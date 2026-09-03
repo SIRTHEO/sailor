@@ -286,7 +286,12 @@ Starting point, so the mandate builds on it instead of beside it.
    *Proof:* the shipped flow names the local runner as its only engine and
    ends in a handover; run without spending, the file read reaches the model
    and the proposal reaches the handover whole while the run waits for a
-   person. The real run on one file of this repository is still to make.
+   person. *Measured on 03/09:* two real runs on `crates/models/src/fuel.rs`
+   from this terminal: rows on `ollama`, `work_kind: mechanical`, counts
+   read from stderr (2313 in, 1934 and 41 out), zero Claude calls; the first
+   run died on a ledger column the schema version had not carried, fixed
+   with a test. The 1.5b model answered a placeholder instead of the file:
+   the sweep needs the 7b, which is Theo's pull.
 
 ## C. Sailor develops Sailor, and this terminal watches
 

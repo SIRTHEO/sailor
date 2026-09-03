@@ -48,7 +48,15 @@ fn print_usage() {
 }
 
 fn load_catalog() -> Result<Catalog, String> {
-    Catalog::parse(&fetch::catalog_body()?)
+    let mut catalog = Catalog::parse(&fetch::catalog_body()?)?;
+    let home = ledger::sailor_home()
+        .map(|home| home.join("pacts.json"))
+        .filter(|path| path.exists())
+        .map(std::fs::read_to_string)
+        .transpose()
+        .map_err(|error| format!("pacts.json: {error}"))?;
+    catalog.declare_pacts(&models::pact::Pacts::in_force(home.as_deref())?);
+    Ok(catalog)
 }
 
 fn run_list(args: &[String]) -> i32 {

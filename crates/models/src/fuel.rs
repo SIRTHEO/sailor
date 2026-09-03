@@ -105,7 +105,12 @@ pub fn unix_secs_of_rfc3339(text: &str) -> Option<i64> {
             sign * (oh.parse::<i64>().ok()? * 3600 + om.parse::<i64>().ok()? * 60)
         }
     };
-    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+    if !(1..=12).contains(&month)
+        || !(1..=31).contains(&day)
+        || !(0..24).contains(&hour)
+        || !(0..60).contains(&minute)
+        || !(0..61).contains(&second)
+    {
         return None;
     }
     Some(days_from_civil(year, month, day) * 86_400 + hour * 3600 + minute * 60 + second - offset_secs)
@@ -157,5 +162,7 @@ mod tests {
         assert_eq!(unix_secs_of_rfc3339("2026-09-01T03:29:59.801054+00:00"), Some(1_788_233_399));
         assert_eq!(unix_secs_of_rfc3339("at 7am"), None);
         assert_eq!(unix_secs_of_rfc3339("2026-13-01T00:00:00Z"), None);
+        assert_eq!(unix_secs_of_rfc3339("2026-09-03T25:00:00Z"), None);
+        assert_eq!(unix_secs_of_rfc3339("2026-09-03T02:00:00-02:00"), Some(1_788_408_000));
     }
 }

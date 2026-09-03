@@ -397,31 +397,35 @@ fn chain_with(verdict: &str, engine_a_args: Option<Value>) -> Graph {
 #[test]
 fn a_dispatch_without_a_why_per_choice_fails_the_shape() {
     let flow = flow_file();
-    let without_whys = json!({
-        "first_engine": format!("primo incarico, {MARK}"),
-        "second_engine": format!("secondo incarico, {MARK}")
-    })
-    .to_string();
-    let mut steps: Vec<Step> = flow.graph.steps().to_vec();
-    for step in &mut steps {
-        if step.id == "dispatch" {
-            step.with.as_mut().expect("the step carries its values")["args"] =
-                reads_stdin(&without_whys);
+    for missing in ["why_first", "why_second"] {
+        let mut answer = json!({
+            "first_engine": format!("primo incarico, {MARK}"),
+            "second_engine": format!("secondo incarico, {MARK}"),
+            "why_first": "a territory",
+            "why_second": "the other"
+        });
+        answer.as_object_mut().expect("an object").remove(missing);
+        let mut steps: Vec<Step> = flow.graph.steps().to_vec();
+        for step in &mut steps {
+            if step.id == "dispatch" {
+                step.with.as_mut().expect("the step carries its values")["args"] =
+                    reads_stdin(&answer.to_string());
+            }
         }
+        let graph = Graph::new(steps).expect("the graph stays valid");
+
+        let (execution, _) = run_with(
+            &graph,
+            &[("trigger", trigger_input())],
+            &registry_with(EveryToolIsShell),
+        );
+
+        assert_eq!(
+            last_decision(&execution),
+            Decision::Failed(vec!["dispatch".to_owned()]),
+            "an answer without «{missing}» must not pass the shape"
+        );
     }
-    let graph = Graph::new(steps).expect("the graph stays valid");
-
-    let (execution, _) = run_with(
-        &graph,
-        &[("trigger", trigger_input())],
-        &registry_with(EveryToolIsShell),
-    );
-
-    assert_eq!(
-        last_decision(&execution),
-        Decision::Failed(vec!["dispatch".to_owned()]),
-        "an answer without the whys must not pass the shape"
-    );
 }
 
 /// La consegna dell'innesco, col segno dentro: è l'unica cosa che entra nel
