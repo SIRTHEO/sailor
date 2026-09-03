@@ -250,6 +250,12 @@ pub(crate) fn terminal_open(
     let profiles = profiles::store_io::load_store()
         .map_err(|error| format!("the profile store cannot be read, so no terminal opens under a profile: {error}"))?;
     let crossing = what_crosses(program, args, &profiles);
+    // An endpoint that could not be applied is said before the terminal opens,
+    // not discovered on the bill: the pane would otherwise run on the
+    // subscription while the profile says it should run elsewhere.
+    for why in &crossing.endpoints_refused {
+        crate::events::emit(&app, "terminal", &serde_json::json!({"endpoint_refused": why}));
+    }
     let opened = client_with_host()?.open(
         &workspace_root,
         crossing.program,
@@ -272,6 +278,8 @@ struct Crossing {
     environment: Vec<(String, String)>,
     /// The active profile of the command line the program is, when it is one.
     profile: Option<String>,
+    /// Why an active profile's endpoint could not be applied, if one could not.
+    endpoints_refused: Vec<String>,
 }
 
 fn what_crosses(
@@ -289,11 +297,13 @@ fn what_crosses(
             .find(|cli| cli.executable == name)
             .and_then(|cli| profiles.active.get(cli.id).cloned())
     });
+    let active = profiles::active_environment_with(profiles, &|name| std::env::var(name).ok());
     Crossing {
         program,
         args: args.unwrap_or_default(),
-        environment: profiles::active_environment(profiles),
+        environment: active.environment,
         profile,
+        endpoints_refused: active.refused,
     }
 }
 
@@ -441,6 +451,7 @@ mod tests {
                     "/homes/claude/prove".to_owned()
                 )],
                 profile: Some("prove".to_owned()),
+                endpoints_refused: Vec::new(),
             }
         );
         // A program that is no command line of the profiles runs under none,

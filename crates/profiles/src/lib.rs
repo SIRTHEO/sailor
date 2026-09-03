@@ -298,7 +298,22 @@ pub fn build_environment(cli: &KnownCli, profile_home: &Path) -> BTreeMap<String
 /// whose home does not move: there is no variable to set, and setting a made-up
 /// one would promise a switch that does nothing.
 pub fn active_environment(store: &ProfileStore) -> Vec<(String, String)> {
+    active_environment_with(store, &|name| std::env::var(name).ok()).environment
+}
+
+/// What a terminal opens with, and what it could not be given: an endpoint
+/// dropped in silence leaves the terminal on the subscription.
+pub struct ActiveEnvironment {
+    pub environment: Vec<(String, String)>,
+    pub refused: Vec<String>,
+}
+
+pub fn active_environment_with(
+    store: &ProfileStore,
+    key_of: &dyn Fn(&str) -> Option<String>,
+) -> ActiveEnvironment {
     let mut environment = Vec::new();
+    let mut refused = Vec::new();
     for (cli_id, name) in &store.active {
         let Ok(cli) = find_cli(cli_id) else {
             continue;
@@ -311,8 +326,12 @@ pub fn active_environment(store: &ProfileStore) -> Vec<(String, String)> {
             continue;
         };
         environment.extend(build_environment(cli, &profile.home_dir));
+        match endpoint_environment(cli, profile, key_of) {
+            Ok(endpoint) => environment.extend(endpoint),
+            Err(why) => refused.push(why),
+        }
     }
-    environment
+    ActiveEnvironment { environment, refused }
 }
 
 /// The two paths a symlink swap involves: where the link sits inside the fixed
