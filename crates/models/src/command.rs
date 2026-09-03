@@ -46,10 +46,11 @@ pub fn format_model_line(m: &Model) -> String {
             .join("+")
     };
     format!(
-        "{id}  {kind}  context {ctx}  accepts {modalities}  input {price_in}  output {price_out}",
+        "{id}  {kind}  context {ctx}  accepts {modalities}  input {price_in}  output {price_out}  pact {pact}",
         id = m.id,
         price_in = format_price(m.price_per_million_input),
         price_out = format_price(m.price_per_million_output),
+        pact = m.data_pact,
     )
 }
 

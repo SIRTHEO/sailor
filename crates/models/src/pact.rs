@@ -46,6 +46,16 @@ impl Pacts {
         Pacts::parse(BUILTIN).expect("the pacts shipped with the product parse")
     }
 
+    /// The shipped pacts with the home file's laid over them by id; a home
+    /// file that does not read is an error, never «no pacts».
+    pub fn in_force(home: Option<&str>) -> Result<Pacts, String> {
+        let mut pacts = Pacts::shipped();
+        if let Some(text) = home {
+            pacts.pacts.extend(Pacts::parse(text)?.pacts);
+        }
+        Ok(pacts)
+    }
+
     pub fn of(&self, model_id: &str) -> DataPact {
         self.pacts.get(model_id).copied().unwrap_or_default()
     }
@@ -68,7 +78,10 @@ mod tests {
     }
 
     #[test]
-    fn the_shipped_pacts_parse() {
+    fn the_shipped_pacts_parse_and_the_home_file_lays_over_them_by_id() {
         Pacts::shipped();
+        let laid = Pacts::in_force(Some(r#"{"pacts": {"a/model": "trains"}}"#)).expect("reads");
+        assert_eq!(laid.of("a/model"), DataPact::Trains);
+        assert!(Pacts::in_force(Some("{ not json")).is_err(), "a broken home file is not silence");
     }
 }

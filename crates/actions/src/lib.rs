@@ -1835,6 +1835,12 @@ impl ExternalEngineAction {
                         ),
                     ));
                 };
+                if let Some(other) = spec.prefer.as_deref().filter(|word| *word != "fuel") {
+                    return Err(ActionError::new(
+                        "invalid_input",
+                        format!("`prefer` knows only «fuel», not «{other}»"),
+                    ));
+                }
                 let (ids, preferred) = self.ordered(tools.as_ref(), spec, choice.ids());
                 if ids.is_empty() {
                     return Err(ActionError::new(
@@ -1876,16 +1882,8 @@ impl ExternalEngineAction {
                         });
                         continue;
                     }
-                    // A cap on a window excludes, and never reorders: the sum
-                    // is the ledger's, over every run of this engine.
-                    if let Some(why) = self.over_budget(id) {
-                        refused.push(Refused {
-                            id: id.clone(),
-                            reason: why,
-                            unresolved: false,
-                        });
-                        continue;
-                    }
+                    // The pact first: it is permanent, and a cap that would
+                    // be named instead suggests raising it would help.
                     let pact = tools.data_pact(id);
                     if spec.data == Some(DataClass::Private) && pact != models::pact::DataPact::DoesNotTrain {
                         refused.push(Refused {
@@ -1893,6 +1891,16 @@ impl ExternalEngineAction {
                             reason: format!(
                                 "a private step does not go to an engine whose data pact is «{pact}»"
                             ),
+                            unresolved: false,
+                        });
+                        continue;
+                    }
+                    // A cap on a window excludes, and never reorders: the sum
+                    // is the ledger's, over every run of this engine.
+                    if let Some(why) = self.over_budget(id) {
+                        refused.push(Refused {
+                            id: id.clone(),
+                            reason: why,
                             unresolved: false,
                         });
                         continue;
@@ -5957,6 +5965,43 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         with_price_list(None, || plain.execute(&as_written, &mut shared("corsa-2", "passo")))
             .expect("the chain's first answers");
         assert_eq!(calls_in(&dir.join("deposito-2"))[0].cli, "a-lungo");
+
+        // A word `prefer` does not know is refused by name, not read as silence.
+        let by_luck = json!({"tool": ["a-lungo"], "prefer": "luck", "stdin": "ciao", "timeout_secs": 10});
+        let refused = with_price_list(None, || plain.execute(&by_luck, &mut shared("corsa-3", "passo")))
+            .expect_err("an unknown preference is refused");
+        assert_eq!(refused.class, "invalid_input");
+        assert!(refused.said.contains("«luck»"), "{}", refused.said);
+    }
+
+    /// A step that would start under a profile whose endpoint cannot be
+    /// reached is refused before spending, with the profile's reason.
+    #[test]
+    fn a_profile_whose_endpoint_is_refused_holds_the_engine_back_before_spending() {
+        let dir = scratch("endpoint-rifiutato");
+        let bin = fake_engine(&dir, "codex", WRAPS_ON_DEMAND);
+        let store = dir.join("profili.json");
+        std::fs::write(
+            &store,
+            format!(
+                r#"{{"profiles": [{{"name": "altrove", "cli_id": "codex", "home_dir": "{}",
+                    "endpoint": {{"url": "http://localhost:1/v1", "key_var": "NO_SUCH_KEY_VAR_HERE",
+                    "protocol": "anthropic-messages"}}}}],
+                  "active": {{"codex": "altrove"}}}}"#,
+                dir.join("casa").display()
+            ),
+        )
+        .expect("write the store");
+        let action = ExternalEngineAction::resolving_with(Declares { bin, recipe: Some(declaring_recipe()) });
+        let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
+
+        std::env::set_var("PROFILES_STATE_PATH", &store);
+        let refused = with_price_list(None, || action.execute(&input, &mut shared("corsa", "passo")));
+        std::env::remove_var("PROFILES_STATE_PATH");
+
+        let refused = refused.expect_err("a profile that cannot be pointed there refuses the launch");
+        assert_eq!(refused.class, "no_usable_engine");
+        assert!(refused.said.contains("anthropic-messages"), "{}", refused.said);
     }
 
     /// A step that declares its kind goes first to the engines the strengths
