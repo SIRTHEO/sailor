@@ -5,14 +5,19 @@
 use std::process::Command;
 
 /// The flows that ship with the product, and this project's own.
-const FLOWS_THAT_MAY_BE_TRACKED: &[&str] = &[
-    "crates/flow/system/dispatch-the-work.flow.json",
-    "crates/flow/system/migrate-to-sailor.flow.json",
-    "crates/flow/system/sweep-the-tree.flow.json",
-    "crates/flow/system/what-this-machine-has.flow.json",
-    "crates/flow/system/write-down-what-broke.flow.json",
-    "flows/passa-il-testimone.flow.json",
-];
+/// This project's own flows, which are not shipped inside the binary.
+const THIS_PROJECTS_OWN: &[&str] = &["flows/passa-il-testimone.flow.json"];
+
+/// What may be tracked: the shipped flows, **asked of the product** instead of
+/// copied here. A hand list beside `flow::system::FLOWS` is the same list
+/// written twice, and it went stale the day a flow was shipped.
+fn flows_that_may_be_tracked() -> Vec<String> {
+    flow::system::FLOWS
+        .iter()
+        .map(|(name, _)| format!("crates/flow/system/{name}.flow.json"))
+        .chain(THIS_PROJECTS_OWN.iter().map(|path| (*path).to_owned()))
+        .collect()
+}
 
 /// File names that are a person's, wherever they sit.
 const NAMES_THAT_ARE_A_PERSONS: &[&str] = &[
@@ -43,10 +48,11 @@ fn tracked() -> Vec<String> {
 
 #[test]
 fn only_the_shipped_flows_and_this_projects_own_are_tracked() {
+    let allowed = flows_that_may_be_tracked();
     let strangers: Vec<String> = tracked()
         .into_iter()
         .filter(|path| path.ends_with(".flow.json"))
-        .filter(|path| !FLOWS_THAT_MAY_BE_TRACKED.contains(&path.as_str()))
+        .filter(|path| !allowed.contains(path))
         .collect();
     assert!(
         strangers.is_empty(),
