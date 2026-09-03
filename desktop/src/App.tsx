@@ -1567,16 +1567,14 @@ export default function App() {
           )}
         </main>
 
-        {/* LA COLONNA DESTRA SI CHIUDE A ZERO FLUSSI, e la tela si prende la sua
-            larghezza. Far tacere il contenuto lasciando in piedi il contenitore
-            lasciava una striscia di 288px muta e divisa da un filo: non si legge
-            come calma, si legge come una parte di schermo che non ha finito di
-            caricare.
-
-            È la regola già applicata tre volte in questo schermo — la barra
-            sparisce, la minimappa sparisce, i comandi spariscono: dove non c'è
-            niente da mostrare non serve un posto dove mostrarlo. */}
-        {flows.size > 0 && (
+        {/* LA COLONNA DESTRA STA IN PIEDI QUANDO HA UN PASSO DA DESCRIVERE, e
+            in nessun altro caso: la regola era già scritta qui — dove non c'è
+            niente da mostrare non serve un posto dove mostrarlo — e valeva per
+            zero flussi soltanto. Con dei flussi e nessun passo scelto restavano
+            288px per una frase d'invito, cioè un quinto della finestra, mentre
+            la tela accanto veniva tagliata a metà parola: l'invito costava più
+            di quello che invitava a vedere. */}
+        {selectedData !== undefined && (
           <aside className="panel">
             <datalist id="known-actions">
               {KNOWN_ACTIONS.map((action) => (
@@ -1629,18 +1627,7 @@ export default function App() {
                   />
                 )}
               </>
-            ) : (
-              /* THE PANEL TALKS ABOUT A STEP, the only thing it shows. Asking
-                 for a flow too puts TWO INVITATIONS ON ONE SCREEN, and with a
-                 flow already focused it invites what is already done. At zero
-                 flows there is no rail at all, so promising that step
-                 parameters appear here would promise the impossible. */
-              <div className="panel__empty">
-                {focusName === null
-                  ? "A step's parameters appear here."
-                  : "Pick a step on the canvas to see and change its parameters."}
-              </div>
-            )}
+            ) : null}
           </aside>
         )}
       </div>
