@@ -418,6 +418,7 @@
   "run.failure.subflow_unreadable": "the store could not be read — the fault is not in the flow",
   "run.failure.terminal_not_held": "Sailor is not holding that terminal",
   "run.failure.tool_unavailable": "that tool is not on this machine",
+  "run.failure.tree_not_cut": "the step asked for a tree of its own and git could not cut it, so it was not run in the shared one",
   "run.failure.unjoinable_reference": "only text can be joined, and one of the pieces is not text",
   "run.failure.unknown_action": "the step calls for an action nobody here knows",
   "run.failure.unknown_command_line": "no descriptor is loaded for that command line — it may be missing, switched off, or broken",
