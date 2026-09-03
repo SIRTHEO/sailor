@@ -276,8 +276,18 @@ Starting point, so the mandate builds on it instead of beside it.
    session (never `--continue`), receives only the mandate and the two
    answers, and its verdict is a closed word. The descriptor's `fork_session`
    is never used for it.
-   *Proof:* the command line composed for verify carries no resume flag; a
-   test on `command_line(&recipe)`.
+   *Where it landed:* a step declares `"blind": true`, and a blind step opens
+   no session and continues none, whatever it asks; `sailor flow check`
+   refuses a flow that declares a step blind and also asks it to resume or
+   fork, because the two say opposite things about the same step. **The word
+   is the flow's, not the code's:** Theo, on 03/09, on a first version that
+   made `kind: judgement` mean blindness — *shouldn't the judge be a node a
+   user creates rather than something hardcoded?* A kind of work is data for
+   the strengths table; what a step may see is the author's declaration, and
+   nothing in Rust reads a step as a judge.
+   *Proof:* with a session left by an earlier step and an engine that can
+   resume, the same step resumes when it says nothing and starts from scratch
+   when it says `blind`; the check names a step that declares both.
 5. **The mechanical work goes local, and is judged by a check.** The ollama
    descriptor gains an `ask` block (`ollama run <model>`, prompt on stdin,
    `usage` from `--verbose`), and a flow `sweep-the-tree` takes a mechanical

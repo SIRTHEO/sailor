@@ -1654,6 +1654,14 @@ fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) -> Result<S
             &[("flow", &flow.id), ("steps", &sweeping.join(", "))],
         ));
     }
+    let seeing = blind_steps_asking_for_a_session(&flow);
+    if !seeing.is_empty() {
+        println!("{report}");
+        return Err(catalogue::say(
+            "cli.flow.blind_and_asking_for_a_session",
+            &[("flow", &flow.id), ("steps", &seeing.join(", "))],
+        ));
+    }
     let unasked = handed_without_choices(&flow);
     if !unasked.is_empty() {
         println!("{report}");
@@ -2483,6 +2491,23 @@ const MOUNTED_ARG: &str = "<mounted>";
 
 /// The handed steps that offer the person no closed choice: a question in
 /// free text is not a step, and is refused before it can be asked.
+/// Steps that declare themselves blind and ask to continue a session: a flow
+/// saying two opposite things about the same step, refused before it runs.
+fn blind_steps_asking_for_a_session(flow: &FlowFile) -> Vec<String> {
+    flow.graph
+        .steps()
+        .iter()
+        .filter(|step| {
+            let Some(with) = step.with.as_ref() else {
+                return false;
+            };
+            with.get(actions::BLIND).and_then(Value::as_bool) == Some(true)
+                && with.get("session").is_some()
+        })
+        .map(|step| step.id.clone())
+        .collect()
+}
+
 fn handed_without_choices(flow: &FlowFile) -> Vec<String> {
     flow.graph
         .steps()
@@ -3628,6 +3653,45 @@ mod tests {
         assert_eq!(handed_without_choices(&flow_with(&format!("{base}, \"options\": []}}"))), vec!["decide".to_owned()]);
         let asked = format!("{base}, \"options\": [{{\"label\": \"yes\", \"facts\": \"it fits\"}}]}}");
         assert!(handed_without_choices(&flow_with(&asked)).is_empty());
+    }
+
+    /// A step cannot be blind and continue somebody's session: the flow would
+    /// say two opposite things and the run would honour the first.
+    #[test]
+    fn a_blind_step_that_asks_to_continue_a_session_is_named_by_the_check() {
+        let flow_with = |with: &str| -> FlowFile {
+            serde_json::from_str(&format!(
+                r#"{{
+                    "id": "verifica",
+                    "description": "a step that must not see",
+                    "graph": {{"steps": [{{
+                        "id": "judge",
+                        "deps": [],
+                        "input_schema": {{"type": "any"}},
+                        "output_schema": {{"type": "any"}},
+                        "when": null,
+                        "action": "external_engine",
+                        "max_attempts": 1,
+                        "with": {with}
+                    }}]}},
+                    "inputs": {{}}
+                }}"#
+            ))
+            .expect("the flow is valid")
+        };
+        let base = r#"{"tool": "un-motore", "stdin": "judge this", "timeout_secs": 60"#;
+        let both = format!("{base}, \"blind\": true, \"session\": {{\"resume\": \"implement\"}}}}");
+        assert_eq!(
+            blind_steps_asking_for_a_session(&flow_with(&both)),
+            vec!["judge".to_owned()]
+        );
+        let blind_alone = format!("{base}, \"blind\": true}}");
+        assert!(blind_steps_asking_for_a_session(&flow_with(&blind_alone)).is_empty());
+        let resuming_alone = format!("{base}, \"session\": {{\"resume\": \"implement\"}}}}");
+        assert!(
+            blind_steps_asking_for_a_session(&flow_with(&resuming_alone)).is_empty(),
+            "a step that never said it was blind is free to continue a session"
+        );
     }
 
     /// **UNA CONSEGNA VIVA NON SI CHIUDE SOTTO I PIEDI DI CHI CI LAVORA.**

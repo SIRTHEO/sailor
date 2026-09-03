@@ -1479,6 +1479,11 @@ struct EngineSpec {
     /// `judgement`, `writing`): the strengths table puts its engines first.
     #[serde(default)]
     kind: Option<String>,
+    /// This step is given what it is handed and nothing else: no session of
+    /// another step is continued, whatever it asks. Whoever writes the flow
+    /// declares it — a step is not read as a judge by the words in it.
+    #[serde(default)]
+    blind: bool,
     /// `fuel`: among the chain, the engine whose subscription window would
     /// otherwise expire unused goes first, and the why is said.
     #[serde(default)]
@@ -2122,6 +2127,9 @@ fn fresh_session_id() -> String {
     )
 }
 
+/// The field a step declares to be given nothing it was not handed.
+pub const BLIND: &str = "blind";
+
 /// Con quali opzioni girare, e sotto quale identificativo di sessione questa
 /// chiamata risulta essere girata.
 struct SessionPlan {
@@ -2181,6 +2189,7 @@ fn say_it_starts_over(live: Option<&dyn LiveSink>, named: &str, why: &str) {
 fn session_plan(
     candidate: &Candidate,
     asked: Option<&SessionUse>,
+    blind: bool,
     record: Option<&Recording<'_>>,
     live: Option<&dyn LiveSink>,
     named: &str,
@@ -2188,6 +2197,12 @@ fn session_plan(
     let Some(asked) = asked else {
         return SessionPlan::from_scratch();
     };
+    // Declared by whoever wrote the step, never inferred from what the step
+    // looks like: a session carried in would hand it what it asked not to see.
+    if blind {
+        say_it_starts_over(live, named, "the step is declared blind");
+        return SessionPlan::from_scratch();
+    }
     let Some(record) = record else {
         // Il deposito è il posto dove una sessione si posa e si ritrova: senza,
         // non c'è niente da aprire perché non ci sarebbe niente da riprendere.
@@ -2762,7 +2777,7 @@ impl ExternalEngineAction {
         };
         // Prima di montare la riga: questa chiamata continua qualcosa, o parte
         // da zero? Non può fallire — al massimo riparte da zero dicendolo.
-        let session = session_plan(candidate, spec.session.as_ref(), record, live, &named);
+        let session = session_plan(candidate, spec.session.as_ref(), spec.blind, record, live, &named);
         let mut args = session
             .args
             .clone()
@@ -5295,6 +5310,96 @@ mod what_it_cost {
           "cached_per_million": 0.3 }
       ]
     }"#;
+
+
+    /// A step declared blind is handed what the flow hands it and nothing else.
+    /// The word is the flow's, not ours: no kind of work is read as a judge.
+    #[test]
+    fn a_step_declared_blind_carries_no_option_that_would_continue_a_session() {
+        let dir = scratch("cieco");
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        ledger
+            .record_model_call(&a_call_that_opened("s-1"))
+            .expect("una sessione lasciata dal passo di prima");
+        let candidate = a_candidate_that_can_resume();
+        let record = Recording {
+            ledger: &ledger,
+            run_id: "corsa".to_owned(),
+            step_id: "verifica".to_owned(),
+        };
+        let asked = SessionUse::Resume("implementa".to_owned());
+
+        // The control: without the declaration the step resumes, which is what
+        // makes the blind case a difference and not a coincidence.
+        let seeing = session_plan(&candidate, Some(&asked), false, Some(&record), None, "«motore»");
+        assert_eq!(
+            seeing.args,
+            Some(vec!["--resume".to_owned(), "s-1".to_owned()]),
+            "a step that did not ask to be blind continues the session it named"
+        );
+
+        let blind = session_plan(&candidate, Some(&asked), true, Some(&record), None, "«motore»");
+        assert!(
+            blind.args.is_none() && blind.recorded.is_none(),
+            "a blind step starts from scratch: {:?}",
+            blind.args
+        );
+    }
+
+    fn a_candidate_that_can_resume() -> Candidate {
+        Candidate {
+            id: Some("motore".to_owned()),
+            bin: "eco".to_owned(),
+            args: vec!["ask".to_owned()],
+            prompt: PromptVia::Stdin,
+            unusable_when: Vec::new(),
+            exhausted_when: Vec::new(),
+            cooldown_secs: None,
+            declared_usage: None,
+            can_be_asked: true,
+            why: None,
+            session: SessionRecipe {
+                open: Some(vec!["--session".to_owned(), SESSION_PLACEHOLDER.to_owned()]),
+                resume: Some(vec!["--resume".to_owned(), SESSION_PLACEHOLDER.to_owned()]),
+                fork: None,
+                id_from: None,
+            },
+        }
+    }
+
+    fn a_call_that_opened(session: &str) -> ledger::ModelCallRecord {
+        ledger::ModelCallRecord {
+            call_id: format!("corsa:implementa:{session}"),
+            run_id: "corsa".to_owned(),
+            step_id: Some("implementa".to_owned()),
+            purpose: EXTERNAL_ENGINE_ACTION.to_owned(),
+            cli: "motore".to_owned(),
+            requested_model: String::new(),
+            actual_model: String::new(),
+            input_tokens: None,
+            output_tokens: None,
+            cached_tokens: None,
+            cache_write_tokens: None,
+            cache_write_long_tokens: None,
+            total_tokens: None,
+            turns: None,
+            cost_micros: None,
+            declared_cost_micros: None,
+            price_currency: None,
+            input_price_micros_per_million: None,
+            output_price_micros_per_million: None,
+            cached_price_micros_per_million: None,
+            cache_write_price_micros_per_million: None,
+            cache_write_long_price_micros_per_million: None,
+            engine_identity: ledger::EngineIdentity::NotAKnownEngine,
+            retry_chain: Vec::new(),
+            error_type: None,
+            started_at: 1,
+            ended_at: Some(2),
+            session_id: Some(session.to_owned()),
+            work_kind: None,
+        }
+    }
 
     fn write_price_list(dir: &std::path::Path) -> std::path::PathBuf {
         let path = dir.join("pricing.json");
