@@ -57,6 +57,10 @@ fn dispatch(args: &[String], sources: &[FlowSource]) -> Result<String, String> {
         [command, name, value, weight] if command == "schedule" => {
             set_schedule(sources, name, value, Some(weight))
         }
+        [command] if command == "publish" => crate::publish_cmd::publish_flows(sources, None),
+        [command, remote] if command == "publish" => {
+            crate::publish_cmd::publish_flows(sources, Some(remote))
+        }
         _ => Err(usage()),
     }
 }
@@ -1113,6 +1117,10 @@ pub const USAGE: &[Form] = &[
     },
     Form {
         form: "sailor flow relocate <name> [prefix-to-strip]",
+        says_key: "",
+    },
+    Form {
+        form: "sailor flow publish [remote]",
         says_key: "",
     },
 ];
