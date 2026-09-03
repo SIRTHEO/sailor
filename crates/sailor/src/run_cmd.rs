@@ -36,6 +36,18 @@ fn resolve(
     rest: &[String],
     fixed_home: &std::path::Path,
 ) -> Result<Launch, String> {
+    resolve_with(cli_id, store, rest, fixed_home, &key_of_the_environment)
+}
+
+/// The same, reading the endpoint's key from wherever the caller says. The
+/// proof needs a machine whose variables it decides.
+fn resolve_with(
+    cli_id: &str,
+    store: &ProfileStore,
+    rest: &[String],
+    fixed_home: &std::path::Path,
+    key_of: &dyn Fn(&str) -> Option<String>,
+) -> Result<Launch, String> {
     let cli = find_cli(cli_id)?;
     if matches!(cli.home, HomeMechanism::Unknown) {
         return Err(catalogue::say(
@@ -72,12 +84,25 @@ fn resolve(
         _ => None,
     };
 
+    // A profile that points its command line at another endpoint points it
+    // there in a terminal too. Refused rather than launched without it: an
+    // engine that quietly falls back to the subscription spends money the
+    // person had said should be spent elsewhere.
+    let mut env = build_environment(cli, &profile.home_dir);
+    env.extend(profiles::endpoint_environment(cli, profile, key_of)?);
+
     Ok(Launch {
         executable: cli.executable.to_owned(),
-        env: build_environment(cli, &profile.home_dir),
+        env,
         args: rest.to_vec(),
         expected_link,
     })
+}
+
+/// The key itself is never in the store: the profile names the variable, the
+/// machine holds the value.
+fn key_of_the_environment(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|key| !key.is_empty())
 }
 
 /// Il collegamento sul disco punta davvero al profilo attivo? Si rifiuta invece
@@ -212,6 +237,44 @@ mod tests {
         assert_eq!(
             launch.env.get("CODEX_HOME"),
             Some(&"/prova/codex/secondo".to_owned())
+        );
+    }
+
+    /// A terminal is where an engine is actually worked in, and until now the
+    /// endpoint reached only the steps of a flow: the same profile sent a run
+    /// to another provider and a terminal to the subscription.
+    #[test]
+    fn a_profile_with_an_endpoint_points_the_terminal_there_too() {
+        let mut store = two_profile_store();
+        store.profiles[0].endpoint = Some(profiles::ProfileEndpoint {
+            url: "https://altrove.example/v1".to_owned(),
+            key_var: "CHIAVE_ALTROVE".to_owned(),
+            protocol: "openai-responses".to_owned(),
+        });
+        store.active.insert("codex".to_owned(), "primo".to_owned());
+        let with_the_key = |name: &str| (name == "CHIAVE_ALTROVE").then(|| "una-chiave".to_owned());
+
+        let launch =
+            resolve_with("codex", &store, &[], Path::new("/casa"), &with_the_key).unwrap();
+        assert_eq!(
+            launch.env.get("OPENAI_BASE_URL"),
+            Some(&"https://altrove.example/v1".to_owned()),
+            "the terminal starts pointed at the endpoint the profile declares"
+        );
+        assert_eq!(launch.env.get("OPENAI_API_KEY"), Some(&"una-chiave".to_owned()));
+        assert_eq!(
+            launch.env.get("CODEX_HOME"),
+            Some(&"/prova/codex/primo".to_owned()),
+            "and still in the home of the profile in force"
+        );
+
+        let nowhere = |_: &str| None;
+        let refused =
+            resolve_with("codex", &store, &[], Path::new("/casa"), &nowhere).unwrap_err();
+        assert!(
+            refused.contains("CHIAVE_ALTROVE"),
+            "a key that is not on this machine refuses the launch instead of \
+             starting it against the subscription: {refused}"
         );
     }
 

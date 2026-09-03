@@ -181,9 +181,13 @@ Starting point, so the mandate builds on it instead of beside it.
    `OPENAI_BASE_URL`/`OPENAI_API_KEY` for Codex), `endpoint_environment`
    refusing a foreign protocol, a missing key or a line without a variable;
    `candidates` refuses the engine with that reason; `ProfileInForce.endpoint`
-   on the ledger row. Still to do: the terminal's environment does not carry
-   the endpoint yet (only flow steps do), and the model that answered is read
-   only where the descriptor's `usage` block reads it.
+   on the ledger row. The terminal carries it too, since 03/09: `sailor run`
+   refuses the launch when the endpoint cannot be honoured rather than
+   starting the command line against the subscription, and a terminal opened
+   from the window carries the endpoints of every active profile, with the
+   ones that could not be applied travelling beside the environment as
+   refusals the window says out loud. Still to do: the model that answered is
+   read only where the descriptor's `usage` block reads it.
    *Proof:* a profile with an endpoint makes the composed environment carry
    the two variables and the identity carry the endpoint; a profile whose
    endpoint speaks another protocol is refused naming both protocols.
