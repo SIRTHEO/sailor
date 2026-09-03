@@ -788,3 +788,29 @@ fn every_tool_the_flow_asks_for_is_declared_by_some_descriptor() {
         );
     }
 }
+
+/// The step that judges says so in the flow, where its author can read it and
+/// change it. Nothing in the code decides which step is the judge.
+#[test]
+fn the_step_that_judges_is_declared_blind_in_the_flow() {
+    let flow = flow_file();
+    let blind: Vec<&str> = flow
+        .graph
+        .steps()
+        .iter()
+        .filter(|step| {
+            step.with
+                .as_ref()
+                .and_then(|with| with.get(actions::BLIND))
+                .and_then(Value::as_bool)
+                == Some(true)
+        })
+        .map(|step| step.id.as_str())
+        .collect();
+    assert_eq!(
+        blind,
+        vec!["verify"],
+        "the verify step is the one that must not continue the session of the \
+         work it judges, and it is the only one held to it"
+    );
+}

@@ -435,6 +435,7 @@
               }
             ]
           },
+          "blind": true,
           "timeout_secs": 900
         },
         "input_schema": {
