@@ -12,6 +12,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser } from "playwright";
+import { PLACES } from "../src/Rail";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const URL = "http://localhost:5183/";
@@ -86,7 +87,11 @@ async function main(): Promise<void> {
       });
       const page = await context.newPage();
       await page.goto(URL, { waitUntil: "networkidle" });
-      await page.getByRole("button", { name: /^\s*flows/i }).first().click();
+      // The place's name comes from the product: copied here once, it went
+      // stale and this measure stopped running at all.
+      const board = PLACES.find((one) => one.id === "board");
+      if (!board) throw new Error("the product has no board to measure");
+      await page.getByRole("button", { name: new RegExp(`^\\s*${board.name}`, "i") }).first().click();
       await page.locator(".react-flow__node-step").first().waitFor({ timeout: 8000 });
       // The framing is a declared transition: let it finish before measuring.
       await page.waitForTimeout(900);
