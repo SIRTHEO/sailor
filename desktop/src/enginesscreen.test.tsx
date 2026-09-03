@@ -22,6 +22,7 @@ const ANSWER: Engines = {
       executable: "/opt/homebrew/bin/codex", version: "0.152.1",
       signed_in: "no", signed_in_said: "Not logged in", profile_in_force: "prove",
       quota: [], quota_why: "this engine declares no channel to read what is left",
+      set_aside: null, budget: null,
       sign_in: { program: "/opt/homebrew/bin/codex", args: ["login"], interactive: true, note: "measured with `codex login --help`" },
       install: { line: "npm install -g @openai/codex", note: "measured" },
     },
@@ -33,16 +34,29 @@ const ANSWER: Engines = {
       quota_why: null,
       sign_in: { program: "/home/theo/.local/bin/claude", args: ["auth", "login"], interactive: true, note: "" },
       install: null,
+      set_aside: { until: 1_788_400_000, said: "You've hit your weekly limit" },
+      budget: { cap_micros: 20_000_000, window_secs: 86_400, spent_micros: 18_300_000, spent_why: null },
     },
     {
       id: "openrouter-cli", label: "OpenRouter CLI", presence: "absent", reason: "no `openrouter` on the PATH",
       executable: null, version: null,
       signed_in: "not known", signed_in_said: "it is not on this machine, so there is nobody to ask", profile_in_force: null,
       quota: [], quota_why: "this engine declares no channel to read what is left",
+      set_aside: null, budget: null,
       sign_in: null, install: { line: "npm install -g openrouter", note: "" },
     },
   ],
 };
+
+test("an engine set aside or under a cap says so, and one that is neither says it is not held back", async () => {
+  shellThatAnswers();
+  render(<EnginesScreen native />);
+  const held = await screen.findAllByText(/set aside until/);
+  expect(held).toHaveLength(1);
+  expect(screen.getByText(/it said «You've hit your weekly limit»/)).toBeTruthy();
+  expect(screen.getByText(/spent 18\.30 \$ of 20\.00 \$ in the last 24 h/)).toBeTruthy();
+  expect(screen.getAllByText("not held back")).toHaveLength(2);
+});
 
 function shellThatAnswers(): { calls: Array<{ command: string; args: unknown }> } {
   const calls: Array<{ command: string; args: unknown }> = [];
