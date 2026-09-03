@@ -12,6 +12,10 @@ use terminal::inbox::{self, Inbox};
 /// What one delivery was, and when it landed.
 type Delivery = (Instant, Vec<u8>);
 
+/// Both instants are stamped by the woken receiver, so the reading is the
+/// sender's pause plus a wake-up difference: it read 49.994 against 50 ms.
+const STAMPED_ON_WAKING: Duration = Duration::from_millis(5);
+
 /// Everything one typed line leaves in a letterbox, in the order it arrives.
 ///
 /// The letterbox is a real one and the caller is the real function: nothing
@@ -79,8 +83,9 @@ fn the_text_is_left_alone_before_the_enter_follows() {
     assert_eq!(seen.len(), 2, "text then Enter");
     let waited = seen[1].0.duration_since(seen[0].0);
     assert!(
-        waited >= inbox::ENTER_FOLLOWS_AFTER,
-        "the Enter followed after {waited:?}, sooner than the {:?} declared",
+        waited + STAMPED_ON_WAKING >= inbox::ENTER_FOLLOWS_AFTER,
+        "the Enter followed after {waited:?}, and even allowing {STAMPED_ON_WAKING:?} of \
+         wake-up drift that is sooner than the {:?} declared",
         inbox::ENTER_FOLLOWS_AFTER
     );
 }
