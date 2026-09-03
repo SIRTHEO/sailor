@@ -255,7 +255,10 @@ export function parseStylesheet(source: string): Stylesheet {
       if (text[close] === "}") depth -= 1;
       close += 1;
     }
-    const prelude = text.slice(index, open).trim();
+    // A STATEMENT AT-RULE IS NOT A PRELUDE: `@import` ends at its semicolon.
+    // Read together with the selector that follows, `:root` itself looked like
+    // the body of an at-rule and every role went unseen.
+    const prelude = (splitTop(text.slice(index, open), ";").pop() ?? "").trim();
     const body = text.slice(open + 1, close - 1);
     index = close;
 
@@ -274,6 +277,17 @@ export function parseStylesheet(source: string): Stylesheet {
         }
       }
       colorsInsideAtRules += inner.colorsInsideAtRules;
+      continue;
+    }
+
+    // `@theme` DECLARES ROLES, IT PAINTS NOTHING. Tailwind emits it as custom
+    // properties on `:root`, so that is what it is read as.
+    if (/^@theme\b/.test(prelude)) {
+      const declarations = parseDeclarations(body);
+      if (declarations.length > 0) {
+        order += 1;
+        rules.push({ selector: ":root", specificity: specificityOf(":root"), order, declarations });
+      }
       continue;
     }
 
