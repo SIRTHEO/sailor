@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import stylesheetSource from "./styles.css?raw";
-import { parseColor, parseStylesheet } from "./contrast";
+import { parseColor, parseStylesheet, resolveVars } from "./contrast";
 
 /**
  * **THE PROHIBITIONS AT THE TOP OF `styles.css`, INTERROGATED.** A prohibition
@@ -91,7 +91,10 @@ describe("ogni colore passa da un ruolo", () => {
       ([property]) => /^--(bg|paper|raised|rail|line|band-fill|ink|muted|faint|state-|ok|warn|danger|focus|ink-surface|on-ink|optional|lane-)/.test(property),
     );
     expect(tokens.length).toBeGreaterThan(15);
-    const broken = tokens.filter(([, value]) => parseColor(value) === null);
+    // A role may stand for another: the names a component asks for are
+    // aliases. Resolved before reading, so a misspelt one is still red.
+    const roles = new Map((root as { declarations: Array<[string, string]> }).declarations);
+    const broken = tokens.filter(([, value]) => parseColor(resolveVars(value, roles)) === null);
     expect(broken).toEqual([]);
   });
 });
@@ -115,6 +118,7 @@ describe("il foglio si legge tutto", () => {
     // the test that never looked, unreadable on the screen. So the two sets of
     // colour roles must be the same set, and every dark value must be a colour.
     const root = sheet.rules.find((rule) => rule.selector === ":root");
+    // Raw, not resolved: an alias follows its target under the dark ground.
     const lightColours = (root?.declarations ?? []).filter(([, value]) => parseColor(value) !== null).map(([name]) => name);
     const dark = sheet.darkRoot ?? [];
     const darkNames = dark.map(([name]) => name);

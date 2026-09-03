@@ -1,11 +1,16 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
+import tailwind from "@tailwindcss/vite";
+import { fileURLToPath, URL } from "node:url";
 
 // La porta è fissa perché il guscio nativo la apre per nome, non per scoperta.
 // Diversa da quella di `sailor ui` (47831), che serve la pagina in sola lettura:
 // finché le due esistono insieme non devono litigare.
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwind()],
+  // `@/` è la radice dei sorgenti: è la convenzione che shadcn genera nei
+  // propri componenti, e senza l'alias ogni file aggiunto va corretto a mano.
+  resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   server: {
     port: 5183,
     strictPort: true,

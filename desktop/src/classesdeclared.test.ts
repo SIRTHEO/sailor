@@ -6,9 +6,11 @@
  */
 import { describe, expect, test } from "vitest";
 import { parseStylesheet } from "./contrast";
+import { utilities } from "./tailwindcandidates";
 import stylesheetSource from "./styles.css?raw";
 
-const sources = import.meta.glob("./*.tsx", { query: "?raw", import: "default", eager: true });
+// Every screen, wherever it sits: a folder is not a place to hide from this.
+const sources = import.meta.glob("./**/*.tsx", { query: "?raw", import: "default", eager: true });
 
 /**
  * Classes React Flow styles itself. The prefixed ones are a family; `nodrag`
@@ -81,19 +83,26 @@ describe("the sheet and the screens", () => {
     expect(unseen, "markers written on an element that no rule ever looks at").toEqual([]);
   });
 
-  test("EVERY CLASS THE WINDOW WEARS IS ONE THE SHEET DRESSES", () => {
+  test("EVERY CLASS THE WINDOW WEARS IS ONE THE SHEET DRESSES", async () => {
     const inSheet = declared();
     const inCode = used();
+    const worn = [...inCode.values()].flatMap((names) => [...names]);
+    // A utility is dressed by Tailwind, and only if it exists.
+    const fromTailwind = await utilities(worn.filter((name) => !inSheet.has(name)));
 
-    // THE CONTROL FIRST, both sides: an empty parse on either would make the
-    // comparison pass for having compared nothing.
+    // THE CONTROL FIRST, on all three sides: an empty parse on any would make
+    // the comparison pass for having compared nothing.
     expect(inSheet.size, "no class parsed out of the stylesheet").toBeGreaterThan(50);
     expect(inCode.size, "no component file parsed").toBeGreaterThan(3);
+    expect(
+      (await utilities(["flex", "justify-strat"])),
+      "the compiler answers yes to everything, or to nothing",
+    ).toEqual(new Set(["flex"]));
 
     const orphans: string[] = [];
     for (const [path, names] of inCode) {
       for (const name of names) {
-        if (!inSheet.has(name)) orphans.push(`${path}: ${name}`);
+        if (!inSheet.has(name) && !fromTailwind.has(name)) orphans.push(`${path}: ${name}`);
       }
     }
     expect(orphans, "classes worn by an element and dressed by no rule").toEqual([]);
