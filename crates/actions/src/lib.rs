@@ -2899,16 +2899,20 @@ impl ExternalEngineAction {
 
 impl ExternalEngineAction {
     /// Why `id` is over the cap the person declared for it, if it is: no
-    /// file, no cap for it, or no ledger to sum from means it fits.
+    /// file, no cap for it, or no ledger to sum from means it fits. A caps
+    /// file that does not read, or a sum that fails, refuses with the reason:
+    /// a cap the person wrote is never lifted by a typo.
     fn over_budget(&self, id: &str) -> Option<String> {
-        let budgets = budget::declared(self.budgets.as_deref()?);
+        let budgets = match budget::declared(self.budgets.as_deref()?) {
+            Ok(budgets) => budgets,
+            Err(why) => return Some(format!("its caps cannot be read: {why}")),
+        };
         let declared = budgets.get(id)?;
         let now = now_secs();
-        let spent = self
-            .ledger
-            .as_ref()?
-            .spent_by_cli_since(id, now - declared.window_secs)
-            .ok()?;
+        let spent = match self.ledger.as_ref()?.spent_by_cli_since(id, now - declared.window_secs) {
+            Ok(spent) => spent,
+            Err(error) => return Some(format!("its spend cannot be summed: {error}")),
+        };
         budget::over(declared, &spent)
     }
 
@@ -4253,8 +4257,8 @@ mod tests {
                     args_before_prompt: Vec::new(),
                     unusable_when: vec!["weekly limit".to_owned()],
                     refuses_without_prompt: Vec::new(),
-            exhausted_when: Vec::new(),
-            cooldown_secs: None,
+                    exhausted_when: Vec::new(),
+                    cooldown_secs: None,
                     usage: None,
                 }),
                 "vivo" => Some(AskRecipe {
@@ -4263,8 +4267,8 @@ mod tests {
                     args_before_prompt: Vec::new(),
                     unusable_when: vec!["weekly limit".to_owned()],
                     refuses_without_prompt: Vec::new(),
-            exhausted_when: Vec::new(),
-            cooldown_secs: None,
+                    exhausted_when: Vec::new(),
+                    cooldown_secs: None,
                     usage: None,
                 }),
                 "rotto" => Some(AskRecipe {
@@ -4273,8 +4277,8 @@ mod tests {
                     args_before_prompt: Vec::new(),
                     unusable_when: vec!["weekly limit".to_owned()],
                     refuses_without_prompt: Vec::new(),
-            exhausted_when: Vec::new(),
-            cooldown_secs: None,
+                    exhausted_when: Vec::new(),
+                    cooldown_secs: None,
                     usage: None,
                 }),
                 // Risolvibile ma senza ricetta: un passo che non scrive le
@@ -4590,8 +4594,8 @@ mod tests {
                         args_before_prompt: Vec::new(),
                         unusable_when: vec![String::new(), "   ".to_owned()],
                         refuses_without_prompt: Vec::new(),
-            exhausted_when: Vec::new(),
-            cooldown_secs: None,
+                    exhausted_when: Vec::new(),
+                    cooldown_secs: None,
                         usage: None,
                     }),
                     other => Chain.ask_recipe(other),
@@ -5390,8 +5394,8 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
                 args_before_prompt: Vec::new(),
                 unusable_when: Vec::new(),
                 refuses_without_prompt: Vec::new(),
-            exhausted_when: Vec::new(),
-            cooldown_secs: None,
+                exhausted_when: Vec::new(),
+                cooldown_secs: None,
                 usage: None,
             }),
         })
@@ -5874,8 +5878,8 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
                     args_before_prompt: Vec::new(),
                     unusable_when: Vec::new(),
                     refuses_without_prompt: Vec::new(),
-            exhausted_when: Vec::new(),
-            cooldown_secs: None,
+                    exhausted_when: Vec::new(),
+                    cooldown_secs: None,
                     usage: None,
                 }),
             })
@@ -6084,8 +6088,8 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
                 args_before_prompt: Vec::new(),
                 unusable_when: Vec::new(),
                 refuses_without_prompt: Vec::new(),
-            exhausted_when: Vec::new(),
-            cooldown_secs: None,
+                exhausted_when: Vec::new(),
+                cooldown_secs: None,
                 usage: None,
             }),
         })
@@ -6460,8 +6464,8 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
                 args_before_prompt: Vec::new(),
                 unusable_when: Vec::new(),
                 refuses_without_prompt: Vec::new(),
-            exhausted_when: Vec::new(),
-            cooldown_secs: None,
+                exhausted_when: Vec::new(),
+                cooldown_secs: None,
                 usage: None,
             })
         }
