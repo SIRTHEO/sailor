@@ -1281,9 +1281,7 @@ export default function App() {
         }}
       />
 
-      {/* THE PLACES, IN A COLUMN, divided by what you are doing and not by how
-          the program is built. A section opens on what its question wants, and
-          everything else lives inside it. */}
+      {/* The places, in a column, divided by what you are doing. */}
       <div className="app__body">
       <Rail here={place} onGo={setPlace} counts={{ board: flows.size, terminals: terminalCount }} />
       <div className="stage">
@@ -1316,8 +1314,6 @@ export default function App() {
           onOpenRun={(runId) => setWatching(runId)}
         />
       )}
-      {/* THE LEDGER IS A PLACE, NOT A TAB. It is a database and it is looked
-          at like one; buried under another question nobody found it. */}
       {place === "ledger" && (
         <div className="section">
           <div className="section__body">
@@ -1567,13 +1563,9 @@ export default function App() {
           )}
         </main>
 
-        {/* LA COLONNA DESTRA STA IN PIEDI QUANDO HA UN PASSO DA DESCRIVERE, e
-            in nessun altro caso: la regola era già scritta qui — dove non c'è
-            niente da mostrare non serve un posto dove mostrarlo — e valeva per
-            zero flussi soltanto. Con dei flussi e nessun passo scelto restavano
-            288px per una frase d'invito, cioè un quinto della finestra, mentre
-            la tela accanto veniva tagliata a metà parola: l'invito costava più
-            di quello che invitava a vedere. */}
+        {/* The right column stands when it has a step to describe: with flows
+            and no step chosen, 288px stood for an invitation while the canvas
+            beside it was cut mid-word. */}
         {selectedData !== undefined && (
           <aside className="panel">
             <datalist id="known-actions">
