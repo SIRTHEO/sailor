@@ -87,7 +87,18 @@ pub const USAGE: &[crate::Form] = &[
 fn list() -> Result<String, String> {
     let home = ledger::sailor_home()
         .ok_or_else(|| catalogue::say("cli.workspace.no_house_to_read", &[]))?;
-    let known = flow::workspace::known_in(&home)?;
+    // A tree Sailor worked in and that declares itself is a project too, or
+    // the list stays empty while the projects exist.
+    let seen = sessions::Sessions::default_path()
+        .ok()
+        .and_then(|path| sessions::Sessions::open(path).ok())
+        .and_then(|store| store.trees_worked_in().ok())
+        .unwrap_or_default();
+    let at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_secs() as i64)
+        .unwrap_or_default();
+    let known = flow::workspace::known_including(&home, &seen, at)?;
     if known.is_empty() {
         return Ok(catalogue::say("cli.workspace.none_known", &[]));
     }

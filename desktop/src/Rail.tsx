@@ -1,12 +1,8 @@
 // The places of the window, each a question a person actually asks.
 //
-// **ONE NAVIGATION, IN A COLUMN, DIVIDED BY WHAT YOU ARE DOING** and not by
-// how the program is built. A row of nouns is a list of what exists.
-//
-// **A GLYPH, A NAME AND A COUNT — NOT A SENTENCE EACH.** The column carried
-// what every place answers under its name, on two lines: five sentences
-// stacked, all the same weight, which is a wall of text and not a
-// navigation. What a place answers belongs to the place, once you are in it.
+// One navigation, in a column, divided by what you are doing. A glyph, a name
+// and a count — not a sentence each: five sentences stacked, all the same
+// weight, are a wall of text. What a place answers belongs to the place.
 
 export type Section = "board" | "terminals" | "ledger" | "memory" | "sailor";
 
