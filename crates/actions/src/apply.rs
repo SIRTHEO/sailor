@@ -72,10 +72,23 @@ pub fn paths_touched(patch: &str) -> Vec<String> {
 /// its file name, so an assent naming another directory cannot smuggle the
 /// assent file itself back in.
 pub fn behind_the_wall(path: &str) -> bool {
-    let name = Path::new(path).file_name().and_then(|name| name.to_str());
+    let path = Path::new(path);
+    let name = path.file_name().and_then(|name| name.to_str());
     THE_WALL
         .iter()
-        .any(|walled| path.ends_with(walled) || name == Some(*walled))
+        .any(|walled| path.ends_with(Path::new(walled)) || name == Some(*walled))
+}
+
+/// A path a patch may be judged on at all: relative, and made of plain names.
+///
+/// **`..` IS THE WHOLE POINT.** `crates/../autocura.json` names the file the
+/// wall exists to hold, and reads as a path under `crates/` to anyone
+/// comparing text. Judged as text, both lists answer the wrong question.
+fn is_a_plain_relative_path(path: &str) -> bool {
+    !path.is_empty()
+        && Path::new(path)
+            .components()
+            .all(|piece| matches!(piece, std::path::Component::Normal(_)))
 }
 
 /// What the assent file says may be touched: paths, as prefixes of what a
@@ -111,15 +124,27 @@ pub fn why_not(paths: &[String], assent: &[String]) -> Option<String> {
     if paths.is_empty() {
         return Some("the patch names no file: there is nothing to apply".to_owned());
     }
+    if let Some(crooked) = paths.iter().find(|path| !is_a_plain_relative_path(path)) {
+        return Some(format!(
+            "«{crooked}» is not a plain path inside the tree: a patch that walks up or \
+             starts at the root is judged on a name that is not where it lands"
+        ));
+    }
     if let Some(walled) = paths.iter().find(|path| behind_the_wall(path)) {
         return Some(format!(
             "«{walled}» is behind the wall, which no assent opens: it is the file that \
              grants, the code that applies, or the test that defends them"
         ));
     }
+    // Whole names and not letters: `crates/` must not answer for
+    // `crates-of-somebody-else/`.
     let unasked: Vec<&String> = paths
         .iter()
-        .filter(|path| !assent.iter().any(|allowed| path.starts_with(allowed.as_str())))
+        .filter(|path| {
+            !assent
+                .iter()
+                .any(|allowed| Path::new(path).starts_with(Path::new(allowed)))
+        })
         .collect();
     if !unasked.is_empty() {
         return Some(format!(
