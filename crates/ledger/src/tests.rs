@@ -2102,6 +2102,35 @@ fn a_runs_spending_does_not_include_the_neighbours() {
     assert!(mine.is_complete());
 }
 
+/// What one engine spent on a window is its own and the window's: another
+/// engine's calls and this engine's older calls do not enter, across runs.
+#[test]
+fn an_engines_spend_on_a_window_leaves_out_the_others_and_the_older() {
+    let directory = TestDirectory::new("engine-window-spend");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    let mut recent = call_in_run("recente", "run-1", Some(7));
+    recent.cli = "this-engine".to_owned();
+    recent.started_at = 1_000;
+    let mut other_run = call_in_run("altra-corsa", "run-2", Some(5));
+    other_run.cli = "this-engine".to_owned();
+    other_run.started_at = 1_500;
+    let mut older = call_in_run("vecchia", "run-1", Some(1_000));
+    older.cli = "this-engine".to_owned();
+    older.started_at = 999;
+    let mut another_engine = call_in_run("altrui", "run-1", Some(10_000));
+    another_engine.cli = "another-engine".to_owned();
+    another_engine.started_at = 1_500;
+    for call in [&recent, &other_run, &older, &another_engine] {
+        ledger.record_model_call(call).expect("record the call");
+    }
+
+    let spend = ledger.spent_by_cli_since("this-engine", 1_000).expect("read the spend");
+
+    assert_eq!(spend.micros, 12, "the two calls in the window, across both runs");
+    assert_eq!(spend.calls, 2);
+    assert!(spend.is_complete());
+}
+
 /// A run that called no engine spent zero **and** hides nothing unknown: both
 /// together, or "zero" would stay ambiguous.
 #[test]
