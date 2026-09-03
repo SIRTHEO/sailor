@@ -4,15 +4,13 @@
 import { useState } from "react";
 import { FaultsScreen } from "./FaultsScreen";
 import { History } from "./History";
-import { LedgerBrowser } from "./LedgerBrowser";
 import { Now } from "./Now";
 import { QuotaScreen } from "./QuotaScreen";
 
-export type MemoryTab = "runs" | "ledger" | "spend" | "faults";
+export type MemoryTab = "runs" | "spend" | "faults";
 
 export const MEMORY_TABS: { id: MemoryTab; name: string; about: string }[] = [
   { id: "runs", name: "Runs", about: "open now, and every one before" },
-  { id: "ledger", name: "Ledger", about: "the tables, as they are" },
   { id: "spend", name: "Spend and quota", about: "what it cost, what is left" },
   { id: "faults", name: "Faults", about: "and what would have prevented each" },
 ];
@@ -23,15 +21,12 @@ export function Memory({
   tab,
   onTab,
   onOpenRun,
-  onLedgerTable,
 }: {
   native: boolean;
   now: number;
   tab: MemoryTab;
   onTab: (tab: MemoryTab) => void;
   onOpenRun: (runId: string) => void;
-  /** The table open in the ledger browser, for the breadcrumbs; `null` when none. */
-  onLedgerTable?: (table: string | null) => void;
 }) {
   return (
     <div className="section">
@@ -43,7 +38,6 @@ export function Memory({
             <History native={native} />
           </>
         )}
-        {tab === "ledger" && <LedgerBrowser native={native} onTable={onLedgerTable} />}
         {tab === "spend" && <QuotaScreen native={native} now={now} />}
         {tab === "faults" && <FaultsScreen native={native} />}
       </div>
