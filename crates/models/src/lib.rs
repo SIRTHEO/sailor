@@ -9,6 +9,7 @@ pub mod catalog;
 pub mod command;
 pub mod config;
 pub mod fetch;
+pub mod fuel;
 pub mod pact;
 pub mod pricing;
 pub mod remaining;
