@@ -93,6 +93,7 @@ fn a_call_that_cost(call_id: &str, run_id: &str, micros: i64) -> ModelCallRecord
         // No session: this test watches the spend cap, and a row that neither
         // opens nor resumes one is the normal case.
         session_id: None,
+        work_kind: None,
         purpose: "external_engine".to_owned(),
         cli: "test-engine".to_owned(),
         requested_model: String::new(),

@@ -329,6 +329,11 @@ pub struct ModelCallRecord {
     /// there the parent's id would resume the trunk, silently, as if the branch.
     #[serde(default)]
     pub session_id: Option<String>,
+    /// The kind of work the step declared (`mechanical`, `research`, ...),
+    /// so a sum per kind can say who did what at what cost. `None` when the
+    /// step declared none.
+    #[serde(default)]
+    pub work_kind: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1863,7 +1868,8 @@ fn create_projection_tables(connection: &Connection) -> Result<(), LedgerError> 
              cache_write_price_micros_per_million INTEGER,
              cache_write_long_price_micros_per_million INTEGER,
              turns TEXT,
-             session_id TEXT
+             session_id TEXT,
+             work_kind TEXT
          );
          CREATE TABLE IF NOT EXISTS snapshots (
              snapshot_id TEXT PRIMARY KEY,
@@ -2000,6 +2006,10 @@ fn add_missing_projection_columns(transaction: &Transaction<'_>) -> Result<(), L
     // it, or on an existing store this line never runs at all.
     if !column_exists(transaction, "model_calls", "session_id")? {
         transaction.execute("ALTER TABLE model_calls ADD COLUMN session_id TEXT", [])?;
+    }
+    // version 9: the kind of work, for a sum per kind of who did what.
+    if !column_exists(transaction, "model_calls", "work_kind")? {
+        transaction.execute("ALTER TABLE model_calls ADD COLUMN work_kind TEXT", [])?;
     }
     // version 8: the identity the process started with, replacing two columns
     // left over from a `current_mandate` table that no longer exists.
@@ -2553,10 +2563,10 @@ fn project_model_call(
              retry_chain, error_type, started_at, ended_at, total_tokens,
              declared_cost_micros, cache_write_tokens, cache_write_long_tokens,
              cache_write_price_micros_per_million,
-             cache_write_long_price_micros_per_million, turns, session_id)
+             cache_write_long_price_micros_per_million, turns, session_id, work_kind)
          VALUES
          (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
-          ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)
+          ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)
          ON CONFLICT(call_id) DO UPDATE SET
           run_id=excluded.run_id, step_id=excluded.step_id,
           purpose=excluded.purpose, cli=excluded.cli,
@@ -2577,7 +2587,7 @@ fn project_model_call(
           cache_write_price_micros_per_million=excluded.cache_write_price_micros_per_million,
           cache_write_long_price_micros_per_million=excluded.cache_write_long_price_micros_per_million,
           turns=excluded.turns,
-          session_id=excluded.session_id",
+          session_id=excluded.session_id, work_kind=excluded.work_kind",
         params![
             record.call_id,
             record.run_id,
@@ -2612,6 +2622,7 @@ fn project_model_call(
             record.cache_write_long_price_micros_per_million,
             record.turns.map(|n| n.to_string()),
             record.session_id,
+            record.work_kind,
         ],
     )?;
     Ok(())
@@ -2909,7 +2920,7 @@ fn parse_attempt_relation(value: &str) -> rusqlite::Result<AttemptRelation> {
 /// second copy inside `actions` while it existed: two copies getting it wrong
 /// together confirm each other, and no test sees it. This list is the anchor
 /// outside both — a moved column turns red here.
-pub const MODEL_CALL_DUMP_COLUMNS: &str = "call_id,run_id,step_id,purpose,cli,requested_model,actual_model,input_tokens,output_tokens,cached_tokens,cost_micros,price_currency,input_price_micros_per_million,output_price_micros_per_million,cached_price_micros_per_million,engine_identity,retry_chain,error_type,started_at,ended_at,total_tokens,declared_cost_micros,cache_write_tokens,cache_write_long_tokens,cache_write_price_micros_per_million,cache_write_long_price_micros_per_million,turns,session_id";
+pub const MODEL_CALL_DUMP_COLUMNS: &str = "call_id,run_id,step_id,purpose,cli,requested_model,actual_model,input_tokens,output_tokens,cached_tokens,cost_micros,price_currency,input_price_micros_per_million,output_price_micros_per_million,cached_price_micros_per_million,engine_identity,retry_chain,error_type,started_at,ended_at,total_tokens,declared_cost_micros,cache_write_tokens,cache_write_long_tokens,cache_write_price_micros_per_million,cache_write_long_price_micros_per_million,turns,session_id,work_kind";
 
 fn dump_table(connection: &Connection, table: &str) -> Result<Value, LedgerError> {
     let columns = match table {

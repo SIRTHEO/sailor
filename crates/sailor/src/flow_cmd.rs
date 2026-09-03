@@ -4652,6 +4652,7 @@ mod tests {
             started_at: 0,
             ended_at: Some(1),
             session_id: None,
+            work_kind: None,
         }
     }
 
@@ -6172,6 +6173,7 @@ mod tests {
             started_at: 100,
             ended_at: Some(105),
             session_id: None,
+            work_kind: None,
         }
     }
 
@@ -6608,6 +6610,7 @@ mod tests {
             started_at: 0,
             ended_at: Some(1),
             session_id: None,
+            work_kind: None,
         }
     }
 

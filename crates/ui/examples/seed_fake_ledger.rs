@@ -180,5 +180,6 @@ fn fake_call(
         started_at: 1_756_000_001,
         ended_at: Some(1_756_000_009),
         session_id: None,
+        work_kind: None,
     }
 }
