@@ -13,6 +13,22 @@ and repeated instead of recounted.
 > Interfaces change. What is here works and is tested; what is missing is
 > written down in `docs/guasti-incontrati.md`, open defects included.
 
+## Five minutes
+
+```sh
+cargo install --path crates/sailor        # one binary, `sailor`, no service
+sailor workspace init                     # in the project you work on
+sailor flow check dispatch-the-work       # which engines are here, tried without spending
+sailor remaining                          # what is left of each subscription window
+sailor flow run sweep-the-tree            # a mechanical job on one file, by the local model
+```
+
+What you get: the engines on this machine with whether they are signed in and
+how much of their window is left; a flow that splits a mandate across two
+engines and has a third judge them; a ledger row for every call, with tokens,
+cost, identity and the kind of work; and a desktop window that shows all of it
+and opens terminals that know which engine runs in them.
+
 ## What it does, concretely
 
 - **Runs flows**: a graph of steps, where independent ones genuinely start
@@ -65,10 +81,12 @@ The long version is fault 11 in `docs/guasti-incontrati.md`.
 | command | what it is for |
 |---|---|
 | `sailor flow list \| check \| run \| cost \| cap` | flows: which exist, whether they hold up, running them, what they cost, what cap they carry |
+| `sailor flow publish [remote]` | your own flows to a git repository of your own, refused if one carries a key |
 | `sailor step open \| close` | the steps a live agent takes charge of |
 | `sailor run <cli>` | starts a command line with its profile's equipment |
-| `sailor profiles list \| create \| switch` | each engine's identities, and whether they are authenticated |
+| `sailor profiles list \| create \| switch \| endpoint` | each engine's identities, whether they are authenticated, and another endpoint that speaks the engine's own protocol |
 | `sailor remaining` | how much quota is left, read from the provider rather than inferred |
+| `sailor models` | the catalogue, with price and data pact per model |
 | `sailor inventory` | what this machine can do, and what has appeared or disappeared |
 | `sailor session` | the tracked terminals and what is running right now |
 | `sailor workspace` | the project root and what it declares |
@@ -77,7 +95,7 @@ The long version is fault 11 in `docs/guasti-incontrati.md`.
 
 ## How it is built
 
-Fifteen Rust crates in one workspace, with the boundaries placed where the
+Nineteen Rust crates in one workspace, with the boundaries placed where the
 responsibilities divide rather than where it was convenient:
 
 | | |
@@ -111,11 +129,11 @@ Few, and they count for more than style preferences. In full in
 - **Every defect gets written down**, in `docs/guasti-incontrati.md`, with how
   it came to light and **what would have stopped it** — because what follows a
   fault is a check, not a task assigned to somebody.
-- **Identifiers in English. What a stranger reads — this README, the CI, the
-  messages a user of the tool sees — in English. Comments inside the code, and
-  everything under `docs/`, in Italian.** Decided by Theo on 2026-09-01, so
-  expect the fault log and the decision record linked above to be in Italian:
-  they are the workshop's notebooks, not the product's surface.
+- **Everything in the tree is in English**: identifiers, comments, documents,
+  commit messages, what a user of the tool reads. The comments and documents
+  written in Italian before that rule are a measured debt, counted by a test
+  that lets the number only fall, so expect some of the fault log and the
+  decision record linked above to still be in Italian while it is paid.
 
 ## Licence
 
