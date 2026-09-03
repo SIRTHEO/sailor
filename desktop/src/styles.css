@@ -490,6 +490,141 @@ button.is-primary {
   overflow-y: auto;
 }
 
+/* ── WHICH WORKSPACE THE WINDOW IS IN ──────────────────────────────────────
+   The spine of the column: what the board, the terminals and the runs answer
+   about depends on it. */
+.wsp {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--line);
+}
+
+.wsp__here {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1px;
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-prose);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+
+.wsp__here:hover,
+.wsp__here[data-open] {
+  border-color: var(--line);
+  background: var(--bg);
+}
+
+.wsp__here:disabled {
+  cursor: default;
+}
+
+.wsp__name {
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Which tree: four checkouts of one project differ by this word alone. */
+.wsp__tree {
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wsp__list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 6;
+  width: 226px;
+  max-height: 340px;
+  overflow-y: auto;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: var(--space-2);
+}
+
+.wsp__group + .wsp__group {
+  margin-top: var(--space-2);
+}
+
+.wsp__project {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+  padding: 0 var(--space-1) 2px;
+}
+
+.wsp__tree-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--ink);
+  background: none;
+  border: none;
+  border-left: 2px solid transparent;
+  padding: 3px var(--space-2);
+  cursor: pointer;
+}
+
+.wsp__tree-row:hover {
+  background: var(--bg);
+}
+
+.wsp__tree-row[data-here] {
+  border-left-color: var(--focus);
+  font-weight: 600;
+}
+
+/* A tree whose marker is gone keeps the word: a list that silently shrinks
+   cannot be told from one that never had the entry. */
+.wsp__tree-row[data-gone] .wsp__tree-name {
+  color: var(--muted);
+}
+
+.wsp__gone {
+  margin-left: auto;
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--warn);
+}
+
+.wsp__none,
+.wsp__trouble {
+  font-size: var(--text-micro);
+  color: var(--muted);
+  padding: var(--space-1) var(--space-2);
+}
+
+.wsp__trouble {
+  color: var(--danger);
+}
+
 .places__group,
 .subrail__group {
   display: flex;
@@ -497,7 +632,8 @@ button.is-primary {
   gap: 2px;
 }
 
-.places__heading {
+.places__heading,
+.wsp__heading {
   font-family: var(--font-display);
   font-size: var(--text-micro);
   text-transform: uppercase;

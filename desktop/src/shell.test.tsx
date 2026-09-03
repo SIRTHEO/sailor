@@ -64,6 +64,16 @@ describe("the places", () => {
     const { container } = render(<App />);
     const headings = Array.from(container.querySelectorAll(".places__heading")).map((one) => one.textContent);
     expect(headings).toEqual(["work", "what happened", "itself"]);
+
+    // The workspace is above the places, not inside one: the gesture that
+    // moves the window was a tab under «Terminals», so it never said where.
+    const spine = container.querySelector(".places .wsp");
+    expect(spine, "the window does not say which workspace it is in").not.toBeNull();
+    const first = container.querySelector(".places__item") as Node;
+    expect(
+      (spine as Element).compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING,
+      "the workspace sits below the places it decides",
+    ).toBeTruthy();
     const names = Array.from(container.querySelectorAll(".places__name")).map((one) => one.textContent);
     expect(names).toEqual(["Board", "Terminals", "Ledger", "Runs", "Sailor"]);
     // A glyph each, and the question is the row's title rather than a second
