@@ -34,6 +34,7 @@
   "cli.flow.published": "{count} flows in {dir}: committed",
   "cli.flow.published_nothing_new": "{count} flows in {dir}: nothing changed since the last publication",
   "cli.flow.published_and_pushed": ", and pushed to {remote}",
+  "cli.flow.blind_and_asking_for_a_session": "flow {flow} declares a step blind and asks it to continue a session: {steps}. The two say opposite things about the same step, and the run would honour the first — a step that judges its own chain's work is worth what it could not see. Take one of the two off: what a blind step must read goes in its prompt.",
   "cli.flow.handed_without_choices":"flow {flow} hands a step to a person without a closed choice to close it with: {steps}. A question in free text is not a step: give the step an «options» list, each with a «label» and the «facts» it rests on.",
   "cli.flow.commit_without_paths":"flow {flow} runs `git commit` without saying what it commits: {steps}. With no paths, `git commit` commits everything already staged — and in a work tree shared with other sessions the index also holds another session's staged work, which then travels inside a commit that never mentions it. Say what the step commits: «--» followed by the paths, or «--only»/«--include» with a path.",
   "cli.flow.does_not_load": "flow {flow} ({origin}) does not load: {reason}",
