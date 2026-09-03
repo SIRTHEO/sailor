@@ -76,10 +76,17 @@ pub const CLAIMS_COLLECTION: &str = "work-claims";
 /// Quanto dura un annuncio che non dichiara una durata sua.
 pub const DEFAULT_LEASE_SECONDS: i64 = 900;
 
-pub fn register_presence(registry: &mut flow::ActionRegistry, ledger: Ledger) {
-    registry.register(WORK_CLAIM_ACTION, WorkClaimAction::new(ledger.clone()));
-    registry.register(WORK_RELEASE_ACTION, WorkReleaseAction::new(ledger.clone()));
-    registry.register(WORK_SURVEY_ACTION, WorkSurveyAction::new(ledger));
+/// **THE SURVEY REGISTERS WITHOUT A STORE, THE TWO THAT WRITE DO NOT.** A
+/// shipped flow names it, and `flow check` must be able to say the step names a
+/// real action without opening anything. Without one it **refuses** rather than
+/// answering «nobody»: unreadable is not empty, and seven agents read as zero
+/// is the fault this module is written against.
+pub fn register_presence(registry: &mut flow::ActionRegistry, ledger: Option<Ledger>) {
+    registry.register(WORK_SURVEY_ACTION, WorkSurveyAction::new(ledger.clone()));
+    if let Some(ledger) = ledger {
+        registry.register(WORK_CLAIM_ACTION, WorkClaimAction::new(ledger.clone()));
+        registry.register(WORK_RELEASE_ACTION, WorkReleaseAction::new(ledger));
+    }
 }
 
 fn now() -> i64 {
@@ -399,11 +406,11 @@ impl Action for WorkReleaseAction {
 }
 
 pub struct WorkSurveyAction {
-    ledger: Ledger,
+    ledger: Option<Ledger>,
 }
 
 impl WorkSurveyAction {
-    pub fn new(ledger: Ledger) -> Self {
+    pub fn new(ledger: Option<Ledger>) -> Self {
         Self { ledger }
     }
 }
@@ -413,8 +420,14 @@ impl Action for WorkSurveyAction {
         let spec: SurveySpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         let at = spec.at.unwrap_or_else(now);
-        let records = self
-            .ledger
+        let ledger = self.ledger.as_ref().ok_or_else(|| {
+            ActionError::new(
+                "no_store",
+                "I cannot tell where the claims are, and an empty list here would say «nobody»"
+                    .to_owned(),
+            )
+        })?;
+        let records = ledger
             .records_in(CLAIMS_COLLECTION)
             .map_err(|error| ActionError::new("store_unreadable", error.to_string()))?;
         let mut working: Vec<Value> = Vec::new();
@@ -563,7 +576,7 @@ mod tests {
         let (ledger, _guard) = store();
         let mut shared = SharedState::new();
         let action = WorkClaimAction::new(ledger.clone());
-        let survey = WorkSurveyAction::new(ledger);
+        let survey = WorkSurveyAction::new(Some(ledger));
 
         action
             .execute(
@@ -709,7 +722,7 @@ mod tests {
         let mut shared = SharedState::new();
         let action = WorkClaimAction::new(ledger.clone());
         let release = WorkReleaseAction::new(ledger.clone());
-        let survey = WorkSurveyAction::new(ledger);
+        let survey = WorkSurveyAction::new(Some(ledger));
 
         action
             .execute(
@@ -817,7 +830,7 @@ mod tests {
         let (ledger, _guard) = store();
         let mut shared = SharedState::new();
         let action = WorkClaimAction::new(ledger.clone());
-        let survey = WorkSurveyAction::new(ledger);
+        let survey = WorkSurveyAction::new(Some(ledger));
 
         action
             .execute(

@@ -161,6 +161,9 @@ const ACTION_KIND: Record<string, StepKind> = {
   work_claim: "deposit",
   work_release: "deposit",
   work_survey: "deposit",
+  // The terminals Sailor follows. A reading of a store like the ones above,
+  // and it draws in the same family: the sessions file sits beside the ledger.
+  terminal_survey: "deposit",
   // The relay's four nodes. Measuring produces a verdict a `when` reads, so it
   // draws as a check; typing and emptying reach a live session, which is a
   // gesture; taking the mandate waits for whoever is alive in there to write
