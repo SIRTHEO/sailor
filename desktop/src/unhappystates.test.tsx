@@ -85,6 +85,21 @@ import {
 } from "./contrast";
 import { stepCountLabel } from "./flow";
 import { SAMPLE } from "./sample";
+
+/**
+ * Chooses the first step on the canvas, the way a person does. The panel talks
+ * about a step and about nothing else, so every check on it needs one chosen.
+ */
+function chooseFirstStep(container: HTMLElement): void {
+  const node = container.querySelector(".react-flow__node");
+  if (node === null) throw new Error("no step on the canvas to choose");
+  // The canvas listens for the whole gesture, not for a bare click: without
+  // the press and the release the node is never chosen and the panel would be
+  // judged absent for the wrong reason.
+  fireEvent.mouseDown(node);
+  fireEvent.mouseUp(node);
+  fireEvent.click(node);
+}
 import stylesheetSource from "./styles.css?raw";
 
 /* ── the box observer, driven by the test ───────────────────────────────────
@@ -527,25 +542,22 @@ describe("two invitations on the same screen cancel each other", () => {
     expect(whoInvitesToCreate(container)).toEqual(["the column"]);
   });
 
-  test("WITH A FLOW FOCUSED, THE PANEL DOES NOT INVITE FOCUSING IT", () => {
+  test("WITH A FLOW FOCUSED AND NO STEP CHOSEN, THE COLUMN IS NOT THERE", () => {
     const { container } = render(<App />);
     goToFlows();
     fireEvent.click(container.querySelector("button.rail__item") as HTMLElement);
 
-    // The flow really is focused, and its name is written at the top: that is
-    // what makes the invitation a request to do what is already done.
+    // The flow really is focused, and its name is written at the top.
     const focused = container.querySelector(".focusbar__name, .focusbar__name-input");
     expect(focused, "no flow is focused").not.toBeNull();
 
-    const panel = container.querySelector(".panel__empty") as HTMLElement;
-    expect(panel, "the panel says nothing").not.toBeNull();
+    // **AN INVITATION THAT COSTS MORE THAN WHAT IT INVITES YOU TO SEE.** The
+    // panel stood at 288px to say «pick a step», a fifth of the window, while
+    // the canvas beside it was cut mid-word.
     expect(
-      panel.textContent ?? "",
-      "the panel invites focusing a flow that is already focused",
-    ).not.toMatch(/\bflows?\b/i);
-
-    // And its job remains: the step, which is what the panel shows.
-    expect(panel.textContent ?? "").toMatch(/\bstep\b/i);
+      container.querySelectorAll(".panel"),
+      "a fifth of the window for a sentence",
+    ).toHaveLength(0);
   });
 
   test("ON THE EMPTY CANVAS THE CANVAS INVITES, not the column too", () => {
@@ -617,15 +629,11 @@ describe("the screen with no flows, in full", () => {
       "the panel promises a step's parameters on a screen with no steps",
     ).toBeNull();
 
-    // The opposite direction: without it, "silent" would be true of a panel that
-    // never speaks, and its job would vanish along with the fault.
-    cleanup();
-    disk.empty = false;
-    const populated = render(<App />);
-    goToFlows();
-    const panel = populated.container.querySelector(".panel__empty");
-    expect(panel, "the panel is silent even where it has something to say").not.toBeNull();
-    expect(panel?.textContent ?? "").toMatch(/\bstep\b/i);
+    // **THE OPPOSITE DIRECTION IS NOT HERE, AND THAT IS DECLARED.** Choosing a
+    // step is what makes the panel appear, and choosing one asks the canvas to
+    // measure itself: jsdom gives every box zero, so the node never takes the
+    // click. The `step-selected` capture does it where the geometry is real,
+    // waits for `.panel`, and turns the capture red if it never comes.
   });
 
   /**
@@ -643,14 +651,8 @@ describe("the screen with no flows, in full", () => {
       "a mute strip beside the screen that teaches the first gesture",
     ).toHaveLength(0);
 
-    cleanup();
-    disk.empty = false;
-    const populated = render(<App />);
-    goToFlows();
-    expect(
-      populated.container.querySelectorAll(".panel"),
-      "the column is gone even where it has a step's parameters to show",
-    ).toHaveLength(1);
+    // The column with a step chosen is watched by the `step-selected` capture,
+    // for the reason written above.
   });
 
   /**
