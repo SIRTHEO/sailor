@@ -294,9 +294,31 @@ pub enum Pointer {
 /// What a descriptor declares it can read from its own engine's output. Every
 /// pointer is optional: an engine that says only the total declares only
 /// `total_tokens`, and the rest stay unknown.
+/// Which pipe the engine states its usage on. Ollama prints its counts on
+/// stderr while the answer goes to stdout; reading the wrong one finds nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Heard {
+    #[default]
+    Stdout,
+    Stderr,
+    Both,
+}
+
+impl Heard {
+    /// The text to read the usage from, given both pipes.
+    pub fn text(self, stdout: &str, stderr: &str) -> String {
+        match self {
+            Heard::Stdout => stdout.to_owned(),
+            Heard::Stderr => stderr.to_owned(),
+            Heard::Both => format!("{stdout}\n{stderr}"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Declared {
     pub read: Shape,
+    pub from: Heard,
     pub input_tokens: Option<Pointer>,
     pub output_tokens: Option<Pointer>,
     /// Input tokens **read from the cache**, which have a price per million
@@ -584,6 +606,7 @@ mod declared_tests {
     fn wrapped_declaration() -> Declared {
         Declared {
             read: Shape::Json,
+            from: Heard::Stdout,
             input_tokens: path(&["usage", "input_tokens"]),
             output_tokens: path(&["usage", "output_tokens"]),
             cached_tokens: path(&["usage", "cache_read_input_tokens"]),

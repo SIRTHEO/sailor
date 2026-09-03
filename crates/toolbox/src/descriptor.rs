@@ -165,6 +165,10 @@ pub struct Ask {
     /// and its malformed line both exit 2. Empty means "nobody looked".
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub refuses_without_prompt: Vec<String>,
+    /// Measured: the line composed without a question exits quietly, with
+    /// nothing on stdout, instead of refusing in words.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub silent_without_prompt: bool,
     /// The fields not understood, for the same reason as `Descriptor::extra`.
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
@@ -230,6 +234,9 @@ pub struct Usage {
     /// `text` (pointers are regular expressions with a capture group).
     #[serde(default)]
     pub read: ReadAs,
+    /// Which pipe carries the usage: `stdout` (the default), `stderr`, `both`.
+    #[serde(default)]
+    pub from: ReadFrom,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_tokens: Option<Where>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -290,6 +297,16 @@ pub enum ReadAs {
     Json,
     /// The output is plain text.
     Text,
+}
+
+/// The pipe an engine states its usage on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReadFrom {
+    #[default]
+    Stdout,
+    Stderr,
+    Both,
 }
 
 /// Where a value sits inside what the engine said, and **the shape is said by
@@ -1578,7 +1595,7 @@ mod the_new_field_is_optional {
             };
             checked += 1;
             assert!(
-                !ask.refuses_without_prompt.is_empty(),
+                !ask.refuses_without_prompt.is_empty() || ask.silent_without_prompt,
                 "«{}» declares how a question is put to it but not how it refuses \
                  the line composed without a question: its command line has never \
                  been run, and no check would notice. Measure it by composing the \
