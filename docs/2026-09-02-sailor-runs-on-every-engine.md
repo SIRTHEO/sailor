@@ -138,9 +138,14 @@ Starting point, so the mandate builds on it instead of beside it.
    the measure it was written on: the ledger's calls per kind with their
    outcome and cost, read by `history_ask`. A kind without a row falls to the
    chain as written, never to Claude by default.
-   *Proof:* a `mechanical` step with ollama present resolves to ollama; with
-   the row removed it resolves to the chain's first; the ledger names the
-   kind on the call.
+   *Where it landed:* `models::strengths` with `strengths.default.json`
+   (replaced whole by `strengths.json` in the home or `SAILOR_STRENGTHS`);
+   `kind` on the step; the table's engines first, then the chain as written;
+   `work_kind` on the `model_calls` row. The table says it rests on the
+   mandate, not on a ledger measure yet: the sum per kind is still to write.
+   *Proof:* a `mechanical` step with a local engine in the row resolves to it
+   ahead of the chain; with the row removed it resolves to the chain's first;
+   the ledger row names the kind.
 8. **A subscription window is spent, not saved.** For every engine with a
    window (Claude's five hours and seven days, Codex's the same), the
    dispatcher reads what is left and the time to reset, and prefers the

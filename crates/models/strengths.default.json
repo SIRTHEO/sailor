@@ -1,0 +1,21 @@
+{
+  "_readme": [
+    "THE STRENGTHS TABLE SHIPPED WITH THE PRODUCT. For a kind of work a step",
+    "declares (`kind`), the engines to try first, in order, across companies;",
+    "the chain the flow wrote follows them. A kind without a row falls to the",
+    "chain as written. ~/.config/sailor/strengths.json replaces this file whole.",
+    "",
+    "`measured_on` says what the rows rest on. Until the ledger has enough",
+    "calls per kind to say who did what at what cost, they rest on the mandate",
+    "of 02/09/2026: mechanical work local, research reads on the free models,",
+    "implementation and judgement on the paid subscriptions."
+  ],
+  "measured_on": "the mandate of 02/09/2026; no ledger measure per kind yet",
+  "rows": {
+    "mechanical": ["ollama"],
+    "research": ["openrouter-cli", "gemini-cli"],
+    "implementation": ["codex", "claude-code"],
+    "judgement": ["codex", "claude-code"],
+    "writing": ["claude-code", "gemini-cli"]
+  }
+}

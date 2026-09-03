@@ -112,6 +112,7 @@ fn sample_all(ledger: &Ledger) {
             started_at: 101,
             ended_at: Some(110),
             session_id: None,
+            work_kind: None,
         })
         .expect("record the call");
     ledger
@@ -1804,6 +1805,7 @@ fn call_with(call_id: &str, tokens: Option<u64>, cost: Option<i64>) -> ModelCall
         started_at: 100,
         ended_at: Some(110),
         session_id: None,
+        work_kind: None,
     }
 }
 

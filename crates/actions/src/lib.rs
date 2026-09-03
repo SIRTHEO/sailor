@@ -1457,6 +1457,10 @@ struct EngineSpec {
     /// whose data pact is `trains` or `unknown`. Absent is `public`.
     #[serde(default)]
     data: Option<DataClass>,
+    /// The kind of work (`mechanical`, `research`, `implementation`,
+    /// `judgement`, `writing`): the strengths table puts its engines first.
+    #[serde(default)]
+    kind: Option<String>,
     #[serde(default)]
     args: Vec<String>,
     #[serde(default)]
@@ -1643,6 +1647,8 @@ pub struct ExternalEngineAction {
     cooldowns: Option<PathBuf>,
     /// Where the person's spend caps per engine live; `None` means no cap.
     budgets: Option<PathBuf>,
+    /// The person's strengths table, or `None` for the shipped one.
+    strengths: Option<PathBuf>,
 }
 
 impl Default for ExternalEngineAction {
@@ -1661,6 +1667,7 @@ impl ExternalEngineAction {
             ledger: None,
             cooldowns: cooldown::default_path(),
             budgets: budget::default_path(),
+            strengths: strengths_path(),
         }
     }
 
@@ -1673,6 +1680,7 @@ impl ExternalEngineAction {
             ledger: None,
             cooldowns: cooldown::default_path(),
             budgets: budget::default_path(),
+            strengths: strengths_path(),
         }
     }
 
@@ -1681,6 +1689,34 @@ impl ExternalEngineAction {
     pub fn budgeted_by(mut self, path: Option<PathBuf>) -> Self {
         self.budgets = path;
         self
+    }
+
+    /// With the strengths table read from `path` instead of the shipped one.
+    pub fn strong_by(mut self, path: Option<PathBuf>) -> Self {
+        self.strengths = path;
+        self
+    }
+
+    /// The chain for this step: the strengths table's engines for its kind
+    /// first, then the chain as the flow wrote it. A kind without a row, or
+    /// a step without a kind, is the chain as written.
+    fn ordered_by_strength(&self, spec: &EngineSpec, chain: &[String]) -> Vec<String> {
+        let Some(kind) = spec.kind.as_deref() else {
+            return chain.to_vec();
+        };
+        let table = self
+            .strengths
+            .as_deref()
+            .and_then(|path| std::fs::read_to_string(path).ok())
+            .and_then(|text| models::strengths::Strengths::parse(&text).ok())
+            .unwrap_or_else(models::strengths::Strengths::shipped);
+        let mut ordered: Vec<String> = table.first_for(kind).to_vec();
+        for id in chain {
+            if !ordered.contains(id) {
+                ordered.push(id.clone());
+            }
+        }
+        ordered
     }
 
     /// With the list of engines set aside kept at `path`: a test hands a
@@ -1756,7 +1792,7 @@ impl ExternalEngineAction {
                         ),
                     ));
                 };
-                let ids = choice.ids();
+                let ids = self.ordered_by_strength(spec, choice.ids());
                 if ids.is_empty() {
                     return Err(ActionError::new(
                         "invalid_input",
@@ -1767,7 +1803,7 @@ impl ExternalEngineAction {
                 let step_said_args = !spec.args.is_empty();
                 let mut usable = Vec::new();
                 let mut refused = Vec::new();
-                for id in ids {
+                for id in &ids {
                     let bin = match tools.resolve(id) {
                         Ok(bin) => bin,
                         Err(reason) => {
@@ -2346,6 +2382,14 @@ fn current_equipment_for(bin: &str, step_env: &BTreeMap<String, String>) -> Equi
 const PRICING_ENV: &str = "SAILOR_PRICING";
 const PRICING_FILE: &str = "pricing.json";
 
+/// The person's strengths table: `SAILOR_STRENGTHS`, or `strengths.json` in the home.
+fn strengths_path() -> Option<PathBuf> {
+    match std::env::var_os("SAILOR_STRENGTHS").filter(|value| !value.is_empty()) {
+        Some(declared) => Some(PathBuf::from(declared)),
+        None => ledger::sailor_home().map(|home| home.join("strengths.json")),
+    }
+}
+
 /// Il listino da applicare: quello spedito col prodotto, sovrascritto da quello
 /// scritto in casa.
 ///
@@ -2430,6 +2474,8 @@ struct Spent {
     /// scelta. Senza, due corse dello stesso flusso non sono la stessa misura —
     /// e la riga non porta la ragione per cui i due consumi differiscono.
     identity: EngineIdentity,
+    /// The kind of work the step declared, for the sum per kind.
+    work_kind: Option<String>,
 }
 
 /// Scrive nel deposito la riga di **questa** chiamata.
@@ -2544,6 +2590,7 @@ fn record_the_call(
         started_at: spent.started_at,
         ended_at: Some(spent.ended_at),
         session_id: spent.session_id,
+        work_kind: spent.work_kind,
     };
     let _ = record.ledger.record_model_call(&written);
 }
@@ -2697,6 +2744,7 @@ impl ExternalEngineAction {
                         ended_at,
                         session_id: session.session_id(said),
                         identity: equipment.identity.clone(),
+                        work_kind: spec.kind.clone(),
                     },
                 );
             }
@@ -5707,6 +5755,56 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         run(DataPact::DoesNotTrain, private).expect("a pact that does not train may read it");
         run(DataPact::Trains, public).expect("a public step goes anywhere");
         run(DataPact::Unknown, unsaid).expect("a step that says nothing is public");
+    }
+
+    /// Two engines that both answer, told apart by the id on the ledger row.
+    struct TwoEngines {
+        bins: std::collections::BTreeMap<&'static str, String>,
+    }
+
+    impl ToolResolver for TwoEngines {
+        fn resolve(&self, id: &str) -> Result<String, String> {
+            self.bins.get(id).cloned().ok_or_else(|| format!("«{id}» is not here"))
+        }
+        fn ask_recipe(&self, _id: &str) -> Option<AskRecipe> {
+            Some(declaring_recipe())
+        }
+    }
+
+    /// A step that declares its kind goes first to the engines the strengths
+    /// table names for that kind, then to the chain as written; without a row
+    /// for the kind the chain's first answers. The ledger row names the kind.
+    #[test]
+    fn a_kind_of_work_goes_first_where_the_table_says_and_the_ledger_names_it() {
+        let dir = scratch("forze");
+        let local = fake_engine(&dir, "locale", WRAPS_ON_DEMAND);
+        let chained = fake_engine(&dir, "catena", WRAPS_ON_DEMAND);
+        let engines = || TwoEngines {
+            bins: [("locale", local.clone()), ("catena", chained.clone())].into_iter().collect(),
+        };
+        let table = dir.join("strengths.json");
+        std::fs::write(&table, r#"{"measured_on": "a test", "rows": {"mechanical": ["locale"]}}"#)
+            .expect("write the table");
+        let empty = dir.join("strengths-empty.json");
+        std::fs::write(&empty, r#"{"measured_on": "a test", "rows": {}}"#).expect("write the empty table");
+        let input = json!({"tool": "catena", "kind": "mechanical", "stdin": "ciao", "timeout_secs": 10});
+
+        let action = ExternalEngineAction::resolving_with(engines())
+            .recording_to(Some(Ledger::open(dir.join("deposito")).expect("open")))
+            .strong_by(Some(table));
+        with_price_list(None, || action.execute(&input, &mut shared("corsa-1", "passo")))
+            .expect("the local engine answers");
+        let calls = calls_in(&dir.join("deposito"));
+        assert_eq!(calls[0].cli, "locale", "the table's engine went first, ahead of the chain");
+        assert_eq!(calls[0].work_kind.as_deref(), Some("mechanical"));
+
+        // The control: without a row for the kind, the chain as written.
+        let plain = ExternalEngineAction::resolving_with(engines())
+            .recording_to(Some(Ledger::open(dir.join("deposito-2")).expect("open")))
+            .strong_by(Some(empty));
+        with_price_list(None, || plain.execute(&input, &mut shared("corsa-2", "passo")))
+            .expect("the chain's engine answers");
+        assert_eq!(calls_in(&dir.join("deposito-2"))[0].cli, "catena");
     }
 
     /// **E IL DEPOSITO DEVE DIRLO ANCHE QUANDO L'USCITA È ZERO.**

@@ -460,6 +460,7 @@ mod tests {
             started_at: 0,
             ended_at: None,
             session_id: None,
+            work_kind: None,
         }
     }
 
