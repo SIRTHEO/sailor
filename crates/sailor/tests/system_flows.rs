@@ -37,6 +37,10 @@ fn product_registry() -> ActionRegistry {
         actions::EXTERNAL_ENGINE_ACTION,
         actions::ExternalEngineAction::resolving_with(toolbox::Tools::current()),
     );
+    registry.register(
+        actions::handoff::HANDED_TO_AGENT_ACTION,
+        actions::handoff::HandoffAction::new(),
+    );
     registry
 }
 

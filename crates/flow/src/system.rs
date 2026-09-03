@@ -59,6 +59,12 @@ pub const FLOWS: &[(&str, &str)] = &[
         "dispatch-the-work",
         include_str!("../system/dispatch-the-work.flow.json"),
     ),
+    // Mechanical work on one file by the local runner, handed over as a
+    // proposal: the chain names no paid subscription.
+    (
+        "sweep-the-tree",
+        include_str!("../system/sweep-the-tree.flow.json"),
+    ),
 ];
 
 /// A place where flows are looked for, with the name a reader sees.
