@@ -43,6 +43,7 @@ pub mod history;
 pub mod mcp;
 pub mod presence;
 pub mod store;
+pub mod terminals;
 
 /// I tipi puri con cui un descrittore dichiara dove stanno i suoi numeri,
 /// ri-esportati da qui.

@@ -71,6 +71,12 @@ pub const FLOWS: &[(&str, &str)] = &[
         "write-down-what-broke",
         include_str!("../system/write-down-what-broke.flow.json"),
     ),
+    // The watch this terminal keeps: three readings and no engine, so it can
+    // run at every beat without costing a call.
+    (
+        "watch-the-crew",
+        include_str!("../system/watch-the-crew.flow.json"),
+    ),
 ];
 
 /// A place where flows are looked for, with the name a reader sees.

@@ -33,6 +33,10 @@ models = { path = "../models" }
 profiles = { path = "../profiles" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# `sessions` dal 03/09/2026: chi guarda l'equipaggio deve poter leggere i
+# terminali che Sailor segue, non solo gli annunci che gli agenti scrivono. Non
+# c'e' ciclo: `sessions` dipende solo da `ledger`.
+sessions = { path = "../sessions" }
 # Cutting a step its own tree is git's job, and the one place that talks to
 # git worktrees already lives here. No cycle: this crate depends on serde.
 workspace = { path = "../workspace" }
