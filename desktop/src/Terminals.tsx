@@ -49,6 +49,8 @@ interface TerminalsProps {
   ceiling?: number | null;
   /** How many terminals are open, told whenever it changes. */
   onCount?: (count: number) => void;
+  /** The list itself, for the column that nests each terminal under its tree. */
+  onList?: (all: TerminalSummary[]) => void;
 }
 
 /**
@@ -89,13 +91,20 @@ export function placesOf(known: Project[], trees: Tree[]): Place[] {
   return places;
 }
 
-export function Terminals({ native, shown = true, ceiling = null, onCount }: TerminalsProps) {
+/** One array, so a render with nothing open does not tell the column anew. */
+const EMPTY: TerminalSummary[] = [];
+
+export function Terminals({ native, shown = true, ceiling = null, onCount, onList }: TerminalsProps) {
   const outside = "outside the desktop shell: pseudo-terminals are the engine's to open";
   const { asked, again } = useAsk<TerminalSummary[]>(native, listTerminals, REFRESH_MS, outside);
   const openedCount = asked.state === "answered" ? asked.value.length : 0;
+  const known = asked.state === "answered" ? asked.value : EMPTY;
   useEffect(() => {
     onCount?.(openedCount);
   }, [openedCount, onCount]);
+  useEffect(() => {
+    onList?.(known);
+  }, [known, onList]);
 
   const [here, setHere] = useState<string | null>(null);
   /** Who sent `terminal_closed`, and with what outcome. */

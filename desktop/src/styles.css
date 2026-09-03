@@ -490,6 +490,168 @@ button.is-primary {
   overflow-y: auto;
 }
 
+/* ── THE COLUMN IS THE WORLD ───────────────────────────────────────────────
+   Workspaces, the trees each is checked out into, and what lives in every
+   tree. What holds wherever you are is a strip at the top, because it is not
+   where the work is. */
+.world {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 214px;
+  padding: var(--space-2) var(--space-2) var(--space-4);
+  border-right: 1px solid var(--line);
+  background: var(--paper);
+  overflow-y: auto;
+}
+
+.world__above {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--line);
+}
+
+.world__global,
+.wsx__leaf,
+.wsx__row,
+.wsx__name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-prose);
+  font-size: var(--text-body);
+  color: var(--ink);
+  background: none;
+  border: none;
+  border-left: 2px solid transparent;
+  padding: 2px var(--space-2);
+  cursor: pointer;
+}
+
+.world__global:hover,
+.wsx__leaf:hover,
+.wsx__row:hover,
+.wsx__name:hover {
+  background: var(--bg);
+}
+
+.world__global[data-here],
+.wsx__leaf[data-here],
+.wsx__row[data-here] {
+  border-left-color: var(--focus);
+  font-weight: 600;
+}
+
+.world__glyph {
+  width: 14px;
+  flex: none;
+  text-align: center;
+  font-size: var(--text-small);
+  color: var(--muted);
+}
+
+.world__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.world__head {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+  padding: var(--space-4) var(--space-2) var(--space-1);
+}
+
+.world__mute {
+  font-size: var(--text-micro);
+  color: var(--muted);
+  padding: 0 var(--space-2) var(--space-1);
+}
+
+/* A project, its trees, and what is open in each. */
+.wsx,
+.wsx__tree {
+  display: flex;
+  flex-direction: column;
+}
+
+.wsx__name {
+  font-weight: 600;
+}
+
+.wsx__fold {
+  width: 10px;
+  flex: none;
+  color: var(--muted);
+  font-size: var(--text-micro);
+}
+
+.wsx__row {
+  padding-left: var(--space-4);
+}
+
+.wsx__leaf {
+  padding-left: var(--space-6);
+  font-size: var(--text-small);
+}
+
+/* Alive or not, at every level. Never the only carrier: the word beside it
+   says the same, and a dot alone is a colour with no name. */
+.wsx__dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--muted);
+}
+
+.wsx__dot[data-live] {
+  background: var(--state-went);
+  border-color: var(--state-went);
+}
+
+.wsx__tree-name,
+.wsx__term {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wsx__term {
+  font-family: var(--font-data);
+}
+
+.wsx__count {
+  margin-left: auto;
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 74px;
+}
+
+.wsx__row[data-gone] .wsx__tree-name {
+  color: var(--muted);
+}
+
+.wsx__gone {
+  margin-left: auto;
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--warn);
+}
+
 /* ── WHICH WORKSPACE THE WINDOW IS IN ──────────────────────────────────────
    The spine of the column: what the board, the terminals and the runs answer
    about depends on it. */
@@ -4544,6 +4706,16 @@ tr[data-followable]:hover {
     gap: var(--space-4);
     overflow-x: auto;
     overflow-y: hidden;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+
+  /* THE WORLD BECOMES A STRIP ALONG THE TOP. A tree of workspaces read
+     sideways is unreadable, so narrow it keeps its own height instead of
+     taking the width the work needs. */
+  .world {
+    width: auto;
+    max-height: 34vh;
     border-right: none;
     border-bottom: 1px solid var(--line);
   }

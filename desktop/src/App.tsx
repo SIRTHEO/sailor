@@ -30,7 +30,9 @@ import { stepStatesOfCanvas, stepStatesOfRun } from "./runstate";
 import { BlankCanvas, type PlacesAsk } from "./BlankCanvas";
 import { lastedOf, outcomeOf, whenOf } from "./History";
 import { useAsk, useClock } from "./ask";
-import { Rail, PLACES, type Section } from "./Rail";
+import { PLACES, type Section } from "./Rail";
+import { World } from "./World";
+import type { TerminalSummary } from "./terminal";
 import { BuildChip, LiveChip, WhoChip } from "./Bar";
 import { LedgerBrowser } from "./LedgerBrowser";
 import { Memory, MEMORY_TABS, type MemoryTab } from "./Memory";
@@ -232,6 +234,8 @@ export default function App() {
   const [sailorTab, setSailorTab] = useState<SailorTab>("keeps");
   const [terminalsTab, setTerminalsTab] = useState<TerminalsTab>("live");
   const [terminalCount, setTerminalCount] = useState(0);
+  /** The terminals themselves: the column nests each under the tree it runs in. */
+  const [openTerminals, setOpenTerminals] = useState<TerminalSummary[]>([]);
   const [ledgerTable, setLedgerTable] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
 
@@ -1283,11 +1287,12 @@ export default function App() {
 
       {/* The places, in a column, divided by what you are doing. */}
       <div className="app__body">
-      <Rail
+      <World
+        native={NATIVE}
         here={place}
         onGo={setPlace}
         counts={{ board: flows.size, terminals: terminalCount }}
-        native={NATIVE}
+        terminals={openTerminals}
         onMoved={() => readFlows(() => true)}
       />
       <div className="stage">
@@ -1351,6 +1356,7 @@ export default function App() {
         ceiling={ceilingOf(flows)}
         onProjectChanged={() => readFlows(() => true)}
         onCount={setTerminalCount}
+        onList={setOpenTerminals}
       />
 
       {/* Outside the canvas element on purpose: it is positioned in window
