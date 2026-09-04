@@ -327,29 +327,19 @@ function goToFlows(): void {
 /* ═══ 1. THE FRAMING ════════════════════════════════════════════════════════ */
 
 /**
- * **THE BOARD WAS BORN WITH ITS FRAMING MEASURED AT ZERO.** The window opens on
- * «Now»; the board lives inside `.body[hidden]`; the sheet gives that a
- * `display: none`; React Flow mounts with `fitView` on a **0×0** box. The two
- * remaining `fitView` calls fire on `focusName` or `source`, never on «Flows».
- * The numbers behind that were measured in a real Chrome — in jsdom nothing has
- * a size, so none is reproduced here and none is faked; what is guarded is the
- * rule that produces them.
- *
- * **THE REMAINDER IS A DECLARED LIMIT, NOT UNFINISHED WORK.** React Flow's
- * default `minZoom` is **0.5** while a framing that held everything would want
- * **0.338**, the canvas being 920px against a `relay` lane of 1040px: the fit
- * asks below the minimum, gets the minimum, and the rest leaves the box. Leave
- * `minZoom` alone — seeing every node costs 25px of window, seeing them whole
- * 264px, and lowering it would change the zoom gesture on every screen for a
- * strip under an inch. The mitigation is **the minimap**, in each state's colour.
+ * **THE BOARD WAS BORN WITH ITS FRAMING MEASURED AT ZERO**: mounted inside
+ * `.body[hidden]`, React Flow fits a **0×0** box. In jsdom nothing has a size,
+ * so no measurement is reproduced here and none is faked — what is guarded is
+ * the rule. A wide flow still leaves part of itself outside at a narrow width:
+ * `minZoom` floors at **0.5**, and lowering it would change the zoom gesture on
+ * every screen to win a strip under an inch. The mitigation is the minimap.
  *
  * **THE TEST BELOW IS STRICTER THAN THE WORLD.** Removing the `width === 0`
- * guard turns it red, yet in Chrome nothing would show: there the first
- * `ResizeObserver` notification already arrives with a measured box. The guard
- * forbids framing a null box by construction instead of by luck. **And the
- * fault is not one of framing**: an empty screen with a confident bar beside it
- * explains that emptiness plausibly and falsely, so the broken state and the
- * empty state become indistinguishable — the worst fault in this section.
+ * guard turns it red though Chrome would show nothing, since there the first
+ * `ResizeObserver` notification already carries a measured box: the guard
+ * forbids framing a null box by construction instead of by luck. An empty
+ * screen beside a confident bar explains itself plausibly and falsely, and the
+ * broken state and the empty one stop being distinguishable.
  */
 describe("the framing, when the board appears", () => {
   test("PRESSING «Flows» REDOES THE FRAMING, as soon as the box can be measured", async () => {
