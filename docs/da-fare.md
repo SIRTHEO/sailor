@@ -186,6 +186,20 @@ dichiarati:
   costruirlo, metterlo accanto al binario, e **dire** che lì nessuno lo
   troverà.
 
+- **Nessuno sa con quale modello sta lavorando un agente dentro un terminale**,
+  e l'intestazione del riquadro lo lascia in bianco invece di inventarlo. Le tre
+  strade che non rispondono, misurate il 04/09/2026: `models::effective_model`
+  risponde per un catalogo suo, per **tipo di lavoro**, che non è ciò con cui
+  gira una riga di comando; `Usage.model` nel descrittore dice dove il motore
+  nomina il modello che **ha servito** una chiamata, cioè un fatto dopo, non
+  prima; e l'unica cosa nota in anticipo è un argomento passato all'apertura,
+  quando il descrittore dichiara la capacità `choose_model` e qualcuno l'ha
+  usata. La cura ha una forma sola che non mente: il descrittore dichiara
+  **come si chiede a quel motore quale modello ha in forza** — una `Ask` come
+  quelle già lì per il login e per l'uso — e chi non lo dichiara lascia il campo
+  vuoto invece di far comparire un valore verosimile. È la pretesa E.2 del
+  mandato, l'unica delle cinque parole che manca.
+
 - **`sample.ts` contiene dati finti** scritti «finché la finestra non legge dal
   motore», che ormai legge.
 - ~~**Il crate dei ganci di Claude Code serve un mondo che stiamo smontando**, e
