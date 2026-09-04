@@ -303,7 +303,8 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
             // **THE SAME REPORT ON THE PATH THAT DOES NOTHING**, which is the
             // one a release lands on most days: «nothing to do» while an older
             // copy answers to the name is the whole fault, said reassuringly.
-            say_what_the_name_finds(selected, &home.join(selected.safe_rel));
+            let seen = say_what_the_name_finds(selected, &home.join(selected.safe_rel));
+            return Ok(release::ends_with(&seen));
         }
         return Ok(0);
     }
@@ -348,7 +349,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     }
 
     write_stamp(&stamp, &source_rev, &head_short);
-    say_what_the_name_finds(selected, &safe);
+    let seen = say_what_the_name_finds(selected, &safe);
 
     if let Some(service) = selected.service {
         // The service runs every 90 seconds: between the first check and this
@@ -363,7 +364,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         }
         restart_service(service);
     }
-    Ok(0)
+    Ok(release::ends_with(&seen))
 }
 
 /// Where the sources sit below the home.
@@ -559,7 +560,7 @@ fn status_description(status: ExitStatus) -> String {
 /// The copy in service lives outside `target/` on purpose, and that same care
 /// puts it where a shell may never look. This only reports: where the binary
 /// belongs on a machine is not a release's decision to take.
-fn say_what_the_name_finds(selected: &Target, safe: &Path) {
+fn say_what_the_name_finds(selected: &Target, safe: &Path) -> release::OnPath {
     let found = match toolbox::probe::look_up(selected.bin, &toolbox::Machine::current()) {
         toolbox::probe::Look::Found(path) => Some(path.display().to_string()),
         _ => None,
@@ -567,24 +568,26 @@ fn say_what_the_name_finds(selected: &Target, safe: &Path) {
     let same_bytes = found
         .as_deref()
         .is_some_and(|first| files_equal(Path::new(first), safe).unwrap_or(false));
-    match release::on_path(found.as_deref(), &safe.display().to_string(), same_bytes) {
+    let seen = release::on_path(found.as_deref(), &safe.display().to_string(), same_bytes);
+    match &seen {
         release::OnPath::Same => {}
         release::OnPath::Absent => println!(
             "   {}",
             catalogue::say("cli.release.the_name_finds_nothing", &[("name", selected.bin)])
         ),
-        release::OnPath::Shadowed { first } => println!(
+        release::OnPath::Shadowed { first } => eprintln!(
             "   {}",
             catalogue::say(
                 "cli.release.the_name_finds_another_one",
                 &[
                     ("name", selected.bin),
-                    ("first", &first),
+                    ("first", first),
                     ("path", &safe.display().to_string()),
                 ]
             )
         ),
     }
+    seen
 }
 
 /// The page of the clone, built where the shell will look for it.

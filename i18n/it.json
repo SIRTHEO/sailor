@@ -265,7 +265,7 @@
   "cli.release.targets_available": "bersagli disponibili: {targets}",
   "cli.release.tests_not_run": "== {count} prove NON ESEGUITE (non fallite) ==\n   Verde qui non vuol dire provato là: il perimetro ha negato quello che chiedevano.",
   "cli.release.tests_skipped": "== PROVE SALTATE (--skip-tests): questo rilascio NON è stato provato ==",
-  "cli.release.the_name_finds_another_one": "ATTENZIONE: chi digita «{name}» esegue ancora {first}, che non è la copia appena messa in servizio.\n   Tutto ciò che cerca il nome — finestra compresa — continua a eseguire quella. Sostituiscila con {path}, o metti quella cartella davanti nel percorso di ricerca.",
+  "cli.release.the_name_finds_another_one": "ATTENZIONE: chi digita «{name}» esegue ancora {first}, che non è la copia appena messa in servizio.\n   Tutto ciò che cerca il nome — finestra compresa — continua a eseguire quella, quindi questo rilascio non è finito: sostituiscila con {path}, o metti quella cartella davanti nel percorso di ricerca.",
   "cli.release.the_name_finds_nothing": "nota: «{name}» non è in nessun percorso di ricerca, quindi chi lo cerca non troverà ciò che è appena stato messo in servizio",
   "cli.release.uncommitted_stay_out": "nota: {count} file non committati sotto {parts} restano fuori dal servizio, per costruzione",
   "cli.release.unknown_target": "bersaglio sconosciuto «{target}»; i bersagli disponibili sono: {targets}",
