@@ -125,6 +125,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     let root = sources_root()?;
     let head_rev = git_text(&root, &["rev-parse", "HEAD"])?;
     let head_short = git_text(&root, &["rev-parse", "--short", "HEAD"])?;
+    let tree_rev = git_text(&root, &["rev-parse", "HEAD^{tree}"])?;
     // The parts the target is made of, not `crates/` alone: the window is half
     // a page, and a stamp read over the engine only would name a commit that
     // changed nothing inside it.
@@ -221,11 +222,23 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         the_page_is_inside(&fresh, &repository.join(page).join("dist"))?;
     }
 
+    // TWO ROOTS, AND THEY ARE NOT THE SAME THING. `root` is what gets built;
+    // `home` is what gets installed into. They coincided once, and moving the
+    // first moved the second by accident: the binary landed beside the sources.
+    let home = install_root()?;
+    let memo = home.join(selected.suite_memo_rel);
+
     // One suite per manifest the target is judged by: the root's, which holds
     // the judges of the whole tree, and the target's own when it declares one —
     // `cargo test` at the root never enters a nested workspace.
     let judges = if options.skip_tests {
         println!("{}", catalogue::say("cli.release.tests_skipped", &[]));
+        Vec::new()
+    } else if suite_memo_says(&memo, &tree_rev) {
+        println!(
+            "{}",
+            catalogue::say("cli.release.suite_already_green", &[("tree", &tree_rev[..8])])
+        );
         Vec::new()
     } else {
         release::manifests_to_judge(selected)
@@ -293,12 +306,10 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
             );
         }
     }
+    if !judges.is_empty() {
+        remember_the_suite(&memo, &tree_rev);
+    }
 
-    // TWO ROOTS, AND THEY ARE NOT THE SAME THING. `root` is what gets built;
-    // `home` is what gets installed into. They coincided once, and moving the
-    // first moved the second by accident: the binary landed beside the sources
-    // while the hooks went on running the old one from where it had always been.
-    let home = install_root()?;
     let live = root.join(selected.live_rel);
     let stamp = home.join(selected.stamp_rel);
     let stamp_to_read = stamp.clone();
@@ -313,6 +324,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
             // one a release lands on most days: «nothing to do» while an older
             // copy answers to the name is the whole fault, said reassuringly.
             let seen = say_what_the_name_finds(selected, &home.join(selected.safe_rel));
+            say_whether_pushed(&root);
             return Ok(release::ends_with(&seen));
         }
         return Ok(0);
@@ -359,6 +371,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
 
     write_stamp(&stamp, &source_rev, &head_short);
     let seen = say_what_the_name_finds(selected, &safe);
+    say_whether_pushed(&root);
 
     if let Some(service) = selected.service {
         // The service runs every 90 seconds: between the first check and this
@@ -940,6 +953,60 @@ fn atomic_copy(source: &Path, destination: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Whether the suite already passed on exactly this tree. The memo names a
+/// tree, not a commit: an amended message changes nothing the judges read.
+fn suite_memo_says(memo: &Path, tree_rev: &str) -> bool {
+    fs::read_to_string(memo).is_ok_and(|remembered| remembered.trim() == tree_rev)
+}
+
+fn remember_the_suite(memo: &Path, tree_rev: &str) {
+    let written = match memo.parent() {
+        Some(parent) => fs::create_dir_all(parent).and_then(|_| fs::write(memo, format!("{tree_rev}\n"))),
+        None => fs::write(memo, format!("{tree_rev}\n")),
+    };
+    if let Err(error) = written {
+        eprintln!(
+            "{}",
+            catalogue::say(
+                "cli.release.suite_not_remembered",
+                &[("memo", &memo.display().to_string()), ("error", &error.to_string())],
+            )
+        );
+    }
+}
+
+/// The trunk goes to the remote with every release: what is in service on
+/// this machine is what the remote holds. Refused, it is said, not hidden —
+/// the release stands, the remote is behind.
+fn push_the_trunk(root: &Path) -> Result<String, String> {
+    let pushed = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["push", "--porcelain"])
+        .output()
+        .map_err(|error| error.to_string())?;
+    let last_line = |bytes: &[u8]| {
+        String::from_utf8_lossy(bytes)
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .last()
+            .unwrap_or_default()
+            .to_string()
+    };
+    if pushed.status.success() {
+        Ok(last_line(&pushed.stdout))
+    } else {
+        Err(last_line(&pushed.stderr))
+    }
+}
+
+fn say_whether_pushed(root: &Path) {
+    match push_the_trunk(root) {
+        Ok(line) => println!("   {}", catalogue::say("cli.release.pushed", &[("line", &line)])),
+        Err(line) => println!("   {}", catalogue::say("cli.release.not_pushed", &[("line", &line)])),
+    }
+}
+
 fn write_stamp(path: &Path, revision: &str, head_short: &str) {
     let result = path
         .parent()
@@ -1208,6 +1275,42 @@ mod tests {
                 candidate.name
             );
         }
+    }
+
+    /// **THE SUITE TAKES TWELVE MINUTES AND A DOCS COMMIT CHANGES NOTHING IT
+    /// JUDGES** was the wish; what holds is narrower and honest: the same tree
+    /// is not judged twice, a different one always is.
+    #[test]
+    fn a_suite_that_passed_on_this_tree_is_not_run_twice() {
+        let scratch = std::env::temp_dir().join(format!("sailor-suite-memo-{}", std::process::id()));
+        let memo = scratch.join("state").join("suite-tree");
+
+        assert!(!suite_memo_says(&memo, "a1b2"), "nothing remembered yet");
+        remember_the_suite(&memo, "a1b2");
+        let same = suite_memo_says(&memo, "a1b2");
+        let other = suite_memo_says(&memo, "a1b3");
+        let _ = fs::remove_dir_all(&scratch);
+
+        assert!(same, "the tree the suite passed on");
+        assert!(!other, "a tree with one more byte");
+    }
+
+    /// A refused push is reported in git's own last line, not swallowed and not
+    /// fatal: the binary is already in service by then.
+    #[test]
+    fn a_push_the_remote_refuses_is_said_in_gits_words() {
+        let scratch = std::env::temp_dir().join(format!("sailor-no-remote-{}", std::process::id()));
+        fs::create_dir_all(&scratch).expect("scratch");
+        let git = |args: &[&str]| {
+            Command::new("git").arg("-C").arg(&scratch).args(args).output().expect("git")
+        };
+        git(&["init", "--quiet"]);
+
+        let said = push_the_trunk(&scratch);
+        let _ = fs::remove_dir_all(&scratch);
+
+        let refused = said.expect_err("no remote to push to");
+        assert!(!refused.is_empty(), "git's line, not an empty one");
     }
 
     // I tre casi qui sotto nominavano `notte` fino al 01/09/2026. `parse_options`

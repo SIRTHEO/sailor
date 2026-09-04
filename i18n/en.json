@@ -490,5 +490,9 @@
   "cli.ratchet.green": "green",
   "cli.ratchet.red": "red  ",
   "cli.ratchet.all_green": "every seed holds on HEAD with these changes",
-  "cli.ratchet.some_red": "a seed does not hold: the lines above say what to write"
+  "cli.ratchet.some_red": "a seed does not hold: the lines above say what to write",
+  "cli.release.suite_already_green": "the suite already passed on this tree ({tree}): not run again",
+  "cli.release.suite_not_remembered": "the suite passed but {memo} could not be written ({error}): the next release runs it again",
+  "cli.release.pushed": "pushed: {line}",
+  "cli.release.not_pushed": "not pushed, the remote is behind: {line}"
 }
