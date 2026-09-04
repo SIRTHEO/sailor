@@ -205,6 +205,7 @@ fn the_failure_message_reaches_whoever_is_watching() {
     );
 
     let failure = LiveStatus {
+        supervisor_pid: std::process::id(),
         state: LiveState::BuildFailed,
         message: "error[E0425]: cannot find value `x` in this scope".to_owned(),
         changed_at: 1_700_000_000,

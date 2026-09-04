@@ -39,30 +39,26 @@ pub fn default_directory() -> Option<PathBuf> {
     if let Some(declared) = env_path("SAILOR_LEDGER") {
         return Some(declared);
     }
-    // THE HOME OF WHOEVER CAME BEFORE. On a machine where Sailor has already
-    // run, the store sits where the old version put it, and moving the default
-    // would make it invisible: the runs are there, the window would say "none".
-    // Recognised by the two files, not by the directory: an empty directory
-    // left behind is not an installation. This step is a migration, not a home:
-    // remove it once the old store has been moved, and move it first.
+    // THE HOME OF WHOEVER CAME BEFORE, recognised by the two files and not by
+    // the directory: moving the default without it would leave the runs where
+    // they are and the window saying «none». A migration, not a home — it goes
+    // when the old store is carried, and the store moves first.
     if let Some(home) = env_path("HOME") {
         let previous = home.join(".claude/state/flussi");
         if previous.join(STATE_FILE).exists() && previous.join(EVENTS_FILE).exists() {
             return Some(previous);
         }
     }
-    // `None` when `HOME` is undefined, and the `?` is how it leaves: every
-    // caller already has a fallback, and a home deduced from nothing would send
-    // one of them to write in somebody else's place.
+    // `None` when `HOME` is undefined: every caller has a fallback, and a home
+    // deduced from nothing writes in somebody else's place.
     Some(sailor_home()?.join("ledger"))
 }
 
 /// Sailor's home: where the store, the flows and the configuration live.
 ///
-/// **No single person's path.** Discovered the way any program on this system
-/// would: `SAILOR_HOME` if declared, else the standard configuration directory,
-/// else the running user's. `None` if the environment declares neither — a home
-/// guessed without grounds would write into somebody else's place.
+/// **No single person's path**: `SAILOR_HOME` if declared, else the standard
+/// configuration directory, else the running user's. `None` when the
+/// environment declares neither.
 pub fn sailor_home() -> Option<PathBuf> {
     Some(sailor_home_in(
         env_path("SAILOR_HOME"),
@@ -431,15 +427,16 @@ pub struct ProcessEndRecord {
 /// to look" arrive identical. This asks about **one** pid the store wrote, and
 /// `EPERM` — *alive, but another user's* — is a yes; a no would redo the fault.
 pub fn pid_is_alive(pid: u32) -> bool {
-    // **LIMIT ONE, AND THERE IS NO BETTER CHECK.** Process numbers get reused,
-    // so a live pid does not prove it is the *same* process the store wrote.
-    // Settling that would mean comparing the start time, which macOS does not
-    // hand over without `libproc`. So this **confirms**, it does not decide:
-    // what was started is still the store's word, never this call's.
+    // **LIMIT ONE, AND THERE IS NO BETTER CHECK.** Numbers get reused, so a
+    // live pid does not prove it is the *same* process the store wrote:
+    // settling that wants a start time, which macOS keeps behind `libproc`.
+    // This confirms, it does not decide.
 
-    // Pid 0 is the caller's own process group: even the null signal would be
-    // asking about ourselves, and the answer would be a yes about nobody.
-    if pid == 0 {
+    // **A NUMBER THAT IS NOT A PID IS NOT ASKED ABOUT.** Read signed, 0 is the
+    // caller's own group and anything below it is a group or everybody: a
+    // stored number past a positive `i32` would answer «alive» about whoever
+    // happened to be running.
+    if pid == 0 || pid > i32::MAX as u32 {
         return false;
     }
     // **LIMIT TWO, AND IT WAS MEASURED: an unreaped child reads as alive.** A

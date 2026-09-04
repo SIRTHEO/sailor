@@ -2774,3 +2774,14 @@ fn a_store_written_before_the_column_gains_it_on_open() {
         "the migrated store cannot record a tree"
     );
 }
+
+/// **A NUMBER THAT IS NOT A PID IS NOT ASKED ABOUT.** Read signed, anything
+/// below 1 addresses a process group or everybody, so a stored number past a
+/// positive `i32` would answer «alive» about whoever is running.
+#[test]
+fn a_pid_outside_the_range_of_a_pid_is_not_alive() {
+    assert!(super::pid_is_alive(std::process::id()), "this process is running");
+    assert!(!super::pid_is_alive(0), "zero is the caller's own group");
+    assert!(!super::pid_is_alive(u32::MAX), "read signed, this addresses everybody");
+    assert!(!super::pid_is_alive(i32::MAX as u32 + 1), "the first number past the range");
+}

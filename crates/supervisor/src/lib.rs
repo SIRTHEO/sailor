@@ -165,6 +165,12 @@ pub struct LiveStatus {
     /// Since when what is on the screen has been running: with
     /// `build_failed`, the answer to «how old is what I am looking at».
     pub running_since: Option<i64>,
+    /// **WHO IS SAYING THIS, SO A READER CAN ASK WHETHER THEY ARE STILL
+    /// THERE.** The file outlives its writer, and a window reading yesterday's
+    /// «a build is waiting» offers a gesture nobody listens for. `0` comes
+    /// from a file written before the field, and means «cannot tell».
+    #[serde(default)]
+    pub supervisor_pid: u32,
 }
 
 /// What the file is called, under Sailor's home.

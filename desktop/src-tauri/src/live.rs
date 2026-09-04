@@ -33,7 +33,21 @@ const CALM_TITLE: &str = "Sailor";
 /// Quello che la finestra restituisce a chi chiede com'è messa la modalità viva.
 #[tauri::command]
 pub fn live_status() -> Option<LiveStatus> {
-    LiveStatus::read(&status_path())
+    said_by_somebody_still_there(LiveStatus::read(&status_path()))
+}
+
+/// **A STATUS OUTLIVES WHOEVER WROTE IT.** The file stays on disk when the
+/// supervisor stops, so a window opened tomorrow — or a released one, which
+/// never had a supervisor — would read «a build is waiting» and offer a
+/// gesture nobody is listening for. A pid of `0` comes from a file written
+/// before the field existed: it is «cannot tell», and it is shown.
+fn said_by_somebody_still_there(status: Option<LiveStatus>) -> Option<LiveStatus> {
+    let status = status?;
+    if status.supervisor_pid == 0 || ledger::pid_is_alive(status.supervisor_pid) {
+        Some(status)
+    } else {
+        None
+    }
 }
 
 fn status_path() -> std::path::PathBuf {
@@ -67,16 +81,26 @@ pub fn watch(app: &AppHandle) {
         let mut last: Option<LiveStatus> = None;
         loop {
             std::thread::sleep(LOOK_EVERY);
-            let current = LiveStatus::read(&status_path());
+            let current = said_by_somebody_still_there(LiveStatus::read(&status_path()));
             if current == last {
                 continue;
             }
-            if let Some(status) = current.as_ref() {
-                announce(&app, status);
+            match current.as_ref() {
+                Some(status) => announce(&app, status),
+                // The supervisor went: the title goes back to being a name.
+                None => calm(&app),
             }
             last = current;
         }
     });
+}
+
+/// Puts the title back to the resting one. A window that kept «rebuilding…»
+/// after the supervisor stopped would be waiting for news that cannot come.
+fn calm(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_title(CALM_TITLE);
+    }
 }
 
 fn announce(app: &AppHandle, status: &LiveStatus) {
@@ -100,4 +124,36 @@ fn announce(app: &AppHandle, status: &LiveStatus) {
         LiveState::Running => CALM_TITLE.to_owned(),
     };
     let _ = window.set_title(&title);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn status(pid: u32) -> LiveStatus {
+        LiveStatus {
+            state: LiveState::Ready,
+            message: String::new(),
+            changed_at: 100,
+            running_since: Some(90),
+            supervisor_pid: pid,
+        }
+    }
+
+    /// **A BUILD NOBODY IS HOLDING IS NOT A BUILD YOU CAN TAKE.** The status
+    /// file stays on disk after the supervisor stops, and a released window
+    /// never had one at all: read as it is, both would offer a gesture that
+    /// reaches nobody.
+    #[test]
+    fn a_status_whose_supervisor_is_gone_is_no_status_at_all() {
+        // This process is alive by definition, and no pid is 0 but the file
+        // written before the field existed.
+        assert!(said_by_somebody_still_there(Some(status(std::process::id()))).is_some());
+        assert!(said_by_somebody_still_there(Some(status(0))).is_some());
+        assert!(said_by_somebody_still_there(None).is_none());
+
+        // A number that is not a pid at all. It matters that this is a no:
+        // read as a signed integer it would address a whole process group.
+        assert!(said_by_somebody_still_there(Some(status(u32::MAX))).is_none());
+    }
 }
