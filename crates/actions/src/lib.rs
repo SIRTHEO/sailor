@@ -5985,6 +5985,78 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         assert_eq!(calls_in(&dir.join("deposito")).len(), 2);
     }
 
+    /// **A DOOR KNOWN TO BE SHUT IS NOT KNOCKED ON AGAIN.** The file's
+    /// arithmetic was proved; the chain that fills it was not. Here a real
+    /// engine says its quota is spent, and the next chain refuses it without
+    /// starting it — naming until when, and what it said.
+    #[test]
+    fn an_engine_that_said_its_quota_was_spent_is_not_started_again() {
+        let dir = scratch("da-parte");
+        let bin = fake_engine(
+            &dir,
+            "motore-esaurito",
+            "cat > /dev/null\necho \"You've hit your weekly limit\"\nexit 0",
+        );
+        let aside = dir.join("cooldowns.json");
+        let mut recipe = declaring_recipe();
+        recipe.exhausted_when = vec!["weekly limit".to_owned()];
+        recipe.cooldown_secs = Some(3_600);
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin: bin.clone(),
+            recipe: Some(recipe.clone()),
+        })
+        .recording_to(Some(Ledger::open(dir.join("deposito")).expect("aprire il deposito")))
+        .cooling_down_in(Some(aside.clone()));
+        let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
+
+        // The first chain runs it, and it says the quota is spent.
+        let broke = with_price_list(None, || {
+            action.execute(&input, &mut shared("corsa-1", "passo-1"))
+        })
+        .expect_err("a spent quota is not a step that went");
+        assert_eq!(broke.class, "engine_exhausted");
+        assert!(aside.exists(), "nothing was set aside: {}", broke.said);
+
+        // The second chain does not start it at all: the refusal is the list's.
+        let refused = with_price_list(None, || {
+            action.execute(&input, &mut shared("corsa-2", "passo-1"))
+        })
+        .expect_err("the door is known to be shut");
+        assert!(
+            refused.said.contains("set aside until") && refused.said.contains("weekly limit"),
+            "the refusal says neither until when nor what it said: {}",
+            refused.said
+        );
+        assert_eq!(
+            calls_in(&dir.join("deposito")).len(),
+            1,
+            "the second chain started the engine again"
+        );
+
+        // THE CONTROL: past its time the same engine is knocked on again.
+        // Without this arm the code could set an engine aside for ever and pass.
+        let past = std::fs::read_to_string(&aside).expect("the list");
+        let now = now_secs();
+        std::fs::write(
+            &aside,
+            past.replace(
+                &format!("{}", now + 3_600),
+                &format!("{}", now - 1),
+            ),
+        )
+        .expect("bring its time forward");
+        let again = with_price_list(None, || {
+            action.execute(&input, &mut shared("corsa-3", "passo-1"))
+        })
+        .expect_err("it is spent again, but it was asked");
+        assert!(
+            !again.said.contains("set aside until"),
+            "past its time it was still refused from the list: {}",
+            again.said
+        );
+        assert_eq!(calls_in(&dir.join("deposito")).len(), 2);
+    }
+
     /// An engine that resolves, with the pact its descriptor would declare.
     struct Pacted {
         bin: String,
