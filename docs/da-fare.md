@@ -213,6 +213,19 @@ dichiarati:
   cui questa sezione esiste. L'ordine è quindi: prima le credenziali, poi la
   registrazione della risposta, poi il lettore.
 
+- **Cambiare progetto non cambia con chi girano i motori**, e la pretesa E.1
+  del mandato dice che dovrebbe. Misurato il 04/09/2026: `work_here` sposta la
+  cartella di lavoro del processo — e con quella i flussi, le corse, il
+  censimento e l'albero predefinito dei terminali — ma `profiles::ProfileStore`
+  tiene `active` come **una sola mappa** da riga di comando a nome di profilo,
+  per tutta la macchina. Non c'è nessuno spazio di lavoro dentro quel deposito,
+  quindi non c'è niente che possa seguire uno spostamento. Non è un difetto di
+  `work_here`: è una forma che il deposito non ha. Prima del codice va presa una
+  decisione, e non è tecnica: **un'identità appartiene a una persona o a un
+  progetto?** Se alla persona, la riga di E.1 va corretta; se al progetto,
+  `active` diventa una mappa per radice e ogni lettore di `active_environment`
+  deve dire da quale radice sta leggendo.
+
 - **`sample.ts` contiene dati finti** scritti «finché la finestra non legge dal
   motore», che ormai legge.
 - ~~**Il crate dei ganci di Claude Code serve un mondo che stiamo smontando**, e
