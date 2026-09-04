@@ -192,6 +192,15 @@ impl Filter {
 mod tests {
     use super::*;
 
+    /// Reading a modality off a real entry: the check is `Model::accepts`, and
+    /// it lived beside a token reader that no longer exists.
+    #[test]
+    fn accepts_modality_check_is_reused_correctly() {
+        let catalog = Catalog::parse(SAMPLE).unwrap();
+        let model = catalog.find("thinkingmachines/inkling:free").unwrap();
+        assert!(model.accepts(Modality::Audio));
+    }
+
     const SAMPLE: &str = include_str!("../tests/fixtures/catalog-sample.json");
 
     #[test]

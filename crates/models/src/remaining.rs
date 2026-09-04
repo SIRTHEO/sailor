@@ -1,19 +1,17 @@
 //! How much of **a person's** quota is left, read instead of asked.
 //!
-//! **WHY IT EXISTS.** A step handed to a live agent declares its own spend with
-//! `sailor step close --turns`, and an agent cannot count what its harness
-//! spends for it: in the A/B it declared 33 turns out of 75 real ones, 44%. The
-//! cure is not to ask better — it is to **read**, spending nothing to do it.
+//! **WHY IT EXISTS.** An agent cannot count what its harness spends for it: in
+//! the A/B it declared 33 turns out of 75 real ones. The cure is not to ask
+//! better — it is to **read**, spending nothing to do it.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 /// An OAuth usage channel, as a descriptor declares it: **THIS MODULE KNOWS
-/// NO PROVIDER.** The credentials file belongs to the engine and is only read;
-/// the address and its headers are the provider's, and a versioned channel can
-/// stop answering with nothing here changing, so a missing reading is a reading
-/// that is not there, never an error and never a zero.
+/// NO PROVIDER.** A versioned channel can stop answering with nothing here
+/// changing, so a missing reading is a reading that is not there — never an
+/// error and never a zero.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OauthUsageChannel {
     /// The engine this reading is about: the descriptor's `id`.
@@ -29,9 +27,8 @@ pub struct OauthUsageChannel {
 /// How much of a quota window is already gone, and when that window resets.
 ///
 /// **NOT THE COST OF A RUN, AND CONFUSING THEM IS WORSE THAN NOT HAVING IT.**
-/// It is the person's quota over every session — Sailor's run, the terminal
-/// open beside it, the editor, yesterday's job falling in the same seven-day
-/// window — so no reading can say who else was writing in between.
+/// It is the person's quota over every session — the terminal beside this one,
+/// the editor, yesterday's job in the same window.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Remaining {
     /// Whose quota this is: the engine descriptor's `id`.
@@ -41,17 +38,14 @@ pub struct Remaining {
     /// added windows while this file was being written.
     pub unit: String,
     /// How much is already spent, from `0.0` to `1.0`. **A FRACTION, NOT A
-    /// PERCENTAGE**: the provider answers `50.0` for "half" and here it becomes
-    /// `0.5`. This number ends up beside other ratios — other engines' quotas,
-    /// fractions of a spend cap — and two lookalike units in the same place get
-    /// summed by mistake exactly once, and nobody notices that once.
+    /// PERCENTAGE**: the provider answers `50.0` for "half". It sits beside
+    /// other ratios, and two lookalike units get summed by mistake once.
     pub used_fraction: f64,
     /// When the window restarts, in the shape the provider says it.
     ///
-    /// **IT STAYS TEXT, AND THAT IS NOT LAZINESS** — fault 14: nobody reads
-    /// "it resets at 7" in order to retry then, and an instant derived from a
-    /// rarely seen shape is invented data wearing the face of a measure.
-    /// Convert it when something actually waits for that hour.
+    /// **IT STAYS TEXT, AND THAT IS NOT LAZINESS** — fault 14: an instant
+    /// derived from a rarely seen shape is invented data wearing the face of a
+    /// measure. Convert it when something waits for that hour.
     pub resets_at: Option<String>,
     /// When we looked. A quota ages: a value without the instant it was read
     /// at cannot be told apart from yesterday's.
@@ -60,10 +54,9 @@ pub struct Remaining {
 
 /// Why a reading is not there.
 ///
-/// **NONE OF THESE SHAPES CARRIES THE TOKEN**, which is why they are written
-/// by hand instead of wrapping the underlying error: a generic `Display` that
-/// echoed a command line or a response body is how a secret ends up in a log,
-/// and a log never gives it back.
+/// **NONE OF THESE SHAPES CARRIES THE TOKEN**: a generic `Display` echoing a
+/// command line or a response body is how a secret ends up in a log, and a log
+/// never gives it back.
 #[derive(Clone, PartialEq, Eq)]
 pub enum RemainingError {
     /// The credentials file is not there: that engine is not authenticated
@@ -117,11 +110,9 @@ impl fmt::Display for RemainingError {
 }
 
 /// The access token, in a shape that **cannot be printed by accident**. A
-/// `String` ends up in a `{:?}`, in an error written in a hurry, in a leftover
-/// `dbg!` — none of which looks like printing a secret. So `Debug` is written
-/// by hand, there is no `Display`, no public way to get the text out, and the
-/// only place that touches it is the `curl` stdin configuration. A defect like
-/// this is not prevented with attention: it is prevented by removing the gesture.
+/// `String` ends up in a `{:?}` or a leftover `dbg!`, neither of which looks
+/// like printing a secret: so `Debug` is hand-written, there is no `Display`,
+/// and the only reader is the `curl` stdin configuration.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Token(String);
 
@@ -133,9 +124,8 @@ impl fmt::Debug for Token {
 
 impl Token {
     /// The token inside an engine's credentials file, under the keys the
-    /// descriptor points at. A key that is not there is
-    /// [`RemainingError::NoToken`] and not a panic: a credentials file belongs
-    /// to somebody else and changes when that somebody decides.
+    /// descriptor points at. A missing key is [`RemainingError::NoToken`] and
+    /// not a panic: that file belongs to somebody else.
     pub fn from_credentials_at(text: &str, pointer: &[String]) -> Result<Token, RemainingError> {
         let parsed: serde_json::Value = serde_json::from_str(text)
             .map_err(|error| RemainingError::CredentialsUnreadable(error.to_string()))?;
