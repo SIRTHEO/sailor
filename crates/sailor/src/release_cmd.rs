@@ -301,13 +301,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     let home = install_root()?;
     let live = root.join(selected.live_rel);
     let stamp = home.join(selected.stamp_rel);
-    // The house itself has moved since. A machine that released before then has
-    // no stamp here yet and a real one back there.
-    let stamp_to_read = if stamp.is_file() {
-        stamp.clone()
-    } else {
-        stamp_left_behind(selected.stamp_rel).unwrap_or_else(|| stamp.clone())
-    };
+    let stamp_to_read = stamp.clone();
     if live.is_file() && files_equal(&fresh, &live)? {
         println!(
             "{}",
@@ -405,28 +399,6 @@ const TEST_DID_NOT_RUN: &str = "TEST DID NOT RUN";
 /// service with nobody noticing.
 fn install_root() -> Result<PathBuf, String> {
     ledger::sailor_home().ok_or_else(|| catalogue::say("cli.release.no_house_to_install_into", &[]))
-}
-
-/// The stamp left in the previous house, if this house has none yet.
-///
-/// A missing stamp is not a harmless zero: the release stops being able to say
-/// which commits enter service and prints its widest answer instead. On a
-/// machine that released before the move the stamp is real, only elsewhere:
-/// read there once, written here from then on.
-fn stamp_left_behind(stamp_rel: &str) -> Option<PathBuf> {
-    let previous = previous_stamp_path(env::var_os("HOME"), stamp_rel)?;
-    previous.is_file().then_some(previous)
-}
-
-/// Where it would be, without asking the disk. Separated so the rule can be
-/// tested on a declared home rather than on the machine running the test,
-/// which is fault 5.
-fn previous_stamp_path(home: Option<OsString>, stamp_rel: &str) -> Option<PathBuf> {
-    Some(
-        PathBuf::from(home.filter(|value| !value.is_empty())?)
-            .join(release::PREVIOUS_INSTALL_BELOW_HOME)
-            .join(stamp_rel),
-    )
 }
 
 /// The sources tree what goes into service is built from.
@@ -1144,31 +1116,6 @@ mod tests {
         assert_ne!(sources, house);
     }
 
-    /// The stamp of a machine that released before the house moved.
-    ///
-    /// It is looked for under the previous house, with the target's own
-    /// relative path — not a second string saying where stamps go. A stamp read
-    /// from the wrong place is worse than none: the release would name commits
-    /// that never entered service, and say it with a straight face.
-    #[test]
-    fn the_stamp_of_the_previous_house_keeps_the_target_s_own_path() {
-        let home = Some(OsString::from("/casa/di-chiunque"));
-        let target = release::target("sailor").expect("the table names it");
-
-        assert_eq!(
-            previous_stamp_path(home, target.stamp_rel),
-            Some(
-                PathBuf::from("/casa/di-chiunque")
-                    .join(release::PREVIOUS_INSTALL_BELOW_HOME)
-                    .join("state/sailor-binary-commit")
-            )
-        );
-
-        // A home exported empty by a script that could not find it would put the
-        // stamp at the root of the disk. It is not a home.
-        assert_eq!(previous_stamp_path(Some(OsString::new()), "state/x"), None);
-        assert_eq!(previous_stamp_path(None, "state/x"), None);
-    }
 
     /// A declared root beats the home, and a declared empty one does not.
     ///

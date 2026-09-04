@@ -30,26 +30,7 @@ const WHERE_THEY_BELONG: &str = "crates/toolbox/descriptors/";
 /// nothing new joins. Twenty-five lines across seven crates when first
 /// measured, which is how far one command line had got inside a product meant
 /// for six; the grafting left the list the day its settings file became data.
-const STILL_ALLOWED: &[(&str, &str)] = &[
-    (
-        "crates/release/src/lib.rs",
-        "the house Sailor installed itself into until 01/09/2026, kept so the \
-         release can still find a stamp left there. It goes when a machine that \
-         released before the move has had its stamp carried over",
-    ),
-    (
-        "crates/ledger/src/lib.rs",
-        "one legacy path, from before Sailor had a home of its own",
-    ),
-    (
-        "crates/models/src/store.rs",
-        "where the usage of one command line is kept",
-    ),
-    (
-        "crates/profiles/src/store_io.rs",
-        "moves a product's home when a profile changes",
-    ),
-];
+const STILL_ALLOWED: &[(&str, &str)] = &[];
 
 fn repository_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

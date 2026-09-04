@@ -6,14 +6,15 @@
 use crate::config::UserConfig;
 use std::path::{Path, PathBuf};
 
-/// `MODELS_CONFIG_PATH` when set, otherwise `~/.claude/state/modelli.json`.
+/// `MODELS_CONFIG_PATH` when set, otherwise `modelli.json` in Sailor's home.
 /// Never hardcoded anywhere else in the crate.
 pub fn config_path() -> PathBuf {
     if let Ok(p) = std::env::var("MODELS_CONFIG_PATH") {
         return PathBuf::from(p);
     }
-    let home = std::env::var("HOME").unwrap_or_default();
-    PathBuf::from(format!("{home}/.claude/state/modelli.json"))
+    ledger::sailor_home()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("modelli.json")
 }
 
 /// Reads the configuration from disk. A missing or unreadable file is not an
