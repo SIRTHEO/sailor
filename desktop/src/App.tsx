@@ -50,7 +50,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import type { TerminalSummary } from "./terminal";
-import { BuildChip, LiveChip, WhoChip } from "./Bar";
+import { BeatChip, BuildChip, LiveChip, WhoChip } from "./Bar";
 import { LedgerBrowser } from "./LedgerBrowser";
 import { Memory, MEMORY_TABS, type MemoryTab } from "./Memory";
 import { SailorScreen } from "./SailorScreen";
@@ -1357,6 +1357,7 @@ export default function App() {
               }}
             />
             <BuildChip native={NATIVE} now={now} />
+            <BeatChip native={NATIVE} now={now} />
             <WhoChip native={NATIVE} />
           </>
         }

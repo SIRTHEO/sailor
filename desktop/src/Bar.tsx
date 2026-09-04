@@ -6,11 +6,13 @@
 
 import { useEffect, useState } from "react";
 import {
+  beatReport,
   listenToSailorEvents,
   liveStatus,
   openRuns,
   takeNewBuild,
   todaySummary,
+  type BeatReport,
   type DaySummary,
   type LiveStatus,
   type OpenRun,
@@ -166,6 +168,52 @@ export function buildWords(status: LiveStatus | null, now: number): { warn: bool
   // the one before it, which is exactly what was asked for.
   if (status.state === "ready") return { warn: false, word: `a new build is waiting${since}` };
   return { warn: true, word: `REBUILD FAILED · you see the last good version${since}` };
+}
+
+/**
+ * How often the deadline beats: `beat::EVERY` on the other side, and here only
+ * the yardstick for «late», so a drifting copy warns early, never wrong.
+ */
+export const BEAT_EVERY_SECS = 60;
+
+/**
+ * The beat, in words. **SILENT WHILE THE SCHEDULE IS KEPT**: most decisions are
+ * «not due», and a chip reciting them teaches nobody to read it. Two things are
+ * worth a person — a due flow that would not start, and a beat that stopped,
+ * after which every schedule is off and nothing else here would say so.
+ */
+export function beatWords(report: BeatReport | null, now: number): { warn: boolean; word: string } | null {
+  if (report === null) return null;
+  // The lateness comes first: it is the fact that makes the rest old news.
+  if (now - report.at > 2 * BEAT_EVERY_SECS) {
+    return { warn: true, word: `the beat stopped · last one ${elapsed(report.at, now)} ago` };
+  }
+  const broke = report.decisions.filter((one) => one.verdict === "broke");
+  if (broke.length === 0) return null;
+  const first = `${broke[0].flow}: ${broke[0].why ?? "no reason given"}`;
+  return {
+    warn: true,
+    word: broke.length === 1 ? `did not start · ${first}` : `${broke.length} did not start · ${first}`,
+  };
+}
+
+export function BeatChip({ native, now }: { native: boolean; now: number }) {
+  const report = useOnEvents(native, beatReport);
+  if (!native || report === null) return null;
+  if (report.state === "mute") {
+    return (
+      <span className="chip chip--beat" data-warn="true">
+        the beat cannot be asked: {report.why}
+      </span>
+    );
+  }
+  const said = beatWords(report.value, now);
+  if (said === null) return null;
+  return (
+    <span className="chip chip--beat" data-warn="true">
+      {said.word}
+    </span>
+  );
 }
 
 export function BuildChip({ native, now }: { native: boolean; now: number }) {

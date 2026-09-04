@@ -212,6 +212,28 @@ export async function takeNewBuild(): Promise<void> {
   return invoke<void>("take_new_build");
 }
 
+/** What one flow's schedule came to at one beat. */
+export interface BeatDecision {
+  flow: string;
+  verdict: "ran" | "held" | "broke";
+  run_id?: string;
+  /** Why it was held, or why it broke. Empty on `ran`. */
+  why?: string;
+}
+
+/** The last beat, whole: **a beat says what it did not do, and why.** */
+export interface BeatReport {
+  at: number;
+  decisions: BeatDecision[];
+}
+
+/** `null` before the first beat of this window, which comes within a second. */
+export async function beatReport(): Promise<BeatReport | null> {
+  const invoke = invoker();
+  if (!invoke) throw new Error("outside the native shell: no beat");
+  return invoke<BeatReport | null>("beat_report");
+}
+
 /** A step of a run that waits for a person, with what it asks. */
 export interface HandedStep {
   step_id: string;
