@@ -485,27 +485,50 @@ Starting point, so the mandate builds on it instead of beside it.
    `input_required`, `completed`, `failed`). And the survey is **injected at
    every agent's start**: the Claude SessionStart hook adds it as context, and
    Codex and Gemini read it from the generated file of D.3.
-   *Where it landed:* the smaller half, and it is the half that was hurting.
-   The hook does not write a `work_claim` — that action exists as a flow node
-   (`actions/src/presence.rs`) and nothing in `sailor session` calls it — so the
-   shared vocabulary, the renewal at each event and the release on close are all
-   unbuilt. What the hook does write is Sailor's own register: a row per tty
-   with its tree, its session and its events. **And from 04/09/2026 the greeting
-   reads it back**: the `SessionStart` context now names the other terminals the
-   register holds open in the same tree, and says what follows from it — read a
-   clean HEAD before seeding a ratchet or calling the tree green, because the
-   uncommitted work here may be somebody else's. The line reports the register
-   and says so: a terminal killed without closing stays open in there.
-   *Why it was built this way round:* the claim's own proof needs two command
-   lines and the survey; the register needed neither, and the cost of not having
-   it was measured the same day — two sets of ratchet seeds taken over another
+   *Where it landed:* the register first, on 04/09/2026, and the claim the same
+   night. The register is Sailor's own: a row per tty with its tree, its session
+   and its events, **read back in the greeting** — the `SessionStart` context
+   names the other terminals held open in the same tree and says what follows
+   from it, that a measurement over the working tree may be measuring somebody
+   else's, and that a terminal killed without closing stays in the list.
+   *Why it was built this way round:* the claim's proof needs two command lines
+   and the survey; the register needed neither, and the cost of not having it
+   was measured the same day — two sets of ratchet seeds taken over another
    session's uncommitted file, and a release stopped because of it.
+   *And then the claim.* The hook now writes one: `open` announces, every event
+   renews, `close` releases, and the record carries the shared words —
+   `gen_ai.agent.name`, `gen_ai.agent.id`, `gen_ai.conversation.id`, and the
+   A2A state (`working` while it works, `completed` on release). The name is the
+   command line and the profile it runs under (`claude (questa-macchina)`),
+   which the hook knows because the graft now writes `--cli <id>` into the line
+   it grafts. **The announcement is held by the terminal, not by the process
+   that writes it**: a hook is a new process at every keystroke, and a claim
+   keyed on that pid would leave one abandoned holder per keystroke.
+   *What the claim showed the moment it existed:* the crew survey of this
+   machine had answered «nobody» while sixteen terminals were working — and one
+   fixture claim had been written into the machine's own ledger by the unit
+   tests, which is why the ledger is now handed to the form instead of found by
+   it.
    *Proof:* `the_others_are_the_open_ones_of_this_tree_and_never_me` and
    `a_terminal_killed_without_closing_is_still_listed` in
-   `crates/sessions/tests/who_else_is_in_this_tree.rs`; both mutants — dropping
-   the «not me» filter and dropping the «open» filter — turn them red. The
-   claim's own proof, two command lines and a `same_workdir` collision, is not
-   written.
+   `crates/sessions/tests/who_else_is_in_this_tree.rs` for the register, both
+   mutants red; `opening_a_terminal_announces_it_to_the_others`,
+   `a_second_event_renews_the_announcement_instead_of_adding_one` and
+   `closing_a_terminal_releases_what_it_announced` in `session_cmd` for the
+   claim, with three mutants run red — not announcing at all, keying the
+   announcement on the writer's pid, and not releasing on close. Read from the
+   released binary on this machine: `watch-the-crew` now answers with one
+   working agent, `claude (questa-macchina)#ttys004`, on branch `sorgenti`.
+   And the crew, not one terminal: `two_command_lines_in_one_tree_appear_in_the_same_survey`
+   puts three announcements of the hook's own shape in one tree — two command
+   lines, one of them in two terminals — and reads all three back from
+   `work_survey`, each with its own conversation. Two mutants red: a key that
+   forgets which terminal holds the claim (the two sessions of one command line
+   collapse into one row), and a record that drops the conversation.
+   *Still not written:* a terminal's announcement computes no collision. The
+   flow node warns whoever announces that somebody else holds the same tree;
+   the hook takes the shorter road, `put_record`, so two terminals see each
+   other in the survey but neither is told.
 2. **The window shows the crew.** Terminals › crew lists every claim: who,
    which program and model and profile, which tree and branch, doing what,
    since when, and the gone with their why. It is the survey drawn, not a
