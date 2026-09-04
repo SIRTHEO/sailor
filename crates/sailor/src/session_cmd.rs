@@ -207,6 +207,13 @@ fn dispatch(args: &[String]) -> Result<Report, String> {
         None
     };
 
+    // The same list, for the other store: only whoever announces opens it.
+    let deposit = if NEEDS_THE_DEPOSIT.contains(&verb) {
+        deposit()?
+    } else {
+        None
+    };
+
     // Here, and only here, the machine is looked at: an event has arrived.
     let census = Census::of(&LocalMachine);
 
@@ -216,6 +223,7 @@ fn dispatch(args: &[String]) -> Result<Report, String> {
         payload: &payload,
         raw: &raw,
         store: store.as_ref(),
+        deposit: deposit.as_ref(),
         census: &census,
         tty: &tty,
         at: now(),
@@ -239,6 +247,11 @@ struct Request<'a> {
     /// open. While it was mandatory, the one form that exists in order not to
     /// lie died before it could speak.
     store: Option<&'a Sessions>,
+    /// The ledger the terminal announces itself in. **`None` is «nobody needs
+    /// it here»**, as for [`Request::store`]: a form that does not announce
+    /// must not open it, and a test must be able to walk the whole road
+    /// without writing into the machine's own home.
+    deposit: Option<&'a ledger::Ledger>,
     census: &'a Census,
     tty: &'a str,
     at: i64,
@@ -277,6 +290,9 @@ impl<'a> Request<'a> {
 /// Watched by `a_form_that_never_reads_the_store_survives_a_store_that_will_not_open`,
 /// which runs on **every** form not listed here.
 const NEEDS_THE_STORE: &[&str] = &["open", "event", "close", "list", "detach", "attach"];
+
+/// The forms that announce this terminal to the other agents, or stop.
+const NEEDS_THE_DEPOSIT: &[&str] = &["open", "event", "close"];
 
 /// What Sailor does at each of its moments. What a line calls that moment is
 /// said by the descriptor, never here.
@@ -1076,8 +1092,14 @@ fn open_terminal(request: &Request<'_>) -> Result<Report, String> {
         .record_event(&event_named(request, "open"))
         .map_err(|error| error.to_string())?;
 
+    let announced = announce(request, &arrival, "working");
     if request.is_a_session_start() {
-        return Ok(Report::spoken(welcome(&arrival, Some(store), &still_open())));
+        return Ok(Report::spoken(welcome(
+            &arrival,
+            Some(store),
+            &still_open(),
+            &announced,
+        )));
     }
     Ok(Report::spoken(described(&arrival)))
 }
@@ -1171,17 +1193,96 @@ fn still_open_in(deposit: &ledger::Ledger) -> Result<StillOpen, String> {
     })
 }
 
-/// The same, from this machine's home. `Ok(None)` where there is no home to
-/// look in, which is not the same as a home holding nothing.
-fn still_open() -> Result<Option<StillOpen>, String> {
+/// This machine's ledger. `Ok(None)` where there is no home to look in, which
+/// is not the same as a home holding nothing.
+fn deposit() -> Result<Option<ledger::Ledger>, String> {
     let Some(directory) = ledger::default_directory() else {
         return Ok(None);
     };
     if !directory.exists() {
         return Ok(None);
     }
-    let deposit = ledger::Ledger::open(&directory).map_err(|error| error.to_string())?;
-    still_open_in(&deposit).map(Some)
+    ledger::Ledger::open(&directory)
+        .map(Some)
+        .map_err(|error| error.to_string())
+}
+
+/// The same, from this machine's home.
+fn still_open() -> Result<Option<StillOpen>, String> {
+    match deposit()? {
+        Some(deposit) => still_open_in(&deposit).map(Some),
+        None => Ok(None),
+    }
+}
+
+/// The name the others see in the survey: **the command line and the profile it
+/// runs under**, which is what tells two terminals of the same tree apart when
+/// the tree is all they have in common.
+fn agent_of(request: &Request<'_>) -> String {
+    // A hook grafted before the line learnt to name its command line says
+    // nothing here, and the survey shows that instead of guessing a name.
+    let Some(cli) = request.options.get("cli").filter(|id| !id.is_empty()) else {
+        return catalogue::say("cli.session.a_line_that_did_not_say", &[]);
+    };
+    match profiles::store_io::load_store()
+        .ok()
+        .and_then(|store| store.active.get(cli).cloned())
+    {
+        Some(profile) => format!("{cli} ({profile})"),
+        None => cli.clone(),
+    }
+}
+
+/// The branch a directory is on, in git's own words. `None` where git says
+/// nothing: a detached head, or no git to ask.
+fn branch_of(path: &str) -> Option<String> {
+    let said = std::process::Command::new("git")
+        .args(["-C", path, "rev-parse", "--abbrev-ref", "HEAD"])
+        .output()
+        .ok()?;
+    if !said.status.success() {
+        return None;
+    }
+    let found = String::from_utf8_lossy(&said.stdout).trim().to_owned();
+    (!found.is_empty() && found != "HEAD").then_some(found)
+}
+
+/// **THE TERMINAL ANNOUNCES ITSELF TO THE OTHER AGENTS**, and renews at every
+/// event. Held by the terminal and not by the process that writes: a hook is a
+/// new process at every keystroke, and one claim per keystroke is not a crew.
+fn announce(request: &Request<'_>, arrival: &Arrival, state: &str) -> Result<(), String> {
+    let Some(deposit) = request.deposit else {
+        return Ok(());
+    };
+    let workdir = arrival.anchor.worktree.clone();
+    let record = actions::presence::claim_record(&actions::presence::Claim {
+        agent: agent_of(request),
+        holder: arrival.anchor.tty.clone(),
+        repository: repository_holding(&workdir).unwrap_or_else(|| workdir.clone()),
+        branch: branch_of(&workdir),
+        workdir: Some(workdir),
+        // A terminal takes the tree: what an agent will touch is not known when
+        // it arrives, and the prudent answer is the one already written down.
+        paths: Vec::new(),
+        doing: None,
+        pid: std::process::id(),
+        at: request.at,
+        lease_seconds: actions::presence::DEFAULT_LEASE_SECONDS,
+        conversation: arrival.session_id.clone(),
+        state: state.to_owned(),
+    });
+    deposit.put_record(&record).map_err(|error| error.to_string())
+}
+
+/// The other end: the terminal closes, and stops holding anything.
+fn stop_announcing(request: &Request<'_>, arrival: &Arrival) -> Result<(), String> {
+    let Some(deposit) = request.deposit else {
+        return Ok(());
+    };
+    let key = actions::presence::claim_key(&agent_of(request), &arrival.anchor.tty);
+    actions::presence::release_claim(&deposit, &key, request.at)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 /// A run named for a reader: the flow, then the identifier the resume needs.
@@ -1222,7 +1323,12 @@ fn what_is_still_open(found: &StillOpen) -> Option<String> {
 /// four moments where what the hook writes becomes context the agent reads. A
 /// plain line would be read by the person at the screen and not by the agent,
 /// and detaching would stay a thing that exists and nobody knows about.
-fn welcome(arrival: &Arrival, store: Option<&Sessions>, open: &Result<Option<StillOpen>, String>) -> String {
+fn welcome(
+    arrival: &Arrival,
+    store: Option<&Sessions>,
+    open: &Result<Option<StillOpen>, String>,
+    announced: &Result<(), String>,
+) -> String {
     let mut text = catalogue::say(
         "cli.session.welcome",
         &[
@@ -1263,6 +1369,16 @@ fn welcome(arrival: &Arrival, store: Option<&Sessions>, open: &Result<Option<Sti
             ));
         }
     }
+    // **AN ANNOUNCEMENT THAT DID NOT GO IS SAID HERE**, because the survey will
+    // then show this terminal as nobody, and whoever reads it will conclude the
+    // tree is empty when it is not.
+    if let Err(why) = announced {
+        text.push('\n');
+        text.push_str(&catalogue::say(
+            "cli.session.not_announced",
+            &[("why", why)],
+        ));
+    }
     serde_json::json!({
         "hookSpecificOutput": {
             "hookEventName": "SessionStart",
@@ -1282,6 +1398,9 @@ fn record_event(request: &Request<'_>) -> Result<Report, String> {
     store
         .record_event(&happened)
         .map_err(|error| error.to_string())?;
+    // The announcement is renewed here and nowhere else: a lease that only the
+    // opening renewed would expire on a terminal that has been working all day.
+    let _ = announce(request, &arrival, "working");
     Ok(Report::spoken(format!(
         "{} su {}",
         happened.name, happened.tty
@@ -1296,6 +1415,7 @@ fn close_terminal(request: &Request<'_>) -> Result<Report, String> {
     store
         .record_event(&event_named(request, "close"))
         .map_err(|error| error.to_string())?;
+    let _ = stop_announcing(request, &arrival_of(request));
     let key = if closed {
         "cli.session.closed"
     } else {
@@ -1547,6 +1667,20 @@ mod tests {
         census: &Census,
         options: &BTreeMap<String, String>,
     ) -> Result<Report, String> {
+        asking(verb, raw, store, None, census, options)
+    }
+
+    /// The same, announcing into a ledger of the test's own: **no case writes
+    /// into the machine's home**, and one that did was found by reading the
+    /// crew survey of this machine and seeing a fixture in it.
+    fn asking(
+        verb: &str,
+        raw: &str,
+        store: &Sessions,
+        deposit: Option<&ledger::Ledger>,
+        census: &Census,
+        options: &BTreeMap<String, String>,
+    ) -> Result<Report, String> {
         let payload = Payload::parse(raw).expect("il payload della prova è JSON");
         act(&Request {
             verb,
@@ -1554,6 +1688,7 @@ mod tests {
             payload: &payload,
             raw,
             store: Some(store),
+            deposit,
             census,
             tty: "ttys004",
             at: 1_000,
@@ -1768,6 +1903,102 @@ mod tests {
         assert_eq!(once, twice, "il secondo innesto non deve cambiare niente");
     }
 
+    fn named_line() -> BTreeMap<String, String> {
+        BTreeMap::from([("cli".to_owned(), "unmotore".to_owned())])
+    }
+
+    fn claims_in(deposit: &ledger::Ledger) -> Vec<serde_json::Value> {
+        deposit
+            .records_in(actions::presence::CLAIMS_COLLECTION)
+            .expect("leggere gli annunci")
+            .into_iter()
+            .map(|record| record.value)
+            .collect()
+    }
+
+    /// **A TRACKED TERMINAL ANNOUNCES ITSELF TO THE OTHER AGENTS.** Sailor knew
+    /// sixteen terminals were open and the crew survey answered «nobody»: the
+    /// register and the claims are two lists, and only the first was written.
+    #[test]
+    fn opening_a_terminal_announces_it_to_the_others() {
+        let scratch = Scratch::new("annuncio");
+        let store = scratch.store();
+        let deposit = ledger::Ledger::open(scratch.directory.join("deposito")).expect("il deposito");
+
+        asking(
+            "open",
+            r#"{"session_id":"una-conversazione","cwd":"/un-albero"}"#,
+            &store,
+            Some(&deposit),
+            &one_terminal(),
+            &named_line(),
+        )
+        .expect("l'apertura riesce");
+
+        let claims = claims_in(&deposit);
+        assert_eq!(claims.len(), 1, "{claims:?}");
+        assert_eq!(claims[0]["workdir"], serde_json::json!("/un-albero"));
+        assert_eq!(claims[0]["state"], serde_json::json!("working"));
+        assert!(
+            claims[0]["agent"].as_str().unwrap_or_default().contains("unmotore"),
+            "l'annuncio non dice quale riga di comando: {claims:?}"
+        );
+        // The shared words, so that exporting this later costs nobody a
+        // translation: the conversation is the one the payload named.
+        assert_eq!(
+            claims[0]["gen_ai.conversation.id"],
+            serde_json::json!("una-conversazione")
+        );
+    }
+
+    /// **THE ANNOUNCEMENT IS HELD BY THE TERMINAL, NOT BY WHOEVER WRITES IT.**
+    /// A hook is a new process at every event: keyed on that pid, a day of work
+    /// would leave one abandoned claim per keystroke and a crew of ghosts.
+    #[test]
+    fn a_second_event_renews_the_announcement_instead_of_adding_one() {
+        let scratch = Scratch::new("annuncio-rinnovato");
+        let store = scratch.store();
+        let deposit = ledger::Ledger::open(scratch.directory.join("deposito")).expect("il deposito");
+        let payload = r#"{"session_id":"una-conversazione","cwd":"/un-albero"}"#;
+
+        for verb in ["open", "event", "event"] {
+            asking(verb, payload, &store, Some(&deposit), &one_terminal(), &named_line())
+                .expect("il momento passa");
+        }
+
+        let keys: Vec<String> = deposit
+            .records_in(actions::presence::CLAIMS_COLLECTION)
+            .expect("leggere gli annunci")
+            .into_iter()
+            .map(|record| record.key)
+            .collect();
+
+        assert_eq!(keys.len(), 1, "un annuncio per evento: {keys:?}");
+        // AND THE KEY NAMES THE TERMINAL. Three moments in one test share this
+        // process, so counting alone would stay green with the writer's pid in
+        // the key and go red only on the machine, at the third keystroke.
+        assert!(keys[0].ends_with("#ttys004"), "l'annuncio non è del terminale: {keys:?}");
+    }
+
+    /// A terminal that closes stops holding the tree: whoever reads the survey
+    /// afterwards must not be told somebody is working there.
+    #[test]
+    fn closing_a_terminal_releases_what_it_announced() {
+        let scratch = Scratch::new("annuncio-rilasciato");
+        let store = scratch.store();
+        let deposit = ledger::Ledger::open(scratch.directory.join("deposito")).expect("il deposito");
+        let payload = r#"{"session_id":"una-conversazione","cwd":"/un-albero"}"#;
+        asking("open", payload, &store, Some(&deposit), &one_terminal(), &named_line())
+            .expect("l'apertura riesce");
+
+        asking("close", payload, &store, Some(&deposit), &one_terminal(), &named_line())
+            .expect("la chiusura riesce");
+
+        let claims = claims_in(&deposit);
+        assert_eq!(claims.len(), 1, "{claims:?}");
+        assert!(!claims[0]["released_at"].is_null(), "resta annunciato: {claims:?}");
+    }
+
     /// **A GRAFT THAT IS OURS AND OUT OF DATE IS REWRITTEN, NOT SKIPPED**, or
     /// the fix reaches only whoever thought to uninstall by hand. One goes in
     /// and one comes out: running the graft twice is still not a way of two.
@@ -1973,6 +2204,7 @@ mod tests {
             payload: &payload,
             raw: "",
             store: None,
+            deposit: None,
             census: &one_terminal(),
             tty: "",
             at: 1_000,
@@ -2066,6 +2298,7 @@ mod tests {
             payload: &payload,
             raw: "",
             store: None,
+            deposit: None,
             census: &one_terminal(),
             tty: "",
             at: 1_000,
@@ -2124,7 +2357,7 @@ mod tests {
     /// The greeting on its own, with no register to ask: these cases are about
     /// what the text says, and the neighbours have their own in `sessions`.
     fn welcome_of(arrival: &Arrival) -> String {
-        welcome(arrival, None, &Ok(None))
+        welcome(arrival, None, &Ok(None), &Ok(()))
     }
 
     /// **A NEIGHBOUR ELSEWHERE IS NAMED WITH THE ELSEWHERE.** Same repository,
@@ -2215,7 +2448,7 @@ mod tests {
             ask_again: Vec::new(),
         }));
 
-        let said = welcome(&arriving_in(&scratch), None, &open);
+        let said = welcome(&arriving_in(&scratch), None, &open, &Ok(()));
 
         assert!(said.contains("un-flusso-1788423534"), "non nomina la corsa: {said}");
         assert!(
@@ -2284,8 +2517,8 @@ mod tests {
         let scratch = Scratch::new("deposito-cieco");
         let arrival = arriving_in(&scratch);
 
-        let quiet = welcome(&arrival, None, &Ok(None));
-        let blind = welcome(&arrival, None, &Err("il file è di un altro".to_owned()));
+        let quiet = welcome(&arrival, None, &Ok(None), &Ok(()));
+        let blind = welcome(&arrival, None, &Err("il file è di un altro".to_owned()), &Ok(()));
 
         assert_ne!(quiet, blind, "un deposito illeggibile saluta come uno vuoto");
         assert!(blind.contains("il file è di un altro"), "senza il motivo: {blind}");
@@ -2373,6 +2606,7 @@ mod tests {
             payload: &Payload::parse("{}").expect("payload vuoto"),
             raw: "",
             store: None,
+            deposit: None,
             census: &one_terminal(),
             tty: "",
             at: 1_000,
@@ -2428,6 +2662,7 @@ mod tests {
             payload: &Payload::parse("{}").expect("the empty payload"),
             raw: "",
             store: None,
+            deposit: None,
             census: &one_terminal(),
             tty: "",
             at: 1_000,
@@ -2667,6 +2902,7 @@ mod tests {
             payload: &Payload::parse("{}").expect("payload vuoto"),
             raw: "",
             store: None,
+            deposit: None,
             census: &refused,
             tty: "",
             at: 1_000,
