@@ -29,6 +29,8 @@ const STATE_OF_OUTCOME: Record<string, StepState> = {
   // A step that answered «not yet, ask me on the next beat» is closed and
   // will be asked again: it waits, it is not still running.
   NotYet: "waiting",
+  // A branch nobody took. Not waiting: nothing will make it run.
+  Skipped: "skipped",
 };
 
 /**

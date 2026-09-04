@@ -103,7 +103,9 @@ export type StepState =
   | "went"
   | "broke"
   | "capped"
-  | "handed_to_human";
+  | "handed_to_human"
+  /** A branch was not taken, so this step never runs: finished, not pending. */
+  | "skipped";
 
 export interface StepRun {
   step_id: string;
