@@ -161,7 +161,10 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     let repository = temporary.path.join("repo");
     println!(
         "{}",
-        catalogue::say("cli.release.cloning_head", &[("head", &head_short)])
+        catalogue::say(
+            "cli.release.cloning_head",
+            &[("head", &head_short), ("root", &root.display().to_string())],
+        )
     );
     clone_repository(&root, &repository)?;
     command_success(
