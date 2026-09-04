@@ -87,20 +87,22 @@ Trappole già pagate su questa macchina:
   commenti italiani alzavano un contatore, le sue righe di codice abbassavano il
   rapporto di un crate — e i semi descrivevano un albero che a `HEAD` non
   esiste. `sailor release`, che esegue la suite su un clone di `HEAD`, si è
-  fermato senza sostituire niente, ed è così che si è visto. La misura giusta
-  costa trenta secondi:
+  fermato senza sostituire niente, ed è così che si è visto. La misura giusta è
+  un comando, e costa un minuto:
 
   ```sh
-  rm -rf /tmp/pulito && mkdir -p /tmp/pulito
-  git archive HEAD | tar -x -C /tmp/pulito
-  # sovrapponi solo i TUOI file modificati, non quelli di altre sessioni
-  CARGO_TARGET_DIR=$PWD/target/from-head cargo test \
-    --manifest-path /tmp/pulito/Cargo.toml \
-    -p sailor --test comments_do_not_crowd_out_the_code
+  sailor ratchet                 # tutti i giudici che leggono le sorgenti
+  sailor ratchet --only comments_do_not_crowd_out_the_code
   ```
 
-  Vale anche prima di dire «l'albero è verde»: `git status` mostra chi altro sta
-  scrivendo, e i suoi rossi non sono i tuoi.
+  Rifà `git archive HEAD` in `target/ratchet-tree`, vi sovrappone i file
+  modificati e quelli nuovi che entrano in una cartella che `HEAD` conosce (li
+  elenca: guarda se ce n'è uno non tuo), e stampa dei giudici rossi solo quello
+  che hanno detto. Il rito a mano — archivio, `cp` file per file, `cargo test
+  --manifest-path` con `CARGO_TARGET_DIR=$PWD/target/from-head` — resta la
+  spiegazione di cosa fa, non più il gesto. Vale anche prima di dire «l'albero è
+  verde»: `git status` mostra chi altro sta scrivendo, e i suoi rossi non sono i
+  tuoi.
 - **`cargo fmt -- <file>` non si limita a quel file**: formatta tutto il
   workspace. L'albero non è formattato in blocco e non va formattato in blocco.
 - **`cargo test --tests` non aggiorna il binario** che i ganci eseguono.
