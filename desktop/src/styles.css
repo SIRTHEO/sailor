@@ -4024,7 +4024,8 @@ tr[data-followable]:hover {
   padding: 2px 8px;
 }
 
-.chip--build {
+.chip--build,
+.chip--beat {
   color: var(--muted);
 }
 
@@ -4188,7 +4189,8 @@ tr[data-followable]:hover {
   border-color: var(--focus);
 }
 
-.chip--build[data-warn] {
+.chip--build[data-warn],
+.chip--beat[data-warn] {
   color: var(--danger);
   background: var(--danger-soft);
   font-weight: 600;
