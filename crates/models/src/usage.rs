@@ -1,265 +1,14 @@
 //! The exact token and context count, from an engine's answer.
 //!
 //! `None` is a legitimate answer — a number that engine does not say — while
-//! `0` never is for a missing field: nothing is invented here.
-
-use crate::catalog::Model;
-
-/// The tokens measured for a single call. `total_tokens` can be known even
-/// when `prompt_tokens`/`completion_tokens` are not (Codex says only the total
-/// on its output).
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct TokenUsage {
-    pub prompt_tokens: Option<u64>,
-    pub completion_tokens: Option<u64>,
-    pub total_tokens: Option<u64>,
-    /// The cost in USD, when the engine declares it itself (OpenRouter does on
-    /// every answer, zero included on free models).
-    pub cost_usd: Option<f64>,
-}
-
-impl TokenUsage {
-    /// From the JSON body of an OpenRouter `chat/completions` answer. A field
-    /// that is missing, or is not a number, stays `None` rather than failing
-    /// the whole parse: an error body (429, invalid key, …) must be able to
-    /// give back an empty `TokenUsage` instead of a panic.
-    pub fn from_openrouter_body(body: &str) -> TokenUsage {
-        let Ok(parsed) = serde_json::from_str::<serde_json::Value>(body) else {
-            return TokenUsage::default();
-        };
-        let usage = parsed.get("usage");
-        let field_u64 = |key: &str| usage.and_then(|u| u.get(key)).and_then(|v| v.as_u64());
-        TokenUsage {
-            prompt_tokens: field_u64("prompt_tokens"),
-            completion_tokens: field_u64("completion_tokens"),
-            total_tokens: field_u64("total_tokens"),
-            cost_usd: usage.and_then(|u| u.get("cost")).and_then(|v| v.as_f64()),
-        }
-    }
-
-    /// From the text output of `codex exec`: reuses `parse_codex_tokens`
-    /// instead of rewriting the parsing (`"tokens used"` followed by the number
-    /// with a dot as thousands separator). Codex separates neither prompt from
-    /// completion nor declares a cost: those stay `None`.
-    pub fn from_codex_output(output: &str) -> TokenUsage {
-        let raw = parse_codex_tokens(output);
-        TokenUsage {
-            total_tokens: raw.parse().ok(),
-            ..TokenUsage::default()
-        }
-    }
-}
-
-/// The full picture of a call: what went in, what came out, what is left of
-/// the model's window, what it cost.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct ContextAccounting {
-    pub usage: TokenUsage,
-    /// The window of the model used: `None` when the model is not in the
-    /// catalog (e.g. Codex, which is not an OpenRouter model).
-    pub context_length: Option<u64>,
-    /// `context_length - total_tokens`. `None` when either addend is missing —
-    /// a remainder computed on an unknown total would be an invented number
-    /// wearing the face of a measure.
-    pub remaining: Option<u64>,
-    pub cost_usd: Option<f64>,
-}
-
-impl ContextAccounting {
-    /// Combines the measured usage with the catalog model that served it, when
-    /// that model is known. If `usage.cost_usd` is already declared by the
-    /// engine (OpenRouter always does) that one is used; otherwise the cost
-    /// comes from the model's price list, when there is one.
-    pub fn compute(usage: TokenUsage, model: Option<&Model>) -> ContextAccounting {
-        let context_length = model.and_then(|m| m.context_length);
-        let remaining = match (context_length, usage.total_tokens) {
-            (Some(ctx), Some(total)) => Some(ctx.saturating_sub(total)),
-            _ => None,
-        };
-        let cost_usd = usage.cost_usd.or_else(|| compute_cost(&usage, model));
-        ContextAccounting {
-            usage,
-            context_length,
-            remaining,
-            cost_usd,
-        }
-    }
-}
-
-/// The cost from the model's price list, when the engine has not said it
-/// already. It needs both halves (prompt and completion, price and count):
-/// with one missing the cost stays unknown.
-fn compute_cost(usage: &TokenUsage, model: Option<&Model>) -> Option<f64> {
-    let model = model?;
-    let prompt_tokens = usage.prompt_tokens? as f64;
-    let completion_tokens = usage.completion_tokens? as f64;
-    let price_in = model.price_per_million_input?;
-    let price_out = model.price_per_million_output?;
-    Some((prompt_tokens * price_in + completion_tokens * price_out) / 1_000_000.0)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::catalog::{Catalog, Modality};
-
-    // A real body, captured on nvidia/nemotron-3-super-120b-a12b:free (key
-    // read from a file, never printed; no trace of it left here).
-    const OPENROUTER_OK: &str = r#"{"id":"gen-1787833447-8R8Z6Ce3NQrwbjknBeMw","usage":{"prompt_tokens":27,"completion_tokens":20,"total_tokens":47,"cost":0,"is_byok":false}}"#;
-
-    #[test]
-    fn reads_all_three_token_counts_and_the_cost() {
-        let usage = TokenUsage::from_openrouter_body(OPENROUTER_OK);
-        assert_eq!(usage.prompt_tokens, Some(27));
-        assert_eq!(usage.completion_tokens, Some(20));
-        assert_eq!(usage.total_tokens, Some(47));
-        assert_eq!(usage.cost_usd, Some(0.0));
-    }
-
-    #[test]
-    fn a_429_body_has_no_usage_at_all_not_a_panic() {
-        let body = r#"{"error":{"code":429,"message":"limit"}}"#;
-        let usage = TokenUsage::from_openrouter_body(body);
-        assert_eq!(usage, TokenUsage::default());
-    }
-
-    #[test]
-    fn garbage_input_gives_an_empty_usage_not_a_panic() {
-        let usage = TokenUsage::from_openrouter_body("not json");
-        assert_eq!(usage, TokenUsage::default());
-    }
-
-    #[test]
-    fn codex_output_reuses_the_shared_parser() {
-        let output = "some noise\ntokens used\n13.910\nmore noise";
-        let usage = TokenUsage::from_codex_output(output);
-        assert_eq!(usage.total_tokens, Some(13910));
-        assert_eq!(usage.prompt_tokens, None);
-        assert_eq!(usage.completion_tokens, None);
-        assert_eq!(usage.cost_usd, None);
-    }
-
-    #[test]
-    fn codex_output_without_the_marker_is_unknown_not_zero() {
-        let usage = TokenUsage::from_codex_output("no useful line here");
-        assert_eq!(usage.total_tokens, None);
-    }
-
-    fn sample_model(id: &str) -> Model {
-        let catalog =
-            Catalog::parse(include_str!("../tests/fixtures/catalog-sample.json")).unwrap();
-        catalog.find(id).unwrap().clone()
-    }
-
-    #[test]
-    fn computes_remaining_context_against_the_model_window() {
-        let model = sample_model("nvidia/nemotron-3-super-120b-a12b:free"); // 262144
-        let usage = TokenUsage {
-            total_tokens: Some(47),
-            ..TokenUsage::default()
-        };
-        let acc = ContextAccounting::compute(usage, Some(&model));
-        assert_eq!(acc.context_length, Some(262144));
-        assert_eq!(acc.remaining, Some(262144 - 47));
-    }
-
-    #[test]
-    fn remaining_is_none_when_the_model_is_unknown_codex_case() {
-        let usage = TokenUsage {
-            total_tokens: Some(13910),
-            ..TokenUsage::default()
-        };
-        let acc = ContextAccounting::compute(usage, None);
-        assert_eq!(acc.context_length, None);
-        assert_eq!(
-            acc.remaining, None,
-            "a remainder on an unknown window would be an invented number"
-        );
-    }
-
-    #[test]
-    fn remaining_is_none_when_total_tokens_is_unknown() {
-        let model = sample_model("nvidia/nemotron-3-super-120b-a12b:free");
-        let acc = ContextAccounting::compute(TokenUsage::default(), Some(&model));
-        assert_eq!(acc.remaining, None);
-    }
-
-    #[test]
-    fn prefers_the_engines_own_declared_cost_over_a_computed_one() {
-        let model = sample_model("qwen/qwen3.8-flash");
-        let usage = TokenUsage {
-            prompt_tokens: Some(100),
-            completion_tokens: Some(100),
-            cost_usd: Some(0.4242), // deliberately unlike the computed value, to prove it wins
-            ..TokenUsage::default()
-        };
-        let acc = ContextAccounting::compute(usage, Some(&model));
-        assert_eq!(acc.cost_usd, Some(0.4242));
-    }
-
-    #[test]
-    fn computes_cost_from_the_price_list_when_the_engine_says_nothing() {
-        let model = sample_model("qwen/qwen3.8-flash"); // 0.15 / 0.47 USD per million
-        let usage = TokenUsage {
-            prompt_tokens: Some(1_000_000),
-            completion_tokens: Some(1_000_000),
-            ..TokenUsage::default()
-        };
-        let acc = ContextAccounting::compute(usage, Some(&model));
-        let cost = acc.cost_usd.unwrap();
-        assert!(
-            (cost - 0.62).abs() < 1e-9,
-            "expected 0.15+0.47=0.62, got {cost}"
-        );
-    }
-
-    #[test]
-    fn cost_is_unknown_when_token_counts_are_only_partial() {
-        let model = sample_model("qwen/qwen3.8-flash");
-        let usage = TokenUsage {
-            prompt_tokens: Some(10),
-            ..TokenUsage::default()
-        }; // completion missing
-        let acc = ContextAccounting::compute(usage, Some(&model));
-        assert_eq!(acc.cost_usd, None);
-    }
-
-    #[test]
-    fn accepts_modality_check_is_reused_correctly() {
-        let model = sample_model("thinkingmachines/inkling:free");
-        assert!(model.accepts(Modality::Audio));
-    }
-}
-
-/// The tokens `codex exec` declares in its text output.
-///
-/// It came from `notte`, which is no longer in the repo — so every `crates/notte`
-/// path still named in `config.rs` and `fetch.rs` points at a crate that is not
-/// there. It lives here because reading what an engine says it consumed is this
-/// crate's trade.
-pub fn parse_codex_tokens(output: &str) -> String {
-    let mut lines = output.lines();
-    while let Some(line) = lines.next() {
-        if line.trim() == "tokens used" {
-            if let Some(num_line) = lines.next() {
-                let cleaned: String = num_line.trim().chars().filter(|c| *c != '.').collect();
-                if !cleaned.is_empty() && cleaned.chars().all(|c| c.is_ascii_digit()) {
-                    return cleaned;
-                }
-            }
-        }
-    }
-    "?".to_string()
-}
-
-// ── consumption read the way a descriptor declares it ─────────────────────
+//! `0` never is: nothing is invented here. **AND IT IS READ THE WAY A
+//! DESCRIPTOR DECLARES IT**, never by a reader named after one engine.
 
 /// The shape in which an engine states its own consumption.
 ///
-/// **IT IS DATA, NOT A BRANCH PER PROVIDER.** `from_openrouter_body` and
-/// `from_codex_output` above are hand-written readers for two known formats;
-/// a third for every new engine is the road model-independence forbids. Here
-/// the descriptor says the shape, so a new engine is measured with a file.
+/// **IT IS DATA, NOT A BRANCH PER PROVIDER.** A hand-written reader for every
+/// new engine is the road model independence forbids: here the descriptor says
+/// the shape, so a new engine is measured with a file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Shape {
     /// The output is a JSON envelope, and pointers are key paths.
@@ -272,22 +21,18 @@ pub enum Shape {
 
 /// Where a value sits inside what the engine said.
 ///
-/// The two forms are not interchangeable: a key path holds only on a JSON
-/// body, a regular expression only on text. A pointer of the wrong shape finds
-/// nothing and leaves the value **unknown** — the right way to be wrong, since
-/// no invented number takes its place.
+/// A key path holds only on a JSON body, a regular expression only on text: a
+/// pointer of the wrong shape finds nothing and leaves the value **unknown**,
+/// which is the right way to be wrong.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Pointer {
     /// A key path inside the envelope: `["usage", "input_tokens"]`.
     Path(Vec<String>),
     /// A regular expression with the number (or the text) in the first group.
     Pattern(String),
-    /// **The name of the first key** of the object sitting at this path. Some
-    /// engines use the model name as a *key* rather than a field:
-    /// `{"modelUsage": {"claude-opus-5[1m]": {...}}}`. Without this form the
-    /// name is unreachable, and without the name no price-list entry can be
-    /// found: the cost would stay unknown even with a perfect list. Only the
-    /// first key is taken, and `read_name` says why.
+    /// **The name of the first key** of the object at this path, for engines
+    /// that state the model as a *key* rather than a field. Without the name
+    /// no price-list entry is found, and the cost stays unknown.
     FirstKey(Vec<String>),
 }
 
