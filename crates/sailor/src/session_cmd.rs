@@ -1248,8 +1248,9 @@ fn branch_of(path: &str) -> Option<String> {
 }
 
 /// **THE TERMINAL ANNOUNCES ITSELF TO THE OTHER AGENTS**, and renews at every
-/// event. Held by the terminal and not by the process that writes: a hook is a
-/// new process at every keystroke, and one claim per keystroke is not a crew.
+/// event. Held by the terminal — not by the process that writes, which is a new
+/// one at every keystroke, and not by the name of the command line, which
+/// changes under the same terminal.
 fn announce(request: &Request<'_>, arrival: &Arrival, state: &str) -> Result<(), String> {
     let Some(deposit) = request.deposit else {
         return Ok(());
@@ -1257,7 +1258,7 @@ fn announce(request: &Request<'_>, arrival: &Arrival, state: &str) -> Result<(),
     let workdir = arrival.anchor.worktree.clone();
     let record = actions::presence::claim_record(&actions::presence::Claim {
         agent: agent_of(request),
-        holder: arrival.anchor.tty.clone(),
+        key: actions::presence::terminal_claim_key(&arrival.anchor.tty),
         repository: repository_holding(&workdir).unwrap_or_else(|| workdir.clone()),
         branch: branch_of(&workdir),
         workdir: Some(workdir),
@@ -1279,7 +1280,7 @@ fn stop_announcing(request: &Request<'_>, arrival: &Arrival) -> Result<(), Strin
     let Some(deposit) = request.deposit else {
         return Ok(());
     };
-    let key = actions::presence::claim_key(&agent_of(request), &arrival.anchor.tty);
+    let key = actions::presence::terminal_claim_key(&arrival.anchor.tty);
     actions::presence::release_claim(&deposit, &key, request.at)
         .map(|_| ())
         .map_err(|error| error.to_string())
@@ -1974,10 +1975,12 @@ mod tests {
             .collect();
 
         assert_eq!(keys.len(), 1, "un annuncio per evento: {keys:?}");
-        // AND THE KEY NAMES THE TERMINAL. Three moments in one test share this
-        // process, so counting alone would stay green with the writer's pid in
-        // the key and go red only on the machine, at the third keystroke.
-        assert!(keys[0].ends_with("#ttys004"), "l'annuncio non è del terminale: {keys:?}");
+        // AND THE KEY IS THE TERMINAL, nothing else. Three moments in one test
+        // share this process, so counting alone would stay green with the
+        // writer's pid in the key and go red only on the machine, at the third
+        // keystroke; and with the command line's name in there, a graft that
+        // learns which line it is would announce the same terminal twice.
+        assert_eq!(keys[0], "terminal#ttys004", "{keys:?}");
     }
 
     /// A terminal that closes stops holding the tree: whoever reads the survey
@@ -1997,6 +2000,31 @@ mod tests {
         let claims = claims_in(&deposit);
         assert_eq!(claims.len(), 1, "{claims:?}");
         assert!(!claims[0]["released_at"].is_null(), "resta annunciato: {claims:?}");
+    }
+
+    /// **THE SAME TERMINAL UNDER A NEW NAME IS THE SAME ROW.** The graft learns
+    /// which command line it is, or a profile is switched, and the name changes
+    /// under a terminal that never moved: keyed on the name, the old one would
+    /// stay announced beside the new until its lease ran out, and the survey
+    /// would show two agents where one person is typing. Seen on this machine.
+    #[test]
+    fn a_terminal_whose_command_line_gets_a_name_is_still_one_announcement() {
+        let scratch = Scratch::new("annuncio-rinominato");
+        let store = scratch.store();
+        let deposit = ledger::Ledger::open(scratch.directory.join("deposito")).expect("il deposito");
+        let payload = r#"{"session_id":"una-conversazione","cwd":"/un-albero"}"#;
+
+        asking("open", payload, &store, Some(&deposit), &one_terminal(), &no_options())
+            .expect("prima senza nome");
+        asking("event", payload, &store, Some(&deposit), &one_terminal(), &named_line())
+            .expect("poi col nome");
+
+        let claims = claims_in(&deposit);
+        assert_eq!(claims.len(), 1, "{claims:?}");
+        assert!(
+            claims[0]["agent"].as_str().unwrap_or_default().contains("unmotore"),
+            "l'annuncio è rimasto al nome vecchio: {claims:?}"
+        );
     }
 
     /// **A GRAFT THAT IS OURS AND OUT OF DATE IS REWRITTEN, NOT SKIPPED**, or

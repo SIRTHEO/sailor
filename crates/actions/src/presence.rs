@@ -83,12 +83,18 @@ struct SurveySpec {
     at: Option<i64>,
 }
 
-/// Which announcement is which: an agent, and **which instance of it** — a pid
-/// where a step announces itself, a terminal where a hook does. The second is
-/// not the pid of whoever writes: a hook is a new process at every event, and
-/// keying on it would leave one abandoned claim per keystroke.
+/// Which announcement is which, for a step: an agent and the process holding it.
 pub fn claim_key(agent: &str, holder: &str) -> String {
     format!("{agent}#{holder}")
+}
+
+/// **A TERMINAL HOLDS ONE ANNOUNCEMENT, whatever runs in it.** The name of the
+/// command line is an attribute and not an identity: it changes when a graft
+/// learns which line it is or a profile is switched, and keyed on it the old
+/// name stays announced beside the new until its lease runs out. Nor is it the
+/// pid of whoever writes: a hook is a new process at every keystroke.
+pub fn terminal_claim_key(tty: &str) -> String {
+    format!("terminal#{tty}")
 }
 
 /// What one holder announces.
@@ -97,7 +103,8 @@ pub fn claim_key(agent: &str, holder: &str) -> String {
 /// same record; a second copy would drift the day one of them learns a field.
 pub struct Claim {
     pub agent: String,
-    pub holder: String,
+    /// Which announcement this is, from [`claim_key`] or [`terminal_claim_key`].
+    pub key: String,
     pub repository: String,
     pub workdir: Option<String>,
     pub branch: Option<String>,
@@ -119,7 +126,7 @@ pub struct Claim {
 pub fn claim_record(claim: &Claim) -> StoreRecord {
     StoreRecord {
         collection: CLAIMS_COLLECTION.to_owned(),
-        key: claim_key(&claim.agent, &claim.holder),
+        key: claim.key.clone(),
         value: json!({
             "agent": claim.agent,
             "repository": claim.repository,
@@ -132,7 +139,7 @@ pub fn claim_record(claim: &Claim) -> StoreRecord {
             "expires_at": claim.at + claim.lease_seconds,
             "released_at": Value::Null,
             "gen_ai.agent.name": claim.agent,
-            "gen_ai.agent.id": claim_key(&claim.agent, &claim.holder),
+            "gen_ai.agent.id": claim.key,
             "gen_ai.conversation.id": claim.conversation,
             "state": claim.state,
         }),
@@ -283,7 +290,7 @@ impl Action for WorkClaimAction {
         let expires_at = at + lease;
         let record = claim_record(&Claim {
             agent: spec.agent.clone(),
-            holder: pid.to_string(),
+            key: claim_key(&spec.agent, &pid.to_string()),
             repository: spec.repository.clone(),
             workdir: spec.workdir.clone(),
             branch: spec.branch.clone(),
@@ -583,7 +590,7 @@ mod tests {
         let (ledger, _guard) = store();
         let terminal = |agent: &str, tty: &str| Claim {
             agent: agent.to_owned(),
-            holder: tty.to_owned(),
+            key: terminal_claim_key(tty),
             repository: "/casa/progetto/.git".to_owned(),
             workdir: Some("/casa/progetto".to_owned()),
             branch: Some("sorgenti".to_owned()),
