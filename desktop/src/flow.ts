@@ -112,6 +112,8 @@ export interface StepRun {
   /** Present only while an agent holds the step. */
   held_by_pid?: number;
   elapsed_secs?: number;
+  /** When it last said something: the instant of its last piece of output. */
+  spoke_at?: number;
 }
 
 /** The kind says what Sailor does if the step falls and its effect is unknown. */

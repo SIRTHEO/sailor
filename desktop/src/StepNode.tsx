@@ -5,7 +5,7 @@ import { nodeId, type PortShape, type StepPort, type StepPorts } from "./layout"
 import { MODEL_KEY, TOOL_KEY, useTool, useToolsAreKnown } from "./tools";
 import { ToolMark } from "./ToolMark";
 import { formatCost, formatTokens, usageIsPartial, type StepUsage } from "./stepusage";
-import { group } from "./i18n";
+import { group, t } from "./i18n";
 
 /**
  * The real step states, keyed `flow::step`. **THROUGH A CONTEXT AND NOT THE
@@ -14,6 +14,15 @@ import { group } from "./i18n";
  * nodes' identity, so only what changed redraws.
  */
 export const StepRunContext = createContext<Map<string, StepRun>>(new Map());
+
+/**
+ * The second the window is at, ticking only while something runs. A node needs
+ * it to know when a step has gone quiet: silence is not a fact anybody sends.
+ */
+export const NowContext = createContext<number>(0);
+
+/** How long after its last piece of output a step is still «speaking». */
+export const STILL_SPEAKING_SECS = 2;
 
 /**
  * What each step spent, and on which model, keyed `flow::step`. Through a
@@ -68,6 +77,9 @@ export const STATE_COLOR: Record<StepState, string> = {
 };
 
 const STATE_LABEL = group("window.step.state.") as Record<StepState, string>;
+
+/** What a running step says instead, while its output is arriving. */
+const SPEAKING_LABEL = t("window.step.speaking");
 
 /**
  * **TWO REGISTERS OF ATTENTION.** Live runs share one quiet breathing dot that
@@ -400,6 +412,15 @@ export function StepNode({ data, selected }: NodeProps) {
   // No run is «not run yet», never «waiting»: a node that waits is waiting
   // on something, and a flow nobody ran waits on nothing. Fault 30.
   const state: StepState = run?.state ?? "idle";
+  // SPEAKING IS SOMETHING A RUNNING STEP DOES, and it is the only sign that
+  // separates an agent at work from one stuck: the breathing dot says «alive»
+  // for both. The last piece of output has a second on it; silence has nothing,
+  // so it is read off the clock.
+  const now = useContext(NowContext);
+  const speaking =
+    state === "running" &&
+    run?.spoke_at !== undefined &&
+    now - run.spoke_at <= STILL_SPEAKING_SECS;
   const isAgent = kind === "engine";
   // Which tool runs this node reads off the canvas, not only from the panel:
   // it is the first question asked of a flow somebody else wrote.
@@ -459,8 +480,12 @@ export function StepNode({ data, selected }: NodeProps) {
         <span className="step-node__kind">{KIND_LABEL[kind]}</span>
         {step.when && <span className="step-node__when">condizionato</span>}
         <span className="step-node__state">
-          <span className="step-node__state-dot" aria-hidden="true" />
-          {STATE_LABEL[state]}
+          {speaking ? (
+            <span className="speaks" aria-hidden="true" />
+          ) : (
+            <span className="step-node__state-dot" aria-hidden="true" />
+          )}
+          {speaking ? SPEAKING_LABEL : STATE_LABEL[state]}
         </span>
       </div>
 
