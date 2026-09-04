@@ -12,9 +12,12 @@ Every claim below carries an *Outcome* line: what is true now, where the
 proof is, and what is still a gesture only Theo can make. Every battery named
 was judged by a fresh-context judge who did not write it (one per group), and
 counts only because the judge re-inserted the defect and watched it go red.
-Every «by hand» check is still open: nobody sat in the window during this run,
-and the document does not pretend otherwise. **The gestures left to Theo are
-listed at the end**, so the day inside Sailor can start with them.
+The «by hand» checks were open until 04/09/2026, when the eight gestures at
+the end were performed in the installed window. What they found is written
+where each claim sits, defects included. **They could not have been performed
+before**: the window in service carried no page at all and opened blank —
+fault 77 — so every gesture was waiting on a release that had never once
+embedded the page it was releasing.
 
 ## The measure
 
@@ -111,7 +114,9 @@ Terminals shows the pane exactly as it was, including what the program printed
 while away.
 *Check: by hand, and a battery test that mounts, unmounts and remounts the
 screen and asserts the earlier output is on the pane.*
-*Outcome: battery yes, by hand not yet.* `App.tsx` keeps the screen mounted
+*Outcome: yes, both.* By hand on 04/09: twelve ticks started, the Board opened
+mid-loop, and coming back the pane held all twelve and the prompt after them.
+`App.tsx` keeps the screen mounted
 behind the other places, and a pane that comes back draws the host's backlog
 first. Tests `THE SCREEN STAYS MOUNTED BEHIND THE OTHER PLACES` and `LEAVING
 THE SCREEN AND COMING BACK SHOWS WHAT WAS PRINTED MEANWHILE` in
@@ -123,7 +128,10 @@ finds the terminals still open, still running, with their output.
 *Check: by hand — open a terminal, run something long, quit the app, reopen,
 the tab is there and the program is alive. Plus a battery test that the pty is
 not owned by the window process.*
-*Outcome: battery yes, by hand not yet.* The ptys belong to `sailor terminal
+*Outcome: yes, both.* By hand on 04/09: two tabs open — one running an agent,
+one running `sleep 600` — quit with ⌘Q, reopened. Both tabs came back ALIVE
+with their scrollback, and `ps -p` found the sleep still counting.
+The ptys belong to `sailor terminal
 host`, a process of its own (`setsid`, SIGHUP ignored) that the window starts
 when none answers and talks to over a socket under the ledger directory.
 `crates/sailor/tests/a_terminal_outlives_the_window.rs` runs the real binary:
@@ -149,7 +157,12 @@ dropped the offset filter, red both times.
 The known workspaces and worktrees are offered; a path can still be typed.
 *Check: by hand, plus a battery test that the offered list is the engine's
 answer and not a list kept in the screen.*
-*Outcome: battery yes, by hand not yet.* The select is built from `projects()`
+*Outcome: yes as written, and the gesture found a defect the claim does not
+cover.* By hand on 04/09: the select listed the projects, then the worktrees
+each with its branch, and «…another path» last. But six of the project rows
+carried **the same label** and a seventh repeated it further down: the claim
+asks what is listed, not whether a person can tell two entries apart. Fault 79.
+The select is built from `projects()`
 and `listTrees()` only, with «…another path» keeping a typed path. `THE
 OFFERED PLACES ARE THE ENGINE'S ANSWER` in `desktop/src/terminal.test.tsx`; the
 judge seeded the list with one place of its own and three tests went red.
@@ -170,7 +183,12 @@ inside the pty.
 *Check: battery — `Opening.environment` is set from the profile store and a
 test reads the child's environment. And by hand: open a terminal on the `prove`
 profile and confirm the agent inside it is that profile's.*
-*Outcome: battery yes, by hand not yet.* `profiles::active_environment` turns
+*Outcome: yes, both.* By hand on 04/09, in a terminal opened from the window:
+`CODEX_HOME` was the active `prove` profile's home, the same path
+`sailor profiles list` prints. `CLAUDE_CONFIG_DIR` was **empty**, and that is
+right rather than missing: no profile is declared for that command line, and
+nothing was invented to fill the variable.
+`profiles::active_environment` turns
 the active profiles into `CLAUDE_CONFIG_DIR` / `CODEX_HOME`
 (`the_active_profiles_become_the_variables_a_terminal_opens_with`), the bridge
 reads the store at every open and passes them, and
@@ -223,7 +241,16 @@ the id, and dropped the tally write: red three times.
 hands work to the agent already alive in a terminal reaches it.
 *Check: battery — `a_line_typed_from_outside_reaches_the_program` extended to a
 terminal born through the bridge. Plus by hand, once, with a real agent.*
-*Outcome: battery yes, by hand not yet.* The terminal in the test is born
+*Outcome: yes, both, and the flow half needs a word.* By hand on 04/09, with a
+real agent alive in a window-opened terminal: `sailor flow run
+passa-il-testimone <tty>` completed green **without typing anything** — the
+terminal was under the ceiling, so the `when` skipped the whole chain and left
+the measurement behind, which is the flow's declared behaviour and not a
+failure. The typing half was then driven through the same power the skipped
+step uses, `sailor terminal press`: the line appeared in the agent's prompt,
+was submitted, and the agent answered. So the claim holds, and what a run of
+that flow proves depends on how full the terminal was when it ran.
+The terminal in the test is born
 through the engine's `Terminals::open` with a mailroom, which is exactly what
 the host does; the judge also drove the relay's own `type_into_terminal` node
 against a host-owned terminal and read the word back from its backlog. With the
@@ -250,7 +277,10 @@ fact «past the ceiling».
 working tree of a workspace: which files, and what changed in them.
 *Check: by hand, on a real change, plus a battery test that the diff shown is
 `git`'s answer and not one computed here.*
-*Outcome: battery yes, by hand not yet.* `workspace::changes` returns the files
+*Outcome: yes, both.* By hand on 04/09, with one uncommitted line in a file:
+the panel showed the same hunk as `git diff HEAD` in that terminal — same
+header, same index hashes, same single added line.
+`workspace::changes` returns the files
 of `git status --porcelain -z` and the text of `git diff HEAD`, byte for byte;
 `crates/workspace/tests/the_diff_shown_is_gits_answer.rs` compares against git
 run by the test, with a clean tree, a staged file and a path with a space and an
@@ -261,7 +291,13 @@ reached from a terminal tab, under «what changed in …».
 
 **C2. A file can be opened in the editor Theo already uses**, from the window.
 *Check: by hand.*
-*Outcome: not yet, the check is Theo's.* Each listed file has «open in the
+*Outcome: the hand-off works, and the claim is not met.* By hand on 04/09, with
+neither variable set: pressing it did open the file, in the application the
+system associates with that file type — a **read-only preview**, not an editor.
+So the gesture succeeds and the claim, which names an editor, does not hold.
+Fault 80: the last resort is «whatever opens this kind of file», which says
+nothing about editing.
+Each listed file has «open in the
 editor», which hands its absolute path to `SAILOR_EDITOR`, else `VISUAL`, else
 the system opener (`desktop/src-tauri/src/changes.rs`). The judge flipped the
 precedence and the test went red, and ran a fake editor to see the path arrive
@@ -324,28 +360,39 @@ outside the tree it was pointed at, and the release stopped there.
 
 ---
 
-# What is still Theo's: the gestures
+# The gestures, performed
 
-Nobody sat in the window during this run. Each of these takes a minute, and
-each is the «by hand» half of a claim above.
+The eight were done on 04/09/2026 in the installed window, one after another,
+in about half an hour including the repair that made them possible. Six held.
+Two held as written and failed the thing the claim was really about, and both
+are now in the ledger.
 
-1. **A1** — open a terminal, run `for i in 1 2 3 4 5; do echo tick-$i; sleep 1;
-   done`, go to Flows, wait, come back: the ticks are on the pane.
-2. **A2** — open a terminal, run `sleep 600`, quit Sailor, reopen it: the tab
-   with that tty is there and `ps -p <pid>` shows the sleep alive.
-3. **A4** — open the Terminals screen: the workspace select lists the projects
-   and worktrees, and «…another path» still takes a typed one.
-4. **A6** — with `prove` active, open a terminal and run `echo
-   $CLAUDE_CONFIG_DIR`: it is that profile's home.
-5. **A9** — read the top of `desktop/src/Terminals.tsx` against A2.
-6. **B2** — with `claude` running in a window-opened terminal, run
-   `sailor flow run passa-il-testimone` with that tab's tty: the line lands in
-   the agent's prompt.
-7. **C1** — with an uncommitted edit in a workspace, press «what changed in …»
-   under its terminal and compare with `git diff HEAD` in that terminal.
-8. **C2** — press «open in the editor» on a listed file and see which
-   application opens. If it is not the right one, set `SAILOR_EDITOR` (or
-   `VISUAL`) in the environment the window is launched from.
+| | gesture | what happened |
+|---|---|---|
+| **A1** | ticks, leave to the Board, come back | ✅ all twelve on the pane, prompt after them |
+| **A2** | agent and `sleep 600`, ⌘Q, reopen | ✅ both tabs back ALIVE with their scrollback; `ps -p` found the sleep counting |
+| **A4** | the workspace select | ⚠️ lists what it claims — and six rows share one label. **Fault 79** |
+| **A6** | the profile's variable inside the pty | ✅ `CODEX_HOME` is `prove`'s home; the other variable empty because no profile declares it |
+| **A9** | read `Terminals.tsx` against A2 | ✅ the header names the reason A2 works: the list belongs to the engine, the ptys to the host |
+| **B2** | a line into a live agent | ✅ it lands, is submitted, and is answered. The flow itself skipped: the terminal was under the ceiling |
+| **C1** | «what changed in …» against `git diff HEAD` | ✅ same hunk, same index hashes, same line |
+| **C2** | «open in the editor» | ⚠️ it opens — a read-only preview, not an editor. **Fault 80** |
+
+Three things were learned that no claim asks about, and all three are in
+`docs/guasti-incontrati.md`:
+
+- **Fault 77, which was blocking every one of them.** The window in service
+  carried no page and opened blank, because the release built the shell without
+  the feature that embeds it. Every shell that release had ever built was
+  empty. The release now declares the feature and, before replacing anything,
+  reads the binary it just built looking for the page.
+- **Fault 78.** The pane says «every key goes to the process as it is, Enter
+  included», and a Control combination does not. A shell left on a continuation
+  prompt cannot be interrupted from the window — only closed.
+- The «what to start» field takes a program and its arguments, which is claim
+  A5 and correct; a shell line typed into it fails with the operating system's
+  own «no such file or directory», in Italian, saying nothing about what it
+  expected. The Italian half is already listed above.
 
 # What the judges found and this run left as it is
 
