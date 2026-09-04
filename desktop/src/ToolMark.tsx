@@ -40,7 +40,7 @@ const MARKS: Record<string, ToolMarkShape> = {
       { d: "M12 3v7M12 14v7M4.2 7.5l6.1 3.5M13.7 13l6.1 3.5M4.2 16.5l6.1-3.5M13.7 11l6.1-3.5" },
     ],
   },
-  codex: {
+  "codex": {
     tint: "#10a37f",
     // Un anello spezzato con un nodo al centro: un ciclo che passa da un punto.
     paths: [
@@ -53,7 +53,7 @@ const MARKS: Record<string, ToolMarkShape> = {
     // Una stella a quattro punte, tutta d'un tratto.
     paths: [{ d: "M12 2c0 5.5 4.5 10 10 10-5.5 0-10 4.5-10 10 0-5.5-4.5-10-10-10 5.5 0 10-4.5 10-10z", fill: true }],
   },
-  ollama: {
+  "ollama": {
     tint: "#7c3aed",
     // Due archi come orecchie sopra un corpo tondo.
     paths: [
