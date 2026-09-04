@@ -74,6 +74,7 @@ export const STATE_COLOR: Record<StepState, string> = {
   broke: "var(--state-broke)",
   capped: "var(--state-capped)",
   handed_to_human: "var(--state-human)",
+  skipped: "var(--state-waiting)",
 };
 
 const STATE_LABEL = group("window.step.state.") as Record<StepState, string>;
