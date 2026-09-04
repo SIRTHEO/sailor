@@ -7,10 +7,6 @@
 
 use std::path::{Path, PathBuf};
 
-/// Where the machine keeps names that must not be committed: one per line,
-/// `#` for a comment. `SAILOR_PRIVATE_NAMES` overrides the location.
-const PRIVATE_NAMES: &str = "personal/.sailor-notes/private-names";
-
 /// The suffixes a reader can open and read words in.
 ///
 /// **`.html` WAS MISSING AND `design/` WENT UNREAD.** The directory was walked
@@ -176,29 +172,29 @@ fn main_worktree() -> Option<PathBuf> {
 /// so this is armed on the machine that could leak them and quiet elsewhere.
 #[test]
 fn the_names_this_machine_declares_private_appear_nowhere() {
-    let list = std::env::var("SAILOR_PRIVATE_NAMES")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            std::env::var("HOME")
-                .map(|home| PathBuf::from(home).join(PRIVATE_NAMES))
-                .unwrap_or_default()
-        });
+    // Where the list is and what counts as a name are read from
+    // `toolbox::privacy`, the same place the command that writes a fault reads
+    // them: two readers of one list drift, and the drift shows up as a gate
+    // that passes what the store already took.
+    let Some(list) = toolbox::privacy::where_the_names_are(
+        std::env::var("SAILOR_PRIVATE_NAMES").ok(),
+        std::env::var("HOME").ok(),
+    ) else {
+        println!("unarmed: nothing says where the private names are");
+        return;
+    };
     let Ok(text) = std::fs::read_to_string(&list) else {
         println!("unarmed: no private-names list at {}", list.display());
         return;
     };
-    let names: Vec<&str> = text
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty() && !line.starts_with('#'))
-        .collect();
+    let names = toolbox::privacy::names_in(&text);
     println!(
         "armed with {} private names from {}",
         names.len(),
         list.display()
     );
     for name in names {
-        let hits = occurrences_of(name);
+        let hits = occurrences_of(&name);
         // The name itself is never echoed: this message is read on a terminal
         // whose scrollback can be pasted anywhere.
         assert!(
