@@ -14,6 +14,9 @@ export interface Where {
   memoryTab?: string;
   /** The flow the board had open, or `null` for none. */
   focus?: string | null;
+  /** The bench: which terminal judges which handed step, kept for the same
+   * reason as the rest — the terminal survives the swap, the strip must too. */
+  bench?: { terminalId: string; runId: string; stepId: string; mandate: string } | null;
 }
 
 function store(): Storage | null {
