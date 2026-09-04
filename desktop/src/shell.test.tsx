@@ -384,3 +384,53 @@ describe("the machine's ground and the screens it holds", () => {
     }
   });
 });
+
+/**
+ * **THE WINDOW COMES BACK WHERE IT WAS.** A build of the engine replaces this
+ * window; the terminals survive it, being held elsewhere, and until now
+ * everything else did not — every build cost the walk back.
+ */
+describe("a window replaced by a build", () => {
+  afterEach(() => window.localStorage.clear());
+
+  test("OPENS WHERE IT WAS LEFT, place and all", () => {
+    const first = render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /Runs/ }));
+    expect(
+      first.container.querySelector(".body[hidden]"),
+      "the board is still in view, so this proves nothing",
+    ).not.toBeNull();
+    cleanup();
+
+    // A NEW WINDOW, not a re-render: this is what a swap leaves behind.
+    const again = render(<App />);
+    const crumbs = Array.from(again.container.querySelectorAll(".topbar__crumb")).map(
+      (one) => one.textContent,
+    );
+    expect(crumbs[0], "it opened on the board again").toBe("Runs");
+  });
+
+  test("AND ON THE FLOW THAT WAS OPEN, not on the first of the list", () => {
+    const first = render(<App />);
+    const rows = Array.from(first.container.querySelectorAll<HTMLElement>("button.rail__item"));
+    const other = rows.find((row) => row.getAttribute("data-open") === null) as HTMLElement;
+    expect(other, "the column offers no second flow").toBeDefined();
+    const name = other.querySelector(".rail__label")?.textContent ?? "";
+    fireEvent.click(other);
+    cleanup();
+
+    const again = render(<App />);
+    const open = again.container.querySelector("button.rail__item[data-open] .rail__label");
+    expect(open?.textContent).toBe(name);
+  });
+
+  test("A FLOW THAT IS NOT THERE ANY MORE IS NOT A PLACE", () => {
+    // Renamed, deleted, or belonging to a tree nobody stands in now: the board
+    // opens where everybody starts instead of on a name nothing answers to.
+    window.localStorage.setItem("sailor.where", JSON.stringify({ place: "board", focus: "un-fantasma" }));
+    const { container } = render(<App />);
+    const open = container.querySelectorAll("button.rail__item[data-open]");
+    expect(open, "the board opened on nothing, or on two things").toHaveLength(1);
+    expect(open[0].querySelector(".rail__label")?.textContent).not.toBe("un-fantasma");
+  });
+});
