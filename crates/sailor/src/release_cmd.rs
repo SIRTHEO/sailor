@@ -569,10 +569,18 @@ fn build_the_page(root: &Path, repository: &Path, page_rel: &str) -> Result<(), 
         &fs::read_to_string(tree_page.join(lock)).unwrap_or_default(),
         tree_page.join("node_modules").is_dir(),
     );
-    let borrowed = matches!(modules, release::Modules::Borrow)
-        && match std::os::unix::fs::symlink(
-            tree_page.join("node_modules"),
-            cloned_page.join("node_modules"),
+    let borrowed = matches!(modules, release::Modules::Borrow) && {
+        // **COPIED WITH `-c`, NOT LINKED.** A symlink leaves the modules outside
+        // the clone, and the page's own builder refuses to read a file from
+        // outside the tree it was pointed at — measured, and the page did not
+        // build. `-c` clones the blocks instead of the bytes: three seconds for
+        // 300 MB, and what the clone writes never reaches this tree.
+        match command_success(
+            Command::new("cp")
+                .arg("-Rc")
+                .arg(tree_page.join("node_modules"))
+                .arg(cloned_page.join("node_modules")),
+            &catalogue::say("cli.release.cannot_borrow_the_modules", &[("error", "cp -Rc")]),
         ) {
             Ok(()) => {
                 println!("{}", catalogue::say("cli.release.borrowing_the_modules", &[]));
@@ -581,16 +589,11 @@ fn build_the_page(root: &Path, repository: &Path, page_rel: &str) -> Result<(), 
             Err(error) => {
                 // Not a failure: installing is always available, and one that
                 // said nothing would look like a release that borrowed.
-                eprintln!(
-                    "{}",
-                    catalogue::say(
-                        "cli.release.cannot_borrow_the_modules",
-                        &[("error", &error.to_string())]
-                    )
-                );
+                eprintln!("{error}");
                 false
             }
-        };
+        }
+    };
     if !borrowed {
         println!("{}", catalogue::say("cli.release.installing_the_modules", &[]));
         command_success(
