@@ -324,6 +324,7 @@
   "cli.session.uninstall.nothing_read": "no settings file was read at all. That is a statement, not a silence: read the lines above for which command line refused and why",
   "cli.session.uninstall.taken_out": "taken out of {file}: {events}",
   "cli.session.uninstall.word_not_ours": "/{word} stays: {file} is not the file Sailor writes",
+  "cli.session.rules": "The rules of this tree are written in {files}: read them before changing anything here.",
   "cli.session.uninstall.word_unreadable": "/{word} stays: {file} ({error})",
   "cli.session.uninstall.words_taken": "{words} taken out of {directory}",
   "cli.session.welcome": "You are connected to Sailor.\nterminal {tty} · tree {worktree}\nThis terminal is tracked: Sailor knows you exist, which tree you work in, and when you will need to hand on.\nTo detach it: /sailor-off",
