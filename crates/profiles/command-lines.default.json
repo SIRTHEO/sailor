@@ -14,6 +14,12 @@
     "step naming a binary is matched on this and never on `id`, so a wrapper",
     "does not get handed somebody else's credentials.",
     "",
+    "`already_at` is where that engine keeps its home when nothing moves it,",
+    "below $HOME. It is what `profiles adopt` takes as a profile: the",
+    "credentials already on the machine, read where they are and never copied —",
+    "a rotating refresh token held in two homes breaks both. Absent means",
+    "nobody established it, and `adopt` then asks for the directory by name.",
+    "",
     "`native` says whether the engine keeps profiles of its own: `supported`,",
     "`not supported`, or `unverified`. A word this list does not know is read as",
     "`unverified`, never as a no: a measurement invented from a misspelling is",
@@ -35,7 +41,7 @@
       "executable": "claude",
       "native": "not supported",
       "native_note": "checked on 2.1.247: `auth` offers only login, logout and status, and `--help` names no profile or multi-account subcommand.",
-      "home": { "variable": "CLAUDE_CONFIG_DIR" },
+      "home": { "variable": "CLAUDE_CONFIG_DIR", "already_at": ".claude" },
       "home_note": "checked against the installed binary: the variable moves the whole directory, credentials and settings included.",
       "endpoint": {
         "url_var": "ANTHROPIC_BASE_URL",
@@ -49,7 +55,7 @@
       "executable": "codex",
       "native": "supported",
       "native_note": "`-p/--profile` layers `<home>/<name>.config.toml` over the base configuration: config profiles, not separate credentials.",
-      "home": { "variable": "CODEX_HOME" },
+      "home": { "variable": "CODEX_HOME", "already_at": ".codex" },
       "home_note": "checked with `doctor`: it shows auth.json and config.toml inside the directory the variable names.",
       "endpoint": {
         "url_var": "OPENAI_BASE_URL",
@@ -63,7 +69,7 @@
       "executable": "gemini",
       "native": "not supported",
       "native_note": "no `--profile` in `--help`: only sessions (`--resume`, `--session-id`), not separate identities.",
-      "home": { "variable": "GEMINI_CLI_HOME" },
+      "home": { "variable": "GEMINI_CLI_HOME", "already_at": ".gemini" },
       "home_note": "checked against the installed source: the base directory is that variable, or `.gemini` under $HOME."
     },
     {

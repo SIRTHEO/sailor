@@ -46,6 +46,8 @@ pub struct KnownCli {
     pub native_profiles_note: String,
     pub home: HomeMechanism,
     pub home_note: String,
+    /// Below `$HOME`, where it keeps its home when nothing moves it.
+    pub home_already_here: Option<String>,
     /// How this command line is pointed at another endpoint that speaks its
     /// own protocol, unmodified and with nothing in between; `None` when no
     /// such variable is known.
@@ -168,10 +170,18 @@ struct DeclaredHome {
     variable: String,
     #[serde(default)]
     credential_symlink: String,
+    #[serde(default)]
+    already_at: String,
 }
 
 impl From<DeclaredCli> for KnownCli {
     fn from(declared: DeclaredCli) -> KnownCli {
+        let already_at = declared
+            .home
+            .as_ref()
+            .map(|home| home.already_at.trim())
+            .filter(|at| !at.is_empty())
+            .map(str::to_owned);
         let display_name = if declared.display_name.is_empty() {
             declared.id.clone()
         } else {
@@ -198,6 +208,7 @@ impl From<DeclaredCli> for KnownCli {
                 _ => HomeMechanism::Unknown,
             },
             home_note: declared.home_note,
+            home_already_here: already_at,
             endpoint: declared.endpoint,
         }
     }
@@ -301,6 +312,15 @@ pub fn validate_profile_name(name: &str) -> Result<(), ProfileNameError> {
         return Err(ProfileNameError::Traversal);
     }
     Ok(())
+}
+
+/// The home this command line already keeps here, when no variable moves it.
+/// **READ WHERE THEY ARE, NEVER COPIED**: one rotating refresh token in two
+/// homes invalidates both. `None` where nobody established where it is.
+pub fn existing_home(cli: &KnownCli, home: &Path) -> Option<PathBuf> {
+    cli.home_already_here
+        .as_deref()
+        .map(|below| home.join(below))
 }
 
 /// Where a profile's home sits inside the profiles root. Validates both
@@ -474,6 +494,7 @@ mod tests {
                 relative_path: "credentials.json".to_owned(),
             },
             home_note: "a fixture".to_owned(),
+            home_already_here: None,
             endpoint: None,
         };
         let env = build_environment(&cli, Path::new("/home/profiles/acme/work"));
