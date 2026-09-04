@@ -138,3 +138,48 @@ describe("how long a step took", () => {
     expect(states.get("read")?.state).toBe("waiting");
   });
 })
+
+/**
+ * **WHAT A STEP IS SAYING WHILE IT RUNS.** The engine has sent its output piece
+ * by piece since the first run, and nothing read it: on the canvas a step that
+ * had just printed thirty lines and one stuck for eight minutes were the same
+ * node with the same breathing dot.
+ */
+describe("a step that is speaking", () => {
+  function at(seq: number, kind: string, stepId: string, when: number, payload: unknown = {}): RunEvent {
+    return { run_id: "r", seq, kind: kind as RunEvent["kind"], at: when, step_id: stepId, payload };
+  }
+
+  test("THE INSTANT OF ITS LAST PIECE OF OUTPUT IS KEPT, and it is the last one", () => {
+    const states = stepStatesOfRun([
+      at(1, "step_started", "read", 1000, { attempt: 1 }),
+      at(2, "step_text", "read", 1004, { pipe: "stdout", text: "› reading\n" }),
+      at(3, "step_text", "read", 1009, { pipe: "stdout", text: "› done\n" }),
+    ]);
+    expect(states.get("read")?.spoke_at).toBe(1009);
+    // And it is still running: speaking is something a running step does.
+    expect(states.get("read")?.state).toBe("running");
+  });
+
+  test("A STEP THAT HAS SAID NOTHING HAS NO INSTANT, which is not «long ago»", () => {
+    const states = stepStatesOfRun([at(1, "step_started", "read", 1000, { attempt: 1 })]);
+    expect(states.get("read")?.spoke_at).toBeUndefined();
+  });
+
+  test("OUTPUT BEFORE THE START IS NOT AN ANSWER: there is no step to speak yet", () => {
+    // Only what a started step says counts: a piece arriving for a step nobody
+    // opened would invent a running step out of an ordering accident.
+    const states = stepStatesOfRun([at(1, "step_text", "read", 1000, { text: "x" })]);
+    expect(states.get("read")).toBeUndefined();
+  });
+
+  test("WHAT IT SAID DOES NOT SURVIVE THE CLOSE: a closed step is not speaking", () => {
+    const states = stepStatesOfRun([
+      at(1, "step_started", "read", 1000, { attempt: 1 }),
+      at(2, "step_text", "read", 1004, { text: "x" }),
+      at(3, "step_closed", "read", 1006, { outcome: "Went" }),
+    ]);
+    expect(states.get("read")?.state).toBe("went");
+    expect(states.get("read")?.spoke_at).toBeUndefined();
+  });
+});

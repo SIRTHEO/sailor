@@ -6,19 +6,12 @@ import { totalsArePartial, type RunUsage } from "./flow";
 /**
  * A run as it goes: what is running, what finished, what it said.
  *
- * **STEP STATE STREAMS. THE TEXT A STEP PRODUCES DOES NOT.** The shell
- * announces each step opening and closing the instant the store makes it
- * durable, so a second step is seen starting while the run is half done. But
- * `drain_and_wait` in `crates/actions/src/lib.rs` reads stdout with
- * `read_to_end` on a thread of its own, and that buffer only becomes readable
- * at the `join` — an agent that talks for half an hour delivers all of it at
- * once, at the end.
- *
- * So an output line carries **the instant the step closed**, which is when it
- * really arrived, and every box says so while the step is still running.
- * Spreading them over an invented time to look alive is the exact lie this
- * guards against. For real streaming, `read_to_end` becomes `BufReader::lines()`
- * pushing into a channel: that is the only place, everything above it is ready.
+ * **THE TEXT ARRIVES WHILE THE STEP IS STILL RUNNING.** `drain` in
+ * `crates/actions/src/lib.rs` reads each pipe in a loop and hands every piece
+ * to its sink, which the shell publishes as `step_text`: a line carries the
+ * instant it really arrived. What the closing event brings is the whole buffer
+ * again, plus what only it can carry — the answer of a step that declares a
+ * shape, which never travelled as `stdout` at all.
  *
  * The front starts together — the cap is `AT_ONCE` in
  * `crates/flow/src/executor.rs`, four steps per wave.

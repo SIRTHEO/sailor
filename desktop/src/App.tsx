@@ -22,6 +22,7 @@ import {
   FlowBandNode,
   StepNode,
   STATE_COLOR,
+  NowContext,
   StepRunContext,
   StepUsageContext,
   WireContext,
@@ -1393,6 +1394,7 @@ export default function App() {
 
       <RunContext.Provider value={controls}>
       <StepRunContext.Provider value={stepStates}>
+      <NowContext.Provider value={now}>
       <WireContext.Provider value={openWireMenu}>
       <StepUsageContext.Provider value={stepUsage}>
       {place === "memory" && (
@@ -1669,6 +1671,7 @@ export default function App() {
       )}
       </StepUsageContext.Provider>
       </WireContext.Provider>
+      </NowContext.Provider>
       </StepRunContext.Provider>
       </RunContext.Provider>
       </div>
