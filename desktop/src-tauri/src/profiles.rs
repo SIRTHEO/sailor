@@ -40,7 +40,7 @@ pub(crate) struct Row {
     said: String,
 }
 
-fn native(state: ::profiles::NativeProfiles) -> &'static str {
+fn native(state: &::profiles::NativeProfiles) -> &'static str {
     match state {
         ::profiles::NativeProfiles::Supported => "supported",
         ::profiles::NativeProfiles::NotSupported => "not supported",
@@ -63,10 +63,10 @@ pub(crate) fn profile_command_lines() -> Vec<CommandLine> {
     ::profiles::known_clis()
         .iter()
         .map(|cli| {
-            let (home_mechanism, home_detail) = match cli.home {
-                ::profiles::HomeMechanism::EnvVar(name) => ("variable", name.to_owned()),
+            let (home_mechanism, home_detail) = match &cli.home {
+                ::profiles::HomeMechanism::EnvVar(name) => ("variable", name.clone()),
                 ::profiles::HomeMechanism::CredentialSymlink { relative_path } => {
-                    ("symlink", relative_path.to_owned())
+                    ("symlink", relative_path.clone())
                 }
                 ::profiles::HomeMechanism::Unknown => ("none", String::new()),
             };
@@ -74,7 +74,7 @@ pub(crate) fn profile_command_lines() -> Vec<CommandLine> {
                 id: cli.id.to_owned(),
                 display_name: cli.display_name.to_owned(),
                 executable: cli.executable.to_owned(),
-                native_profiles: native(cli.native_profiles),
+                native_profiles: native(&cli.native_profiles),
                 native_profiles_note: cli.native_profiles_note.to_owned(),
                 home_mechanism,
                 home_detail,

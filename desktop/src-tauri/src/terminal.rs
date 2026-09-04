@@ -295,7 +295,7 @@ fn what_crosses(
         profiles::known_clis()
             .iter()
             .find(|cli| cli.executable == name)
-            .and_then(|cli| profiles.active.get(cli.id).cloned())
+            .and_then(|cli| profiles.active.get(&cli.id).cloned())
     });
     let active = profiles::active_environment_with(profiles, &|name| std::env::var(name).ok());
     Crossing {
