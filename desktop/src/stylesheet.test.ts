@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import stylesheetSource from "./styles.css?raw";
-import { parseColor, parseStylesheet, resolveVars } from "./contrast";
+import { isRoleGround, parseColor, parseStylesheet, resolveVars } from "./contrast";
 
 /**
  * **THE PROHIBITIONS AT THE TOP OF `styles.css`, INTERROGATED.** A prohibition
@@ -11,8 +11,8 @@ import { parseColor, parseStylesheet, resolveVars } from "./contrast";
 
 const sheet = parseStylesheet(stylesheetSource);
 
-/** The sheet's rules minus `:root`, which is where the roles are defined. */
-const outsideRoot = sheet.rules.filter((rule) => rule.selector !== ":root");
+/** The sheet's rules minus the grounds where the roles are defined. */
+const outsideRoot = sheet.rules.filter((rule) => !isRoleGround(rule.selector));
 
 function declarationsOf(property: string): Array<{ selector: string; value: string }> {
   const found: Array<{ selector: string; value: string }> = [];
@@ -126,6 +126,18 @@ describe("il foglio si legge tutto", () => {
     expect(lightColours.filter((name) => !darkNames.includes(name))).toEqual([]);
     expect(darkNames.filter((name) => !lightColours.includes(name) && !/^--(shadow|scrim)$/.test(name))).toEqual([]);
     expect(dark.filter(([name, value]) => parseColor(value) === null && !/^--(shadow|scrim)$/.test(name))).toEqual([]);
+  });
+
+  test("THE DAY A PERSON PINS IS THE DAY THE MACHINE WOULD HAVE GIVEN", () => {
+    // CSS cannot say «that block, under this selector too», so the day palette
+    // is written twice: once for `prefers-color-scheme: light`, once for
+    // `[data-theme="light"]`. Two hands drifting apart would give a person who
+    // chose day a different day from everyone else's, and every measurement in
+    // `contrast.test.tsx` is made against one of the two.
+    const pinned = sheet.rules.find((rule) => rule.selector === ':root[data-theme="light"]');
+    expect(pinned, "nobody can pin the day any more").toBeDefined();
+    expect(sheet.otherRoot, "the machine's own day is gone").not.toBeNull();
+    expect(pinned?.declarations).toEqual(sheet.otherRoot);
   });
 
   test("il divieto 7 è scritto nel foglio, non solo nel commento", () => {
