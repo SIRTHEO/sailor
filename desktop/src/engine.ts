@@ -191,7 +191,7 @@ export async function flowPlaces(): Promise<FlowPlace[]> {
 
 /** What the supervisor of the live window says about the build it is showing. */
 export interface LiveStatus {
-  state: "building" | "running" | "build_failed";
+  state: "building" | "running" | "build_failed" | "ready";
   /** Empty when all is well; the compiler's output when it is not. */
   message: string;
   changed_at: number;
@@ -203,6 +203,13 @@ export async function liveStatus(): Promise<LiveStatus | null> {
   const invoke = invoker();
   if (!invoke) throw new Error("outside the native shell: no supervisor");
   return invoke<LiveStatus | null>("live_status");
+}
+
+/** Asks for the build that is waiting. **This window ends when it is granted.** */
+export async function takeNewBuild(): Promise<void> {
+  const invoke = invoker();
+  if (!invoke) throw new Error("outside the native shell: no supervisor");
+  return invoke<void>("take_new_build");
 }
 
 /** A step of a run that waits for a person, with what it asks. */
