@@ -83,8 +83,74 @@ struct SurveySpec {
     at: Option<i64>,
 }
 
-fn claim_key(agent: &str, pid: u32) -> String {
-    format!("{agent}#{pid}")
+/// Which announcement is which: an agent, and **which instance of it** — a pid
+/// where a step announces itself, a terminal where a hook does. The second is
+/// not the pid of whoever writes: a hook is a new process at every event, and
+/// keying on it would leave one abandoned claim per keystroke.
+pub fn claim_key(agent: &str, holder: &str) -> String {
+    format!("{agent}#{holder}")
+}
+
+/// What one holder announces.
+///
+/// **ONE COPY OF THE SHAPE.** The flow node and the terminal hook write the
+/// same record; a second copy would drift the day one of them learns a field.
+pub struct Claim {
+    pub agent: String,
+    pub holder: String,
+    pub repository: String,
+    pub workdir: Option<String>,
+    pub branch: Option<String>,
+    pub paths: Vec<String>,
+    pub doing: Option<String>,
+    pub pid: u32,
+    pub at: i64,
+    pub lease_seconds: i64,
+    /// The conversation this holder is in, where it has one.
+    pub conversation: Option<String>,
+    /// What it is doing, in the words A2A uses: `working`, `input_required`,
+    /// `completed`, `failed`.
+    pub state: String,
+}
+
+/// The announcement as a record. **The shared words travel in it**, under the
+/// names OpenTelemetry and A2A already use, so an export costs nobody a
+/// translation later.
+pub fn claim_record(claim: &Claim) -> StoreRecord {
+    StoreRecord {
+        collection: CLAIMS_COLLECTION.to_owned(),
+        key: claim_key(&claim.agent, &claim.holder),
+        value: json!({
+            "agent": claim.agent,
+            "repository": claim.repository,
+            "workdir": claim.workdir,
+            "branch": claim.branch,
+            "paths": claim.paths,
+            "doing": claim.doing,
+            "pid": claim.pid,
+            "renewed_at": claim.at,
+            "expires_at": claim.at + claim.lease_seconds,
+            "released_at": Value::Null,
+            "gen_ai.agent.name": claim.agent,
+            "gen_ai.agent.id": claim_key(&claim.agent, &claim.holder),
+            "gen_ai.conversation.id": claim.conversation,
+            "state": claim.state,
+        }),
+        written_by: claim.agent.clone(),
+        written_at: claim.at,
+    }
+}
+
+/// Marks one announcement released, and says whether there was one to release.
+pub fn release_claim(ledger: &Ledger, key: &str, at: i64) -> Result<bool, ledger::LedgerError> {
+    let Some(mut record) = ledger.read_record(CLAIMS_COLLECTION, key)? else {
+        return Ok(false);
+    };
+    record.value["released_at"] = json!(at);
+    record.value["state"] = json!("completed");
+    record.written_at = at;
+    ledger.put_record(&record)?;
+    Ok(true)
 }
 
 /// Quanto due annunci si sovrappongono, dal più stretto al più largo.
@@ -213,25 +279,22 @@ impl Action for WorkClaimAction {
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         let pid = spec.pid.unwrap_or_else(std::process::id);
         let at = spec.at.unwrap_or_else(now);
-        let expires_at = at + spec.lease_seconds.unwrap_or(DEFAULT_LEASE_SECONDS);
-        let record = StoreRecord {
-            collection: CLAIMS_COLLECTION.to_owned(),
-            key: claim_key(&spec.agent, pid),
-            value: json!({
-                "agent": spec.agent,
-                "repository": spec.repository,
-                "workdir": spec.workdir,
-                "branch": spec.branch,
-                "paths": spec.paths,
-                "doing": spec.doing,
-                "pid": pid,
-                "renewed_at": at,
-                "expires_at": expires_at,
-                "released_at": Value::Null,
-            }),
-            written_by: spec.agent.clone(),
-            written_at: at,
-        };
+        let lease = spec.lease_seconds.unwrap_or(DEFAULT_LEASE_SECONDS);
+        let expires_at = at + lease;
+        let record = claim_record(&Claim {
+            agent: spec.agent.clone(),
+            holder: pid.to_string(),
+            repository: spec.repository.clone(),
+            workdir: spec.workdir.clone(),
+            branch: spec.branch.clone(),
+            paths: spec.paths.clone(),
+            doing: spec.doing.clone(),
+            pid,
+            at,
+            lease_seconds: lease,
+            conversation: None,
+            state: "working".to_owned(),
+        });
         // **PRIMA SI SCRIVE, POI SI GUARDA.** L'ordine non è indifferente: due
         // agenti che partono nello stesso istante devono vedersi *almeno da un
         // lato*. Guardando prima di scrivere, entrambi leggerebbero un deposito
@@ -332,19 +395,12 @@ impl Action for WorkReleaseAction {
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         let pid = spec.pid.unwrap_or_else(std::process::id);
         let at = spec.at.unwrap_or_else(now);
-        let key = claim_key(&spec.agent, pid);
-        let found = self
-            .ledger
-            .read_record(CLAIMS_COLLECTION, &key)
-            .map_err(|error| ActionError::new("store_unreadable", error.to_string()))?;
-        let Some(mut record) = found else {
-            return Ok(ActionOutcome::Went(json!({ "released": false })));
-        };
-        record.value["released_at"] = json!(at);
-        record.written_at = at;
-        self.ledger
-            .put_record(&record)
+        let key = claim_key(&spec.agent, &pid.to_string());
+        let released = release_claim(&self.ledger, &key, at)
             .map_err(|error| ActionError::new("store_refused", error.to_string()))?;
+        if !released {
+            return Ok(ActionOutcome::Went(json!({ "released": false })));
+        }
         Ok(ActionOutcome::Went(json!({ "released": true, "key": key })))
     }
 
@@ -515,6 +571,65 @@ mod tests {
             later["collisions"].as_array().expect("le collisioni").len(),
             0,
             "un annuncio scaduto non trattiene nessuno"
+        );
+    }
+
+    /// **TWO COMMAND LINES IN ONE TREE SEE EACH OTHER**, which is the half of
+    /// the promise the flow node does not cover: a terminal's announcement is
+    /// written by the hook and held by the terminal, not by the process, and
+    /// the survey has to read it just the same.
+    #[test]
+    fn two_command_lines_in_one_tree_appear_in_the_same_survey() {
+        let (ledger, _guard) = store();
+        let terminal = |agent: &str, tty: &str| Claim {
+            agent: agent.to_owned(),
+            holder: tty.to_owned(),
+            repository: "/casa/progetto/.git".to_owned(),
+            workdir: Some("/casa/progetto".to_owned()),
+            branch: Some("sorgenti".to_owned()),
+            paths: Vec::new(),
+            doing: None,
+            pid: 101,
+            at: NOON,
+            lease_seconds: 900,
+            conversation: Some(format!("conversazione-di-{agent}")),
+            state: "working".to_owned(),
+        };
+        // THE THIRD IS THE SAME COMMAND LINE IN ANOTHER TERMINAL, which is the
+        // ordinary case on this machine and the one a key that forgets the
+        // holder collapses: two sessions would become one row, and the survey
+        // would say one agent where two are typing.
+        for (agent, tty) in [
+            ("unmotore (questa-macchina)", "ttys004"),
+            ("un-altro (prove)", "ttys009"),
+            ("unmotore (questa-macchina)", "ttys010"),
+        ] {
+            ledger
+                .put_record(&claim_record(&terminal(agent, tty)))
+                .expect("l'annuncio si scrive");
+        }
+
+        let survey = WorkSurveyAction::new(Some(ledger));
+        let answer = went(
+            survey
+                .execute(&json!({"at": NOON + 60}), &mut SharedState::new())
+                .expect("il censimento"),
+        );
+
+        let working = answer["working"].as_array().expect("chi lavora");
+        let names: Vec<&str> = working
+            .iter()
+            .filter_map(|entry| entry["agent"].as_str())
+            .collect();
+        assert_eq!(names.len(), 3, "{answer}");
+        assert!(names.contains(&"unmotore (questa-macchina)"), "{answer}");
+        assert!(names.contains(&"un-altro (prove)"), "{answer}");
+        // AND EACH CARRIES ITS OWN CONVERSATION: without it the two rows say
+        // that two agents are here and give no way to reach either.
+        assert_ne!(
+            working[0]["gen_ai.conversation.id"],
+            working[1]["gen_ai.conversation.id"],
+            "{answer}"
         );
     }
 
