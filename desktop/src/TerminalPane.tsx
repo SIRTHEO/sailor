@@ -20,7 +20,9 @@ import "@xterm/xterm/css/xterm.css";
 import {
   keyStroke,
   livenessWord,
+  paneGesture,
   terminalBacklog,
+  windowHold,
   type KeyMode,
   type Liveness,
   type OutputBus,
@@ -139,6 +141,25 @@ export function TerminalPane({
             break;
         }
       }
+    });
+
+    // The two gestures the window keeps: what the emulator holds as a
+    // selection is not a document selection, so nothing else can copy it, and
+    // a paste is handed back to the emulator to arrive as one bracketed piece.
+    term.attachCustomKeyEventHandler((event) => {
+      if (event.type !== "keydown") return true;
+      const gesture = paneGesture(event, windowHold(navigator.platform ?? ""));
+      if (gesture === "copy") {
+        const taken = term.getSelection();
+        if (taken === "") return true;
+        void navigator.clipboard?.writeText(taken);
+        return false;
+      }
+      if (gesture === "paste") {
+        void navigator.clipboard?.readText().then((text) => term.paste(text));
+        return false;
+      }
+      return true;
     });
 
     // The frame changes when the window does, not when React decides.

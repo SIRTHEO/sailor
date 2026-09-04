@@ -421,6 +421,48 @@ export type Liveness =
   | { state: "closed"; status: string | null }
   | { state: "unknown"; why: string };
 
+/** What a key press does before the process ever sees it. */
+export type PaneGesture = "copy" | "paste" | "to_process";
+
+/** Which modifier the window keeps for itself, on this machine. */
+export type WindowHold = "meta" | "ctrl_shift";
+
+/** Only the fields of a key event this decision reads. */
+export interface KeyPress {
+  key: string;
+  metaKey?: boolean;
+  ctrlKey?: boolean;
+  shiftKey?: boolean;
+  altKey?: boolean;
+}
+
+/**
+ * The modifier a terminal window keeps on this machine. Apple keyboards have a
+ * key the shell never sees; elsewhere there is none, and every terminal ever
+ * written has settled on Ctrl-Shift for the same reason.
+ */
+export function windowHold(platform: string): WindowHold {
+  return /mac|iphone|ipad/i.test(platform) ? "meta" : "ctrl_shift";
+}
+
+/**
+ * **CTRL-C IS THE INTERRUPT AND NOTHING TAKES IT.** The shortest way to give
+ * copy a key steals the one that stops a runaway process, after which closing
+ * the pane is the only way out of one. Copy is asked for with the modifier the
+ * process never receives, and a bare Ctrl-C goes through under either hold.
+ */
+export function paneGesture(press: KeyPress, hold: WindowHold): PaneGesture {
+  const letter = press.key.length === 1 ? press.key.toLowerCase() : press.key;
+  const asked =
+    hold === "meta"
+      ? press.metaKey === true && press.ctrlKey !== true && press.altKey !== true
+      : press.ctrlKey === true && press.shiftKey === true && press.altKey !== true;
+  if (!asked) return "to_process";
+  if (letter === "c") return "copy";
+  if (letter === "v") return "paste";
+  return "to_process";
+}
+
 /**
  * The state to show, from the only two facts the window has. The order
  * matters: **an event wins over the list**, because `terminal_closed` arrived
