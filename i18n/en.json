@@ -217,7 +217,7 @@
   "cli.profiles.usage_switch": "usage: sailor profiles switch <cli> <name>",
   "cli.clock_before_epoch": "the machine's clock is before 1970: {error}",
   "cli.release.also_outside_target": "also outside target/: {path}",
-  "cli.release.borrowing_the_modules": "the page's modules are exactly this tree's: borrowing them instead of installing a quarter of a gigabyte again",
+  "cli.release.borrowing_the_modules": "the page's modules are exactly this tree's: cloned from here instead of installing a quarter of a gigabyte again",
   "cli.release.building": "== building from that tree ==",
   "cli.release.building_the_page": "== building the page in that tree ==",
   "cli.release.built_nothing": "the build succeeded and produced no {path}",
