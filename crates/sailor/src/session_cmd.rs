@@ -792,7 +792,7 @@ fn grafted_into(
     if named.is_empty() {
         return Ok(nothing_to_graft(tool));
     }
-    installed(settings, &named)
+    installed(settings, &named, &tool.id)
 }
 
 /// The moments this line can report, paired with the verb we run at each.
@@ -801,6 +801,14 @@ fn events_this_line_can_report(tool: &toolbox::descriptor::Descriptor) -> Vec<(&
         .iter()
         .filter_map(|(moment, verb)| tool.event_for(moment).map(|event| (event, *verb)))
         .collect()
+}
+
+/// The line a graft writes, in **one copy for both formats**, naming the
+/// command line it went into: a hook that does not say who it was grafted for
+/// reaches us with a session and a directory and nothing else, and the terminal
+/// is then tracked as somebody and announced to the others as nobody.
+fn hook_command(binary: &str, verb: &str, cli: &str) -> String {
+    format!("{binary} session {verb} --cli {cli}")
 }
 
 fn nothing_to_graft(tool: &toolbox::descriptor::Descriptor) -> String {
@@ -828,7 +836,7 @@ fn grafted_into_toml(
         .to_string();
     let commands: Vec<(&str, String)> = named
         .iter()
-        .map(|(event, verb)| (*event, format!("{binary} session {verb}")))
+        .map(|(event, verb)| (*event, hook_command(&binary, verb, &tool.id)))
         .collect();
 
     // **A FILE THAT IS THERE AND WILL NOT BE READ STOPS THE GRAFT.** Treating
@@ -896,7 +904,11 @@ fn just_grafted(settings: &std::path::Path, events: &str) -> String {
 /// The binary's path is the one running right now (`current_exe`): a graft
 /// writing plain `sailor` would work only where that name is already on the
 /// `PATH` of whoever opens the terminal, which is not something knowable here.
-fn installed(settings: &std::path::Path, events: &[(&str, &str)]) -> Result<String, String> {
+fn installed(
+    settings: &std::path::Path,
+    events: &[(&str, &str)],
+    cli: &str,
+) -> Result<String, String> {
     let mut root: serde_json::Value = match std::fs::read_to_string(settings) {
         Ok(text) if text.trim().is_empty() => serde_json::json!({}),
         // **A FILE WE CANNOT READ IS NOT REWRITTEN.** Replacing it with our own
@@ -937,7 +949,7 @@ fn installed(settings: &std::path::Path, events: &[(&str, &str)]) -> Result<Stri
 
     let mut added = Vec::new();
     for (event, verb) in events {
-        let command = format!("{binary} session {verb}");
+        let command = hook_command(&binary, verb, cli);
         let list = hooks
             .entry(*event)
             .or_insert_with(|| serde_json::json!([]))
@@ -949,14 +961,29 @@ fn installed(settings: &std::path::Path, events: &[(&str, &str)]) -> Result<Stri
                 )
             })?;
 
-        // Already grafted: told by the command, not by the position.
-        let already = list.iter().any(|entry| {
-            serde_json::to_string(entry)
-                .map(|written| ours(&written))
+        // Ours, told by the command and not by the position — **and one of
+        // ours that no longer says what we would write is rewritten**, or the
+        // terminals grafted before this line stay announced as nobody.
+        let ours_here: Vec<usize> = list
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| {
+                serde_json::to_string(entry)
+                    .map(|written| ours(&written))
+                    .unwrap_or(false)
+            })
+            .map(|(at, _)| at)
+            .collect();
+        let up_to_date = ours_here.iter().any(|at| {
+            serde_json::to_string(&list[*at])
+                .map(|written| written.contains(&command))
                 .unwrap_or(false)
         });
-        if already {
+        if up_to_date {
             continue;
+        }
+        for at in ours_here.iter().rev() {
+            list.remove(*at);
         }
         list.push(serde_json::json!({
             "hooks": [{"type": "command", "command": command}]
@@ -1127,12 +1154,10 @@ fn repository_holding(path: &str) -> Option<String> {
     (!found.is_empty()).then_some(found)
 }
 
-/// What the ledger holds open that nothing is going to pick up on its own.
-///
-/// **TWO LISTS AND NOT ONE.** A run `waiting` was handed to a person and stays
-/// there until one takes it; a run that stopped on a step saying «not yet»
-/// needs no person at all, only somebody to run it again. Merging them would
-/// send a reader to take a step nobody handed them.
+/// What the ledger holds open that nothing picks up on its own, in **two lists
+/// and not one**: a run `waiting` was handed to a person, one stopped on «not
+/// yet» wants only running again, and merging them would send a reader to take
+/// a step nobody handed them.
 struct StillOpen {
     waiting: Vec<ledger::WaitingRun>,
     ask_again: Vec<ledger::WaitingRun>,
@@ -1702,7 +1727,7 @@ mod tests {
         let settings = scratch.directory.join("settings.json");
         std::fs::write(&settings, settings_of_someone_else()).expect("scrivere");
 
-        installed(&settings, &as_one_line_names_them()).expect("l'innesto riesce");
+        installed(&settings, &as_one_line_names_them(), "unmotore").expect("l'innesto riesce");
 
         let after: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&settings).expect("rileggere"))
@@ -1735,12 +1760,50 @@ mod tests {
         let settings = scratch.directory.join("settings.json");
         std::fs::write(&settings, settings_of_someone_else()).expect("scrivere");
 
-        installed(&settings, &as_one_line_names_them()).expect("primo innesto");
+        installed(&settings, &as_one_line_names_them(), "unmotore").expect("primo innesto");
         let once = std::fs::read_to_string(&settings).expect("rileggere");
-        installed(&settings, &as_one_line_names_them()).expect("secondo innesto");
+        installed(&settings, &as_one_line_names_them(), "unmotore").expect("secondo innesto");
         let twice = std::fs::read_to_string(&settings).expect("rileggere");
 
         assert_eq!(once, twice, "il secondo innesto non deve cambiare niente");
+    }
+
+    /// **A GRAFT THAT IS OURS AND OUT OF DATE IS REWRITTEN, NOT SKIPPED**, or
+    /// the fix reaches only whoever thought to uninstall by hand. One goes in
+    /// and one comes out: running the graft twice is still not a way of two.
+    #[test]
+    fn a_graft_of_ours_that_is_out_of_date_is_replaced() {
+        let scratch = Scratch::new("innesto-vecchio");
+        let settings = scratch.directory.join("settings.json");
+        let binary = std::env::current_exe().expect("dove sono").display().to_string();
+        let (event, verb) = as_one_line_names_them()[0];
+        std::fs::write(
+            &settings,
+            serde_json::to_string_pretty(&serde_json::json!({
+                "hooks": {
+                    event: [{"hooks": [{
+                        "type": "command",
+                        "command": format!("{binary} session {verb}"),
+                    }]}]
+                }
+            }))
+            .expect("scrivere"),
+        )
+        .expect("scrivere");
+
+        installed(&settings, &as_one_line_names_them(), "unmotore").expect("l'innesto riesce");
+        let written = std::fs::read_to_string(&settings).expect("rileggere");
+        let root: serde_json::Value = serde_json::from_str(&written).expect("è JSON");
+        let list = root["hooks"][event].as_array().expect("l'elenco dell'evento");
+
+        assert_eq!(list.len(), 1, "l'innesto vecchio è rimasto accanto al nuovo: {written}");
+        // THE ONE ENTRY OF THIS EVENT: a search over the whole file would find
+        // the other moments' fresh lines and call the stale one repaired.
+        let only = serde_json::to_string(&list[0]).expect("una riga sola");
+        assert!(
+            only.contains("--cli unmotore"),
+            "l'innesto vecchio è stato saltato invece che rifatto: {only}"
+        );
     }
 
     /// **A FILE WE CANNOT READ IS NOT REWRITTEN.** Overwriting it with our own
@@ -1751,7 +1814,7 @@ mod tests {
         let settings = scratch.directory.join("settings.json");
         std::fs::write(&settings, "{ questo non è JSON").expect("scrivere");
 
-        let refused = installed(&settings, &as_one_line_names_them())
+        let refused = installed(&settings, &as_one_line_names_them(), "unmotore")
             .expect_err("un file illeggibile ferma l'innesto");
         assert!(refused.contains("settings.json"), "{refused}");
         assert_eq!(
@@ -2039,7 +2102,7 @@ mod tests {
     fn what_the_install_writes_names_no_product() {
         let scratch = Scratch::new("innesto-neutro");
         let settings = scratch.directory.join("settings.json");
-        installed(&settings, &as_one_line_names_them())
+        installed(&settings, &as_one_line_names_them(), "unmotore")
             .expect("l'innesto riesce anche su un file che non c'era");
 
         let binary = std::env::current_exe().expect("dove sono").display().to_string();
@@ -2142,9 +2205,8 @@ mod tests {
 
     /// **WORK NOBODY IS DOING ARRIVES WITHOUT BEING ASKED FOR.** A run handed
     /// to a person is invisible until somebody types `sailor flow due`, and
-    /// nothing on this machine types it: the greeting is the one channel that
-    /// reaches whoever works here, so it carries the run, its flow, and the
-    /// line that takes it up.
+    /// nothing here types it: the greeting carries the run and the line that
+    /// takes it up.
     #[test]
     fn the_welcome_says_which_runs_are_waiting_for_a_person() {
         let scratch = Scratch::new("corse-in-attesa");
@@ -2168,7 +2230,6 @@ mod tests {
     /// nobody handed them goes looking for a hand-over that is not there.
     #[test]
     fn a_run_to_ask_again_is_not_described_as_one_waiting_for_a_person() {
-        let scratch = Scratch::new("non-ancora");
         // THE SAME RUN IN EITHER LIST, so the only thing that can differ
         // between the two sentences is what they say about it. With two
         // different runs the identifiers alone would tell them apart, and the
@@ -2385,7 +2446,7 @@ mod tests {
         let before: serde_json::Value =
             serde_json::from_str(settings_of_someone_else()).expect("the fixture is JSON");
 
-        installed(&settings, &as_one_line_names_them()).expect("the graft runs");
+        installed(&settings, &as_one_line_names_them(), "unmotore").expect("the graft runs");
         let grafted = std::fs::read_to_string(&settings).expect("read back");
         assert!(ours(&grafted), "the graft wrote nothing of ours: {grafted}");
 
@@ -2407,7 +2468,7 @@ mod tests {
         let scratch = Scratch::new("stacco-doppio");
         let settings = scratch.directory.join("settings.json");
         std::fs::write(&settings, settings_of_someone_else()).expect("write");
-        installed(&settings, &as_one_line_names_them()).expect("the graft runs");
+        installed(&settings, &as_one_line_names_them(), "unmotore").expect("the graft runs");
 
         uninstalled(&settings).expect("the first removal");
         let once = std::fs::read_to_string(&settings).expect("read back");
