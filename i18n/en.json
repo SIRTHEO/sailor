@@ -233,7 +233,7 @@
   "cli.release.cannot_start_git_clone": "cannot start git clone: {error}",
   "cli.release.cannot_start_the_suite": "cannot start the suite: {error}",
   "cli.release.checkout_failed": "checking HEAD out in the clone failed",
-  "cli.release.cloning_head": "== cloning HEAD ({head}) into a throwaway tree ==",
+  "cli.release.cloning_head": "== cloning HEAD ({head}) of {root} into a throwaway tree ==",
   "cli.release.commits_touching_the_parts": "({count} commit(s) touching {parts}, from {from} to {to})",
   "cli.release.dry_run": "== dry run: the binary in service was NOT replaced ==",
   "cli.release.head_does_not_compile": "HEAD does not compile: nothing was replaced and the binary in service is intact",
