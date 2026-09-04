@@ -201,7 +201,7 @@ pub(crate) fn engines() -> Result<Engines, String> {
             profiles::known_clis()
                 .iter()
                 .find(|cli| cli.executable == file_name(bin))
-                .and_then(|cli| store.active.get(cli.id).cloned())
+                .and_then(|cli| store.active.get(&cli.id).cloned())
         });
         // The channel is the descriptor's: an engine that declares none is
         // said so, and no engine is named here.
