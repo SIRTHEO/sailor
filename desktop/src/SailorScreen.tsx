@@ -8,6 +8,7 @@ import type { SailorTab } from "./sailortabs";
 import { EnginesScreen } from "./EnginesScreen";
 import { Installed } from "./Installed";
 import { KeepsScreen } from "./KeepsScreen";
+import { LookScreen } from "./LookScreen";
 import { MachineScreen } from "./MachineScreen";
 import { Manual } from "./Manual";
 import { ProfileList } from "./ProfileList";
@@ -41,6 +42,7 @@ export function SailorScreen({
           </>
         )}
         {tab === "commands" && <Manual native={native} />}
+        {tab === "look" && <LookScreen />}
       </div>
     </div>
   );
