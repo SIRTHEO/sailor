@@ -116,6 +116,7 @@ fn sleeper(process_id: &str, port: Option<u16>) -> Spec {
         port,
         purpose: "live".to_owned(),
         started_by: "una prova".to_owned(),
+        environment: Vec::new(),
     }
 }
 
