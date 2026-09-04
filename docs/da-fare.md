@@ -63,10 +63,10 @@ Nessuna di queste è bloccata da lavoro: sono bloccate da una scelta.
   orchestrato qui, non la casella `delete_branch_on_merge` di GitHub — quella
   cancella e toglie insieme la possibilità di decidere cosa si archivia, e non
   tocca comunque il locale, dove sta metà del residuo. Resta spenta di
-  proposito su suite, whatsapp e matching-engine.
+  proposito su tre repository di questa macchina.
 
   Quattro esiti da distinguere, misurati quel giorno su 91 rami locali e 14
-  alberi di lavoro nei repo Gyver:
+  alberi di lavoro nei repository di quel giorno:
 
   - **Residuo**: la punta locale è identica a `headRefOid` della PR fusa —
     ogni commit è già su GitHub. 44 rami. Togliere non perde niente.
@@ -187,8 +187,19 @@ dichiarati:
   **Ciò che resta aperto è il guasto 5**, non questa voce: la cura che dichiarava
   — le prove non leggono lo stato della macchina — non è mai stata scritta, e
   nessun controllo impedisce che il caso ricompaia in un altro crate.
-- **In modalità viva, un errore di compilazione in un crate qualunque uccide la
-  finestra** invece di lasciarla all'ultima versione buona.
+- ~~**In modalità viva, un errore di compilazione in un crate qualunque uccide la
+  finestra** invece di lasciarla all'ultima versione buona.~~ **Non è più vero, e
+  la voce era vecchia di un rovesciamento.** `sailor-live` costruisce **prima** e
+  sostituisce **solo se** la costruzione è riuscita (`rebuild_then_swap`): una
+  compilazione fallita risponde `KeptRunning`, la finestra resta quella di prima
+  e la fascia lo dice invece di lasciare uno schermo vuoto. E una costruzione
+  riuscita non sostituisce niente da sola: `turn_now` scambia solo se la finestra
+  l'ha chiesto — il bottone «take it» — così sviluppare Sailor dentro Sailor non
+  fa riavviare Sailor a ogni salvataggio. Due batterie:
+  `crates/supervisor/tests/a_broken_build_keeps_the_window.rs` e
+  `a_build_does_not_take_the_window.rs`. Resta vero il contorno: chi ha solo
+  l'eseguibile non ha niente di tutto questo, ed è
+  `the_live_mode_belongs_to_a_source_tree` a tenerlo.
 - ~~**Un motore che dice di non poter lavorare ed esce ZERO non fa scattare
   nessun ripiego**~~ — **chiuso il 01/09/2026**, con tre prove e due mutanti.
   Trovato da un giudice che verificava la chiusura del guasto 31, cioè **dal
