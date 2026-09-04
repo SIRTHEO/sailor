@@ -275,6 +275,7 @@
   "cli.release.what_goes_in": "== what goes into service ==",
   "cli.release.which_commit_is_unknown": "which commit produced the binary in service is not known.\n   That is expected the first time only; from now on the answer is written in {stamp}.",
   "cli.remaining.no_channel": "no engine on this machine declares a channel to read its quota from: nothing to ask",
+  "cli.remaining.no_channel_declared": "{engine} · nobody asked: its descriptor declares no channel to read the quota from. This is «nobody looked», not «no quota»",
   "cli.remaining.no_window": "no quota window declared: the channel answered with no measurements",
   "cli.remaining.whose_quota": "the PERSON's quota, not a run's: it counts every session, including the ones outside Sailor",
   "cli.run.active_profile_gone": "the active profile '{profile}' for {id} is no longer in the state",
