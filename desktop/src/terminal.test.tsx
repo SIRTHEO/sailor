@@ -766,6 +766,33 @@ describe("the terminals screen", () => {
     }
   });
 
+  test("THE BENCH IS DRAWN OVER ITS OWN TERMINAL AND NO OTHER", async () => {
+    // Two terminals are open and one of them is a bench: what is being judged
+    // must not sit over the other, where a verdict would be given on the
+    // wrong work.
+    const shell = pretendShell({ terminal_list: TWO, ...PLACES });
+    try {
+      const { rerender } = render(
+        <div className="app">
+          <Terminals native bench={{ terminalId: TWO[1].id, runId: "prima-corsa", stepId: "review", mandate: "read the diff" }} />
+        </div>,
+      );
+      await screen.findByText("read the diff");
+      expect(screen.getByRole("button", { name: "it went" })).toBeTruthy();
+
+      // A bench naming a terminal this window no longer has draws nothing:
+      // a strip over somebody else's pane is worse than no strip.
+      rerender(
+        <div className="app">
+          <Terminals native bench={{ terminalId: "gone", runId: "prima-corsa", stepId: "review", mandate: "read the diff" }} />
+        </div>,
+      );
+      await waitFor(() => expect(screen.queryByText("read the diff")).toBeNull());
+    } finally {
+      shell.stop();
+    }
+  });
+
   test("THE KEY OPENS A TERMINAL WHERE YOU ARE STANDING, with nothing asked", async () => {
     const shell = pretendShell({ terminal_list: [], terminal_open: TWO[0], ...PLACES });
     try {

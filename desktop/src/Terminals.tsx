@@ -33,6 +33,7 @@ import {
   type TerminalSummary,
 } from "./terminal";
 import { commandLines, type CommandLine } from "./profiles";
+import { WorkbenchStrip, type Bench } from "./Workbench";
 import { projects, type Project } from "./workspaces";
 import { listTrees, type Tree } from "./worktree";
 
@@ -54,6 +55,10 @@ interface TerminalsProps {
   onCount?: (count: number) => void;
   /** The list itself, for the column that nests each terminal under its tree. */
   onList?: (all: TerminalSummary[]) => void;
+  /** The terminal opened to work on a handed step, when one is. */
+  bench?: Bench | null;
+  /** Told when the step the bench was for has been closed, and how it answered. */
+  onBenchClosed?: (answer: string) => void;
 }
 
 /**
@@ -103,7 +108,15 @@ export function placesOf(known: Project[], trees: Tree[]): Place[] {
 /** One array, so a render with nothing open does not tell the column anew. */
 const EMPTY: TerminalSummary[] = [];
 
-export function Terminals({ native, shown = true, ceiling = null, onCount, onList }: TerminalsProps) {
+export function Terminals({
+  native,
+  shown = true,
+  ceiling = null,
+  onCount,
+  onList,
+  bench = null,
+  onBenchClosed,
+}: TerminalsProps) {
   const outside = "outside the desktop shell: pseudo-terminals are the engine's to open";
   const { asked, again } = useAsk<TerminalSummary[]>(native, listTerminals, REFRESH_MS, outside);
   const openedCount = asked.state === "answered" ? asked.value.length : 0;
@@ -443,6 +456,14 @@ export function Terminals({ native, shown = true, ceiling = null, onCount, onLis
               );
             })}
           </nav>
+
+          {/* WHAT IS BEING JUDGED, ABOVE THE PLACE IT IS BEING JUDGED IN.
+              The bench is the terminal a handed step was opened on, and the
+              verdict is given from here — not from the run's row, after
+              walking back to it. */}
+          {bench !== null && opened.some((entry) => entry.id === bench.terminalId) && (
+            <WorkbenchStrip bench={bench} onClosed={(answer) => onBenchClosed?.(answer)} />
+          )}
 
           {/* EVERY TERMINAL IS ON SCREEN AT ONCE. A day is spent watching two
               agents, and one pane behind tabs meant flipping between them; the

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { closeHandedStep, handedSteps, takeHandedStep, type HandedStep } from "./engine";
+import { BORN_COLS, BORN_ROWS, openTerminal } from "./terminal";
+import { useBench } from "./Workbench";
 
 /**
  * The steps of a run that wait for a person, and the two gestures on them:
@@ -19,6 +21,7 @@ interface HandedProps {
 }
 
 export function Handed({ runId, onChanged }: HandedProps) {
+  const bench = useBench();
   const [ask, setAsk] = useState<Ask>({ state: "asking" });
   const [said, setSaid] = useState<Record<string, string>>({});
   const [report, setReport] = useState<string | null>(null);
@@ -70,6 +73,33 @@ export function Handed({ runId, onChanged }: HandedProps) {
             <button type="button" onClick={() => act(takeHandedStep(runId, step.step_id))}>
               take it
             </button>
+            {/* **THE TREE THE RUN WAS BORN IN, NOT THE ONE THE WINDOW STANDS
+                IN.** A bench in the wrong tree is found out at the first
+                command that reads a file, and by then a verdict was given. */}
+            {bench !== null && step.worktree !== null && (
+              <button
+                type="button"
+                onClick={() => {
+                  setTrouble(null);
+                  openTerminal({
+                    workspaceRoot: step.worktree ?? "",
+                    cols: BORN_COLS,
+                    rows: BORN_ROWS,
+                  }).then(
+                    (born) =>
+                      bench({
+                        terminalId: born.id,
+                        runId,
+                        stepId: step.step_id,
+                        mandate: step.mandate,
+                      }),
+                    (error: unknown) => setTrouble(String(error)),
+                  );
+                }}
+              >
+                open it as a terminal
+              </button>
+            )}
           </div>
           <textarea
             className="handed__said"

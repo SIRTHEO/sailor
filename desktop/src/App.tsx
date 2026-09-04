@@ -56,6 +56,7 @@ import { Memory, MEMORY_TABS, type MemoryTab } from "./Memory";
 import { SailorScreen } from "./SailorScreen";
 import { SAILOR_TABS, type SailorTab } from "./sailortabs";
 import { TerminalsSection, TERMINALS_TABS, type TerminalsTab } from "./TerminalsSection";
+import { BenchContext, type Bench } from "./Workbench";
 import { declaredCeiling } from "./terminal";
 import { Palette, isPaletteKey, type Entry } from "./Palette";
 import { StepEditor } from "./StepEditor";
@@ -279,6 +280,15 @@ export default function App() {
   const [terminalCount, setTerminalCount] = useState(0);
   /** The terminals themselves: the column nests each under the tree it runs in. */
   const [openTerminals, setOpenTerminals] = useState<TerminalSummary[]>([]);
+  /** The terminal opened to judge a handed step, and what it is for. */
+  const [bench, setBench] = useState<Bench | null>(null);
+  // OPENING A BENCH GOES THERE. A terminal born on another screen, with the
+  // person left looking at the row they pressed, is a terminal nobody uses.
+  const openBench = useCallback((asked: Bench) => {
+    setBench(asked);
+    setTerminalsTab("live");
+    setPlace("terminals");
+  }, []);
   const [ledgerTable, setLedgerTable] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
 
@@ -1425,6 +1435,7 @@ export default function App() {
       <RunContext.Provider value={controls}>
       <StepRunContext.Provider value={stepStates}>
       <NowContext.Provider value={now}>
+      <BenchContext.Provider value={openBench}>
       <WireContext.Provider value={openWireMenu}>
       <StepUsageContext.Provider value={stepUsage}>
       {place === "memory" && (
@@ -1488,6 +1499,8 @@ export default function App() {
         onProjectChanged={() => readFlows(() => true)}
         onCount={setTerminalCount}
         onList={setOpenTerminals}
+        bench={bench}
+        onBenchClosed={() => setBench(null)}
       />
 
       {/* Outside the canvas element on purpose: it is positioned in window
@@ -1701,6 +1714,7 @@ export default function App() {
       )}
       </StepUsageContext.Provider>
       </WireContext.Provider>
+      </BenchContext.Provider>
       </NowContext.Provider>
       </StepRunContext.Provider>
       </RunContext.Provider>

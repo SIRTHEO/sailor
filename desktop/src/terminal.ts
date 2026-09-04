@@ -101,6 +101,14 @@ export type Submitted =
       refused?: string | null;
     };
 
+/**
+ * How big a terminal is born before anybody measures it. Not a preference:
+ * `terminal_open` wants `cols` and `rows`, and the real size arrives after the
+ * first paint. Eighty by twenty-four is what every full-screen program handles.
+ */
+export const BORN_COLS = 80;
+export const BORN_ROWS = 24;
+
 /** How a terminal is opened: where, what to start with which arguments, how big. */
 export interface Opening {
   /** **The directory is declared at opening, never after.** See `crates/terminal/src/lib.rs`. */
@@ -410,11 +418,9 @@ export function keyStroke(mode: KeyMode, draft: string, data: string): Stroke {
 // ── alive, ended, or no longer known ─────────────────────────────────────
 
 /**
- * How a terminal is doing, for whoever looks.
- *
- * **THREE STATES, NOT TWO.** «Alive» and «no longer known» are not the same
- * thing: if the event channel did not attach, a death would never arrive, and
- * a pane that keeps saying «alive» is asserting something it cannot know.
+ * How a terminal is doing. **THREE STATES, NOT TWO**: with the event channel
+ * unattached a death never arrives, and a pane that keeps saying «alive» is
+ * asserting what it cannot know.
  */
 export type Liveness =
   | { state: "alive" }

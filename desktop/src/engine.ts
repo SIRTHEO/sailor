@@ -219,6 +219,8 @@ export interface HandedStep {
   holder: string;
   mandate: string;
   since: number;
+  /** The tree the run was born in; `null` when it was born outside every one. */
+  worktree: string | null;
 }
 
 export async function handedSteps(runId: string): Promise<HandedStep[]> {
