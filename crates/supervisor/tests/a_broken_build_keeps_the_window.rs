@@ -142,6 +142,15 @@ fn a_real_child_is_still_breathing_after_a_broken_build() {
         }
     }
 
+    /// **THE CLEAN-UP CANNOT LIVE ON THE HAPPY PATH**: a panic below unwinds
+    /// past the `stop()` at the end, and what this lit outlives the suite.
+    impl Drop for Child {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
     let mut running = Some(Child(child));
     assert!(
         ledger::pid_is_alive(pid),
