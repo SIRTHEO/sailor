@@ -7,6 +7,15 @@
 # with a `git add -A`. A name keeps out what it names; a shape keeps out what
 # it is. Whoever needs a second build directory calls it `target-<something>`
 # and nothing happens.
+#
+# That rule fixed git and created the disk problem, so it has a second half now.
+# `cargo clean` empties `target/` and nothing else, so every `target-int` and
+# `target-i18n` — and every `sailor-target-*` left beside the repo — grows and
+# is never reclaimed. On 04/09/2026 that was **27 GB across four directories**,
+# 3.9 GB of it in a `target-i18n` no file in the tree named. A second build
+# directory belongs INSIDE `target/`: call it `target/int`, the way
+# `release_cmd.rs:171` already calls its own `target/from-head`. One line here
+# keeps it out of git, and `cargo clean` takes it back.
 target*/
 mutants.out/
 mutants.out.old/

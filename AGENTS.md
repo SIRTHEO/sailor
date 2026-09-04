@@ -49,14 +49,31 @@ Trappole già pagate su questa macchina:
 - **Mai incanalare `cargo test` in `grep` o `tail`**: il codice d'uscita diventa
   quello dell'ultimo comando, e una batteria rossa passa per verde. Scrivi
   l'uscita su un file e leggila.
+- **Una seconda cartella di compilazione sta DENTRO `target/`, mai accanto.**
+  Il `.gitignore` chiede `target-<qualcosa>` e ha risolto il problema di git; il
+  problema del disco l'ha creato. `cargo clean` svuota **solo** `target/`, quindi
+  ogni `target-int`, `target-i18n`, e peggio ogni `sailor-target-*` fratello del
+  repo, resta lì per sempre e nessuno lo vede crescere. Il 04/09/2026 erano
+  **27 GB su quattro cartelle**, di cui 3,9 GB in un `target-i18n` che nessun
+  file dell'albero nominava. Chiamala `target/int`, `target/verifica`, come fa
+  già `release_cmd.rs:171` con `target/from-head`: una riga di `.gitignore` la
+  copre e `cargo clean` la riprende.
 - **Sempre `--no-fail-fast`, e non è un dettaglio di comodità.** Senza,
   `cargo test` si ferma al **primo binario rosso** e tutto ciò che viene dopo
   **non viene eseguito** — non fallisce: non parte. Misurato il 01/09/2026
   dentro il perimetro, dove il sandbox nega `openpty` e `crates/terminal`
-  cade sempre: **36 binari eseguiti su 47**. I dieci che non partono mai sono
-  sempre gli stessi, la coda dell'alfabeto — `toolbox`, `trigger`, `ui` e sette
-  prove d'integrazione. Chi batte `cargo test` lì dentro sta guardando tre
-  quarti dell'albero credendo di guardarlo tutto.
+  cade sempre. I binari che non partono sono sempre gli stessi, la coda
+  dell'alfabeto — `toolbox`, `trigger`, `ui` e sette prove d'integrazione. Chi
+  batte `cargo test` lì dentro sta guardando tre quarti dell'albero credendo di
+  guardarlo tutto.
+
+  **Le cifre di questo paragrafo erano «36 su 47» ed erano superate.** Rimisurato
+  il 04/09/2026 con `--no-fail-fast` e l'uscita su file: **108 binari più 19
+  doc-target, 1.252 prove, 1.199 verdi, 53 rosse — e tutte e 53 sono il sandbox**
+  (43 per `mkdir /tmp/sr-*` negato, 11 per `openpty` negato). **Zero rosse vere.**
+  In CI il 02/09: 109 binari, 1.134 prove, 2 rosse vere. Tutti e 19 i crate hanno
+  prove. Un numero scritto qui e non rimisurato è una guardia falsa come le altre:
+  chi legge «36 su 47» oggi conclude che manca un quarto dell'albero, e non manca.
 
   Quel giorno è costato un lavoro dichiarato finito con una regressione dentro:
   la prova che cadeva stava in `toolbox`, e il `grep FAILED` di chi la cercava
