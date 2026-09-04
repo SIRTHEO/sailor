@@ -167,8 +167,25 @@ dichiarati:
   fermato lì. *Quali giudici*: la radice sempre, il manifesto del bersaglio
   quando ne dichiara uno suo, e le prove della pagina dentro il suo `npm run
   build`, che le esegue prima di scrivere `dist`. Misurato: 2 min 58 s a vuoto
-  con `--skip-tests`, dal clone al binario. Resta fuori il pacchetto `.app`: il
-  bersaglio mette in servizio il binario, non un'icona nel Dock.
+  con `--skip-tests`, dal clone al binario.
+- **Il rilascio della finestra mette in servizio un binario, non un pacchetto.**
+  Quindi il Dock e Spotlight non la trovano, e chi la vuole aperta come si apre
+  un programma deve battere un nome in un terminale. Il pacchetto esiste e si
+  costruisce: `cargo tauri build --bundles app` produce
+  `desktop/src-tauri/target/release/bundle/macos/Sailor.app`, misurato il
+  04/09/2026 in 1 m 27 s, e aperto con `open` parte davvero (RSS 106 MB). Ciò
+  che manca per farlo entrare nel rilascio sono due cose. La prima è un
+  raddoppio da evitare: `cargo tauri build` rifà per conto suo la pagina e la
+  compilazione che il rilascio ha già fatto nel clone, quindi o il bersaglio
+  dichiara che il pacchetto **è** la costruzione — e allora il rilascio chiama
+  quello invece di `cargo build` — oppure si paga due volte. La seconda è dove
+  va: un `.app` sotto `~/.config/sailor/bin/` non lo indicizza nessuno, e
+  `~/Applications` è fuori dalla casa di Sailor. La dottrina scritta nel
+  rilascio dice che dove sta un binario su una macchina non lo decide un
+  rilascio, quindi la forma coerente è la stessa di `release::on_path`:
+  costruirlo, metterlo accanto al binario, e **dire** che lì nessuno lo
+  troverà.
+
 - **`sample.ts` contiene dati finti** scritti «finché la finestra non legge dal
   motore», che ormai legge.
 - ~~**Il crate dei ganci di Claude Code serve un mondo che stiamo smontando**, e
