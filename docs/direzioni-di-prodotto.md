@@ -1,5 +1,13 @@
 # Direzioni di prodotto — segnate, non decise
 
+> **Riletto il 04/09/2026: il punto 1 non descrive più la finestra.** Diceva
+> «nessuna pagina per profili, modelli, fornitori»: `ProfileList.tsx` e
+> `QuotaScreen.tsx` esistono, con le loro prove, e lo spazio di lavoro è
+> diventato la spina dorsale invece di una scheda. Le altre tre direzioni non
+> sono state rilette riga per riga: **prendile come segnate il 29/08, non come
+> lo stato di oggi.** Per cosa manca davvero, la fonte è
+> `docs/2026-09-02-the-mvp-that-ends-orca.md`.
+
 Theo, 29/08/2026: «per ora segnamolo, poi prenderemo decisioni; concentriamoci
 sul core e sulla risoluzione di avere la benzina».
 
