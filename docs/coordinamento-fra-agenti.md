@@ -25,7 +25,7 @@ niente servizio esterno.
 ## Il punto d'incontro che esisteva già
 
 `ledger::default_directory()` risponde **lo stesso percorso da qualunque albero
-di lavoro** — su questa macchina `~/.claude/state/flussi` — ed è SQLite in
+di lavoro** — su questa macchina `~/.config/sailor/ledger` — ed è SQLite in
 modalità WAL con un tempo di attesa dichiarato. Più processi lo aprono
 direttamente: nessuno di loro è «il server», e chi non c'è non tiene niente. Il
 punto d'incontro senza centro non andava costruito, andava riconosciuto.

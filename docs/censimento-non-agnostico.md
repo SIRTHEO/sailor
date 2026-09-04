@@ -53,9 +53,9 @@ tornerebbe vivo e deciderebbe la raggiungibilità di una competenza.
 | `crates/inventory/src/lib.rs:692` | `if path.is_dir() && path.join(".claude").is_dir() {` | Idem | Idem |
 | `crates/sailor/src/inventory_cmd.rs:149-152` | `PathBuf::from(home).join(".claude").join("state").join("flussi")` | **Il deposito aperto a mano invece che con `ledger::default_directory()`**, che è esattamente la seconda copia che `crates/ledger/src/lib.rs:82-89` dice di aver già pagato | Una riga: chiamare `ledger::default_directory()` |
 | `crates/sailor/src/release_cmd.rs:292` | `.map(\|home\| PathBuf::from(home).join(".claude"))` | Sailor installa il proprio binario dentro la casa di un altro prodotto. `CLAUDE_HOME` lo sposta, ma il predefinito è quello | Una riga per il predefinito; il gesto vero è spostare l'installazione, che tocca i ganci esterni |
-| `crates/models/src/store.rs:17` | `PathBuf::from(format!("{home}/.claude/state/modelli.json"))` | La configurazione dei modelli **di Sailor** vive nella casa di un altro prodotto | Una riga: `ledger::sailor_home()` |
+| `crates/models/src/store.rs:17` | `PathBuf::from(format!("{home}/.claude/state/modelli.json"))` | La configurazione dei modelli **di Sailor** vive nella casa di un altro prodotto | Una riga: `ledger::sailor_home()` — **fatto il 05/09/2026**: deposito, `modelli.json` e `profili.json` stanno in `~/.config/sailor`, e `STILL_ALLOWED` è vuota |
 | `crates/profiles/src/store_io.rs:22-26` | `.join(".claude").join("state").join("profili.json")` | Idem per i profili | Una riga, stessa cura |
-| `crates/ledger/src/lib.rs:56` | `let previous = home.join(".claude/state/flussi");` | Idem per il deposito — **ma è dichiarato come gradino di migrazione** (righe 46-55), con scritto chi lo toglie e come | Una riga, quando il deposito vecchio sarà spostato. Il commento è onesto: conta come debito **datato**, non come sciatteria |
+| `crates/ledger/src/lib.rs:56` | `let previous = home.join(".claude/state/flussi");` | Idem per il deposito — **ma è dichiarato come gradino di migrazione** (righe 46-55), con scritto chi lo toglie e come | Una riga, quando il deposito vecchio sarà spostato. Il commento è onesto: conta come debito **datato**, non come sciatteria — **fatto il 05/09/2026**: deposito, `modelli.json` e `profili.json` stanno in `~/.config/sailor`, e `STILL_ALLOWED` è vuota |
 | `crates/models/src/remaining.rs:45` | `const CLAUDE_CREDENTIALS: &str = ".claude/.credentials.json";` | Percorso del fornitore inchiodato | Una riga se il descrittore del motore dichiara dove stanno le sue credenziali |
 | `crates/release/src/lib.rs:97-99` | `bin: "claude-hooks", live_rel: "target/release/claude-hooks", safe_rel: "bin/claude-hooks",` | Un bersaglio di rilascio che nomina un binario di un altro prodotto — e che **non è nel workspace**: `Cargo.toml` non ha nessun membro `claude-hooks` | Una voce di tabella; ma va deciso se `release` appartiene ancora a Sailor |
 
@@ -113,10 +113,10 @@ Quello che le sfugge, e che la regola di `AGENTS.md` invece copre:
 | `crates/trigger/descriptors/default.json:2` | `"_leggimi": [` | Idem | Idem |
 | `crates/toolbox/descriptors/default.json:2` | `"_leggimi": [` | Idem | Idem |
 | `crates/toolbox/descriptors/automations.json:2` | `"_leggimi": [` | Idem | Idem |
-| `crates/models/src/store.rs:17` | `format!("{home}/.claude/state/modelli.json")` | **Nome di file in italiano nato da una stringa letterale**: `AGENTS.md` dice «nomi di file e cartelle», la prova guarda solo i nomi dei sorgenti sul disco | Una riga, insieme allo spostamento di casa |
+| `crates/models/src/store.rs:17` | `format!("{home}/.claude/state/modelli.json")` | **Nome di file in italiano nato da una stringa letterale**: `AGENTS.md` dice «nomi di file e cartelle», la prova guarda solo i nomi dei sorgenti sul disco | Una riga, insieme allo spostamento di casa — **fatto il 05/09/2026**: deposito, `modelli.json` e `profili.json` stanno in `~/.config/sailor`, e `STILL_ALLOWED` è vuota |
 | `crates/profiles/src/store_io.rs:25` | `.join("profili.json")` | Idem | Idem |
 | `crates/sailor/src/inventory_cmd.rs:152` | `.join("flussi")` | Nome di cartella in italiano da stringa letterale | Una riga |
-| `crates/ledger/src/lib.rs:56` | `home.join(".claude/state/flussi")` | Idem (gradino di migrazione dichiarato) | Una riga, insieme alla migrazione |
+| `crates/ledger/src/lib.rs:56` | `home.join(".claude/state/flussi")` | Idem (gradino di migrazione dichiarato) | Una riga, insieme alla migrazione — **fatto il 05/09/2026**: deposito, `modelli.json` e `profili.json` stanno in `~/.config/sailor`, e `STILL_ALLOWED` è vuota |
 | `crates/release/src/lib.rs:92` | `in_progress_rel: "state/plancia/coda-notte/in-corso",` | Tre nomi di cartella in italiano in una stringa letterale | Una riga |
 
 **Il caso noto va smentito per questo albero.** `~/.claude/state/sessioni-vive/`
