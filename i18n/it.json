@@ -404,7 +404,7 @@
   "run.failure.no_store": "nessuno sa dove sia il deposito",
   "run.failure.no_tool_resolver": "nessuno sa dove trovare quello strumento",
   "run.failure.no_usable_engine": "nessuno dei motori chiesti dal passo ha potuto lavorare",
-  "run.failure.nobody_keeps_the_time": "questo innesco lo fa scattare l'orologio, e il tempo non lo tiene ancora nessuno",
+  "run.failure.nobody_keeps_the_time": "questo innesco lo fa scattare l'orologio, e l'orologio è tenuto sulla pianificazione del flusso, non su questa sorgente",
   "run.failure.reset_not_declared": "nessuno ha scritto come si svuota una sessione di quella riga di comando",
   "run.failure.shape_not_in_prompt": "la forma pretesa non è stata chiesta al motore",
   "run.failure.store_refused": "il deposito non ha accettato la scrittura",
