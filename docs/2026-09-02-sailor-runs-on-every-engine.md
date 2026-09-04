@@ -2,7 +2,7 @@
 
 **02/09/2026.** The specification behind the next one-shot mandate. It is the
 stopping condition: when every claim below is yes, with its proof, the work is
-done. It is written the way `2026-09-02-the-mvp-that-ends-orca.md` was, because
+done. It is written the way `2026-09-02-the-termination-condition.md` was, because
 that form ended a build that had iterated for weeks.
 
 Where it comes from, in Theo's words of the same evening: *the same flow we do

@@ -6,7 +6,7 @@
 > diventato la spina dorsale invece di una scheda. Le altre tre direzioni non
 > sono state rilette riga per riga: **prendile come segnate il 29/08, non come
 > lo stato di oggi.** Per cosa manca davvero, la fonte è
-> `docs/2026-09-02-the-mvp-that-ends-orca.md`.
+> `docs/2026-09-02-the-termination-condition.md`.
 
 Theo, 29/08/2026: «per ora segnamolo, poi prenderemo decisioni; concentriamoci
 sul core e sulla risoluzione di avere la benzina».
