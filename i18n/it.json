@@ -324,6 +324,7 @@
   "cli.session.uninstall.nothing_read": "non è stato letto nessun file di impostazioni. È un'affermazione, non un silenzio: leggi le righe qui sopra per sapere quale riga di comando ha rifiutato e perché",
   "cli.session.uninstall.taken_out": "tolto da {file}: {events}",
   "cli.session.uninstall.word_not_ours": "/{word} resta: {file} non è il file che scrive Sailor",
+  "cli.session.rules": "Le regole di questo albero stanno in {files}: leggile prima di cambiare qualcosa qui.",
   "cli.session.uninstall.word_unreadable": "/{word} resta: {file} ({error})",
   "cli.session.uninstall.words_taken": "{words} tolte da {directory}",
   "cli.session.welcome": "Sei collegato a Sailor.\nterminale {tty} · albero {worktree}\nQuesto terminale è tracciato: Sailor sa che esisti, in che albero lavori e quando avrai bisogno di passare il testimone.\nPer staccarlo: /sailor-off",
