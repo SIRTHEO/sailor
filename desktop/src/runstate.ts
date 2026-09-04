@@ -59,6 +59,15 @@ export function stepStatesOfRun(events: RunEvent[]): Map<string, StepRun> {
       continue;
     }
 
+    // WHAT IT IS SAYING WHILE IT RUNS. The engine has always sent this piece by
+    // piece and nothing read it: on the canvas a step that had just printed
+    // thirty lines and one stuck for eight minutes were drawn the same.
+    if (event.kind === "step_text") {
+      const current = states.get(stepId);
+      if (current) states.set(stepId, { ...current, spoke_at: event.at });
+      continue;
+    }
+
     if (event.kind === "step_closed") {
       const outcome = typeof payload?.outcome === "string" ? payload.outcome : "";
       // LA SPECIE VINCE SULL'ESITO quando dice che il passo aspetta una
