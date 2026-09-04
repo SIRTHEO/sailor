@@ -95,8 +95,26 @@ Quel «passaggio di artefatto esplicito» è **parola per parola** la decisione 
 abbiamo preso noi — *fra i passi passa un artefatto, non una conversazione* — e
 i «nodi completati validati» sono `reconcile`.
 
-Quello che Crewplane **non** dichiara: nessun conto dei token, nessun costo,
-nessun tetto. È il pezzo che resta nostro.
+~~Quello che Crewplane **non** dichiara: nessun conto dei token, nessun costo,
+nessun tetto. È il pezzo che resta nostro.~~
+
+**Falso, e corretto il 04/09/2026 clonando il repository invece di leggerne la
+descrizione.** Crewplane ha cinque classi di gettoni — `input`, `cached_input`,
+`cache_write`, `output`, `reasoning` — un prezzo per milione **per classe**, e
+un livello di **confidenza** del costo (`exact`, ripiego stimato a quattro
+caratteri per gettone, `none`). Cioè il nostro stesso principio — *ciò che non è
+misurato non diventa un numero* — scritto da qualcun altro come tipo, non come
+commento. Ha anche i worktree git, che questa pagina non registrava.
+
+Resta nostro qualcosa di più stretto, e va detto così invece che in grande:
+**la sesta classe.** Nessuno tiene separata la scrittura di cache a lunga
+durata — Crewplane si ferma a cinque, Claudexor collassa lettura e scrittura in
+un campo solo. Sul nostro descrittore quella classe è il **96% del costo** di
+una chiamata misurata: collassarla sbaglia il conto di un ordine di grandezza.
+
+Quello che Crewplane davvero non fa è leggere la quota dal fornitore: cerca
+sottostringhe nell'uscita (`quota_reached_on_contains`) e poi aspetta. È il
+contrario del criterio di `unusable_when`.
 
 ### Claudexor risolve la quota, e col nostro stesso criterio
 
@@ -143,21 +161,52 @@ codex — senza inventare niente, che era la condizione.
 - **Vibestrate** — «*flusso YAML di fasi*».
 - **DeerFlow**, **fractal** — deleghe gerarchiche a sotto-agenti.
 
-## Cosa resta da fare
+## Le tre cose da fare — fatte il 04/09/2026
 
-Questo giro è stato fatto **leggendo pagine, non aprendo prodotti**. Restano
-tre cose, in ordine di valore:
+Le prime due erano «aprire Crewplane» e «aprire Claudexor», la terza «provare i
+canali di quota». Fatte, e **la prima ha smentito subito una riga di questa
+pagina**: è la ragione per cui il primo giro non contava come misura.
 
-1. **Provare i canali di quota davvero**, su questa macchina: `codex
-   app-server` e l'endpoint OAuth di Claude. Sono due comandi, costano zero, e
-   chiudono un guasto aperto.
-2. **Aprire Crewplane** e guardare come dichiara una fase e come riprende: è la
-   cosa più vicina a noi, e sapere dove diverge vale più di qualunque recensione.
-3. **Aprire Claudexor** sul punto della rotazione: come distingue un limite
-   confermato da un errore qualunque. Il guasto 31 è chiuso dal 01/09/2026 —
-   chi non dichiara come si esaurisce sta in fondo alla catena, e un controllo
-   lo pretende — ma la misura che manca è ancora quella: le parole con cui `agy`
-   dice di aver finito la quota. Il giorno in cui si vedono, `agy` torna a poter
-   fare da ripiego.
+**Il canale della quota**: `sailor remaining` risponde per Claude Code, letto da
+`api/oauth/usage`. Codex e Gemini non sono ancora letti da nessuno.
 
-Finché non sono fatte, ogni riga qui sopra è un indizio, non una misura.
+**Claudexor, sul punto della rotazione.** Non guarda mai la prosa, e il suo
+documento di architettura lo scrive: *«the classifier reads only typed event
+fields — never prose»*. L'adattatore di ogni motore traduce il frame nativo in
+**due campi distinti e disgiunti** sullo stesso evento — `rate_limit` e
+`transient {network | service_unavailable}` — e un predicato solo, ottantacinque
+righe, decide. Il transitorio si ritenta **sullo stesso profilo**, e non entra
+mai nella rotazione.
+
+E porta la condizione che a noi non era venuta in mente:
+
+> non si ruota mai su un tentativo che ha già toccato il disco.
+
+Solo se il risultato è vuoto **e** nessuna modifica è stata osservata. È la metà
+del guasto 31 che non avevamo nominato, ed è MIT.
+
+## Cosa resta da fare adesso
+
+1. **Aprire herdr** — Rust, Apache-2.0, 35.248 stelle, spinto il 04/09: un
+   server di sfondo che **possiede i pseudo-terminali**, con i riquadri marcati
+   `working | blocked | idle` e un'interfaccia su socket. È il nostro
+   `sailor terminal host`, con tre anni di vantaggio. Non conta gettoni e non
+   legge quota. Mezza giornata ad aprirlo prima di scrivere un'altra riga lì.
+2. **Le parole con cui `agy` dice di aver finito la quota**, che è la misura
+   ancora mancante del guasto 31. Il giorno in cui si vedono, `agy` torna a
+   poter fare da ripiego.
+3. **La quota di Codex dal canale giusto**: il metodo app-server
+   `account/rateLimits/read` (da `rust-v0.142.0`) — **non** i file di rollout,
+   dove `rate_limits` è nullo in modo exec e, per un difetto aperto, sempre
+   nullo dal rilascio di gpt-5.4. Claudexor legge ancora i rollout: qui siamo
+   avanti se ci arriviamo per primi.
+
+**Due divieti, e vengono da chi ha già sbattuto.** Non rinnovare mai un gettone
+al posto della riga di comando: su Claude un rinnovo fuori banda invalida la
+copia della CLI, su Codex il gettone di rinnovo è a uso singolo e rotante.
+*Leggere sì, rinnovare no.* E il canale che usiamo per Claude non è documentato
+— quello documentato è la statusline, che porta le stesse due finestre e non
+costa una chiamata: vanno tenuti in coppia, non uno al posto dell'altro.
+
+Le righe di questa pagina che non dicono «clonato e letto» restano indizi, non
+misure. Al 04/09 sono clonati e letti Crewplane e Claudexor, e nient'altro.
