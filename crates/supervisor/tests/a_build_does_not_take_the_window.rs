@@ -59,3 +59,27 @@ fn asking_is_a_file_and_the_answer_is_taking_it_away() {
     // at the next build, which is the thing this whole file exists to prevent.
     assert!(!SwapRequest::take(&path), "the ask was taken away by the answer");
 }
+
+/// **THE LEDGER KNOWS WHO SAILOR STARTED, AND NOBODY ELSE.** A page server left
+/// running by hand holds the port all the same, and vite answers a taken port
+/// by moving to the next one while the window keeps loading from this one.
+#[test]
+fn a_port_somebody_else_holds_is_seen_by_asking_the_port() {
+    // **BOTH LOCALHOST ADDRESSES**: the page server of this repository sits on
+    // `::1`, leaving `127.0.0.1` free.
+    for address in ["127.0.0.1", "::1"] {
+        let held = std::net::TcpListener::bind((address, 0)).expect("a port to hold");
+        let port = held.local_addr().expect("its number").port();
+        assert!(
+            supervisor::who_holds(port).is_some(),
+            "a port held on {address} answered «free»"
+        );
+        drop(held);
+    }
+    // The absurd control: with nobody on it, the same question answers nothing.
+    // A check that says «taken» about everything would stop every start.
+    let free = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a free port");
+    let number = free.local_addr().expect("its number").port();
+    drop(free);
+    assert_eq!(supervisor::who_holds(number), None);
+}

@@ -42,11 +42,9 @@ fn main() {
     }
 }
 
-/// La radice del repository su cui lavorare.
-///
-/// **Viene da chi lancia, mai scritta dentro.** È la lezione del guasto 25: un
-/// percorso assoluto dentro il programma lo rende eseguibile in un posto solo, e
-/// lanciato da un clone lavora — e commette — nel repository principale.
+/// The repository to work on. **It comes from whoever starts this, never
+/// written inside** — fault 25: an absolute path in the program makes it
+/// runnable in one place, and from a clone it works in the main tree.
 fn repository_root(arguments: &[String]) -> PathBuf {
     let mut arguments = arguments.iter();
     while let Some(argument) = arguments.next() {
@@ -73,7 +71,7 @@ fn open_ledger() -> Option<ledger::Ledger> {
     }
 }
 
-/// Cosa è rimasto acceso, e chi respira ancora.
+/// What was left running, and who still breathes.
 fn list_left_running(store: Option<&ledger::Ledger>) {
     let Some(store) = store else {
         eprintln!("senza deposito non c'è niente da elencare");
@@ -109,11 +107,8 @@ fn list_left_running(store: Option<&ledger::Ledger>) {
     }
 }
 
-/// Spegne quello che è rimasto acceso, e lo scrive.
-///
-/// **È la seconda metà del guasto 4**: «non può né spegnerli né riprenderli».
-/// Chi trova la porta occupata aveva bisogno di questo comando, e la volta
-/// scorsa ha dovuto cercare il pid a mano — due persone, due volte.
+/// Stops what was left running, and writes it down. **The second half of
+/// fault 4**: whoever found the port taken had to hunt the pid by hand.
 fn stop_left_running(store: Option<&ledger::Ledger>) {
     let Some(store) = store else {
         eprintln!("senza deposito non c'è niente da spegnere");
@@ -158,7 +153,7 @@ fn stop_left_running(store: Option<&ledger::Ledger>) {
     }
 }
 
-/// SIGTERM su un pid solo. Non `pkill`, non `killall`: un numero conosciuto.
+/// SIGTERM on one pid. Not `pkill`, not `killall`: a known number.
 unsafe fn libc_kill(pid: u32) -> bool {
     extern "C" {
         fn kill(pid: i32, signal: i32) -> i32;
@@ -216,6 +211,20 @@ fn run_live(root: &Path, store: Option<&ledger::Ledger>, at_once: bool) {
                 std::process::exit(3);
             }
         }
+    }
+
+    // **AND THE PORT IS ASKED OF THE PORT.** The ledger knows who Sailor
+    // started, and nothing about a page server left running by hand — which
+    // vite answers by moving to the next port while the window keeps loading
+    // from this one. A bind, not a process list: fault 12.
+    if let Some(taken) = supervisor::who_holds(DEV_PORT) {
+        eprintln!(
+            "la porta {DEV_PORT} è occupata ({taken}) e non risulta a Sailor. Il \n\
+             servitore della pagina ne prenderebbe un'altra in silenzio, e la finestra \n\
+             continuerebbe a leggere da questa. `lsof -nP -iTCP:{DEV_PORT} -sTCP:LISTEN` \n\
+             dice di chi è."
+        );
+        std::process::exit(3);
     }
 
     // Il servitore di sviluppo della pagina. È il processo che nel guasto 4
@@ -384,10 +393,8 @@ fn start_window(
     )
 }
 
-/// Chi ha acceso: la persona più il pid di questo supervisore.
-///
-/// **Il nome da solo non basta**, perché due supervisori della stessa persona
-/// sono precisamente il caso del guasto 4 — due cantieri, due porte, una notte.
+/// Who lit it: the person plus this supervisor's pid. **The name alone is not
+/// enough** — two supervisors of the same person are fault 4 exactly.
 fn started_by() -> String {
     let who = std::env::var("USER").unwrap_or_else(|_| "ignoto".to_owned());
     format!("sailor-live/{who}/{}", std::process::id())
