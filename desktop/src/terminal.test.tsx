@@ -19,6 +19,7 @@ import {
   paneGesture,
   STILL_SPEAKING_MS,
   splitCommandLine,
+  windowGesture,
   windowHold,
   type KeyAction,
   type TerminalSummary,
@@ -155,6 +156,24 @@ describe("the two keys the window keeps for itself", () => {
     expect(windowHold("Linux x86_64")).toBe("ctrl_shift");
     expect(windowHold("Win32")).toBe("ctrl_shift");
     expect(windowHold("")).toBe("ctrl_shift");
+  });
+});
+
+describe("the keys that make this a terminal application", () => {
+  test("ANOTHER TERMINAL WHERE YOU STAND, AND THE NTH OF THE OPEN ONES", () => {
+    expect(windowGesture({ key: "t", metaKey: true }, "meta")).toEqual({ kind: "new" });
+    expect(windowGesture({ key: "T", ctrlKey: true, shiftKey: true }, "ctrl_shift")).toEqual({ kind: "new" });
+    expect(windowGesture({ key: "3", metaKey: true }, "meta")).toEqual({ kind: "focus", nth: 3 });
+    expect(windowGesture({ key: "9", metaKey: true }, "meta")).toEqual({ kind: "focus", nth: 9 });
+  });
+
+  test("and every other key is the process's", () => {
+    // Zero is not a terminal, and a bare letter is something being typed.
+    expect(windowGesture({ key: "0", metaKey: true }, "meta")).toBeNull();
+    expect(windowGesture({ key: "t" }, "meta")).toBeNull();
+    expect(windowGesture({ key: "3" }, "meta")).toBeNull();
+    expect(windowGesture({ key: "t", ctrlKey: true }, "meta")).toBeNull();
+    expect(windowGesture({ key: "t", ctrlKey: true }, "ctrl_shift")).toBeNull();
   });
 });
 
@@ -742,6 +761,26 @@ describe("the terminals screen", () => {
       expect(shell.argsOf("terminal_open")).toEqual([
         { workspaceRoot: "/work/other-repo", program: undefined, args: undefined, cols: 80, rows: 24 },
       ]);
+    } finally {
+      shell.stop();
+    }
+  });
+
+  test("THE KEY OPENS A TERMINAL WHERE YOU ARE STANDING, with nothing asked", async () => {
+    const shell = pretendShell({ terminal_list: [], terminal_open: TWO[0], ...PLACES });
+    try {
+      render(
+        <div className="app">
+          <Terminals native />
+        </div>,
+      );
+      await screen.findByRole("combobox");
+      await act(async () => {
+        // This window says no platform, so the hold is the one every terminal
+        // outside Apple keyboards has settled on.
+        fireEvent.keyDown(window, { key: "T", ctrlKey: true, shiftKey: true });
+      });
+      expect(shell.argsOf("terminal_open")[0]).toMatchObject({ workspaceRoot: "/work/sailor" });
     } finally {
       shell.stop();
     }
