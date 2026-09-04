@@ -59,6 +59,11 @@ pub struct StepRecord {
     pub outcome: Option<Outcome>,
     #[serde(deserialize_with = "required_option")]
     pub output: Option<Value>,
+    /// **THAT THERE IS AN OUTPUT IS WRITTEN DOWN, NOT DEDUCED FROM IT.** A null
+    /// output serialises the way *no* output does, so it came back as none and
+    /// the step after it died saying it had no typed output.
+    #[serde(default)]
+    pub output_was_written: bool,
     /// Raw text, truncated. It serves a person when something goes wrong. It is
     /// NOT the data channel: no condition is ever evaluated on it.
     #[serde(deserialize_with = "required_option")]
@@ -144,6 +149,7 @@ impl StepRecord {
             started_at,
             outcome: None,
             output: None,
+            output_was_written: false,
             said: None,
             failure_class: None,
             ended_at: None,

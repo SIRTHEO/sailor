@@ -273,6 +273,73 @@ fn explicit_projection_rebuild_is_identical_and_skipped_event_control_differs() 
     assert_eq!(ledger.projection_dump().expect("read the result"), expected);
 }
 
+/// **A NULL OUTPUT IS AN OUTPUT, AND THE LOG HAS TO KEEP THAT** — fault 33: a
+/// step closed `Went` with one came back with none, and the step after it died
+/// saying it had no typed output, three steps from the defect. The projection
+/// is **rebuilt from the log** on purpose: the column keeps the two apart on
+/// its own, so reading the store without replaying would pass while the log,
+/// which is the source of truth, still lost it.
+#[test]
+fn a_step_closed_with_a_null_output_still_has_one_after_a_rebuild() {
+    let directory = TestDirectory::new("uscita-nulla");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    ledger
+        .append_step_started(&started("run-1"))
+        .expect("record the intent");
+    ledger
+        .close_step(
+            "run-1",
+            "compile",
+            1,
+            7,
+            Completion {
+                outcome: Outcome::Went,
+                output: Some(Value::Null),
+                ..completion()
+            },
+        )
+        .expect("close it with a null output");
+
+    ledger.rebuild_projections().expect("rebuild from the log");
+
+    let steps = ledger.steps("run-1").expect("read the steps");
+    assert_eq!(steps.len(), 1);
+    assert_eq!(
+        steps[0].output,
+        Some(Value::Null),
+        "a null output came back as no output at all"
+    );
+}
+
+/// The other arm: **no output must stay no output.** Without it the repair
+/// could hand every step a null output and the case above would stay green.
+#[test]
+fn a_step_closed_with_no_output_still_has_none_after_a_rebuild() {
+    let directory = TestDirectory::new("nessuna-uscita");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    ledger
+        .append_step_started(&started("run-1"))
+        .expect("record the intent");
+    ledger
+        .close_step(
+            "run-1",
+            "compile",
+            1,
+            7,
+            Completion {
+                outcome: Outcome::Went,
+                output: None,
+                ..completion()
+            },
+        )
+        .expect("close it with no output");
+
+    ledger.rebuild_projections().expect("rebuild from the log");
+
+    let steps = ledger.steps("run-1").expect("read the steps");
+    assert_eq!(steps[0].output, None, "a step with no output grew one");
+}
+
 #[test]
 fn committed_event_is_projected_after_a_crash_between_the_two_phases() {
     let directory = TestDirectory::new("checkpoint");
