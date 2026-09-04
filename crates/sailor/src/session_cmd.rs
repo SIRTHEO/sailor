@@ -1050,7 +1050,7 @@ fn open_terminal(request: &Request<'_>) -> Result<Report, String> {
         .map_err(|error| error.to_string())?;
 
     if request.is_a_session_start() {
-        return Ok(Report::spoken(welcome(&arrival, Some(store))));
+        return Ok(Report::spoken(welcome(&arrival, Some(store), &still_open())));
     }
     Ok(Report::spoken(described(&arrival)))
 }
@@ -1127,13 +1127,77 @@ fn repository_holding(path: &str) -> Option<String> {
     (!found.is_empty()).then_some(found)
 }
 
+/// What the ledger holds open that nothing is going to pick up on its own.
+///
+/// **TWO LISTS AND NOT ONE.** A run `waiting` was handed to a person and stays
+/// there until one takes it; a run that stopped on a step saying «not yet»
+/// needs no person at all, only somebody to run it again. Merging them would
+/// send a reader to take a step nobody handed them.
+struct StillOpen {
+    waiting: Vec<ledger::WaitingRun>,
+    ask_again: Vec<ledger::WaitingRun>,
+}
+
+/// The two lists, from a ledger already open.
+fn still_open_in(deposit: &ledger::Ledger) -> Result<StillOpen, String> {
+    Ok(StillOpen {
+        waiting: deposit.waiting_runs().map_err(|error| error.to_string())?,
+        ask_again: deposit.runs_to_ask_again().map_err(|error| error.to_string())?,
+    })
+}
+
+/// The same, from this machine's home. `Ok(None)` where there is no home to
+/// look in, which is not the same as a home holding nothing.
+fn still_open() -> Result<Option<StillOpen>, String> {
+    let Some(directory) = ledger::default_directory() else {
+        return Ok(None);
+    };
+    if !directory.exists() {
+        return Ok(None);
+    }
+    let deposit = ledger::Ledger::open(&directory).map_err(|error| error.to_string())?;
+    still_open_in(&deposit).map(Some)
+}
+
+/// A run named for a reader: the flow, then the identifier the resume needs.
+fn run_named(run: &ledger::WaitingRun) -> String {
+    if run.entity.is_empty() {
+        return run.run_id.clone();
+    }
+    format!("{} ({})", run.entity, run.run_id)
+}
+
+/// What the greeting says about them, and **nothing where there is nothing**:
+/// a greeting that reports emptiness every time teaches nobody to read it.
+fn what_is_still_open(found: &StillOpen) -> Option<String> {
+    let mut lines: Vec<String> = Vec::new();
+    for (runs, key) in [
+        (&found.waiting, "cli.session.runs_waiting_for_a_person"),
+        (&found.ask_again, "cli.session.runs_to_ask_again"),
+    ] {
+        if runs.is_empty() {
+            continue;
+        }
+        let which: Vec<String> = runs.iter().map(run_named).collect();
+        lines.push(catalogue::say(
+            key,
+            &[
+                ("count", &runs.len().to_string()),
+                ("which", &which.join(", ")),
+                ("first", &runs[0].run_id),
+            ],
+        ));
+    }
+    (!lines.is_empty()).then(|| lines.join("\n"))
+}
+
 /// The welcome, in the wrapper that gets injected into the session's context.
 ///
 /// **A WRAPPER AND NOT A PRINTED LINE** because `SessionStart` is one of the
 /// four moments where what the hook writes becomes context the agent reads. A
 /// plain line would be read by the person at the screen and not by the agent,
 /// and detaching would stay a thing that exists and nobody knows about.
-fn welcome(arrival: &Arrival, store: Option<&Sessions>) -> String {
+fn welcome(arrival: &Arrival, store: Option<&Sessions>, open: &Result<Option<StillOpen>, String>) -> String {
     let mut text = catalogue::say(
         "cli.session.welcome",
         &[
@@ -1154,6 +1218,25 @@ fn welcome(arrival: &Arrival, store: Option<&Sessions>) -> String {
     if let Some(said) = store.and_then(|store| neighbours(arrival, store)) {
         text.push('\n');
         text.push_str(&said);
+    }
+    // **«I COULD NOT LOOK» IS NOT «NOTHING IS OPEN»**, and the greeting is the
+    // one place where the two get confused: a silent line reads like a quiet
+    // machine. So a ledger that would not open says so, with the reason.
+    match open {
+        Ok(Some(found)) => {
+            if let Some(said) = what_is_still_open(found) {
+                text.push('\n');
+                text.push_str(&said);
+            }
+        }
+        Ok(None) => {}
+        Err(why) => {
+            text.push('\n');
+            text.push_str(&catalogue::say(
+                "cli.session.ledger_did_not_open",
+                &[("why", why)],
+            ));
+        }
     }
     serde_json::json!({
         "hookSpecificOutput": {
@@ -1978,7 +2061,7 @@ mod tests {
     /// The greeting on its own, with no register to ask: these cases are about
     /// what the text says, and the neighbours have their own in `sessions`.
     fn welcome_of(arrival: &Arrival) -> String {
-        welcome(arrival, None)
+        welcome(arrival, None, &Ok(None))
     }
 
     /// **A NEIGHBOUR ELSEWHERE IS NAMED WITH THE ELSEWHERE.** Same repository,
@@ -2031,6 +2114,160 @@ mod tests {
         assert!(
             !said.contains("come si lavora qui"),
             "il benvenuto porta dentro il testo intero: {said}"
+        );
+    }
+
+    /// An arrival in a throwaway tree: these cases are about the ledger's half
+    /// of the greeting, and the tree only has to be somewhere.
+    fn arriving_in(scratch: &Scratch) -> Arrival {
+        Arrival {
+            anchor: sessions::Anchor {
+                tty: "ttys004".to_owned(),
+                worktree: scratch.directory.display().to_string(),
+                ancestor: None,
+            },
+            session_id: None,
+            transcript_path: None,
+            at: 1_000,
+        }
+    }
+
+    fn a_run(run_id: &str, flow: &str) -> ledger::WaitingRun {
+        ledger::WaitingRun {
+            run_id: run_id.to_owned(),
+            entity: flow.to_owned(),
+            waiting_since: 1_000,
+        }
+    }
+
+    /// **WORK NOBODY IS DOING ARRIVES WITHOUT BEING ASKED FOR.** A run handed
+    /// to a person is invisible until somebody types `sailor flow due`, and
+    /// nothing on this machine types it: the greeting is the one channel that
+    /// reaches whoever works here, so it carries the run, its flow, and the
+    /// line that takes it up.
+    #[test]
+    fn the_welcome_says_which_runs_are_waiting_for_a_person() {
+        let scratch = Scratch::new("corse-in-attesa");
+        let open = Ok(Some(StillOpen {
+            waiting: vec![a_run("un-flusso-1788423534", "un-flusso")],
+            ask_again: Vec::new(),
+        }));
+
+        let said = welcome(&arriving_in(&scratch), None, &open);
+
+        assert!(said.contains("un-flusso-1788423534"), "non nomina la corsa: {said}");
+        assert!(
+            said.contains("sailor flow resume un-flusso-1788423534"),
+            "non dice come si prende in mano: {said}"
+        );
+    }
+
+    /// **WAITING AND «NOT YET» ARE NOT THE SAME THING**, and the greeting
+    /// is where the two would get merged: one wants a person to come and take a
+    /// step, the other only wants running again. A reader sent to take a step
+    /// nobody handed them goes looking for a hand-over that is not there.
+    #[test]
+    fn a_run_to_ask_again_is_not_described_as_one_waiting_for_a_person() {
+        let scratch = Scratch::new("non-ancora");
+        // THE SAME RUN IN EITHER LIST, so the only thing that can differ
+        // between the two sentences is what they say about it. With two
+        // different runs the identifiers alone would tell them apart, and the
+        // wording could collapse into one without a single test going red.
+        let same = || a_run("una-corsa-1", "un-flusso");
+        let waiting = what_is_still_open(&StillOpen {
+            waiting: vec![same()],
+            ask_again: Vec::new(),
+        })
+        .expect("una corsa in attesa si dice");
+        let again = what_is_still_open(&StillOpen {
+            waiting: Vec::new(),
+            ask_again: vec![same()],
+        })
+        .expect("una corsa da rilanciare si dice");
+
+        assert_ne!(waiting, again, "le due liste dicono la stessa frase");
+
+        // AND BOTH TOGETHER ARE TWO LINES, not one list of two: a greeting that
+        // merged them would send whoever reads it to take a step nobody handed
+        // them.
+        let both = what_is_still_open(&StillOpen {
+            waiting: vec![a_run("in-attesa-1", "un-flusso")],
+            ask_again: vec![a_run("non-ancora-1", "un-altro")],
+        })
+        .expect("le due liste insieme si dicono");
+        assert_eq!(both.lines().count(), 2, "{both}");
+        assert_eq!(both, format!("{waiting_line}\n{again_line}",
+            waiting_line = waiting.replace("una-corsa-1", "in-attesa-1"),
+            again_line = again.replace("una-corsa-1", "non-ancora-1").replace("un-flusso", "un-altro")),
+            "{both}");
+    }
+
+    /// **A GREETING THAT REPORTS EMPTINESS EVERY TIME TEACHES NOBODY TO READ
+    /// IT**: with nothing open the greeting is the greeting it was before.
+    #[test]
+    fn nothing_open_adds_nothing_to_the_welcome() {
+        assert_eq!(
+            what_is_still_open(&StillOpen {
+                waiting: Vec::new(),
+                ask_again: Vec::new(),
+            }),
+            None
+        );
+    }
+
+    /// **«I COULD NOT LOOK» IS NOT «NOTHING IS OPEN»**, and here the two
+    /// look identical from the outside: a silent greeting reads like a quiet
+    /// machine. A ledger that would not open says so, with its reason.
+    #[test]
+    fn a_ledger_that_did_not_open_is_not_a_machine_with_nothing_open() {
+        let scratch = Scratch::new("deposito-cieco");
+        let arrival = arriving_in(&scratch);
+
+        let quiet = welcome(&arrival, None, &Ok(None));
+        let blind = welcome(&arrival, None, &Err("il file è di un altro".to_owned()));
+
+        assert_ne!(quiet, blind, "un deposito illeggibile saluta come uno vuoto");
+        assert!(blind.contains("il file è di un altro"), "senza il motivo: {blind}");
+    }
+
+    /// The reading itself, against a real ledger: the two words the store keeps
+    /// runs under are `waiting` and `not_yet`, and this is where a rename of
+    /// either would show up instead of the greeting silently going quiet.
+    #[test]
+    fn the_two_lists_come_from_the_ledger_under_its_own_two_words() {
+        let scratch = Scratch::new("deposito-vero");
+        let deposit = ledger::Ledger::open(&scratch.directory).expect("aprire il deposito");
+        for (run_id, flow, status) in [
+            ("in-attesa-1", "un-flusso", "waiting"),
+            ("non-ancora-1", "un-altro", "not_yet"),
+            ("finita-1", "una-terza", "ok"),
+        ] {
+            deposit
+                .record_run(&ledger::RunRecord {
+                    run_id: run_id.to_owned(),
+                    kind: "flow".to_owned(),
+                    entity: flow.to_owned(),
+                    parent_run_id: None,
+                    started_by: "prova".to_owned(),
+                    status: status.to_owned(),
+                    total_cost_micros: 0,
+                    error: None,
+                    started_at: 1_000,
+                    ended_at: None,
+                    worktree: None,
+                })
+                .expect("registrare la corsa");
+        }
+
+        let found = still_open_in(&deposit).expect("leggere le due liste");
+
+        assert_eq!(
+            found.waiting.iter().map(|run| run.run_id.as_str()).collect::<Vec<_>>(),
+            vec!["in-attesa-1"]
+        );
+        assert_eq!(
+            found.ask_again.iter().map(|run| run.run_id.as_str()).collect::<Vec<_>>(),
+            vec!["non-ancora-1"]
         );
     }
 
