@@ -371,12 +371,13 @@ are now in the ledger.
 |---|---|---|
 | **A1** | ticks, leave to the Board, come back | ✅ all twelve on the pane, prompt after them |
 | **A2** | agent and `sleep 600`, ⌘Q, reopen | ✅ both tabs back ALIVE with their scrollback; `ps -p` found the sleep counting |
-| **A4** | the workspace select | ⚠️ lists what it claims — and six rows share one label. **Fault 79** |
+| **A4** | the workspace select | ⚠️ lists what it claims — and six rows share one label. **Fault 79**, closed: the label carries what distinguishes it |
 | **A6** | the profile's variable inside the pty | ✅ `CODEX_HOME` is `prove`'s home; the other variable empty because no profile declares it |
+| **A6b** | the same variable inside `sailor terminal run` | ⚠️ empty: the command opened terminals under no profile at all, where the window opened them under the one in force. **Fault 81**, closed with an end-to-end test |
 | **A9** | read `Terminals.tsx` against A2 | ✅ the header names the reason A2 works: the list belongs to the engine, the ptys to the host |
 | **B2** | a line into a live agent | ✅ it lands, is submitted, and is answered. The flow itself skipped: the terminal was under the ceiling |
 | **C1** | «what changed in …» against `git diff HEAD` | ✅ same hunk, same index hashes, same line |
-| **C2** | «open in the editor» | ⚠️ it opens — a read-only preview, not an editor. **Fault 80** |
+| **C2** | «open in the editor» | ⚠️ it opens — a read-only preview, not an editor. **Fault 80**, closed: the button names who will get the file before the press |
 
 Three things were learned that no claim asks about, and all three are in
 `docs/guasti-incontrati.md`:
