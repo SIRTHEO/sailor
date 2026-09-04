@@ -58,6 +58,34 @@ Nessuna di queste è bloccata da lavoro: sono bloccate da una scelta.
 
 ## Chieste da Theo, non ancora iniziate
 
+- **Il ciclo di vita di un ramo, come flusso.** Chiesto il 04/09/2026: apri →
+  PR → fondi → chiudi → togli dal locale **o archivia**. Deve essere un flusso
+  orchestrato qui, non la casella `delete_branch_on_merge` di GitHub — quella
+  cancella e toglie insieme la possibilità di decidere cosa si archivia, e non
+  tocca comunque il locale, dove sta metà del residuo. Resta spenta di
+  proposito su suite, whatsapp e matching-engine.
+
+  Quattro esiti da distinguere, misurati quel giorno su 91 rami locali e 14
+  alberi di lavoro nei repo Gyver:
+
+  - **Residuo**: la punta locale è identica a `headRefOid` della PR fusa —
+    ogni commit è già su GitHub. 44 rami. Togliere non perde niente.
+  - **Lavoro che vive solo lì**: PR fusa **ma commit dopo**. 5 rami, uno con
+    sei commit che non esistono altrove.
+  - **Mai passati da una PR**: 18 rami, dieci sul solo motore.
+  - **Alberi di lavoro**: 7 su 14 su PR già fuse e puliti; 3 sono PR aperte di
+    altre sessioni; 4 hanno modifiche non committate, uno con 22 file.
+    Rimuovere un albero cancella la cartella.
+
+  Il criterio è **la punta contro `headRefOid`**, mai `git branch --merged`:
+  con lo squash quello, `git cherry` e `diff develop...ramo` mentono tutti nello
+  stesso verso — 48 falsi su 103 misurati il 24/08. La fonte è
+  `gh pr list --head <ramo>`.
+
+  Controprova già in casa: `packages` ha la casella accesa ed è l'unico repo che
+  non accumula (4 rami sul remoto contro i 53 della suite). Dice che il problema
+  è reale; non dice che la casella sia il rimedio che vogliamo.
+
 - **I processi non muoiono quando si chiude la finestra o la riga di comando**, e
   si riprendono da soli. Lo stesso problema visto dall'altro lato: oggi Sailor
   avvia processi e **non sa quali ha avviato**, quindi non può né spegnerli né
