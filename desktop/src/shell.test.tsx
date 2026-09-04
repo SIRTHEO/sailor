@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import App from "./App";
-import { buildWords, liveWords, spendWords, whoWords, LiveChip } from "./Bar";
+import { beatWords, buildWords, liveWords, spendWords, whoWords, LiveChip } from "./Bar";
 import { BlankCanvas } from "./BlankCanvas";
 import { LedgerBrowser } from "./LedgerBrowser";
 import { MACHINE, inTheStrip, machineHolds, tabsThatExist } from "./places";
@@ -189,6 +189,33 @@ describe("the bar's three facts", () => {
     const ready = buildWords({ state: "ready", message: "", changed_at: 99, running_since: 100 - 15 * 60 }, 100);
     expect(ready?.warn).toBe(false);
     expect(ready?.word).toBe("a new build is waiting running since 15m ago");
+  });
+
+  test("THE BEAT IS SILENT WHILE THE SCHEDULE IS KEPT, and loud when it is not", () => {
+    // Most decisions are «not due»: a chip that recited them would be a chip
+    // nobody reads on the day it matters.
+    const kept = { at: 1_000, decisions: [{ flow: "notte", verdict: "held" as const, why: "not due" }] };
+    expect(beatWords(kept, 1_030)).toBeNull();
+    expect(beatWords(null, 1_030)).toBeNull();
+
+    // A due flow that would not start is nowhere else in the window.
+    const broke = {
+      at: 1_000,
+      decisions: [
+        { flow: "notte", verdict: "held" as const, why: "not due" },
+        { flow: "relay", verdict: "broke" as const, why: "the engine is not signed in" },
+      ],
+    };
+    expect(beatWords(broke, 1_030)).toEqual({
+      warn: true,
+      word: "did not start · relay: the engine is not signed in",
+    });
+
+    // **A BEAT THAT STOPPED HAPPENING TURNS OFF EVERY SCHEDULE**, and the
+    // lateness is said first: it makes what the report says old news.
+    const late = beatWords(broke, 1_000 + 5 * 60);
+    expect(late?.warn).toBe(true);
+    expect(late?.word).toBe("the beat stopped · last one 5m ago");
   });
 
   test("THE EMPTY BOARD SAYS WHERE IT LOOKED, with the real paths and what it found", () => {
