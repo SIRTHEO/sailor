@@ -30,6 +30,7 @@ import {
   watchTerminals,
   type TerminalSummary,
 } from "./terminal";
+import { commandLines, type CommandLine } from "./profiles";
 import { projects, type Project } from "./workspaces";
 import { listTrees, type Tree } from "./worktree";
 
@@ -130,6 +131,8 @@ export function Terminals({ native, shown = true, ceiling = null, onCount, onLis
   /** Whether what changed in the visible terminal's workspace is on screen. */
   const [reading, setReading] = useState(false);
   const [places, setPlaces] = useState<Place[]>([]);
+  /** The command lines this machine knows, as what a terminal can be born on. */
+  const [lines, setLines] = useState<CommandLine[]>([]);
   /** Why the known places could not all be read, when they could not. */
   const [placesWhy, setPlacesWhy] = useState<string | null>(null);
 
@@ -160,6 +163,24 @@ export function Terminals({ native, shown = true, ceiling = null, onCount, onLis
         .map((outcome) => String((outcome as PromiseRejectedResult).reason));
       setPlacesWhy(refused.length > 0 ? refused.join("; ") : null);
     });
+    return () => {
+      dropped = true;
+    };
+  }, [native]);
+
+  // Read once: the table of command lines is what the product knows, not what
+  // this machine has, so it does not go stale while a terminal is open.
+  useEffect(() => {
+    if (!native) return;
+    let dropped = false;
+    void commandLines().then(
+      (known) => {
+        if (!dropped) setLines(known);
+      },
+      // Not being able to list them costs the buttons, and nothing else: the
+      // field below still takes any command line.
+      () => {},
+    );
     return () => {
       dropped = true;
     };
@@ -294,10 +315,36 @@ export function Terminals({ native, shown = true, ceiling = null, onCount, onLis
         )}
         <label className="terminals__field">
           <span className="label">What to start</span>
+          {/* THE ENGINES ARE OFFERED, NOT TYPED FROM MEMORY. Their names come
+              from the table of command lines, so a machine with other engines
+              on it offers those, and this screen names none of them. */}
+          {lines.length > 0 && (
+            <span className="terminals__engines">
+              <button
+                type="button"
+                className="terminals__engine"
+                data-chosen={program.trim() === "" || undefined}
+                onClick={() => setProgram("")}
+              >
+                your shell
+              </button>
+              {lines.map((line) => (
+                <button
+                  key={line.id}
+                  type="button"
+                  className="terminals__engine"
+                  data-chosen={program.trim() === line.executable || undefined}
+                  onClick={() => setProgram(line.executable)}
+                >
+                  {line.display_name}
+                </button>
+              ))}
+            </span>
+          )}
           <input
             className="terminals__input"
             value={program}
-            placeholder="your shell, or a command line such as claude --resume"
+            placeholder="your shell, or a command line with its options"
             onChange={(event) => setProgram(event.target.value)}
           />
         </label>

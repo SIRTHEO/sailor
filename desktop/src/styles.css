@@ -3928,6 +3928,27 @@ tr[data-followable]:hover {
   flex-grow: 1;
 }
 
+.terminals__engines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.terminals__engine {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.terminals__engine[data-chosen] {
+  border-color: var(--focus);
+  color: var(--ink);
+}
+
 .terminals__input,
 .terminals__select {
   font-family: var(--font-data);

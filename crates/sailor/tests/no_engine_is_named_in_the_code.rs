@@ -1,12 +1,12 @@
 //! Sailor is agnostic to the engine: a provider's name belongs in a
-//! descriptor, never in a string literal the code branches on **and never in
-//! the name of a function, type or field**. Both are counted here, and both
-//! counts may only fall.
+//! descriptor, never in a sentence the product says **and never in the name of
+//! a function, type or field**. Both are counted here — across the engine and
+//! the window alike — and both counts may only fall.
 
 use std::path::{Path, PathBuf};
 
 /// Re-measured exactly when it falls, never raised.
-const NAMED_TODAY: usize = 11;
+const NAMED_TODAY: usize = 29;
 
 /// Identifiers carrying an engine's name. Same rule, other half of it.
 const NAMED_IDENTIFIERS_TODAY: usize = 0;
@@ -23,24 +23,19 @@ const ATOMS: &[&str] = &[
     "openrouter",
 ];
 
-const NAMES: &[&str] = &[
-    "claude-code",
-    "claude",
-    "codex",
-    "gemini-cli",
-    "gemini",
-    "agy",
-    "antigravity",
-    "ollama",
-    "openrouter-cli",
-    "openrouter",
-];
-
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
         .expect("the workspace root")
+}
+
+/// Whether this file is one the product ships, rather than one that judges it.
+fn is_source(name: &str) -> bool {
+    if name.contains(".test.") || name == "tests.rs" {
+        return false;
+    }
+    name.ends_with(".rs") || name.ends_with(".ts") || name.ends_with(".tsx")
 }
 
 fn rust_files(under: &Path, out: &mut Vec<PathBuf>) {
@@ -54,19 +49,79 @@ fn rust_files(under: &Path, out: &mut Vec<PathBuf>) {
             if name != "target" && name != "tests" && name != "examples" {
                 rust_files(&path, out);
             }
-        } else if name.ends_with(".rs") && name != "tests.rs" {
+        } else if is_source(&name) {
             out.push(path);
         }
     }
 }
 
-/// The literals `"<name>"` in the code that is not a test.
+/// Eats up to the `*/` that closes the comment just entered. A doc comment in
+/// TypeScript is a block, and read as code its prose becomes literals.
+fn skip_block_comment(rest: &mut std::iter::Peekable<std::str::Chars<'_>>) {
+    rest.next();
+    let mut previous = ' ';
+    for letter in rest.by_ref() {
+        if previous == '*' && letter == '/' {
+            return;
+        }
+        previous = letter;
+    }
+}
+
+/// Every string literal in the code that is not a test, without its quotes.
+fn literals_of(text: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut inside: Option<char> = None;
+    let mut held = String::new();
+    let mut rest = text
+        .split("#[cfg(test)]")
+        .next()
+        .unwrap_or("")
+        .chars()
+        .peekable();
+    while let Some(letter) = rest.next() {
+        match inside {
+            Some(quote) => {
+                if letter == '\\' {
+                    rest.next();
+                } else if letter == quote {
+                    found.push(std::mem::take(&mut held));
+                    inside = None;
+                } else {
+                    held.push(letter);
+                }
+            }
+            None => match letter {
+                '"' | '`' => inside = Some(letter),
+                '/' if rest.peek() == Some(&'/') => {
+                    for skipped in rest.by_ref() {
+                        if skipped == '\n' {
+                            break;
+                        }
+                    }
+                }
+                '/' if rest.peek() == Some(&'*') => skip_block_comment(&mut rest),
+                _ => {}
+            },
+        }
+    }
+    found
+}
+
+/// **A SENTENCE THE PRODUCT SAYS IS A LITERAL TOO.** Counting only `"codex"`
+/// missed «your shell, or a command line such as claude --resume»: a field that
+/// names one engine to whoever installed another, in the middle of a string
+/// nothing matched.
 fn named_in(text: &str) -> usize {
-    let code = text.split("#[cfg(test)]").next().unwrap_or("");
-    NAMES
+    literals_of(text)
         .iter()
-        .map(|name| code.matches(&format!("\"{name}\"")).count())
-        .sum()
+        .filter(|literal| {
+            literal
+                .split(|letter: char| !letter.is_alphanumeric() && letter != '_')
+                .flat_map(words_of)
+                .any(|word| ATOMS.contains(&word.as_str()))
+        })
+        .count()
 }
 
 /// The words of an identifier, split on `_` and on every capital.
@@ -114,6 +169,10 @@ fn only_code(text: &str) -> String {
                 }
                 out.push(' ');
             }
+            '/' if rest.peek() == Some(&'*') => {
+                skip_block_comment(&mut rest);
+                out.push(' ');
+            }
             other => out.push(other),
         }
     }
@@ -144,6 +203,7 @@ fn measure_with(count_in: fn(&str) -> usize) -> (usize, Vec<(usize, PathBuf)>) {
     let mut files = Vec::new();
     rust_files(&root.join("crates"), &mut files);
     rust_files(&root.join("desktop/src-tauri/src"), &mut files);
+    rust_files(&root.join("desktop/src"), &mut files);
     let mut per_file = Vec::new();
     let mut total = 0;
     for file in files {
@@ -163,6 +223,9 @@ fn the_control_first_a_literal_is_counted_and_a_test_module_is_not() {
     assert_eq!(named_in(r#"let x = "codex"; let y = "claude-code";"#), 2);
     assert_eq!(named_in(r#"let x = 1; #[cfg(test)] mod t { const A: &str = "codex"; }"#), 0);
     assert_eq!(named_in(r#"// codex is mentioned in prose only"#), 0);
+    // A sentence shown to a person counts once, however long it is.
+    assert_eq!(named_in(r#"placeholder="a command line such as codex resume""#), 1);
+    assert_eq!(named_in(r#"let ok = "including the legacy path";"#), 0);
 }
 
 #[test]

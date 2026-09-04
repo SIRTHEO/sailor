@@ -747,6 +747,37 @@ describe("the terminals screen", () => {
     }
   });
 
+  test("THE ENGINES ARE OFFERED BY NAME, AND THE NAMES ARE NOT THIS SCREEN'S", async () => {
+    // The list is the table of command lines: a machine carrying other engines
+    // offers those, and nothing here has to be edited for it to happen.
+    const shell = pretendShell({
+      terminal_list: [],
+      terminal_open: TWO[0],
+      ...PLACES,
+      profile_command_lines: [
+        { id: "un-motore", display_name: "Un Motore", executable: "unmotore" },
+        { id: "un-altro", display_name: "Un Altro", executable: "unaltro" },
+      ],
+    });
+    try {
+      render(
+        <div className="app">
+          <Terminals native />
+        </div>,
+      );
+      const chosen = await screen.findByRole("button", { name: "Un Altro" });
+      await act(async () => {
+        fireEvent.click(chosen);
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Open a terminal" }));
+      });
+      expect(shell.argsOf("terminal_open")[0]).toMatchObject({ program: "unaltro", args: undefined });
+    } finally {
+      shell.stop();
+    }
+  });
+
   test("WHAT TO START CROSSES THE BRIDGE AS A PROGRAM AND ITS ARGUMENTS", async () => {
     // Typing `claude --resume` must not look for a binary named, literally,
     // `claude --resume`: the field is split before the call.
@@ -758,7 +789,7 @@ describe("the terminals screen", () => {
         </div>,
       );
       await screen.findByRole("combobox");
-      fireEvent.change(screen.getByPlaceholderText(/claude --resume/), { target: { value: "claude --resume" } });
+      fireEvent.change(screen.getByPlaceholderText(/a command line with its options/), { target: { value: "claude --resume" } });
       await act(async () => {
         fireEvent.click(screen.getByRole("button", { name: "Open a terminal" }));
       });
