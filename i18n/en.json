@@ -461,5 +461,6 @@
   "window.step.state.running": "running",
   "window.step.state.waiting": "waiting",
   "window.step.state.idle": "not run yet",
+  "window.step.state.skipped": "not taken",
   "window.step.state.went": "went"
 }
