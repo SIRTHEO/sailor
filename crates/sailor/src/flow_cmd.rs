@@ -2091,8 +2091,11 @@ fn relocate_flow(sources: &[FlowSource], name: &str, from: Option<&str>) -> Resu
     let mut document: Value = serde_json::from_str(&text)
         .map_err(|error| format!("{} non è un JSON valido: {error}", path.display()))?;
 
-    let (moved, left_alone) = relocate_workdirs(&mut document, &old_root)
+    let (mut moved, mut left_alone) = relocate_workdirs(&mut document, &old_root)
         .ok_or_else(|| format!("{} non ha passi da spostare", path.display()))?;
+    let (from_inputs, kept) = relocate_declared_inputs(&mut document, &old_root);
+    moved.extend(from_inputs);
+    left_alone.extend(kept);
 
     if !moved.is_empty() {
         let mut rewritten = serde_json::to_string_pretty(&document)
@@ -2143,6 +2146,56 @@ fn relocate_flow(sources: &[FlowSource], name: &str, from: Option<&str>) -> Resu
         );
     }
     Ok(report)
+}
+
+/// The same, on the inputs a person writes by hand.
+///
+/// **THE CURE LOOKS WHERE THE JUDGE LOOKS**: `hardcoded_paths` reads the
+/// declared inputs too, so a flow could be refused for a field this command
+/// never walked. A field equal to the root becomes `.` and is not removed:
+/// an input is read by name, and taking it away changes what arrives.
+fn relocate_declared_inputs(document: &mut Value, old_root: &Path) -> (Vec<String>, Vec<String>) {
+    let mut moved = Vec::new();
+    let mut left_alone = Vec::new();
+    let Some(inputs) = document.get_mut("inputs").and_then(Value::as_object_mut) else {
+        return (moved, left_alone);
+    };
+    for (name, declared) in inputs.iter_mut() {
+        walk_inputs_for_places(name, declared, old_root, &mut moved, &mut left_alone);
+    }
+    (moved, left_alone)
+}
+
+fn walk_inputs_for_places(
+    name: &str,
+    value: &mut Value,
+    old_root: &Path,
+    moved: &mut Vec<String>,
+    left_alone: &mut Vec<String>,
+) {
+    let Some(fields) = value.as_object_mut() else {
+        return;
+    };
+    for (key, inner) in fields.iter_mut() {
+        if !POSITION_FIELDS.contains(&key.as_str()) {
+            walk_inputs_for_places(name, inner, old_root, moved, left_alone);
+            continue;
+        }
+        let Value::String(declared) = inner else {
+            continue;
+        };
+        if !(declared.starts_with('/') || declared.starts_with("~/")) {
+            continue;
+        }
+        match relative_to(old_root, declared) {
+            Some(rest) => {
+                let rest = if rest.is_empty() { ".".to_owned() } else { rest };
+                moved.push(format!("{name}: «{declared}» → «{rest}»"));
+                *inner = Value::String(rest);
+            }
+            None => left_alone.push(format!("{name}: «{declared}»")),
+        }
+    }
 }
 
 /// Toglie il prefisso dai `workdir` del documento, senza toccare il disco.
@@ -6709,6 +6762,48 @@ mod tests {
             document["graph"]["steps"][0]["with"]["workdir"],
             serde_json::json!({"$from": "/innesco/text"})
         );
+    }
+
+    /// **THE CURE MUST REACH WHERE THE REFUSAL POINTS.** `flow check` refuses a
+    /// flow for an absolute place field in the declared inputs and names
+    /// `flow relocate` as the way out; relocate walked only the steps, so on
+    /// this machine it printed a report, changed nothing, exited zero, and the
+    /// check stayed red on the very field it had named.
+    #[test]
+    fn a_place_field_in_the_declared_inputs_is_relocated_too() {
+        let mut document = serde_json::json!({
+            "id": "prova", "description": "d",
+            "graph": {"steps": []},
+            "inputs": {
+                "riferimenti": {
+                    "workdir": "/vecchio/albero/pagina",
+                    "root_path": "/vecchio/albero/pagina",
+                    "brief": "un testo che nomina /vecchio/albero e resta com'è"
+                },
+                "altrove": {"workdir": "/una/casa/fuori"},
+                "sulla-radice": {"workdir": "/vecchio/albero"}
+            }
+        });
+
+        let (moved, left) = relocate_declared_inputs(&mut document, Path::new("/vecchio/albero"));
+
+        assert_eq!(document["inputs"]["riferimenti"]["workdir"], "pagina");
+        // AN INPUT IS READ BY NAME: the field on the root becomes «.», never
+        // taken away, or the flow would receive one key less than it declares.
+        assert_eq!(document["inputs"]["sulla-radice"]["workdir"], ".");
+        // Outside the prefix, and not a place field: neither is this command's
+        // to decide.
+        assert_eq!(document["inputs"]["altrove"]["workdir"], "/una/casa/fuori");
+        assert_eq!(
+            document["inputs"]["riferimenti"]["root_path"],
+            "/vecchio/albero/pagina"
+        );
+        assert!(document["inputs"]["riferimenti"]["brief"]
+            .as_str()
+            .expect("il testo")
+            .contains("/vecchio/albero"));
+        assert_eq!(moved.len(), 2, "spostati: {moved:?}");
+        assert_eq!(left.len(), 1, "lasciati: {left:?}");
     }
 
     // ── il totale che contiene un'incognita ──────────────────────────────
