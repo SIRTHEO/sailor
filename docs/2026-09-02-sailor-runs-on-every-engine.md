@@ -115,12 +115,22 @@ Starting point, so the mandate builds on it instead of beside it.
    guard the case the class exists for: a refusal that **exits zero** is still
    recorded as exhausted, and an engine whose descriptor declares no words for
    exhaustion kills the chain instead of inventing the class.
-   *What is not built, and why:* the cooldown beside the profile —
-   `cooldown_until`, `error_count`, `disabled_until`, `disabled_reason`. Not one
-   of those four names occurs anywhere in `crates/`. So the class is known at
-   the moment of the refusal and forgotten straight after: the next run asks the
-   exhausted engine again, and learns the same thing by spending the same call.
-   In `da-fare.md`.
+   The cooldown is built too, under other names: `actions::cooldown` keeps
+   `SAILOR_COOLDOWNS` — `cooldowns.json` beside the store — as `{since, until,
+   said}` per engine, written when a refusal closes with the class and the
+   descriptor declares `cooldown_secs`, and read while the candidates are
+   chosen: the engine is refused **before it is started**, the refusal names
+   until when and what it said, and the chain goes on with the others. Until
+   04/09 only the file's arithmetic was proved; a chain now drives it —
+   `an_engine_that_said_its_quota_was_spent_is_not_started_again` runs the
+   engine once, refuses it the second time without starting it, and brings its
+   time forward to see it knocked on again. Its mutant, taking the reading of
+   the list away, turns it red.
+   *What is not built, and why:* the other half of the shape the claim names —
+   `error_count` and `disabled_reason`, an engine switched off for repeating
+   errors rather than for a quota. Nothing counts an engine's failures, so
+   nothing can disable one for them; what comes back at its reset is the
+   quota case alone. In `da-fare.md`.
 3. **A budget per engine on a declared window excludes, never reorders.**
    Declared in `budgets.json` beside the profile store (`SAILOR_BUDGETS`
    overrides), per engine id: a cap in micro-units and a window in seconds.
