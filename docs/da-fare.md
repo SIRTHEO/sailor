@@ -200,6 +200,19 @@ dichiarati:
   vuoto invece di far comparire un valore verosimile. È la pretesa E.2 del
   mandato, l'unica delle cinque parole che manca.
 
+- **Quattro motori su cinque non dichiarano nessun canale di quota**, e finché
+  non lo dichiarano `sailor remaining` può solo dire che nessuno li ha chiesti.
+  Misurato il 04/09/2026: sul disco ci sono cinque righe di comando, una sola
+  porta un blocco `quota` nel descrittore. I canali che il mandato nomina — il
+  `account/rateLimits/read` dell'app-server di uno, gli endpoint dei motori a
+  chiave, le intestazioni `x-ratelimit-remaining-*` — **non si possono scrivere
+  onestamente da qui**: la prova che il mandato pretende è «una prova per
+  lettore su una risposta **registrata**», e registrare una risposta vera
+  richiede una sessione autenticata, che è il gesto delle credenziali. Un
+  lettore scritto contro una risposta inventata è esattamente il difetto contro
+  cui questa sezione esiste. L'ordine è quindi: prima le credenziali, poi la
+  registrazione della risposta, poi il lettore.
+
 - **`sample.ts` contiene dati finti** scritti «finché la finestra non legge dal
   motore», che ormai legge.
 - ~~**Il crate dei ganci di Claude Code serve un mondo che stiamo smontando**, e
