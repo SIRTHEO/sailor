@@ -16,8 +16,10 @@ import {
   livenessOf,
   livenessWord,
   OutputBus,
+  paneGesture,
   STILL_SPEAKING_MS,
   splitCommandLine,
+  windowHold,
   type KeyAction,
   type TerminalSummary,
 } from "./terminal";
@@ -122,6 +124,39 @@ function kinds(actions: KeyAction[]): string[] {
 function submittedLines(actions: KeyAction[]): string[] {
   return actions.flatMap((action) => (action.kind === "submit" ? [action.line] : []));
 }
+
+describe("the two keys the window keeps for itself", () => {
+  test("A TERMINAL YOU CANNOT COPY OUT OF IS NOT ONE YOU WORK IN", () => {
+    expect(paneGesture({ key: "c", metaKey: true }, "meta")).toBe("copy");
+    expect(paneGesture({ key: "v", metaKey: true }, "meta")).toBe("paste");
+    expect(paneGesture({ key: "C", ctrlKey: true, shiftKey: true }, "ctrl_shift")).toBe("copy");
+    expect(paneGesture({ key: "V", ctrlKey: true, shiftKey: true }, "ctrl_shift")).toBe("paste");
+  });
+
+  test("AND NOTHING TAKES CTRL-C, under either hold", () => {
+    // Copy on the key that stops a runaway process leaves closing the pane as
+    // the only way out of one.
+    expect(paneGesture({ key: "c", ctrlKey: true }, "meta")).toBe("to_process");
+    expect(paneGesture({ key: "c", ctrlKey: true }, "ctrl_shift")).toBe("to_process");
+    expect(paneGesture({ key: "c", ctrlKey: true, metaKey: true }, "meta")).toBe("to_process");
+  });
+
+  test("every other key belongs to the process", () => {
+    expect(paneGesture({ key: "c" }, "meta")).toBe("to_process");
+    expect(paneGesture({ key: "v", ctrlKey: true }, "ctrl_shift")).toBe("to_process");
+    expect(paneGesture({ key: "k", metaKey: true }, "meta")).toBe("to_process");
+    expect(paneGesture({ key: "ArrowUp", metaKey: true }, "meta")).toBe("to_process");
+    expect(paneGesture({ key: "c", metaKey: true, altKey: true }, "meta")).toBe("to_process");
+  });
+
+  test("the hold is the machine's, not a guess made once", () => {
+    expect(windowHold("MacIntel")).toBe("meta");
+    expect(windowHold("iPhone")).toBe("meta");
+    expect(windowHold("Linux x86_64")).toBe("ctrl_shift");
+    expect(windowHold("Win32")).toBe("ctrl_shift");
+    expect(windowHold("")).toBe("ctrl_shift");
+  });
+});
 
 describe("where a key goes", () => {
   test("NO KEY OTHER THAN ENTER ENDS UP IN ROUTING", () => {
