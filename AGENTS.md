@@ -239,6 +239,31 @@ stessa misura un ramo che *deve* risultare portante — uno con dentro un file c
 il tronco non ha. Se esce «superato», la misura è cieca e ogni numero di quella
 passata si butta.
 
+## Il ciclo di un ramo, e come si chiama
+
+Misurato il 05/09/2026: **64 rami locali, 56 con contenuto identico al tronco**
+e cinque copie di lavoro aperte da giorni, tutte pulite e tutte già dentro. Il
+tronco stava **196 commit avanti al remoto** e nessuno aveva spinto. Nomi come
+`work/fusione-sera-guasti` e `innesto-toml-codex-ricucito`: raccontano una sera,
+non un lavoro.
+
+- **Il tronco è `sorgenti`**, e si spinge su `origin/sorgenti` **a ogni
+  rilascio**, non «quando ci si ricorda»: un rilascio che mette in servizio un
+  binario che il remoto non ha mai visto è un rilascio che esiste su una
+  macchina sola. `origin/main` è la storia **precedente alla riscrittura** e
+  non si tocca finché Theo non decide cosa farne.
+- **Un ramo si chiama `work/<cosa-fa>`, in inglese, come i commit**:
+  `work/terminal-claims`, non `work/annunci-terminali`; `work/toml-graft`, non
+  `work/innesto-toml`. Il nome dice il lavoro, non il giorno né il gesto
+  (`fusione`, `ricucito`, `sera` non sono lavori).
+- **Nasce da `sorgenti`, torna in `sorgenti`, e muore.** Fuso il ramo, si prova
+  per contenuto che è superato (sotto) e si cancella nello stesso gesto; la
+  copia di lavoro si toglie con `git worktree remove`. Un ramo che sopravvive
+  alla propria fusione è ingombro che qualcuno dovrà rimisurare.
+- **Chi trova un ramo di un altro non lo cancella**: lo prova per contenuto,
+  e se è superato lo dice a chi lo ha aperto — o a Theo — con la misura
+  accanto.
+
 ## Chi crea non giudica
 
 Il verdetto su un lavoro va a un contesto che non l'ha prodotto. Se hai scritto
