@@ -145,6 +145,16 @@ dichiarati:
   degli strumenti: chiedere al motore, non tenere una lista.
 - **Un passo che esegue un comando non conserva il proprio testo**: di lui resta
   solo l'esito.
+- **La finestra non ha un bersaglio di rilascio, quindi non si installa.** Si
+  costruisce (`npm run build` più `cargo build --release` sul manifesto del
+  guscio, misurato: 12 MB, meno di due minuti) e si lancia dal suo percorso
+  dentro `target/`, che una pulizia porta via. Perché `sailor release` la sappia
+  mettere in servizio come mette `sailor` servono tre cose: un bersaglio che
+  dichiari **quale manifesto** costruire — il guscio dichiara un `[workspace]`
+  suo, quindi non è quello della radice — un modo di costruire la pagina dentro
+  il clone di HEAD senza rifare `npm ci` a ogni rilascio, e la decisione su
+  quali giudici valgono per un rilascio della finestra: quelli della radice non
+  toccano né il guscio né la pagina.
 - **`sample.ts` contiene dati finti** scritti «finché la finestra non legge dal
   motore», che ormai legge.
 - ~~**Il crate dei ganci di Claude Code serve un mondo che stiamo smontando**, e
