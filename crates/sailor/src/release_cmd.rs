@@ -350,6 +350,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     }
 
     write_stamp(&stamp, &source_rev, &head_short);
+    say_what_the_name_finds(selected, &safe);
 
     if let Some(service) = selected.service {
         // The service runs every 90 seconds: between the first check and this
@@ -553,6 +554,39 @@ fn status_description(status: ExitStatus) -> String {
         .code()
         .map(|code| format!("exit {code}"))
         .unwrap_or_else(|| "ended by a signal".to_string())
+}
+
+/// Says what a shell would run when somebody types the target's name.
+///
+/// The copy in service lives outside `target/` on purpose, and that same care
+/// puts it where a shell may never look. This only reports: where the binary
+/// belongs on a machine is not a release's decision to take.
+fn say_what_the_name_finds(selected: &Target, safe: &Path) {
+    let found = match toolbox::probe::look_up(selected.bin, &toolbox::Machine::current()) {
+        toolbox::probe::Look::Found(path) => Some(path.display().to_string()),
+        _ => None,
+    };
+    let same_bytes = found
+        .as_deref()
+        .is_some_and(|first| files_equal(Path::new(first), safe).unwrap_or(false));
+    match release::on_path(found.as_deref(), &safe.display().to_string(), same_bytes) {
+        release::OnPath::Same => {}
+        release::OnPath::Absent => println!(
+            "   {}",
+            catalogue::say("cli.release.the_name_finds_nothing", &[("name", selected.bin)])
+        ),
+        release::OnPath::Shadowed { first } => println!(
+            "   {}",
+            catalogue::say(
+                "cli.release.the_name_finds_another_one",
+                &[
+                    ("name", selected.bin),
+                    ("first", &first),
+                    ("path", &safe.display().to_string()),
+                ]
+            )
+        ),
+    }
 }
 
 /// The page of the clone, built where the shell will look for it.
