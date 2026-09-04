@@ -32,8 +32,7 @@ interface StripProps {
 
 /**
  * The strip above a bench's pane: what was asked, and the two ways out. The
- * terminal stays open after it — what was learnt in there is often the next
- * thing somebody wants to read.
+ * terminal stays open after it: what was learnt in there is often read next.
  */
 export function WorkbenchStrip({ bench, onClosed }: StripProps) {
   const [said, setSaid] = useState("");
