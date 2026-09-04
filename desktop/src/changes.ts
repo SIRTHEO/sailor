@@ -37,6 +37,38 @@ export function openInEditor(path: string): Promise<void> {
   return ask<void>("open_in_editor", { path });
 }
 
+/** Who chose what opens a file: `SAILOR_EDITOR`, `VISUAL`, or nobody. */
+export type OpenerKind = "declared" | "visual" | "system";
+
+/** What will run on a file, and who chose it. */
+export interface Opener {
+  kind: OpenerKind;
+  program: string;
+  args: string[];
+}
+
+export function whoOpensFiles(): Promise<Opener> {
+  return ask<Opener>("who_opens_files");
+}
+
+/**
+ * What the button can honestly promise.
+ *
+ * **AN ASSOCIATION IS NOT AN EDITOR**: with nothing declared the file goes
+ * wherever this machine sends that kind, which may only read it.
+ */
+export function openerWord(opener: Opener | null): string {
+  if (!opener) return "open the file";
+  if (opener.kind === "system") return "hand to the system";
+  return `open in ${opener.program}`;
+}
+
+/** What is worth saying once, above the files, when nobody declared one. */
+export function openerNote(opener: Opener | null): string | null {
+  if (!opener || opener.kind !== "system") return null;
+  return `No editor is declared: a file goes to \`${opener.program}\`, which hands it to whatever this machine opens that kind with — and that may not be able to write it. Name one in SAILOR_EDITOR.`;
+}
+
 /** The word a person reads for a porcelain status. */
 export function statusWord(status: string): string {
   if (status === "??") return "new";
