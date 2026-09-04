@@ -1,0 +1,22 @@
+{
+  "_readme": [
+    "WHERE THE PRICE CATALOGUE IS DOWNLOADED FROM, shipped with the product as",
+    "data. It is here and not in Rust for the reason every other engine fact is:",
+    "a product that claims to know no provider must not carry one provider's",
+    "address in its code, and whoever wants another catalogue must be able to",
+    "point at it without a compiler.",
+    "",
+    "`url` is asked with no authentication, so there is no key anywhere near",
+    "this file. `shape` says which reader understands the answer: today there is",
+    "one, and naming it is what lets a second arrive as data instead of as a",
+    "branch.",
+    "",
+    "MODELS_CATALOGUE_SOURCE names a file read instead of this one, whole.",
+    "MODELS_CATALOG_FETCH_OVERRIDE replaces the download itself with any",
+    "command, which is how the tests reach both outcomes without a line."
+  ],
+  "catalogue": {
+    "url": "https://openrouter.ai/api/v1/models",
+    "shape": "openrouter-v1"
+  }
+}
