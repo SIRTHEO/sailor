@@ -1,12 +1,9 @@
-//! **AN ENDING THE WINDOW HAS NO WORD FOR IS AN ENDING SHOWN AS A RAW NAME.**
-//! The engine says how a step ended; the page turns that into a word a person
-//! reads, from a table of its own. Two hand-written lists confirm each other
-//! even when they are wrong together — fault 19 — and here the drift is silent:
-//! the page falls back to printing whatever it did not recognise.
-//!
-//! Both lists are read from source, so neither is copied here. A variant added
-//! to the engine turns this red the day it is added, not the day somebody sees
-//! `NotYet` on a screen.
+//! **AN ENDING THE WINDOW HAS NO WORD FOR IS SHOWN AS A RAW NAME.** Two
+//! hand-written lists confirm each other even when they are wrong together —
+//! fault 19 — and here the drift is silent: the page prints whatever it did
+//! not recognise. Both lists are read from source, so neither is copied here,
+//! and a variant added to the engine turns this red the day it is added, not
+//! the day somebody sees `NotYet` on a screen.
 
 use std::path::{Path, PathBuf};
 
