@@ -12,7 +12,10 @@ use std::path::{Path, PathBuf};
 /// A throwaway home under the temp directory, deleted and rebuilt every run: a
 /// test that inherits the previous one's dirt proves nothing.
 fn fake_home(name: &str) -> PathBuf {
-    let home = std::env::temp_dir().join(format!("inventory-test-{name}"));
+    let home = std::env::temp_dir().join(format!(
+        "inventory-test-{name}-{}",
+        std::process::id()
+    ));
     let _ = fs::remove_dir_all(&home);
     fs::create_dir_all(&home).unwrap();
     home

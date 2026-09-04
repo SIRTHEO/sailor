@@ -10,7 +10,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 fn fake_home(name: &str) -> PathBuf {
-    let home = std::env::temp_dir().join(format!("reachability-test-{name}"));
+    let home = std::env::temp_dir().join(format!(
+        "reachability-test-{name}-{}",
+        std::process::id()
+    ));
     let _ = fs::remove_dir_all(&home);
     fs::create_dir_all(&home).unwrap();
     home

@@ -490,7 +490,10 @@ fn the_device_in_the_list_is_the_one_the_program_inside_reports() {
 /// cartella, e chi legge cercherebbe nel posto sbagliato.
 #[test]
 fn a_workspace_that_is_not_there_is_refused_before_anything_starts() {
-    let missing = std::env::temp_dir().join("sailor-terminal-non-esiste-davvero");
+    let missing = std::env::temp_dir().join(format!(
+        "sailor-terminal-non-esiste-davvero-{}",
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&missing);
     assert!(Workspace::open(&missing).is_err());
 }
