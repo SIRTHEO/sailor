@@ -108,6 +108,19 @@ Starting point, so the mandate builds on it instead of beside it.
    *Proof:* a fake engine that prints the weekly-limit sentence closes the step
    with that class; removing the form from the descriptor turns it back into
    `exit_error`.
+   *Where it landed:* the class and the descriptor's forms, measured on 04/09.
+   `quota_exhausted` is the class an engine's own refusal closes a step with,
+   the forms that mean it are read from the descriptor, and the reset instant
+   is extracted when the engine gives one. Three tests hold it, and two of them
+   guard the case the class exists for: a refusal that **exits zero** is still
+   recorded as exhausted, and an engine whose descriptor declares no words for
+   exhaustion kills the chain instead of inventing the class.
+   *What is not built, and why:* the cooldown beside the profile —
+   `cooldown_until`, `error_count`, `disabled_until`, `disabled_reason`. Not one
+   of those four names occurs anywhere in `crates/`. So the class is known at
+   the moment of the refusal and forgotten straight after: the next run asks the
+   exhausted engine again, and learns the same thing by spending the same call.
+   In `da-fare.md`.
 3. **A budget per engine on a declared window excludes, never reorders.**
    Declared in `budgets.json` beside the profile store (`SAILOR_BUDGETS`
    overrides), per engine id: a cap in micro-units and a window in seconds.
@@ -118,6 +131,14 @@ Starting point, so the mandate builds on it instead of beside it.
    no profile column yet, and a cap per profile would have nothing to sum.
    *Proof:* two priced calls under a cap one call fills, the second is refused
    before spending and the chain goes on; a cap on another engine binds nothing.
+   *Where it landed:* built, and the proof is the one written above, both arms.
+   `actions::budget` reads `SAILOR_BUDGETS` or `budgets.json` beside the store;
+   `an_engine_over_its_budget_is_refused_before_spending` makes one priced call
+   of 18.30 $ under a cap of 10 $, finds the window full on the second, and
+   asserts the ledger holds **one** call — the refusal spent nothing — then runs
+   the same engine against a file that caps some other engine and it goes
+   through. A file that does not parse is an error, never «no caps»: a broken
+   budget that read as «spend freely» is the one way this could fail open.
 4. **The catalogue carries what nobody's does: how much is free, on what pact,
    how much is left.** Three columns in `crates/models`, fed by the OmniRoute
    free-tier dataset (MIT, decision of 30/08) and by A.1. Every free entry
@@ -456,6 +477,16 @@ Starting point, so the mandate builds on it instead of beside it.
    second source.
    *Proof:* the screen reads `work_survey` and nothing else; a test on the
    command asked.
+   *Where it landed:* the survey, not the screen. `work_survey` is an action,
+   the shipped flow `watch-the-crew` asks it, and three tests hold it — one of
+   them that the watch **starts no engine**, which is what keeps a watch from
+   being switched off for what it costs. The window knows the word only as a
+   step kind on the canvas.
+   *What is not built, and why:* Terminals › crew. Nothing under `desktop/src`
+   reads that survey, so the claim's own subject — the window — shows nothing
+   of the crew, and the answer is reachable from the command line alone. It is
+   a screen over an answer that already exists, and it was not the thing
+   standing between Theo and using Sailor tonight. In `da-fare.md`.
 3. **The ledger is the memory, without a vector store.** A `memories` table
    with `type` (user, feedback, project, reference), `label`, `value`,
    `provenance` (run, step, session), `modified`, and `valid_from` /
