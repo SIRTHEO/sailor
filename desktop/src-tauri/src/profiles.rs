@@ -26,6 +26,9 @@ pub(crate) struct CommandLine {
     /// The variable's name, or the swapped path. Empty when there is neither.
     home_detail: String,
     home_note: String,
+    /// The home this engine already keeps on this machine, whole. Empty where
+    /// nobody established one: there is then nothing to adopt.
+    home_already_here: String,
 }
 
 /// One profile as the window draws it. `access` is the verdict to act on and
@@ -79,6 +82,11 @@ pub(crate) fn profile_command_lines() -> Vec<CommandLine> {
                 home_mechanism,
                 home_detail,
                 home_note: cli.home_note.to_owned(),
+                home_already_here: std::env::var_os("HOME")
+                    .map(std::path::PathBuf::from)
+                    .and_then(|home| ::profiles::existing_home(cli, &home))
+                    .map(|at| at.display().to_string())
+                    .unwrap_or_default(),
             }
         })
         .collect()
@@ -118,6 +126,15 @@ pub(crate) fn profile_switch(app: tauri::AppHandle, cli_id: String, name: String
 #[tauri::command]
 pub(crate) fn profile_create(app: tauri::AppHandle, cli_id: String, name: String) -> Result<(), String> {
     sailor::profiles_cmd::create(&cli_id, &name)?;
+    crate::events::emit(&app, "profile", &serde_json::json!({ "cli_id": cli_id, "name": name }));
+    Ok(())
+}
+
+/// **THE HOME THAT ALREADY HOLDS AN ACCOUNT**, taken as it is. Nothing is
+/// created and nothing is written inside it: see `sailor::profiles_cmd`.
+#[tauri::command]
+pub(crate) fn profile_adopt(app: tauri::AppHandle, cli_id: String, name: String) -> Result<(), String> {
+    sailor::profiles_cmd::adopt(&cli_id, &name, None)?;
     crate::events::emit(&app, "profile", &serde_json::json!({ "cli_id": cli_id, "name": name }));
     Ok(())
 }

@@ -7,6 +7,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { ProfileList } from "./ProfileList";
+import { toAdopt } from "./profiles";
 
 afterEach(() => {
   cleanup();
@@ -20,6 +21,7 @@ const CLIS = [
     native_profiles_note: "`-p/--profile` layers a config file over the base one.",
     home_mechanism: "variable" as const, home_detail: "CODEX_HOME",
     home_note: "checked with `codex doctor`.",
+    home_already_here: "/una/casa/.codex",
   },
   {
     id: "antigravity", display_name: "Antigravity", executable: "antigravity",
@@ -27,6 +29,7 @@ const CLIS = [
     native_profiles_note: "no such binary in PATH: the product installs as `agy`.",
     home_mechanism: "none" as const, home_detail: "",
     home_note: "the string is absent from the binary and the home follows $HOME.",
+    home_already_here: "",
   },
 ];
 
@@ -131,5 +134,27 @@ describe("the engine is asked, not guessed at", () => {
     await vi.waitUntil(() => asked.length >= 2);
     expect(asked).toContain("profile_command_lines");
     expect(asked).toContain("profiles");
+  });
+});
+
+/**
+ * **A NEW PROFILE IS AN EMPTY HOME**, and every engine lit under it starts
+ * logged out. The account already on the machine is offered as it is — once,
+ * and never a second time on a home some profile already holds.
+ */
+describe("the home that is already here", () => {
+  test("the screen offers it by name, and stops offering once it is taken", async () => {
+    anEngineThatAnswers();
+    render(<ProfileList native />);
+    await waitFor(() => expect(screen.getByText("Codex")).toBeTruthy());
+    expect(screen.getByRole("button", { name: /Adopt \/una\/casa\/\.codex/ })).toBeTruthy();
+
+    const codex = CLIS[0];
+    expect(toAdopt(codex, ROWS)).toBe("/una/casa/.codex");
+    expect(
+      toAdopt(codex, [...ROWS, { ...ROWS[0], name: "gia-presa", home_dir: "/una/casa/.codex" }]),
+      "a second profile on one home is the same account under two names",
+    ).toBeNull();
+    expect(toAdopt(CLIS[1], ROWS), "nothing to adopt where nobody found a home").toBeNull();
   });
 });

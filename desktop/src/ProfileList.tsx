@@ -6,10 +6,12 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import {
+  adopt,
   commandLines,
   create,
   rows,
   switchTo,
+  toAdopt,
   type Access,
   type CommandLine,
   type Row,
@@ -38,7 +40,9 @@ export function ProfileList({ native }: { native: boolean }) {
   const [ask, setAsk] = useState<Ask>({ state: "asking" });
   const [busy, setBusy] = useState<string | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
-  const [naming, setNaming] = useState<string | null>(null);
+  // Which command line is being named, and which gesture the name is for:
+  // one form, two endings.
+  const [naming, setNaming] = useState<{ id: string; how: "make" | "adopt" } | null>(null);
   const [name, setName] = useState("");
 
   const read = useCallback(() => {
@@ -166,12 +170,14 @@ export function ProfileList({ native }: { native: boolean }) {
               </table>
             )}
 
-            {cli.home_mechanism === "none" ? null : naming === cli.id ? (
+            {cli.home_mechanism === "none" ? null : naming?.id === cli.id ? (
               <form
                 className="now__new"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  if (name.trim() !== "") act(`new/${cli.id}`, create(cli.id, name.trim()));
+                  if (name.trim() === "") return;
+                  const how = naming.how === "adopt" ? adopt : create;
+                  act(`new/${cli.id}`, how(cli.id, name.trim()));
                 }}
               >
                 <input
@@ -182,16 +188,35 @@ export function ProfileList({ native }: { native: boolean }) {
                   onChange={(event) => setName(event.target.value)}
                 />
                 <button type="submit" className="rail__all" disabled={busy !== null}>
-                  make it
+                  {naming.how === "adopt" ? "adopt it" : "make it"}
                 </button>
                 <button type="button" className="rail__all" onClick={() => setNaming(null)}>
                   never mind
                 </button>
               </form>
             ) : (
-              <button type="button" className="rail__new" onClick={() => { setNaming(cli.id); setName(""); }}>
-                + New profile
-              </button>
+              <div className="now__new">
+                <button
+                  type="button"
+                  className="rail__new"
+                  onClick={() => { setNaming({ id: cli.id, how: "make" }); setName(""); }}
+                >
+                  + New profile
+                </button>
+                {/* A NEW HOME IS AN EMPTY ONE: every engine lit under it
+                    starts logged out. The account already on this machine is
+                    taken where it is, and nothing is copied into a second
+                    home. */}
+                {toAdopt(cli, ask.profiles) !== null && (
+                  <button
+                    type="button"
+                    className="rail__new"
+                    onClick={() => { setNaming({ id: cli.id, how: "adopt" }); setName(""); }}
+                  >
+                    + Adopt {toAdopt(cli, ask.profiles)}
+                  </button>
+                )}
+              </div>
             )}
           </section>
         );

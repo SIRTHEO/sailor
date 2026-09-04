@@ -219,6 +219,7 @@ fn main() {
             profiles::profile_command_lines,
             profiles::profile_switch,
             profiles::profile_create,
+            profiles::profile_adopt,
             models::models_catalogue,
             models::quota,
             models::model_set,
