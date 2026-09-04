@@ -257,6 +257,17 @@ against a host-owned terminal and read the word back from its backlog. With the
 letterbox thread dropping its bytes, both went red. One thing the judge noted:
 the relay reports «went» when the letterbox accepted the bytes, not when the
 program read them.
+**And on the evening of 04/09 the chain past the ceiling ran whole, for the
+first time.** A terminal Sailor owns was filled to 1,500,000 bytes — over the
+500,000-token ceiling the step declares — and `sailor flow run
+passa-il-testimone ttys009` took every step: the measure said past the ceiling,
+the request for the mandate was typed into the terminal, the collection
+answered `not_yet` because nobody had left one, and after a mandate was left
+through `sailor terminal mandate` the resumed run reset the session (`/clear`)
+and handed the mandate back. All three lines were read back from the
+terminal's own output, in order, so «went» was checked against what the
+program actually received. What is still unobserved is only the agent's half:
+a real agent deciding to write the mandate when asked.
 
 **B3. Sailor says when an agent is about to need the baton**, from the count it
 already keeps, rather than from a guess.
