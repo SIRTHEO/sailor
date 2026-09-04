@@ -829,3 +829,8 @@ it; the seven gestures below are listed for Theo.
 6. Open Terminals › crew with two command lines in one tree.
 7. Switch workspace from the rail and watch the board change.
 8. Run `migrate-to-sailor` and read the list it hands over.
+9. Run `sailor session install`. The hooks grafted before 04/09/2026 do not say
+   which command line they are, so every terminal announces itself to the crew
+   as «a command line that did not say»; the graft rewrites its own stale lines
+   in place, one out and one in. It writes into the settings files of the
+   command lines, which is Theo's to do and not mine.
