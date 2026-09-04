@@ -184,12 +184,8 @@ fn not_listening_yet(descriptor: &TriggerDescriptor) -> String {
     said
 }
 
-/// What the descriptor declared, handed back to whoever reads the failure,
-/// next to the keeper of time that does exist and what it would not honour.
-///
-/// **THE CLOCK IS KEPT, ONE DECLARATION AWAY.** The window beats every minute
-/// and `sailor flow tick` judges the same way, both on the flow's `schedule`:
-/// a message saying nobody keeps time sends the reader to build what is built.
+/// What the descriptor declared, handed back next to the keeper of time that
+/// does exist, and what that keeper would not honour.
 fn nobody_keeps_the_time(descriptor: &TriggerDescriptor) -> String {
     let declared = match &descriptor.periodic {
         Some(periodic) => format!(
@@ -205,7 +201,10 @@ fn nobody_keeps_the_time(descriptor: &TriggerDescriptor) -> String {
          judges the same way, and both read the recurrence off the flow file. \
          This source declares {declared}, and nothing reads it. \
          What works today: move that recurrence into the flow's `schedule` and give this step \
-         the manual shape, which carries the signal with it.",
+         the manual shape, which carries the signal with it. \
+         Know what that keeper does not cover: the beat lives only while the window is open, \
+         nobody catches up the occurrences that went by while it was closed, and outside it \
+         `sailor flow tick` runs when something calls it.",
         descriptor.id
     );
     if let Some(periodic) = &descriptor.periodic {
@@ -352,11 +351,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// **THE REFUSAL NAMES THE KEEPER THAT EXISTS.** Time is kept — the window
-    /// beats every minute and `sailor flow tick` judges the same way — on the
-    /// flow's `schedule`, one declaration away from here. A message saying
-    /// nobody keeps it sends whoever reads it to build what is already built,
-    /// and hides that the way through is to move the recurrence.
+    /// **THE REFUSAL NAMES THE KEEPER THAT EXISTS.** Time is kept on the flow's
+    /// `schedule`, one declaration away: saying nobody keeps it sends whoever
+    /// reads it to build what is built, and hides that the way is a move.
     #[test]
     fn the_clock_that_is_kept_is_named_next_to_the_one_that_is_not() {
         let dir = std::env::temp_dir().join(format!("sailor-orologio-tenuto-{}", std::process::id()));
@@ -379,6 +376,9 @@ mod tests {
 
         assert!(error.said.contains("`schedule`"), "{}", error.said);
         assert!(error.said.contains("flow tick"), "{}", error.said);
+        // And the hole that keeper leaves, which is the half a reader would
+        // otherwise discover on the first morning the window was closed.
+        assert!(error.said.contains("while the window is open"), "{}", error.said);
         // And what the keeper would not honour, so the move is made with open
         // eyes rather than discovered on the first missed hour.
         assert!(error.said.contains("once_for_all_of_them"), "{}", error.said);
