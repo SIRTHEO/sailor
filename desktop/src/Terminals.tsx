@@ -462,10 +462,8 @@ export function Terminals({
             })}
           </nav>
 
-          {/* WHAT IS BEING JUDGED, ABOVE THE PLACE IT IS BEING JUDGED IN.
-              The bench is the terminal a handed step was opened on, and the
-              verdict is given from here — not from the run's row, after
-              walking back to it. */}
+          {/* WHAT IS BEING JUDGED, ABOVE THE PLACE IT IS JUDGED IN: the
+              verdict is given here, not from the row you walked away from. */}
           {bench !== null && opened.some((entry) => entry.id === bench.terminalId) && (
             <WorkbenchStrip bench={bench} onClosed={(answer) => onBenchClosed?.(answer)} />
           )}

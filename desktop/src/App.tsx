@@ -279,7 +279,7 @@ export default function App() {
   /** The terminals themselves: the column nests each under the tree it runs in. */
   const [openTerminals, setOpenTerminals] = useState<TerminalSummary[]>([]);
   /** The terminal opened to judge a handed step, and what it is for. */
-  const [bench, setBench] = useState<Bench | null>(null);
+  const [bench, setBench] = useState<Bench | null>(() => wasAt.current.bench ?? null);
   // OPENING A BENCH GOES THERE. A terminal born on another screen, with the
   // person left looking at the row they pressed, is a terminal nobody uses.
   const openBench = useCallback((asked: Bench) => {
@@ -1224,8 +1224,8 @@ export default function App() {
   // build is not asked whether it minds, and an unload handler would be the one
   // thing a swap does not wait for.
   useEffect(() => {
-    rememberWhere({ place, sailorTab, memoryTab, focus: focusName });
-  }, [place, sailorTab, memoryTab, focusName]);
+    rememberWhere({ place, sailorTab, memoryTab, focus: focusName, bench });
+  }, [place, sailorTab, memoryTab, focusName, bench]);
 
   const focusedBand = focusName ? layout.bands.get(focusName) : undefined;
   const focusedWorking = focusName ? flows.get(focusName) : undefined;
