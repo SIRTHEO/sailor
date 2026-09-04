@@ -1,13 +1,9 @@
-//! `sailor release`: mette in servizio un binario costruito da `HEAD`, mai
-//! dall'albero di lavoro.
+//! `sailor release`: puts into service a binary built from `HEAD`, never from
+//! the working tree.
 //!
-//! Questo modulo contiene soltanto i gesti che toccano disco e processi. Le
-//! decisioni — quali bersagli esistono, come si legge un timbro e quando un
-//! servizio è occupato — stanno nella libreria `release`, dove si possono
-//! provare senza cambiare il mondo. Prima del 27/08/2026 questo era il
-//! `main.rs` di un binario a sé (`release`): confluito qui perché nessuno
-//! aveva mai deciso più di un binario di sistema, e il crate `release` che
-//! resta serve solo più come libreria.
+//! Only the gestures that touch disk and processes live here. The decisions —
+//! which targets exist, how a stamp is read, when a service is busy — are in
+//! the `release` library, where they can be tested without changing the world.
 
 use release::{read_stamp, readiness, target, target_names, Service, Target};
 use std::env;
@@ -75,15 +71,13 @@ pub fn run(args: &[String]) -> i32 {
     }
 }
 
-/// Le forme di `sailor release`, una per riga. Vedi `flow_cmd::USAGE`.
+/// The forms of `sailor release`, one per line. See `flow_cmd::USAGE`.
 ///
-/// **QUI NON SI RICOPIANO I NOMI DEI BERSAGLI.** Nasceva
-/// `<notte|hooks|sailor>`: due dei tre erano binari cancellati dal repo il
-/// 28/08/2026, e questa riga — scritta il 01/09 su un altro ramo, mentre qui i
-/// fossili venivano tolti — li ha riportati sotto gli occhi di chi digita
-/// `sailor --help`. È il guasto 10 in miniatura: l'elenco vero è
-/// `release::TARGETS`, e chi sbaglia nome se lo sente dire da `target_names()`
-/// con la tabella di adesso, non con quella di allora.
+/// **THE TARGET NAMES ARE NOT COPIED HERE.** This line once spelled out three
+/// of them and two named binaries the repository had already deleted, so
+/// `sailor --help` offered releases that could not happen. The real list is
+/// `release::TARGETS`, and whoever types a wrong name hears it from
+/// `target_names()` with today's table rather than an older one.
 pub const USAGE: &[crate::Form] = &[crate::Form {
     form: "sailor release <target> [--dry-run] [--skip-tests] [--wait-secs N]",
     says_key: "",
@@ -306,6 +300,10 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         );
         if !options.dry_run {
             write_stamp(&stamp, &source_rev, &head_short);
+            // **THE SAME REPORT ON THE PATH THAT DOES NOTHING**, which is the
+            // one a release lands on most days: «nothing to do» while an older
+            // copy answers to the name is the whole fault, said reassuringly.
+            say_what_the_name_finds(selected, &home.join(selected.safe_rel));
         }
         return Ok(0);
     }

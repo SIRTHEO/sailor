@@ -304,6 +304,24 @@ stays as the net. One limit the judge named: «still running» is known from
 this window's own runs, not from the ledger, so a run left open by a window
 that was closed does not hold the next window's beat.
 
+**D3. The window is installed the way the engine is.** Not built and launched
+from inside `target/`, which a `cargo clean` empties, but put into service from
+a commit, with that commit written down beside it.
+*Check: measured — `sailor release window`, and the stamp names the commit.*
+*Outcome: yes, measured.* The window is a target of `sailor release` like
+`sailor` is, and the three things that made it different are declared rather
+than guessed: `manifest_rel`, because the shell is a workspace of its own that
+neither the root's build nor the root's suite enters — so a release now runs one
+suite per manifest the target is made of; `page_rel`, because the shell embeds
+the page at compile time, so it is built **inside the clone** before the shell,
+and the page's own gate runs inside that build; and `parts_of`, so what stays
+out of service and what the stamp names are read over the directories the target
+is really made of. The page's modules are cloned from the working tree with
+`cp -Rc` when the two `package-lock.json` are the same bytes — three seconds for
+300 MB instead of an `npm ci`; a symlink was tried first and does not work, and
+that is a measurement, not a preference: the page's builder refuses a file from
+outside the tree it was pointed at, and the release stopped there.
+
 ---
 
 # What is still Theo's: the gestures
