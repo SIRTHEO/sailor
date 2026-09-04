@@ -10,7 +10,10 @@ si cancella e non si rimpiange.
 c'è il rimando, non la copia. Una copia a mano invecchia da sola, e lo sappiamo
 perché è già successo.
 
-Aggiornato il 29/08/2026, dopo la prima corsa in cui Sailor ha sviluppato un pezzo di se stesso.
+Aggiornato il 04/09/2026. **La rotta non sta qui**: cosa manca perché il lavoro
+finisca sta nella condizione di fine del 02/09, in `docs/`, dove ogni
+affermazione porta il controllo che la decide. Qui restano le voci sospese e le
+scelte che aspettano Theo — cioè ciò che questo file era.
 
 ## Aspettano una decisione di Theo
 
@@ -140,9 +143,13 @@ dichiarati:
   costante.~~ Sciolto il 31/08/2026: quattro è il **soffitto**, e sotto un tetto
   di spesa la larghezza la calcola `how_many_fit` dal residuo diviso la chiamata
   più cara vista in quella corsa.
-- **La cassetta dei passi offre otto tipi, il motore ne esegue tre.** Chi usa uno
-  degli altri cinque costruisce un flusso che non parte. La cura è la stessa
-  degli strumenti: chiedere al motore, non tenere una lista.
+- ~~**La cassetta dei passi offre otto tipi, il motore ne esegue tre.**~~
+  **Riparato, e verificato il 04/09/2026.** La cassetta legge
+  `DEFAULT_ACTION_FOR_KIND` (`desktop/src/flow.ts`) invece di tenere una lista:
+  sette tipi, ognuno con la sua azione, e
+  `crates/sailor/tests/one_action_list_for_the_window_and_the_engine.rs` tiene
+  incollate le due parti. È la cura che questa riga chiedeva — *chiedere al
+  motore, non tenere una lista* — applicata.
 - **Un passo che esegue un comando non conserva il proprio testo**: di lui resta
   solo l'esito.
 - ~~**La finestra non ha un bersaglio di rilascio, quindi non si installa.**~~

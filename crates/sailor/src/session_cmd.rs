@@ -1889,7 +1889,10 @@ mod tests {
     }
 
     /// The iron rule holds for what the graft **writes** too: the command that
-    /// ends up in the hooks names no product.
+    /// ends up in the hooks names no product. The binary's own path is left
+    /// out, because the machine chooses that string and we do not: scanning it
+    /// turned this red for a tree kept under a directory named after a product,
+    /// which measures the disk instead of the code. See fault 72.
     #[test]
     fn what_the_install_writes_names_no_product() {
         let scratch = Scratch::new("innesto-neutro");
@@ -1897,11 +1900,18 @@ mod tests {
         installed(&settings, &as_one_line_names_them())
             .expect("l'innesto riesce anche su un file che non c'era");
 
+        let binary = std::env::current_exe().expect("dove sono").display().to_string();
         let written = std::fs::read_to_string(&settings).expect("rileggere");
+        let ours = written.replace(&binary, "<the binary>");
+        assert!(
+            ours != written,
+            "the binary's path is absent: this test is looking at the wrong thing"
+        );
+
         for product in ["orca", "warp", "vscode", "iterm", "tmux"] {
             assert!(
-                !written.to_lowercase().contains(product),
-                "l'innesto ha scritto «{product}» in settings.json: {written}"
+                !ours.to_lowercase().contains(product),
+                "the graft wrote «{product}» into settings.json: {ours}"
             );
         }
     }
