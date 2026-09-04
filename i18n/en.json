@@ -102,6 +102,8 @@
   "cli.command.version": "the version of this binary",
   "cli.command.workspace": "declares the project root, so a flow does not have to know it",
   "cli.command.worktree": "the trees this repository is checked out into",
+  "cli.faults.a_path_of_this_machine": "the text carries an absolute path of this machine, from character {at} ({count} thing(s) found). It is true here and on no other machine, and the record is published",
+  "cli.faults.a_private_name": "the text carries a name this machine declares private, from character {at} ({count} thing(s) found). It is not repeated here: this terminal can be recorded. The record is published, so the name has to go before it is written",
   "cli.faults.written": "the table is written into {file}: {count} faults",
   "cli.faults.brought_in": "brought in {count} faults from {file}; the store now holds {total}",
   "cli.faults.cannot_read_the_fault": "cannot read the fault: {error}",

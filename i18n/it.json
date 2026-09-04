@@ -102,6 +102,8 @@
   "cli.command.version": "la versione di questo binario",
   "cli.command.workspace": "dichiara la radice del progetto, così un flusso non deve saperla",
   "cli.command.worktree": "gli alberi in cui questo repository è estratto",
+  "cli.faults.a_path_of_this_machine": "il testo porta un percorso assoluto di questa macchina, dal carattere {at} ({count} cose trovate). È vero qui e su nessun'altra macchina, e il registro si pubblica",
+  "cli.faults.a_private_name": "il testo porta un nome che questa macchina dichiara privato, dal carattere {at} ({count} cose trovate). Non lo ripeto qui: questo terminale può essere registrato. Il registro si pubblica, quindi il nome va tolto prima di scriverlo",
   "cli.faults.written": "la tabella è scritta in {file}: {count} guasti",
   "cli.faults.brought_in": "portati dentro {count} difetti da {file}; adesso il deposito ne tiene {total}",
   "cli.faults.cannot_read_the_fault": "non riesco a leggere il difetto: {error}",
