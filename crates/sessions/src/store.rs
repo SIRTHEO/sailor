@@ -115,16 +115,22 @@ impl TerminalRow {
     }
 }
 
-/// The other terminals the register says are open in the same tree. What comes
-/// back is what the register holds, not what is alive: a terminal killed
-/// without closing stays here, and the caller says so.
+/// The other terminals open on the same work, as the register holds it — one
+/// killed without closing stays here. **THE QUESTION IS THE REPOSITORY, NOT
+/// THE PATH**; a path no repository claims is compared as itself.
 pub fn others_in_the_tree<'a>(
     rows: &'a [TerminalRow],
     mine: &str,
-    worktree: &str,
+    here: &str,
+    repository_of: &dyn Fn(&str) -> Option<String>,
 ) -> Vec<&'a TerminalRow> {
+    let ours = repository_of(here);
     rows.iter()
-        .filter(|row| row.is_open() && row.tty != mine && row.worktree == worktree)
+        .filter(|row| row.is_open() && row.tty != mine)
+        .filter(|row| match (ours.as_deref(), repository_of(&row.worktree)) {
+            (Some(ours), Some(theirs)) => ours == theirs,
+            _ => row.worktree == here,
+        })
         .collect()
 }
 
