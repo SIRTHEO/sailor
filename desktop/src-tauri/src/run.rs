@@ -1,50 +1,21 @@
-//! Far partire un flusso dalla finestra, e guardarlo correre.
+//! Starting a flow from the window, and watching it run.
 //!
-//! ## PERCHÉ IL GUSCIO ESEGUE, INVECE DI LANCIARE IL BINARIO
+//! **WHY THE SHELL EXECUTES INSTEAD OF LAUNCHING THE BINARY.** Measured:
+//! `sailor flow run` gives one line, at the end — twelve seconds of silence
+//! and then a verdict, which is the worst thing an execution view can be,
+//! because it looks broken. And the binary takes no mandate: a delivery would
+//! mean rewriting the flow on disk, so this morning's would stay in tomorrow's
+//! file. Executing here costs a thread and gives both.
 //!
-//! La via ovvia sarebbe lanciare `sailor flow run <nome>` come processo figlio
-//! e leggerne l'uscita. Misurato il 28/08/2026, quel comando dà **una riga
-//! sola, a corsa finita**: dodici secondi di silenzio e poi `flusso X terminato
-//! con stato Y`. Una vista costruita su quello resterebbe vuota per tutta la
-//! durata del lavoro, che è il difetto peggiore di una vista d'esecuzione —
-//! peggiore di non averla, perché sembra rotta.
+//! **IT MIRRORS `flow_cmd::run_flow`, AND THE TWO ARE KEPT IN STEP.** The
+//! ledger-then-registry order, the shape of a `run_id`, the two `record_run`
+//! around the execution: the same forty lines, private to a binary and
+//! unreachable from here. The duplication is declared rather than hidden.
 //!
-//! E c'è un secondo motivo, che da solo basterebbe: **il binario non accetta un
-//! testo**. Il suo dispatch è un `match` su due elementi esatti
-//! (`crates/sailor/src/flow_cmd.rs`), senza `--input`, senza stdin, senza
-//! `--json`. Un mandato si passa solo cambiando il campo `inputs` del file. Un
-//! innesco che, per portare la consegna di chi preme, dovesse **riscrivere il
-//! flusso sul disco** cambierebbe il documento a ogni corsa: la consegna di
-//! stamattina resterebbe scritta nel file di domani.
-//!
-//! Il guscio dipende già da `flow`, `actions`, `ledger` e `toolbox`, e
-//! `InProcessExecutor` è sincrono. Eseguire qui costa un thread e restituisce
-//! le due cose che servono: il mandato passa in memoria, e ogni passo si vede
-//! aprirsi e chiudersi nell'istante in cui accade.
-//!
-//! ## QUESTO MODULO RICALCA `flow_cmd::run_flow`, E VA TENUTO IN PARI
-//!
-//! L'ordine deposito-poi-registro, la forma del `run_id`, i due `record_run`
-//! attorno all'esecuzione, la traduzione da `Decision` a stato: sono le stesse
-//! quaranta righe di `crates/sailor/src/flow_cmd.rs`, che sono funzioni private
-//! di un binario e non si possono richiamare da qui. **Chi cambia quelle cambia
-//! anche queste.** La duplicazione è dichiarata invece che nascosta perché
-//! l'alternativa — rendere pubblico mezzo `flow_cmd` per un guscio che vive
-//! fuori dal workspace — sposterebbe il problema senza chiuderlo.
-//!
-//! ## COSA SCORRE DAVVERO, E COSA NO
-//!
-//! Scorre lo **stato dei passi**: `append_started` e `close` passano di qui nel
-//! momento esatto in cui il deposito li rende durevoli, e da lì l'evento arriva
-//! alla finestra. Chi guarda vede un passo aprirsi e sa da quanto gira.
-//!
-//! Non scorre il **testo** che un passo produce, e non è una scelta di questo
-//! modulo: `crates/actions/src/lib.rs` legge stdout del processo con
-//! `read_to_end` su un thread, e quel buffer diventa leggibile solo al `join`,
-//! cioè a processo finito. Il testo compare quindi tutto insieme alla chiusura
-//! del passo. La finestra lo dichiara invece di far finta; qui resta scritto
-//! **dove si cambierebbe**: `drain_and_wait`, sostituendo `read_to_end` con un
-//! `BufReader::lines()` che spinga ogni riga in un canale.
+//! What streams is the **state** of the steps, at the instant the ledger makes
+//! it durable. The **text** a step produces does not, and not by a choice made
+//! here: `actions` reads stdout with `read_to_end` on a thread, and that buffer
+//! is readable only at the join. Where it would change: `drain_and_wait`.
 
 // `Decision` non compare più: la traduzione da decisione a stato è passata in
 // `registry` insieme alla sua gemella della riga di comando, e l'importazione

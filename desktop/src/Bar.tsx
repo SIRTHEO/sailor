@@ -4,7 +4,7 @@
 // **IF A RUN IS UNDER WAY YOU MUST KNOW IT FROM ANYWHERE.** Until now the bar
 // said so only on the board; leaving it left the run out of sight.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   beatReport,
   listenToSailorEvents,
@@ -27,17 +27,44 @@ import { rows as profileRows, type Row as ProfileRow } from "./profiles";
 export type Answer<T> = { state: "answered"; value: T } | { state: "mute"; why: string } | null;
 
 /**
- * Asks once, then again at every fact on the one channel. No timer: what the
- * bar shows moves when the shell says something moved. Where the channel
- * cannot be listened to, the first answer stays, with nothing pretending to
- * be fresher.
+ * The least time between two asks of the same reader. **A RUN PUTS HUNDREDS OF
+ * FACTS A SECOND HERE**, one per piece of an engine's output, and one of the
+ * reads behind a chip starts a command per profile.
  */
-function useOnEvents<T>(native: boolean, ask: () => Promise<T>): Answer<T> {
+export const AT_MOST_EVERY_MS = 1_000;
+
+/** What each reader of the bar listens for. */
+const OF_A_RUN = ["run", "beat"] as const;
+const OF_A_BUILD = ["build"] as const;
+const OF_A_BEAT = ["beat"] as const;
+/**
+ * **NOTHING A RUN SAYS CHANGES WHO YOU RUN AS**, and this read starts a command
+ * per profile: hearing anything else pays that price for news it cannot carry.
+ */
+const OF_A_PROFILE = ["profile"] as const;
+
+/** Whether a fact is one this reader listens for. No list is every kind. */
+export function hears(kind: string, kinds?: readonly string[]): boolean {
+  return kinds === undefined || kinds.includes(kind);
+}
+
+/**
+ * Asks once, then again at the facts this reader listens for: what the bar
+ * shows moves when the shell says something moved, at most once a second, and
+ * the last fact of a burst is asked for at the end of that second rather than
+ * dropped. Where the channel cannot be listened to, the first answer stays.
+ */
+function useOnEvents<T>(native: boolean, ask: () => Promise<T>, kinds?: readonly string[]): Answer<T> {
   const [answer, setAnswer] = useState<Answer<T>>(null);
+  const listensFor = useRef(kinds);
+  listensFor.current = kinds;
   useEffect(() => {
     if (!native) return;
     let alive = true;
+    let askedAt = 0;
+    let later: ReturnType<typeof setTimeout> | null = null;
     const once = () => {
+      askedAt = Date.now();
       ask().then(
         (value) => {
           if (alive) setAnswer({ state: "answered", value });
@@ -47,9 +74,22 @@ function useOnEvents<T>(native: boolean, ask: () => Promise<T>): Answer<T> {
         },
       );
     };
+    const maybe = (kind: string) => {
+      if (!alive || !hears(kind, listensFor.current)) return;
+      const since = Date.now() - askedAt;
+      if (since >= AT_MOST_EVERY_MS) {
+        once();
+        return;
+      }
+      if (later !== null) return;
+      later = setTimeout(() => {
+        later = null;
+        if (alive) once();
+      }, AT_MOST_EVERY_MS - since);
+    };
     once();
     let stop: (() => void) | null = null;
-    listenToSailorEvents(() => once()).then((subscribed) => {
+    listenToSailorEvents((event) => maybe(event.kind)).then((subscribed) => {
       if (!alive) {
         if ("stop" in subscribed) subscribed.stop();
         return;
@@ -58,6 +98,7 @@ function useOnEvents<T>(native: boolean, ask: () => Promise<T>): Answer<T> {
     });
     return () => {
       alive = false;
+      if (later !== null) clearTimeout(later);
       if (stop) stop();
     };
   }, [native, ask]);
@@ -109,8 +150,8 @@ interface LiveChipProps {
 }
 
 export function LiveChip({ native, now, onOpen, onSpend }: LiveChipProps) {
-  const runs = useOnEvents(native, openRuns);
-  const summary = useOnEvents(native, todaySummary);
+  const runs = useOnEvents(native, openRuns, OF_A_RUN);
+  const summary = useOnEvents(native, todaySummary, OF_A_RUN);
   if (!native) return null;
   if (runs?.state === "mute") {
     return (
@@ -198,7 +239,7 @@ export function beatWords(report: BeatReport | null, now: number): { warn: boole
 }
 
 export function BeatChip({ native, now }: { native: boolean; now: number }) {
-  const report = useOnEvents(native, beatReport);
+  const report = useOnEvents(native, beatReport, OF_A_BEAT);
   if (!native || report === null) return null;
   if (report.state === "mute") {
     return (
@@ -217,7 +258,7 @@ export function BeatChip({ native, now }: { native: boolean; now: number }) {
 }
 
 export function BuildChip({ native, now }: { native: boolean; now: number }) {
-  const status = useOnEvents(native, liveStatus);
+  const status = useOnEvents(native, liveStatus, OF_A_BUILD);
   if (!native || status === null) return null;
   if (status.state === "mute") {
     return (
@@ -250,7 +291,7 @@ export function BuildChip({ native, now }: { native: boolean; now: number }) {
 }
 
 export function WhoChip({ native }: { native: boolean }) {
-  const rows = useOnEvents(native, profileRows);
+  const rows = useOnEvents(native, profileRows, OF_A_PROFILE);
   if (!native || rows === null) return null;
   if (rows.state === "mute") {
     return (
