@@ -77,8 +77,25 @@ Starting point, so the mandate builds on it instead of beside it.
    and its descriptor is re-verified: the free path through Google login
    ended on 18/06/2026. `sailor remaining` prints one line per engine and
    profile, and «cannot read» is a line of its own, never a zero.
+   *Where it landed:* one channel of the five, and the report no longer hides
+   the other four. `sailor remaining` reads the OAuth usage kind the descriptor
+   declares and prints, measured on this machine on 04/09/2026, three windows
+   for one engine with their reset instants. The other engines on this machine
+   — four of them, all installed — **declare no channel**, so nothing asked
+   them; until today they were simply absent from the report, and a person
+   reading three windows for one engine concluded the others have no quota.
+   That is a zero standing in for «I did not look», one step further out, and
+   now each is a line of its own saying nobody asked and why.
+   *What is not built, and why:* the channels the claim names for the other
+   engines. Not one of them can be written honestly from here: the proof this
+   claim demands is «a test per reader on a **recorded** answer», and recording
+   a real answer needs a signed-in session — which is gesture 2, Theo's, and
+   the one thing no flow can do. A reader written against an invented answer
+   would be the defect this whole section exists to prevent. In `da-fare.md`.
    *Proof:* a test per reader on a recorded answer; the absurd control first: a
-   refusal is never an empty measure (already the rule in `remaining.rs`).
+   refusal is never an empty measure (already the rule in `remaining.rs`); and
+   `an_engine_nobody_asked_is_not_an_engine_without_a_quota`, whose mutant —
+   listing every engine regardless of who was asked — turns it red.
    Sources: `2026-09-02-how-others-run-on-many-engines.md`.
 2. **Exhaustion is a class of its own, with the reset.** `quota_exhausted`
    joins `ENGINE_FAILURES`; the forms that mean it are declared per engine in
@@ -239,8 +256,27 @@ Starting point, so the mandate builds on it instead of beside it.
     `flow_cmd` (16), `run_cmd` (12), `profiles_cmd` (10). The profiles' table
     moves into the descriptors (`home` mechanism, native profiles, executable),
     which already carry the rest of what a command line is.
+    *Where it landed:* yes, and the two halves are counted apart because they
+    are not the same thing. **No name decides anything**: `no_engine_is_named_in_the_code`
+    holds `NAMED_IDENTIFIERS_TODAY = 0` — not one function, field or constant in
+    the tree is named after an engine, so `read_from_claude` and its family are
+    gone, and the quota reader is a kind the descriptor declares. **Ten string
+    literals are left**, measured on this tree by asking the ratchet with its
+    seed at zero: four in `desktop/src/ToolMark.tsx`, which are the keys of a
+    map from tool id to a drawing, with a monogram on a computed tint for every
+    id the map does not carry — a name used as data, and the fallback is the
+    normal case; six are the previous home's directory, one each in `ledger`,
+    `release`, `models/store.rs`, `models/fetch.rs`, `inventory` and
+    `profiles/store_io.rs`, every one of them a declared migration for a machine
+    that installed before the move, not an address the code depends on. The
+    heaviest place the claim named — the profiles' table of known command lines,
+    twenty-two — is gone: it is `crates/profiles/command-lines.default.json`, a
+    data file, and moving it fixed a real defect on the way, a command line
+    whose executable is not its id.
     *Proof:* the ratchet is red on the count of the day before its seed was
-    lowered; putting one literal back turns it red.
+    lowered; putting one literal back turns it red — measured 04/09/2026, one
+    constant added to `crates/release`, «engine names in the code: 11 (the seed
+    is 10)», green again on removal.
 
 ## B. Dispatch: the same flow, from three seats, chosen by what is left
 

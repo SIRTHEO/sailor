@@ -48,9 +48,10 @@ fn dispatch(args: &[String]) -> Result<String, String> {
     let machine = toolbox::Machine::current();
     let catalog = toolbox::Catalog::load(&toolbox::default_sources(&machine));
     let readings = toolbox::quota::read_all(&catalog, &machine, now);
-    if readings.is_empty() {
-        return Err(catalogue::say("cli.remaining.no_channel", &[]));
-    }
+    let asked: Vec<String> = readings
+        .iter()
+        .map(|reading| reading.engine.clone())
+        .collect();
     let mut found = Vec::new();
     let mut refused = Vec::new();
     for reading in readings {
@@ -59,15 +60,60 @@ fn dispatch(args: &[String]) -> Result<String, String> {
             Err(why) => refused.push(format!("{} · cannot read: {why}", reading.engine)),
         }
     }
+    // **AN ENGINE ON THIS MACHINE THAT NOBODY ASKED IS A LINE, NOT A SILENCE.**
+    // Only the engines whose descriptor declares a channel are read, and the
+    // rest used to be absent from the report altogether — so a person reading
+    // one engine's three windows concluded the others have no quota, when in
+    // fact nobody looked. That is the same mistake as a zero standing in for
+    // «I did not look», one step further out.
+    let report_of_the_machine = toolbox::detect(&catalog, &machine);
+    let present: Vec<String> = report_of_the_machine
+        .findings
+        .into_iter()
+        .filter(|found| found.family == "ai_cli" && found.presence.is_present())
+        .map(|found| found.descriptor_id)
+        .collect();
+    let unasked = never_asked(&present, &asked);
+    if found.is_empty() && refused.is_empty() && unasked.is_empty() {
+        return Err(catalogue::say("cli.remaining.no_channel", &[]));
+    }
+    if found.is_empty() && refused.is_empty() {
+        return Err(said_of_the_unasked(&unasked).join("\n"));
+    }
     if found.is_empty() {
-        return Err(refused.join("\n"));
+        return Err(refused
+            .into_iter()
+            .chain(said_of_the_unasked(&unasked))
+            .collect::<Vec<_>>()
+            .join("\n"));
     }
     let mut said = report(&found);
-    for line in refused {
+    for line in refused.into_iter().chain(said_of_the_unasked(&unasked)) {
         said.push('\n');
         said.push_str(&line);
     }
     Ok(said)
+}
+
+/// The engines on this machine that nothing asked, in the order they were
+/// found. **Nobody looked is not «nothing to look at»**, and the difference is
+/// the whole reason this list exists.
+pub fn never_asked(present: &[String], asked: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for engine in present {
+        if !asked.iter().any(|one| one == engine) && !out.contains(engine) {
+            out.push(engine.clone());
+        }
+    }
+    out
+}
+
+/// One line each, saying what is missing rather than what was measured.
+fn said_of_the_unasked(engines: &[String]) -> Vec<String> {
+    engines
+        .iter()
+        .map(|engine| catalogue::say("cli.remaining.no_channel_declared", &[("engine", engine)]))
+        .collect()
 }
 
 /// Le quote per una persona, una per riga.
@@ -116,6 +162,32 @@ mod tests {
             resets_at: resets_at.map(str::to_owned),
             observed_at: 1_788_000_000,
         }
+    }
+
+    /// **AN ENGINE NOBODY ASKED IS NOT AN ENGINE WITHOUT A QUOTA.** The report
+    /// read only those declaring a channel and the rest vanished from it: a
+    /// zero standing in for «I did not look», one step further out.
+    #[test]
+    fn an_engine_nobody_asked_is_not_an_engine_without_a_quota() {
+        let present = vec![
+            "unmotore".to_owned(),
+            "un-altro".to_owned(),
+            "senza-casa".to_owned(),
+        ];
+        let asked = vec!["un-altro".to_owned()];
+        assert_eq!(
+            never_asked(&present, &asked),
+            vec!["unmotore".to_owned(), "senza-casa".to_owned()]
+        );
+
+        // The absurd control: all asked, no extra line. Without this arm the
+        // function could list everything always and still pass.
+        assert!(never_asked(&present, &present).is_empty());
+        // And an engine the detection names twice stays one line.
+        assert_eq!(
+            never_asked(&["unmotore".to_owned(), "unmotore".to_owned()], &[]),
+            vec!["unmotore".to_owned()]
+        );
     }
 
     /// **LA RIGA DICE DI CHI È LA QUOTA, PRIMA DI DIRE QUANTA.** È l'avvertenza
