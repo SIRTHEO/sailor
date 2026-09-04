@@ -126,6 +126,12 @@ export function Terminals({ native, shown = true, ceiling = null, onCount, onLis
   const [placesWhy, setPlacesWhy] = useState<string | null>(null);
 
   const bus = useMemo(() => new OutputBus(), []);
+
+  /* WHICH ONES ARE TALKING RIGHT NOW. The bytes stay out of React — a
+     `setState` per piece would redraw the window on every line of a build —
+     so what crosses over is only this set, a few times a second at most. */
+  const [speaking, setSpeaking] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => bus.watchSpeaking((now) => setSpeaking(now)), [bus]);
   // `again` changes identity on every render; the listener attaches once.
   const refresh = useRef(again);
   refresh.current = again;
@@ -327,8 +333,14 @@ export function Terminals({ native, shown = true, ceiling = null, onCount, onLis
                       count and the tracking store all key on. */}
                   <span className="terminals__device">{entry.device}</span>
                   <span className="terminals__where">{entry.workspaceName}</span>
-                  {/* The word carries the state as much as the colour: prohibition 5. */}
-                  <span className="terminals__word">{livenessWord(liveness)}</span>
+                  {/* The word carries the state as much as the colour: prohibition 5,
+                      and it is what is left when motion is refused. */}
+                  {liveness.state === "alive" && speaking.has(entry.id) && (
+                    <span className="speaks" aria-hidden="true" />
+                  )}
+                  <span className="terminals__word">
+                    {livenessWord(liveness, speaking.has(entry.id))}
+                  </span>
                 </button>
               );
             })}
@@ -348,6 +360,7 @@ export function Terminals({ native, shown = true, ceiling = null, onCount, onLis
                   summary={entry}
                   ceiling={ceiling}
                   liveness={liveness}
+                  speaking={speaking.has(entry.id)}
                   bus={bus}
                   visible
                   focused={entry.id === visible}

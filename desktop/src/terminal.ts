@@ -445,11 +445,15 @@ export function livenessOf(
   return { state: "alive" };
 }
 
-/** The word beside the colour: colour alone does not carry state. */
-export function livenessWord(liveness: Liveness): string {
+/**
+ * The word beside the colour: colour alone does not carry state. **SPEAKING IS
+ * NOT A FOURTH LIVENESS**, it is something an alive one does — and it is the
+ * word, not the ring, that says so where motion is refused.
+ */
+export function livenessWord(liveness: Liveness, speaking = false): string {
   switch (liveness.state) {
     case "alive":
-      return "alive";
+      return speaking ? "speaking" : "alive";
     case "closed":
       return "ended";
     case "unknown":
@@ -462,6 +466,12 @@ export function livenessWord(liveness: Liveness): string {
 /** A piece of output, with the offset of its first byte. */
 export type OutputReader = (bytes: Uint8Array, at: number) => void;
 
+/** How long after its last byte a terminal is still «speaking». */
+export const STILL_SPEAKING_MS = 800;
+
+/** How often the set of speakers is looked at while anybody is speaking. */
+const LOOK_EVERY_MS = 250;
+
 /**
  * Whoever draws a terminal subscribes here; whoever listens to the event
  * pours in. **Not React state**: what leaves a pseudo-terminal arrives in
@@ -471,6 +481,16 @@ export type OutputReader = (bytes: Uint8Array, at: number) => void;
  */
 export class OutputBus {
   private readonly readers = new Map<string, OutputReader>();
+
+  /* WHO IS SPEAKING, AT THE ONLY PLACE THAT KNOWS: every byte crosses here, so
+     the answer costs a map write per piece. What leaves is a set that changes a
+     few times a second — the bytes themselves never reach React. */
+  private readonly spokeAt = new Map<string, number>();
+  private readonly watchers = new Set<(speaking: ReadonlySet<string>) => void>();
+  private speakers = new Set<string>();
+  private looking: ReturnType<typeof setInterval> | null = null;
+
+  constructor(private readonly now: () => number = Date.now) {}
 
   /** Returns how to unsubscribe. */
   subscribe(id: string, reader: OutputReader): () => void {
@@ -486,10 +506,52 @@ export class OutputBus {
    * loses them in silence shows an empty screen where there was output.
    */
   deliver(id: string, bytes: Uint8Array, at: number): boolean {
+    // SPEECH IS SPEECH WITH OR WITHOUT A PANE: the bytes below may be lost,
+    // but that a terminal is talking is true either way.
+    this.spokeAt.set(id, this.now());
+    if (!this.speakers.has(id)) this.look();
+    this.keepLooking();
+
     const reader = this.readers.get(id);
     if (!reader) return false;
     reader(bytes, at);
     return true;
+  }
+
+  /** The terminals that have said something within the last breath. */
+  speaking(): ReadonlySet<string> {
+    return this.speakers;
+  }
+
+  /** Told whenever that set changes; returns how to stop being told. */
+  watchSpeaking(watcher: (speaking: ReadonlySet<string>) => void): () => void {
+    this.watchers.add(watcher);
+    return () => {
+      this.watchers.delete(watcher);
+    };
+  }
+
+  /* A CLOCK THAT RUNS ONLY WHILE SOMEBODY TALKS: this window stays open for
+     weeks, and a timer ticking through a quiet night is a cost nobody sees. */
+  private keepLooking(): void {
+    if (this.looking !== null) return;
+    this.looking = setInterval(() => this.look(), LOOK_EVERY_MS);
+  }
+
+  private look(): void {
+    const cutoff = this.now() - STILL_SPEAKING_MS;
+    const next = new Set<string>();
+    for (const [id, when] of this.spokeAt) {
+      if (when > cutoff) next.add(id);
+      else this.spokeAt.delete(id);
+    }
+    if (next.size === 0 && this.looking !== null) {
+      clearInterval(this.looking);
+      this.looking = null;
+    }
+    if (next.size === this.speakers.size && [...next].every((id) => this.speakers.has(id))) return;
+    this.speakers = next;
+    for (const watcher of this.watchers) watcher(next);
   }
 }
 
