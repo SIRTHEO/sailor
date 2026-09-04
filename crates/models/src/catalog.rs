@@ -1,9 +1,9 @@
-//! The OpenRouter model catalog: from the JSON of
-//! `https://openrouter.ai/api/v1/models` to a filterable list.
+//! The model catalogue: from the JSON a catalogue answers to a filterable
+//! list. Which catalogue, and which shape, `catalogue-source.default.json`
+//! declares and `fetch` reads.
 //!
-//! Everything here is pure: it takes a JSON string already in hand and gives
-//! back values. Downloading lives in `fetch.rs`, on purpose — the tests here
-//! run on a slice of catalog saved in the crate, never over the network.
+//! Everything here is pure: JSON in hand, values back. Downloading lives in
+//! `fetch.rs`, and these tests run on a saved slice, never over the network.
 
 use crate::pact::{DataPact, Pacts};
 use std::fmt;

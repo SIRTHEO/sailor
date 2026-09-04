@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 
 /// Re-measured exactly when it falls, never raised.
-const NAMED_TODAY: usize = 10;
+const NAMED_TODAY: usize = 9;
 
 /// Identifiers carrying an engine's name. Same rule, other half of it.
 const NAMED_IDENTIFIERS_TODAY: usize = 0;
