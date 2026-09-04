@@ -6033,13 +6033,11 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
             "the second chain started the engine again"
         );
 
-        // THE CONTROL: past its time the same engine is knocked on again.
-        // Without this arm the code could set an engine aside for ever and pass.
-        //
-        // The instant is read from the list and not recomputed here: guessing
-        // it as `now + 3600` meant guessing what the clock said when the file
-        // was written, and one second of load between the two left the file
-        // untouched and this arm red for a reason that is not the code's.
+        // THE CONTROL: past its time the same engine is knocked on again, or
+        // the code could set one aside for ever and pass. The instant is read
+        // from the list and never recomputed: guessing it as `now + 3600`
+        // guesses what the clock said when the file was written, and one second
+        // of load left the file untouched and this arm red for nothing.
         let past = std::fs::read_to_string(&aside).expect("the list");
         let mut written: serde_json::Value = serde_json::from_str(&past).expect("the list is JSON");
         let now = now_secs();
