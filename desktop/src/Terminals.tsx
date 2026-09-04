@@ -80,27 +80,62 @@ export interface Place {
 }
 
 /**
+ * The shortest tail of each path that tells it apart from the others: one
+ * segment where the name is unique, more where it is not. **A NAME IS NOT AN
+ * IDENTITY** — measured, thirteen places and six labelled the same word.
+ */
+export function shortestTails(paths: string[]): string[] {
+  const segments = paths.map((path) => path.split("/").filter((part) => part !== ""));
+  const tail = (parts: string[], depth: number) => parts.slice(-depth).join("/");
+  return segments.map((parts, at) => {
+    for (let depth = 1; depth <= parts.length; depth += 1) {
+      const mine = tail(parts, depth);
+      const shared = segments.some((other, index) => index !== at && tail(other, depth) === mine);
+      if (!shared) return mine;
+    }
+    return parts.join("/");
+  });
+}
+
+/**
  * The known workspaces and worktrees, as the engine answers them. **NOT A
  * LIST KEPT HERE**: `workspaces` and `worktree_list` already answer the
  * question, and a screen that remembered places would offer a project that
  * moved yesterday. A root that is both stays one entry.
  */
 export function placesOf(known: Project[], trees: Tree[]): Place[] {
-  const places: Place[] = [];
+  const roots: string[] = [];
   const seen = new Set<string>();
   for (const project of known) {
     if (seen.has(project.root)) continue;
     seen.add(project.root);
-    places.push({ root: project.root, label: `${project.name} · project`, current: project.current });
+    roots.push(project.root);
   }
   for (const tree of trees) {
     if (seen.has(tree.path)) continue;
     seen.add(tree.path);
+    roots.push(tree.path);
+  }
+  // Over every place at once: a project and a worktree can share a name.
+  const tails = shortestTails(roots);
+  const places: Place[] = [];
+  let at = 0;
+  const taken = new Set<string>();
+  for (const project of known) {
+    if (taken.has(project.root)) continue;
+    taken.add(project.root);
+    places.push({ root: project.root, label: `${tails[at]} · project`, current: project.current });
+    at += 1;
+  }
+  for (const tree of trees) {
+    if (taken.has(tree.path)) continue;
+    taken.add(tree.path);
     places.push({
       root: tree.path,
-      label: `${tree.name} · worktree${tree.branch ? ` on ${tree.branch}` : ""}`,
+      label: `${tails[at]} · worktree${tree.branch ? ` on ${tree.branch}` : ""}`,
       current: tree.current,
     });
+    at += 1;
   }
   return places;
 }
