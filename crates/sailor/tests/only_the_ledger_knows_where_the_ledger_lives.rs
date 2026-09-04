@@ -1,8 +1,8 @@
 //! **UN SOLO POSTO SA DOVE STA IL DEPOSITO.**
 //!
 //! `ledger::default_directory()` è quel posto: legge `SAILOR_LEDGER` se c'è,
-//! altrimenti riconosce la casa di chi c'era prima e infine sceglie quella
-//! nuova. Chi ricompone quel percorso a mano non fa una copia inerte — ne fa una
+//! altrimenti sceglie la casa di Sailor. Chi ricompone quel percorso a mano non
+//! fa una copia inerte — ne fa una
 //! **diversa**, perché la copia scritta a mano non guarda `SAILOR_LEDGER`.
 //!
 //! **IL DANNO NON È UN DISALLINEAMENTO, È UNA DIVERGENZA SILENZIOSA.** Trovato
