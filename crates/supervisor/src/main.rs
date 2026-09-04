@@ -406,6 +406,7 @@ fn publish(path: &Path, state: LiveState, message: String, running_since: Option
         message,
         changed_at: now(),
         running_since,
+        supervisor_pid: std::process::id(),
     };
     if let Err(error) = status.write(path) {
         eprintln!("lo stato non si scrive ({}): {error}", path.display());
