@@ -103,14 +103,23 @@ pub(crate) fn profiles() -> Result<Vec<Row>, String> {
         .collect())
 }
 
+/// **A SWITCH IS A FACT LIKE ANY OTHER, AND IT CROSSES THE ONE CHANNEL.** Who
+/// the engines run as is drawn in the bar, and that reader hears nothing else:
+/// the read behind it starts a command per profile, so it listens for this and
+/// for nothing a run says. Without the line here it would go stale until the
+/// window was reopened.
 #[tauri::command]
-pub(crate) fn profile_switch(cli_id: String, name: String) -> Result<(), String> {
-    sailor::profiles_cmd::switch(&cli_id, &name)
+pub(crate) fn profile_switch(app: tauri::AppHandle, cli_id: String, name: String) -> Result<(), String> {
+    sailor::profiles_cmd::switch(&cli_id, &name)?;
+    crate::events::emit(&app, "profile", &serde_json::json!({ "cli_id": cli_id, "name": name }));
+    Ok(())
 }
 
 #[tauri::command]
-pub(crate) fn profile_create(cli_id: String, name: String) -> Result<(), String> {
-    sailor::profiles_cmd::create(&cli_id, &name)
+pub(crate) fn profile_create(app: tauri::AppHandle, cli_id: String, name: String) -> Result<(), String> {
+    sailor::profiles_cmd::create(&cli_id, &name)?;
+    crate::events::emit(&app, "profile", &serde_json::json!({ "cli_id": cli_id, "name": name }));
+    Ok(())
 }
 
 #[cfg(test)]

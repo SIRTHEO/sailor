@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import App from "./App";
-import { beatWords, buildWords, liveWords, spendWords, whoWords, LiveChip } from "./Bar";
+import { beatWords, buildWords, hears, liveWords, spendWords, whoWords, LiveChip } from "./Bar";
 import { BlankCanvas } from "./BlankCanvas";
 import { LedgerBrowser } from "./LedgerBrowser";
 import { MACHINE, inTheStrip, machineHolds, tabsThatExist } from "./places";
@@ -191,6 +191,18 @@ describe("the bar's three facts", () => {
     expect(ready?.word).toBe("a new build is waiting running since 15m ago");
   });
 
+  test("A READER OF THE BAR HEARS WHAT IT ASKED FOR, and a run's chatter is not it", () => {
+    // The read behind «who you run as» starts a command per profile, and a
+    // run puts hundreds of facts a second on this channel.
+    expect(hears("run", ["run", "beat"])).toBe(true);
+    expect(hears("beat", ["run", "beat"])).toBe(true);
+    expect(hears("run", ["profile"])).toBe(false);
+    expect(hears("terminal", ["profile"])).toBe(false);
+    expect(hears("profile", ["profile"])).toBe(true);
+    // No list is every kind: a reader that did not choose keeps what it had.
+    expect(hears("whatever-comes-next", undefined)).toBe(true);
+  });
+
   test("THE BEAT IS SILENT WHILE THE SCHEDULE IS KEPT, and loud when it is not", () => {
     // Most decisions are «not due»: a chip that recited them would be a chip
     // nobody reads on the day it matters.
@@ -284,7 +296,10 @@ describe("the bar's three facts", () => {
     }
   });
 
-  test("THE BAR LISTENS TO ONE CHANNEL AND NO TIMER: it asks again when the shell says something moved", async () => {
+  test("THE BAR LISTENS TO ONE CHANNEL, AND A BURST OF FACTS IS ONE ASK", async () => {
+    // One piece of an engine's output is one fact here, hundreds a second: a
+    // read on each turns a talkative step into a storm, and one of the reads
+    // starts a command per profile.
     const shell = pretendShell({ open_runs: [], day_summary: { ledger_present: true, cost_micros: 0, unpriced: 0 } });
     const channels: string[] = [];
     const handlers: Array<(event: { payload: unknown }) => void> = [];
@@ -300,10 +315,18 @@ describe("the bar's three facts", () => {
       await screen.findByText("nothing running");
       await waitFor(() => expect(channels.length).toBeGreaterThan(0));
       expect(new Set(channels)).toEqual(new Set(["sailor_event"]));
-      const askedBefore = shell.calls.filter((call) => call.command === "open_runs").length;
-      // The shell says a run moved: every listener of the chip hears the one channel.
-      handlers.forEach((handler) => handler({ payload: { kind: "run", at: 1, payload: {} } }));
-      await waitFor(() => expect(shell.calls.filter((call) => call.command === "open_runs").length).toBe(askedBefore + 1));
+
+      const asked = () => shell.calls.filter((call) => call.command === "open_runs").length;
+      const before = asked();
+      for (let piece = 0; piece < 50; piece += 1) {
+        handlers.forEach((handler) => handler({ payload: { kind: "run", at: piece, payload: {} } }));
+      }
+      expect(asked(), "fifty facts asked fifty times").toBe(before);
+
+      // **AND THE LAST FACT OF A BURST IS NOT LOST**: asked for at the end of
+      // the second, or the chip keeps the state from before the run ended.
+      await waitFor(() => expect(asked()).toBe(before + 1), { timeout: 3000 });
+      expect(asked(), "one ask for the whole burst").toBe(before + 1);
     } finally {
       shell.stop();
     }
