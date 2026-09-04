@@ -4085,6 +4085,20 @@ tr[data-followable]:hover {
   font-size: var(--text-small);
 }
 
+/* The one chip that is a gesture: it ends this window and starts the next. */
+.chip--asks {
+  border: 1px solid var(--accent-fill);
+  border-radius: var(--radius);
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.chip--asks:hover {
+  border-color: var(--focus);
+}
+
 .chip--build[data-warn] {
   color: var(--danger);
   background: var(--danger-soft);

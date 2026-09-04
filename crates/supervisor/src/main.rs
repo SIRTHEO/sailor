@@ -17,8 +17,8 @@ use std::time::Duration;
 
 use supervisor::child::{cargo_build, newest_change, Process, Spec};
 use supervisor::{
-    close_the_ones_that_stopped_breathing, left_running, now, rebuild_then_swap, LiveState,
-    LiveStatus, Rebuild,
+    close_the_ones_that_stopped_breathing, left_running, now, rebuild_then_swap, turn_now,
+    LiveState, LiveStatus, Rebuild, SwapRequest, Turn,
 };
 
 use supervisor::DEV_PORT;
@@ -38,7 +38,7 @@ fn main() {
     match arguments.first().map(String::as_str) {
         Some("--list") => list_left_running(store.as_ref()),
         Some("--stop") => stop_left_running(store.as_ref()),
-        _ => run_live(&root, store.as_ref()),
+        _ => run_live(&root, store.as_ref(), arguments.iter().any(|one| one == "--at-once")),
     }
 }
 
@@ -167,7 +167,10 @@ unsafe fn libc_kill(pid: u32) -> bool {
     kill(pid as i32, SIGTERM) == 0
 }
 
-fn run_live(root: &Path, store: Option<&ledger::Ledger>) {
+/// `--at-once` puts every build on the screen the moment it is done, which is
+/// what this did before the window learnt to wait. Kept for whoever is not
+/// working inside the window they are building.
+fn run_live(root: &Path, store: Option<&ledger::Ledger>, at_once: bool) {
     let desktop = root.join("desktop");
     let manifest = desktop.join("src-tauri/Cargo.toml");
     let binary = desktop.join("src-tauri/target/debug/sailor-desktop");
@@ -179,9 +182,18 @@ fn run_live(root: &Path, store: Option<&ledger::Ledger>) {
         std::process::exit(2);
     }
 
-    let status_path = ledger::sailor_home()
-        .map(|home| LiveStatus::path_in(&home))
+    let home = ledger::sailor_home();
+    let status_path = home
+        .as_ref()
+        .map(|home| LiveStatus::path_in(home))
         .unwrap_or_else(|| std::env::temp_dir().join(supervisor::STATUS_FILE));
+    let swap_path = home
+        .as_ref()
+        .map(|home| SwapRequest::path_in(home))
+        .unwrap_or_else(|| std::env::temp_dir().join(supervisor::SWAP_FILE));
+    // An ask left behind by whoever ran this before would swap the first
+    // window this one lights, before anybody has looked at it.
+    SwapRequest::take(&swap_path);
 
     if let Some(store) = store {
         match close_the_ones_that_stopped_breathing(store, now()) {
@@ -270,6 +282,9 @@ fn run_live(root: &Path, store: Option<&ledger::Ledger>) {
     }
 
     println!("in ascolto. Ctrl-C per chiudere.");
+    // A build that nobody has taken yet, and the ask that is still standing.
+    let mut waiting = false;
+    let mut asked = at_once;
     loop {
         std::thread::sleep(Duration::from_millis(500));
 
@@ -283,46 +298,51 @@ fn run_live(root: &Path, store: Option<&ledger::Ledger>) {
             }
         }
 
+        asked |= SwapRequest::take(&swap_path);
         let changed = newest_change(&roots);
-        if changed <= seen {
-            continue;
-        }
-        seen = changed;
-
-        println!("qualcosa è cambiato: ricostruisco senza toccare la finestra.");
-        publish(
-            &status_path,
-            LiveState::Building,
-            String::new(),
-            running_since,
-        );
-
-        let outcome = rebuild_then_swap(
-            &mut window,
-            || cargo_build(&manifest, Some(1)),
-            || start_window(&binary, &desktop, store),
-        );
-
-        match outcome {
-            Rebuild::Replaced => {
-                running_since = Some(now());
-                println!("finestra sostituita.");
-                publish(
-                    &status_path,
-                    LiveState::Running,
-                    String::new(),
-                    running_since,
+        match turn_now(changed > seen, waiting, asked, window.is_none()) {
+            Turn::Wait => {}
+            Turn::Build => {
+                seen = changed;
+                println!("qualcosa è cambiato: ricostruisco senza toccare la finestra.");
+                publish(&status_path, LiveState::Building, String::new(), running_since);
+                match cargo_build(&manifest, Some(1)) {
+                    supervisor::BuildOutcome::Succeeded => {
+                        waiting = true;
+                        // ON SCREEN IS STILL THE ONE BEFORE THIS, and it stays
+                        // there: what was being worked in is not taken away by
+                        // the act of proving the code compiles.
+                        println!("costruita. Aspetta: la finestra la prende quando gliela chiedi.");
+                        publish(&status_path, LiveState::Ready, String::new(), running_since);
+                    }
+                    supervisor::BuildOutcome::Failed { message } => {
+                        eprintln!("{message}");
+                        eprintln!("costruzione fallita: la finestra resta all'ultima versione buona.");
+                        publish(&status_path, LiveState::BuildFailed, message, running_since);
+                    }
+                }
+            }
+            Turn::Swap => {
+                asked = false;
+                waiting = false;
+                publish(&status_path, LiveState::Building, String::new(), running_since);
+                let outcome = rebuild_then_swap(
+                    &mut window,
+                    || supervisor::BuildOutcome::Succeeded,
+                    || start_window(&binary, &desktop, store),
                 );
-            }
-            Rebuild::KeptRunning { message } => {
-                eprintln!("{message}");
-                eprintln!("costruzione fallita: la finestra resta all'ultima versione buona.");
-                publish(&status_path, LiveState::BuildFailed, message, running_since);
-            }
-            Rebuild::StartFailed { message } => {
-                eprintln!("costruita, ma non riparte: {message}");
-                publish(&status_path, LiveState::BuildFailed, message, None);
-                running_since = None;
+                match outcome {
+                    Rebuild::Replaced => {
+                        running_since = Some(now());
+                        println!("finestra sostituita.");
+                        publish(&status_path, LiveState::Running, String::new(), running_since);
+                    }
+                    Rebuild::KeptRunning { message } | Rebuild::StartFailed { message } => {
+                        eprintln!("costruita, ma non riparte: {message}");
+                        publish(&status_path, LiveState::BuildFailed, message, None);
+                        running_since = None;
+                    }
+                }
             }
         }
     }

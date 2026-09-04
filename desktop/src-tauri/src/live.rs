@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Emitter, Manager};
 
-use supervisor::{LiveState, LiveStatus};
+use supervisor::{LiveState, LiveStatus, SwapRequest};
 
 /// Ogni quanto si guarda il file di stato.
 ///
@@ -40,6 +40,19 @@ fn status_path() -> std::path::PathBuf {
     ledger::sailor_home()
         .map(|home| LiveStatus::path_in(&home))
         .unwrap_or_else(|| std::env::temp_dir().join(supervisor::STATUS_FILE))
+}
+
+fn swap_path() -> std::path::PathBuf {
+    ledger::sailor_home()
+        .map(|home| SwapRequest::path_in(&home))
+        .unwrap_or_else(|| std::env::temp_dir().join(supervisor::SWAP_FILE))
+}
+
+/// Asks for the build that is waiting. **This window ends when it is granted**,
+/// which is why nothing else asks: the gesture belongs to the person.
+#[tauri::command]
+pub fn take_new_build() -> Result<(), String> {
+    SwapRequest::ask(&swap_path())
 }
 
 /// Accende il filo che guarda il file di stato e riferisce.
@@ -83,6 +96,7 @@ fn announce(app: &AppHandle, status: &LiveStatus) {
             "Sailor — rebuild FAILED: you are looking at the last good version".to_owned()
         }
         LiveState::Building => "Sailor — rebuilding…".to_owned(),
+        LiveState::Ready => "Sailor — a new build is waiting".to_owned(),
         LiveState::Running => CALM_TITLE.to_owned(),
     };
     let _ = window.set_title(&title);

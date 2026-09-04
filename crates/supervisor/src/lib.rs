@@ -110,6 +110,71 @@ pub enum LiveState {
     /// guarda deve saperlo: senza questo stato la finestra mentirebbe per
     /// omissione, che il guasto 30 ha già pagato una volta.
     BuildFailed,
+    /// A build is done and waiting, and the window on the screen is the one
+    /// before it. Nothing takes it until somebody asks.
+    Ready,
+}
+
+/// What the live loop does on this turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Turn {
+    /// Nothing was saved and nobody asked.
+    Wait,
+    /// Something was saved: build it, and leave the window where it is.
+    Build,
+    /// Put the build that is waiting on the screen.
+    Swap,
+}
+
+/// **A BUILD DOES NOT TAKE THE WINDOW AWAY FROM YOU.**
+///
+/// Developing Sailor inside Sailor means every save used to close the thing
+/// being worked in — the session you were reading, the pane you were typing
+/// into, the run you were watching. Building at once is still right: it is how
+/// you learn the code compiles. Swapping at once is not, so the fresh binary
+/// waits until it is asked for, and swaps by itself only when there is nothing
+/// on the screen to take away.
+pub fn turn_now(saved: bool, waiting: bool, asked: bool, nothing_on_screen: bool) -> Turn {
+    if saved {
+        return Turn::Build;
+    }
+    if waiting && (asked || nothing_on_screen) {
+        return Turn::Swap;
+    }
+    Turn::Wait
+}
+
+/// The window's request for the build that is waiting.
+///
+/// **A FILE, FOR THE REASON `LiveStatus` IS A FILE**, read the other way: the
+/// supervisor cannot open a channel towards a window it did not start, and the
+/// window cannot towards a supervisor it does not know. Asking is creating the
+/// file; the answer is the supervisor removing it.
+pub struct SwapRequest;
+
+/// Come si chiama il file, sotto la casa di Sailor.
+pub const SWAP_FILE: &str = "live-swap";
+
+impl SwapRequest {
+    pub fn path_in(home: &Path) -> PathBuf {
+        home.join(SWAP_FILE)
+    }
+
+    /// Asks. Writing it twice is asking once: the file is the whole message.
+    pub fn ask(path: &Path) -> Result<(), String> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| format!("creare {}: {error}", parent.display()))?;
+        }
+        std::fs::write(path, now().to_string())
+            .map_err(|error| format!("scrivere {}: {error}", path.display()))
+    }
+
+    /// Whether somebody asked, taking the request away as it answers. An ask
+    /// that stayed on disk would swap the window again at the next build.
+    pub fn take(path: &Path) -> bool {
+        std::fs::remove_file(path).is_ok()
+    }
 }
 
 /// Lo stato che il supervisore pubblica e la finestra legge.

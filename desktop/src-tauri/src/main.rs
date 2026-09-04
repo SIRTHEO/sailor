@@ -176,6 +176,7 @@ fn main() {
             flows,
             flow_places,
             live::live_status,
+            live::take_new_build,
             flows::save_flow,
             flows::delete_flow,
             tools::discover_tools,

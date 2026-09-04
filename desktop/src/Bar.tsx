@@ -9,6 +9,7 @@ import {
   listenToSailorEvents,
   liveStatus,
   openRuns,
+  takeNewBuild,
   todaySummary,
   type DaySummary,
   type LiveStatus,
@@ -161,6 +162,9 @@ export function buildWords(status: LiveStatus | null, now: number): { warn: bool
   if (status === null || status.state === "running") return null;
   if (status.state === "building") return { warn: false, word: "rebuilding the window…" };
   const since = status.running_since === null ? "" : ` running since ${elapsed(status.running_since, now)} ago`;
+  // **NOT A WARNING.** Nothing is wrong: a build is done and this window is
+  // the one before it, which is exactly what was asked for.
+  if (status.state === "ready") return { warn: false, word: `a new build is waiting${since}` };
   return { warn: true, word: `REBUILD FAILED · you see the last good version${since}` };
 }
 
@@ -176,6 +180,20 @@ export function BuildChip({ native, now }: { native: boolean; now: number }) {
   }
   const said = buildWords(status.value, now);
   if (said === null) return null;
+  // THE ONLY THING IN THIS BAR THAT ENDS THE WINDOW, so it is a button and
+  // looks like one: nothing here takes the screen away on its own.
+  if (status.value?.state === "ready") {
+    return (
+      <button
+        type="button"
+        className="chip chip--build chip--asks"
+        onClick={() => void takeNewBuild()}
+        title="the window is replaced by the build that is waiting"
+      >
+        {said.word} · take it
+      </button>
+    );
+  }
   return (
     <span className="chip chip--build" data-warn={said.warn || undefined} title={status.value?.message || undefined}>
       {said.word}

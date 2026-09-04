@@ -183,6 +183,14 @@ describe("the bar's three facts", () => {
     expect(failed?.word).toBe("REBUILD FAILED · you see the last good version running since 15m ago");
   });
 
+  test("A BUILD THAT IS WAITING IS NOT A WARNING: nothing is wrong, and nothing moves", () => {
+    // The window on the screen is the one before this build, deliberately: it
+    // holds the pane being typed in and the run being watched.
+    const ready = buildWords({ state: "ready", message: "", changed_at: 99, running_since: 100 - 15 * 60 }, 100);
+    expect(ready?.warn).toBe(false);
+    expect(ready?.word).toBe("a new build is waiting running since 15m ago");
+  });
+
   test("THE EMPTY BOARD SAYS WHERE IT LOOKED, with the real paths and what it found", () => {
     render(
       <BlankCanvas
