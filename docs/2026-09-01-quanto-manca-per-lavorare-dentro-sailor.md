@@ -1,6 +1,6 @@
 # Quanto manca per lavorare dentro Sailor
 
-> **Superato il 02/09/2026 da `docs/2026-09-02-the-mvp-that-ends-orca.md`.**
+> **Superato il 02/09/2026 da `docs/2026-09-02-the-termination-condition.md`.**
 > Quel documento lo dichiara scaduto sul proprio primo punto — il terminale
 > nella finestra, chiamato qui «il vero blocco», che il 02/09 esisteva già — ma
 > la dichiarazione stava solo là. Per due giorni chi apriva **questo** file

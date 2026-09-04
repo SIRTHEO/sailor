@@ -117,6 +117,15 @@ suo controllo, e senza non entra:
 > dichiara la propria superficie e i propri poteri**; e, per le sole `sense`,
 > fallisce se non dichiara cosa risponde da cieca.
 
+**Quella prova non è mai stata scritta, e la scelta è stata presa il
+04/09/2026: questo documento resta dichiarato e non in vigore.** Nessuna azione
+porta una superficie — cercare `surface` nei crate torna due file, e uno dei
+due, `crates/actions/src/history.rs`, lo dice di sé. Non si ritira, perché il
+disegno regge; non si costruisce adesso, perché paga solo insieme al modello
+dei poteri di un passo, che è previsto dopo. Fino ad allora, per la regola di
+questo stesso progetto, **qui c'è un'intenzione e non un vincolo** — ed è il
+guasto 67, che resta aperto e ora ha una risposta invece di una domanda.
+
 Nasce rossa sulle nove azioni di oggi — nessuna dichiara niente — ed è il modo
 in cui questa pagina resta viva invece di diventare la descrizione di ciò che è
 già successo.
