@@ -70,38 +70,40 @@ on 02/09/2026 by reading the code and running commands, not recalled.
   two claims below — **B** is built on the third outcome, not on the parking
   one, and **D2** starts from a beat that exists rather than from nothing.
 
-## What is false today, measured
+## What was false on 02/09, and what it is now
 
 These are the defects the claims below are aimed at. Each was measured, not
-inferred.
+inferred — and each was measured again on the evening of 04/09. **All eight
+have fallen**, so what follows is the record of what the claims were for, not
+a list of open defects.
 
-1. **A terminal dies with the window.** The panes live in an `OnceLock` inside
-   the Tauri process (`desktop/src-tauri/src/terminal.rs:55-58`). Close the
-   window and every session inside it is gone.
-2. **A comment says the opposite, and a design choice rests on it.**
-   `desktop/src/Terminals.tsx:5` states «A terminal outlives the window —
-   closing it does not kill the session inside». That is false. The choice it
-   justifies (keep no local copy of the list) is right for a different reason.
-3. **There is no scrollback.** Output is delivered live and kept nowhere. Leave
-   the Terminals screen and come back: the component unmounted
-   (`App.tsx:1245` renders it behind `place === "terminals"`), the emulator was
-   destroyed, and the pane is blank while the process is alive and talking.
-4. **A profile cannot reach a terminal.** `Opening.environment` is public on the
-   engine and the bridge never sets it — the string `environment` does not occur
-   in `desktop/src-tauri/src/terminal.rs` or `desktop/src/terminal.ts`. Neither
-   `CLAUDE_CONFIG_DIR` nor `CODEX_HOME` gets through.
-5. **A program cannot be given arguments.** `Opening.args` is declared in
-   `desktop/src/terminal.ts:82` and `Terminals.tsx` never passes it. Typing
-   `claude --resume` in «what to start» looks for a binary named, literally,
-   `claude --resume`.
-6. **A tab cannot be identified.** `Summary` carries `id`, `workspace_root`,
-   `workspace_name`, `alive`, `process_id` — and no tty, though `Pty::device()`
-   exists at `crates/terminal/src/pty.rs:201`. The window cannot say which tab
-   is which session.
-7. **The workspace is a path you type by hand.** The «workspace» field is free
-   text, while `workspaces` and `worktree_list` already answer the question.
-8. **That screen is still in Italian** («Spazio di lavoro», «Cosa avviare»,
-   «apro…»), against the decision of 01/09.
+1. ~~**A terminal dies with the window.**~~ The panes lived in a `OnceLock`
+   inside the Tauri process. They live in `sailor terminal host` now, a process
+   of its own: gesture A2 closed the window with ⌘Q and both tabs came back
+   alive, with the `sleep` still counting under `ps -p`.
+2. ~~**A comment says the opposite, and a design choice rests on it.**~~
+   `desktop/src/Terminals.tsx` said «a terminal outlives the window» while it
+   did not. Gesture A9 read the header against A2: it now names the reason that
+   is true — the list belongs to the engine, the ptys to the host.
+3. ~~**There is no scrollback.**~~ Leaving the screen and coming back showed a
+   blank pane over a live process. A2 came back to both panes with their
+   scrollback.
+4. ~~**A profile cannot reach a terminal.**~~ The string `environment` did not
+   occur in the bridge; it occurs eight times in `desktop/src-tauri/src/terminal.rs`,
+   and gesture A6 read `CODEX_HOME` inside the pty as the active profile's home.
+   The command line was still opening terminals with an empty environment on
+   04/09 — **fault 81**, closed the same evening, with the binary itself in a
+   real pty as the test.
+5. ~~**A program cannot be given arguments.**~~ `Opening.args` was declared and
+   never passed. `Terminals.tsx:290` passes it.
+6. ~~**A tab cannot be identified.**~~ `Summary` carried no tty. It carries
+   `device`, and with it `moved`, `estimated_tokens`, `program` and the profile
+   in force.
+7. ~~**The workspace is a path you type by hand.**~~ It is a select built by
+   `placesOf` from the projects and the worktrees — and since **fault 79** each
+   row carries what distinguishes it, because six of them shared one label.
+8. ~~**That screen is still in Italian.**~~ None of the three sentences is
+   there any more.
 
 ---
 
