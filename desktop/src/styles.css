@@ -213,7 +213,7 @@
    out, and `contrast.test.tsx` measures every scene a second time with these
    values in place. Day, for whoever works by a window. */
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme="dark"]) {
     --bg: #f7f8f8;
     --paper: #ffffff;
     --raised: #ffffff;
@@ -265,6 +265,65 @@
     --lane-9: #a076ca;
     --lane-10: #c46da5;
   }
+}
+
+/* THE SAME DAY, CHOSEN INSTEAD OF INHERITED. The block above answers the
+   machine; this one answers a person who wants the other look on the machine
+   they have. The values are the day palette again, written out: CSS has no way
+   to say «that block, under this selector too», so `stylesheet.test.ts`
+   compares the two declaration by declaration. Night needs no twin — it is the
+   ground, and the `:not()` above is what steps aside for it. */
+:root[data-theme="light"] {
+  --bg: #f7f8f8;
+  --paper: #ffffff;
+  --raised: #ffffff;
+  --rail: #f7f8f8;
+  --line: #e4e5e7;
+  --band-fill: rgb(8 9 10 / 3.5%);
+
+  --ink: #08090a;
+  --muted: #626169;
+  --faint: #626169;
+
+  --state-waiting: #626169;
+  --state-running: #1a5f96;
+  --state-went: #146447;
+  --state-broke: #a13930;
+  --state-capped: #92531b;
+  --state-human: #6b46a8;
+
+  --ok: #146447;
+  --ok-soft: #dcebe3;
+  --warn: #92531b;
+  --warn-soft: #f7e8ce;
+  --danger: #a13930;
+  --danger-soft: #f6dedb;
+
+  --focus: #4f5bc4;
+  --accent-fill: #5e6ad2;
+  --on-accent: #ffffff;
+
+  --shadow: 0 8px 24px rgb(8 9 10 / 10%);
+  --scrim: rgb(8 9 10 / 40%);
+
+  --ink-surface: #08090a;
+  --on-ink: #f7f8f8;
+  --on-ink-muted: #a1a1aa;
+
+  --optional: #7c8a9f;
+  --grid-fine: #eceded;
+  --grid-coarse: #e2e3e5;
+
+  --lane-1: #d26b71;
+  --lane-2: #c87436;
+  --lane-3: #a5851e;
+  --lane-4: #739432;
+  --lane-5: #129b6b;
+  --lane-6: #18989c;
+  --lane-7: #2391c3;
+  --lane-8: #6b83d8;
+  --lane-9: #a076ca;
+  --lane-10: #c46da5;
 }
 
 /* Whoever asked for less motion gets none. */

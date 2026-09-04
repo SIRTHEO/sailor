@@ -79,6 +79,7 @@ export const MACHINE: MachineRow[] = [
   { id: "commands", name: "Commands", glyph: "\u2318", asks: "every verb sailor answers to", section: "sailor", tab: "commands" },
   { id: "keeps", name: "Stores", glyph: "\u25a3", asks: "every store, its path and its size", section: "sailor", tab: "keeps" },
   { id: "cando", name: "What it can do", glyph: "\u2726", asks: "the actions a flow may use", section: "sailor", tab: "cando" },
+  { id: "look", name: "Appearance", glyph: "\u263e", asks: "night, day, or whatever this machine says", section: "sailor", tab: "look" },
 ];
 
 /** The tabs the machine ground carries, for the check that keeps the two glued. */

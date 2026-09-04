@@ -145,6 +145,18 @@ export interface Stylesheet {
   otherRoot: Array<[string, string]> | null;
 }
 
+/**
+ * **WHERE THE ROLES ARE DEFINED.** `:root` is the ground. A look a person pins
+ * writes the same roles again under `[data-theme]`, and the answer the machine
+ * gives writes them under a `:not()` of it — all three are role grounds, and
+ * none of them is «a rule that paints something».
+ */
+export function isRoleGround(selector: string): boolean {
+  return /^:root(:not\(\[data-theme="(?:dark|light)"\]\)|\[data-theme="(?:dark|light)"\])?$/.test(
+    selector.trim(),
+  );
+}
+
 /** Whether an at-rule prelude is a colour scheme's, in any spacing. */
 function isOtherScheme(prelude: string): boolean {
   return /^@media\s*\(\s*prefers-color-scheme\s*:\s*(dark|light)\s*\)$/.test(prelude);
@@ -268,7 +280,7 @@ export function parseStylesheet(source: string): Stylesheet {
       // to the measurement as a colour in any other at-rule.
       const inner = parseStylesheet(body);
       for (const rule of inner.rules) {
-        if (rule.selector === ":root") {
+        if (isRoleGround(rule.selector)) {
           otherRoot = [...(otherRoot ?? []), ...rule.declarations];
           continue;
         }
