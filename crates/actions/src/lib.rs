@@ -6035,16 +6035,19 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
 
         // THE CONTROL: past its time the same engine is knocked on again.
         // Without this arm the code could set an engine aside for ever and pass.
+        //
+        // The instant is read from the list and not recomputed here: guessing
+        // it as `now + 3600` meant guessing what the clock said when the file
+        // was written, and one second of load between the two left the file
+        // untouched and this arm red for a reason that is not the code's.
         let past = std::fs::read_to_string(&aside).expect("the list");
+        let mut written: serde_json::Value = serde_json::from_str(&past).expect("the list is JSON");
         let now = now_secs();
-        std::fs::write(
-            &aside,
-            past.replace(
-                &format!("{}", now + 3_600),
-                &format!("{}", now - 1),
-            ),
-        )
-        .expect("bring its time forward");
+        for (_, aside) in written.as_object_mut().expect("one entry per engine") {
+            aside["until"] = json!(now - 1);
+        }
+        std::fs::write(&aside, serde_json::to_string(&written).expect("write it back"))
+            .expect("bring its time forward");
         let again = with_price_list(None, || {
             action.execute(&input, &mut shared("corsa-3", "passo-1"))
         })
