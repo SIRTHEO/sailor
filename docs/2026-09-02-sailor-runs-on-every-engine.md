@@ -486,8 +486,24 @@ Starting point, so the mandate builds on it instead of beside it.
    and its runs; the rail names the workspace; system flows and home flows are
    two pages of their own; the switch moves root, terminals' default tree and
    credentials together.
-   *Proof:* two projects registered, the board changes flows on switch; a test
-   on `flowPlaces` per root.
+   *Where it landed:* two of the three things the switch was to move. `work_here`
+   resolves the project from any place inside it, refuses a directory with no
+   marker by name, writes the visit into the register **before** moving — so a
+   register that cannot be written refuses the whole gesture — and then moves the
+   process's working directory, which is what every reader of flows, runs and
+   census resolves against; the terminals' default tree follows because it is
+   that same directory.
+   *The credentials do not move, and the reason is structural.* Measured:
+   `profiles::ProfileStore` holds `active` as one map from command line to
+   profile name, for the whole machine — there is no workspace anywhere in it,
+   so there is nothing that could follow a switch. Switching project leaves the
+   engines running as whoever they were running as. That is not a bug in
+   `work_here`: it is a shape the store does not have, and giving it one is a
+   decision about whether an identity belongs to a person or to a project. In
+   `da-fare.md`.
+   *Proof:* `a_project_is_found_from_inside_it_and_refused_where_there_is_none`
+   in `desktop/src-tauri/src/workspaces.rs`. The `flowPlaces` test per root the
+   claim asks for is not written.
 2. **A terminal says who runs in it.** The pane header shows the program, the
    model in force, the profile, the tree, and the estimated tokens against the
    ceiling; a pane that runs no agent says «shell».
