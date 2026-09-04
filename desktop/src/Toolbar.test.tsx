@@ -32,8 +32,8 @@ vi.mock("./sample", async (importOriginal) => {
 /**
  * **THE STEP TOOLBOX, INTERROGATED WHERE IT WOULD GO WRONG.** A screenshot
  * cannot show that the bar sits **inside** the canvas without scrolling away,
- * that every family offered creates a step with an action the engine knows in
- * both directions, or that with no flow in focus it says what is missing.
+ * or that every family offered creates a step with an action the engine knows
+ * in both directions.
  */
 
 afterEach(() => {
@@ -390,47 +390,35 @@ describe("what the bar offers", () => {
     }
   });
 
-  test("the bar says which flow the step lands in", () => {
-    const { container } = render(
-      <Toolbar flowName="esamina-la-repo" onAdd={() => {}} />,
-    );
-    expect(container.querySelector(".toolbar__target")?.textContent).toContain("esamina-la-repo");
+  /**
+   * **THE NAME IS NOT DRAWN TWICE.** «Add to «x»» answered which of the many
+   * lanes the step fell into; the board draws one flow and writes its name at
+   * the top of the paper. The tie stays where it costs no pixel.
+   */
+  test("THE BAR NAMES ITS FLOW WHERE IT COSTS NOTHING, and does not draw it again", () => {
+    const { container } = render(<Toolbar flowName="esamina-la-repo" onAdd={() => {}} />);
+
+    const bar = container.querySelector(".toolbar") as HTMLElement;
+    expect(bar.getAttribute("aria-label")).toContain("esamina-la-repo");
+    expect(bar.textContent, "the name is drawn as well as spoken").not.toContain("esamina-la-repo");
   });
-});
 
-describe("with no flow picked", () => {
-  test("THE BAR SAYS WHAT IS MISSING, IT DOES NOT JUST GO DARK", () => {
-    const { container } = render(<Toolbar flowName={null} onAdd={() => {}} />);
-
-    // No disabled button: a button that cannot be pressed and does not say why
-    // is a dead end.
+  /**
+   * **THE BAR HAS NO SECOND FACE.** «No flow in focus» is not a state any more:
+   * the board opens on a flow, and with none to open the empty canvas has the
+   * screen. The prop that cannot be null is what makes it unreachable.
+   */
+  test("THE BAR IS ONLY EVER ABOUT A FLOW: no prompt, no empty face", () => {
+    const { container } = render(<Toolbar flowName="prima-corsa" onAdd={() => {}} />);
+    expect(container.querySelector(".toolbar__prompt")).toBeNull();
+    expect(container.querySelectorAll(".toolbar__tool").length).toBeGreaterThan(0);
     expect(container.querySelectorAll("button:disabled")).toHaveLength(0);
-    expect(container.querySelectorAll(".toolbar__tool")).toHaveLength(0);
-
-    // In their place, what is missing — on screen, not inside a `title`.
-    const prompt = container.querySelector(".toolbar__prompt") as HTMLElement;
-    expect(prompt).not.toBeNull();
-    expect(prompt.textContent).toContain("Pick a flow");
-
-    // And it says where, because a bar that names a lack without naming its
-    // owner sends people looking. It does not carry the gesture itself: that
-    // one belongs to the column, in every state, and is asserted there.
-    expect(prompt.textContent).toContain("in the column");
-    expect(container.querySelectorAll("button")).toHaveLength(0);
-  });
-
-  test("the reason is not in a `title`, where nobody looks for it", () => {
-    const { container } = render(<Toolbar flowName={null} onAdd={() => {}} />);
-    const withTitle = Array.from(container.querySelectorAll("[title]"));
-    expect(withTitle).toEqual([]);
   });
 });
 
 /**
- * **WITH ZERO FLOWS THE BAR IS NOT THERE AT ALL**, which is not the same as
- * «no flow in focus»: there the bar stays and changes job. That moment belongs
- * to the empty canvas; two invitations on one screen cancel each other out. The
- * condition is a single line of `App.tsx` (`flows.size > 0`).
+ * **WITH ZERO FLOWS THE BAR IS NOT THERE AT ALL.** That moment belongs to the
+ * empty canvas; two invitations on one screen cancel each other out.
  */
 describe("with zero flows", () => {
   test("THE BAR GOES AND THE EMPTY CANVAS STAYS, not both", () => {
