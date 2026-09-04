@@ -455,7 +455,25 @@ Starting point, so the mandate builds on it instead of beside it.
 2. **A terminal says who runs in it.** The pane header shows the program, the
    model in force, the profile, the tree, and the estimated tokens against the
    ceiling; a pane that runs no agent says «shell».
-   *Proof:* a pane test on the four words.
+   *Where it landed:* four of the five. The header carries the program, the
+   profile it opened under, the tree by name and by path, and the estimate
+   against the ceiling with the `≈` that says it is one; and a program no
+   command line declares is now shown as a shell — **the word comes from the
+   command lines the product knows**, not from a list of names in the window,
+   so a new engine is a shell until its data says otherwise.
+   *The model in force is not there, and inventing it would be worse than the
+   gap.* Measured: nothing in Sailor knows which model an agent is using inside
+   a terminal. The model store answers for a catalogue of its own by kind of
+   work (`models::effective_model`), which is not what a command line runs
+   with; a descriptor names where an engine reports the model it **used**
+   (`Usage.model`), which is a fact after a call, not before one; and the only
+   thing knowable in advance is an argument the opener passed, when the
+   descriptor declares a `choose_model` capability and somebody used it. A
+   header that printed any of those three as «the model in force» would be
+   claiming what nobody measured. In `da-fare.md`.
+   *Proof:* `a program no command line declares is a shell, and the word comes
+   from the data` in `desktop/src/terminal.test.tsx`; the judge put the list
+   back and it went red.
 3. **One event stream, from anywhere.** Runs, sessions, claims, faults and
    the build feed one `sailor_event` channel; the bar consumes only that
    channel; Now is a view of the same events. A poll that fails is shown red
