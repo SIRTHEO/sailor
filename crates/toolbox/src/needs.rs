@@ -104,11 +104,13 @@ impl Action for ToolNeedsAction {
         let mut asked: BTreeMap<String, Vec<String>> = BTreeMap::new();
         let mut named_binaries: Vec<String> = Vec::new();
         let mut flows_seen = 0usize;
+        let mut steps_seen = 0usize;
         let mut flows_broken: Vec<String> = Vec::new();
         for (name, _, entry) in system::load_all(&sources) {
             match entry {
                 Ok(flow) => {
                     flows_seen += 1;
+                    steps_seen += steps_read(&flow);
                     for (tool, step) in tools_named_by(&flow) {
                         asked
                             .entry(tool)
@@ -170,6 +172,7 @@ impl Action for ToolNeedsAction {
             .collect();
         let report = report_of(
             flows_seen,
+            steps_seen,
             &flows_broken,
             &looked_in,
             &present,
@@ -180,6 +183,7 @@ impl Action for ToolNeedsAction {
 
         Ok(ActionOutcome::Went(json!({
             "flows_seen": flows_seen,
+            "steps_seen": steps_seen,
             "flows_broken": flows_broken,
             "looked_in": looked_in,
             "present": present,
@@ -221,17 +225,40 @@ fn tools_named_by(flow: &FlowFile) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for step in flow.graph.steps() {
         for place in [step.with.as_ref(), flow.inputs.get(&step.id)] {
-            if let Some(tool) = place
-                .and_then(|value| value.get("tool"))
-                .and_then(Value::as_str)
-            {
-                out.push((tool.to_owned(), step.id.clone()));
+            let Some(declared) = place.and_then(|value| value.get("tool")) else {
+                continue;
+            };
+            for tool in named_in(declared) {
+                out.push((tool, step.id.clone()));
             }
         }
     }
     out.sort();
     out.dedup();
     out
+}
+
+/// The tool names a `tool` field holds: one, or every string of a list.
+/// **A LIST COUNTS AS EVERY NAME IN IT**: reading only the string dropped the
+/// alternatives in silence, so the flows written to be portable were the ones
+/// the census went blind on.
+fn named_in(declared: &Value) -> Vec<String> {
+    match declared {
+        Value::String(one) => vec![one.clone()],
+        Value::Array(many) => many
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// How many steps were read looking for a tool. **A REPORT THAT SAYS «NOTHING
+/// IS MISSING» WITHOUT SAYING OVER HOW MANY STEPS CANNOT BE ARGUED WITH**: this
+/// one read ten of fifty-three and nobody could see it from the outside.
+fn steps_read(flow: &FlowFile) -> usize {
+    flow.graph.steps().len()
 }
 
 /// The steps that name a binary instead of a tool.
@@ -276,6 +303,7 @@ fn count(quantity: usize, one: &str, many: &str) -> String {
 /// its place: the window shows this, another step takes the lists.
 fn report_of(
     flows_seen: usize,
+    steps_seen: usize,
     flows_broken: &[String],
     looked_in: &[String],
     present: &[Need],
@@ -286,9 +314,10 @@ fn report_of(
     let mut text = String::new();
     let _ = write!(
         text,
-        "{} read in {}; they ask for {}.",
+        "{} read in {}, {} looked at; they ask for {}.",
         count(flows_seen, "flow", "flows"),
         count(looked_in.len(), "place", "places"),
+        count(steps_seen, "step", "steps"),
         count(
             present.len() + missing.len() + unknown.len(),
             "tool",
@@ -362,4 +391,48 @@ fn report_of(
     }
     let _ = write!(text, "\n\nLooked in:\n  {}", looked_in.join("\n  "));
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn a_flow_asking(tool: Value) -> FlowFile {
+        let document = json!({
+            "id": "un-flusso",
+            "description": "d",
+            "graph": {"steps": [{
+                "id": "leggi", "deps": [], "action": "external_engine",
+                "max_attempts": 1, "when": null,
+                "input_schema": {"type": "any"}, "output_schema": {"type": "any"},
+                "with": {"tool": tool}
+            }]},
+            "inputs": {}
+        });
+        serde_json::from_value(document).expect("the flow parses")
+    }
+
+    /// **A STEP THAT OFFERS ALTERNATIVES ASKS FOR ALL OF THEM.** Reading only
+    /// the string counted none, so the flows written to be portable were the
+    /// ones this went blind on — and the report said nothing was missing.
+    #[test]
+    fn a_tool_declared_as_a_list_is_asked_for_by_every_name_in_it() {
+        let asked = tools_named_by(&a_flow_asking(json!(["unmotore", "un-altro"])));
+        let names: Vec<&str> = asked.iter().map(|(tool, _)| tool.as_str()).collect();
+        assert_eq!(names, vec!["un-altro", "unmotore"], "asked: {asked:?}");
+        assert!(asked.iter().all(|(_, step)| step == "leggi"));
+
+        // The control: the string still counts, and nothing else does.
+        assert_eq!(tools_named_by(&a_flow_asking(json!("unmotore"))).len(), 1);
+        assert!(tools_named_by(&a_flow_asking(json!({"id": "unmotore"}))).is_empty());
+        assert!(tools_named_by(&a_flow_asking(json!([1, true]))).is_empty());
+    }
+
+    /// A report saying nothing is missing without saying over how many steps
+    /// cannot be argued with by whoever reads it.
+    #[test]
+    fn the_report_says_how_many_steps_it_looked_at() {
+        let text = report_of(2, 53, &[], &["a place".to_owned()], &[], &[], &[], &[]);
+        assert!(text.contains("53 steps looked at"), "{text}");
+    }
 }
