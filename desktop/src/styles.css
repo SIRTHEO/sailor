@@ -2431,6 +2431,9 @@ tr[data-followable]:hover {
 .step-node[data-state="broke"] { --state: var(--state-broke); }
 .step-node[data-state="capped"] { --state: var(--state-capped); }
 .step-node[data-state="handed_to_human"] { --state: var(--state-human); }
+/* Not taken: the board drew this one with a broken outline, so the shape says
+   «no run came through here» and the tint is not asked to carry it alone. */
+.step-node[data-state="skipped"] { --state: var(--state-waiting); border-style: dashed; }
 
 .step-node[data-selected] {
   border-color: var(--focus);

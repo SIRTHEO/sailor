@@ -419,6 +419,7 @@ const EVERY_STATE: StepState[] = [
   "broke",
   "capped",
   "handed_to_human",
+  "skipped",
 ];
 
 function stepProps(data: StepNodeData): NodeProps {
