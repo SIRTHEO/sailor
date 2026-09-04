@@ -1,5 +1,15 @@
 # Quanto manca per lavorare dentro Sailor
 
+> **Superato il 02/09/2026 da `docs/2026-09-02-the-mvp-that-ends-orca.md`.**
+> Quel documento lo dichiara scaduto sul proprio primo punto — il terminale
+> nella finestra, chiamato qui «il vero blocco», che il 02/09 esisteva già — ma
+> la dichiarazione stava solo là. Per due giorni chi apriva **questo** file
+> leggeva una mappa che diceva «qui c'è un muro» dove il muro non c'era più, e
+> nessuna riga glielo diceva. Aggiunta il 04/09/2026.
+>
+> Resta come misura di come si stimava il 01/09. **Per sapere cosa manca, la
+> fonte sono le ventuno affermazioni dell'altro documento**, non questa lista.
+
 **01/09/2026.** Nato dalla domanda di Theo: *quanto lavoro manca all'MVP per
 poter passare una giornata dentro Sailor?*
 
