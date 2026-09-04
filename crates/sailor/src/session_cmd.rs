@@ -1055,6 +1055,23 @@ fn open_terminal(request: &Request<'_>) -> Result<Report, String> {
     Ok(Report::spoken(described(&arrival)))
 }
 
+/// The names a tree keeps its instructions under.
+///
+/// **A CONVENTION, NOT THIS TREE'S FILES.** A list naming one project's own
+/// documents would hand every other tree an address it has not got. What each
+/// file says — including which others to read first — is the file's business.
+const RULES_OF_A_TREE: [&str; 2] = ["AGENTS.md", "CLAUDE.md"];
+
+/// The ones this tree really has. **Empty is an answer**: a tree with no
+/// written rules gets a greeting and no promise of a file that is not there.
+fn rules_in(worktree: &std::path::Path) -> Vec<String> {
+    RULES_OF_A_TREE
+        .iter()
+        .filter(|name| worktree.join(name).is_file())
+        .map(|name| (*name).to_owned())
+        .collect()
+}
+
 /// The welcome, in the wrapper that gets injected into the session's context.
 ///
 /// **A WRAPPER AND NOT A PRINTED LINE** because `SessionStart` is one of the
@@ -1062,13 +1079,23 @@ fn open_terminal(request: &Request<'_>) -> Result<Report, String> {
 /// plain line would be read by the person at the screen and not by the agent,
 /// and detaching would stay a thing that exists and nobody knows about.
 fn welcome(arrival: &Arrival) -> String {
-    let text = catalogue::say(
+    let mut text = catalogue::say(
         "cli.session.welcome",
         &[
             ("tty", &arrival.anchor.tty),
             ("worktree", &arrival.anchor.worktree),
         ],
     );
+    // THE RULES OF THE TREE TRAVEL ON THE SAME CHANNEL AS THE GREETING, which
+    // was already the only one that reaches whoever works here.
+    let rules = rules_in(std::path::Path::new(&arrival.anchor.worktree));
+    if !rules.is_empty() {
+        text.push('\n');
+        text.push_str(&catalogue::say(
+            "cli.session.rules",
+            &[("files", &rules.join(", "))],
+        ));
+    }
     serde_json::json!({
         "hookSpecificOutput": {
             "hookEventName": "SessionStart",
@@ -1877,6 +1904,59 @@ mod tests {
                 "l'innesto ha scritto «{product}» in settings.json: {written}"
             );
         }
+    }
+
+    /// **THE RULES OF THE TREE TRAVEL WITH THE GREETING.** `SessionStart` is
+    /// the one moment whose text becomes context the agent reads, and until
+    /// this it carried a welcome and nothing else: a tree could hold its
+    /// instructions in a file nobody opened, and the first line of them — «read
+    /// these two before correcting anything» — never arrived.
+    #[test]
+    fn the_welcome_hands_over_the_rules_the_tree_really_has() {
+        let scratch = Scratch::new("regole-dell-albero");
+        std::fs::write(scratch.directory.join("AGENTS.md"), "come si lavora qui\n")
+            .expect("le regole si scrivono");
+
+        let said = welcome(&Arrival {
+            anchor: sessions::Anchor {
+                tty: "ttys004".to_owned(),
+                worktree: scratch.directory.display().to_string(),
+                ancestor: None,
+            },
+            session_id: None,
+            transcript_path: None,
+            at: 1_000,
+        });
+
+        assert!(said.contains("AGENTS.md"), "il benvenuto non nomina le regole: {said}");
+        // A NAME AND NOT THE FILE: what it says is the file's business, and a
+        // tree's instructions in the context of every session are paid at every
+        // single start.
+        assert!(
+            !said.contains("come si lavora qui"),
+            "il benvenuto porta dentro il testo intero: {said}"
+        );
+    }
+
+    /// **A FILE THAT IS NOT THERE IS NOT PROMISED.** The same rule as the two
+    /// words: whoever is told to read a file that does not exist looks for it.
+    #[test]
+    fn a_tree_with_no_written_rules_is_promised_none() {
+        let scratch = Scratch::new("albero-senza-regole");
+
+        let said = welcome(&Arrival {
+            anchor: sessions::Anchor {
+                tty: "ttys004".to_owned(),
+                worktree: scratch.directory.display().to_string(),
+                ancestor: None,
+            },
+            session_id: None,
+            transcript_path: None,
+            at: 1_000,
+        });
+
+        assert!(!said.contains("AGENTS.md"), "promette un file che non c'è: {said}");
+        assert!(said.contains("ttys004"), "e il benvenuto sparisce del tutto: {said}");
     }
 
     /// **THE WELCOME PROMISES ONLY WORDS THAT EXIST.** It says «to detach it:
