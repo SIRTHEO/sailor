@@ -256,6 +256,19 @@ pub fn close_the_ones_that_stopped_breathing(
     Ok(closed)
 }
 
+/// Why the port cannot be taken, when somebody is on it. **Both localhost
+/// addresses**: a server on `::1` leaves `127.0.0.1` free, and asking one of
+/// them answers «nobody» with somebody plainly there.
+pub fn who_holds(port: u16) -> Option<String> {
+    for address in ["127.0.0.1", "::1"] {
+        match std::net::TcpListener::bind((address, port)) {
+            Ok(_) => {}
+            Err(error) => return Some(format!("{address}: {error}")),
+        }
+    }
+    None
+}
+
 /// Now, in seconds since the epoch.
 pub fn now() -> i64 {
     std::time::SystemTime::now()
