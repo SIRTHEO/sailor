@@ -226,7 +226,8 @@ fn main() {
             worktree::worktree_create,
             worktree::worktree_remove,
             changes::workspace_changes,
-            changes::open_in_editor
+            changes::open_in_editor,
+            changes::who_opens_files
         ])
         .run(tauri::generate_context!())
         .expect("la finestra di Sailor non si è aperta");

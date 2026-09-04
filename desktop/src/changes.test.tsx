@@ -2,13 +2,13 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 import { ChangesScreen } from "./ChangesScreen";
-import { statusWord } from "./changes";
+import { openerNote, openerWord, statusWord } from "./changes";
 
 /**
  * **WHAT IS SHOWN IS GIT'S ANSWER, VERBATIM.** The screen draws the files and
  * the diff the engine handed it and computes nothing of its own: the test
- * feeds a diff no code would produce and expects it back unchanged. And a
- * file goes to the editor by its absolute path, or the editor opens nothing.
+ * feeds a diff no code would produce and expects it back unchanged, and the
+ * button names who will get the file before anybody presses it.
  */
 
 afterEach(cleanup);
@@ -49,7 +49,11 @@ const SEEN = {
 
 describe("what changed in a workspace", () => {
   test("THE FILES AND THE DIFF ARE THE ENGINE'S, and the diff is shown as it came", async () => {
-    const shell = pretendShell({ workspace_changes: SEEN, open_in_editor: null });
+    const shell = pretendShell({
+      workspace_changes: SEEN,
+      open_in_editor: null,
+      who_opens_files: { kind: "declared", program: "code", args: ["--wait"] },
+    });
     try {
       render(<ChangesScreen root="/work/sailor" name="sailor" />);
       await screen.findByText("crates/terminal/src/host.rs");
@@ -62,7 +66,7 @@ describe("what changed in a workspace", () => {
 
       // A FILE GOES TO THE EDITOR BY ITS ABSOLUTE PATH.
       await act(async () => {
-        fireEvent.click(screen.getAllByRole("button", { name: "open in the editor" })[1]);
+        fireEvent.click(screen.getAllByRole("button", { name: "open in code" })[1]);
       });
       expect(shell.calls.find((call) => call.command === "open_in_editor")?.args).toEqual({
         path: "/work/sailor/docs/new-note.md",
@@ -70,6 +74,32 @@ describe("what changed in a workspace", () => {
     } finally {
       shell.stop();
     }
+  });
+
+  test("WITH NO EDITOR DECLARED THE BUTTON PROMISES NONE, and says what answers instead", async () => {
+    const shell = pretendShell({
+      workspace_changes: SEEN,
+      open_in_editor: null,
+      who_opens_files: { kind: "system", program: "open", args: [] },
+    });
+    try {
+      render(<ChangesScreen root="/work/sailor" name="sailor" />);
+      await screen.findAllByRole("button", { name: "hand to the system" });
+      expect(screen.queryAllByRole("button", { name: /editor/ })).toEqual([]);
+      expect(screen.getByText(/No editor is declared/).textContent).toContain("SAILOR_EDITOR");
+    } finally {
+      shell.stop();
+    }
+  });
+
+  test("the word follows who was chosen, and an unanswered ask promises nothing", () => {
+    expect(openerWord({ kind: "declared", program: "code", args: [] })).toBe("open in code");
+    expect(openerWord({ kind: "visual", program: "zed", args: [] })).toBe("open in zed");
+    expect(openerWord({ kind: "system", program: "open", args: [] })).not.toContain("editor");
+    expect(openerWord(null)).not.toContain("editor");
+    expect(openerNote({ kind: "declared", program: "code", args: [] })).toBeNull();
+    expect(openerNote(null)).toBeNull();
+    expect(openerNote({ kind: "system", program: "xdg-open", args: [] })).toContain("xdg-open");
   });
 
   test("an engine that cannot read the tree is said, not passed for a clean tree", async () => {
