@@ -238,6 +238,9 @@ fn run_live(root: &Path, store: Option<&ledger::Ledger>, at_once: bool) {
             port: Some(DEV_PORT),
             purpose: "live".to_owned(),
             started_by: started_by(),
+            // The environment of whoever typed `sailor-live`, which is what a
+            // development server and the window both want.
+            environment: Vec::new(),
         },
         store,
     );
@@ -388,6 +391,9 @@ fn start_window(
             port: None,
             purpose: "live".to_owned(),
             started_by: started_by(),
+            // The environment of whoever typed `sailor-live`, which is what a
+            // development server and the window both want.
+            environment: Vec::new(),
         },
         store,
     )
