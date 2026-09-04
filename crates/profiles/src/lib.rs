@@ -1,10 +1,7 @@
 //! Several profiles per known command line, even where that command line has
-//! none of its own.
-//!
-//! Where the command line reads an environment variable for its home, a profile
-//! is just a directory: switching is setting a variable, with no copies and
-//! nothing to overwrite. Where it does not, the fallback is a symlink on the
-//! credentials file — more fragile, and marked as such.
+//! none of its own. Where it reads a variable for its home a profile is just a
+//! directory; where it does not, the fallback is a symlink on the credentials
+//! file — more fragile, and marked as such.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -14,13 +11,13 @@ use std::path::{Path, PathBuf};
 pub mod store_io;
 
 /// How a command line finds its own home directory.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HomeMechanism {
     /// This variable moves the whole home directory.
-    EnvVar(&'static str),
+    EnvVar(String),
     /// No known variable: the profile swaps a symlink at this path, relative to
     /// the fixed home.
-    CredentialSymlink { relative_path: &'static str },
+    CredentialSymlink { relative_path: String },
     /// Not established: nobody has checked how this command line moves its home,
     /// or whether it can.
     Unknown,
@@ -36,19 +33,19 @@ pub enum NativeProfiles {
     Unverified,
 }
 
-/// A known command line: how it is invoked and how its home moves. `known_clis`
-/// is the declared table — extend it by adding an entry, nothing else.
-#[derive(Debug, Clone, Copy)]
+/// A known command line: how it is invoked and how its home moves. The list is
+/// **declared in a file**, not written here — see [`BUILTIN`].
+#[derive(Debug, Clone)]
 pub struct KnownCli {
-    pub id: &'static str,
-    pub display_name: &'static str,
-    pub executable: &'static str,
+    pub id: String,
+    pub display_name: String,
+    pub executable: String,
     pub native_profiles: NativeProfiles,
     /// How the judgement above was reached: what the real command says, or why
     /// it was not checked.
-    pub native_profiles_note: &'static str,
+    pub native_profiles_note: String,
     pub home: HomeMechanism,
-    pub home_note: &'static str,
+    pub home_note: String,
     /// How this command line is pointed at another endpoint that speaks its
     /// own protocol, unmodified and with nothing in between; `None` when no
     /// such variable is known.
@@ -57,11 +54,11 @@ pub struct KnownCli {
 
 /// The two variables a command line reads to talk to an endpoint other than
 /// its maker's, and the protocol that endpoint must speak.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct NativeEndpoint {
-    pub url_var: &'static str,
-    pub key_var: &'static str,
-    pub protocol: &'static str,
+    pub url_var: String,
+    pub key_var: String,
+    pub protocol: String,
 }
 
 /// Where a profile sends its command line instead of the maker's endpoint.
@@ -87,7 +84,7 @@ pub fn endpoint_environment(
     let Some(endpoint) = &profile.endpoint else {
         return Ok(env);
     };
-    let Some(native) = cli.endpoint else {
+    let Some(native) = cli.endpoint.as_ref() else {
         return Err(format!(
             "profile «{}» declares an endpoint, but no variable is known that points {} elsewhere",
             profile.name, cli.display_name
@@ -105,70 +102,109 @@ pub fn endpoint_environment(
             profile.name, endpoint.key_var
         ));
     };
-    env.insert(native.url_var.to_owned(), endpoint.url.clone());
-    env.insert(native.key_var.to_owned(), key);
+    env.insert(native.url_var.clone(), endpoint.url.clone());
+    env.insert(native.key_var.clone(), key);
     Ok(env)
 }
 
-const KNOWN_CLIS: &[KnownCli] = &[
-    KnownCli {
-        id: "claude",
-        display_name: "Claude Code",
-        executable: "claude",
-        native_profiles: NativeProfiles::NotSupported,
-        native_profiles_note: "checked on claude 2.1.247: `claude auth` offers only login/logout/status, and `--help` names no profile or multi-account subcommand.",
-        home: HomeMechanism::EnvVar("CLAUDE_CONFIG_DIR"),
-        home_note: "checked against the installed binary: the variable moves the whole directory, `.credentials.json` and `settings.json` included.",
-        endpoint: Some(NativeEndpoint {
-            url_var: "ANTHROPIC_BASE_URL",
-            key_var: "ANTHROPIC_API_KEY",
-            protocol: "anthropic-messages",
-        }),
-    },
-    KnownCli {
-        id: "codex",
-        display_name: "Codex",
-        executable: "codex",
-        native_profiles: NativeProfiles::Supported,
-        native_profiles_note: "`-p/--profile` in `codex --help` layers `$CODEX_HOME/<name>.config.toml` over the base configuration — config profiles, not separate credentials.",
-        home: HomeMechanism::EnvVar("CODEX_HOME"),
-        home_note: "checked with `codex doctor`: it shows auth.json and config.toml inside the directory CODEX_HOME names.",
-        endpoint: Some(NativeEndpoint {
-            url_var: "OPENAI_BASE_URL",
-            key_var: "OPENAI_API_KEY",
-            protocol: "openai-responses",
-        }),
-    },
-    KnownCli {
-        id: "gemini",
-        display_name: "Gemini CLI",
-        executable: "gemini",
-        native_profiles: NativeProfiles::NotSupported,
-        native_profiles_note: "no `--profile` in `gemini --help`: only sessions (`--resume`, `--session-id`), not separate identities.",
-        home: HomeMechanism::EnvVar("GEMINI_CLI_HOME"),
-        home_note: "checked against the installed source: `baseDir = process.env[\"GEMINI_CLI_HOME\"] || join(homedir, \".gemini\")`.",
-        endpoint: None,
-    },
-    KnownCli {
-        id: "antigravity",
-        display_name: "Antigravity",
-        executable: "antigravity",
-        native_profiles: NativeProfiles::Unverified,
-        native_profiles_note: "no `antigravity` binary in PATH: the product installs as `agy`, so this entry looks for a name nobody uses. Native profiles stay unchecked — `agy --help` and its subcommands name none.",
-        home: HomeMechanism::Unknown,
-        home_note: "its data lives under the Gemini CLI's directory, but `GEMINI_CLI_HOME` does NOT move it: the string is absent from the binary and the home follows $HOME. So the active profile does not move this one's home the way it moves claude's and codex's — two profiles start it in the same place, silently. `Unknown` is still the right value for «no known way», but this is not «not checked yet»: it is checked, and there is no way.",
-        endpoint: None,
-    },
-];
+/// The list shipped with the product, embedded as `models::pricing::BUILTIN`
+/// is: a binary copied elsewhere keeps answering, with no path to guess.
+pub const BUILTIN: &str = include_str!("../command-lines.default.json");
 
-/// The table of known command lines.
+/// The variable naming a file read instead of the shipped one, whole.
+pub const COMMAND_LINES_PATH_VAR: &str = "PROFILES_COMMAND_LINES";
+
+/// The table, read once. **THE ENGINES ARE NOT WRITTEN IN RUST**: a list of
+/// providers compiled into a product that claims to know none.
 pub fn known_clis() -> &'static [KnownCli] {
-    KNOWN_CLIS
+    static TABLE: std::sync::OnceLock<Vec<KnownCli>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        let declared = std::env::var_os(COMMAND_LINES_PATH_VAR)
+            .and_then(|path| std::fs::read_to_string(path).ok());
+        let text = declared.as_deref().unwrap_or(BUILTIN);
+        // **A BROKEN LIST FALLS BACK TO THE SHIPPED ONE.** Whoever mistyped a
+        // comma wants their engines back, not a product that will not start.
+        parse_command_lines(text)
+            .or_else(|_| parse_command_lines(BUILTIN))
+            .expect("the command lines shipped with the product parse")
+    })
 }
 
-/// The command line carrying this `id`, or a readable refusal. One place:
-/// `sailor profiles` and `sailor run` both look here, not in two copies of the
-/// same `.find()`.
+/// The list as a file declares it.
+pub fn parse_command_lines(text: &str) -> Result<Vec<KnownCli>, String> {
+    let read: CommandLinesFile =
+        serde_json::from_str(text).map_err(|error| format!("the list does not parse: {error}"))?;
+    Ok(read.command_lines.into_iter().map(KnownCli::from).collect())
+}
+
+#[derive(Deserialize)]
+struct CommandLinesFile {
+    #[serde(default)]
+    command_lines: Vec<DeclaredCli>,
+}
+
+#[derive(Deserialize)]
+struct DeclaredCli {
+    id: String,
+    #[serde(default)]
+    display_name: String,
+    executable: String,
+    #[serde(default)]
+    native: String,
+    #[serde(default)]
+    native_note: String,
+    #[serde(default)]
+    home: Option<DeclaredHome>,
+    #[serde(default)]
+    home_note: String,
+    #[serde(default)]
+    endpoint: Option<NativeEndpoint>,
+}
+
+/// Exactly one field is written; neither means **no known way**.
+#[derive(Deserialize)]
+struct DeclaredHome {
+    #[serde(default)]
+    variable: String,
+    #[serde(default)]
+    credential_symlink: String,
+}
+
+impl From<DeclaredCli> for KnownCli {
+    fn from(declared: DeclaredCli) -> KnownCli {
+        let display_name = if declared.display_name.is_empty() {
+            declared.id.clone()
+        } else {
+            declared.display_name
+        };
+        KnownCli {
+            id: declared.id,
+            display_name,
+            executable: declared.executable,
+            // **A WORD NOBODY TAUGHT US IS «UNVERIFIED», NEVER «NO»**.
+            native_profiles: match declared.native.as_str() {
+                "supported" => NativeProfiles::Supported,
+                "not supported" => NativeProfiles::NotSupported,
+                _ => NativeProfiles::Unverified,
+            },
+            native_profiles_note: declared.native_note,
+            home: match declared.home {
+                Some(home) if !home.variable.is_empty() => HomeMechanism::EnvVar(home.variable),
+                Some(home) if !home.credential_symlink.is_empty() => {
+                    HomeMechanism::CredentialSymlink {
+                        relative_path: home.credential_symlink,
+                    }
+                }
+                _ => HomeMechanism::Unknown,
+            },
+            home_note: declared.home_note,
+            endpoint: declared.endpoint,
+        }
+    }
+}
+
+/// The command line carrying this `id`, or a readable refusal. One place, so
+/// two callers cannot disagree about what «unknown» means.
 pub fn find_cli(id: &str) -> Result<&'static KnownCli, String> {
     known_clis()
         .iter()
@@ -284,8 +320,8 @@ pub fn profile_home_path(
 /// operation, see [`symlink_swap`].
 pub fn build_environment(cli: &KnownCli, profile_home: &Path) -> BTreeMap<String, String> {
     let mut env = BTreeMap::new();
-    if let HomeMechanism::EnvVar(name) = cli.home {
-        env.insert(name.to_owned(), profile_home.to_string_lossy().into_owned());
+    if let HomeMechanism::EnvVar(name) = &cli.home {
+        env.insert(name.clone(), profile_home.to_string_lossy().into_owned());
     }
     env
 }
@@ -429,15 +465,15 @@ mod tests {
     #[test]
     fn build_environment_is_empty_without_an_env_var_mechanism() {
         let cli = KnownCli {
-            id: "acme",
-            display_name: "Acme CLI",
-            executable: "acme",
+            id: "una-casa".to_owned(),
+            display_name: "Una Casa".to_owned(),
+            executable: "unacasa".to_owned(),
             native_profiles: NativeProfiles::NotSupported,
-            native_profiles_note: "a fixture",
+            native_profiles_note: "a fixture".to_owned(),
             home: HomeMechanism::CredentialSymlink {
-                relative_path: "credentials.json",
+                relative_path: "credentials.json".to_owned(),
             },
-            home_note: "a fixture",
+            home_note: "a fixture".to_owned(),
             endpoint: None,
         };
         let env = build_environment(&cli, Path::new("/home/profiles/acme/work"));
@@ -518,7 +554,7 @@ mod tests {
 
     #[test]
     fn find_cli_finds_a_known_id_and_rejects_an_unknown_one() {
-        assert_eq!(find_cli("codex").map(|c| c.id), Ok("codex"));
+        assert_eq!(find_cli("codex").map(|c| c.id.as_str()), Ok("codex"));
         assert!(find_cli("does-not-exist").is_err());
     }
 
@@ -529,13 +565,11 @@ mod tests {
     /// id, not the executable's name.
     #[test]
     fn a_resolved_path_leads_back_to_the_command_line_that_reads_that_home() {
-        assert_eq!(
-            cli_for_executable("/opt/homebrew/bin/claude").map(|c| c.id),
-            Some("claude")
-        );
-        assert_eq!(cli_for_executable("codex").map(|c| c.id), Some("codex"));
-        assert_eq!(cli_for_executable("/bin/sh").map(|c| c.id), None);
-        assert_eq!(cli_for_executable("claude-code").map(|c| c.id), None);
+        let named = |bin| cli_for_executable(bin).map(|cli| cli.id.as_str());
+        assert_eq!(named("/opt/homebrew/bin/claude"), Some("claude"));
+        assert_eq!(named("codex"), Some("codex"));
+        assert_eq!(named("/bin/sh"), None);
+        assert_eq!(named("claude-code"), None);
     }
 
     /// A prefix comparison would hand `claude-wrapper` Claude Code's home: one
@@ -544,7 +578,7 @@ mod tests {
     fn a_name_that_merely_resembles_an_executable_is_not_that_executable() {
         for near in ["claude-wrapper", "myclaude", "codexx", "gemini2"] {
             assert_eq!(
-                cli_for_executable(near).map(|cli| cli.id),
+                cli_for_executable(near).map(|cli| cli.id.as_str()),
                 None,
                 "«{near}» is not an executable in the table"
             );
@@ -555,7 +589,7 @@ mod tests {
     fn known_clis_have_unique_non_empty_ids() {
         let clis = known_clis();
         assert!(!clis.is_empty());
-        let mut ids: Vec<&str> = clis.iter().map(|c| c.id).collect();
+        let mut ids: Vec<&str> = clis.iter().map(|c| c.id.as_str()).collect();
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), clis.len(), "duplicate id in the table");
