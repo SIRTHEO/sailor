@@ -438,7 +438,32 @@ Starting point, so the mandate builds on it instead of beside it.
    what, where, since when, and what died; the Claude Code session under the
    Sailor hooks runs it at each beat and says when something is due, without
    a person asking.
-   *Proof:* the flow's output on this machine, with the sessions of tonight.
+   *Where it landed:* the flow, whole, and half of the arrival. Run
+   `watch-the-crew-1788552294205589000`, on the evening of 04/09/2026, cost
+   nothing and printed the three readings side by side: sixteen terminals open
+   in five trees with the hour each started in, one closed, one run left
+   halfway and one waiting for a person since 03:38. The middle reading, the
+   claims, **came back empty on a machine with sixteen terminals working** —
+   which is D.1's unbuilt half seen from the outside: nothing writes a
+   `work_claim`, so agents do not see one another, and the watch says so
+   instead of drawing a crew out of the register.
+   *What is not built, and why:* nothing runs the flow at each beat. The beat
+   that exists is the window's, and it runs what is *due*; `watch-the-crew`
+   has no schedule, and a watch that only answers when typed is a watch nobody
+   types. What does now arrive without being asked is the part that had an
+   addressee — the greeting of every session in the tree says which runs the
+   ledger holds waiting for a person and which stopped on «not yet», with the
+   line that takes each up. That was the whole content of «says when something
+   is due» on a machine where twenty-five flows out of twenty-five have no
+   schedule.
+   *Proof:* the run above, read back from the ledger; and, for the greeting,
+   `the_welcome_says_which_runs_are_waiting_for_a_person`,
+   `a_run_to_ask_again_is_not_described_as_one_waiting_for_a_person` and
+   `a_ledger_that_did_not_open_is_not_a_machine_with_nothing_open` in
+   `session_cmd`, whose three mutants — dropping the ledger half, silencing the
+   unreadable ledger, giving both lists one sentence — were each run red. The
+   greeting was read from the released binary on this machine and named the
+   waiting `sweep-the-tree` run.
 5. **A loop stops for three reasons and one wall.** A self-care run ends on
    a declared promise, on a number of turns, or by hand; and every run
    carries a wall of time the model is told about (Copilot warns at fifty-nine
