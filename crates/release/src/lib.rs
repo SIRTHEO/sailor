@@ -167,6 +167,33 @@ pub fn how_to_get_the_modules(cloned_lock: &str, tree_lock: &str, tree_has_them:
     }
 }
 
+/// What a shell would run when somebody types the target's name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OnPath {
+    /// What the search path finds is what was just put in service.
+    Same,
+    /// Another copy comes first, and it is a different file: whoever looks the
+    /// name up, the window included, goes on running that one.
+    Shadowed { first: String },
+    /// Nothing on the search path answers to that name.
+    Absent,
+}
+
+/// Which of the three it is, from what the search path answered.
+///
+/// **THE RELEASE CANNOT SEE THIS AND SAY NOTHING.** A release that ends green
+/// while an older binary keeps answering to the name is the fault this crate
+/// exists to prevent, through the one door it left open.
+pub fn on_path(found: Option<&str>, safe: &str, same_bytes: bool) -> OnPath {
+    match found {
+        None => OnPath::Absent,
+        Some(first) if first == safe || same_bytes => OnPath::Same,
+        Some(first) => OnPath::Shadowed {
+            first: first.to_owned(),
+        },
+    }
+}
+
 /// The target with this name, if it exists.
 pub fn target(name: &str) -> Option<&'static Target> {
     TARGETS.iter().find(|t| t.name == name)
@@ -346,6 +373,22 @@ mod tests {
             parts_of(target("window").expect("named")),
             vec!["crates", "desktop"]
         );
+    }
+
+    /// The middle answer is the fault: green release, old binary answering.
+    #[test]
+    fn a_release_can_tell_whether_the_name_still_finds_an_older_copy() {
+        let safe = "/home/bin/sailor";
+        assert_eq!(on_path(Some(safe), safe, true), OnPath::Same);
+        // A second copy elsewhere, byte for byte the same one: nothing to say.
+        assert_eq!(on_path(Some("/altrove/bin/sailor"), safe, true), OnPath::Same);
+        assert_eq!(
+            on_path(Some("/altrove/bin/sailor"), safe, false),
+            OnPath::Shadowed {
+                first: "/altrove/bin/sailor".to_owned()
+            }
+        );
+        assert_eq!(on_path(None, safe, false), OnPath::Absent);
     }
 
     #[test]

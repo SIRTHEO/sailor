@@ -145,16 +145,23 @@ dichiarati:
   degli strumenti: chiedere al motore, non tenere una lista.
 - **Un passo che esegue un comando non conserva il proprio testo**: di lui resta
   solo l'esito.
-- **La finestra non ha un bersaglio di rilascio, quindi non si installa.** Si
-  costruisce (`npm run build` più `cargo build --release` sul manifesto del
-  guscio, misurato: 12 MB, meno di due minuti) e si lancia dal suo percorso
-  dentro `target/`, che una pulizia porta via. Perché `sailor release` la sappia
-  mettere in servizio come mette `sailor` servono tre cose: un bersaglio che
-  dichiari **quale manifesto** costruire — il guscio dichiara un `[workspace]`
-  suo, quindi non è quello della radice — un modo di costruire la pagina dentro
-  il clone di HEAD senza rifare `npm ci` a ogni rilascio, e la decisione su
-  quali giudici valgono per un rilascio della finestra: quelli della radice non
-  toccano né il guscio né la pagina.
+- ~~**La finestra non ha un bersaglio di rilascio, quindi non si installa.**~~
+  **Chiuso il 04/09/2026**, con le tre cose che la voce chiedeva, dichiarate e
+  non dedotte. *Quale manifesto*: `Target.manifest_rel`, e il rilascio costruisce
+  e prova quello — il guscio dichiara un `[workspace]` suo, quindi la suite della
+  radice non ci entrava, e adesso ne gira una per manifesto
+  (`release::manifests_to_judge`). *La pagina dentro il clone*: si costruisce
+  prima del guscio, che la incorpora a tempo di compilazione, e i moduli si
+  clonano dall'albero con `cp -Rc` quando i due `package-lock.json` sono gli
+  stessi byte (`release::how_to_get_the_modules`) — tre secondi invece di
+  `npm ci`, e ciò che il clone scrive non torna indietro. Il collegamento
+  simbolico, provato per primo, non funziona: il costruttore della pagina
+  rifiuta un file fuori dall'albero che gli è stato indicato, e il rilascio si è
+  fermato lì. *Quali giudici*: la radice sempre, il manifesto del bersaglio
+  quando ne dichiara uno suo, e le prove della pagina dentro il suo `npm run
+  build`, che le esegue prima di scrivere `dist`. Misurato: 2 min 58 s a vuoto
+  con `--skip-tests`, dal clone al binario. Resta fuori il pacchetto `.app`: il
+  bersaglio mette in servizio il binario, non un'icona nel Dock.
 - **`sample.ts` contiene dati finti** scritti «finché la finestra non legge dal
   motore», che ormai legge.
 - ~~**Il crate dei ganci di Claude Code serve un mondo che stiamo smontando**, e
