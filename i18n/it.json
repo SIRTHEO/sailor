@@ -490,5 +490,9 @@
   "cli.ratchet.green": "verde",
   "cli.ratchet.red": "rosso",
   "cli.ratchet.all_green": "ogni seme tiene su HEAD con queste modifiche",
-  "cli.ratchet.some_red": "un seme non tiene: le righe qui sopra dicono cosa scrivere"
+  "cli.ratchet.some_red": "un seme non tiene: le righe qui sopra dicono cosa scrivere",
+  "cli.release.suite_already_green": "la suite era già passata su questo albero ({tree}): non la rieseguo",
+  "cli.release.suite_not_remembered": "la suite è passata ma {memo} non si scrive ({error}): il prossimo rilascio la rifà",
+  "cli.release.pushed": "spinto: {line}",
+  "cli.release.not_pushed": "non spinto, il remoto è indietro: {line}"
 }
