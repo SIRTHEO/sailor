@@ -169,6 +169,16 @@ Trappole già pagate su questa macchina:
   or employer names, internal repository names, transcripts and logs copied out
   of private tooling, and any framing of this work as a reaction to or
   comparison with somebody else's product.
+
+  **The measure is `cargo test -p sailor --test
+  a_product_name_in_prose_only_ever_falls`**, and it counts rather than
+  forbids. A product name is a fact in a descriptor, the vocabulary of the ban
+  inside a gate, and in prose it is either a measurement of this machine or
+  this work sold against somebody else's — no rule of place separates those,
+  and only a person can. So the mentions prose already carries are counted, the
+  number may only fall, and a new one is red until somebody reads it and
+  decides which of the two it is. Measured on a clean `HEAD`, never on the
+  working tree: several sessions write in this checkout.
 - **Flow and step `id`s stay as they are**, and the `.flow.json` filenames with
   them. This is not an exception to the language rule: **what the compiler
   reads is language, what the ledger keeps is data.** Renaming a step would

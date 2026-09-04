@@ -506,18 +506,19 @@ Starting point, so the mandate builds on it instead of beside it.
    *Proof:* the judges' list in `la-finestra-che-mostra-se-stessa.md` marked
    one by one.
 
-## F. Orca leaves the machine, by flow
+## F. Clearing another tool's grafts off the machine
 
-1. **`migrate-to-sailor` does the uninstall.** It takes the ten Orca hook
-   lines out of `~/.claude/settings.json` (keeping the Sailor grafts), moves
-   `~/.orca` to the archive with the date, lists the projects under
-   `~/.claude/projects` that no tree on disk matches, and names the GitHub
-   repositories not touched since a declared date; it deletes nothing that is
-   not a hook line, and hands the list to Theo.
-   *Proof:* a run on a scratch home with a fake settings file leaves the
-   Sailor lines and removes the Orca ones; the archive carries the date.
-2. **The number.** The document's outcome section says how long the migration
-   took on this machine, in minutes of Theo's gestures and minutes of flows.
+**Taken out of this repository on 2026-09-04, by Theo's decision.** It was a
+section named after somebody else's product, describing its removal — which is
+the one thing `AGENTS.md` has kept out of here since the founding charter:
+framing this work as a reaction to another product. The measurements stay; the
+positioning went to the notes that have no remote.
+
+What the letter of it asked for is still worth building, and in a shape that
+does not name anything: **a tool declares where it puts its grafts and its
+data, and Sailor knows how to clear them without knowing the tool.** That is
+the descriptor, the same door an engine comes in through, and it works for any
+tool instead of one. Nobody has built it.
 
 ## G. A public repository, and what a reader of the code found
 
