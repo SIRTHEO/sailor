@@ -1,20 +1,13 @@
 //! **DEVELOPING SAILOR INSIDE SAILOR.** Fault 11 asked that a failed build not
-//! take the window away; working inside the window being built asks for the
-//! other half of it, because a build that *succeeds* took it away just as
-//! surely. Every save closed the pane being typed in, the run being watched,
-//! the session being read — and none of that is the price of learning that the
-//! code compiles, which is what building at once is for.
-//!
-//! So the two are separated: building stays automatic, **swapping is asked
-//! for**. Joining them again — returning `Swap` where a save is seen — turns
-//! the first test here red, which is how it was verified.
+//! take the window away; a build that *succeeds* took it away just as surely,
+//! with the pane being typed in and the run being watched inside it. So the
+//! two are separated: building stays automatic, **swapping is asked for**.
 
 use std::path::PathBuf;
 
 use supervisor::{turn_now, SwapRequest, Turn};
 
-/// A directory of this test's own. `SAILOR_TEST_TMP` is honoured because a
-/// sandbox does not always let a process write where `TMPDIR` points.
+/// A directory of this test's own, under `SAILOR_TEST_TMP` where it is set.
 fn scratch(name: &str) -> PathBuf {
     let root = std::env::var("SAILOR_TEST_TMP")
         .map(PathBuf::from)
