@@ -439,11 +439,16 @@ export function Terminals({
                   data-state={liveness.state}
                   onClick={() => setHere(entry.id)}
                 >
-                  {/* THE TTY IS THE ANCHOR: not a product name, not a title
-                      read out of the output. It is what the letterbox, the
-                      count and the tracking store all key on. */}
-                  <span className="terminals__device">{entry.device}</span>
+                  {/* WHAT IS RUNNING IN THERE, WHICH IS HOW A PERSON KNOWS
+                      THE TAB. Declared at opening, never read out of the
+                      output: five tabs saying only their tty are five tabs
+                      nobody can tell apart. The tty stays — it is the anchor
+                      the letterbox and the tracking store key on. */}
+                  {entry.program !== "" && (
+                    <span className="terminals__program">{entry.program}</span>
+                  )}
                   <span className="terminals__where">{entry.workspaceName}</span>
+                  <span className="terminals__device">{entry.device}</span>
                   {/* The word carries the state as much as the colour: prohibition 5,
                       and it is what is left when motion is refused. */}
                   {liveness.state === "alive" && speaking.has(entry.id) && (
