@@ -439,6 +439,7 @@
   "window.step.kind.subflow": "sotto-flusso",
   "window.step.kind.trigger": "innesco",
   "window.step.kind.wait": "attesa",
+  "window.step.speaking": "sta parlando",
   "window.step.state.broke": "rotto, si ritenta",
   "window.step.state.capped": "fermo al tetto",
   "window.step.state.handed_to_human": "aspetta una persona",

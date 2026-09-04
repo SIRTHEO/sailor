@@ -439,6 +439,7 @@
   "window.step.kind.subflow": "subflow",
   "window.step.kind.trigger": "trigger",
   "window.step.kind.wait": "wait",
+  "window.step.speaking": "speaking",
   "window.step.state.broke": "broken, retrying",
   "window.step.state.capped": "stopped at the cap",
   "window.step.state.handed_to_human": "waiting for a person",

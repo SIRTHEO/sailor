@@ -5,7 +5,17 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import type { Step, StepKind, StepRun } from "./flow";
 import { t } from "./i18n";
-import { KIND_LABEL, StepNode, StepRunContext, StepUsageContext, WireContext, formatElapsed, type StepNodeData } from "./StepNode";
+import {
+  KIND_LABEL,
+  NowContext,
+  STILL_SPEAKING_SECS,
+  StepNode,
+  StepRunContext,
+  StepUsageContext,
+  WireContext,
+  formatElapsed,
+  type StepNodeData,
+} from "./StepNode";
 import { STEP_WIDTH } from "./layout";
 import { parseStylesheet, styleTree, type Stylesheet } from "./contrast";
 import type { StepUsage } from "./stepusage";
@@ -38,13 +48,13 @@ function mountNode(
   states: Map<string, StepRun>,
   usage: Map<string, StepUsage> = new Map(),
   selected = false,
+  now = 0,
 ) {
   const full: StepNodeData = {
     step: STEP,
     kind: "engine",
     flowName: "sviluppa-sailor",
     color: "#000",
-    dimmed: false,
     ...data,
   };
   // Le proprietà che React Flow passa a un nodo sono molte e nessuna di quelle
@@ -62,13 +72,15 @@ function mountNode(
   } as unknown as NodeProps;
 
   const { container } = render(
+    <NowContext.Provider value={now}>
     <StepRunContext.Provider value={states}>
       <StepUsageContext.Provider value={usage}>
         <ReactFlowProvider>
           <StepNode {...props} />
         </ReactFlowProvider>
       </StepUsageContext.Provider>
-    </StepRunContext.Provider>,
+    </StepRunContext.Provider>
+    </NowContext.Provider>,
   );
   return container.querySelector(".step-node") as HTMLElement;
 }
@@ -441,7 +453,7 @@ describe("asking what follows a step", () => {
     const props = {
       id: "n",
       type: "step",
-      data: { step: STEP, kind: "engine", flowName: "sviluppa-sailor", color: "#000", dimmed: false },
+      data: { step: STEP, kind: "engine", flowName: "sviluppa-sailor", color: "#000" },
       selected: false,
       zIndex: 0,
       isConnectable: false,
@@ -480,5 +492,37 @@ describe("asking what follows a step", () => {
     const button = node.querySelector(".step-node__more") as HTMLElement;
     fireEvent.click(button);
     expect(asked).toEqual([STEP.id]);
+  });
+});
+
+/**
+ * **THE BREATHING DOT SAYS «ALIVE» FOR BOTH.** An agent printing its way
+ * through a repository and one stuck on something that will never answer are
+ * the same node: the engine has always sent the output piece by piece, and the
+ * canvas threw it away.
+ */
+describe("a step that is speaking", () => {
+  const spoke = (state: StepRun["state"], when: number): Map<string, StepRun> =>
+    new Map([["sviluppa-sailor::implementa", { step_id: "implementa", state, attempt: 1, spoke_at: when }]]);
+
+  test("WHILE ITS OUTPUT ARRIVES THE NODE SAYS SO, and turns a ring instead of the dot", () => {
+    const node = mountNode({}, spoke("running", 1_000), new Map(), false, 1_000 + STILL_SPEAKING_SECS);
+    expect(node.querySelector(".speaks"), "no ring while it talks").not.toBeNull();
+    expect(node.querySelector(".step-node__state-dot"), "the dot is there as well").toBeNull();
+    expect(node.textContent).toContain(t("window.step.speaking"));
+  });
+
+  test("AFTER THE SILENCE IT IS RUNNING AGAIN, not speaking for ever", () => {
+    const node = mountNode({}, spoke("running", 1_000), new Map(), false, 1_000 + STILL_SPEAKING_SECS + 1);
+    expect(node.querySelector(".speaks"), "the ring turns on a step gone quiet").toBeNull();
+    expect(node.textContent).toContain(t("window.step.state.running"));
+  });
+
+  test("SPEAKING IS SOMETHING A RUNNING STEP DOES: a closed one keeps its ending", () => {
+    // The same instant, the same clock — only the state differs. A node that
+    // read the instant alone would call a finished step a talking one.
+    const node = mountNode({}, spoke("went", 1_000), new Map(), false, 1_000);
+    expect(node.querySelector(".speaks")).toBeNull();
+    expect(node.textContent).toContain(t("window.step.state.went"));
   });
 });
