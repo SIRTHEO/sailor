@@ -219,10 +219,10 @@ fn run_live(root: &Path, store: Option<&ledger::Ledger>, at_once: bool) {
     // from this one. A bind, not a process list: fault 12.
     if let Some(taken) = supervisor::who_holds(DEV_PORT) {
         eprintln!(
-            "la porta {DEV_PORT} è occupata ({taken}) e non risulta a Sailor. Il \n\
-             servitore della pagina ne prenderebbe un'altra in silenzio, e la finestra \n\
-             continuerebbe a leggere da questa. `lsof -nP -iTCP:{DEV_PORT} -sTCP:LISTEN` \n\
-             dice di chi è."
+            "la porta {DEV_PORT} è occupata ({taken}) e non risulta a Sailor.\n\
+             Il servitore della pagina ne prenderebbe un'altra in silenzio, e la\n\
+             finestra continuerebbe a leggere da questa.\n\
+             `lsof -nP -iTCP:{DEV_PORT} -sTCP:LISTEN` dice di chi è."
         );
         std::process::exit(3);
     }
