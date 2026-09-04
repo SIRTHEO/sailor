@@ -294,6 +294,7 @@
   "cli.session.no_terminal_anywhere": "there is no telling which terminal this process runs on: none of its three descriptors is a tty, and no process above it on the parent chain has one either. Say it with --tty <name>",
   "cli.session.no_typed_words": "{tool}: no words a user types, so the welcome promises none",
   "cli.session.nothing_grafted": "nothing was grafted anywhere. That is a statement, not a silence: read the lines above for which command line refused and why",
+  "cli.session.others_in_this_tree": "{count} other terminal(s) are open in this tree, by the register: {who}. Uncommitted work here may be theirs, and a measurement taken over the working tree measures theirs too — so read what a clean HEAD says before seeding any ratchet, and before calling the tree green. The register does not know what is alive: a terminal killed without closing stays in this list.",
   "cli.session.root_not_an_object": "{file}: the root is not an object",
   "cli.session.word_body": "Run `sailor session {verb}` and report in one line what it answered. Do nothing else.",
   "cli.session.word_off": "Detach this terminal from Sailor: it stops being tracked, and so do the sessions opened here afterwards.",
