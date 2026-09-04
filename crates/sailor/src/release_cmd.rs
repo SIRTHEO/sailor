@@ -407,7 +407,7 @@ fn install_root() -> Result<PathBuf, String> {
 /// service. It no longer reads `SAILOR_HOME` either: everywhere else that
 /// variable means Sailor's *configuration* home, so reading it here as the
 /// sources was the same fault waiting behind a second door.
-fn sources_root() -> Result<PathBuf, String> {
+pub(crate) fn sources_root() -> Result<PathBuf, String> {
     root_under(
         env::var_os("SAILOR_SOURCES"),
         env::var_os("HOME"),
