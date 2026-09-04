@@ -101,6 +101,41 @@ pub fn judge(
         .collect()
 }
 
+/// One decision in two words, the shape a line of the beat is written in.
+fn said(verdict: &Verdict) -> (&'static str, &str) {
+    match verdict {
+        Verdict::Ran { run_id } => ("ran", run_id.as_str()),
+        Verdict::Held { why } => ("hold", why.as_str()),
+        Verdict::Broke { why } => ("broke", why.as_str()),
+    }
+}
+
+/// **A BEAT PRINTS WHAT CHANGED, NOT WHAT IS.** It judges every known flow
+/// every minute, and printing all of it was thirty lines a minute for as long
+/// as the window stays open — on a machine meant to stay on for years, tens of
+/// thousands of lines a day, among which the one that matters is invisible.
+/// A steady schedule now says nothing, and every transition still says itself.
+pub fn news<'a>(previous: Option<&Report>, current: &'a Report) -> Vec<&'a Decision> {
+    current
+        .decisions
+        .iter()
+        .filter(|decision| {
+            let before = previous.and_then(|report| {
+                report
+                    .decisions
+                    .iter()
+                    .find(|seen| seen.flow == decision.flow)
+            });
+            match before {
+                // A flow nobody judged before is news whatever it says: it has
+                // just appeared, or this is the first beat of this window.
+                None => true,
+                Some(before) => said(&before.verdict) != said(&decision.verdict),
+            }
+        })
+        .collect()
+}
+
 fn now_secs() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -158,15 +193,13 @@ pub fn once(app: &AppHandle) -> Option<Report> {
             .collect(),
     };
     let report = Report { at: now, decisions };
-    for decision in &report.decisions {
-        let (word, rest) = match &decision.verdict {
-            Verdict::Ran { run_id } => ("ran", run_id.as_str()),
-            Verdict::Held { why } => ("hold", why.as_str()),
-            Verdict::Broke { why } => ("broke", why.as_str()),
-        };
+    let mut held = beat.last.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    for decision in news(held.as_ref(), &report) {
+        let (word, rest) = said(&decision.verdict);
         println!("beat\t{}\t{word}\t{rest}", decision.flow);
     }
-    *beat.last.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(report.clone());
+    *held = Some(report.clone());
+    drop(held);
     let _ = app.emit(EVENT, &report);
     crate::events::emit(app, "beat", &report);
     Some(report)
@@ -201,6 +234,71 @@ pub(crate) fn beat_report(beat: tauri::State<'_, Arc<Beat>>) -> Option<Report> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn decided(flow: &str, verdict: Verdict) -> Decision {
+        Decision {
+            flow: flow.to_owned(),
+            verdict,
+        }
+    }
+
+    fn held(why: &str) -> Verdict {
+        Verdict::Held {
+            why: why.to_owned(),
+        }
+    }
+
+    fn reported(decisions: Vec<Decision>) -> Report {
+        Report { at: 100, decisions }
+    }
+
+    /// **A BEAT PRINTS WHAT CHANGED, NOT WHAT IS.** Thirty flows judged every
+    /// minute was thirty lines a minute for as long as the window stays open,
+    /// and this window is meant to stay open for years: the line that matters
+    /// was already invisible among the ones that say «not due» forever.
+    #[test]
+    fn a_schedule_that_did_not_move_says_nothing() {
+        let steady = reported(vec![
+            decided("notte", held("not due, last ran 3 minutes ago")),
+            decided("relay", held("no schedule: it starts by hand only")),
+        ]);
+        // The first beat of a window says everything: nobody has heard it yet.
+        assert_eq!(news(None, &steady).len(), 2);
+        assert!(news(Some(&steady), &steady).is_empty());
+    }
+
+    #[test]
+    fn every_transition_still_says_itself() {
+        let before = reported(vec![
+            decided("notte", held("not due, last ran 3 minutes ago")),
+            decided("relay", held("no schedule: it starts by hand only")),
+        ]);
+        let after = reported(vec![
+            decided(
+                "notte",
+                Verdict::Ran {
+                    run_id: "prima-corsa".to_owned(),
+                },
+            ),
+            decided("relay", held("no schedule: it starts by hand only")),
+        ]);
+        let said = news(Some(&before), &after);
+        assert_eq!(said.len(), 1);
+        assert_eq!(said[0].flow, "notte");
+
+        // A hold whose reason changed is news too: «not due» becoming «the
+        // engine is not signed in» is the whole of what a person needs.
+        let refused = reported(vec![
+            decided("notte", held("not due, last ran 3 minutes ago")),
+            decided("relay", held("the engine is not signed in")),
+        ]);
+        assert_eq!(news(Some(&before), &refused).len(), 1);
+
+        // And a flow nobody judged before is news whatever it says.
+        let arrived = reported(vec![decided("un-altro", held("not due"))]);
+        assert_eq!(news(Some(&before), &arrived).len(), 1);
+    }
+
     use flow::system::YOUR_ORIGIN;
 
     fn flow_called(id: &str, every: Option<u64>) -> Known {
