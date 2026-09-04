@@ -1,10 +1,10 @@
-# The MVP that ends Orca
+# The termination condition
 
 **02/09/2026.** This is not a plan and not a wish list. **It is a termination
 condition.** Sailor has been built for weeks without one, and a build with no
 definition of done does not finish — it iterates. Every claim below is written
 so that somebody who did not write it can read it, run something, and say yes
-or no. When all of them are yes, the work stops and Theo moves off Orca.
+or no. When all of them are yes, the work stops and the day moves inside Sailor.
 
 ## The outcome, written the same evening
 
@@ -391,7 +391,7 @@ claim above, say so and stop — do not quietly bring it in.
 - **The Bazel model of a step's powers**, decided 29/08 and not begun: it costs
   a rewrite of the existing flows.
 - **An editor.** C1 and C2 are a diff and a hand-off, not an editing surface.
-- **The 13 open faults.** None of them stands on the road out of Orca.
+- **The 13 open faults.** None of them stands on the road to the day inside.
 - **Tidying, renaming, and refactoring** anything the claims do not touch. A
   file that is Italian, over-commented, or ugly, and that no claim names, stays
   as it is.
