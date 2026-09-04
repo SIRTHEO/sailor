@@ -265,7 +265,7 @@
   "cli.release.targets_available": "targets available: {targets}",
   "cli.release.tests_not_run": "== {count} test(s) NOT RUN (not failed) ==\n   Green here does not mean tested there: the sandbox denied what they asked for.",
   "cli.release.tests_skipped": "== TESTS SKIPPED (--skip-tests): this release was NOT tested ==",
-  "cli.release.the_name_finds_another_one": "WARNING: typing «{name}» still runs {first}, which is not the copy just put in service.\n   Anything that looks the name up — the window included — goes on running that one. Replace it with {path}, or put that directory first on the search path.",
+  "cli.release.the_name_finds_another_one": "WARNING: typing «{name}» still runs {first}, which is not the copy just put in service.\n   Anything that looks the name up — the window included — goes on running that one, so this release is not finished: replace it with {path}, or put that directory first on the search path.",
   "cli.release.the_name_finds_nothing": "note: «{name}» is on no search path, so nothing that looks it up will find what was just put in service",
   "cli.release.uncommitted_stay_out": "note: {count} uncommitted file(s) under {parts} stay out of service, by construction",
   "cli.release.unknown_target": "unknown target '{target}'; the targets available are: {targets}",
