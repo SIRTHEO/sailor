@@ -107,7 +107,7 @@ dai tipi, non dalle prove: cronometrando, aprendo il deposito, facendo uno
 screenshot, controllando il peso di una cartella. È la ragione per cui una prova
 che non poteva venire diversa non è una prova.
 
-**Ventiquattro sono ancora aperti** su settantasette, e due di quelli (10 e 28)
+**Ventisei sono ancora aperti** su ottanta, e due di quelli (10 e 28)
 sono la stessa cosa vista da due lati: **la stessa verità scritta in più posti,
 e nessun controllo che li confronti** — due copie di un elenco di componenti,
 e la risoluzione dei rinvii che stava in dodici punti prima di tornare in uno.
