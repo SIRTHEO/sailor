@@ -1077,11 +1077,22 @@ fn rules_in(worktree: &std::path::Path) -> Vec<String> {
 /// teaches nobody to read it.
 fn neighbours(arrival: &Arrival, store: &Sessions) -> Option<String> {
     let rows = store.terminals().ok()?;
-    let others = sessions::others_in_the_tree(&rows, &arrival.anchor.tty, &arrival.anchor.worktree);
+    let asked: std::cell::RefCell<std::collections::HashMap<String, Option<String>>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+    let repository_of = |path: &str| {
+        if let Some(known) = asked.borrow().get(path) {
+            return known.clone();
+        }
+        let found = repository_holding(path);
+        asked.borrow_mut().insert(path.to_owned(), found.clone());
+        found
+    };
+    let here = &arrival.anchor.worktree;
+    let others = sessions::others_in_the_tree(&rows, &arrival.anchor.tty, here, &repository_of);
     if others.is_empty() {
         return None;
     }
-    let who: Vec<String> = others.iter().map(|row| row.tty.clone()).collect();
+    let who: Vec<String> = others.iter().map(|row| named(row, here)).collect();
     Some(catalogue::say(
         "cli.session.others_in_this_tree",
         &[
@@ -1089,6 +1100,31 @@ fn neighbours(arrival: &Arrival, store: &Sessions) -> Option<String> {
             ("who", &who.join(", ")),
         ],
     ))
+}
+
+/// A neighbour by name, and **where they are when it is not where you are**:
+/// the same repository is reached from several directories, and «ttys010»
+/// alone would send a reader to look in their own.
+fn named(row: &sessions::TerminalRow, here: &str) -> String {
+    if row.worktree == here {
+        return row.tty.clone();
+    }
+    format!("{} ({})", row.tty, row.worktree)
+}
+
+/// The repository a directory belongs to, in git's own words, so that a
+/// worktree and the checkout it was cut from come back as one place. `None`
+/// where git says nothing: outside a repository, or with no git to ask.
+fn repository_holding(path: &str) -> Option<String> {
+    let said = std::process::Command::new("git")
+        .args(["-C", path, "rev-parse", "--path-format=absolute", "--git-common-dir"])
+        .output()
+        .ok()?;
+    if !said.status.success() {
+        return None;
+    }
+    let found = String::from_utf8_lossy(&said.stdout).trim().to_owned();
+    (!found.is_empty()).then_some(found)
 }
 
 /// The welcome, in the wrapper that gets injected into the session's context.
@@ -1943,6 +1979,27 @@ mod tests {
     /// what the text says, and the neighbours have their own in `sessions`.
     fn welcome_of(arrival: &Arrival) -> String {
         welcome(arrival, None)
+    }
+
+    /// **A NEIGHBOUR ELSEWHERE IS NAMED WITH THE ELSEWHERE.** Same repository,
+    /// another directory: a bare tty sends the reader to look in their own.
+    #[test]
+    fn a_neighbour_of_another_worktree_is_named_with_it() {
+        let row = |worktree: &str| sessions::TerminalRow {
+            tty: "ttys010".to_owned(),
+            worktree: worktree.to_owned(),
+            ancestor: None,
+            session_id: None,
+            transcript_path: None,
+            opened_at: 1_000,
+            closed_at: None,
+            detached_at: None,
+        };
+        assert_eq!(named(&row("/un-albero"), "/un-albero"), "ttys010");
+        assert_eq!(
+            named(&row("/un-albero-tagliato"), "/un-albero"),
+            "ttys010 (/un-albero-tagliato)"
+        );
     }
 
     /// **THE RULES OF THE TREE TRAVEL WITH THE GREETING.** `SessionStart` is
