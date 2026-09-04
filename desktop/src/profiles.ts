@@ -34,6 +34,8 @@ export interface CommandLine {
   /** The variable's name, or the swapped path. Empty when there is neither. */
   home_detail: string;
   home_note: string;
+  /** The home it already keeps here, whole. Empty where nobody found one. */
+  home_already_here: string;
 }
 
 /**
@@ -64,6 +66,22 @@ export function rows(): Promise<Row[]> {
 
 export function switchTo(cli_id: string, name: string): Promise<void> {
   return ask<void>("profile_switch", { cliId: cli_id, name });
+}
+
+export function adopt(cli_id: string, name: string): Promise<void> {
+  return ask<void>("profile_adopt", { cliId: cli_id, name });
+}
+
+/**
+ * The home worth adopting here, or null. **A HOME ALREADY TAKEN IS NOT
+ * OFFERED TWICE**: two profiles on one directory are one account under two
+ * names, and switching between them changes nothing anybody can see.
+ */
+export function toAdopt(cli: CommandLine, rows: Row[]): string | null {
+  const at = cli.home_already_here;
+  if (at === "") return null;
+  const taken = rows.some((row) => row.cli_id === cli.id && row.home_dir === at);
+  return taken ? null : at;
 }
 
 export function create(cli_id: string, name: string): Promise<void> {
