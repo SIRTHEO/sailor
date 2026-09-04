@@ -478,6 +478,7 @@ export function Terminals({
               const liveness = livenessOf(entry, closed, channel.on);
               return (
                 <TerminalPane
+                  known={lines}
                   key={entry.id}
                   summary={entry}
                   ceiling={ceiling}
