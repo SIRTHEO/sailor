@@ -115,6 +115,19 @@ impl TerminalRow {
     }
 }
 
+/// The other terminals the register says are open in the same tree. What comes
+/// back is what the register holds, not what is alive: a terminal killed
+/// without closing stays here, and the caller says so.
+pub fn others_in_the_tree<'a>(
+    rows: &'a [TerminalRow],
+    mine: &str,
+    worktree: &str,
+) -> Vec<&'a TerminalRow> {
+    rows.iter()
+        .filter(|row| row.is_open() && row.tty != mine && row.worktree == worktree)
+        .collect()
+}
+
 /// Something that happened on a terminal, appended and never rewritten. This is
 /// the queue the succession of sessions on one tty is reconstructed from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
