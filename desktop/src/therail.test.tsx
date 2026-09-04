@@ -7,6 +7,9 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import App from "./App";
+import { World } from "./World";
+import { t } from "./i18n";
+import type { FlowLive } from "./flowlive";
 
 afterEach(cleanup);
 
@@ -93,5 +96,65 @@ describe("the flow the board opens on", () => {
       "the press moved to another flow",
     ).toBe(name);
     expect(container.querySelectorAll(".flow-band")).toHaveLength(1);
+  });
+});
+
+/**
+ * **THE ROW SAYS WHAT IS HAPPENING TO THE FLOW IT NAMES.** The lane's tint is
+ * how steps are found on the paper, not a state: a flow running now, one
+ * waiting for a person and one broken in the night were identical rows.
+ */
+describe("a flow's row and its state", () => {
+  function rowFor(live: FlowLive | null) {
+    const { container } = render(
+      <World
+        native={false}
+        here="board"
+        hereTab="engines"
+        onGo={() => {}}
+        onOpen={() => {}}
+        counts={{ board: 1 }}
+        terminals={[]}
+        onMoved={() => {}}
+        onTree={() => {}}
+        onNewFlow={() => {}}
+        flowGroups={[
+          {
+            origin: "this project",
+            flows: [{ name: "un-flusso", note: "7 steps", color: "#4ea7fc", dirty: false, live }],
+            broken: [],
+          },
+        ]}
+        focusName={null}
+        onFlow={() => {}}
+      />,
+    );
+    return container.querySelector("button.rail__item") as HTMLElement;
+  }
+
+  test("A FLOW WAITING FOR A PERSON WEARS THE HAND, and says so in words", () => {
+    const row = rowFor({ state: "handed_to_human", waiting: 1 });
+    expect(row.getAttribute("data-live")).toBe("handed_to_human");
+    expect(row.querySelector(".rail__hand"), "the hand is not on the row").not.toBeNull();
+    expect(row.textContent).toContain(t("window.flow.live.waiting", { waiting: 1 }));
+    // The step count steps aside: two answers in one place is neither.
+    expect(row.textContent).not.toContain("7 steps");
+  });
+
+  test("A FLOW TALKING TURNS A RING; one running quietly keeps the dot", () => {
+    const talking = rowFor({ state: "running", done: 3, steps: 7, speaking: true });
+    expect(talking.querySelector(".speaks"), "no ring while it talks").not.toBeNull();
+    expect(talking.textContent).toContain(t("window.flow.live.running", { done: 3, steps: 7 }));
+
+    const quiet = rowFor({ state: "running", done: 3, steps: 7, speaking: false });
+    expect(quiet.querySelector(".speaks"), "the ring turns with nothing arriving").toBeNull();
+    expect(quiet.querySelector(".rail__dot"), "a running flow has no mark at all").not.toBeNull();
+  });
+
+  test("WITH NOTHING KNOWN THE ROW IS THE LANE AND THE COUNT, as before", () => {
+    const row = rowFor(null);
+    expect(row.getAttribute("data-live")).toBeNull();
+    expect(row.querySelector(".rail__hand")).toBeNull();
+    expect(row.textContent).toContain("7 steps");
   });
 });

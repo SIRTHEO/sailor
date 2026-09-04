@@ -526,3 +526,25 @@ describe("a step that is speaking", () => {
     expect(node.textContent).toContain(t("window.step.state.went"));
   });
 });
+
+/**
+ * **A REQUEST IS NOT AN ENDING.** Six states are things that happened; this one
+ * is something asked of you, and it is the only one nothing will unblock on its
+ * own. It carries a shape as well as a tint and a word, so that it can be found
+ * across a screen without reading it.
+ */
+describe("the state that waits for a person", () => {
+  test("IT WEARS A HAND, and no other state does", () => {
+    const handed = mountNode({}, new Map([["sviluppa-sailor::implementa", runIn("handed_to_human")]]));
+    expect(handed.querySelector(".step-node__hand"), "no hand where a person is waited on").not.toBeNull();
+    // And the dot is gone, not hidden behind it: two marks for one state is a
+    // second sign that means nothing.
+    expect(handed.querySelector(".step-node__state-dot")).toBeNull();
+    expect(handed.textContent).toContain(SAYS("handed_to_human"));
+
+    for (const state of ["running", "went", "broke", "capped", "waiting"] as const) {
+      const other = mountNode({}, new Map([["sviluppa-sailor::implementa", runIn(state)]]));
+      expect(other.querySelector(".step-node__hand"), `«${state}» wears the hand too`).toBeNull();
+    }
+  });
+});

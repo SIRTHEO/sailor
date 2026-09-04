@@ -33,6 +33,7 @@ import { stepStatesOfCanvas, stepStatesOfRun } from "./runstate";
 import { BlankCanvas, type PlacesAsk } from "./BlankCanvas";
 import { MACHINE, MACHINE_GROUND, PLACES, inTheStrip, type Section } from "./places";
 import { World, OF_THIS_TREE, type FlowGroup } from "./World";
+import { liveOf, newestPerFlow } from "./flowlive";
 import { ChangesScreen } from "./ChangesScreen";
 import type { Project } from "./workspaces";
 import {
@@ -1157,6 +1158,12 @@ export default function App() {
 
   // The column's flows in the shape the world column draws. The wording and
   // the lane colour stay here, with the flows.
+  /* WHAT IS HAPPENING TO EACH FLOW, where the flows are listed. The facts were
+     all in this window already and the column showed a step count: which one is
+     running now, which one is waiting for you, which one broke in the night was
+     nowhere. `now` is a dependency because silence is not an event. */
+  const liveFlows = useMemo(() => newestPerFlow(executions.values()), [executions]);
+
   const worldGroups = useMemo<FlowGroup[]>(
     () =>
       railGroups.map((group) => ({
@@ -1168,11 +1175,12 @@ export default function App() {
             note: stepCountLabel(flow.graph.steps.length),
             color: layout.bands.get(name)?.color,
             dirty: working ? isDirty(working) : false,
+            live: liveOf(liveFlows.get(name), now),
           };
         }),
         broken: group.broken.map((entry) => ({ name: entry.name, reason: entry.reason })),
       })),
-    [railGroups, layout, flows],
+    [railGroups, layout, flows, liveFlows, now],
   );
 
   /**
