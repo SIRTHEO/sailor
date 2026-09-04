@@ -185,12 +185,17 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     }
     println!("{}", catalogue::say("cli.release.building", &[]));
     let cloned_manifest = repository.join(selected.manifest_rel);
-    let build = Command::new("cargo")
+    let mut builder = Command::new("cargo");
+    builder
         .current_dir(&cloned_rust)
         .env("CARGO_TARGET_DIR", &build_target)
         .args(["build", "--release", "--bin", selected.bin])
         .arg("--manifest-path")
-        .arg(&cloned_manifest)
+        .arg(&cloned_manifest);
+    for feature in selected.features {
+        builder.arg("--features").arg(feature);
+    }
+    let build = builder
         .output()
         .map_err(|error| format!("cannot start cargo: {error}"))?;
     print_tail(&combined_output(&build), 5);
@@ -204,6 +209,13 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
             "cli.release.built_nothing",
             &[("path", &fresh.display().to_string())],
         ));
+    }
+
+    // THE RELEASE READS WHAT IT BUILT. A shell built without the feature that
+    // embeds the page compiles green and opens blank; nothing before this line
+    // can tell the difference. Fault 77.
+    if let Some(page) = selected.page_rel {
+        the_page_is_inside(&fresh, &repository.join(page).join("dist"))?;
     }
 
     // One suite per manifest the target is judged by: the root's, which holds
@@ -651,6 +663,61 @@ fn build_the_page(root: &Path, repository: &Path, page_rel: &str) -> Result<(), 
         return Err(catalogue::say("cli.release.page_does_not_build", &[]));
     }
     Ok(())
+}
+
+/// Refuses a binary that does not carry the page that was just built for it.
+///
+/// The names come from `dist/assets`, where the page's builder writes every
+/// file it hashes; `index.html` is left out on purpose, because those eleven
+/// letters appear in a binary for a dozen reasons and would answer «yes» for a
+/// shell with nothing in it — which is the exact case this exists to catch.
+fn the_page_is_inside(binary: &Path, dist: &Path) -> Result<(), String> {
+    let mut names = Vec::new();
+    collect_relative(&dist.join("assets"), dist, &mut names);
+    names.sort();
+    // Nothing to look for is not a pass: it means the page's builder wrote no
+    // hashed file, so there was never anything to embed. Fault 22.
+    if names.is_empty() {
+        return Err(catalogue::say(
+            "cli.release.page_has_no_files",
+            &[("path", &dist.display().to_string())],
+        ));
+    }
+
+    let bytes = fs::read(binary).map_err(|error| {
+        catalogue::say(
+            "cli.release.cannot_read_what_was_built",
+            &[("path", &binary.display().to_string()), ("error", &error.to_string())],
+        )
+    })?;
+    let missing = release::page_files_missing_from(&bytes, &names);
+    if missing.is_empty() {
+        return Ok(());
+    }
+    Err(catalogue::say(
+        "cli.release.page_is_not_inside",
+        &[
+            ("missing", &missing.len().to_string()),
+            ("of", &names.len().to_string()),
+            ("first", missing.first().map(String::as_str).unwrap_or("")),
+        ],
+    ))
+}
+
+/// Every file under `directory`, named the way the page refers to it: relative
+/// to `dist`, with forward slashes, which is how the shell keys them.
+fn collect_relative(directory: &Path, dist: &Path, found: &mut Vec<String>) {
+    let Ok(entries) = fs::read_dir(directory) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_relative(&path, dist, found);
+        } else if let Ok(relative) = path.strip_prefix(dist) {
+            found.push(relative.to_string_lossy().replace('\\', "/"));
+        }
+    }
 }
 
 fn make_temporary_tree() -> Result<TemporaryTree, String> {
