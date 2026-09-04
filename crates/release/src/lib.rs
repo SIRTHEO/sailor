@@ -53,6 +53,8 @@ pub struct Target {
     /// The file naming the commit the binary in service was built from,
     /// relative to the home. It is the only place that fact exists.
     pub stamp_rel: &'static str,
+    /// The tree the suite last passed on, relative to the home.
+    pub suite_memo_rel: &'static str,
     /// `None` for anything reborn on every call.
     pub service: Option<Service>,
 }
@@ -81,6 +83,7 @@ pub const TARGETS: &[Target] = &[
         live_rel: "target/release/sailor",
         safe_rel: "bin/sailor",
         stamp_rel: "state/sailor-binary-commit",
+        suite_memo_rel: "state/sailor-suite-tree",
         service: None,
     },
     // The window, until now only launchable from inside `target/`, which a
@@ -100,6 +103,7 @@ pub const TARGETS: &[Target] = &[
         live_rel: "desktop/src-tauri/target/release/sailor-desktop",
         safe_rel: "bin/sailor-desktop",
         stamp_rel: "state/window-binary-commit",
+        suite_memo_rel: "state/window-suite-tree",
         service: None,
     },
 ];
