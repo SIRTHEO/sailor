@@ -1050,7 +1050,7 @@ fn open_terminal(request: &Request<'_>) -> Result<Report, String> {
         .map_err(|error| error.to_string())?;
 
     if request.is_a_session_start() {
-        return Ok(Report::spoken(welcome(&arrival)));
+        return Ok(Report::spoken(welcome(&arrival, Some(store))));
     }
     Ok(Report::spoken(described(&arrival)))
 }
@@ -1072,13 +1072,32 @@ fn rules_in(worktree: &std::path::Path) -> Vec<String> {
         .collect()
 }
 
+/// Who else the register holds open in this tree, for the greeting. Nothing at
+/// all when nobody else is here: a greeting that reports emptiness every time
+/// teaches nobody to read it.
+fn neighbours(arrival: &Arrival, store: &Sessions) -> Option<String> {
+    let rows = store.terminals().ok()?;
+    let others = sessions::others_in_the_tree(&rows, &arrival.anchor.tty, &arrival.anchor.worktree);
+    if others.is_empty() {
+        return None;
+    }
+    let who: Vec<String> = others.iter().map(|row| row.tty.clone()).collect();
+    Some(catalogue::say(
+        "cli.session.others_in_this_tree",
+        &[
+            ("count", &who.len().to_string()),
+            ("who", &who.join(", ")),
+        ],
+    ))
+}
+
 /// The welcome, in the wrapper that gets injected into the session's context.
 ///
 /// **A WRAPPER AND NOT A PRINTED LINE** because `SessionStart` is one of the
 /// four moments where what the hook writes becomes context the agent reads. A
 /// plain line would be read by the person at the screen and not by the agent,
 /// and detaching would stay a thing that exists and nobody knows about.
-fn welcome(arrival: &Arrival) -> String {
+fn welcome(arrival: &Arrival, store: Option<&Sessions>) -> String {
     let mut text = catalogue::say(
         "cli.session.welcome",
         &[
@@ -1095,6 +1114,10 @@ fn welcome(arrival: &Arrival) -> String {
             "cli.session.rules",
             &[("files", &rules.join(", "))],
         ));
+    }
+    if let Some(said) = store.and_then(|store| neighbours(arrival, store)) {
+        text.push('\n');
+        text.push_str(&said);
     }
     serde_json::json!({
         "hookSpecificOutput": {
@@ -1916,6 +1939,12 @@ mod tests {
         }
     }
 
+    /// The greeting on its own, with no register to ask: these cases are about
+    /// what the text says, and the neighbours have their own in `sessions`.
+    fn welcome_of(arrival: &Arrival) -> String {
+        welcome(arrival, None)
+    }
+
     /// **THE RULES OF THE TREE TRAVEL WITH THE GREETING.** `SessionStart` is
     /// the one moment whose text becomes context the agent reads, and until
     /// this it carried a welcome and nothing else: a tree could hold its
@@ -1927,7 +1956,7 @@ mod tests {
         std::fs::write(scratch.directory.join("AGENTS.md"), "come si lavora qui\n")
             .expect("le regole si scrivono");
 
-        let said = welcome(&Arrival {
+        let said = welcome_of(&Arrival {
             anchor: sessions::Anchor {
                 tty: "ttys004".to_owned(),
                 worktree: scratch.directory.display().to_string(),
@@ -1954,7 +1983,7 @@ mod tests {
     fn a_tree_with_no_written_rules_is_promised_none() {
         let scratch = Scratch::new("albero-senza-regole");
 
-        let said = welcome(&Arrival {
+        let said = welcome_of(&Arrival {
             anchor: sessions::Anchor {
                 tty: "ttys004".to_owned(),
                 worktree: scratch.directory.display().to_string(),
@@ -1995,7 +2024,7 @@ mod tests {
         };
         act(&request).expect("l'innesto riesce");
 
-        let saluto = welcome(&Arrival {
+        let saluto = welcome_of(&Arrival {
             anchor: sessions::Anchor {
                 tty: "ttys004".to_owned(),
                 worktree: "/qui".to_owned(),
