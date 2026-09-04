@@ -26,6 +26,10 @@ pub struct Spec {
     pub port: Option<u16>,
     pub purpose: String,
     pub started_by: String,
+    /// What is laid over the environment of whoever lights it. **Empty means
+    /// «whatever the parent has»**, which a development server and the window
+    /// both want; it also means a profile never arrives by accident.
+    pub environment: Vec<(String, String)>,
 }
 
 /// Un processo acceso da Sailor, che sa di esserlo.
@@ -78,6 +82,7 @@ impl Process {
         command
             .args(&spec.args)
             .current_dir(&spec.working_directory)
+            .envs(spec.environment.iter().map(|(name, value)| (name, value)))
             .stdin(Stdio::null());
         Self::in_its_own_group(&mut command);
         let child = command
