@@ -4106,6 +4106,60 @@ tr[data-followable]:hover {
   font-size: var(--text-small);
 }
 
+/* The bench: what is being judged, above the terminal it is judged in. */
+.bench {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--raised);
+  border: 1px solid var(--focus);
+  border-radius: var(--radius);
+}
+
+.bench__head {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+}
+
+.bench__step {
+  font-family: var(--font-data);
+  font-weight: 600;
+}
+
+.bench__run {
+  color: var(--muted);
+  font-size: var(--text-small);
+  font-family: var(--font-data);
+}
+
+.bench__mandate {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--font-prose);
+  font-size: var(--text-body);
+}
+
+.bench__said {
+  font-family: var(--font-prose);
+  font-size: var(--text-body);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-1) var(--space-2);
+}
+
+.bench__acts {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.bench__trouble {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--text-small);
+}
+
 /* The one chip that is a gesture: it ends this window and starts the next. */
 .chip--asks {
   border: 1px solid var(--accent-fill);

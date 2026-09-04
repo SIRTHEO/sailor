@@ -20,6 +20,10 @@ pub(crate) struct Handed {
     pub mandate: String,
     /// Since when it waits: the instant the step closed as waiting.
     pub since: i64,
+    /// The tree the run was born in, so the person can be put to work **in
+    /// it** instead of judging from wherever the window happens to stand.
+    /// `None` is a real answer: a run started outside every workspace.
+    pub worktree: Option<String>,
 }
 
 /// The handed steps among a run's records: the latest record of each step,
@@ -43,6 +47,7 @@ pub(crate) fn handed_of(records: &[StepRecord]) -> Vec<Handed> {
             holder: word_in(&record.input, "holder"),
             mandate: word_in(&record.input, "mandate"),
             since: record.ended_at.unwrap_or(record.started_at),
+            worktree: None,
         })
         .collect()
 }
@@ -62,7 +67,21 @@ pub(crate) fn handed_steps(run_id: String) -> Result<Vec<Handed>, String> {
     let records = ledger
         .steps(&run_id)
         .map_err(|error| format!("cannot read run {run_id}: {error}"))?;
-    Ok(handed_of(&records))
+    // **WHERE THE RUN IS, NOT WHERE THE WINDOW IS.** Whoever takes the step
+    // opens a terminal on it, and a terminal in the wrong tree is found out at
+    // the first command that reads a file.
+    let worktree = ledger
+        .run_header(&run_id)
+        .ok()
+        .flatten()
+        .and_then(|header| header.worktree);
+    Ok(handed_of(&records)
+        .into_iter()
+        .map(|step| Handed {
+            worktree: worktree.clone(),
+            ..step
+        })
+        .collect())
 }
 
 /// Takes a handed step as the person at this machine. The engine's answer is
