@@ -119,8 +119,12 @@ fn hold(args: &[String]) -> Result<i32, String> {
     let here = std::env::current_dir().map_err(|error| error.to_string())?;
     let workspace = Workspace::open(&here).map_err(|error| error.to_string())?;
     let size = bridge::size_of(0).unwrap_or_default();
+    let opening = under_the_active_profile();
+    for why in &opening.refused {
+        eprintln!("sailor terminal: {why}");
+    }
     let inner = Arc::new(
-        Pty::open(&workspace, OsStr::new(program), &rest, size, &[])
+        Pty::open(&workspace, OsStr::new(program), &rest, size, &opening.environment)
             .map_err(|error| error.to_string())?,
     );
 
@@ -156,6 +160,21 @@ fn hold(args: &[String]) -> Result<i32, String> {
     let _ = std::fs::remove_file(mailroom(&options)?.join(format!("{tty}.seen")));
     showing.map_err(|error| error.to_string())?;
     Ok(exit_code_of(&inner))
+}
+
+/// What a terminal of this command opens with. **THE WINDOW DID THIS AND THE
+/// COMMAND DID NOT**: a terminal opened here ran under whatever the outer
+/// shell happened to carry, so an engine lit from it answered as somebody the
+/// profile in force does not name. A store that cannot be read is said out
+/// loud, never passed for a store with nothing active.
+fn under_the_active_profile() -> profiles::ActiveEnvironment {
+    match profiles::store_io::load_store() {
+        Ok(store) => profiles::active_environment_with(&store, &|name| std::env::var(name).ok()),
+        Err(why) => profiles::ActiveEnvironment {
+            environment: Vec::new(),
+            refused: vec![why],
+        },
+    }
 }
 
 /// Holds the terminals the window opens, in a process that is not the window.
