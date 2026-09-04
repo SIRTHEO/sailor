@@ -11,6 +11,8 @@ import { declaredCeiling } from "./terminal";
 import {
   decodeBytes,
   encodeBytes,
+  asTyped,
+  fieldGesture,
   keyBytes,
   keyStroke,
   livenessOf,
@@ -309,6 +311,27 @@ const KNOWN = [
   { id: "unmotore", executable: "unmotore" },
   { id: "un-altro", executable: "altromotore" },
 ] as unknown as Parameters<typeof whoLabel>[1];
+
+describe("the line field is a command line, not a document", () => {
+  // Measured: a quoted argument arrived unquoted, and the shell waited.
+  test("the four characters the system substitutes come back straight", () => {
+    expect(asTyped("echo \u201cciao\u201d")).toBe('echo "ciao"');
+    expect(asTyped("git commit -m \u2018fatto\u2019")).toBe("git commit -m 'fatto'");
+    // The control: a line nobody rewrote passes untouched, accents included.
+    expect(asTyped("echo 'perché' \"così\"")).toBe("echo 'perché' \"così\"");
+  });
+
+  // With no way out from the field, a continuation prompt ends the session.
+  test("the one key that leaves the field is the one that gets you out", () => {
+    expect(fieldGesture({ key: "c", ctrlKey: true })).toEqual({ kind: "interrupt" });
+    expect(fieldGesture({ key: "C", ctrlKey: true })).toEqual({ kind: "interrupt" });
+    // Everything else waits for Enter, this machine's copy gesture included.
+    expect(fieldGesture({ key: "c" })).toBeNull();
+    expect(fieldGesture({ key: "c", metaKey: true })).toBeNull();
+    expect(fieldGesture({ key: "c", ctrlKey: true, metaKey: true })).toBeNull();
+    expect(fieldGesture({ key: "u", ctrlKey: true })).toBeNull();
+  });
+});
 
 describe("who runs in the pane", () => {
   test("the program, the profile when one applies, and an older host said as such", () => {
