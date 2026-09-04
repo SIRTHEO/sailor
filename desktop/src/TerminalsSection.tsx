@@ -8,6 +8,7 @@ import { SubRail } from "./Memory";
 import { Projects } from "./Projects";
 import type { TerminalSummary } from "./terminal";
 import { Terminals } from "./Terminals";
+import type { Bench } from "./Workbench";
 import { Worktrees } from "./Worktrees";
 
 export type TerminalsTab = "live" | "projects" | "worktrees";
@@ -28,6 +29,8 @@ export function TerminalsSection({
   onProjectChanged,
   onCount,
   onList,
+  bench,
+  onBenchClosed,
 }: {
   native: boolean;
   now: number;
@@ -42,12 +45,23 @@ export function TerminalsSection({
   onCount: (count: number) => void;
   /** The terminals themselves, for the column that nests them under a tree. */
   onList: (all: TerminalSummary[]) => void;
+  /** The terminal opened to work on a handed step, when one is. */
+  bench?: Bench | null;
+  onBenchClosed?: (answer: string) => void;
 }) {
   return (
     <div className="section" hidden={!shown}>
       <SubRail here={tab} onGo={onTab} tabs={TERMINALS_TABS} />
       <div className="section__body section__body--terminals">
-        <Terminals native={native} shown={shown && tab === "live"} ceiling={ceiling} onCount={onCount} onList={onList} />
+        <Terminals
+          native={native}
+          shown={shown && tab === "live"}
+          ceiling={ceiling}
+          onCount={onCount}
+          onList={onList}
+          bench={bench}
+          onBenchClosed={onBenchClosed}
+        />
         {shown && tab === "projects" && <Projects native={native} now={now} onMoved={onProjectChanged} />}
         {shown && tab === "worktrees" && <Worktrees native={native} />}
       </div>
