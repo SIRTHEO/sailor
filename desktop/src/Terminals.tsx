@@ -28,6 +28,8 @@ import {
   splitCommandLine,
   submitLine,
   watchTerminals,
+  windowGesture,
+  windowHold,
   type TerminalSummary,
 } from "./terminal";
 import { commandLines, type CommandLine } from "./profiles";
@@ -251,6 +253,26 @@ export function Terminals({ native, shown = true, ceiling = null, onCount, onLis
       setOpening(false);
     }
   }, [root, program, again]);
+
+  // **A TERMINAL YOU HAVE TO REACH FOR WITH THE MOUSE IS ONE YOU OPEN
+  // ELSEWHERE.** Another terminal where you are standing, and the nth of the
+  // ones already open: the two gestures of a whole day, on the keyboard.
+  useEffect(() => {
+    if (!native || !shown) return;
+    const listen = (event: KeyboardEvent) => {
+      const gesture = windowGesture(event, windowHold(navigator.platform ?? ""));
+      if (gesture === null) return;
+      event.preventDefault();
+      if (gesture.kind === "new") {
+        if (root !== "") void open();
+        return;
+      }
+      const nth = known[gesture.nth - 1];
+      if (nth) setHere(nth.id);
+    };
+    window.addEventListener("keydown", listen);
+    return () => window.removeEventListener("keydown", listen);
+  }, [native, shown, open, known, root]);
 
   if (asked.state === "mute") {
     return (

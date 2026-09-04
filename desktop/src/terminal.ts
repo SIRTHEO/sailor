@@ -463,6 +463,27 @@ export function paneGesture(press: KeyPress, hold: WindowHold): PaneGesture {
   return "to_process";
 }
 
+/** What a key asks the terminals screen for, when it asks anything. */
+export type WindowGesture = { kind: "new" } | { kind: "focus"; nth: number } | null;
+
+/**
+ * **A TERMINAL YOU HAVE TO REACH FOR WITH THE MOUSE IS ONE YOU OPEN
+ * ELSEWHERE.** The same modifier the process never sees carries the two
+ * gestures a person makes all day: another terminal where they are standing,
+ * and the nth one of the ones already open.
+ */
+export function windowGesture(press: KeyPress, hold: WindowHold): WindowGesture {
+  const held =
+    hold === "meta"
+      ? press.metaKey === true && press.ctrlKey !== true && press.altKey !== true
+      : press.ctrlKey === true && press.shiftKey === true && press.altKey !== true;
+  if (!held) return null;
+  const letter = press.key.length === 1 ? press.key.toLowerCase() : press.key;
+  if (letter === "t") return { kind: "new" };
+  if (letter >= "1" && letter <= "9") return { kind: "focus", nth: Number(letter) };
+  return null;
+}
+
 /**
  * The state to show, from the only two facts the window has. The order
  * matters: **an event wins over the list**, because `terminal_closed` arrived
