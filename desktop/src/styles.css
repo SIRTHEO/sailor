@@ -3962,11 +3962,25 @@ tr[data-followable]:hover {
 
 /* The tty on a tab and on the pane's head: the anchor of the session, read
    character by character to be matched with what the machine says. */
-.terminals__device,
+.terminals__program {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--ink);
+  font-weight: 600;
+}
+
 .pane__device {
   font-family: var(--font-data);
   font-size: var(--text-small);
   color: var(--ink);
+}
+
+/* On a tab the program leads and the tty follows it: the anchor is still
+   there, and what a person recognises is first. */
+.terminals__device {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--muted);
 }
 
 .terminals__where {
