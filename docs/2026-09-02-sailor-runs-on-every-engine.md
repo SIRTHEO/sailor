@@ -429,9 +429,27 @@ Starting point, so the mandate builds on it instead of beside it.
    `input_required`, `completed`, `failed`). And the survey is **injected at
    every agent's start**: the Claude SessionStart hook adds it as context, and
    Codex and Gemini read it from the generated file of D.3.
-   *Proof:* two sessions of two command lines opened in one tree show one
-   `same_workdir` collision in the survey, and the second session's first
-   context names the first.
+   *Where it landed:* the smaller half, and it is the half that was hurting.
+   The hook does not write a `work_claim` — that action exists as a flow node
+   (`actions/src/presence.rs`) and nothing in `sailor session` calls it — so the
+   shared vocabulary, the renewal at each event and the release on close are all
+   unbuilt. What the hook does write is Sailor's own register: a row per tty
+   with its tree, its session and its events. **And from 04/09/2026 the greeting
+   reads it back**: the `SessionStart` context now names the other terminals the
+   register holds open in the same tree, and says what follows from it — read a
+   clean HEAD before seeding a ratchet or calling the tree green, because the
+   uncommitted work here may be somebody else's. The line reports the register
+   and says so: a terminal killed without closing stays open in there.
+   *Why it was built this way round:* the claim's own proof needs two command
+   lines and the survey; the register needed neither, and the cost of not having
+   it was measured the same day — two sets of ratchet seeds taken over another
+   session's uncommitted file, and a release stopped because of it.
+   *Proof:* `the_others_are_the_open_ones_of_this_tree_and_never_me` and
+   `a_terminal_killed_without_closing_is_still_listed` in
+   `crates/sessions/tests/who_else_is_in_this_tree.rs`; both mutants — dropping
+   the «not me» filter and dropping the «open» filter — turn them red. The
+   claim's own proof, two command lines and a `same_workdir` collision, is not
+   written.
 2. **The window shows the crew.** Terminals › crew lists every claim: who,
    which program and model and profile, which tree and branch, doing what,
    since when, and the gone with their why. It is the survey drawn, not a
