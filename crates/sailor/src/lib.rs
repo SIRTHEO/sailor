@@ -31,6 +31,7 @@ pub mod inventory_cmd;
 pub mod models_cmd;
 pub mod profiles_cmd;
 pub mod publish_cmd;
+pub mod ratchet_cmd;
 pub mod release_cmd;
 pub mod remaining_cmd;
 pub mod run_cmd;
@@ -136,6 +137,12 @@ pub const COMMANDS: &[Command] = &[
         description_key: "cli.command.release",
         usage: release_cmd::USAGE,
         run: release_cmd::run,
+    },
+    Command {
+        name: "ratchet",
+        description_key: "cli.command.ratchet",
+        usage: ratchet_cmd::USAGE,
+        run: ratchet_cmd::run,
     },
     Command {
         name: "profiles",
