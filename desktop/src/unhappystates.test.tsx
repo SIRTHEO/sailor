@@ -452,7 +452,9 @@ describe("a single step is not «1 passi»", () => {
 const OWNERS: Array<[selector: string, name: string]> = [
   [".world", "the column"],
   [".blank__card", "the blank canvas"],
-  [".toolbar__prompt", "the bar"],
+  // THE WHOLE BAR, not the one line it used to say this with: a selector that
+  // matches nothing counts nothing for ever.
+  [".toolbar", "the bar"],
   [".panel__empty", "the panel"],
 ];
 
@@ -497,33 +499,28 @@ describe("two invitations on the same screen cancel each other", () => {
   /**
    * **THE COLUMN OWNS THE GESTURE, IN EVERY STATE WHERE IT EXISTS.** The bar is
    * scoped to one flow, so a gesture that makes a sibling of it does not belong
-   * there, and with a flow focused the bar does not carry it at all. The tools
-   * moved into the board because a step is a thing **on** it — a flow is not.
+   * there. The tools moved into the board because a step is a thing **on** it —
+   * a flow is not.
    */
-  test("AT REST ONLY THE COLUMN OFFERS TO MAKE A FLOW, and the bar points at it", () => {
+  test("AT REST A FLOW IS OPEN, AND ONLY THE COLUMN OFFERS TO MAKE ANOTHER", () => {
     const { container } = render(<App />);
     goToFlows();
 
-    // The scene is the right one: there are flows, none is focused, the toolbar
-    // has changed job. Without this line the count would be true even on a
-    // screen where nobody speaks.
-    const prompt = container.querySelector(".toolbar__prompt") as HTMLElement;
-    expect(prompt, "the toolbar has not changed job").not.toBeNull();
+    // The scene is the right one: the board opens on a flow and the bar has its
+    // tools. Without this the count would hold on a screen where nobody speaks.
+    expect(container.querySelector(".flow-band"), "no flow is drawn at rest").not.toBeNull();
+    expect(container.querySelectorAll(".toolbar__tool").length, "the bar has no tools").toBeGreaterThan(0);
     expect(whoInvitesToCreate(container)).toEqual(["the column"]);
-
-    // And the bar still speaks: silencing it would satisfy the count above
-    // while leaving the screen with a bar that says nothing at all.
-    expect(prompt.textContent ?? "").toMatch(/in the column/i);
-    expect(invites(prompt.textContent ?? ""), "the bar stopped asking for a flow").toBe(true);
   });
 
-  test("WITH A FLOW FOCUSED, THE COLUMN IS STILL THE ONLY ONE THAT OFFERS IT", () => {
+  test("AND AFTER PICKING ANOTHER FLOW BY HAND, still only the column", () => {
     const { container } = render(<App />);
     goToFlows();
-    fireEvent.click(container.querySelector("button.rail__item") as HTMLElement);
+    const rows = Array.from(container.querySelectorAll<HTMLElement>("button.rail__item"));
+    const other = rows.find((row) => row.getAttribute("data-open") === null);
+    expect(other, "the column offers no second flow to pick").toBeDefined();
+    fireEvent.click(other as HTMLElement);
 
-    // The bar has its tools back, so this is the other state, not a repeat of
-    // the one above: there the gesture could hide in a bar that had no tools.
     expect(container.querySelectorAll(".toolbar__tool").length, "the bar has no tools").toBeGreaterThan(0);
     expect(whoInvitesToCreate(container)).toEqual(["the column"]);
   });
@@ -565,32 +562,29 @@ describe("two invitations on the same screen cancel each other", () => {
 /* ═══ 2 bis. A LINE THAT POINTS AT A PLACE YOU ARE NOT IN ═══════════════════ */
 
 /**
- * **THE BAR SENDS YOU TO A COLUMN SIX PLACES OUT OF SEVEN HAVE NOT GOT.** The
- * line it carries with nothing focused — «pick one in the rail» — belongs to
- * the board alone, and the window opens away from the board: two invitations
- * cancelling each other, in its loneliest form.
+ * **THE BAR SENT YOU TO A COLUMN SIX PLACES OUT OF SEVEN HAVE NOT GOT.** That
+ * line is gone, not conditioned: what the bar says about a flow it says only
+ * where the flow is drawn.
  */
 describe("the bar does not send you to a column this place has not got", () => {
-  test("AWAY FROM THE BOARD THE BAR IS SILENT ABOUT THE COLUMN, and speaks on the board", () => {
+  test("THE BAR SPEAKS OF THE FLOW ON THE BOARD, AND OF NO COLUMN ANYWHERE", () => {
     const { container } = render(<App />);
+    const bar = () => container.querySelector(".topbar") as HTMLElement;
 
-    // The window opens on the board now, where the column is: the line must
-    // be there. This is the control that makes the absence below worth
-    // anything, because an absence passes just as well when the selector is
-    // wrong.
-    const line = container.querySelector(".topbar__none");
-    expect(line, "the bar is silent on the board, where the column is").not.toBeNull();
-    expect(line?.textContent ?? "").toMatch(/rail|column/i);
+    // The control that makes the absences below worth anything: on the board
+    // the bar really does carry what it knows about the open flow.
+    expect(container.querySelector(".topbar__flow"), "the bar says nothing about the open flow").not.toBeNull();
+    expect(bar().textContent ?? "", "the bar still points at the column").not.toMatch(/\brail\b|\bcolumn\b/i);
 
     // Leave the board: **mounted is not in view**. The board sits inside
-    // `.body[hidden]`, and the bar must stop naming a column this place has
-    // not got.
+    // `.body[hidden]`, and the bar must stop speaking of a flow this place
+    // does not draw.
     fireEvent.click(screen.getByRole("button", { name: /Runs/ }));
     expect(container.querySelector(".body[hidden]"), "the board is still in view").not.toBeNull();
-    expect(
-      container.querySelector(".topbar__none"),
-      "the bar names the column in a place that has none",
-    ).toBeNull();
+    expect(bar().textContent ?? "", "the bar points at a column in a place that has none").not.toMatch(
+      /\brail\b|\bcolumn\b/i,
+    );
+    expect(container.querySelector(".topbar__flow"), "the bar speaks of a flow off the board").toBeNull();
   });
 });
 

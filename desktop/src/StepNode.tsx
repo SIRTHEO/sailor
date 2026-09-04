@@ -47,8 +47,6 @@ export interface StepNodeData extends Record<string, unknown> {
   /** The flow the step belongs to, and its lane colour on the single canvas. */
   flowName: string;
   color: string;
-  /** True when another flow has focus: this step retreats, it does not vanish. */
-  dimmed: boolean;
   /** What goes in and out, read from the graph. Absent only in test data. */
   ports?: StepPorts;
 }
@@ -389,7 +387,7 @@ function StepMeter({ usage }: { usage: StepUsage }) {
 }
 
 export function StepNode({ data, selected }: NodeProps) {
-  const { step, kind, run: fromData, flowName, color: flowColor, dimmed, ports } =
+  const { step, kind, run: fromData, flowName, color: flowColor, ports } =
     data as StepNodeData;
   // REAL FACTS BEAT THE SAMPLE. `run` in `data` still exists because that is
   // how the sample data colours the canvas outside the native shell; when a
@@ -418,14 +416,11 @@ export function StepNode({ data, selected }: NodeProps) {
     <div
       className="step-node"
       data-agent={isAgent || undefined}
-      data-dimmed={dimmed || undefined}
       data-state={state}
       data-selected={selected || undefined}
       data-far={far || undefined}
       data-calls={isolated || undefined}
     >
-      {/* Il bollino di corsia: a quale flusso appartiene questo passo, nella
-          tela dove tutti i flussi stanno insieme. */}
       <div className="step-node__flow" style={{ background: flowColor }} title={flowName} />
       {/* WHAT COULD FOLLOW THIS, without a drag. Hidden from the far zoom with
           everything else that cannot be read there. */}
@@ -571,7 +566,6 @@ export interface FlowBandData extends Record<string, unknown> {
   description: string;
   stepCount: number;
   color: string;
-  dimmed: boolean;
 }
 
 /**
@@ -580,22 +574,12 @@ export interface FlowBandData extends Record<string, unknown> {
  * connected" readable instead of forty scattered nodes.
  */
 export function FlowBandNode({ data }: NodeProps) {
-  const { name, description, stepCount, color, dimmed } = data as FlowBandData;
+  const { name, description, stepCount, color } = data as FlowBandData;
   // As for a step: from far away the label grows instead of staying drawn six
   // pixels tall.
   const far = useStore((s) => s.transform[2]) < FAR_ZOOM;
-  // THE LANE'S TINT LEAVES WHEN THE LANE IS NOT FOCUSED, and the border falls
-  // back to the neutral hairline. Which branch is being watched shows through
-  // the SIGNS — veil, border, badge — never through the text, which would drop
-  // the description to 1.47:1.
-  const borderColor = dimmed ? undefined : color;
   return (
-    <div
-      className="flow-band"
-      data-dimmed={dimmed || undefined}
-      data-far={far || undefined}
-      style={{ borderColor }}
-    >
+    <div className="flow-band" data-far={far || undefined} style={{ borderColor: color }}>
       <div className="flow-band__head">
         {/* IL COLORE DELLA CORSIA È UN SEGNO, NON UN COLORE DI TESTO.
             Scriverci sopra il nome del flusso è ciò che si faceva prima, e la

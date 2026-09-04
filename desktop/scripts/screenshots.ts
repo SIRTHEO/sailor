@@ -73,6 +73,26 @@ async function openMachineRow(page: Page, label: string): Promise<void> {
 const A_GAP_IN_THE_PRODUCT = "product gap: ";
 
 /**
+ * **THE FRAME IS ANIMATED, SO IT IS WAITED FOR, NOT ASSUMED.** The canvas takes
+ * three hundred milliseconds to settle on a flow; a geometry read while it
+ * moves names a node that is somewhere else by the time the pointer arrives.
+ */
+async function framed(page: Page): Promise<void> {
+  const where = async () =>
+    await page.evaluate(
+      `(() => { var vp = document.querySelector(".react-flow__viewport");
+                return vp ? vp.style.transform : ""; })()`,
+    );
+  let last = await where();
+  for (let tries = 0; tries < 20; tries += 1) {
+    await page.waitForTimeout(100);
+    const now = await where();
+    if (now === last && now !== "") return;
+    last = now;
+  }
+}
+
+/**
  * Reaches the canvas and focuses the first flow, then frames it.
  *
  * Framing is not a capture detail: whoever photographs without it photographs
@@ -109,6 +129,7 @@ async function focusFirstFlow(page: Page): Promise<void> {
   } catch {
     console.log("    · framing failed: the canvas stays where it was");
   }
+  await framed(page);
 }
 
 const SCENES: Scene[] = [
