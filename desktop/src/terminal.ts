@@ -469,6 +469,30 @@ export function paneGesture(press: KeyPress, hold: WindowHold): PaneGesture {
   return "to_process";
 }
 
+/**
+ * What a key pressed in the line field asks for. **THE FIELD IS NOT THE
+ * PROGRAM**, and one key must leave it anyway: without it a shell on a
+ * continuation prompt can only be answered by closing the session inside it.
+ */
+export type FieldGesture = { kind: "interrupt" } | null;
+
+export function fieldGesture(press: KeyPress): FieldGesture {
+  const held = press.ctrlKey === true && press.metaKey !== true && press.altKey !== true;
+  if (held && press.key.toLowerCase() === "c") return { kind: "interrupt" };
+  return null;
+}
+
+/**
+ * The line as the person meant it. **THE FOUR CHARACTERS SUBSTITUTED HERE ARE
+ * NOT CHARACTERS ANYBODY TYPED**: measured, a shell left waiting on `dquote>`.
+ * No curly quote leaves this field, and a line that cannot be quoted is worse.
+ */
+export function asTyped(line: string): string {
+  return line
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201c\u201d]/g, '"');
+}
+
 /** What a key asks the terminals screen for, when it asks anything. */
 export type WindowGesture = { kind: "new" } | { kind: "focus"; nth: number } | null;
 

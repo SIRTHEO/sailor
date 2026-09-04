@@ -233,7 +233,7 @@
   "cli.release.cannot_start_git_clone": "non riesco ad avviare git clone: {error}",
   "cli.release.cannot_start_the_suite": "non riesco ad avviare la batteria: {error}",
   "cli.release.checkout_failed": "l'estrazione di HEAD nel clone è fallita",
-  "cli.release.cloning_head": "== clono HEAD ({head}) in un albero usa-e-getta ==",
+  "cli.release.cloning_head": "== clono HEAD ({head}) di {root} in un albero usa-e-getta ==",
   "cli.release.commits_touching_the_parts": "({count} commit che toccano {parts}, da {from} a {to})",
   "cli.release.dry_run": "== prova a vuoto: il binario in servizio NON è stato sostituito ==",
   "cli.release.head_does_not_compile": "HEAD non compila: non è stato sostituito niente e il binario in servizio è intatto",
