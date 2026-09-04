@@ -34,6 +34,7 @@ import { BlankCanvas, type PlacesAsk } from "./BlankCanvas";
 import { MACHINE, MACHINE_GROUND, PLACES, inTheStrip, type Section } from "./places";
 import { World, OF_THIS_TREE, type FlowGroup } from "./World";
 import { liveOf, newestPerFlow } from "./flowlive";
+import { amongThese, rememberWhere, whereYouWere } from "./whereyouwere";
 import { ChangesScreen } from "./ChangesScreen";
 import type { Project } from "./workspaces";
 import {
@@ -53,7 +54,7 @@ import { BuildChip, LiveChip, WhoChip } from "./Bar";
 import { LedgerBrowser } from "./LedgerBrowser";
 import { Memory, MEMORY_TABS, type MemoryTab } from "./Memory";
 import { SailorScreen } from "./SailorScreen";
-import { type SailorTab } from "./sailortabs";
+import { SAILOR_TABS, type SailorTab } from "./sailortabs";
 import { TerminalsSection, TERMINALS_TABS, type TerminalsTab } from "./TerminalsSection";
 import { declaredCeiling } from "./terminal";
 import { Palette, isPaletteKey, type Entry } from "./Palette";
@@ -259,9 +260,19 @@ export default function App() {
   const [source, setSource] = useState<Source>(NATIVE ? "loading" : "sample");
   const [failure, setFailure] = useState<string | null>(null);
 
-  const [place, setPlace] = useState<Place>("board");
-  const [memoryTab, setMemoryTab] = useState<MemoryTab>("runs");
-  const [sailorTab, setSailorTab] = useState<SailorTab>("keeps");
+  /* WHERE YOU WERE, and not where everybody starts. Working on Sailor with
+     Sailor open means this window is replaced at every build of the engine
+     under it; landing on the board each time costs the walk back. */
+  const wasAt = useRef(whereYouWere());
+  const [place, setPlace] = useState<Place>(() =>
+    amongThese(wasAt.current.place, PLACES.map((one) => one.id), "board"),
+  );
+  const [memoryTab, setMemoryTab] = useState<MemoryTab>(() =>
+    amongThese(wasAt.current.memoryTab, MEMORY_TABS.map((one) => one.id), "runs"),
+  );
+  const [sailorTab, setSailorTab] = useState<SailorTab>(() =>
+    amongThese(wasAt.current.sailorTab, SAILOR_TABS.map((one) => one.id), "keeps"),
+  );
   /** The tree the window stands in, as the column reads it. */
   const [standingIn, setStandingIn] = useState<Project | null>(null);
   const [terminalsTab, setTerminalsTab] = useState<TerminalsTab>("live");
@@ -284,7 +295,7 @@ export default function App() {
 
   // Focus belongs to the branch, not the canvas: the rail points at a path
   // inside the single graph, it does not choose which graph to show.
-  const [focusName, setFocusName] = useState<string | null>(null);
+  const [focusName, setFocusName] = useState<string | null>(() => wasAt.current.focus ?? null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
 
   const [saving, setSaving] = useState<Set<string>>(new Set());
@@ -1190,12 +1201,23 @@ export default function App() {
    * takes the screen, which is the state that does teach.
    */
   useEffect(() => {
-    if (place !== "board" || focusName !== null) return;
+    if (place !== "board" || source === "loading") return;
+    // A NAME THE WINDOW NO LONGER HAS IS NOT A PLACE. What was open last time
+    // may have been renamed, deleted, or belong to a tree nobody stands in now:
+    // it opens where everybody starts instead of on a ghost.
+    const known = railGroups.flatMap((group) => group.flows.map((one) => one.name));
+    if (focusName !== null && known.includes(focusName)) return;
     const ownFirst = railGroups.find((group) => group.origin === OF_THIS_TREE)?.flows[0]?.name;
-    const anyFirst = railGroups.flatMap((group) => group.flows)[0]?.name;
-    const opening = ownFirst ?? anyFirst;
-    if (opening !== undefined) setFocusName(opening);
-  }, [place, focusName, railGroups]);
+    const opening = ownFirst ?? known[0];
+    setFocusName(opening ?? null);
+  }, [place, focusName, railGroups, source]);
+
+  // WRITTEN DOWN AS IT CHANGES, not on the way out: a window replaced by a
+  // build is not asked whether it minds, and an unload handler would be the one
+  // thing a swap does not wait for.
+  useEffect(() => {
+    rememberWhere({ place, sailorTab, memoryTab, focus: focusName });
+  }, [place, sailorTab, memoryTab, focusName]);
 
   const focusedBand = focusName ? layout.bands.get(focusName) : undefined;
   const focusedWorking = focusName ? flows.get(focusName) : undefined;
