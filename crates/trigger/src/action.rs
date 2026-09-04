@@ -5,7 +5,7 @@
 //! returns the signal in the shape the steps downstream read. It executes
 //! nothing and touches nothing in the world.
 
-use crate::{default_sources, Catalog, Kind, Listen, Signal, Source, TriggerDescriptor};
+use crate::{default_sources, Catalog, Kind, Listen, MissedRun, Signal, Source, TriggerDescriptor};
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies};
 use serde::Deserialize;
 use serde_json::Value;
@@ -120,9 +120,8 @@ impl Action for TriggerAction {
                 "listening_not_built",
                 not_listening_yet(descriptor),
             )),
-            // The same border, on the other side: the shape is declared, the
-            // clock that would fire it is not, and who winds that clock is a
-            // decision nobody has taken.
+            // The same border, on the other side: the clock is wound, but on
+            // the flow's own schedule, and nothing reads the one declared here.
             Kind::Periodic => Err(ActionError::new(
                 "nobody_keeps_the_time",
                 nobody_keeps_the_time(descriptor),
@@ -185,11 +184,12 @@ fn not_listening_yet(descriptor: &TriggerDescriptor) -> String {
     said
 }
 
-/// What the descriptor declared, handed back to whoever reads the failure: the
-/// missing piece is a keeper of time, not a missing declaration.
+/// What the descriptor declared, handed back to whoever reads the failure,
+/// next to the keeper of time that does exist and what it would not honour.
 ///
-/// **NOTHING IS INSTALLED TO FILL THE GAP.** Who invokes the beat is Theo's
-/// decision, and a step that quietly started a timer would take it for him.
+/// **THE CLOCK IS KEPT, ONE DECLARATION AWAY.** The window beats every minute
+/// and `sailor flow tick` judges the same way, both on the flow's `schedule`:
+/// a message saying nobody keeps time sends the reader to build what is built.
 fn nobody_keeps_the_time(descriptor: &TriggerDescriptor) -> String {
     let declared = match &descriptor.periodic {
         Some(periodic) => format!(
@@ -199,12 +199,34 @@ fn nobody_keeps_the_time(descriptor: &TriggerDescriptor) -> String {
         // Loading prevents this; reaching it means the fault is there.
         None => "it declares nothing about when it fires".to_owned(),
     };
-    format!(
-        "the trigger «{}» is fired by the clock, and nothing in Sailor keeps time: {declared}. \
-         `sailor flow tick` is the beat and it decides correctly, but somebody has to call it, \
-         and who that is has not been decided — so this step stops instead of inventing a run.",
+    let mut said = format!(
+        "the trigger «{}» is fired by the clock, and the clock is kept on the flow's own \
+         `schedule`, not on this source: the window beats every minute and `sailor flow tick` \
+         judges the same way, and both read the recurrence off the flow file. \
+         This source declares {declared}, and nothing reads it. \
+         What works today: move that recurrence into the flow's `schedule` and give this step \
+         the manual shape, which carries the signal with it.",
         descriptor.id
-    )
+    );
+    if let Some(periodic) = &descriptor.periodic {
+        if periodic.missed_run == MissedRun::CatchUpEachOne {
+            said.push_str(
+                " One thing does not survive the move: those keepers start a single run however \
+                 many occurrences went by, so `catch_up_each_one` becomes `once_for_all_of_them`.",
+            );
+        }
+        if periodic.at_most_at_once > 1 {
+            said.push_str(&format!(
+                " Nor does the width: they hold a flow whose last run is still open, so the limit \
+                 they keep is one at once, not {}.",
+                periodic.at_most_at_once
+            ));
+        }
+    }
+    if !descriptor.note.is_empty() {
+        said.push_str(&format!(" Descriptor note: {}", descriptor.note));
+    }
+    said
 }
 
 #[cfg(test)]
@@ -298,8 +320,8 @@ mod tests {
     }
 
     /// **THE SAME BORDER ON THE CLOCK'S SIDE.** A periodic source declares when
-    /// it would fire; nothing keeps that time, so the step breaks instead of
-    /// answering. The mutant that fells this is returning a signal here: a run
+    /// it would fire; nothing reads that declaration, so the step breaks instead
+    /// of answering. The mutant that fells this is returning a signal here: a run
     /// would then claim the hour had come when nobody had looked at a clock.
     #[test]
     fn a_periodic_source_refuses_to_pretend_the_hour_came() {
@@ -323,10 +345,44 @@ mod tests {
 
         assert_eq!(error.class, "nobody_keeps_the_time");
         assert!(error.said.contains("ogni-mezz-ora"), "{}", error.said);
-        // What it declared comes back out: the missing piece is the keeper of
-        // time, not the declaration.
+        // What it declared comes back out: the missing piece is a reader of the
+        // declaration, not the declaration.
         assert!(error.said.contains("CatchUpEachOne"), "{}", error.said);
         assert!(error.said.contains("at most 1"), "{}", error.said);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **THE REFUSAL NAMES THE KEEPER THAT EXISTS.** Time is kept — the window
+    /// beats every minute and `sailor flow tick` judges the same way — on the
+    /// flow's `schedule`, one declaration away from here. A message saying
+    /// nobody keeps it sends whoever reads it to build what is already built,
+    /// and hides that the way through is to move the recurrence.
+    #[test]
+    fn the_clock_that_is_kept_is_named_next_to_the_one_that_is_not() {
+        let dir = std::env::temp_dir().join(format!("sailor-orologio-tenuto-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("creating the test directory");
+        let file = dir.join("miei.json");
+        std::fs::write(
+            &file,
+            r#"[{"id": "ogni-ora", "kind": "periodic", "periodic": {
+                 "every": {"kind": "every_seconds", "seconds": 3600},
+                 "missed_run": "catch_up_each_one", "at_most_at_once": 3}}]"#,
+        )
+        .expect("writing the test descriptors");
+
+        let error = fire(json!({
+            "source": "ogni-ora",
+            "descriptor_paths": [file.to_string_lossy()],
+            "include_defaults": false
+        }))
+        .expect_err("nothing reads this declaration");
+
+        assert!(error.said.contains("`schedule`"), "{}", error.said);
+        assert!(error.said.contains("flow tick"), "{}", error.said);
+        // And what the keeper would not honour, so the move is made with open
+        // eyes rather than discovered on the first missed hour.
+        assert!(error.said.contains("once_for_all_of_them"), "{}", error.said);
+        assert!(error.said.contains("not 3"), "{}", error.said);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
