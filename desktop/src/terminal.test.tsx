@@ -305,12 +305,30 @@ function summary(over: Partial<TerminalSummary>): TerminalSummary {
   };
 }
 
+const KNOWN = [
+  { id: "unmotore", executable: "unmotore" },
+  { id: "un-altro", executable: "altromotore" },
+] as unknown as Parameters<typeof whoLabel>[1];
+
 describe("who runs in the pane", () => {
   test("the program, the profile when one applies, and an older host said as such", () => {
-    expect(whoLabel({ program: "zsh", profile: null })).toBe("zsh");
-    expect(whoLabel({ program: "codex", profile: "prove" })).toBe("codex · as prove");
+    expect(whoLabel({ program: "unmotore", profile: null }, KNOWN)).toBe("unmotore");
+    expect(whoLabel({ program: "unmotore", profile: "prove" }, KNOWN)).toBe("unmotore · as prove");
     // The control: no program is not a shell, it is a host that did not say.
-    expect(whoLabel({ program: "", profile: null })).toBe("program not reported by this host");
+    expect(whoLabel({ program: "", profile: null }, KNOWN)).toBe("program not reported by this host");
+  });
+
+  // **A PANE THAT RUNS NO AGENT SAYS SO.** A shell shown like an engine is a
+  // pane somebody waits on for an answer that will never come, and the tab
+  // beside it looks identical.
+  test("a program no command line declares is a shell, and the word comes from the data", () => {
+    expect(whoLabel({ program: "zsh", profile: null }, KNOWN)).toBe("zsh · shell");
+    // The profile does not make a shell an agent: it applies to the terminal,
+    // not to whatever the person typed inside it.
+    expect(whoLabel({ program: "zsh", profile: "prove" }, KNOWN)).toBe("zsh · shell");
+    // And with nothing known, everything is a shell: the window says what it
+    // was told rather than guessing which names are engines.
+    expect(whoLabel({ program: "unmotore", profile: null }, [])).toBe("unmotore · shell");
   });
 });
 

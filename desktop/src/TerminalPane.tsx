@@ -31,6 +31,7 @@ import {
   type Submitted,
   type TerminalSummary,
 } from "./terminal";
+import type { CommandLine } from "./profiles";
 
 // The birth size lives beside the other decisions, in `terminal.ts`; it is
 // re-exported here because this is where every pane already looks for it.
@@ -38,6 +39,8 @@ export { BORN_COLS, BORN_ROWS };
 
 interface PaneProps {
   summary: TerminalSummary;
+  /** The command lines the product knows, so the pane can tell an agent from a shell. */
+  known: CommandLine[];
   /** The ceiling the relay hands on at, or `null` when no loaded flow declares one. */
   ceiling: number | null;
   liveness: Liveness;
@@ -60,6 +63,7 @@ interface PaneProps {
 
 export function TerminalPane({
   summary,
+  known,
   ceiling,
   liveness,
   speaking = false,
@@ -236,7 +240,7 @@ export function TerminalPane({
             the machine — the letterbox, the count, the tracking store. */}
         <span className="pane__device">{summary.device}</span>
         <span className="pane__who" title="the program started inside, and the profile it runs under">
-          {whoLabel(summary)}
+          {whoLabel(summary, known)}
         </span>
         <span className="label">{summary.workspaceName}</span>
         <span className="pane__root">{summary.workspaceRoot}</span>
@@ -395,8 +399,17 @@ function shortCount(n: number): string {
  * older host reports no program, and the label says so rather than guessing
  * a shell. No model: an interactive program picks its own, unknown to Sailor.
  */
-export function whoLabel(summary: Pick<TerminalSummary, "program" | "profile">): string {
+export function whoLabel(
+  summary: Pick<TerminalSummary, "program" | "profile">,
+  known: CommandLine[],
+): string {
   if (!summary.program) return "program not reported by this host";
+  // **WHICH PROGRAMS ARE AGENTS IS DATA, NOT A LIST IN HERE.** The command
+  // lines the product knows name their own executable; anything else running
+  // in a terminal is a shell, and saying so is the difference between a pane
+  // waiting on a person and one waiting on nobody.
+  const agent = known.some((line) => line.executable === summary.program);
+  if (!agent) return `${summary.program} · shell`;
   return summary.profile === null || summary.profile === undefined
     ? summary.program
     : `${summary.program} · as ${summary.profile}`;
