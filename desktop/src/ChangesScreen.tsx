@@ -1,18 +1,27 @@
 // What an agent changed, read inside Sailor.
 //
-// **A DIFF, NOT AN EDITOR.** This shows git's answer about a working tree —
-// which files, and what changed in them — and hands a file to the editor the
-// person already uses. Nothing here edits or computes a difference: the text
-// is `git diff`'s, so what is read here is what a terminal would say.
+// **A DIFF, NOT AN EDITOR.** This shows git's answer about a working tree and
+// hands a file to whoever opens files here, naming them before the press.
+// Nothing here computes a difference: the text is `git diff`'s.
 
 import { useCallback, useEffect, useState } from "react";
-import { openInEditor, statusWord, workspaceChanges, type Changes as Seen } from "./changes";
+import {
+  openInEditor,
+  openerNote,
+  openerWord,
+  statusWord,
+  whoOpensFiles,
+  workspaceChanges,
+  type Changes as Seen,
+  type Opener,
+} from "./changes";
 
 type Ask = { state: "asking" } | { state: "asked"; seen: Seen } | { state: "mute"; why: string };
 
 export function ChangesScreen({ root, name }: { root: string; name: string }) {
   const [ask, setAsk] = useState<Ask>({ state: "asking" });
   const [trouble, setTrouble] = useState<string | null>(null);
+  const [opener, setOpener] = useState<Opener | null>(null);
 
   const again = useCallback(() => {
     setAsk({ state: "asking" });
@@ -23,6 +32,19 @@ export function ChangesScreen({ root, name }: { root: string; name: string }) {
   }, [root]);
 
   useEffect(again, [again]);
+
+  // Asked before a file is pressed: the word on the button is what will
+  // happen, and an unanswered ask promises nothing.
+  useEffect(() => {
+    let listening = true;
+    whoOpensFiles().then(
+      (answer) => listening && setOpener(answer),
+      () => listening && setOpener(null),
+    );
+    return () => {
+      listening = false;
+    };
+  }, []);
 
   const open = useCallback((path: string) => {
     setTrouble(null);
@@ -39,6 +61,7 @@ export function ChangesScreen({ root, name }: { root: string; name: string }) {
         </button>
       </header>
 
+      {openerNote(opener) !== null && <p className="changes__note">{openerNote(opener)}</p>}
       {ask.state === "asking" && <p className="changes__note">Asking git…</p>}
       {ask.state === "mute" && <p className="changes__note">I cannot read the working tree: {ask.why}</p>}
       {trouble !== null && (
@@ -63,7 +86,7 @@ export function ChangesScreen({ root, name }: { root: string; name: string }) {
                   className="changes__open"
                   onClick={() => open(`${ask.seen.root}/${file.path}`)}
                 >
-                  open in the editor
+                  {openerWord(opener)}
                 </button>
               </li>
             ))}
