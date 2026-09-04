@@ -15,17 +15,14 @@ pub fn home_dir() -> Result<PathBuf, String> {
 }
 
 fn default_state_path() -> PathBuf {
-    home_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join(".claude")
-        .join("state")
+    ledger::sailor_home()
+        .unwrap_or_else(|| PathBuf::from("."))
         .join("profili.json")
 }
 
-/// `PROFILES_STATE_PATH` when set, otherwise `~/.claude/state/profili.json`.
-///
-/// The filename is data, not language: it names state already written on disk,
-/// and renaming it would orphan the profiles somebody already has.
+/// `PROFILES_STATE_PATH` when set, otherwise `profili.json` in Sailor's home.
+/// The filename is data, not language: renaming it would orphan the profiles
+/// somebody already has.
 pub fn state_path() -> PathBuf {
     env::var_os("PROFILES_STATE_PATH")
         .map(PathBuf::from)

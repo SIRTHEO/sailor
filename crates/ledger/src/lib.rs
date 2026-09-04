@@ -39,16 +39,6 @@ pub fn default_directory() -> Option<PathBuf> {
     if let Some(declared) = env_path("SAILOR_LEDGER") {
         return Some(declared);
     }
-    // THE HOME OF WHOEVER CAME BEFORE, recognised by the two files and not by
-    // the directory: moving the default without it would leave the runs where
-    // they are and the window saying «none». A migration, not a home — it goes
-    // when the old store is carried, and the store moves first.
-    if let Some(home) = env_path("HOME") {
-        let previous = home.join(".claude/state/flussi");
-        if previous.join(STATE_FILE).exists() && previous.join(EVENTS_FILE).exists() {
-            return Some(previous);
-        }
-    }
     // `None` when `HOME` is undefined: every caller has a fallback, and a home
     // deduced from nothing writes in somebody else's place.
     Some(sailor_home()?.join("ledger"))

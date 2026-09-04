@@ -57,14 +57,6 @@ pub struct Target {
     pub service: Option<Service>,
 }
 
-/// The house Sailor installed itself into before it had one of its own.
-///
-/// Not a coupling to that command line, which never reads either file: Sailor
-/// keeping its binary and its stamp in somebody else's directory. What still
-/// depends on it is a migration, not an address — a machine that released
-/// before the move has its last stamp there — and it goes when that is carried.
-pub const PREVIOUS_INSTALL_BELOW_HOME: &str = ".claude";
-
 /// The targets that exist. `every_release_target_names_a_real_binary` asks
 /// `cargo metadata` whether each `bin` is real, because `bin` is a string and a
 /// table naming a deleted crate still compiles.
