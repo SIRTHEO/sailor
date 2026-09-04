@@ -1641,6 +1641,26 @@ fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) -> Result<S
             &[("flow", &flow.id), ("fields", &stuck.join("; "))],
         ));
     }
+    // **BEFORE THE RUN, BECAUSE ONE OF THE TWO SHAPES IS SILENT.** In `when`
+    // a pointer that cannot match makes the step skip, and a skipped step
+    // closes green; in a value it breaks at the first run.
+    let dead: Vec<String> = pointers_that_cannot_match(&flow)
+        .iter()
+        .map(|found| {
+            if found.field.is_empty() {
+                format!("{} in «when» ({})", found.step, found.pointer)
+            } else {
+                format!("{} in «{}» ({})", found.step, found.field, found.pointer)
+            }
+        })
+        .collect();
+    if !dead.is_empty() {
+        println!("{report}");
+        return Err(catalogue::say(
+            "cli.flow.pointer_that_cannot_match",
+            &[("flow", &flow.id), ("fields", &dead.join("; "))],
+        ));
+    }
     // An error, not a warning: the step does not fail, it commits another
     // session's staged work under a message about something else.
     let sweeping: Vec<String> = undelimited_commits(&flow)
@@ -2574,6 +2594,108 @@ fn handed_without_choices(flow: &FlowFile) -> Vec<String> {
         })
         .map(|step| step.id.clone())
         .collect()
+}
+
+/// A pointer that cannot match the shape the step's input will have.
+#[derive(Debug)]
+struct DeadPointer {
+    step: String,
+    field: String,
+    pointer: String,
+}
+
+/// **A POINTER THAT CANNOT MATCH IS A STEP THAT NEVER RUNS.** With several
+/// dependencies, or one declared skippable, the input is an object keyed by
+/// dependency name with `with` laid over: a first segment that is neither is
+/// dead before the run starts.
+fn pointers_that_cannot_match(flow: &FlowFile) -> Vec<DeadPointer> {
+    let mut found = Vec::new();
+    for step in flow.graph.steps() {
+        // Only where the shape is certain. One dependency that cannot be
+        // skipped hands its own output over, and what is in it is the other
+        // step's business — judging that here would invent.
+        let named_by_dependency = match step.deps.as_slice() {
+            [] => false,
+            [only] => flow.graph.dependency_is_skippable(&step.id, only),
+            _ => true,
+        };
+        if !named_by_dependency {
+            continue;
+        }
+        let mut reachable: Vec<String> = step.deps.clone();
+        if let Some(Value::Object(with)) = step.with.as_ref() {
+            reachable.extend(with.keys().cloned());
+        }
+        if let Some(condition) = step.when.as_ref() {
+            if let Some(pointer) = pointer_of(condition) {
+                collect_dead(&step.id, "when", pointer, &reachable, &mut found);
+            }
+        }
+        if let Some(with) = step.with.as_ref() {
+            collect_dead_references(&step.id, "", with, &reachable, &mut found);
+        }
+    }
+    found
+}
+
+fn pointer_of(condition: &flow::Condition) -> Option<&str> {
+    match condition {
+        flow::Condition::PointerEquals { pointer, .. } => Some(pointer),
+        flow::Condition::PointerExists { pointer } => Some(pointer),
+        flow::Condition::Equals { .. } => None,
+    }
+}
+
+fn collect_dead_references(
+    step: &str,
+    field: &str,
+    value: &Value,
+    reachable: &[String],
+    found: &mut Vec<DeadPointer>,
+) {
+    match value {
+        Value::Object(fields) => {
+            if let Some(Value::String(pointer)) = fields.get(reference::FROM_KEY) {
+                collect_dead(step, field, pointer, reachable, found);
+                return;
+            }
+            for (key, inner) in fields {
+                let trail = if field.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{field}.{key}")
+                };
+                collect_dead_references(step, &trail, inner, reachable, found);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                collect_dead_references(step, field, item, reachable, found);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_dead(
+    step: &str,
+    field: &str,
+    pointer: &str,
+    reachable: &[String],
+    found: &mut Vec<DeadPointer>,
+) {
+    // An empty pointer is the whole input, and reaches it by definition.
+    let Some(first) = pointer.trim_start_matches('/').split('/').next() else {
+        return;
+    };
+    if first.is_empty() || reachable.iter().any(|name| name == first) {
+        return;
+    }
+    found.push(DeadPointer {
+        step: step.to_owned(),
+        field: field.to_owned(),
+        pointer: pointer.to_owned(),
+    });
 }
 
 /// Steps that run `git commit` without delimiting what they commit, which in a
@@ -6804,6 +6926,70 @@ mod tests {
             .contains("/vecchio/albero"));
         assert_eq!(moved.len(), 2, "spostati: {moved:?}");
         assert_eq!(left.len(), 1, "lasciati: {left:?}");
+    }
+
+    /// **A POINTER THAT CANNOT MATCH IS A STEP THAT NEVER RUNS.** With more
+    /// than one dependency the input is keyed by dependency name, so a bare
+    /// `/text` reaches nothing: in `when` the step skips and the run closes
+    /// green, which is the shape nobody can see from a run.
+    #[test]
+    fn a_pointer_that_cannot_reach_the_input_is_named_before_the_run() {
+        let flow: FlowFile = serde_json::from_value(serde_json::json!({
+            "id": "prova", "description": "d",
+            "graph": {"steps": [
+                {"id": "innesco", "deps": [], "action": "trigger", "max_attempts": 1,
+                 "when": null, "with": {"source": "manual"},
+                 "input_schema": {"type": "any"}, "output_schema": {"type": "any"}},
+                {"id": "altro", "deps": [], "action": "trigger", "max_attempts": 1,
+                 "when": null, "with": {"source": "manual"},
+                 "input_schema": {"type": "any"}, "output_schema": {"type": "any"}},
+                {"id": "morto", "deps": ["innesco", "altro"], "action": "shell_check",
+                 "max_attempts": 1,
+                 "when": {"kind": "pointer_equals", "pointer": "/status", "value": "ok"},
+                 "with": {"command": {"$from": "/text"}},
+                 "input_schema": {"type": "any"}, "output_schema": {"type": "any"}},
+                {"id": "vivo", "deps": ["innesco", "altro"], "action": "shell_check",
+                 "max_attempts": 1,
+                 "when": {"kind": "pointer_exists", "pointer": "/innesco/text"},
+                 "with": {"command": {"$from": "/altro/text"}, "cap": 3,
+                          "quanti": {"$from": "/cap"}},
+                 "input_schema": {"type": "any"}, "output_schema": {"type": "any"}}
+            ]},
+            "inputs": {}
+        }))
+        .expect("il flusso si legge");
+
+        let dead = pointers_that_cannot_match(&flow);
+        let named: Vec<(&str, &str)> = dead
+            .iter()
+            .map(|found| (found.step.as_str(), found.pointer.as_str()))
+            .collect();
+        // Both shapes of the same defect, and nothing else: the step whose
+        // pointers name a dependency is untouched, and so is the one whose
+        // pointer names a key its own `with` lays over.
+        assert_eq!(named, vec![("morto", "/status"), ("morto", "/text")], "{dead:?}");
+    }
+
+    /// THE CONTROL: one dependency that cannot be skipped hands its own output
+    /// over, and what is inside it is the other step's business. Judging there
+    /// would call every honest pointer dead.
+    #[test]
+    fn a_single_dependency_that_cannot_be_skipped_is_not_judged() {
+        let flow: FlowFile = serde_json::from_value(serde_json::json!({
+            "id": "prova", "description": "d",
+            "graph": {"steps": [
+                {"id": "innesco", "deps": [], "action": "trigger", "max_attempts": 1,
+                 "when": null, "with": {"source": "manual"},
+                 "input_schema": {"type": "any"}, "output_schema": {"type": "any"}},
+                {"id": "dopo", "deps": ["innesco"], "action": "shell_check", "max_attempts": 1,
+                 "when": {"kind": "pointer_exists", "pointer": "/text"},
+                 "with": {"command": {"$from": "/text"}},
+                 "input_schema": {"type": "any"}, "output_schema": {"type": "any"}}
+            ]},
+            "inputs": {}
+        }))
+        .expect("il flusso si legge");
+        assert!(pointers_that_cannot_match(&flow).is_empty());
     }
 
     // ── il totale che contiene un'incognita ──────────────────────────────
