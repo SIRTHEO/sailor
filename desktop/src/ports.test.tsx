@@ -411,7 +411,7 @@ describe("state: dot PLUS word", () => {
     "handed_to_human",
   ];
 
-  test("every state carries a dot and a word, and the words are all different", () => {
+  test("every state carries a mark and a word, and the words are all different", () => {
     const words = new Set<string>();
     for (const state of STATES) {
       const node = mountNode(
@@ -419,7 +419,12 @@ describe("state: dot PLUS word", () => {
         new Map([["sviluppa-sailor::implementa", { step_id: "implementa", state, attempt: 1 }]]),
       );
       const label = node.querySelector(".step-node__state") as HTMLElement;
-      expect(label.querySelector(".step-node__state-dot"), `${state} has no dot`).not.toBeNull();
+      // A MARK, NOT THE DOT ITSELF: the state that waits for a person wears a
+      // hand in its place, which is a shape where the dot was a tint.
+      expect(
+        label.querySelector(".step-node__state-dot, .step-node__hand"),
+        `${state} has no mark`,
+      ).not.toBeNull();
       const word = (label.textContent ?? "").trim();
       // The dot alone would be color and nothing else: the word is what survives
       // greyscale, and that is prohibition 5 to the letter.
