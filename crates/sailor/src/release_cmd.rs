@@ -131,8 +131,14 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     let root = sources_root()?;
     let head_rev = git_text(&root, &["rev-parse", "HEAD"])?;
     let head_short = git_text(&root, &["rev-parse", "--short", "HEAD"])?;
+    // The parts the target is made of, not `crates/` alone: the window is half
+    // a page, and a stamp read over the engine only would name a commit that
+    // changed nothing inside it.
+    let parts = release::parts_of(selected);
     let source_rev = {
-        let revision = git_text(&root, &["log", "-1", "--format=%H", "--", "crates/"])?;
+        let mut ask = vec!["log", "-1", "--format=%H", "--"];
+        ask.extend(parts.iter().copied());
+        let revision = git_text(&root, &ask)?;
         if revision.is_empty() {
             head_rev.clone()
         } else {
@@ -140,14 +146,19 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         }
     };
 
-    let dirty = git_output(&root, &["status", "--porcelain", "--", "crates"])?;
+    let mut ask = vec!["status", "--porcelain", "--"];
+    ask.extend(parts.iter().copied());
+    let dirty = git_output(&root, &ask)?;
     let dirty_count = String::from_utf8_lossy(&dirty.stdout).lines().count();
     if dirty_count > 0 {
         println!(
             "{}",
             catalogue::say(
                 "cli.release.uncommitted_stay_out",
-                &[("count", &dirty_count.to_string())],
+                &[
+                    ("count", &dirty_count.to_string()),
+                    ("parts", &parts.join(", ")),
+                ],
             )
         );
     }
@@ -172,11 +183,20 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     // I crate stanno alla radice dell'albero dal trasloco del 27/08/2026: non
     // c'è più un sottoalbero da cui compilare.
     let cloned_rust = repository.clone();
+    // THE PAGE IS BUILT FIRST, AND INSIDE THE CLONE. The shell embeds `dist/`
+    // at compile time: build it after, and the binary carries whatever page was
+    // lying there — on a machine that develops the window, the working tree's.
+    if let Some(page) = selected.page_rel {
+        build_the_page(&root, &repository, page)?;
+    }
     println!("{}", catalogue::say("cli.release.building", &[]));
+    let cloned_manifest = repository.join(selected.manifest_rel);
     let build = Command::new("cargo")
         .current_dir(&cloned_rust)
         .env("CARGO_TARGET_DIR", &build_target)
         .args(["build", "--release", "--bin", selected.bin])
+        .arg("--manifest-path")
+        .arg(&cloned_manifest)
         .output()
         .map_err(|error| format!("cannot start cargo: {error}"))?;
     print_tail(&combined_output(&build), 5);
@@ -192,11 +212,21 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         ));
     }
 
-    if options.skip_tests {
+    // One suite per manifest the target is judged by: the root's, which holds
+    // the judges of the whole tree, and the target's own when it declares one —
+    // `cargo test` at the root never enters a nested workspace.
+    let judges = if options.skip_tests {
         println!("{}", catalogue::say("cli.release.tests_skipped", &[]));
+        Vec::new()
     } else {
-        println!("{}", catalogue::say("cli.release.running_the_suite", &[]));
-        let suite_path = temporary.path.join("suite.txt");
+        release::manifests_to_judge(selected)
+    };
+    for (number, manifest_rel) in judges.iter().enumerate() {
+        println!(
+            "{}",
+            catalogue::say("cli.release.running_the_suite", &[("manifest", manifest_rel)])
+        );
+        let suite_path = temporary.path.join(format!("suite-{number}.txt"));
         let suite_file = File::create(&suite_path)
             .map_err(|error| format!("cannot create {}: {error}", suite_path.display()))?;
         let suite_error = suite_file.try_clone().map_err(|error| {
@@ -212,7 +242,10 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
             // ones after it do not fail: they never start. A release that reads
             // "the suite is red" would name one binary while ten more were
             // never attempted, and whoever repairs that one releases blind.
-            .args(["test", "--release", "--no-fail-fast", "--", "--nocapture"])
+            .args(["test", "--release", "--no-fail-fast"])
+            .arg("--manifest-path")
+            .arg(repository.join(manifest_rel))
+            .args(["--", "--nocapture"])
             .stdout(Stdio::from(suite_file))
             .stderr(Stdio::from(suite_error))
             .status()
@@ -277,7 +310,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         return Ok(0);
     }
 
-    print_changes(&root, &stamp_to_read, &head_rev, &head_short)?;
+    print_changes(&root, &stamp_to_read, &head_rev, &head_short, &parts)?;
     if options.dry_run {
         println!("{}", catalogue::say("cli.release.dry_run", &[]));
         return Ok(0);
@@ -522,6 +555,66 @@ fn status_description(status: ExitStatus) -> String {
         .unwrap_or_else(|| "ended by a signal".to_string())
 }
 
+/// The page of the clone, built where the shell will look for it.
+///
+/// **THE MODULES ARE BORROWED WHEN THE LOCK IS THE SAME, AND NEVER OTHERWISE.**
+/// A quarter of a gigabyte per release is a release nobody runs; the wrong
+/// modules are a window carrying versions nobody wrote.
+fn build_the_page(root: &Path, repository: &Path, page_rel: &str) -> Result<(), String> {
+    let tree_page = root.join(page_rel);
+    let cloned_page = repository.join(page_rel);
+    let lock = "package-lock.json";
+    let modules = release::how_to_get_the_modules(
+        &fs::read_to_string(cloned_page.join(lock)).unwrap_or_default(),
+        &fs::read_to_string(tree_page.join(lock)).unwrap_or_default(),
+        tree_page.join("node_modules").is_dir(),
+    );
+    let borrowed = matches!(modules, release::Modules::Borrow)
+        && match std::os::unix::fs::symlink(
+            tree_page.join("node_modules"),
+            cloned_page.join("node_modules"),
+        ) {
+            Ok(()) => {
+                println!("{}", catalogue::say("cli.release.borrowing_the_modules", &[]));
+                true
+            }
+            Err(error) => {
+                // Not a failure: installing is always available, and one that
+                // said nothing would look like a release that borrowed.
+                eprintln!(
+                    "{}",
+                    catalogue::say(
+                        "cli.release.cannot_borrow_the_modules",
+                        &[("error", &error.to_string())]
+                    )
+                );
+                false
+            }
+        };
+    if !borrowed {
+        println!("{}", catalogue::say("cli.release.installing_the_modules", &[]));
+        command_success(
+            Command::new("npm").current_dir(&cloned_page).arg("ci"),
+            &catalogue::say("cli.release.modules_would_not_install", &[]),
+        )?;
+    }
+
+    println!("{}", catalogue::say("cli.release.building_the_page", &[]));
+    // `npm run build` type-checks the page and runs its tests before it writes
+    // anything: a page that does not pass produces no `dist`, and the release
+    // stops here rather than putting a shell around it.
+    let built = Command::new("npm")
+        .current_dir(&cloned_page)
+        .args(["run", "build"])
+        .output()
+        .map_err(|error| format!("cannot start npm: {error}"))?;
+    print_tail(&combined_output(&built), 10);
+    if !built.status.success() {
+        return Err(catalogue::say("cli.release.page_does_not_build", &[]));
+    }
+    Ok(())
+}
+
 fn make_temporary_tree() -> Result<TemporaryTree, String> {
     let parent = env::var_os("TMPDIR")
         .filter(|value| !value.is_empty())
@@ -601,6 +694,7 @@ fn print_changes(
     stamp: &Path,
     head_rev: &str,
     head_short: &str,
+    parts: &[&str],
 ) -> Result<(), String> {
     println!("{}", catalogue::say("cli.release.what_goes_in", &[]));
     let previous = fs::read_to_string(stamp)
@@ -621,17 +715,22 @@ fn print_changes(
             })?;
         if exists.success() {
             let range = format!("{previous}..{head_rev}");
-            let log = git_output(root, &["log", "--oneline", &range, "--", "crates"])?;
+            let mut ask = vec!["log", "--oneline", &range, "--"];
+            ask.extend(parts.iter().copied());
+            let log = git_output(root, &ask)?;
             print!("{}", String::from_utf8_lossy(&log.stdout));
-            let count = git_text(root, &["rev-list", "--count", &range, "--", "crates"])?;
+            let mut ask = vec!["rev-list", "--count", &range, "--"];
+            ask.extend(parts.iter().copied());
+            let count = git_text(root, &ask)?;
             println!(
                 "   {}",
                 catalogue::say(
-                    "cli.release.commits_touching_crates",
+                    "cli.release.commits_touching_the_parts",
                     &[
                         ("count", &count),
                         ("from", short_revision(&previous)),
                         ("to", head_short),
+                        ("parts", &parts.join(", ")),
                     ],
                 )
             );

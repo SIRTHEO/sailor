@@ -27,6 +27,12 @@ pub struct Target {
     pub name: &'static str,
     /// The `cargo` target to build.
     pub bin: &'static str,
+    /// The manifest that builds it, relative to the **sources**: a build
+    /// launched at the root never enters a nested workspace.
+    pub manifest_rel: &'static str,
+    /// The directory of the page the binary embeds at compile time — the one
+    /// holding `package.json` — or `None` for a binary with no page.
+    pub page_rel: Option<&'static str>,
     /// The copy inside the build tree, relative to the **sources** — the one a
     /// local `cargo build` overwrites.
     pub live_rel: &'static str,
@@ -70,12 +76,96 @@ pub const TARGETS: &[Target] = &[
     Target {
         name: "sailor",
         bin: "sailor",
+        manifest_rel: ROOT_MANIFEST,
+        page_rel: None,
         live_rel: "target/release/sailor",
         safe_rel: "bin/sailor",
         stamp_rel: "state/sailor-binary-commit",
         service: None,
     },
+    // The window, until now only launchable from inside `target/`, which a
+    // `cargo clean` empties. Three things differ from the row above, all
+    // declared: a workspace of its own, a page to build first, and cargo
+    // writing beside that shell instead of at the root.
+    Target {
+        name: "window",
+        bin: "sailor-desktop",
+        manifest_rel: "desktop/src-tauri/Cargo.toml",
+        page_rel: Some("desktop"),
+        live_rel: "desktop/src-tauri/target/release/sailor-desktop",
+        safe_rel: "bin/sailor-desktop",
+        stamp_rel: "state/window-binary-commit",
+        service: None,
+    },
 ];
+
+/// The manifest at the root of the sources: the workspace of the engine.
+pub const ROOT_MANIFEST: &str = "Cargo.toml";
+
+/// The manifests a release of this target runs the suite of, in order: the
+/// root's, then the target's own when it declares one. Without the second a
+/// window would go into service with its shell never judged.
+///
+/// **THE PAGE'S TESTS ARE NOT HERE, AND THAT IS NOT AN OMISSION.** They run
+/// inside its build, so a page that does not pass produces no `dist`.
+pub fn manifests_to_judge(target: &Target) -> Vec<&'static str> {
+    let mut all = vec![ROOT_MANIFEST];
+    if target.manifest_rel != ROOT_MANIFEST {
+        all.push(target.manifest_rel);
+    }
+    all
+}
+
+/// The directories of the sources a target is made of, for git: `crates/`
+/// always, plus the top of whatever else it declares. A window whose parts
+/// were read as `crates/` only would be stamped with a commit that changed
+/// nothing in it.
+pub fn parts_of(target: &Target) -> Vec<&'static str> {
+    let mut parts = vec!["crates"];
+    // The root's manifest names no directory of its own, and `crates/` is
+    // already here; a nested one names the tree it sits in.
+    let manifest_dir = target
+        .manifest_rel
+        .contains('/')
+        .then(|| top_of(target.manifest_rel));
+    for part in [manifest_dir, target.page_rel.map(top_of)]
+        .into_iter()
+        .flatten()
+    {
+        if !parts.contains(&part) {
+            parts.push(part);
+        }
+    }
+    parts
+}
+
+/// The first directory of a relative path.
+fn top_of(path: &'static str) -> &'static str {
+    path.split('/').next().unwrap_or(path)
+}
+
+/// What a release has to do about the page's modules before it can build it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Modules {
+    /// The tree holds exactly these ones: the clone borrows them instead of
+    /// downloading a quarter of a gigabyte again.
+    Borrow,
+    /// Install them inside the clone, from the lock the clone carries.
+    Install,
+}
+
+/// Whether the clone may borrow the tree's modules, from the two locks.
+///
+/// **THE LOCK IS THE WHOLE ANSWER.** Borrowed against a different one they
+/// build a page nobody wrote — a window in service carrying versions its
+/// commit never named — so byte equality is asked of the files themselves.
+pub fn how_to_get_the_modules(cloned_lock: &str, tree_lock: &str, tree_has_them: bool) -> Modules {
+    if tree_has_them && cloned_lock == tree_lock && !cloned_lock.is_empty() {
+        Modules::Borrow
+    } else {
+        Modules::Install
+    }
+}
 
 /// The target with this name, if it exists.
 pub fn target(name: &str) -> Option<&'static Target> {
@@ -202,6 +292,59 @@ mod tests {
         assert_eq!(
             ready.unknown,
             vec!["arrivato-per-altra-via.txt".to_string()]
+        );
+    }
+
+    /// **THE ROOT'S SUITE DOES NOT ENTER A NESTED WORKSPACE.** A release that
+    /// ran only the root's would put a shell into service nothing had judged.
+    #[test]
+    fn a_target_with_a_workspace_of_its_own_is_judged_by_two_suites() {
+        let engine = target("sailor").expect("the table names it");
+        let window = target("window").expect("the table names it");
+
+        assert_eq!(manifests_to_judge(engine), vec![ROOT_MANIFEST]);
+        assert_eq!(
+            manifests_to_judge(window),
+            vec![ROOT_MANIFEST, "desktop/src-tauri/Cargo.toml"],
+        );
+    }
+
+    /// A page is built before the shell that embeds it, so the target says
+    /// where it is. Saying the engine had one would send the release looking
+    /// for a `package.json` at the root of the sources.
+    #[test]
+    fn only_the_target_that_carries_a_page_declares_one() {
+        assert_eq!(target("sailor").expect("named").page_rel, None);
+        assert_eq!(target("window").expect("named").page_rel, Some("desktop"));
+    }
+
+    /// **THE MODULES ARE BORROWED ONLY AGAINST THE SAME LOCK**, or the window
+    /// goes into service carrying versions its own commit never named.
+    #[test]
+    fn the_modules_are_borrowed_only_when_the_two_locks_are_the_same_bytes() {
+        let lock = "{\"lockfileVersion\": 3}";
+        assert_eq!(how_to_get_the_modules(lock, lock, true), Modules::Borrow);
+        assert_eq!(
+            how_to_get_the_modules(lock, "{\"lockfileVersion\": 2}", true),
+            Modules::Install
+        );
+        // The tree may simply not have them — a fresh checkout, or a cleaned
+        // one. Then there is nothing to borrow and the answer is not "yes".
+        assert_eq!(how_to_get_the_modules(lock, lock, false), Modules::Install);
+        // And two locks that are both unreadable are not "the same lock": an
+        // empty string is what a missing file reads as, and borrowing on it
+        // would be borrowing on no evidence at all.
+        assert_eq!(how_to_get_the_modules("", "", true), Modules::Install);
+    }
+
+    /// What a release leaves out and what its stamp names are read over the
+    /// parts the target is really made of, not over `crates/` alone.
+    #[test]
+    fn the_parts_of_a_target_are_the_directories_it_is_made_of() {
+        assert_eq!(parts_of(target("sailor").expect("named")), vec!["crates"]);
+        assert_eq!(
+            parts_of(target("window").expect("named")),
+            vec!["crates", "desktop"]
         );
     }
 
