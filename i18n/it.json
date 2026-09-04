@@ -434,6 +434,7 @@
   "window.flow.live.capped": "fermo al tetto",
   "window.flow.live.running": "{done} di {steps}",
   "window.flow.live.stopped": "fermato a mano",
+  "window.flow.live.stopping": "si sta fermando · {done} di {steps}",
   "window.flow.live.waiting": "aspetta te",
   "window.flow.live.went": "è andato",
   "window.step.kind.branch": "ramo",

@@ -14,6 +14,8 @@ export const STILL_SPEAKING_SECS = 2;
 export type FlowLive =
   /** A run of it is going: how far it has got, and whether it is talking. */
   | { state: "running"; done: number; steps: number; speaking: boolean }
+  /** Somebody asked it to stop, and it has not finished stopping. */
+  | { state: "stopping"; done: number; steps: number }
   /** It stopped on somebody: nothing will unblock it but a person. */
   | { state: "handed_to_human"; waiting: number }
   /** The last run ended, and how. `at` is when. */
@@ -58,6 +60,12 @@ export function liveOf(run: RunSnapshot | undefined, now: number): FlowLive | nu
 
   if (run.status === "running") {
     const done = states.filter((step) => step.state !== "running").length;
+    // **A STOP THAT WAS ASKED FOR IS NOT NOTHING.** The run stays «running»
+    // until the step in flight closes, so the status alone says «going» to
+    // whoever just pressed Stop.
+    if (run.events.some((event) => event.kind === "stop_requested")) {
+      return { state: "stopping", done, steps: states.length };
+    }
     const speaking = states.some(
       (step) =>
         step.state === "running" &&
