@@ -76,6 +76,25 @@ back. `sailor-live` builds first and touches what is running **only if** the
 build succeeded: the window survives, changes its title and shows the error.
 The long version is fault 11 in `docs/guasti-incontrati.md`.
 
+And a build no longer takes the window away either. It builds on every save —
+that is how you learn the code compiles — but the swap **waits to be asked**:
+the bar says a new build is ready and you take it when the pane you are typing
+in is not in the middle of something. `sailor-live --at-once` restores the old
+behaviour for whoever is not working inside what they are building.
+
+**To use the window without a supervisor** — no rebuilding, no vite, the page
+built into the binary:
+
+```sh
+cd desktop && npm run build && cargo build --release --manifest-path src-tauri/Cargo.toml
+./src-tauri/target/release/sailor-desktop
+```
+
+The terminals it opens are held by `sailor terminal host`, a process that
+outlives the window, so this one and the live one can replace each other
+without closing a session. It is not installed anywhere yet: there is no
+release target for the window, which is written down in `docs/da-fare.md`.
+
 ## The commands
 
 | command | what it is for |
