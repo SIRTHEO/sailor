@@ -4236,6 +4236,56 @@ tr[data-followable]:hover {
   color: var(--state-waiting);
 }
 
+/* WHAT IS HAPPENING TO A FLOW, on the row that names it. The mark takes the
+   state's tint instead of the lane's, and only the states that ask something
+   colour the words as well: a column of green «went» would spend the whole
+   palette on rows nobody has to look at. */
+.rail__item[data-live="running"] { --state: var(--state-running); }
+.rail__item[data-live="handed_to_human"] { --state: var(--state-human); }
+.rail__item[data-live="broke"] { --state: var(--state-broke); }
+.rail__item[data-live="capped"] { --state: var(--state-capped); }
+.rail__item[data-live="went"] { --state: var(--state-went); }
+.rail__item[data-live="stopped"] { --state: var(--state-waiting); }
+
+.rail__item[data-live] .rail__dot {
+  background: var(--state);
+}
+
+.rail__item[data-live="handed_to_human"] .rail__note,
+.rail__item[data-live="broke"] .rail__note,
+.rail__item[data-live="capped"] .rail__note {
+  color: var(--state);
+}
+
+.rail__hand {
+  display: inline-flex;
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  color: var(--state, var(--state-human));
+}
+
+.rail__hand svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* THE HAND. It takes the dot's place in the one state that waits for a person,
+   and its size is the dot's box so nothing on the row moves when a step passes
+   from running to handed over. */
+.step-node__hand {
+  display: inline-flex;
+  width: 11px;
+  height: 11px;
+  flex: 0 0 auto;
+  color: var(--state, var(--state-human));
+}
+
+.step-node__hand svg {
+  width: 100%;
+  height: 100%;
+}
+
 /* IT IS SPEAKING RIGHT NOW, which «alive» does not say: a terminal that has
    just printed thirty lines and one stuck for eight minutes are both alive.
    The ring turns while bytes arrive and stops after a breath of silence; the
