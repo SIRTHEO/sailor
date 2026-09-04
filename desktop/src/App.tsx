@@ -7,6 +7,8 @@ import {
   ReactFlow,
   applyEdgeChanges,
   applyNodeChanges,
+  useNodesInitialized,
+  useReactFlow,
   type Connection,
   type Edge,
   type EdgeChange,
@@ -29,7 +31,7 @@ import { stepUsageOfRun, type StepUsage } from "./stepusage";
 import { stepStatesOfCanvas, stepStatesOfRun } from "./runstate";
 import { BlankCanvas, type PlacesAsk } from "./BlankCanvas";
 import { MACHINE, MACHINE_GROUND, PLACES, inTheStrip, type Section } from "./places";
-import { World, type FlowGroup } from "./World";
+import { World, OF_THIS_TREE, type FlowGroup } from "./World";
 import { ChangesScreen } from "./ChangesScreen";
 import type { Project } from "./workspaces";
 import {
@@ -96,6 +98,24 @@ import {
 import { MODEL_KEY, type Tool, type ToolDiscovery } from "./tools";
 
 const nodeTypes = { step: StepNode, flowBand: FlowBandNode, trigger: TriggerNode };
+
+/**
+ * **THE FIT WAITS FOR THE PAPER TO BE MEASURED.** Fired in the same commit it
+ * frames what is on its way out, which on a narrow window leaves every step off
+ * the side; `useNodesInitialized` says when the new nodes have a size. `maxZoom`
+ * stops it at life size, where a one-step flow drew that step twice as big.
+ */
+function FitToFlow({ focus }: { focus: string | null }) {
+  const measured = useNodesInitialized();
+  const { fitView } = useReactFlow();
+
+  useEffect(() => {
+    if (!measured) return;
+    void fitView({ padding: 0.15, maxZoom: 1, duration: 300 });
+  }, [measured, focus, fitView]);
+
+  return null;
+}
 
 /** How much room the trigger takes to the left of its lane. */
 const TRIGGER_WIDTH = 240;
@@ -749,27 +769,7 @@ export default function App() {
     setEdges(canvas.edges);
   }, [canvas]);
 
-  // Focus moves the viewport, it does not rebuild the layout: the last known
-  // box is read from a ref, so a keystroke does not re-centre the canvas while
-  // a field is being edited elsewhere.
-  const bandsRef = useRef(layout.bands);
-  bandsRef.current = layout.bands;
   const flowInstance = useRef<ReactFlowInstance | null>(null);
-
-  useEffect(() => {
-    const instance = flowInstance.current;
-    if (!instance) return;
-    if (focusName === null) {
-      instance.fitView({ padding: 0.15, duration: 300 });
-      return;
-    }
-    const band = bandsRef.current.get(focusName);
-    if (!band) return;
-    void instance.fitBounds(
-      { x: band.x, y: band.y, width: band.width, height: band.height },
-      { padding: 0.2, duration: 300 },
-    );
-  }, [focusName]);
 
   useEffect(() => {
     flowInstance.current?.fitView({ padding: 0.15 });
@@ -1174,6 +1174,20 @@ export default function App() {
     [railGroups, layout, flows],
   );
 
+  /**
+   * **THE BOARD OPENS ON A FLOW**, the first of this tree's own or of any
+   * source: it draws one, and an empty canvas beside a column of thirty-one
+   * names teaches nobody the first gesture. With no flow at all the blank card
+   * takes the screen, which is the state that does teach.
+   */
+  useEffect(() => {
+    if (place !== "board" || focusName !== null) return;
+    const ownFirst = railGroups.find((group) => group.origin === OF_THIS_TREE)?.flows[0]?.name;
+    const anyFirst = railGroups.flatMap((group) => group.flows)[0]?.name;
+    const opening = ownFirst ?? anyFirst;
+    if (opening !== undefined) setFocusName(opening);
+  }, [place, focusName, railGroups]);
+
   const focusedBand = focusName ? layout.bands.get(focusName) : undefined;
   const focusedWorking = focusName ? flows.get(focusName) : undefined;
   const focusedDirty = focusedWorking ? isDirty(focusedWorking) : false;
@@ -1287,7 +1301,6 @@ export default function App() {
           saved, nor whether it was running, nor a way to run it. Save and Run
           need a subject, and the subject is the flow the rail has in focus. */}
       <TopBar
-        onBoard={place === "board"}
         crumbs={crumbs}
         chips={
           <>
@@ -1308,7 +1321,10 @@ export default function App() {
             <WhoChip native={NATIVE} />
           </>
         }
-        flowName={focusName}
+        /* THE BAR SPEAKS OF THE FLOW ONLY WHERE THE FLOW IS DRAWN: its size,
+           its unsaved mark and the two gestures that act on it stood in every
+           place, about a flow the place in view does not show. */
+        flowName={place === "board" ? focusName : null}
         steps={focusedWorking ? focusedWorking.flow.graph.steps.length : 0}
         dirty={focusedDirty}
         busy={focusName !== null && saving.has(focusName)}
@@ -1351,7 +1367,9 @@ export default function App() {
         flowGroups={worldGroups}
         focusName={focusName}
         onFlow={(name) => {
-          setFocusName((current) => (name !== null && current === name ? null : name));
+          // PRESSING THE OPEN FLOW KEEPS IT OPEN: closing it once meant «see
+          // them all», and now would mean a blank board.
+          setFocusName((current) => (name === null ? null : (current === name ? current : name)));
           setSelectedNode(null);
         }}
         onNewFlow={addFlow}
@@ -1502,6 +1520,7 @@ export default function App() {
                 gives the eye a measure, the coarse one gives it a place. Both
                 are declared under 1.5:1, because a grid that reads competes
                 with the nodes and the nodes are the figure. */}
+            <FitToFlow focus={focusName} />
             <Background id="fine" gap={12} variant={BackgroundVariant.Lines} color="var(--grid-fine)" />
             <Background id="coarse" gap={96} variant={BackgroundVariant.Lines} color="var(--grid-coarse)" />
 
@@ -1542,21 +1561,17 @@ export default function App() {
               />
             )}
 
-            {/* LA CASSETTA STA QUI DENTRO, ed è tutto il punto del lavoro: chi
-                compone non esce più dalla tela per prendere un attrezzo.
-                Sta dentro `ReactFlow` e non accanto perché `Panel` la disegna
-                fuori dal riquadro che pan e zoom trasformano — dentro la tela,
-                ferma rispetto ad essa.
+            {/* THE TOOLBOX SITS IN HERE, which is the whole point of the
+                work: whoever composes no longer leaves the canvas to take a
+                tool. Inside `ReactFlow` and not beside it because `Panel` draws
+                outside the box pan and zoom transform — in the canvas, still
+                against it.
 
-                CON ZERO FLUSSI NON C'È: quel momento è della tela vuota, che
-                insegna il primo gesto. Due inviti nello stesso schermo si
-                annullano — è la stessa regola per cui una vista ha un solo
-                elemento isolato. */}
-            {flows.size > 0 && (
-              <Toolbar
-                flowName={focusName}
-                onAdd={(kind) => focusName && addStep(focusName, kind)}
-              />
+                WITH NO FLOW DRAWN IT IS NOT THERE: that moment belongs to the
+                empty canvas, which teaches the first gesture. Two invitations
+                on one screen cancel each other out. */}
+            {focusName !== null && (
+              <Toolbar flowName={focusName} onAdd={(kind) => addStep(focusName, kind)} />
             )}
           </ReactFlow>
 
@@ -1783,12 +1798,6 @@ function runProgress(run: RunSnapshot): { done: number; running: number } {
 }
 
 interface TopBarProps {
-  /**
-   * Whether the board — and with it the column — is the place in view. The bar
-   * is the program's and is drawn everywhere; the line about focusing a flow
-   * belongs to one place only.
-   */
-  onBoard: boolean;
   /** Where the person is: the section, and the entry inside it. */
   crumbs: string[];
   /** What runs, what it costs, who as: drawn from every place. */
@@ -1817,7 +1826,6 @@ interface TopBarProps {
  * a number the flow really carries.
  */
 function TopBar({
-  onBoard,
   crumbs,
   chips,
   flowName,
@@ -1869,13 +1877,10 @@ function TopBar({
         ))}
       </nav>
 
-      {/* A LINE THAT NAMES THE COLUMN IS SILENT WHERE THERE IS NO COLUMN. The
-          window opens away from the board, which is the only place holding
-          one, and six places out of seven were being sent somewhere they
-          are not. */}
-      {flowName === null ? (
-        onBoard && <span className="topbar__none">no flow in focus — pick one in the rail</span>
-      ) : (
+      {/* NOTHING IS SAID ABOUT A FLOW WHERE THERE IS NONE. «No flow in focus —
+          pick one in the rail» named a column six places have not got, and asked
+          for a gesture the board now makes on its own. */}
+      {flowName !== null && (
         <span className="topbar__flow">
           <span className="topbar__steps">{steps} steps</span>
           {dirty && (

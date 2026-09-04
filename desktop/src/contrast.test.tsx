@@ -381,18 +381,24 @@ describe("the window at rest", () => {
   });
 });
 
-describe("the window with a flow focused", () => {
-  test("DIMMING A LANE MUST NOT DIM ITS WORDS", () => {
-    // Clicking a flow in the column puts `data-dimmed` on the other lanes with
-    // `opacity: 0.3`, which sank their description to 1.47:1. It is the same
-    // mechanism prohibition 5 condemns elsewhere.
+describe("the window with a flow chosen", () => {
+  /**
+   * There is nothing left to dim: the board draws one flow. Fading the others
+   * had sunk their description to 1.47:1, and faded is not separated anyway —
+   * on a tree with thirty-one flows it was a mile of ghosts.
+   */
+  test("ONE LANE IS DRAWN, AND EVERY WORD IN IT IS LEGIBLE", () => {
     const { container } = render(<App />);
     goToFlows();
     const rail = Array.from(container.querySelectorAll("button.rail__item")).find(
       (button) => button.querySelector(".rail__label")?.textContent === "relay",
     );
     fireEvent.click(rail as HTMLElement);
-    expect(document.querySelectorAll("[data-dimmed]").length).toBeGreaterThan(0);
+    expect(
+      document.querySelectorAll("[data-dimmed]"),
+      "something is still drawn faded",
+    ).toHaveLength(0);
+    expect(container.querySelectorAll(".flow-band"), "more than one lane on the paper").toHaveLength(1);
     expect(measure(70)).toEqual([]);
   });
 });

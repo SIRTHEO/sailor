@@ -1848,24 +1848,6 @@ tr[data-followable]:hover {
   box-shadow: var(--shadow);
 }
 
-/* Where the step will land, written before you press: the canvas shows every
-   lane at once, and without this line the right lane is a guess. */
-.toolbar__target {
-  font-family: var(--font-display);
-  font-size: var(--text-micro);
-  font-weight: 600;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.toolbar__target-name {
-  font-family: var(--font-data);
-  letter-spacing: 0;
-  text-transform: none;
-  color: var(--ink);
-}
-
 /* THE TOOLS WRAP, and this is half the corridor rule. A max-width on a flex
    container does NOT restrain its children: the box shrinks to the cap and the
    row overflows anyway, over the minimap, while the bar's
@@ -1940,19 +1922,6 @@ tr[data-followable]:hover {
   text-transform: uppercase;
   line-height: 1.3;
   text-align: center;
-}
-
-/* WITH NO FOCUSED FLOW THE BAR SHRINKS, IT DOES NOT GREY OUT. Seven disabled
-   buttons take the space of seven gestures while offering none, and a reason
-   hidden in a `title` is a reason nobody looks for. */
-.toolbar__prompt {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-3);
-  margin: 0;
-  font-size: var(--text-body);
-  color: var(--muted);
 }
 
 /* ── the blank canvas ────────────────────────────────────────────────────
@@ -2899,26 +2868,14 @@ tr[data-followable]:hover {
   color: var(--state, var(--muted));
 }
 
-/* The lane badge sits on top, thin: it says which flow the step belongs to
-   without stealing tint from the state, which is what gets looked at. */
+/* The flow's tint, thin and on top: it ties the step to its band without
+   stealing tint from the state, which is what gets looked at. */
 .step-node__flow {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   height: 2px;
-}
-
-/* DIMMED DOES NOT MEAN UNREADABLE (rule 6, and rule 5 by reflection). An
-   `opacity` on the whole node puts a step name at 1.86:1. What retreats here
-   are the SIGNS: the node loses its own paper and merges into the canvas
-   ground, and the lane badge goes out. The words stay as they were. */
-.step-node[data-dimmed] {
-  background: var(--bg);
-}
-
-.step-node[data-dimmed] .step-node__flow {
-  opacity: 0.3;
 }
 
 /* React Flow's attribution stays: hiding it is something you buy a licence
@@ -2942,18 +2899,6 @@ tr[data-followable]:hover {
   transition:
     background var(--motion) var(--ease),
     border-color var(--motion) var(--ease);
-}
-
-/* As for a node: an unfocused lane loses its veil and its mark, not its
-   words. */
-.flow-band[data-dimmed] {
-  background: transparent;
-  border-color: var(--line);
-  border-style: dotted;
-}
-
-.flow-band[data-dimmed] .flow-band__mark {
-  opacity: 0.3;
 }
 
 .flow-band__head {
@@ -4678,13 +4623,6 @@ tr[data-followable]:hover {
   border-radius: var(--radius);
   padding: 2px var(--space-1);
   flex-shrink: 0;
-}
-
-/* No flow open is a fact, not an absence to hide. */
-.topbar__none {
-  font-size: var(--text-small);
-  color: var(--muted);
-  white-space: nowrap;
 }
 
 /* Unsaved work: the dot carries the eye, the word carries the meaning —
