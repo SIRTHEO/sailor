@@ -1052,9 +1052,61 @@ fn current_uid() -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::MetadataExt;
 
     fn a(words: &[&str]) -> Vec<String> {
         words.iter().map(|w| w.to_string()).collect()
+    }
+
+    /// **A RELEASE DOES NOT STOP WHAT IS ALREADY RUNNING**: the terminal host
+    /// holds the shells, and one dying at every build would take them. **The
+    /// inode is what this reads**, that being the mechanism: a copy over the
+    /// same inode rewrites the image under a running process, which is not
+    /// refused here but punished later, when a page it had not read no longer
+    /// matches its signature. «Alive a moment after» would pass on a toy.
+    #[test]
+    fn replacing_a_binary_leaves_the_process_that_is_running_it_alive() {
+        let scratch = std::env::temp_dir().join(format!(
+            "sailor-release-in-servizio-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or_default()
+        ));
+        fs::create_dir_all(&scratch).expect("the scratch directory");
+        let in_service = scratch.join("in-servizio");
+        atomic_copy(Path::new("/bin/sleep"), &in_service).expect("the first copy");
+
+        let held = fs::metadata(&in_service).expect("what is in service").ino();
+        let mut running = std::process::Command::new(&in_service)
+            .arg("300")
+            .spawn()
+            .expect("the binary in service runs");
+
+        // The release of a different binary over the one being run.
+        atomic_copy(Path::new("/bin/echo"), &in_service).expect("the replacement");
+
+        let still_here = running.try_wait().expect("ask after it").is_none();
+        let _ = running.kill();
+        let _ = running.wait();
+        // THE FILE IS COMPARED, NOT RUN: a copy of a system binary loses its
+        // signature, and what the kernel then does to it is a fact about the
+        // machine and not about the release.
+        let in_service_now = fs::read(&in_service).expect("read what is in service");
+        let the_new_one = fs::read("/bin/echo").expect("read the new binary");
+        let now_held = fs::metadata(&in_service).expect("what is in service now").ino();
+        let _ = fs::remove_dir_all(&scratch);
+
+        assert!(still_here, "the release stopped what was running");
+        assert_eq!(
+            in_service_now, the_new_one,
+            "the file in service is not the new binary"
+        );
+        assert_ne!(
+            held, now_held,
+            "the new binary was written over the file the running process holds"
+        );
     }
 
     #[test]

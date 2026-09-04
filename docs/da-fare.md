@@ -264,6 +264,16 @@ dichiarati:
   `a_build_does_not_take_the_window.rs`. Resta vero il contorno: chi ha solo
   l'eseguibile non ha niente di tutto questo, ed è
   `the_live_mode_belongs_to_a_source_tree` a tenerlo.
+  **E dal 04/09/2026 anche la metà della riga di comando è tenuta da una prova**:
+  `replacing_a_binary_leaves_the_process_that_is_running_it_alive` accende un
+  processo vero, gli sostituisce sotto il binario come fa il rilascio, e guarda
+  che sia ancora vivo **e che l'inode sia cambiato**. L'inode è il punto: una
+  copia sopra lo stesso inode riscrive l'immagine sotto un processo che gira, e
+  questo sistema non la rifiuta — la punisce dopo, quando una pagina non ancora
+  letta non corrisponde più alla firma. Una prova sul solo «è ancora vivo un
+  istante dopo» passerebbe su un giocattolo che sta tutto nelle pagine già
+  lette, e mentirebbe su ogni binario vero. Misura di stanotte: l'host dei
+  terminali ha attraversato vivo cinque rilasci in quattro ore.
 - ~~**Un motore che dice di non poter lavorare ed esce ZERO non fa scattare
   nessun ripiego**~~ — **chiuso il 01/09/2026**, con tre prove e due mutanti.
   Trovato da un giudice che verificava la chiusura del guasto 31, cioè **dal
