@@ -249,11 +249,28 @@ export function KindIcon({
 }
 
 /**
- * How long a step took, at the precision that answers the question.
- *
- * Under ten seconds a tenth is the difference between "instant" and "slow", and
- * over a minute nobody compares tenths. Comma for the decimal, like every other
- * number this window prints.
+ * **THE ONE STATE THAT WILL NOT UNBLOCK ITSELF GETS A SHAPE OF ITS OWN.** Every
+ * other ending is a tint and a word: this one is a request, and a request has
+ * to be findable across a screen without reading. A silhouette and not strokes,
+ * because at eleven pixels line art becomes a smudge.
+ */
+export function HandMark({ className = "step-node__hand" }: { className?: string }) {
+  return (
+    <span className={className} aria-hidden="true">
+      <svg viewBox="0 0 24 24">
+        <path
+          fill="currentColor"
+          d="M12 2a1.5 1.5 0 00-1.5 1.5V11h-1V5.2a1.5 1.5 0 10-3 0V13l-.8-1.4a1.45 1.45 0 10-2.5 1.4l2.8 4.9A6.2 6.2 0 0011.3 21h1.4a6 6 0 006-6V7.2a1.5 1.5 0 10-3 0V11h-1V3.5A1.5 1.5 0 0012 2z"
+        />
+      </svg>
+    </span>
+  );
+}
+
+/**
+ * How long a step took, at the precision that answers the question: under ten
+ * seconds a tenth separates «instant» from «slow», and over a minute nobody
+ * compares tenths. Comma for the decimal, like every other number here.
  */
 export function formatElapsed(seconds: number): string {
   if (seconds < 10) return `${seconds.toFixed(1)} s`;
@@ -482,6 +499,8 @@ export function StepNode({ data, selected }: NodeProps) {
         <span className="step-node__state">
           {speaking ? (
             <span className="speaks" aria-hidden="true" />
+          ) : state === "handed_to_human" ? (
+            <HandMark />
           ) : (
             <span className="step-node__state-dot" aria-hidden="true" />
           )}

@@ -10,6 +10,9 @@ import { grouped, treeName } from "./workspacetrees";
 import { projects, workHere, type Project } from "./workspaces";
 import type { SailorTab } from "./sailortabs";
 import type { TerminalSummary } from "./terminal";
+import { HandMark } from "./StepNode";
+import type { FlowLive } from "./flowlive";
+import { t } from "./i18n";
 
 /**
  * The flows of one source, as the column draws them. The order is the
@@ -18,8 +21,38 @@ import type { TerminalSummary } from "./terminal";
  */
 export interface FlowGroup {
   origin: string | null;
-  flows: { name: string; note: string; color?: string; dirty: boolean }[];
+  flows: {
+    name: string;
+    note: string;
+    color?: string;
+    dirty: boolean;
+    /** What is happening to it right now, or `null` when nothing is known. */
+    live?: FlowLive | null;
+  }[];
   broken: { name: string; reason: string }[];
+}
+
+/**
+ * The mark at the head of a flow's row. **The lane's tint is what a row wears
+ * when there is nothing to say**: it is how the steps on the paper are found,
+ * not a state, and it steps aside for one.
+ */
+function LiveMark({ live, color }: { live?: FlowLive | null; color?: string }) {
+  if (live?.state === "handed_to_human") return <HandMark className="rail__hand" />;
+  if (live?.state === "running" && live.speaking) return <span className="speaks" aria-hidden="true" />;
+  return <span className="rail__dot" style={live ? undefined : { background: color }} />;
+}
+
+/** What the row says on its right, or `null` to leave the step count there. */
+function liveNote(live?: FlowLive | null): string | null {
+  if (!live) return null;
+  if (live.state === "running") {
+    return t("window.flow.live.running", { done: live.done, steps: live.steps });
+  }
+  if (live.state === "handed_to_human") {
+    return t("window.flow.live.waiting", { waiting: live.waiting });
+  }
+  return t(`window.flow.live.${live.state}`);
 }
 
 /** Where a source's flows belong in the column. */
@@ -182,14 +215,18 @@ export function World({
             key={one.name}
             className="rail__item"
             data-open={one.name === focusName || undefined}
+            data-live={one.live?.state}
             onClick={() => onFlow(one.name)}
           >
-            <span className="rail__dot" style={{ background: one.color }} />
+            {/* THE MARK SAYS WHAT IS HAPPENING, and only where nothing is it
+                the lane's tint: a ring while it talks, a hand where it waits
+                for you, the tint of the ending otherwise. */}
+            <LiveMark live={one.live} color={one.color} />
             <span className="rail__label">
               {one.name}
               {one.dirty && <span className="rail__dirty-dot" title="not saved" />}
             </span>
-            <span className="rail__note">{one.note}</span>
+            <span className="rail__note">{liveNote(one.live) ?? one.note}</span>
           </button>
         ))}
         {/* A broken flow does not vanish from the list: it is shown, marked,
