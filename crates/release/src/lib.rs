@@ -194,6 +194,22 @@ pub fn on_path(found: Option<&str>, safe: &str, same_bytes: bool) -> OnPath {
     }
 }
 
+/// The code a release ends with, once it knows what the name finds.
+///
+/// **A SHADOWED RELEASE IS NOT A FINISHED RELEASE**: everything that looks the
+/// name up goes on running the older copy, and ending zero there says «done»
+/// about the one thing the release exists to guarantee.
+pub fn ends_with(found: &OnPath) -> i32 {
+    match found {
+        OnPath::Shadowed { .. } => SHADOWED,
+        _ => 0,
+    }
+}
+
+/// What a release exits with when the name still finds another copy. Not `1`:
+/// the build and the suite went, and nothing about them needs redoing.
+pub const SHADOWED: i32 = 4;
+
 /// The target with this name, if it exists.
 pub fn target(name: &str) -> Option<&'static Target> {
     TARGETS.iter().find(|t| t.name == name)
@@ -389,6 +405,20 @@ mod tests {
             }
         );
         assert_eq!(on_path(None, safe, false), OnPath::Absent);
+    }
+
+    /// The one outcome a release must not call finished.
+    #[test]
+    fn a_shadowed_release_does_not_end_at_zero() {
+        assert_eq!(ends_with(&OnPath::Same), 0);
+        assert_eq!(ends_with(&OnPath::Absent), 0);
+        assert_eq!(
+            ends_with(&OnPath::Shadowed {
+                first: "/altrove/bin/sailor".to_owned()
+            }),
+            SHADOWED
+        );
+        assert_ne!(SHADOWED, 0);
     }
 
     #[test]
