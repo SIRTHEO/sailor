@@ -1892,7 +1892,7 @@ mod tests {
     /// ends up in the hooks names no product. The binary's own path is left
     /// out, because the machine chooses that string and we do not: scanning it
     /// turned this red for a tree kept under a directory named after a product,
-    /// which measures the disk instead of the code. See fault 72.
+    /// which measures the disk instead of the code. See fault 75.
     #[test]
     fn what_the_install_writes_names_no_product() {
         let scratch = Scratch::new("innesto-neutro");
