@@ -49,6 +49,9 @@ function liveNote(live?: FlowLive | null): string | null {
   if (live.state === "running") {
     return t("window.flow.live.running", { done: live.done, steps: live.steps });
   }
+  if (live.state === "stopping") {
+    return t("window.flow.live.stopping", { done: live.done, steps: live.steps });
+  }
   if (live.state === "handed_to_human") {
     return t("window.flow.live.waiting", { waiting: live.waiting });
   }

@@ -434,6 +434,7 @@
   "window.flow.live.capped": "stopped at the cap",
   "window.flow.live.running": "{done} of {steps}",
   "window.flow.live.stopped": "stopped by hand",
+  "window.flow.live.stopping": "stopping · {done} of {steps}",
   "window.flow.live.waiting": "waiting for you",
   "window.flow.live.went": "went",
   "window.step.kind.branch": "branch",

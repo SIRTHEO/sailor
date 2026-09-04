@@ -45,6 +45,21 @@ describe("what is happening to a flow", () => {
     expect(liveOf(run({ events }), 900 + STILL_SPEAKING_SECS + 1)).toMatchObject({ speaking: false });
   });
 
+  test("A STOP THAT WAS ASKED FOR IS NOT NOTHING", () => {
+    // The engine keeps the run «running» until the step in flight closes, so
+    // a row read off the status alone says «going» to whoever just pressed
+    // Stop — and the second press is how you learn a button did nothing.
+    const events = [
+      event(1, "step_started", "uno", 100, { attempt: 1 }),
+      event(2, "step_closed", "uno", 104, { outcome: "Went" }),
+      event(3, "step_started", "due", 104, { attempt: 1 }),
+      event(4, "stop_requested", null, 120, { by: "theo" }),
+    ];
+    expect(liveOf(run({ events }), 1_000)).toEqual({ state: "stopping", done: 1, steps: 2 });
+    // The absurd control: without the asking it is a run going, as before.
+    expect(liveOf(run({ events: events.slice(0, 3) }), 1_000)).toMatchObject({ state: "running" });
+  });
+
   test("A PERSON WAITING BEATS EVERYTHING ELSE, though the run is still «running»", () => {
     // The engine calls this run running, and drawn as such the row would ask
     // nothing while being the one thing on the screen that cannot go on.
