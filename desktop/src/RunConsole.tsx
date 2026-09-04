@@ -281,6 +281,8 @@ export const OUTCOME_LABEL: Record<string, string> = {
   Went: "went",
   Broke: "broke",
   Waiting: "waiting",
+  /** The third outcome: it could not work now and asks to be asked again. */
+  NotYet: "not yet",
   Stopped: "stopped",
   Skipped: "skipped",
 };
