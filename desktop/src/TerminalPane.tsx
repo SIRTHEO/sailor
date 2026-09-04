@@ -20,6 +20,9 @@ import "@xterm/xterm/css/xterm.css";
 import {
   BORN_COLS,
   BORN_ROWS,
+  asTyped,
+  fieldGesture,
+  keyBytes,
   keyStroke,
   livenessWord,
   paneGesture,
@@ -310,7 +313,7 @@ export function TerminalPane({
         className="pane__ask"
         onSubmit={(event) => {
           event.preventDefault();
-          const line = asked.trim();
+          const line = asTyped(asked).trim();
           if (line === "" || dead) return;
           setAsked("");
           setRefused(null);
@@ -330,6 +333,18 @@ export function TerminalPane({
           disabled={dead}
           onFocus={onFocus}
           onChange={(event) => setAsked(event.target.value)}
+          // Told not to rewrite, and undone on the way out where it does anyway.
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          onKeyDown={(event) => {
+            if (fieldGesture(event) === null) return;
+            // An interrupt that waited for Enter would arrive after the thing
+            // it was meant to stop.
+            event.preventDefault();
+            setAsked("");
+            onPress(keyBytes("\x03"));
+          }}
         />
       </form>
 
