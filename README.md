@@ -92,8 +92,22 @@ cd desktop && npm run build && cargo build --release --manifest-path src-tauri/C
 
 The terminals it opens are held by `sailor terminal host`, a process that
 outlives the window, so this one and the live one can replace each other
-without closing a session. It is not installed anywhere yet: there is no
-release target for the window, which is written down in `docs/da-fare.md`.
+without closing a session.
+
+**To install it**, the same way `sailor` installs itself:
+
+```sh
+sailor release window
+```
+
+That clones `HEAD` into a throwaway tree — never the working tree, so nobody's
+uncommitted lines go into service — builds the page inside it, then the shell
+from its own manifest, runs the suite of both, and puts the binary under
+`~/.config/sailor/bin/sailor-desktop` with the commit it came from written
+beside it. The page's modules are cloned from this tree when the two
+`package-lock.json` are the same bytes, so a release costs seconds and not an
+`npm ci`. What it does not do is a `.app` bundle: it installs a binary, not an
+icon in the Dock.
 
 ## The commands
 
