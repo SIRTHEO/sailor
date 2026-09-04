@@ -252,7 +252,9 @@ fn a_cli_whose_home_no_variable_moves_says_so_with_its_reason() {
         .active
         .insert("antigravity".to_owned(), "lavoro".to_owned());
 
-    let equipment = equipment_for(&store, "antigravity", &BTreeMap::new());
+    // The binary is not the id: the list declares `agy`, which is what the
+    // vendor installs, and it is the binary that a step names.
+    let equipment = equipment_for(&store, "agy", &BTreeMap::new());
 
     assert!(equipment.env.is_empty(), "{:?}", equipment.env);
     let EngineIdentity::NotMovedByAnEnvVar {

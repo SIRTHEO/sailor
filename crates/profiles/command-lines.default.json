@@ -1,0 +1,78 @@
+{
+  "_readme": [
+    "THE COMMAND LINES A CREDENTIALS PROFILE CAN BE MADE OF, shipped with the",
+    "product. It is data: add an engine, or correct one, without recompiling.",
+    "",
+    "A profile is a home directory the engine is started with. Where a variable",
+    "moves that directory the switch costs a variable and nothing else; where",
+    "none does, the fallback is a symlink on the credentials file, which is more",
+    "fragile and is marked as such. `home` carries `variable` or",
+    "`credential_symlink`; absent means NO KNOWN WAY, which is not the same as",
+    "«nobody looked» — `home_note` says which, and it is read by a person.",
+    "",
+    "`executable` is what actually reads that home, and it is the honest link: a",
+    "step naming a binary is matched on this and never on `id`, so a wrapper",
+    "does not get handed somebody else's credentials.",
+    "",
+    "`native` says whether the engine keeps profiles of its own: `supported`,",
+    "`not supported`, or `unverified`. A word this list does not know is read as",
+    "`unverified`, never as a no: a measurement invented from a misspelling is",
+    "worse than an admitted gap.",
+    "",
+    "`endpoint` names the two variables that send the engine to an endpoint",
+    "other than its maker's, and the protocol that endpoint must speak. A",
+    "profile declaring an endpoint of another protocol is refused: nothing of",
+    "Sailor's translates in between.",
+    "",
+    "To change the list on one machine, write $SAILOR_HOME/command-lines.json:",
+    "an `id` present there replaces the one shipped here, and ids not in here",
+    "are added."
+  ],
+  "command_lines": [
+    {
+      "id": "claude",
+      "display_name": "Claude Code",
+      "executable": "claude",
+      "native": "not supported",
+      "native_note": "checked on 2.1.247: `auth` offers only login, logout and status, and `--help` names no profile or multi-account subcommand.",
+      "home": { "variable": "CLAUDE_CONFIG_DIR" },
+      "home_note": "checked against the installed binary: the variable moves the whole directory, credentials and settings included.",
+      "endpoint": {
+        "url_var": "ANTHROPIC_BASE_URL",
+        "key_var": "ANTHROPIC_API_KEY",
+        "protocol": "anthropic-messages"
+      }
+    },
+    {
+      "id": "codex",
+      "display_name": "Codex",
+      "executable": "codex",
+      "native": "supported",
+      "native_note": "`-p/--profile` layers `<home>/<name>.config.toml` over the base configuration: config profiles, not separate credentials.",
+      "home": { "variable": "CODEX_HOME" },
+      "home_note": "checked with `doctor`: it shows auth.json and config.toml inside the directory the variable names.",
+      "endpoint": {
+        "url_var": "OPENAI_BASE_URL",
+        "key_var": "OPENAI_API_KEY",
+        "protocol": "openai-responses"
+      }
+    },
+    {
+      "id": "gemini",
+      "display_name": "Gemini CLI",
+      "executable": "gemini",
+      "native": "not supported",
+      "native_note": "no `--profile` in `--help`: only sessions (`--resume`, `--session-id`), not separate identities.",
+      "home": { "variable": "GEMINI_CLI_HOME" },
+      "home_note": "checked against the installed source: the base directory is that variable, or `.gemini` under $HOME."
+    },
+    {
+      "id": "antigravity",
+      "display_name": "Antigravity",
+      "executable": "agy",
+      "native": "unverified",
+      "native_note": "`--help` and its subcommands name no profile option; nothing else was measured.",
+      "home_note": "its data lives under the Gemini CLI's directory, and GEMINI_CLI_HOME does NOT move it: the string is absent from the binary and the home follows $HOME. Two profiles of it therefore start in the same place, silently. That is measured, not unlooked-at."
+    }
+  ]
+}

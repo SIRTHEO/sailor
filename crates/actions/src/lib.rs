@@ -2405,7 +2405,7 @@ pub fn equipment_with_keys(
             refused: None,
         };
     };
-    let named = store.active.get(cli.id);
+    let named = store.active.get(&cli.id);
     let resolved = named.and_then(|active| {
         store
             .profiles
@@ -2458,8 +2458,8 @@ fn identity_of(
     resolved: Option<&profiles::Profile>,
     step_env: &BTreeMap<String, String>,
 ) -> EngineIdentity {
-    let cli_id = cli.id.to_owned();
-    if let profiles::HomeMechanism::EnvVar(variable) = cli.home {
+    let cli_id = cli.id.clone();
+    if let profiles::HomeMechanism::EnvVar(variable) = &cli.home {
         if let Some(home) = step_env.get(variable) {
             return EngineIdentity::ChosenByTheStep {
                 cli_id,
@@ -2468,7 +2468,7 @@ fn identity_of(
         }
     }
     match (resolved, named) {
-        (Some(profile), _) => match cli.home {
+        (Some(profile), _) => match &cli.home {
             profiles::HomeMechanism::EnvVar(_) => EngineIdentity::ProfileInForce {
                 cli_id,
                 profile_name: profile.name.clone(),
@@ -2500,7 +2500,7 @@ fn identity_of(
 
 /// Perché un profilo dichiarato non è finito nell'ambiente, con le parole del
 /// meccanismo che lo impedisce.
-fn why_it_stays_where_it_is(mechanism: profiles::HomeMechanism) -> &'static str {
+fn why_it_stays_where_it_is(mechanism: &profiles::HomeMechanism) -> &'static str {
     match mechanism {
         profiles::HomeMechanism::CredentialSymlink { .. } => {
             "this command line has no variable that moves the home: the profile swaps a symlink, and the identity depends on where that file points on the disk"
