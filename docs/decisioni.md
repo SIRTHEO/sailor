@@ -594,6 +594,14 @@ sulla lingua prima del 31/08: una prova che scorre il registro delle azioni e
 fallisce se una non dichiara superficie e poteri, e se una `sense` non dichiara
 la propria risposta da cieca. **Nasce rossa su tutte e nove le azioni di oggi.**
 
+> **Quella prova non è mai stata scritta, ed è il guasto 67, aperto.** Verificato
+> il 04/09/2026: cercare `surface` nei crate torna due file, e uno dei due —
+> `crates/actions/src/history.rs` — lo dice di sé, *«the four surfaces do not
+> exist in the code»*. Finché la prova non c'è, questo paragrafo descrive una
+> regola che nessuno può violare, che per la regola qui sopra è una regola che
+> non c'è. La scelta fra scrivere la prova e ritirare la regola è di Theo, e
+> sta nel guasto 67: **questa nota non la prende, la rende visibile.**
+
 **Il debito, dichiarato.** I sette cantieri aperti il 31/08 (`supervisor`,
 `terminal`, `presence`, `mcp`, e gli altri) hanno prodotto crate **prima** di
 questo criterio. Se non si adeguano prima di chiudere, la regola nasce con
