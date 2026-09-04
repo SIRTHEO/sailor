@@ -3903,6 +3903,24 @@ tr[data-followable]:hover {
   border-radius: var(--radius-lg);
 }
 
+/* NOT ASKING ANYTHING TAKES NO ROOM. With the answers already known the strip
+   is one gesture and a way out of it, and the terminals get the screen. */
+.terminals__open:not([data-asking]) {
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  border-style: dashed;
+}
+
+.terminals__elsewhere {
+  border: 0;
+  background: none;
+  padding: 0 var(--space-2);
+  font-size: var(--text-small);
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .terminals__field {
   display: flex;
   flex-direction: column;
