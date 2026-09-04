@@ -1,16 +1,9 @@
-//! **Tiene accesa la finestra mentre si aggiusta la macchina di sotto.**
+//! **Keeps the window on while the machine underneath is repaired.**
 //!
-//! PERCHÉ ESISTE, IN UNA RIGA: `cargo tauri dev` ferma il programma acceso
-//! **prima** di ricompilare, quindi ogni file toccato spegne la finestra e una
-//! compilazione fallita è soltanto il motivo per cui non ne ritorna una. Qui
-//! l'ordine è rovesciato — si costruisce, e si tocca ciò che è acceso solo se
-//! la costruzione è riuscita. Il meccanismo di `tauri-cli` è citato per esteso
-//! in `crates/supervisor/tests/a_broken_build_keeps_the_window.rs`.
-//!
-//! L'ALTRA METÀ È IL GUASTO 4. Un supervisore che accende processi e non li
-//! scrive da nessuna parte fabbrica esattamente gli orfani che hanno bloccato
-//! l'avvio due volte in una notte: quello che accende qui va nel deposito
-//! (`crates/ledger`), che sopravvive alla finestra, alla sessione e al riavvio.
+//! `cargo tauri dev` stops what is running **before** recompiling, so every
+//! saved file closes the window. Here the order is reversed, and what is
+//! running is touched only when the build succeeded. Every process this
+//! lights goes into the ledger, which outlives window and session — fault 4.
 
 use std::path::{Path, PathBuf};
 
@@ -18,54 +11,41 @@ use serde::{Deserialize, Serialize};
 
 pub mod child;
 
-/// Qualcosa che è acceso e che si può spegnere.
-///
-/// **È un tratto e non un processo concreto perché la regola che questo crate
-/// difende è una sola riga di sequenza**, e una riga di sequenza si prova senza
-/// accendere niente. Il processo vero è `child::Process`, e le prove usano
-/// tutti e due: il finto per l'ordine, quello vero per credere all'ordine.
+/// Something running that can be stopped. **A trait and not a process**: the
+/// rule this crate defends is one line of sequence, and a line of sequence is
+/// proved without lighting anything.
 pub trait Running {
     fn stop(&mut self) -> Result<(), String>;
 }
 
-/// Com'è andata la costruzione.
+/// How the build went.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BuildOutcome {
     Succeeded,
-    /// Il testo che il compilatore ha stampato. **Va portato intero fino a chi
-    /// guarda**: una modalità viva che dice «costruzione fallita» e basta
-    /// obbliga a cercare l'errore in un terminale, che è il posto da cui questa
-    /// finestra dovrebbe liberare.
+    /// What the compiler printed, **carried whole to whoever is looking**:
+    /// «build failed» alone sends them to a terminal to find out why.
     Failed {
         message: String,
     },
 }
 
-/// Cosa è successo a un giro di ricostruzione.
+/// What happened to one round of rebuilding.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Rebuild {
-    /// Costruito, il vecchio fermato, il nuovo acceso.
+    /// Built, the old one stopped, the new one lit.
     Replaced,
-    /// Costruzione fallita: **quello di prima è ancora acceso**, e questo è il
-    /// comportamento che il guasto 11 chiedeva.
+    /// The build failed: **the one from before is still running**, which is
+    /// what fault 11 asked for.
     KeptRunning { message: String },
-    /// Costruito, ma il programma nuovo non è partito. Va distinto da
-    /// `KeptRunning`: lì c'è ancora qualcosa da guardare, qui no, e chiamarli
-    /// con lo stesso nome farebbe dire «tutto bene, uso la versione vecchia» a
-    /// chi non ha più nessuna versione.
+    /// Built, and the new one did not start. Distinct from `KeptRunning`:
+    /// there something is still on the screen, here nothing is.
     StartFailed { message: String },
 }
 
-/// **PRIMA SI COSTRUISCE, POI SI SOSTITUISCE.**
-///
-/// L'ordine è tutto il contenuto di questa funzione, ed è l'inverso di quello
-/// di `tauri-cli`. Invertirlo di nuovo — fermare `running` prima di chiamare
-/// `build` — rimette il guasto 11 esattamente com'era, e le prove di questo
-/// crate diventano rosse su quella mutazione: è così che sono state verificate.
-///
-/// `start` non viene nemmeno chiamata quando la costruzione fallisce: non c'è
-/// niente di nuovo da accendere, e chiamarla vorrebbe dire far ripartire il
-/// binario **vecchio** facendolo passare per nuovo.
+/// **BUILD FIRST, REPLACE AFTER.** The order is the whole content of this
+/// function, and the inverse of `tauri-cli`'s. `start` is not even called when
+/// the build fails: there is nothing new to light, and calling it would put
+/// the **old** binary back up wearing the face of the new one.
 pub fn rebuild_then_swap<R: Running>(
     running: &mut Option<R>,
     build: impl FnOnce() -> BuildOutcome,
@@ -74,13 +54,12 @@ pub fn rebuild_then_swap<R: Running>(
     match build() {
         BuildOutcome::Failed { message } => Rebuild::KeptRunning { message },
         BuildOutcome::Succeeded => {
-            // Da qui in poi si tocca ciò che è acceso, e si può farlo solo
-            // perché il binario nuovo esiste già sul disco.
+            // From here on what is running is touched, and only because the
+            // new binary is already on disk.
             if let Some(previous) = running.as_mut() {
                 if let Err(error) = previous.stop() {
-                    // Non si torna indietro: il binario è cambiato sotto, e
-                    // tenere acceso qualcosa che non si riesce a fermare
-                    // lascerebbe due programmi sulla stessa porta.
+                    // No way back: keeping something that will not stop would
+                    // leave two programs on the same port.
                     return Rebuild::StartFailed {
                         message: format!("il programma acceso non si è fermato: {error}"),
                     };
@@ -102,13 +81,12 @@ pub fn rebuild_then_swap<R: Running>(
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LiveState {
-    /// Si sta ricostruendo. Quello che si vede è ancora la versione di prima.
+    /// Rebuilding. What is on the screen is still the one before.
     Building,
-    /// Quello che si vede è l'ultima versione costruita.
+    /// What is on the screen is the newest build.
     Running,
-    /// La ricostruzione è fallita. **Quello che si vede è vecchio**, e chi
-    /// guarda deve saperlo: senza questo stato la finestra mentirebbe per
-    /// omissione, che il guasto 30 ha già pagato una volta.
+    /// The build failed. **What is on the screen is old**, and whoever looks
+    /// must know it: without this state the window lies by omission.
     BuildFailed,
     /// A build is done and waiting, and the window on the screen is the one
     /// before it. Nothing takes it until somebody asks.
@@ -126,14 +104,10 @@ pub enum Turn {
     Swap,
 }
 
-/// **A BUILD DOES NOT TAKE THE WINDOW AWAY FROM YOU.**
-///
-/// Developing Sailor inside Sailor means every save used to close the thing
-/// being worked in — the session you were reading, the pane you were typing
-/// into, the run you were watching. Building at once is still right: it is how
-/// you learn the code compiles. Swapping at once is not, so the fresh binary
-/// waits until it is asked for, and swaps by itself only when there is nothing
-/// on the screen to take away.
+/// **A BUILD DOES NOT TAKE THE WINDOW AWAY FROM YOU.** Building on every save
+/// is right: it is how you learn the code compiles. Swapping on every save is
+/// not — it closes the pane being typed in — so the fresh binary waits to be
+/// asked for, and goes on by itself only when the screen holds nothing.
 pub fn turn_now(saved: bool, waiting: bool, asked: bool, nothing_on_screen: bool) -> Turn {
     if saved {
         return Turn::Build;
@@ -152,7 +126,7 @@ pub fn turn_now(saved: bool, waiting: bool, asked: bool, nothing_on_screen: bool
 /// file; the answer is the supervisor removing it.
 pub struct SwapRequest;
 
-/// Come si chiama il file, sotto la casa di Sailor.
+/// What the file is called, under Sailor's home.
 pub const SWAP_FILE: &str = "live-swap";
 
 impl SwapRequest {
@@ -177,48 +151,40 @@ impl SwapRequest {
     }
 }
 
-/// Lo stato che il supervisore pubblica e la finestra legge.
+/// What the supervisor publishes and the window reads.
 ///
-/// **PERCHÉ UN FILE E NON UN CANALE.** Chi deve leggere questo messaggio è il
-/// programma **già acceso** — quello costruito *prima* che il supervisore
-/// partisse, o prima ancora. Non esiste nessun canale che il supervisore possa
-/// aprire verso un processo che è nato senza saperlo; un file in un posto
-/// concordato invece lo leggono tutti e due, e sopravvive al fatto che uno dei
-/// due muoia.
+/// **A FILE AND NOT A CHANNEL**: the reader is the program **already running**,
+/// built before the supervisor started, and no channel reaches a process born
+/// without knowing about you. A file in an agreed place outlives either.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LiveStatus {
     pub state: LiveState,
-    /// Vuoto quando va tutto bene; l'uscita del compilatore quando no.
+    /// Empty when all is well; the compiler's output when it is not.
     pub message: String,
     pub changed_at: i64,
-    /// Da quando è acceso il programma che si sta guardando. Con
-    /// `state: build_failed` è la risposta a «quanto è vecchio quello che
-    /// vedo», che è la sola cosa che chi guarda vuole sapere in quel momento.
+    /// Since when what is on the screen has been running: with
+    /// `build_failed`, the answer to «how old is what I am looking at».
     pub running_since: Option<i64>,
 }
 
-/// Come si chiama il file, sotto la casa di Sailor.
+/// What the file is called, under Sailor's home.
 pub const STATUS_FILE: &str = "live-status.json";
 
-/// La porta del servitore di sviluppo della finestra.
-///
-/// **È la porta del guasto 4**, quella che un orfano teneva occupata due volte
-/// in una notte. Sta scritta anche in `desktop/src-tauri/tauri.conf.json` come
-/// `devUrl`, e due copie di un numero divergono: `the_dev_port_matches_the_tauri_config`
-/// le confronta, perché un registro che dichiara la porta sbagliata manda chi
-/// cerca l'orfano a guardare altrove.
+/// The port of the window's development server: **the port of fault 4**, held
+/// by an orphan twice in one night. Written down again in
+/// `desktop/src-tauri/tauri.conf.json`, and `the_dev_port_matches_the_tauri_config`
+/// compares the two copies.
 pub const DEV_PORT: u16 = 5183;
 
 impl LiveStatus {
-    /// Dove sta il file di stato, data la casa di Sailor.
+    /// Where the status file is, given Sailor's home.
     pub fn path_in(home: &Path) -> PathBuf {
         home.join(STATUS_FILE)
     }
 
-    /// **SCRITTURA INTERA O NIENTE.** Il lettore è un altro processo che legge
-    /// quando vuole: scrivendo sul posto lo si sorprenderebbe a metà file, e un
-    /// JSON troncato lo farebbe sembrare assente proprio nell'istante in cui
-    /// c'è un errore da mostrare.
+    /// **WHOLE OR NOTHING.** The reader is another process reading whenever
+    /// it likes: written in place it would be caught mid-file, and truncated
+    /// JSON looks absent exactly when there is an error to show.
     pub fn write(&self, path: &Path) -> Result<(), String> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
@@ -234,27 +200,25 @@ impl LiveStatus {
         Ok(())
     }
 
-    /// **UN FILE ASSENTE O ROTTO NON È UN ERRORE, È UN «NON SO».** Chi legge è
-    /// la finestra, e una finestra che muore perché il file di stato è a metà
-    /// sarebbe il guasto 11 rifatto da questa parte.
+    /// **A MISSING OR BROKEN FILE IS NOT AN ERROR, IT IS AN «I DO NOT KNOW».**
+    /// A window that died over a half-written status file would be fault 11
+    /// remade from this side.
     pub fn read(path: &Path) -> Option<Self> {
         let text = std::fs::read_to_string(path).ok()?;
         serde_json::from_str(&text).ok()
     }
 }
 
-/// Un processo che il deposito dà per acceso, e cosa ne dice il sistema.
+/// A process the ledger calls running, and what the system says about it.
 #[derive(Debug, Clone)]
 pub struct LeftRunning {
     pub record: ledger::ProcessRecord,
-    /// **Due domande diverse, tenute separate apposta.** Il deposito dice cosa
-    /// è stato avviato; questo campo dice se quel pid respira ancora. Fonderle
-    /// vorrebbe dire chiedere al sistema operativo l'elenco, che è la strada su
-    /// cui aspetta il guasto 12.
+    /// **Two different questions, kept apart on purpose.** The ledger says
+    /// what was started; this says whether that pid still breathes.
     pub still_alive: bool,
 }
 
-/// Cosa è rimasto acceso dall'ultima volta, con la conferma pid per pid.
+/// What was left running, confirmed pid by pid.
 pub fn left_running(store: &ledger::Ledger) -> Result<Vec<LeftRunning>, ledger::LedgerError> {
     Ok(store
         .processes_left_running()?
@@ -266,16 +230,12 @@ pub fn left_running(store: &ledger::Ledger) -> Result<Vec<LeftRunning>, ledger::
         .collect())
 }
 
-/// Chiude nel deposito le voci di processi che non respirano più.
+/// Closes, in the ledger, the rows of processes that stopped breathing.
 ///
-/// **SERVE PERCHÉ IL DEPOSITO NON PUÒ VEDERE UNA MORTE VIOLENTA.** Un processo
-/// ucciso da fuori — o insieme al terminale che lo teneva — non scrive la
-/// propria chiusura, e resta «acceso» per sempre. Senza questa passata l'elenco
-/// si riempie di fantasmi, e un elenco pieno di fantasmi lo si smette di
-/// leggere: è il modo esatto in cui un registro dei processi smette di
-/// impedire il guasto 4.
-///
-/// Restituisce quanti ne ha chiusi.
+/// **THE LEDGER CANNOT SEE A VIOLENT DEATH**: a process killed from outside
+/// writes no ending and stays «running» for ever. A list full of ghosts is a
+/// list nobody reads, which is how a process registry stops preventing fault 4.
+/// Returns how many it closed.
 pub fn close_the_ones_that_stopped_breathing(
     store: &ledger::Ledger,
     now: i64,
@@ -287,7 +247,7 @@ pub fn close_the_ones_that_stopped_breathing(
     {
         store.record_process_ended(&ledger::ProcessEndRecord {
             process_id: gone.record.process_id,
-            // Non si inventa un codice d'uscita: nessuno l'ha visto uscire.
+            // No exit code is invented: nobody saw it leave.
             exit_code: None,
             ended_at: now,
         })?;
@@ -296,7 +256,7 @@ pub fn close_the_ones_that_stopped_breathing(
     Ok(closed)
 }
 
-/// Adesso, in secondi dall'epoca.
+/// Now, in seconds since the epoch.
 pub fn now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
