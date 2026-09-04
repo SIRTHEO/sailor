@@ -67,6 +67,8 @@ export const ANOTHER_PATH = "…another path";
 export interface Place {
   root: string;
   label: string;
+  /** Whether this is the one being worked in right now. */
+  current?: boolean;
 }
 
 /**
@@ -81,12 +83,16 @@ export function placesOf(known: Project[], trees: Tree[]): Place[] {
   for (const project of known) {
     if (seen.has(project.root)) continue;
     seen.add(project.root);
-    places.push({ root: project.root, label: `${project.name} · project` });
+    places.push({ root: project.root, label: `${project.name} · project`, current: project.current });
   }
   for (const tree of trees) {
     if (seen.has(tree.path)) continue;
     seen.add(tree.path);
-    places.push({ root: tree.path, label: `${tree.name} · worktree${tree.branch ? ` on ${tree.branch}` : ""}` });
+    places.push({
+      root: tree.path,
+      label: `${tree.name} · worktree${tree.branch ? ` on ${tree.branch}` : ""}`,
+      current: tree.current,
+    });
   }
   return places;
 }
@@ -112,6 +118,8 @@ export function Terminals({ native, shown = true, ceiling = null, onCount, onLis
   /** The event channel: attached, or the reason it is not. */
   const [channel, setChannel] = useState<{ on: boolean; why: string | null }>({ on: false, why: null });
   const [opening, setOpening] = useState(false);
+  /** Whether the opening form is asking, rather than using what it knows. */
+  const [detailed, setDetailed] = useState(false);
   /** The chosen place's root, `ANOTHER_PATH`, or "" before anything was chosen. */
   const [chosen, setChosen] = useState("");
   const [typed, setTyped] = useState("");
@@ -194,7 +202,10 @@ export function Terminals({ native, shown = true, ceiling = null, onCount, onLis
 
   // Nothing chosen yet means the first known place, or a typed path when
   // there is none: the form is never blank on a machine with projects.
-  const choice = chosen === "" ? (places[0]?.root ?? ANOTHER_PATH) : chosen;
+  // WHERE YOU ARE STANDING, not the head of a list. A terminal opened in the
+  // wrong tree is discovered at the first command that reads a file.
+  const here_ = places.find((place) => place.current) ?? places[0];
+  const choice = chosen === "" ? (here_?.root ?? ANOTHER_PATH) : chosen;
   const root = choice === ANOTHER_PATH ? typed.trim() : choice;
 
   const open = useCallback(async () => {
@@ -245,13 +256,20 @@ export function Terminals({ native, shown = true, ceiling = null, onCount, onLis
       {/* THE DIRECTORY IS DECLARED AT OPENING. There is no generic terminal you
           then tell where to go: the workspace is part of what the terminal is,
           and what lets routing know which project is being talked about. */}
+      {/* ONE GESTURE WHEN THERE IS NOTHING TO CHOOSE. With a terminal already
+          open the answers are known — the tree you are standing in, the shell
+          you used — and a form asking them again on every new terminal is a
+          form asking you to confirm what it already knows. */}
       <form
         className="terminals__open"
+        data-asking={detailed || opened.length === 0 || undefined}
         onSubmit={(event) => {
           event.preventDefault();
           void open();
         }}
       >
+        {(detailed || opened.length === 0) && (
+        <>
         <label className="terminals__field">
           <span className="label">Workspace</span>
           <select className="terminals__select" value={choice} onChange={(event) => setChosen(event.target.value)}>
@@ -283,9 +301,20 @@ export function Terminals({ native, shown = true, ceiling = null, onCount, onLis
             onChange={(event) => setProgram(event.target.value)}
           />
         </label>
+        </>
+        )}
         <button type="submit" className="is-primary" disabled={opening || root === ""}>
-          {opening ? "opening…" : "Open a terminal"}
+          {opening ? "opening…" : opened.length === 0 ? "Open a terminal" : "New terminal"}
         </button>
+        {opened.length > 0 && (
+          <button
+            type="button"
+            className="terminals__elsewhere"
+            onClick={() => setDetailed((was) => !was)}
+          >
+            {detailed ? "never mind" : "somewhere else…"}
+          </button>
+        )}
       </form>
 
       {placesWhy !== null && (
