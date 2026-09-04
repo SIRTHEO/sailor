@@ -1,61 +1,9 @@
-//! I tre nodi con cui un agente **dice di esserci** e **scopre chi altro c'è**.
+//! The three nodes an agent **says it is here** with, and reads who else is.
 //!
-//! **PERCHÉ ESISTONO.** Il 31/08/2026 sette agenti lavoravano su sette alberi
-//! di lavoro della stessa repo e nessuno sapeva dell'esistenza degli altri.
-//! Nello stesso giorno, due cose che discendono da lì: una sessione ha
-//! committato su `sorgenti` cancellando il lavoro non committato di un'altra —
-//! e nessuna delle due se n'è accorta; e due sessioni hanno numerato in modo
-//! indipendente una voce nuova dello stesso documento, producendo due `27` e
-//! due `28`. Non è una svista due volte: è la stessa mancanza, cioè che il
-//! sistema non ha nessun posto dove uno dica «ci sono» e un altro lo legga.
-//!
-//! **DOVE STA IL PUNTO D'INCONTRO, VISTO CHE NON C'È UN CENTRO.** Il deposito
-//! è già una casa sola per macchina — `ledger::default_directory()` risponde
-//! lo stesso percorso da qualunque albero di lavoro — ed è SQLite in modalità
-//! WAL con un tempo di attesa dichiarato: più processi lo aprono direttamente,
-//! senza che nessuno di loro sia «il server». Non serve un demone, non serve
-//! un servizio, non serve una porta: chi non c'è non tiene niente. Questi tre
-//! nodi non aggiungono infrastruttura, compongono i tre nodi del deposito che
-//! esistevano già.
-//!
-//! **UN ANNUNCIO SCADE, E NON SI RILASCIA SOLTANTO.** Su questa macchina i
-//! processi vengono uccisi dal sonno del sistema, quindi un rilascio esplicito
-//! è una promessa che il morto non può mantenere: sarebbe l'annuncio appeso
-//! per sempre, che è il difetto principale di questa famiglia di sistemi. Qui
-//! l'annuncio dura un tempo dichiarato e va **rinnovato** — l'unica promessa
-//! che un processo morto non può fingere di mantenere. Il rilascio esiste
-//! comunque, perché chi finisce alle 10:00 non deve trattenere fino alle
-//! 10:15, e resta **distinto** da una scadenza: `released` dice «qualcuno ha
-//! guardato e ha finito», `expired` dice «nessuno si è più fatto vivo».
-//!
-//! **LA CHIAVE PORTA IL PROCESSO, ED È IL PUNTO DI TUTTO.** Un annuncio sta
-//! sotto `<agente>#<pid>`: nessun agente scrive mai la riga di un altro, quindi
-//! nessun rinnovo può cancellare il lavoro di nessuno. È la stessa lezione del
-//! doppio `27` letta al contrario — due che scrivono nello stesso posto si
-//! sovrascrivono, due che scrivono ciascuno nel proprio si sommano — e senza
-//! il `#<pid>` due agenti che scegliessero lo stesso nome ricadrebbero
-//! esattamente nel difetto contro cui questo modulo è scritto.
-//!
-//! **NON CHIEDE AL SISTEMA OPERATIVO SE UN PROCESSO È VIVO.** Il `pid` viene
-//! registrato perché una persona possa controllare, e non è l'oracolo: il
-//! guasto 12 di `docs/guasti-incontrati.md` dice che dentro il perimetro
-//! `pgrep` non vede i processi e **risponde vuoto senza errore**, e la cura
-//! scritta accanto è «chiedere lo stato al deposito, non al sistema
-//! operativo». La regola di vita è la scadenza, e solo quella.
-//!
-//! **QUELLO CHE LA SCADENZA NON SA, E VA LETTO PRIMA DI FIDARSENE.** Durante il
-//! sonno di sistema un processo è **congelato ma vivo**, e l'orologio a muro
-//! avanza lo stesso: al risveglio la sua scadenza è passata mentre lui non è
-//! morto affatto. Per questo il censimento non dice mai «morto»: dice
-//! `expired`, che significa «nessuno si è più fatto vivo» — e chi legge ha
-//! `renewed_at` accanto per sapere se il silenzio dura trenta secondi o otto
-//! ore. La misura autorevole esiste ed è `flock(2)`: il kernel rilascia il lock
-//! anche dopo un `SIGKILL`, ed è l'unica primitiva in cui la scadenza non
-//! dipende da codice nostro. **Non è qui**, e la ragione è dichiarata: vuole o
-//! una dipendenza nuova nel workspace — che il `Cargo.toml` di casa tiene al
-//! minimo per scelta scritta — o del codice `unsafe` in un crate che non ne ha.
-//! Va aggiunta come **secondo strato autorevole** sopra questo, non al suo
-//! posto: `flock` sa se un processo esiste, non se sta lavorando.
+//! The meeting place is the ledger: one house per machine, answering the same
+//! path from every worktree, opened directly by several processes with none of
+//! them the server. An announcement **expires and is renewed** — the one
+//! promise a process the system killed in its sleep cannot fake.
 
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies};
 use ledger::{Ledger, StoreRecord};
