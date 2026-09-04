@@ -23,13 +23,11 @@ import {
 } from "./terminal";
 
 /**
- * **THE THINGS THE REACT HALF OF THE TERMINAL CAN GET WRONG IN SILENCE.** An
- * accent lost inside a long output, a key sent to routing instead of to the
- * program, a dead terminal drawn alive, a pane that comes back blank, a
- * contrast pair below threshold: none makes a noise, the window draws the
- * same, and whoever looks believes it. The judge is the contract, not the
- * bridge — the shell is faked from `docs/2026-09-01-il-contratto-del-terminale.md`
- * by hand, while the components are the real ones, emulator included.
+ * **WHAT THE REACT HALF OF THE TERMINAL CAN GET WRONG IN SILENCE.** An accent
+ * lost in a long output, a key sent to routing instead of to the program, a
+ * dead terminal drawn alive, a pane that comes back blank: none makes a noise.
+ * The judge is the contract — the shell is faked from its document by hand,
+ * while the components are the real ones, emulator included.
  */
 
 afterEach(cleanup);
@@ -432,9 +430,8 @@ const EMPTY_BACKLOG = { at: 0, bytes: "", upto: 0, ended: null };
 /**
  * Fakes the shell: the seven commands and the two events of the contract.
  * **`listen` IS EITHER THERE OR NOT, AND IT IS A PARAMETER**: without the
- * channel the screen must say «no longer known» instead of «alive», and
- * unless it can be removed that rule cannot be tested. A pane always asks for
- * its backlog, so an empty one is answered unless the scene says otherwise.
+ * channel the screen must say «no longer known», and a rule that cannot be
+ * removed cannot be tested. A pane always asks for its backlog.
  */
 function pretendShell(answers: Record<string, unknown>, withEvents = true): FakeShell {
   const before = (window as unknown as { __TAURI__?: unknown }).__TAURI__;
@@ -625,6 +622,62 @@ describe("the terminals screen", () => {
       expect(shell.argsOf("terminal_open")).toEqual([
         { workspaceRoot: "/work/sailor-worktrees/x", program: undefined, args: undefined, cols: 80, rows: 24 },
       ]);
+    } finally {
+      shell.stop();
+    }
+  });
+
+  test("A SECOND TERMINAL IS ONE GESTURE: the form stops asking what it knows", async () => {
+    const shell = pretendShell({ terminal_list: [TWO[0]], terminal_open: TWO[1], ...PLACES });
+    try {
+      render(
+        <div className="app">
+          <Terminals native />
+        </div>,
+      );
+      // With one open, the answers are known — the tree you stand in, the shell
+      // you used — and a form asking them again asks you to confirm them.
+      await waitFor(() => expect(screen.getByRole("button", { name: "New terminal" })).toBeTruthy());
+      expect(screen.queryByRole("combobox"), "the form still asks where").toBeNull();
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "New terminal" }));
+      });
+      expect(shell.argsOf("terminal_open")).toHaveLength(1);
+
+      // And the way to somewhere else is one press away, not gone.
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /somewhere else/ }));
+      });
+      expect(screen.queryByRole("combobox"), "there is no way to choose another tree").not.toBeNull();
+    } finally {
+      shell.stop();
+    }
+  });
+
+  test("THE TREE YOU ARE STANDING IN IS THE ONE IT OPENS IN, not the head of a list", async () => {
+    // The one being worked in is second here on purpose: taking the first would
+    // pass by accident.
+    const shell = pretendShell({
+      terminal_list: [],
+      terminal_open: TWO[0],
+      workspaces: [
+        { root: "/work/altro", name: "altro", first_seen: 1, last_seen: 9, standing: "declared", current: false },
+        { root: "/work/qui", name: "qui", first_seen: 1, last_seen: 2, standing: "declared", current: true },
+      ],
+      worktree_list: [],
+    });
+    try {
+      render(
+        <div className="app">
+          <Terminals native />
+        </div>,
+      );
+      await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Open a terminal" }));
+      });
+      expect(shell.argsOf("terminal_open")[0]).toMatchObject({ workspaceRoot: "/work/qui" });
     } finally {
       shell.stop();
     }
