@@ -461,5 +461,6 @@
   "window.step.state.running": "in corso",
   "window.step.state.waiting": "in attesa",
   "window.step.state.idle": "mai eseguito",
+  "window.step.state.skipped": "non percorso",
   "window.step.state.went": "andato"
 }
