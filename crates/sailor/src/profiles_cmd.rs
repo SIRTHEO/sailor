@@ -182,12 +182,12 @@ fn access_of(
     cli: &KnownCli,
     home: &Path,
 ) -> (Access, String) {
-    let Some((tool, bin)) = tools.declared_as_executable(cli.executable) else {
+    let Some((tool, bin)) = tools.declared_as_executable(&cli.executable) else {
         return (
             Access::NotKnown,
             catalogue::say(
                 "cli.profiles.access.no_such_executable",
-                &[("executable", cli.executable)],
+                &[("executable", &cli.executable)],
             ),
         );
     };
@@ -207,7 +207,7 @@ fn access_of(
             Access::HomeDoesNotMove,
             catalogue::say(
                 "cli.profiles.access.home_does_not_move",
-                &[("id", cli.id), ("note", cli.home_note)],
+                &[("id", &cli.id), ("note", &cli.home_note)],
             ),
         );
     }
@@ -264,7 +264,7 @@ fn cmd_create(args: &[String]) -> Result<(), String> {
 /// thing here that is a security rule and not a preference.
 pub fn create(cli_id: &str, name: &String) -> Result<(), String> {
     let cli = find_cli(cli_id)?;
-    let home = profile_home_path(&store_io::profiles_root(), cli.id, name)
+    let home = profile_home_path(&store_io::profiles_root(), &cli.id, name)
         .map_err(|e| catalogue::say("cli.profiles.name_not_valid", &[("error", &e.to_string())]))?;
     std::fs::create_dir_all(&home).map_err(|e| {
         catalogue::say(
@@ -284,7 +284,7 @@ pub fn create(cli_id: &str, name: &String) -> Result<(), String> {
     if already_exists {
         return Err(catalogue::say(
             "cli.profiles.already_exists",
-            &[("name", name), ("id", cli.id)],
+            &[("name", name), ("id", &cli.id)],
         ));
     }
     store.profiles.push(Profile {
@@ -306,7 +306,7 @@ fn cmd_endpoint(args: &[String]) -> Result<(), String> {
         .profiles
         .iter_mut()
         .find(|p| p.cli_id == cli.id && &p.name == name)
-        .ok_or_else(|| catalogue::say("cli.profiles.not_found", &[("name", name), ("id", cli.id)]))?;
+        .ok_or_else(|| catalogue::say("cli.profiles.not_found", &[("name", name), ("id", &cli.id)]))?;
     profile.endpoint = Some(profiles::ProfileEndpoint {
         url: url.clone(),
         key_var: key_var.clone(),
@@ -337,16 +337,16 @@ pub fn switch(cli_id: &str, name: &String) -> Result<(), String> {
         .find(|p| p.cli_id == cli.id && &p.name == name)
         .cloned()
         .ok_or_else(|| {
-            catalogue::say("cli.profiles.not_found", &[("name", name), ("id", cli.id)])
+            catalogue::say("cli.profiles.not_found", &[("name", name), ("id", &cli.id)])
         })?;
 
-    if let HomeMechanism::CredentialSymlink { relative_path } = cli.home {
+    if let HomeMechanism::CredentialSymlink { relative_path } = &cli.home {
         store_io::apply_symlink_swap(&store_io::home_dir()?, relative_path, &profile.home_dir)?;
     }
     // Per il meccanismo a variabile d'ambiente non c'è nulla da spostare sul
     // filesystem: registrare l'attivo qui basta, `build_environment` legge
     // `profile.home_dir` al momento del lancio — vedi `sailor run`.
-    store.active.insert(cli.id.to_owned(), name.clone());
+    store.active.insert(cli.id.clone(), name.clone());
     store_io::save_store(&store)
 }
 
@@ -356,7 +356,7 @@ fn cmd_current(args: &[String]) -> Result<(), String> {
     };
     let cli = find_cli(cli_id)?;
     let store = store_io::load_store()?;
-    match store.active.get(cli.id) {
+    match store.active.get(&cli.id) {
         Some(name) => println!("{name}"),
         None => println!("{}", catalogue::say("cli.profiles.none_active", &[])),
     }

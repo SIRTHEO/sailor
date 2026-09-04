@@ -55,10 +55,10 @@ fn resolve_with(
             &[("cli", &cli.display_name), ("note", &cli.home_note)],
         ));
     }
-    let Some(active_name) = store.active.get(cli.id) else {
+    let Some(active_name) = store.active.get(&cli.id) else {
         return Err(catalogue::say(
             "cli.run.no_active_profile",
-            &[("cli", &cli.display_name), ("id", cli.id)],
+            &[("cli", &cli.display_name), ("id", &cli.id)],
         ));
     };
     let profile = store
@@ -68,7 +68,7 @@ fn resolve_with(
         .ok_or_else(|| {
             catalogue::say(
                 "cli.run.active_profile_gone",
-                &[("profile", active_name), ("id", cli.id)],
+                &[("profile", active_name), ("id", &cli.id)],
             )
         })?;
 
@@ -77,9 +77,9 @@ fn resolve_with(
     // lo stato dice «attivo X» ma il collegamento punta ancora a Y, la riga di
     // comando parte con le credenziali di Y e nessuno se ne accorge. Qui si
     // calcola il collegamento atteso; chi lancia lo confronta con quello vero.
-    let expected_link = match cli.home {
+    let expected_link = match &cli.home {
         HomeMechanism::CredentialSymlink { relative_path } => {
-            Some(symlink_swap(fixed_home, relative_path, &profile.home_dir))
+            Some(symlink_swap(fixed_home, &relative_path, &profile.home_dir))
         }
         _ => None,
     };
