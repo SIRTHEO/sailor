@@ -20,6 +20,15 @@ describe("where you were", () => {
     expect(whereYouWere()).toEqual({ place: "terminals", focus: "prima-corsa" });
   });
 
+  test("THE BENCH IS WRITTEN DOWN TOO: the terminal survives the swap, and so does what it is for", () => {
+    const bench = { terminalId: "t-9", runId: "prima-corsa", stepId: "review", mandate: "read the diff" };
+    rememberWhere({ place: "terminals", bench });
+    expect(whereYouWere().bench).toEqual(bench);
+    // Closing the step clears it: a bench back after a verdict asks twice.
+    rememberWhere({ bench: null });
+    expect(whereYouWere().bench).toBeNull();
+  });
+
   test("A HALF-WRITTEN NOTE IS DROPPED WHOLE", () => {
     // Storage is shared with everything else in this window and survives every
     // version of it: what comes back is not necessarily what was written.
