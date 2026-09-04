@@ -1,34 +1,23 @@
 /**
- * **IL DIVIETO 6 MISURATO DA UN CONTROLLO, NON DA UN ATTREZZO USA-E-GETTA.**
+ * **PROHIBITION 6, MEASURED BY A CHECK AND NOT BY A THROWAWAY TOOL.** No
+ * text/ground pair under 4.5:1. The measure was taken once by hand, with a
+ * script that died with its turn; the test this file makes possible goes red
+ * when `--muted` is lightened by two characters, while `vitest`, `tsc` and the
+ * identifier check stay green.
  *
- * Il divieto in testa a `styles.css` dice: nessuna accoppiata testo/sfondo
- * sotto 4,5:1. Fino al 31/08/2026 quel divieto non aveva niente che lo
- * interrogasse: la misura era stata presa una volta a mano, in un turno, con
- * uno script morto insieme al turno. La prova che questo file rende possibile
- * nasce rossa se qualcuno rimette `--muted: #94a3b8` — due caratteri — mentre
- * `vitest`, `tsc` e `identifiers_are_in_english` restano tutti e tre verdi.
+ * **WHY AN ENGINE OF OUR OWN.** A real browser means a dependency and a
+ * listening port, which answers `EPERM` inside the command perimeter — and a
+ * check that skips itself when it cannot run is the hole being closed. So
+ * `jsdom` draws the real DOM of the real components, and here is what jsdom
+ * lacks: the cascade, custom-property inheritance, and `var()`. Its numbers
+ * were compared against headless Chrome on the same page — same pairs, same
+ * ratios to the hundredth — and against a checker that did not write it.
  *
- * **PERCHÉ UN MOTORE NOSTRO E NON UN BROWSER.** Servirebbe un browser vero, e
- * un browser vero qui vuol dire una dipendenza in più (`playwright` non c'è) e
- * una porta in ascolto — che dentro il perimetro dei comandi risponde `EPERM`.
- * Un controllo che si salta da solo quando non può girare è esattamente il buco
- * che stiamo chiudendo. Quindi: `jsdom` disegna il DOM vero dei componenti
- * veri, e qui sotto c'è la parte che a `jsdom` manca — la cascata, l'eredità
- * delle proprietà personalizzate e `var()`.
- *
- * **COME SI SA CHE QUESTO MOTORE NON MENTE.** Non basta che sia d'accordo con
- * se stesso: due copie che sbagliano insieme si confermano. Le sue misure sono
- * state confrontate con quelle di Chrome headless sulla stessa pagina — stesso
- * elenco di accoppiate, stessi rapporti a meno del centesimo — e con quelle di
- * un verificatore che questo file non l'aveva scritto.
- *
- * **COSA QUESTO MOTORE NON FA**, e va saputo prima di fidarsene: non fa
- * impaginazione (niente sovrapposizioni, niente altezze), non valuta gli stati
- * del puntatore (`:hover`, `:focus`) né gli pseudo-elementi, e salta il
- * contenuto delle regole-@. Le regole saltate che dichiarano un colore vengono
- * contate: se qualcuno ne scrive una, il controllo lo dice invece di tacere.
+ * **WHAT IT DOES NOT DO**, worth knowing before trusting it: no layout, no
+ * pointer states, no pseudo-elements, and it skips the body of at-rules. A
+ * skipped rule that declares a colour is counted, so writing one is said out
+ * loud instead of passing in silence.
  */
-
 export interface Rgb {
   r: number;
   g: number;
