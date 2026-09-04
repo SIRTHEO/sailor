@@ -18,6 +18,8 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as Emulator } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import {
+  BORN_COLS,
+  BORN_ROWS,
   keyStroke,
   livenessWord,
   paneGesture,
@@ -30,13 +32,9 @@ import {
   type TerminalSummary,
 } from "./terminal";
 
-/**
- * How big a terminal is born before anybody measures it. Not a preference:
- * `terminal_open` wants `cols` and `rows`, and the real size arrives after the
- * first paint. Eighty by twenty-four is what every full-screen program handles.
- */
-export const BORN_COLS = 80;
-export const BORN_ROWS = 24;
+// The birth size lives beside the other decisions, in `terminal.ts`; it is
+// re-exported here because this is where every pane already looks for it.
+export { BORN_COLS, BORN_ROWS };
 
 interface PaneProps {
   summary: TerminalSummary;
