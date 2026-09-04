@@ -75,3 +75,35 @@ fn a_list_that_does_not_parse_says_so_instead_of_answering_half() {
     // every engine off has no command line to make a profile of.
     assert_eq!(parse_command_lines("{}").expect("it parses").len(), 0);
 }
+
+/// **A PROFILE CAN BE THE HOME THAT IS ALREADY THERE.** A home built from
+/// nothing has no credentials, and every engine lit under it starts logged
+/// out; the file says where each engine already keeps one, so the account a
+/// person is logged into can be taken as it is instead of copied.
+#[test]
+fn an_engine_can_declare_the_home_it_already_keeps() {
+    let table = parse_command_lines(
+        r#"{"command_lines": [
+             {"id": "un-motore", "executable": "unmotore",
+              "home": {"variable": "UNMOTORE_HOME", "already_at": ".unmotore"}},
+             {"id": "un-altro", "executable": "unaltro",
+              "home": {"variable": "UNALTRO_HOME"}}
+           ]}"#,
+    )
+    .expect("it parses");
+    assert_eq!(
+        profiles::existing_home(&table[0], std::path::Path::new("/una/casa")),
+        Some(std::path::PathBuf::from("/una/casa/.unmotore"))
+    );
+    assert_eq!(
+        profiles::existing_home(&table[1], std::path::Path::new("/una/casa")),
+        None,
+        "an engine nobody looked into offers no home to adopt"
+    );
+    assert!(
+        known_clis()
+            .iter()
+            .any(|cli| cli.home_already_here.is_some()),
+        "the shipped list declares no home anybody could adopt"
+    );
+}
