@@ -178,10 +178,37 @@ fn add(store: &Faults) -> Result<String, String> {
         // record exists not to be.
         return Err(catalogue::say("cli.faults.no_prevention", &[]));
     }
+    what_the_repository_could_not_publish(&raw)?;
     let recorded = store.record(&draft).map_err(|error| error.to_string())?;
     Ok(catalogue::say(
         "cli.faults.recorded",
         &[("number", &recorded.number.to_string())],
+    ))
+}
+
+/// Refuses text this machine declares it cannot publish.
+///
+/// **THE GATE USED TO RUN ONLY AT COMMIT**, which means somebody else, another
+/// day, rendering the table and finding a home path and a private name inside
+/// it. The rule is read from one place, `toolbox::privacy`, so the store and
+/// the gate cannot drift apart — and the refusal says where, never what.
+fn what_the_repository_could_not_publish(text: &str) -> Result<(), String> {
+    let names = toolbox::privacy::declared_here(&|path| std::fs::read_to_string(path).ok());
+    let home = std::env::var("HOME").ok();
+    let found = toolbox::privacy::what_cannot_be_published(text, &names, home.as_deref());
+    let Some(first) = found.first() else {
+        return Ok(());
+    };
+    let (key, at) = match first {
+        toolbox::privacy::Reason::APrivateName { at } => ("cli.faults.a_private_name", at),
+        toolbox::privacy::Reason::APathOfThisMachine { at } => ("cli.faults.a_path_of_this_machine", at),
+    };
+    Err(catalogue::say(
+        key,
+        &[
+            ("at", &at.to_string()),
+            ("count", &found.len().to_string()),
+        ],
     ))
 }
 
@@ -192,6 +219,7 @@ fn set_status(store: &Faults, loose: &[String]) -> Result<String, String> {
     let number: i64 = number
         .parse()
         .map_err(|_| catalogue::say("cli.faults.not_a_number", &[("number", number)]))?;
+    what_the_repository_could_not_publish(status)?;
     let changed = store
         .set_status(number, status)
         .map_err(|error| error.to_string())?;
