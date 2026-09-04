@@ -5,7 +5,7 @@ import { Terminal as Emulator } from "@xterm/xterm";
 import stylesheetSource from "./styles.css?raw";
 import App from "./App";
 import { belowThreshold, contrastPairs, parseStylesheet, type Stylesheet } from "./contrast";
-import { ANOTHER_PATH, placesOf, Terminals, WORKSPACE_HINT } from "./Terminals";
+import { ANOTHER_PATH, placesOf, shortestTails, Terminals, WORKSPACE_HINT } from "./Terminals";
 import { movedLabel, routingNote, tokensLabel, whoLabel } from "./TerminalPane";
 import { declaredCeiling } from "./terminal";
 import {
@@ -311,6 +311,39 @@ const KNOWN = [
   { id: "unmotore", executable: "unmotore" },
   { id: "un-altro", executable: "altromotore" },
 ] as unknown as Parameters<typeof whoLabel>[1];
+
+describe("choosing a place", () => {
+  const project = (root: string, name: string) => ({
+    root,
+    name,
+    first_seen: 1,
+    last_seen: 2,
+    standing: "declared" as const,
+    current: false,
+  });
+
+  // Measured: thirteen places, six carrying the same word.
+  test("no two places in the list carry the same label", () => {
+    const places = placesOf(
+      [
+        project("/casa/lavoro/il-progetto", "il-progetto"),
+        project("/casa/prove/il-progetto", "il-progetto"),
+        project("/casa/una-casa", "una-casa"),
+      ],
+      [{ path: "/casa/alberi/il-progetto", name: "il-progetto", branch: "prima-corsa", current: false }] as never,
+    );
+    const labels = places.map((place) => place.label);
+    expect(new Set(labels).size).toBe(labels.length);
+    // A name nothing shares stays plain: every path in full is as unreadable.
+    expect(labels).toContain("una-casa · project");
+  });
+
+  test("the tail grows only as far as it must", () => {
+    expect(shortestTails(["/a/uno", "/a/due"])).toEqual(["uno", "due"]);
+    expect(shortestTails(["/a/x/uno", "/b/x/uno"])).toEqual(["a/x/uno", "b/x/uno"]);
+    expect(shortestTails(["/solo"])).toEqual(["solo"]);
+  });
+});
 
 describe("the line field is a command line, not a document", () => {
   // Measured: a quoted argument arrived unquoted, and the shell waited.
