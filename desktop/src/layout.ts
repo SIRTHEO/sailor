@@ -107,12 +107,11 @@ export function toEdges(graph: Graph, runs: Map<string, StepRun> = new Map()): E
   );
 }
 
-// ── the single canvas: every flow, branches of one system ───────────────
+// ── the paper: one flow, in its own coloured lane ───────────────────────
 //
 // No flow declares a dependency on a step of another flow, so an arc between
-// two flows would be an invented arc. What can honestly be done is showing them
-// as branches of one tree: one canvas, each flow in its own coloured lane, and
-// no bridges that do not exist on disk.
+// two flows would be an invented arc: how flows relate is a question about
+// flows, and belongs to a view whose nodes are flows.
 
 const BAND_GAP = 56;
 const BAND_PAD_X = 28;
@@ -447,9 +446,10 @@ export interface UnifiedLayout {
 }
 
 /**
- * Lays every flow out on one canvas, one horizontal lane per flow, stacked top
- * to bottom. Inside a lane the level order of `toNodes`/`toEdges` applies; no
- * arc crosses between lanes, for the reason written above.
+ * **THE BOARD DRAWS ONE FLOW.** Thirty-one lanes stacked down the canvas with
+ * all but one faded is a mile of paper mostly made of ghosts, each still taking
+ * its space: faded is not separated. The lane stays — it carries the name, the
+ * description and the count — and is simply the only one.
  */
 export function buildUnifiedLayout(
   flows: Array<{ name: string; flow: FlowFile }>,
@@ -461,11 +461,16 @@ export function buildUnifiedLayout(
   const bands = new Map<string, FlowBand>();
   let top = 0;
 
-  flows.forEach(({ name, flow }, index) => {
+  // The colour is the flow's own, taken from its place in the whole list, so
+  // it does not change when the list is narrowed to one.
+  const drawn = flows
+    .map((entry, index) => ({ ...entry, index }))
+    .filter(({ name }) => focus === null || focus === name);
+
+  drawn.forEach(({ name, flow, index }) => {
     const graph = flow.graph;
     const depth = depths(graph);
     const color = colorForFlow(index);
-    const dimmed = focus !== null && focus !== name;
 
     let maxColumn = 0;
     const perColumn = new Map<number, number>();
@@ -492,7 +497,6 @@ export function buildUnifiedLayout(
         description: flow.description,
         stepCount: graph.steps.length,
         color,
-        dimmed,
       },
     });
 
@@ -511,7 +515,6 @@ export function buildUnifiedLayout(
           run: runs.get(step.id),
           flowName: name,
           color,
-          dimmed,
           // Ports live in `data` and not in a context because they depend only
           // on the file, not on a run. What this canvas cannot take is
           // rebuilding the node list on every incoming FACT; the file changes
@@ -537,7 +540,7 @@ export function buildUnifiedLayout(
             nodeId(name, dependency),
             nodeId(name, step.id),
             look,
-            dimmed ? 0.25 : 1,
+            1,
           ),
         );
       }

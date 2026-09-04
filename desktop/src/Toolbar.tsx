@@ -53,35 +53,21 @@ export const TOOLBAR_KINDS: StepKind[] = TOOL_GROUPS.flatMap((group) => group.ki
 
 
 interface ToolbarProps {
-  /** The flow that receives the step, or `null` if none has focus. */
-  flowName: string | null;
+  /** The flow that receives the step: the one the board draws. */
+  flowName: string;
   onAdd: (kind: StepKind) => void;
 }
 
 /**
- * **WITH NO FOCUSED FLOW THE BAR CHANGES JOB, IT DOES NOT GREY OUT.** Seven
- * disabled buttons offer nothing and a `title` needs a second of hovering, so
- * it shrinks to a row that names what is missing and points at its owner — and
- * does not carry the make-a-flow gesture, which is the column's in every state.
+ * **THE BAR HAS ONE JOB BECAUSE THE BOARD HAS ONE FLOW.** A second face saying
+ * «pick a flow in the column», and a line naming which lane the step fell into,
+ * both answered a question the board no longer asks.
  */
 export function Toolbar({ flowName, onAdd }: ToolbarProps) {
-  if (flowName === null) {
-    return (
-      <Panel position="bottom-left" className="toolbar">
-        <p className="toolbar__prompt">Pick a flow in the column to add steps.</p>
-      </Panel>
-    );
-  }
-
   return (
-    <Panel position="bottom-left" className="toolbar">
-      {/* DOVE VA A FINIRE IL PASSO, scritto prima di premere. La tela mostra
-          tutti i flussi insieme: senza questa riga il passo nuovo comparirebbe
-          in una corsia qualunque delle tante, e capire quale è un indovinello
-          che si risolve dopo. */}
-      <div className="toolbar__target">
-        Add to <span className="toolbar__target-name">«{flowName}»</span>
-      </div>
+    /* WHERE THE STEP LANDS IS STILL SAID, WHERE IT COSTS NOTHING: the drawn row
+       repeated the name at the top of the paper, and said it to no reader. */
+    <Panel position="bottom-left" className="toolbar" aria-label={`Add a step to ${flowName}`}>
       <div className="toolbar__row">
         {TOOL_GROUPS.map((group) => (
           <div className="toolbar__group" key={group.label} role="group" aria-label={group.label}>

@@ -112,7 +112,10 @@ describe("the column is the world", () => {
   test("THE BAR SAYS WHERE YOU ARE: the place, then the entry inside it", () => {
     const { container } = render(<App />);
     const crumbs = () => Array.from(container.querySelectorAll(".topbar__crumb")).map((one) => one.textContent);
-    expect(crumbs()).toEqual(["Board"]);
+    // The board opens on a flow, so the entry inside the place is that flow:
+    // «Board» alone was the old at-rest state, where the paper held every flow
+    // at once and none of them was the one you were in.
+    expect(crumbs()).toEqual(["Board", "prima-corsa"]);
 
     fireEvent.click(screen.getByRole("button", { name: /Runs/ }));
     expect(crumbs()).toEqual(["Runs", "Runs"]);

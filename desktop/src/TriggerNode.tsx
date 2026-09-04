@@ -6,10 +6,8 @@ import { KindIcon } from "./StepNode";
 /**
  * The trigger node: where a flow starts, and the gesture that starts it.
  *
- * **IT IS A NODE AND NOT A BUTTON IN THE BAR.** A button up there starts «the
- * focused flow», and on a canvas holding every flow at once that is a way to
- * launch the wrong one. The gesture sits where the graph begins, on the branch
- * it concerns, and the mandate written into it is that flow's.
+ * **IT IS A NODE AND NOT A BUTTON IN THE BAR.** The gesture sits where the
+ * graph begins, and the mandate written into it is that flow's.
  *
  * **THIS NODE IS THE GESTURE, NOT THE STEP.** The step is in the flow file — no
  * deps, `"action": "trigger"`, taking its mandate in `inputs.<step>.text` — and
