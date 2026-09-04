@@ -263,3 +263,22 @@ fn the_watch_starts_no_engine() {
     }
     assert_eq!(flow.spend_cap_micros, None);
 }
+
+/// **A WATCH NOBODY WINDS IS A WATCH THAT STOPPED.** The beat reads the
+/// recurrence off the flow file; without one the watch runs only when a person
+/// asks, which is never at the hour something died. Every half hour, light: 48
+/// runs a day on a machine that stays on for years, and no engine in any.
+#[test]
+fn the_watch_beats_on_its_own_every_half_hour() {
+    let flow = flow_file();
+    let schedule = serde_json::to_value(flow.schedule.expect("the watch has a schedule"))
+        .expect("a schedule serialises");
+    assert_eq!(
+        schedule,
+        json!({
+            "recurrence": { "kind": "every_seconds", "seconds": 1800 },
+            "weight": "light",
+            "perimeter": []
+        })
+    );
+}

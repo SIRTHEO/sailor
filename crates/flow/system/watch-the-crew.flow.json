@@ -1,6 +1,13 @@
 {
   "id": "watch-the-crew",
   "description": "WHO IS WORKING ON WHAT, WHERE, SINCE WHEN, AND WHAT DIED. Three readings and no engine, so this costs nothing and can run at every beat: a watch that costs a call is a watch somebody switches off the first day. The first reads the terminals Sailor follows — those still open with the tree and the hour each started in, those closed and those alive that asked not to be followed. The second reads the claims agents write for one another, which is a different list: an agent that claims nothing still has a terminal, and one whose claim lapsed may still be typing. The third asks the ledger what is still open, keeping apart the runs left halfway — which are resumed — from the runs waiting for a person, which are taken up by hand. The last step prints the three side by side, because the answer to «is anything due» is in the comparison and not in any one of them: a terminal working with no claim, a claim held by a terminal that closed, a run waiting since yesterday. NOTHING HERE WRITES ANYTHING, and the only command it runs prints what the steps before it already read.",
+  "schedule": {
+    "recurrence": {
+      "kind": "every_seconds",
+      "seconds": 1800
+    },
+    "weight": "light"
+  },
   "graph": {
     "steps": [
       {
