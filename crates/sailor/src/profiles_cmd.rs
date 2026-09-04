@@ -24,6 +24,7 @@ fn dispatch(args: &[String]) -> Result<(), String> {
     match args {
         [cmd, rest @ ..] if cmd == "list" => cmd_list(rest),
         [cmd, rest @ ..] if cmd == "create" => cmd_create(rest),
+        [cmd, rest @ ..] if cmd == "adopt" => cmd_adopt(rest),
         [cmd, rest @ ..] if cmd == "switch" => cmd_switch(rest),
         [cmd, rest @ ..] if cmd == "current" => cmd_current(rest),
         [cmd, rest @ ..] if cmd == "endpoint" => cmd_endpoint(rest),
@@ -39,6 +40,10 @@ pub const USAGE: &[Form] = &[
     },
     Form {
         form: "sailor profiles create <cli> <name>",
+        says_key: "",
+    },
+    Form {
+        form: "sailor profiles adopt <cli> <name> [path]",
         says_key: "",
     },
     Form {
@@ -294,6 +299,71 @@ pub fn create(cli_id: &str, name: &String) -> Result<(), String> {
         endpoint: None,
     });
     store_io::save_store(&store)
+}
+
+fn cmd_adopt(args: &[String]) -> Result<(), String> {
+    match args {
+        [cli_id, name] => adopt(cli_id, name, None),
+        [cli_id, name, path] => adopt(cli_id, name, Some(Path::new(path))),
+        _ => Err(catalogue::say("cli.profiles.usage_adopt", &[])),
+    }
+}
+
+/// Takes a home already on the machine as a profile.
+///
+/// **THE ACCOUNT A PERSON IS LOGGED INTO IS THE ONE THEY MEAN.** A profile
+/// made from nothing has no credentials, and the fix is not to copy a token
+/// into it — one rotating token in two homes invalidates both — but to name
+/// the home that has one. Nothing is created, nothing written inside it.
+pub fn adopt(cli_id: &str, name: &String, path: Option<&Path>) -> Result<(), String> {
+    let cli = find_cli(cli_id)?;
+    profiles::validate_profile_name(name)
+        .map_err(|e| catalogue::say("cli.profiles.name_not_valid", &[("error", &e.to_string())]))?;
+    let home = match path {
+        Some(path) => path.to_path_buf(),
+        None => {
+            let here = std::env::var_os("HOME").map(std::path::PathBuf::from);
+            here.and_then(|here| profiles::existing_home(cli, &here))
+                .ok_or_else(|| catalogue::say("cli.profiles.no_home_of_its_own", &[("id", &cli.id)]))?
+        }
+    };
+    if !home.is_dir() {
+        return Err(catalogue::say(
+            "cli.profiles.home_not_there",
+            &[("path", &home.display().to_string())],
+        ));
+    }
+
+    let mut store = store_io::load_store()?;
+    if store
+        .profiles
+        .iter()
+        .any(|p| p.cli_id == cli.id && &p.name == name)
+    {
+        return Err(catalogue::say(
+            "cli.profiles.already_exists",
+            &[("name", name), ("id", &cli.id)],
+        ));
+    }
+    store.profiles.push(Profile {
+        name: name.clone(),
+        cli_id: cli.id.to_owned(),
+        home_dir: home.clone(),
+        endpoint: None,
+    });
+    store_io::save_store(&store)?;
+    println!(
+        "{}",
+        catalogue::say(
+            "cli.profiles.adopted",
+            &[
+                ("name", name),
+                ("id", &cli.id),
+                ("path", &home.display().to_string())
+            ]
+        )
+    );
+    Ok(())
 }
 
 fn cmd_endpoint(args: &[String]) -> Result<(), String> {
