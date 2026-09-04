@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeAll, describe, expect, test } from "vitest";
+import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { Terminal as Emulator } from "@xterm/xterm";
 import stylesheetSource from "./styles.css?raw";
 import App from "./App";
@@ -16,6 +16,7 @@ import {
   livenessOf,
   livenessWord,
   OutputBus,
+  STILL_SPEAKING_MS,
   splitCommandLine,
   type KeyAction,
   type TerminalSummary,
@@ -294,6 +295,81 @@ describe("how a terminal is doing", () => {
       livenessWord({ state: "unknown", why: "x" }),
     ];
     expect(new Set(words).size).toBe(3);
+  });
+});
+
+/**
+ * **«ALIVE» IS NOT «TALKING».** One that has just printed thirty lines and one
+ * stuck for eight minutes were drawn the same way. The answer is taken where
+ * every byte already passes, since the bytes stay out of React.
+ */
+describe("which terminals are speaking", () => {
+  const clock = { at: 1_000 };
+  const busWithClock = () => new OutputBus(() => clock.at);
+
+  test("A TERMINAL THAT SPEAKS IS IN THE SET, and stops being after the silence", () => {
+    vi.useFakeTimers();
+    clock.at = 1_000;
+    const bus = busWithClock();
+    const seen: string[][] = [];
+    bus.watchSpeaking((now) => seen.push([...now]));
+
+    bus.deliver("t1", new Uint8Array([1]), 0);
+    expect([...bus.speaking()]).toEqual(["t1"]);
+    expect(seen, "nobody was told it started").toEqual([["t1"]]);
+
+    // A ring that stopped between two lines of a build would flicker at each.
+    clock.at += STILL_SPEAKING_MS / 2;
+    vi.advanceTimersByTime(STILL_SPEAKING_MS / 2);
+    expect([...bus.speaking()]).toEqual(["t1"]);
+
+    clock.at += STILL_SPEAKING_MS;
+    vi.advanceTimersByTime(STILL_SPEAKING_MS);
+    expect([...bus.speaking()]).toEqual([]);
+    expect(seen[seen.length - 1], "nobody was told it stopped").toEqual([]);
+    vi.useRealTimers();
+  });
+
+  test("SPEECH IS COUNTED WITH OR WITHOUT A PANE, and per terminal", () => {
+    vi.useFakeTimers();
+    clock.at = 1_000;
+    const bus = busWithClock();
+
+    // Nobody subscribed for `t2`: the bytes are lost, the fact that it talks
+    // is not — the tab says so before a pane exists.
+    expect(bus.deliver("t2", new Uint8Array([1]), 0)).toBe(false);
+    bus.deliver("t1", new Uint8Array([1]), 0);
+    expect([...bus.speaking()].sort()).toEqual(["t1", "t2"]);
+
+    // Only one keeps talking.
+    clock.at += STILL_SPEAKING_MS;
+    bus.deliver("t1", new Uint8Array([2]), 0);
+    vi.advanceTimersByTime(STILL_SPEAKING_MS);
+    expect([...bus.speaking()]).toEqual(["t1"]);
+    vi.useRealTimers();
+  });
+
+  test("THE CLOCK RUNS ONLY WHILE SOMEBODY TALKS: a window open for weeks", () => {
+    vi.useFakeTimers();
+    clock.at = 1_000;
+    const bus = busWithClock();
+    expect(vi.getTimerCount(), "a timer before a single byte").toBe(0);
+
+    bus.deliver("t1", new Uint8Array([1]), 0);
+    expect(vi.getTimerCount(), "nobody is watching the silence").toBe(1);
+
+    clock.at += STILL_SPEAKING_MS * 2;
+    vi.advanceTimersByTime(STILL_SPEAKING_MS * 2);
+    expect(vi.getTimerCount(), "the timer ticks on through the quiet night").toBe(0);
+    vi.useRealTimers();
+  });
+
+  test("THE WORD SAYS IT TOO, for whoever refuses the motion", () => {
+    expect(livenessWord({ state: "alive" }, true)).toBe("speaking");
+    expect(livenessWord({ state: "alive" }, false)).toBe("alive");
+    // Speech is something an alive one does: an ended terminal does not
+    // acquire a fourth word by having bytes in flight.
+    expect(livenessWord({ state: "closed", status: null }, true)).toBe("ended");
   });
 });
 

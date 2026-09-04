@@ -41,6 +41,8 @@ interface PaneProps {
   /** The ceiling the relay hands on at, or `null` when no loaded flow declares one. */
   ceiling: number | null;
   liveness: Liveness;
+  /** Whether bytes are arriving from it right now. */
+  speaking?: boolean;
   /** Where the process's bytes arrive: the pane subscribes for its own `id`. */
   bus: OutputBus;
   /** Hidden when the screen is away: the emulator stays alive and keeps receiving. */
@@ -60,6 +62,7 @@ export function TerminalPane({
   summary,
   ceiling,
   liveness,
+  speaking = false,
   bus,
   visible,
   focused,
@@ -219,8 +222,9 @@ export function TerminalPane({
         <span className="label">{summary.workspaceName}</span>
         <span className="pane__root">{summary.workspaceRoot}</span>
         {/* The word sits beside the colour: prohibition 5. */}
+        {liveness.state === "alive" && speaking && <span className="speaks" aria-hidden="true" />}
         <span className="pane__state" data-state={liveness.state}>
-          {livenessWord(liveness)}
+          {livenessWord(liveness, speaking)}
         </span>
         {liveness.state === "unknown" && <span className="pane__why">{liveness.why}</span>}
         {liveness.state === "closed" && liveness.status !== null && (

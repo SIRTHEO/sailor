@@ -4236,6 +4236,33 @@ tr[data-followable]:hover {
   color: var(--state-waiting);
 }
 
+/* IT IS SPEAKING RIGHT NOW, which «alive» does not say: a terminal that has
+   just printed thirty lines and one stuck for eight minutes are both alive.
+   The ring turns while bytes arrive and stops after a breath of silence; the
+   word says the same thing for whoever refuses motion, which is why the ring
+   is `aria-hidden` and carries nothing of its own. */
+.speaks {
+  width: 11px;
+  height: 11px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-pill);
+  border: 1.5px solid var(--line);
+  border-top-color: var(--state-running);
+  animation: speaks-turn 0.7s linear infinite;
+}
+
+@keyframes speaks-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .speaks {
+    animation: none;
+  }
+}
+
 .terminals__tab[data-state="alive"] .terminals__word,
 .pane__state[data-state="alive"] {
   color: var(--state-running);
