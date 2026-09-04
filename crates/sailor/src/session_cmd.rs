@@ -292,7 +292,7 @@ impl<'a> Request<'a> {
 const NEEDS_THE_STORE: &[&str] = &["open", "event", "close", "list", "detach", "attach"];
 
 /// The forms that announce this terminal to the other agents, or stop.
-const NEEDS_THE_DEPOSIT: &[&str] = &["open", "event", "close"];
+const NEEDS_THE_DEPOSIT: &[&str] = &["open", "event", "close", "detach"];
 
 /// What Sailor does at each of its moments. What a line calls that moment is
 /// said by the descriptor, never here.
@@ -1433,6 +1433,9 @@ fn detach_terminal(request: &Request<'_>) -> Result<Report, String> {
     store
         .record_event(&event_named(request, "detach"))
         .map_err(|error| error.to_string())?;
+    // **DETACHED MEANS DETACHED HERE TOO**: a terminal that asked not to be
+    // followed must not stay announced to the others until its lease runs out.
+    let _ = stop_announcing(request, &arrival_of(request));
     Ok(Report::spoken(catalogue::say(
         "cli.session.detached",
         &[("tty", request.tty)],
@@ -1996,6 +1999,26 @@ mod tests {
 
         asking("close", payload, &store, Some(&deposit), &one_terminal(), &named_line())
             .expect("la chiusura riesce");
+
+        let claims = claims_in(&deposit);
+        assert_eq!(claims.len(), 1, "{claims:?}");
+        assert!(!claims[0]["released_at"].is_null(), "resta annunciato: {claims:?}");
+    }
+
+    /// **A TERMINAL THAT ASKED NOT TO BE FOLLOWED IS NOT LEFT ANNOUNCED.** The
+    /// register drops it at once and the crew would have kept it for the length
+    /// of a lease, which is the same silence for show the greeting avoids.
+    #[test]
+    fn detaching_a_terminal_takes_it_out_of_the_crew_too() {
+        let scratch = Scratch::new("annuncio-staccato");
+        let store = scratch.store();
+        let deposit = ledger::Ledger::open(scratch.directory.join("deposito")).expect("il deposito");
+        let payload = r#"{"session_id":"una-conversazione","cwd":"/un-albero"}"#;
+        asking("open", payload, &store, Some(&deposit), &one_terminal(), &named_line())
+            .expect("l'apertura riesce");
+
+        asking("detach", payload, &store, Some(&deposit), &one_terminal(), &named_line())
+            .expect("lo stacco riesce");
 
         let claims = claims_in(&deposit);
         assert_eq!(claims.len(), 1, "{claims:?}");
