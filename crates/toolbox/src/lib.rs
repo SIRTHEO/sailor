@@ -8,6 +8,7 @@
 pub mod action;
 pub mod descriptor;
 pub mod needs;
+pub mod privacy;
 pub mod probe;
 pub mod quota;
 pub mod resolver;
