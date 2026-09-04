@@ -80,6 +80,27 @@ Trappole già pagate su questa macchina:
   non poteva trovarla perché quella prova non era **mai partita**. È la stessa
   famiglia della riga qui sopra — un esito verde che non ha guardato niente —
   e si riconosce solo contando i binari, non le prove.
+- **I semi dei cricchetti si misurano su `HEAD` pulito, non sull'albero di
+  lavoro.** In questo checkout scrivono più sessioni insieme, e i file non
+  committati di un'altra falsano ogni conteggio: il 04/09/2026 ho scritto semi
+  misurati con la prova non committata di un'altra sessione in albero — i suoi
+  commenti italiani alzavano un contatore, le sue righe di codice abbassavano il
+  rapporto di un crate — e i semi descrivevano un albero che a `HEAD` non
+  esiste. `sailor release`, che esegue la suite su un clone di `HEAD`, si è
+  fermato senza sostituire niente, ed è così che si è visto. La misura giusta
+  costa trenta secondi:
+
+  ```sh
+  rm -rf /tmp/pulito && mkdir -p /tmp/pulito
+  git archive HEAD | tar -x -C /tmp/pulito
+  # sovrapponi solo i TUOI file modificati, non quelli di altre sessioni
+  CARGO_TARGET_DIR=$PWD/target/from-head cargo test \
+    --manifest-path /tmp/pulito/Cargo.toml \
+    -p sailor --test comments_do_not_crowd_out_the_code
+  ```
+
+  Vale anche prima di dire «l'albero è verde»: `git status` mostra chi altro sta
+  scrivendo, e i suoi rossi non sono i tuoi.
 - **`cargo fmt -- <file>` non si limita a quel file**: formatta tutto il
   workspace. L'albero non è formattato in blocco e non va formattato in blocco.
 - **`cargo test --tests` non aggiorna il binario** che i ganci eseguono.
