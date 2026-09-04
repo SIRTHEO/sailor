@@ -1,5 +1,5 @@
-//! Downloads the real catalog by running `curl` — the road `notte` took to
-//! OpenRouter. No authentication, so no key in here.
+//! Downloads the catalogue by running `curl`, with no authentication and so no
+//! key in here. **The address is data, not Rust**: another catalogue is a file.
 //!
 //! No test reaches the real network: one is red when the line drops, not when
 //! the code is wrong. What is tested is what happens **around** it, through
@@ -7,7 +7,41 @@
 
 use std::process::Command;
 
-const CATALOG_URL: &str = "https://openrouter.ai/api/v1/models";
+/// The source shipped with the product, embedded like the price list.
+pub const BUILTIN_SOURCE: &str = include_str!("../catalogue-source.default.json");
+
+/// The variable naming a file read instead of the shipped one.
+pub const CATALOGUE_SOURCE_PATH_VAR: &str = "MODELS_CATALOGUE_SOURCE";
+
+/// Where the catalogue is asked, and which reader reads the answer.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+pub struct CatalogueSource {
+    pub url: String,
+    pub shape: String,
+}
+
+#[derive(serde::Deserialize)]
+struct SourceFile {
+    catalogue: CatalogueSource,
+}
+
+/// What a file declares.
+pub fn parse_source(text: &str) -> Result<CatalogueSource, String> {
+    serde_json::from_str::<SourceFile>(text)
+        .map(|read| read.catalogue)
+        .map_err(|error| format!("the catalogue source does not parse: {error}"))
+}
+
+/// The source in force. **A broken file falls back to the shipped one**:
+/// whoever mistyped a comma wants their catalogue back, not a dead product.
+pub fn catalogue_source() -> CatalogueSource {
+    let declared = std::env::var_os(CATALOGUE_SOURCE_PATH_VAR)
+        .and_then(|path| std::fs::read_to_string(path).ok());
+    let text = declared.as_deref().unwrap_or(BUILTIN_SOURCE);
+    parse_source(text)
+        .or_else(|_| parse_source(BUILTIN_SOURCE))
+        .expect("the catalogue source shipped with the product parses")
+}
 
 /// Downloads the catalog's JSON body. `MODELS_CATALOG_FETCH_OVERRIDE` replaces
 /// `curl` with any command, to feed in a fixed catalog without a network.
@@ -23,7 +57,7 @@ pub fn catalog_body() -> Result<String, String> {
         ),
         Err(_) => {
             let mut curl = Command::new("curl");
-            curl.args(["-sS", "-m", "30", CATALOG_URL]);
+            curl.args(["-sS", "-m", "30", &catalogue_source().url]);
             ("curl".to_owned(), curl)
         }
     };
@@ -49,6 +83,41 @@ pub fn catalog_body() -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **THE SHIPPED SOURCE IS READ, NOT ASSUMED**: one that stops parsing
+    /// leaves the product falling back to itself, which reads like a default.
+    #[test]
+    fn the_shipped_source_names_where_the_catalogue_is_asked_for() {
+        let source = catalogue_source();
+        assert!(source.url.starts_with("https://"), "{source:?}");
+        assert!(!source.shape.is_empty(), "{source:?}");
+    }
+
+    /// **AND A FILE REPLACES IT WHOLE**: that is the point of the move, and it
+    /// is asked of `catalogue_source` and not of the parser — the precedence
+    /// between the two is the part a reversed `or_else` would silently swap.
+    #[test]
+    fn a_declared_file_replaces_the_shipped_source() {
+        let shipped = catalogue_source().url;
+        let path = std::env::temp_dir().join(format!("models-source-{}.json", std::process::id()));
+        std::fs::write(
+            &path,
+            r#"{"catalogue": {"url": "https://un-altro/models", "shape": "una-forma"}}"#,
+        )
+        .expect("the declared file is written");
+
+        std::env::set_var(CATALOGUE_SOURCE_PATH_VAR, &path);
+        let declared = catalogue_source();
+        // A FILE THAT DOES NOT PARSE FALLS BACK, and the same variable says it.
+        std::fs::write(&path, "{ non è JSON").expect("the broken file is written");
+        let broken = catalogue_source();
+        std::env::remove_var(CATALOGUE_SOURCE_PATH_VAR);
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(declared.url, "https://un-altro/models", "the file was not read");
+        assert_eq!(declared.shape, "una-forma");
+        assert_eq!(broken.url, shipped, "a broken file left no catalogue at all");
+    }
 
     /// The override is the only seam the network leaves: through it, both
     /// outcomes are reachable without a line.
