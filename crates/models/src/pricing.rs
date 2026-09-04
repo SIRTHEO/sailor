@@ -5,12 +5,11 @@
 //! a comparison, and the sum is made here. Pure: text in, values out; whoever
 //! reads the file from disk lives elsewhere, as for `catalog` and `usage`.
 
-/// The price list the product carries with it, embedded rather than sought in
-/// an install directory — the scheme of `toolbox::descriptor::BUILTIN` and the
-/// system flows, and for the same reason: a binary copied elsewhere keeps
+/// The price list the product carries with it, embedded as
+/// `toolbox::descriptor::BUILTIN` is: a binary copied elsewhere keeps
 /// answering, with no path to guess. **TWO LISTS EXIST AND THE HOME ONE WINS
-/// BY `id`** — `$SAILOR_HOME/pricing.json`, rewritten with a text editor,
-/// because prices change more often than anyone recompiles.
+/// BY `id`** — `$SAILOR_HOME/pricing.json`, because prices change more often
+/// than anyone recompiles.
 pub const BUILTIN: &str = include_str!("../pricing.default.json");
 
 /// How to tell a reader where a price list that nobody wrote on this machine
@@ -18,12 +17,10 @@ pub const BUILTIN: &str = include_str!("../pricing.default.json");
 /// looking for it on disk would find nothing.
 pub const BUILTIN_SOURCE: &str = "built-in";
 
-/// The list shipped with the product, and **THE CURE FOR FAULT 35**: when only
-/// the home file existed, a machine without it left every `cost_micros` at
-/// `None`, every run looked costless, and a flow with a `spend_cap_micros` ran
-/// to the end without any error — a brake that does not brake. The cure is to
-/// ship the list, as descriptors and system flows are shipped. **IT PANICS IF
-/// IT DOES NOT PARSE**: an empty list here would put fault 35 back on its feet.
+/// The list shipped with the product, and **THE CURE FOR FAULT 35**: with only
+/// the home file, a machine without it left every `cost_micros` at `None` and
+/// a `spend_cap_micros` was a brake that does not brake. **IT PANICS IF IT
+/// DOES NOT PARSE**: an empty list here would put that fault back on its feet.
 pub fn shipped() -> PriceList {
     PriceList::parse(BUILTIN).expect("the price list shipped with the product parses")
 }
@@ -31,16 +28,14 @@ pub fn shipped() -> PriceList {
 /// What this list can say about a model name.
 ///
 /// **THREE OUTCOMES AND NOT TWO, BECAUSE THEY ARE TWO DIFFERENT REPAIRS.** An
-/// unknown name is repaired by adding an entry or an alias; an entry with no
-/// prices, by writing the prices. Calling both "unknown" sends the reader to
-/// the wrong place, and the cost is unknown either way — so the number hides it.
+/// unknown name wants an entry or an alias; an entry with no prices wants the
+/// prices. The cost is unknown either way, so the number hides which.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Known {
     /// It is there, with the two prices a sum needs.
     Priced,
     /// It is there, but the input or the output price is missing: the cost
-    /// will stay unknown all the same, and nobody would notice looking at the
-    /// list from a distance.
+    /// stays unknown all the same, and the list looks complete from afar.
     ListedWithoutPrice,
     /// No entry carries this name, neither as `id` nor as an alias.
     Absent,
@@ -55,10 +50,9 @@ pub enum Known {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Price {
     pub id: String,
-    /// The other names the same model goes by. A command-line engine names the
-    /// model however it likes — `sonnet`, `claude-sonnet-5`,
-    /// `anthropic/claude-sonnet-5` — and whoever keeps the list knows which of
-    /// those are the same thing. The code does not guess it.
+    /// The other names the same model goes by — `sonnet`, `claude-sonnet-5`,
+    /// `anthropic/claude-sonnet-5`. Whoever keeps the list says which are the
+    /// same thing; the code does not guess it.
     pub aliases: Vec<String>,
     pub input_per_million: Option<f64>,
     pub output_per_million: Option<f64>,
