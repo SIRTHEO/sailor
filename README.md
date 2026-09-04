@@ -11,7 +11,9 @@ and repeated instead of recounted.
 
 > **Status: under construction, and used every day by the people writing it.**
 > Interfaces change. What is here works and is tested; what is missing is
-> written down in `docs/guasti-incontrati.md`, open defects included.
+> written down in `docs/guasti-incontrati.md`, open defects included. What
+> would make it *finished* is written down too, as a termination condition in
+> `docs/`: twenty-one claims, each with the check that decides it.
 
 ## Five minutes
 
@@ -56,7 +58,7 @@ and opens terminals that know which engine runs in them.
 
 ```sh
 cargo build --workspace
-cargo test --workspace      # around 930 tests across 79 targets
+cargo test --workspace --no-fail-fast   # 1,267 tests across 112 binaries
 ```
 
 Rust 1.89 or newer. No service and no database to start: the store is a SQLite
@@ -127,6 +129,8 @@ responsibilities divide rather than where it was convenient:
 | `profiles` | the credential homes, one per command line |
 | `registry` · `trigger` · `release` | the action registry, triggers, releases |
 | `inventory` · `sessions` · `supervisor` · `terminal` | the machine: what exists, what runs, what is live |
+| `workspace` · `relay` | the tree being worked in, and handing a live agent the baton |
+| `catalogue` · `faults` | the sentences a person reads, and the fault ledger |
 | `ui` · `sailor` | the shared view and the command line |
 
 ## The rules this project holds itself to
