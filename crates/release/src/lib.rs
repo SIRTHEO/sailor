@@ -33,6 +33,13 @@ pub struct Target {
     /// The directory of the page the binary embeds at compile time — the one
     /// holding `package.json` — or `None` for a binary with no page.
     pub page_rel: Option<&'static str>,
+    /// The cargo features the build has to be given, beyond the defaults.
+    ///
+    /// **A DEFAULT BUILD OF A SHELL IS A DEVELOPMENT BUILD**: its own build
+    /// script reads `dev = !custom-protocol`, so without that feature it embeds
+    /// no page and looks for a development server that answers nobody once the
+    /// binary is in service. Fault 77.
+    pub features: &'static [&'static str],
     /// The copy inside the build tree, relative to the **sources** — the one a
     /// local `cargo build` overwrites.
     pub live_rel: &'static str,
@@ -78,6 +85,7 @@ pub const TARGETS: &[Target] = &[
         bin: "sailor",
         manifest_rel: ROOT_MANIFEST,
         page_rel: None,
+        features: &[],
         live_rel: "target/release/sailor",
         safe_rel: "bin/sailor",
         stamp_rel: "state/sailor-binary-commit",
@@ -92,6 +100,11 @@ pub const TARGETS: &[Target] = &[
         bin: "sailor-desktop",
         manifest_rel: "desktop/src-tauri/Cargo.toml",
         page_rel: Some("desktop"),
+        // Named on the dependency and not on this package, which declares no
+        // feature of its own: `--features tauri/custom-protocol` is what the
+        // shell's own builder passes, and copying it here keeps the release and
+        // that builder producing the same binary.
+        features: &["tauri/custom-protocol"],
         live_rel: "desktop/src-tauri/target/release/sailor-desktop",
         safe_rel: "bin/sailor-desktop",
         stamp_rel: "state/window-binary-commit",
@@ -287,9 +300,86 @@ pub fn readiness(receipt_names: &[String], alive: &dyn Fn(u32) -> bool) -> Readi
     out
 }
 
+/// The files of the built page that the binary does not carry.
+///
+/// **A BUILD THAT SUCCEEDS IS NOT A BINARY THAT WORKS**: given the wrong
+/// features the shell embeds nothing and compiles green, and what comes out
+/// opens a window, carries its title, answers every call and shows a blank
+/// page. Nothing in the exit code says so, so the bytes are read. Fault 77.
+pub fn page_files_missing_from(binary: &[u8], asset_names: &[String]) -> Vec<String> {
+    // Every name, not just one: a page missing a font was not embedded whole
+    // either, and it costs one pass over a file already in hand.
+    asset_names
+        .iter()
+        .filter(|name| !contains(binary, name.as_bytes()))
+        .cloned()
+        .collect()
+}
+
+/// Whether `needle` appears anywhere in `haystack`. The embedded names sit
+/// among compressed blocks, so this is a byte search and not a line one.
+fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+    !needle.is_empty() && haystack.windows(needle.len()).any(|window| window == needle)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The shape of the fault: the page built, the binary carries none of it.
+    #[test]
+    fn a_binary_without_the_page_names_every_file_it_is_missing() {
+        let names = vec!["assets/index-AAA.js".to_owned(), "assets/index-BBB.css".to_owned()];
+        let missing = page_files_missing_from(b"a shell with no page inside", &names);
+        assert_eq!(missing, names, "neither file is in there, so both are named");
+    }
+
+    #[test]
+    fn a_binary_carrying_the_page_is_missing_nothing() {
+        let names = vec!["assets/index-AAA.js".to_owned(), "assets/index-BBB.css".to_owned()];
+        let binary = b"\x00\x01assets/index-AAA.js\xff\xfeassets/index-BBB.css\x00";
+        assert!(page_files_missing_from(binary, &names).is_empty());
+    }
+
+    /// Half a page is the harder case: the build went, one file did not make it,
+    /// and the window would open showing text with no style on it.
+    #[test]
+    fn a_page_missing_one_file_names_that_one() {
+        let names = vec!["assets/index-AAA.js".to_owned(), "assets/index-BBB.css".to_owned()];
+        let binary = b"only assets/index-AAA.js is in here";
+        assert_eq!(page_files_missing_from(binary, &names), vec!["assets/index-BBB.css"]);
+    }
+
+    /// A check with nothing to look for reads as agreement — fault 22. It is the
+    /// caller's job to have found the files; this says what this function does
+    /// when it has not, so the caller can be judged on it.
+    #[test]
+    fn nothing_to_look_for_finds_nothing_missing() {
+        assert!(page_files_missing_from(b"anything", &[]).is_empty());
+    }
+
+    /// The window declares what takes it out of development mode, and the engine
+    /// declares nothing: a page built and then not embedded is fault 77.
+    #[test]
+    fn a_target_with_a_page_declares_what_embeds_it() {
+        for target in TARGETS {
+            if target.page_rel.is_some() {
+                assert!(
+                    target.features.contains(&"tauri/custom-protocol"),
+                    "{}: it builds a page and does not ask for the feature that \
+                     embeds it, so the binary would go looking for the \
+                     development server instead",
+                    target.name
+                );
+            } else {
+                assert!(
+                    target.features.is_empty(),
+                    "{}: features on a target with no page need a reason here",
+                    target.name
+                );
+            }
+        }
+    }
 
     #[test]
     fn stamp_skips_comments_and_blank_lines() {
