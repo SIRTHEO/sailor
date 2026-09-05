@@ -875,7 +875,7 @@ mod tests {
     /// **IL PESO NON SI INVENTA SU UN FLUSSO CHE NON NE HA UNO.**
     ///
     /// Il ripiego ovvio sarebbe «leggero», e sarebbe un dato inventato con la
-    /// faccia di una dichiarazione: chi legge `docs/da-fare.md` vedrebbe un peso
+    /// faccia di una dichiarazione: chi legge la nota `da-fare` vedrebbe un peso
     /// che nessuno ha misurato. Il rifiuto scrive la riga da digitare, così
     /// costa una battuta e non una lettura del codice.
     #[test]

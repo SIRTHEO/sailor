@@ -12,8 +12,8 @@ and repeated instead of recounted.
 > **Status: under construction, and used every day by the people writing it.**
 > Interfaces change. What is here works and is tested; what is missing is
 > written down in `docs/guasti-incontrati.md`, open defects included. What
-> would make it *finished* is written down too, as a termination condition in
-> `docs/`: twenty-one claims, each with the check that decides it.
+> would make it *finished* is written down too, as a termination condition
+> Sailor keeps in its own store: `sailor search termination condition` finds it.
 
 ## Five minutes
 
