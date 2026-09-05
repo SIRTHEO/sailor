@@ -6447,3 +6447,23 @@ tr[data-followable]:hover {
   font-size: var(--text-micro);
   font-family: var(--font-data);
 }
+
+/* ── the whiteboard ─────────────────────────────────────────────────── */
+.sketch { display: flex; flex-direction: column; gap: 16px; max-width: 960px; }
+.sketch__head { display: flex; flex-direction: column; gap: 4px; }
+.sketch__board { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; align-items: start; }
+.sketch__block { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
+.sketch__block-head { display: flex; align-items: center; gap: 8px; }
+.sketch__number { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 1.5em; }
+.sketch__kind { flex: 1; }
+.sketch__remove { border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.sketch__remove:hover { color: var(--ink); }
+.sketch__words { min-height: 72px; resize: vertical; font: inherit; background: var(--raised); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 8px; }
+.sketch__after { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sketch__arrow { border: 1px solid var(--line); border-radius: var(--radius-pill); padding: 0 8px; background: transparent; color: var(--ink); cursor: pointer; font-variant-numeric: tabular-nums; }
+.sketch__arrow[data-on] { background: var(--accent-fill); color: var(--on-accent); border-color: transparent; }
+.sketch__add, .sketch__draft { padding: 6px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--raised); color: var(--ink); cursor: pointer; }
+.sketch__draft { background: var(--accent-fill); color: var(--on-accent); border-color: transparent; }
+.sketch__draft:disabled { opacity: 0.5; cursor: default; }
+.sketch__foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.sketch__text pre { white-space: pre-wrap; font-size: var(--text-small); font-family: var(--font-data); }

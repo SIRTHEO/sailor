@@ -7,7 +7,7 @@
 import type { SailorTab } from "./sailortabs";
 import { SAILOR_TABS } from "./sailortabs";
 
-export type Section = "board" | "changes" | "terminals" | "ledger" | "memory" | "sailor";
+export type Section = "board" | "changes" | "sketch" | "terminals" | "ledger" | "memory" | "sailor";
 
 export interface Place {
   id: Section;
@@ -26,6 +26,13 @@ export const PLACES: Place[] = [
     name: "Changes",
     glyph: "⇄",
     asks: "what is not saved yet, in this tree",
+    group: "work",
+  },
+  {
+    id: "sketch",
+    name: "Whiteboard",
+    glyph: "✎",
+    asks: "draw the flow you want, in blocks and words",
     group: "work",
   },
   { id: "terminals", name: "Terminals", glyph: "▮", asks: "what is running", group: "work" },
@@ -108,4 +115,4 @@ export function inTheStrip(): Place[] {
  * strip row: what they answer changes with the tree, and a row that answers
  * about a tree you cannot see from it is a row that lies.
  */
-export const UNDER_A_TREE: Section[] = ["board", "changes"];
+export const UNDER_A_TREE: Section[] = ["board", "changes", "sketch"];
