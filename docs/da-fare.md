@@ -127,7 +127,8 @@ Nessuna di queste è bloccata da lavoro: sono bloccate da una scelta.
   nodi di base di Sailor su cui disegnare e scrivere, e un agente che dallo
   schizzo fa una bozza vera. *05/09: la metà del motore c'è — `draft-a-flow`,
   `action_list`, `flow_draft` — e ha scritto il suo primo flusso da uno schizzo
-  in testo. Manca la tela nella finestra.*
+  in testo; la tela è il luogo «Whiteboard» della finestra (`967665a2`), da
+  provare nella finestra rilasciata.*
 - **Spazi di lavoro come pagine**: una pagina per i flussi di sistema, una per i
   generici, una per ogni spazio di lavoro, coi nodi collegabili fra pagine.
   Il 01/09/2026 Theo l'ha saldata alla voce sulle sospese: la pagina è una tela
