@@ -9,7 +9,7 @@ use crate::Form;
 use flow::reference;
 use flow::{
     ActionRegistry, Execution, Executor, FlowFile, Graph, InProcessExecutor, RecordStore,
-    SystemClock,
+    StepRecord, SystemClock,
 };
 use ledger::Ledger;
 use models::pricing::{Known, PriceList};
@@ -129,17 +129,86 @@ fn cost_of(flow: &str) -> Result<String, String> {
         .filter(|run| run.entity == flow)
         .max_by_key(|run| run.started_at)
         .ok_or_else(|| catalogue::say("cli.flow.never_run_here", &[("flow", flow)]))?;
+    let steps: &[StepRecord] = data
+        .steps_by_run
+        .get(&run.run_id)
+        .map_or(&[], Vec::as_slice);
     let view = ui::dashboard::summarize_run(
         run,
-        data.steps_by_run
-            .get(&run.run_id)
-            .map_or(&[], Vec::as_slice),
+        steps,
         data.calls_by_run
             .get(&run.run_id)
             .map_or(&[], Vec::as_slice),
         now_secs()?,
     );
-    Ok(spending_report(&view, &actions::current_price_list()))
+    let mut report = spending_report(&view, &actions::current_price_list());
+    report.push_str(&refusals_report(steps));
+    Ok(report)
+}
+
+/// The attempts of one step that one declared check refused, and by which
+/// rules: a flow refused thirty times reads which check says no, not only
+/// that thirty attempts broke.
+struct RefusedAttempts {
+    step_id: String,
+    check: String,
+    attempts: usize,
+    rules: BTreeSet<&'static str>,
+}
+
+/// One row per (step, check), the most refused first.
+fn refused_attempts(steps: &[StepRecord]) -> Vec<RefusedAttempts> {
+    let mut by_check: BTreeMap<(String, String), RefusedAttempts> = BTreeMap::new();
+    for record in steps {
+        let Some(refusal) = &record.refusal else {
+            continue;
+        };
+        let key = (record.step_id.clone(), refusal.check.clone());
+        let row = by_check.entry(key).or_insert_with(|| RefusedAttempts {
+            step_id: record.step_id.clone(),
+            check: refusal.check.clone(),
+            attempts: 0,
+            rules: BTreeSet::new(),
+        });
+        row.attempts += 1;
+        row.rules.insert(refusal.rule.name());
+    }
+    let mut rows: Vec<RefusedAttempts> = by_check.into_values().collect();
+    rows.sort_by(|left, right| {
+        right
+            .attempts
+            .cmp(&left.attempts)
+            .then_with(|| left.step_id.cmp(&right.step_id))
+            .then_with(|| left.check.cmp(&right.check))
+    });
+    rows
+}
+
+/// Empty when no check refused anything: a heading over nothing would read as
+/// a count of zero, and there is nothing to count.
+fn refusals_report(steps: &[StepRecord]) -> String {
+    let rows = refused_attempts(steps);
+    if rows.is_empty() {
+        return String::new();
+    }
+    let mut report = format!("\n{}", catalogue::say("cli.flow.refusals_heading", &[]));
+    for row in rows {
+        let rules = row.rules.iter().copied().collect::<Vec<_>>().join(", ");
+        let _ = write!(
+            report,
+            "\n{}",
+            catalogue::say(
+                "cli.flow.refused_by_check",
+                &[
+                    ("step", &row.step_id),
+                    ("attempts", &row.attempts.to_string()),
+                    ("check", &row.check),
+                    ("rules", &rules),
+                ],
+            )
+        );
+    }
+    report
 }
 
 /// Il consumo di una corsa, per una persona.
@@ -3719,7 +3788,7 @@ fn new_run_id(flow_id: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use flow::{Clock, Decision, InMemoryRecordStore, ProcessProbe, StepRecord};
+    use flow::{Clock, Decision, InMemoryRecordStore, ProcessProbe};
 
     // ── the beat ─────────────────────────────────────────────────────────
 
@@ -4193,6 +4262,7 @@ mod tests {
                     output: Some(serde_json::json!({})),
                     said: None,
                     failure_class: None,
+                    refusal: None,
                     ended_at: 1_500,
                     bytes_seen: None,
                     bytes_discarded: None,
@@ -5307,6 +5377,58 @@ mod tests {
         let said = spending_report(&view, &a_small_price_list());
 
         assert!(!said.contains("cannot price"), "{said}");
+    }
+
+    fn a_refused_attempt(
+        step_id: &str,
+        attempt: u32,
+        check: &str,
+        rule: flow::RefusalRule,
+    ) -> StepRecord {
+        let mut record = StepRecord::started(
+            "run-1",
+            step_id,
+            attempt,
+            1,
+            vec![],
+            serde_json::json!(null),
+            vec![],
+            attempt as i64,
+        );
+        record.outcome = Some(flow::Outcome::Broke);
+        record.failure_class = Some("answer_off_shape".to_owned());
+        record.refusal = Some(flow::Refusal::new(check, "$.verdict", rule, "\"remvoe\""));
+        record.ended_at = Some(attempt as i64 + 1);
+        record
+    }
+
+    /// One line per (step, check) with how many attempts that check refused and
+    /// by which rules, the most refused first; a run nobody refused adds nothing.
+    #[test]
+    fn the_cost_report_counts_the_attempts_each_check_refused_per_step() {
+        use flow::RefusalRule::{MissingField, NotAllowed, WrongType};
+        let mut went = StepRecord::started("run-1", "judge", 4, 1, vec![], serde_json::json!(null), vec![], 4);
+        went.outcome = Some(flow::Outcome::Went);
+        let steps = vec![
+            a_refused_attempt("judge", 1, "answer_shape", NotAllowed),
+            a_refused_attempt("judge", 2, "answer_shape", MissingField),
+            a_refused_attempt("judge", 3, "answer_shape", NotAllowed),
+            went,
+            a_refused_attempt("judge", 5, "output_schema", WrongType),
+            a_refused_attempt("draft", 1, "answer_shape", WrongType),
+        ];
+
+        let said = refusals_report(&steps);
+
+        let lines: Vec<&str> = said.lines().filter(|line| !line.is_empty()).collect();
+        assert_eq!(lines.len(), 4, "{said}");
+        assert_eq!(lines[0], catalogue::say("cli.flow.refusals_heading", &[]));
+        assert!(lines[1].contains("judge") && lines[1].contains("3 ") && lines[1].contains("answer_shape"), "{said}");
+        assert!(lines[1].contains("missing_field, not_allowed"), "{said}");
+        assert!(lines[2].contains("draft") && lines[2].contains("1 ") && lines[2].contains("answer_shape"), "{said}");
+        assert!(lines[3].contains("judge") && lines[3].contains("1 ") && lines[3].contains("output_schema"), "{said}");
+
+        assert_eq!(refusals_report(&steps[3..4]), "");
     }
 
     /// **SOTTO TRE CORSE COSTATE NON SI SUGGERISCE NIENTE, E SI DICE PERCHÉ.**
