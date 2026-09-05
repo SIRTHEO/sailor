@@ -11,7 +11,7 @@ use std::process::Command;
 /// Warnings per crate, as measured today. Downwards only: a crate that warns
 /// more than its seed is red, and so is a seed left above what the tree holds.
 const WARNINGS_TODAY: &[(&str, usize)] = &[
-    ("actions", 134),
+    ("actions", 0),
     ("catalogue", 0),
     ("faults", 0),
     ("flow", 0),
