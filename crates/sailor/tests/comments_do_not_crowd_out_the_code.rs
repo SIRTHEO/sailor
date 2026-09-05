@@ -347,7 +347,7 @@ fn permille_per_crate() -> BTreeMap<String, usize> {
     let mut comments: BTreeMap<String, usize> = BTreeMap::new();
     let mut code: BTreeMap<String, usize> = BTreeMap::new();
     for path in sources() {
-        let relative = path.strip_prefix(&root).unwrap_or(&path);
+        let relative = path.strip_prefix(root).unwrap_or(&path);
         let mut parts = relative.components().map(|part| part.as_os_str().to_string_lossy().into_owned());
         let crate_name = match parts.next().as_deref() {
             Some("crates") => parts.next().unwrap_or_default(),
@@ -412,11 +412,12 @@ fn no_new_comment_block_runs_past_the_cap() {
         counts.long_blocks <= LONG_BLOCKS_TODAY,
         "blocks over {MAX_BLOCK} lines: {} (the declared cap is {LONG_BLOCKS_TODAY}). \
          The longest runs {} lines in {}. Shorten it, or move the chronicle into \
-         the commit message{}",
+         the commit message{}{}",
         counts.long_blocks,
         counts.worst.0,
         counts.worst.1,
-        format!("{}{}", all_three(&counts), heaviest(&counts.long_at))
+        all_three(&counts),
+        heaviest(&counts.long_at)
     );
 }
 
@@ -441,9 +442,10 @@ fn the_comments_not_in_english_only_shrink() {
         counts.not_english <= COMMENT_LINES_NOT_IN_ENGLISH,
         "comment lines not in English: {} (declared {COMMENT_LINES_NOT_IN_ENGLISH}). \
          If you are writing a new comment, write it in English; if you are \
-         translating, lower the number{}",
+         translating, lower the number{}{}",
         counts.not_english,
-        format!("{}{}", all_three(&counts), heaviest(&counts.not_english_at))
+        all_three(&counts),
+        heaviest(&counts.not_english_at)
     );
 }
 
