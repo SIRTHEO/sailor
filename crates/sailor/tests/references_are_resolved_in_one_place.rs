@@ -352,7 +352,7 @@ fn nothing_but_the_place_where_the_input_is_composed_resolves_references() {
             }
         };
         for (number, line) in code.lines().enumerate() {
-            if names_the_call(&line) && !allowed.contains(&relative.as_str()) {
+            if names_the_call(line) && !allowed.contains(&relative.as_str()) {
                 copies.push(format!("{relative}:{}: {}", number + 1, line.trim()));
             }
         }

@@ -266,7 +266,7 @@ fn keystrokes_reach(inner: &Arc<Pty>, typed: Arc<AtomicU64>) {
 fn show_output(inner: &Arc<Pty>, shown: Arc<AtomicU64>) -> io::Result<()> {
     let from = inner
         .reader()
-        .map_err(|error| io::Error::new(io::ErrorKind::Other, error.to_string()))?;
+        .map_err(|error| io::Error::other(error.to_string()))?;
     let into = bridge::Counted::new(unsafe { File::from_raw_fd(libc::dup(1)) }, shown);
     bridge::pump(from, into, || follow_the_window(inner))
 }
@@ -559,9 +559,7 @@ mod tests {
 
     #[test]
     fn a_form_nobody_wrote_is_refused_by_name() {
-        let error = dispatch(&words(&["invented"]))
-            .err()
-            .expect("an invented form is refused");
+        let error = dispatch(&words(&["invented"])).expect_err("an invented form is refused");
         assert!(
             error.contains("invented"),
             "the refusal must name it: {error}"
@@ -603,8 +601,7 @@ mod tests {
     #[test]
     fn a_command_line_nobody_measured_is_refused_and_told_where_to_say_it() {
         let refusal = reset_line_of(&shipped(), "codex")
-            .err()
-            .expect("an undeclared command line must refuse");
+            .expect_err("an undeclared command line must refuse");
         assert!(refusal.contains("does not declare"), "{refusal}");
         assert!(
             refusal.contains("reset_context"),
@@ -615,8 +612,7 @@ mod tests {
     #[test]
     fn a_command_line_nobody_ever_heard_of_is_refused_by_name() {
         let refusal = reset_line_of(&shipped(), "rossignol")
-            .err()
-            .expect("an unknown command line must refuse");
+            .expect_err("an unknown command line must refuse");
         assert!(refusal.contains("rossignol"), "{refusal}");
     }
 
@@ -655,8 +651,7 @@ mod tests {
             directory.to_str().expect("a path"),
         ]);
         let refusal = leave_mandate(&written, &mut "   \n".as_bytes())
-            .err()
-            .expect("an empty mandate is refused");
+            .expect_err("an empty mandate is refused");
         assert!(refusal.contains("nothing to hand on"), "{refusal}");
         assert_eq!(
             mandate::read(&mandate::address_in(&directory, "ttys004")),
@@ -667,9 +662,7 @@ mod tests {
 
     #[test]
     fn running_nothing_is_refused_instead_of_opening_an_empty_terminal() {
-        let error = hold(&words(&["--"]))
-            .err()
-            .expect("an empty command line is refused");
+        let error = hold(&words(&["--"])).expect_err("an empty command line is refused");
         assert!(error.contains("nothing to run"), "{error}");
     }
 }

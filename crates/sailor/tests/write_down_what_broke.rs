@@ -83,7 +83,7 @@ impl Clock for Tick {
 
 fn run(graph: &Graph, trigger: Value) -> (Execution, InMemoryRecordStore) {
     let scratch = Scratch::new();
-    let mut store = InMemoryRecordStore::default();
+    let store = InMemoryRecordStore::default();
     let request = ExecutionRequest {
         run_id: "written".to_owned(),
         root_inputs: [("trigger".to_owned(), trigger)].into_iter().collect(),
@@ -92,7 +92,7 @@ fn run(graph: &Graph, trigger: Value) -> (Execution, InMemoryRecordStore) {
         spend_cap_micros: None,
     };
     let execution = InProcessExecutor
-        .execute(graph, request, &mut store, &registry(&scratch), &mut Tick(0.into()))
+        .execute(graph, request, &store, &registry(&scratch), &Tick(0.into()))
         .expect("the execution does not break");
     (execution, store)
 }
