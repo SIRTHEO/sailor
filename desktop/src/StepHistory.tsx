@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { stepHistory, type StepPassage } from "./engine";
 import { OUTCOME_LABEL, whyFailed } from "./RunConsole";
 import { StepRefusal } from "./StepRefusal";
+import { StepRan } from "./StepRan";
 
 /**
  * What came into this node, over time. The run view tells today's call; this
@@ -126,6 +127,8 @@ export function StepHistory({ flowName, stepId }: StepHistoryProps) {
                 <div className="passage__detail">
                   <div className="passage__label">came in</div>
                   <pre className="passage__code">{JSON.stringify(passage.input, null, 2)}</pre>
+
+                  {passage.ran && <StepRan ran={passage.ran} />}
 
                   {passage.output !== null && passage.output !== undefined && (
                     <>
