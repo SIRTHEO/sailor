@@ -477,7 +477,7 @@ mod tests {
             dir: scratch.clone(),
         }];
         let now = now_secs().unwrap_or(0);
-        let ledger = Ledger::open(&scratch.join("ledger")).expect("a scratch ledger");
+        let ledger = Ledger::open(scratch.join("ledger")).expect("a scratch ledger");
         for (run, at) in [("ogni-minuto-1", now - 30), ("ogni-minuto-2", now - 20), ("ogni-minuto-3", now - 10)] {
             ledger
                 .record_run(&a_closed_run("ogni-minuto", run, "failed", at))

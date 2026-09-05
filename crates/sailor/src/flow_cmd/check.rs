@@ -1179,7 +1179,7 @@ mod tests {
         });
 
         let error = engine
-            .execute(&input, &mut flow::SharedState::new())
+            .execute(&input, &flow::SharedState::new())
             .expect_err("quell'identificativo non esiste");
 
         assert_eq!(error.class, "tool_unavailable", "{}", error.said);

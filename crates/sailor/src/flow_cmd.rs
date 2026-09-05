@@ -105,7 +105,7 @@ fn one_flow(sources: &[FlowSource], name: &str) -> Result<(FlowFile, &'static st
         Some((_, origin, Ok(flow))) => Ok((flow.clone(), origin)),
         Some((_, origin, Err(reason))) => Err(catalogue::say(
             "cli.flow.does_not_load",
-            &[("flow", name), ("origin", origin), ("reason", &reason)],
+            &[("flow", name), ("origin", origin), ("reason", reason)],
         )),
         None => {
             let names: Vec<&str> = known.iter().map(|(name, _, _)| name.as_str()).collect();

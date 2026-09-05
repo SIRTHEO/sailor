@@ -54,7 +54,7 @@ fn shipped(name: &str) -> FlowFile {
 }
 
 fn run(flow: &FlowFile) -> (Execution, Vec<flow::StepRecord>) {
-    let mut store = InMemoryRecordStore::default();
+    let store = InMemoryRecordStore::default();
     let run_id = format!("prova-{}", flow.id);
     let request = ExecutionRequest {
         run_id: run_id.clone(),
@@ -67,9 +67,9 @@ fn run(flow: &FlowFile) -> (Execution, Vec<flow::StepRecord>) {
         .execute(
             &flow.graph,
             request,
-            &mut store,
+            &store,
             &product_registry(),
-            &mut Tick::new(0),
+            &Tick::new(0),
         )
         .expect("l'esecuzione non deve rompersi");
     let records = store.records(&run_id).expect("le tracce della corsa");
@@ -449,7 +449,7 @@ fn the_crossing_says_who_asked_for_what() {
                     "note": "si installa così"
                 }]
             }),
-            &mut SharedState::new(),
+            &SharedState::new(),
         )
         .expect("l'azione non deve rompersi");
 
@@ -528,7 +528,7 @@ fn a_tool_that_is_absent_is_not_a_tool_that_is_unknown() {
                     "note": "si prende da docker.com"
                 }]
             }),
-            &mut SharedState::new(),
+            &SharedState::new(),
         )
         .expect("l'azione non deve rompersi");
 
@@ -554,7 +554,7 @@ fn without_a_detection_the_step_refuses_instead_of_guessing() {
     let error = registry
         .get("tool_needs")
         .expect("l'azione è registrata")
-        .execute(&serde_json::json!({}), &mut SharedState::new())
+        .execute(&serde_json::json!({}), &SharedState::new())
         .expect_err("senza rilevamento il passo non può rispondere");
     assert_eq!(error.class, "invalid_input");
 }

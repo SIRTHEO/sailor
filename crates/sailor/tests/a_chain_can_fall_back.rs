@@ -32,15 +32,6 @@
 //! spediti.
 
 use std::collections::BTreeSet;
-use std::path::PathBuf;
-
-fn repository_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(|crates| crates.parent())
-        .expect("il crate sta in <radice>/crates/sailor")
-        .to_path_buf()
-}
 
 /// Un motore nominato in una catena, con il posto che occupa.
 struct InChain {
