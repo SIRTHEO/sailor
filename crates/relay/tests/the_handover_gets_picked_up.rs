@@ -53,7 +53,8 @@ fn request() -> ExecutionRequest {
 /// after: the mandate is collected and the run is complete.
 #[test]
 fn a_mandate_written_after_the_pause_is_collected_by_the_next_beat() {
-    let directory = terminal::scratch::directory("relay-picked-up");
+    let directory =
+        terminal::scratch::directory("relay-picked-up").expect("a scratch directory");
     let path = terminal::mandate::address_in(&directory, "ttys004");
     let graph = Graph::new(vec![collecting_step(
         directory.to_str().expect("a readable path"),
@@ -120,7 +121,7 @@ fn a_mandate_written_after_the_pause_is_collected_by_the_next_beat() {
 /// on every beat instead of holding a process still inside the engine.
 #[test]
 fn a_mandate_that_never_arrives_ends_the_run_instead_of_holding_it() {
-    let directory = terminal::scratch::directory("relay-never");
+    let directory = terminal::scratch::directory("relay-never").expect("a scratch directory");
     let graph = Graph::new(vec![collecting_step(
         directory.to_str().expect("a readable path"),
     )])

@@ -20,7 +20,7 @@ use crate::inbox::{self, Inbox};
 use crate::pty::{Pty, PtyError, Size};
 use crate::routing::{PathLookup, Routed, Router};
 use crate::tally::{self, Counters};
-use crate::{Catalog, Ending, Output, Workspace};
+use crate::{locked, Catalog, Ending, Output, Workspace};
 use std::ffi::OsString;
 use std::io::Read;
 use std::path::PathBuf;
@@ -95,7 +95,7 @@ impl Terminal {
     }
 
     pub fn alive(&self) -> bool {
-        !*self.closed.lock().expect("il lucchetto non panica") && self.pty.alive()
+        !*locked(&self.closed) && self.pty.alive()
     }
 
     pub fn process_id(&self) -> u32 {
@@ -153,7 +153,7 @@ impl Terminal {
     }
 
     pub fn close(&self) -> Result<(), PtyError> {
-        *self.closed.lock().expect("il lucchetto non panica") = true;
+        *locked(&self.closed) = true;
         self.pty.close()
     }
 
@@ -363,27 +363,20 @@ impl Terminals {
             }
             output.ended(how_it_ended(&draining.pty));
         });
-        self.open
-            .lock()
-            .expect("il lucchetto dell'elenco non panica")
-            .push(Arc::clone(&terminal));
+        locked(&self.open).push(Arc::clone(&terminal));
         Ok(terminal)
     }
 
     /// Quali terminali sono aperti e in quale spazio di lavoro.
     pub fn list(&self) -> Vec<Summary> {
-        self.open
-            .lock()
-            .expect("il lucchetto dell'elenco non panica")
+        locked(&self.open)
             .iter()
             .map(|terminal| terminal.summary())
             .collect()
     }
 
     pub fn find(&self, id: &str) -> Option<Arc<Terminal>> {
-        self.open
-            .lock()
-            .expect("il lucchetto dell'elenco non panica")
+        locked(&self.open)
             .iter()
             .find(|terminal| terminal.id == id)
             .map(Arc::clone)
@@ -391,10 +384,7 @@ impl Terminals {
 
     /// Chiude un terminale e lo toglie dall'elenco.
     pub fn close(&self, id: &str) -> Option<Result<(), PtyError>> {
-        let mut open = self
-            .open
-            .lock()
-            .expect("il lucchetto dell'elenco non panica");
+        let mut open = locked(&self.open);
         let at = open.iter().position(|terminal| terminal.id == id)?;
         let terminal = open.remove(at);
         Some(terminal.close())
@@ -403,12 +393,7 @@ impl Terminals {
     /// Chiude tutto. Chi apre terminali deve avere un gesto solo per la fine,
     /// o ne dimentica uno.
     pub fn close_all(&self) {
-        let taken: Vec<Arc<Terminal>> = std::mem::take(
-            &mut *self
-                .open
-                .lock()
-                .expect("il lucchetto dell'elenco non panica"),
-        );
+        let taken: Vec<Arc<Terminal>> = std::mem::take(&mut *locked(&self.open));
         for terminal in taken {
             let _ = terminal.close();
         }
@@ -491,5 +476,30 @@ fn how_it_ended(pty: &Pty) -> Ending {
             return Ending::StillRunning;
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The list is what every request of the host goes through: a thread that
+    /// died holding it must not leave every terminal unreachable from then on.
+    #[test]
+    fn the_list_still_answers_after_a_thread_died_holding_it() {
+        let terminals = Arc::new(Terminals::with_catalog(&Catalog::default()));
+        let poisoning = Arc::clone(&terminals);
+        let died = std::thread::spawn(move || {
+            let _open = poisoning.open.lock().expect("still clean");
+            panic!("died holding the list");
+        })
+        .join();
+        assert!(died.is_err(), "the thread has to die holding the lock");
+        assert!(terminals.open.is_poisoned());
+
+        assert!(terminals.list().is_empty());
+        assert!(terminals.find("nobody").is_none());
+        assert!(terminals.close("nobody").is_none());
+        terminals.close_all();
     }
 }
