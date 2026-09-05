@@ -60,6 +60,7 @@ fn step(id: &str, deps: &[&str], with: Option<Value>) -> Step {
         ask_again_after_secs: None,
         retry_after_secs: None,
         phase: None,
+        stops_when: None,
     }
 }
 
@@ -92,6 +93,7 @@ fn what_the_action_saw(graph: &Graph, root_inputs: BTreeMap<String, Value>) -> V
                 gates: vec![],
                 shared: SharedState::new(),
                 spend_cap_micros: None,
+                stops: flow::RunStops::default(),
             },
             &store,
             &actions,
@@ -253,6 +255,7 @@ fn run_and_read(graph: &Graph, guard_says: &str) -> (Vec<Decision>, Vec<flow::St
                 gates: vec![],
                 shared: SharedState::new(),
                 spend_cap_micros: None,
+                stops: flow::RunStops::default(),
             },
             &store,
             &actions,
@@ -303,6 +306,7 @@ fn a_pointer_that_finds_nothing_breaks_that_step_and_only_that_one() {
                 gates: vec![],
                 shared: SharedState::new(),
                 spend_cap_micros: None,
+                stops: flow::RunStops::default(),
             },
             &store,
             &actions,

@@ -62,6 +62,7 @@ fn run(flow: &FlowFile) -> (Execution, Vec<flow::StepRecord>) {
         gates: Vec::new(),
         shared: SharedState::new(),
         spend_cap_micros: None,
+        stops: flow::RunStops::default(),
     };
     let execution = InProcessExecutor
         .execute(
