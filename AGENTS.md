@@ -219,6 +219,21 @@ una copia non costa niente e non si perde niente.
 - **Cancellare il ramo è un'altra decisione**, e non è tua: si prova prima che il
   contenuto sia già nel tronco, e si chiede.
 
+**Il primo gesto in una copia è guardare da dove è stata tagliata.** Non è
+prudenza, è il guasto 101: la sera del 05/09/2026 cinque copie su sei sono nate
+**1120 commit indietro**, sulla vecchia linea di `main`, dove `sailor ratchet`
+non esiste e i file dei semi nemmeno. Un agente ci ha lavorato un turno intero e
+ha consegnato un commit non fondibile, dichiarando semi che non erano di questo
+albero. Il confronto costa un secondo:
+
+```sh
+git log --oneline -1 && git log --oneline -1 sorgenti
+```
+
+Se non coincidono, `git reset --hard sorgenti` prima di leggere qualunque file.
+Una copia tagliata da un riferimento che nessuno ha scelto non è isolamento: è
+un altro progetto con lo stesso nome.
+
 ## L'integrazione ha un ramo solo
 
 Undici di quelle 53 esistevano **solo per fondere** — `fusione-quattro`,
