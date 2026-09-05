@@ -2,7 +2,6 @@
 
 use flow::FlowFile;
 use serde_json::Value;
-use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use ui::gather::FlowSource;
 
@@ -34,77 +33,100 @@ use super::run_and_resume::workspace_root;
 /// non combacia si vede nel rapporto invece di sparire.
 pub(super) fn relocate_flow(sources: &[FlowSource], name: &str, from: Option<&str>) -> Result<String, String> {
     let root = workspace_root().ok_or_else(|| {
-        format!(
-            "non c'è nessuna radice di progetto risalendo da qui: manca un {}. \
-             Si crea con «sailor workspace init»",
-            flow::workspace::MARKER
+        catalogue::say(
+            "cli.flow.no_workspace_root_here",
+            &[("marker", flow::workspace::MARKER)],
         )
     })?;
     // Il prefisso da togliere: quello dichiarato, o la radice stessa quando il
     // flusso è stato scritto proprio qui.
     let old_root = from.map(PathBuf::from).unwrap_or_else(|| root.clone());
     let path = flow_file_path(sources, name)?;
-    let text = std::fs::read_to_string(&path)
-        .map_err(|error| format!("non riesco a leggere {}: {error}", path.display()))?;
+    let text = std::fs::read_to_string(&path).map_err(|error| {
+        catalogue::say(
+            "cli.flow.cannot_read_file",
+            &[("path", &path.display().to_string()), ("error", &error.to_string())],
+        )
+    })?;
     // Si lavora sul documento grezzo e non sul `FlowFile` tipato: un flusso può
     // avere campi che questa versione non conosce, e riscriverlo dal tipo li
     // perderebbe in silenzio — è il guasto 8 applicato a un file dell'utente.
-    let mut document: Value = serde_json::from_str(&text)
-        .map_err(|error| format!("{} non è un JSON valido: {error}", path.display()))?;
+    let mut document: Value = serde_json::from_str(&text).map_err(|error| {
+        catalogue::say(
+            "cli.flow.not_valid_json",
+            &[("path", &path.display().to_string()), ("error", &error.to_string())],
+        )
+    })?;
 
-    let (mut moved, mut left_alone) = relocate_workdirs(&mut document, &old_root)
-        .ok_or_else(|| format!("{} non ha passi da spostare", path.display()))?;
+    let (mut moved, mut left_alone) = relocate_workdirs(&mut document, &old_root).ok_or_else(|| {
+        catalogue::say(
+            "cli.flow.no_steps_to_relocate",
+            &[("path", &path.display().to_string())],
+        )
+    })?;
     let (from_inputs, kept) = relocate_declared_inputs(&mut document, &old_root);
     moved.extend(from_inputs);
     left_alone.extend(kept);
 
     if !moved.is_empty() {
-        let mut rewritten = serde_json::to_string_pretty(&document)
-            .map_err(|error| format!("non riesco a ricomporre il flusso: {error}"))?;
+        let mut rewritten = serde_json::to_string_pretty(&document).map_err(|error| {
+            catalogue::say(
+                "cli.flow.cannot_recompose_flow",
+                &[("error", &error.to_string())],
+            )
+        })?;
         rewritten.push('\n');
-        std::fs::write(&path, rewritten)
-            .map_err(|error| format!("non riesco a scrivere {}: {error}", path.display()))?;
+        std::fs::write(&path, rewritten).map_err(|error| {
+            catalogue::say(
+                "cli.flow.cannot_write_file",
+                &[("path", &path.display().to_string()), ("error", &error.to_string())],
+            )
+        })?;
     }
 
-    let mut report = format!(
-        "radice: {}\nprefisso tolto: {}\nflusso: {}",
-        root.display(),
-        old_root.display(),
-        path.display()
+    let mut report = catalogue::say(
+        "cli.flow.relocate_heading",
+        &[
+            ("root", &root.display().to_string()),
+            ("prefix", &old_root.display().to_string()),
+            ("path", &path.display().to_string()),
+        ],
     );
-    let _ = write!(
-        report,
-        "\ncampi spostati: {}",
-        if moved.is_empty() {
-            "nessuno".to_owned()
-        } else {
-            format!("{}\n  {}", moved.len(), moved.join("\n  "))
-        }
-    );
+    let moved_said = if moved.is_empty() {
+        catalogue::say("cli.flow.no_field_moved", &[])
+    } else {
+        format!("{}\n  {}", moved.len(), moved.join("\n  "))
+    };
+    report.push_str(&catalogue::say(
+        "cli.flow.fields_moved",
+        &[("moved", &moved_said)],
+    ));
     if !left_alone.is_empty() {
-        let _ = write!(
-            report,
-            "\nfuori dal prefisso, lasciati come stanno \
-             (il prefisso si dichiara come secondo argomento): {}",
-            left_alone.join("; ")
-        );
+        report.push_str(&catalogue::say(
+            "cli.flow.outside_the_prefix_left_alone",
+            &[("fields", &left_alone.join("; "))],
+        ));
     }
     // I percorsi dentro i testi si mostrano e non si toccano: chi legge decide.
-    let flow: FlowFile = serde_json::from_str(&text)
-        .map_err(|error| format!("{} non è un flusso valido: {error}", path.display()))?;
+    let flow: FlowFile = serde_json::from_str(&text).map_err(|error| {
+        catalogue::say(
+            "cli.flow.not_a_valid_flow",
+            &[("path", &path.display().to_string()), ("error", &error.to_string())],
+        )
+    })?;
     let in_text: Vec<String> = hardcoded_paths(&flow)
         .iter()
         .filter(|found| !found.fatal)
         .map(|found| format!("{} in «{}» ({})", found.step, found.field, found.value))
         .collect();
     if !in_text.is_empty() {
-        let _ = write!(
-            report,
-            "\n\nDA CORREGGERE A MANO — percorsi dentro un testo, {} in tutto:\n  {}\n\
-             Non li riscrivo: un prompt è un'istruzione, e riscriverla è deciderla.",
-            in_text.len(),
-            in_text.join("\n  ")
-        );
+        report.push_str(&catalogue::say(
+            "cli.flow.paths_inside_text_to_fix_by_hand",
+            &[
+                ("count", &in_text.len().to_string()),
+                ("paths", &in_text.join("\n  ")),
+            ],
+        ));
     }
     Ok(report)
 }
@@ -178,8 +200,7 @@ fn relocate_workdirs(document: &mut Value, old_root: &Path) -> Option<(Vec<Strin
         let step_id = step
             .get("id")
             .and_then(Value::as_str)
-            .unwrap_or("(senza id)")
-            .to_owned();
+            .map_or_else(|| catalogue::say("cli.flow.step_without_id", &[]), str::to_owned);
         let Some(with) = step.get_mut("with").and_then(Value::as_object_mut) else {
             continue;
         };
@@ -200,7 +221,10 @@ fn relocate_workdirs(document: &mut Value, old_root: &Path) -> Option<(Vec<Strin
                 // è stato deciso da ciò che è stato spostato. Misurato il
                 // 31/08/2026: 62 righe cambiate al posto di 7.
                 with.shift_remove(WORKDIR_KEY);
-                moved.push(format!("{step_id}: tolto (era la radice)"));
+                moved.push(catalogue::say(
+                    "cli.flow.workdir_removed_was_the_root",
+                    &[("step", &step_id)],
+                ));
             }
             Some(rest) => {
                 with.insert(WORKDIR_KEY.to_owned(), Value::String(rest.clone()));
@@ -227,10 +251,9 @@ fn flow_file_path(sources: &[FlowSource], name: &str) -> Result<PathBuf, String>
             return Ok(candidate);
         }
     }
-    Err(format!(
-        "il flusso {name} non è un file su disco: i flussi spediti col prodotto \
-         stanno dentro il binario e non si riscrivono — se ne scrive uno con lo \
-         stesso nome nel progetto"
+    Err(catalogue::say(
+        "cli.flow.flow_is_not_a_file_on_disk",
+        &[("name", name)],
     ))
 }
 
