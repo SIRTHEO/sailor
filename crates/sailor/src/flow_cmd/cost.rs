@@ -241,13 +241,14 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
     // 35: chi non ha un prezzo per un modello deve saperlo, non dedurlo da uno
     // zero. I nomi vengono da `tokens_by_model`, cioè da chi ha davvero
     // risposto in questa corsa.
+    let not_declared = ui::dashboard::model_not_declared();
     let unpriced = cannot_be_priced(
         prices,
         &view
             .tokens_by_model
             .keys()
             .filter(|name| !name.trim().is_empty())
-            .filter(|name| name.as_str() != ui::dashboard::MODEL_NOT_DECLARED)
+            .filter(|name| **name != not_declared)
             .cloned()
             .collect(),
     );
@@ -958,7 +959,24 @@ mod tests {
     /// La cifra secca, come la scriverebbe un totale completo. Se compare in un
     /// rapporto parziale, chi legge ha in mano un numero che non è il totale.
     fn bare_total(micros: i64) -> String {
-        format!("equivalent cost: {:.4}", micros as f64 / 1_000_000.0)
+        catalogue::say("ui.cost.exact", &[("units", &units(micros))])
+    }
+
+    /// The floor, as the catalogue writes it: the known part, and how many of
+    /// the calls are outside it.
+    fn floored_total(micros: i64, calls: usize, without_cost: usize) -> String {
+        catalogue::say(
+            "ui.cost.at_least",
+            &[
+                ("units", &units(micros)),
+                ("calls", &calls.to_string()),
+                ("calls_without_cost", &without_cost.to_string()),
+            ],
+        )
+    }
+
+    fn units(micros: i64) -> String {
+        format!("{:.4}", micros as f64 / 1_000_000.0)
     }
 
     /// **UN TOTALE CHE CONTIENE UN'INCOGNITA NON È UN TOTALE.**
@@ -983,12 +1001,8 @@ mod tests {
             "la cifra secca non deve comparire: si legge come il totale vero.\n{report}"
         );
         assert!(
-            report.contains("at least"),
-            "il numero va letto come un pavimento, non come una somma.\n{report}"
-        );
-        assert!(
-            report.contains("3 calls out of 4"),
-            "quanto manca si dice accanto alla cifra, non in fondo.\n{report}"
+            report.contains(&floored_total(1_667_400, 4, 3)),
+            "il numero va letto come un pavimento, con quanto manca accanto alla cifra.\n{report}"
         );
     }
 
@@ -1057,7 +1071,7 @@ mod tests {
             a_handed_call("build", 33),
         ]);
 
-        assert!(report.contains("at least 1.6674"), "{report}");
+        assert!(report.contains(&floored_total(1_667_400, 2, 1)), "{report}");
         assert!(!report.contains(&bare_total(1_667_400)), "{report}");
         assert!(
             the_line_naming(&report, "build").contains("self-declared"),
@@ -1072,7 +1086,7 @@ mod tests {
             "the declared turns are qualified in the line of the number.\n{report}"
         );
         assert!(
-            !report.contains("(model not declared) ("),
+            !report.contains(&format!("{} (", ui::dashboard::model_not_declared())),
             "a step no engine served is not a model missing from the price list.\n{report}"
         );
     }
@@ -1124,7 +1138,7 @@ mod tests {
 
         let report = cost_of_in(&directory.0, "prova").expect("il rapporto si scrive");
 
-        assert!(report.contains("at least 1.6674"), "{report}");
+        assert!(report.contains(&floored_total(1_667_400, 2, 1)), "{report}");
         assert!(!report.contains(&bare_total(1_667_400)), "{report}");
         assert!(
             the_line_naming(&report, "build").contains("self-declared"),
@@ -1140,7 +1154,7 @@ mod tests {
         let report = report_for(&[a_call_named("consegnata", None)]);
 
         assert!(
-            report.contains("unknown"),
+            report.contains(&catalogue::say("ui.cost.unknown", &[("calls", "1")])),
             "senza nemmeno una misura non c'è un pavimento da dichiarare.\n{report}"
         );
         assert!(
