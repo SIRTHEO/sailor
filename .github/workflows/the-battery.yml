@@ -16,7 +16,8 @@
 # FAULT THE PRESENT SHAPE COMES FROM.** It put `cargo fmt --check` and
 # `cargo clippy -- -D warnings` **before** `cargo test`, the way half the world
 # writes it. Measured on this code: rustfmt wants to change **415 places
-# across 90 files**, clippy has **199** suspicions. Neither is a defect —
+# across 90 files**; clippy's suspicions are counted by a judge of the suite
+# (`clippy_only_ever_gets_quieter`) and stand at **0**. Neither is a defect —
 # they are the gap between rustfmt's habits and a hand-broken style —
 # but both fall in ten seconds, and falling first they **kept the battery from
 # running in all three runs there had been**. The result was a light that was
