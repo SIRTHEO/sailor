@@ -8,8 +8,16 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 
 /// The bucket for calls to an engine that never said which model it used. It
-/// is not a model: it is the missing declaration.
-pub const MODEL_NOT_DECLARED: &str = "(model not declared)";
+/// is not a model: it is the missing declaration, said in the reader's language.
+pub fn model_not_declared() -> String {
+    catalogue::say("ui.cost.model_not_declared", &[])
+}
+
+/// A micro-unit figure as the catalogue's sentences carry it: in units, to
+/// four places, so the two languages format the number the same way.
+fn units_of(micros: i64) -> String {
+    format!("{:.4}", micros as f64 / 1_000_000.0)
+}
 
 /// The counts of a set of calls.
 ///
@@ -115,11 +123,10 @@ pub fn how_the_cost_reads(reading: &flow::CostReading) -> String {
     // wrong total. A floor answers: *this much has already gone, and it is not
     // all of it*.
     match reading {
-        flow::CostReading::Nothing => "equivalent cost: 0 (no call spent anything)".to_owned(),
-        flow::CostReading::Exact(micros) => format!(
-            "equivalent cost: {:.4} (what it would have cost through the API, not an outlay)",
-            *micros as f64 / 1_000_000.0
-        ),
+        flow::CostReading::Nothing => catalogue::say("ui.cost.nothing", &[]),
+        flow::CostReading::Exact(micros) => {
+            catalogue::say("ui.cost.exact", &[("units", &units_of(*micros))])
+        }
         // Without even one measurement there is no floor to declare: «at least
         // 0.0000» is true, says nothing, and reads as a small outlay. It is the
         // third case of `Spend`, carried all the way through.
@@ -127,18 +134,18 @@ pub fn how_the_cost_reads(reading: &flow::CostReading) -> String {
             known_micros: 0,
             calls,
             ..
-        } => format!(
-            "equivalent cost: unknown — none of the {calls} calls declared a cost, \
-             and what a delegated step consumes is self-declared"
-        ),
+        } => catalogue::say("ui.cost.unknown", &[("calls", &calls.to_string())]),
         flow::CostReading::AtLeast {
             known_micros,
             calls,
             calls_without_cost,
-        } => format!(
-            "equivalent cost: at least {:.4}, and the true one is higher — \
-             {calls_without_cost} calls out of {calls} are not measured",
-            *known_micros as f64 / 1_000_000.0
+        } => catalogue::say(
+            "ui.cost.at_least",
+            &[
+                ("units", &units_of(*known_micros)),
+                ("calls", &calls.to_string()),
+                ("calls_without_cost", &calls_without_cost.to_string()),
+            ],
         ),
     }
 }
@@ -271,7 +278,7 @@ pub fn summarize_run(
             // invisible in the per-model list; here they carry a name that says
             // what they are.
             let by_model = if call.actual_model.trim().is_empty() {
-                MODEL_NOT_DECLARED.to_owned()
+                model_not_declared()
             } else {
                 call.actual_model.clone()
             };
@@ -653,7 +660,50 @@ mod what_is_not_known {
             &[measured("", Some(1), Some(1), None, None)],
             20,
         );
-        assert!(view.tokens_by_model.contains_key(MODEL_NOT_DECLARED));
+        assert!(view.tokens_by_model.contains_key(&model_not_declared()));
         assert!(!view.tokens_by_model.contains_key(""));
+        assert_eq!(
+            model_not_declared(),
+            catalogue::say("ui.cost.model_not_declared", &[]),
+            "the bucket's name is the catalogue's, not a word written into the code"
+        );
+    }
+
+    /// Each of the four readings is the catalogue's sentence with the same
+    /// values, not a line of its own: a line written into the code is English
+    /// for everyone, and nothing else in this crate would have said so.
+    #[test]
+    fn the_cost_line_is_the_catalogues_sentence_in_every_case() {
+        assert_eq!(
+            how_the_cost_reads(&flow::CostReading::Nothing),
+            catalogue::say("ui.cost.nothing", &[])
+        );
+        assert_eq!(
+            how_the_cost_reads(&flow::CostReading::Exact(1_667_400)),
+            catalogue::say("ui.cost.exact", &[("units", "1.6674")])
+        );
+        assert_eq!(
+            how_the_cost_reads(&flow::CostReading::AtLeast {
+                known_micros: 0,
+                calls: 3,
+                calls_without_cost: 3,
+            }),
+            catalogue::say("ui.cost.unknown", &[("calls", "3")])
+        );
+        assert_eq!(
+            how_the_cost_reads(&flow::CostReading::AtLeast {
+                known_micros: 1_667_400,
+                calls: 4,
+                calls_without_cost: 3,
+            }),
+            catalogue::say(
+                "ui.cost.at_least",
+                &[
+                    ("units", "1.6674"),
+                    ("calls", "4"),
+                    ("calls_without_cost", "3"),
+                ]
+            )
+        );
     }
 }
