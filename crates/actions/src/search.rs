@@ -11,9 +11,11 @@ use std::path::{Path, PathBuf};
 pub const FLOW_SEARCH_ACTION: &str = "flow_search";
 pub const LEDGER_SEARCH_ACTION: &str = "ledger_search";
 
-/// How far back the ledger is read for a search: the recent runs and steps.
+/// How far back the ledger is read for a search: the recent runs, steps and
+/// events.
 pub const RECENT_RUNS: usize = 500;
 pub const RECENT_STEPS: usize = 2000;
+pub const RECENT_EVENTS: usize = 2000;
 
 pub fn register_search(
     registry: &mut flow::ActionRegistry,
@@ -101,7 +103,7 @@ impl Action for LedgerSearchAction {
             .as_ref()
             .ok_or_else(|| ActionError::new("no_store", String::new()))?;
         let hits = ledger
-            .search(&spec.query, RECENT_RUNS, RECENT_STEPS)
+            .search(&spec.query, RECENT_RUNS, RECENT_STEPS, RECENT_EVENTS)
             .map_err(|error| ActionError::new("search_refused", error.to_string()))?;
         let hits: Vec<Value> = hits
             .into_iter()
