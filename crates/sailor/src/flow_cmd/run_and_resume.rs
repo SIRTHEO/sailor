@@ -14,6 +14,39 @@ use ui::gather::FlowSource;
 
 use super::{default_ledger_dir, missing_actions, new_run_id, now_secs, one_flow};
 
+/// The last closed run's report, put where the trigger step carries it on.
+/// Nothing to carry is nothing written: a first run must read as a first run.
+fn put_previous_report(flow: &mut FlowFile, ledger: &Ledger) -> Result<(), String> {
+    let Some(report) = ledger
+        .last_run_report(&flow.id)
+        .map_err(|error| {
+            catalogue::say(
+                "cli.flow.last_report_not_read",
+                &[("flow", &flow.id), ("error", &error.to_string())],
+            )
+        })?
+    else {
+        return Ok(());
+    };
+    let Some(trigger) = flow
+        .graph
+        .steps()
+        .iter()
+        .find(|step| step.action == "trigger")
+        .map(|step| step.id.clone())
+    else {
+        return Ok(());
+    };
+    let entry = flow
+        .inputs
+        .entry(trigger)
+        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+    if let Value::Object(fields) = entry {
+        fields.insert("previous_report".to_owned(), report);
+    }
+    Ok(())
+}
+
 /// Mette il mandato nell'ingresso del passo di innesco.
 ///
 /// Il passo si riconosce dall'**azione** che nomina, non dal suo identificativo:
@@ -379,6 +412,7 @@ pub(super) fn run_flow(sources: &[FlowSource], name: &str, mandate: Option<&str>
             ledger_dir.display()
         )
     })?;
+    put_previous_report(&mut flow, &ledger)?;
     // CHI GUARDA È IL TERMINALE, e solo qui: `flow check` non esegue niente e
     // non ha testo da mostrare.
     let registry = default_registry(
@@ -524,7 +558,21 @@ pub(super) fn record_run(
             error,
             started_by: seat_of(std::env::var_os("SAILOR_TERMINAL").is_some()),
         },
-    )
+    )?;
+    // The report is written after the header and only for a closed run, so it
+    // reads the status this close just wrote. The store keeps it to one: a
+    // resume that finds the run closed crosses this same point.
+    if let Some(closed_at) = ended_at {
+        ledger
+            .write_run_report(run_id, "sailor flow", closed_at)
+            .map_err(|error| {
+                catalogue::say(
+                    "cli.flow.report_not_written",
+                    &[("run", run_id), ("error", &error.to_string())],
+                )
+            })?;
+    }
+    Ok(())
 }
 
 /// Which seat this command line runs from: a pane the terminal host opened
@@ -772,6 +820,66 @@ mod tests {
              risulterebbe partita al mattino"
         );
         assert_eq!(header.status, "complete", "la ripresa aggiorna lo stato");
+    }
+
+    // ── the report the run before it left ────────────────────────────
+
+    /// The report of the last closed run reaches the trigger step's input, so
+    /// the run after reads what the one before left, and a flow with nothing
+    /// behind it carries nothing rather than an empty report.
+    #[test]
+    fn the_previous_report_reaches_the_trigger_and_only_when_there_is_one() {
+        let json = r#"{
+            "id": "un-flusso", "description": "flusso con innesco",
+            "graph": {"steps": [{
+                "id": "innesco", "deps": [], "action": "trigger", "max_attempts": 1,
+                "when": null, "input_schema": {"type": "any"}, "output_schema": {"type": "any"}
+            }]},
+            "inputs": {"innesco": {"source": "manual", "text": "un incarico"}}
+        }"#;
+        let dir = std::env::temp_dir().join(format!(
+            "sailor-rapporto-precedente-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        let ledger = Ledger::open(&dir).expect("il deposito si apre");
+
+        let mut first: FlowFile = serde_json::from_str(json).expect("caricare il flusso");
+        put_previous_report(&mut first, &ledger).expect("niente da portare");
+        assert!(
+            first.inputs["innesco"].get("previous_report").is_none(),
+            "senza una corsa chiusa prima, l'innesco non porta niente: {:?}",
+            first.inputs["innesco"]
+        );
+
+        ledger
+            .record_run(&ledger::RunRecord {
+                run_id: "corsa-1".to_owned(),
+                kind: "flow".to_owned(),
+                entity: "un-flusso".to_owned(),
+                parent_run_id: None,
+                started_by: "test".to_owned(),
+                status: "complete".to_owned(),
+                total_cost_micros: 0,
+                error: None,
+                started_at: 10,
+                ended_at: Some(20),
+                worktree: None,
+            })
+            .expect("la riga della corsa");
+        ledger
+            .write_run_report("corsa-1", "test", 30)
+            .expect("il rapporto si scrive");
+
+        let mut second: FlowFile = serde_json::from_str(json).expect("caricare il flusso");
+        put_previous_report(&mut second, &ledger).expect("il rapporto entra");
+
+        assert_eq!(
+            second.inputs["innesco"]["previous_report"]["run_id"], "corsa-1",
+            "la corsa dopo legge il rapporto di quella prima: {:?}",
+            second.inputs["innesco"]
+        );
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     // ── il mandato che entra dall'innesco ────────────────────────────
