@@ -1,0 +1,55 @@
+name: Feature request
+description: Something Sailor should be able to do and cannot.
+title: "feat: "
+labels: ["feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Start from the work, not from the mechanism. What you were trying to do,
+        and what stopped you, decides more than a proposed design does.
+
+        Some choices are already made and do not reopen without a measurement —
+        they are in `docs/decisioni.md`, and `AGENTS.md` points at them. Worth a
+        look before writing, in case the answer is already there.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you were trying to do
+      description: The situation, and where Sailor stopped being able to help. Not the feature yet.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like it to do
+      description: Sketch the behaviour. A command line, a flow step, or a screen is enough.
+    validations:
+      required: true
+
+  - type: textarea
+    id: today
+    attributes:
+      label: How you handle it today
+      description: The workaround, if you have one, and what it costs.
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What else you considered
+      description: Other shapes this could take, and why you did not pick them.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: engines
+    attributes:
+      label: Engines
+      description: Sailor knows no engine by name — a tool declares what it can do in a descriptor. Does this proposal hold for a command line that does not exist yet?
+      options:
+        - label: This works for any engine, or the part that does not is something a descriptor can declare.
+          required: false
