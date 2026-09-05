@@ -18,7 +18,7 @@ use std::time::Duration;
 use supervisor::child::{cargo_build, newest_change, Process, Spec};
 use supervisor::{
     close_the_ones_that_stopped_breathing, left_running, now, rebuild_then_swap, turn_now,
-    LiveState, LiveStatus, Rebuild, SwapRequest, Turn,
+    LiveState, LiveStatus, Rebuild, Supervisor, SwapRequest, Turn,
 };
 
 use supervisor::DEV_PORT;
@@ -27,8 +27,8 @@ fn main() {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     let root = repository_root(&arguments);
 
-    let store = open_ledger();
-    if store.is_none() {
+    let supervisor = Supervisor::over(open_ledger());
+    if supervisor.ledger().is_none() {
         eprintln!(
             "avviso: nessun deposito. I processi accesi non verranno registrati, \
              e un orfano di stanotte domani non avrà un padrone."
@@ -36,9 +36,13 @@ fn main() {
     }
 
     match arguments.first().map(String::as_str) {
-        Some("--list") => list_left_running(store.as_ref()),
-        Some("--stop") => stop_left_running(store.as_ref()),
-        _ => run_live(&root, store.as_ref(), arguments.iter().any(|one| one == "--at-once")),
+        Some("--list") => list_left_running(supervisor.ledger()),
+        Some("--stop") => stop_left_running(supervisor.ledger()),
+        _ => run_live(
+            &root,
+            &supervisor,
+            arguments.iter().any(|one| one == "--at-once"),
+        ),
     }
 }
 
@@ -165,7 +169,8 @@ unsafe fn libc_kill(pid: u32) -> bool {
 /// `--at-once` puts every build on the screen the moment it is done, which is
 /// what this did before the window learnt to wait. Kept for whoever is not
 /// working inside the window they are building.
-fn run_live(root: &Path, store: Option<&ledger::Ledger>, at_once: bool) {
+fn run_live(root: &Path, supervisor: &Supervisor, at_once: bool) {
+    let store = supervisor.ledger();
     let desktop = root.join("desktop");
     let manifest = desktop.join("src-tauri/Cargo.toml");
     let binary = desktop.join("src-tauri/target/debug/sailor-desktop");
@@ -229,21 +234,18 @@ fn run_live(root: &Path, store: Option<&ledger::Ledger>, at_once: bool) {
 
     // Il servitore di sviluppo della pagina. È il processo che nel guasto 4
     // teneva la porta.
-    let vite = Process::start(
-        Spec {
-            process_id: format!("live-frontend-{DEV_PORT}"),
-            command: "npm".to_owned(),
-            args: vec!["run".to_owned(), "dev".to_owned()],
-            working_directory: desktop.clone(),
-            port: Some(DEV_PORT),
-            purpose: "live".to_owned(),
-            started_by: started_by(),
-            // The environment of whoever typed `sailor-live`, which is what a
-            // development server and the window both want.
-            environment: Vec::new(),
-        },
-        store,
-    );
+    let vite = supervisor.start(Spec {
+        process_id: format!("live-frontend-{DEV_PORT}"),
+        command: "npm".to_owned(),
+        args: vec!["run".to_owned(), "dev".to_owned()],
+        working_directory: desktop.clone(),
+        port: Some(DEV_PORT),
+        purpose: "live".to_owned(),
+        started_by: started_by(),
+        // The environment of whoever typed `sailor-live`, which is what a
+        // development server and the window both want.
+        environment: Vec::new(),
+    });
     let _vite = match vite {
         Ok(process) => {
             println!(
@@ -266,7 +268,7 @@ fn run_live(root: &Path, store: Option<&ledger::Ledger>, at_once: bool) {
     let mut running_since: Option<i64> = None;
 
     match cargo_build(&manifest, Some(1)) {
-        supervisor::BuildOutcome::Succeeded => match start_window(&binary, &desktop, store) {
+        supervisor::BuildOutcome::Succeeded => match start_window(&binary, &desktop, supervisor) {
             Ok(process) => {
                 println!("finestra accesa: pid {}", process.pid());
                 running_since = Some(now());
@@ -341,7 +343,7 @@ fn run_live(root: &Path, store: Option<&ledger::Ledger>, at_once: bool) {
                 let outcome = rebuild_then_swap(
                     &mut window,
                     || supervisor::BuildOutcome::Succeeded,
-                    || start_window(&binary, &desktop, store),
+                    || start_window(&binary, &desktop, supervisor),
                 );
                 match outcome {
                     Rebuild::Replaced => {
@@ -380,23 +382,20 @@ fn watched_roots(root: &Path) -> Vec<PathBuf> {
 fn start_window(
     binary: &Path,
     working_directory: &Path,
-    store: Option<&ledger::Ledger>,
+    supervisor: &Supervisor,
 ) -> Result<Process, String> {
-    Process::start(
-        Spec {
-            process_id: "live-window".to_owned(),
-            command: binary.display().to_string(),
-            args: Vec::new(),
-            working_directory: working_directory.to_path_buf(),
-            port: None,
-            purpose: "live".to_owned(),
-            started_by: started_by(),
-            // The environment of whoever typed `sailor-live`, which is what a
-            // development server and the window both want.
-            environment: Vec::new(),
-        },
-        store,
-    )
+    supervisor.start(Spec {
+        process_id: "live-window".to_owned(),
+        command: binary.display().to_string(),
+        args: Vec::new(),
+        working_directory: working_directory.to_path_buf(),
+        port: None,
+        purpose: "live".to_owned(),
+        started_by: started_by(),
+        // The environment of whoever typed `sailor-live`, which is what a
+        // development server and the window both want.
+        environment: Vec::new(),
+    })
 }
 
 /// Who lit it: the person plus this supervisor's pid. **The name alone is not
