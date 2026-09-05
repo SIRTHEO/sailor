@@ -36,6 +36,7 @@ pub mod publish_cmd;
 pub mod ratchet_cmd;
 pub mod release_cmd;
 pub mod remember_cmd;
+pub mod repeats_cmd;
 pub mod search_cmd;
 pub mod remaining_cmd;
 pub mod run_cmd;
@@ -222,6 +223,12 @@ pub const COMMANDS: &[Command] = &[
         description_key: "cli.command.remaining",
         usage: remaining_cmd::USAGE,
         run: remaining_cmd::run,
+    },
+    Command {
+        name: "repeats",
+        description_key: "cli.command.repeats",
+        usage: repeats_cmd::USAGE,
+        run: repeats_cmd::run,
     },
     Command {
         name: "version",

@@ -467,6 +467,40 @@ pub struct FailedStep {
     pub ended_at: i64,
 }
 
+/// What a record answering a repeated call would have saved here. A saving
+/// counted on a key that was a pointer, or on a call no engine ever priced, is
+/// one nobody can bank: those stay apart so the headline cannot be read alone.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RepeatedCalls {
+    pub calls: i64,
+    pub served: i64,
+    pub served_on_an_unresolved_prompt: i64,
+    pub served_micros: i64,
+    pub served_without_a_cost: i64,
+    /// Calls whose step this store no longer holds: no key, so never served.
+    pub calls_without_a_key: i64,
+    pub spent_micros: i64,
+}
+
+/// True when the recorded input still names a value instead of carrying it, so
+/// two of them matching says nothing about the two prompts.
+fn prompt_is_a_pointer(input: &str) -> bool {
+    serde_json::from_str::<Value>(input).is_ok_and(|value| names_a_value(&value))
+}
+
+fn names_a_value(value: &Value) -> bool {
+    match value {
+        Value::Object(fields) => fields.iter().any(|(key, inner)| {
+            key == flow::reference::FROM_KEY
+                || key == flow::reference::JOIN_KEY
+                || key == flow::reference::JSON_KEY
+                || names_a_value(inner)
+        }),
+        Value::Array(items) => items.iter().any(names_a_value),
+        _ => false,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GatesChangedStep {
     pub run_id: String,
@@ -1293,6 +1327,72 @@ impl Ledger {
             calls_without_cost,
             dearest_micros,
         })
+    }
+
+    /// How many calls a record would have answered instead of making, counted
+    /// over the calls this store already holds.
+    ///
+    /// The key is the step's input fingerprint plus the model that answered:
+    /// it leaves out the tree's commit and the descriptor's version, which no
+    /// row carries and which can only split a key, so `served` is a ceiling.
+    pub fn repeated_engine_calls(&self) -> Result<RepeatedCalls, LedgerError> {
+        let connection = self.lock()?;
+        // A redone step has several attempts: the one that counts is the one
+        // open when the call started, so an attempt after it never wins.
+        let mut statement = connection.prepare(
+            "WITH ranked AS (
+                 SELECT m.call_id, m.started_at, m.cost_micros, m.actual_model,
+                        m.error_type, s.input_digest, s.input, s.outcome,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY m.call_id
+                            ORDER BY (s.started_at > m.started_at), s.started_at DESC
+                        ) AS choice
+                 FROM model_calls m
+                 LEFT JOIN steps s
+                   ON s.run_id = m.run_id AND s.step_id = m.step_id
+             )
+             SELECT cost_micros, actual_model, error_type, input_digest, input, outcome
+             FROM ranked WHERE choice = 1
+             ORDER BY started_at, call_id",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, Option<i64>>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, Option<String>>(5)?,
+            ))
+        })?;
+        let mut tally = RepeatedCalls::default();
+        let mut answered = std::collections::HashSet::new();
+        for row in rows {
+            let (cost, model, error_type, digest, input, outcome) = row?;
+            tally.calls += 1;
+            tally.spent_micros += cost.unwrap_or(0);
+            let Some(digest) = digest else {
+                tally.calls_without_a_key += 1;
+                continue;
+            };
+            let key = (digest, model);
+            if answered.contains(&key) {
+                tally.served += 1;
+                match cost {
+                    Some(micros) => tally.served_micros += micros,
+                    None => tally.served_without_a_cost += 1,
+                }
+                if input.as_deref().is_some_and(prompt_is_a_pointer) {
+                    tally.served_on_an_unresolved_prompt += 1;
+                }
+            }
+            // Only a call that succeeded ever answers for another: a refusal,
+            // an exhausted quota or an outcome nobody closed is not an answer.
+            if error_type.is_none() && outcome.as_deref() == Some("Went") {
+                answered.insert(key);
+            }
+        }
+        Ok(tally)
     }
 
     /// What one engine has spent since an instant, across every run: the sum
