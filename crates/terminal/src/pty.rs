@@ -20,7 +20,7 @@
 //! stanno nella libreria di sistema ovunque. Meno da spiegare a chi compila
 //! altrove.
 
-use crate::Workspace;
+use crate::{locked, Workspace};
 use std::ffi::{CStr, CString, OsStr};
 use std::fs::File;
 use std::io::{self, Read, Write};
@@ -221,39 +221,24 @@ impl Pty {
     /// bloccherebbe chi scrive per tutto il tempo in cui chi legge aspetta —
     /// cioè quasi sempre, perché un terminale sta fermo quasi sempre.
     pub fn reader(&self) -> Result<impl Read + Send, PtyError> {
-        self.leader
-            .lock()
-            .expect("il lucchetto del terminale non panica")
-            .try_clone()
-            .map_err(PtyError::Broken)
+        locked(&self.leader).try_clone().map_err(PtyError::Broken)
     }
 
     /// Scrive sull'ingresso del terminale, come se qualcuno avesse digitato.
     pub fn write(&self, bytes: &[u8]) -> Result<(), PtyError> {
-        let mut leader = self
-            .leader
-            .lock()
-            .expect("il lucchetto del terminale non panica");
+        let mut leader = locked(&self.leader);
         leader.write_all(bytes).map_err(PtyError::Broken)?;
         leader.flush().map_err(PtyError::Broken)
     }
 
     /// Dice al terminale quanto è grande adesso.
     pub fn resize(&self, size: Size) -> Result<(), PtyError> {
-        let leader = self
-            .leader
-            .lock()
-            .expect("il lucchetto del terminale non panica");
-        set_size(&*leader, size).map_err(PtyError::Broken)
+        set_size(&*locked(&self.leader), size).map_err(PtyError::Broken)
     }
 
     /// Se il processo dentro il terminale è ancora vivo.
     pub fn alive(&self) -> bool {
-        let mut child = self
-            .child
-            .lock()
-            .expect("il lucchetto del figlio non panica");
-        matches!(child.try_wait(), Ok(None))
+        matches!(locked(&self.child).try_wait(), Ok(None))
     }
 
     /// Com'è finito il processo dentro, se è finito.
@@ -267,11 +252,7 @@ impl Pty {
     /// e due i casi la risposta onesta è «non lo so», ed è quella che il
     /// chiamante trasforma in [`crate::Ending::StillRunning`].
     pub fn finished(&self) -> Option<crate::Ending> {
-        let mut child = self
-            .child
-            .lock()
-            .expect("il lucchetto del figlio non panica");
-        match child.try_wait() {
+        match locked(&self.child).try_wait() {
             Ok(Some(status)) => Some(match status.code() {
                 Some(code) => crate::Ending::Exited(code),
                 None => crate::Ending::Killed,
@@ -282,10 +263,7 @@ impl Pty {
 
     /// L'identificativo di processo di ciò che gira dentro.
     pub fn process_id(&self) -> u32 {
-        self.child
-            .lock()
-            .expect("il lucchetto del figlio non panica")
-            .id()
+        locked(&self.child).id()
     }
 
     /// Chiude il terminale e aspetta che il processo sia davvero finito.
@@ -294,10 +272,7 @@ impl Pty {
     /// processo zombie per ogni terminale chiuso; su una sessione lunga
     /// diventano centinaia, e il guasto si vede in un posto che non c'entra.
     pub fn close(&self) -> Result<(), PtyError> {
-        let mut child = self
-            .child
-            .lock()
-            .expect("il lucchetto del figlio non panica");
+        let mut child = locked(&self.child);
         // Un figlio già morto dà «nessun processo»: non è un guasto, è la
         // condizione normale di chi chiude un terminale dopo aver scritto
         // `exit`.
@@ -328,9 +303,7 @@ fn open_leader() -> Result<OwnedFd, PtyError> {
 }
 
 fn follower_name(leader: &OwnedFd) -> Result<CString, PtyError> {
-    let _guard = PTSNAME_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _guard = locked(&PTSNAME_LOCK);
     let raw = unsafe { libc::ptsname(leader.as_raw_fd()) };
     if raw.is_null() {
         return Err(PtyError::FollowerNotReady(io::Error::last_os_error()));
@@ -358,4 +331,61 @@ fn set_size(leader: &impl AsRawFd, size: Size) -> io::Result<()> {
         return Err(io::Error::last_os_error());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    /// A terminal whose leader is the null device and whose child is a shell:
+    /// enough to drive the locks, without a pseudo-terminal a perimeter denies.
+    fn stub(exit_code: i32) -> Pty {
+        let child = Command::new("/bin/sh")
+            .arg("-c")
+            .arg(format!("exit {exit_code}"))
+            .spawn()
+            .expect("a shell");
+        let sink = std::fs::OpenOptions::new()
+            .write(true)
+            .open("/dev/null")
+            .expect("the null device");
+        Pty {
+            leader: Mutex::new(sink),
+            child: Mutex::new(child),
+            device: "/dev/null".to_owned(),
+        }
+    }
+
+    /// The thread draining a terminal must still learn how it ended after some
+    /// other thread died holding its locks, or the pane shows it alive forever.
+    #[test]
+    fn a_terminal_still_answers_after_a_thread_died_holding_its_locks() {
+        let pty = Arc::new(stub(7));
+        let poisoning = Arc::clone(&pty);
+        let died = std::thread::spawn(move || {
+            let _leader = poisoning.leader.lock().expect("still clean");
+            let _child = poisoning.child.lock().expect("still clean");
+            panic!("died holding the terminal");
+        })
+        .join();
+        assert!(died.is_err(), "the thread has to die holding both locks");
+        assert!(pty.leader.is_poisoned() && pty.child.is_poisoned());
+
+        pty.write(b"typed").expect("the null device takes anything");
+        assert!(pty.resize(Size::default()).is_err(), "the null device has no size");
+        assert!(pty.process_id() > 0);
+        let until = Instant::now() + Duration::from_secs(5);
+        let ending = loop {
+            if let Some(ending) = pty.finished() {
+                break ending;
+            }
+            assert!(Instant::now() < until, "the shell never reported its exit");
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        assert_eq!(ending, crate::Ending::Exited(7));
+        assert!(!pty.alive());
+        pty.close().expect("closing a child already gone");
+    }
 }

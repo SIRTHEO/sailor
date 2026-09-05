@@ -44,7 +44,14 @@ pub use session::{estimated_tokens, Opening, Summary, Terminal, Terminals};
 
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard, PoisonError};
+
+/// The guard, even after another thread died holding the lock: what sits under
+/// every lock in this crate is whole after any panic, and a second panic would
+/// take the host with it.
+pub(crate) fn locked<T>(lock: &Mutex<T>) -> MutexGuard<'_, T> {
+    lock.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 /// Lo spazio di lavoro a cui un terminale appartiene: una repo, la cartella di
 /// un progetto.
@@ -186,13 +193,13 @@ impl Buffer {
     }
 
     pub fn bytes(&self) -> Vec<u8> {
-        self.bytes.lock().expect("il buffer non panica").clone()
+        locked(&self.bytes).clone()
     }
 
     /// Com'è finito il terminale, se è finito. `None` vuol dire «non ancora»,
     /// non «bene».
     pub fn ending(&self) -> Option<Ending> {
-        *self.ending.lock().expect("il buffer non panica")
+        *locked(&self.ending)
     }
 
     /// Attende la fine, fino a `limit`. Stessa ragione di [`Buffer::wait_for`]:
@@ -237,13 +244,39 @@ impl Buffer {
 
 impl Output for Buffer {
     fn chunk(&self, bytes: &[u8]) {
-        self.bytes
-            .lock()
-            .expect("il buffer non panica")
-            .extend_from_slice(bytes);
+        locked(&self.bytes).extend_from_slice(bytes);
     }
 
     fn ended(&self, ending: Ending) {
-        *self.ending.lock().expect("il buffer non panica") = Some(ending);
+        *locked(&self.ending) = Some(ending);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    /// A thread that dies holding the buffer must not take every later reader
+    /// with it: the bytes are whole, and the end can still be said.
+    #[test]
+    fn a_buffer_still_answers_after_a_thread_died_holding_it() {
+        let buffer = Arc::new(Buffer::new());
+        buffer.chunk(b"before");
+        let poisoning = Arc::clone(&buffer);
+        let died = std::thread::spawn(move || {
+            let _bytes = poisoning.bytes.lock().expect("still clean");
+            let _ending = poisoning.ending.lock().expect("still clean");
+            panic!("died holding the buffer");
+        })
+        .join();
+        assert!(died.is_err(), "the thread has to die holding both locks");
+        assert!(buffer.bytes.is_poisoned() && buffer.ending.is_poisoned());
+
+        buffer.chunk(b" after");
+        assert_eq!(buffer.text(), "before after");
+        assert_eq!(buffer.ending(), None);
+        buffer.ended(Ending::Exited(3));
+        assert_eq!(buffer.ending(), Some(Ending::Exited(3)));
     }
 }

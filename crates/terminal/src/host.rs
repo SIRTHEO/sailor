@@ -8,7 +8,7 @@
 
 use crate::inbox;
 use crate::session::{Opening, Summary, Terminals};
-use crate::{Ending, Output, Routed, Workspace};
+use crate::{locked, Ending, Output, Routed, Workspace};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{self, BufRead, BufReader, Read, Write};
@@ -194,9 +194,7 @@ impl Relay {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, RelayState> {
-        self.state
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        locked(&self.state)
     }
 
     /// From now on: the backlog is asked for apart, and the offsets are what
@@ -267,11 +265,7 @@ impl Host {
     }
 
     fn relay_of(&self, id: &str) -> Option<Arc<Relay>> {
-        self.relays
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .get(id)
-            .cloned()
+        locked(&self.relays).get(id).cloned()
     }
 
     fn unknown(&self, id: &str) -> String {
@@ -314,10 +308,7 @@ impl Host {
             .terminals
             .open(workspace, &opening, |id| {
                 let relay = Arc::new(Relay::new());
-                self.relays
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner())
-                    .insert(id.to_owned(), Arc::clone(&relay));
+                locked(&self.relays).insert(id.to_owned(), Arc::clone(&relay));
                 relay as Arc<dyn Output>
             })
             .map_err(|error| error.to_string())?;
@@ -389,10 +380,7 @@ impl Host {
                     why: self.unknown(&id),
                 },
                 Some(Ok(())) => {
-                    self.relays
-                        .lock()
-                        .unwrap_or_else(|poisoned| poisoned.into_inner())
-                        .remove(&id);
+                    locked(&self.relays).remove(&id);
                     Answer::Done
                 }
                 Some(Err(error)) => Answer::Refused {
