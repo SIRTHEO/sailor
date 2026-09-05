@@ -343,6 +343,7 @@ mod resuming_instead_of_rediscovering {
             ended_at: Some(2),
             session_id: Some(session.to_owned()),
             work_kind: None,
+            fell_back_from: Vec::new(),
         }
     }
 
