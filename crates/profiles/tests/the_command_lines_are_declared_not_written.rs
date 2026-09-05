@@ -29,6 +29,27 @@ fn at_least_one_engine_declares_how_its_home_moves() {
         .any(|cli| matches!(cli.home, HomeMechanism::EnvVar(_))));
 }
 
+/// Absent `home` covers two facts — nobody looked, or nothing moves it — and
+/// only the note tells them apart: a shipped entry without one hides the second.
+#[test]
+fn every_shipped_home_declared_no_known_way_carries_the_note_that_says_which() {
+    let unmoved: Vec<_> = known_clis()
+        .iter()
+        .filter(|cli| cli.home == HomeMechanism::Unknown)
+        .collect();
+    assert!(
+        !unmoved.is_empty(),
+        "no shipped entry declares a home nothing moves: this rule has nothing to read"
+    );
+    for cli in unmoved {
+        assert!(
+            !cli.home_note.trim().is_empty(),
+            "{} declares no way to move its home and no note saying whether anybody looked",
+            cli.id
+        );
+    }
+}
+
 #[test]
 fn a_home_declared_neither_way_is_no_known_way_and_keeps_its_note() {
     let table = parse_command_lines(

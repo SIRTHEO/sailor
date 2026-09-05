@@ -144,10 +144,10 @@ fn identity_of(
             // come si sposti, questa funzione non ha messo niente
             // nell'ambiente: l'identità dipende da dove punta un file sul disco,
             // e questo codice il disco non lo tocca.
-            mechanism => EngineIdentity::NotMovedByAnEnvVar {
+            _ => EngineIdentity::NotMovedByAnEnvVar {
                 cli_id,
                 profile_name: profile.name.clone(),
-                why: why_it_stays_where_it_is(mechanism).to_owned(),
+                why: why_it_stays_where_it_is(cli),
             },
         },
         (None, Some(active)) => EngineIdentity::ProfileVanished {
@@ -162,20 +162,26 @@ fn identity_of(
     }
 }
 
-/// Perché un profilo dichiarato non è finito nell'ambiente, con le parole del
-/// meccanismo che lo impedisce.
-fn why_it_stays_where_it_is(mechanism: &profiles::HomeMechanism) -> &'static str {
-    match mechanism {
+/// Why a declared profile did not reach the environment, in the words of the
+/// mechanism that keeps it out — and, where no mechanism is declared, in the
+/// words the command line's own entry gives: «not known» would be false for
+/// an entry that was measured and found unmovable.
+fn why_it_stays_where_it_is(cli: &profiles::KnownCli) -> String {
+    match &cli.home {
         profiles::HomeMechanism::CredentialSymlink { .. } => {
-            "this command line has no variable that moves the home: the profile swaps a symlink, and the identity depends on where that file points on the disk"
+            "this command line has no variable that moves the home: the profile swaps a symlink, and the identity depends on where that file points on the disk".to_owned()
         }
         profiles::HomeMechanism::Unknown => {
-            "how this command line moves its own home is not known, so nothing was overlaid"
+            let why = "no variable is declared to move this command line's home, so nothing was overlaid";
+            match cli.home_note.trim() {
+                "" => why.to_owned(),
+                note => format!("{why}; its entry says: {note}"),
+            }
         }
         // Un meccanismo a variabile qui non ci arriva: chi chiama lo ha già
         // trattato sopra. Se un giorno ci arrivasse, la frase dice il vero.
         profiles::HomeMechanism::EnvVar(_) => {
-            "the mechanism goes through a variable, and it was not overlaid"
+            "the mechanism goes through a variable, and it was not overlaid".to_owned()
         }
     }
 }
