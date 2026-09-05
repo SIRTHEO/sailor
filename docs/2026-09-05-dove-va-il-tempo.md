@@ -170,13 +170,14 @@ Misurato sull'albero a `b03afc54`, la notte fra il 4 e il 5.
   — «non spinto, il remoto è indietro: 403» — e il quarto, alle 03:00, ha
   spinto: `origin/sorgenti` a `b70e37e8`, oltre 200 commit. Nessuno ha toccato
   una credenziale; il gestore di sistema ne aveva una buona.
-- **Misurato il rilascio di un commit di sola documentazione: 7 min 44 s**
+- **Misurato il rilascio di un commit di sola documentazione: 7 min 44 s → 47 s**
   (02:52:58 → 03:00:42), di cui 42 s di compilazione e il resto la suite, per
   un albero in cui nessun crate era cambiato. La causa è il clone in una
   cartella `mktemp` nuova a ogni rilascio: cargo giudica per percorso e mtime,
   e ricompila tutto e rilega ogni binario di prova con LTO. Il rimedio è entrato
   la stessa notte — l'albero di rilascio vive in `target/release-tree` e viene
-  portato a HEAD con un checkout — e il numero dopo va scritto qui.
+  portato a HEAD con un checkout — e il numero dopo è **47 s** (rilascio 21,
+  03:35:42 → 03:36:29): dieci volte. Con tre crate toccati, 5 min 27 s.
 - **4, 5, 6, 7: no.** Non iniziati.
 
 E i cinque concetti di Theo della stessa sera:
