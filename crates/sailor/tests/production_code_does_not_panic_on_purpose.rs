@@ -25,7 +25,7 @@ const ON_PURPOSE: &[&str] = &[
 const PANICS_TODAY: &[(&str, usize)] = &[
     ("actions", 3),
     ("catalogue", 1),
-    ("desktop", 4),
+    ("desktop", 1),
     ("faults", 0),
     ("flow", 5),
     ("inventory", 0),
