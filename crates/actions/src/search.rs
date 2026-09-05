@@ -2,7 +2,9 @@
 //! text searched is the whole flow file — id, description, every mandate and
 //! `with` — so a word written once in one step's prompt finds that flow.
 
+use faults::Faults;
 use flow::{Action, ActionError, ActionOutcome, FlowFile, SharedState, StepSpecies};
+use ledger::search::Hit;
 use ledger::Ledger;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -21,9 +23,28 @@ pub fn register_search(
     registry: &mut flow::ActionRegistry,
     home_flows: Option<PathBuf>,
     ledger: Option<Ledger>,
+    faults_store: Option<PathBuf>,
 ) {
     registry.register(FLOW_SEARCH_ACTION, FlowSearchAction::new(home_flows));
-    registry.register(LEDGER_SEARCH_ACTION, LedgerSearchAction::new(ledger));
+    registry.register(LEDGER_SEARCH_ACTION, LedgerSearchAction::new(ledger, faults_store));
+}
+
+/// What the ledger and the fault register hold, ranked once over the union:
+/// the ids say which kind each hit is. A register that has no file yet is a
+/// register with nothing in it, not an error.
+pub fn search_the_ledger_and_the_faults(
+    ledger: &Ledger,
+    faults_store: Option<&Path>,
+    query: &str,
+) -> Result<Vec<Hit>, String> {
+    let mut documents = ledger
+        .documents_to_search(RECENT_RUNS, RECENT_STEPS, RECENT_EVENTS)
+        .map_err(|error| error.to_string())?;
+    if let Some(path) = faults_store.filter(|path| path.exists()) {
+        let register = Faults::open(path).map_err(|error| error.to_string())?;
+        documents.extend(register.documents_to_search().map_err(|error| error.to_string())?);
+    }
+    ledger::search::rank_texts(&documents, query).map_err(|error| error.to_string())
 }
 
 /// What a flow is known as when loaded: its name, where it came from, and the
@@ -83,14 +104,16 @@ impl Action for FlowSearchAction {
     }
 }
 
-/// The runs, steps and store entries of the ledger that mention the words.
+/// The runs, steps, events and store entries of the ledger, and the faults of
+/// the register, that mention the words.
 pub struct LedgerSearchAction {
     ledger: Option<Ledger>,
+    faults_store: Option<PathBuf>,
 }
 
 impl LedgerSearchAction {
-    pub fn new(ledger: Option<Ledger>) -> Self {
-        Self { ledger }
+    pub fn new(ledger: Option<Ledger>, faults_store: Option<PathBuf>) -> Self {
+        Self { ledger, faults_store }
     }
 }
 
@@ -102,9 +125,8 @@ impl Action for LedgerSearchAction {
             .ledger
             .as_ref()
             .ok_or_else(|| ActionError::new("no_store", String::new()))?;
-        let hits = ledger
-            .search(&spec.query, RECENT_RUNS, RECENT_STEPS, RECENT_EVENTS)
-            .map_err(|error| ActionError::new("search_refused", error.to_string()))?;
+        let hits = search_the_ledger_and_the_faults(ledger, self.faults_store.as_deref(), &spec.query)
+            .map_err(|reason| ActionError::new("search_refused", reason))?;
         let hits: Vec<Value> = hits
             .into_iter()
             .map(|hit| json!({ "id": hit.id, "rank": hit.rank, "excerpt": hit.excerpt }))
@@ -151,5 +173,44 @@ mod tests {
     fn a_word_no_flow_says_finds_nothing() {
         let hits = rank_flows(&shipped(), "zwieback").expect("a ranking");
         assert!(hits.is_empty(), "{hits:?}");
+    }
+
+    /// One ranking answers for both stores: a store entry of the ledger and a
+    /// fault of the register that say the same word are both in it.
+    #[test]
+    fn the_ledger_and_the_fault_register_answer_in_one_ranking() {
+        let dir = std::env::temp_dir().join(format!("sailor-search-union-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let ledger = Ledger::open(&dir).expect("a ledger");
+        ledger
+            .put_record(&ledger::StoreRecord {
+                collection: "notes".to_owned(),
+                key: "one".to_owned(),
+                value: json!({ "text": "a quokka in the store" }),
+                written_by: "test".to_owned(),
+                written_at: 3,
+            })
+            .expect("a record");
+        let faults_store = dir.join(faults::FAULTS_FILE);
+        let fault = Faults::open(&faults_store)
+            .expect("a register")
+            .record(&faults::Draft {
+                happened_on: "01/01/2000".to_owned(),
+                what_happened: "a quokka in the register".to_owned(),
+                how_it_showed: "in a test".to_owned(),
+                what_would_prevent: "a door".to_owned(),
+                status: "**aperto**".to_owned(),
+            })
+            .expect("a fault");
+        let ids: Vec<String> = search_the_ledger_and_the_faults(&ledger, Some(&faults_store), "quokka")
+            .expect("a ranking")
+            .into_iter()
+            .map(|hit| hit.id)
+            .collect();
+        drop(ledger);
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(ids.contains(&"store:notes/one".to_owned()), "{ids:?}");
+        assert!(ids.contains(&format!("fault:{}", fault.number)), "{ids:?}");
     }
 }
