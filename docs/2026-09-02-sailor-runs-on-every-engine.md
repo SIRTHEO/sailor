@@ -115,6 +115,12 @@ Starting point, so the mandate builds on it instead of beside it.
    guard the case the class exists for: a refusal that **exits zero** is still
    recorded as exhausted, and an engine whose descriptor declares no words for
    exhaustion kills the chain instead of inventing the class.
+   Since 05/09 the descriptor also tells the spent quota apart from the other
+   refusals: `exhausted_when` names, among the words of `unusable_when`, the
+   ones that mean the quota ran out, and a word there that `unusable_when`
+   does not cover fails the load. An engine that only waits for a person
+   declares the line it prints before waiting (`ask.waits_for_a_person_when`),
+   and the process is stopped on it instead of waited for.
    The cooldown is built too, under other names: `actions::cooldown` keeps
    `SAILOR_COOLDOWNS` — `cooldowns.json` beside the store — as `{since, until,
    said}` per engine, written when a refusal closes with the class and the

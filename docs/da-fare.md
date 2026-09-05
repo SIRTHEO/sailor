@@ -364,6 +364,9 @@ dichiarati:
   provocare senza spendere la quota vera. **La regola sul ripiego non lo vede**,
   e non è un difetto della regola: chiede che il campo non sia vuoto, non che
   sia completo. Chi vede `agy` dire di essere esaurito scriva la frase lì.
+  *05/09:* il posto dove scriverla ora esiste ed è controllato: `exhausted_when`
+  nel descrittore, validato contro `unusable_when`. La frase di `agy` resta
+  non misurata.
 - **`agy` non riceve la casa del profilo attivo.** Misurato il 01/09/2026: la
   sua casa è `~/.gemini/antigravity-cli`, guidata da `$HOME`, e la stringa
   `GEMINI_CLI_HOME` **non compare** nel binario. La sovrapposizione d'ambiente
@@ -379,11 +382,19 @@ dichiarati:
   ancora verificato», e non esiste un valore per «verificato: non c'è nessun
   modo di spostarla». Sono due fatti diversi che oggi si scrivono uguale, ed è
   la distinzione che il blocco `capabilities` paga per avere altrove.
+  *05/09:* la seconda è chiusa: la nota `home_note` del descrittore («si muove
+  solo con `HOME`, nessuna variabile propria») viaggia nell'identità che il
+  ledger tiene per il profilo, e la riga dice perché due profili partono nella
+  stessa casa invece di dire che nessuno ha guardato. La prima (`executable`)
+  e se `HOME` possa essere spostato per un passo restano da decidere.
 - **Senza credenziali `agy` aspetta 60 secondi prima di arrendersi**, dopo aver
   aperto il browser sull'URL OAuth. Oggi non morde perché `agy` è autenticato;
   il giorno in cui il suo accesso scade, `agy` in mezzo a una catena costa
   **60 secondi per passo** contro i ~10 di un `codex` a 401. Un motore che non
   può lavorare dovrebbe poterlo dire subito: finché aspetta, il ripiego è caro.
+  *Chiuso il 05/09:* il descrittore dichiara la riga che stampa prima di
+  aspettare (`ask.waits_for_a_person_when`), il processo viene fermato appena
+  l'uscita la contiene, e la catena passa oltre con le parole del motore.
 - **Un passo che scrive `"tool": "agy"` come stringa invece che come elenco
   esce da ogni controllo sulle catene**: `engines_in_chains()` legge solo
   `as_array()` e lo salta, `fallbacks_into` gli lascia zero motori da guardare.
@@ -392,6 +403,9 @@ dichiarati:
   `exhausted`» — **è caduta con la riga qui sopra**: adesso si registra `exhausted` in
   tutti e due i rami. Resta la prima, che è la peggiore: quel passo non è
   sorvegliato da nessuna regola sulle catene.
+  *Chiuso il 05/09:* un solo lettore, `actions::engines_named_in`, legge i
+  motori di un passo, e una stringa è una catena di uno: quel passo è
+  sorvegliato come gli altri.
 - **`desktop/src-tauri/Cargo.lock` è già vecchio a HEAD**, e si sporca da solo:
   `crates/actions` dipende da `profiles` dal 01/09/2026 e quel lock non lo sa —
   sotto `actions` elenca `flow`, `ledger`, `models`, `serde`, `serde_json` e
