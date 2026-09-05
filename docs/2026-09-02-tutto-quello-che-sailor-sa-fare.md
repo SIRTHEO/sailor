@@ -217,8 +217,8 @@ nessuno sa quanto restava — che è il fatto da cui è nata la ricerca del 29/0
 
 ### 4.7 La staffetta, la supervisione, il rilascio
 
-- **`relay`** — passare il testimone fra sessioni. Il progetto sta in
-  `docs/2026-08-28-il-flusso-che-accompagna.md`. Nessuna porta.
+- **`relay`** — passare il testimone fra sessioni. Il progetto sta nella
+  nota `2026-08-28-il-flusso-che-accompagna`. Nessuna porta.
 - **`supervisor`** — `cargo_build`, `rebuild_then_swap`, `LiveStatus`,
   `close_the_ones_that_stopped_breathing`: ricostruire e rimettere in servizio a
   caldo. Nessuna porta. Il comando `live_status` è esposto dal guscio **e la

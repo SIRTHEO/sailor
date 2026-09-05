@@ -188,7 +188,7 @@ esiste.
 | leggere la quota **del profilo** invece che della persona | **manca** — `sailor remaining` legge la casa della persona |
 
 Le prime due assenze sono la stessa cosa, ed è il **terzo livello**: la ricerca
-del 29/08/2026 (`docs/profili-e-consumo.md`) aveva già misurato che AWS, Google
+del 29/08/2026 (la nota `profili-e-consumo`) aveva già misurato che AWS, Google
 Cloud e Kubernetes hanno tutti e tre la stessa forma — un file permanente, una
 variabile d'ambiente, e **uno scavalco per singolo comando** — e che Sailor ha i
 primi due. Il terzo ha un effetto secondario che vale da solo: **una corsa torna

@@ -696,14 +696,14 @@ ciascun motore (il listino, `~/.config/sailor/pricing.json`), **quanta quota
 gli resta** (`sailor remaining`), **se è autenticato davvero** — sulla casa del
 profilo attivo, non su quella di chi ha aperto il terminale — e **quante volte
 ha risposto**, dal deposito. Un ordine che non si appoggia ad almeno uno di
-questi quattro non si applica: si scrive in `docs/da-fare.md` come proposta.
+questi quattro non si applica: si scrive nella nota `da-fare` come proposta.
 
 **E il primo esito di questa regola è che due dei quattro numeri non ci sono.**
 Il listino conosce un fornitore su tre, e `sailor remaining` risponde per un
 motore solo: un ordine per costo o per quota residua **oggi non è calcolabile**,
 e chi lo proponesse starebbe indovinando. L'unica cosa che la misura impone oggi
 è che un motore misurato **non autenticato** non stia davanti a uno misurato
-autenticato. I numeri e le proposte che ne restano stanno in `docs/da-fare.md`.
+autenticato. I numeri e le proposte che ne restano stanno nella nota `da-fare`.
 
 **Il limite di questa decisione, dichiarato.** Le credenziali sono uno stato che
 cambia; l'ordine scritto in un flusso no. Scrivere il primo dentro il secondo è

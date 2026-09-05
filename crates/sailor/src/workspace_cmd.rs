@@ -25,11 +25,10 @@ fn now() -> i64 {
 /// sembrano regole» vorrebbe dire indovinare, e ciò che questo comando scrive
 /// lo legge poi qualcun altro come se fosse stato deciso. Quello che non è in
 /// elenco si aggiunge a mano al file, che è il posto giusto per una decisione.
-const RULE_CANDIDATES: [&str; 5] = [
+const RULE_CANDIDATES: [&str; 4] = [
     "AGENTS.md",
     "CLAUDE.md",
     "docs/decisioni.md",
-    "docs/da-fare.md",
     "docs/guasti-incontrati.md",
 ];
 
