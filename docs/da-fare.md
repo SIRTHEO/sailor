@@ -81,6 +81,22 @@ Nessuna di queste è bloccata da lavoro: sono bloccate da una scelta.
    compra solo con `PRAGMA fullfsync = ON`, 3,9 ms a scrittura. Oggi il ledger
    non lo imposta. Resta FULL; accendere `fullfsync` è una scelta di Theo, con
    il prezzo scritto in `docs/2026-09-05-dove-sailor-e-lento.md` §4.
+9. **Chi scrive il puntatore alla pagina delle memorie nei file che i motori
+   leggono.** Dal 05/09 ogni motore dichiara i file che legge all'avvio e
+   `sailor memory where` dice quali motori vedono `state/memory.md` e quali
+   no; nessuno lo cura. Le scelte: Sailor scrive una riga in `AGENTS.md` /
+   `CLAUDE.md` / `GEMINI.md` dell'albero (un file del progetto, versionato,
+   che tutti vedono), o nel file di casa (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`,
+   `~/.gemini/GEMINI.md`: personale, non versionato), o non scrive e lo dice
+   soltanto. Raccomandato il file di casa: è dello stesso proprietario delle
+   memorie, e un repository pubblico non deve puntare a un file che non ha.
+10. **Due flussi spediti che chiamano un motore da soli.** `consolidate-memories`
+   ha `daily_at 04:30` e parte dal battito della finestra quando la finestra
+   è aperta a quell'ora; `take-the-next-fault` non ha orologio e si lancia a
+   mano. Il primo costa una chiamata al giorno con tutte le memorie nel
+   mandato; il secondo una riparazione intera. Nessuno dei due è stato visto
+   dal vivo. Da decidere se il primo resta a orologio, e se il secondo ne
+   riceve uno.
 
 ## Chieste da Theo, non ancora iniziate
 
