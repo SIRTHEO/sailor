@@ -166,10 +166,17 @@ Misurato sull'albero a `b03afc54`, la notte fra il 4 e il 5.
 - **2, il rilascio ricorda la suite: c'è.** L'albero (`HEAD^{tree}`) va in
   `state/<bersaglio>-suite-tree` quando la suite è verde; un rilascio dello
   stesso albero lo dice e non la rifà.
-- **3, il rilascio spinge il tronco: c'è**, e stasera dice la verità: «non
-  spinto, il remoto è indietro: 403». La credenziale git di questa macchina è
-  di un altro account; il gesto è di Theo (`gh auth switch`, poi
-  `gh auth setup-git`).
+- **3, il rilascio spinge il tronco: c'è.** Tre rilasci hanno detto la verità
+  — «non spinto, il remoto è indietro: 403» — e il quarto, alle 03:00, ha
+  spinto: `origin/sorgenti` a `b70e37e8`, oltre 200 commit. Nessuno ha toccato
+  una credenziale; il gestore di sistema ne aveva una buona.
+- **Misurato il rilascio di un commit di sola documentazione: 7 min 44 s**
+  (02:52:58 → 03:00:42), di cui 42 s di compilazione e il resto la suite, per
+  un albero in cui nessun crate era cambiato. La causa è il clone in una
+  cartella `mktemp` nuova a ogni rilascio: cargo giudica per percorso e mtime,
+  e ricompila tutto e rilega ogni binario di prova con LTO. Il rimedio è entrato
+  la stessa notte — l'albero di rilascio vive in `target/release-tree` e viene
+  portato a HEAD con un checkout — e il numero dopo va scritto qui.
 - **4, 5, 6, 7: no.** Non iniziati.
 
 E i cinque concetti di Theo della stessa sera:
