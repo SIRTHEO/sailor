@@ -118,6 +118,9 @@ pub(crate) struct Spent {
     pub(crate) identity: EngineIdentity,
     /// The kind of work the step declared, for the sum per kind.
     pub(crate) work_kind: Option<String>,
+    /// What this call did with the session of its flow, the case where it
+    /// asked to continue one and started from nothing included.
+    pub(crate) session_mode: Option<ledger::SessionMode>,
 }
 
 /// Scrive nel deposito la riga di **questa** chiamata.
@@ -234,6 +237,7 @@ pub(crate) fn record_the_call(
         ended_at: Some(spent.ended_at),
         session_id: spent.session_id,
         work_kind: spent.work_kind,
+        session_mode: spent.session_mode,
     };
     let _ = record.ledger.record_model_call(&written);
 }
@@ -346,6 +350,7 @@ mod what_it_cost {
                 declared: Declared {
                     read: Shape::Json,
                     from: models::usage::Heard::Stdout,
+                    reports: crate::Reports::PerCall,
                     input_tokens: path(&["usage", "input_tokens"]),
                     output_tokens: path(&["usage", "output_tokens"]),
                     cached_tokens: path(&["usage", "cache_read_input_tokens"]),
