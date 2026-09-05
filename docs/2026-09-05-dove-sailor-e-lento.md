@@ -53,6 +53,14 @@ un crate che nessuno ha toccato tiene i suoi mtime e i suoi binari di prova.
 La prova (`the_release_tree_is_kept_and_only_what_changed_is_touched`) tiene
 il mtime di un file non toccato attraverso due rilasci.
 
+**Prime misure con l'albero persistente:** il rilascio 20 (`04792a7b`, tre
+crate toccati) è durato **5 min 27 s** (03:29:50 → 03:35:17), 38 s di
+compilazione — i binari di prova dei crate toccati e di chi dipende da loro
+sono stati rilegati, gli altri no. Il rilascio 19, sola documentazione, ha
+compilato per 34 s soltanto `catalogue` (incorpora `i18n/*.json`, che erano
+cambiati) e `sailor`, ma è uscito rosso per il guasto 89 e non conta come
+misura.
+
 **Cosa si misura dopo:** il rilascio di un commit di sola documentazione, dal
 `inizio` alla `fine` scritti nel log. La previsione — che non vale niente finché
 non è misurata — è sotto i due minuti: il tempo di *eseguire* la suite, non di
