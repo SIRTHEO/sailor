@@ -422,6 +422,9 @@ dichiarati:
   due lock. Non è un guasto capitato: è un difetto che aspetta, e lo si chiude
   rigenerando quel lock — oppure, meglio, chiedendosi perché un membro del
   prodotto stia fuori dall'unico oracolo che abbiamo.
+  *05/09:* rigenerato (`69427396`: mancavano `catalogue` sotto `flow` e
+  `profiles`, il resto era già a posto). La batteria continua a non
+  compilarlo: il lock tornerà vecchio alla prossima dipendenza nuova.
 
 ## L'ordine dei motori in catena, misurato il 01/09/2026
 
