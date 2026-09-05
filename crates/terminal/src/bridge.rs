@@ -107,7 +107,7 @@ impl Write for Keys<'_> {
 }
 
 fn as_io(error: PtyError) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, error.to_string())
+    io::Error::other(error.to_string())
 }
 
 /// A writer that keeps count of what passes through it.

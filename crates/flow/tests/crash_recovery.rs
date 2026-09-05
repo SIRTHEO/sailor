@@ -334,7 +334,7 @@ fn the_species_written_when_the_step_started_beats_the_action_of_today() {
 #[test]
 fn the_engine_records_the_holder_and_the_species_when_it_opens_a_step() {
     let graph = opaque_graph();
-    let mut store = InMemoryRecordStore::from_records(vec![]);
+    let store = InMemoryRecordStore::from_records(vec![]);
     let mut actions = ActionRegistry::default();
     actions.register("opaque", Opaque(StepSpecies::Repeatable));
     InProcessExecutor
@@ -347,9 +347,9 @@ fn the_engine_records_the_holder_and_the_species_when_it_opens_a_step() {
                 shared: SharedState::new(),
                 spend_cap_micros: None,
             },
-            &mut store,
+            &store,
             &actions,
-            &mut FixedClock::new(1),
+            &FixedClock::new(1),
         )
         .expect("execution succeeded");
     let record = store
