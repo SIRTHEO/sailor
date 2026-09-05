@@ -525,6 +525,13 @@
   "cli.remember.wants_three": "una memoria è un tipo, un'etichetta e un valore; uso: {usage}",
   "cli.remember.kept": "tenuta: «{label}» ({type})",
   "cli.session.remembered": "{count} memorie tenute, le ultime {recent}: `sailor search <parola>` le trova, `sailor remember` ne aggiunge una.",
+  "cli.session.memory_page": "La pagina delle memorie è {path}; comincia così:\n{opening}",
+  "cli.command.memory": "rende ciò che si ricorda nell'unico file che ogni riga di comando legge all'avvio",
+  "cli.memory.page_says": "scrive la pagina delle memorie ancora valide in state/memory.md sotto la casa di Sailor; con --print la stampa invece",
+  "cli.memory.wants_page": "l'unica forma è `page`; uso: {usage}",
+  "cli.memory.written": "{count} memorie sulla pagina, scritta in {path}",
+  "cli.memory.no_home": "nessuna casa in cui scrivere la pagina: HOME non è impostata",
   "run.failure.bad_memory_type": "una memoria è user, feedback, project o reference, e questa non è nessuna delle quattro",
-  "run.failure.secret_in_memory": "la memoria porta quel che sembra una credenziale, e una credenziale non si ricorda mai"
+  "run.failure.secret_in_memory": "la memoria porta quel che sembra una credenziale, e una credenziale non si ricorda mai",
+  "run.failure.page_unwritten": "la pagina delle memorie non si è potuta scrivere, e le righe di comando leggono ancora la vecchia"
 }
