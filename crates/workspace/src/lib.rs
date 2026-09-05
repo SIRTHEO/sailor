@@ -72,18 +72,22 @@ pub fn parse_worktrees(porcelain: &str) -> Vec<Worktree> {
     trees
 }
 
-/// Where a new tree goes: beside the repository, not inside it.
-///
-/// Inside would make every tree a directory the repository itself can see, and
-/// every tool that walks the project would walk all of them. This is the shape
-/// already on this machine, read rather than invented.
-pub fn tree_path(repo: &Path, name: &str) -> PathBuf {
+const BESIDE_A_CHECKOUT: &str = "-worktrees";
+
+/// Where the trees of a repository go: beside it, not inside it. Inside, every
+/// tool that walks the project would walk every tree of it as well.
+pub fn trees_root(repo: &Path) -> PathBuf {
     let stem = repo
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("repo");
     let parent = repo.parent().map(Path::to_path_buf).unwrap_or_default();
-    parent.join(format!("{stem}-worktrees")).join(name)
+    parent.join(format!("{stem}{BESIDE_A_CHECKOUT}"))
+}
+
+/// Where a new tree goes.
+pub fn tree_path(repo: &Path, name: &str) -> PathBuf {
+    trees_root(repo).join(name)
 }
 
 /// A branch name is not a directory name: `work/thing` would nest a directory.
@@ -154,6 +158,65 @@ fn safe(name: &str) -> String {
     name.chars()
         .map(|letter| if letter.is_ascii_alphanumeric() || letter == '-' || letter == '_' { letter } else { '-' })
         .collect()
+}
+
+/// What became of a tree asked to close. A kept tree carries why, not a
+/// sentence: the words a person reads belong to whoever speaks to them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Closing {
+    TakenDown,
+    /// Git would not take it down, in git's own words.
+    GitRefused(String),
+    HoldsACommitNobodyElseHas(String),
+}
+
+/// Takes down the tree cut for one step, once nobody is coming back to it.
+/// Two things keep it, and neither is ever overridden: git's refusal over
+/// uncommitted work, and a commit that only this tree holds. See fault 89.
+pub fn close_tree(repo: &Path, tree: &Path) -> Closing {
+    if let Some(commit) = a_commit_no_branch_holds(repo, tree) {
+        return Closing::HoldsACommitNobodyElseHas(commit);
+    }
+    let at = tree.to_string_lossy().into_owned();
+    match git(repo, &["worktree", "remove", &at]) {
+        Err(refusal) => Closing::GitRefused(refusal),
+        Ok(_) => {
+            // The run's directory goes with its last step: a full one errors.
+            if let Some(parent) = tree.parent() {
+                let _ = std::fs::remove_dir(parent);
+            }
+            Closing::TakenDown
+        }
+    }
+}
+
+/// The head of `tree` when no branch of `repo` holds it. Git's refusal does
+/// not cover a commit the engine made inside a detached tree, and taking the
+/// tree down would leave that commit unreachable.
+fn a_commit_no_branch_holds(repo: &Path, tree: &Path) -> Option<String> {
+    let head = git(tree, &["rev-parse", "HEAD"]).ok()?;
+    let head = head.trim().to_owned();
+    if head.is_empty() {
+        return None;
+    }
+    let holders = git(repo, &["branch", "--all", "--contains", &head]).unwrap_or_default();
+    holders.trim().is_empty().then_some(head)
+}
+
+/// The run and the step a tree was cut for, or nothing for a tree a person
+/// cut. Read off the shape `tree_for` builds and not off one checkout's trees
+/// root: a run launched inside another checkout cuts beside that one.
+pub fn run_and_step_of(tree: &Worktree) -> Option<(String, String)> {
+    let step = Path::new(&tree.path);
+    let run = step.parent()?;
+    let beside = run.parent()?.file_name()?.to_str()?;
+    if !beside.ends_with(BESIDE_A_CHECKOUT) {
+        return None;
+    }
+    Some((
+        run.file_name()?.to_str()?.to_owned(),
+        step.file_name()?.to_str()?.to_owned(),
+    ))
 }
 
 /// Takes a tree down. Git refuses while the tree holds uncommitted work, and
@@ -266,6 +329,130 @@ pub fn tree_around(here: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A scratch place of this test's own, never a directory of this machine.
+    fn a_scratch(label: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "sailor-workspace-{label}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).expect("a scratch");
+        path
+    }
+
+    /// Only the repository's own settings: nothing of the account running this.
+    fn run_git(at: &Path, args: &[&str]) -> std::process::Output {
+        Command::new("git")
+            .arg("-C")
+            .arg(at)
+            .args(args)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .output()
+            .expect("git runs")
+    }
+
+    /// A repository with one commit: no tree can be cut from an empty history.
+    fn a_repository(label: &str) -> (PathBuf, PathBuf) {
+        let scratch = a_scratch(label);
+        let repo = scratch.join("project");
+        std::fs::create_dir_all(&repo).expect("the repository");
+        for args in [
+            &["init", "-q"][..],
+            &["config", "user.email", "test@example"],
+            &["config", "user.name", "test"],
+        ] {
+            assert!(run_git(&repo, args).status.success(), "git {args:?}");
+        }
+        std::fs::write(repo.join("README"), "a tree to cut from\n").expect("a file");
+        assert!(run_git(&repo, &["add", "README"]).status.success());
+        assert!(run_git(&repo, &["commit", "-q", "-m", "the first"]).status.success());
+        (scratch, repo)
+    }
+
+    /// A step's tree that answered and left nothing goes; one holding work
+    /// that is not committed stays, and says in git's words why.
+    #[test]
+    fn a_tree_holding_work_is_kept_and_a_clean_one_is_taken_down() {
+        let (scratch, repo) = a_repository("closing");
+        let clean = tree_for(&repo, "run-1", "clean").expect("a tree");
+        let dirty = tree_for(&repo, "run-1", "dirty").expect("a tree");
+        std::fs::write(dirty.join("left-behind"), "half a thought\n").expect("work left");
+
+        let went = close_tree(&repo, &clean);
+        let stayed = close_tree(&repo, &dirty);
+        let clean_is_gone = !clean.exists();
+        let work_is_there = dirty.join("left-behind").exists();
+        let listed = String::from_utf8_lossy(&run_git(&repo, &["worktree", "list"]).stdout)
+            .into_owned();
+        let dirty = dirty.to_string_lossy().into_owned();
+        let _ = std::fs::remove_dir_all(&scratch);
+
+        assert_eq!(went, Closing::TakenDown);
+        assert!(clean_is_gone, "the clean tree is still on disk");
+        assert!(
+            matches!(stayed, Closing::GitRefused(ref said) if !said.is_empty()),
+            "{stayed:?}"
+        );
+        assert!(work_is_there, "the work was lost");
+        assert!(listed.contains(&dirty), "{listed}");
+    }
+
+    /// The refusal is the safety property: what overrides it is never written.
+    #[test]
+    fn taking_a_tree_down_never_forces_it() {
+        let source = include_str!("lib.rs");
+        let overriding = format!("--{}", "force");
+        assert!(!source.contains(&overriding), "the refusal can be overridden");
+    }
+
+    /// No branch holds a commit made inside a detached tree, so taking the
+    /// tree down would lose it.
+    #[test]
+    fn a_tree_holding_a_commit_no_branch_has_is_kept() {
+        let (scratch, repo) = a_repository("committed");
+        let tree = tree_for(&repo, "run-2", "committed").expect("a tree");
+        std::fs::write(tree.join("answer"), "the engine's work\n").expect("work");
+        assert!(run_git(&tree, &["add", "answer"]).status.success());
+        assert!(run_git(&tree, &["commit", "-q", "-m", "what it found"]).status.success());
+
+        let stayed = close_tree(&repo, &tree);
+        let there = tree.join("answer").exists();
+        let _ = std::fs::remove_dir_all(&scratch);
+
+        assert!(
+            matches!(stayed, Closing::HoldsACommitNobodyElseHas(ref at) if at.len() >= 7),
+            "{stayed:?}"
+        );
+        assert!(there, "the commit's tree was taken down anyway");
+    }
+
+    /// A tree cut under a run and a step says which; one a person cut does not.
+    #[test]
+    fn a_step_tree_says_which_run_and_step_it_belongs_to() {
+        let of = |path: &str| {
+            run_and_step_of(&Worktree {
+                path: path.to_owned(),
+                head: String::new(),
+                branch: None,
+                locked: false,
+                prunable: false,
+            })
+        };
+
+        assert_eq!(
+            of("/somewhere/project-worktrees/run-1/implementa"),
+            Some(("run-1".to_owned(), "implementa".to_owned()))
+        );
+        assert_eq!(
+            of("/somewhere/a-copy-worktrees/run-1/implementa"),
+            Some(("run-1".to_owned(), "implementa".to_owned())),
+            "a run launched inside another checkout cuts beside that one"
+        );
+        assert_eq!(of("/somewhere/project-worktrees/a-branch"), None);
+        assert_eq!(of("/elsewhere/run-1/implementa"), None);
+    }
 
     /// A directory deep in a checkout names that checkout, in its real path;
     /// a directory outside every checkout names nothing.

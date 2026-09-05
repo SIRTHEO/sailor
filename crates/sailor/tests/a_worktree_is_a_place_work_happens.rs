@@ -94,3 +94,26 @@ fn nothing_at_all_reads_as_nothing_at_all() {
     assert_eq!(render(&[]), "no worktrees");
     assert!(parse_worktrees("").is_empty());
 }
+
+/// A tree a step left behind is disk nobody asked for until the listing says
+/// whose it is and how many there are.
+#[test]
+fn a_tree_kept_from_a_step_is_listed_with_its_run_and_counted() {
+    let trees = parse_worktrees(
+        "worktree /somewhere/project\nHEAD abc\nbranch refs/heads/sorgenti\n\n\
+         worktree /somewhere/project-worktrees/corsa-1/implementa\nHEAD def\ndetached\n",
+    );
+
+    let shown = render(&trees);
+    let line = shown
+        .lines()
+        .find(|line| line.starts_with("implementa"))
+        .expect("the kept tree is listed");
+
+    assert!(line.contains("corsa-1") && line.contains("implementa"), "{line}");
+    assert!(shown.contains("1 of these"), "the kept trees are not counted:\n{shown}");
+    assert!(
+        !shown.lines().next().expect("the repository's own line").contains("corsa-1"),
+        "a tree a person cut was read as a step's:\n{shown}"
+    );
+}
