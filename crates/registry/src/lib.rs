@@ -125,7 +125,7 @@ pub fn default_registry(
     // Who is working on what, because an **agent** must be able to ask. The
     // reading half goes in without a store; the two that write stay out.
     actions::presence::register_presence(&mut registry, ledger.clone());
-    actions::memory::register_memory(&mut registry, ledger.clone());
+    actions::memory::register_memory(&mut registry, ledger.clone(), ledger::sailor_home());
     // The home is taken here, the flows are read when asked.
     actions::search::register_search(
         &mut registry,
