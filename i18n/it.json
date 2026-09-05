@@ -494,5 +494,8 @@
   "cli.release.suite_already_green": "la suite era già passata su questo albero ({tree}): non la rieseguo",
   "cli.release.suite_not_remembered": "la suite è passata ma {memo} non si scrive ({error}): il prossimo rilascio la rifà",
   "cli.release.pushed": "spinto: {line}",
-  "cli.release.not_pushed": "non spinto, il remoto è indietro: {line}"
+  "cli.release.not_pushed": "non spinto, il remoto è indietro: {line}",
+  "cli.flow.search_nothing": "nessun flusso nomina «{query}»",
+  "cli.flow.search_found": "{count} flusso/i nominano «{query}», il migliore per primo:",
+  "run.failure.search_refused": "la ricerca è stata rifiutata — serve una parola, o i flussi non si sono potuti ordinare"
 }
