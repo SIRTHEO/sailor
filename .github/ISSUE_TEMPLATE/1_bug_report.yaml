@@ -1,0 +1,79 @@
+name: Bug report
+description: Something Sailor did that it should not have done, or did not do that it should have.
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Sailor is under construction, so a report that says exactly what you
+        typed and exactly what came back is worth more than a diagnosis.
+
+        **If this is a security problem, do not open an issue.** Use the
+        repository's Security tab, "Report a vulnerability". See `SECURITY.md`.
+
+        **Redact before you paste**: no tokens or keys, and no absolute paths
+        from your home directory.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The output of `sailor version`. If you built from source, add the commit.
+      placeholder: sailor 0.1.0
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: Operating system and version, architecture, and the Rust version if you built it yourself.
+      placeholder: macOS 15.6 arm64, rustc 1.89
+    validations:
+      required: true
+
+  - type: textarea
+    id: command
+    attributes:
+      label: The exact command
+      description: What you ran, verbatim. Include the flow file or the profile involved if there is one.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: The output, verbatim, and any error message. Paste it rather than describing it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where
+      options:
+        - The command line
+        - The desktop window
+        - A flow run
+        - A terminal Sailor opened
+        - Somewhere else, or not sure
+    validations:
+      required: false
+
+  - type: textarea
+    id: anything_else
+    attributes:
+      label: Anything else
+      description: How often it happens, what you were doing before, what you already tried.
+    validations:
+      required: false
