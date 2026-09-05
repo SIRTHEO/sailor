@@ -211,7 +211,7 @@ pub fn manifest(from: &Path) -> Option<BTreeSet<String>> {
     let mut cur = from.to_path_buf();
     for _ in 0..5 {
         cur = cur.parent()?.to_path_buf();
-        let p = cur.join(&manifest_name());
+        let p = cur.join(manifest_name());
         if !p.exists() {
             continue;
         }
