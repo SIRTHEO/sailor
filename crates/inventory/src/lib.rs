@@ -31,6 +31,15 @@ pub enum Kind {
 }
 
 impl Kind {
+    /// Every family, in the order the list prints them.
+    pub const ALL: [Kind; 5] = [
+        Kind::Skill,
+        Kind::Agent,
+        Kind::Command,
+        Kind::Rule,
+        Kind::Hook,
+    ];
+
     /// The name the family goes by for whoever reads the list.
     pub fn label(self) -> &'static str {
         match self {
@@ -40,6 +49,12 @@ impl Kind {
             Kind::Rule => "rule",
             Kind::Hook => "hook",
         }
+    }
+
+    /// The family a label names, the inverse of `label`: `None` for a word the
+    /// list never prints, so a typo is not read as a family.
+    pub fn from_label(label: &str) -> Option<Kind> {
+        Kind::ALL.into_iter().find(|kind| kind.label() == label)
     }
 }
 
