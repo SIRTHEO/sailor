@@ -328,7 +328,7 @@ mod tests {
     use super::super::check::check_report;
     use super::*;
     use flow::FlowFile;
-    use registry::default_registry;
+    use registry::{registry_in, House};
     use std::path::{Path, PathBuf};
 
     // ── le case di credenziali ────────────────────────────────────────
@@ -453,7 +453,7 @@ mod tests {
         let store = a_store_pointing_at(&empty);
         let (report, unknown) = check_report(
             &flow,
-            &default_registry(None, None),
+            &registry_in(House::empty(), None, None),
             Some(&tools),
             Some(&EngineWorld {
                 probe: &real,
@@ -488,7 +488,7 @@ mod tests {
         let store = a_store_pointing_at(&full);
         let (report, _) = check_report(
             &flow,
-            &default_registry(None, None),
+            &registry_in(House::empty(), None, None),
             Some(&tools),
             Some(&EngineWorld {
                 probe: &real,
@@ -526,7 +526,7 @@ mod tests {
 
         let (report, _) = check_report(
             &flow,
-            &default_registry(None, None),
+            &registry_in(House::empty(), None, None),
             Some(&tools),
             Some(&EngineWorld {
                 probe: &real,
@@ -667,7 +667,7 @@ mod tests {
 
         let (report, _) = check_report(
             &flow,
-            &default_registry(None, None),
+            &registry_in(House::empty(), None, None),
             Some(&tools),
             Some(&EngineWorld::without_profiles(&probe)),
         );
@@ -691,7 +691,7 @@ mod tests {
 
         let (report, _) = check_report(
             &flow,
-            &default_registry(None, None),
+            &registry_in(House::empty(), None, None),
             Some(&tools),
             Some(&EngineWorld::without_profiles(&probe)),
         );
@@ -725,7 +725,7 @@ mod tests {
 
         let (report, _) = check_report(
             &flow,
-            &default_registry(None, None),
+            &registry_in(House::empty(), None, None),
             Some(&tools),
             Some(&EngineWorld::without_profiles(&probe)),
         );
@@ -755,7 +755,7 @@ mod tests {
 
         let (report, _) = check_report(
             &flow,
-            &default_registry(None, None),
+            &registry_in(House::empty(), None, None),
             Some(&tools),
             Some(&EngineWorld::without_profiles(&probe)),
         );
@@ -792,7 +792,7 @@ mod tests {
 
         let (report, _) = check_report(
             &flow,
-            &default_registry(None, None),
+            &registry_in(House::empty(), None, None),
             Some(&tools),
             Some(&EngineWorld::without_profiles(&probe)),
         );
@@ -816,7 +816,7 @@ mod tests {
         let flow = flow_with_chain(r#""motore""#);
         let tools = tools_with_engines(&[("motore", REFUSES)]);
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), Some(&tools), None);
+        let (report, _) = check_report(&flow, &registry_in(House::empty(), None, None), Some(&tools), None);
 
         assert!(!report.contains("command lines"), "{report}");
     }
@@ -851,7 +851,7 @@ mod tests {
 
         let (report, _) = check_report(
             &flow,
-            &default_registry(None, None),
+            &registry_in(House::empty(), None, None),
             Some(&tools),
             Some(&EngineWorld::without_profiles(&probe)),
         );

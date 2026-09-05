@@ -317,7 +317,7 @@ fn new_run_id(flow_id: &str) -> Result<String, String> {
 mod tests {
     use super::test_support::*;
     use super::*;
-    use registry::default_registry;
+    use registry::{registry_in, House};
     use std::fs;
 
     #[test]
@@ -437,7 +437,7 @@ mod tests {
             let text = std::fs::read_to_string(&path).expect("leggere il flusso");
             let flow: FlowFile = serde_json::from_str(&text)
                 .unwrap_or_else(|e| panic!("{} non si carica: {e}", path.display()));
-            let unknown = missing_actions(&flow.graph, &default_registry(None, None));
+            let unknown = missing_actions(&flow.graph, &registry_in(House::empty(), None, None));
             assert!(
                 unknown.is_empty(),
                 "{} nomina azioni che il motore non conosce: {unknown:?}",
@@ -456,7 +456,7 @@ mod tests {
         let json = flow_json("shell_check", "[]", inputs);
         let flow: FlowFile = serde_json::from_str(&json).expect("caricare la forma decisa");
         assert_eq!(flow.graph.steps().len(), 1);
-        assert!(missing_actions(&flow.graph, &default_registry(None, None)).is_empty());
+        assert!(missing_actions(&flow.graph, &registry_in(House::empty(), None, None)).is_empty());
     }
 
     /// UN NOME NON DIVENTA PIÙ UN PERCORSO, e la protezione cambia di natura:

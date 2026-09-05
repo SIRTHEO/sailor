@@ -88,22 +88,14 @@ fn scratch_dir(label: &str) -> PathBuf {
     dir
 }
 
-/// I nomi che il motore registra **davvero**, chiesti al registro invece che
-/// ricopiati.
-///
-/// **IL DEPOSITO SERVE.** Sei azioni si registrano solo quando c'è — quelle che
-/// scrivono e leggono il deposito — e la finestra ha ragione a saperle
-/// disegnare comunque: un flusso che le nomina esiste e gira.
-///
-/// `default_registry` legge la macchina per costruire il risolutore degli
-/// strumenti, ma i **nomi** delle azioni non dipendono da cosa c'è installato:
-/// sono le righe di `registry::default_registry`, e non il contenuto di
-/// `~/.config/sailor/tools.d`. Questa prova non è quindi una di quelle del
-/// guasto 5.
+/// The names the engine really registers, asked of the registry rather than
+/// copied. **THE STORE MATTERS**: six actions register only when there is one,
+/// and the window is right to draw them all the same. The house is this test's
+/// own, so nothing of the machine's home or tools decides the list.
 fn engine_action_names(label: &str) -> BTreeSet<String> {
     let dir = scratch_dir(label);
     let ledger = ledger::Ledger::open(&dir).expect("un deposito di prova si apre");
-    registry::default_registry(Some(ledger), None)
+    registry::registry_in(registry::House::under(&dir), Some(ledger), None)
         .names()
         .into_iter()
         .map(str::to_owned)
