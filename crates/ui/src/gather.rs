@@ -453,9 +453,10 @@ mod tests {
     /// «no runs» while the runs are there.
     #[test]
     fn the_window_asks_the_ledger_where_the_ledger_lives() {
-        assert_eq!(
-            default_ledger_dir(),
-            ledger::default_directory().expect("this machine declares HOME")
-        );
+        let declared = std::env::temp_dir().join(format!("sailor-ledger-here-{}", std::process::id()));
+        std::env::set_var("SAILOR_LEDGER", &declared);
+        let asked = default_ledger_dir();
+        assert_eq!(asked, declared);
+        assert_eq!(asked, ledger::default_directory().expect("a declared ledger is a directory"));
     }
 }

@@ -584,6 +584,7 @@ pub(super) fn engines_of(with: &Value) -> Vec<String> {
 mod tests {
     use super::super::test_support::*;
     use super::*;
+    use registry::{registry_in, House};
 
     // ── i campi che l'azione non conosce ─────────────────────────────
 
@@ -599,7 +600,7 @@ mod tests {
         let json = flow_json("external_engine", "[]", inputs);
         let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), None, None);
+        let (report, _) = check_report(&flow, &registry_in(House::empty(), None, None), None, None);
 
         assert!(
             report.contains("campi che l'azione non conosce"),
@@ -626,7 +627,7 @@ mod tests {
         }"#;
         let flow: FlowFile = serde_json::from_str(json).expect("caricare il flusso");
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), None, None);
+        let (report, _) = check_report(&flow, &registry_in(House::empty(), None, None), None, None);
 
         assert!(report.contains("ripeti <- nessuna"), "the step is listed: {report}");
         assert!(
@@ -649,7 +650,7 @@ mod tests {
         let json = flow_json("external_engine", "[]", inputs);
         let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), None, None);
+        let (report, _) = check_report(&flow, &registry_in(House::empty(), None, None), None, None);
 
         assert!(
             !report.contains("campi che l'azione non conosce"),
@@ -662,7 +663,7 @@ mod tests {
     /// subito su codice vero invece che su un flusso inventato.
     #[test]
     fn no_shipped_flow_carries_a_field_nobody_reads() {
-        let registry = default_registry(None, None);
+        let registry = registry_in(House::empty(), None, None);
         for (name, text) in flow::system::FLOWS {
             let flow: FlowFile = serde_json::from_str(text)
                 .unwrap_or_else(|why| panic!("il flusso «{name}» non si carica: {why}"));
@@ -688,7 +689,10 @@ mod tests {
         let file = std::env::temp_dir().join(format!("prova-strumenti-{}.json", ids.join("-")));
         std::fs::write(&file, format!(r#"{{"tools":[{}]}}"#, entries.join(","))).expect("scrivere");
         let catalog = toolbox::Catalog::load(&[toolbox::Source::File(file)]);
-        toolbox::Tools::new(catalog, toolbox::Machine::current())
+        toolbox::Tools::new(
+            catalog,
+            toolbox::Machine::bare(std::path::PathBuf::from(toolbox::probe::NOWHERE)),
+        )
     }
 
     fn flow_wanting_tool(tool: &str) -> FlowFile {
@@ -724,7 +728,7 @@ mod tests {
         let tools = tools_declaring(&["git"]);
 
         let (report, unknown) =
-            check_report(&flow, &default_registry(None, None), Some(&tools), None);
+            check_report(&flow, &registry_in(House::empty(), None, None), Some(&tools), None);
 
         assert_eq!(unknown, vec!["questo-non-esiste-in-nessun-catalogo"]);
         assert!(
@@ -745,7 +749,7 @@ mod tests {
         let tools = tools_declaring(&["strumento-dichiarato-mai-installato"]);
 
         let (report, unknown) =
-            check_report(&flow, &default_registry(None, None), Some(&tools), None);
+            check_report(&flow, &registry_in(House::empty(), None, None), Some(&tools), None);
 
         assert!(unknown.is_empty(), "non è un errore: {unknown:?}");
         assert!(
@@ -776,7 +780,10 @@ mod tests {
         )
         .expect("scrivere");
         let catalog = toolbox::Catalog::load(&[toolbox::Source::File(file)]);
-        toolbox::Tools::new(catalog, toolbox::Machine::current())
+        toolbox::Tools::new(
+            catalog,
+            toolbox::Machine::bare(std::path::PathBuf::from(toolbox::probe::NOWHERE)),
+        )
     }
 
     fn flow_needing_capability(tool: &str, capability: &str) -> FlowFile {
@@ -813,7 +820,7 @@ mod tests {
         let tools = tools_with_capabilities("un-motore", r#"{"response_shape": false}"#);
 
         let (report, unknown) =
-            check_report(&flow, &default_registry(None, None), Some(&tools), None);
+            check_report(&flow, &registry_in(House::empty(), None, None), Some(&tools), None);
 
         assert!(
             unknown.is_empty(),
@@ -840,7 +847,7 @@ mod tests {
         let flow = flow_needing_capability("un-motore", "response_shape");
         let tools = tools_with_capabilities("un-motore", r#"{"choose_model": true}"#);
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), Some(&tools), None);
+        let (report, _) = check_report(&flow, &registry_in(House::empty(), None, None), Some(&tools), None);
 
         assert!(
             report.contains("nessuno ha guardato"),
@@ -862,7 +869,7 @@ mod tests {
             r#"{"response_shape": {"args": ["--json-schema"], "takes_value": true}}"#,
         );
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), Some(&tools), None);
+        let (report, _) = check_report(&flow, &registry_in(House::empty(), None, None), Some(&tools), None);
 
         assert!(
             !report.contains("capacità che il motore non dichiara"),
@@ -884,7 +891,7 @@ mod tests {
         let flow = flow_needing_capability("un-motore", "response_shape");
         let tools = tools_with_capabilities("un-motore", r#"{"response_shape": true}"#);
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), Some(&tools), None);
+        let (report, _) = check_report(&flow, &registry_in(House::empty(), None, None), Some(&tools), None);
 
         assert!(
             !report.contains("campi che l'azione non conosce"),
@@ -920,7 +927,10 @@ mod tests {
         )
         .expect("scrivere");
         let catalog = toolbox::Catalog::load(&[toolbox::Source::File(file)]);
-        toolbox::Tools::new(catalog, toolbox::Machine::current())
+        toolbox::Tools::new(
+            catalog,
+            toolbox::Machine::bare(std::path::PathBuf::from(toolbox::probe::NOWHERE)),
+        )
     }
 
     /// Un passo con una catena di due motori.
@@ -957,7 +967,7 @@ mod tests {
     #[test]
     fn a_chain_whose_first_engine_cannot_fall_back_is_named_by_the_check() {
         let flow = flow_with_a_chain();
-        let registry = default_registry(None, None);
+        let registry = registry_in(House::empty(), None, None);
 
         let silent = tools_where_the_first_says("");
         let (about_the_silent, _) = check_report(&flow, &registry, Some(&silent), None);
@@ -987,7 +997,7 @@ mod tests {
     fn without_a_detector_the_check_says_nothing_about_tools() {
         let flow = flow_wanting_tool("qualunque");
 
-        let (report, unknown) = check_report(&flow, &default_registry(None, None), None, None);
+        let (report, unknown) = check_report(&flow, &registry_in(House::empty(), None, None), None, None);
 
         assert!(unknown.is_empty());
         assert!(!report.contains("strument"), "{report}");
@@ -1013,7 +1023,7 @@ mod tests {
         let mut with = without.clone();
         with.spend_cap_micros = Some(2_500_000);
 
-        let registry = default_registry(None, None);
+        let registry = registry_in(House::empty(), None, None);
         let (said_without, _) = check_report(&without, &registry, None, None);
         let (said_with, _) = check_report(&with, &registry, None, None);
 
@@ -1037,7 +1047,7 @@ mod tests {
         let mut flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
         flow.spend_cap_micros = Some(1);
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), None, None);
+        let (report, _) = check_report(&flow, &registry_in(House::empty(), None, None), None, None);
 
         assert!(report.contains("does not reach the engines"), "{report}");
         assert!(report.contains("first front"), "{report}");
@@ -1049,7 +1059,7 @@ mod tests {
         let json = flow_json("azione_assente", "[]", "{}");
         let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), None, None);
+        let (report, _) = check_report(&flow, &registry_in(House::empty(), None, None), None, None);
 
         assert!(report.contains("passi: 1"), "{report}");
         assert!(report.contains("cicli: nessuno"), "{report}");
@@ -1076,7 +1086,7 @@ mod tests {
         }"#;
         let flow: FlowFile = serde_json::from_str(json).expect("caricare il flusso");
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), None, None);
+        let (report, _) = check_report(&flow, &registry_in(House::empty(), None, None), None, None);
 
         assert!(report.contains("dipendenze: 1"), "{report}");
         assert!(report.contains("child <- root"), "{report}");
@@ -1100,7 +1110,7 @@ mod tests {
         }"#;
         let flow: FlowFile = serde_json::from_str(json).expect("the flow loads");
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), None, None);
+        let (report, _) = check_report(&flow, &registry_in(House::empty(), None, None), None, None);
 
         let labelled = format!(
             "child <- root{}",
@@ -1112,7 +1122,7 @@ mod tests {
 
     #[test]
     fn both_default_actions_are_known_to_check() {
-        let registry = default_registry(None, None);
+        let registry = registry_in(House::empty(), None, None);
         assert!(registry.get("external_engine").is_some());
         assert!(registry.get("shell_check").is_some());
     }
@@ -1126,7 +1136,7 @@ mod tests {
     /// esattamente sulla macchina appena installata.
     #[test]
     fn the_history_question_is_registered_even_without_a_deposit() {
-        let registry = default_registry(None, None);
+        let registry = registry_in(House::empty(), None, None);
         assert!(registry.get("history_ask").is_some());
         assert!(
             registry.get("store_write").is_none(),
@@ -1144,7 +1154,7 @@ mod tests {
         let json = flow_json("shell_check", "[]", "{}");
         let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), None, None);
+        let (report, _) = check_report(&flow, &registry_in(House::empty(), None, None), None, None);
 
         assert!(report.contains("azioni disponibili: "), "{report}");
         assert!(report.contains("history_ask"), "{report}");
@@ -1155,7 +1165,7 @@ mod tests {
     /// che li nomina si controlla senza che nessuno le registri a mano.
     #[test]
     fn the_trigger_and_the_detector_are_known_to_check() {
-        let registry = default_registry(None, None);
+        let registry = registry_in(House::empty(), None, None);
         assert!(registry.get("trigger").is_some());
         assert!(registry.get("detect_tools").is_some());
     }
@@ -1168,7 +1178,7 @@ mod tests {
     /// *chi* si lamenta, non che lo strumento ci sia.
     #[test]
     fn the_registered_engine_knows_how_to_resolve_a_tool_id() {
-        let registry = default_registry(None, None);
+        let registry = registry_in(House::empty(), None, None);
         let engine = registry
             .get("external_engine")
             .expect("il motore è registrato");
