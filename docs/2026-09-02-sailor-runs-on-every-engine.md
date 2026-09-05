@@ -574,9 +574,14 @@ Starting point, so the mandate builds on it instead of beside it.
    nothing was added to the schema. *Proof:* `a_word_written_in_one_flow_finds_that_flow_and_no_other`
    in `actions::search`, with the text itself as the oracle — the flows found
    are exactly the shipped flows whose file contains the word, and there is
-   one; mutant (every flow returned) red. The `memories` table, the index over
-   runs and events, the generated file and the consolidation flow are still
-   not written.
+   one; mutant (every flow returned) red. The same night, the ledger: `ledger_search`
+   is an action and `sailor search <words>` asks both at once — the flows, and
+   the ledger's recent runs (500), steps (2 000) and store entries, each one
+   document with an id that says which it is (`run:…`, `step:…/…#n`,
+   `store:…/…`). *Proof:* `what_the_ledger_holds_is_found_by_its_words` in
+   `ledger::search`, one document of each kind found by a word only it says.
+   The `memories` table, the index over events and faults, the generated file
+   and the consolidation flow are still not written.
 4. **What Sailor remembers of a run is written down, once.** The report of
    every closed run (what went, what broke, what it cost, what was learnt) is
    a store record, and a flow that starts on the same entity reads the last

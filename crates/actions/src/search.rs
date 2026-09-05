@@ -3,14 +3,25 @@
 //! `with` — so a word written once in one step's prompt finds that flow.
 
 use flow::{Action, ActionError, ActionOutcome, FlowFile, SharedState, StepSpecies};
+use ledger::Ledger;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
 pub const FLOW_SEARCH_ACTION: &str = "flow_search";
+pub const LEDGER_SEARCH_ACTION: &str = "ledger_search";
 
-pub fn register_search(registry: &mut flow::ActionRegistry, home_flows: Option<PathBuf>) {
+/// How far back the ledger is read for a search: the recent runs and steps.
+pub const RECENT_RUNS: usize = 500;
+pub const RECENT_STEPS: usize = 2000;
+
+pub fn register_search(
+    registry: &mut flow::ActionRegistry,
+    home_flows: Option<PathBuf>,
+    ledger: Option<Ledger>,
+) {
     registry.register(FLOW_SEARCH_ACTION, FlowSearchAction::new(home_flows));
+    registry.register(LEDGER_SEARCH_ACTION, LedgerSearchAction::new(ledger));
 }
 
 /// What a flow is known as when loaded: its name, where it came from, and the
@@ -62,6 +73,40 @@ impl Action for FlowSearchAction {
         let known = flow::system::load_all(&flow::system::sources_from_env(&home));
         let hits = rank_flows(&known, &spec.query)
             .map_err(|reason| ActionError::new("search_refused", reason))?;
+        Ok(ActionOutcome::Went(json!({ "query": spec.query, "hits": hits })))
+    }
+
+    fn species(&self) -> StepSpecies {
+        StepSpecies::Repeatable
+    }
+}
+
+/// The runs, steps and store entries of the ledger that mention the words.
+pub struct LedgerSearchAction {
+    ledger: Option<Ledger>,
+}
+
+impl LedgerSearchAction {
+    pub fn new(ledger: Option<Ledger>) -> Self {
+        Self { ledger }
+    }
+}
+
+impl Action for LedgerSearchAction {
+    fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
+        let spec: SearchSpec = serde_json::from_value(input.clone())
+            .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
+        let ledger = self
+            .ledger
+            .as_ref()
+            .ok_or_else(|| ActionError::new("no_store", String::new()))?;
+        let hits = ledger
+            .search(&spec.query, RECENT_RUNS, RECENT_STEPS)
+            .map_err(|error| ActionError::new("search_refused", error.to_string()))?;
+        let hits: Vec<Value> = hits
+            .into_iter()
+            .map(|hit| json!({ "id": hit.id, "rank": hit.rank, "excerpt": hit.excerpt }))
+            .collect();
         Ok(ActionOutcome::Went(json!({ "query": spec.query, "hits": hits })))
     }
 
