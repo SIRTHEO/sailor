@@ -1040,13 +1040,58 @@ fn remember_the_suite(memo: &Path, tree_rev: &str) {
     }
 }
 
+/// How this tree proves who it is to its remote, when it says so itself.
+///
+/// Two settings of the repository, both absent by default: the name to push
+/// under, and the command that prints its secret. Neither is in the code — a
+/// machine with several accounts has to say which one owns the remote, and the
+/// answer is nobody's business but that tree's.
+fn how_to_prove_who_we_are(root: &Path) -> Vec<String> {
+    let setting = |name: &str| {
+        let read = Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["config", "--get", name])
+            .output()
+            .ok()?;
+        let value = String::from_utf8_lossy(&read.stdout).trim().to_owned();
+        (read.status.success() && !value.is_empty()).then_some(value)
+    };
+    let (Some(name), Some(secret)) = (setting(PUSH_AS), setting(SECRET_FROM)) else {
+        return Vec::new();
+    };
+    // The helper an empty value first: a configuration that shuts the helpers
+    // off for this host would otherwise shut ours off with them.
+    vec![
+        "-c".to_owned(),
+        format!("{HELPER_FOR_THE_REMOTE}="),
+        "-c".to_owned(),
+        format!(
+            "{HELPER_FOR_THE_REMOTE}=!f() {{ echo username={name}; echo password=$({secret}); }}; f"
+        ),
+    ]
+}
+
+/// The name this tree pushes under, when it declares one.
+const PUSH_AS: &str = "sailor.pushAs";
+
+/// The command that prints that name's secret, run for one push and never read
+/// by us: what it prints goes from the shell to git and nowhere else.
+const SECRET_FROM: &str = "sailor.pushSecretFrom";
+
+/// Where a credential helper is declared for the remote this tree pushes to.
+const HELPER_FOR_THE_REMOTE: &str = "credential.https://github.com.helper";
+
 /// The trunk goes to the remote with every release: what is in service on
 /// this machine is what the remote holds. Refused, it is said, not hidden —
 /// the release stands, the remote is behind.
 fn push_the_trunk(root: &Path) -> Result<String, String> {
-    let pushed = Command::new("git")
-        .arg("-C")
-        .arg(root)
+    let mut push = Command::new("git");
+    push.arg("-C").arg(root);
+    for argument in how_to_prove_who_we_are(root) {
+        push.arg(argument);
+    }
+    let pushed = push
         .args(["push", "--porcelain"])
         .output()
         .map_err(|error| error.to_string())?;
@@ -1154,6 +1199,50 @@ fn current_uid() -> u32 {
 
 #[cfg(test)]
 mod tests {
+
+    /// A tree that says nothing about who it is pushes as it always did: the
+    /// arguments are empty, and nobody's configuration is touched.
+    #[test]
+    fn a_tree_that_declares_no_name_pushes_as_it_always_did() {
+        let dir = std::env::temp_dir().join(format!("sailor-spinta-muta-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("the scratch directory");
+        let git = |args: &[&str]| {
+            Command::new("git")
+                .arg("-C")
+                .arg(&dir)
+                .args(args)
+                .output()
+                .expect("git answers");
+        };
+        git(&["init", "-q"]);
+
+        assert!(
+            how_to_prove_who_we_are(&dir).is_empty(),
+            "nothing declared, nothing added"
+        );
+
+        // Half a declaration is no declaration: a name with no way to prove it
+        // would send git looking for a password nobody can give.
+        git(&["config", PUSH_AS, "qualcuno"]);
+        assert!(
+            how_to_prove_who_we_are(&dir).is_empty(),
+            "a name without its secret is not a proof"
+        );
+
+        git(&["config", SECRET_FROM, "echo il-segreto"]);
+        let said = how_to_prove_who_we_are(&dir);
+        assert_eq!(said.len(), 4, "the helper is shut off, then declared: {said:?}");
+        assert!(
+            said[3].contains("username=qualcuno") && said[3].contains("echo il-segreto"),
+            "the name and the command reach the helper: {said:?}"
+        );
+        assert!(
+            said[1].ends_with('='),
+            "and the helpers of that host are shut off first: {said:?}"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
     use super::*;
     use std::os::unix::fs::MetadataExt;
 
