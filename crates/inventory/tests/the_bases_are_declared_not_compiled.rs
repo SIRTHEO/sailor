@@ -7,7 +7,7 @@
 
 use inventory::{default_roots_from, repos_under};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// A throwaway directory, deleted and rebuilt every run.
 fn temp(name: &str) -> PathBuf {
@@ -18,14 +18,14 @@ fn temp(name: &str) -> PathBuf {
 }
 
 /// A repo is recognised by the `.claude/` it carries, as elsewhere in the crate.
-fn repo(base: &PathBuf, name: &str) {
+fn repo(base: &Path, name: &str) {
     fs::create_dir_all(base.join(name).join(".claude")).unwrap();
 }
 
 #[test]
 fn a_base_that_cannot_be_read_is_reported_not_swallowed() {
     let missing = temp("unreadable").join("this-does-not-exist");
-    let survey = repos_under(&[missing.clone()]);
+    let survey = repos_under(std::slice::from_ref(&missing));
 
     assert!(
         survey.roots.is_empty(),
