@@ -93,7 +93,7 @@
   "cli.flow.no_spend_cap": "\nspend cap: none",
   "cli.flow.past_models_unpriced": "\nmodels used by past runs that the price list cannot price: {models}\n  their cost stays unknown, not zero: the counted spend is lower than the real one\n  it is repaired by writing the entry in ~/.config/sailor/pricing.json, which wins over the shipped one",
   "cli.flow.spend_cap": "\nspend cap: {micros} micros ({units} of equivalent cost)",
-  "cli.flow.engine_login_not_declared": "{who}: its descriptor does not declare how to ask it whether it is authenticated (`login_status`), so nobody looked — which does not mean it is",
+  "cli.flow.engine_login_not_declared": "{who}: its descriptor does not declare how to ask it whether it is authenticated (`login_status`), so nobody looked — and not looking is not a no",
   "cli.flow.engine_login_half_declared": "{who}: its descriptor declares `login_status` by half — the words of the yes and those of the no are both needed — so nothing can be read",
   "cli.flow.engine_login_unrecognised": "{who}: it answered «{said}», which looks like neither of the two declared forms",
   "cli.flow.homes_without_credentials": "\nHOMES WITHOUT CREDENTIALS (the run starts anyway, and the calls to these engines will start UNAUTHENTICATED): {engines}",
