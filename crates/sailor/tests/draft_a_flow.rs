@@ -38,9 +38,9 @@ fn the_sketch_is_read_then_written_then_kept_only_if_it_stands() {
     assert_eq!(author.deps, vec!["trigger", "vocabulary"]);
     let draft = &flow.graph.steps()[3];
     assert_eq!(
-        draft.with.as_ref().and_then(|with| with["flow"]["$from"].as_str()),
-        Some("/author/answer/flow"),
-        "the draft takes the flow the author answered with"
+        draft.with.as_ref().and_then(|with| with["flow"]["$json"].as_str()),
+        Some("/answer/flow"),
+        "one dependency, so the pointer is bare; and as text, so the drafted flow's own references travel as data"
     );
 }
 
@@ -72,4 +72,5 @@ fn the_author_is_handed_the_vocabulary_and_the_shape_of_a_flow() {
     assert!(stdin.contains("/trigger/text"), "the sketch is carried in");
     assert!(stdin.contains("/answer_shape"), "the answer's shape is carried in");
     assert!(stdin.contains("skippable_dependencies"), "the file's shape is spelled out");
+    assert!(stdin.contains("THE POINTER RULE"), "one dependency is /field, many are /step/field");
 }
