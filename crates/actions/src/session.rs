@@ -6,7 +6,8 @@ use crate::cost::Recording;
 use crate::process::{LiveSink, Pipe};
 use crate::recipe::{command_line_with, AskRecipe, SessionRecipe, SESSION_PLACEHOLDER};
 use crate::spec::SessionUse;
-use crate::{read_text, Pointer};
+use crate::{read_text, Pointer, Reading, Reports};
+use ledger::SessionMode;
 
 // ── riprendere invece di riscoprire ──────────────────────────────────────
 
@@ -88,6 +89,9 @@ pub(crate) struct SessionPlan {
     /// c'è **vince su `recorded`**: la parola del motore su quale sessione ha
     /// usato batte la nostra su quale gli avevamo chiesto.
     read_id_from: Option<Pointer>,
+    /// What the ledger will say this call did with the session. `None` is the
+    /// step that asked for nothing at all.
+    pub(crate) mode: Option<SessionMode>,
 }
 
 impl SessionPlan {
@@ -97,6 +101,19 @@ impl SessionPlan {
             args: None,
             recorded: None,
             read_id_from: None,
+            mode: None,
+        }
+    }
+
+    /// From nothing, on a step that had asked for something else.
+    ///
+    /// **THE ROW SAYS SO, NOT ONLY THE LIVE TEXT.** The line on the terminal is
+    /// gone by morning; the bill is not, and a run of cold calls keeping no
+    /// trace of having asked reads afterwards like a run that resumed.
+    fn fell_back() -> Self {
+        Self {
+            mode: Some(SessionMode::ColdFallback),
+            ..Self::from_scratch()
         }
     }
 
@@ -146,7 +163,7 @@ pub(crate) fn session_plan(
     // looks like: a session carried in would hand it what it asked not to see.
     if blind {
         say_it_starts_over(live, named, "the step is declared blind");
-        return SessionPlan::from_scratch();
+        return SessionPlan::fell_back();
     }
     let Some(record) = record else {
         // Il deposito è il posto dove una sessione si posa e si ritrova: senza,
@@ -159,13 +176,13 @@ pub(crate) fn session_plan(
                 asked.word()
             ),
         );
-        return SessionPlan::from_scratch();
+        return SessionPlan::fell_back();
     };
     match asked {
         SessionUse::Open => {
             let Some(line) = &candidate.session.open else {
                 say_it_starts_over(live, named, "cannot open a session that can be found again");
-                return SessionPlan::from_scratch();
+                return SessionPlan::fell_back();
             };
             // **SI CONIA UN IDENTIFICATIVO SOLO SE SI HA DOVE METTERLO.** Una
             // riga senza segnaposto è quella di un motore che il nome se lo dà
@@ -183,6 +200,7 @@ pub(crate) fn session_plan(
                 }),
                 recorded: ours,
                 read_id_from: candidate.session.id_from.clone(),
+                mode: Some(SessionMode::Opened),
             }
         }
         SessionUse::Resume(step) | SessionUse::Fork(step) => {
@@ -194,7 +212,7 @@ pub(crate) fn session_plan(
             };
             let Some(line) = line else {
                 say_it_starts_over(live, named, &format!("cannot {}", asked.word()));
-                return SessionPlan::from_scratch();
+                return SessionPlan::fell_back();
             };
             // Senza identificativo di strumento non c'è nessun motore a cui
             // attribuire una sessione: è un `bin` scritto a mano nel passo.
@@ -212,7 +230,7 @@ pub(crate) fn session_plan(
                     named,
                     &format!("step «{step}» left no session of «{cli}» to continue"),
                 );
-                return SessionPlan::from_scratch();
+                return SessionPlan::fell_back();
             };
             SessionPlan {
                 args: Some(with_session_id(line, &id)),
@@ -222,8 +240,65 @@ pub(crate) fn session_plan(
                 // ramo diventa continuabile come il tronco.
                 recorded: if forking { None } else { Some(id) },
                 read_id_from: candidate.session.id_from.clone(),
+                mode: Some(if forking {
+                    SessionMode::Forked
+                } else {
+                    SessionMode::Resumed
+                }),
             }
         }
+    }
+}
+
+/// The part of a reading that belongs to **this** step.
+///
+/// **AN ENGINE THAT COUNTS PER CALL IS ALREADY ANSWERED**, and its reading is
+/// returned untouched: nothing is subtracted from a number that was never a
+/// running total. Only `per_session` takes the other road, against what this
+/// run has already attributed to that session.
+pub(crate) fn this_step_share(
+    record: &Recording<'_>,
+    candidate: &Candidate,
+    session_id: Option<&str>,
+    reading: Reading,
+) -> Reading {
+    let cumulative = candidate
+        .declared_usage
+        .as_ref()
+        .is_some_and(|declared| declared.reports == Reports::PerSession);
+    if !cumulative {
+        return reading;
+    }
+    // **NO SESSION, NO BASELINE, NO SHARE.** A cumulative engine called outside
+    // a session we can name states what the session has spent, and there is no
+    // honest way to cut this call out of it: the row says unknown.
+    let before = session_id
+        .zip(candidate.id.as_deref())
+        .and_then(|(session, cli)| {
+            record
+                .ledger
+                .attributed_to_session(&record.run_id, session, cli)
+                .ok()
+        })
+        .map(what_the_session_carried)
+        .unwrap_or_default();
+    models::usage::share_after(reading, &before)
+}
+
+/// The ledger's totals in the shape the subtraction speaks.
+fn what_the_session_carried(so_far: ledger::SessionSoFar) -> Reading {
+    Reading {
+        input_tokens: so_far.input_tokens,
+        output_tokens: so_far.output_tokens,
+        cached_tokens: so_far.cached_tokens,
+        cache_write_tokens: so_far.cache_write_tokens,
+        cache_write_long_tokens: so_far.cache_write_long_tokens,
+        total_tokens: so_far.total_tokens,
+        turns: so_far.turns,
+        declared_cost: so_far
+            .declared_cost_micros
+            .map(|micros| micros as f64 / 1_000_000.0),
+        ..Reading::default()
     }
 }
 
@@ -344,6 +419,7 @@ mod resuming_instead_of_rediscovering {
             session_id: Some(session.to_owned()),
             work_kind: None,
             fell_back_from: Vec::new(),
+            session_mode: Some(SessionMode::Opened),
         }
     }
 
@@ -821,5 +897,270 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
         );
         assert!(one.starts_with(|c: char| c.is_ascii_hexdigit()));
         assert!(groups[2].starts_with('4'), "la versione: «{one}»");
+    }
+
+    // ── what the ledger says a call did with the session ────────────────
+
+    fn calls_in(dir: &std::path::Path) -> Vec<ledger::ModelCallRecord> {
+        let ledger = Ledger::open(dir).expect("reopen the store");
+        let dump = ledger.projection_dump().expect("read the projection");
+        ui::parse::parse_model_calls(&dump)
+    }
+
+    fn only_call(dir: &std::path::Path) -> ledger::ModelCallRecord {
+        let mut calls = calls_in(dir);
+        assert_eq!(calls.len(), 1, "one call only: {calls:?}");
+        calls.remove(0)
+    }
+
+    /// A step with no `session` key at all: the line the engine gets and the
+    /// row the store keeps must be the ones they were before any of this.
+    fn plain_step() -> Value {
+        json!({ "tool": TOOL, "stdin": "guarda l'albero", "timeout_secs": 20 })
+    }
+
+    /// **A FLOW THAT DECLARES NOTHING BEHAVES AS IT DID.** All of this is
+    /// opt-in: with no declaration the engine is invoked on its own recipe and
+    /// nothing is written in the session columns.
+    #[test]
+    fn a_step_that_declares_no_session_is_invoked_and_recorded_as_before() {
+        let dir = scratch("dichiara-niente");
+        let bin = fake_engine(&dir);
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            sessions: Some(knows_all_three()),
+        })
+        .recording_to(Some(ledger));
+
+        ran(&action, &plain_step(), "corsa-9", "scopri");
+
+        assert_eq!(
+            invocations(&dir),
+            vec!["--ask".to_owned()],
+            "no session option on a line that asked for none"
+        );
+        let call = only_call(&dir.join("deposito"));
+        assert_eq!(call.session_id, None);
+        assert_eq!(
+            call.session_mode, None,
+            "whoever asked for nothing has nothing to confess"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **THE FALLBACK IS ON THE ROW, NOT ONLY ON THE TERMINAL.** An engine that
+    /// cannot resume gives the step a cold call; without this column that run's
+    /// bill would read exactly like a run where every step resumed.
+    #[test]
+    fn a_step_that_had_to_start_over_says_so_in_the_ledger() {
+        let dir = scratch("ripiego-registrato");
+        let bin = fake_engine(&dir);
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            // Opens, cannot resume: three of the four engines on this machine.
+            sessions: Some(SessionRecipe {
+                open: knows_all_three().open,
+                ..SessionRecipe::default()
+            }),
+        })
+        .recording_to(Some(ledger));
+
+        ran(
+            &action,
+            &step_that(json!({ "resume": "scopri" })),
+            "corsa-10",
+            "piano",
+        );
+
+        let call = only_call(&dir.join("deposito"));
+        assert_eq!(
+            call.session_mode,
+            Some(SessionMode::ColdFallback),
+            "the step had asked to resume, and the call started from nothing"
+        );
+        assert_eq!(call.session_id, None, "and there is no session to name");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **A BLIND STEP IS COLD, AND THE ROW SAYS IT WAS ASKED TO BE OTHERWISE.**
+    /// The check refuses the pair before a run; a step reached by a road the
+    /// check never walked still leaves a trace of what it asked for.
+    #[test]
+    fn a_blind_step_gets_a_cold_call_and_the_ledger_records_the_fallback() {
+        let dir = scratch("cieco-registrato");
+        let bin = fake_engine(&dir);
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            sessions: Some(knows_all_three()),
+        })
+        .recording_to(Some(ledger));
+
+        // A session really is left behind, or the blind step would start over
+        // for want of one and the test would pass without blindness.
+        ran(&action, &step_that(json!("open")), "corsa-11", "scopri");
+        let mut step = step_that(json!({ "resume": "scopri" }));
+        step["blind"] = json!(true);
+        ran(&action, &step, "corsa-11", "giudica");
+
+        assert_eq!(
+            invocations(&dir)[1],
+            "--ask",
+            "no option that would carry an earlier context in"
+        );
+        let judging = calls_in(&dir.join("deposito"))
+            .into_iter()
+            .find(|call| call.step_id.as_deref() == Some("giudica"))
+            .expect("the blind step wrote its row");
+        assert_eq!(judging.session_mode, Some(SessionMode::ColdFallback));
+        assert_eq!(judging.session_id, None, "and it continued nobody");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// And a call that really did continue says the other thing, so the two are
+    /// told apart by the row and not by whoever remembers the run.
+    #[test]
+    fn a_call_that_really_resumed_is_written_down_as_resumed() {
+        let dir = scratch("ripresa-registrata");
+        let bin = fake_engine(&dir);
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            sessions: Some(knows_all_three()),
+        })
+        .recording_to(Some(ledger));
+
+        ran(&action, &step_that(json!("open")), "corsa-12", "scopri");
+        ran(
+            &action,
+            &step_that(json!({ "resume": "scopri" })),
+            "corsa-12",
+            "piano",
+        );
+
+        let modes: Vec<Option<SessionMode>> = calls_in(&dir.join("deposito"))
+            .iter()
+            .map(|call| call.session_mode)
+            .collect();
+        assert!(
+            modes.contains(&Some(SessionMode::Opened))
+                && modes.contains(&Some(SessionMode::Resumed)),
+            "one row opens and the other continues: {modes:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── whose numbers those are: this call's, or the session's ──────────
+
+    /// An engine that keeps counting from the moment its session opened: every
+    /// answer states a thousand more than the one before it.
+    const COUNTS_THE_WHOLE_SESSION: &str = r#"cat > /dev/null
+here="$(dirname "$0")"
+printf '%s\n' "$*" >> "$here/invocations"
+n=$(cat "$here/counter" 2>/dev/null || echo 0)
+n=$((n + 1))
+printf '%s' "$n" > "$here/counter"
+printf '{"result":"ok","usage":{"input_tokens":%s}}' "$((n * 1000))""#;
+
+    /// The same engine, declared one way or the other. Nothing but the
+    /// declaration separates the two runs.
+    struct Counting {
+        bin: String,
+        reports: Reports,
+    }
+
+    impl ToolResolver for Counting {
+        fn resolve(&self, id: &str) -> Result<String, String> {
+            match id {
+                TOOL => Ok(self.bin.clone()),
+                other => Err(format!("«{other}» non è su questa macchina")),
+            }
+        }
+        fn ask_recipe(&self, _id: &str) -> Option<AskRecipe> {
+            Some(AskRecipe {
+                args: vec!["--ask".to_owned()],
+                prompt: PromptVia::Stdin,
+                args_before_prompt: Vec::new(),
+                unusable_when: Vec::new(),
+                exhausted_when: Vec::new(),
+                cooldown_secs: None,
+                waits_for_a_person_when: Vec::new(),
+                silent_without_prompt: false,
+                refuses_without_prompt: Vec::new(),
+                usage: Some(crate::recipe::UsageRecipe {
+                    args: Vec::new(),
+                    declared: crate::Declared {
+                        read: crate::Shape::Json,
+                        from: models::usage::Heard::Stdout,
+                        reports: self.reports,
+                        input_tokens: Some(Pointer::Path(vec![
+                            "usage".to_owned(),
+                            "input_tokens".to_owned(),
+                        ])),
+                        answer: Some(Pointer::Path(vec!["result".to_owned()])),
+                        ..crate::Declared::default()
+                    },
+                }),
+            })
+        }
+        fn session_recipe(&self, _id: &str) -> Option<SessionRecipe> {
+            Some(knows_all_three())
+        }
+    }
+
+    /// Runs open-then-resume against the counting engine and returns what each
+    /// row was charged, in the order the calls were made.
+    fn charged_to_each_step(label: &str, reports: Reports) -> Vec<Option<u64>> {
+        let dir = scratch(label);
+        let bin = engine_that(&dir, COUNTS_THE_WHOLE_SESSION);
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let action = ExternalEngineAction::resolving_with(Counting { bin, reports })
+            .recording_to(Some(ledger));
+
+        ran(&action, &step_that(json!("open")), "corsa-13", "scopri");
+        ran(
+            &action,
+            &step_that(json!({ "resume": "scopri" })),
+            "corsa-13",
+            "piano",
+        );
+
+        let mut calls = calls_in(&dir.join("deposito"));
+        // In the order they were made: the counter at the end of `call_id` is
+        // the only field that keeps it — the step names sort the other way.
+        calls.sort_by_key(|call| {
+            call.call_id
+                .rsplit(':')
+                .next()
+                .and_then(|tail| tail.parse::<u64>().ok())
+                .expect("every call carries its own sequence number")
+        });
+        let _ = std::fs::remove_dir_all(&dir);
+        calls.iter().map(|call| call.input_tokens).collect()
+    }
+
+    /// **THE DIFFERENCE BETWEEN TWO READINGS IS THE SECOND STEP'S SHARE.** The
+    /// engine says 1000 then 2000; charging the second step 2000 would count
+    /// the first step's thousand twice and make the resumed call look dearer
+    /// than the cold one it replaced.
+    #[test]
+    fn a_cumulative_engine_charges_each_step_only_what_it_added() {
+        assert_eq!(
+            charged_to_each_step("consumo-cumulativo", Reports::PerSession),
+            vec![Some(1_000), Some(1_000)]
+        );
+    }
+
+    /// **AND WHICH ONE IT IS, IS DECLARED.** The same engine read as per-call
+    /// charges the second step the whole 2000: the two readings are identical,
+    /// so only the descriptor can tell them apart.
+    #[test]
+    fn the_same_numbers_read_as_per_call_are_not_touched() {
+        assert_eq!(
+            charged_to_each_step("consumo-per-chiamata", Reports::PerCall),
+            vec![Some(1_000), Some(2_000)]
+        );
     }
 }
