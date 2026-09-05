@@ -682,6 +682,59 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         assert_eq!(calls[0].error_type.as_deref(), Some("exit_error"));
     }
 
+    /// An engine that answered in the shape the step declared has worked, and
+    /// the words that mean a refusal are not looked for inside its answer.
+    #[test]
+    fn an_answer_in_the_declared_shape_is_not_read_as_a_refusal() {
+        let dir = scratch("forma-contro-rifiuto");
+        // The answer says the word the descriptor declares, because it is about
+        // it: an engine reading this tree prints it while working.
+        let bin = fake_engine(
+            &dir,
+            "motore-che-parla-di-quote",
+            "cat > /dev/null\necho '{\"found\": \"the weekly limit sentence lives in the descriptor\"}'",
+        );
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let mut recipe = declaring_recipe();
+        recipe.unusable_when = vec!["weekly limit".to_owned()];
+        recipe.exhausted_when = vec!["weekly limit".to_owned()];
+        recipe.cooldown_secs = Some(1800);
+        let aside = dir.join("cooldowns.json");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            recipe: Some(recipe),
+        })
+        .recording_to(Some(ledger))
+        .cooling_down_in(Some(aside.clone()));
+        let input = json!({
+            "tool": "motore-di-prova",
+            "stdin": "guarda l'albero, e rispondi in questa forma: {\"type\":\"object\",\"properties\":{\"found\":{\"type\":\"string\"}},\"required\":[\"found\"],\"allow_extra\":false}",
+            "timeout_secs": 10,
+            "answer_shape": {
+                "type": "object",
+                "properties": {"found": {"type": "string"}},
+                "required": ["found"],
+                "allow_extra": false
+            }
+        });
+
+        let outcome = with_price_list(None, || {
+            action.execute(&input, &shared("corsa-in-forma", "passo-1"))
+        })
+        .expect("an answer in the declared shape is the step's answer");
+
+        assert!(
+            format!("{outcome:?}").contains("descriptor"),
+            "the answer reaches the step: {outcome:?}"
+        );
+        let calls = calls_in(&dir.join("deposito"));
+        assert_eq!(calls[0].error_type, None, "no refusal was recorded");
+        assert!(
+            !aside.exists(),
+            "an engine that worked is not set aside for half an hour"
+        );
+    }
+
     /// A spent quota is its own class, and the engine is set aside for the
     /// time its descriptor declares: the second step in the same window does
     /// not knock on it. Without `exhausted_when` the same output stays the
