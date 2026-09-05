@@ -634,7 +634,7 @@ pub(crate) fn start(
             request,
             &mut store,
             &registry,
-            &mut SystemClock,
+            &SystemClock,
         );
 
         let ended_at = now_secs();
