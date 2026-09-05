@@ -613,7 +613,7 @@ pub struct ReconciliationRequest<'a> {
     pub actions: &'a ActionRegistry,
     pub shared: &'a SharedState,
     pub processes: &'a dyn ProcessProbe,
-    pub clock: &'a mut dyn Clock,
+    pub clock: &'a dyn Clock,
 }
 
 pub trait Executor {
