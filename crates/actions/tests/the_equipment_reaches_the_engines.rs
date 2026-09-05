@@ -45,6 +45,50 @@ fn step_env(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         .collect()
 }
 
+/// **A HOME NOTHING MOVES IS NOT A HOME NOBODY LOOKED AT.** The shipped list
+/// declares one command line with no way to move its home and says why in its
+/// note; a profile declared for it reaches no environment — there is nothing
+/// to set — and the identity the ledger keeps carries that measured note
+/// instead of «not known», which would be false.
+#[test]
+fn a_profile_for_a_home_nothing_moves_reaches_no_environment_and_says_why() {
+    let cli = profiles::known_clis()
+        .iter()
+        .find(|cli| cli.home == profiles::HomeMechanism::Unknown)
+        .expect("the shipped list declares a command line whose home nothing moves");
+    assert!(
+        !cli.home_note.trim().is_empty(),
+        "the entry must say why, since that is what a person reads"
+    );
+    let mut store = ProfileStore::default();
+    store.profiles.push(Profile {
+        name: "work".to_owned(),
+        cli_id: cli.id.clone(),
+        home_dir: PathBuf::from("/case/work"),
+        endpoint: None,
+    });
+    store.active.insert(cli.id.clone(), "work".to_owned());
+
+    let equipment = equipment_for(&store, &cli.executable, &BTreeMap::new());
+
+    assert!(
+        equipment.env.is_empty(),
+        "nothing moves this home, so nothing is overlaid: {:?}",
+        equipment.env
+    );
+    let EngineIdentity::NotMovedByAnEnvVar {
+        why, profile_name, ..
+    } = equipment.identity
+    else {
+        panic!("a declared profile that is not in force")
+    };
+    assert_eq!(profile_name, "work");
+    assert!(
+        why.contains(cli.home_note.trim()),
+        "the why carries the entry's own measured note: {why}"
+    );
+}
+
 /// A profile with a native endpoint launches the unmodified command line
 /// pointed there, with the key read from the machine, and the identity names
 /// the endpoint; a profile whose endpoint speaks another protocol refuses the

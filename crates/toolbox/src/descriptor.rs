@@ -157,6 +157,12 @@ pub struct Ask {
     /// is tried again every time, as before.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cooldown_secs: Option<u64>,
+    /// The words after which this engine only waits for a person — a browser
+    /// to visit, a code to type. A step has nobody to send, so on seeing one
+    /// the engine is stopped at once instead of being paid its wait, and what
+    /// it had said is read as its refusal. Empty means it is waited for in full.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub waits_for_a_person_when: Vec<String>,
     /// How this engine refuses the line **composed without the question**: the
     /// only harmless way to try a real command line, since no provider is called
     /// yet the same argument parsing runs. Data, because each refuses in its own
@@ -872,12 +878,33 @@ impl Descriptor {
         if let Some(ask) = self.ask.as_ref() {
             for (field, marks) in [
                 ("unusable_when", &ask.unusable_when),
+                ("exhausted_when", &ask.exhausted_when),
+                ("waits_for_a_person_when", &ask.waits_for_a_person_when),
                 ("refuses_without_prompt", &ask.refuses_without_prompt),
             ] {
                 if marks.iter().any(|mark| mark.trim().is_empty()) {
                     found.push(format!(
                         "declares an empty fragment in `ask.{field}`, which is contained in \
                          any output at all: it would always match"
+                    ));
+                }
+            }
+            // A word that means a spent quota must also mean it cannot work:
+            // the run reads the first list, the dry run and the fallback rule
+            // read the second, and a word in the first alone splits the verdict.
+            let unusable: Vec<String> = ask
+                .unusable_when
+                .iter()
+                .map(|mark| mark.trim().to_lowercase())
+                .filter(|mark| !mark.is_empty())
+                .collect();
+            for mark in ask.exhausted_when.iter().filter(|mark| !mark.trim().is_empty()) {
+                let said = mark.trim().to_lowercase();
+                if !unusable.iter().any(|covering| said.contains(covering)) {
+                    found.push(format!(
+                        "declares «{mark}» in `ask.exhausted_when` and no word of \
+                         `ask.unusable_when` covers it: the run would class that output a \
+                         spent quota while the dry run and the fallback rule never see it"
                     ));
                 }
             }
@@ -1833,6 +1860,97 @@ mod the_new_field_is_optional {
              list, and that must be said: otherwise the form of a declaration passes \
              for a declaration"
         );
+    }
+
+    /// **A WORD FOR A SPENT QUOTA IS ONE OF THE WORDS FOR «CANNOT WORK».** The
+    /// run reads `exhausted_when` first and the dry run only `unusable_when`:
+    /// a word in the first that no word of the second covers gives two
+    /// verdicts on one output. Covering is containment, so «insufficient_quota»
+    /// is covered by «quota»; and an empty fragment is refused there as in the
+    /// other two lists.
+    #[test]
+    fn a_word_for_a_spent_quota_that_no_word_for_cannot_work_covers_is_a_contradiction() {
+        let catalog = loaded(
+            "spent-quota-words",
+            r#"[
+              {
+                "id": "coperto", "family": "ai_cli",
+                "detect": { "command": "primo" },
+                "ask": { "args": ["-p"], "prompt": "stdin",
+                         "unusable_when": ["quota", "401"],
+                         "exhausted_when": ["insufficient_quota"] }
+              },
+              {
+                "id": "scoperto", "family": "ai_cli",
+                "detect": { "command": "secondo" },
+                "ask": { "args": ["-p"], "prompt": "stdin",
+                         "unusable_when": ["401"],
+                         "exhausted_when": ["weekly limit"] }
+              },
+              {
+                "id": "frammento-vuoto", "family": "ai_cli",
+                "detect": { "command": "terzo" },
+                "ask": { "args": ["-p"], "prompt": "stdin",
+                         "unusable_when": ["401"],
+                         "exhausted_when": ["   "] }
+              }
+            ]"#,
+        );
+        assert!(catalog.problems.is_empty(), "{:?}", catalog.problems);
+        // Only what is said about this list: the fixtures declare no
+        // capabilities, and that contradiction is another test's.
+        let of = |id: &str| -> Vec<String> {
+            catalog
+                .contradictions()
+                .into_iter()
+                .filter(|found| found.tool == id && found.said.contains("exhausted_when"))
+                .map(|found| found.said)
+                .collect()
+        };
+
+        assert!(
+            of("coperto").is_empty(),
+            "a word contained in a «cannot work» word is covered: {:?}",
+            of("coperto")
+        );
+
+        let uncovered = of("scoperto");
+        assert_eq!(uncovered.len(), 1, "{uncovered:?}");
+        assert!(
+            uncovered[0].contains("weekly limit") && uncovered[0].contains("exhausted_when"),
+            "the contradiction names the word and the field: {}",
+            uncovered[0]
+        );
+
+        let empty = of("frammento-vuoto");
+        assert!(
+            empty.iter().any(|said| said.contains("empty fragment") && said.contains("exhausted_when")),
+            "an empty fragment in `exhausted_when` matches everything and must be named: {empty:?}"
+        );
+    }
+
+    /// An empty fragment among the words for waiting on a person would stop
+    /// every engine on its first byte: it is named like the other lists'.
+    #[test]
+    fn an_empty_fragment_among_the_words_for_waiting_on_a_person_is_named() {
+        let catalog = loaded(
+            "waiting-words",
+            r#"[
+              {
+                "id": "aspetta-su-niente", "family": "ai_cli",
+                "detect": { "command": "primo" },
+                "ask": { "args": ["-p"], "prompt": "stdin",
+                         "unusable_when": ["401"],
+                         "waits_for_a_person_when": ["Waiting for a code", " "] }
+              }
+            ]"#,
+        );
+        assert!(catalog.problems.is_empty(), "{:?}", catalog.problems);
+        let named = catalog
+            .contradictions()
+            .into_iter()
+            .any(|found| found.said.contains("empty fragment") && found.said.contains("waits_for_a_person_when"));
+        assert!(named, "the empty fragment must be named with its field");
     }
 
     /// The shipped `codex` descriptor declares how its usage is read, in the
