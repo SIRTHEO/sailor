@@ -38,7 +38,7 @@ const PANICS_TODAY: &[(&str, usize)] = &[
     ("sailor", 3),
     ("sessions", 0),
     ("supervisor", 0),
-    ("terminal", 19),
+    ("terminal", 1),
     ("toolbox", 1),
     ("trigger", 1),
     ("ui", 0),
