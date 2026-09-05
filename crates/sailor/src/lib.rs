@@ -30,6 +30,7 @@ pub mod flow_cmd;
 pub mod inventory_cmd;
 pub mod memory_cmd;
 pub mod models_cmd;
+pub mod notes_cmd;
 pub mod profiles_cmd;
 pub mod publish_cmd;
 pub mod ratchet_cmd;
@@ -239,6 +240,12 @@ pub const COMMANDS: &[Command] = &[
         description_key: "cli.command.worktree",
         usage: worktree_cmd::USAGE,
         run: worktree_cmd::run,
+    },
+    Command {
+        name: "notes",
+        description_key: "cli.command.notes",
+        usage: notes_cmd::USAGE,
+        run: notes_cmd::run,
     },
     Command {
         name: "faults",

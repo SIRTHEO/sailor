@@ -3,6 +3,7 @@
 //! `with` — so a word written once in one step's prompt finds that flow.
 
 use crate::memory::{tree_name, Memory, MEMORIES_COLLECTION};
+use crate::notes::{Note, NOTES_COLLECTION};
 use faults::Faults;
 use flow::{Action, ActionError, ActionOutcome, FlowFile, SharedState, StepSpecies};
 use ledger::search::Hit;
@@ -61,6 +62,20 @@ pub fn memory_behind(ledger: &Ledger, hit: &Hit) -> Option<Memory> {
         .ok()
         .flatten()
         .and_then(|record| serde_json::from_value(record.value).ok())
+}
+
+/// The note a hit stands for, when its id names one: the title the id alone
+/// does not say. `None` for every other kind of hit, and for one taken out.
+pub fn note_behind(ledger: &Ledger, hit: &Hit) -> Option<Note> {
+    let slug = hit
+        .id
+        .strip_prefix("store:")?
+        .strip_prefix(NOTES_COLLECTION)?
+        .strip_prefix('/')?;
+    crate::notes::read(ledger, slug)
+        .ok()
+        .flatten()
+        .filter(Note::kept)
 }
 
 /// What a flow is known as when loaded: its name, where it came from, and the
