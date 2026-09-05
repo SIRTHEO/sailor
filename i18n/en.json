@@ -482,7 +482,7 @@
   "run.failure.no_store": "nobody knows where the store lives",
   "run.failure.no_tool_resolver": "nobody knows where to find that tool",
   "run.failure.no_usable_engine": "none of the engines the step asks for could work",
-  "run.failure.nobody_keeps_the_time": "this trigger is fired by the clock, and the clock is kept on the flow's schedule, not on this source",
+  "run.failure.periodic_source_not_read": "nothing reads the recurrence this source declares: the clock is kept on the flow's schedule, and that is what the beat starts",
   "run.failure.reset_not_declared": "nobody has written down how a session of that command line is emptied",
   "run.failure.shape_not_in_prompt": "the shape demanded was never asked of the engine",
   "run.failure.store_refused": "the store did not take the write",
