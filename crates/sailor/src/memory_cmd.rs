@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 pub const USAGE: &[crate::Form] = &[
     crate::Form {
-        form: "sailor memory page [--print]",
+        form: "sailor memory page [--print] [--tree <path>]",
         says_key: "cli.memory.page_says",
     },
     crate::Form {
@@ -18,10 +18,15 @@ pub const USAGE: &[crate::Form] = &[
 ];
 
 pub fn run(args: &[String]) -> i32 {
-    match args {
-        [page] if page == "page" => write_or_print(false),
-        [page, flag] if page == "page" && flag == "--print" => write_or_print(true),
-        [form] if form == "where" => where_the_page_is_read(),
+    match args.split_first() {
+        Some((form, options)) if form == "page" => match page_options(options) {
+            Ok(asked) => write_or_print(&asked),
+            Err(message) => {
+                eprintln!("sailor memory: {message}");
+                2
+            }
+        },
+        Some((form, [])) if form == "where" => where_the_page_is_read(),
         _ => {
             let forms: Vec<&str> = USAGE.iter().map(|form| form.form).collect();
             eprintln!(
@@ -33,7 +38,38 @@ pub fn run(args: &[String]) -> i32 {
     }
 }
 
-fn write_or_print(print: bool) -> i32 {
+/// What `sailor memory page` was asked: the machine's page written or printed,
+/// or one tree's page — only ever printed, since the file on disk is the
+/// machine's.
+#[derive(Debug, PartialEq, Eq)]
+struct PageAsked {
+    print: bool,
+    tree: Option<PathBuf>,
+}
+
+fn page_options(options: &[String]) -> Result<PageAsked, String> {
+    let mut asked = PageAsked { print: false, tree: None };
+    let mut rest = options.iter();
+    while let Some(word) = rest.next() {
+        match word.as_str() {
+            "--print" => asked.print = true,
+            "--tree" => {
+                asked.tree = Some(PathBuf::from(rest.next().ok_or_else(|| {
+                    catalogue::say("cli.option_wants_a_value", &[("option", "--tree")])
+                })?))
+            }
+            other => {
+                return Err(catalogue::say(
+                    "cli.memory.unknown_option",
+                    &[("option", other), ("usage", USAGE[0].form)],
+                ))
+            }
+        }
+    }
+    Ok(asked)
+}
+
+fn write_or_print(asked: &PageAsked) -> i32 {
     let ledger = match ledger::Ledger::open(ui::gather::default_ledger_dir()) {
         Ok(ledger) => ledger,
         Err(error) => {
@@ -52,8 +88,12 @@ fn write_or_print(print: bool) -> i32 {
             return 1;
         }
     };
-    if print {
-        println!("{}", actions::memory::page(&memories));
+    if let Some(tree) = &asked.tree {
+        println!("{}", actions::memory::page(&memories, &actions::memory::tree_of(tree)));
+        return 0;
+    }
+    if asked.print {
+        println!("{}", actions::memory::page_of_every_tree(&memories));
         return 0;
     }
     let Some(home) = ledger::sailor_home() else {
@@ -210,6 +250,18 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
+    }
+
+    /// `--tree` takes the path after it and `--print` stands alone; a word
+    /// that is neither is refused, and so is a `--tree` with nothing after it.
+    #[test]
+    fn the_page_options_are_read_as_typed() {
+        let words = |list: &[&str]| list.iter().map(|word| (*word).to_owned()).collect::<Vec<_>>();
+        let both = page_options(&words(&["--tree", "/a/tree", "--print"])).expect("read");
+        assert_eq!(both, PageAsked { print: true, tree: Some(PathBuf::from("/a/tree")) });
+        assert_eq!(page_options(&[]).expect("read"), PageAsked { print: false, tree: None });
+        assert!(page_options(&words(&["--tree"])).is_err(), "a --tree with no path after it");
+        assert!(page_options(&words(&["--loud"])).is_err(), "a word that is no option");
     }
 
     /// **ONE LOOK SAYS WHICH ENGINE SEES THE MEMORIES.** The file is read where
