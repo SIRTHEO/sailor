@@ -134,6 +134,21 @@ pub fn forms_as_lines(forms: &[Form]) -> Vec<String> {
     forms.iter().map(|form| form.line(width)).collect()
 }
 
+/// The verb of each form: the word after the command's own name. The verbs a
+/// dispatch accepts are read off the forms it prints, never listed a second
+/// time beside them — see fault 10.
+pub fn verbs_of(forms: &[Form]) -> Vec<&'static str> {
+    forms
+        .iter()
+        .filter_map(|form| form.form.split_whitespace().nth(2))
+        .collect()
+}
+
+/// Whether `verb` is one the forms promise.
+pub fn is_a_form(forms: &[Form], verb: &str) -> bool {
+    verbs_of(forms).contains(&verb)
+}
+
 pub const COMMANDS: &[Command] = &[
     Command {
         name: "release",
@@ -356,6 +371,55 @@ mod tests {
 
     fn args(words: &[&str]) -> Vec<String> {
         words.iter().map(|w| w.to_string()).collect()
+    }
+
+    /// The verbs a dispatch accepts come off the forms it prints, so the two
+    /// cannot part: a form added to the help is accepted, a form removed from
+    /// the help is refused, and nothing else is a form.
+    #[test]
+    fn the_verbs_are_read_off_the_forms_and_are_the_third_word() {
+        const FORMS: &[Form] = &[
+            Form {
+                form: "sailor thing list [--open]",
+                says_key: "",
+            },
+            Form {
+                form: "sailor thing add < file.json",
+                says_key: "",
+            },
+        ];
+        assert_eq!(verbs_of(FORMS), vec!["list", "add"]);
+        assert!(is_a_form(FORMS, "list"));
+        assert!(is_a_form(FORMS, "add"));
+        assert!(!is_a_form(FORMS, "thing"), "the command's own name is not a verb");
+        assert!(!is_a_form(FORMS, "sailor"));
+        assert!(!is_a_form(FORMS, "[--open]"), "an option is not a verb");
+        assert!(!is_a_form(FORMS, "sweep"));
+    }
+
+    /// The commands that dispatch by verb have one per form and no form
+    /// without: a usage line missing its verb would silently shrink what is
+    /// accepted, since the accepted verbs are read off the usage.
+    #[test]
+    fn every_shipped_form_carries_a_verb_where_the_command_has_verbs() {
+        for (name, usage) in [
+            ("faults", faults_cmd::USAGE),
+            ("terminal", terminal_cmd::USAGE),
+            ("session", session_cmd::USAGE),
+        ] {
+            let verbs = verbs_of(usage);
+            assert_eq!(
+                verbs.len(),
+                usage.len(),
+                "«sailor {name}»: a form without a third word"
+            );
+            for verb in &verbs {
+                assert!(
+                    !verb.starts_with('-') && !verb.starts_with('<') && !verb.starts_with('['),
+                    "«sailor {name} {verb}» is not a verb but an argument"
+                );
+            }
+        }
     }
 
     /// **OGNI COMANDO DICE COME SI SCRIVE, E LA PRIMA PAROLA È IL SUO NOME.**

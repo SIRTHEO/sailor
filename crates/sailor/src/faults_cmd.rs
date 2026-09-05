@@ -37,8 +37,6 @@ pub const USAGE: &[Form] = &[
     },
 ];
 
-const FORMS: &[&str] = &["list", "add", "status", "render", "import", "check"];
-
 const WITHOUT_VALUE: &[&str] = &["open", "json"];
 
 fn usage_text() -> String {
@@ -68,12 +66,12 @@ fn dispatch(args: &[String]) -> Result<String, String> {
     let Some(verb) = args.first().map(String::as_str) else {
         return Err(usage_text());
     };
-    if !FORMS.contains(&verb) {
+    if !crate::is_a_form(USAGE, verb) {
         return Err(format!(
             "{}\n{}",
             catalogue::say(
                 "cli.not_a_form_of_this_command",
-                &[("verb", verb), ("forms", &FORMS.join(", "))],
+                &[("verb", verb), ("forms", &crate::verbs_of(USAGE).join(", "))],
             ),
             usage_text()
         ));

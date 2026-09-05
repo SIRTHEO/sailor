@@ -89,21 +89,6 @@ fn usage_text() -> String {
     )
 }
 
-/// The forms this command knows, in one place: the list `--help` prints and the
-/// one dispatch accepts must be the same, or a form that is documented and not
-/// accepted gets discovered in the hands of whoever typed it.
-const FORMS: &[&str] = &[
-    "open",
-    "event",
-    "close",
-    "list",
-    "detach",
-    "attach",
-    "census",
-    "install",
-    "uninstall",
-];
-
 /// The forms that speak of **one** terminal, and so must know its name.
 /// `list` and `census` are not here: they speak of all of them.
 const NEEDS_A_TERMINAL: &[&str] = &["open", "event", "close", "detach", "attach"];
@@ -151,12 +136,12 @@ fn dispatch(args: &[String]) -> Result<Report, String> {
     let Some(verb) = args.first().map(String::as_str) else {
         return Err(usage_text());
     };
-    if !FORMS.contains(&verb) {
+    if !crate::is_a_form(USAGE, verb) {
         return Err(format!(
             "{}\n{}",
             catalogue::say(
                 "cli.not_a_form_of_this_command",
-                &[("verb", verb), ("forms", &FORMS.join(", "))],
+                &[("verb", verb), ("forms", &crate::verbs_of(USAGE).join(", "))],
             ),
             usage_text()
         ));
@@ -294,18 +279,25 @@ const NEEDS_THE_STORE: &[&str] = &["open", "event", "close", "list", "detach", "
 /// The forms that announce this terminal to the other agents, or stop.
 const NEEDS_THE_DEPOSIT: &[&str] = &["open", "event", "close", "detach"];
 
-/// What Sailor does at each of its moments. What a line calls that moment is
-/// said by the descriptor, never here.
-///
-/// **FOUR, AND NO MORE:** one more hook is one more process at every event of
-/// every session. `session_start` carries the welcome and is the only one whose
-/// text reaches the agent; the others say alive, asked, about to be compacted.
-const WHAT_WE_DO_AT_EACH: &[(&str, &str)] = &[
-    ("session_start", "open"),
-    ("alive", "event"),
-    ("asked", "event"),
-    ("compacting", "event"),
-];
+/// What Sailor does at a moment. The moments are toolbox's list, asked rather
+/// than copied here; what a line calls each is said by its descriptor.
+/// `session_start` carries the welcome and is the only one whose text reaches
+/// the agent, so it opens; every other moment is an event.
+fn what_we_do_at(moment: &str) -> &'static str {
+    if moment == toolbox::descriptor::SESSION_START {
+        "open"
+    } else {
+        "event"
+    }
+}
+
+/// Every moment with its verb, in the order toolbox names them. **FOUR, AND
+/// NO MORE**: one more hook is one more process at every event of every session.
+fn what_we_do_at_each() -> impl Iterator<Item = (&'static str, &'static str)> {
+    toolbox::descriptor::MOMENTS
+        .iter()
+        .map(|moment| (*moment, what_we_do_at(moment)))
+}
 
 /// How one of our hooks is told from anyone else's: by the fact that it invokes
 /// **this** command. Not by a name written beside it, which can be changed
@@ -790,9 +782,8 @@ fn uninstalled(settings: &std::path::Path) -> Result<String, String> {
 /// report has to name. A pure answer, so it can be asked of a descriptor
 /// nobody ships and the check needs no product to exist.
 fn moments_without_an_event(tool: &toolbox::descriptor::Descriptor) -> Vec<&'static str> {
-    WHAT_WE_DO_AT_EACH
-        .iter()
-        .map(|(moment, _)| *moment)
+    what_we_do_at_each()
+        .map(|(moment, _)| moment)
         .filter(|moment| tool.event_for(moment).is_none())
         .collect()
 }
@@ -813,9 +804,8 @@ fn grafted_into(
 
 /// The moments this line can report, paired with the verb we run at each.
 fn events_this_line_can_report(tool: &toolbox::descriptor::Descriptor) -> Vec<(&str, &str)> {
-    WHAT_WE_DO_AT_EACH
-        .iter()
-        .filter_map(|(moment, verb)| tool.event_for(moment).map(|event| (event, *verb)))
+    what_we_do_at_each()
+        .filter_map(|(moment, verb)| tool.event_for(moment).map(|event| (event, verb)))
         .collect()
 }
 
@@ -1734,6 +1724,26 @@ mod tests {
     use sessions::census::{Inhabitant, Refusal, Terminal};
     use sessions::SESSIONS_FILE;
 
+    /// The moments are toolbox's list and nothing is added or lost on the way:
+    /// one verb per moment, the first opens, every other one is an event.
+    #[test]
+    fn every_moment_toolbox_names_gets_a_verb_and_only_the_first_opens() {
+        let paired: Vec<(&str, &str)> = what_we_do_at_each().collect();
+        assert_eq!(paired.len(), toolbox::descriptor::MOMENTS.len());
+        assert_eq!(paired.len(), 4, "four, and no more: {paired:?}");
+        let opening: Vec<&str> = paired
+            .iter()
+            .filter(|(_, verb)| *verb == "open")
+            .map(|(moment, _)| *moment)
+            .collect();
+        assert_eq!(opening, vec![toolbox::descriptor::SESSION_START]);
+        assert_eq!(
+            paired.iter().filter(|(_, verb)| *verb == "event").count(),
+            3,
+            "every moment but the first is an event: {paired:?}"
+        );
+    }
+
     struct Scratch {
         directory: PathBuf,
     }
@@ -1837,9 +1847,12 @@ mod tests {
         std::fs::create_dir_all(&impossible).expect("la cartella di prova");
         let settings = scratch.directory.join("settings-di-prova.json");
 
-        for form in FORMS.iter().filter(|form| !NEEDS_THE_STORE.contains(form)) {
+        for form in crate::verbs_of(USAGE)
+            .into_iter()
+            .filter(|form| !NEEDS_THE_STORE.contains(form))
+        {
             let words: Vec<String> = vec![
-                (*form).to_owned(),
+                form.to_owned(),
                 "--store".to_owned(),
                 impossible.display().to_string(),
                 "--settings".to_owned(),
@@ -3285,20 +3298,6 @@ mod tests {
         );
     }
 
-    /// The list printed and the list accepted are the same one: a form that is
-    /// documented and not accepted is discovered only by typing it.
-    #[test]
-    fn the_usage_names_every_form_the_dispatch_accepts() {
-        for form in FORMS {
-            assert!(
-                USAGE
-                    .iter()
-                    .any(|line| line.form.contains(&format!("session {form}"))),
-                "«{form}» è accettata e non è scritta in USAGE"
-            );
-        }
-    }
-
     /// The anchor is `(tty, tree, progenitor)`, and it shows in the row written.
     #[test]
     fn an_arrival_is_anchored_to_the_tty_the_tree_and_the_ancestor() {
@@ -3463,7 +3462,7 @@ mod tests {
     #[test]
     fn an_unknown_form_names_the_ones_that_exist() {
         let message = dispatch(&["sweep".to_owned()]).expect_err("una forma ignota è un errore");
-        for form in FORMS {
+        for form in crate::verbs_of(USAGE) {
             assert!(message.contains(form), "{message} non nomina «{form}»");
         }
     }

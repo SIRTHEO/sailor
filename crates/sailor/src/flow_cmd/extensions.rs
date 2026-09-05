@@ -282,7 +282,7 @@ mod tests {
     use super::super::check::check_report;
     use super::*;
     use inventory::{collect, Root};
-    use registry::default_registry;
+    use registry::{registry_in, House};
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -427,7 +427,7 @@ mod tests {
     /// would call an honest declaration a typo.
     #[test]
     fn declaring_needs_is_not_a_stray_field() {
-        let registry = default_registry(None, None);
+        let registry = registry_in(House::empty(), None, None);
         let engine = r#"{"tool": "x", "needs_extensions": ["skill:one"], "timeout_secs": 1}"#;
         let handed = r#"{"mandate": "m", "holder": "h", "handoff_timeout_secs": 1,
             "needs_extensions": ["skill:one"], "options": [{"label": "done"}]}"#;
@@ -490,7 +490,7 @@ mod tests {
     fn the_check_names_what_a_step_leans_on_without_declaring() {
         let flow = flow_with(r#"{"stdin": "run /first", "timeout_secs": 1}"#);
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), None, None);
+        let (report, _) = check_report(&flow, &registry_in(House::empty(), None, None), None, None);
 
         let said = catalogue::say(
             "cli.flow.extensions_named_not_declared",

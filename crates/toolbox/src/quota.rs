@@ -67,7 +67,7 @@ mod tests {
     /// signed with the descriptor's id.
     #[test]
     fn a_channel_is_the_descriptors_and_an_unknown_kind_is_refused_by_name() {
-        let machine = Machine::current();
+        let machine = Machine::bare(std::path::PathBuf::from(crate::probe::NOWHERE));
         assert!(channel_of(&parsed(r#"{"id": "x", "family": "ai_cli"}"#), &machine).is_none());
 
         let odd = parsed(
