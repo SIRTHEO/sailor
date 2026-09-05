@@ -26,22 +26,23 @@ pub const JOIN_KEY: &str = "$join";
 /// structured value, written as JSON.
 pub const JSON_KEY: &str = "$json";
 
-/// Replaces the references inside a step's input with the values they name; an
-/// input with no references comes back identical, so whoever does not use them
-/// pays nothing. It runs once where the input is composed
-/// ([`crate::step_input`]) and not inside each action — fault 28, and copying
-/// the line into twelve actions of sixteen was fault 10 in twelve copies, not a
-/// cure. How a step gets the previous step's work is the graph's semantics.
+/// Replaces the references inside a value with what they name in that same
+/// value; a value with no references comes back identical. Tests compose a
+/// step's input by hand with it; the engine uses [`resolve_overlay`].
 pub fn resolve_references(input: &Value) -> Result<Value, ActionError> {
     resolve_against(input, input)
 }
 
-/// Walks a value, replacing every reference found anywhere inside it — and that
-/// is the declared limit: references are hunted in *all* the input, which holds
-/// the dependencies' output too. Not a way in while engines answer with text; it
-/// becomes one with an action that yields free objects (`store_read` returns the
-/// stored value as it stands) fed to a node that executes. Whoever wires those
-/// two nodes together must know.
+/// The step's `with`, its references replaced by what they name in the whole
+/// input — the dependencies' output and the `with` itself. Only the `with` is
+/// walked: a `$from` inside a dependency's output is that step's data (a flow a
+/// model drafted carries its own), and whoever writes the flow decides what
+/// gets read, whoever answers does not.
+pub fn resolve_overlay(with: &Value, input: &Value) -> Result<Value, ActionError> {
+    resolve_against(with, input)
+}
+
+/// Walks a value, replacing every reference found anywhere inside it.
 fn resolve_against(value: &Value, root: &Value) -> Result<Value, ActionError> {
     match value {
         Value::Object(fields) => resolve_object(fields, root),

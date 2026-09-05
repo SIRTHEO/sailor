@@ -1547,7 +1547,14 @@ pub fn step_input(
             runs,
         });
     }
-    let value = reference::resolve_references(&positioned).map_err(FlowError::Action)?;
+    let value = match step.with.as_ref() {
+        Some(with) => {
+            let resolved =
+                reference::resolve_overlay(with, &positioned).map_err(FlowError::Action)?;
+            overlay_input(positioned, Some(&resolved))
+        }
+        None => positioned,
+    };
     Ok(StepInput { value, runs })
 }
 
@@ -2094,6 +2101,53 @@ mod tests {
         assert!(!input.contains_key("skipped"));
         assert_eq!(input.get("present_empty"), Some(&json!([])));
         assert_eq!(join.outcome, Some(Outcome::Went));
+    }
+
+    /// **A `$from` INSIDE A DEPENDENCY'S OUTPUT IS DATA.** A flow a model had
+    /// drafted, carrying its own references for a run yet to happen, broke the
+    /// step that was to write it: the resolver hunted the whole input. Only the
+    /// `with` is written by whoever writes the flow; only the `with` is read.
+    #[test]
+    fn a_reference_inside_a_dependencys_output_is_left_as_it_is() {
+        let mut next = step("next", &["root"], "echo", 1);
+        next.with = Some(json!({ "copy": { "$from": "/text" } }));
+        let graph = Graph::new(vec![step("root", &[], "echo", 1), next]).expect("valid graph");
+        let mut actions = ActionRegistry::default();
+        actions.register("echo", Echo);
+        let mut store = InMemoryRecordStore::default();
+        InProcessExecutor
+            .execute(
+                &graph,
+                ExecutionRequest {
+                    run_id: "run".to_owned(),
+                    root_inputs: [(
+                        "root".to_owned(),
+                        json!({ "text": "hello", "drafted": { "$from": "/nowhere" } }),
+                    )]
+                    .into_iter()
+                    .collect(),
+                    gates: vec![],
+                    shared: SharedState::new(),
+                    spend_cap_micros: None,
+                },
+                &mut store,
+                &actions,
+                &mut Tick::new(0),
+            )
+            .expect("the run goes");
+
+        let records = store.all();
+        let next = records
+            .iter()
+            .find(|record| record.step_id == "next")
+            .expect("the next step's record");
+        assert_eq!(next.outcome, Some(Outcome::Went), "{:?}", next.said);
+        assert_eq!(next.input["copy"], json!("hello"), "the with's own reference is resolved");
+        assert_eq!(
+            next.input["drafted"],
+            json!({ "$from": "/nowhere" }),
+            "the dependency's data arrives as it was"
+        );
     }
 
     #[test]
