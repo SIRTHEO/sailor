@@ -525,6 +525,13 @@
   "cli.remember.wants_three": "a memory is a type, a label and a value; usage: {usage}",
   "cli.remember.kept": "kept: «{label}» ({type})",
   "cli.session.remembered": "{count} memor(ies) are kept, the latest {recent}: `sailor search <word>` finds them, `sailor remember` adds one.",
+  "cli.session.memory_page": "The page of memories is {path}; it opens with:\n{opening}",
+  "cli.command.memory": "renders what is remembered into the one file every command line reads at its start",
+  "cli.memory.page_says": "writes the page of the memories still valid to state/memory.md under Sailor's home; with --print it is printed instead",
+  "cli.memory.wants_page": "the only form is `page`; usage: {usage}",
+  "cli.memory.written": "{count} memor(ies) on the page, written to {path}",
+  "cli.memory.no_home": "no home to write the page into: HOME is not set",
   "run.failure.bad_memory_type": "a memory is user, feedback, project or reference, and this is none of them",
-  "run.failure.secret_in_memory": "the memory carries what looks like a credential, and a credential is never remembered"
+  "run.failure.secret_in_memory": "the memory carries what looks like a credential, and a credential is never remembered",
+  "run.failure.page_unwritten": "the page of memories could not be written, so the command lines still read the old one"
 }
