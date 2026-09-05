@@ -462,6 +462,8 @@
   "cli.worktree.directory_gone": "its directory is gone",
   "cli.worktree.kept_from_runs": "{count} of these were cut for a step of a run and are still standing: a step takes its own tree down unless what it holds would go with it.",
   "cli.worktree.locked": "locked",
+  "cli.worktree.names_against": "{count} branches are named against the convention — the trunk is «sorgenti», work happens on «work/<topic>», and a tree the mechanism cut names itself:",
+  "cli.worktree.names_follow": "every branch is named for the work it does",
   "engine.tree_kept_over_a_commit": "The tree {tree} stays: it sits on commit {commit}, and no branch of this repository holds that commit.",
   "engine.tree_kept_over_work": "The tree {tree} stays, because git would not take it down: {said}",
   "flow.for_each.child_died": "the thread running element {index} died before it could say how it ended",
