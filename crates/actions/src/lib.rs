@@ -34,6 +34,10 @@
 //! `"tool": "claude-code"` gira ovunque quel descrittore trovi qualcosa, e si
 //! ferma con un messaggio utile dove non lo trova.
 
+// Every action returns `flow::ActionError`, sized by the `Action` trait at
+// exactly this lint's threshold: boxing it here would unbox at every boundary.
+#![allow(clippy::result_large_err)]
+
 pub mod apply;
 pub mod budget;
 pub mod cooldown;

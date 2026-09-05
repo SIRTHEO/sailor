@@ -734,7 +734,7 @@ mod tests {
         let outcome = action
             .execute(
                 &json!({"bin": "sh", "args": ["-c", "echo detto-dal-motore"], "timeout_secs": 10}),
-                &mut shared,
+                &shared,
             )
             .expect("il passo doveva riuscire");
         assert!(matches!(outcome, ActionOutcome::Went(_)));
@@ -761,11 +761,11 @@ mod tests {
 
         let action =
             ExternalEngineAction::new().watched_by(Some(Arc::new(Never) as Arc<dyn StepSinks>));
-        let mut shared = SharedState::new();
+        let shared = SharedState::new();
         action
             .execute(
                 &json!({"bin": "sh", "args": ["-c", "echo muto"], "timeout_secs": 10}),
-                &mut shared,
+                &shared,
             )
             .expect("il passo doveva riuscire lo stesso");
     }
@@ -794,7 +794,7 @@ mod tests {
         });
 
         let outcome = action
-            .execute(&input, &mut SharedState::new())
+            .execute(&input, &SharedState::new())
             .expect("un ingresso con l'uscita della dipendenza deve girare");
 
         let ActionOutcome::Went(output) = outcome else {
@@ -836,9 +836,9 @@ mod tests {
             "args": ["-c", "echo 'answer: 42'"],
             "timeout_secs": 5
         });
-        let mut shared = SharedState::new();
+        let shared = SharedState::new();
         let outcome = action
-            .execute(&input, &mut shared)
+            .execute(&input, &shared)
             .expect("l'azione non fallisce");
         let ActionOutcome::Went(output) = outcome else {
             panic!("un'azione motore riuscita è sempre Went")
@@ -865,7 +865,7 @@ mod tests {
         });
 
         let error = action
-            .execute(&input, &mut SharedState::new())
+            .execute(&input, &SharedState::new())
             .expect_err("un motore uscito in errore rompe il passo");
 
         assert_eq!(error.class, "engine_exit_error");
@@ -887,7 +887,7 @@ mod tests {
         });
 
         let ActionOutcome::Went(output) = action
-            .execute(&input, &mut SharedState::new())
+            .execute(&input, &SharedState::new())
             .expect("l'esito è dichiarato accettabile")
         else {
             panic!("un esito tollerato resta un dato")
@@ -909,7 +909,7 @@ mod tests {
         });
 
         let error = action
-            .execute(&input, &mut SharedState::new())
+            .execute(&input, &SharedState::new())
             .expect_err("«failed» non è un esito di un motore");
 
         assert_eq!(error.class, "invalid_input");
@@ -924,7 +924,7 @@ mod tests {
         let input = json!({"bin": "/nessun/binario/qui-di-sicuro", "timeout_secs": 5});
 
         let error = action
-            .execute(&input, &mut SharedState::new())
+            .execute(&input, &SharedState::new())
             .expect_err("un motore che non parte rompe il passo");
 
         assert_eq!(error.class, "engine_spawn_failed");
@@ -941,7 +941,7 @@ mod tests {
         let input = json!({"bin": "sh", "args": ["-c", "exec sleep 60"], "timeout_secs": 1});
 
         let error = action
-            .execute(&input, &mut SharedState::new())
+            .execute(&input, &SharedState::new())
             .expect_err("il tempo scaduto rompe il passo");
 
         assert_eq!(error.class, "engine_timed_out");
@@ -978,7 +978,7 @@ mod tests {
         });
 
         let ActionOutcome::Went(output) = ExternalEngineAction::new()
-            .execute(&with_references_resolved(input), &mut SharedState::new())
+            .execute(&with_references_resolved(input), &SharedState::new())
             .expect("la risposta rispetta la forma")
         else {
             panic!("un motore che risponde è sempre Went")
@@ -1021,7 +1021,7 @@ mod tests {
         });
 
         let error = ExternalEngineAction::new()
-            .execute(&with_references_resolved(input), &mut SharedState::new())
+            .execute(&with_references_resolved(input), &SharedState::new())
             .expect_err("un motore fuori forma non ha risposto");
 
         assert_eq!(error.class, "answer_off_shape");
@@ -1039,7 +1039,7 @@ mod tests {
         });
 
         let error = ExternalEngineAction::new()
-            .execute(&with_references_resolved(input), &mut SharedState::new())
+            .execute(&with_references_resolved(input), &SharedState::new())
             .expect_err("non è JSON");
 
         assert_eq!(error.class, "answer_not_json");
@@ -1066,7 +1066,7 @@ mod tests {
         });
 
         let ActionOutcome::Went(output) = ExternalEngineAction::new()
-            .execute(&with_references_resolved(input), &mut SharedState::new())
+            .execute(&with_references_resolved(input), &SharedState::new())
             .expect("il blocco recintato si legge")
         else {
             panic!("un motore che risponde è sempre Went")
@@ -1088,7 +1088,7 @@ mod tests {
         });
 
         let error = ExternalEngineAction::new()
-            .execute(&input, &mut SharedState::new())
+            .execute(&input, &SharedState::new())
             .expect_err("la forma non è stata chiesta a nessuno");
 
         assert_eq!(
@@ -1113,7 +1113,7 @@ mod tests {
         });
 
         let error = ExternalEngineAction::new()
-            .execute(&with_references_resolved(input), &mut SharedState::new())
+            .execute(&with_references_resolved(input), &SharedState::new())
             .expect_err("le due dichiarazioni non stanno insieme");
 
         assert_eq!(error.class, "invalid_input");
@@ -1139,10 +1139,10 @@ mod tests {
             "stdin": {"$join": ["Esegui solo la tua sezione.\n", {"$from": "/stdout"}]},
             "timeout_secs": 5
         });
-        let mut shared = SharedState::new();
+        let shared = SharedState::new();
 
         let ActionOutcome::Went(output) = action
-            .execute(&with_references_resolved(input), &mut shared)
+            .execute(&with_references_resolved(input), &shared)
             .unwrap()
         else {
             panic!("un motore che risponde è sempre Went")
