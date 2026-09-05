@@ -265,6 +265,36 @@ non un lavoro.
 - **Chi trova un ramo di un altro non lo cancella**: lo prova per contenuto,
   e se è superato lo dice a chi lo ha aperto — o a Theo — con la misura
   accanto.
+- **Ci sono due nomi che non scegli tu, e vanno chiusi lo stesso.** Un agente
+  in copia di lavoro nasce su un ramo che il meccanismo chiama da sé; un passo
+  che chiede un albero tutto suo apre una copia sotto il nome della corsa e del
+  passo. Nessuno dei due si cancella da solo: chi fonde chiude il primo, chi
+  legge il lavoro chiude il secondo. Misurato il 05/09/2026: dodici copie
+  orfane e 905 MB dopo una sera di deleghe, ed è il guasto 89.
+- **Il tronco si spinge a ogni rilascio, e se il remoto lo rifiuta si guarda
+  perché.** Una macchina con più di un accesso a quel remoto deve dire quale
+  possiede il repository: `sailor.pushAs` e `sailor.pushSecretFrom` nella
+  configurazione di questo albero. Il 05/09/2026 il remoto è rimasto indietro
+  di 179 commit per un giorno perché l'accesso attivo non era il proprietario,
+  e ogni rilascio lo diceva onestamente mentre niente si muoveva.
+
+## Come si esplora questo albero prima di cambiarlo
+
+**Prima di cercare a mano, si chiede all'indice.** SocratiCode ha questo
+repository indicizzato e risponde per simbolo, per grafo delle dipendenze e per
+ricerca semantica: `codebase_symbol` per dove vive una cosa, `codebase_search`
+per «chi fa X», `codebase_impact` per chi tocchi cambiandola. Un `grep` su un
+albero di quarantamila righe trova le occorrenze, non le relazioni, e chi
+sviluppa senza chiedere all'indice rifà a mano una misura che c'è già.
+
+**Il limite è dichiarato**: l'indice va dietro ai file nuovi di poche ore, e su
+Rust il grafo ha dato falsi orfani (guasto 38). Vale come prima domanda, non
+come verdetto: ciò che l'indice dice si conferma leggendo il file che nomina.
+
+**E c'è già una misura di quanto costa non chiedere**: `sailor search <parole>`
+cerca fra flussi, corse, deposito, eventi e guasti di questa macchina, e
+risponde a domande che nessuna lettura del codice può — quante volte un passo è
+fallito, quale guasto è già stato scritto, cosa ha imparato la corsa di ieri.
 
 ## Chi crea non giudica
 
