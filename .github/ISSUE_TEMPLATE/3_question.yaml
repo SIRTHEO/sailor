@@ -1,0 +1,47 @@
+name: Question
+description: You cannot work out how something is meant to work, or whether it is meant to work that way at all.
+title: "question: "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A question that turns out to be a defect becomes a bug report, and a
+        question the documents should have answered becomes a change to them —
+        so ask it here rather than guessing.
+
+        Places that may already answer it: `README.md` for what Sailor does,
+        `CONTRIBUTING.md` for how to build, test and commit, `AGENTS.md` for the
+        rules of the tree, and `docs/` for the decisions and the fault ledger.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: The question
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: What you were doing
+      description: The command, the flow or the part of the code that raised it. Verbatim output helps here too.
+    validations:
+      required: false
+
+  - type: textarea
+    id: looked
+    attributes:
+      label: Where you already looked
+      description: What you read and why it did not settle it. This is what turns a question into a fix to the documents.
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The output of `sailor version`, if the question is about a running Sailor.
+      placeholder: sailor 0.1.0
+    validations:
+      required: false
