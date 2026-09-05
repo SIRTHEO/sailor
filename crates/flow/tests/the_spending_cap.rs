@@ -126,6 +126,7 @@ fn step(id: &str, action: &str, deps: Vec<String>) -> Step {
         ask_again_after_secs: None,
         retry_after_secs: None,
         phase: None,
+        stops_when: None,
         with: None,
     }
 }
@@ -162,6 +163,7 @@ fn run_with_cap(cap: Option<i64>, price_micros: i64) -> (flow::Execution, usize)
                 gates: vec![],
                 shared: SharedState::new(),
                 spend_cap_micros: cap,
+                stops: flow::RunStops::default(),
             },
             store.as_ref(),
             &actions,
@@ -275,6 +277,7 @@ fn what_the_cap_does_not_know_is_declared() {
                 gates: vec![],
                 shared: SharedState::new(),
                 spend_cap_micros: Some(100),
+                stops: flow::RunStops::default(),
             },
             store.as_ref(),
             &actions,
@@ -334,6 +337,7 @@ fn the_front_narrows_as_the_money_runs_out() {
                 // Spent 100, cap 350: 250 remain, and two of the dearest seen
                 // (100) fit inside that.
                 spend_cap_micros: Some(350),
+                stops: flow::RunStops::default(),
             },
             store.as_ref(),
             &actions,
@@ -395,6 +399,7 @@ fn the_step_that_ran_is_closed_in_the_store() {
                 gates: vec![],
                 shared: SharedState::new(),
                 spend_cap_micros: Some(100),
+                stops: flow::RunStops::default(),
             },
             store.as_ref(),
             &actions,

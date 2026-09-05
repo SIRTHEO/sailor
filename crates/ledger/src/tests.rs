@@ -73,6 +73,7 @@ fn sample_all(ledger: &Ledger) {
             started_at: 90,
             ended_at: Some(121),
             worktree: None,
+            stop_reason: None,
         })
         .expect("record the run");
     ledger
@@ -1389,6 +1390,7 @@ fn a_run(ledger: &Ledger, run_id: &str, entity: &str, started_at: i64, ended_at:
             started_at,
             ended_at,
             worktree: None,
+            stop_reason: None,
         })
         .expect("record the run");
 }
@@ -1469,6 +1471,7 @@ fn a_handed_run_is_found_by_the_waiting_question_and_not_by_the_unfinished_one()
             started_at: 100,
             ended_at: Some(150),
             worktree: None,
+            stop_reason: None,
         })
         .expect("record the handed-over run");
     a_step(
@@ -2761,6 +2764,7 @@ fn a_browsed_statement_reads_any_table_and_cannot_write() {
             started_at: 200,
             ended_at: Some(201),
             worktree: None,
+            stop_reason: None,
         })
         .expect("the store still writes");
 }
@@ -2845,6 +2849,7 @@ fn born_in(run_id: &str, worktree: Option<&str>) -> RunRecord {
         started_at: 10,
         ended_at: Some(20),
         worktree: worktree.map(str::to_owned),
+        stop_reason: None,
     }
 }
 

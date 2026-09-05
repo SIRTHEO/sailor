@@ -173,7 +173,7 @@ pub fn resume_run_with(
     // THE RESUME GOES THROUGH THE ONE CONSTRUCTOR, like the first run, and
     // keeps the same id: a request built by hand would lose the workspace
     // root in silence, and a new id would redo every step already paid for.
-    let request = registry::execution_request(flow, run_id, root);
+    let request = registry::execution_request(Some(ledger), flow, run_id, root, started_at);
     // La riconciliazione vede quello che vedrà l'esecuzione: stessa radice,
     // stesso stato condiviso.
     let shared = request.shared.clone();
@@ -234,6 +234,7 @@ pub fn resume_run_with(
         started_at,
         Some(now_secs()?),
         why.clone(),
+        registry::how_it_stopped(&execution),
     )?;
     let _ = write!(report, "\nstato: {status}");
     if exit_ok {
@@ -429,17 +430,29 @@ pub(super) fn run_flow(sources: &[FlowSource], name: &str, mandate: Option<&str>
 
     let run_id = new_run_id(&flow.id)?;
     let started_at = now_secs()?;
-    record_run(&ledger, &flow, &run_id, "running", started_at, None, None)?;
+    record_run(
+        &ledger, &flow, &run_id, "running", started_at, None, None, None,
+    )?;
 
     let store = ledger.clone();
-    let result = execute_flow(&flow, &run_id, &store, &registry, &SystemClock);
+    let result = execute_flow(
+        Some(&ledger),
+        &flow,
+        &run_id,
+        started_at,
+        &store,
+        &registry,
+        &SystemClock,
+    );
     match result {
         Ok(execution) => {
             let (status, exit_ok) = execution_status(&execution);
             // Il tetto raggiunto porta con sé i numeri: finiscono nella riga
             // della corsa, così chi rilegge lo storico fra una settimana sa
-            // quanto era il tetto allora e quanto si era speso.
-            let why = registry::stopped_by_cap(&execution);
+            // quanto era il tetto allora e quanto si era speso. A run that
+            // stopped itself says which of the four reasons did it.
+            let why = registry::stopped_by_cap(&execution)
+                .or_else(|| registry::halted_by_hand(&execution));
             record_run(
                 &ledger,
                 &flow,
@@ -448,6 +461,7 @@ pub(super) fn run_flow(sources: &[FlowSource], name: &str, mandate: Option<&str>
                 started_at,
                 Some(now_secs()?),
                 why.clone(),
+                registry::how_it_stopped(&execution),
             )?;
             if exit_ok {
                 Ok(format!("flusso {} completato; corsa {run_id}", flow.id))
@@ -471,6 +485,7 @@ pub(super) fn run_flow(sources: &[FlowSource], name: &str, mandate: Option<&str>
                 started_at,
                 Some(now_secs()?),
                 Some(said.clone()),
+                None,
             )?;
             Err(format!(
                 "esecuzione del flusso {} fallita: {said}; corsa {run_id}",
@@ -481,8 +496,10 @@ pub(super) fn run_flow(sources: &[FlowSource], name: &str, mandate: Option<&str>
 }
 
 fn execute_flow(
+    ledger: Option<&Ledger>,
     flow: &FlowFile,
     run_id: &str,
+    started_at: i64,
     store: &dyn RecordStore,
     registry: &ActionRegistry,
     clock: &dyn flow::Clock,
@@ -492,7 +509,7 @@ fn execute_flow(
     InProcessExecutor
         .execute(
             &flow.graph,
-            registry::execution_request(flow, run_id, root.as_deref()),
+            registry::execution_request(ledger, flow, run_id, root.as_deref(), started_at),
             store,
             registry,
             clock,
@@ -537,6 +554,7 @@ fn execution_status(execution: &Execution) -> (&'static str, bool) {
 /// Fino al 31/08/2026 tutte e due scrivevano `total_cost_micros: 0` a mano su
 /// un campo che la finestra mostra: riparare una sola delle due avrebbe dato
 /// due totali diversi per la stessa corsa a seconda di chi l'aveva lanciata.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn record_run(
     ledger: &Ledger,
     flow: &FlowFile,
@@ -545,6 +563,7 @@ pub(super) fn record_run(
     started_at: i64,
     ended_at: Option<i64>,
     error: Option<String>,
+    stop_reason: Option<flow::StopReason>,
 ) -> Result<(), String> {
     registry::record_flow_run(
         ledger,
@@ -556,6 +575,7 @@ pub(super) fn record_run(
             ended_at,
             error,
             started_by: seat_of(std::env::var_os("SAILOR_TERMINAL").is_some()),
+            stop_reason,
         },
     )?;
     // The report is written after the header and only for a closed run, so it
@@ -767,6 +787,7 @@ mod tests {
                 started_at: 1_000,
                 ended_at: Some(1_500),
                 worktree: None,
+                stop_reason: None,
             })
             .expect("registrare la corsa");
         let mut record = StepRecord::started(
@@ -863,6 +884,7 @@ mod tests {
                 started_at: 10,
                 ended_at: Some(20),
                 worktree: None,
+                stop_reason: None,
             })
             .expect("la riga della corsa");
         ledger
@@ -1147,7 +1169,7 @@ mod tests {
         let json = flow_json("shell_check", "[]", inputs);
         let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
 
-        let request = registry::execution_request(&flow, "corsa-1", None);
+        let request = registry::execution_request(None, &flow, "corsa-1", None, 0);
 
         assert_eq!(request.root_inputs, flow.inputs);
         assert_eq!(request.run_id, "corsa-1");
@@ -1169,8 +1191,10 @@ mod tests {
         let store = InMemoryRecordStore::default();
 
         let execution = execute_flow(
+            None,
             &flow,
             "corsa-1",
+            0,
             &store,
             &registry_in(House::empty(), None, None),
             &Tick::new(0),
