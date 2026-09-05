@@ -138,6 +138,8 @@
   "cli.flow.step_without_id": "(no id)",
   "cli.flow.workdir_removed_was_the_root": "{step}: removed (it was the root)",
   "cli.flow.flow_is_not_a_file_on_disk": "flow {name} is not a file on disk: the flows shipped with the product live inside the binary and are not rewritten — write one with the same name in the project",
+  "cli.flow.private_step_no_engine_may_run": "\nsteps whose text is private and whose engines may not take it (the step cannot run anywhere, and the run stops before spending): {steps}",
+  "cli.flow.private_step_engine_refused": "{step} \u2192 {engine}: its data pact is \u00ab{pact}\u00bb, and a private step goes only to an engine measured not to train on what it receives",
   "cli.flow.step_phase": " — phase: {phase}",
   "cli.flow.what_the_cap_does_not_promise": "\nwhat the cap does not promise:\n  - it does not reach the engines: the brake sits before opening a front, never inside a call already under way, and no engine knows the cap exists\n  - a run's first front is never braked: with no call observed the width stays at the ceiling of four, because tightening on a number that does not exist would be inventing it\n  - it counts only the calls that declare a cost; those that do not stay out of the sum, so the real spend is higher than the counted one",
   "cli.command.faults": "faults met while building: what happened, and the check that would prevent it",
