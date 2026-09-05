@@ -28,6 +28,7 @@
 pub mod faults_cmd;
 pub mod flow_cmd;
 pub mod inventory_cmd;
+pub mod memory_cmd;
 pub mod models_cmd;
 pub mod profiles_cmd;
 pub mod publish_cmd;
@@ -151,6 +152,12 @@ pub const COMMANDS: &[Command] = &[
         description_key: "cli.command.search",
         usage: search_cmd::USAGE,
         run: search_cmd::run,
+    },
+    Command {
+        name: "memory",
+        description_key: "cli.command.memory",
+        usage: memory_cmd::USAGE,
+        run: memory_cmd::run,
     },
     Command {
         name: "ratchet",
