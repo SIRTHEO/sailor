@@ -683,6 +683,18 @@ Starting point, so the mandate builds on it instead of beside it.
    a store record, and a flow that starts on the same entity reads the last
    report first.
    *Proof:* a second run of a flow carries the previous report in its trigger.
+   *Where it landed:* the store collection `run-reports`, one entry per flow,
+   holding the last closed run's report: which steps went, which broke with
+   their class and the head of what they said, the spend, the calls, and
+   whatever the run declared it `learnt`. It is written where every close
+   passes, after the header so it reads the status that close just wrote, and
+   the store keeps it to one — a resume finding the run already closed crosses
+   the same point and writes nothing. The launcher reads the last report of
+   the same flow and puts it in the trigger step's input, and the signal
+   carries it on as `previous_report`, absent rather than empty when there is
+   none. Five tests, three mutants, each red on its own: the guard dropped,
+   the trigger input left alone, the signal not carrying it. Measured live on
+   two runs: the second carried the first's report, run id and all.
 5. **Skills, rules and equipment are Sailor's to manage.** `sailor
    inventory` already lists skills, agents, commands, rules and hooks and
    says which are off. A flow reads it per workspace, proposes what to
