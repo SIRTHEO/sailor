@@ -129,6 +129,7 @@ fn close_step(ledger: &Ledger, run_id: &str, step_id: &str, started_at: i64, end
                 said: None,
                 failure_class: None,
                 refusal: None,
+                ran: None,
                 ended_at,
                 bytes_seen: None,
                 bytes_discarded: None,
