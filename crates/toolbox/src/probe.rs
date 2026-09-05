@@ -12,6 +12,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
+/// A home no machine has: what a bare machine gets when its caller has no
+/// scratch directory to give it.
+pub const NOWHERE: &str = "/nonexistent";
+
 /// The world being searched.
 #[derive(Debug, Clone)]
 pub struct Machine {
@@ -49,6 +53,18 @@ impl Machine {
             home,
             env,
             version_probes: true,
+        }
+    }
+
+    /// A machine with nothing on it: an empty search path, no variables and
+    /// `home` as its home. What a test hands in so that nothing of the machine
+    /// it runs on is read, and what a static check builds its world from.
+    pub fn bare(home: PathBuf) -> Machine {
+        Machine {
+            path_dirs: Vec::new(),
+            home,
+            env: BTreeMap::new(),
+            version_probes: false,
         }
     }
 

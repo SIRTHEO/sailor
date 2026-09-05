@@ -1415,7 +1415,14 @@ mod tests {
         let root = scratch.join("sources");
         fs::create_dir_all(&root).expect("scratch");
         let git = |args: &[&str]| {
-            let out = Command::new("git").arg("-C").arg(&root).args(args).output().expect("git");
+            let out = Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .output()
+                .expect("git");
             assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
         };
         git(&["init", "--quiet"]);

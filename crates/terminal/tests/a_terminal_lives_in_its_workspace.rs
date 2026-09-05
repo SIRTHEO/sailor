@@ -55,7 +55,9 @@ impl Drop for Scratch {
 /// regola di smistamento di mezzo renderebbe ambiguo quale dei due ha fallito.
 fn plain_terminals() -> Terminals {
     Terminals::with_router(Arc::new(Router::without_routes(Arc::new(
-        terminal::PathLookup::current(),
+        terminal::PathLookup::on(toolbox::Machine::bare(std::path::PathBuf::from(
+            toolbox::probe::NOWHERE,
+        ))),
     ))))
 }
 
