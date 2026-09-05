@@ -544,12 +544,15 @@ pub struct ResetContext {
     pub extra: BTreeMap<String, Value>,
 }
 
+/// The moment a session begins: the one whose answer reaches the agent.
+pub const SESSION_START: &str = "session_start";
+
 /// The moments Sailor needs to hear about, in Sailor's own words.
 ///
 /// Named here because they are what Sailor needs, not what any one product
 /// offers. A command line maps them onto its own event names, and stays silent
-/// about the ones it cannot report.
-pub const MOMENTS: &[&str] = &["session_start", "alive", "asked", "compacting"];
+/// about the ones it cannot report. Whoever acts at each asks this list.
+pub const MOMENTS: &[&str] = &[SESSION_START, "alive", "asked", "compacting"];
 
 /// How a settings file is written, because grafting has to read it back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
