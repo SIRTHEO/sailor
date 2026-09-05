@@ -341,6 +341,59 @@ fn a_step_closed_with_no_output_still_has_none_after_a_rebuild() {
     assert_eq!(steps[0].output, None, "a step with no output grew one");
 }
 
+/// The register itself keeps the two apart — the two closes write different
+/// bytes — and the projection reads back each as it was written, with no
+/// rebuild in between: the projection written at close is the one read.
+#[test]
+fn the_register_and_the_projection_keep_a_null_output_apart_from_none() {
+    let directory = TestDirectory::new("two-records");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    for (run_id, output) in [("run-null", Some(Value::Null)), ("run-none", None)] {
+        ledger
+            .append_step_started(&started(run_id))
+            .expect("record the intent");
+        ledger
+            .close_step(
+                run_id,
+                "compile",
+                1,
+                7,
+                Completion {
+                    outcome: Outcome::Went,
+                    output: output.clone(),
+                    ..completion()
+                },
+            )
+            .expect("close it");
+        let steps = ledger.steps(run_id).expect("read the steps");
+        assert_eq!(
+            steps[0].output, output,
+            "{run_id} read back as the other record"
+        );
+    }
+
+    let connection = ledger.lock().expect("connection");
+    let payload_of = |run_id: &str| -> String {
+        connection
+            .query_row(
+                "SELECT payload FROM events.events WHERE kind = 'step_closed' AND run_id = ?1",
+                [run_id],
+                |row| row.get(0),
+            )
+            .expect("the closing event")
+    };
+    let with_null = payload_of("run-null");
+    let with_none = payload_of("run-none");
+    assert!(
+        with_null.contains(r#""output":null,"output_was_written":true"#),
+        "{with_null}"
+    );
+    assert!(
+        with_none.contains(r#""output":null,"output_was_written":false"#),
+        "{with_none}"
+    );
+}
+
 #[test]
 fn committed_event_is_projected_after_a_crash_between_the_two_phases() {
     let directory = TestDirectory::new("checkpoint");

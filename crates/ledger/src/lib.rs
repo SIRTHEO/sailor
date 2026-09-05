@@ -951,7 +951,6 @@ impl Ledger {
             });
         }
         record.outcome = Some(completion.outcome);
-        record.output_was_written = completion.output.is_some();
         record.output = completion.output;
         record.said = completion.said.map(flow::truncate_said);
         record.failure_class = completion.failure_class;
@@ -2210,17 +2209,10 @@ fn apply_pending_events(transaction: &Transaction<'_>) -> Result<(), LedgerError
     Ok(())
 }
 
-/// One door for every event out of the log, **and the door that puts back what
-/// JSON cannot say**: a null output reads as no output, so the record carries
-/// whether one was written and this turns it back into what was closed with.
+/// One door for every event out of the log. It repairs nothing: what the record
+/// cannot say in JSON, the record's own wire form says (see fault 33).
 fn event_read_from(payload: &str) -> Result<StoredEvent, LedgerError> {
-    let mut event: StoredEvent = serde_json::from_str(payload)?;
-    if let StoredEvent::StepClosed(record) = &mut event {
-        if record.output_was_written && record.output.is_none() {
-            record.output = Some(serde_json::Value::Null);
-        }
-    }
-    Ok(event)
+    serde_json::from_str(payload).map_err(LedgerError::from)
 }
 
 fn set_projection_watermark(transaction: &Transaction<'_>, seq: i64) -> Result<(), LedgerError> {
@@ -2824,13 +2816,11 @@ fn step_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StepRecord> {
             .as_deref()
             .map(|value| parse_outcome(value, 10))
             .transpose()?,
+        // A null output is the text «null» in the column; no output is SQL NULL.
         output: output
             .as_deref()
             .map(|value| json_column(value, 11))
             .transpose()?,
-        // The projection keeps the two apart already: a null output is the text
-        // «null» in the column, no output is SQL NULL.
-        output_was_written: output.is_some(),
         said: row.get(12)?,
         failure_class: row.get(13)?,
         refusal: refusal

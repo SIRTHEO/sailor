@@ -143,13 +143,11 @@ pub struct StepRecord {
     /// `unresolved_reference` it is the diagnosis, on `Went` a real fault.
     #[serde(deserialize_with = "required_option")]
     pub outcome: Option<Outcome>,
-    #[serde(deserialize_with = "required_option")]
+    /// `Some(Null)` and `None` are two records, and JSON has one `null` for
+    /// both: the field goes on the wire as two keys (see `output_on_wire`), so
+    /// the two survive a round trip without any reader putting them back apart.
+    #[serde(flatten, with = "output_on_wire")]
     pub output: Option<Value>,
-    /// **THAT THERE IS AN OUTPUT IS WRITTEN DOWN, NOT DEDUCED FROM IT.** A null
-    /// output serialises the way *no* output does, so it came back as none and
-    /// the step after it died saying it had no typed output.
-    #[serde(default)]
-    pub output_was_written: bool,
     /// Raw text, truncated. It serves a person when something goes wrong. It is
     /// NOT the data channel: no condition is ever evaluated on it.
     #[serde(deserialize_with = "required_option")]
@@ -238,7 +236,6 @@ impl StepRecord {
             started_at,
             outcome: None,
             output: None,
-            output_was_written: false,
             said: None,
             failure_class: None,
             refusal: None,
@@ -288,6 +285,50 @@ where
     T: Deserialize<'de>,
 {
     Option::<T>::deserialize(deserializer)
+}
+
+/// The output on the wire: the value under `output`, and under
+/// `output_was_written` whether there was one, since a null value and no value
+/// are the same JSON. A record from before the second key lacks it and reads
+/// `false`, which is how such records were always read — see fault 33.
+mod output_on_wire {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use serde_json::Value;
+
+    #[derive(Serialize)]
+    struct Written<'a> {
+        output: &'a Option<Value>,
+        output_was_written: bool,
+    }
+
+    #[derive(Deserialize)]
+    struct Read {
+        #[serde(deserialize_with = "super::required_option")]
+        output: Option<Value>,
+        #[serde(default)]
+        output_was_written: bool,
+    }
+
+    pub fn serialize<S: Serializer>(
+        output: &Option<Value>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        Written {
+            output,
+            output_was_written: output.is_some(),
+        }
+        .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<Value>, D::Error> {
+        let read = Read::deserialize(deserializer)?;
+        Ok(match read.output {
+            None if read.output_was_written => Some(Value::Null),
+            other => other,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -393,6 +434,101 @@ mod tests {
         // inherit a species nobody declared.
         assert_eq!(record.species, None);
         assert_eq!(record.held_by_pid, None);
+    }
+
+    fn closed_with(output: Option<Value>) -> StepRecord {
+        let mut record = StepRecord::started("run", "step", 1, 1, vec![], json!(null), vec![], 1);
+        record.outcome = Some(Outcome::Went);
+        record.output = output;
+        record.ended_at = Some(2);
+        record
+    }
+
+    /// Fault 33: the two closes below used to write the same bytes, and the
+    /// null output came back as none. Now the bytes differ and each reads back
+    /// as itself, with no reader in between putting anything right.
+    #[test]
+    fn a_null_output_and_no_output_are_two_records_after_a_round_trip() {
+        let with_null =
+            serde_json::to_string(&closed_with(Some(Value::Null))).expect("serializable");
+        let with_none = serde_json::to_string(&closed_with(None)).expect("serializable");
+        assert_ne!(with_null, with_none, "the two closes wrote the same bytes");
+        assert!(
+            with_null.contains(r#""output":null,"output_was_written":true"#),
+            "{with_null}"
+        );
+        assert!(
+            with_none.contains(r#""output":null,"output_was_written":false"#),
+            "{with_none}"
+        );
+
+        let back: StepRecord = serde_json::from_str(&with_null).expect("readable");
+        assert_eq!(
+            back.output,
+            Some(Value::Null),
+            "a null output came back as none"
+        );
+        assert_eq!(back, closed_with(Some(Value::Null)));
+        let back: StepRecord = serde_json::from_str(&with_none).expect("readable");
+        assert_eq!(back.output, None, "no output came back as a null one");
+        assert_eq!(back, closed_with(None));
+    }
+
+    /// The bytes a record was written with before the second key existed. A
+    /// bare `null` meant no output then, and keeps meaning it: nothing written
+    /// before the key can have meant a null output, because the log could not
+    /// say one. A record from the first days of the key reads by the key.
+    #[test]
+    fn a_record_written_before_the_second_key_reads_as_it_always_did() {
+        let before = r#"{"run_id":"run","step_id":"step","attempt":1,"epoch":1,"deps":[],
+            "input_digest":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+            "input":null,"gates":[],"started_at":1,"outcome":"Went","output":null,
+            "said":null,"failure_class":null,"ended_at":2}"#;
+        let old: StepRecord = serde_json::from_str(before).expect("an old record still reads");
+        assert_eq!(
+            old.output, None,
+            "a bare null from before the key is no output"
+        );
+
+        let with_a_value = before.replace(r#""output":null"#, r#""output":{"code":101}"#);
+        let old: StepRecord =
+            serde_json::from_str(&with_a_value).expect("an old record still reads");
+        assert_eq!(old.output, Some(json!({"code": 101})));
+
+        let first_days = before.replace(
+            r#""output":null"#,
+            r#""output":null,"output_was_written":true"#,
+        );
+        let early: StepRecord =
+            serde_json::from_str(&first_days).expect("an early record reads");
+        assert_eq!(
+            early.output,
+            Some(Value::Null),
+            "the key said an output was written"
+        );
+    }
+
+    /// The output key is one of the fields a truncated record must not be able
+    /// to lack, and the two-key wire form must not have loosened that.
+    #[test]
+    fn a_record_without_an_output_key_is_rejected() {
+        let mut value = serde_json::to_value(closed_with(None)).expect("serializable record");
+        let fields = value.as_object_mut().expect("the record is an object");
+        fields.remove("output");
+        assert!(serde_json::from_value::<StepRecord>(value).is_err());
+    }
+
+    /// The record still refuses a key nobody declared: a misspelt field would
+    /// otherwise drop its data in silence, and the two-key wire form must not
+    /// have opened that door either.
+    #[test]
+    fn a_record_with_a_key_nobody_declared_is_rejected() {
+        let mut value = serde_json::to_value(closed_with(None)).expect("serializable record");
+        let fields = value.as_object_mut().expect("the record is an object");
+        fields.insert("outputs".to_owned(), json!(1));
+        let error =
+            serde_json::from_value::<StepRecord>(value).expect_err("an unknown key is refused");
+        assert!(error.to_string().contains("outputs"), "{error}");
     }
 
     #[test]
