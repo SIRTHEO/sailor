@@ -3,8 +3,8 @@
 //! `cargo build --release` builds from the working tree, not from a commit, so
 //! rebuilding puts everybody's uncommitted lines into service. This crate holds
 //! what can be got wrong silently — which targets exist, which commit produced
-//! the binary in service, and whether it can be replaced right now. Cloning,
-//! building, copying and restarting live in `main.rs`.
+//! the binary in service, and whether it can be replaced right now. The
+//! gestures — tree to HEAD, build, copy, restart — are the `release` command's.
 
 /// A resident service: some need a restart for the replacement to take effect.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
