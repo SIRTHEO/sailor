@@ -6,7 +6,6 @@
 //! is meant to move, had no idea trees existed at all.
 
 use crate::Form;
-use std::path::Path;
 use workspace::{create, list, remove, root, run_and_step_of, Worktree};
 
 pub const USAGE: &[Form] = &[
@@ -42,7 +41,7 @@ fn dispatch(args: &[String]) -> Result<String, String> {
     match args {
         [command] if command == "list" => {
             let trees = list(&repo)?;
-            Ok(render(&repo, &trees))
+            Ok(render(&trees))
         }
         [command, branch] if command == "create" => {
             let path = create(&repo, branch, None)?;
@@ -65,7 +64,7 @@ fn dispatch(args: &[String]) -> Result<String, String> {
 /// The window draws its own; this is the shape a terminal reads. A tree a
 /// step of a run kept is named with its run and step, and counted at the end:
 /// kept disk nothing says out loud is fault 89 in a new place.
-pub fn render(repo: &Path, trees: &[Worktree]) -> String {
+pub fn render(trees: &[Worktree]) -> String {
     if trees.is_empty() {
         return "no worktrees".to_owned();
     }
@@ -90,7 +89,7 @@ pub fn render(repo: &Path, trees: &[Worktree]) -> String {
             line.push_str("  ");
             line.push_str(&catalogue::say("cli.worktree.directory_gone", &[]));
         }
-        if let Some((run, step)) = run_and_step_of(repo, tree) {
+        if let Some((run, step)) = run_and_step_of(tree) {
             kept += 1;
             line.push_str("  ");
             line.push_str(&catalogue::say(
