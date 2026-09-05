@@ -56,6 +56,7 @@ fn seed(dir: &Path) {
                 output: Some(serde_json::json!({"ok": true})),
                 said: None,
                 failure_class: None,
+                refusal: None,
                 ended_at: 1010,
                 bytes_seen: None,
                 bytes_discarded: None,

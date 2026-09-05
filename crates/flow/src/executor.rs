@@ -1,4 +1,4 @@
-use crate::record::truncate_said;
+use crate::record::{truncate_said, Refusal};
 use crate::reference;
 use crate::{AttemptRelation, Graph, Outcome, SchemaError, Step, StepRecord, StepSpecies};
 use serde_json::Value;
@@ -52,6 +52,8 @@ pub const CURRENT_CAP: &str = "flow.cap_micros";
 pub struct ActionError {
     pub class: String,
     pub said: String,
+    /// Set when a declared check refused a value: which one, and what it saw.
+    pub refusal: Option<Refusal>,
 }
 
 impl ActionError {
@@ -59,7 +61,13 @@ impl ActionError {
         Self {
             class: class.into(),
             said: said.into(),
+            refusal: None,
         }
+    }
+
+    pub fn refused(mut self, refusal: Refusal) -> Self {
+        self.refusal = Some(refusal);
+        self
     }
 }
 
@@ -179,6 +187,7 @@ pub struct Completion {
     pub output: Option<Value>,
     pub said: Option<String>,
     pub failure_class: Option<String>,
+    pub refusal: Option<Refusal>,
     pub ended_at: i64,
     pub bytes_seen: Option<u64>,
     pub bytes_discarded: Option<u64>,
@@ -343,6 +352,7 @@ impl RecordStore for InMemoryRecordStore {
             || record.output.is_some()
             || record.said.is_some()
             || record.failure_class.is_some()
+            || record.refusal.is_some()
             || record.ended_at.is_some()
             || record.bytes_seen.is_some()
             || record.bytes_discarded.is_some()
@@ -422,6 +432,7 @@ impl RecordStore for InMemoryRecordStore {
         record.output = completion.output;
         record.said = completion.said;
         record.failure_class = completion.failure_class;
+        record.refusal = completion.refusal;
         record.ended_at = Some(completion.ended_at);
         record.bytes_seen = completion.bytes_seen;
         record.bytes_discarded = completion.bytes_discarded;
@@ -872,15 +883,7 @@ impl Executor for InProcessExecutor {
                             &step.id,
                             attempt,
                             epoch,
-                            Completion {
-                                outcome: Outcome::Broke,
-                                output: None,
-                                said: Some(error.said),
-                                failure_class: Some(error.class),
-                                ended_at: clock.now()?,
-                                bytes_seen: None,
-                                bytes_discarded: None,
-                            },
+                            broke(error, clock.now()?),
                         )?;
                         continue;
                     }
@@ -1068,65 +1071,25 @@ fn run_one(
     mine.insert(CURRENT_STEP.to_owned(), Value::String(step.id.clone()));
 
     let completion = match work.action {
-        None => Completion {
-            outcome: Outcome::Skipped,
-            output: None,
-            said: None,
-            failure_class: None,
-            ended_at: clock.now()?,
-            bytes_seen: None,
-            bytes_discarded: None,
-        },
+        None => closed(Outcome::Skipped, None, None, None, clock.now()?),
         Some(action) => match action.execute(&work.input, &mine) {
             Ok(ActionOutcome::Went(output)) => match step.output_schema.validate(&output) {
-                Ok(()) => Completion {
-                    outcome: Outcome::Went,
-                    output: Some(output),
-                    said: None,
-                    failure_class: None,
-                    ended_at: clock.now()?,
-                    bytes_seen: None,
-                    bytes_discarded: None,
-                },
-                Err(error) => Completion {
-                    outcome: Outcome::Broke,
-                    output: None,
-                    said: Some(error.to_string()),
-                    failure_class: Some("invalid_output".to_owned()),
-                    ended_at: clock.now()?,
-                    bytes_seen: None,
-                    bytes_discarded: None,
-                },
+                Ok(()) => closed(Outcome::Went, Some(output), None, None, clock.now()?),
+                Err(error) => broke(
+                    ActionError::new("invalid_output", error.to_string())
+                        .refused(error.refused_by("output_schema")),
+                    clock.now()?,
+                ),
             },
-            Ok(ActionOutcome::Waiting(reason)) => Completion {
-                outcome: Outcome::Waiting,
-                output: None,
-                said: Some(reason),
-                failure_class: None,
-                ended_at: clock.now()?,
-                bytes_seen: None,
-                bytes_discarded: None,
-            },
+            Ok(ActionOutcome::Waiting(reason)) => {
+                closed(Outcome::Waiting, None, Some(reason), None, clock.now()?)
+            }
             // No `failure_class`: not yet is not a failure, and a class here
             // would put an ordinary poll into every count of what went wrong.
-            Ok(ActionOutcome::NotYet(reason)) => Completion {
-                outcome: Outcome::NotYet,
-                output: None,
-                said: Some(reason),
-                failure_class: None,
-                ended_at: clock.now()?,
-                bytes_seen: None,
-                bytes_discarded: None,
-            },
-            Err(error) => Completion {
-                outcome: Outcome::Broke,
-                output: None,
-                said: Some(error.said),
-                failure_class: Some(error.class),
-                ended_at: clock.now()?,
-                bytes_seen: None,
-                bytes_discarded: None,
-            },
+            Ok(ActionOutcome::NotYet(reason)) => {
+                closed(Outcome::NotYet, None, Some(reason), None, clock.now()?)
+            }
+            Err(error) => broke(error, clock.now()?),
         },
     };
     store.close(run_id, &step.id, work.attempt, epoch, completion)
@@ -1244,6 +1207,27 @@ fn closed(
         output,
         said,
         failure_class: failure_class.map(str::to_owned),
+        refusal: None,
+        ended_at,
+        bytes_seen: None,
+        bytes_discarded: None,
+    }
+}
+
+/// A step broken by its action. When a declared check refused a value, the
+/// sentence a person reads opens with which check and what it saw, and the
+/// refusal itself travels beside the class so it can be counted.
+fn broke(error: ActionError, ended_at: i64) -> Completion {
+    let said = match &error.refusal {
+        Some(refusal) => format!("{}\n{}", refusal.explain(), error.said),
+        None => error.said,
+    };
+    Completion {
+        outcome: Outcome::Broke,
+        output: None,
+        said: Some(said),
+        failure_class: Some(error.class),
+        refusal: error.refusal,
         ended_at,
         bytes_seen: None,
         bytes_discarded: None,
@@ -1864,6 +1848,71 @@ mod tests {
         );
     }
 
+    /// A check that refuses leaves the row saying which check and what it saw:
+    /// as a record beside the class, for a count, and as the opening of the
+    /// sentence a person reads. The step's own output schema is one such check.
+    #[test]
+    fn a_refused_step_records_which_check_refused_and_opens_its_sentence_with_it() {
+        struct Refusing;
+
+        impl Action for Refusing {
+            fn execute(
+                &self,
+                _input: &Value,
+                _shared: &SharedState,
+            ) -> Result<ActionOutcome, ActionError> {
+                Err(ActionError::new("answer_off_shape", "off shape").refused(Refusal::new(
+                    "answer_shape",
+                    "$.verdict",
+                    crate::RefusalRule::NotAllowed,
+                    "\"remvoe\"",
+                )))
+            }
+        }
+
+        let mut off_shape = step("shaped", &[], "refusing", 1);
+        off_shape.output_schema = ValueSchema::Any;
+        let mut typed = step("typed", &[], "echo", 1);
+        typed.output_schema = ValueSchema::Number;
+        let graph = Graph::new(vec![off_shape, typed]).expect("valid graph");
+        let mut actions = ActionRegistry::default();
+        actions.register("refusing", Refusing);
+        actions.register("echo", Echo);
+        let mut roots = BTreeMap::new();
+        roots.insert("typed".to_owned(), json!("not a number"));
+        let request = ExecutionRequest {
+            run_id: "run".to_owned(),
+            root_inputs: roots,
+            gates: vec![],
+            shared: SharedState::new(),
+            spend_cap_micros: None,
+        };
+        let mut store = InMemoryRecordStore::default();
+        let _ = InProcessExecutor.execute(&graph, request, &mut store, &actions, &mut Tick::new(0));
+
+        let records = store.records("run").expect("records");
+        let shaped = records
+            .iter()
+            .find(|record| record.step_id == "shaped")
+            .expect("the shaped step ran");
+        let refusal = shaped.refusal.as_ref().expect("the refusal is recorded");
+        assert_eq!(refusal.check, "answer_shape");
+        assert_eq!(refusal.seen, "\"remvoe\"");
+        let said = shaped.said.as_deref().expect("the step said why");
+        assert!(said.starts_with(&refusal.explain()), "{said}");
+        assert!(said.ends_with("off shape"), "{said}");
+
+        let typed = records
+            .iter()
+            .find(|record| record.step_id == "typed")
+            .expect("the typed step ran");
+        assert_eq!(typed.failure_class.as_deref(), Some("invalid_output"));
+        let refusal = typed.refusal.as_ref().expect("the output schema is a check");
+        assert_eq!(refusal.check, "output_schema");
+        assert_eq!(refusal.rule, crate::RefusalRule::WrongType);
+        assert_eq!(refusal.seen, "\"not a number\"");
+    }
+
     /// A store that answers "stop" once a number of fronts have asked.
     struct HaltAfter {
         inner: InMemoryRecordStore,
@@ -2268,6 +2317,7 @@ mod tests {
                 output: Some(json!("late")),
                 said: None,
                 failure_class: None,
+                refusal: None,
                 ended_at: 4,
                 bytes_seen: None,
                 bytes_discarded: None,
