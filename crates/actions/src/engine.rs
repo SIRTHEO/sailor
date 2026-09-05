@@ -13,11 +13,11 @@ use crate::process::{
     StepSinks,
 };
 use crate::recipe::{PromptVia, ToolResolver};
-use crate::session::session_plan;
+use crate::session::{session_plan, SessionPlan};
 use crate::spec::{EngineSpec, A_TREE_OF_ITS_OWN, TREE};
 use crate::{budget, cooldown, Reading};
-use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies, ValueSchema};
-use ledger::Ledger;
+use flow::{Action, ActionError, ActionOutcome, Ran, SharedState, StepSpecies, ValueSchema};
+use ledger::{EngineIdentity, Ledger};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -240,10 +240,89 @@ fn engine_cannot_work(
     ))
 }
 
+/// The line one engine is about to be started with, and what the record of
+/// the call needs to know about how it was composed.
+struct Prepared {
+    invocation: EngineInvocation,
+    session: SessionPlan,
+    identity: EngineIdentity,
+    named: String,
+}
+
+/// Composes the line for one engine: which session it continues, where the
+/// prompt goes, under which equipment it starts. `set_aside` names the engines
+/// already put aside, so the echo can say this one is the fallback.
+fn compose(
+    candidate: &Candidate,
+    spec: &EngineSpec,
+    live: Option<&dyn LiveSink>,
+    set_aside: &[String],
+    record: Option<&Recording<'_>>,
+) -> Prepared {
+    let bin = &candidate.bin;
+    let named = match candidate.id.as_deref() {
+        Some(id) => format!("«{id}» (`{bin}`)"),
+        None => format!("`{bin}`"),
+    };
+    // Prima di montare la riga: questa chiamata continua qualcosa, o parte
+    // da zero? Non può fallire — al massimo riparte da zero dicendolo.
+    let session = session_plan(candidate, spec.session.as_ref(), spec.blind, record, live, &named);
+    let mut args = session
+        .args
+        .clone()
+        .unwrap_or_else(|| candidate.args.clone());
+    // Il testo della domanda va dove quel motore lo vuole: sull'ingresso per
+    // chi legge da lì, in coda agli argomenti per chi lo vuole scritto sulla
+    // riga. È l'unica differenza fra due motori che il flusso non deve più
+    // conoscere.
+    let stdin = match candidate.prompt {
+        PromptVia::Stdin => spec.stdin.clone(),
+        PromptVia::LastArg => {
+            if let Some(text) = &spec.stdin {
+                args.push(text.clone());
+            }
+            None
+        }
+    };
+    if let (Some(live), Some(id)) = (live, candidate.id.as_deref()) {
+        if !set_aside.is_empty() {
+            live.chunk(
+                Pipe::Stderr,
+                format!("[sailor] moving on to engine «{id}»\n").as_bytes(),
+            );
+        }
+        if let Some(why) = &candidate.why {
+            live.chunk(Pipe::Stderr, format!("[sailor] preferring {why}\n").as_bytes());
+        }
+    }
+    // **LA DOTAZIONE DI SAILOR, NON QUELLA DEL TERMINALE.** È il guasto 18:
+    // fino al 01/09/2026 questa riga era `env: spec.env.clone()`, e un
+    // motore lanciato da un passo di flusso ereditava l'ambiente di chi
+    // aveva aperto il terminale — cioè leggeva la casa del vicino, mentre
+    // `sailor run` lo stesso motore lo portava nella propria. Il profilo sta
+    // **sotto** `spec.env`: chi scrive una variabile nel passo vince.
+    let equipment = current_equipment_for(bin, &spec.env);
+    Prepared {
+        invocation: EngineInvocation {
+            bin: bin.clone(),
+            args,
+            env: equipment.env,
+            workdir: spec.workdir.clone(),
+            stdin: stdin.map(String::into_bytes),
+            timeout: Duration::from_secs(spec.timeout_secs),
+        },
+        session,
+        identity: equipment.identity,
+        named,
+    }
+}
+
 impl ExternalEngineAction {
-    /// Interroga un motore. `set_aside` sono quelli già scartati, e finisce nei
-    /// messaggi d'errore: chi legge un passo rosso deve vedere l'intera catena,
-    /// non solo l'ultimo anello.
+    /// Asks one engine: composes its line, says it on the step's echo, starts
+    /// it and judges what came back. `set_aside` are the engines already put
+    /// aside, and it reaches the error messages: whoever reads a red step must
+    /// see the whole chain, not only its last link. The line comes back with
+    /// the answer, and on every error raised after the engine was started.
     #[allow(clippy::too_many_arguments)]
     fn ask(
         &self,
@@ -255,63 +334,54 @@ impl ExternalEngineAction {
         solo: bool,
         record: Option<&Recording<'_>>,
         tried_before: &[String],
-    ) -> Result<Asked, ActionError> {
-        let bin = &candidate.bin;
-        let seconds = spec.timeout_secs;
-        let named = match candidate.id.as_deref() {
-            Some(id) => format!("«{id}» (`{bin}`)"),
-            None => format!("`{bin}`"),
-        };
-        // Prima di montare la riga: questa chiamata continua qualcosa, o parte
-        // da zero? Non può fallire — al massimo riparte da zero dicendolo.
-        let session = session_plan(candidate, spec.session.as_ref(), spec.blind, record, live, &named);
-        let mut args = session
-            .args
-            .clone()
-            .unwrap_or_else(|| candidate.args.clone());
-        // Il testo della domanda va dove quel motore lo vuole: sull'ingresso per
-        // chi legge da lì, in coda agli argomenti per chi lo vuole scritto sulla
-        // riga. È l'unica differenza fra due motori che il flusso non deve più
-        // conoscere.
-        let stdin = match candidate.prompt {
-            PromptVia::Stdin => spec.stdin.clone(),
-            PromptVia::LastArg => {
-                if let Some(text) = &spec.stdin {
-                    args.push(text.clone());
-                }
-                None
-            }
-        };
-        if let (Some(live), Some(id)) = (live, candidate.id.as_deref()) {
-            if !set_aside.is_empty() {
-                live.chunk(
-                    Pipe::Stderr,
-                    format!("[sailor] moving on to engine «{id}»\n").as_bytes(),
-                );
-            }
-            if let Some(why) = &candidate.why {
-                live.chunk(Pipe::Stderr, format!("[sailor] preferring {why}\n").as_bytes());
-            }
+    ) -> Result<(Asked, Ran), ActionError> {
+        let prepared = compose(candidate, spec, live, set_aside, record);
+        let ran = prepared.invocation.ran();
+        if let Some(live) = live {
+            live.chunk(Pipe::Stderr, format!("[sailor] {}\n", ran.announce()).as_bytes());
         }
-        // **LA DOTAZIONE DI SAILOR, NON QUELLA DEL TERMINALE.** È il guasto 18:
-        // fino al 01/09/2026 questa riga era `env: spec.env.clone()`, e un
-        // motore lanciato da un passo di flusso ereditava l'ambiente di chi
-        // aveva aperto il terminale — cioè leggeva la casa del vicino, mentre
-        // `sailor run` lo stesso motore lo portava nella propria. Il profilo sta
-        // **sotto** `spec.env`: chi scrive una variabile nel passo vince.
-        let equipment = current_equipment_for(bin, &spec.env);
-        let invocation = EngineInvocation {
-            bin: bin.clone(),
-            args,
-            env: equipment.env,
-            workdir: spec.workdir.clone(),
-            stdin: stdin.map(String::into_bytes),
-            timeout: Duration::from_secs(seconds),
-        };
+        let started = self.start(
+            candidate,
+            spec,
+            shape,
+            live,
+            set_aside,
+            solo,
+            record,
+            tried_before,
+            &prepared,
+        );
+        match started {
+            Ok(asked) => Ok((asked, ran)),
+            Err(error) => Err(error.having_run(ran)),
+        }
+    }
+
+    /// Starts the composed line and judges what came back.
+    #[allow(clippy::too_many_arguments)]
+    fn start(
+        &self,
+        candidate: &Candidate,
+        spec: &EngineSpec,
+        shape: Option<&ValueSchema>,
+        live: Option<&dyn LiveSink>,
+        set_aside: &[String],
+        solo: bool,
+        record: Option<&Recording<'_>>,
+        tried_before: &[String],
+        prepared: &Prepared,
+    ) -> Result<Asked, ActionError> {
+        let Prepared {
+            invocation,
+            session,
+            identity,
+            named,
+        } = prepared;
+        let seconds = spec.timeout_secs;
         // Gli istanti si prendono stretti attorno alla chiamata: è la durata di
         // *questa* invocazione, non del passo che la contiene.
         let started_at = now_secs();
-        let result = invoke_external_engine_watched(&invocation, live);
+        let result = invoke_external_engine_watched(invocation, live);
         let ended_at = now_secs();
         // Il consumo si legge da ciò che il motore ha detto, secondo quanto il
         // suo descrittore dichiara. Chi non dichiara niente lascia tutto
@@ -338,7 +408,7 @@ impl ExternalEngineAction {
                         started_at,
                         ended_at,
                         session_id: session.session_id(said),
-                        identity: equipment.identity.clone(),
+                        identity: identity.clone(),
                         work_kind: spec.kind.clone(),
                     },
                 );
@@ -389,7 +459,7 @@ impl ExternalEngineAction {
                 // fallimento di questo motore lo vuole come dato, e non vuole che
                 // qualcun altro ci riprovi al posto suo.
                 if cannot_work && !tolerates(&spec.accept, "exit_error") {
-                    return engine_cannot_work(&named, solo, &stdout, &stderr);
+                    return engine_cannot_work(named, solo, &stdout, &stderr);
                 }
                 // **L'USCITA DEL PASSO NON CAMBIA PERCHÉ SI È MISURATO.** Se il
                 // descrittore ha chiesto un involucro per farsi dire i token,
@@ -448,7 +518,7 @@ impl ExternalEngineAction {
                         // La conseguenza è **la stessa** dell'uscita zero, e sta
                         // in un posto solo: due copie di questo blocco erano già
                         // divergenti appena nate.
-                        return engine_cannot_work(&named, solo, &stdout, &stderr);
+                        return engine_cannot_work(named, solo, &stdout, &stderr);
                     }
                     let chain = if set_aside.is_empty() {
                         String::new()
@@ -582,6 +652,17 @@ impl Action for ExternalEngineAction {
     }
 
     fn execute(&self, input: &Value, shared: &SharedState) -> Result<ActionOutcome, ActionError> {
+        self.execute_and_report(input, shared)
+            .map(|(outcome, _)| outcome)
+    }
+
+    /// The line of the engine that answered travels with the answer; with a
+    /// chain, the line of the last engine tried travels with the error.
+    fn execute_and_report(
+        &self,
+        input: &Value,
+        shared: &SharedState,
+    ) -> Result<(ActionOutcome, Option<Ran>), ActionError> {
         let live = sink_for_step(&self.watcher, shared);
         // Dove annotare la spesa. Si costruisce qui perché `shared` più avanti
         // non c'è più, ed è `None` — cioè non si annota niente — se manca il
@@ -637,8 +718,9 @@ impl Action for ExternalEngineAction {
         // scritta nella riga: `set_aside` porta frasi per una persona, questo
         // porta nomi che una somma può raggruppare.
         let mut tried_before: Vec<String> = Vec::new();
+        let mut last_ran = None;
         for candidate in &candidates {
-            match self.ask(
+            let (asked, ran) = self.ask(
                 candidate,
                 &spec,
                 shape,
@@ -647,9 +729,11 @@ impl Action for ExternalEngineAction {
                 solo,
                 record.as_ref(),
                 &tried_before,
-            )? {
-                Asked::Answered(outcome) => return Ok(outcome),
+            )?;
+            match asked {
+                Asked::Answered(outcome) => return Ok((outcome, Some(ran))),
                 Asked::CannotWork(why) => {
+                    last_ran = Some(ran);
                     set_aside.push(why);
                     if let Some(id) = &candidate.id {
                         tried_before.push(id.clone());
@@ -657,13 +741,17 @@ impl Action for ExternalEngineAction {
                 }
             }
         }
-        Err(ActionError::new(
+        let none_could = ActionError::new(
             "no_usable_engine",
             format!(
                 "none of the engines the step asks for could work. {}",
                 each_one_why(&set_aside)
             ),
-        ))
+        );
+        Err(match last_ran {
+            Some(ran) => none_could.having_run(ran),
+            None => none_could,
+        })
     }
 
     /// Non dichiara di potersi rifare, e quindi finisce a una persona.
@@ -1162,4 +1250,78 @@ mod tests {
     // `crates/flow/tests/a_reference_reaches_every_action.rs`. Tenerla anche qui
     // vorrebbe dire due prove della stessa regola in due punti — e quella qui
     // sarebbe verde chiamando la risoluzione a mano, cioè misurando la prova.
+
+    /// The record of an engine step carries the binary and the arguments as
+    /// started — with the answer, and with the error when the engine broke.
+    #[test]
+    fn an_engine_step_reports_the_binary_and_the_arguments_it_started() {
+        let answered = json!({"bin": "sh", "args": ["-c", "echo ok"], "timeout_secs": 5});
+        let (outcome, ran) = ExternalEngineAction::new()
+            .execute_and_report(&with_references_resolved(answered), &SharedState::new())
+            .expect("the engine answers");
+        assert!(matches!(outcome, ActionOutcome::Went(_)));
+        assert_eq!(ran, Some(Ran::new("sh", ["-c", "echo ok"])));
+
+        let broke = json!({"bin": "sh", "args": ["-c", "exit 3"], "timeout_secs": 5});
+        let error = ExternalEngineAction::new()
+            .execute_and_report(&with_references_resolved(broke), &SharedState::new())
+            .expect_err("an engine that exits red breaks its step");
+        assert_eq!(error.class, "engine_exit_error");
+        assert_eq!(
+            error.ran.as_deref(),
+            Some(&Ran::new("sh", ["-c", "exit 3"])),
+            "a broken engine step forgot the line it ran"
+        );
+    }
+
+    /// Whoever watches the step reads the engine's line before the engine has
+    /// spoken, on the step's own echo.
+    #[test]
+    fn the_engine_step_says_what_it_is_about_to_run_before_running_it() {
+        struct Recorder(std::sync::Mutex<Vec<(Pipe, Vec<u8>)>>);
+
+        impl LiveSink for Recorder {
+            fn chunk(&self, pipe: Pipe, bytes: &[u8]) {
+                self.0
+                    .lock()
+                    .expect("nobody panics here")
+                    .push((pipe, bytes.to_vec()));
+            }
+        }
+
+        struct OneSink(Arc<Recorder>);
+
+        impl StepSinks for OneSink {
+            fn sink_for(&self, _step: &str) -> Arc<dyn LiveSink> {
+                self.0.clone()
+            }
+        }
+
+        let recorder = Arc::new(Recorder(std::sync::Mutex::new(Vec::new())));
+        let action = ExternalEngineAction::new()
+            .watched_by(Some(Arc::new(OneSink(recorder.clone()))));
+        let mut shared = SharedState::new();
+        shared.insert(flow::CURRENT_STEP.to_owned(), json!("ask"));
+        action
+            .execute(
+                &json!({"bin": "sh", "args": ["-c", "echo ok"], "timeout_secs": 5}),
+                &shared,
+            )
+            .expect("the engine answers");
+
+        let seen = recorder.0.lock().expect("nobody panics here").clone();
+        let expected = format!("[sailor] {}\n", Ran::new("sh", ["-c", "echo ok"]).announce());
+        let announced = seen
+            .iter()
+            .position(|(pipe, bytes)| *pipe == Pipe::Stderr && bytes == expected.as_bytes());
+        let answered = seen
+            .iter()
+            .position(|(pipe, bytes)| *pipe == Pipe::Stdout && bytes == b"ok\n");
+        assert!(announced.is_some(), "the line was never said: {seen:?}");
+        assert!(answered.is_some(), "the engine's own text did not arrive: {seen:?}");
+        assert!(
+            announced < answered,
+            "the line came after the engine had spoken: {seen:?}"
+        );
+    }
 }
