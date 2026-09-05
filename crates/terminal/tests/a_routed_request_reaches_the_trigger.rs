@@ -82,19 +82,12 @@ fn a_routed_request_becomes_the_signal_of_a_manual_trigger() {
 /// alla prima corsa vera invece che qui.
 #[test]
 fn the_flow_the_shipped_rules_name_starts_with_a_manual_trigger() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(std::path::Path::parent)
-        .expect("il crate sta due livelli sotto la radice")
-        .to_path_buf();
 
     let catalog = Catalog::load(&[terminal::Source::Builtin]);
     assert!(!catalog.live().is_empty());
     for loaded in catalog.live() {
-        // **IL FLUSSO SI CERCA DOVE VIAGGIA LA REGOLA CHE LO NOMINA**, cioè
-        // dentro il binario. Fino all'01/09/2026 lo si leggeva da `flows/` del
-        // repo: qui c'era, perché era un flusso nostro, e la prova era verde
-        // mentre su qualunque altra macchina la regola puntava al nulla.
+        // The flow is looked for where the rule that names it travels: inside
+        // the binary, not in this repository's `flows/`.
         let text = flow::system::FLOWS
             .iter()
             .find(|(name, _)| *name == loaded.route.flow)
