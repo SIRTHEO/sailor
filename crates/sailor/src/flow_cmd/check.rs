@@ -10,6 +10,7 @@ use ui::gather::FlowSource;
 use super::cap_and_schedule::WHAT_THE_CAP_DOES_NOT_PROMISE_KEY;
 use super::cost::{in_units, models_seen_by, what_is_priced};
 use super::engines::{engine_lines_into, login_states_into};
+use super::extensions::extensions_of_this_machine_into;
 use super::hazards::{
     blind_steps_asking_for_a_session, handed_without_choices, hardcoded_paths,
     outside_text_in_command, pointers_that_cannot_match, undelimited_commits, HardcodedPath,
@@ -47,6 +48,9 @@ pub(super) fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) 
         models_seen_by(&flow.id).as_ref(),
         flow.spend_cap_micros,
     ));
+    // The inventory is this machine's, so it is read here for the same reason
+    // as the price list: a test feeds `check_report` a scratch one instead.
+    extensions_of_this_machine_into(&mut report, &flow);
     // **UN RINVIO DENTRO UN CAMPO CHE VIENE ESEGUITO SI FERMA QUI.** Prima
     // dell'esecuzione, perché dopo il rinvio è già diventato testo di shell e
     // non si distingue più da ciò che il flusso aveva scritto.

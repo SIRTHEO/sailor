@@ -19,6 +19,7 @@ mod cap_and_schedule;
 mod check;
 mod cost;
 mod engines;
+mod extensions;
 mod hazards;
 mod relocate;
 mod run_and_resume;
