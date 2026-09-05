@@ -17,6 +17,9 @@ rust-version.workspace = true
 
 [dependencies]
 actions = { path = "../actions" }
+# Where a sentence for a person is written, in both languages: the reason a run
+# stopped is shown by the window and by the command line alike.
+catalogue = { path = "../catalogue" }
 flow = { path = "../flow" }
 faults = { path = "../faults" }
 ledger = { path = "../ledger" }

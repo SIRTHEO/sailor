@@ -7,7 +7,7 @@
 
 use std::path::Path;
 
-use flow::{Decision, Execution, FlowFile, SpendStop};
+use flow::{Decision, Execution, FlowFile, SpendStop, StopReason};
 use ledger::{Ledger, RunRecord};
 
 /// How a run ended, and whether the process that launched it may exit zero.
@@ -62,23 +62,49 @@ pub fn stopped_by_cap(execution: &Execution) -> Option<String> {
     }
 }
 
-/// Why the run stopped, if somebody asked it to: the steps it did not start.
+/// Why the run stopped, if it stopped itself: the reason and the steps it did
+/// not start.
 pub fn halted_by_hand(execution: &Execution) -> Option<String> {
     match execution.decisions.last() {
-        Some(Decision::Halted(not_started)) => Some(why_it_halted(not_started)),
+        Some(Decision::Halted {
+            reason,
+            not_started,
+        }) => Some(why_it_halted(*reason, not_started)),
         _ => None,
     }
 }
 
-/// The sentence for a stop asked by hand, composed once for every caller.
-pub fn why_it_halted(not_started: &[String]) -> String {
+/// Which of the four reasons closed the run, if one of them did.
+pub fn how_it_stopped(execution: &Execution) -> Option<StopReason> {
+    match execution.decisions.last() {
+        Some(Decision::Halted { reason, .. }) => Some(*reason),
+        _ => None,
+    }
+}
+
+/// The sentence for a run that stopped itself, composed once for every caller.
+pub fn why_it_halted(reason: StopReason, not_started: &[String]) -> String {
     format!(
-        "stopped by hand before the next step. Steps not started: {}",
+        "{} Steps not started: {}",
+        say_the_reason(reason),
         if not_started.is_empty() {
             "none".to_owned()
         } else {
             not_started.join(", ")
         }
+    )
+}
+
+/// What one of the four reasons says to a person.
+pub fn say_the_reason(reason: StopReason) -> String {
+    catalogue::say(
+        match reason {
+            StopReason::Promise => "run.stopped.promise",
+            StopReason::Turns => "run.stopped.turns",
+            StopReason::ByHand => "run.stopped.by_hand",
+            StopReason::Wall => "run.stopped.wall",
+        },
+        &[],
     )
 }
 
@@ -104,6 +130,10 @@ pub struct FlowRun<'a> {
     /// Who started it: the window's button, the command line, a schedule. It
     /// tells otherwise identical runs apart.
     pub started_by: &'a str,
+    /// Which of the four reasons closed it short, when one of them did. The
+    /// status alone says `stopped` for all four, and one word for four endings
+    /// cannot be counted.
+    pub stop_reason: Option<StopReason>,
 }
 
 /// Records — or updates — a run's header.
@@ -162,6 +192,9 @@ fn write_run(
     let spent = ledger
         .spent_in_run(run.run_id)
         .map_err(|error| format!("cannot read the spend of run {}: {error}", run.run_id))?;
+    let worktree = where_the_process_stands();
+    let reason = run.stop_reason;
+    let ended_at = run.ended_at;
     ledger
         .record_run(&RunRecord {
             run_id: run.run_id.to_owned(),
@@ -173,10 +206,43 @@ fn write_run(
             total_cost_micros: spent.micros,
             error: run.error,
             started_at: run.started_at,
-            ended_at: run.ended_at,
-            worktree: where_the_process_stands(),
+            ended_at,
+            worktree: worktree.clone(),
+            stop_reason: reason.map(|reason| reason.as_text().to_owned()),
         })
-        .map_err(|error| format!("cannot record run {}: {error}", run.run_id))
+        .map_err(|error| format!("cannot record run {}: {error}", run.run_id))?;
+    // The line is left here rather than beside each launcher, so the window and
+    // the command line leave the same one. Only a closed run has a line, and
+    // only a flow that says it looks after itself.
+    if let Some(closed_at) = ended_at.filter(|_| flow.self_care) {
+        let said = reason.map(say_the_reason);
+        ledger
+            .write_self_care_line(
+                run.run_id,
+                worktree.as_deref().and_then(head_of_the_tree),
+                said.as_deref(),
+                run.started_by,
+                closed_at,
+            )
+            .map_err(|error| {
+                format!("cannot write the self-care line of run {}: {error}", run.run_id)
+            })?;
+    }
+    Ok(())
+}
+
+/// The commit a tree stands on, or nothing where there is no tree to ask and no
+/// answer to invent.
+fn head_of_the_tree(worktree: &str) -> Option<String> {
+    let seen = std::process::Command::new("git")
+        .args(["-C", worktree, "rev-parse", "HEAD"])
+        .output()
+        .ok()?;
+    if !seen.status.success() {
+        return None;
+    }
+    let commit = String::from_utf8(seen.stdout).ok()?.trim().to_owned();
+    (!commit.is_empty()).then_some(commit)
 }
 
 #[cfg(test)]

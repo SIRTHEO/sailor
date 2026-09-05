@@ -214,6 +214,7 @@ fn step(id: &str, deps: &[&str], action: &str, with: Option<Value>) -> Step {
         ask_again_after_secs: None,
         retry_after_secs: None,
         phase: None,
+        stops_when: None,
     }
 }
 
@@ -230,6 +231,7 @@ fn run(bench: &Arc<Bench>, graph: Graph, root_inputs: Value) -> Execution {
                 gates: Vec::new(),
                 shared: SharedState::new(),
                 spend_cap_micros: None,
+                stops: flow::RunStops::default(),
             },
             bench.store.as_ref(),
             &registry,

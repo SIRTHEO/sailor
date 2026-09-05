@@ -35,6 +35,7 @@ fn collecting_step(store: &str) -> Step {
         ask_again_after_secs: None,
         retry_after_secs: None,
         phase: None,
+        stops_when: None,
     }
 }
 
@@ -45,6 +46,7 @@ fn request() -> ExecutionRequest {
         gates: Vec::new(),
         shared: SharedState::new(),
         spend_cap_micros: None,
+        stops: flow::RunStops::default(),
     }
 }
 

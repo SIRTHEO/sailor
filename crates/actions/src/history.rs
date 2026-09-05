@@ -112,6 +112,17 @@ enum Ask {
     /// waiting for somebody. The two are kept apart because the repair is not
     /// the same — one is resumed, the other is taken up by a person.
     OpenRuns {},
+    /// What the self-care runs of this flow left behind, one line each.
+    ///
+    /// **THE ONE QUESTION CARRYING A FLOW'S OWN WORD**, and it is the declared
+    /// widening: a line was written to the store on purpose, as a `store_write`
+    /// is, not lifted out of a step's output by this node.
+    SelfCareLines {
+        #[serde(default)]
+        flow: Option<String>,
+        #[serde(default)]
+        within_last_runs: Option<u32>,
+    },
     /// Quanto ci mette di solito questo passo.
     StepDuration {
         step_id: String,
@@ -135,12 +146,14 @@ fn allowed_fields(ask: &str) -> Option<&'static [&'static str]> {
         "failure_classes" => Some(&["ask", "flow", "within_last_runs"]),
         "last_run" => Some(&["ask", "flow", "include_said"]),
         "open_runs" => Some(&["ask"]),
+        "self_care_lines" => Some(&["ask", "flow", "within_last_runs"]),
         "step_duration" => Some(&["ask", "step_id", "flow", "within_last_runs"]),
         _ => None,
     }
 }
 
-const KNOWN_ASKS: &str = "step_failures, failure_classes, last_run, open_runs, step_duration";
+const KNOWN_ASKS: &str =
+    "step_failures, failure_classes, last_run, open_runs, self_care_lines, step_duration";
 
 fn parse_ask(input: &Value) -> Result<Ask, ActionError> {
     let object = input.as_object().ok_or_else(|| {
@@ -195,6 +208,9 @@ fn declared_window(ask: &Ask) -> Option<u32> {
         }
         | Ask::StepDuration {
             within_last_runs, ..
+        }
+        | Ask::SelfCareLines {
+            within_last_runs, ..
         } => *within_last_runs,
         // `last_run` looks at one run by definition, and what is still open is
         // open now: neither has a window to declare.
@@ -240,6 +256,7 @@ fn ask_name(ask: &Ask) -> &'static str {
         Ask::FailureClasses { .. } => "failure_classes",
         Ask::LastRun { .. } => "last_run",
         Ask::OpenRuns {} => "open_runs",
+        Ask::SelfCareLines { .. } => "self_care_lines",
         Ask::StepDuration { .. } => "step_duration",
     }
 }
@@ -459,6 +476,21 @@ impl HistoryAskAction {
                 }
                 Ok((1, answer))
             }
+            Ask::SelfCareLines {
+                flow,
+                within_last_runs,
+            } => {
+                let limit = window(*within_last_runs)?;
+                let flow = flow.as_deref();
+                let lines = ledger.self_care_lines(flow, limit).map_err(unreadable)?;
+                let considered = ledger.runs_in_window(flow, limit).map_err(unreadable)?;
+                Ok((
+                    considered,
+                    json!({
+                        "lines": lines,
+                    }),
+                ))
+            }
             Ask::StepDuration {
                 step_id,
                 flow,
@@ -577,6 +609,7 @@ mod tests {
                 started_at,
                 ended_at,
                 worktree: None,
+                stop_reason: None,
             })
             .expect("registrare la corsa");
     }
@@ -721,6 +754,7 @@ mod tests {
                 started_at,
                 ended_at: None,
                 worktree: None,
+                stop_reason: None,
             })
             .expect("registrare la corsa in attesa");
     }

@@ -142,6 +142,7 @@ fn step(id: &str, deps: Vec<String>) -> Step {
         ask_again_after_secs: None,
         retry_after_secs: None,
         phase: None,
+        stops_when: None,
         with: None,
     }
 }
@@ -197,6 +198,7 @@ fn run_on_a_real_ledger(label: &str, cap: Option<i64>, price_micros: i64) -> How
                 gates: vec![],
                 shared: SharedState::new(),
                 spend_cap_micros: cap,
+                stops: flow::RunStops::default(),
             },
             &ledger,
             &actions,

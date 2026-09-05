@@ -393,6 +393,7 @@ mod tests {
             started_at,
             ended_at,
             worktree: None,
+            stop_reason: None,
         }
     }
 
@@ -586,6 +587,7 @@ mod what_is_not_known {
             started_at: 0,
             ended_at: Some(10),
             worktree: None,
+            stop_reason: None,
         }
     }
 
