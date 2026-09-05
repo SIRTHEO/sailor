@@ -1097,7 +1097,7 @@ fn open_terminal(request: &Request<'_>) -> Result<Report, String> {
         return Ok(Report::spoken(welcome(
             &arrival,
             Some(store),
-            &still_open(),
+            &still_open(&started(request, &arrival)),
             &announced,
         )));
     }
@@ -1185,12 +1185,66 @@ struct StillOpen {
     ask_again: Vec<ledger::WaitingRun>,
     remembered: Vec<actions::memory::Memory>,
     page: Option<PageOnDisk>,
+    page_unseen: Option<PageUnseen>,
 }
 
 /// The page of memories as it sits on disk: its address, and how it opens.
 struct PageOnDisk {
     path: PathBuf,
     opening: String,
+}
+
+/// The files this terminal's engine reads at its start, none of which names
+/// the page: the memories are on disk and this engine will not see them.
+struct PageUnseen {
+    engine: String,
+    files: Vec<PathBuf>,
+}
+
+/// The engine a terminal starts, and where: what decides which files it reads.
+struct Started<'a> {
+    engine: Option<&'a profiles::KnownCli>,
+    profile_home: Option<PathBuf>,
+    worktree: PathBuf,
+    home: Option<PathBuf>,
+}
+
+/// The engine the hook named, under the profile in force for it.
+fn started(request: &Request<'_>, arrival: &Arrival) -> Started<'static> {
+    let engine = request
+        .options
+        .get("cli")
+        .and_then(|id| profiles::find_cli(id).ok());
+    let profile_home = engine.and_then(|engine| {
+        let store = profiles::store_io::load_store().ok()?;
+        crate::memory_cmd::active_profile(&store, &engine.id).map(|profile| profile.home_dir.clone())
+    });
+    Started {
+        engine,
+        profile_home,
+        worktree: PathBuf::from(&arrival.anchor.worktree),
+        home: profiles::store_io::home_dir().ok(),
+    }
+}
+
+/// **ONLY WHERE THERE IS A PAGE TO SEE**: with no page on disk there is nothing
+/// to miss, and an engine nobody looked into is not called blind.
+fn page_unseen(started: &Started<'_>, page: Option<&PageOnDisk>) -> Option<PageUnseen> {
+    let (engine, page, home) = (started.engine?, page?, started.home.as_deref()?);
+    let sight = crate::memory_cmd::Sight::of(
+        engine,
+        &started.worktree,
+        home,
+        started.profile_home.as_deref(),
+        &page.path,
+    );
+    if sight.reads.is_empty() || sight.names_the_page.is_some() {
+        return None;
+    }
+    Some(PageUnseen {
+        engine: engine.display_name.clone(),
+        files: sight.reads,
+    })
 }
 
 /// How many of the page's lines the greeting repeats.
@@ -1206,16 +1260,22 @@ fn page_on_disk(home: Option<&std::path::Path>) -> Option<PageOnDisk> {
 }
 
 /// The two lists and the memories, from a ledger already open.
-fn still_open_in(deposit: &ledger::Ledger, home: Option<&std::path::Path>) -> Result<StillOpen, String> {
+fn still_open_in(
+    deposit: &ledger::Ledger,
+    home: Option<&std::path::Path>,
+    started: &Started<'_>,
+) -> Result<StillOpen, String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or_default();
+    let page = page_on_disk(home);
     Ok(StillOpen {
         waiting: deposit.waiting_runs().map_err(|error| error.to_string())?,
         ask_again: deposit.runs_to_ask_again().map_err(|error| error.to_string())?,
         remembered: actions::memory::remembered(deposit, now).map_err(|error| error.to_string())?,
-        page: page_on_disk(home),
+        page_unseen: page_unseen(started, page.as_ref()),
+        page,
     })
 }
 
@@ -1234,9 +1294,9 @@ fn deposit() -> Result<Option<ledger::Ledger>, String> {
 }
 
 /// The same, from this machine's home.
-fn still_open() -> Result<Option<StillOpen>, String> {
+fn still_open(started: &Started<'_>) -> Result<Option<StillOpen>, String> {
     match deposit()? {
-        Some(deposit) => still_open_in(&deposit, ledger::sailor_home().as_deref()).map(Some),
+        Some(deposit) => still_open_in(&deposit, ledger::sailor_home().as_deref(), started).map(Some),
         None => Ok(None),
     }
 }
@@ -1363,6 +1423,13 @@ fn what_is_still_open(found: &StillOpen) -> Option<String> {
                 ("path", &page.path.display().to_string()),
                 ("opening", &page.opening),
             ],
+        ));
+    }
+    if let Some(unseen) = &found.page_unseen {
+        let files: Vec<String> = unseen.files.iter().map(|file| file.display().to_string()).collect();
+        lines.push(catalogue::say(
+            "cli.session.page_unseen",
+            &[("engine", &unseen.engine), ("files", &files.join(", "))],
         ));
     }
     (!lines.is_empty()).then(|| lines.join("\n"))
@@ -2479,6 +2546,7 @@ mod tests {
             ask_again: Vec::new(),
             remembered: vec![memory("the trunk", 3), memory("the home", 2)],
             page: None,
+            page_unseen: None,
         };
         let said = what_is_still_open(&found).expect("something to say");
         assert!(said.contains("«the trunk»") && said.contains("«the home»"), "{said}");
@@ -2503,12 +2571,14 @@ mod tests {
             ask_again: Vec::new(),
             remembered: Vec::new(),
             page: None,
+            page_unseen: None,
         });
         let said = what_is_still_open(&StillOpen {
             waiting: Vec::new(),
             ask_again: Vec::new(),
             remembered: Vec::new(),
             page: Some(present),
+            page_unseen: None,
         })
         .expect("something to say");
 
@@ -2517,6 +2587,70 @@ mod tests {
         assert!(said.contains(&path.display().to_string()), "the path is not named: {said}");
         assert!(said.contains("**three**") && !said.contains("**four**"), "the opening is not the first three lines: {said}");
         assert!(page_on_disk(None).is_none(), "a page with no home to look in");
+    }
+
+    /// **THE GREETING NAMES THE FILE THE ENGINE READS WHEN IT DOES NOT NAME
+    /// THE PAGE**, and only then: with the page named there, with no page on
+    /// disk, or for an engine nobody looked into, the sentence stays out.
+    #[test]
+    fn the_greeting_names_the_file_an_engine_reads_that_does_not_name_the_page() {
+        let scratch = Scratch::new("pagina-non-vista");
+        let home = scratch.directory.join("home");
+        let worktree = scratch.directory.join("tree");
+        let someone = scratch.directory.join("someone");
+        std::fs::create_dir_all(&worktree).expect("the tree");
+        let page_path = actions::memory::page_path(&home);
+        std::fs::create_dir_all(page_path.parent().expect("a parent")).expect("the state dir");
+        std::fs::write(&page_path, "- **one** (project): 1").expect("a page");
+        let page = page_on_disk(Some(&home)).expect("a page on disk");
+        let table = profiles::parse_command_lines(
+            r#"{"command_lines": [
+                 {"id": "un-motore", "executable": "unmotore", "reads_instructions_from": ["RULES.md"]},
+                 {"id": "un-altro", "executable": "unaltro"}
+               ]}"#,
+        )
+        .expect("it parses");
+        fn started_in<'a>(
+            engine: Option<&'a profiles::KnownCli>,
+            worktree: &std::path::Path,
+            home: &std::path::Path,
+        ) -> Started<'a> {
+            Started {
+                engine,
+                profile_home: None,
+                worktree: worktree.to_path_buf(),
+                home: Some(home.to_path_buf()),
+            }
+        }
+        let rules = worktree.join("RULES.md");
+
+        let unseen = page_unseen(&started_in(Some(&table[0]), &worktree, &someone), Some(&page)).expect("an engine that does not see the page");
+        assert_eq!(unseen.files, vec![rules.clone()]);
+        let said = what_is_still_open(&StillOpen {
+            waiting: Vec::new(),
+            ask_again: Vec::new(),
+            remembered: Vec::new(),
+            page: None,
+            page_unseen: Some(unseen),
+        })
+        .expect("something to say");
+        assert!(said.contains(&rules.display().to_string()), "the file is not named: {said}");
+
+        std::fs::write(&rules, format!("read {} first", page_path.display())).expect("rules");
+        assert!(
+            page_unseen(&started_in(Some(&table[0]), &worktree, &someone), Some(&page)).is_none(),
+            "the file names the page, and the engine is still called blind"
+        );
+        assert!(
+            page_unseen(&started_in(Some(&table[1]), &worktree, &someone), Some(&page)).is_none(),
+            "an engine nobody looked into is called blind"
+        );
+        assert!(page_unseen(&started_in(None, &worktree, &someone), Some(&page)).is_none(), "a terminal that named no engine");
+        std::fs::remove_file(&rules).expect("removed");
+        assert!(
+            page_unseen(&started_in(Some(&table[0]), &worktree, &someone), None).is_none(),
+            "with no page on disk there is nothing to miss"
+        );
     }
 
     /// **A NEIGHBOUR ELSEWHERE IS NAMED WITH THE ELSEWHERE.** Same repository,
@@ -2607,6 +2741,7 @@ mod tests {
             ask_again: Vec::new(),
             remembered: Vec::new(),
             page: None,
+            page_unseen: None,
         }));
 
         let said = welcome(&arriving_in(&scratch), None, &open, &Ok(()));
@@ -2634,6 +2769,7 @@ mod tests {
             ask_again: Vec::new(),
             remembered: Vec::new(),
             page: None,
+            page_unseen: None,
         })
         .expect("una corsa in attesa si dice");
         let again = what_is_still_open(&StillOpen {
@@ -2641,6 +2777,7 @@ mod tests {
             ask_again: vec![same()],
             remembered: Vec::new(),
             page: None,
+            page_unseen: None,
         })
         .expect("una corsa da rilanciare si dice");
 
@@ -2654,6 +2791,7 @@ mod tests {
             ask_again: vec![a_run("non-ancora-1", "un-altro")],
             remembered: Vec::new(),
             page: None,
+            page_unseen: None,
         })
         .expect("le due liste insieme si dicono");
         assert_eq!(both.lines().count(), 2, "{both}");
@@ -2673,6 +2811,7 @@ mod tests {
                 ask_again: Vec::new(),
                 remembered: Vec::new(),
                 page: None,
+                page_unseen: None,
             }),
             None
         );
@@ -2722,7 +2861,13 @@ mod tests {
                 .expect("registrare la corsa");
         }
 
-        let found = still_open_in(&deposit, None).expect("leggere le due liste");
+        let nobody = Started {
+            engine: None,
+            profile_home: None,
+            worktree: PathBuf::new(),
+            home: None,
+        };
+        let found = still_open_in(&deposit, None, &nobody).expect("leggere le due liste");
 
         assert_eq!(
             found.waiting.iter().map(|run| run.run_id.as_str()).collect::<Vec<_>>(),
