@@ -14,11 +14,12 @@ pub use run_record::{
 };
 pub use subflow_host::LedgerHost;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use flow::{ActionRegistry, ExecutionRequest, FlowFile, SharedState};
 use ledger::Ledger;
+use toolbox::{Catalog, Machine, Source, Tools};
 
 /// The request a run starts from, built in one place.
 ///
@@ -46,7 +47,61 @@ pub fn execution_request(flow: &FlowFile, run_id: &str, root: Option<&Path>) -> 
     }
 }
 
-/// The action registry: everything a step can ask to be done.
+/// What the registry takes from the machine, in one place: Sailor's home,
+/// where memories and flows live; the store's directory, where the fault and
+/// session registers are kept; and the tools that can be resolved. The product
+/// hands in this machine's; a test hands in a house of its own — see fault 5.
+pub struct House {
+    pub home: Option<PathBuf>,
+    pub store_dir: Option<PathBuf>,
+    pub tools: Tools,
+}
+
+impl House {
+    /// The house of whoever runs this process.
+    pub fn of_this_machine() -> House {
+        House {
+            home: ledger::sailor_home(),
+            store_dir: ledger::default_directory(),
+            tools: Tools::current(),
+        }
+    }
+
+    /// No home, no store, and only the shipped descriptors on a machine with
+    /// nothing installed: what a static check builds its registry from.
+    pub fn empty() -> House {
+        House {
+            home: None,
+            store_dir: None,
+            tools: Self::shipped_tools(Machine::bare(PathBuf::from(toolbox::probe::NOWHERE))),
+        }
+    }
+
+    /// Everything under one directory — the home, and the store beside it —
+    /// with the shipped descriptors on a bare machine whose home is there.
+    pub fn under(directory: &Path) -> House {
+        House {
+            home: Some(directory.to_path_buf()),
+            store_dir: Some(directory.join("ledger")),
+            tools: Self::shipped_tools(Machine::bare(directory.to_path_buf())),
+        }
+    }
+
+    fn shipped_tools(machine: Machine) -> Tools {
+        Tools::new(Catalog::load(&[Source::Builtin]), machine)
+    }
+}
+
+/// The action registry of this machine: [`registry_in`] over the house of
+/// whoever runs the process.
+pub fn default_registry(
+    ledger: Option<Ledger>,
+    watcher: Option<Arc<dyn actions::StepSinks>>,
+) -> ActionRegistry {
+    registry_in(House::of_this_machine(), ledger, watcher)
+}
+
+/// The action registry: everything a step can ask to be done, over a house.
 ///
 /// **Line order matters.** `actions::register_default` registers an external
 /// engine that cannot resolve a tool by id; a line below *replaces* it with one
@@ -59,10 +114,18 @@ pub fn execution_request(flow: &FlowFile, run_id: &str, root: Option<&Path>) -> 
 /// nothing. Nodes that *write* stay out when it is missing; the one that
 /// *reads* history is registered anyway, because "no run recorded" is a good
 /// answer rather than a failure.
-pub fn default_registry(
+pub fn registry_in(
+    house: House,
     ledger: Option<Ledger>,
     watcher: Option<Arc<dyn actions::StepSinks>>,
 ) -> ActionRegistry {
+    let House {
+        home,
+        store_dir,
+        tools,
+    } = house;
+    let in_store = |file: &str| store_dir.as_ref().map(|directory| directory.join(file));
+    let flows = home.as_ref().map(|home| home.join("flows"));
     let mut registry = ActionRegistry::default();
     actions::register_default(&mut registry);
     // Detecting what is on this machine is an action like any other: a step can
@@ -83,7 +146,7 @@ pub fn default_registry(
     // reaches the action through the shared state.
     registry.register(
         actions::EXTERNAL_ENGINE_ACTION,
-        actions::ExternalEngineAction::resolving_with(toolbox::Tools::current())
+        actions::ExternalEngineAction::resolving_with(tools)
             .watched_by(watcher.clone())
             .recording_to(ledger.clone()),
     );
@@ -106,12 +169,9 @@ pub fn default_registry(
     // hands. Registered even where the store is absent, for the same reason as
     // the two above: `flow check` must be able to say the step names a real
     // action without opening anything.
-    actions::faults::register_faults(&mut registry, faults::Faults::default_path().ok());
+    actions::faults::register_faults(&mut registry, in_store(faults::FAULTS_FILE));
     // The terminals Sailor follows: only the path is taken here.
-    actions::terminals::register_terminals(
-        &mut registry,
-        sessions::Sessions::default_path().ok(),
-    );
+    actions::terminals::register_terminals(&mut registry, in_store(sessions::SESSIONS_FILE));
     // A flow that runs another one. Registered **even without a ledger**, for
     // the reason declared above: `flow check` must be able to say a `subflow`
     // step names a real action without opening anything. Running without one
@@ -133,22 +193,19 @@ pub fn default_registry(
     // Who is working on what, because an **agent** must be able to ask. The
     // reading half goes in without a store; the two that write stay out.
     actions::presence::register_presence(&mut registry, ledger.clone());
-    actions::memory::register_memory(&mut registry, ledger.clone(), ledger::sailor_home());
+    actions::memory::register_memory(&mut registry, ledger.clone(), home);
     // The home is taken here, the flows are read when asked.
     actions::search::register_search(
         &mut registry,
-        ledger::sailor_home().map(|home| home.join("flows")),
+        flows.clone(),
         ledger.clone(),
-        faults::Faults::default_path().ok(),
+        in_store(faults::FAULTS_FILE),
     );
     if let Some(ledger) = ledger {
         actions::store::register_store(&mut registry, ledger);
     }
     // Last: the list it hands out is everything above.
-    actions::draft::register_draft(
-        &mut registry,
-        ledger::sailor_home().map(|home| home.join("flows")),
-    );
+    actions::draft::register_draft(&mut registry, flows);
     registry
 }
 
@@ -159,9 +216,25 @@ mod tests {
     /// The actions the window's copy had lost along the way, named one by one.
     /// Removing any of them from `default_registry` turns this red, which is
     /// the only way to tell whoever comes next that a line went missing.
+    /// A house of a test's own keeps everything under its directory, and the
+    /// empty one holds nothing of any machine: neither reads the runner's.
+    #[test]
+    fn a_house_is_the_callers_and_never_the_machines() {
+        let scratch = std::env::temp_dir().join(format!("sailor-house-{}", std::process::id()));
+        let house = House::under(&scratch);
+        assert_eq!(house.home.as_deref(), Some(scratch.as_path()));
+        assert_eq!(house.store_dir, Some(scratch.join("ledger")));
+        assert!(house.tools.declares("claude-code"), "the shipped descriptors are there");
+
+        let empty = House::empty();
+        assert_eq!(empty.home, None);
+        assert_eq!(empty.store_dir, None);
+        assert!(empty.tools.declares("claude-code"));
+    }
+
     #[test]
     fn the_registry_carries_every_action_a_shipped_flow_can_name() {
-        let registry = default_registry(None, None);
+        let registry = registry_in(House::empty(), None, None);
         for wanted in [
             actions::EXTERNAL_ENGINE_ACTION,
             actions::SHELL_CHECK_ACTION,
@@ -273,7 +346,7 @@ mod tests {
     /// that touches nothing.
     #[test]
     fn without_a_ledger_the_writing_nodes_stay_out_and_the_reading_one_stays_in() {
-        let registry = default_registry(None, None);
+        let registry = registry_in(House::empty(), None, None);
         assert!(
             registry.get("history_ask").is_some(),
             "reading history works without a ledger: the answer is «there is nothing»"
@@ -292,7 +365,7 @@ mod tests {
     /// cannot be traced back to the step that called it.
     #[test]
     fn without_a_ledger_the_subflow_step_is_registered_but_refuses_to_run() {
-        let registry = default_registry(None, None);
+        let registry = registry_in(House::empty(), None, None);
         let step = registry
             .get(flow::subflow::SUBFLOW_ACTION)
             .expect("registered even without a ledger");

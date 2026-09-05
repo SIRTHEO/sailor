@@ -110,7 +110,7 @@ fn the_mandate_says_what_to_merge_what_to_drop_and_what_never_to_reword() {
 /// without a store, the way `flow check` checks it.
 #[test]
 fn every_action_the_consolidation_names_is_registered() {
-    let registry = registry::default_registry(None, None);
+    let registry = registry::registry_in(registry::House::empty(), None, None);
     let names = registry.names();
     for step in shipped().graph.steps() {
         assert!(

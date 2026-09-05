@@ -20,7 +20,7 @@ fn shipped() -> Catalog {
 #[test]
 fn every_declared_channel_is_announced_and_every_announcement_has_its_channel() {
     let catalog = shipped();
-    let machine = Machine::current();
+    let machine = Machine::bare(std::path::PathBuf::from(toolbox::probe::NOWHERE));
     let mut with_channel = 0;
     for loaded in catalog.live() {
         let descriptor = &loaded.descriptor;

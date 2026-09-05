@@ -49,7 +49,7 @@ fn the_sketch_is_read_then_written_then_kept_only_if_it_stands() {
 /// drafter itself.
 #[test]
 fn every_action_the_drafter_names_is_registered() {
-    let registry = registry::default_registry(None, None);
+    let registry = registry::registry_in(registry::House::empty(), None, None);
     let names = registry.names();
     for step in shipped().graph.steps() {
         assert!(

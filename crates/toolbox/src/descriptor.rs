@@ -220,12 +220,10 @@ pub struct LoginStatus {
     pub extra: BTreeMap<String, Value>,
 }
 
-/// How **an engine's usage** is read, as the descriptor declares it. Same reason
-/// as `Ask`, applied to the bill: while "ask for `--output-format json` and look
-/// under `usage`" sits in an `if` branch, measuring a new engine means
-/// recompiling. The field is optional, and an engine without it is invoked as
-/// before and leaves its tokens at **unknown** — never at zero. A zero in place
-/// of "I do not know" is a lie no downstream view can correct.
+/// How **an engine's usage** is read, as the descriptor declares it: measuring
+/// a new engine must not mean recompiling. The field is optional, and an engine
+/// without it is invoked as before and leaves its tokens at **unknown** — never
+/// at zero, which no downstream view could correct.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Usage {
     /// The options to add to the question so it reports its usage — for example
@@ -316,11 +314,9 @@ pub enum ReadFrom {
 }
 
 /// Where a value sits inside what the engine said, and **the shape is said by
-/// the pointer**, the same choice as `models::usage::read_text`: a key path
-/// holds on a JSON envelope, a regular expression on text. Asking for the shape
-/// in a field of its own would let a descriptor answer inconsistently, and that
-/// inconsistency would not give an error — it would give an unknown answer with
-/// no visible cause.
+/// the pointer**, as in `models::usage::read_text`: a key path holds on a JSON
+/// envelope, a regular expression on text. A shape field of its own would let a
+/// descriptor contradict itself into an unknown answer with no visible cause.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum Where {
@@ -550,12 +546,15 @@ pub struct ResetContext {
     pub extra: BTreeMap<String, Value>,
 }
 
+/// The moment a session begins: the one whose answer reaches the agent.
+pub const SESSION_START: &str = "session_start";
+
 /// The moments Sailor needs to hear about, in Sailor's own words.
 ///
 /// Named here because they are what Sailor needs, not what any one product
 /// offers. A command line maps them onto its own event names, and stays silent
-/// about the ones it cannot report.
-pub const MOMENTS: &[&str] = &["session_start", "alive", "asked", "compacting"];
+/// about the ones it cannot report. Whoever acts at each asks this list.
+pub const MOMENTS: &[&str] = &[SESSION_START, "alive", "asked", "compacting"];
 
 /// How a settings file is written, because grafting has to read it back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]

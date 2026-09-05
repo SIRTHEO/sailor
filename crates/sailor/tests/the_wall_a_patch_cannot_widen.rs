@@ -18,6 +18,9 @@ fn git(repo: &Path, args: &[&str]) {
         .arg("-C")
         .arg(repo)
         .args(args)
+        // The repository's own settings only: nothing of the runner's account.
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
         .output()
         .expect("git runs");
     assert!(done.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&done.stderr));

@@ -22,7 +22,7 @@ fn scratch(name: &str) -> PathBuf {
 /// A host answering under `directory`, with its letterboxes beside it.
 fn host_in(directory: &Path) -> Client {
     let terminals = Terminals::with_router(Arc::new(Router::without_routes(Arc::new(
-        PathLookup::current(),
+        PathLookup::on(toolbox::Machine::bare(directory.to_path_buf())),
     ))))
     .with_mailroom(inbox::mailroom(directory));
     let host = Arc::new(Host::new(terminals));

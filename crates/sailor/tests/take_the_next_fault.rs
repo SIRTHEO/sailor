@@ -66,11 +66,11 @@ impl Drop for Scratch {
     }
 }
 
-/// The product's registry over a register of this test's own: the machine's
-/// register may hold an open fault, and the engine step would then start.
+/// The product's registry over a house and a register of this test's own: the
+/// machine's register may hold an open fault, and the engine step would start.
 fn registry(scratch: &Scratch) -> ActionRegistry {
     let ledger = ledger::Ledger::open(scratch.0.join("ledger")).expect("a store of our own");
-    let mut registry = registry::default_registry(Some(ledger), None);
+    let mut registry = registry::registry_in(registry::House::under(&scratch.0), Some(ledger), None);
     actions::faults::register_faults(&mut registry, Some(scratch.register()));
     registry.register(
         actions::EXTERNAL_ENGINE_ACTION,
@@ -175,7 +175,7 @@ fn the_fault_is_read_then_handed_to_the_engine_only_when_one_is_open() {
 /// Every action the flow names is one the default registry has.
 #[test]
 fn every_action_the_flow_names_is_registered() {
-    let registry = registry::default_registry(None, None);
+    let registry = registry::registry_in(registry::House::empty(), None, None);
     let names = registry.names();
     for step in shipped().graph.steps() {
         assert!(

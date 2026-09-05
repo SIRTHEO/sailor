@@ -23,10 +23,10 @@ use std::collections::BTreeMap;
 
 /// The registry the product builds, not one rebuilt here: rebuilt, it held
 /// neither `history_ask` nor the fault nodes, so a shipped flow naming one
-/// passed a check the real program fails. Without a ledger, which is a machine
-/// with no store: the nodes that need one register anyway and say so.
+/// passed a check the real program fails. Over an empty house — no store, no
+/// home, nothing of this machine: the nodes that need one register and say so.
 fn product_registry() -> ActionRegistry {
-    registry::default_registry(None, None)
+    registry::registry_in(registry::House::empty(), None, None)
 }
 
 /// Un orologio finto che avanza di uno a ogni domanda. Il contatore è atomico
@@ -324,7 +324,7 @@ fn the_migration_flow_never_runs_anything() {
 /// uno sbagliato, e un passo potrebbe nominarne uno come se fosse un binario.
 #[test]
 fn the_automations_catalog_does_not_leak_into_the_tools() {
-    let tools = toolbox::Tools::current();
+    let tools = registry::House::empty().tools;
     let automations: BTreeMap<String, ()> =
         toolbox::Catalog::load(&[toolbox::Source::BuiltinNamed("automations".to_owned())])
             .live()

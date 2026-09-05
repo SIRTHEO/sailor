@@ -57,14 +57,13 @@ impl Drop for Scratch {
     }
 }
 
-/// The product's registry, over a store and a register of this test's own.
-///
-/// **NEITHER IS THE MACHINE'S.** `default_registry` would give the fault nodes
-/// the register a person actually keeps, and a test that writes there leaves a
-/// fault nobody hit.
+/// The product's registry, over a house, a store and a register of this test's
+/// own. **NONE IS THE MACHINE'S.** `default_registry` would give the fault
+/// nodes the register a person actually keeps, and a test that writes there
+/// leaves a fault nobody hit.
 fn registry(scratch: &Scratch) -> ActionRegistry {
     let ledger = ledger::Ledger::open(scratch.0.join("ledger")).expect("a store of our own");
-    let mut registry = registry::default_registry(Some(ledger), None);
+    let mut registry = registry::registry_in(registry::House::under(&scratch.0), Some(ledger), None);
     actions::faults::register_faults(&mut registry, Some(scratch.0.join(faults::FAULTS_FILE)));
     registry.register(
         actions::EXTERNAL_ENGINE_ACTION,
