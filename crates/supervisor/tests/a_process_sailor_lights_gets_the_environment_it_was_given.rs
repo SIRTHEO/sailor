@@ -8,8 +8,8 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use supervisor::child::{Process, Spec};
-use supervisor::Running;
+use supervisor::child::Spec;
+use supervisor::{Running, Supervisor};
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -37,8 +37,8 @@ impl Drop for TestDirectory {
 /// waits for the file. **The child is the judge**: what it received, it says.
 fn what_the_child_received(dir: &TestDirectory, environment: Vec<(String, String)>) -> String {
     let written = dir.0.join("received");
-    let mut process = Process::start(
-        Spec {
+    let mut process = Supervisor::over(None)
+        .start(Spec {
             process_id: "a-test".to_owned(),
             command: "/bin/sh".to_owned(),
             args: vec![
@@ -50,10 +50,8 @@ fn what_the_child_received(dir: &TestDirectory, environment: Vec<(String, String
             purpose: "a test".to_owned(),
             started_by: "a test".to_owned(),
             environment,
-        },
-        None,
-    )
-    .expect("the process lights");
+        })
+        .expect("the process lights");
 
     // The file is waited for and not a fixed time: a `sleep` long enough here
     // is a judge that turns red on somebody else's machine.

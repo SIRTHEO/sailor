@@ -7,9 +7,56 @@
 
 use std::path::{Path, PathBuf};
 
+use ledger::Ledger;
 use serde::{Deserialize, Serialize};
 
 pub mod child;
+
+/// The supervisor's leave to start a long-lived process, and the ledger the
+/// start is written in: one value, so neither travels without the other. Only
+/// `Supervisor` issues it, and a forged one is a type error, not a fault to find:
+/// ```compile_fail
+/// let forged = supervisor::StartToken { store: None };
+/// ```
+pub struct StartToken {
+    store: Option<Ledger>,
+}
+
+impl StartToken {
+    pub fn ledger(&self) -> Option<&Ledger> {
+        self.store.as_ref()
+    }
+}
+
+/// **THE ONE PLACE A LONG PROCESS IS STARTED FROM.** It owns the ledger of
+/// started processes and is the only issuer of the token `child::Process::start`
+/// takes, so a spawn that never met the supervisor does not compile (fault 4).
+pub struct Supervisor {
+    token: StartToken,
+}
+
+impl Supervisor {
+    /// Over `None` nothing is recorded: whoever runs without a ledger is told
+    /// so where the supervisor starts, and an orphan of theirs has no owner.
+    pub fn over(store: Option<Ledger>) -> Self {
+        Self {
+            token: StartToken { store },
+        }
+    }
+
+    pub fn ledger(&self) -> Option<&Ledger> {
+        self.token.ledger()
+    }
+
+    pub fn token(&self) -> &StartToken {
+        &self.token
+    }
+
+    /// Starts `spec` under this supervisor's token, recorded in its ledger.
+    pub fn start(&self, spec: child::Spec) -> Result<child::Process, String> {
+        child::Process::start(spec, &self.token)
+    }
+}
 
 /// Something running that can be stopped. **A trait and not a process**: the
 /// rule this crate defends is one line of sequence, and a line of sequence is
@@ -280,4 +327,62 @@ pub fn now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs() as i64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::child::Spec;
+
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new() -> Self {
+            let path = std::env::temp_dir()
+                .join(format!("sailor-supervisor-token-{}", std::process::id()));
+            std::fs::create_dir_all(&path).expect("a scratch directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// The token opens the road it guards: a short process starts under it,
+    /// stands in the ledger while it runs, and leaves the ledger when stopped.
+    #[test]
+    fn the_supervisor_starts_and_stops_a_process_with_its_token() {
+        let scratch = Scratch::new();
+        let supervisor = Supervisor::over(Some(Ledger::open(&scratch.0).expect("a ledger")));
+        let mut process = child::Process::start(
+            Spec {
+                process_id: "a-short-one".to_owned(),
+                command: "sh".to_owned(),
+                args: vec!["-c".to_owned(), "sleep 0.2".to_owned()],
+                working_directory: scratch.0.clone(),
+                port: None,
+                purpose: "a test".to_owned(),
+                started_by: "a test".to_owned(),
+                environment: Vec::new(),
+            },
+            supervisor.token(),
+        )
+        .expect("the process starts");
+        let store = supervisor.ledger().expect("the ledger it was given");
+        let running: Vec<String> = left_running(store)
+            .expect("the ledger is read")
+            .into_iter()
+            .map(|item| item.record.process_id)
+            .collect();
+        assert_eq!(running, vec!["a-short-one".to_owned()]);
+
+        let pid = process.pid();
+        process.stop().expect("the process stops");
+
+        assert!(!ledger::pid_is_alive(pid), "pid {pid} outlived its stop");
+        assert!(left_running(store).expect("the ledger is read").is_empty());
+    }
 }
