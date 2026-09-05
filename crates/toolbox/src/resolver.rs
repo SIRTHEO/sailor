@@ -235,6 +235,7 @@ impl actions::ToolResolver for Tools {
             unusable_when: ask.unusable_when.clone(),
             exhausted_when: ask.exhausted_when.clone(),
             cooldown_secs: ask.cooldown_secs,
+            waits_for_a_person_when: ask.waits_for_a_person_when.clone(),
             refuses_without_prompt: ask.refuses_without_prompt.clone(),
             silent_without_prompt: ask.silent_without_prompt,
             usage: loaded.descriptor.usage.as_ref().map(usage_recipe),
