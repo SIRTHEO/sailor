@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 const LINES_OUT_OF_SCALE: usize = 2_000;
 
 /// How many files run over today. Downwards only.
-const OUT_OF_SCALE_TODAY: usize = 6;
+const OUT_OF_SCALE_TODAY: usize = 5;
 
 fn sources() -> Vec<PathBuf> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
