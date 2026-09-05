@@ -840,6 +840,17 @@ enters here as claims, not as praise.
    value only the supervisor emits, so a second road does not compile.
    *Proof:* a test that tries to spawn without the token does not compile,
    asserted with a `compile_fail` doctest.
+   *Where it landed, 05/09/2026:* `supervisor::StartToken`, a struct with one
+   private field that carries the ledger the start is written in, so only the
+   crate builds one; `Supervisor::over(ledger)` is its only issuer and owns
+   `start(spec)`; `child::Process::start(spec, &token)` takes it by reference.
+   The binary's two starts and the tests go through the supervisor; nothing
+   else in the workspace spawned a long process (measured by grep, the one
+   other mention is a comment). Two `compile_fail` doctests — building the
+   token from outside, and the old call shape without it — and the mutant
+   that made the first one fail: the field made public, the doctest compiled
+   and the run went red. A unit test starts and stops `sh -c 'sleep 0.2'`
+   with the token and reads the one running row and then none.
 5. **`Some(Null)` and `None` are two records.** The event register wraps the
    value so the two serialise differently; the guard in `step close` stays,
    but the format no longer depends on it (fault 33, half open).
