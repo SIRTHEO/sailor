@@ -441,7 +441,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
 
         let outcome = with_price_list(Some(&price_list), || {
-            action.execute(&input, &mut shared("corsa-1", "passo-1"))
+            action.execute(&input, &shared("corsa-1", "passo-1"))
         })
         .expect("il motore risponde");
         let ActionOutcome::Went(output) = outcome else {
@@ -531,7 +531,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
 
         let outcome = with_price_list(Some(&price_list), || {
-            action.execute(&input, &mut shared("corsa-2", "passo-2"))
+            action.execute(&input, &shared("corsa-2", "passo-2"))
         })
         .expect("il motore risponde");
         let ActionOutcome::Went(output) = outcome else {
@@ -581,7 +581,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
 
         let error = with_price_list(None, || {
-            action.execute(&input, &mut shared("corsa-3", "passo-3"))
+            action.execute(&input, &shared("corsa-3", "passo-3"))
         })
         .expect_err("un'uscita diversa da zero rompe il passo");
         assert_eq!(error.class, "engine_exit_error");
@@ -625,7 +625,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
 
         let error = with_price_list(None, || {
-            action.execute(&input, &mut shared("corsa-esaurita", "passo-1"))
+            action.execute(&input, &shared("corsa-esaurita", "passo-1"))
         })
         .expect_err("un motore esaurito e solo non può fare il lavoro");
 
@@ -671,7 +671,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
 
         let error = with_price_list(None, || {
-            action.execute(&input, &mut shared("corsa-rotta", "passo-1"))
+            action.execute(&input, &shared("corsa-rotta", "passo-1"))
         })
         .expect_err("un'uscita diversa da zero rompe il passo");
 
@@ -707,7 +707,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
 
         let error = with_price_list(None, || {
-            action.execute(&input, &mut shared("corsa-a-secco", "passo-1"))
+            action.execute(&input, &shared("corsa-a-secco", "passo-1"))
         })
         .expect_err("a spent engine alone cannot do the work");
         assert_eq!(error.class, "engine_exhausted");
@@ -718,7 +718,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
 
         // The second knock is refused before spending, and says until when.
         let again = with_price_list(None, || {
-            action.execute(&input, &mut shared("corsa-a-secco", "passo-2"))
+            action.execute(&input, &shared("corsa-a-secco", "passo-2"))
         })
         .expect_err("an engine set aside is not tried");
         assert_eq!(again.class, "no_usable_engine");
@@ -732,7 +732,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         })
         .recording_to(Some(Ledger::open(dir.join("deposito-2")).expect("second ledger")))
         .cooling_down_in(Some(dir.join("cooldowns-2.json")));
-        with_price_list(None, || plain.execute(&input, &mut shared("corsa-piana", "passo-1")))
+        with_price_list(None, || plain.execute(&input, &shared("corsa-piana", "passo-1")))
             .expect_err("still cannot work");
         assert_eq!(calls_in(&dir.join("deposito-2"))[0].error_type.as_deref(), Some("exhausted"));
         assert!(cooldown::set_aside_until(&dir.join("cooldowns-2.json"), "motore-di-prova", now_secs()).is_none());
@@ -764,11 +764,11 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
 
         with_price_list(Some(&price_list), || {
-            action.execute(&input, &mut shared("corsa-1", "passo-1"))
+            action.execute(&input, &shared("corsa-1", "passo-1"))
         })
         .expect("the first call fits under the cap");
         let refused = with_price_list(Some(&price_list), || {
-            action.execute(&input, &mut shared("corsa-2", "passo-1"))
+            action.execute(&input, &shared("corsa-2", "passo-1"))
         })
         .expect_err("the second call finds the window full");
         assert_eq!(refused.class, "no_usable_engine");
@@ -786,7 +786,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         .recording_to(Some(Ledger::open(dir.join("deposito")).expect("reopen")))
         .budgeted_by(Some(others));
         with_price_list(Some(&price_list), || {
-            unbound.execute(&input, &mut shared("corsa-3", "passo-1"))
+            unbound.execute(&input, &shared("corsa-3", "passo-1"))
         })
         .expect("a cap on another engine is not this engine's");
         assert_eq!(calls_in(&dir.join("deposito")).len(), 2);
@@ -818,7 +818,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
 
         // The first chain runs it, and it says the quota is spent.
         let broke = with_price_list(None, || {
-            action.execute(&input, &mut shared("corsa-1", "passo-1"))
+            action.execute(&input, &shared("corsa-1", "passo-1"))
         })
         .expect_err("a spent quota is not a step that went");
         assert_eq!(broke.class, "engine_exhausted");
@@ -826,7 +826,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
 
         // The second chain does not start it at all: the refusal is the list's.
         let refused = with_price_list(None, || {
-            action.execute(&input, &mut shared("corsa-2", "passo-1"))
+            action.execute(&input, &shared("corsa-2", "passo-1"))
         })
         .expect_err("the door is known to be shut");
         assert!(
@@ -854,7 +854,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         std::fs::write(&aside, serde_json::to_string(&written).expect("write it back"))
             .expect("bring its time forward");
         let again = with_price_list(None, || {
-            action.execute(&input, &mut shared("corsa-3", "passo-1"))
+            action.execute(&input, &shared("corsa-3", "passo-1"))
         })
         .expect_err("it is spent again, but it was asked");
         assert!(
@@ -893,7 +893,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let bin = fake_engine(&dir, "motore", WRAPS_ON_DEMAND);
         let run = |pact: DataPact, input: serde_json::Value| {
             let action = ExternalEngineAction::resolving_with(Pacted { bin: bin.clone(), pact });
-            with_price_list(None, || action.execute(&input, &mut shared("corsa", "passo")))
+            with_price_list(None, || action.execute(&input, &shared("corsa", "passo")))
         };
         let private = json!({"tool": "motore-di-prova", "data": "private", "stdin": "ciao", "timeout_secs": 10});
         let public = json!({"tool": "motore-di-prova", "data": "public", "stdin": "ciao", "timeout_secs": 10});
@@ -952,7 +952,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let run = |from, ledger: &str| {
             let action = ExternalEngineAction::resolving_with(Declares { bin: bin.clone(), recipe: Some(recipe(from)) })
                 .recording_to(Some(Ledger::open(dir.join(ledger)).expect("open")));
-            with_price_list(None, || action.execute(&input, &mut shared("corsa", "passo"))).expect("answers");
+            with_price_list(None, || action.execute(&input, &shared("corsa", "passo"))).expect("answers");
             calls_in(&dir.join(ledger)).remove(0)
         };
 
@@ -1009,19 +1009,19 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
 
         let action = ExternalEngineAction::resolving_with(engines())
             .recording_to(Some(Ledger::open(dir.join("deposito")).expect("open")));
-        with_price_list(None, || action.execute(&by_fuel, &mut shared("corsa-1", "passo")))
+        with_price_list(None, || action.execute(&by_fuel, &shared("corsa-1", "passo")))
             .expect("the short window answers");
         assert_eq!(calls_in(&dir.join("deposito"))[0].cli, "a-breve");
 
         let plain = ExternalEngineAction::resolving_with(engines())
             .recording_to(Some(Ledger::open(dir.join("deposito-2")).expect("open")));
-        with_price_list(None, || plain.execute(&as_written, &mut shared("corsa-2", "passo")))
+        with_price_list(None, || plain.execute(&as_written, &shared("corsa-2", "passo")))
             .expect("the chain's first answers");
         assert_eq!(calls_in(&dir.join("deposito-2"))[0].cli, "a-lungo");
 
         // A word `prefer` does not know is refused by name, not read as silence.
         let by_luck = json!({"tool": ["a-lungo"], "prefer": "luck", "stdin": "ciao", "timeout_secs": 10});
-        let refused = with_price_list(None, || plain.execute(&by_luck, &mut shared("corsa-3", "passo")))
+        let refused = with_price_list(None, || plain.execute(&by_luck, &shared("corsa-3", "passo")))
             .expect_err("an unknown preference is refused");
         assert_eq!(refused.class, "invalid_input");
         assert!(refused.said.contains("«luck»"), "{}", refused.said);
@@ -1048,7 +1048,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let action = ExternalEngineAction::resolving_with(Declares { bin, recipe: Some(declaring_recipe()) });
         let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
 
-        let refused = with_profiles_state(&store, || action.execute(&input, &mut shared("corsa", "passo")));
+        let refused = with_profiles_state(&store, || action.execute(&input, &shared("corsa", "passo")));
 
         let refused = refused.expect_err("a profile that cannot be pointed there refuses the launch");
         assert_eq!(refused.class, "no_usable_engine");
@@ -1076,7 +1076,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let action = ExternalEngineAction::resolving_with(engines())
             .recording_to(Some(Ledger::open(dir.join("deposito")).expect("open")))
             .strong_by(Some(table));
-        with_price_list(None, || action.execute(&input, &mut shared("corsa-1", "passo")))
+        with_price_list(None, || action.execute(&input, &shared("corsa-1", "passo")))
             .expect("the local engine answers");
         let calls = calls_in(&dir.join("deposito"));
         assert_eq!(calls[0].cli, "locale", "the table's engine went first, ahead of the chain");
@@ -1086,7 +1086,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let plain = ExternalEngineAction::resolving_with(engines())
             .recording_to(Some(Ledger::open(dir.join("deposito-2")).expect("open")))
             .strong_by(Some(empty));
-        with_price_list(None, || plain.execute(&input, &mut shared("corsa-2", "passo")))
+        with_price_list(None, || plain.execute(&input, &shared("corsa-2", "passo")))
             .expect("the chain's engine answers");
         assert_eq!(calls_in(&dir.join("deposito-2"))[0].cli, "catena");
     }
@@ -1121,7 +1121,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
 
         let error = with_price_list(None, || {
-            action.execute(&input, &mut shared("corsa-esaurita-a-zero", "passo-1"))
+            action.execute(&input, &shared("corsa-esaurita-a-zero", "passo-1"))
         })
         .expect_err("un motore che dice di non poter lavorare non ha risposto");
         assert_eq!(error.class, "engine_exhausted");
@@ -1185,7 +1185,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
             });
 
             let outcome = with_price_list(None, || {
-                action.execute(&input, &mut shared(&format!("corsa-{name}"), "passo-1"))
+                action.execute(&input, &shared(&format!("corsa-{name}"), "passo-1"))
             })
             .unwrap_or_else(|error| {
                 panic!(
@@ -1225,7 +1225,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
 
         let error = with_price_list(None, || {
-            action.execute(&input, &mut shared("corsa-4", "passo-4"))
+            action.execute(&input, &shared("corsa-4", "passo-4"))
         })
         .expect_err("un binario che non c'è rompe il passo");
         assert_eq!(error.class, "engine_spawn_failed");
@@ -1268,7 +1268,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
             })
             .recording_to(Some(ledger));
             let ActionOutcome::Went(output) = with_price_list(Some(&price_list), || {
-                action.execute(&input, &mut shared("corsa-5", "passo-5"))
+                action.execute(&input, &shared("corsa-5", "passo-5"))
             })
             .expect("risponde") else {
                 panic!("Went")
@@ -1284,7 +1284,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
             })
             .recording_to(Some(ledger));
             let ActionOutcome::Went(output) = with_price_list(Some(&price_list), || {
-                action.execute(&input, &mut shared("corsa-6", "passo-6"))
+                action.execute(&input, &shared("corsa-6", "passo-6"))
             })
             .expect("risponde") else {
                 panic!("Went")
@@ -1323,7 +1323,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         });
         let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
         assert!(action
-            .execute(&input, &mut shared("corsa-7", "passo-7"))
+            .execute(&input, &shared("corsa-7", "passo-7"))
             .is_ok());
 
         // Col deposito ma senza la chiave della corsa: nessuna riga.
@@ -1335,7 +1335,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         .recording_to(Some(ledger));
         let mut only_the_step = SharedState::new();
         only_the_step.insert(flow::CURRENT_STEP.to_owned(), json!("passo-8"));
-        assert!(action.execute(&input, &mut only_the_step).is_ok());
+        assert!(action.execute(&input, &only_the_step).is_ok());
         assert!(
             calls_in(&dir.join("deposito")).is_empty(),
             "senza corsa non si attribuisce nessuna spesa a nessuno"
@@ -1354,7 +1354,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let input = json!({"bin": "echo", "args": ["ciao"], "timeout_secs": 10});
 
         assert!(action
-            .execute(&input, &mut shared("corsa-9", "passo-9"))
+            .execute(&input, &shared("corsa-9", "passo-9"))
             .is_ok());
         assert!(calls_in(&dir.join("deposito")).is_empty());
     }
@@ -1393,7 +1393,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         });
 
         assert!(action
-            .execute(&input, &mut shared("corsa-cargo", "prove"))
+            .execute(&input, &shared("corsa-cargo", "prove"))
             .is_ok());
 
         assert!(
@@ -1430,7 +1430,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         });
 
         let ActionOutcome::Went(output) = with_price_list(Some(&price_list), || {
-            action.execute(&input, &mut shared("corsa-10", "passo-10"))
+            action.execute(&input, &shared("corsa-10", "passo-10"))
         })
         .expect("risponde") else {
             panic!("Went")
@@ -1481,7 +1481,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
 
         let ActionOutcome::Went(output) = with_price_list(Some(&price_list), || {
-            action.execute(&input, &mut shared("corsa-11", "passo-11"))
+            action.execute(&input, &shared("corsa-11", "passo-11"))
         })
         .expect("risponde") else {
             panic!("Went")
@@ -1566,7 +1566,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
 
         with_profiles_state(&state, || {
-            action.execute(&input, &mut shared("corsa-1", "passo-1"))
+            action.execute(&input, &shared("corsa-1", "passo-1"))
         })
         .expect("il motore risponde");
 
@@ -1611,7 +1611,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
 
         with_profiles_state(&state, || {
-            action.execute(&input, &mut shared("corsa-1", "passo-1"))
+            action.execute(&input, &shared("corsa-1", "passo-1"))
         })
         .expect("il motore risponde");
 
@@ -1675,7 +1675,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","usage":{"input_
         });
 
         with_profiles_state(&state, || {
-            action.execute(&input, &mut shared("corsa-1", "passo-1"))
+            action.execute(&input, &shared("corsa-1", "passo-1"))
         })
         .expect("il motore risponde");
 
@@ -1739,7 +1739,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","usage":{"input_
         });
 
         with_profiles_state(&state, || {
-            action.execute(&input, &mut shared("corsa-1", "passo-1"))
+            action.execute(&input, &shared("corsa-1", "passo-1"))
         })
         .expect("il motore risponde");
 

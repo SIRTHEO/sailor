@@ -111,6 +111,7 @@ impl Action for FlowDraftAction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     fn a_flow(action: &str) -> Value {
         json!({
@@ -133,9 +134,9 @@ mod tests {
         dir
     }
 
-    fn drafter(dir: &PathBuf) -> FlowDraftAction {
+    fn drafter(dir: &Path) -> FlowDraftAction {
         FlowDraftAction::new(
-            Some(dir.clone()),
+            Some(dir.to_path_buf()),
             vec!["trigger".to_owned(), "work_survey".to_owned()],
         )
     }
