@@ -119,6 +119,7 @@ fn sample_all(ledger: &Ledger) {
             session_id: None,
             work_kind: None,
             fell_back_from: Vec::new(),
+            session_mode: None,
         })
         .expect("record the call");
     ledger
@@ -1938,7 +1939,8 @@ fn call_with(call_id: &str, tokens: Option<u64>, cost: Option<i64>) -> ModelCall
         ended_at: Some(110),
         session_id: None,
         work_kind: None,
-            fell_back_from: Vec::new(),
+        fell_back_from: Vec::new(),
+        session_mode: None,
     }
 }
 
@@ -2165,6 +2167,58 @@ fn a_session_belongs_to_the_engine_that_opened_it() {
             .expect("the ledger answers"),
         None,
         "and neither does another run"
+    );
+}
+
+/// **THE BASELINE OF A SESSION IS WHAT ITS OWN ROWS ALREADY CARRY**, and one
+/// nobody has written to yet carries zero: a measurement, not an absence.
+#[test]
+fn a_session_carries_the_sum_of_the_shares_written_against_it() {
+    let directory = TestDirectory::new("what-the-session-carries");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    for call in ["call-1", "call-2"] {
+        ledger
+            .record_model_call(&call_with_session(call, "scopri", "un-motore", "sessione-1"))
+            .expect("record the call");
+    }
+
+    let carried = ledger
+        .attributed_to_session("run-1", "sessione-1", "un-motore")
+        .expect("the ledger answers");
+
+    assert_eq!(carried.input_tokens, Some(20), "two rows of ten");
+    assert_eq!(
+        ledger
+            .attributed_to_session("run-1", "sessione-mai-vista", "un-motore")
+            .expect("the ledger answers")
+            .input_tokens,
+        Some(0),
+        "a session with no rows has spent nothing yet"
+    );
+}
+
+/// **ONE UNKNOWN ROW MAKES THE COLUMN UNKNOWN**, which is the honest way
+/// round: skipping it would make every later share come out too high.
+#[test]
+fn one_unmeasured_row_leaves_that_column_of_the_baseline_unknown() {
+    let directory = TestDirectory::new("one-row-unmeasured");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    ledger
+        .record_model_call(&call_with_session("call-1", "scopri", "un-motore", "sessione-1"))
+        .expect("the measured one");
+    let mut unmeasured = call_with_session("call-2", "scopri", "un-motore", "sessione-1");
+    unmeasured.input_tokens = None;
+    ledger.record_model_call(&unmeasured).expect("the other one");
+
+    let carried = ledger
+        .attributed_to_session("run-1", "sessione-1", "un-motore")
+        .expect("the ledger answers");
+
+    assert_eq!(carried.input_tokens, None, "ten plus «I do not know» is not ten");
+    assert_eq!(
+        carried.output_tokens,
+        Some(20),
+        "and the column beside it, measured on both, stays a number"
     );
 }
 

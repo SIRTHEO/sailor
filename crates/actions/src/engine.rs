@@ -13,7 +13,7 @@ use crate::process::{
     Pipe, StepSinks,
 };
 use crate::recipe::{PromptVia, ToolResolver};
-use crate::session::{session_plan, SessionPlan};
+use crate::session::{session_plan, this_step_share, SessionPlan};
 use crate::spec::{EngineSpec, A_TREE_OF_ITS_OWN, TREE};
 use crate::{budget, cooldown, Reading};
 use flow::{Action, ActionError, ActionOutcome, Ran, SharedState, StepSpecies, ValueSchema};
@@ -443,18 +443,20 @@ impl ExternalEngineAction {
         // in cui scrive i propri token.
         let note = |reading: Reading, error_type: Option<&'static str>, said: &str| {
             if let Some(record) = record {
+                let session_id = session.session_id(said);
                 record_the_call(
                     record,
                     candidate,
                     chain,
                     Spent {
-                        reading,
+                        reading: this_step_share(record, candidate, session_id.as_deref(), reading),
                         error_type,
                         started_at,
                         ended_at,
-                        session_id: session.session_id(said),
+                        session_id,
                         identity: identity.clone(),
                         work_kind: spec.kind.clone(),
+                        session_mode: session.mode,
                     },
                 );
             }

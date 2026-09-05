@@ -278,11 +278,8 @@ fn spelled(number: usize) -> String {
     }
 }
 
-/// The hundreds, and the one join Italian changes.
-///
-/// «cento» keeps its vowel before «uno» — centouno — but before «otto» the two
-/// o merge into one: centotto, never centootto. Past the hundred the rest is
-/// the same rule, so it is called back.
+/// The hundreds: «cento» keeps its vowel before «uno» — centouno — but before
+/// «otto» the two o merge into one, centotto. Past it the rule is the same.
 fn with_hundreds(number: usize) -> String {
     let (hundred, rest) = (number / 100, number % 100);
     let prefix = match hundred {

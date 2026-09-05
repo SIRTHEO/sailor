@@ -101,7 +101,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// learned four cache columns while this stayed at 4, an existing store was
 /// already registered at 4, `4 < 4` is false, the migration never ran, and
 /// every read died with `no such column: cache_write_tokens`.
-const PROJECTION_SCHEMA_VERSION: i64 = 14;
+const PROJECTION_SCHEMA_VERSION: i64 = 15;
 
 pub enum LedgerError {
     Sqlite(rusqlite::Error),
@@ -339,6 +339,64 @@ pub struct ModelCallRecord {
     /// here. **Not [`Self::retry_chain`]**: those were started and failed.
     #[serde(default)]
     pub fell_back_from: Vec<String>,
+    /// **WHAT THE STEP ASKED OF THE SESSION, AND WHAT IT GOT.** `None` asked
+    /// for nothing. Without [`SessionMode::ColdFallback`] a run that never
+    /// resumed once reads like one that resumed throughout, and its bill
+    /// passes for proof.
+    #[serde(default)]
+    pub session_mode: Option<SessionMode>,
+}
+
+/// How a call stood towards the session of its flow: three say the mechanism
+/// engaged, and the fourth that it did not, on a step that had asked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionMode {
+    Opened,
+    Resumed,
+    Forked,
+    /// Asked to open, continue or branch, and none of it was possible.
+    ColdFallback,
+}
+
+impl SessionMode {
+    pub fn word(self) -> &'static str {
+        match self {
+            SessionMode::Opened => "opened",
+            SessionMode::Resumed => "resumed",
+            SessionMode::Forked => "forked",
+            SessionMode::ColdFallback => "cold_fallback",
+        }
+    }
+
+    /// A word this build does not know stays `None`, never a guess.
+    pub fn from_word(word: &str) -> Option<SessionMode> {
+        [
+            SessionMode::Opened,
+            SessionMode::Resumed,
+            SessionMode::Forked,
+            SessionMode::ColdFallback,
+        ]
+        .into_iter()
+        .find(|mode| mode.word() == word)
+    }
+}
+
+/// What a session already carried before this call, column by column.
+///
+/// **`None` IS «NOBODY CAN WORK IT OUT», AND IT SPREADS ON PURPOSE**: a sum
+/// skipping an unknown row would be a baseline too low, and every later share
+/// measured against it too high.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SessionSoFar {
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
+    pub cached_tokens: Option<u64>,
+    pub cache_write_tokens: Option<u64>,
+    pub cache_write_long_tokens: Option<u64>,
+    pub total_tokens: Option<u64>,
+    pub turns: Option<u64>,
+    pub declared_cost_micros: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1449,6 +1507,53 @@ impl Ledger {
         }
     }
 
+    /// What this run has already attributed to a session on that engine.
+    ///
+    /// **THE BASELINE IS A SUM OF SHARES, NOT THE LAST READING**, because
+    /// shares are what the rows hold; an unknown count makes its column
+    /// unknown here too, instead of lowering the baseline in silence.
+    pub fn attributed_to_session(
+        &self,
+        run_id: &str,
+        session_id: &str,
+        cli: &str,
+    ) -> Result<SessionSoFar, LedgerError> {
+        let connection = self.lock()?;
+        let counted = |sum: Option<i64>, missing: Option<i64>| match missing.unwrap_or(0) {
+            0 => Some(sum.unwrap_or(0).max(0) as u64),
+            _ => None,
+        };
+        Ok(connection.query_row(
+            "SELECT SUM(CAST(input_tokens AS INTEGER)), SUM(input_tokens IS NULL),
+                    SUM(CAST(output_tokens AS INTEGER)), SUM(output_tokens IS NULL),
+                    SUM(CAST(cached_tokens AS INTEGER)), SUM(cached_tokens IS NULL),
+                    SUM(CAST(cache_write_tokens AS INTEGER)), SUM(cache_write_tokens IS NULL),
+                    SUM(CAST(cache_write_long_tokens AS INTEGER)),
+                    SUM(cache_write_long_tokens IS NULL),
+                    SUM(CAST(total_tokens AS INTEGER)), SUM(total_tokens IS NULL),
+                    SUM(CAST(turns AS INTEGER)), SUM(turns IS NULL),
+                    SUM(declared_cost_micros), SUM(declared_cost_micros IS NULL)
+             FROM model_calls
+             WHERE run_id = ?1 AND session_id = ?2 AND cli = ?3",
+            params![run_id, session_id, cli],
+            |row| {
+                Ok(SessionSoFar {
+                    input_tokens: counted(row.get(0)?, row.get(1)?),
+                    output_tokens: counted(row.get(2)?, row.get(3)?),
+                    cached_tokens: counted(row.get(4)?, row.get(5)?),
+                    cache_write_tokens: counted(row.get(6)?, row.get(7)?),
+                    cache_write_long_tokens: counted(row.get(8)?, row.get(9)?),
+                    total_tokens: counted(row.get(10)?, row.get(11)?),
+                    turns: counted(row.get(12)?, row.get(13)?),
+                    declared_cost_micros: match row.get::<_, Option<i64>>(15)?.unwrap_or(0) {
+                        0 => Some(row.get::<_, Option<i64>>(14)?.unwrap_or(0)),
+                        _ => None,
+                    },
+                })
+            },
+        )?)
+    }
+
     /// How many runs actually fall inside the window asked for.
     ///
     /// Whoever gets a count must know what it was computed over: a window of
@@ -1985,7 +2090,8 @@ fn create_projection_tables(connection: &Connection) -> Result<(), LedgerError> 
              turns TEXT,
              session_id TEXT,
              work_kind TEXT,
-             fell_back_from TEXT
+             fell_back_from TEXT,
+             session_mode TEXT
          );
          CREATE TABLE IF NOT EXISTS snapshots (
              snapshot_id TEXT PRIMARY KEY,
@@ -2153,6 +2259,11 @@ fn add_missing_projection_columns(transaction: &Transaction<'_>) -> Result<(), L
     // version 14: which preferred engine was not there.
     if !column_exists(transaction, "model_calls", "fell_back_from")? {
         transaction.execute("ALTER TABLE model_calls ADD COLUMN fell_back_from TEXT", [])?;
+    }
+    // version 15: what a step asked of the session, and whether it got it. A
+    // run of cold calls looked exactly like one that resumed throughout.
+    if !column_exists(transaction, "model_calls", "session_mode")? {
+        transaction.execute("ALTER TABLE model_calls ADD COLUMN session_mode TEXT", [])?;
     }
     // version 8: the identity the process started with, replacing two columns
     // left over from a `current_mandate` table that no longer exists.
@@ -2729,10 +2840,11 @@ fn project_model_call(
              declared_cost_micros, cache_write_tokens, cache_write_long_tokens,
              cache_write_price_micros_per_million,
              cache_write_long_price_micros_per_million, turns, session_id, work_kind,
-             fell_back_from)
+             fell_back_from, session_mode)
          VALUES
          (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
-          ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30)
+          ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30,
+          ?31)
          ON CONFLICT(call_id) DO UPDATE SET
           run_id=excluded.run_id, step_id=excluded.step_id,
           purpose=excluded.purpose, cli=excluded.cli,
@@ -2754,7 +2866,8 @@ fn project_model_call(
           cache_write_long_price_micros_per_million=excluded.cache_write_long_price_micros_per_million,
           turns=excluded.turns,
           session_id=excluded.session_id, work_kind=excluded.work_kind,
-          fell_back_from=excluded.fell_back_from",
+          fell_back_from=excluded.fell_back_from,
+          session_mode=excluded.session_mode",
         params![
             record.call_id,
             record.run_id,
@@ -2791,6 +2904,7 @@ fn project_model_call(
             record.session_id,
             record.work_kind,
             serde_json::to_string(&record.fell_back_from)?,
+            record.session_mode.map(SessionMode::word),
         ],
     )?;
     Ok(())
@@ -3101,7 +3215,7 @@ fn parse_attempt_relation(value: &str) -> rusqlite::Result<AttemptRelation> {
 /// second copy inside `actions` while it existed: two copies getting it wrong
 /// together confirm each other, and no test sees it. This list is the anchor
 /// outside both — a moved column turns red here.
-pub const MODEL_CALL_DUMP_COLUMNS: &str = "call_id,run_id,step_id,purpose,cli,requested_model,actual_model,input_tokens,output_tokens,cached_tokens,cost_micros,price_currency,input_price_micros_per_million,output_price_micros_per_million,cached_price_micros_per_million,engine_identity,retry_chain,error_type,started_at,ended_at,total_tokens,declared_cost_micros,cache_write_tokens,cache_write_long_tokens,cache_write_price_micros_per_million,cache_write_long_price_micros_per_million,turns,session_id,work_kind,fell_back_from";
+pub const MODEL_CALL_DUMP_COLUMNS: &str = "call_id,run_id,step_id,purpose,cli,requested_model,actual_model,input_tokens,output_tokens,cached_tokens,cost_micros,price_currency,input_price_micros_per_million,output_price_micros_per_million,cached_price_micros_per_million,engine_identity,retry_chain,error_type,started_at,ended_at,total_tokens,declared_cost_micros,cache_write_tokens,cache_write_long_tokens,cache_write_price_micros_per_million,cache_write_long_price_micros_per_million,turns,session_id,work_kind,fell_back_from,session_mode";
 
 fn dump_table(connection: &Connection, table: &str) -> Result<Value, LedgerError> {
     let columns = match table {
