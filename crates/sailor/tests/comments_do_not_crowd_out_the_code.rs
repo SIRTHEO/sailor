@@ -385,19 +385,23 @@ fn no_crate_lets_its_comments_outtalk_its_code_more_than_today() {
     let measured = permille_per_crate();
     let table: Vec<String> = measured.iter().map(|(name, permille)| format!("    (\"{name}\", {permille}),")).collect();
     let seeded: BTreeMap<&str, usize> = COMMENT_PERMILLE_TODAY.iter().copied().collect();
+    // Every crate's complaint at once: said one at a time, a night of four
+    // crates cost four measurements.
+    let mut complaints = Vec::new();
     for (name, permille) in &measured {
         let seed = seeded.get(name.as_str()).copied();
-        assert!(
-            seed.is_some_and(|seed| *permille <= seed),
-            "crate «{name}» carries {permille}‰ comment lines against a seed of {seed:?}. Cut comments, or the table is stale; measured now:\n{}",
-            table.join("\n")
-        );
-        assert!(
-            seed.is_some_and(|seed| seed <= permille + HOW_STALE_A_SEED_MAY_BE),
-            "crate «{name}» is seeded at {seed:?}‰ and holds {permille}‰: lower the seed. Measured now:\n{}",
-            table.join("\n")
-        );
+        if !seed.is_some_and(|seed| *permille <= seed) {
+            complaints.push(format!("crate «{name}» carries {permille}‰ comment lines against a seed of {seed:?}. Cut comments, or the table is stale"));
+        } else if !seed.is_some_and(|seed| seed <= permille + HOW_STALE_A_SEED_MAY_BE) {
+            complaints.push(format!("crate «{name}» is seeded at {seed:?}‰ and holds {permille}‰: lower the seed"));
+        }
     }
+    assert!(
+        complaints.is_empty(),
+        "{}; measured now:\n{}",
+        complaints.join("; "),
+        table.join("\n")
+    );
     assert_eq!(seeded.len(), measured.len(), "the table names crates the tree lacks, or lacks some; measured now:\n{}", table.join("\n"));
 }
 
