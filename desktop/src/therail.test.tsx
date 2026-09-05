@@ -29,7 +29,7 @@ beforeAll(() => {
 
 /** The board is one place among several, and a click is what opens it. */
 function goToFlows(): void {
-  screen.getByRole("button", { name: /^Board/ }).click();
+  fireEvent.click(screen.getByRole("button", { name: /^Board/ }));
 }
 
 describe("the column, grouped by origin", () => {
