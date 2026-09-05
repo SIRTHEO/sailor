@@ -196,8 +196,12 @@ dichiarati:
   `crates/sailor/tests/one_action_list_for_the_window_and_the_engine.rs` tiene
   incollate le due parti. È la cura che questa riga chiedeva — *chiedere al
   motore, non tenere una lista* — applicata.
-- **Un passo che esegue un comando non conserva il proprio testo**: di lui resta
-  solo l'esito.
+- ~~**Un passo che esegue un comando non conserva il proprio testo**: di lui resta
+  solo l'esito.~~ **Chiuso il 05/09**: il record del passo porta `ran`
+  (programma risolto e argomenti, ogni parola tagliata a 160 byte), il ledger
+  lo scrive nella colonna `steps.ran` (proiezione alla versione 12, aggiunta
+  ai depositi vecchi), e il passo lo annuncia sul proprio flusso vivo prima
+  di partire («running …»). La finestra e `flow cost` non lo mostrano ancora.
 - ~~**La finestra non ha un bersaglio di rilascio, quindi non si installa.**~~
   **Chiuso il 04/09/2026**, con le tre cose che la voce chiedeva, dichiarate e
   non dedotte. *Quale manifesto*: `Target.manifest_rel`, e il rilascio costruisce
