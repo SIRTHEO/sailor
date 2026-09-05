@@ -142,6 +142,7 @@
   "cli.flow.private_step_engine_refused": "{step} \u2192 {engine}: its data pact is \u00ab{pact}\u00bb, and a private step goes only to an engine measured not to train on what it receives",
   "cli.flow.report_not_written": "the report of run {run} could not be written: {error}",
   "cli.flow.last_report_not_read": "the last report of flow {flow} could not be read: {error}",
+  "cli.flow.declared_by_the_engines": "the engines declare it cost them {units}, over {calls} of the {of} calls: their own word, not a reading of the price list, and not added to the figure above",
   "cli.flow.step_phase": " — phase: {phase}",
   "cli.flow.what_the_cap_does_not_promise": "\nwhat the cap does not promise:\n  - it does not reach the engines: the brake sits before opening a front, never inside a call already under way, and no engine knows the cap exists\n  - a run's first front is never braked: with no call observed the width stays at the ceiling of four, because tightening on a number that does not exist would be inventing it\n  - it counts only the calls that declare a cost; those that do not stay out of the sum, so the real spend is higher than the counted one",
   "cli.command.faults": "faults met while building: what happened, and the check that would prevent it",

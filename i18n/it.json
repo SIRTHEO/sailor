@@ -142,6 +142,7 @@
   "cli.flow.private_step_engine_refused": "{step} \u2192 {engine}: il suo patto sui dati \u00e8 \u00ab{pact}\u00bb, e un passo privato va solo a un motore misurato che non si addestra su ci\u00f2 che riceve",
   "cli.flow.report_not_written": "il rapporto della corsa {run} non si \u00e8 potuto scrivere: {error}",
   "cli.flow.last_report_not_read": "l'ultimo rapporto del flusso {flow} non si \u00e8 potuto leggere: {error}",
+  "cli.flow.declared_by_the_engines": "i motori dichiarano che \u00e8 costata loro {units}, su {calls} chiamate delle {of}: \u00e8 parola loro, non una lettura del listino, e non entra nella cifra qui sopra",
   "cli.flow.step_phase": " — fase: {phase}",
   "cli.flow.what_the_cap_does_not_promise": "\nquello che il tetto non promette:\n  - non arriva ai motori: il freno sta prima di aprire un fronte, mai dentro una chiamata già partita, e nessun motore sa che il tetto esiste\n  - il primo fronte di una corsa non è mai frenato: senza nessuna chiamata osservata la larghezza resta al soffitto di quattro, perché stringere su un numero che non esiste sarebbe inventarlo\n  - conta solo le chiamate che dichiarano un costo; quelle che non lo dichiarano restano fuori dalla somma, quindi la spesa vera è più alta di quella contata",
   "cli.command.faults": "i difetti incontrati costruendo: cos'è successo, e il controllo che lo eviterebbe",
