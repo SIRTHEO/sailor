@@ -106,10 +106,10 @@ fn each_step_asking_for_a_tree_of_its_own_gets_one_and_nobody_shares() {
     let asks_for_a_tree = json!({"bin": bin, "tree": "own", "timeout_secs": 30});
 
     // The control: a step that asks for nothing stands where the run stands.
-    let mut shared = shared_for(&repo, "corsa-1", "engine_a");
+    let shared = shared_for(&repo, "corsa-1", "engine_a");
     let shared_tree = stood_in(
         &action
-            .execute(&json!({"bin": bin, "timeout_secs": 30}), &mut shared)
+            .execute(&json!({"bin": bin, "timeout_secs": 30}), &shared)
             .expect("the step had to go"),
     );
     assert!(
@@ -117,10 +117,10 @@ fn each_step_asking_for_a_tree_of_its_own_gets_one_and_nobody_shares() {
         "a step that asked for nothing was moved anyway: {shared_tree}"
     );
 
-    let mut shared = shared_for(&repo, "corsa-1", "engine_a");
-    let first = stood_in(&action.execute(&asks_for_a_tree, &mut shared).expect("the step had to go"));
-    let mut shared = shared_for(&repo, "corsa-1", "engine_b");
-    let second = stood_in(&action.execute(&asks_for_a_tree, &mut shared).expect("the step had to go"));
+    let shared = shared_for(&repo, "corsa-1", "engine_a");
+    let first = stood_in(&action.execute(&asks_for_a_tree, &shared).expect("the step had to go"));
+    let shared = shared_for(&repo, "corsa-1", "engine_b");
+    let second = stood_in(&action.execute(&asks_for_a_tree, &shared).expect("the step had to go"));
 
     assert_ne!(first, second, "two steps of one run were given the same tree");
     for stood in [&first, &second] {
@@ -134,8 +134,8 @@ fn each_step_asking_for_a_tree_of_its_own_gets_one_and_nobody_shares() {
 
     // A retried step finds the tree its first attempt left, or the work of the
     // attempt before it would be invisible to the one after.
-    let mut shared = shared_for(&repo, "corsa-1", "engine_a");
-    let again = stood_in(&action.execute(&asks_for_a_tree, &mut shared).expect("the step had to go"));
+    let shared = shared_for(&repo, "corsa-1", "engine_a");
+    let again = stood_in(&action.execute(&asks_for_a_tree, &shared).expect("the step had to go"));
     assert_eq!(again, first, "a second attempt was cut a second tree");
 
     let listed = std::process::Command::new("git")
@@ -158,25 +158,25 @@ fn a_step_that_wants_a_tree_and_names_a_workdir_is_refused() {
     let bin = an_engine_that_prints_where_it_stands(dir.path());
     let action = actions::ExternalEngineAction::new();
 
-    let mut shared = shared_for(&repo, "corsa-2", "confuso");
+    let shared = shared_for(&repo, "corsa-2", "confuso");
     let refused = action
         .execute(
             &json!({"bin": bin, "tree": "own", "workdir": "/altrove", "timeout_secs": 30}),
-            &mut shared,
+            &shared,
         )
         .expect_err("two places for one step");
     assert_eq!(refused.class, "invalid_input", "{refused:?}");
 
-    let mut shared = shared_for(&repo, "corsa-2", "sconosciuto");
+    let shared = shared_for(&repo, "corsa-2", "sconosciuto");
     let unknown = action
-        .execute(&json!({"bin": bin, "tree": "shared", "timeout_secs": 30}), &mut shared)
+        .execute(&json!({"bin": bin, "tree": "shared", "timeout_secs": 30}), &shared)
         .expect_err("a word nobody defined");
     assert_eq!(unknown.class, "invalid_input", "{unknown:?}");
 
     // Nothing to name the tree after is a refusal too, never the shared tree.
-    let mut nowhere = SharedState::new();
+    let nowhere = SharedState::new();
     let nameless = action
-        .execute(&json!({"bin": bin, "tree": "own", "timeout_secs": 30}), &mut nowhere)
+        .execute(&json!({"bin": bin, "tree": "own", "timeout_secs": 30}), &nowhere)
         .expect_err("no run, no step, no project");
     assert_eq!(nameless.class, "invalid_input", "{nameless:?}");
 }
