@@ -1,5 +1,6 @@
 //! `sailor search <words>`: everything Sailor keeps that mentions them — the
-//! flows of every source, and the ledger's recent runs, steps and store.
+//! flows of every source, the ledger's recent runs, steps, events and store,
+//! and the fault register kept beside the ledger.
 
 use flow::system::FlowSource;
 use ledger::Ledger;
@@ -45,14 +46,8 @@ fn report(sources: &[FlowSource], ledger_dir: &std::path::Path, query: &str) -> 
     }
     match Ledger::open(ledger_dir) {
         Ok(ledger) => {
-            let hits = ledger
-                .search(
-                    query,
-                    actions::search::RECENT_RUNS,
-                    actions::search::RECENT_STEPS,
-                    actions::search::RECENT_EVENTS,
-                )
-                .map_err(|error| error.to_string())?;
+            let faults_store = ledger_dir.join(faults::FAULTS_FILE);
+            let hits = actions::search::search_the_ledger_and_the_faults(&ledger, Some(&faults_store), query)?;
             lines.push(catalogue::say(
                 "cli.search.ledger_found",
                 &[("count", &hits.len().to_string()), ("query", query)],
