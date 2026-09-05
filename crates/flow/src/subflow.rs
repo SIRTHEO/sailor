@@ -4,6 +4,7 @@
 //! for recursion, [`MAX_DEPTH`] for depth, [`tightest`] and [`remaining_of`]
 //! for the cap and for what it does not promise.
 
+use crate::for_each::FOR_EACH_ACTION;
 use crate::system::{self, FlowSource};
 use crate::{
     Action, ActionError, ActionOutcome, ActionRegistry, Clock, Execution, ExecutionRequest,
@@ -111,6 +112,245 @@ impl SubflowAction {
     }
 }
 
+/// What every child a step opens shares, read once before the first opens.
+pub(crate) struct Caller {
+    pub parent_run: String,
+    pub parent_step: String,
+    pub chain: Vec<String>,
+    pub cap: Option<i64>,
+    pub root: Option<Value>,
+}
+
+/// The flow a step asked for, and where it was found.
+pub(crate) struct Located {
+    pub name: String,
+    pub flow: FlowFile,
+    pub origin: &'static str,
+}
+
+/// Everything `prepare` hands back. The store stands apart from the caller
+/// on purpose: `RecordStore` is `Sync` and not `Send`, so an `Arc` of it
+/// inside a struct could not be lent to the threads `for_each` opens, while a
+/// bare reference to it can — the way the executor lends its own.
+pub(crate) struct Prepared {
+    pub caller: Caller,
+    pub located: Located,
+    pub store: Arc<dyn RecordStore>,
+}
+
+/// How a child run ended: `outputs` is filled only when it went well.
+pub(crate) struct ChildEnd {
+    pub run_id: String,
+    pub status: &'static str,
+    pub outputs: Value,
+}
+
+/// Everything a step must know before opening a child: who is calling, where
+/// the flow is, and that calling it is allowed at all.
+pub(crate) fn prepare(
+    host: &dyn SubflowHost,
+    shared: &SharedState,
+    flow_name: &str,
+) -> Result<Prepared, ActionError> {
+    // The caller: run and step are written by the executor before every
+    // action. Without them the child run could not be traced back, and a
+    // child run nobody can tie to the step that asked for it is the fault
+    // decision 4 exists to prevent.
+    let parent_run = text(shared, CURRENT_RUN).ok_or_else(|| {
+        ActionError::new(
+            "no_parent_run",
+            "no run in progress: a subflow exists only inside a run",
+        )
+    })?;
+    let parent_step = text(shared, CURRENT_STEP).ok_or_else(|| {
+        ActionError::new(
+            "no_parent_step",
+            "no step in progress: there would be nobody to attribute the child run to",
+        )
+    })?;
+
+    // Ask for the store before reading any file. Not having one is a
+    // condition of the step, not of the flow it names: discovering it after
+    // walking every source would tell someone "I cannot find that flow"
+    // when in truth they could not have run any flow at all.
+    let store = host.store()?;
+
+    let sources = host.sources();
+    let found = system::load_all(&sources);
+    let (_, origin, entry) = found
+        .iter()
+        .find(|(name, _, _)| name == flow_name)
+        .ok_or_else(|| {
+            ActionError::new(
+                "unknown_subflow",
+                format!(
+                    "no flow named \"{flow_name}\" among the ones I can see: {}",
+                    places(&sources)
+                ),
+            )
+        })?;
+    let child = entry
+        .clone()
+        .map_err(|why| ActionError::new("invalid_subflow", why))?;
+
+    // Before opening, not after spending. The calls declared in `with` read
+    // without running anything: a loop across separate files is caught
+    // here, at the outermost run's first `subflow` step.
+    if let Some(cycle) = call_cycle(flow_name, &known_flows(&found)) {
+        return Err(cyclic(&cycle));
+    }
+
+    let chain = extend_chain(&chain_of(shared), flow_name)?;
+
+    // A call declares no cap of its own: the spend cap belongs to the flow.
+    // A step that could raise it for the flow it calls would move the
+    // declaration away from whoever has to read it.
+    let cap = tightest(
+        child.spend_cap_micros,
+        remaining_of(shared, &store, &parent_run)?,
+    );
+    Ok(Prepared {
+        caller: Caller {
+            parent_run,
+            parent_step,
+            chain,
+            cap,
+            root: shared.get(WORKSPACE_ROOT).cloned(),
+        },
+        located: Located {
+            name: flow_name.to_owned(),
+            flow: child,
+            origin,
+        },
+        store,
+    })
+}
+
+/// Opens, runs and closes one child run, writing its header at both ends.
+/// A child that ended badly is an error carrying the class of its ending;
+/// waiting and not-yet are not endings, and come back as a status.
+pub(crate) fn run_child(
+    host: &dyn SubflowHost,
+    caller: &Caller,
+    located: &Located,
+    store: &dyn RecordStore,
+    root_inputs: BTreeMap<String, Value>,
+    run_id: String,
+) -> Result<ChildEnd, ActionError> {
+    let child = &located.flow;
+    let flow_name = located.name.as_str();
+    let started_at = SystemClock.now().map_err(clock_broke)?;
+    let mut note = RunNote {
+        flow: child,
+        run_id: &run_id,
+        parent_run_id: &caller.parent_run,
+        parent_step_id: &caller.parent_step,
+        status: "running",
+        started_at,
+        ended_at: None,
+        error: None,
+    };
+    host.note_run(&note)?;
+
+    let mut child_shared = SharedState::new();
+    child_shared.insert(CALL_CHAIN.to_owned(), chain_value(&caller.chain));
+    // The root comes down, the inputs do not. What the child receives is
+    // written by its caller in one place; where it works is not an input but
+    // the same machine and project as the parent. Without this line the child
+    // falls on the process directory — fault 25 by the back door — and works
+    // in the wrong place without failing. A parent with no root invents none.
+    if let Some(root) = &caller.root {
+        child_shared.insert(WORKSPACE_ROOT.to_owned(), root.clone());
+    }
+
+    let actions = host.actions()?;
+    let outcome = InProcessExecutor.execute(
+        &child.graph,
+        ExecutionRequest {
+            run_id: run_id.clone(),
+            root_inputs,
+            gates: Vec::new(),
+            shared: child_shared,
+            spend_cap_micros: caller.cap,
+        },
+        store,
+        actions.as_ref(),
+        &SystemClock,
+    );
+
+    let ended_at = SystemClock.now().map_err(clock_broke)?;
+    note.ended_at = Some(ended_at);
+
+    let execution = match outcome {
+        Ok(execution) => execution,
+        Err(error) => {
+            let said = error.to_string();
+            note.status = "failed";
+            note.error = Some(said.clone());
+            host.note_run(&note)?;
+            return Err(ActionError::new(
+                "subflow_broke",
+                format!("run {run_id} of flow {flow_name} never started: {said}"),
+            ));
+        }
+    };
+
+    let (status, went_well) = crate::run_status(&execution);
+    let why = host.why(&execution);
+    note.status = status;
+    note.error = why.clone();
+    host.note_run(&note)?;
+
+    if !went_well {
+        // Waiting is not breaking, and neither is not-yet: the caller parks on
+        // either, so the parent's run stays restartable instead of reading as
+        // broken. Not-yet must not decay into waiting — the child comes back
+        // by itself, so the calling step has to be asked again as well.
+        if status == "waiting" || status == "not_yet" {
+            return Ok(ChildEnd {
+                run_id,
+                status,
+                outputs: Value::Null,
+            });
+        }
+        // **THE CLASS IS WRITTEN OUT WHERE THE ERROR IS BUILT.**
+        // `format!("subflow_{status}")` gave these same names and no reader
+        // could find them: searching for `subflow_failed` came back empty,
+        // and a name held in a variable is one the pairing check cannot see.
+        // The last arm is its own class and not a bucket — a status added to
+        // `run_status` would otherwise arrive wearing another one's name.
+        let said = why
+            .unwrap_or_else(|| format!("run {run_id} of flow {flow_name} ended in state {status}"));
+        return Err(match status {
+            "stopped" => ActionError::new("subflow_stopped", said),
+            "failed" => ActionError::new("subflow_failed", said),
+            "cap_reached" => ActionError::new("subflow_cap_reached", said),
+            "incomplete" => ActionError::new("subflow_incomplete", said),
+            _ => ActionError::new("subflow_unknown_state", said),
+        });
+    }
+
+    let records = store
+        .records(&run_id)
+        .map_err(|error| ActionError::new("subflow_unreadable", error.to_string()))?;
+    Ok(ChildEnd {
+        run_id,
+        status,
+        outputs: last_outputs(&child.graph, &records),
+    })
+}
+
+/// What a step hands back for a child that went well.
+pub(crate) fn went_output(located: &Located, end: &ChildEnd) -> Value {
+    json!({
+        "flow": located.name,
+        "origin": located.origin,
+        "run_id": end.run_id,
+        "status": end.status,
+        "outputs": end.outputs,
+    })
+}
+
 impl Action for SubflowAction {
     fn execute(&self, input: &Value, shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         let call: Call = serde_json::from_value(input.clone()).map_err(|error| {
@@ -119,186 +359,38 @@ impl Action for SubflowAction {
                 format!("the step does not declare which flow to run: {error}"),
             )
         })?;
-
-        // The caller: run and step are written by the executor before every
-        // action. Without them the child run could not be traced back, and a
-        // child run nobody can tie to the step that asked for it is the fault
-        // decision 4 exists to prevent.
-        let parent_run = text(shared, CURRENT_RUN).ok_or_else(|| {
-            ActionError::new(
-                "no_parent_run",
-                "no run in progress: a subflow exists only inside a run",
-            )
-        })?;
-        let parent_step = text(shared, CURRENT_STEP).ok_or_else(|| {
-            ActionError::new(
-                "no_parent_step",
-                "no step in progress: there would be nobody to attribute the child run to",
-            )
-        })?;
-
-        // Ask for the store before reading any file. Not having one is a
-        // condition of the step, not of the flow it names: discovering it after
-        // walking every source would tell someone "I cannot find that flow"
-        // when in truth they could not have run any flow at all.
-        let store = self.host.store()?;
-
-        let sources = self.host.sources();
-        let found = system::load_all(&sources);
-        let (_, origin, entry) = found
-            .iter()
-            .find(|(name, _, _)| name == &call.flow)
-            .ok_or_else(|| {
-                ActionError::new(
-                    "unknown_subflow",
-                    format!(
-                        "no flow named \"{}\" among the ones I can see: {}",
-                        call.flow,
-                        places(&sources)
-                    ),
-                )
-            })?;
-        let child = entry
-            .clone()
-            .map_err(|why| ActionError::new("invalid_subflow", why))?;
-
-        // Before opening, not after spending. The calls declared in `with` read
-        // without running anything: a loop across separate files is caught
-        // here, at the outermost run's first `subflow` step.
-        if let Some(cycle) = call_cycle(&call.flow, &known_flows(&found)) {
-            return Err(cyclic(&cycle));
-        }
-
-        let chain = extend_chain(&chain_of(shared), &call.flow)?;
-
-        // A call declares no cap of its own: the spend cap belongs to the flow.
-        // A step that could raise it for the flow it calls would move the
-        // declaration away from whoever has to read it.
-        let cap = tightest(
-            child.spend_cap_micros,
-            remaining_of(shared, &store, &parent_run)?,
-        );
-
-        let run_id = child_run_id(&parent_run, &parent_step)?;
-        let started_at = SystemClock.now().map_err(clock_broke)?;
-        let mut note = RunNote {
-            flow: &child,
-            run_id: &run_id,
-            parent_run_id: &parent_run,
-            parent_step_id: &parent_step,
-            status: "running",
-            started_at,
-            ended_at: None,
-            error: None,
-        };
-        self.host.note_run(&note)?;
+        let Prepared {
+            caller,
+            located,
+            store,
+        } = prepare(self.host.as_ref(), shared, &call.flow)?;
 
         // The child's inputs are its own, overridden by the step — never the
         // parent's: what the child receives is written in one place, and reads
         // without knowing anything about whoever calls it.
-        let mut root_inputs = child.inputs.clone();
+        let mut root_inputs = located.flow.inputs.clone();
         root_inputs.extend(call.inputs.clone());
 
-        let mut child_shared = SharedState::new();
-        child_shared.insert(CALL_CHAIN.to_owned(), chain_value(&chain));
-        // **LA RADICE SCENDE, GLI INGRESSI NO.** Sono due cose diverse e vanno
-        // dette separate: quello che il figlio *riceve* è scritto in un posto
-        // solo (sopra), ma *dove lavora* non è un ingresso — è la stessa
-        // macchina e lo stesso progetto del padre. Senza questa riga il figlio
-        // di una chiamata cade sulla cartella del processo, che è il guasto 25
-        // preso dalla porta di servizio: non fallisce, lavora nel posto
-        // sbagliato. Un padre senza radice non ne inventa una: assente resta
-        // assente, e il figlio fallirà dicendolo come lo direbbe il padre.
-        if let Some(root) = shared.get(WORKSPACE_ROOT) {
-            child_shared.insert(WORKSPACE_ROOT.to_owned(), root.clone());
-        }
-
-        let actions = self.host.actions()?;
-        let outcome = InProcessExecutor.execute(
-            &child.graph,
-            ExecutionRequest {
-                run_id: run_id.clone(),
-                root_inputs,
-                gates: Vec::new(),
-                shared: child_shared,
-                spend_cap_micros: cap,
-            },
+        let run_id = child_run_id(&caller.parent_run, &caller.parent_step)?;
+        let end = run_child(
+            self.host.as_ref(),
+            &caller,
+            &located,
             store.as_ref(),
-            actions.as_ref(),
-            &SystemClock,
-        );
-
-        let ended_at = SystemClock.now().map_err(clock_broke)?;
-        note.ended_at = Some(ended_at);
-
-        let execution = match outcome {
-            Ok(execution) => execution,
-            Err(error) => {
-                let said = error.to_string();
-                note.status = "failed";
-                note.error = Some(said.clone());
-                self.host.note_run(&note)?;
-                return Err(ActionError::new(
-                    "subflow_broke",
-                    format!("run {run_id} of flow {} never started: {said}", call.flow),
-                ));
-            }
-        };
-
-        let (status, went_well) = crate::run_status(&execution);
-        let why = self.host.why(&execution);
-        note.status = status;
-        note.error = why.clone();
-        self.host.note_run(&note)?;
-
-        if !went_well {
-            // Waiting is not breaking. A child stopped on a waiting step makes
-            // the parent wait: the parent's run stays restartable instead of
-            // reading as broken, which is how any other step behaves while it
-            // does not yet know its own outcome.
-            if status == "waiting" {
-                return Ok(ActionOutcome::Waiting(format!(
-                    "run {run_id} of flow {} is waiting",
-                    call.flow
-                )));
-            }
-            // Nor is not-yet breaking, and it must not decay into waiting: the
-            // child comes back by itself, so the calling step has to be asked
-            // again as well, or the branch parks on a child that did not park.
-            if status == "not_yet" {
-                return Ok(ActionOutcome::NotYet(format!(
-                    "run {run_id} of flow {} is not done yet",
-                    call.flow
-                )));
-            }
-            // **THE CLASS IS WRITTEN OUT WHERE THE ERROR IS BUILT.**
-            // `format!("subflow_{status}")` gave these same names and no reader
-            // could find them: searching for `subflow_failed` came back empty,
-            // and a name held in a variable is one the pairing check cannot see.
-            // The last arm is its own class and not a bucket — a status added to
-            // `run_status` would otherwise arrive wearing another one's name.
-            let said = why.unwrap_or_else(|| {
-                format!("run {run_id} of flow {} ended in state {status}", call.flow)
-            });
-            return Err(match status {
-                "stopped" => ActionError::new("subflow_stopped", said),
-                "failed" => ActionError::new("subflow_failed", said),
-                "cap_reached" => ActionError::new("subflow_cap_reached", said),
-                "incomplete" => ActionError::new("subflow_incomplete", said),
-                _ => ActionError::new("subflow_unknown_state", said),
-            });
+            root_inputs,
+            run_id,
+        )?;
+        match end.status {
+            "waiting" => Ok(ActionOutcome::Waiting(format!(
+                "run {} of flow {} is waiting",
+                end.run_id, call.flow
+            ))),
+            "not_yet" => Ok(ActionOutcome::NotYet(format!(
+                "run {} of flow {} is not done yet",
+                end.run_id, call.flow
+            ))),
+            _ => Ok(ActionOutcome::Went(went_output(&located, &end))),
         }
-
-        let records = store
-            .records(&run_id)
-            .map_err(|error| ActionError::new("subflow_unreadable", error.to_string()))?;
-        Ok(ActionOutcome::Went(json!({
-            "flow": call.flow,
-            "origin": origin,
-            "run_id": run_id,
-            "status": status,
-            "outputs": last_outputs(&child.graph, &records),
-        })))
     }
 
     fn unknown_fields(&self, declared: &Value) -> Vec<String> {
@@ -365,7 +457,7 @@ pub fn extend_chain(chain: &[String], next: &str) -> Result<Vec<String>, ActionE
     Ok(extended)
 }
 
-/// The flows named by this flow's `subflow` steps.
+/// The flows named by this flow's `subflow` and `for_each` steps.
 ///
 /// It reads `with`, that is, what is declared. A step that derives the flow
 /// name from a dependency's output does not appear here and cannot: at check
@@ -375,7 +467,7 @@ pub fn calls_of(flow: &FlowFile) -> Vec<String> {
     flow.graph
         .steps()
         .iter()
-        .filter(|step| step.action == SUBFLOW_ACTION)
+        .filter(|step| step.action == SUBFLOW_ACTION || step.action == FOR_EACH_ACTION)
         .filter_map(|step| {
             step.with
                 .as_ref()
@@ -470,7 +562,7 @@ fn remaining_of(
 /// log line, a report. The trailing nanoseconds make every attempt unique: a
 /// retried `subflow` step opens a *new* run instead of reopening the broken
 /// one, which is how every other retry in the tree behaves.
-fn child_run_id(parent_run: &str, parent_step: &str) -> Result<String, ActionError> {
+pub(crate) fn child_run_id(parent_run: &str, parent_step: &str) -> Result<String, ActionError> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|error| ActionError::new("clock_before_epoch", error.to_string()))?;

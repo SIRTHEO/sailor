@@ -1,3 +1,4 @@
+use crate::for_each::FOR_EACH_ACTION;
 use crate::ValueSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -102,6 +103,7 @@ pub enum GraphError {
     ZeroAttempts(String),
     DestructiveInputOverlay { step: String },
     IncompatibleInput { step: String },
+    ForEachWithout { step: String, field: &'static str },
 }
 
 impl Graph {
@@ -145,6 +147,19 @@ impl Graph {
             }
             if by_id.insert(step.id.as_str(), step).is_some() {
                 return Err(GraphError::DuplicateStep(step.id.clone()));
+            }
+            // Refused while loading, not at the first run: a list to loop over
+            // and a flow to run are the step, and a step missing either would
+            // be found only by the run that paid to reach it.
+            if step.action == FOR_EACH_ACTION {
+                for field in ["flow", "items"] {
+                    if step.with.as_ref().and_then(|with| with.get(field)).is_none() {
+                        return Err(GraphError::ForEachWithout {
+                            step: step.id.clone(),
+                            field,
+                        });
+                    }
+                }
             }
         }
 
@@ -384,6 +399,12 @@ impl Display for GraphError {
                     "step {step} input does not accept dependency output"
                 )
             }
+            GraphError::ForEachWithout { step, field } => {
+                write!(
+                    formatter,
+                    "step {step} runs a flow for each element but declares no {field}"
+                )
+            }
         }
     }
 }
@@ -414,6 +435,52 @@ mod tests {
     fn arbitrary_backward_edges_are_rejected() {
         let error = Graph::new(vec![step("a", &["b"]), step("b", &["a"])]);
         assert_eq!(error, Err(GraphError::Cycle));
+    }
+
+    fn for_each(with: serde_json::Value) -> Step {
+        let mut repeat = step("ripeti", &[]);
+        repeat.action = FOR_EACH_ACTION.to_owned();
+        repeat.with = Some(with);
+        repeat
+    }
+
+    #[test]
+    fn a_for_each_step_without_a_flow_or_a_list_is_refused_by_name() {
+        let no_flow = Graph::new(vec![for_each(serde_json::json!({ "items": [1] }))]);
+        assert_eq!(
+            no_flow,
+            Err(GraphError::ForEachWithout {
+                step: "ripeti".to_owned(),
+                field: "flow",
+            })
+        );
+
+        let no_items = Graph::new(vec![for_each(serde_json::json!({ "flow": "foglia" }))]);
+        assert_eq!(
+            no_items,
+            Err(GraphError::ForEachWithout {
+                step: "ripeti".to_owned(),
+                field: "items",
+            })
+        );
+        assert!(
+            no_items.unwrap_err().to_string().contains("ripeti"),
+            "the refusal names the step"
+        );
+    }
+
+    /// The twin: a pointer counts as a list, since the executor resolves it
+    /// before the step runs, and a step with both is a step.
+    #[test]
+    fn a_for_each_step_with_a_flow_and_a_list_or_a_pointer_is_accepted() {
+        Graph::new(vec![for_each(
+            serde_json::json!({ "flow": "foglia", "items": [1, 2] }),
+        )])
+        .expect("a literal list");
+        Graph::new(vec![for_each(
+            serde_json::json!({ "flow": "foglia", "items": { "$from": "/list" } }),
+        )])
+        .expect("a pointer to a list");
     }
 
     #[test]
