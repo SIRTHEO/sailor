@@ -6,7 +6,8 @@
 //! is meant to move, had no idea trees existed at all.
 
 use crate::Form;
-use workspace::{create, list, remove, root, Worktree};
+use std::path::Path;
+use workspace::{create, list, remove, root, run_and_step_of, Worktree};
 
 pub const USAGE: &[Form] = &[
     Form {
@@ -41,7 +42,7 @@ fn dispatch(args: &[String]) -> Result<String, String> {
     match args {
         [command] if command == "list" => {
             let trees = list(&repo)?;
-            Ok(render(&trees))
+            Ok(render(&repo, &trees))
         }
         [command, branch] if command == "create" => {
             let path = create(&repo, branch, None)?;
@@ -61,9 +62,10 @@ fn dispatch(args: &[String]) -> Result<String, String> {
 
 /// One line per tree, with the state a person acts on beside the name.
 ///
-/// The window draws its own; this is the shape a terminal reads, and the two
-/// have no reason to be the same thing.
-pub fn render(trees: &[Worktree]) -> String {
+/// The window draws its own; this is the shape a terminal reads. A tree a
+/// step of a run kept is named with its run and step, and counted at the end:
+/// kept disk nothing says out loud is fault 89 in a new place.
+pub fn render(repo: &Path, trees: &[Worktree]) -> String {
     if trees.is_empty() {
         return "no worktrees".to_owned();
     }
@@ -72,24 +74,37 @@ pub fn render(trees: &[Worktree]) -> String {
         .map(|tree| tree.name().len())
         .max()
         .unwrap_or(0);
-    trees
-        .iter()
-        .map(|tree| {
-            let branch = tree
-                .branch
-                .clone()
-                .unwrap_or_else(|| catalogue::say("cli.worktree.detached", &[]));
-            let mut line = format!("{:widest$}  {branch}", tree.name());
-            if tree.locked {
-                line.push_str("  ");
-                line.push_str(&catalogue::say("cli.worktree.locked", &[]));
-            }
-            if tree.prunable {
-                line.push_str("  ");
-                line.push_str(&catalogue::say("cli.worktree.directory_gone", &[]));
-            }
-            line
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+    let mut kept = 0usize;
+    let mut lines: Vec<String> = Vec::new();
+    for tree in trees {
+        let branch = tree
+            .branch
+            .clone()
+            .unwrap_or_else(|| catalogue::say("cli.worktree.detached", &[]));
+        let mut line = format!("{:widest$}  {branch}", tree.name());
+        if tree.locked {
+            line.push_str("  ");
+            line.push_str(&catalogue::say("cli.worktree.locked", &[]));
+        }
+        if tree.prunable {
+            line.push_str("  ");
+            line.push_str(&catalogue::say("cli.worktree.directory_gone", &[]));
+        }
+        if let Some((run, step)) = run_and_step_of(repo, tree) {
+            kept += 1;
+            line.push_str("  ");
+            line.push_str(&catalogue::say(
+                "cli.worktree.cut_for",
+                &[("run", &run), ("step", &step)],
+            ));
+        }
+        lines.push(line);
+    }
+    if kept > 0 {
+        lines.push(catalogue::say(
+            "cli.worktree.kept_from_runs",
+            &[("count", &kept.to_string())],
+        ));
+    }
+    lines.join("\n")
 }
