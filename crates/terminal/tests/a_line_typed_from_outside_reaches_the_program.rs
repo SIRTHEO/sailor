@@ -128,7 +128,7 @@ fn a_line_left_in_the_letterbox_reaches_a_terminal_born_through_the_engine() {
     let directory = scratch("engine-born");
     let workspace = Workspace::open(&directory).expect("open the workspace");
     let terminals = terminal::Terminals::with_router(Arc::new(terminal::Router::without_routes(
-        Arc::new(terminal::PathLookup::current()),
+        Arc::new(terminal::PathLookup::on(toolbox::Machine::bare(directory.clone()))),
     )))
     .with_mailroom(inbox::mailroom(&directory));
     let shown = Arc::new(terminal::Buffer::new());
