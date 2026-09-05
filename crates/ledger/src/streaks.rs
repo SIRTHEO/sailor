@@ -46,16 +46,15 @@ impl Ledger {
             }
             streaks
                 .entry(flow.clone())
-                .and_modify(|streak| streak.length += 1)
+                .and_modify(|streak| streak.runs.push(run_id.clone()))
                 .or_insert(FailureStreak {
                     flow,
-                    length: 1,
-                    last_failed_run: run_id,
+                    runs: vec![run_id],
                 });
         }
         Ok(streaks
             .into_values()
-            .filter(|streak| streak.length >= at_least)
+            .filter(|streak| streak.length() >= at_least)
             .collect())
     }
 
@@ -152,13 +151,11 @@ mod tests {
             vec![
                 FailureStreak {
                     flow: "notte".to_owned(),
-                    length: 2,
-                    last_failed_run: "notte-2".to_owned(),
+                    runs: vec!["notte-2".to_owned(), "notte-1".to_owned()],
                 },
                 FailureStreak {
                     flow: "relay".to_owned(),
-                    length: 3,
-                    last_failed_run: "relay-5".to_owned(),
+                    runs: vec!["relay-5".to_owned(), "relay-4".to_owned(), "relay-3".to_owned()],
                 },
             ]
         );
@@ -185,8 +182,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
 
         assert_eq!(streaks.len(), 1, "{streaks:?}");
-        assert_eq!(streaks[0].length, 3);
-        assert_eq!(streaks[0].last_failed_run, "relay-3");
+        assert_eq!(streaks[0].length(), 3);
+        assert_eq!(streaks[0].last_failed_run(), "relay-3");
     }
 
     #[test]

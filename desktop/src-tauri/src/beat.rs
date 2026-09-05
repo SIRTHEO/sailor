@@ -453,8 +453,7 @@ mod tests {
     fn a_fault_is_started_unless_the_writer_is_still_busy_or_it_was_written() {
         let streaks = vec![FailureStreak {
             flow: "relay".to_owned(),
-            length: 3,
-            last_failed_run: "relay-3".to_owned(),
+            runs: vec!["relay-3".to_owned(), "relay-2".to_owned(), "relay-1".to_owned()],
         }];
         let nothing_written = BTreeSet::new();
         let due = faults_to_start(&streaks, &nothing_written, &[]);
