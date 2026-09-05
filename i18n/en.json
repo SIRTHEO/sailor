@@ -579,7 +579,7 @@
   "cli.ratchet.not_a_repository": "the sources are not a git repository",
   "cli.ratchet.archive_failed": "git archive HEAD did not produce a tree",
   "cli.ratchet.no_judge": "no judge carries a seed here",
-  "cli.ratchet.measuring": "measuring {judges} judge(s) on a clean HEAD, {laid_over} changed file(s) laid over",
+  "cli.ratchet.measuring": "measuring {judges} judge(s) on a clean HEAD, {laid_over} changed file(s) laid over, {taken_away} removed file(s) taken away",
   "cli.ratchet.green": "green",
   "cli.ratchet.red": "red  ",
   "cli.ratchet.all_green": "every seed holds on HEAD with these changes",
