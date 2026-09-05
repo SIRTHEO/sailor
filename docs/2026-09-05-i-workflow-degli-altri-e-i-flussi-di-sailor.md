@@ -99,7 +99,11 @@ un grafo, un registro o un orologio. Per loro Sailor non «rispecchia» niente:
    catena di `deps`, `phase` è il futuro campo `phase`. Nessun codice nuovo: il
    mandato del passo `author` deve dire che uno script è uno schizzo
    ammesso e come si legge. Chi ha un workflow che funziona lo consolida in un
-   flusso con un gesto, e da lì corre su ogni motore con un registro.
+   flusso con un gesto, e da lì corre su ogni motore con un registro. Fatto: il
+   mandato del passo `author` in `crates/flow/system/draft-a-flow.flow.json` ha
+   la sezione «IF THE SKETCH IS A SCRIPT» con le quattro corrispondenze, e
+   `crates/sailor/tests/draft_a_flow.rs` prova che ci siano — finché il campo
+   `phase` non esiste, il nome della fase resta nell'id o nella descrizione.
 2. **`for_each`.** Un passo che, ricevuta una lista, apre un `subflow` per
    elemento sotto il tetto del fronte, e restituisce la lista delle uscite. È
    l'unica primitiva di Claude che non abbiamo, ed è quella che fa la
