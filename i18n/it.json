@@ -531,6 +531,7 @@
   "cli.remember.kept": "tenuta: «{label}» ({type})",
   "cli.session.remembered": "{count} memorie tenute, le ultime {recent}: `sailor search <parola>` le trova, `sailor remember` ne aggiunge una.",
   "cli.session.memory_page": "La pagina delle memorie è {path}; comincia così:\n{opening}",
+  "cli.session.page_unseen": "{engine} legge {files} all'avvio e nessuno di essi nomina la pagina: non vede le memorie finché uno non lo fa.",
   "cli.command.memory": "rende ciò che si ricorda nell'unico file che ogni riga di comando legge all'avvio",
   "cli.memory.page_says": "scrive la pagina delle memorie ancora valide in state/memory.md sotto la casa di Sailor; con --print la stampa invece",
   "cli.memory.wants_a_form": "le forme sono `page` e `where`; uso: {usage}",
