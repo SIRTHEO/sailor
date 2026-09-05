@@ -507,5 +507,17 @@
   "cli.search.flows_found": "flows: {count} mention «{query}»",
   "cli.search.ledger_found": "ledger: {count} run(s), step(s) or store entr(ies) mention «{query}»",
   "cli.search.ledger_closed": "ledger: could not be opened, so nothing of it was searched ({error})",
-  "cli.release.tree_not_brought_to_head": "the release tree could not be brought to HEAD (git {step} failed): remove target/release-tree and release again"
+  "cli.release.tree_not_brought_to_head": "the release tree could not be brought to HEAD (git {step} failed): remove target/release-tree and release again",
+  "window.sketch.title": "Whiteboard",
+  "window.sketch.lead": "Draw the flow you want: a block per step, its kind, your words on it, and which block it comes after. The drawing goes to draft-a-flow, which writes a flow that stands beside your others.",
+  "window.sketch.kind": "kind of step",
+  "window.sketch.words": "what this step does, in your words",
+  "window.sketch.after": "after",
+  "window.sketch.add": "+ block",
+  "window.sketch.remove": "remove this block",
+  "window.sketch.draft": "Draft the flow",
+  "window.sketch.drafting": "the author is writing the flow — watch the run",
+  "window.sketch.ended": "the run ended: {status}. If it stands, the flow is on the board.",
+  "window.sketch.outside": "outside the shell there is no engine to draft it",
+  "window.sketch.as_text": "the sketch as the author reads it"
 }

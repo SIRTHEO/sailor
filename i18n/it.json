@@ -507,5 +507,17 @@
   "cli.search.flows_found": "flussi: {count} nominano «{query}»",
   "cli.search.ledger_found": "ledger: {count} corse, passi o voci di deposito nominano «{query}»",
   "cli.search.ledger_closed": "ledger: non si è aperto, quindi non vi ho cercato niente ({error})",
-  "cli.release.tree_not_brought_to_head": "l'albero di rilascio non si è potuto portare a HEAD (git {step} fallito): togli target/release-tree e rilascia di nuovo"
+  "cli.release.tree_not_brought_to_head": "l'albero di rilascio non si è potuto portare a HEAD (git {step} fallito): togli target/release-tree e rilascia di nuovo",
+  "window.sketch.title": "Lavagna",
+  "window.sketch.lead": "Disegna il flusso che vuoi: un blocco per passo, il suo genere, le tue parole sopra, e dopo quale blocco viene. Il disegno va a draft-a-flow, che scrive un flusso che sta in piedi accanto agli altri tuoi.",
+  "window.sketch.kind": "genere del passo",
+  "window.sketch.words": "cosa fa questo passo, con le tue parole",
+  "window.sketch.after": "dopo",
+  "window.sketch.add": "+ blocco",
+  "window.sketch.remove": "togli questo blocco",
+  "window.sketch.draft": "Fai la bozza",
+  "window.sketch.drafting": "l'autore sta scrivendo il flusso — guarda la corsa",
+  "window.sketch.ended": "la corsa è finita: {status}. Se sta in piedi, il flusso è sulla tela.",
+  "window.sketch.outside": "fuori dal guscio non c'è un motore che la scriva",
+  "window.sketch.as_text": "lo schizzo come lo legge l'autore"
 }
