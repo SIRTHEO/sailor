@@ -98,6 +98,7 @@ fn a_claim_and_a_waiting_run(ledger: &Ledger, agent: &str, repository: &str) {
             started_at: 1_700_000_100,
             ended_at: None,
             worktree: None,
+            stop_reason: None,
         })
         .expect("the waiting run is recorded");
 }
@@ -119,6 +120,7 @@ fn run(scratch: &Scratch, ledger: &Ledger, graph: &Graph) -> (Execution, InMemor
         gates: Vec::new(),
         shared: SharedState::new(),
         spend_cap_micros: None,
+        stops: flow::RunStops::default(),
     };
     let execution = InProcessExecutor
         .execute(

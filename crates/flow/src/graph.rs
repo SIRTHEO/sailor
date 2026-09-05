@@ -41,6 +41,12 @@ pub struct Step {
     /// executes: absent is written absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phase: Option<String>,
+    /// The promise this step closes the run on: a JSON pointer into its **own**
+    /// output which, once true, means the run has done what it was for. Read
+    /// after the output schema has accepted the value, so a refused answer
+    /// keeps nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stops_when: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -104,6 +110,7 @@ pub enum GraphError {
     DestructiveInputOverlay { step: String },
     IncompatibleInput { step: String },
     ForEachWithout { step: String, field: &'static str },
+    StopsWhenIsNotAPointer { step: String, value: String },
 }
 
 impl Graph {
@@ -147,6 +154,17 @@ impl Graph {
             }
             if by_id.insert(step.id.as_str(), step).is_some() {
                 return Err(GraphError::DuplicateStep(step.id.clone()));
+            }
+            // Refused while loading: a pointer that names nothing is a promise
+            // that can never be kept, and a run would go to its wall to find
+            // out.
+            if let Some(pointer) = step.stops_when.as_deref() {
+                if !pointer.starts_with('/') {
+                    return Err(GraphError::StopsWhenIsNotAPointer {
+                        step: step.id.clone(),
+                        value: pointer.to_owned(),
+                    });
+                }
             }
             // Refused while loading, not at the first run: a list to loop over
             // and a flow to run are the step, and a step missing either would
@@ -405,6 +423,13 @@ impl Display for GraphError {
                     "step {step} runs a flow for each element but declares no {field}"
                 )
             }
+            GraphError::StopsWhenIsNotAPointer { step, value } => {
+                write!(
+                    formatter,
+                    "step {step} declares `stops_when` as «{value}», which is not \
+                     a pointer into its output: it begins with a slash, as «/done» does"
+                )
+            }
         }
     }
 }
@@ -428,6 +453,7 @@ mod tests {
             ask_again_after_secs: None,
             retry_after_secs: None,
             phase: None,
+        stops_when: None,
         }
     }
 

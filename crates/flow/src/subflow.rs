@@ -8,8 +8,9 @@ use crate::for_each::FOR_EACH_ACTION;
 use crate::system::{self, FlowSource};
 use crate::{
     Action, ActionError, ActionOutcome, ActionRegistry, Clock, Execution, ExecutionRequest,
-    Executor, FlowFile, Graph, InProcessExecutor, Outcome, RecordStore, SharedState, StepRecord,
-    StepSpecies, SystemClock, CURRENT_CAP, CURRENT_RUN, CURRENT_STEP, WORKSPACE_ROOT,
+    Executor, FlowFile, Graph, InProcessExecutor, Outcome, RecordStore, RunStops, SharedState,
+    StepRecord, StepSpecies, SystemClock, CURRENT_CAP, CURRENT_RUN, CURRENT_STEP, CURRENT_WALL,
+    WORKSPACE_ROOT,
 };
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -70,6 +71,8 @@ pub struct RunNote<'a> {
     /// `None` while the child run is still open.
     pub ended_at: Option<i64>,
     pub error: Option<String>,
+    /// Which of the four reasons closed the child short, when one of them did.
+    pub stop_reason: Option<crate::StopReason>,
 }
 
 /// What the `subflow` step cannot know on its own. A trait rather than three
@@ -118,6 +121,9 @@ pub(crate) struct Caller {
     pub parent_step: String,
     pub chain: Vec<String>,
     pub cap: Option<i64>,
+    /// The wall of the run that called, when it has one. A child never widens
+    /// it: it is the earlier of this and the child's own.
+    pub wall_deadline_at: Option<i64>,
     pub root: Option<Value>,
 }
 
@@ -215,6 +221,7 @@ pub(crate) fn prepare(
             parent_step,
             chain,
             cap,
+            wall_deadline_at: shared.get(CURRENT_WALL).and_then(Value::as_i64),
             root: shared.get(WORKSPACE_ROOT).cloned(),
         },
         located: Located {
@@ -249,6 +256,7 @@ pub(crate) fn run_child(
         started_at,
         ended_at: None,
         error: None,
+        stop_reason: None,
     };
     host.note_run(&note)?;
 
@@ -272,6 +280,17 @@ pub(crate) fn run_child(
             gates: Vec::new(),
             shared: child_shared,
             spend_cap_micros: caller.cap,
+            stops: RunStops {
+                // The child's own wall is counted from when the child starts;
+                // the caller's is already an instant. Whichever falls first is
+                // the one that holds.
+                wall_deadline_at: earliest(
+                    child.wall_secs.map(|secs| started_at + secs as i64),
+                    caller.wall_deadline_at,
+                ),
+                max_turns: None,
+                turns_taken: None,
+            },
         },
         store,
         actions.as_ref(),
@@ -299,6 +318,10 @@ pub(crate) fn run_child(
     let why = host.why(&execution);
     note.status = status;
     note.error = why.clone();
+    note.stop_reason = match execution.decisions.last() {
+        Some(crate::Decision::Halted { reason, .. }) => Some(*reason),
+        _ => None,
+    };
     host.note_run(&note)?;
 
     if !went_well {
@@ -536,6 +559,18 @@ pub fn tightest(declared: Option<i64>, remaining: Option<i64>) -> Option<i64> {
     }
 }
 
+/// The wall that holds for the child: the earlier of the two instants.
+///
+/// `None` imposes nothing, as with the cap, so a child under a walled parent is
+/// walled and a child of an unwalled one with a wall of its own keeps it.
+fn earliest(one: Option<i64>, other: Option<i64>) -> Option<i64> {
+    match (one, other) {
+        (Some(one), Some(other)) => Some(one.min(other)),
+        (Some(one), None) => Some(one),
+        (None, other) => other,
+    }
+}
+
 /// What is left of the parent's own cap, if it has one.
 ///
 /// Known limit: the store sums per run and the child's spend sits under its own
@@ -652,6 +687,7 @@ mod tests {
                 ask_again_after_secs: None,
                 retry_after_secs: None,
                 phase: None,
+        stops_when: None,
             })
             .collect();
         FlowFile {
@@ -661,6 +697,9 @@ mod tests {
             inputs: BTreeMap::new(),
             schedule: None,
             spend_cap_micros: None,
+            wall_secs: None,
+            max_turns: None,
+            self_care: false,
         }
     }
 

@@ -450,6 +450,7 @@ mod tests {
             started_at,
             ended_at: Some(started_at + 1),
             worktree: None,
+            stop_reason: None,
         }
     }
 

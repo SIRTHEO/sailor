@@ -628,5 +628,9 @@
   "run.failure.bad_memory_type": "una memoria è user, feedback, project o reference, e questa non è nessuna delle quattro",
   "run.failure.secret_in_memory": "la memoria porta quel che sembra una credenziale, e una credenziale non si ricorda mai",
   "run.failure.page_unwritten": "la pagina delle memorie non si è potuta scrivere, e le righe di comando leggono ancora la vecchia",
-  "run.failure.kept_and_dropped": "un'etichetta è chiesta tenuta e tolta nello stesso passaggio — il deposito non può tenere tutte e due le risposte, e non si è scritto niente"
+  "run.failure.kept_and_dropped": "un'etichetta è chiesta tenuta e tolta nello stesso passaggio — il deposito non può tenere tutte e due le risposte, e non si è scritto niente",
+  "run.stopped.promise": "la corsa si è fermata sulla promessa dichiarata da un passo: quello per cui esisteva è fatto.",
+  "run.stopped.turns": "la corsa si è fermata prima di aprire qualunque cosa, perché questo flusso ha già preso tutti i giri che dichiara.",
+  "run.stopped.by_hand": "la corsa è stata fermata a mano prima del passo successivo.",
+  "run.stopped.wall": "la corsa si è fermata al muro di tempo dichiarato dal flusso."
 }

@@ -218,6 +218,7 @@ fn calling_step(id: &str, calls: &str, inputs: Value) -> Step {
         ask_again_after_secs: None,
         retry_after_secs: None,
         phase: None,
+        stops_when: None,
     }
 }
 
@@ -248,6 +249,7 @@ fn run_calling(bench: &Arc<Bench>, calls: &str, inputs: Value, cap: Option<i64>)
                 gates: Vec::new(),
                 shared,
                 spend_cap_micros: cap,
+                stops: flow::RunStops::default(),
             },
             bench.store.as_ref(),
             &registry,
@@ -458,6 +460,7 @@ fn a_parent_without_a_root_hands_the_child_none() {
                 gates: Vec::new(),
                 shared: SharedState::new(),
                 spend_cap_micros: None,
+                stops: flow::RunStops::default(),
             },
             bench.store.as_ref(),
             &registry,

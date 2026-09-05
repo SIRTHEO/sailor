@@ -565,7 +565,7 @@ pub(crate) fn start(
     // propria provenienza prima che qualunque passo giri, e resta nel deposito
     // append-only anche se la corsa si schianta al primo passo.
     record_run(
-        &ledger, &flow, &run_id, "running", started_at, None, None, &origin,
+        &ledger, &flow, &run_id, "running", started_at, None, None, &origin, None,
     )?;
 
     {
@@ -627,7 +627,8 @@ pub(crate) fn start(
         //
         // L'ingresso resta quello che il pulsante ha in mano: la finestra può
         // lanciare lo stesso flusso con un mandato diverso.
-        let mut request = registry::execution_request(&flow, &run_id, root.as_deref());
+        let mut request =
+            registry::execution_request(Some(&ledger), &flow, &run_id, root.as_deref(), started_at);
         request.root_inputs = inputs;
         let result = InProcessExecutor.execute(
             &flow.graph,
@@ -649,6 +650,7 @@ pub(crate) fn start(
             ),
             Err(failure) => ("failed".to_owned(), Some(failure.to_string())),
         };
+        let stop_reason = result.as_ref().ok().and_then(registry::how_it_stopped);
         let _ = record_run(
             &ledger,
             &flow,
@@ -658,6 +660,7 @@ pub(crate) fn start(
             Some(ended_at),
             error.clone(),
             &origin,
+            stop_reason,
         );
         handle.set_status(&run_id, &status);
         handle.publish(
@@ -1332,6 +1335,7 @@ fn record_run(
     ended_at: Option<i64>,
     error: Option<String>,
     started_by: &str,
+    stop_reason: Option<flow::StopReason>,
 ) -> Result<(), String> {
     registry::record_flow_run(
         ledger,
@@ -1343,6 +1347,7 @@ fn record_run(
             ended_at,
             error,
             started_by,
+            stop_reason,
         },
     )
 }

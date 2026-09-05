@@ -89,6 +89,7 @@ fn run(graph: &Graph, trigger: Value) -> (Execution, InMemoryRecordStore) {
         gates: Vec::new(),
         shared: SharedState::new(),
         spend_cap_micros: None,
+        stops: flow::RunStops::default(),
     };
     let execution = InProcessExecutor
         .execute(graph, request, &store, &registry(&scratch), &Tick(0.into()))

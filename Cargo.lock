@@ -352,6 +352,7 @@ name = "registry"
 version = "0.1.0"
 dependencies = [
  "actions",
+ "catalogue",
  "faults",
  "flow",
  "ledger",
