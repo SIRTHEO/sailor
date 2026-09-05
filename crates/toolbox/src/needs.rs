@@ -175,9 +175,11 @@ impl Action for ToolNeedsAction {
             steps_seen,
             &flows_broken,
             &looked_in,
-            &present,
-            &missing,
-            &unknown,
+            Asked {
+                present: &present,
+                missing: &missing,
+                unknown: &unknown,
+            },
             &named_binaries,
         );
 
@@ -299,6 +301,13 @@ fn count(quantity: usize, one: &str, many: &str) -> String {
     }
 }
 
+/// What the flows ask for, sorted by what this machine can say about it.
+struct Asked<'a> {
+    present: &'a [Need],
+    missing: &'a [Need],
+    unknown: &'a [Need],
+}
+
 /// The answer written for a person to read. It sits beside the data and not in
 /// its place: the window shows this, another step takes the lists.
 fn report_of(
@@ -306,11 +315,14 @@ fn report_of(
     steps_seen: usize,
     flows_broken: &[String],
     looked_in: &[String],
-    present: &[Need],
-    missing: &[Need],
-    unknown: &[Need],
+    asked: Asked<'_>,
     named_binaries: &[String],
 ) -> String {
+    let Asked {
+        present,
+        missing,
+        unknown,
+    } = asked;
     let mut text = String::new();
     let _ = write!(
         text,
@@ -432,7 +444,12 @@ mod tests {
     /// cannot be argued with by whoever reads it.
     #[test]
     fn the_report_says_how_many_steps_it_looked_at() {
-        let text = report_of(2, 53, &[], &["a place".to_owned()], &[], &[], &[], &[]);
+        let nothing = Asked {
+            present: &[],
+            missing: &[],
+            unknown: &[],
+        };
+        let text = report_of(2, 53, &[], &["a place".to_owned()], nothing, &[]);
         assert!(text.contains("53 steps looked at"), "{text}");
     }
 }
