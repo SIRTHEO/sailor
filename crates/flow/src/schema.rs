@@ -1,3 +1,4 @@
+use crate::record::{Refusal, RefusalRule};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -29,6 +30,16 @@ pub enum ValueSchema {
 pub struct SchemaError {
     pub path: String,
     pub expected: String,
+    pub rule: RefusalRule,
+    /// The offending value as JSON; empty when the fault is a missing field.
+    pub seen: String,
+}
+
+impl SchemaError {
+    /// The refusal a check named `check` records for this error.
+    pub fn refused_by(&self, check: &str) -> Refusal {
+        Refusal::new(check, self.path.clone(), self.rule, &self.seen)
+    }
 }
 
 impl ValueSchema {
@@ -130,6 +141,8 @@ impl ValueSchema {
         let mismatch = || SchemaError {
             path: path.clone(),
             expected: self.kind().to_owned(),
+            rule: RefusalRule::WrongType,
+            seen: value.to_string(),
         };
         match self {
             ValueSchema::Any => Ok(()),
@@ -141,6 +154,8 @@ impl ValueSchema {
             ValueSchema::OneOf { values } => Err(SchemaError {
                 path,
                 expected: format!("one of {}; found {}", Value::Array(values.clone()), value),
+                rule: RefusalRule::NotAllowed,
+                seen: value.to_string(),
             }),
             ValueSchema::Array { items } => {
                 let values = value.as_array().ok_or_else(mismatch)?;
@@ -159,6 +174,8 @@ impl ValueSchema {
                     return Err(SchemaError {
                         path: format!("{path}.{missing}"),
                         expected: "required property".to_owned(),
+                        rule: RefusalRule::MissingField,
+                        seen: String::new(),
                     });
                 }
                 for (name, item) in values {
@@ -168,6 +185,8 @@ impl ValueSchema {
                             return Err(SchemaError {
                                 path: format!("{path}.{name}"),
                                 expected: "declared property".to_owned(),
+                                rule: RefusalRule::UnknownField,
+                                seen: item.to_string(),
                             });
                         }
                         None => {}
@@ -259,5 +278,54 @@ mod tests {
         assert!(!wanted.accepts(&ValueSchema::OneOf {
             values: vec![json!(["claude-code", 7])],
         }));
+    }
+
+    /// Each way a value can fail names its rule, the field, and what was there,
+    /// so a refusal can be counted by rule instead of read from prose.
+    #[test]
+    fn every_way_of_failing_names_its_rule_its_field_and_what_it_saw() {
+        let schema = ValueSchema::Object {
+            properties: [
+                (
+                    "verdict".to_owned(),
+                    ValueSchema::OneOf {
+                        values: vec![json!("keep"), json!("remove")],
+                    },
+                ),
+                ("count".to_owned(), ValueSchema::Number),
+            ]
+            .into_iter()
+            .collect(),
+            required: ["verdict".to_owned()].into_iter().collect(),
+            allow_extra: false,
+        };
+        let refused = |value: Value| {
+            schema
+                .validate(&value)
+                .expect_err("the value is off shape")
+                .refused_by("answer_shape")
+        };
+
+        let missing = refused(json!({"count": 1}));
+        assert_eq!(
+            (missing.rule, missing.path.as_str(), missing.seen.as_str()),
+            (RefusalRule::MissingField, "$.verdict", "")
+        );
+        let not_allowed = refused(json!({"verdict": "remvoe"}));
+        assert_eq!(
+            (not_allowed.rule, not_allowed.path.as_str(), not_allowed.seen.as_str()),
+            (RefusalRule::NotAllowed, "$.verdict", "\"remvoe\"")
+        );
+        let wrong_type = refused(json!({"verdict": "keep", "count": "three"}));
+        assert_eq!(
+            (wrong_type.rule, wrong_type.path.as_str(), wrong_type.seen.as_str()),
+            (RefusalRule::WrongType, "$.count", "\"three\"")
+        );
+        let unknown = refused(json!({"verdict": "keep", "extra": [1, 2]}));
+        assert_eq!(
+            (unknown.rule, unknown.path.as_str(), unknown.seen.as_str()),
+            (RefusalRule::UnknownField, "$.extra", "[1,2]")
+        );
+        assert_eq!(unknown.check, "answer_shape");
     }
 }

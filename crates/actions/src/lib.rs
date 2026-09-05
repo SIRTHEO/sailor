@@ -58,7 +58,10 @@ pub mod terminals;
 /// una sola delle due.
 pub use models::usage::{read_declared, read_scalar, read_text, Declared, Pointer, Reading, Shape};
 
-use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies, ValueSchema};
+use flow::{
+    Action, ActionError, ActionOutcome, Refusal, RefusalRule, SharedState, StepSpecies,
+    ValueSchema,
+};
 use ledger::{EngineIdentity, Ledger, ModelCallRecord};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -1640,6 +1643,9 @@ fn pruned(shape: &ValueSchema, value: Value) -> Value {
     }
 }
 
+/// The name under which the declared shape of an answer refuses one.
+const ANSWER_SHAPE_CHECK: &str = "answer_shape";
+
 /// Legge la risposta di un motore secondo la forma che il passo ha dichiarato.
 fn shaped_answer(shape: &ValueSchema, said: &str) -> Result<Value, ActionError> {
     let body = json_body(said);
@@ -1651,6 +1657,12 @@ fn shaped_answer(shape: &ValueSchema, said: &str) -> Result<Value, ActionError> 
                 tail(said)
             ),
         )
+        .refused(Refusal::new(
+            ANSWER_SHAPE_CHECK,
+            "",
+            RefusalRule::NotJson,
+            body,
+        ))
     })?;
     shape.validate(&value).map_err(|error| {
         ActionError::new(
@@ -1660,6 +1672,7 @@ fn shaped_answer(shape: &ValueSchema, said: &str) -> Result<Value, ActionError> 
                 tail(said)
             ),
         )
+        .refused(error.refused_by(ANSWER_SHAPE_CHECK))
     })?;
     Ok(pruned(shape, value))
 }
@@ -3411,7 +3424,13 @@ impl Action for ShellCheckAction {
                             how_it_exited(code),
                             what_it_said("", &stderr)
                         ),
-                    ));
+                    )
+                    .refused(Refusal::new(
+                        "command",
+                        "",
+                        RefusalRule::ExitCode,
+                        &stderr,
+                    )));
                 }
                 ("failed", None)
             }
@@ -3443,7 +3462,13 @@ impl Action for ShellCheckAction {
                     "the reading of `{command}` weighs {} characters, past the cap of {MAX_ANSWER_BYTES}.                      The cap does not truncate: a cut value looks whole. Narrow what the                      command prints — with a filter, or by asking it for fewer fields.",
                     said.len()
                 ),
-            ));
+            )
+            .refused(Refusal::new(
+                ANSWER_SHAPE_CHECK,
+                "",
+                RefusalRule::TooLong,
+                &said,
+            )));
         }
         // **IL TESTO GREZZO NON ESCE DAL PASSO**: consegna `answer`, o niente.
         // È la stessa scelta che `an_engine_step_declares_what_it_can_return_and_what_it_hands_on`
@@ -5160,6 +5185,57 @@ mod tests {
             .execute(&fuori_forma, &mut SharedState::new())
             .expect_err("JSON valido ma fuori dalla forma dichiarata");
         assert_eq!(error.class, "answer_off_shape");
+    }
+
+    /// Beside the class, the error names the check that refused and what it
+    /// saw: the field and its value for a shape, the text for an answer that
+    /// is not JSON, the stderr for a command that exited red.
+    #[test]
+    fn a_refusal_names_the_check_the_field_and_what_it_saw() {
+        let shape = json!({
+            "type": "object",
+            "properties": {"conta": {"type": "number"}},
+            "required": ["conta"],
+            "allow_extra": false
+        });
+        let off_shape = json!({
+            "command": r#"echo '{"conta": "tre"}'"#,
+            "answer_shape": shape.clone(),
+            "timeout_secs": 5
+        });
+        let refusal = ShellCheckAction::new()
+            .execute(&off_shape, &mut SharedState::new())
+            .expect_err("off shape")
+            .refusal
+            .expect("a shape that refuses says so");
+        assert_eq!(refusal.check, "answer_shape");
+        assert_eq!(refusal.path, "$.conta");
+        assert_eq!(refusal.rule, RefusalRule::WrongType);
+        assert_eq!(refusal.seen, "\"tre\"");
+
+        let not_json = json!({
+            "command": "echo non sono json",
+            "answer_shape": shape,
+            "timeout_secs": 5
+        });
+        let refusal = ShellCheckAction::new()
+            .execute(&not_json, &mut SharedState::new())
+            .expect_err("not json")
+            .refusal
+            .expect("a text that is not JSON is refused by the shape");
+        assert_eq!(refusal.check, "answer_shape");
+        assert_eq!(refusal.rule, RefusalRule::NotJson);
+        assert_eq!(refusal.seen, "non sono json");
+
+        let red = json!({"command": "echo perche 1>&2; exit 2", "timeout_secs": 5});
+        let refusal = ShellCheckAction::new()
+            .execute(&red, &mut SharedState::new())
+            .expect_err("a red command")
+            .refusal
+            .expect("a command that exits red is a check that refused");
+        assert_eq!(refusal.check, "command");
+        assert_eq!(refusal.rule, RefusalRule::ExitCode);
+        assert_eq!(refusal.seen, "perche");
     }
 
     /// **QUI IL COMANDO SI SEPARA DAL MOTORE, E NON PER SVISTA.** Il motore

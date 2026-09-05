@@ -51,6 +51,7 @@ fn completion() -> Completion {
         output: Some(json!({"code": 101})),
         said: Some("raw error text".to_owned()),
         failure_class: Some("compiler_error".to_owned()),
+        refusal: None,
         ended_at: 120,
         bytes_seen: None,
         bytes_discarded: None,
@@ -1373,6 +1374,7 @@ fn a_step(
                     output: Some(json!({"secret": "nor this one"})),
                     said: said.map(str::to_owned),
                     failure_class: failure_class.map(str::to_owned),
+                    refusal: None,
                     ended_at,
                     bytes_seen: Some(10),
                     bytes_discarded: Some(0),
@@ -2851,4 +2853,95 @@ fn a_pid_outside_the_range_of_a_pid_is_not_alive() {
     assert!(!super::pid_is_alive(0), "zero is the caller's own group");
     assert!(!super::pid_is_alive(u32::MAX), "read signed, this addresses everybody");
     assert!(!super::pid_is_alive(i32::MAX as u32 + 1), "the first number past the range");
+}
+
+fn a_refusal() -> flow::Refusal {
+    flow::Refusal::new(
+        "answer_shape",
+        "$.verdict",
+        flow::RefusalRule::NotAllowed,
+        "\"remvoe\"",
+    )
+}
+
+/// The refusal closes with the step and reads back whole — from the rows and
+/// from the dump the window reads — and a rebuild from the log keeps it.
+#[test]
+fn a_refusal_closes_with_the_step_and_reads_back() {
+    let directory = TestDirectory::new("refusal");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    ledger
+        .append_step_started(&started("run-1"))
+        .expect("start the step");
+    ledger
+        .close_step(
+            "run-1",
+            "compile",
+            1,
+            7,
+            Completion {
+                refusal: Some(a_refusal()),
+                ..completion()
+            },
+        )
+        .expect("close it refused");
+
+    let steps = ledger.steps("run-1").expect("read the steps");
+    assert_eq!(steps[0].refusal, Some(a_refusal()));
+    let dump = ledger.projection_dump().expect("read the projection");
+    let row = &dump["steps"].as_array().expect("rows")[0];
+    let in_dump: flow::Refusal =
+        serde_json::from_str(row[20].as_str().expect("the last column is the refusal"))
+            .expect("the column holds the refusal as JSON");
+    assert_eq!(in_dump, a_refusal());
+
+    ledger.rebuild_projections().expect("rebuild from the log");
+    let steps = ledger.steps("run-1").expect("read the rebuilt steps");
+    assert_eq!(steps[0].refusal, Some(a_refusal()));
+}
+
+/// A store written before refusals existed opens, reads its rows without one,
+/// and takes a refusal from then on.
+#[test]
+fn a_store_from_before_refusals_opens_and_reads_its_steps() {
+    let directory = TestDirectory::new("before-refusals");
+    {
+        let ledger = Ledger::open(&directory.0).expect("open the ledger");
+        ledger
+            .append_step_started(&started("run-1"))
+            .expect("start the step");
+        ledger
+            .close_step("run-1", "compile", 1, 7, completion())
+            .expect("close it");
+        let connection = ledger.connection.lock().expect("nobody panics here");
+        connection
+            .execute_batch("ALTER TABLE steps DROP COLUMN refusal")
+            .expect("take the column away");
+        connection
+            .pragma_update(None, "user_version", 10i64)
+            .expect("declare itself version 10");
+    }
+
+    let reopened = Ledger::open(&directory.0).expect("reopen the older store");
+    let steps = reopened.steps("run-1").expect("read the older rows");
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0].refusal, None, "a row written before the column has none");
+
+    reopened
+        .append_step_started(&started("run-2"))
+        .expect("start a new step");
+    reopened
+        .close_step(
+            "run-2",
+            "compile",
+            1,
+            7,
+            Completion {
+                refusal: Some(a_refusal()),
+                ..completion()
+            },
+        )
+        .expect("the migrated store takes a refusal");
+    let steps = reopened.steps("run-2").expect("read it back");
+    assert_eq!(steps[0].refusal, Some(a_refusal()));
 }

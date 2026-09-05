@@ -29,7 +29,8 @@ pub use executor::{
 pub use file::FlowFile;
 pub use graph::{Condition, DependencyEdge, Graph, GraphError, Step};
 pub use record::{
-    digest_input, truncate_said, AttemptRelation, Outcome, StepRecord, StepSpecies, MAX_SAID_BYTES,
+    digest_input, truncate_said, AttemptRelation, Outcome, Refusal, RefusalRule, StepRecord,
+    StepSpecies, MAX_SAID_BYTES, MAX_SEEN_BYTES,
 };
 pub use schedule::{is_due, Recurrence, Schedule, Weight};
 pub use schema::{SchemaError, ValueSchema};
