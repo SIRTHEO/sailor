@@ -1183,13 +1183,19 @@ fn repository_holding(path: &str) -> Option<String> {
 struct StillOpen {
     waiting: Vec<ledger::WaitingRun>,
     ask_again: Vec<ledger::WaitingRun>,
+    remembered: Vec<actions::memory::Memory>,
 }
 
-/// The two lists, from a ledger already open.
+/// The two lists and the memories, from a ledger already open.
 fn still_open_in(deposit: &ledger::Ledger) -> Result<StillOpen, String> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or_default();
     Ok(StillOpen {
         waiting: deposit.waiting_runs().map_err(|error| error.to_string())?,
         ask_again: deposit.runs_to_ask_again().map_err(|error| error.to_string())?,
+        remembered: actions::memory::remembered(deposit, now).map_err(|error| error.to_string())?,
     })
 }
 
@@ -1312,6 +1318,21 @@ fn what_is_still_open(found: &StillOpen) -> Option<String> {
                 ("count", &runs.len().to_string()),
                 ("which", &which.join(", ")),
                 ("first", &runs[0].run_id),
+            ],
+        ));
+    }
+    if !found.remembered.is_empty() {
+        let recent: Vec<String> = found
+            .remembered
+            .iter()
+            .take(3)
+            .map(|memory| format!("«{}»", memory.label))
+            .collect();
+        lines.push(catalogue::say(
+            "cli.session.remembered",
+            &[
+                ("count", &found.remembered.len().to_string()),
+                ("recent", &recent.join(", ")),
             ],
         ));
     }
@@ -2411,6 +2432,29 @@ mod tests {
         welcome(arrival, None, &Ok(None), &Ok(()))
     }
 
+    /// What Sailor remembers is said at the start, count and the latest labels:
+    /// a memory nobody is handed at the start is a memory nobody reads.
+    #[test]
+    fn the_greeting_names_what_is_remembered() {
+        let memory = |label: &str, modified: i64| actions::memory::Memory {
+            kind: "project".to_owned(),
+            label: label.to_owned(),
+            value: "…".to_owned(),
+            provenance: "test".to_owned(),
+            modified,
+            valid_from: modified,
+            valid_until: None,
+        };
+        let found = StillOpen {
+            waiting: Vec::new(),
+            ask_again: Vec::new(),
+            remembered: vec![memory("the trunk", 3), memory("the home", 2)],
+        };
+        let said = what_is_still_open(&found).expect("something to say");
+        assert!(said.contains("«the trunk»") && said.contains("«the home»"), "{said}");
+        assert!(said.contains('2'), "the count: {said}");
+    }
+
     /// **A NEIGHBOUR ELSEWHERE IS NAMED WITH THE ELSEWHERE.** Same repository,
     /// another directory: a bare tty sends the reader to look in their own.
     #[test]
@@ -2497,6 +2541,7 @@ mod tests {
         let open = Ok(Some(StillOpen {
             waiting: vec![a_run("un-flusso-1788423534", "un-flusso")],
             ask_again: Vec::new(),
+            remembered: Vec::new(),
         }));
 
         let said = welcome(&arriving_in(&scratch), None, &open, &Ok(()));
@@ -2522,11 +2567,13 @@ mod tests {
         let waiting = what_is_still_open(&StillOpen {
             waiting: vec![same()],
             ask_again: Vec::new(),
+            remembered: Vec::new(),
         })
         .expect("una corsa in attesa si dice");
         let again = what_is_still_open(&StillOpen {
             waiting: Vec::new(),
             ask_again: vec![same()],
+            remembered: Vec::new(),
         })
         .expect("una corsa da rilanciare si dice");
 
@@ -2538,6 +2585,7 @@ mod tests {
         let both = what_is_still_open(&StillOpen {
             waiting: vec![a_run("in-attesa-1", "un-flusso")],
             ask_again: vec![a_run("non-ancora-1", "un-altro")],
+            remembered: Vec::new(),
         })
         .expect("le due liste insieme si dicono");
         assert_eq!(both.lines().count(), 2, "{both}");
@@ -2555,6 +2603,7 @@ mod tests {
             what_is_still_open(&StillOpen {
                 waiting: Vec::new(),
                 ask_again: Vec::new(),
+                remembered: Vec::new(),
             }),
             None
         );

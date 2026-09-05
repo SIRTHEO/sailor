@@ -42,6 +42,7 @@ pub mod handoff;
 pub mod history;
 pub mod mcp;
 pub mod draft;
+pub mod memory;
 pub mod presence;
 pub mod search;
 pub mod store;
