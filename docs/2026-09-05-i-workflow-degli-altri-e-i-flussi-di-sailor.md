@@ -31,7 +31,7 @@ si salva nemmeno. Le primitive si corrispondono quasi una a una; la differenza
 | quando parte | `/loop`, `CronCreate`, routine | `schedule` nel file (`every_seconds`, `daily_at`, peso) letto dal **battito** della finestra e da `sailor flow tick` | `crates/flow/src/schedule.rs`, `desktop/src-tauri/src/beat.rs` |
 | al partire, al fermarsi | hooks `SessionStart`, `Stop`, `PreToolUse` | `sailor session open/event/close` innestati nelle CLI dal binario, uguali per ogni motore | `crates/sailor/src/session_cmd.rs` |
 | chi lavora a cosa | agent teams (`~/.claude/teams`), solo dentro Claude | **annunci** nel deposito `work-claims`, con i nomi OpenTelemetry e gli stati A2A; `work_survey` li legge da qualunque motore | `crates/actions/src/presence.rs` |
-| memoria | `MEMORY.md` per progetto, file per fatto | il ledger, e da oggi `flow_search` (FTS5 sui flussi); la tabella `memories` non c'è ancora | `crates/ledger/src/search.rs`, D.3 del mandato |
+| memoria | `MEMORY.md` per progetto, file per fatto | la collezione `memories` del deposito, la pagina `state/memory.md`, `sailor search` (FTS5 su flussi, corse, deposito, eventi, guasti), e `consolidate-memories` una volta al giorno | `crates/actions/src/memory.rs`, `crates/ledger/src/search.rs` |
 | quale modello | il modello della sessione, o `model:` sul subagente | **la tabella delle forze per `kind`**, e il carburante che resta: nessun nome di fornitore nel codice | `crates/models`, giudice `no_engine_is_named_in_the_code` |
 | il costo | non misurato per passo | ogni chiamata ha una riga (`model_calls`) e ogni flusso un tetto di spesa (`spend_cap_micros`) | `crates/ledger`, `sailor flow cap` |
 | quando qualcosa si rompe | il testo dell'errore nella conversazione | l'evento nel ledger, e `write-down-what-broke` che scrive la riga nel registro dei guasti | `crates/flow/system/write-down-what-broke.flow.json` |
@@ -71,8 +71,9 @@ un grafo, un registro o un orologio. Per loro Sailor non «rispecchia» niente:
    ha tanti passi quanti sono scritti nel file: un passo può ricevere una
    lista, non diventare una lista di passi. La via che c'è oggi è `subflow`
    dentro un motore che decide quanti figli aprire — ma è il motore a
-   deciderlo, non il grafo. *Manca:* un passo `for_each` che apra un figlio
-   per elemento, con il tetto del fronte già esistente.
+   deciderlo, non il grafo. *Mancava:* un passo `for_each` che apra un figlio
+   per elemento, con il tetto del fronte già esistente. C'è dalla stessa notte
+   (sotto, gesto 2).
 2. **Le fasi come cosa detta.** `phases` nel `meta` dà alla persona il nome del
    momento in cui si trova; il nostro grafo lo sa ma non lo dice. *Manca poco:*
    un campo facoltativo `phase` sul passo, letto dalla finestra e da
@@ -105,11 +106,17 @@ un grafo, un registro o un orologio. Per loro Sailor non «rispecchia» niente:
    `crates/sailor/tests/draft_a_flow.rs` prova che ci siano. Il campo `phase`
    è arrivato la stessa notte (sotto); il mandato dell'autore va aggiornato per
    usarlo invece dell'id.
-2. **`for_each`.** Un passo che, ricevuta una lista, apre un `subflow` per
-   elemento sotto il tetto del fronte, e restituisce la lista delle uscite. È
-   l'unica primitiva di Claude che non abbiamo, ed è quella che fa la
-   revisione a più dimensioni (una per ogni tipo di difetto, poi una verifica
-   per ogni risultato) — il caso d'uso che Theo ha visto fare al `Workflow`.
+2. **`for_each`.** *Fatto la stessa notte:* `crates/flow/src/for_each.rs`.
+   Il passo riceve `items` (una lista, o un `$from` che il risolutore ha già
+   sostituito) e `flow`; apre un figlio per elemento a gruppi larghi quanto il
+   fronte dell'esecutore, ogni figlio è una corsa `subflow` nel ledger legata
+   al passo, e l'uscita è `{"items": [...]}` nell'ordine degli elementi. Lista
+   vuota, nessun figlio; un figlio che fallisce fa fallire il passo con
+   l'indice dell'elemento. `Graph::validate` rifiuta un `for_each` senza
+   `flow` o senza `items`. Dieci prove, ognuna col suo mutante; uno dei
+   mutanti ha trovato un difetto vero (l'offset dei gruppi) prima del commit.
+   Era l'unica primitiva di Claude che non avevamo: la revisione a più
+   dimensioni con una verifica per risultato ora si scrive in un file.
 3. **`phase`.** *Fatto la stessa notte:* `Step.phase` facoltativo in
    `crates/flow/src/graph.rs`, `sailor flow check` lo stampa accanto al passo,
    la finestra lo disegna sopra il nome del nodo (`StepNode.tsx`,
