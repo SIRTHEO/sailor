@@ -280,6 +280,12 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
             .map_err(|error| format!("cannot read {} back: {error}", suite_path.display()))?;
         print_tail(&suite, 25);
         if !suite_status.success() {
+            // The tail ends on cargo's «N targets failed» and never on the
+            // names: the red tests are said here, or the person digs a log
+            // that the throwaway directory has already deleted.
+            for line in the_red_lines(&suite) {
+                println!("{line}");
+            }
             eprintln!(
                 "sailor release: {}",
                 catalogue::say("cli.release.suite_is_red", &[])
@@ -759,6 +765,19 @@ fn combined_output(output: &Output) -> Vec<u8> {
     let mut bytes = output.stdout.clone();
     bytes.extend_from_slice(&output.stderr);
     bytes
+}
+
+/// The lines of a suite's output that name what went red: the tests marked
+/// FAILED, where they panicked, and the binaries cargo lists. At most forty.
+fn the_red_lines(contents: &[u8]) -> Vec<String> {
+    String::from_utf8_lossy(contents)
+        .lines()
+        .filter(|line| {
+            line.contains("... FAILED") || line.contains("panicked at") || line.contains("test result: FAILED")
+        })
+        .map(|line| line.trim().to_owned())
+        .take(40)
+        .collect()
 }
 
 fn print_tail(contents: &[u8], count: usize) {
@@ -1335,6 +1354,16 @@ mod tests {
 
         let refused = said.expect_err("no remote to push to");
         assert!(!refused.is_empty(), "git's line, not an empty one");
+    }
+
+    /// A red suite names its red tests: the tail alone ended on cargo's count.
+    #[test]
+    fn a_red_suite_names_the_tests_that_went_red() {
+        let output = b"running 3 tests\ntest a_thing ... ok\ntest the_other ... FAILED\n\nthread 'the_other' panicked at crates/x/tests/y.rs:9:5:\nboom\ntest result: FAILED. 2 passed; 1 failed\nerror: 1 target failed:\n";
+        let red = the_red_lines(output);
+        assert_eq!(red.len(), 3, "{red:?}");
+        assert!(red[0].contains("the_other ... FAILED"));
+        assert!(red[1].contains("crates/x/tests/y.rs:9:5"));
     }
 
     /// **THE RELEASE TREE IS BROUGHT TO HEAD, NOT REMADE.** A file the new
