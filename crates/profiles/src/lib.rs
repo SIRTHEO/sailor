@@ -18,8 +18,8 @@ pub enum HomeMechanism {
     /// No known variable: the profile swaps a symlink at this path, relative to
     /// the fixed home.
     CredentialSymlink { relative_path: String },
-    /// Not established: nobody has checked how this command line moves its home,
-    /// or whether it can.
+    /// No variable and no symlink declared: nobody looked, or somebody did and
+    /// nothing moves it at the price of a variable. `home_note` says which.
     Unknown,
 }
 
