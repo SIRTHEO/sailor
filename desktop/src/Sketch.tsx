@@ -27,6 +27,11 @@ export function Sketch({
   const [blocks, setBlocks] = useState<Block[]>(() => loadSketch(storage));
   const [drafting, setDrafting] = useState<Drafting>({ state: "idle" });
   const next = useRef(blocks.length + 1);
+  // The caller hands a fresh closure on every render; read through a ref, or
+  // the listener below is torn down and rebuilt each time and an event that
+  // lands in between is lost.
+  const drafted = useRef(onDrafted);
+  drafted.current = onDrafted;
 
   useEffect(() => saveSketch(storage, blocks), [blocks, storage]);
 
@@ -38,7 +43,7 @@ export function Sketch({
       if (event.run_id !== drafting.runId || event.kind !== "run_ended") return;
       const payload = event.payload as { status?: unknown } | null;
       setDrafting({ state: "ended", status: typeof payload?.status === "string" ? payload.status : "ended" });
-      onDrafted();
+      drafted.current();
     }).then((result) => {
       if ("why" in result) return;
       if (dropped) result.stop();
@@ -48,7 +53,7 @@ export function Sketch({
       dropped = true;
       stop?.();
     };
-  }, [native, drafting, onDrafted]);
+  }, [native, drafting]);
 
   const text = useMemo(() => sketchText(blocks), [blocks]);
 
