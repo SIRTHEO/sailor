@@ -156,7 +156,7 @@ mod tests {
     use super::*;
 
     fn scratch(name: &str) -> PathBuf {
-        crate::scratch::directory(&format!("tally-{name}"))
+        crate::scratch::directory(&format!("tally-{name}")).expect("a scratch directory")
     }
 
     #[test]

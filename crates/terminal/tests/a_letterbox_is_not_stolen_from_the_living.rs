@@ -21,7 +21,7 @@ impl Scratch {
     /// per-user temporary directory eats half of it.
     fn new(name: &str) -> Scratch {
         Scratch {
-            directory: terminal::scratch::directory(name),
+            directory: terminal::scratch::directory(name).expect("a scratch directory"),
         }
     }
 }
