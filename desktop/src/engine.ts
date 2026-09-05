@@ -577,6 +577,16 @@ export interface Refusal {
 }
 
 /**
+ * The process a step started, as it was started: the program after resolution,
+ * not the template, and its arguments. Each word is cut by the ledger, so a
+ * prompt handed on the line does not become the row.
+ */
+export interface Ran {
+  program: string;
+  args: string[];
+}
+
+/**
  * Una volta in cui un passo è stato attraversato.
  *
  * Viene dal deposito, non dalla memoria di questa finestra: le corse che questa
@@ -592,6 +602,8 @@ export interface StepPassage {
   outcome: string | null;
   failure_class: string | null;
   refusal: Refusal | null;
+  /** The program and the arguments the step started, after resolution. */
+  ran: Ran | null;
   /** Da dove è partita la corsa: la provenienza, scritta dal sistema. */
   started_by: string;
   /** Che cosa è entrato in questo nodo, quella volta. */
