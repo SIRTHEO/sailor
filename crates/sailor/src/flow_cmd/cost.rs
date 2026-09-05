@@ -213,6 +213,11 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
         "\n{}",
         ui::dashboard::how_the_cost_reads(&tokens.cost_reading())
     );
+    // **WHAT THE ENGINES SAID IT COST THEM, BESIDE THE SUM AND NEVER IN IT.**
+    // A figure an engine declares is its own word, not a reading of a price
+    // list, and adding the two would make a number nobody can take apart.
+    // Leaving it out was worse: a run that really cost money read as unknown.
+    report.push_str(&declared_report(&view.calls));
     // The floor and the names travel together: «at least» without the steps
     // that made it a floor sends the reader to redo the sum by hand and land
     // on the wrong total again.
@@ -306,6 +311,29 @@ fn self_declared_turns(calls: &[ui::dashboard::CallView]) -> u64 {
         .filter(|call| call.engine_identity == ledger::EngineIdentity::DeclaredByAnAgent)
         .filter_map(|call| call.turns)
         .sum()
+}
+
+/// What the engines of this run declared it cost them, when any did.
+fn declared_report(calls: &[ui::dashboard::CallView]) -> String {
+    let declared: Vec<i64> = calls
+        .iter()
+        .filter_map(|call| call.declared_cost_micros)
+        .collect();
+    if declared.is_empty() {
+        return String::new();
+    }
+    let total: i64 = declared.iter().sum();
+    format!(
+        "\n{}",
+        catalogue::say(
+            "cli.flow.declared_by_the_engines",
+            &[
+                ("units", &in_units(total)),
+                ("calls", &declared.len().to_string()),
+                ("of", &calls.len().to_string()),
+            ],
+        )
+    )
 }
 
 /// One line per unmeasured (step, reason), in order of appearance; a step
@@ -692,6 +720,43 @@ mod tests {
             "un modello prezzato non si segnala: {said}"
         );
         assert!(said.contains("lower than the real one"), "{said}");
+    }
+
+    /// **WHAT AN ENGINE SAID IT COST IS SAID, BESIDE THE SUM AND NOT IN IT.**
+    /// A run whose only priced call is unpriceable read as costing nothing
+    /// while the engine had declared its own figure in the same row.
+    #[test]
+    fn the_cost_report_says_what_the_engines_declared_it_cost_them() {
+        let mut declaring = a_call("mai-visto", None);
+        declaring.declared_cost_micros = Some(2_555_965);
+        let calls = vec![a_call("prezzato", Some(1_000)), declaring];
+        let view = ui::dashboard::summarize_run(&a_finished_run(), &[], &calls, 100);
+
+        let said = spending_report(&view, &a_small_price_list());
+
+        assert!(
+            said.contains("2.55") || said.contains("2.56"),
+            "the figure the engine declared is in the report: {said}"
+        );
+        assert!(
+            said.contains("1 of the 2 calls"),
+            "and over how many calls of how many: {said}"
+        );
+    }
+
+    /// Nobody declaring anything says nothing: a line about a figure that does
+    /// not exist would be one more thing to read on every healthy run.
+    #[test]
+    fn a_run_where_no_engine_declared_a_cost_says_nothing_about_it() {
+        let calls = vec![a_call("prezzato", Some(1_000))];
+        let view = ui::dashboard::summarize_run(&a_finished_run(), &[], &calls, 100);
+
+        let said = spending_report(&view, &a_small_price_list());
+
+        assert!(
+            !said.contains("their own word"),
+            "no engine declared a cost, so no line about it: {said}"
+        );
     }
 
     /// **IL RAPPORTO DICE CON QUALE IDENTITÀ OGNI PROCESSO È PARTITO.**
