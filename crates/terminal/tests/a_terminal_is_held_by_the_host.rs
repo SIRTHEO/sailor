@@ -274,7 +274,7 @@ fn a_terminal_the_host_opened_has_a_letterbox_and_a_count_under_its_tty() {
     // The count lands on disk while the session runs, under the same tty.
     let counted = tally::address_in(&directory, &row.device);
     let deadline = Instant::now() + PATIENCE;
-    while tally::read(&counted).map_or(true, |seen| seen.total() == 0) {
+    while tally::read(&counted).is_none_or(|seen| seen.total() == 0) {
         assert!(
             Instant::now() < deadline,
             "no count landed at {}",
@@ -327,8 +327,7 @@ fn a_terminal_nobody_opened_is_refused_by_name() {
     let client = host_in(&directory);
     let refusal = client
         .submit("nobody-9", "ls")
-        .err()
-        .expect("an unknown terminal is refused");
+        .expect_err("an unknown terminal is refused");
     assert!(refusal.contains("nobody-9"), "{refusal}");
     let _ = std::fs::remove_dir_all(&directory);
 }

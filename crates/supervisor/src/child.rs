@@ -1,16 +1,16 @@
-//! I processi veri: accenderli, scriverli nel deposito, spegnerli.
+//! Real processes: starting them, writing them in the ledger, stopping them.
 //!
-//! **OGNI PROCESSO CHE PARTE DA QUI FINISCE NEL DEPOSITO PRIMA DI ESSERE
-//! USATO** — è la riparazione del guasto 4 al punto in cui il guasto nasce.
-//! Non c'è una strada per accendere qualcosa senza scriverlo: `Process::start`
-//! è l'unica, e registra.
+//! **EVERY PROCESS STARTED HERE IS IN THE LEDGER BEFORE IT IS USED** — fault 4
+//! cured where it is born. `Process::start` is the one road, it records, and
+//! it opens only to the supervisor's `StartToken`: a second road does not
+//! compile.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use ledger::{Ledger, ProcessEndRecord, ProcessRecord};
 
-use crate::{now, BuildOutcome, Running};
+use crate::{now, BuildOutcome, Running, StartToken};
 
 /// Cosa accendere.
 #[derive(Debug, Clone)]
@@ -69,15 +69,13 @@ impl Process {
         let _ = pid;
     }
 
-    /// Accende, poi scrive.
-    ///
-    /// **L'ORDINE È VOLUTO.** Si registra col pid vero in mano: scrivere
-    /// l'intenzione prima dell'avvio metterebbe nell'elenco degli orfani un
-    /// processo che non è mai nato, e chi lo legge andrebbe a cercare un pid
-    /// che non c'è. Se invece è la **scrittura** a fallire, il processo esiste
-    /// già e non lo si abbandona in silenzio: si spegne e si dichiara. Un
-    /// processo acceso e non registrato è precisamente il guasto 4.
-    pub fn start(spec: Spec, store: Option<&Ledger>) -> Result<Self, String> {
+    /// Spawns, then records the real pid: a record that fails stops what it
+    /// started rather than leave an orphan (fault 4). Without the token:
+    /// ```compile_fail
+    /// # use supervisor::child::{Process, Spec}; fn spec() -> Spec { unimplemented!() }
+    /// let started = Process::start(spec(), None);
+    /// ```
+    pub fn start(spec: Spec, token: &StartToken) -> Result<Self, String> {
         let mut command = Command::new(&spec.command);
         command
             .args(&spec.args)
@@ -92,7 +90,7 @@ impl Process {
         let mut process = Self {
             spec,
             child,
-            store: store.cloned(),
+            store: token.ledger().cloned(),
             stopped: false,
         };
 

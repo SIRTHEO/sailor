@@ -234,7 +234,7 @@ mod tests {
     use serde_json::json;
 
     fn fire(input: Value) -> Result<Value, ActionError> {
-        match TriggerAction.execute(&input, &mut SharedState::new())? {
+        match TriggerAction.execute(&input, &SharedState::new())? {
             ActionOutcome::Went(output) => Ok(output),
             ActionOutcome::Waiting(reason) => panic!("no trigger stays waiting: {reason}"),
             ActionOutcome::NotYet(reason) => panic!("no trigger postpones itself: {reason}"),

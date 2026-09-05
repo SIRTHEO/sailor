@@ -364,7 +364,7 @@ pub fn build_executions(
             summarize_run(run, steps, calls, now)
         })
         .collect();
-    executions.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+    executions.sort_by_key(|execution| std::cmp::Reverse(execution.started_at));
     executions
 }
 

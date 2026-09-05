@@ -137,13 +137,13 @@ mod tests {
         // always fails. `pwd` and not `echo` — the override runs with no
         // arguments, and a bare `echo` prints one empty line, which is exactly
         // the case being told apart here. It cost a red test to notice.
-        let said = with_override("pwd", || catalog_body());
+        let said = with_override("pwd", catalog_body);
         assert!(
             said.is_ok(),
             "a source that answers was called broken: {said:?}"
         );
 
-        let empty = with_override("true", || catalog_body());
+        let empty = with_override("true", catalog_body);
         let why = empty.expect_err("a source that says nothing must not read as a catalogue");
         assert!(
             why.contains("nothing"),
