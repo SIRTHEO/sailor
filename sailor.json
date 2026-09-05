@@ -3,7 +3,6 @@
   "rules": [
     "AGENTS.md",
     "docs/decisioni.md",
-    "docs/da-fare.md",
     "docs/guasti-incontrati.md"
   ],
   "checks": {}

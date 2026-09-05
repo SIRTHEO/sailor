@@ -1,7 +1,7 @@
 //! Il nodo con cui un passo interroga un server MCP, e la verifica che viene
 //! prima.
 //!
-//! **PERCHÉ ESISTE.** `docs/da-fare.md` lo chiamava «l'anello mancante»: Sailor
+//! **PERCHÉ ESISTE.** La nota `da-fare` lo chiamava «l'anello mancante»: Sailor
 //! *riconosce* i server MCP — il rilevatore ha la famiglia `mcp_server` — ma
 //! nessuna delle nove azioni registrate sapeva parlarci. Un flusso che voleva
 //! chiedere a SocratiCode «cosa toccherebbe questo cambiamento» doveva uscire
@@ -80,7 +80,7 @@ pub fn register_mcp(registry: &mut flow::ActionRegistry) {
 /// il prompt.
 ///
 /// **PERCHÉ STA NELL'USCITA E NON IN UN DOCUMENTO.** Sta anche in
-/// `docs/2026-08-28-sailor-si-sviluppa-su-se-stesso.md`, sezione 6, che dice
+/// nella nota `2026-08-28-sailor-si-sviluppa-su-se-stesso`, sezione 6, che dice
 /// testualmente che questa regola va nel prompt del passo che usa SocratiCode.
 /// Un documento però lo legge chi c'era: chi userà questo nodo fra sei mesi
 /// scriverà il proprio prompt senza averlo mai aperto. Uscendo da qui, la regola
