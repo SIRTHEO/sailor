@@ -48,6 +48,14 @@ pub const WORKSPACE_ROOT: &str = "workspace.root";
 /// file able to write here would raise its own cap.
 pub const CURRENT_CAP: &str = "flow.cap_micros";
 
+/// When this run's wall falls, for the action that starts another run: a child
+/// must not outlive it. Absent means no wall was declared, as with the cap.
+pub const CURRENT_WALL: &str = "flow.wall_deadline_at";
+
+/// How many seconds are left of the wall, offered to a step whose schema can
+/// receive it, as the project root is.
+pub const WALL_REMAINING_SECS: &str = "wall_remaining_secs";
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct ActionError {
     pub class: String,
@@ -529,11 +537,57 @@ pub enum Decision {
     /// still; here it is the run that stopped, and for a reason that can be
     /// read in money.
     CapReached(SpendStop),
-    /// Somebody asked the run to stop, and it did before opening this front.
-    /// The steps carried are the ones that were ready and did not start: not
-    /// faults, and a resume finds them where they were.
-    Halted(Vec<String>),
+    /// The run closed itself before opening this front, for one of the four
+    /// declared reasons. The steps carried are the ones that were ready and did
+    /// not start: not faults, and a resume finds them where they were.
+    Halted {
+        reason: StopReason,
+        not_started: Vec<String>,
+    },
     Complete,
+}
+
+/// Why a run closed short of its last step, as the ledger keeps it.
+///
+/// Closed on purpose: a reason is compared across runs, and free text gives two
+/// words for one state. The spend cap is not here — it carries numbers of its
+/// own, see [`SpendStop`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StopReason {
+    /// A step declared `stops_when` and its own output made that pointer true.
+    Promise,
+    /// The flow declared `max_turns` and this run is past it. A turn is one
+    /// recorded run of the same flow, whoever launched it and however it ended,
+    /// so the n+1th closes before opening anything.
+    Turns,
+    /// Somebody asked the run to stop, and it did before opening a front.
+    ByHand,
+    /// `wall_secs` have passed since the run **first** started: a resume does
+    /// not move the wall.
+    Wall,
+}
+
+impl StopReason {
+    /// The word the ledger keeps.
+    pub fn as_text(&self) -> &'static str {
+        match self {
+            Self::Promise => "promise",
+            Self::Turns => "turns",
+            Self::ByHand => "by_hand",
+            Self::Wall => "wall",
+        }
+    }
+
+    /// The reason a stored word names, or `None` for a word from nowhere.
+    pub fn from_text(text: &str) -> Option<Self> {
+        match text {
+            "promise" => Some(Self::Promise),
+            "turns" => Some(Self::Turns),
+            "by_hand" => Some(Self::ByHand),
+            "wall" => Some(Self::Wall),
+            _ => None,
+        }
+    }
 }
 
 /// Why the run stopped, with the numbers to judge it by.
@@ -573,7 +627,7 @@ pub fn run_status(execution: &Execution) -> (&'static str, bool) {
         Some(Decision::Stopped(_)) => ("stopped", false),
         Some(Decision::Failed(_)) => ("failed", false),
         Some(Decision::CapReached(_)) => ("cap_reached", false),
-        Some(Decision::Halted(_)) => ("stopped", false),
+        Some(Decision::Halted { .. }) => ("stopped", false),
         Some(Decision::Ready(_)) | Some(Decision::Running(_)) | None => ("incomplete", false),
     }
 }
@@ -591,6 +645,23 @@ pub struct ExecutionRequest {
     /// first paid call; `None` is a flow nobody set a limit on. The default is
     /// `None`: a cap appearing by itself would stop runs nobody asked to stop.
     pub spend_cap_micros: Option<i64>,
+    /// What may close this run before its last step. One field rather than
+    /// three: they are checked together, at one point.
+    pub stops: RunStops,
+}
+
+/// What closes a run short, as the launcher declares it.
+///
+/// The wall arrives as an **instant**, not a duration, computed from the run's
+/// original start: a resume finds the same deadline instead of a fresh one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RunStops {
+    /// When the wall falls. `None` is "no wall declared".
+    pub wall_deadline_at: Option<i64>,
+    /// How many turns this flow may take in all.
+    pub max_turns: Option<u32>,
+    /// How many turns of this flow the store already holds, this run apart.
+    pub turns_taken: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -807,7 +878,8 @@ impl Executor for InProcessExecutor {
             .map(PathBuf::from);
         loop {
             let records = store.records(&request.run_id)?;
-            let decision = decision_from(graph, &records, clock.now()?)?;
+            let now = clock.now()?;
+            let decision = decision_from(graph, &records, now)?;
             decisions.push(decision.clone());
             let Decision::Ready(front) = decision else {
                 return Ok(Execution {
@@ -816,11 +888,15 @@ impl Executor for InProcessExecutor {
                 });
             };
 
-            // A stop asked by hand is read before the front opens, the only
-            // moment it costs nothing to honour: a step already at work has
-            // already paid, and the engine cannot take it back.
-            if store.halt_requested(&request.run_id)? {
-                decisions.push(Decision::Halted(front));
+            // The four reasons meet here, before the front opens: the only
+            // moment any of them costs nothing, since a step at work has paid
+            // and none of these takes it back. A run over its wall ends after
+            // the step in flight, never during it.
+            if let Some(reason) = closes_the_run(graph, &request, &records, store, now)? {
+                decisions.push(Decision::Halted {
+                    reason,
+                    not_started: front,
+                });
                 return Ok(Execution {
                     decisions,
                     shared: request.shared,
@@ -857,6 +933,12 @@ impl Executor for InProcessExecutor {
             // declared instead of coincidental, and whoever reads a run sees
             // those steps started together because they share one epoch.
             let epoch = records.iter().map(|record| record.epoch).max().unwrap_or(0) + 1;
+            // Read once for the whole front, from the instant it was decided
+            // on: two steps opening together are told the same number.
+            let wall_remaining = request
+                .stops
+                .wall_deadline_at
+                .map(|deadline| deadline.saturating_sub(now));
             // All are opened first and executed after. Opening is short and
             // orderly, execution long and concurrent: keeping them apart makes
             // the order steps appear in the store the graph's, not the order in
@@ -882,6 +964,7 @@ impl Executor for InProcessExecutor {
                     &request.root_inputs,
                     &records,
                     root.as_deref(),
+                    wall_remaining,
                 ) {
                     Ok(input) => input,
                     Err(FlowError::Action(error)) => {
@@ -976,6 +1059,13 @@ impl Executor for InProcessExecutor {
                     .shared
                     .insert(CURRENT_CAP.to_owned(), Value::from(cap));
             }
+            // The wall goes in beside the cap, for the same reason: without it
+            // a child would run past the wall of the run that called it.
+            if let Some(deadline) = request.stops.wall_deadline_at {
+                request
+                    .shared
+                    .insert(CURRENT_WALL.to_owned(), Value::from(deadline));
+            }
 
             // The front runs together — see fault 7. A `for` used to walk the
             // ready steps one after the other: two independent six-second steps
@@ -1067,6 +1157,66 @@ fn how_many_fit(remaining_micros: i64, dearest_micros: Option<i64>) -> usize {
     // which is the right way — three and a half calls of margin are three.
     let fit = (remaining_micros / dearest).clamp(1, AT_ONCE as i64);
     fit as usize
+}
+
+/// Whether the run closes here instead of opening the front, and why.
+///
+/// The order is the order of the answers: a promise already kept is what the
+/// run was for, and outranks a wall that falls in the same instant.
+fn closes_the_run(
+    graph: &Graph,
+    request: &ExecutionRequest,
+    records: &[StepRecord],
+    store: &dyn RecordStore,
+    now: i64,
+) -> Result<Option<StopReason>, FlowError> {
+    if promise_is_kept(graph, records) {
+        return Ok(Some(StopReason::Promise));
+    }
+    if let (Some(taken), Some(max)) = (request.stops.turns_taken, request.stops.max_turns) {
+        if taken >= max {
+            return Ok(Some(StopReason::Turns));
+        }
+    }
+    if store.halt_requested(&request.run_id)? {
+        return Ok(Some(StopReason::ByHand));
+    }
+    if request
+        .stops
+        .wall_deadline_at
+        .is_some_and(|deadline| now >= deadline)
+    {
+        return Ok(Some(StopReason::Wall));
+    }
+    Ok(None)
+}
+
+/// Whether a step that declared `stops_when` has made its own pointer true.
+///
+/// Only an output the schema accepted is read — a step is written `Went` after
+/// validation. Absent, `null`, `false`, zero and empty keep no promise.
+fn promise_is_kept(graph: &Graph, records: &[StepRecord]) -> bool {
+    graph.steps().iter().any(|step| {
+        let Some(pointer) = step.stops_when.as_deref() else {
+            return false;
+        };
+        records
+            .iter()
+            .filter(|record| record.step_id == step.id && record.outcome == Some(Outcome::Went))
+            .filter_map(|record| record.output.as_ref())
+            .any(|output| output.pointer(pointer).is_some_and(is_truthy))
+    })
+}
+
+fn is_truthy(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(yes) => *yes,
+        Value::Number(number) => number.as_f64() != Some(0.0),
+        Value::String(text) => !text.is_empty(),
+        Value::Array(items) => !items.is_empty(),
+        Value::Object(fields) => !fields.is_empty(),
+    }
 }
 
 /// A step already opened in the store, waiting to be executed.
@@ -1549,9 +1699,10 @@ pub fn step_input(
     root_inputs: &BTreeMap<String, Value>,
     records: &[StepRecord],
     root: Option<&Path>,
+    wall_remaining_secs: Option<i64>,
 ) -> Result<StepInput, FlowError> {
     let composed = composed_input(graph, step, root_inputs, records)?;
-    let positioned = resolve_workdir(step, composed, root)?;
+    let positioned = offer_the_wall(step, resolve_workdir(step, composed, root)?, wall_remaining_secs);
     // The condition is judged on the input not yet resolved, and this was
     // measured: `flows/chiedi-all-indice.flow.json` has step `leggi` with a
     // `when` on `/status` and a `with` full of `$from` into the output of
@@ -1660,6 +1811,25 @@ fn resolve_workdir(step: &Step, input: Value, root: Option<&Path>) -> Result<Val
         }
     }
     Ok(Value::Object(fields))
+}
+
+/// How long the step has, put where a mandate can say it.
+///
+/// Under the same rule as the project root: only to a step whose schema can
+/// receive it. A flow with no wall gets what it always got, key for key.
+fn offer_the_wall(step: &Step, input: Value, remaining: Option<i64>) -> Value {
+    let Some(remaining) = remaining else {
+        return input;
+    };
+    let Value::Object(mut fields) = input else {
+        return input;
+    };
+    if !fields.contains_key(WALL_REMAINING_SECS)
+        && step.input_schema.accepts_property(WALL_REMAINING_SECS)
+    {
+        fields.insert(WALL_REMAINING_SECS.to_owned(), Value::from(remaining));
+    }
+    Value::Object(fields)
 }
 
 fn overlay_input(input: Value, with: Option<&Value>) -> Value {
@@ -1833,6 +2003,7 @@ mod tests {
             ask_again_after_secs: None,
             retry_after_secs: None,
             phase: None,
+        stops_when: None,
         }
     }
 
@@ -1874,6 +2045,7 @@ mod tests {
             gates: vec![],
             shared: SharedState::new(),
             spend_cap_micros: None,
+            stops: RunStops::default(),
         };
         let store = InMemoryRecordStore::default();
         InProcessExecutor
@@ -1923,6 +2095,7 @@ mod tests {
             gates: vec![],
             shared: SharedState::new(),
             spend_cap_micros: None,
+            stops: RunStops::default(),
         };
         let store = InMemoryRecordStore::default();
         let _ = InProcessExecutor.execute(&graph, request, &store, &actions, &Tick::new(0));
@@ -1994,6 +2167,7 @@ mod tests {
             gates: vec![],
             shared: SharedState::new(),
             spend_cap_micros: None,
+            stops: RunStops::default(),
         };
         let store = InMemoryRecordStore::default();
         let _ = InProcessExecutor.execute(&graph, request, &store, &actions, &Tick::new(0));
@@ -2066,6 +2240,7 @@ mod tests {
             gates: vec![],
             shared: SharedState::new(),
             spend_cap_micros: None,
+            stops: RunStops::default(),
         };
         let store = HaltAfter {
             inner: InMemoryRecordStore::default(),
@@ -2080,7 +2255,10 @@ mod tests {
             vec![
                 Decision::Ready(vec!["first".to_owned()]),
                 Decision::Ready(vec!["second".to_owned()]),
-                Decision::Halted(vec!["second".to_owned()]),
+                Decision::Halted {
+                    reason: StopReason::ByHand,
+                    not_started: vec!["second".to_owned()],
+                },
             ]
         );
         assert_eq!(run_status(&result), ("stopped", false));
@@ -2107,6 +2285,7 @@ mod tests {
             gates: vec!["filesystem".to_owned()],
             shared: [("budget".to_owned(), json!(10))].into_iter().collect(),
             spend_cap_micros: None,
+            stops: RunStops::default(),
         };
         let store = InMemoryRecordStore::default();
         let result = InProcessExecutor
@@ -2148,6 +2327,7 @@ mod tests {
             gates: vec![],
             shared: SharedState::new(),
             spend_cap_micros: None,
+            stops: RunStops::default(),
         };
         let store = InMemoryRecordStore::default();
 
@@ -2186,6 +2366,7 @@ mod tests {
                     gates: vec![],
                     shared: SharedState::new(),
                     spend_cap_micros: None,
+                    stops: RunStops::default(),
                 },
                 &store,
                 &actions,
@@ -2237,6 +2418,7 @@ mod tests {
                     gates: vec![],
                     shared: SharedState::new(),
                     spend_cap_micros: None,
+                    stops: RunStops::default(),
                 },
                 &store,
                 &actions,
@@ -2281,6 +2463,7 @@ mod tests {
                     gates: vec![],
                     shared: SharedState::new(),
                     spend_cap_micros: None,
+                    stops: RunStops::default(),
                 },
                 &store,
                 &actions,
@@ -2319,6 +2502,7 @@ mod tests {
             gates: vec![],
             shared: SharedState::new(),
             spend_cap_micros: None,
+            stops: RunStops::default(),
         };
         let store = InMemoryRecordStore::default();
         InProcessExecutor
@@ -2372,6 +2556,7 @@ mod tests {
                     gates: vec!["network".to_owned(), "filesystem".to_owned()],
                     shared: SharedState::new(),
                     spend_cap_micros: None,
+                    stops: RunStops::default(),
                 },
                 &store,
                 &actions,
@@ -2456,6 +2641,7 @@ mod tests {
             gates: vec![],
             shared: SharedState::new(),
             spend_cap_micros: None,
+            stops: RunStops::default(),
         };
         let store = InMemoryRecordStore::default();
         let execution = InProcessExecutor
@@ -2570,6 +2756,7 @@ mod tests {
             gates: vec![],
             shared: SharedState::new(),
             spend_cap_micros: None,
+            stops: RunStops::default(),
         }
     }
 

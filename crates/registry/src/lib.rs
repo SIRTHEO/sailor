@@ -9,15 +9,15 @@ mod run_record;
 mod subflow_host;
 
 pub use run_record::{
-    execution_status, halted_by_hand, record_child_run, record_flow_run, stopped_by_cap,
-    why_it_halted, why_it_stopped, FlowRun,
+    execution_status, halted_by_hand, how_it_stopped, record_child_run, record_flow_run,
+    say_the_reason, stopped_by_cap, why_it_halted, why_it_stopped, FlowRun,
 };
 pub use subflow_host::LedgerHost;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use flow::{ActionRegistry, ExecutionRequest, FlowFile, SharedState};
+use flow::{ActionRegistry, ExecutionRequest, FlowFile, RunStops, SharedState};
 use ledger::Ledger;
 use toolbox::{Catalog, Machine, Source, Tools};
 
@@ -27,7 +27,13 @@ use toolbox::{Catalog, Machine, Source, Tools};
 /// directory: whoever needs a root fails saying so, when the step's input is
 /// composed. A silent fallback here would put a run launched from the window in
 /// a different place from the same run launched from the terminal.
-pub fn execution_request(flow: &FlowFile, run_id: &str, root: Option<&Path>) -> ExecutionRequest {
+pub fn execution_request(
+    ledger: Option<&Ledger>,
+    flow: &FlowFile,
+    run_id: &str,
+    root: Option<&Path>,
+    started_at: i64,
+) -> ExecutionRequest {
     let mut shared = SharedState::new();
     if let Some(root) = root {
         // The value's type comes from `SharedState`, which keeps this crate
@@ -44,6 +50,20 @@ pub fn execution_request(flow: &FlowFile, run_id: &str, root: Option<&Path>) -> 
         shared,
         // The cap is the flow's and travels with the run: the launcher only carries it.
         spend_cap_micros: flow.spend_cap_micros,
+        stops: RunStops {
+            // The start is asked for and not read off the clock: a resume
+            // reading it here would grant itself the whole wall again.
+            wall_deadline_at: flow.wall_secs.map(|secs| started_at + secs as i64),
+            max_turns: flow.max_turns,
+            // No store to ask, no count, and that is not zero: a machine that
+            // cannot say how many turns were taken must not stop a run on the
+            // strength of a number nobody read. Counted only where a flow
+            // declares a limit, so an ordinary run asks nothing.
+            turns_taken: flow
+                .max_turns
+                .and(ledger)
+                .and_then(|ledger| ledger.turns_of_flow(&flow.id, run_id).ok()),
+        },
     }
 }
 
@@ -298,7 +318,7 @@ mod tests {
             "inputs": {}
         }"#;
         let flow: FlowFile = serde_json::from_str(json).expect("loading the flow");
-        let request = execution_request(&flow, "corsa-1", Some(Path::new("/una/radice")));
+        let request = execution_request(None, &flow, "corsa-1", Some(Path::new("/una/radice")), 0);
 
         let store = flow::InMemoryRecordStore::default();
         flow::InProcessExecutor
@@ -333,7 +353,7 @@ mod tests {
             "graph": {"steps": []}, "inputs": {}}"#;
         let flow: FlowFile = serde_json::from_str(json).expect("loading the flow");
 
-        let request = execution_request(&flow, "corsa-1", None);
+        let request = execution_request(None, &flow, "corsa-1", None, 0);
 
         assert!(
             !request.shared.contains_key(flow::WORKSPACE_ROOT),
@@ -408,6 +428,7 @@ mod tests {
                 ended_at: Some(2),
                 error: None,
                 started_by: "subflow chiamata",
+                stop_reason: None,
             },
             "corsa-del-padre",
         )

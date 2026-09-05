@@ -88,6 +88,7 @@ mod tests {
             ask_again_after_secs: None,
             retry_after_secs: None,
             phase: None,
+        stops_when: None,
         }
     }
 
@@ -103,6 +104,9 @@ mod tests {
             schedule: None,
             // No cap: these tests spend nothing.
             spend_cap_micros: None,
+            wall_secs: None,
+            max_turns: None,
+            self_care: false,
         }
     }
 

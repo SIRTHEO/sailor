@@ -86,6 +86,7 @@ fn step(id: &str) -> Step {
         ask_again_after_secs: None,
         retry_after_secs: None,
         phase: None,
+        stops_when: None,
     }
 }
 
@@ -113,6 +114,7 @@ fn run_front(count: usize, expected: usize) -> (Vec<Decision>, Vec<String>, Vec<
         gates: vec![],
         shared: SharedState::new(),
         spend_cap_micros: None,
+        stops: flow::RunStops::default(),
     };
 
     let execution = InProcessExecutor

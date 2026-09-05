@@ -692,6 +692,7 @@ mod tests {
             started_at: 0,
             ended_at: Some(10),
             worktree: None,
+            stop_reason: None,
         }
     }
 
@@ -943,6 +944,7 @@ mod tests {
             100,
             Some(110),
             None,
+            None,
         )
         .expect("registrare la corsa");
 
@@ -1055,6 +1057,7 @@ mod tests {
             started_at: 0,
             ended_at: Some(10),
             worktree: None,
+            stop_reason: None,
         }
     }
 
@@ -1251,6 +1254,7 @@ mod tests {
             "complete",
             100,
             Some(110),
+            None,
             None,
         )
         .expect("registrare la corsa");

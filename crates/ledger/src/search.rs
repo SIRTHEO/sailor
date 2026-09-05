@@ -248,6 +248,7 @@ mod tests {
                 started_at: 1,
                 ended_at: None,
                 worktree: None,
+                stop_reason: None,
             })
             .expect("a run");
         let ids: Vec<String> = ledger
