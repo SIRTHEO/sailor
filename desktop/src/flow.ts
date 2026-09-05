@@ -166,6 +166,9 @@ const ACTION_KIND: Record<string, StepKind> = {
   work_release: "deposit",
   work_survey: "deposit",
   flow_search: "deposit",
+  action_list: "deposit",
+  // Writes a flow file where the person's flows live: a gesture on the world.
+  flow_draft: "gesture",
   // The terminals Sailor follows. A reading of a store like the ones above,
   // and it draws in the same family: the sessions file sits beside the ledger.
   terminal_survey: "deposit",

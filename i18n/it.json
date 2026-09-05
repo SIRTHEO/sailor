@@ -448,7 +448,7 @@
   "run.failure.patch_refused": "la patch non è stata applicata: nomina un file a cui nessuno ha dato assenso, o uno dietro la parete che nessun assenso apre",
   "run.failure.tree_not_cut": "il passo ha chiesto un albero suo e git non ha potuto tagliarlo, quindi non è stato eseguito in quello condiviso",
   "run.failure.unjoinable_reference": "si può unire solo testo, e uno dei pezzi non è testo",
-  "run.failure.unknown_action": "il passo chiede un'azione che qui nessuno conosce",
+  "run.failure.unknown_action": "la bozza nomina un'azione che il motore non ha",
   "run.failure.unknown_command_line": "nessun descrittore caricato per quella riga di comando — può mancare, essere disattivato o essere rotto",
   "run.failure.unknown_step": "il flusso ripreso non ha nessun passo con quel nome",
   "run.failure.unknown_subflow": "nessun flusso con quel nome, in nessuno dei posti dove si cercano i flussi",
@@ -497,5 +497,8 @@
   "cli.release.not_pushed": "non spinto, il remoto è indietro: {line}",
   "cli.flow.search_nothing": "nessun flusso nomina «{query}»",
   "cli.flow.search_found": "{count} flusso/i nominano «{query}», il migliore per primo:",
-  "run.failure.search_refused": "la ricerca è stata rifiutata — serve una parola, o i flussi non si sono potuti ordinare"
+  "run.failure.search_refused": "la ricerca è stata rifiutata — serve una parola, o i flussi non si sono potuti ordinare",
+  "run.failure.invalid_flow": "il flusso in bozza non sta in piedi: la validazione del motore lo ha rifiutato",
+  "run.failure.no_flows_dir": "non c'è una casa in cui scrivere la bozza",
+  "run.failure.draft_not_written": "la bozza sta in piedi ma non si è potuta scrivere"
 }
