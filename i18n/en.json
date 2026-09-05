@@ -1,6 +1,7 @@
 {
   "cli.flow.absolute_path_in_a_place_field": "flow {flow} has an absolute path in a place field: {fields}. A flow must not know where the repository is — the root comes from whoever launches. It is taken out with «sailor flow relocate {flow}».",
   "cli.flow.beat_could_not_look": "the beat did not run, and this is not «nothing was due»: with no last runs no schedule can be judged. {why}",
+  "cli.flow.beat_writes_fault": "«{flow}» failed {times} runs in a row, so its fault is being written down: {said}",
   "cli.flow.cap_is": "\ncap: {micros} micros ({units} of equivalent cost)",
   "cli.flow.cap_negative": "a negative cap means nothing: {micros}. Zero is «it must spend nothing», «{none}» is «nobody set a limit»",
   "cli.flow.cap_not_a_number": "«{value}» is neither a number of micro-units nor the word «{none}». A million is one unit of currency: `sailor flow cap {name} 1000000` sets a cap of 1.00",
@@ -81,6 +82,8 @@
   "cli.flow.will_not_load": "will not load",
   "desktop.beat.could_not_look": "held: the beat could not read the ledger ({why})",
   "desktop.beat.still_running": "still running from an earlier start",
+  "desktop.beat.writes_fault": "«{flow}» failed {times} runs in a row, so its fault is being written down: run {run_id}",
+  "desktop.beat.fault_not_written": "«{flow}» failed {times} runs in a row, and its fault could not be written: {why}",
   "cli.flow.cap_will_not_count_them": "\n  and the spend cap will not count those calls: it will stop later than it declares, or not stop at all",
   "cli.flow.models_never_run_here": "\nmodels: this flow has never run here, so there is no telling which will answer, nor whether the price list will know how to price them",
   "cli.flow.models_store_unreadable": "\nmodels: the ledger could not be read, so there is no telling which models this flow has used",

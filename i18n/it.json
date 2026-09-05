@@ -1,6 +1,7 @@
 {
   "cli.flow.absolute_path_in_a_place_field": "il flusso {flow} ha un percorso assoluto in un campo di posizione: {fields}. Un flusso non deve sapere dove sta il repository — la radice viene da chi lancia. Si toglie con «sailor flow relocate {flow}».",
   "cli.flow.beat_could_not_look": "il battito non è girato, e questo non è «non era dovuto niente»: senza le ultime corse nessuna pianificazione si può giudicare. {why}",
+  "cli.flow.beat_writes_fault": "«{flow}» è caduto {times} corse di fila, quindi il suo guasto viene scritto: {said}",
   "cli.flow.cap_is": "\ntetto: {micros} micro ({units} di costo equivalente)",
   "cli.flow.cap_negative": "un tetto negativo non vuol dire niente: {micros}. Zero è «non deve spendere niente», «{none}» è «nessuno ha messo un limite»",
   "cli.flow.cap_not_a_number": "«{value}» non è un numero di micro-unità né la parola «{none}». Un milione è un'unità di valuta: `sailor flow cap {name} 1000000` mette un tetto di 1,00",
@@ -81,6 +82,8 @@
   "cli.flow.will_not_load": "non si carica",
   "desktop.beat.could_not_look": "trattenuto: il battito non ha potuto leggere il deposito ({why})",
   "desktop.beat.still_running": "ancora in corsa da un avvio precedente",
+  "desktop.beat.writes_fault": "«{flow}» è caduto {times} corse di fila, quindi il suo guasto viene scritto: corsa {run_id}",
+  "desktop.beat.fault_not_written": "«{flow}» è caduto {times} corse di fila, e il suo guasto non si è potuto scrivere: {why}",
   "cli.flow.cap_will_not_count_them": "\n  e il tetto di spesa non conterà quelle chiamate: si fermerà più tardi di quanto dichiara, o non si fermerà affatto",
   "cli.flow.models_never_run_here": "\nmodelli: questo flusso non è mai girato qui, quindi non si sa quali risponderanno né se il listino saprà prezzarli",
   "cli.flow.models_store_unreadable": "\nmodelli: il deposito non si è potuto leggere, quindi non si sa quali modelli questo flusso abbia usato",

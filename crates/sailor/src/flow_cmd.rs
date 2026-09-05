@@ -1398,18 +1398,39 @@ fn waiting_report() -> String {
 /// flow due, which is right the first time and a lie when the ledger simply
 /// would not open — there the honest report is that nobody knows.
 enum LastRuns {
-    Read(BTreeMap<String, i64>),
+    Read(Glance),
     NothingHasRunYet,
     CouldNotLook(String),
+}
+
+/// What one look at the ledger tells a beat: when each flow last started,
+/// which flows keep failing, and which of those failures a beat already wrote
+/// a fault about. The ledger it came from stays in hand, so the beat can note
+/// the fault it writes in the same place the next beat will read.
+#[derive(Default)]
+struct Glance {
+    last_started: BTreeMap<String, i64>,
+    streaks: Vec<flow::FailureStreak>,
+    faults_written: BTreeSet<String>,
+    ledger: Option<Ledger>,
+}
+
+fn glance_at(ledger: &Ledger) -> Result<Glance, ledger::LedgerError> {
+    Ok(Glance {
+        last_started: ledger.last_started_at()?,
+        streaks: ledger.failure_streaks(flow::FAILURES_THAT_MAKE_A_FAULT)?,
+        faults_written: ledger.faults_written()?,
+        ledger: Some(ledger.clone()),
+    })
 }
 
 impl LastRuns {
     /// `consequence` is the catalogue key for what not looking cost, since the
     /// beat and the due list pay it differently.
-    fn read_or_say_it_could_not(self, consequence: &str) -> Result<BTreeMap<String, i64>, String> {
+    fn read_or_say_it_could_not(self, consequence: &str) -> Result<Glance, String> {
         match self {
             LastRuns::Read(found) => Ok(found),
-            LastRuns::NothingHasRunYet => Ok(BTreeMap::new()),
+            LastRuns::NothingHasRunYet => Ok(Glance::default()),
             LastRuns::CouldNotLook(why) => Err(catalogue::say(consequence, &[("why", &why)])),
         }
     }
@@ -1425,7 +1446,7 @@ fn last_runs() -> LastRuns {
     if !dir.join("state.db").exists() {
         return LastRuns::NothingHasRunYet;
     }
-    match Ledger::open(&dir).and_then(|ledger| ledger.last_started_at()) {
+    match Ledger::open(&dir).and_then(|ledger| glance_at(&ledger)) {
         Ok(found) => LastRuns::Read(found),
         Err(error) => LastRuns::CouldNotLook(catalogue::say(
             "cli.flow.ledger_would_not_be_read",
@@ -1455,10 +1476,16 @@ fn last_runs() -> LastRuns {
 /// exactly what it would have decided without the interruption — which is the
 /// one property a thing that runs forever has to have on a machine that sleeps.
 fn tick_flows(sources: &[FlowSource]) -> Result<String, String> {
-    tick_flows_with(sources, last_runs())
+    tick_flows_with(sources, last_runs(), &mut |name, mandate| {
+        run_flow(sources, name, mandate)
+    })
 }
 
-fn tick_flows_with(sources: &[FlowSource], last: LastRuns) -> Result<String, String> {
+/// How the beat starts a flow, given its name and a mandate. Handed in so a
+/// test can watch what the beat asks for without running anything.
+type Starter<'a> = &'a mut dyn FnMut(&str, Option<&str>) -> Result<String, String>;
+
+fn tick_flows_with(sources: &[FlowSource], last: LastRuns, start: Starter<'_>) -> Result<String, String> {
     let known = known_flows(sources);
     if known.is_empty() {
         return Ok(nothing_found(sources));
@@ -1467,7 +1494,8 @@ fn tick_flows_with(sources: &[FlowSource], last: LastRuns) -> Result<String, Str
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    let last = last.read_or_say_it_could_not("cli.flow.beat_could_not_look")?;
+    let glance = last.read_or_say_it_could_not("cli.flow.beat_could_not_look")?;
+    let last = &glance.last_started;
 
     let mut report = String::new();
     let mut ran = 0usize;
@@ -1502,7 +1530,7 @@ fn tick_flows_with(sources: &[FlowSource], last: LastRuns) -> Result<String, Str
             continue;
         }
         ran += 1;
-        match run_flow(sources, &name, None) {
+        match start(&name, None) {
             Ok(said) => {
                 let _ = writeln!(report, "{name}\tran\t{}", said.lines().next().unwrap_or(""));
             }
@@ -1515,6 +1543,40 @@ fn tick_flows_with(sources: &[FlowSource], last: LastRuns) -> Result<String, Str
                     complaint.lines().next().unwrap_or("")
                 );
             }
+        }
+    }
+    // A flow that failed three times in a row owes the register a line, and
+    // the fault writer is started here with that flow as its mandate. The
+    // failed run is remembered whatever the start came to: a writer that
+    // cannot run says so once, instead of being asked again at every beat.
+    for fault in flow::faults_due(&glance.streaks, &glance.faults_written) {
+        ran += 1;
+        let (word, said) = match start(flow::system::FAULT_WRITER, Some(&fault.flow)) {
+            Ok(said) => ("ran", said),
+            Err(complaint) => ("broke", complaint),
+        };
+        let _ = writeln!(
+            report,
+            "{}\t{word}\t{}",
+            flow::system::FAULT_WRITER,
+            catalogue::say(
+                "cli.flow.beat_writes_fault",
+                &[
+                    ("flow", &fault.flow),
+                    ("times", &fault.length.to_string()),
+                    ("said", said.lines().next().unwrap_or("")),
+                ],
+            )
+        );
+        if let Some(ledger) = &glance.ledger {
+            ledger
+                .remember_fault_written(
+                    &fault.flow,
+                    &fault.run_id,
+                    seat_of(std::env::var_os("SAILOR_TERMINAL").is_some()),
+                    now,
+                )
+                .map_err(|error| error.to_string())?;
         }
     }
     let _ = write!(report, "{ran} run, {held} held");
@@ -1530,7 +1592,9 @@ fn due_flows(sources: &[FlowSource]) -> Result<String, String> {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    let last = last_runs().read_or_say_it_could_not("cli.flow.due_could_not_look")?;
+    let last = last_runs()
+        .read_or_say_it_could_not("cli.flow.due_could_not_look")?
+        .last_started;
 
     let mut report = String::new();
     let mut due = 0usize;
@@ -3698,7 +3762,7 @@ mod tests {
         // The last runs are handed in rather than read: a test that opens the
         // ledger of whoever runs it is fault 5, and here it would also decide
         // the answer.
-        let said = tick_flows_with(&sources, LastRuns::NothingHasRunYet)
+        let said = tick_flows_with(&sources, LastRuns::NothingHasRunYet, &mut never_starts)
             .expect("a beat over one flow works");
         assert!(
             said.contains("senza-orario\thold\tno schedule"),
@@ -3735,6 +3799,7 @@ mod tests {
         let complaint = tick_flows_with(
             &sources,
             LastRuns::CouldNotLook("unable to open database file".to_owned()),
+            &mut never_starts,
         )
         .expect_err("a blind beat is not a beat that did nothing");
         assert!(
@@ -3750,11 +3815,111 @@ mod tests {
         // of refusing. Without this half the test above would pass on a beat
         // that complains every time. The last run is now, so nothing is started
         // and this test touches no real ledger.
-        let just_ran = BTreeMap::from([("ogni-minuto".to_owned(), now_secs().unwrap_or(0))]);
-        let said = tick_flows_with(&sources, LastRuns::Read(just_ran))
+        let just_ran = Glance {
+            last_started: BTreeMap::from([("ogni-minuto".to_owned(), now_secs().unwrap_or(0))]),
+            ..Glance::default()
+        };
+        let said = tick_flows_with(&sources, LastRuns::Read(just_ran), &mut never_starts)
             .expect("a beat that could look works");
         assert!(said.contains("ogni-minuto\thold\tnot due"), "{said}");
         assert!(said.contains("0 run, 1 held"), "{said}");
+        let _ = fs::remove_dir_all(&scratch);
+    }
+
+    /// A starter for beats that must not start anything: the test is about
+    /// what the beat holds, and a start would be the defect.
+    fn never_starts(name: &str, _: Option<&str>) -> Result<String, String> {
+        panic!("the beat started {name}")
+    }
+
+    fn a_closed_run(flow: &str, run_id: &str, status: &str, started_at: i64) -> ledger::RunRecord {
+        ledger::RunRecord {
+            run_id: run_id.to_owned(),
+            kind: "flow".to_owned(),
+            entity: flow.to_owned(),
+            parent_run_id: None,
+            started_by: "test".to_owned(),
+            status: status.to_owned(),
+            total_cost_micros: 0,
+            error: None,
+            started_at,
+            ended_at: Some(started_at + 1),
+            worktree: None,
+        }
+    }
+
+    /// **A FLOW THAT FAILS THREE TIMES IN A ROW WRITES A FAULT BY ITSELF.**
+    /// The beat sees the streak in the ledger, starts the fault writer with
+    /// that flow as its mandate, says so in its report, and remembers the
+    /// failed run so the next beat does not ask twice. The fault writer's own
+    /// failures never start it about itself.
+    #[test]
+    fn a_flow_that_failed_three_times_in_a_row_has_its_fault_written_once() {
+        let scratch = std::env::temp_dir().join(format!("sailor-guasto-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&scratch);
+        fs::create_dir_all(&scratch).expect("create the test directory");
+        fs::write(
+            scratch.join("ogni-minuto.flow.json"),
+            r#"{"id":"ogni-minuto","description":"un flusso a intervallo",
+                "schedule":{"recurrence":{"kind":"every_seconds","seconds":60},"weight":"light"},
+                "graph":{"steps":[{"id":"innesco","deps":[],"action":"trigger","max_attempts":1,
+                "when":null,"with":{"source":"manual","text":"vai"},
+                "input_schema":{"type":"any"},"output_schema":{"type":"any"}}]},"inputs":{}}"#,
+        )
+        .expect("write a scheduled flow");
+        let sources = vec![FlowSource {
+            origin: "prova",
+            dir: scratch.clone(),
+        }];
+        let now = now_secs().unwrap_or(0);
+        let ledger = Ledger::open(&scratch.join("ledger")).expect("a scratch ledger");
+        for (run, at) in [("ogni-minuto-1", now - 30), ("ogni-minuto-2", now - 20), ("ogni-minuto-3", now - 10)] {
+            ledger
+                .record_run(&a_closed_run("ogni-minuto", run, "failed", at))
+                .expect("a failed run");
+        }
+        for (run, at) in [("writer-1", now - 30), ("writer-2", now - 20), ("writer-3", now - 10)] {
+            ledger
+                .record_run(&a_closed_run(flow::system::FAULT_WRITER, run, "failed", at))
+                .expect("a failed run of the fault writer");
+        }
+
+        let mut started: Vec<(String, Option<String>)> = Vec::new();
+        let said = tick_flows_with(
+            &sources,
+            LastRuns::Read(glance_at(&ledger).expect("a glance")),
+            &mut |name, mandate| {
+                started.push((name.to_owned(), mandate.map(str::to_owned)));
+                Ok(format!("flow {name} complete; run {name}-77"))
+            },
+        )
+        .expect("a beat over a failing flow works");
+        assert_eq!(
+            started,
+            vec![(flow::system::FAULT_WRITER.to_owned(), Some("ogni-minuto".to_owned()))],
+            "{said}"
+        );
+        assert!(said.contains("ogni-minuto\thold\tnot due"), "{said}");
+        assert!(
+            said.contains("write-down-what-broke\tran\t«ogni-minuto» failed 3 runs in a row"),
+            "the report must say which flow, how often, and that the fault is being written: {said}"
+        );
+        assert!(said.contains("write-down-what-broke-77"), "and name the run: {said}");
+        assert!(said.contains("1 run, 1 held"), "{said}");
+        assert_eq!(
+            ledger.faults_written().expect("the memory"),
+            BTreeSet::from(["ogni-minuto-3".to_owned()])
+        );
+
+        // The next beat over the same ledger owes nothing: the fault is written.
+        let said = tick_flows_with(
+            &sources,
+            LastRuns::Read(glance_at(&ledger).expect("a glance")),
+            &mut never_starts,
+        )
+        .expect("a beat after the fault works");
+        assert!(said.contains("0 run, 1 held"), "{said}");
+        drop(ledger);
         let _ = fs::remove_dir_all(&scratch);
     }
     use std::fs;
