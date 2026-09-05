@@ -769,15 +769,25 @@ fn combined_output(output: &Output) -> Vec<u8> {
 
 /// The lines of a suite's output that name what went red: the tests marked
 /// FAILED, where they panicked, and the binaries cargo lists. At most forty.
+/// The lines of a suite that say what went red, and the line after each
+/// panic: that one carries the message, and without it the place of the
+/// panic is known and the reason is gone with the temporary tree.
 fn the_red_lines(contents: &[u8]) -> Vec<String> {
-    String::from_utf8_lossy(contents)
-        .lines()
-        .filter(|line| {
-            line.contains("... FAILED") || line.contains("panicked at") || line.contains("test result: FAILED")
-        })
-        .map(|line| line.trim().to_owned())
-        .take(40)
-        .collect()
+    let text = String::from_utf8_lossy(contents);
+    let mut red = Vec::new();
+    let mut after_a_panic = false;
+    for line in text.lines() {
+        let names_a_red = line.contains("... FAILED") || line.contains("test result: FAILED");
+        let is_a_panic = line.contains("panicked at");
+        if names_a_red || is_a_panic || after_a_panic {
+            red.push(line.trim().to_owned());
+        }
+        after_a_panic = is_a_panic;
+        if red.len() == 40 {
+            break;
+        }
+    }
+    red
 }
 
 fn print_tail(contents: &[u8], count: usize) {
@@ -1361,9 +1371,10 @@ mod tests {
     fn a_red_suite_names_the_tests_that_went_red() {
         let output = b"running 3 tests\ntest a_thing ... ok\ntest the_other ... FAILED\n\nthread 'the_other' panicked at crates/x/tests/y.rs:9:5:\nboom\ntest result: FAILED. 2 passed; 1 failed\nerror: 1 target failed:\n";
         let red = the_red_lines(output);
-        assert_eq!(red.len(), 3, "{red:?}");
+        assert_eq!(red.len(), 4, "{red:?}");
         assert!(red[0].contains("the_other ... FAILED"));
         assert!(red[1].contains("crates/x/tests/y.rs:9:5"));
+        assert_eq!(red[2], "boom", "the line after a panic is its message");
     }
 
     /// **THE RELEASE TREE IS BROUGHT TO HEAD, NOT REMADE.** A file the new
