@@ -52,11 +52,15 @@ pub struct KnownCli {
     /// own protocol, unmodified and with nothing in between; `None` when no
     /// such variable is known.
     pub endpoint: Option<NativeEndpoint>,
+    /// The files it reads at its start, each relative to the project root or
+    /// under `~`. Empty where nobody established them, which is not «none».
+    pub reads_instructions_from: Vec<String>,
 }
 
 /// The two variables a command line reads to talk to an endpoint other than
 /// its maker's, and the protocol that endpoint must speak.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NativeEndpoint {
     pub url_var: String,
     pub key_var: String,
@@ -132,20 +136,48 @@ pub fn known_clis() -> &'static [KnownCli] {
     })
 }
 
-/// The list as a file declares it.
+/// The list as a file declares it. **A REFUSAL NAMES THE ENGINE**: an entry
+/// with a field this list does not know, or a value of the wrong shape, is
+/// refused as a whole, and the id is what a person greps their file for.
 pub fn parse_command_lines(text: &str) -> Result<Vec<KnownCli>, String> {
     let read: CommandLinesFile =
         serde_json::from_str(text).map_err(|error| format!("the list does not parse: {error}"))?;
-    Ok(read.command_lines.into_iter().map(KnownCli::from).collect())
+    read.command_lines.into_iter().map(declared).collect()
+}
+
+fn declared(entry: serde_json::Value) -> Result<KnownCli, String> {
+    let id = entry
+        .get("id")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    let cli: DeclaredCli = serde_json::from_value(entry).map_err(|error| {
+        catalogue::say(
+            "profiles.command_line_refused",
+            &[("id", &id), ("why", &error.to_string())],
+        )
+    })?;
+    if let Some(path) = cli
+        .reads_instructions_from
+        .iter()
+        .find(|path| path.is_empty() || Path::new(path).is_absolute())
+    {
+        return Err(catalogue::say(
+            "profiles.instructions_path_refused",
+            &[("id", &id), ("path", path)],
+        ));
+    }
+    Ok(KnownCli::from(cli))
 }
 
 #[derive(Deserialize)]
 struct CommandLinesFile {
     #[serde(default)]
-    command_lines: Vec<DeclaredCli>,
+    command_lines: Vec<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct DeclaredCli {
     id: String,
     #[serde(default)]
@@ -161,10 +193,13 @@ struct DeclaredCli {
     home_note: String,
     #[serde(default)]
     endpoint: Option<NativeEndpoint>,
+    #[serde(default)]
+    reads_instructions_from: Vec<String>,
 }
 
 /// Exactly one field is written; neither means **no known way**.
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct DeclaredHome {
     #[serde(default)]
     variable: String,
@@ -210,6 +245,7 @@ impl From<DeclaredCli> for KnownCli {
             home_note: declared.home_note,
             home_already_here: already_at,
             endpoint: declared.endpoint,
+            reads_instructions_from: declared.reads_instructions_from,
         }
     }
 }
@@ -321,6 +357,34 @@ pub fn existing_home(cli: &KnownCli, home: &Path) -> Option<PathBuf> {
     cli.home_already_here
         .as_deref()
         .map(|below| home.join(below))
+}
+
+/// Where the files `cli` reads at its start sit on this machine. A path under
+/// `~` is under `home`, except that a profile moving the engine's home by
+/// variable takes along what sits in its usual place: the engine reads the
+/// file where it is started, not where it would have been.
+pub fn instruction_files(
+    cli: &KnownCli,
+    project_root: &Path,
+    home: &Path,
+    profile_home: Option<&Path>,
+) -> Vec<PathBuf> {
+    let moved = profile_home.filter(|_| matches!(cli.home, HomeMechanism::EnvVar(_)));
+    cli.reads_instructions_from
+        .iter()
+        .map(|declared| {
+            let Some(under_home) = declared.strip_prefix("~/") else {
+                return project_root.join(declared);
+            };
+            let inside_the_moved_home = moved.zip(cli.home_already_here.as_deref()).and_then(
+                |(profile_home, usual)| {
+                    let inside = under_home.strip_prefix(usual)?.strip_prefix('/')?;
+                    Some(profile_home.join(inside))
+                },
+            );
+            inside_the_moved_home.unwrap_or_else(|| home.join(under_home))
+        })
+        .collect()
 }
 
 /// Where a profile's home sits inside the profiles root. Validates both
@@ -496,6 +560,7 @@ mod tests {
             home_note: "a fixture".to_owned(),
             home_already_here: None,
             endpoint: None,
+            reads_instructions_from: Vec::new(),
         };
         let env = build_environment(&cli, Path::new("/home/profiles/acme/work"));
         assert!(env.is_empty());
