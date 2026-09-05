@@ -48,6 +48,8 @@
   "cli.flow.held_deadline_not_passed": "tenuti, la scadenza non è passata: {steps}",
   "cli.flow.in_the_store": "nel deposito: {runs} corse, di cui {costed} hanno speso qualcosa di noto",
   "cli.flow.in_turns": "in {turns} turni",
+  "cli.flow.refusals_heading": "rifiutati da una verifica dichiarata:",
+  "cli.flow.refused_by_check": "  {step}: {attempts} tentativi rifiutati da {check} ({rules})",
   "cli.flow.last_run_minutes_ago": "ultima corsa {minutes} minuti fa",
   "cli.flow.model_absent_from_the_list": "{model} (nessuna voce nel listino)",
   "cli.flow.model_listed_without_price": "{model} (una voce senza prezzi)",
