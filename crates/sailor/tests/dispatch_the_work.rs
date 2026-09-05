@@ -746,6 +746,7 @@ fn a_skipped_step_leaves_the_run_green_and_its_children_unrun() {
         retry_after_secs: None,
         phase: None,
         stops_when: None,
+        decides_done: false,
     };
     let mut first = step("first", &[], None);
     first.with = None;
