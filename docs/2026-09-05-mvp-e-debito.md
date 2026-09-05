@@ -163,3 +163,34 @@ Restano, del debito contato la mattina: `execute_flow` con `&mut dyn Clock`,
 `tool_needs` che non conta le competenze, la coppia `inventory::Kind` ↔
 `FAMILIES` fra Rust e TypeScript, 24 panici (nessuno nei terminali), e i
 guasti che chiedono una decisione o una corsa dal vivo.
+
+## La prima delega vera a un motore, misurata
+
+**05/09, sera.** Theo: *«perché non iniziamo a sfruttare Sailor, delegando un
+po' a codex e gemini come previsto da infrastruttura».* Due corse dal vivo, e
+tre difetti che nessuna prova aveva visto — tutti trovati eseguendo, non
+leggendo.
+
+1. **Un flusso spedito che nessuno dei suoi motori può eseguire** (guasto 94).
+   `take-the-next-fault` chiede dati privati e nomina tre motori; nessuno dei
+   tre dichiara il proprio patto sui dati, quindi valgono «sconosciuto» e un
+   passo privato li rifiuta prima di spendere. La corsa si è chiusa `failed` in
+   due secondi con zero chiamate. Le prove del flusso non lo vedevano perché il
+   finto motore che dichiarano risponde «non addestra»: **il finto era più
+   permissivo del vero**.
+2. **Una risposta giusta buttata via come quota esaurita** (guasto 95, curato).
+   Il motore ha consegnato ventisette punti di ricognizione corretti, nella
+   forma dichiarata, e il passo si è chiuso `exhausted` mettendo il motore da
+   parte per mezz'ora. Le parole che significano rifiuto si cercavano in tutta
+   l'uscita, e un motore che legge questo albero stampa questo albero: i nostri
+   documenti parlano di quote, e la parola compariva trentasette volte nel
+   materiale letto. Ora una risposta che sta nella forma dichiarata è lavoro
+   fatto, e dentro non si cerca il rifiuto.
+3. **Un motore spedito che non risponde** (guasto 96). Invocato con la riga che
+   il suo descrittore dichiara, ha restituito il vuoto. La prova a secco lo dà
+   sano perché giudica il rifiuto *senza* domanda, non la risposta *con* la
+   domanda: una riga che parte non è una riga che risponde.
+
+E una cosa che ha funzionato al primo colpo: l'annuncio `[sailor] running …`
+del passo comando, costruito nel pomeriggio, si è visto dal vivo alla prima
+corsa, con il programma e gli argomenti veri.
