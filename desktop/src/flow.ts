@@ -38,6 +38,8 @@ export interface Step {
   /** The action's stable name, resolved by the registry. Never code. */
   action: string;
   max_attempts: number;
+  /** The moment of the process this step belongs to, as its author wrote it. */
+  phase?: string;
 }
 
 export interface Graph {

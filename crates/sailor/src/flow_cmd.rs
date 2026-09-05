@@ -1799,6 +1799,9 @@ fn check_report(
             step.deps.join(", ")
         };
         let _ = write!(report, "\n  {} <- {}", step.id, dependencies);
+        if let Some(phase) = &step.phase {
+            report.push_str(&catalogue::say("cli.flow.step_phase", &[("phase", phase)]));
+        }
     }
     // **IL TETTO STA NEL RAPPORTO, E CON LUI CIÒ CHE NON PROMETTE.** Chi
     // controlla un flusso prima di lanciarlo sta decidendo se può permetterselo:
@@ -5704,6 +5707,34 @@ mod tests {
 
         assert!(report.contains("dipendenze: 1"), "{report}");
         assert!(report.contains("child <- root"), "{report}");
+    }
+
+    /// The phase is for whoever reads the report, so it sits on the step's own
+    /// line — and only there: a step that names none gets no label, or the
+    /// reader would take the hole for a phase nobody wrote.
+    #[test]
+    fn check_names_the_phase_of_a_step_that_has_one_and_stays_quiet_otherwise() {
+        let json = r#"{
+            "id": "fasi",
+            "description": "one step names its phase",
+            "graph": {
+                "steps": [
+                    {"id":"root","deps":[],"action":"shell_check","max_attempts":1,"when":null,"input_schema":{"type":"any"},"output_schema":{"type":"any"}},
+                    {"id":"child","deps":["root"],"action":"shell_check","max_attempts":1,"when":null,"input_schema":{"type":"any"},"output_schema":{"type":"any"},"phase":"build"}
+                ]
+            },
+            "inputs": {}
+        }"#;
+        let flow: FlowFile = serde_json::from_str(json).expect("the flow loads");
+
+        let (report, _) = check_report(&flow, &default_registry(None, None), None, None);
+
+        let labelled = format!(
+            "child <- root{}",
+            catalogue::say("cli.flow.step_phase", &[("phase", "build")])
+        );
+        assert!(report.contains(&labelled), "{report}");
+        assert!(report.contains("root <- nessuna\n"), "{report}");
     }
 
     #[test]
