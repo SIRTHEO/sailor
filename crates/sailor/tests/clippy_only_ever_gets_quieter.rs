@@ -22,7 +22,7 @@ const WARNINGS_TODAY: &[(&str, usize)] = &[
     ("registry", 0),
     ("relay", 0),
     ("release", 0),
-    ("sailor", 45),
+    ("sailor", 0),
     ("sessions", 0),
     ("supervisor", 0),
     ("terminal", 0),
