@@ -152,6 +152,15 @@ pub trait Action: Send + Sync {
         Vec::new()
     }
 
+    /// Whether this action's output is a verdict a run may be closed on.
+    ///
+    /// Only an action that answers yes may carry `decides_done`. The default is
+    /// no, and the engine keeps it: a model deciding that the work is finished
+    /// is the approval step this whole piece exists to remove.
+    fn is_a_check(&self) -> bool {
+        false
+    }
+
     /// An action with no positive proof is not automatically relaunchable:
     /// `Unknown` keeps the ambiguity instead of duplicating an outside effect.
     fn inspect_effect(
@@ -556,6 +565,12 @@ pub enum Decision {
 pub enum StopReason {
     /// A step declared `stops_when` and its own output made that pointer true.
     Promise,
+    /// A step declared `decides_done` and its verdict came back passed.
+    ///
+    /// Apart from `Promise`, which is a model's own word that it is finished.
+    /// Whoever reads a cheap run has to be able to tell the two apart: this one
+    /// cost a command, that one cost a call and believed the answer.
+    Checked,
     /// The flow declared `max_turns` and this run is past it. A turn is one
     /// recorded run of the same flow, whoever launched it and however it ended,
     /// so the n+1th closes before opening anything.
@@ -572,6 +587,7 @@ impl StopReason {
     pub fn as_text(&self) -> &'static str {
         match self {
             Self::Promise => "promise",
+            Self::Checked => "checked",
             Self::Turns => "turns",
             Self::ByHand => "by_hand",
             Self::Wall => "wall",
@@ -582,6 +598,7 @@ impl StopReason {
     pub fn from_text(text: &str) -> Option<Self> {
         match text {
             "promise" => Some(Self::Promise),
+            "checked" => Some(Self::Checked),
             "turns" => Some(Self::Turns),
             "by_hand" => Some(Self::ByHand),
             "wall" => Some(Self::Wall),
@@ -627,6 +644,12 @@ pub fn run_status(execution: &Execution) -> (&'static str, bool) {
         Some(Decision::Stopped(_)) => ("stopped", false),
         Some(Decision::Failed(_)) => ("failed", false),
         Some(Decision::CapReached(_)) => ("cap_reached", false),
+        // A check that passed is the one halt that is not short of anything:
+        // the run did what it was for, and nobody has to come and finish it.
+        Some(Decision::Halted {
+            reason: StopReason::Checked,
+            ..
+        }) => ("complete", true),
         Some(Decision::Halted { .. }) => ("stopped", false),
         Some(Decision::Ready(_)) | Some(Decision::Running(_)) | None => ("incomplete", false),
     }
@@ -1170,6 +1193,11 @@ fn closes_the_run(
     store: &dyn RecordStore,
     now: i64,
 ) -> Result<Option<StopReason>, FlowError> {
+    // Ahead of the promise on purpose: when a command and a model both say the
+    // work is done, the one that was measured is the one worth recording.
+    if a_check_settled_it(graph, records) {
+        return Ok(Some(StopReason::Checked));
+    }
     if promise_is_kept(graph, records) {
         return Ok(Some(StopReason::Promise));
     }
@@ -1189,6 +1217,26 @@ fn closes_the_run(
         return Ok(Some(StopReason::Wall));
     }
     Ok(None)
+}
+
+/// The word a check writes when it passed, and the field it writes it in.
+///
+/// One word, compared for equality. Nothing else is a pass: a check that broke,
+/// timed out, was never reached or answered a shape of its own leaves the run
+/// open. The error goes the way that worries — an absent check is a check that
+/// did not say yes.
+pub const VERDICT_FIELD: &str = "/status";
+pub const VERDICT_PASSED: &str = "passed";
+
+/// Whether a step that declared `decides_done` came back passed.
+fn a_check_settled_it(graph: &Graph, records: &[StepRecord]) -> bool {
+    graph.steps().iter().filter(|step| step.decides_done).any(|step| {
+        records
+            .iter()
+            .filter(|record| record.step_id == step.id && record.outcome == Some(Outcome::Went))
+            .filter_map(|record| record.output.as_ref())
+            .any(|output| output.pointer(VERDICT_FIELD) == Some(&Value::String(VERDICT_PASSED.to_owned())))
+    })
 }
 
 /// Whether a step that declared `stops_when` has made its own pointer true.
@@ -2004,6 +2052,7 @@ mod tests {
             retry_after_secs: None,
             phase: None,
         stops_when: None,
+        decides_done: false,
         }
     }
 

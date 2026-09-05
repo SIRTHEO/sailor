@@ -144,6 +144,7 @@ fn step(id: &str, deps: Vec<String>) -> Step {
         retry_after_secs: None,
         phase: None,
         stops_when: None,
+        decides_done: false,
         with: None,
     }
 }
