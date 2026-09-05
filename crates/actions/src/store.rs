@@ -263,7 +263,7 @@ mod tests {
     #[test]
     fn a_flow_can_remember_something_the_engine_knows_nothing_about() {
         let (ledger, _guard) = store();
-        let mut shared = SharedState::new();
+        let shared = SharedState::new();
         let write = StoreWriteAction::new(ledger.clone());
         let read = StoreReadAction::new(ledger);
 
@@ -276,14 +276,14 @@ mod tests {
                     "written_by": "flusso-mandato-corrente",
                     "written_at": 1_756_400_000i64,
                 }),
-                &mut shared,
+                &shared,
             )
             .expect("scrittura");
 
         let outcome = read
             .execute(
                 &json!({"collection": "mandate", "key": "current"}),
-                &mut shared,
+                &shared,
             )
             .expect("lettura");
         let ActionOutcome::Went(value) = outcome else {
@@ -313,13 +313,13 @@ mod tests {
     #[test]
     fn a_missing_record_is_an_answer_not_a_failure() {
         let (ledger, _guard) = store();
-        let mut shared = SharedState::new();
+        let shared = SharedState::new();
         let read = StoreReadAction::new(ledger);
 
         let outcome = read
             .execute(
                 &json!({"collection": "mandate", "key": "current"}),
-                &mut shared,
+                &shared,
             )
             .expect("la lettura di una voce assente non è un errore");
         let ActionOutcome::Went(value) = outcome else {
@@ -343,7 +343,7 @@ mod tests {
     #[test]
     fn a_collection_reads_in_key_order_and_after_skips_what_was_read() {
         let (ledger, _guard) = store();
-        let mut shared = SharedState::new();
+        let shared = SharedState::new();
         let write = StoreWriteAction::new(ledger.clone());
         let list = StoreListAction::new(ledger);
 
@@ -359,13 +359,13 @@ mod tests {
                         "written_by": "prova",
                         "written_at": 1_756_400_000i64,
                     }),
-                    &mut shared,
+                    &shared,
                 )
                 .expect("scrittura");
         }
 
         let ActionOutcome::Went(all) = list
-            .execute(&json!({"collection": "posta/theo"}), &mut shared)
+            .execute(&json!({"collection": "posta/theo"}), &shared)
             .expect("elenco")
         else {
             panic!("nessuna attesa");
@@ -386,7 +386,7 @@ mod tests {
         let ActionOutcome::Went(fresh) = list
             .execute(
                 &json!({"collection": "posta/theo", "after": "2026-08-28T02"}),
-                &mut shared,
+                &shared,
             )
             .expect("elenco")
         else {
@@ -404,11 +404,11 @@ mod tests {
     #[test]
     fn nothing_new_leaves_the_readers_place_alone() {
         let (ledger, _guard) = store();
-        let mut shared = SharedState::new();
+        let shared = SharedState::new();
         let list = StoreListAction::new(ledger);
 
         let ActionOutcome::Went(empty) = list
-            .execute(&json!({"collection": "posta/nessuno"}), &mut shared)
+            .execute(&json!({"collection": "posta/nessuno"}), &shared)
             .expect("elenco")
         else {
             panic!("nessuna attesa");
@@ -424,7 +424,7 @@ mod tests {
     #[test]
     fn an_empty_address_is_refused_with_the_stores_own_words() {
         let (ledger, _guard) = store();
-        let mut shared = SharedState::new();
+        let shared = SharedState::new();
         let write = StoreWriteAction::new(ledger);
 
         let error = write
@@ -435,7 +435,7 @@ mod tests {
                     "value": 1,
                     "written_by": "prova",
                 }),
-                &mut shared,
+                &shared,
             )
             .expect_err("una collezione vuota non si scrive");
         assert_eq!(error.class, "store_refused");
