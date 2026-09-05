@@ -5,7 +5,7 @@
 //! their `run_id`. Token columns are stored as text so precision survives past
 //! 2^53, so both a string and a number are accepted here.
 
-use ledger::{EngineIdentity, ModelCallRecord, RunRecord};
+use ledger::{EngineIdentity, ModelCallRecord, RunRecord, SessionMode};
 use serde_json::Value;
 
 pub fn parse_runs(dump: &Value) -> Vec<RunRecord> {
@@ -97,6 +97,10 @@ fn parse_model_call_row(row: &Value) -> Option<ModelCallRecord> {
         work_kind: opt_str_at(cols, 28),
         // Version 14, the preferred engine that was not there.
         fell_back_from: ids_at(cols, 29),
+        // Version 15: a word this build does not know stays `None`.
+        session_mode: opt_str_at(cols, 30)
+            .as_deref()
+            .and_then(SessionMode::from_word),
     })
 }
 
@@ -198,6 +202,7 @@ mod tests {
             (27, "session_id"),
             (28, "work_kind"),
             (29, "fell_back_from"),
+            (30, "session_mode"),
         ] {
             assert_eq!(
                 dumped.get(index).copied(),
@@ -207,7 +212,7 @@ mod tests {
         }
         assert_eq!(
             dumped.len(),
-            30,
+            31,
             "the ledger dumps a column this file never reads"
         );
     }
