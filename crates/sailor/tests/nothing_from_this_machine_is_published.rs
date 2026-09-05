@@ -215,6 +215,12 @@ fn the_names_this_machine_declares_private_appear_nowhere() {
 #[test]
 fn nothing_git_tracks_in_those_places_goes_unread() {
     let root = repo_root();
+    // Fault 100: outside the top of a repository the oracle is empty, not
+    // clean — the answer names the files of whatever repository sits above.
+    if !workspace::is_the_top_of_its_repository(&root) {
+        workspace::measured_nothing("this tree is not the top of a repository, so the list of tracked files this check compares against is empty");
+        return;
+    }
     let seen: std::collections::BTreeSet<PathBuf> = published_files().into_iter().collect();
     let out = std::process::Command::new("git")
         .args(["ls-files", "-z"])
