@@ -183,9 +183,15 @@ E i cinque concetti di Theo della stessa sera:
 
 1. **Le sessioni analizzate**: questo documento.
 2. **Memoria e comunicazione fra agenti**: la ricerca sui flussi (`flow_search`,
-   `sailor flow search <parole>`, FTS5 in memoria) è entrata; la tabella
-   `memories`, l'indice su corse ed eventi, il file generato per le tre righe di
-   comando no. Gli annunci fra agenti c'erano già (D.1 del mandato).
+   `sailor flow search <parole>`, FTS5 in memoria) e sul ledger (`ledger_search`,
+   `sailor search <parole>`: corse, passi, deposito) sono entrate; le memorie
+   pure — `remember` come azione e `sailor remember` a mano, quattro tipi,
+   provenienza, `valid_from` che resta e `valid_until` invece della
+   cancellazione, **un segreto rifiutato prima di essere scritto** — e il saluto
+   di ogni terminale ne dice il numero e le ultime tre. Manca il file generato
+   per le tre righe di comando (la funzione che lo rende c'è, `page()`, provata
+   su 250 memorie) e l'indice su eventi e guasti. Gli annunci fra agenti c'erano
+   già (D.1 del mandato).
 3. **I workflow degli altri e i nostri**:
    `docs/2026-09-05-i-workflow-degli-altri-e-i-flussi-di-sailor.md`.
 4. **La lavagna**: la metà del motore c'è ed è provata dal vivo. `draft-a-flow`
