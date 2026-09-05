@@ -121,6 +121,11 @@ fn the_scan_finds_the_classes_that_are_known_to_be_there() {
 /// number: every source git tracks under a crate is one the walker opened.
 #[test]
 fn every_source_file_git_tracks_is_one_the_scan_opened() {
+    // Fault 100: outside the top of a repository the oracle is empty, not clean.
+    if !workspace::is_the_top_of_its_repository(&root()) {
+        workspace::measured_nothing("this tree is not the top of a repository, so the list of tracked sources this coverage is checked against is empty");
+        return;
+    }
     let listed = std::process::Command::new("git")
         .arg("-C")
         .arg(root())

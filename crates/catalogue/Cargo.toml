@@ -14,3 +14,10 @@ rust-version.workspace = true
 # anything it pulls in, everything pulls in.
 [dependencies]
 serde_json = { workspace = true }
+
+# Tests only, and it stays that way: a judge here asks git what it tracks, and
+# a judge with no repository to ask must say so rather than pass on an empty
+# answer. `workspace` depends on nothing of this workspace, so nothing of it
+# reaches the shipped crate.
+[dev-dependencies]
+workspace = { path = "../workspace" }
