@@ -10,7 +10,7 @@ si cancella e non si rimpiange.
 c'è il rimando, non la copia. Una copia a mano invecchia da sola, e lo sappiamo
 perché è già successo.
 
-Aggiornato il 04/09/2026. **La rotta non sta qui**: cosa manca perché il lavoro
+Aggiornato il 05/09/2026. **La rotta non sta qui**: cosa manca perché il lavoro
 finisca sta nella condizione di fine del 02/09, in `docs/`, dove ogni
 affermazione porta il controllo che la decide. Qui restano le voci sospese e le
 scelte che aspettano Theo — cioè ciò che questo file era.
@@ -24,8 +24,11 @@ Nessuna di queste è bloccata da lavoro: sono bloccate da una scelta.
    prezzo di continuare sì (+34%, monotono su 37 sessioni su 45). Raccomandato il
    prezzo. *Per esteso*: `docs/2026-08-28-il-flusso-che-accompagna.md`.
 2. **Prima l'orologio o prima la staffetta.** Ciò che calcola quando un flusso è
-   dovuto esiste già; nessuno esegue ciò che calcola. *29/08: questa voce è
-   diventata più urgente.* Senza di essa un flusso a ronda non è ripetibile da
+   dovuto esiste già; lo esegue il battito della finestra (ogni minuto, finché
+   la finestra è aperta) e `sailor flow tick` quando qualcuno lo chiama. *05/09:
+   `watch-the-crew` ha una programmazione, ogni mezz'ora; fuori dalla finestra
+   nessuno chiama il battito, e questa resta la decisione.* *29/08: questa voce
+   è diventata più urgente.* Senza di essa un flusso a ronda non è ripetibile da
    dentro Sailor, e il rimedio ovvio — uno script che rilancia — è stato scritto
    e poi cancellato lo stesso giorno: sarebbe stato un cerotto fuori dal sistema
    su un buco dentro il sistema, e i cerotti restano.
@@ -58,6 +61,17 @@ Nessuna di queste è bloccata da lavoro: sono bloccate da una scelta.
 - **Il file delle autorizzazioni non esiste**, e la decisione è di Theo: se il
   modello Bazel vale per ogni passo, l'autocura non ha bisogno di un gate suo —
   è un flusso come gli altri, con i poteri che dichiara. Un pezzo in meno.
+
+### Aperte il 05/09
+
+6. **La credenziale git di questa macchina non è quella del repository.** Il
+   rilascio spinge il tronco a ogni rilascio e da stasera dice «non spinto, il
+   remoto è indietro: 403»: `sorgenti` è oltre 200 commit avanti a
+   `origin/sorgenti`. Il gesto è di Theo: `gh auth switch -u SIRTHEO && gh auth
+   setup-git`, poi un rilascio qualunque.
+7. **`origin/main` è la storia prima della riscrittura.** Il tronco è
+   `sorgenti`; cosa fare del ramo `main` sul remoto — allinearlo, cancellarlo,
+   lasciarlo — è una scelta sul pubblico, e va presa da chi firma.
 
 ## Chieste da Theo, non ancora iniziate
 
@@ -106,7 +120,13 @@ Nessuna di queste è bloccata da lavoro: sono bloccate da una scelta.
   inutile.
 - **Ricerca su tutto ciò che il sistema conserva, anche per significato**, dalla
   finestra e da qualunque agente. Come nodo di sistema, non come funzione della
-  finestra.
+  finestra. *05/09: il primo nodo c'è, `flow_search`, sui soli flussi; corse,
+  eventi e deposito no.*
+- **La lavagna che diventa un flusso.** Chiesta il 04/09/2026: una tela con i
+  nodi di base di Sailor su cui disegnare e scrivere, e un agente che dallo
+  schizzo fa una bozza vera. *05/09: la metà del motore c'è — `draft-a-flow`,
+  `action_list`, `flow_draft` — e ha scritto il suo primo flusso da uno schizzo
+  in testo. Manca la tela nella finestra.*
 - **Spazi di lavoro come pagine**: una pagina per i flussi di sistema, una per i
   generici, una per ogni spazio di lavoro, coi nodi collegabili fra pagine.
   Il 01/09/2026 Theo l'ha saldata alla voce sulle sospese: la pagina è una tela
