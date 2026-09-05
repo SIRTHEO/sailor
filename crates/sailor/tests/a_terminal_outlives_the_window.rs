@@ -15,7 +15,7 @@ use terminal::host::Client;
 const PATIENCE: Duration = Duration::from_secs(15);
 
 fn scratch(name: &str) -> PathBuf {
-    terminal::scratch::directory(&format!("outlives-{name}"))
+    terminal::scratch::directory(&format!("outlives-{name}")).expect("a scratch directory")
 }
 
 /// The host's process, ended with the test whichever way the test ends: a

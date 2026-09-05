@@ -16,7 +16,7 @@ const PATIENCE: Duration = Duration::from_secs(10);
 
 /// A short directory: the sockets inside have a hard address cap.
 fn scratch(name: &str) -> PathBuf {
-    terminal::scratch::directory(&format!("host-{name}"))
+    terminal::scratch::directory(&format!("host-{name}")).expect("a scratch directory")
 }
 
 /// A host answering under `directory`, with its letterboxes beside it.

@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use std::path::PathBuf;
 
 fn scratch(name: &str) -> PathBuf {
-    terminal::scratch::directory(&format!("relay-{name}"))
+    terminal::scratch::directory(&format!("relay-{name}")).expect("a scratch directory")
 }
 
 fn registry() -> flow::ActionRegistry {
