@@ -241,13 +241,14 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
     // 35: chi non ha un prezzo per un modello deve saperlo, non dedurlo da uno
     // zero. I nomi vengono da `tokens_by_model`, cioè da chi ha davvero
     // risposto in questa corsa.
+    let not_declared = ui::dashboard::model_not_declared();
     let unpriced = cannot_be_priced(
         prices,
         &view
             .tokens_by_model
             .keys()
             .filter(|name| !name.trim().is_empty())
-            .filter(|name| name.as_str() != ui::dashboard::MODEL_NOT_DECLARED)
+            .filter(|name| **name != not_declared)
             .cloned()
             .collect(),
     );
@@ -275,17 +276,27 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
     // Cosa c'è dentro quella casa non è affare di un rapporto sul consumo.
     let identities = ui::dashboard::identities_of(&view.calls);
     if !identities.is_empty() {
-        report.push_str("\nidentity:");
+        report.push_str(&catalogue::say("cli.flow.identity_heading", &[]));
         for (identity, how_many) in identities {
-            let word = if how_many == 1 {
-                "chiamata"
-            } else {
-                "chiamate"
-            };
-            let _ = write!(report, "\n  {identity} — {how_many} {word}");
+            report.push_str(&identity_line(&identity, how_many));
         }
     }
     report
+}
+
+/// One identity and how many calls started under it. The plural is the
+/// catalogue's: two keys, and the count picks between them. Both keys are
+/// written out where they are asked for, so the judge that reads the keys the
+/// code asks for sees both.
+fn identity_line(identity: &ledger::EngineIdentity, how_many: usize) -> String {
+    let identity = identity.to_string();
+    let count = how_many.to_string();
+    let values = [("identity", identity.as_str()), ("how_many", count.as_str())];
+    if how_many == 1 {
+        catalogue::say("cli.flow.identity_calls_one", &values)
+    } else {
+        catalogue::say("cli.flow.identity_calls_many", &values)
+    }
 }
 
 /// The turns of a run that an agent declared of itself and nobody measured.
@@ -721,17 +732,61 @@ mod tests {
 
         let said = spending_report(&view, &a_small_price_list());
 
-        assert!(said.contains("identity:"), "{said}");
         assert!(
-            said.contains("profile codex/lavoro — home /case/codex/lavoro — 2 chiamate"),
+            said.contains(&catalogue::say("cli.flow.identity_heading", &[])),
             "{said}"
         );
         assert!(
-            said.contains(
-                "home chosen by the step (codex) — home /una/casa/scritta/nel/passo — 1 chiamata"
-            ),
+            said.contains(&catalogue::say(
+                "cli.flow.identity_calls_many",
+                &[
+                    ("identity", "profile codex/lavoro — home /case/codex/lavoro"),
+                    ("how_many", "2")
+                ]
+            )),
+            "{said}"
+        );
+        assert!(
+            said.contains(&catalogue::say(
+                "cli.flow.identity_calls_one",
+                &[
+                    (
+                        "identity",
+                        "home chosen by the step (codex) — home /una/casa/scritta/nel/passo"
+                    ),
+                    ("how_many", "1")
+                ]
+            )),
             "il caso in cui l'identità è stata cambiata apposta è quello che deve vedersi: {said}"
         );
+    }
+
+    /// The count picks the key, and the two keys differ: a line that always
+    /// said «calls» would pass a test that only looked for the number.
+    #[test]
+    fn the_identity_line_picks_its_plural_by_count() {
+        let identity = ledger::EngineIdentity::ChosenByTheStep {
+            cli_id: "codex".to_owned(),
+            home_dir: "/una/casa".into(),
+        };
+        let named = identity.to_string();
+        let one = catalogue::say(
+            "cli.flow.identity_calls_one",
+            &[("identity", named.as_str()), ("how_many", "1")],
+        );
+        let many = catalogue::say(
+            "cli.flow.identity_calls_many",
+            &[("identity", named.as_str()), ("how_many", "2")],
+        );
+        let one_in_the_plural = catalogue::say(
+            "cli.flow.identity_calls_many",
+            &[("identity", named.as_str()), ("how_many", "1")],
+        );
+        assert_ne!(one, one_in_the_plural, "the two keys say the same thing, and the count decides nothing");
+
+        assert_eq!(identity_line(&identity, 1), one);
+        assert_eq!(identity_line(&identity, 2), many);
+        assert_ne!(identity_line(&identity, 1), one_in_the_plural, "one call was given the plural");
     }
 
     /// La gemella: quando tutto è prezzato la riga non compare. Senza di lei un
@@ -958,7 +1013,24 @@ mod tests {
     /// La cifra secca, come la scriverebbe un totale completo. Se compare in un
     /// rapporto parziale, chi legge ha in mano un numero che non è il totale.
     fn bare_total(micros: i64) -> String {
-        format!("equivalent cost: {:.4}", micros as f64 / 1_000_000.0)
+        catalogue::say("ui.cost.exact", &[("units", &units(micros))])
+    }
+
+    /// The floor, as the catalogue writes it: the known part, and how many of
+    /// the calls are outside it.
+    fn floored_total(micros: i64, calls: usize, without_cost: usize) -> String {
+        catalogue::say(
+            "ui.cost.at_least",
+            &[
+                ("units", &units(micros)),
+                ("calls", &calls.to_string()),
+                ("calls_without_cost", &without_cost.to_string()),
+            ],
+        )
+    }
+
+    fn units(micros: i64) -> String {
+        format!("{:.4}", micros as f64 / 1_000_000.0)
     }
 
     /// **UN TOTALE CHE CONTIENE UN'INCOGNITA NON È UN TOTALE.**
@@ -983,12 +1055,8 @@ mod tests {
             "la cifra secca non deve comparire: si legge come il totale vero.\n{report}"
         );
         assert!(
-            report.contains("at least"),
-            "il numero va letto come un pavimento, non come una somma.\n{report}"
-        );
-        assert!(
-            report.contains("3 calls out of 4"),
-            "quanto manca si dice accanto alla cifra, non in fondo.\n{report}"
+            report.contains(&floored_total(1_667_400, 4, 3)),
+            "il numero va letto come un pavimento, con quanto manca accanto alla cifra.\n{report}"
         );
     }
 
@@ -1057,7 +1125,7 @@ mod tests {
             a_handed_call("build", 33),
         ]);
 
-        assert!(report.contains("at least 1.6674"), "{report}");
+        assert!(report.contains(&floored_total(1_667_400, 2, 1)), "{report}");
         assert!(!report.contains(&bare_total(1_667_400)), "{report}");
         assert!(
             the_line_naming(&report, "build").contains("self-declared"),
@@ -1072,7 +1140,7 @@ mod tests {
             "the declared turns are qualified in the line of the number.\n{report}"
         );
         assert!(
-            !report.contains("(model not declared) ("),
+            !report.contains(&format!("{} (", ui::dashboard::model_not_declared())),
             "a step no engine served is not a model missing from the price list.\n{report}"
         );
     }
@@ -1124,7 +1192,7 @@ mod tests {
 
         let report = cost_of_in(&directory.0, "prova").expect("il rapporto si scrive");
 
-        assert!(report.contains("at least 1.6674"), "{report}");
+        assert!(report.contains(&floored_total(1_667_400, 2, 1)), "{report}");
         assert!(!report.contains(&bare_total(1_667_400)), "{report}");
         assert!(
             the_line_naming(&report, "build").contains("self-declared"),
@@ -1140,7 +1208,7 @@ mod tests {
         let report = report_for(&[a_call_named("consegnata", None)]);
 
         assert!(
-            report.contains("unknown"),
+            report.contains(&catalogue::say("ui.cost.unknown", &[("calls", "1")])),
             "senza nemmeno una misura non c'è un pavimento da dichiarare.\n{report}"
         );
         assert!(

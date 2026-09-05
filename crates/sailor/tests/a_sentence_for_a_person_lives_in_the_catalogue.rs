@@ -7,10 +7,14 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// What `crates/sailor/src` still holds. It goes down as sentences move into
-/// `i18n/`, and a rise means a new one was written into the code. Never raise
-/// it to make the gate green.
+/// What the sources under `WHERE_A_PERSON_IS_SPOKEN_TO` still hold. It goes
+/// down as sentences move into `i18n/`, and a rise means a new one was written
+/// into the code. Never raise it to make the gate green.
 const SENTENCES_STILL_IN_THE_CODE: usize = 3;
+
+/// The sources that write lines for a person: the command line, and the
+/// counts the window and the command line both print through `ui`.
+const WHERE_A_PERSON_IS_SPOKEN_TO: &[&str] = &["crates/sailor/src", "crates/ui/src"];
 
 /// Words that open a query for the database, not a line for a person.
 const A_QUERY_NOT_A_SENTENCE: &[&str] = &[
@@ -264,7 +268,9 @@ fn sentences_of(whole: &str) -> Vec<(usize, String)> {
 
 fn count_them(root: &Path) -> (usize, BTreeMap<String, usize>, Vec<String>) {
     let mut sources = Vec::new();
-    sources_of_the_command_line(&root.join("crates/sailor/src"), &mut sources);
+    for place in WHERE_A_PERSON_IS_SPOKEN_TO {
+        sources_of_the_command_line(&root.join(place), &mut sources);
+    }
     let mut total = 0;
     let mut per_file = BTreeMap::new();
     let mut examples = Vec::new();
@@ -306,6 +312,14 @@ fn heaviest(per_file: &BTreeMap<String, usize>) -> String {
 #[test]
 fn the_sentences_written_into_the_command_line_only_shrink() {
     let root = repository_root();
+    for place in WHERE_A_PERSON_IS_SPOKEN_TO {
+        let mut sources = Vec::new();
+        sources_of_the_command_line(&root.join(place), &mut sources);
+        assert!(
+            !sources.is_empty(),
+            "no source under {place} was read: the count is blind there"
+        );
+    }
     let (total, per_file, _) = count_them(&root);
     assert!(
         !per_file.is_empty(),
@@ -315,7 +329,7 @@ fn the_sentences_written_into_the_command_line_only_shrink() {
         total <= SENTENCES_STILL_IN_THE_CODE,
         "sentences written into the code: {total} (the declared number is \
          {SENTENCES_STILL_IN_THE_CODE}). A sentence written here is English for \
-         everyone for ever: give it a `cli.*` key in i18n/en.json and \
+         everyone for ever: give it a `cli.*` or `ui.*` key in i18n/en.json and \
          i18n/it.json and ask the catalogue for it. Where they are, heaviest \
          first:\n{}",
         heaviest(&per_file)

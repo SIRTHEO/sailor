@@ -4,10 +4,11 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 
-# No extra dependencies: this crate needs only `flow` and `ledger`, which the
-# ledger already brings in, in keeping with the rest of the workspace holding
-# its dependencies to a minimum.
+# No extra dependencies: this crate needs only `flow`, `ledger` and the
+# catalogue its lines for a person are read from, in keeping with the rest of
+# the workspace holding its dependencies to a minimum.
 [dependencies]
+catalogue = { path = "../catalogue" }
 flow = { path = "../flow" }
 ledger = { path = "../ledger" }
 inventory = { path = "../inventory" }
