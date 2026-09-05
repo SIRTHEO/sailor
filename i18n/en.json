@@ -466,6 +466,7 @@
   "run.refusal.rule.not_json": "the answer is not JSON",
   "run.refusal.rule.too_long": "the value is longer than the cap",
   "run.refusal.rule.exit_code": "the command exited with an error",
+  "run.ran": "running {line}",
   "run.failure.child_run_not_recorded": "the child run could not be recorded in the store",
   "run.failure.clock_before_epoch": "the machine's clock reads a time before 1970 — the subflow never opened",
   "run.failure.clock_broke": "the machine's clock would not say the time",

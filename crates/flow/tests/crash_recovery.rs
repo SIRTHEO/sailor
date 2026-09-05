@@ -466,6 +466,7 @@ fn killed_process_reconstructs_the_same_next_decision_without_replaying_effect()
                 said: None,
                 failure_class: None,
                 refusal: None,
+                ran: None,
                 ended_at: 11,
                 bytes_seen: None,
                 bytes_discarded: None,
