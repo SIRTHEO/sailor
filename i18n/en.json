@@ -652,7 +652,7 @@
   "cli.memory.where_unknown": "{engine}{profile}: nobody established what it reads at its start, so nothing says whether it sees the page",
   "cli.memory.link_says": "writes a pointer to the page into the instructions files the engines read in this tree; the ones under the person's home are left alone unless --home is passed",
   "cli.memory.unlink_says": "takes that pointer back out and leaves every file the bytes it held before it went in; --home reaches the ones under the person's home too",
-  "cli.memory.link_block_page": "What Sailor remembers here is on {path}: read that page before you reach for a tool of your own.",
+  "cli.memory.link_block_page": "What Sailor remembers in this tree is rendered by `sailor memory page`: run it, read the file it names, and do that before you reach for a tool of your own.",
   "cli.memory.link_block_rules": "The rules of this tree, and the tools it hands you instead, are written in {rules}.",
   "cli.memory.linked": "{path}: it names the page now",
   "cli.memory.unlinked": "{path}: back to the bytes it held before",

@@ -167,7 +167,12 @@ fn linking_twice_writes_one_block_and_moves_not_a_byte_around_it() {
     assert_eq!(twice, before, "linking twice changed bytes outside the markers");
     assert!(twice.starts_with(head), "the head of the file moved");
     assert!(twice.ends_with("\ntail written after the block\n"), "the tail moved");
-    assert!(twice.contains(&fixture.page.display().to_string()), "the block names no page");
+    // It names the gesture, never the path: that path could not be committed.
+    assert!(twice.contains("sailor memory page"), "the block names no way to the page");
+    assert!(
+        !twice.contains(&fixture.page.display().to_string()),
+        "the block carries a path of this machine"
+    );
 }
 
 /// Byte for byte, both ways: a file that was there is left holding exactly
