@@ -10,12 +10,21 @@ use std::collections::BTreeSet;
 pub const FAILURES_THAT_MAKE_A_FAULT: usize = 3;
 
 /// The most recent closed runs of one flow, as long as every one of them
-/// failed. `length` counts them; `last_failed_run` is the newest.
+/// failed: their ids, newest first.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FailureStreak {
     pub flow: String,
-    pub length: usize,
-    pub last_failed_run: String,
+    pub runs: Vec<String>,
+}
+
+impl FailureStreak {
+    pub fn length(&self) -> usize {
+        self.runs.len()
+    }
+
+    pub fn last_failed_run(&self) -> &str {
+        self.runs.first().map(String::as_str).unwrap_or("")
+    }
 }
 
 /// One fault the beat owes the register: which flow, how long its streak is,
@@ -27,19 +36,20 @@ pub struct FaultToWrite {
     pub run_id: String,
 }
 
-/// The streaks that deserve a fault now: long enough, not written yet, and
-/// never about the fault writer itself — a writer that fails must not be
-/// asked to write about its own failure for ever.
+/// The streaks that deserve a fault now: long enough, never about the fault
+/// writer itself, and holding no run a fault was already written about — one
+/// streak owes one fault, however long it grows, and a streak that starts
+/// afresh after a success owes a new one.
 pub fn faults_due(streaks: &[FailureStreak], already_written: &BTreeSet<String>) -> Vec<FaultToWrite> {
     streaks
         .iter()
-        .filter(|streak| streak.length >= FAILURES_THAT_MAKE_A_FAULT)
+        .filter(|streak| streak.length() >= FAILURES_THAT_MAKE_A_FAULT)
         .filter(|streak| streak.flow != FAULT_WRITER)
-        .filter(|streak| !already_written.contains(&streak.last_failed_run))
+        .filter(|streak| !streak.runs.iter().any(|run| already_written.contains(run)))
         .map(|streak| FaultToWrite {
             flow: streak.flow.clone(),
-            length: streak.length,
-            run_id: streak.last_failed_run.clone(),
+            length: streak.length(),
+            run_id: streak.last_failed_run().to_owned(),
         })
         .collect()
 }
@@ -49,10 +59,13 @@ mod tests {
     use super::*;
 
     fn streak(flow: &str, length: usize) -> FailureStreak {
+        streak_from(flow, 1, length)
+    }
+
+    fn streak_from(flow: &str, first: usize, last: usize) -> FailureStreak {
         FailureStreak {
             flow: flow.to_owned(),
-            length,
-            last_failed_run: format!("{flow}-{length}"),
+            runs: (first..=last).rev().map(|n| format!("{flow}-{n}")).collect(),
         }
     }
 
@@ -67,21 +80,21 @@ mod tests {
     }
 
     #[test]
-    fn a_streak_whose_last_run_was_already_written_is_not_due_again() {
+    fn a_streak_written_about_owes_nothing_more_while_it_grows() {
         let streaks = vec![streak("relay", 3), streak("sweep", 4)];
         let written = BTreeSet::from(["relay-3".to_owned()]);
         let due = faults_due(&streaks, &written);
         assert_eq!(due.len(), 1, "{due:?}");
         assert_eq!(due[0].flow, "sweep");
 
-        // A newer failure moves the streak's last run past what was written,
-        // and the same flow is due again.
-        let grown = vec![FailureStreak {
-            flow: "relay".to_owned(),
-            length: 4,
-            last_failed_run: "relay-4".to_owned(),
-        }];
-        assert_eq!(faults_due(&grown, &written).len(), 1);
+        // Two more failures on the same streak: the fault is already written.
+        let grown = vec![streak("relay", 5)];
+        assert!(faults_due(&grown, &written).is_empty());
+
+        // A success in between, then three fresh failures: a new streak, and
+        // a new fault.
+        let afresh = vec![streak_from("relay", 7, 9)];
+        assert_eq!(faults_due(&afresh, &written).len(), 1);
     }
 
     #[test]
