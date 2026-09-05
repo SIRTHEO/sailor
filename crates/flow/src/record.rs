@@ -2,11 +2,13 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+use std::fmt::{self, Display, Formatter};
 
 pub const MAX_SAID_BYTES: usize = 16 * 1024;
 
-/// The longest excerpt of an offending value a refusal keeps: enough to
-/// recognise the value, and a bound that keeps a row from growing with it.
+/// The longest excerpt a row keeps of a value it only quotes: what a refusal
+/// saw, and each word of the line a step ran. Enough to recognise the value,
+/// and a bound that keeps a row from growing with it.
 pub const MAX_SEEN_BYTES: usize = 160;
 
 /// Which declared check refused a value, where in it, by which rule, and an
@@ -76,6 +78,52 @@ impl Refusal {
         } else {
             catalogue::say("run.refusal.at_path", &values)
         }
+    }
+}
+
+/// The process a step started, as it was started: the program after
+/// resolution, not the template, and its arguments. Each word is cut like
+/// `Refusal::seen`, so a prompt handed on the line does not become the row.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Ran {
+    pub program: String,
+    pub args: Vec<String>,
+}
+
+impl Ran {
+    pub fn new(program: &str, args: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
+        Self {
+            program: head(program, MAX_SEEN_BYTES),
+            args: args
+                .into_iter()
+                .map(|arg| head(arg.as_ref(), MAX_SEEN_BYTES))
+                .collect(),
+        }
+    }
+
+    /// The sentence a person reads as the line starts, from the catalogue.
+    pub fn announce(&self) -> String {
+        catalogue::say("run.ran", &[("line", &self.to_string())])
+    }
+}
+
+/// One line, word by word: a word with a space in it, or nothing in it, sits
+/// between «» so the reader can tell where each one begins and ends.
+impl Display for Ran {
+    fn fmt(&self, out: &mut Formatter<'_>) -> fmt::Result {
+        write!(out, "{}", as_one_word(&self.program))?;
+        for arg in &self.args {
+            write!(out, " {}", as_one_word(arg))?;
+        }
+        Ok(())
+    }
+}
+
+fn as_one_word(text: &str) -> String {
+    if text.is_empty() || text.chars().any(char::is_whitespace) {
+        format!("«{text}»")
+    } else {
+        text.to_owned()
     }
 }
 
@@ -158,6 +206,10 @@ pub struct StepRecord {
     /// Which check refused, and what it saw, when the class is a refusal.
     #[serde(default)]
     pub refusal: Option<Refusal>,
+    /// The process the step started, when its work was one. Absent on a
+    /// record from before the field, and on every step that starts none.
+    #[serde(default)]
+    pub ran: Option<Ran>,
     #[serde(deserialize_with = "required_option")]
     pub ended_at: Option<i64>,
     /// Total bytes emitted; not part of the typed data channel.
@@ -239,6 +291,7 @@ impl StepRecord {
             said: None,
             failure_class: None,
             refusal: None,
+            ran: None,
             ended_at: None,
             bytes_seen: None,
             bytes_discarded: None,
@@ -434,6 +487,46 @@ mod tests {
         // inherit a species nobody declared.
         assert_eq!(record.species, None);
         assert_eq!(record.held_by_pid, None);
+        assert_eq!(record.ran, None, "nothing written before the field ran a line");
+    }
+
+    /// Each word of the line is bounded on its own: an argument carrying a
+    /// whole prompt would otherwise put the prompt in the row.
+    #[test]
+    fn the_line_a_step_ran_cuts_each_word_on_a_character_boundary() {
+        let long = format!("{}é{}", "a".repeat(MAX_SEEN_BYTES - 1), "b".repeat(50));
+        let ran = Ran::new("sh", ["-c", long.as_str()]);
+        assert_eq!(ran.program, "sh");
+        assert_eq!(ran.args, vec!["-c".to_owned(), "a".repeat(MAX_SEEN_BYTES - 1)]);
+        let program = Ran::new(&long, ["x"]).program;
+        assert_eq!(program, "a".repeat(MAX_SEEN_BYTES - 1));
+    }
+
+    /// The line reads as one line, and a word that holds a space is marked,
+    /// or `sh -c echo hi` would read as four words to a reader.
+    #[test]
+    fn the_line_reads_word_by_word_with_spaced_words_marked() {
+        let ran = Ran::new("sh", ["-c", "echo hi", "", "plain"]);
+        assert_eq!(ran.to_string(), "sh -c «echo hi» «» plain");
+    }
+
+    /// The line survives the record, and a record written before it existed
+    /// reads back without one — an old event log is all a store is rebuilt from.
+    #[test]
+    fn the_line_survives_the_record_and_an_old_record_has_none() {
+        let mut record = closed_with(None);
+        record.ran = Some(Ran::new("sh", ["-c", "echo hi"]));
+        let text = serde_json::to_string(&record).expect("serializable record");
+        let back: StepRecord = serde_json::from_str(&text).expect("readable record");
+        assert_eq!(back.ran, record.ran);
+
+        let mut value = serde_json::to_value(&record).expect("serializable record");
+        value
+            .as_object_mut()
+            .expect("the record is an object")
+            .remove("ran");
+        let old: StepRecord = serde_json::from_value(value).expect("an old record reads");
+        assert_eq!(old.ran, None);
     }
 
     fn closed_with(output: Option<Value>) -> StepRecord {

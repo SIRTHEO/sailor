@@ -6,10 +6,11 @@ use crate::answer::{
     CHECK_FAILURES,
 };
 use crate::process::{
-    run_shell_check_watched, sink_for_step, CheckInvocation, CheckResult, StepSinks,
+    run_shell_check_watched, sink_for_step, CheckInvocation, CheckResult, LiveSink, Pipe,
+    StepSinks,
 };
 use flow::{
-    Action, ActionError, ActionOutcome, Refusal, RefusalRule, SharedState, StepSpecies,
+    Action, ActionError, ActionOutcome, Ran, Refusal, RefusalRule, SharedState, StepSpecies,
     ValueSchema,
 };
 use serde::Deserialize;
@@ -102,83 +103,36 @@ impl Action for ShellCheckAction {
     }
 
     fn execute(&self, input: &Value, shared: &SharedState) -> Result<ActionOutcome, ActionError> {
+        self.execute_and_report(input, shared)
+            .map(|(outcome, _)| outcome)
+    }
+
+    /// The line is said on the step's echo before the shell starts, so a check
+    /// that hangs is still seen for what it is; and it travels with the
+    /// outcome, or with the error, from the one place both leave.
+    fn execute_and_report(
+        &self,
+        input: &Value,
+        shared: &SharedState,
+    ) -> Result<(ActionOutcome, Option<Ran>), ActionError> {
         let live = sink_for_step(&self.watcher, shared);
         let spec: CheckSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         check_tolerance(&spec.accept, &CHECK_FAILURES)?;
-        let seconds = spec.timeout_secs;
-        let command = spec.command.clone();
         let invocation = CheckInvocation {
-            command: spec.command,
-            env: spec.env,
-            timeout: Duration::from_secs(seconds),
-            workdir: spec.workdir,
+            command: spec.command.clone(),
+            env: spec.env.clone(),
+            timeout: Duration::from_secs(spec.timeout_secs),
+            workdir: spec.workdir.clone(),
         };
-        let (status, said) = match run_shell_check_watched(&invocation, live.as_deref()) {
-            CheckResult::Passed { stdout } => ("passed", Some(stdout)),
-            CheckResult::Failed { code, stderr } => {
-                if !tolerates(&spec.accept, "failed") {
-                    return Err(ActionError::new(
-                        "check_failed",
-                        format!(
-                            "the check `{command}` {}; {}",
-                            how_it_exited(code),
-                            what_it_said("", &stderr)
-                        ),
-                    )
-                    .refused(Refusal::new(
-                        "command",
-                        "",
-                        RefusalRule::ExitCode,
-                        &stderr,
-                    )));
-                }
-                ("failed", None)
-            }
-            CheckResult::TimedOut => {
-                if !tolerates(&spec.accept, "timed_out") {
-                    return Err(ActionError::new(
-                        "check_timed_out",
-                        format!(
-                            "the check `{command}` did not finish within {seconds} seconds and was killed"
-                        ),
-                    ));
-                }
-                ("timed_out", None)
-            }
-        };
-        // **LA FORMA SI APPLICA SOLO A UN COMANDO RIUSCITO**, e qui il comando
-        // si separa dal motore di proposito. Il motore pretende la forma anche
-        // in `exit_error`, perché un motore che fallisce ha comunque parlato;
-        // un comando fallito non ha prodotto la lettura richiesta. Chi ha
-        // scritto `accept` ramifica già sullo stato, altrimenti non l'avrebbe
-        // scritto.
-        let Some((shape, said)) = spec.answer_shape.as_ref().zip(said) else {
-            return Ok(ActionOutcome::Went(json!({ "status": status })));
-        };
-        if said.len() > MAX_ANSWER_BYTES {
-            return Err(ActionError::new(
-                "answer_too_large",
-                format!(
-                    "the reading of `{command}` weighs {} characters, past the cap of {MAX_ANSWER_BYTES}.                      The cap does not truncate: a cut value looks whole. Narrow what the                      command prints — with a filter, or by asking it for fewer fields.",
-                    said.len()
-                ),
-            )
-            .refused(Refusal::new(
-                ANSWER_SHAPE_CHECK,
-                "",
-                RefusalRule::TooLong,
-                &said,
-            )));
+        let ran = invocation.ran();
+        if let Some(live) = live.as_deref() {
+            live.chunk(Pipe::Stderr, format!("[sailor] {}\n", ran.announce()).as_bytes());
         }
-        // **IL TESTO GREZZO NON ESCE DAL PASSO**: consegna `answer`, o niente.
-        // È la stessa scelta che `an_engine_step_declares_what_it_can_return_and_what_it_hands_on`
-        // pretende già dal motore, e lasciarlo passare accanto al valore
-        // renderebbe la forma un ornamento.
-        let answer = shaped_answer(shape, &said)?;
-        Ok(ActionOutcome::Went(
-            json!({ "status": status, "answer": answer }),
-        ))
+        match run_and_read(&spec, &invocation, live.as_deref()) {
+            Ok(outcome) => Ok((outcome, Some(ran))),
+            Err(error) => Err(error.having_run(ran)),
+        }
     }
 
     /// Una verifica interrotta si rifà: il suo mestiere è rileggere il mondo
@@ -191,10 +145,87 @@ impl Action for ShellCheckAction {
     }
 }
 
+/// Runs the check and reads what it said, by the step's tolerances and the
+/// shape it declared.
+fn run_and_read(
+    spec: &CheckSpec,
+    invocation: &CheckInvocation,
+    live: Option<&dyn LiveSink>,
+) -> Result<ActionOutcome, ActionError> {
+    let command = &invocation.command;
+    let seconds = spec.timeout_secs;
+    let (status, said) = match run_shell_check_watched(invocation, live) {
+        CheckResult::Passed { stdout } => ("passed", Some(stdout)),
+        CheckResult::Failed { code, stderr } => {
+            if !tolerates(&spec.accept, "failed") {
+                return Err(ActionError::new(
+                    "check_failed",
+                    format!(
+                        "the check `{command}` {}; {}",
+                        how_it_exited(code),
+                        what_it_said("", &stderr)
+                    ),
+                )
+                .refused(Refusal::new(
+                    "command",
+                    "",
+                    RefusalRule::ExitCode,
+                    &stderr,
+                )));
+            }
+            ("failed", None)
+        }
+        CheckResult::TimedOut => {
+            if !tolerates(&spec.accept, "timed_out") {
+                return Err(ActionError::new(
+                    "check_timed_out",
+                    format!(
+                        "the check `{command}` did not finish within {seconds} seconds and was killed"
+                    ),
+                ));
+            }
+            ("timed_out", None)
+        }
+    };
+    // **LA FORMA SI APPLICA SOLO A UN COMANDO RIUSCITO**, e qui il comando
+    // si separa dal motore di proposito. Il motore pretende la forma anche
+    // in `exit_error`, perché un motore che fallisce ha comunque parlato;
+    // un comando fallito non ha prodotto la lettura richiesta. Chi ha
+    // scritto `accept` ramifica già sullo stato, altrimenti non l'avrebbe
+    // scritto.
+    let Some((shape, said)) = spec.answer_shape.as_ref().zip(said) else {
+        return Ok(ActionOutcome::Went(json!({ "status": status })));
+    };
+    if said.len() > MAX_ANSWER_BYTES {
+        return Err(ActionError::new(
+            "answer_too_large",
+            format!(
+                "the reading of `{command}` weighs {} characters, past the cap of {MAX_ANSWER_BYTES}.                      The cap does not truncate: a cut value looks whole. Narrow what the                      command prints — with a filter, or by asking it for fewer fields.",
+                said.len()
+            ),
+        )
+        .refused(Refusal::new(
+            ANSWER_SHAPE_CHECK,
+            "",
+            RefusalRule::TooLong,
+            &said,
+        )));
+    }
+    // **IL TESTO GREZZO NON ESCE DAL PASSO**: consegna `answer`, o niente.
+    // È la stessa scelta che `an_engine_step_declares_what_it_can_return_and_what_it_hands_on`
+    // pretende già dal motore, e lasciarlo passare accanto al valore
+    // renderebbe la forma un ornamento.
+    let answer = shaped_answer(shape, &said)?;
+    Ok(ActionOutcome::Went(
+        json!({ "status": status, "answer": answer }),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::tests::with_references_resolved;
+    use std::sync::Mutex;
 
     #[test]
     fn the_shell_check_action_reads_its_json_input() {
@@ -474,5 +505,75 @@ mod tests {
             .execute(&input, &SharedState::new())
             .expect_err("sopra il tetto il passo si ferma invece di tagliare");
         assert_eq!(error.class, "answer_too_large");
+    }
+
+    /// The record of a shell step carries the shell and the text as they were
+    /// started, on the step that passed and on the one that broke alike.
+    #[test]
+    fn a_shell_step_reports_the_shell_and_the_text_it_ran() {
+        let passed = json!({"command": "echo hi", "timeout_secs": 5});
+        let (outcome, ran) = ShellCheckAction::new()
+            .execute_and_report(&passed, &SharedState::new())
+            .expect("the check passes");
+        assert!(matches!(outcome, ActionOutcome::Went(_)));
+        assert_eq!(ran, Some(Ran::new("sh", ["-c", "echo hi"])));
+
+        let broke = json!({"command": "exit 2", "timeout_secs": 5});
+        let error = ShellCheckAction::new()
+            .execute_and_report(&broke, &SharedState::new())
+            .expect_err("a failing check breaks its step");
+        assert_eq!(error.class, "check_failed");
+        assert_eq!(
+            error.ran.as_deref(),
+            Some(&Ran::new("sh", ["-c", "exit 2"])),
+            "a broken check forgot the line it ran"
+        );
+    }
+
+    /// Whoever watches the step reads the line before the shell starts, on the
+    /// step's own echo: a check that hangs is then seen for what it is.
+    #[test]
+    fn the_step_says_what_it_is_about_to_run_before_running_it() {
+        struct Recorder(Mutex<Vec<(Pipe, Vec<u8>)>>);
+
+        impl LiveSink for Recorder {
+            fn chunk(&self, pipe: Pipe, bytes: &[u8]) {
+                self.0
+                    .lock()
+                    .expect("nobody panics here")
+                    .push((pipe, bytes.to_vec()));
+            }
+        }
+
+        struct OneSink(Arc<Recorder>);
+
+        impl StepSinks for OneSink {
+            fn sink_for(&self, _step: &str) -> Arc<dyn LiveSink> {
+                self.0.clone()
+            }
+        }
+
+        let recorder = Arc::new(Recorder(Mutex::new(Vec::new())));
+        let action =
+            ShellCheckAction::new().watched_by(Some(Arc::new(OneSink(recorder.clone()))));
+        let mut shared = SharedState::new();
+        shared.insert(flow::CURRENT_STEP.to_owned(), json!("check"));
+        action
+            .execute(&json!({"command": "echo out", "timeout_secs": 5}), &shared)
+            .expect("the check passes");
+
+        let seen = recorder.0.lock().expect("nobody panics here").clone();
+        let expected = format!("[sailor] {}\n", Ran::new("sh", ["-c", "echo out"]).announce());
+        assert_eq!(
+            seen.first()
+                .map(|(pipe, bytes)| (*pipe, String::from_utf8_lossy(bytes).into_owned())),
+            Some((Pipe::Stderr, expected)),
+            "the line is not the first thing the watcher reads: {seen:?}"
+        );
+        assert!(
+            seen.iter()
+                .any(|(pipe, bytes)| *pipe == Pipe::Stdout && bytes == b"out\n"),
+            "the command's own text still arrives: {seen:?}"
+        );
     }
 }
