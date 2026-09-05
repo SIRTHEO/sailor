@@ -1,8 +1,7 @@
-//! The step that runs a flow once per element of a list. It is `subflow`
-//! repeated, and shares its host, its ledger rows, its call chain and its cap:
-//! what it adds is the loop, opened as wide as the executor's own front and no
-//! wider, and an output that keeps the elements' order whatever order the
-//! children finished in.
+//! The step that runs a flow once per element of a list: `subflow` repeated,
+//! sharing its host, ledger rows, call chain and cap. What it adds is the
+//! loop, as wide as the executor's front and no wider, and an output in the
+//! elements' order whatever order the children finished in.
 
 use crate::subflow::{self, ChildEnd, Located, Prepared, SubflowHost};
 use crate::{Action, ActionError, ActionOutcome, SharedState, StepSpecies, AT_ONCE};
@@ -17,9 +16,8 @@ pub const FOR_EACH_ACTION: &str = "for_each";
 /// The fields the step knows. For `flow check`, not for execution.
 const KNOWN_FIELDS: &[&str] = &["flow", "items", "inputs"];
 
-/// What the step declares. `items` arrives already a list: a `$from` written
-/// in the flow file is replaced by the executor before any action reads its
-/// input, so a pointer and a literal list look the same from here.
+/// What the step declares. `items` arrives already a list: the executor has
+/// replaced any `$from` before an action reads its input.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Repeat {
     /// The flow's name, as it reads on disk without `.flow.json`.
