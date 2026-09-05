@@ -583,8 +583,8 @@ mod tests {
 
     /// **DIRLO E USCIRE ZERO.**
     ///
-    /// **IL GUASTO NON HA ANCORA UN NUMERO, E NON GLIENE DO UNO.** Sta in
-    /// `docs/da-fare.md` in attesa della fusione: due rami stanno numerando
+    /// **IL GUASTO NON HA ANCORA UN NUMERO, E NON GLIENE DO UNO.** Sta nella
+    /// nota `da-fare` in attesa della fusione: due rami stanno numerando
     /// righe nuove nello stesso momento, e il numero che questo lavoro si
     /// aspettava di prendere è già stato preso mentre era in corso. Un numero
     /// sbagliato in un commento manda a leggere il guasto di qualcun altro.

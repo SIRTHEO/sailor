@@ -4,7 +4,7 @@
 //! **PERCHÉ ESISTE, E PERCHÉ NON È PIGNOLERIA.** Il 31/08/2026 due sessioni
 //! hanno scritto nel file nello stesso minuto e sono nati **due guasti 27 e due
 //! guasti 28**: quattro righe, due numeri. Nessuno se ne è accorto, perché un
-//! documento non ha un compilatore. È il guasto che `docs/da-fare.md` aveva già
+//! documento non ha un compilatore. È il guasto che la nota `da-fare` aveva già
 //! previsto — «il file dei guasti è stato modificato durante una corsa che lo
 //! citava: l'analisi parlava di dieci guasti, il file ne aveva undici, e il
 //! verificatore ha respinto per incoerenza».
