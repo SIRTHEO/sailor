@@ -74,3 +74,30 @@ fn the_author_is_handed_the_vocabulary_and_the_shape_of_a_flow() {
     assert!(stdin.contains("skippable_dependencies"), "the file's shape is spelled out");
     assert!(stdin.contains("THE POINTER RULE"), "one dependency is /field, many are /step/field");
 }
+
+/// An orchestration script written for another agent tool is a sketch too, and
+/// the author is told how each of its helpers reads as a flow — without the
+/// mapping it would keep the words and lose the graph.
+#[test]
+fn a_script_is_an_accepted_sketch_and_the_author_is_told_how_to_read_it() {
+    let flow = shipped();
+    let author = &flow.graph.steps()[2];
+    let stdin = serde_json::to_string(&author.with.as_ref().expect("with")["stdin"]).expect("json");
+    assert!(stdin.contains("IF THE SKETCH IS A SCRIPT"), "a script is named as an accepted sketch");
+    assert!(
+        stdin.contains("agent(prompt, {schema, label, phase}) is one «external_engine» step"),
+        "one call to the model is one engine step"
+    );
+    assert!(
+        stdin.contains("«schema» becomes the step's «answer_shape»"),
+        "the schema is the shape of the answer"
+    );
+    assert!(
+        stdin.contains("parallel([...]) is several steps sharing the same «deps»"),
+        "parallel branches share their dependencies"
+    );
+    assert!(
+        stdin.contains("pipeline(items, stage1, stage2) is a chain of «deps»"),
+        "a pipeline is a chain of dependencies"
+    );
+}
