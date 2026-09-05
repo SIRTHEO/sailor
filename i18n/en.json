@@ -667,7 +667,7 @@
   "cli.notes.written": "note «{slug}» is written into {file}: {bytes} bytes, the file as it came in",
   "cli.notes.removed": "note «{slug}» is out; what the store answers with no longer carries its text",
   "cli.notes.no_such_note": "no note is held under «{slug}»; «sailor notes list» says which are",
-  "cli.notes.no_slug": "{file}: its name gives no slug, and a note without an address is found only by whoever knows where it is",
+  "cli.notes.no_slug": "{file}: its name gives no slug, and a note without an address is found only by whoever already knows where it sits",
   "cli.notes.not_text": "{file}: this is not text a note can hold, so nothing was taken in rather than something taken in wrong",
   "cli.notes.usage_import": "usage: sailor notes import <file.md>",
   "cli.notes.usage_show": "usage: sailor notes show <slug>",
