@@ -7,6 +7,7 @@ use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies};
 use ledger::{Ledger, StoreRecord};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const REMEMBER_ACTION: &str = "remember";
@@ -16,8 +17,8 @@ pub const MEMORY_TYPES: &[&str] = &["user", "feedback", "project", "reference"];
 /// the command lines themselves cut their own index.
 pub const PAGE_LINES: usize = 200;
 
-pub fn register_memory(registry: &mut flow::ActionRegistry, ledger: Option<Ledger>) {
-    registry.register(REMEMBER_ACTION, RememberAction::new(ledger));
+pub fn register_memory(registry: &mut flow::ActionRegistry, ledger: Option<Ledger>, home: Option<PathBuf>) {
+    registry.register(REMEMBER_ACTION, RememberAction::new(ledger, home));
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -145,13 +146,37 @@ pub fn page(memories: &[Memory]) -> String {
     lines.join("\n")
 }
 
+/// Where the page lands under Sailor's home: one file, so every command line
+/// reads the same bytes.
+pub fn page_path(home: &Path) -> PathBuf {
+    home.join("state").join("memory.md")
+}
+
+/// Renders the page of the memories valid now and writes it under `home`,
+/// beside first and renamed over the old one: a reader never sees half a page.
+pub fn write_page(ledger: &Ledger, home: &Path) -> Result<PathBuf, ActionError> {
+    let memories = remembered(ledger, now())
+        .map_err(|error| ActionError::new("store_unreadable", error.to_string()))?;
+    let path = page_path(home);
+    let unwritten = |error: std::io::Error| ActionError::new("page_unwritten", format!("{}: {error}", path.display()));
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(unwritten)?;
+    }
+    let beside = path.with_extension("md.part");
+    std::fs::write(&beside, page(&memories)).map_err(unwritten)?;
+    std::fs::rename(&beside, &path).map_err(unwritten)?;
+    Ok(path)
+}
+
 pub struct RememberAction {
     ledger: Option<Ledger>,
+    /// Where the page is refreshed after a write; `None` writes no page.
+    home: Option<PathBuf>,
 }
 
 impl RememberAction {
-    pub fn new(ledger: Option<Ledger>) -> Self {
-        Self { ledger }
+    pub fn new(ledger: Option<Ledger>, home: Option<PathBuf>) -> Self {
+        Self { ledger, home }
     }
 }
 
@@ -176,11 +201,16 @@ impl Action for RememberAction {
                 valid_until: spec.valid_until,
             },
         )?;
+        let page = match &self.home {
+            Some(home) => Some(write_page(ledger, home)?.display().to_string()),
+            None => None,
+        };
         Ok(ActionOutcome::Went(json!({
             "label": kept.label,
             "type": kept.kind,
             "modified": kept.modified,
             "valid_from": kept.valid_from,
+            "page": page,
         })))
     }
 
@@ -284,5 +314,59 @@ mod tests {
         let text = page(&all);
         assert_eq!(text.lines().count(), PAGE_LINES);
         assert!(text.lines().last().expect("a line").contains("and 50 more"), "{text}");
+    }
+
+    /// The file is the rendering, byte for byte, and writing it again with
+    /// nothing changed leaves the same bytes and nothing beside them.
+    #[test]
+    fn the_page_is_written_as_a_file_identical_to_its_rendering() {
+        let (ledger, dir) = a_ledger("file");
+        let home = dir.join("home");
+        remember(&ledger, a_memory("the trunk", "sorgenti", 10)).expect("first");
+        remember(&ledger, a_memory("the home", "under state", 20)).expect("second");
+
+        let path = write_page(&ledger, &home).expect("written");
+        let first = std::fs::read(&path).expect("readable");
+        let again = write_page(&ledger, &home).expect("written again");
+        let second = std::fs::read(&again).expect("readable again");
+        let beside: Vec<_> = std::fs::read_dir(path.parent().expect("a parent"))
+            .expect("the state dir")
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        let rendered = page(&remembered(&ledger, now()).expect("read"));
+        drop(ledger);
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert_eq!(path, home.join("state").join("memory.md"));
+        assert_eq!(first, rendered.as_bytes(), "the file is not the rendering");
+        assert_eq!(first, second, "a second write changed the bytes");
+        assert_eq!(beside, vec!["memory.md"], "something was left beside the page");
+    }
+
+    /// The action refreshes the page after every write, and writes none where
+    /// it was given no home to write it in.
+    #[test]
+    fn the_remember_action_leaves_the_page_fresh() {
+        let (ledger, dir) = a_ledger("action");
+        let home = dir.join("home");
+        let spec = |label: &str, at: i64| json!({"type": "project", "label": label, "value": "v", "at": at});
+        let shared = SharedState::default();
+
+        let with_home = RememberAction::new(Some(ledger.clone()), Some(home.clone()));
+        with_home.execute(&spec("first", 1), &shared).expect("went");
+        let after_one = std::fs::read_to_string(page_path(&home)).expect("a page");
+        with_home.execute(&spec("second", 2), &shared).expect("went again");
+        let after_two = std::fs::read_to_string(page_path(&home)).expect("a page again");
+
+        let homeless = RememberAction::new(Some(ledger.clone()), None);
+        homeless.execute(&spec("third", 3), &shared).expect("went without a home");
+        let untouched = std::fs::read_to_string(page_path(&home)).expect("still a page");
+        drop(ledger);
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert_eq!(after_one, "- **first** (project): v");
+        assert_eq!(after_two, "- **second** (project): v\n- **first** (project): v");
+        assert_eq!(untouched, after_two, "a page was refreshed with no home to write it in");
     }
 }
