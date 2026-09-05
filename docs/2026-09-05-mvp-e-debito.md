@@ -135,5 +135,31 @@ Fusi e verdi al cricchetto (40 giudici) entro le 16:10, tronco a `b2d1e5d5`:
   persona viene fermato sulla riga che dichiara (`waits_for_a_person_when`)
   invece di aspettarlo un minuto; la nota sulla casa viaggia nell'identità.
 
-Guasti aperti: **14** su 93. Il testo del passo comando e i guasti 10 e 5 sono
-in corso su due rami.
+Guasti aperti: **14** su 93.
+
+## Cosa è entrato con la terza ondata
+
+Cinque rami fusi e verdi (40 giudici, suite intera, vitest 440) entro le 18:00,
+tronco a `1371592d`:
+
+- **Il passo comando conserva il proprio testo**: `StepRecord.ran` (programma
+  e argomenti), colonna `steps.ran` nel ledger (proiezione 12), annuncio
+  «running …» sul flusso vivo prima di partire.
+- **Guasto 10**, due istanze alla fonte: i verbi dei comandi letti dall'uso
+  stampato, i momenti di sessione chiesti a `toolbox`.
+- **Guasto 5**: `registry_in(House, …)`, `Machine::bare`, `PathLookup::on`;
+  ~50 prove non leggono più la macchina; giudice
+  `tests_read_no_state_of_this_machine` con 8 porte dichiarate, solo in discesa.
+- **Panici del crate `terminal`: 19 → 0.** Un lucchetto lasciato da un thread
+  morto si recupera (`terminal::locked`), la cartella di lavoro che non si crea
+  è un errore. Il conto del workspace scende da 44 a 24.
+- **La prosa del costo nel catalogo**: `ui.cost.*`, `cli.flow.identity_*`;
+  il giudice delle frasi legge anche `crates/ui`.
+- **Il rifiuto nella finestra è struttura**: regola, percorso, valore visto in
+  tre elementi propri (`StepRefusal.tsx`), portato attraverso l'evento
+  `step_closed` e `StepPassage`.
+
+Restano, del debito contato la mattina: `execute_flow` con `&mut dyn Clock`,
+`tool_needs` che non conta le competenze, la coppia `inventory::Kind` ↔
+`FAMILIES` fra Rust e TypeScript, 24 panici (nessuno nei terminali), e i
+guasti che chiedono una decisione o una corsa dal vivo.
