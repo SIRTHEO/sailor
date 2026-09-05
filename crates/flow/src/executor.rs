@@ -1748,6 +1748,7 @@ mod tests {
     use super::*;
     use crate::{Condition, ValueSchema};
     use serde_json::json;
+    use std::collections::HashSet;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
@@ -2468,6 +2469,216 @@ mod tests {
                 Decision::Ready(vec!["conditional".to_owned()]),
                 Decision::Complete,
             ]
+        );
+    }
+
+    /// A stopped clock that remembers which threads asked it. Stopped, so that
+    /// two readers getting the same answer means one clock and not luck.
+    struct Overheard {
+        at: i64,
+        askers: Mutex<HashSet<std::thread::ThreadId>>,
+    }
+
+    impl Overheard {
+        fn at(instant: i64) -> Self {
+            Overheard {
+                at: instant,
+                askers: Mutex::new(HashSet::new()),
+            }
+        }
+
+        fn askers(&self) -> HashSet<std::thread::ThreadId> {
+            self.askers.lock().expect("nobody panics here").clone()
+        }
+    }
+
+    impl Clock for Overheard {
+        fn now(&self) -> Result<i64, FlowError> {
+            self.askers
+                .lock()
+                .expect("nobody panics here")
+                .insert(std::thread::current().id());
+            Ok(self.at)
+        }
+    }
+
+    /// How long a step waits for the companions it was told to expect.
+    const LONG_ENOUGH: std::time::Duration = std::time::Duration::from_secs(5);
+
+    /// A step that holds until `expected` others have entered, so they are all
+    /// alive at once rather than one after the other.
+    struct WaitsForTheOthers {
+        arrived: Arc<AtomicUsize>,
+        expected: usize,
+        threads: Arc<Mutex<HashSet<std::thread::ThreadId>>>,
+    }
+
+    impl Action for WaitsForTheOthers {
+        fn execute(
+            &self,
+            _input: &Value,
+            _shared: &SharedState,
+        ) -> Result<ActionOutcome, ActionError> {
+            self.threads
+                .lock()
+                .expect("nobody panics here")
+                .insert(std::thread::current().id());
+            self.arrived.fetch_add(1, Ordering::SeqCst);
+            let until = std::time::Instant::now() + LONG_ENOUGH;
+            while self.arrived.load(Ordering::SeqCst) < self.expected {
+                if std::time::Instant::now() >= until {
+                    return Err(ActionError::new("on_its_own", "nobody else came"));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            Ok(ActionOutcome::Went(json!({})))
+        }
+    }
+
+    /// A front of two steps holding each other, on the action `waits`.
+    fn a_front_that_waits(
+        expected: usize,
+    ) -> (
+        Graph,
+        ActionRegistry,
+        Arc<AtomicUsize>,
+        Arc<Mutex<HashSet<std::thread::ThreadId>>>,
+    ) {
+        let arrived = Arc::new(AtomicUsize::new(0));
+        let threads = Arc::new(Mutex::new(HashSet::new()));
+        let mut actions = ActionRegistry::default();
+        actions.register(
+            "waits",
+            WaitsForTheOthers {
+                arrived: Arc::clone(&arrived),
+                expected,
+                threads: Arc::clone(&threads),
+            },
+        );
+        let graph = Graph::new(vec![
+            step("first", &[], "waits", 1),
+            step("second", &[], "waits", 1),
+        ])
+        .expect("valid graph");
+        (graph, actions, arrived, threads)
+    }
+
+    fn a_request(run_id: &str) -> ExecutionRequest {
+        ExecutionRequest {
+            run_id: run_id.to_owned(),
+            root_inputs: BTreeMap::new(),
+            gates: vec![],
+            shared: SharedState::new(),
+            spend_cap_micros: None,
+        }
+    }
+
+    /// Two steps of one front, alive together, ask the same clock and each is
+    /// answered on its own thread with the same instant.
+    #[test]
+    fn two_steps_of_one_front_read_the_same_clock() {
+        let (graph, actions, _, threads) = a_front_that_waits(2);
+        let store = InMemoryRecordStore::default();
+        let clock = Overheard::at(1_000);
+
+        InProcessExecutor
+            .execute(&graph, a_request("run"), &store, &actions, &clock)
+            .expect("the execution reaches the end");
+
+        let ran_on = threads.lock().expect("nobody panics here").clone();
+        assert_eq!(ran_on.len(), 2, "the front ran on two threads");
+        assert!(
+            ran_on.is_subset(&clock.askers()),
+            "the one clock answered on the thread of each step"
+        );
+        for record in store.all() {
+            assert_eq!(
+                record.outcome,
+                Some(Outcome::Went),
+                "{} waited for a companion that never came",
+                record.step_id
+            );
+            assert_eq!(record.started_at, 1_000);
+            assert_eq!(record.ended_at, Some(1_000));
+        }
+    }
+
+    /// A run at work and a reconciliation hold one clock at the same moment,
+    /// and both are answered from the same instant.
+    ///
+    /// The request took the clock exclusively, and an exclusive borrow admits
+    /// no second holder: give it back and this stops compiling.
+    #[test]
+    fn a_run_and_a_reconciliation_hold_one_clock_at_once() {
+        struct NothingRuns;
+
+        impl ProcessProbe for NothingRuns {
+            fn is_running(&self, _record: &StepRecord) -> Result<bool, FlowError> {
+                Ok(false)
+            }
+        }
+
+        let (graph, actions, arrived, threads) = a_front_that_waits(3);
+        let store = InMemoryRecordStore::default();
+        let mut abandoned = InMemoryRecordStore::default();
+        abandoned
+            .append_started(StepRecord::started(
+                "left-behind",
+                "first",
+                1,
+                1,
+                vec![],
+                json!({}),
+                vec![],
+                1,
+            ))
+            .expect("the abandoned run is written");
+        let clock = Overheard::at(1_000);
+        let shared = SharedState::new();
+
+        let report = std::thread::scope(|scope| {
+            let running = scope.spawn(|| {
+                InProcessExecutor.execute(&graph, a_request("run"), &store, &actions, &clock)
+            });
+            let until = std::time::Instant::now() + LONG_ENOUGH;
+            while arrived.load(Ordering::SeqCst) < 2 && std::time::Instant::now() < until {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            let report = InProcessExecutor
+                .reconcile(ReconciliationRequest {
+                    graph: &graph,
+                    run_id: "left-behind",
+                    store: &mut abandoned,
+                    actions: &actions,
+                    shared: &shared,
+                    processes: &NothingRuns,
+                    clock: &clock,
+                })
+                .expect("the reconciliation answers");
+            arrived.fetch_add(1, Ordering::SeqCst);
+            running
+                .join()
+                .expect("the run does not panic")
+                .expect("the execution reaches the end");
+            report
+        });
+
+        assert_eq!(report.closed_as_waiting, vec!["first".to_owned()]);
+        assert_eq!(
+            abandoned.all()[0].ended_at,
+            Some(1_000),
+            "the reconciliation read the instant the run reads"
+        );
+        let ran_on = threads.lock().expect("nobody panics here").clone();
+        assert_eq!(ran_on.len(), 2, "the front ran on two threads");
+        let askers = clock.askers();
+        assert!(
+            ran_on.is_subset(&askers),
+            "the one clock answered on the thread of each step"
+        );
+        assert!(
+            askers.contains(&std::thread::current().id()),
+            "and on the thread that reconciled while they ran"
         );
     }
 }
