@@ -89,21 +89,6 @@ fn usage_text() -> String {
     )
 }
 
-/// The forms this command knows, in one place: the list `--help` prints and the
-/// one dispatch accepts must be the same, or a form that is documented and not
-/// accepted gets discovered in the hands of whoever typed it.
-const FORMS: &[&str] = &[
-    "open",
-    "event",
-    "close",
-    "list",
-    "detach",
-    "attach",
-    "census",
-    "install",
-    "uninstall",
-];
-
 /// The forms that speak of **one** terminal, and so must know its name.
 /// `list` and `census` are not here: they speak of all of them.
 const NEEDS_A_TERMINAL: &[&str] = &["open", "event", "close", "detach", "attach"];
@@ -151,12 +136,12 @@ fn dispatch(args: &[String]) -> Result<Report, String> {
     let Some(verb) = args.first().map(String::as_str) else {
         return Err(usage_text());
     };
-    if !FORMS.contains(&verb) {
+    if !crate::is_a_form(USAGE, verb) {
         return Err(format!(
             "{}\n{}",
             catalogue::say(
                 "cli.not_a_form_of_this_command",
-                &[("verb", verb), ("forms", &FORMS.join(", "))],
+                &[("verb", verb), ("forms", &crate::verbs_of(USAGE).join(", "))],
             ),
             usage_text()
         ));
@@ -1837,9 +1822,12 @@ mod tests {
         std::fs::create_dir_all(&impossible).expect("la cartella di prova");
         let settings = scratch.directory.join("settings-di-prova.json");
 
-        for form in FORMS.iter().filter(|form| !NEEDS_THE_STORE.contains(form)) {
+        for form in crate::verbs_of(USAGE)
+            .into_iter()
+            .filter(|form| !NEEDS_THE_STORE.contains(form))
+        {
             let words: Vec<String> = vec![
-                (*form).to_owned(),
+                form.to_owned(),
                 "--store".to_owned(),
                 impossible.display().to_string(),
                 "--settings".to_owned(),
@@ -3285,20 +3273,6 @@ mod tests {
         );
     }
 
-    /// The list printed and the list accepted are the same one: a form that is
-    /// documented and not accepted is discovered only by typing it.
-    #[test]
-    fn the_usage_names_every_form_the_dispatch_accepts() {
-        for form in FORMS {
-            assert!(
-                USAGE
-                    .iter()
-                    .any(|line| line.form.contains(&format!("session {form}"))),
-                "«{form}» è accettata e non è scritta in USAGE"
-            );
-        }
-    }
-
     /// The anchor is `(tty, tree, progenitor)`, and it shows in the row written.
     #[test]
     fn an_arrival_is_anchored_to_the_tty_the_tree_and_the_ancestor() {
@@ -3463,7 +3437,7 @@ mod tests {
     #[test]
     fn an_unknown_form_names_the_ones_that_exist() {
         let message = dispatch(&["sweep".to_owned()]).expect_err("una forma ignota è un errore");
-        for form in FORMS {
+        for form in crate::verbs_of(USAGE) {
             assert!(message.contains(form), "{message} non nomina «{form}»");
         }
     }
