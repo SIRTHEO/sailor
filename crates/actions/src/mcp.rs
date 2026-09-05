@@ -611,7 +611,7 @@ fn preflight(session: &mut Session, tool: &str, checks: &[PreflightCheck]) -> Pr
     }
     let answers = session.listen_for(&wanted);
 
-    if answers.get(&INITIALIZE_ID).is_none() {
+    if !answers.contains_key(&INITIALIZE_ID) {
         return Preflight {
             status: "unreachable",
             said: "the server did not answer the handshake".to_owned(),
