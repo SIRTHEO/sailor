@@ -9,7 +9,7 @@ use flow::{
     ActionRegistry, Clock, Condition, Decision, Execution, ExecutionRequest, Executor, FlowError,
     FlowFile, Graph, InMemoryRecordStore, InProcessExecutor, Outcome, SharedState, Step,
 };
-use serde_json::{json, Value};
+use serde_json::json;
 
 const FLOW_ID: &str = "take-the-next-fault";
 
