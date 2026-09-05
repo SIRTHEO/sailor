@@ -72,6 +72,8 @@ pub fn parse_worktrees(porcelain: &str) -> Vec<Worktree> {
     trees
 }
 
+const BESIDE_A_CHECKOUT: &str = "-worktrees";
+
 /// Where the trees of a repository go: beside it, not inside it. Inside, every
 /// tool that walks the project would walk every tree of it as well.
 pub fn trees_root(repo: &Path) -> PathBuf {
@@ -80,7 +82,7 @@ pub fn trees_root(repo: &Path) -> PathBuf {
         .and_then(|name| name.to_str())
         .unwrap_or("repo");
     let parent = repo.parent().map(Path::to_path_buf).unwrap_or_default();
-    parent.join(format!("{stem}-worktrees"))
+    parent.join(format!("{stem}{BESIDE_A_CHECKOUT}"))
 }
 
 /// Where a new tree goes.
@@ -165,7 +167,6 @@ pub enum Closing {
     TakenDown,
     /// Git would not take it down, in git's own words.
     GitRefused(String),
-    /// The tree sits on this commit and no branch of the repository has it.
     HoldsACommitNobodyElseHas(String),
 }
 
@@ -202,13 +203,20 @@ fn a_commit_no_branch_holds(repo: &Path, tree: &Path) -> Option<String> {
     holders.trim().is_empty().then_some(head)
 }
 
-/// The run and the step a tree was cut for, or nothing for a tree a person cut.
-pub fn run_and_step_of(repo: &Path, tree: &Worktree) -> Option<(String, String)> {
-    let under = Path::new(&tree.path).strip_prefix(trees_root(repo)).ok()?;
-    let mut segments = under.iter();
-    let run = segments.next()?.to_str()?.to_owned();
-    let step = segments.next()?.to_str()?.to_owned();
-    segments.next().is_none().then_some((run, step))
+/// The run and the step a tree was cut for, or nothing for a tree a person
+/// cut. Read off the shape `tree_for` builds and not off one checkout's trees
+/// root: a run launched inside another checkout cuts beside that one.
+pub fn run_and_step_of(tree: &Worktree) -> Option<(String, String)> {
+    let step = Path::new(&tree.path);
+    let run = step.parent()?;
+    let beside = run.parent()?.file_name()?.to_str()?;
+    if !beside.ends_with(BESIDE_A_CHECKOUT) {
+        return None;
+    }
+    Some((
+        run.file_name()?.to_str()?.to_owned(),
+        step.file_name()?.to_str()?.to_owned(),
+    ))
 }
 
 /// Takes a tree down. Git refuses while the tree holds uncommitted work, and
@@ -391,8 +399,7 @@ mod tests {
         assert!(listed.contains(&dirty), "{listed}");
     }
 
-    /// The refusal is the safety property: the argument overriding it is
-    /// never written here.
+    /// The refusal is the safety property: what overrides it is never written.
     #[test]
     fn taking_a_tree_down_never_forces_it() {
         let source = include_str!("lib.rs");
@@ -424,23 +431,24 @@ mod tests {
     /// A tree cut under a run and a step says which; one a person cut does not.
     #[test]
     fn a_step_tree_says_which_run_and_step_it_belongs_to() {
-        let repo = Path::new("/somewhere/project");
         let of = |path: &str| {
-            run_and_step_of(
-                repo,
-                &Worktree {
-                    path: path.to_owned(),
-                    head: String::new(),
-                    branch: None,
-                    locked: false,
-                    prunable: false,
-                },
-            )
+            run_and_step_of(&Worktree {
+                path: path.to_owned(),
+                head: String::new(),
+                branch: None,
+                locked: false,
+                prunable: false,
+            })
         };
 
         assert_eq!(
             of("/somewhere/project-worktrees/run-1/implementa"),
             Some(("run-1".to_owned(), "implementa".to_owned()))
+        );
+        assert_eq!(
+            of("/somewhere/a-copy-worktrees/run-1/implementa"),
+            Some(("run-1".to_owned(), "implementa".to_owned())),
+            "a run launched inside another checkout cuts beside that one"
         );
         assert_eq!(of("/somewhere/project-worktrees/a-branch"), None);
         assert_eq!(of("/elsewhere/run-1/implementa"), None);
