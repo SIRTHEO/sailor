@@ -53,7 +53,8 @@ pub struct ActionError {
     pub class: String,
     pub said: String,
     /// Set when a declared check refused a value: which one, and what it saw.
-    pub refusal: Option<Refusal>,
+    /// Boxed: it is the bulk of an error every `Result` in the crate carries.
+    pub refusal: Option<Box<Refusal>>,
 }
 
 impl ActionError {
@@ -66,7 +67,7 @@ impl ActionError {
     }
 
     pub fn refused(mut self, refusal: Refusal) -> Self {
-        self.refusal = Some(refusal);
+        self.refusal = Some(Box::new(refusal));
         self
     }
 }
@@ -1227,7 +1228,7 @@ fn broke(error: ActionError, ended_at: i64) -> Completion {
         output: None,
         said: Some(said),
         failure_class: Some(error.class),
-        refusal: error.refusal,
+        refusal: error.refusal.map(|refusal| *refusal),
         ended_at,
         bytes_seen: None,
         bytes_discarded: None,
