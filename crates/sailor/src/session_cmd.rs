@@ -2924,6 +2924,7 @@ mod tests {
                     started_at: 1_000,
                     ended_at: None,
                     worktree: None,
+                    stop_reason: None,
                 })
                 .expect("registrare la corsa");
         }

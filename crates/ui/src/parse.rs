@@ -40,6 +40,7 @@ fn parse_run_row(row: &Value) -> Option<RunRecord> {
         ended_at: opt_i64_at(cols, 9),
         // A dump from before the column has no tenth cell.
         worktree: opt_str_at(cols, 10),
+        stop_reason: opt_str_at(cols, 11),
     })
 }
 

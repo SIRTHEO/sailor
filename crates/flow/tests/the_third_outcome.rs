@@ -39,6 +39,7 @@ fn step(id: &str, action: &str, max_attempts: u32) -> Step {
         ask_again_after_secs: None,
         retry_after_secs: None,
         phase: None,
+        stops_when: None,
     }
 }
 
@@ -49,6 +50,7 @@ fn request(run_id: &str) -> ExecutionRequest {
         gates: Vec::new(),
         shared: SharedState::new(),
         spend_cap_micros: None,
+        stops: flow::RunStops::default(),
     }
 }
 

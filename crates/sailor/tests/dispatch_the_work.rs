@@ -174,6 +174,7 @@ fn run_with(
         gates: Vec::new(),
         shared,
         spend_cap_micros: None,
+        stops: flow::RunStops::default(),
     };
     let execution = InProcessExecutor
         .execute(graph, request, &store, registry, &Tick::new(0))
@@ -744,6 +745,7 @@ fn a_skipped_step_leaves_the_run_green_and_its_children_unrun() {
         ask_again_after_secs: None,
         retry_after_secs: None,
         phase: None,
+        stops_when: None,
     };
     let mut first = step("first", &[], None);
     first.with = None;

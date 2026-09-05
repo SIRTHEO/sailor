@@ -21,6 +21,7 @@ use tracing_subscriber::layer::{Context, Layer};
 pub mod identity;
 pub mod search;
 pub mod reports;
+pub mod self_care;
 pub mod streaks;
 
 pub use identity::EngineIdentity;
@@ -100,7 +101,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// learned four cache columns while this stayed at 4, an existing store was
 /// already registered at 4, `4 < 4` is false, the migration never ran, and
 /// every read died with `no such column: cache_write_tokens`.
-const PROJECTION_SCHEMA_VERSION: i64 = 12;
+const PROJECTION_SCHEMA_VERSION: i64 = 13;
 
 pub enum LedgerError {
     Sqlite(rusqlite::Error),
@@ -179,6 +180,14 @@ pub struct RunRecord {
     /// The workspace this run was born in. `None` is not missing data: a run
     /// started outside every workspace is a real run, and outside is a place.
     pub worktree: Option<String>,
+    /// Why the run closed short, as `flow::StopReason` writes it. `None` for a
+    /// run that reached its last step, failed, or is still open: only a run
+    /// that stopped itself has one.
+    ///
+    /// Read back by a store written before the column existed, so an old event
+    /// still becomes a record.
+    #[serde(default)]
+    pub stop_reason: Option<String>,
 }
 
 /// An entry seen by an inventory scan.
@@ -1038,7 +1047,8 @@ impl Ledger {
         let found = connection
             .query_row(
                 "SELECT run_id, kind, entity, parent_run_id, started_by, status,
-                        total_cost_micros, error, started_at, ended_at, worktree
+                        total_cost_micros, error, started_at, ended_at, worktree,
+                        stop_reason
                  FROM runs WHERE run_id = ?1",
                 params![run_id],
                 |row| {
@@ -1054,6 +1064,7 @@ impl Ledger {
                         started_at: row.get(8)?,
                         ended_at: row.get(9)?,
                         worktree: row.get(10)?,
+                        stop_reason: row.get(11)?,
                     })
                 },
             )
@@ -1812,7 +1823,8 @@ fn create_projection_tables(connection: &Connection) -> Result<(), LedgerError> 
              error TEXT,
              started_at INTEGER NOT NULL,
              ended_at INTEGER,
-             worktree TEXT
+             worktree TEXT,
+             stop_reason TEXT
          );
          CREATE TABLE IF NOT EXISTS steps (
              run_id TEXT NOT NULL,
@@ -2010,6 +2022,11 @@ fn add_missing_projection_columns(transaction: &Transaction<'_>) -> Result<(), L
     // whoever read the run later could not tell what had been executed.
     if !column_exists(transaction, "steps", "ran")? {
         transaction.execute("ALTER TABLE steps ADD COLUMN ran TEXT", [])?;
+    }
+    // version 13: which of the four reasons closed a run short. The status
+    // already said `stopped`, and one word for four endings cannot be counted.
+    if !column_exists(transaction, "runs", "stop_reason")? {
+        transaction.execute("ALTER TABLE runs ADD COLUMN stop_reason TEXT", [])?;
     }
     // version 6: turns. You pay per turn, and no column counted them.
     if !column_exists(transaction, "model_calls", "turns")? {
@@ -2493,14 +2510,14 @@ fn project_run(transaction: &Transaction<'_>, record: &RunRecord) -> Result<(), 
     transaction.execute(
         "INSERT INTO runs
          (run_id, kind, entity, parent_run_id, started_by, status,
-          total_cost_micros, error, started_at, ended_at, worktree)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+          total_cost_micros, error, started_at, ended_at, worktree, stop_reason)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
          ON CONFLICT(run_id) DO UPDATE SET
           kind=excluded.kind, entity=excluded.entity,
           parent_run_id=excluded.parent_run_id, started_by=excluded.started_by,
           status=excluded.status, total_cost_micros=excluded.total_cost_micros,
           error=excluded.error, started_at=excluded.started_at,
-          ended_at=excluded.ended_at,
+          ended_at=excluded.ended_at, stop_reason=excluded.stop_reason,
           -- Where a run was born does not change when it ends, and the row
           -- that closes it is written from a process that may stand elsewhere.
           worktree=COALESCE(excluded.worktree, runs.worktree)",
@@ -2516,6 +2533,7 @@ fn project_run(transaction: &Transaction<'_>, record: &RunRecord) -> Result<(), 
             record.started_at,
             record.ended_at,
             record.worktree,
+            record.stop_reason,
         ],
     )?;
     Ok(())
@@ -2975,7 +2993,9 @@ pub const MODEL_CALL_DUMP_COLUMNS: &str = "call_id,run_id,step_id,purpose,cli,re
 
 fn dump_table(connection: &Connection, table: &str) -> Result<Value, LedgerError> {
     let columns = match table {
-        "runs" => "run_id,kind,entity,parent_run_id,started_by,status,total_cost_micros,error,started_at,ended_at",
+        // The two born later sit at the end, where a positional reader that
+        // predates them simply finds no cell.
+        "runs" => "run_id,kind,entity,parent_run_id,started_by,status,total_cost_micros,error,started_at,ended_at,worktree,stop_reason",
         "steps" => "run_id,step_id,attempt,epoch,deps,input_digest,input,gates,attempt_relation,started_at,outcome,output,said,failure_class,ended_at,bytes_seen,bytes_discarded,held_by_pid,species,checkpointed,refusal,ran",
         // The two columns born with version 4 sit at the end, and that is not
         // untidiness: readers of this dump go by position, and slotting them in
