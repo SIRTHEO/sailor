@@ -595,8 +595,14 @@ pub enum CheckResult {
     Passed {
         stdout: String,
     },
+    /// **THE COMPLAINT TRAVELS, THE READING DOES NOT.** `stdout` is here so a
+    /// failing check can name what is still unresolved, and most suites name it
+    /// there rather than on stderr. It is not the shaped reading: that one
+    /// stays on the passing branch, where the command produced what it was
+    /// asked for.
     Failed {
         code: Option<i32>,
+        stdout: String,
         stderr: String,
     },
     TimedOut,
@@ -636,6 +642,7 @@ pub fn run_shell_check_watched(
             } else {
                 CheckResult::Failed {
                     code: status.code(),
+                    stdout: String::from_utf8_lossy(&stdout).into_owned(),
                     stderr: String::from_utf8_lossy(&stderr).into_owned(),
                 }
             }
@@ -645,6 +652,7 @@ pub fn run_shell_check_watched(
         // verifica: si tratta come fallita, non come "passata per omissione".
         RunOutcome::SpawnFailed(reason) => CheckResult::Failed {
             code: None,
+            stdout: String::new(),
             stderr: reason,
         },
     }
