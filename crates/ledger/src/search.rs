@@ -45,13 +45,14 @@ pub fn rank_texts(documents: &[(String, String)], query: &str) -> Result<Vec<Hit
 }
 
 impl Ledger {
-    /// What the ledger holds as text, one document per run, step and store
-    /// entry — the most recent first, bounded, because a search is a question
-    /// about what happened lately and not a scan of years.
+    /// What the ledger holds as text, one document per run, step, event and
+    /// store entry — the most recent first, bounded, because a search is a
+    /// question about what happened lately and not a scan of years.
     pub fn documents_to_search(
         &self,
         recent_runs: usize,
         recent_steps: usize,
+        recent_events: usize,
     ) -> Result<Vec<(String, String)>, LedgerError> {
         let connection = self.lock()?;
         let mut documents = Vec::new();
@@ -85,6 +86,20 @@ impl Ledger {
         })? {
             documents.push(row?);
         }
+        let mut events = connection.prepare(
+            "SELECT seq, kind, COALESCE(run_id, ''), COALESCE(step_id, ''), SUBSTR(payload, 1, 2000)              FROM events.events ORDER BY seq DESC LIMIT ?1",
+        )?;
+        for row in events.query_map(params![recent_events as i64], |row| {
+            let seq: i64 = row.get(0)?;
+            let text = [1, 2, 3, 4]
+                .iter()
+                .map(|column| row.get::<_, String>(*column))
+                .collect::<Result<Vec<_>, _>>()?
+                .join(" ");
+            Ok((format!("event:{seq}"), text))
+        })? {
+            documents.push(row?);
+        }
         let mut store = connection.prepare("SELECT collection, key, value FROM store")?;
         for row in store.query_map([], |row| {
             let collection: String = row.get(0)?;
@@ -97,9 +112,16 @@ impl Ledger {
         Ok(documents)
     }
 
-    /// The runs, steps and store entries that mention every word, best first.
-    pub fn search(&self, query: &str, recent_runs: usize, recent_steps: usize) -> Result<Vec<Hit>, LedgerError> {
-        rank_texts(&self.documents_to_search(recent_runs, recent_steps)?, query)
+    /// The runs, steps, events and store entries that mention every word,
+    /// best first.
+    pub fn search(
+        &self,
+        query: &str,
+        recent_runs: usize,
+        recent_steps: usize,
+        recent_events: usize,
+    ) -> Result<Vec<Hit>, LedgerError> {
+        rank_texts(&self.documents_to_search(recent_runs, recent_steps, recent_events)?, query)
     }
 }
 
@@ -154,7 +176,8 @@ mod tests {
     }
 
     /// A run, a step and a store entry are each one document, found by a word
-    /// only they say; the id says which of the three it is.
+    /// only they say; the id says which of the three it is. The store entry
+    /// is written as an event, so the event that wrote it answers as well.
     #[test]
     fn what_the_ledger_holds_is_found_by_its_words() {
         let dir = std::env::temp_dir().join(format!("sailor-ledger-search-{}", std::process::id()));
@@ -187,7 +210,7 @@ mod tests {
 
         let ids = |query: &str| -> Vec<String> {
             ledger
-                .search(query, 100, 100)
+                .search(query, 100, 100, 100)
                 .expect("a ranking")
                 .into_iter()
                 .map(|hit| hit.id)
@@ -200,8 +223,50 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
 
         assert_eq!(by_step, vec!["step:r1/rewrite#1"]);
-        assert_eq!(by_store, vec!["store:notes/one"]);
+        assert_eq!(by_store, vec!["store:notes/one", "event:1"]);
         assert_eq!(by_run, vec!["run:r1"]);
+    }
+
+    /// An event is one document too, found by a word only its payload says:
+    /// the parent run's id is in the event's payload, and neither in the run's
+    /// text nor in the event's own columns.
+    #[test]
+    fn an_event_is_found_by_a_word_only_its_payload_says() {
+        let dir = std::env::temp_dir().join(format!("sailor-ledger-event-search-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let ledger = Ledger::open(&dir).expect("a ledger");
+        ledger
+            .record_run(&crate::RunRecord {
+                run_id: "r1".to_owned(),
+                kind: "flow".to_owned(),
+                entity: "sweep-the-tree".to_owned(),
+                parent_run_id: Some("quokka".to_owned()),
+                started_by: "window".to_owned(),
+                status: "running".to_owned(),
+                total_cost_micros: 0,
+                error: None,
+                started_at: 1,
+                ended_at: None,
+                worktree: None,
+            })
+            .expect("a run");
+        let ids: Vec<String> = ledger
+            .search("quokka", 100, 100, 100)
+            .expect("a ranking")
+            .into_iter()
+            .map(|hit| hit.id)
+            .collect();
+        let none_when_events_are_left_out: Vec<String> = ledger
+            .search("quokka", 100, 100, 0)
+            .expect("a ranking")
+            .into_iter()
+            .map(|hit| hit.id)
+            .collect();
+        drop(ledger);
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert_eq!(ids, vec!["event:1"]);
+        assert!(none_when_events_are_left_out.is_empty(), "{none_when_events_are_left_out:?}");
     }
 
     #[test]

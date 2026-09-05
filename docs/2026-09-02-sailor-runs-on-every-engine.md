@@ -593,9 +593,28 @@ Starting point, so the mandate builds on it instead of beside it.
    index. *Proof:* `a_memory_carrying_a_secret_is_refused_and_nothing_is_written`
    and `the_page_is_recent_first_valid_only_and_cut_at_two_hundred_lines` in
    `actions::memory`; `the_greeting_names_what_is_remembered` in `session_cmd`.
+   *Then the events and the faults, the same day.* The event log is one more
+   kind of document, `event:<seq>` — the kind, the run and step it belongs to,
+   and the first 2 000 characters of the payload — bounded at the most recent
+   2 000 like the steps, so the log a machine keeps for years is not scanned
+   at every question. The fault register is not in the ledger's file, so it
+   answers for itself: `Faults::documents_to_search` hands `fault:<n>` with
+   the four columns a person writes, and `actions::search` ranks **once over
+   the union** — the ledger's documents and the register's in one FTS5 index —
+   which is what `ledger_search` and `sailor search` now ask. A register with
+   no file yet is a register with nothing in it, not an error. *Proof:*
+   `an_event_is_found_by_a_word_only_its_payload_says` in `ledger::search`
+   (the word sits in the parent run's id, which neither the run's text nor
+   the event's own columns carry; two mutants red — the payload dropped from
+   the text, the bound ignored); `a_word_in_any_column_of_one_fault_finds_that_fault_and_no_other`
+   in `crates/faults/tests` (one word per column, each finds the one fault;
+   two mutants red — a column dropped, the number forgotten in the id);
+   `the_ledger_and_the_fault_register_answer_in_one_ranking` in
+   `actions::search` (a store entry and a fault saying the same word are both
+   in the one ranking; two mutants red — either side left out).
    *Still not written:* the page as a file handed to the three command lines
-   (today the greeting carries the count and the labels, not the page), the
-   index over events and faults, and the consolidation flow.
+   (today the greeting carries the count and the labels, not the page), and
+   the consolidation flow.
 4. **What Sailor remembers of a run is written down, once.** The report of
    every closed run (what went, what broke, what it cost, what was learnt) is
    a store record, and a flow that starts on the same entity reads the last
