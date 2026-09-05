@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { stepHistory, type StepPassage } from "./engine";
 import { OUTCOME_LABEL, whyFailed } from "./RunConsole";
+import { StepRefusal } from "./StepRefusal";
 
 /**
  * What came into this node, over time. The run view tells today's call; this
@@ -140,6 +141,7 @@ export function StepHistory({ flowName, stepId }: StepHistoryProps) {
                     </>
                   )}
 
+                  {passage.refusal && <StepRefusal refusal={passage.refusal} />}
                   {passage.failure_class && (
                     <div className="passage__failure">{whyFailed(passage.failure_class)}</div>
                   )}

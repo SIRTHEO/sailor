@@ -3754,6 +3754,40 @@ tr[data-followable]:hover {
   color: var(--danger);
 }
 
+/* ── a refusal, as structure: check, rule, path, excerpt ─────────────────── */
+
+.step-refusal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  margin-top: var(--space-2);
+  font-size: var(--text-small);
+  color: var(--danger);
+}
+
+.step-refusal__check {
+  font-weight: 600;
+}
+
+.step-refusal__rule {
+  color: var(--ink);
+}
+
+.step-refusal__path {
+  font-family: var(--font-data);
+  color: var(--muted);
+}
+
+.step-refusal__seen {
+  font-family: var(--font-data);
+  color: var(--ink);
+  background: var(--raised);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius);
+  word-break: break-all;
+}
+
 /* ── what went into a step, over time ───────────────────────────────────── */
 
 .history {
