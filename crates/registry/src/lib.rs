@@ -129,6 +129,7 @@ pub fn default_registry(
     actions::search::register_search(
         &mut registry,
         ledger::sailor_home().map(|home| home.join("flows")),
+        ledger.clone(),
     );
     if let Some(ledger) = ledger {
         actions::store::register_store(&mut registry, ledger);

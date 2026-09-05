@@ -500,5 +500,11 @@
   "run.failure.search_refused": "la ricerca è stata rifiutata — serve una parola, o i flussi non si sono potuti ordinare",
   "run.failure.invalid_flow": "il flusso in bozza non sta in piedi: la validazione del motore lo ha rifiutato",
   "run.failure.no_flows_dir": "non c'è una casa in cui scrivere la bozza",
-  "run.failure.draft_not_written": "la bozza sta in piedi ma non si è potuta scrivere"
+  "run.failure.draft_not_written": "la bozza sta in piedi ma non si è potuta scrivere",
+  "cli.command.search": "trova ciò che Sailor conserva e nomina le parole: i flussi, e corse, passi e deposito recenti del ledger",
+  "cli.search.says": "cerca le parole in ogni flusso e nelle corse, nei passi e nelle voci di deposito recenti del ledger, il migliore per primo",
+  "cli.search.no_words": "una ricerca vuole una parola; uso: {usage}",
+  "cli.search.flows_found": "flussi: {count} nominano «{query}»",
+  "cli.search.ledger_found": "ledger: {count} corse, passi o voci di deposito nominano «{query}»",
+  "cli.search.ledger_closed": "ledger: non si è aperto, quindi non vi ho cercato niente ({error})"
 }

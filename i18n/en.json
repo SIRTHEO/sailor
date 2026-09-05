@@ -500,5 +500,11 @@
   "run.failure.search_refused": "the search was refused — a word is needed, or the flows could not be ranked",
   "run.failure.invalid_flow": "the drafted flow does not stand: the engine's own validation refused it",
   "run.failure.no_flows_dir": "there is no home to write the draft into",
-  "run.failure.draft_not_written": "the draft stands but could not be written"
+  "run.failure.draft_not_written": "the draft stands but could not be written",
+  "cli.command.search": "finds what Sailor keeps that mentions the words: flows, and the ledger's recent runs, steps and store",
+  "cli.search.says": "searches the words in every flow and in the ledger's recent runs, steps and store entries, best first",
+  "cli.search.no_words": "a search needs a word; usage: {usage}",
+  "cli.search.flows_found": "flows: {count} mention «{query}»",
+  "cli.search.ledger_found": "ledger: {count} run(s), step(s) or store entr(ies) mention «{query}»",
+  "cli.search.ledger_closed": "ledger: could not be opened, so nothing of it was searched ({error})"
 }
