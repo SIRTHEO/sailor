@@ -406,6 +406,13 @@ dichiarati:
   *Chiuso il 05/09:* un solo lettore, `actions::engines_named_in`, legge i
   motori di un passo, e una stringa è una catena di uno: quel passo è
   sorvegliato come gli altri.
+- **Il censimento `tool_needs` non conta le competenze.** Dal 05/09 un passo
+  dichiara ciò che chiede a un motore in `needs_extensions` e `sailor flow check`
+  le cerca; l'azione `tool_needs` (`crates/toolbox/src/needs.rs`) legge ancora il
+  solo campo `tool`, quindi un flusso che chiede una competenza assente passa
+  il censimento come portabile. La ricerca vive nel crate `sailor`
+  (`flow_cmd/extensions.rs`) e `toolbox` non può dipenderne: va spostata più in
+  basso prima che il censimento la possa chiamare.
 - **`desktop/src-tauri/Cargo.lock` è già vecchio a HEAD**, e si sporca da solo:
   `crates/actions` dipende da `profiles` dal 01/09/2026 e quel lock non lo sa —
   sotto `actions` elenca `flow`, `ledger`, `models`, `serde`, `serde_json` e
