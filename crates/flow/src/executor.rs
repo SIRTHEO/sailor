@@ -1751,12 +1751,10 @@ pub fn step_input(
 ) -> Result<StepInput, FlowError> {
     let composed = composed_input(graph, step, root_inputs, records)?;
     let positioned = offer_the_wall(step, resolve_workdir(step, composed, root)?, wall_remaining_secs);
-    // The condition is judged on the input not yet resolved, and this was
-    // measured: `flows/chiedi-all-indice.flow.json` has step `leggi` with a
-    // `when` on `/status` and a `with` full of `$from` into the output of
-    // `chiedi`, a skippable dependency. Resolving first took that flow, on the
-    // real binary, from "complete" to "failed — `unresolved_reference`". A step
-    // that will not run must not pay for references to work it will not do.
+    // The condition is judged on the input not yet resolved: a step that will
+    // not run must not pay for references to work it will not do. Resolving
+    // first took a shipped flow, on the real binary, from "complete" to
+    // "failed — `unresolved_reference`".
     let runs = step
         .when
         .as_ref()
