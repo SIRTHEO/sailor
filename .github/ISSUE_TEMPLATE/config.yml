@@ -1,0 +1,9 @@
+# A blank issue is a report with no version, no command and no platform in it,
+# and answering one costs a round trip every time. The three forms ask for what
+# a reader needs; a security report has its own private channel and is not an
+# issue at all.
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://docs.github.com/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability
+    about: Do not open an issue. Use this repository's Security tab, "Report a vulnerability" — see SECURITY.md.
