@@ -855,6 +855,16 @@ enters here as claims, not as praise.
    value so the two serialise differently; the guard in `step close` stays,
    but the format no longer depends on it (fault 33, half open).
    *Proof:* a round trip through the register keeps the two apart.
+   *Where it landed, 05/09/2026:* the wire keeps its two keys, `output` and
+   `output_was_written`, but one field owns them: `StepRecord::output` is
+   `Option<Value>` with a `flatten` serializer in `record.rs` that writes the
+   pair and reads it back (`null` with `true` is `Some(Null)`, the key absent
+   is `false`, so a bare `null` from before the key means what it always did).
+   The ledger's read door that put `Some(Null)` back is gone; the projection
+   writes the text `null` and reads it back as such. Five tests, each with the
+   mutant that made it red: the writer collapsed to `false`, the reader blind
+   to the key, the default on the key removed (the old-bytes fixture went
+   red), the `output` key made optional, `deny_unknown_fields` removed.
 6. **The two files out of scale are split by responsibility.** `actions/src/lib.rs`
    (6 443 lines) and `sailor/src/flow_cmd.rs` (6 253 lines, 71 functions)
    become modules: at least `cost`, `cap` and `schedule` out of `flow_cmd`.
