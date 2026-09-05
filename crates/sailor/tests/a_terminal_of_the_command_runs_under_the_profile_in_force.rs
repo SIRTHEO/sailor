@@ -14,7 +14,7 @@ use terminal::pty::{Pty, Size};
 use terminal::Workspace;
 
 fn scratch(name: &str) -> PathBuf {
-    terminal::scratch::directory(name)
+    terminal::scratch::directory(name).expect("a scratch directory")
 }
 
 /// A store naming an active profile for a command line whose home moves.

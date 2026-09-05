@@ -4,7 +4,8 @@
 //! does: five test files and two modules need it, and copies drift on the one
 //! detail that matters — the sentence printed when it cannot be had.
 
-use std::path::PathBuf;
+use std::io;
+use std::path::{Path, PathBuf};
 
 /// The variable that names a short writable root, for whoever runs inside a
 /// perimeter that does not grant the usual one.
@@ -36,21 +37,25 @@ fn chosen_root(declared: Option<std::ffi::OsString>) -> PathBuf {
 ///
 /// **BEING DENIED AND BEING WRONG LOOK ALIKE.** A perimeter that refuses the
 /// root turns every test here red under names like `relay` and `terminal`, so
-/// the honest reading becomes "the new branch is broken". The refusal names the
+/// the honest reading becomes "the new branch is broken". The error names the
 /// perimeter, the cap that forces a short path, and the way out.
-pub fn directory(name: &str) -> PathBuf {
-    let root = root();
+pub fn directory(name: &str) -> io::Result<PathBuf> {
+    directory_under(&root(), name)
+}
+
+/// The directory itself, apart from where the root comes from: a test that had
+/// to set the variable would race every other test making a directory.
+fn directory_under(root: &Path, name: &str) -> io::Result<PathBuf> {
     let directory = root.join(format!("sr-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&directory);
-    if let Err(error) = std::fs::create_dir_all(&directory) {
-        panic!("{}", refusal(&directory, &error));
-    }
-    directory
+    std::fs::create_dir_all(&directory)
+        .map_err(|error| io::Error::new(error.kind(), refusal(&directory, &error)))?;
+    Ok(directory)
 }
 
 /// The sentence a failed scratch directory prints, kept apart so a test can
 /// read it without needing a perimeter to deny anything.
-pub fn refusal(directory: &std::path::Path, error: &std::io::Error) -> String {
+pub fn refusal(directory: &Path, error: &io::Error) -> String {
     let mut said = format!(
         "could not make the scratch directory {}",
         directory.display()
@@ -148,5 +153,17 @@ mod tests {
             "a missing parent is not a sandbox, and saying so would send the \
              reader to the wrong place: {said}"
         );
+    }
+
+    /// A root that cannot hold a directory is an error the caller reads, with
+    /// the refusal as its sentence and the system's kind kept.
+    #[test]
+    fn a_root_that_refuses_is_an_error_carrying_the_refusal() {
+        let refused = directory_under(Path::new("/dev/null/nowhere"), "refused")
+            .expect_err("nothing can be made under a device");
+        let said = refused.to_string();
+        assert!(said.contains("could not make the scratch directory"), "{said}");
+        assert!(said.contains("sr-refused-"), "it names the directory: {said}");
+        assert_ne!(refused.kind(), std::io::ErrorKind::Other, "the kind survives");
     }
 }

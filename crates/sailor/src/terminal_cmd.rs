@@ -617,7 +617,7 @@ mod tests {
     }
 
     fn scratch(name: &str) -> PathBuf {
-        terminal::scratch::directory(&format!("cmd-{name}"))
+        terminal::scratch::directory(&format!("cmd-{name}")).expect("a scratch directory")
     }
 
     #[test]

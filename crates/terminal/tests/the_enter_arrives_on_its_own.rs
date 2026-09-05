@@ -21,7 +21,7 @@ const STAMPED_ON_WAKING: Duration = Duration::from_millis(5);
 /// The letterbox is a real one and the caller is the real function: nothing
 /// here stands in for either, because the seam being measured is between them.
 fn deliveries_of(name: &str, line: &str) -> Vec<Delivery> {
-    let directory = terminal::scratch::directory(name);
+    let directory = terminal::scratch::directory(name).expect("a scratch directory");
     let address = inbox::address_in(&directory, "ttys999");
     let letterbox = Inbox::open(&address).expect("open a letterbox of our own");
     let (sending, arriving) = mpsc::channel();
@@ -103,7 +103,8 @@ fn an_empty_line_is_the_enter_by_itself() {
 /// nothing, or the tests above would pass on a serve loop inventing deliveries.
 #[test]
 fn a_letterbox_nobody_typed_into_hands_over_nothing() {
-    let directory = terminal::scratch::directory("typed-line-quiet");
+    let directory =
+        terminal::scratch::directory("typed-line-quiet").expect("a scratch directory");
     let address = inbox::address_in(&directory, "ttys999");
     let letterbox = Inbox::open(&address).expect("open a letterbox of our own");
     let (sending, arriving) = mpsc::channel();
