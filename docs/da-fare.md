@@ -73,6 +73,14 @@ Nessuna di queste è bloccata da lavoro: sono bloccate da una scelta.
 7. **`origin/main` è la storia prima della riscrittura.** Il tronco è
    `sorgenti`; cosa fare del ramo `main` sul remoto — allinearlo, cancellarlo,
    lasciarlo — è una scelta sul pubblico, e va presa da chi firma.
+8. **`fullfsync` sul ledger: durabilità vera contro la corrente, a 16 volte il
+   prezzo.** Misurato il 05/09 (`crates/ledger/tests/how_much_an_fsync_costs.rs`):
+   `synchronous = FULL` costa 0,24 ms a scrittura, `NORMAL` 0,19, e la
+   differenza non si vede; ma su questa piattaforma un `fsync` semplice non
+   svuota la cache del disco, e la durabilità contro la mancanza di corrente si
+   compra solo con `PRAGMA fullfsync = ON`, 3,9 ms a scrittura. Oggi il ledger
+   non lo imposta. Resta FULL; accendere `fullfsync` è una scelta di Theo, con
+   il prezzo scritto in `docs/2026-09-05-dove-sailor-e-lento.md` §4.
 
 ## Chieste da Theo, non ancora iniziate
 
