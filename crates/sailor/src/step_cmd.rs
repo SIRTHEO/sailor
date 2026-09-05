@@ -560,7 +560,10 @@ fn what_comes_next(decision: &Decision, run_id: &str, now: i64) -> String {
             &[("steps", &steps.join(", "))],
         ),
         Decision::CapReached(stop) => registry::why_it_stopped(stop),
-        Decision::Halted(steps) => registry::why_it_halted(steps),
+        Decision::Halted {
+            reason,
+            not_started,
+        } => registry::why_it_halted(*reason, not_started),
         Decision::Complete => catalogue::say("cli.step.run_complete", &[]),
     }
 }
@@ -833,6 +836,7 @@ mod tests {
                 started_at: 100,
                 ended_at: Some(150),
                 worktree: None,
+                stop_reason: None,
             })
             .expect("registrare la corsa");
         hand_over(&ledger, step_id, deps);

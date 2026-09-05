@@ -141,6 +141,7 @@ fn opaque_graph() -> Graph {
         ask_again_after_secs: None,
         retry_after_secs: None,
         phase: None,
+        stops_when: None,
     }])
     .expect("valid test graph")
 }
@@ -346,6 +347,7 @@ fn the_engine_records_the_holder_and_the_species_when_it_opens_a_step() {
                 gates: vec![],
                 shared: SharedState::new(),
                 spend_cap_micros: None,
+                stops: flow::RunStops::default(),
             },
             &store,
             &actions,
@@ -379,6 +381,7 @@ fn recovery_graph() -> Graph {
             ask_again_after_secs: None,
             retry_after_secs: None,
             phase: None,
+        stops_when: None,
         },
         Step {
             id: "next".to_owned(),
@@ -395,6 +398,7 @@ fn recovery_graph() -> Graph {
             ask_again_after_secs: None,
             retry_after_secs: None,
             phase: None,
+        stops_when: None,
         },
     ])
     .expect("valid test graph")

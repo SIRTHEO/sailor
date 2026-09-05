@@ -30,6 +30,7 @@ fn seed(dir: &Path) {
             started_at: 1000,
             ended_at: None,
             worktree: None,
+            stop_reason: None,
         })
         .expect("recording the run");
 
@@ -278,6 +279,7 @@ fn a_broken_flow_keeps_its_place_in_the_registry_with_its_reason() {
         ask_again_after_secs: None,
         retry_after_secs: None,
         phase: None,
+        stops_when: None,
     }])
     .expect("valid graph");
     let mut flows = ui::registry::FlowRegistry::new();
@@ -290,6 +292,9 @@ fn a_broken_flow_keeps_its_place_in_the_registry_with_its_reason() {
             inputs: std::collections::BTreeMap::new(),
             schedule: None,
             spend_cap_micros: None,
+            wall_secs: None,
+            max_turns: None,
+            self_care: false,
         }),
     );
     flows.insert("broken".into(), Err("error: cycle in the graph".into()));
