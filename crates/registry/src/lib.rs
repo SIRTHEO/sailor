@@ -125,6 +125,12 @@ pub fn default_registry(
     // Who is working on what, because an **agent** must be able to ask. The
     // reading half goes in without a store; the two that write stay out.
     actions::presence::register_presence(&mut registry, ledger.clone());
+    // The flows searched by their words. The home is taken here, the flows are
+    // read when asked: a flow written after the registry was built is found.
+    actions::search::register_search(
+        &mut registry,
+        ledger::sailor_home().map(|home| home.join("flows")),
+    );
     if let Some(ledger) = ledger {
         actions::store::register_store(&mut registry, ledger);
     }

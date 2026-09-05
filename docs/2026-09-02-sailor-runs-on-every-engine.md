@@ -564,6 +564,19 @@ Starting point, so the mandate builds on it instead of beside it.
    Sources: `2026-09-02-memory-self-knowledge-and-specialists.md`.
    *Proof:* searching a word that appears only in one flow's prompt finds that
    flow and no other.
+   *Where it landed, 05/09/2026:* the search, first. `flow_search` is an
+   action and `sailor flow search <words>` its command: every flow of every
+   source — shipped, yours, the project's — is one document (the whole file,
+   so a word in one step's mandate counts), ranked by FTS5 with a snippet
+   around the match. The index is rebuilt in memory at every question: a few
+   dozen documents cost less than keeping one fresh, and a flow written a
+   second ago is found. FTS5 was already compiled into the ledger's SQLite;
+   nothing was added to the schema. *Proof:* `a_word_written_in_one_flow_finds_that_flow_and_no_other`
+   in `actions::search`, with the text itself as the oracle — the flows found
+   are exactly the shipped flows whose file contains the word, and there is
+   one; mutant (every flow returned) red. The `memories` table, the index over
+   runs and events, the generated file and the consolidation flow are still
+   not written.
 4. **What Sailor remembers of a run is written down, once.** The report of
    every closed run (what went, what broke, what it cost, what was learnt) is
    a store record, and a flow that starts on the same entity reads the last

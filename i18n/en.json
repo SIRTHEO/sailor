@@ -494,5 +494,8 @@
   "cli.release.suite_already_green": "the suite already passed on this tree ({tree}): not run again",
   "cli.release.suite_not_remembered": "the suite passed but {memo} could not be written ({error}): the next release runs it again",
   "cli.release.pushed": "pushed: {line}",
-  "cli.release.not_pushed": "not pushed, the remote is behind: {line}"
+  "cli.release.not_pushed": "not pushed, the remote is behind: {line}",
+  "cli.flow.search_nothing": "no flow mentions «{query}»",
+  "cli.flow.search_found": "{count} flow(s) mention «{query}», best first:",
+  "run.failure.search_refused": "the search was refused — a word is needed, or the flows could not be ranked"
 }

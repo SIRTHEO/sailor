@@ -38,6 +38,9 @@ pub fn run(args: &[String]) -> i32 {
 fn dispatch(args: &[String], sources: &[FlowSource]) -> Result<String, String> {
     match args {
         [command] if command == "list" => list_flows(sources),
+        [command, words @ ..] if command == "search" && !words.is_empty() => {
+            search_flows(sources, &words.join(" "))
+        }
         [command] if command == "due" => due_flows(sources),
         [command] if command == "tick" => tick_flows(sources),
         [command, name] if command == "check" => check_flow(sources, name, true),
@@ -1075,6 +1078,10 @@ pub const USAGE: &[Form] = &[
         says_key: "",
     },
     Form {
+        form: "sailor flow search <words>",
+        says_key: "",
+    },
+    Form {
         form: "sailor flow due",
         says_key: "",
     },
@@ -1124,6 +1131,27 @@ pub const USAGE: &[Form] = &[
         says_key: "",
     },
 ];
+
+/// The flows that mention the words, best first, with the line that matched.
+fn search_flows(sources: &[FlowSource], query: &str) -> Result<String, String> {
+    let hits = actions::search::rank_flows(&known_flows(sources), query)?;
+    if hits.is_empty() {
+        return Ok(catalogue::say("cli.flow.search_nothing", &[("query", query)]));
+    }
+    let mut lines = vec![catalogue::say(
+        "cli.flow.search_found",
+        &[("count", &hits.len().to_string()), ("query", query)],
+    )];
+    for hit in &hits {
+        lines.push(format!(
+            "  {} · {}\n      {}",
+            hit["flow"].as_str().unwrap_or_default(),
+            hit["origin"].as_str().unwrap_or_default(),
+            hit["excerpt"].as_str().unwrap_or_default().replace('\n', " ")
+        ));
+    }
+    Ok(lines.join("\n"))
+}
 
 fn usage() -> String {
     format!(

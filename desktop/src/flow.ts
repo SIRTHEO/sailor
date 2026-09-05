@@ -165,6 +165,7 @@ const ACTION_KIND: Record<string, StepKind> = {
   work_claim: "deposit",
   work_release: "deposit",
   work_survey: "deposit",
+  flow_search: "deposit",
   // The terminals Sailor follows. A reading of a store like the ones above,
   // and it draws in the same family: the sessions file sits beside the ledger.
   terminal_survey: "deposit",
