@@ -6267,9 +6267,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let action = ExternalEngineAction::resolving_with(Declares { bin, recipe: Some(declaring_recipe()) });
         let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
 
-        std::env::set_var("PROFILES_STATE_PATH", &store);
-        let refused = with_price_list(None, || action.execute(&input, &mut shared("corsa", "passo")));
-        std::env::remove_var("PROFILES_STATE_PATH");
+        let refused = with_profiles_state(&store, || action.execute(&input, &mut shared("corsa", "passo")));
 
         let refused = refused.expect_err("a profile that cannot be pointed there refuses the launch");
         assert_eq!(refused.class, "no_usable_engine");
