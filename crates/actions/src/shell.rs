@@ -143,6 +143,11 @@ impl Action for ShellCheckAction {
     fn species(&self) -> StepSpecies {
         StepSpecies::Repeatable
     }
+
+    /// It writes a verdict, so a flow may hang `decides_done` on it.
+    fn is_a_check(&self) -> bool {
+        true
+    }
 }
 
 /// Runs the check and reads what it said, by the step's tolerances and the
@@ -154,39 +159,38 @@ fn run_and_read(
 ) -> Result<ActionOutcome, ActionError> {
     let command = &invocation.command;
     let seconds = spec.timeout_secs;
-    let (status, said) = match run_shell_check_watched(invocation, live) {
-        CheckResult::Passed { stdout } => ("passed", Some(stdout)),
-        CheckResult::Failed { code, stderr } => {
+    // **WHAT IS STILL OPEN LEAVES THE STEP, AND NOTHING ELSE DOES.** A step
+    // that comes after a failed check receives this: that is how a second call
+    // carries the unresolved part instead of the whole mandate again.
+    let (status, said, unresolved) = match run_shell_check_watched(invocation, live) {
+        CheckResult::Passed { stdout } => ("passed", Some(stdout), None),
+        CheckResult::Failed {
+            code,
+            stdout,
+            stderr,
+        } => {
+            let named = format!("the check `{command}` {}; {}", how_it_exited(code), what_it_said(&stdout, &stderr));
             if !tolerates(&spec.accept, "failed") {
-                return Err(ActionError::new(
-                    "check_failed",
-                    format!(
-                        "the check `{command}` {}; {}",
-                        how_it_exited(code),
-                        what_it_said("", &stderr)
-                    ),
-                )
-                .refused(Refusal::new(
+                return Err(ActionError::new("check_failed", named).refused(Refusal::new(
                     "command",
                     "",
                     RefusalRule::ExitCode,
                     &stderr,
                 )));
             }
-            ("failed", None)
+            ("failed", None, Some(named))
         }
         CheckResult::TimedOut => {
+            let named = format!(
+                "the check `{command}` did not finish within {seconds} seconds and was killed"
+            );
             if !tolerates(&spec.accept, "timed_out") {
-                return Err(ActionError::new(
-                    "check_timed_out",
-                    format!(
-                        "the check `{command}` did not finish within {seconds} seconds and was killed"
-                    ),
-                ));
+                return Err(ActionError::new("check_timed_out", named));
             }
-            ("timed_out", None)
+            ("timed_out", None, Some(named))
         }
     };
+    let unresolved = unresolved.map(Value::String);
     // **LA FORMA SI APPLICA SOLO A UN COMANDO RIUSCITO**, e qui il comando
     // si separa dal motore di proposito. Il motore pretende la forma anche
     // in `exit_error`, perché un motore che fallisce ha comunque parlato;
@@ -194,7 +198,7 @@ fn run_and_read(
     // scritto `accept` ramifica già sullo stato, altrimenti non l'avrebbe
     // scritto.
     let Some((shape, said)) = spec.answer_shape.as_ref().zip(said) else {
-        return Ok(ActionOutcome::Went(json!({ "status": status })));
+        return Ok(ActionOutcome::Went(verdict(status, unresolved, None)));
     };
     if said.len() > MAX_ANSWER_BYTES {
         return Err(ActionError::new(
@@ -216,9 +220,20 @@ fn run_and_read(
     // pretende già dal motore, e lasciarlo passare accanto al valore
     // renderebbe la forma un ornamento.
     let answer = shaped_answer(shape, &said)?;
-    Ok(ActionOutcome::Went(
-        json!({ "status": status, "answer": answer }),
-    ))
+    Ok(ActionOutcome::Went(verdict(status, unresolved, Some(answer))))
+}
+
+/// The verdict as the run reads it. `status` is always there, and the two
+/// optional fields are written only when they exist: a key present and null
+/// would look to a downstream step like something it can work from.
+fn verdict(status: &str, unresolved: Option<Value>, answer: Option<Value>) -> Value {
+    let mut output = json!({ "status": status });
+    for (key, value) in [("unresolved", unresolved), ("answer", answer)] {
+        if let Some(value) = value {
+            output[key] = value;
+        }
+    }
+    output
 }
 
 #[cfg(test)]
@@ -443,6 +458,73 @@ mod tests {
         assert_eq!(refusal.check, "command");
         assert_eq!(refusal.rule, RefusalRule::ExitCode);
         assert_eq!(refusal.seen, "perche");
+    }
+
+    /// **WHAT IS OPEN COMES FROM BOTH PIPES.** A step after this one receives
+    /// `unresolved` and nothing else, which is how the second call carries the
+    /// open piece instead of the whole mandate. A suite's complaint lands on
+    /// stdout far more often than on stderr, and a reading that took only
+    /// stderr would hand an empty line downstream.
+    #[test]
+    fn a_failed_check_hands_on_what_is_still_unresolved() {
+        let input = json!({
+            "command": "echo 'section tre is empty'; echo 'exit 1' >&2; exit 1",
+            "accept": ["failed"],
+            "timeout_secs": 5
+        });
+
+        let ActionOutcome::Went(output) = ShellCheckAction::new()
+            .execute(&input, &SharedState::new())
+            .expect("l'esito è dichiarato accettabile")
+        else {
+            panic!("un esito tollerato resta un dato")
+        };
+
+        assert_eq!(output["status"], "failed");
+        let unresolved = output["unresolved"]
+            .as_str()
+            .unwrap_or_else(|| panic!("a failing check names what is left: {output}"));
+        assert!(unresolved.contains("section tre is empty"), "{unresolved}");
+        assert!(unresolved.contains("exit 1"), "{unresolved}");
+    }
+
+    /// A check that passed has nothing open to hand on, and an empty key there
+    /// would read downstream as work still to do.
+    #[test]
+    fn a_passing_check_hands_on_nothing_unresolved() {
+        let input = json!({"command": "true", "timeout_secs": 5});
+
+        let ActionOutcome::Went(output) = ShellCheckAction::new()
+            .execute(&input, &SharedState::new())
+            .expect("il controllo passa")
+        else {
+            panic!("un controllo passato è un dato")
+        };
+
+        assert_eq!(output["status"], "passed");
+        assert!(output.get("unresolved").is_none(), "{output}");
+    }
+
+    /// A check the clock killed says so, and says how long it had: downstream
+    /// it would otherwise read like a check that measured something.
+    #[test]
+    fn a_check_killed_by_the_clock_names_the_limit_it_hit() {
+        let input = json!({
+            "command": "sleep 5",
+            "accept": ["timed_out"],
+            "timeout_secs": 1
+        });
+
+        let ActionOutcome::Went(output) = ShellCheckAction::new()
+            .execute(&input, &SharedState::new())
+            .expect("l'esito è dichiarato accettabile")
+        else {
+            panic!("un esito tollerato resta un dato")
+        };
+
+        assert_eq!(output["status"], "timed_out");
+        let unresolved = output["unresolved"].as_str().expect("dice cosa è successo");
+        assert!(unresolved.contains("1 seconds"), "{unresolved}");
     }
 
     /// **QUI IL COMANDO SI SEPARA DAL MOTORE, E NON PER SVISTA.** Il motore
