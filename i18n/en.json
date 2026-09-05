@@ -531,6 +531,7 @@
   "cli.remember.kept": "kept: «{label}» ({type})",
   "cli.session.remembered": "{count} memor(ies) are kept, the latest {recent}: `sailor search <word>` finds them, `sailor remember` adds one.",
   "cli.session.memory_page": "The page of memories is {path}; it opens with:\n{opening}",
+  "cli.session.page_unseen": "{engine} reads {files} at its start and none of them names the page: it does not see the memories until one does.",
   "cli.command.memory": "renders what is remembered into the one file every command line reads at its start",
   "cli.memory.page_says": "writes the page of the memories still valid to state/memory.md under Sailor's home; with --print it is printed instead",
   "cli.memory.wants_a_form": "the forms are `page` and `where`; usage: {usage}",
