@@ -170,6 +170,9 @@ mod tests {
             flow::subflow::SUBFLOW_ACTION,
             // The watch reads the terminals too, store or no store.
             actions::terminals::TERMINAL_SURVEY_ACTION,
+            // The two ends of the consolidation a shipped flow runs once a day.
+            actions::memory::MEMORY_LIST_ACTION,
+            actions::memory::MEMORY_REPLACE_ACTION,
         ] {
             assert!(
                 registry.get(wanted).is_some(),

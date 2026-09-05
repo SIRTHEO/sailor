@@ -538,5 +538,6 @@
   "cli.memory.no_home": "no home to write the page into: HOME is not set",
   "run.failure.bad_memory_type": "a memory is user, feedback, project or reference, and this is none of them",
   "run.failure.secret_in_memory": "the memory carries what looks like a credential, and a credential is never remembered",
-  "run.failure.page_unwritten": "the page of memories could not be written, so the command lines still read the old one"
+  "run.failure.page_unwritten": "the page of memories could not be written, so the command lines still read the old one",
+  "run.failure.kept_and_dropped": "a label is asked to be kept and dropped in the same pass — the store cannot hold both answers, so nothing was written"
 }
