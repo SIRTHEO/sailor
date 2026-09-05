@@ -603,6 +603,9 @@ fn write_self_declared_turns(
             // lavoro va a un agente che è già vivo nel terminale, e la sua
             // conversazione non è di Sailor e non si può riprendere da qui.
             session_id: None,
+            // And nothing was asked of one either: this step never reached for
+            // a session, so there is no fallback to confess.
+            session_mode: None,
             work_kind: None,
             fell_back_from: Vec::new(),
             // Il perché della riga sta nel `purpose`: chi somma le chiamate di

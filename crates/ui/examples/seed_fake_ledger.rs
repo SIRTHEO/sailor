@@ -187,6 +187,7 @@ fn fake_call(
         ended_at: Some(1_756_000_009),
         session_id: None,
         work_kind: None,
-            fell_back_from: Vec::new(),
+        fell_back_from: Vec::new(),
+        session_mode: None,
     }
 }

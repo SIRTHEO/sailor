@@ -4,6 +4,8 @@
 //! `0` never is: nothing is invented here. **AND IT IS READ THE WAY A
 //! DESCRIPTOR DECLARES IT**, never by a reader named after one engine.
 
+use serde::{Deserialize, Serialize};
+
 /// The shape in which an engine states its own consumption.
 ///
 /// **IT IS DATA, NOT A BRANCH PER PROVIDER.** A hand-written reader for every
@@ -17,6 +19,20 @@ pub enum Shape {
     /// The output is text, and pointers are regular expressions with one
     /// capture group.
     Text,
+}
+
+/// Whose consumption a reading states: this call's, or the session's so far.
+///
+/// **DECLARED, NEVER GUESSED.** The two write the same numbers in the same
+/// place, and reading one as the other never fails: it hands a single step the
+/// whole session's bill, or makes every step after the first look free.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Reports {
+    #[default]
+    PerCall,
+    /// Readings grow, and a share is the difference between two of them.
+    PerSession,
 }
 
 /// Where a value sits inside what the engine said.
@@ -64,6 +80,8 @@ impl Heard {
 pub struct Declared {
     pub read: Shape,
     pub from: Heard,
+    /// Whether these numbers are this call's own or the session's so far.
+    pub reports: Reports,
     pub input_tokens: Option<Pointer>,
     pub output_tokens: Option<Pointer>,
     /// Input tokens **read from the cache**, which have a price per million
@@ -139,6 +157,34 @@ pub struct Reading {
     /// The answer text pulled out of the envelope, when the descriptor says
     /// where it sits.
     pub answer: Option<String>,
+}
+
+/// What a call added to a session whose engine counts cumulatively.
+///
+/// **UNKNOWN, NEVER ZERO**, on a number the engine never said, a baseline
+/// nobody could work out, or a reading *below* its baseline. `before` carries
+/// `Some(0)` for a session that has spent nothing yet.
+pub fn share_after(reading: Reading, before: &Reading) -> Reading {
+    let step = |now: Option<u64>, was: Option<u64>| now?.checked_sub(was?);
+    Reading {
+        input_tokens: step(reading.input_tokens, before.input_tokens),
+        output_tokens: step(reading.output_tokens, before.output_tokens),
+        cached_tokens: step(reading.cached_tokens, before.cached_tokens),
+        cache_write_tokens: step(reading.cache_write_tokens, before.cache_write_tokens),
+        cache_write_long_tokens: step(
+            reading.cache_write_long_tokens,
+            before.cache_write_long_tokens,
+        ),
+        total_tokens: step(reading.total_tokens, before.total_tokens),
+        turns: step(reading.turns, before.turns),
+        declared_cost: match (reading.declared_cost, before.declared_cost) {
+            (Some(now), Some(was)) if now >= was => Some(now - was),
+            _ => None,
+        },
+        // Not counters: they belong to this call whatever the numbers do.
+        model: reading.model,
+        answer: reading.answer,
+    }
 }
 
 /// Reads the consumption from an engine's output the way its descriptor
@@ -352,6 +398,7 @@ mod declared_tests {
         Declared {
             read: Shape::Json,
             from: Heard::Stdout,
+            reports: Reports::PerCall,
             input_tokens: path(&["usage", "input_tokens"]),
             output_tokens: path(&["usage", "output_tokens"]),
             cached_tokens: path(&["usage", "cache_read_input_tokens"]),
@@ -524,5 +571,63 @@ mod declared_tests {
     fn a_declaration_with_no_pointers_at_all_is_empty() {
         assert!(Declared::default().is_empty());
         assert!(!wrapped_declaration().is_empty());
+    }
+
+    fn counted(input: Option<u64>, turns: Option<u64>) -> Reading {
+        Reading {
+            input_tokens: input,
+            turns,
+            ..Reading::default()
+        }
+    }
+
+    /// A session that has spent nothing takes nothing off the reading.
+    #[test]
+    fn the_first_call_of_a_session_keeps_the_whole_reading() {
+        let share = share_after(counted(Some(900), Some(3)), &counted(Some(0), Some(0)));
+
+        assert_eq!(share.input_tokens, Some(900));
+        assert_eq!(share.turns, Some(3));
+    }
+
+    /// **THE SHARE IS THE DIFFERENCE, AND WHICH WAY ROUND IS THE POINT**:
+    /// subtracted the other way this yields nothing at all.
+    #[test]
+    fn the_share_of_a_later_call_is_what_the_session_gained() {
+        let share = share_after(counted(Some(1_400), Some(9)), &counted(Some(900), Some(3)));
+
+        assert_eq!(share.input_tokens, Some(500), "1400 read, 900 already spent");
+        assert_eq!(share.turns, Some(6));
+    }
+
+    /// A baseline nobody could work out cannot become a share. A zero there
+    /// would sum, and no later view could take it back out.
+    #[test]
+    fn a_baseline_nobody_knows_leaves_the_share_unknown_not_zero() {
+        let share = share_after(counted(Some(1_400), Some(9)), &Reading::default());
+
+        assert_eq!(share.input_tokens, None);
+        assert_eq!(share.turns, None);
+    }
+
+    /// A reading under its baseline says the two do not count the same thing.
+    #[test]
+    fn a_reading_below_the_baseline_is_unknown_not_zero() {
+        let share = share_after(counted(Some(100), None), &counted(Some(900), None));
+
+        assert_eq!(share.input_tokens, None);
+    }
+
+    /// What was never said has no share, and the answer travels untouched.
+    #[test]
+    fn a_number_the_engine_never_said_stays_unsaid() {
+        let mut reading = counted(None, Some(4));
+        reading.answer = Some("the answer".to_owned());
+
+        let share = share_after(reading, &counted(Some(0), Some(1)));
+
+        assert_eq!(share.input_tokens, None);
+        assert_eq!(share.turns, Some(3));
+        assert_eq!(share.answer.as_deref(), Some("the answer"));
     }
 }

@@ -474,6 +474,7 @@ mod tests {
             session_id: None,
             work_kind: None,
             fell_back_from: Vec::new(),
+            session_mode: None,
         }
     }
 
