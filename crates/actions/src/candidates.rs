@@ -48,6 +48,24 @@ impl ExternalEngineAction {
         (ordered, preferred)
     }
 
+    /// The engines the strengths table puts first for this step's kind that
+    /// are not usable here: what the step falls back from. Empty without a
+    /// declared kind, without a row for it, or when they are all usable.
+    ///
+    /// **AN ABSENT ENGINE IS NOT A SILENT FAILURE**: without this the ledger
+    /// cannot tell a step that never wanted the local engine from one denied it.
+    pub(crate) fn fell_back_from(&self, spec: &EngineSpec, usable: &[Candidate]) -> Vec<String> {
+        let Some(kind) = spec.kind.as_deref() else {
+            return Vec::new();
+        };
+        self.strengths_table()
+            .first_for(kind)
+            .iter()
+            .filter(|first| !usable.iter().any(|one| one.id.as_deref() == Some(first.as_str())))
+            .cloned()
+            .collect()
+    }
+
     fn strengths_table(&self) -> models::strengths::Strengths {
         self.strengths
             .as_deref()

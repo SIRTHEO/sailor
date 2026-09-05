@@ -343,6 +343,7 @@ mod tests {
             cache_write_long_price_micros_per_million: None,
             engine_identity: ledger::EngineIdentity::default(),
             retry_chain: vec![],
+            fell_back_from: vec![],
             error_type: None,
             started_at: 0,
             ended_at: Some(1),

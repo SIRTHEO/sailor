@@ -259,10 +259,13 @@ fn spelled(number: usize) -> String {
         return IRREGULAR[number].to_string();
     }
     assert!(
-        number < 100,
-        "la prosa non ha mai scritto un numero a tre cifre in lettere: se serve, \
-         la regola delle centinaia va aggiunta qui invece che aggirata"
+        number < 1000,
+        "la prosa non ha mai scritto un numero a quattro cifre in lettere: se serve, \
+         la regola delle migliaia va aggiunta qui invece che aggirata"
     );
+    if number >= 100 {
+        return with_hundreds(number);
+    }
     let (ten, unit) = (number / 10, number % 10);
     let tens = TENS[ten];
     match unit {
@@ -272,6 +275,31 @@ fn spelled(number: usize) -> String {
         // «tre» in coda porta l'accento: ventitré, non ventitre.
         3 => format!("{tens}tré"),
         _ => format!("{tens}{}", IRREGULAR[unit]),
+    }
+}
+
+/// The hundreds, and the one join Italian changes.
+///
+/// «cento» keeps its vowel before «uno» — centouno — but before «otto» the two
+/// o merge into one: centotto, never centootto. Past the hundred the rest is
+/// the same rule, so it is called back.
+fn with_hundreds(number: usize) -> String {
+    let (hundred, rest) = (number / 100, number % 100);
+    let prefix = match hundred {
+        1 => "cento".to_string(),
+        _ => format!("{}cento", IRREGULAR[hundred]),
+    };
+    if rest == 0 {
+        return prefix;
+    }
+    // «tre» takes its accent after a hundred as it does after a ten.
+    let tail = match rest {
+        3 => "tré".to_string(),
+        _ => spelled(rest),
+    };
+    match tail.starts_with('o') {
+        true => format!("{}{tail}", &prefix[..prefix.len() - 1]),
+        false => format!("{prefix}{tail}"),
     }
 }
 
@@ -298,6 +326,14 @@ fn the_numbers_are_spelled_the_way_italian_spells_them() {
         (33, "trentatré"),
         (38, "trentotto"),
         (41, "quarantuno"),
+        (100, "cento"),
+        (101, "centouno"),
+        (103, "centotré"),
+        (108, "centotto"),
+        (121, "centoventuno"),
+        (180, "centottanta"),
+        (200, "duecento"),
+        (308, "trecentotto"),
         (47, "quarantasette"),
         (68, "sessantotto"),
         (91, "novantuno"),
