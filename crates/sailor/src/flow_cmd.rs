@@ -4350,6 +4350,34 @@ mod tests {
         );
     }
 
+    /// A `for_each` step is a step like the others to the check: listed with
+    /// its dependencies, its action known, and its stray fields named.
+    #[test]
+    fn a_for_each_step_is_listed_and_its_stray_fields_are_named() {
+        let json = r#"{
+            "id": "prova", "description": "flusso di prova",
+            "graph": {"steps": [{
+                "id": "ripeti", "deps": [], "action": "for_each", "max_attempts": 1,
+                "when": null, "input_schema": {"type": "any"}, "output_schema": {"type": "any"},
+                "with": {"flow": "foglia", "items": [1, 2], "flusso": "foglia"}
+            }]},
+            "inputs": {}
+        }"#;
+        let flow: FlowFile = serde_json::from_str(json).expect("caricare il flusso");
+
+        let (report, _) = check_report(&flow, &default_registry(None, None), None, None);
+
+        assert!(report.contains("ripeti <- nessuna"), "the step is listed: {report}");
+        assert!(
+            report.contains("azioni mancanti: nessuna"),
+            "the action is one the engine registers: {report}"
+        );
+        assert!(
+            report.contains("ripeti: flusso"),
+            "and the field it does not know is named: {report}"
+        );
+    }
+
     /// La gemella: lo **stesso** flusso col campo giusto non dice niente.
     ///
     /// Senza di lei, un controllo che si lamentasse sempre passerebbe la prova
