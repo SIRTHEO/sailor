@@ -194,3 +194,38 @@ leggendo.
 E una cosa che ha funzionato al primo colpo: l'annuncio `[sailor] running …`
 del passo comando, costruito nel pomeriggio, si è visto dal vivo alla prima
 corsa, con il programma e gli argomenti veri.
+
+## La sera: sette lavoratori, e la repo rimessa in ordine
+
+Theo, la sera del 05/09: *«perché non deleghi più lavoro a più agenti in
+parallelo? anche su cli diverse come dovrebbe essere»*, e poi quattro punti
+sulla repository. Da lì il lavoro ha due gambe: gli agenti in copia di lavoro e
+i motori chiamati dai flussi, che girano insieme.
+
+**Il flusso che manda un incarico a due motori.** `delega-un-pezzo` dichiara un
+motore per passo, così una corsa impegna due righe di comando invece di una in
+fila; nessun passo scrive, e l'uscita è una ricognizione con file e riga che una
+persona traduce in codice. Vive nella casa di chi lo lancia, non nel
+repository — un giudice rifiuta un flusso nostro in `flows/`, perché lì
+vincerebbe su quello di chiunque usi il prodotto.
+
+**Cosa ha prodotto, misurato.** La ricognizione su C.5 ha nominato il punto di
+intercettazione del muro, i venti costruttori che devono continuare a
+compilare, la versione della proiezione da alzare e il mutante: un agente l'ha
+presa e ci ha costruito sopra senza rileggere l'albero. La ricognizione sul
+patto dei dati è diventata il controllo statico che oggi chiude il guasto 94.
+
+**La repository, i quattro punti.**
+1. *Il push era fermo da 179 commit.* Questa macchina ha due accessi a
+   quell'ospite e l'attivo non possiede il repository; cambiarlo cambierebbe
+   ogni altro strumento. Ora l'albero dichiara chi essere (`sailor.pushAs`,
+   `sailor.pushSecretFrom`) e il rilascio spinge. Un albero che non dichiara
+   niente spinge come prima, byte per byte.
+2. *I rami.* Due su `origin` provati superati per contenuto e cancellati; tre
+   danno conflitto e non si misurano così, restano a Theo. Il controllo assurdo
+   che `AGENTS.md` impone ha bocciato la prima misura al primo colpo: dopo un
+   merge non committato si guarda l'indice, non l'albero.
+3. *Gli strumenti.* Chi lavora qui chiede all'indice prima di cercare a mano, e
+   la regola sta dove ogni agente la legge.
+4. *Le copie che nessuno chiude.* Un passo con albero proprio ne apre uno e non
+   lo chiude: dodici orfani e 905 MB in una sera, guasto 97.
