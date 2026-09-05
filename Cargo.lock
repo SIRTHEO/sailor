@@ -302,6 +302,7 @@ dependencies = [
 name = "profiles"
 version = "0.1.0"
 dependencies = [
+ "catalogue",
  "ledger",
  "serde",
  "serde_json",

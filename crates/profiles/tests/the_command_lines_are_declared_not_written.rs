@@ -2,7 +2,8 @@
 //! and endpoint variables: a list of providers inside a product whose first
 //! constraint is that it knows none. This is what the file must say instead.
 
-use profiles::{known_clis, parse_command_lines, HomeMechanism, NativeProfiles};
+use profiles::{instruction_files, known_clis, parse_command_lines, HomeMechanism, NativeProfiles};
+use std::path::{Path, PathBuf};
 
 #[test]
 fn the_shipped_list_parses_and_every_entry_can_be_used() {
@@ -105,5 +106,98 @@ fn an_engine_can_declare_the_home_it_already_keeps() {
             .iter()
             .any(|cli| cli.home_already_here.is_some()),
         "the shipped list declares no home anybody could adopt"
+    );
+}
+
+/// **A FIELD NOBODY DECLARED IS REFUSED, AND THE REFUSAL NAMES THE ENGINE.**
+/// A misspelt key read as «absent» would turn a declared list of files into
+/// «nobody looked», silently; a value of the wrong shape the same. Both are
+/// refused as a whole, and the id is what a person greps their file for.
+#[test]
+fn a_field_nobody_declared_or_of_the_wrong_shape_is_refused_with_the_engines_name() {
+    let refused = |entry: &str| {
+        let text = format!(r#"{{"command_lines": [{entry}]}}"#);
+        parse_command_lines(&text).err().unwrap_or_else(|| panic!("{entry} was accepted"))
+    };
+    for entry in [
+        r#"{"id": "un-motore", "executable": "unmotore", "reads_instruction_from": ["AGENTS.md"]}"#,
+        r#"{"id": "un-motore", "executable": "unmotore", "reads_instructions_from": "AGENTS.md"}"#,
+        r#"{"id": "un-motore", "executable": "unmotore", "reads_instructions_from": ["AGENTS.md", 3]}"#,
+        r#"{"id": "un-motore", "executable": "unmotore", "reads_instructions_from": ["/etc/AGENTS.md"]}"#,
+        r#"{"id": "un-motore", "executable": "unmotore", "reads_instructions_from": [""]}"#,
+        r#"{"id": "un-motore", "executable": "unmotore", "home": {"variabile": "X"}}"#,
+    ] {
+        let why = refused(entry);
+        assert!(why.contains("un-motore"), "the refusal of {entry} does not name the engine: {why}");
+    }
+    // The absurd control: the same entry, spelt right, is taken.
+    let taken = parse_command_lines(
+        r#"{"command_lines": [
+             {"id": "un-motore", "executable": "unmotore",
+              "reads_instructions_from": ["~/.unmotore/RULES.md", "RULES.md"]}
+           ]}"#,
+    )
+    .expect("it parses");
+    assert_eq!(taken[0].reads_instructions_from, vec!["~/.unmotore/RULES.md", "RULES.md"]);
+}
+
+/// **AN ENGINE WHOSE HOME IS KNOWN SAYS WHAT IT READS AT ITS START.** It is
+/// how a person learns whether the page of memories reaches it. An engine
+/// nobody has looked into is allowed its silence, and is told apart by having
+/// no home declared either.
+#[test]
+fn every_shipped_engine_with_a_home_says_what_it_reads_at_its_start() {
+    let looked_into: Vec<_> = known_clis()
+        .iter()
+        .filter(|cli| cli.home != HomeMechanism::Unknown)
+        .collect();
+    assert!(!looked_into.is_empty(), "no shipped engine declares a home");
+    for cli in looked_into {
+        assert!(
+            !cli.reads_instructions_from.is_empty(),
+            "{} declares a home and not what it reads at its start",
+            cli.id
+        );
+    }
+}
+
+/// **THE FILE IS WHERE THE ENGINE IS STARTED**: `~` is the home, a bare name
+/// is under the project, and a profile that moves the engine's home by
+/// variable takes the file in its usual place along. A profile that swaps a
+/// symlink moves no home, and the file stays where it was.
+#[test]
+fn the_files_an_engine_reads_are_resolved_where_it_is_started() {
+    let table = parse_command_lines(
+        r#"{"command_lines": [
+             {"id": "un-motore", "executable": "unmotore",
+              "home": {"variable": "UNMOTORE_HOME", "already_at": ".unmotore"},
+              "reads_instructions_from": ["~/.unmotore/RULES.md", "~/RULES.md", "RULES.md"]},
+             {"id": "un-altro", "executable": "unaltro",
+              "home": {"credential_symlink": "auth.json", "already_at": ".unaltro"},
+              "reads_instructions_from": ["~/.unaltro/RULES.md"]}
+           ]}"#,
+    )
+    .expect("it parses");
+    let project = Path::new("/work/tree");
+    let home = Path::new("/home/someone");
+    assert_eq!(
+        instruction_files(&table[0], project, home, None),
+        vec![
+            PathBuf::from("/home/someone/.unmotore/RULES.md"),
+            PathBuf::from("/home/someone/RULES.md"),
+            PathBuf::from("/work/tree/RULES.md"),
+        ]
+    );
+    assert_eq!(
+        instruction_files(&table[0], project, home, Some(Path::new("/homes/unmotore/work"))),
+        vec![
+            PathBuf::from("/homes/unmotore/work/RULES.md"),
+            PathBuf::from("/home/someone/RULES.md"),
+            PathBuf::from("/work/tree/RULES.md"),
+        ]
+    );
+    assert_eq!(
+        instruction_files(&table[1], project, home, Some(Path::new("/homes/unaltro/work"))),
+        vec![PathBuf::from("/home/someone/.unaltro/RULES.md")]
     );
 }

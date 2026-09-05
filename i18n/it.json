@@ -536,6 +536,8 @@
   "cli.memory.wants_page": "l'unica forma è `page`; uso: {usage}",
   "cli.memory.written": "{count} memorie sulla pagina, scritta in {path}",
   "cli.memory.no_home": "nessuna casa in cui scrivere la pagina: HOME non è impostata",
+  "profiles.command_line_refused": "la riga di comando «{id}» è rifiutata per intero: {why}",
+  "profiles.instructions_path_refused": "la riga di comando «{id}» legge le istruzioni da «{path}», che non sta né sotto la radice del progetto né sotto ~",
   "run.failure.bad_memory_type": "una memoria è user, feedback, project o reference, e questa non è nessuna delle quattro",
   "run.failure.secret_in_memory": "la memoria porta quel che sembra una credenziale, e una credenziale non si ricorda mai",
   "run.failure.page_unwritten": "la pagina delle memorie non si è potuta scrivere, e le righe di comando leggono ancora la vecchia"
