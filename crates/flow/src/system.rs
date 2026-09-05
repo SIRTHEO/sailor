@@ -86,14 +86,12 @@ pub const FLOWS: &[(&str, &str)] = &[
         "draft-a-flow",
         include_str!("../system/draft-a-flow.flow.json"),
     ),
-    // The memories would otherwise only ever grow: once a day an engine reads
-    // them all and answers with what to keep and what to drop.
+    // Once a day an engine reads every memory and says what to keep and drop.
     (
         "consolidate-memories",
         include_str!("../system/consolidate-memories.flow.json"),
     ),
-    // Development takes the oldest open fault as its mandate, and the engine
-    // is never started when nothing is open.
+    // The oldest open fault becomes the mandate; nothing open, no engine.
     (
         "take-the-next-fault",
         include_str!("../system/take-the-next-fault.flow.json"),
