@@ -102,10 +102,11 @@ fn a_claim_and_a_waiting_run(ledger: &Ledger, agent: &str, repository: &str) {
         .expect("the waiting run is recorded");
 }
 
-/// The product's registry, with the terminals of this test instead of the
-/// machine's — the same move `write_down_what_broke` makes for the register.
+/// The product's registry over a house of this test's own, with its terminals
+/// instead of the machine's — the move `write_down_what_broke` makes too.
 fn registry(scratch: &Scratch, ledger: &Ledger) -> ActionRegistry {
-    let mut registry = registry::default_registry(Some(ledger.clone()), None);
+    let mut registry =
+        registry::registry_in(registry::House::under(&scratch.0), Some(ledger.clone()), None);
     actions::terminals::register_terminals(&mut registry, Some(scratch.sessions()));
     registry
 }

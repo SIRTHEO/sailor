@@ -238,7 +238,7 @@ fn what_agy_declares_matches_what_agy_really_said() {
     // potrebbe dire altro.
     let tools = toolbox::Tools::new(
         toolbox::Catalog::load(&[toolbox::descriptor::Source::Builtin]),
-        toolbox::Machine::current(),
+        toolbox::Machine::bare(std::path::PathBuf::from(toolbox::probe::NOWHERE)),
     );
     let recipe = actions::ToolResolver::ask_recipe(&tools, "agy")
         .expect("«agy» è spedito e dichiara come lo si interroga");
@@ -282,7 +282,7 @@ fn a_real_answer_from_agy_is_not_mistaken_for_an_exhausted_engine() {
     let stdout = r#"{"conversation_id":"c-1","status":"OK","response":"Il difetto sta nel middleware di authentication: il token scade e nessuno lo rinnova.","duration_seconds":2,"num_turns":1,"usage":{"input_tokens":12,"output_tokens":3,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":15}}"#;
     let tools = toolbox::Tools::new(
         toolbox::Catalog::load(&[toolbox::descriptor::Source::Builtin]),
-        toolbox::Machine::current(),
+        toolbox::Machine::bare(std::path::PathBuf::from(toolbox::probe::NOWHERE)),
     );
     let recipe = actions::ToolResolver::ask_recipe(&tools, "agy")
         .expect("«agy» è spedito e dichiara come lo si interroga");

@@ -90,7 +90,7 @@ fn step(id: &str, deps: &[&str], action: &str, with: Value) -> Step {
 fn a_key_decided_by_the_step_before_reaches_the_real_store() {
     let dir = TestDirectory::new("chiave-dal-passo-prima");
     let ledger = Ledger::open(dir.0.join("deposito")).expect("aprire il deposito");
-    let actions = registry::default_registry(Some(ledger.clone()), None);
+    let actions = registry::registry_in(registry::House::under(&dir.0), Some(ledger.clone()), None);
 
     let graph = Graph::new(vec![
         step(

@@ -548,6 +548,7 @@ mod tests {
     use super::super::test_support::*;
     use super::*;
     use flow::{Decision, InMemoryRecordStore, ProcessProbe, StepRecord};
+    use registry::{registry_in, House};
     use std::time::{Duration, Instant};
 
     // ── la sonda della consegna ──────────────────────────────────────────
@@ -647,7 +648,7 @@ mod tests {
 
         let mut store =
             InMemoryRecordStore::from_records(vec![a_handed_record(1_000, Some(3_600), None)]);
-        let registry = default_registry(None, None);
+        let registry = registry_in(House::empty(), None, None);
         let shared = flow::SharedState::new();
         let probe = HandoffLease { now: 1_100 };
         let mut clock = SystemClock;
@@ -1064,7 +1065,7 @@ mod tests {
             &flow,
             "corsa-1",
             &store,
-            &default_registry(None, None),
+            &registry_in(House::empty(), None, None),
             &mut Tick::new(0),
         )
         .expect("eseguire il flusso");
