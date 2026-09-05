@@ -339,6 +339,22 @@ pub fn tree_around(here: &Path) -> Option<PathBuf> {
     Some(path.canonicalize().unwrap_or(path))
 }
 
+/// Whether a directory is the top of the repository that tracks it. Discovery
+/// climbs: a tree unpacked under a repository's `target/` answers with it.
+pub fn is_the_top_of_its_repository(here: &Path) -> bool {
+    let Some(top) = tree_around(here) else {
+        return false;
+    };
+    here.canonicalize().is_ok_and(|here| here == top)
+}
+
+/// What a judge prints when its subject is not in the tree it was pointed at.
+pub const MEASURED_NOTHING: &str = "measured nothing:";
+
+pub fn measured_nothing(because: &str) {
+    println!("\n{MEASURED_NOTHING} {because}");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -488,5 +504,26 @@ mod tests {
 
         assert_eq!(found, Some(real_repo));
         assert!(none.is_none(), "{none:?}");
+    }
+
+    /// **FAULT 100.** A directory inside a repository answers like the top.
+    #[test]
+    fn only_the_top_of_a_repository_says_it_is_tracked_from_here() {
+        let scratch = std::env::temp_dir().join(format!("sailor-workspace-top-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&scratch);
+        let repo = scratch.join("a-checkout");
+        let under = repo.join("target").join("unpacked");
+        std::fs::create_dir_all(&under).expect("scratch");
+        let init = Command::new("git").arg("-C").arg(&repo).args(["init", "--quiet"]).status().expect("git");
+        assert!(init.success());
+
+        let top = is_the_top_of_its_repository(&repo);
+        let inside = is_the_top_of_its_repository(&under);
+        let outside = is_the_top_of_its_repository(&scratch);
+        let _ = std::fs::remove_dir_all(&scratch);
+
+        assert!(top, "the checkout is the top of itself");
+        assert!(!inside, "a tree unpacked under target/ is not the top of the repository around it");
+        assert!(!outside, "no repository, no top");
     }
 }
