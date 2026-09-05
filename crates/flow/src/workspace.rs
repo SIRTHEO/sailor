@@ -152,7 +152,7 @@ pub fn known_including(home: &Path, seen: &[PathBuf], at: i64) -> Result<Vec<Kno
             extra: BTreeMap::new(),
         });
     }
-    known.sort_by(|left, right| right.last_seen.cmp(&left.last_seen));
+    known.sort_by_key(|tree| std::cmp::Reverse(tree.last_seen));
     Ok(known)
 }
 
@@ -206,7 +206,7 @@ pub fn known_in(home: &Path) -> Result<Vec<Known>, String> {
     let register: Register = serde_json::from_str(&text)
         .map_err(|error| format!("{} is not a valid register: {error}", path.display()))?;
     let mut seen = register.workspaces;
-    seen.sort_by(|left, right| right.last_seen.cmp(&left.last_seen));
+    seen.sort_by_key(|tree| std::cmp::Reverse(tree.last_seen));
     Ok(seen)
 }
 
@@ -349,7 +349,8 @@ mod tests {
         put_marker(&root, r#"{"name":"sailor"}"#);
         remember_in(&home, &root, 10).expect("registering it");
 
-        let known = known_including(&home, &[root.clone()], 999).expect("the list is readable");
+        let known =
+            known_including(&home, std::slice::from_ref(&root), 999).expect("the list is readable");
 
         assert_eq!(known.len(), 1, "the seen tree was added a second time: {known:?}");
         assert_eq!(known[0].first_seen, 10, "the date of the first day was rewritten");
