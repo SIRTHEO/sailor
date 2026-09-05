@@ -192,8 +192,12 @@ E i cinque concetti di Theo della stessa sera:
    prende uno schizzo — blocchi, parole, frecce — e scrive un flusso che sta in
    piedi dove vivono i flussi della persona; quattro corse, tre difetti trovati
    e chiusi (86, 87 e un puntatore), la quarta ha scritto
-   `traduci-documentazione-in-inglese.flow.json`, tre passi, valido. La tela
-   nella finestra su cui disegnare lo schizzo non c'è ancora: oggi lo schizzo si
-   scrive come testo, `sailor flow run draft-a-flow "…"`.
+   `traduci-documentazione-in-inglese.flow.json`, tre passi, valido. E la tela:
+   il luogo «Whiteboard» sotto l'albero, accanto a Board e Changes — blocchi
+   con un genere, le parole sopra, «dopo quale» — e un pulsante che manda il
+   disegno a `draft-a-flow`; la corsa si guarda dove si guardano le corse, e a
+   fine corsa la tela rilegge i flussi. Da provare nella finestra rilasciata
+   (`sailor release window`); dalla riga di comando lo schizzo resta testo,
+   `sailor flow run draft-a-flow "…"`.
 5. **Le prestazioni**: non iniziato. Va fatto con ricerca vera, non a memoria.
 
