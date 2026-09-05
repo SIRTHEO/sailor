@@ -62,15 +62,13 @@ fn engines_in_chains() -> Vec<InChain> {
             continue;
         };
         for step in steps {
-            let Some(chain) = step["with"]["tool"].as_array() else {
-                continue;
-            };
-            let names: Vec<&str> = chain.iter().filter_map(|id| id.as_str()).collect();
+            // The run's own reader: a name written as a word is a chain of one.
+            let names = actions::engines_named_in(&step["with"]);
             for (place, tool) in names.iter().enumerate() {
                 found.push(InChain {
                     flow: flow.clone(),
                     step: step["id"].as_str().unwrap_or_default().to_owned(),
-                    tool: (*tool).to_owned(),
+                    tool: tool.clone(),
                     last: place + 1 == names.len(),
                 });
             }
@@ -140,6 +138,28 @@ fn every_engine_that_is_not_last_in_a_chain_says_how_it_is_exhausted() {
          di non poter lavorare: quando si esauriscono uccidono il passo, e i \
          motori dopo di loro non partono. È il guasto 31.\n{}",
         silent.into_iter().collect::<Vec<_>>().join("\n")
+    );
+}
+
+/// **A STEP THAT NAMES ONE ENGINE AS A WORD IS A CHAIN OF ONE**, read by the
+/// reader the run uses. It stands in the list as the last of its chain, with
+/// nothing required of it, instead of escaping the list — where a reader of
+/// arrays alone left it, and no rule on chains could see it.
+#[test]
+fn a_step_naming_one_engine_as_a_word_is_a_chain_of_one() {
+    let engines = engines_in_chains();
+    let written_as_a_word: Vec<&InChain> = engines
+        .iter()
+        .filter(|engine| engine.flow == "dispatch-the-work" && engine.step == "engine_b")
+        .collect();
+    assert_eq!(
+        written_as_a_word.len(),
+        1,
+        "the step that writes its engine as a word must be listed once, as a chain of one"
+    );
+    assert!(
+        written_as_a_word[0].last,
+        "a chain of one has no engine after it, so nothing is required of it"
     );
 }
 
