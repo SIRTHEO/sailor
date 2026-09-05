@@ -535,10 +535,7 @@ fn recognised(route: &Route, text: &str) -> Option<String> {
                 // versione minuscola, che per certe lettere non ha la stessa
                 // lunghezza in byte dell'originale. Un taglio a metà carattere
                 // sarebbe un panico dentro un terminale.
-                match text.get(marker.len()..) {
-                    Some(rest) => rest.trim().to_string(),
-                    None => return None,
-                }
+                text.get(marker.len()..)?.trim().to_string()
             } else {
                 text.to_string()
             };

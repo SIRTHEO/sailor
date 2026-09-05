@@ -30,7 +30,7 @@ impl CommandLookup for NothingIsRunnable {
 /// L'innesco manuale, invocato come lo invocherebbe un passo di flusso.
 fn fire(input: Value) -> Value {
     match TriggerAction
-        .execute(&input, &mut SharedState::new())
+        .execute(&input, &SharedState::new())
         .expect("l'innesco manuale è spedito col prodotto")
     {
         ActionOutcome::Went(output) => output,
@@ -99,7 +99,7 @@ fn the_flow_the_shipped_rules_name_starts_with_a_manual_trigger() {
                     loaded.route.id, loaded.route.flow
                 )
             });
-        let document: Value = serde_json::from_str(&text).expect("il flusso è JSON");
+        let document: Value = serde_json::from_str(text).expect("il flusso è JSON");
         let steps = document["graph"]["steps"]
             .as_array()
             .expect("un grafo ha dei passi");
