@@ -595,7 +595,7 @@
   "cli.ratchet.not_a_repository": "le sorgenti non sono un repository git",
   "cli.ratchet.archive_failed": "git archive HEAD non ha prodotto un albero",
   "cli.ratchet.no_judge": "nessun giudice qui porta un seme",
-  "cli.ratchet.measuring": "misuro {judges} giudice/i su un HEAD pulito, {laid_over} file cambiato/i sovrapposto/i",
+  "cli.ratchet.measuring": "misuro {judges} giudice/i su un HEAD pulito, {laid_over} file cambiato/i sovrapposto/i, {taken_away} file rimosso/i tolto/i",
   "cli.ratchet.green": "verde",
   "cli.ratchet.red": "rosso",
   "cli.ratchet.all_green": "ogni seme tiene su HEAD con queste modifiche",
