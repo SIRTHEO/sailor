@@ -34,6 +34,7 @@ fn collecting_step(store: &str) -> Step {
         max_attempts: 1,
         ask_again_after_secs: None,
         retry_after_secs: None,
+        phase: None,
     }
 }
 
