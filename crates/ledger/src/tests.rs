@@ -52,6 +52,7 @@ fn completion() -> Completion {
         said: Some("raw error text".to_owned()),
         failure_class: Some("compiler_error".to_owned()),
         refusal: None,
+        ran: None,
         ended_at: 120,
         bytes_seen: None,
         bytes_discarded: None,
@@ -1428,6 +1429,7 @@ fn a_step(
                     said: said.map(str::to_owned),
                     failure_class: failure_class.map(str::to_owned),
                     refusal: None,
+                    ran: None,
                     ended_at,
                     bytes_seen: Some(10),
                     bytes_discarded: Some(0),
@@ -2997,4 +2999,90 @@ fn a_store_from_before_refusals_opens_and_reads_its_steps() {
         .expect("the migrated store takes a refusal");
     let steps = reopened.steps("run-2").expect("read it back");
     assert_eq!(steps[0].refusal, Some(a_refusal()));
+}
+
+fn a_line() -> flow::Ran {
+    flow::Ran::new("sh", ["-c", "cargo test -p ledger"])
+}
+
+/// The line a step ran closes with the step and reads back whole — from the
+/// rows, from the dump the window reads, and after a rebuild from the log.
+#[test]
+fn the_line_a_step_ran_closes_with_it_and_reads_back() {
+    let directory = TestDirectory::new("ran");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    ledger
+        .append_step_started(&started("run-1"))
+        .expect("start the step");
+    ledger
+        .close_step(
+            "run-1",
+            "compile",
+            1,
+            7,
+            Completion {
+                ran: Some(a_line()),
+                ..completion()
+            },
+        )
+        .expect("close it with the line");
+
+    let steps = ledger.steps("run-1").expect("read the steps");
+    assert_eq!(steps[0].ran, Some(a_line()), "the line did not reach the row");
+    let dump = ledger.projection_dump().expect("read the projection");
+    let row = &dump["steps"].as_array().expect("rows")[0];
+    let in_dump: flow::Ran =
+        serde_json::from_str(row[21].as_str().expect("the last column is the line"))
+            .expect("the column holds the line as JSON");
+    assert_eq!(in_dump, a_line());
+
+    ledger.rebuild_projections().expect("rebuild from the log");
+    let steps = ledger.steps("run-1").expect("read the rebuilt steps");
+    assert_eq!(steps[0].ran, Some(a_line()), "the log lost the line");
+}
+
+/// A store written before the line existed opens, reads its rows without one,
+/// and takes a line from then on.
+#[test]
+fn a_store_from_before_the_line_opens_and_reads_its_steps() {
+    let directory = TestDirectory::new("before-ran");
+    {
+        let ledger = Ledger::open(&directory.0).expect("open the ledger");
+        ledger
+            .append_step_started(&started("run-1"))
+            .expect("start the step");
+        ledger
+            .close_step("run-1", "compile", 1, 7, completion())
+            .expect("close it");
+        let connection = ledger.connection.lock().expect("nobody panics here");
+        connection
+            .execute_batch("ALTER TABLE steps DROP COLUMN ran")
+            .expect("take the column away");
+        connection
+            .pragma_update(None, "user_version", 11i64)
+            .expect("declare itself version 11");
+    }
+
+    let reopened = Ledger::open(&directory.0).expect("reopen the older store");
+    let steps = reopened.steps("run-1").expect("read the older rows");
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0].ran, None, "a row written before the column has no line");
+
+    reopened
+        .append_step_started(&started("run-2"))
+        .expect("start a new step");
+    reopened
+        .close_step(
+            "run-2",
+            "compile",
+            1,
+            7,
+            Completion {
+                ran: Some(a_line()),
+                ..completion()
+            },
+        )
+        .expect("the migrated store takes a line");
+    let steps = reopened.steps("run-2").expect("read it back");
+    assert_eq!(steps[0].ran, Some(a_line()));
 }
