@@ -1011,8 +1011,9 @@ impl Executor for InProcessExecutor {
 /// more; engine quotas and the watcher's patience will not. Four is enough to
 /// erase the wait on a normal front, which in the flows written so far is two
 /// or three steps, and few enough not to open a dozen paid conversations for a
-/// run nobody is supervising.
-const AT_ONCE: usize = 4;
+/// run nobody is supervising. Public because `for_each` opens its children
+/// under the same ceiling: one width for the machine, declared once.
+pub const AT_ONCE: usize = 4;
 
 /// How many steps can be opened at once with this remainder.
 ///
