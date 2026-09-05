@@ -24,7 +24,7 @@
 use actions::{LiveSink, Pipe, StepSinks};
 use flow::{
     ActionRegistry, Completion, Execution, Executor, FlowError, FlowFile, InProcessExecutor,
-    RecordStore, StepRecord, SystemClock,
+    RecordStore, Refusal, StepRecord, SystemClock,
 };
 use ledger::Ledger;
 use serde::Serialize;
@@ -328,21 +328,7 @@ impl RecordStore for WatchedStore {
         epoch: u64,
         completion: Completion,
     ) -> Result<(), FlowError> {
-        // `Completion` non è serializzabile: si compone a mano il fatto da
-        // annunciare, con i campi che servono a chi guarda. `said` è il testo
-        // grezzo del passo — l'unico testo che questo motore conserva.
-        let announced = json!({
-            "step_id": step_id,
-            "attempt": attempt,
-            "epoch": epoch,
-            "outcome": format!("{:?}", completion.outcome),
-            "output": completion.output,
-            "said": completion.said,
-            "failure_class": completion.failure_class,
-            "ended_at": completion.ended_at,
-            "bytes_seen": completion.bytes_seen,
-            "bytes_discarded": completion.bytes_discarded,
-        });
+        let announced = announced_close(step_id, attempt, epoch, &completion);
         self.inner
             .close(run_id, step_id, attempt, epoch, completion)?;
         self.runs.publish(
@@ -371,6 +357,25 @@ impl RecordStore for WatchedStore {
     fn halt_requested(&self, run_id: &str) -> Result<bool, FlowError> {
         Ok(self.runs.halt_requested(run_id))
     }
+}
+
+/// The `step_closed` fact as the window receives it. `Completion` does not
+/// serialise, so the fields a watcher needs are picked by hand: `said` is the
+/// raw text of the step, `refusal` the check that refused and what it saw.
+fn announced_close(step_id: &str, attempt: u32, epoch: u64, completion: &Completion) -> Value {
+    json!({
+        "step_id": step_id,
+        "attempt": attempt,
+        "epoch": epoch,
+        "outcome": format!("{:?}", completion.outcome),
+        "output": completion.output,
+        "said": completion.said,
+        "failure_class": completion.failure_class,
+        "refusal": completion.refusal,
+        "ended_at": completion.ended_at,
+        "bytes_seen": completion.bytes_seen,
+        "bytes_discarded": completion.bytes_discarded,
+    })
 }
 
 /// Resumes a run the ledger holds — one parked on a person and just closed —
@@ -930,6 +935,9 @@ pub struct StepPassage {
     pub ended_at: Option<i64>,
     pub outcome: Option<String>,
     pub failure_class: Option<String>,
+    /// Which check refused, where, by which rule and what it saw: the
+    /// structure beside the class, so the window need not parse `said`.
+    pub refusal: Option<Refusal>,
     /// Da dove è partita la corsa: la provenienza, scritta dal sistema.
     pub started_by: String,
     /// Che cosa è entrato in **questo** nodo, quella volta.
@@ -1018,21 +1026,7 @@ pub(crate) fn step_history(
             if record.step_id != step {
                 continue;
             }
-            passages.push(StepPassage {
-                run_id: record.run_id.clone(),
-                attempt: record.attempt,
-                started_at: record.started_at,
-                ended_at: record.ended_at,
-                outcome: record.outcome.map(|outcome| format!("{outcome:?}")),
-                failure_class: record.failure_class.clone(),
-                started_by: run.started_by.clone(),
-                input: record.input.clone(),
-                mandate: signal.text.clone(),
-                signal_who: signal.who.clone(),
-                signal_where: signal.where_from.clone(),
-                said: record.said.clone(),
-                output: record.output.clone(),
-            });
+            passages.push(passage_of(record, &run.started_by, &signal));
         }
     }
 
@@ -1044,6 +1038,26 @@ pub(crate) fn step_history(
     });
     passages.truncate(limit.unwrap_or(25));
     Ok(passages)
+}
+
+/// One record of the ledger, as the history panel reads it.
+fn passage_of(record: &StepRecord, started_by: &str, signal: &RunSignal) -> StepPassage {
+    StepPassage {
+        run_id: record.run_id.clone(),
+        attempt: record.attempt,
+        started_at: record.started_at,
+        ended_at: record.ended_at,
+        outcome: record.outcome.map(|outcome| format!("{outcome:?}")),
+        failure_class: record.failure_class.clone(),
+        refusal: record.refusal.clone(),
+        started_by: started_by.to_owned(),
+        input: record.input.clone(),
+        mandate: signal.text.clone(),
+        signal_who: signal.who.clone(),
+        signal_where: signal.where_from.clone(),
+        said: record.said.clone(),
+        output: record.output.clone(),
+    }
 }
 
 /// Che cosa portava il segnale con cui è partita una corsa.
@@ -1433,6 +1447,48 @@ mod tests {
 
         let unknown = runs.request_halt("nobody").expect_err("an unknown run refuses");
         assert!(unknown.contains("no run nobody"), "{unknown}");
+    }
+
+    fn refused_by_shape() -> Refusal {
+        Refusal::new("answer_shape", "$.verdict", flow::RefusalRule::NotAllowed, "\"remvoe\"")
+    }
+
+    /// The window shows which rule refused and at which path: the check
+    /// travels as structure in the closing fact, beside the class it explains.
+    #[test]
+    fn a_closing_fact_carries_the_refusal_as_structure() {
+        let completion = Completion {
+            outcome: flow::Outcome::Broke,
+            output: None,
+            said: Some("off shape".to_owned()),
+            failure_class: Some("answer_off_shape".to_owned()),
+            refusal: Some(refused_by_shape()),
+            ended_at: 7,
+            bytes_seen: None,
+            bytes_discarded: None,
+        };
+        let announced = announced_close("verdict", 1, 0, &completion);
+        assert_eq!(announced["refusal"]["check"], "answer_shape");
+        assert_eq!(announced["refusal"]["path"], "$.verdict");
+        assert_eq!(announced["refusal"]["rule"], "not_allowed");
+        assert_eq!(announced["refusal"]["seen"], "\"remvoe\"");
+
+        let plain = Completion { refusal: None, ..completion };
+        assert!(announced_close("verdict", 1, 0, &plain)["refusal"].is_null());
+    }
+
+    /// The same structure reaches the history of a step, read back from the
+    /// ledger, so an old refusal is as legible as the one just made.
+    #[test]
+    fn a_passage_carries_the_refusal_of_its_record() {
+        let mut record =
+            StepRecord::started("r1", "verdict", 1, 0, Vec::new(), json!({}), Vec::new(), 1);
+        record.refusal = Some(refused_by_shape());
+        let passage = passage_of(&record, "window", &RunSignal::default());
+        assert_eq!(passage.refusal, Some(refused_by_shape()));
+
+        record.refusal = None;
+        assert_eq!(passage_of(&record, "window", &RunSignal::default()).refusal, None);
     }
 
     fn engine_step(id: &str, deps: Vec<&str>, with: Value) -> Value {
