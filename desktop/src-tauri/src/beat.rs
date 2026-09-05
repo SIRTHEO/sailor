@@ -18,8 +18,10 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use ui::gather::{default_ledger_dir, flow_sources, load_all_flows};
 
-/// How long the deadline waits between two beats of its own.
-pub const EVERY: Duration = Duration::from_secs(60);
+/// How long the deadline waits between two beats of its own. The number is
+/// the census's, not this file's: `flow::timekeeping` is the one answer about
+/// who keeps time, and a beat with a private interval would contradict it.
+pub const EVERY: Duration = Duration::from_secs(flow::WINDOW_BEAT_EVERY_SECONDS);
 
 /// What the ledger says started a run the beat started.
 pub const ORIGIN: &str = "window · schedule";
