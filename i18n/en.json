@@ -530,6 +530,8 @@
   "cli.search.flows_found": "flows: {count} mention «{query}»",
   "cli.search.ledger_found": "ledger and faults: {count} run(s), step(s), event(s), store entr(ies) or fault(s) mention «{query}»",
   "cli.search.ledger_closed": "ledger: could not be opened, so nothing of it was searched ({error})",
+  "cli.search.memory_in_tree": "«{label}», a memory of {tree}",
+  "cli.search.memory_everywhere": "«{label}», a memory of every tree",
   "cli.release.tree_not_brought_to_head": "the release tree could not be brought to HEAD (git {step} failed): remove target/release-tree and release again",
   "window.sketch.title": "Whiteboard",
   "window.sketch.lead": "Draw the flow you want: a block per step, its kind, your words on it, and which block it comes after. The drawing goes to draft-a-flow, which writes a flow that stands beside your others.",
