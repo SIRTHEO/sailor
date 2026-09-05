@@ -614,6 +614,7 @@ mod tests {
                     output: Some(json!({"risposta": SECRET})),
                     said: Some(format!("{SECRET} detto da {step_id}")),
                     failure_class: failure_class.map(str::to_owned),
+                    refusal: None,
                     ended_at,
                     bytes_seen: Some(64),
                     bytes_discarded: Some(0),
