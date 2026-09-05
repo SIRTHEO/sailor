@@ -169,7 +169,7 @@ fn reconcile_opaque(
             actions: &actions,
             shared: &SharedState::new(),
             processes: &NeverRunning,
-            clock: &mut FixedClock::new(20),
+            clock: &FixedClock::new(20),
         })
         .expect("reconciliation succeeded");
     let decision = InProcessExecutor
@@ -284,7 +284,7 @@ fn a_step_held_by_a_living_process_is_left_alone() {
             actions: &actions,
             shared: &SharedState::new(),
             processes: &AsksTheKernel,
-            clock: &mut FixedClock::new(20),
+            clock: &FixedClock::new(20),
         })
         .expect("reconciliation succeeded");
     assert_eq!(report.still_running, vec!["opaque"]);
@@ -308,7 +308,7 @@ fn a_step_held_by_a_living_process_is_left_alone() {
             actions: &actions,
             shared: &SharedState::new(),
             processes: &AsksTheKernel,
-            clock: &mut FixedClock::new(20),
+            clock: &FixedClock::new(20),
         })
         .expect("reconciliation succeeded");
     assert!(report.still_running.is_empty(), "{report:?}");
@@ -496,7 +496,7 @@ fn killed_process_reconstructs_the_same_next_decision_without_replaying_effect()
             actions: &actions,
             shared: &SharedState::new(),
             processes: &NeverRunning,
-            clock: &mut FixedClock::new(20),
+            clock: &FixedClock::new(20),
         })
         .expect("reconciliation succeeded");
     let actual = InProcessExecutor
@@ -534,7 +534,7 @@ fn absent_process_without_landed_effect_closes_and_retries_itself() {
             actions: &actions,
             shared: &BTreeMap::new(),
             processes: &NeverRunning,
-            clock: &mut FixedClock::new(20),
+            clock: &FixedClock::new(20),
         })
         .expect("reconciliation succeeded");
     assert_eq!(report.closed_as_broke, vec!["write"]);
