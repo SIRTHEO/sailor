@@ -624,9 +624,9 @@ mod tests {
     }
 
     fn went(action: &HistoryAskAction, question: Value) -> Value {
-        let mut shared = SharedState::new();
+        let shared = SharedState::new();
         let outcome = action
-            .execute(&question, &mut shared)
+            .execute(&question, &shared)
             .expect("la domanda risponde");
         let ActionOutcome::Went(value) = outcome else {
             panic!("una lettura locale non aspetta nessuno");
@@ -685,7 +685,7 @@ mod tests {
         let mut shared = SharedState::new();
         shared.insert(flow::CURRENT_RUN.to_owned(), json!("chi-chiede"));
         let ActionOutcome::Went(value) = action
-            .execute(&json!({"ask": "open_runs"}), &mut shared)
+            .execute(&json!({"ask": "open_runs"}), &shared)
             .expect("the question answers")
         else {
             panic!("a local reading waits for nobody");
@@ -820,11 +820,11 @@ mod tests {
             "a question written right accuses nobody"
         );
 
-        let mut shared = SharedState::new();
+        let shared = SharedState::new();
         let carried = action
             .execute(
                 &json!({"ask": "last_run", "flow": "a-flow", "text": "from the step before"}),
-                &mut shared,
+                &shared,
             )
             .expect("a field from the step before is not a typo of ours");
         let ActionOutcome::Went(answer) = carried else {
@@ -837,10 +837,10 @@ mod tests {
     #[test]
     fn an_unknown_question_names_the_ones_that_exist() {
         let action = HistoryAskAction::new(None);
-        let mut shared = SharedState::new();
+        let shared = SharedState::new();
 
         let error = action
-            .execute(&json!({"ask": "select_star_from_steps"}), &mut shared)
+            .execute(&json!({"ask": "select_star_from_steps"}), &shared)
             .expect_err("non esiste");
 
         assert_eq!(error.class, "invalid_input");
@@ -984,12 +984,12 @@ mod tests {
     #[test]
     fn a_window_beyond_the_ceiling_is_refused_instead_of_silently_shrunk() {
         let action = HistoryAskAction::new(None);
-        let mut shared = SharedState::new();
+        let shared = SharedState::new();
 
         let error = action
             .execute(
                 &json!({"ask": "failure_classes", "within_last_runs": 5000}),
-                &mut shared,
+                &shared,
             )
             .expect_err("oltre il tetto");
 
