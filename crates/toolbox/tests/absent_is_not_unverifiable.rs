@@ -719,9 +719,9 @@ fn the_flow_action_answers_with_the_findings() {
         "include_defaults": false,
         "version_probes": false
     });
-    let mut shared = SharedState::new();
+    let shared = SharedState::new();
     let ActionOutcome::Went(output) = toolbox::DetectToolsAction
-        .execute(&input, &mut shared)
+        .execute(&input, &shared)
         .expect("a detection does not fail over how the world is")
     else {
         panic!("a detection that ran is always Went")
@@ -740,10 +740,10 @@ fn the_flow_action_answers_with_the_findings() {
 #[test]
 fn the_flow_action_rejects_an_input_it_cannot_read() {
     use flow::{Action, SharedState};
-    let mut shared = SharedState::new();
+    let shared = SharedState::new();
     let input = serde_json::json!({"famiglia": "ai_cli"});
     assert!(toolbox::DetectToolsAction
-        .execute(&input, &mut shared)
+        .execute(&input, &shared)
         .is_err());
 }
 
