@@ -1,0 +1,925 @@
+<title>Il vocabolario dello stato vivo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+  /* I ruoli sono quelli veri di desktop/src/styles.css, notte, copiati esatti:
+     una tavolozza approssimata farebbe giudicare colori che il prodotto non ha. */
+  :root {
+    --bg: #08090a;
+    --paper: #0f1011;
+    --raised: #18191a;
+    --line: #23252a;
+    --band-fill: rgb(247 248 248 / 3.5%);
+
+    --ink: #f7f8f8;
+    --muted: #8a8f98;
+
+    --state-waiting: #8a8f98;
+    --state-running: #4ea7fc;
+    --state-went: #4cb782;
+    --state-broke: #eb5757;
+    --state-capped: #f2c94c;
+    --state-human: #a78bfa;
+
+    --ok: #4cb782;
+    --warn: #f2c94c;
+    --danger: #eb5757;
+    --focus: #828fff;
+    --accent-fill: #5e6ad2;
+    --on-accent: #ffffff;
+
+    --font-display: Inter, "Helvetica Neue", sans-serif;
+    --font-data: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+
+    --radius: 4px;
+    --radius-lg: 8px;
+    --radius-pill: 999px;
+    --shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-display);
+    font-size: 14px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 48px 24px 96px;
+  }
+
+  /* ── la testa ─────────────────────────────────────────────────────── */
+
+  header.top {
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 24px;
+    margin-bottom: 8px;
+  }
+
+  h1 {
+    font-size: 30px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin: 0 0 8px;
+    text-wrap: balance;
+  }
+
+  .lede {
+    color: var(--muted);
+    max-width: 64ch;
+    margin: 0 0 20px;
+  }
+
+  .lede strong { color: var(--ink); font-weight: 500; }
+
+  .tally {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .verdict {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-pill);
+    padding: 3px 10px 3px 8px;
+    font-size: 11px;
+    font-family: var(--font-data);
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .verdict::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: var(--radius-pill);
+    background: currentColor;
+  }
+
+  .verdict[data-v="c'è"] { color: var(--ok); }
+  .verdict[data-v="debole"] { color: var(--warn); }
+  .verdict[data-v="manca"] { color: var(--danger); }
+
+  /* ── i gruppi ─────────────────────────────────────────────────────── */
+
+  section { margin-top: 44px; }
+
+  h2 {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 4px;
+  }
+
+  .about {
+    color: var(--muted);
+    font-size: 13px;
+    margin: 0 0 18px;
+    max-width: 66ch;
+  }
+
+  /* ── un caso ──────────────────────────────────────────────────────── */
+
+  .case {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    gap: 24px;
+    align-items: start;
+    padding: 20px 0;
+    border-top: 1px solid var(--line);
+  }
+
+  @media (max-width: 760px) {
+    .case { grid-template-columns: 1fr; gap: 14px; }
+  }
+
+  .specimen {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow-x: auto;
+  }
+
+  .say { min-width: 0; }
+
+  .say h3 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0 0 2px;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .say p { margin: 6px 0 0; color: var(--muted); max-width: 62ch; }
+  .say p.now { color: var(--ink); }
+  .say b {
+    font-family: var(--font-data);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-right: 6px;
+  }
+  code {
+    font-family: var(--font-data);
+    font-size: 12px;
+    color: var(--ink);
+    background: var(--raised);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 0 4px;
+  }
+
+  /* ── il nodo, come lo disegna la tela ─────────────────────────────── */
+
+  .node {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--state, var(--muted));
+    border-radius: var(--radius);
+    min-width: 240px;
+  }
+
+  .node[data-calls] {
+    border-width: 2px;
+    border-left-width: 3px;
+    border-color: var(--state, var(--focus));
+    background: var(--raised);
+  }
+
+  .node__head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--line);
+    font-size: 10px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .node__state {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--state, var(--muted));
+  }
+
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: var(--radius-pill);
+    background: var(--state, var(--muted));
+    flex: 0 0 auto;
+  }
+
+  .node[data-state="running"] .dot { animation: breath 2.4s ease-in-out infinite; }
+
+  @keyframes breath {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+
+  .node__name {
+    padding: 10px;
+    font-family: var(--font-data);
+    font-size: 13px;
+  }
+
+  .node__foot {
+    display: flex;
+    gap: 12px;
+    padding: 0 10px 9px;
+    font-family: var(--font-data);
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* ── l'anello di aggiornamento: la proposta ───────────────────────── */
+
+  .ring {
+    width: 11px;
+    height: 11px;
+    border-radius: var(--radius-pill);
+    border: 1.5px solid color-mix(in srgb, var(--state, var(--muted)) 30%, transparent);
+    border-top-color: var(--state, var(--muted));
+    animation: spin 0.7s linear infinite;
+    flex: 0 0 auto;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .hand { font-size: 12px; line-height: 1; }
+
+  /* ── la riga della colonna ────────────────────────────────────────── */
+
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    background: var(--paper);
+    font-size: 13px;
+  }
+
+  .row[data-open] { border-color: var(--line); background: var(--raised); }
+  .row__name { font-family: var(--font-data); }
+  .row__note { margin-left: auto; color: var(--muted); font-family: var(--font-data); font-size: 11px; }
+  .row__lane { width: 7px; height: 7px; border-radius: var(--radius-pill); flex: 0 0 auto; }
+
+  /* ── la linguetta di un terminale ─────────────────────────────────── */
+
+  .tab {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    font-size: 12px;
+    font-family: var(--font-data);
+  }
+
+  .tab__where { color: var(--muted); }
+  .tab__word {
+    margin-left: auto;
+    color: var(--state, var(--muted));
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .stream {
+    font-family: var(--font-data);
+    font-size: 11px;
+    color: var(--muted);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 6px 8px;
+    height: 46px;
+    overflow: hidden;
+  }
+
+  .stream span { display: block; opacity: 0; animation: arrive 3.2s linear infinite; }
+  .stream span:nth-child(2) { animation-delay: 0.8s; }
+  .stream span:nth-child(3) { animation-delay: 1.6s; }
+  .stream span:nth-child(4) { animation-delay: 2.4s; }
+
+  @keyframes arrive {
+    0% { opacity: 0; }
+    6% { opacity: 1; color: var(--ink); }
+    30% { opacity: 1; color: var(--muted); }
+    100% { opacity: 0.35; }
+  }
+
+  /* ── la barra in alto ─────────────────────────────────────────────── */
+
+  .bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    font-size: 12px;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 2px 8px;
+    font-family: var(--font-data);
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* ── il taccuino finale ───────────────────────────────────────────── */
+
+  /* ── una catena ───────────────────────────────────────────────────── */
+
+  .chain {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .link {
+    flex: 1 1 0;
+    min-width: 150px;
+    border: 1px solid var(--line);
+    border-right: 0;
+    padding: 10px 12px;
+    background: var(--paper);
+  }
+
+  .link:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+  .link:last-child { border-right: 1px solid var(--line); border-radius: 0 var(--radius) var(--radius) 0; }
+  .link[data-gap] { background: var(--raised); border-color: var(--danger); border-right-color: var(--danger); }
+  .link[data-gap] + .link { border-left-color: var(--danger); }
+
+  .link__no {
+    font-family: var(--font-data);
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  .link__what {
+    font-size: 13px;
+    font-weight: 500;
+    margin: 2px 0 4px;
+  }
+
+  .link__how {
+    font-family: var(--font-data);
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.45;
+  }
+
+  .link[data-gap] .link__how { color: var(--danger); }
+
+  table.audit {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-top: 8px;
+  }
+
+  table.audit th {
+    text-align: left;
+    font-size: 10px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+    padding: 6px 10px 6px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  table.audit td {
+    padding: 8px 10px 8px 0;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+    color: var(--muted);
+  }
+
+  table.audit td:first-child { color: var(--ink); font-family: var(--font-data); font-size: 11px; white-space: nowrap; }
+  table.audit td b { color: var(--ink); font-weight: 500; font-family: inherit; font-size: 12px; letter-spacing: 0; text-transform: none; }
+
+  .method {
+    margin-top: 56px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    background: var(--paper);
+  }
+
+  .method h2 { margin-bottom: 12px; }
+  .method ol { margin: 0; padding-left: 20px; color: var(--muted); }
+  .method li { margin-bottom: 8px; }
+  .method li strong { color: var(--ink); font-weight: 500; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dot, .ring, .stream span { animation: none; }
+    .stream span { opacity: 1; }
+  }
+</style>
+
+<div class="page">
+  <header class="top">
+    <h1>Il vocabolario dello stato vivo</h1>
+    <p class="lede">
+      Ogni caso che la finestra può trovarsi a raccontare, disegnato con i ruoli veri del
+      foglio di stile. Per ciascuno: <strong>cosa succede davvero</strong>, cosa la finestra
+      mostra <strong>oggi</strong>, e cosa propongo. Serve a una cosa sola: che tu possa
+      puntare il dito. Un commento su un caso vale più di una descrizione a voce, perché il
+      caso è già lì e non c'è da immaginarlo.
+    </p>
+    <div class="tally">
+      <span class="verdict" data-v="c'è">c'è — 11 casi</span>
+      <span class="verdict" data-v="debole">debole — 6 casi</span>
+      <span class="verdict" data-v="manca">manca — 9 casi</span>
+      <span class="verdict" style="color: var(--focus)">1 catena intera</span>
+    </div>
+  </header>
+
+  <!-- ══ UN PASSO ═══════════════════════════════════════════════════ -->
+  <section>
+    <h2>Un passo, sulla tela</h2>
+    <p class="about">
+      Il motore manda già cinque fatti per corsa: <code>step_started</code>,
+      <code>step_text</code>, <code>step_closed</code>, <code>run_ended</code>,
+      <code>stop_requested</code>. Il nodo li legge tutti tranne uno — e proprio quello è
+      l'unico che dice «sta parlando adesso».
+    </p>
+
+    <div class="case">
+      <div class="specimen">
+        <div class="node" data-state="waiting" style="--state: var(--state-waiting)">
+          <div class="node__head">check <span class="node__state"><span class="dot"></span>waiting</span></div>
+          <div class="node__name">working-tree-is-clean</div>
+        </div>
+      </div>
+      <div class="say">
+        <h3>Non è ancora partito <span class="verdict" data-v="c'è">c'è</span></h3>
+        <p><b>oggi</b> pallino grigio fermo e la parola. Il colore non è mai da solo: è il divieto 5.</p>
+      </div>
+    </div>
+
+    <div class="case">
+      <div class="specimen">
+        <div class="node" data-state="running" style="--state: var(--state-running)">
+          <div class="node__head">agent <span class="node__state"><span class="dot"></span>running</span></div>
+          <div class="node__name">scrivi-la-patch</div>
+          <div class="node__foot"><span>pid 41773</span></div>
+        </div>
+      </div>
+      <div class="say">
+        <h3>Sta correndo <span class="verdict" data-v="c'è">c'è</span></h3>
+        <p><b>oggi</b> il pallino respira, 2,4 secondi. Registro volutamente quieto: dice «sono vivo», non «guardami». Con dieci agenti insieme, dieci richiami sarebbero rumore.</p>
+      </div>
+    </div>
+
+    <div class="case">
+      <div class="specimen">
+        <div class="node" data-state="running" style="--state: var(--state-running)">
+          <div class="node__head">agent <span class="node__state"><span class="ring"></span>speaking</span></div>
+          <div class="node__name">scrivi-la-patch</div>
+          <div class="node__foot"><span>pid 41773</span><span>1,4 kB</span></div>
+        </div>
+        <div class="stream">
+          <span>› reading crates/actions/src/lib.rs</span>
+          <span>› 3 hunks</span>
+          <span>› applying</span>
+          <span>› done</span>
+        </div>
+      </div>
+      <div class="say">
+        <h3>Sta parlando adesso <span class="verdict" data-v="manca">manca</span></h3>
+        <p class="now">Questo è il tuo cerchio di aggiornamento. Il motore manda <code>step_text</code> a ogni pezzo di uscita e il nodo lo butta via: sulla tela un agente che ha appena stampato trenta righe e uno bloccato da otto minuti sono identici.</p>
+        <p><b>propongo</b> l'anello gira mentre arrivano byte e si ferma dopo ~800 ms di silenzio; accanto, quanto ha detto finora. La differenza fra «vivo» e «sta lavorando in questo momento» diventa visibile senza aprire la console.</p>
+      </div>
+    </div>
+
+    <div class="case">
+      <div class="specimen">
+        <div class="node" data-state="broke" style="--state: var(--state-broke)">
+          <div class="node__head">agent <span class="node__state"><span class="dot"></span>broke</span></div>
+          <div class="node__name">scrivi-la-patch</div>
+          <div class="node__foot"><span>2ª di 3</span></div>
+        </div>
+      </div>
+      <div class="say">
+        <h3>Si è rotto e ci riprova <span class="verdict" data-v="debole">debole</span></h3>
+        <p><b>oggi</b> rosso e «2ª di 3». Ma è lo stesso rosso di chi ha finito i tentativi: due situazioni opposte — una si sistema da sola, l'altra ti aspetta — con lo stesso segno.</p>
+        <p><b>propongo</b> mentre il ritentativo è in corso lo stato torna <code>running</code> con il conto dei tentativi accanto; il rosso resta a chi non riproverà più.</p>
+      </div>
+    </div>
+
+    <div class="case">
+      <div class="specimen">
+        <div class="node" data-state="human" data-calls style="--state: var(--state-human)">
+          <div class="node__head">a person <span class="node__state"><span class="hand">✋</span>handed to you</span></div>
+          <div class="node__name">decidi-se-pubblicare</div>
+          <div class="node__foot"><span>2 more waiting</span></div>
+        </div>
+      </div>
+      <div class="say">
+        <h3>Aspetta una persona <span class="verdict" data-v="debole">debole</span></h3>
+        <p><b>oggi</b> viola, parola, e il nodo è l'unico isolato con il bordo doppio: la gravità è già giusta. Quello che manca è il segno che si legge da lontano — la mano.</p>
+        <p><b>propongo</b> ✋ al posto del pallino, qui e ovunque questo stato compaia: colonna, elenco corse, barra. È l'unico stato che non si sblocca da solo, e merita un segno suo e non una tinta in più.</p>
+      </div>
+    </div>
+
+    <div class="case">
+      <div class="specimen">
+        <div class="node" data-state="capped" data-calls style="--state: var(--state-capped)">
+          <div class="node__head">agent <span class="node__state"><span class="dot"></span>capped</span></div>
+          <div class="node__name">chiedi-al-modello</div>
+          <div class="node__foot"><span>tetto di spesa</span></div>
+        </div>
+      </div>
+      <div class="say">
+        <h3>Fermato dal tetto <span class="verdict" data-v="c'è">c'è</span></h3>
+        <p><b>oggi</b> giallo, isolato per secondo. Non è un guasto e non deve leggersi come tale.</p>
+      </div>
+    </div>
+
+    <div class="case">
+      <div class="specimen">
+        <div class="node" data-state="went" style="--state: var(--state-went)">
+          <div class="node__head">check <span class="node__state"><span class="dot"></span>went</span></div>
+          <div class="node__name">working-tree-is-clean</div>
+          <div class="node__foot"><span>4,2 s</span></div>
+        </div>
+      </div>
+      <div class="say">
+        <h3>È andato <span class="verdict" data-v="c'è">c'è</span></h3>
+        <p><b>oggi</b> verde e la durata accanto alla parola.</p>
+      </div>
+    </div>
+
+    <div class="case">
+      <div class="specimen">
+        <div class="node" data-state="waiting" style="--state: var(--state-waiting)">
+          <div class="node__head">agent <span class="node__state"><span class="dot"></span>stopped by hand</span></div>
+          <div class="node__name">scrivi-la-patch</div>
+          <div class="node__foot"><span>fermato da te, 09:41</span></div>
+        </div>
+      </div>
+      <div class="say">
+        <h3>L'hai fermato tu <span class="verdict" data-v="manca">manca</span></h3>
+        <p><b>oggi</b> il motore manda <code>stop_requested</code> e la tela non lo legge: chiedi lo stop, il passo in corso finisce comunque, e per quei secondi lo schermo non dice che hai già chiesto. Si preme due volte.</p>
+        <p><b>propongo</b> appena chiesto, il nodo e la barra dicono «si ferma dopo questo passo», con chi l'ha chiesto e quando.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ UN FLUSSO ═════════════════════════════════════════════════ -->
+  <section>
+    <h2>Un flusso, nella colonna</h2>
+    <p class="about">
+      Qui sta il buco più grande. La colonna elenca i flussi con il numero di passi e basta:
+      quale sta correndo <em>adesso</em>, quale ti aspetta, quale si è rotto stanotte, non lo
+      dice nessuno. È la domanda «cosa sta succedendo» fatta al posto in cui la si fa.
+    </p>
+
+    <div class="case">
+      <div class="specimen">
+        <div class="row"><span class="row__lane" style="background: #4ea7fc"></span><span class="row__name">prima-corsa</span><span class="row__note">1 step</span></div>
+        <div class="row" data-open><span class="row__lane" style="background: #a076ca"></span><span class="row__name">relay</span><span class="row__note">7 steps</span></div>
+      </div>
+      <div class="say">
+        <h3>Oggi: nome, tinta, numero di passi <span class="verdict" data-v="manca">manca</span></h3>
+        <p>Trentuno righe tutte uguali. Il pallino porta la tinta della corsia, che serve a ritrovare i passi sulla carta, e non dice niente sullo stato.</p>
+      </div>
+    </div>
+
+    <div class="case">
+      <div class="specimen">
+        <div class="row" data-open style="--state: var(--state-running)">
+          <span class="ring"></span><span class="row__name">relay</span><span class="row__note">3 di 7 · 12 s</span>
+        </div>
+        <div class="row" style="--state: var(--state-human)">
+          <span class="hand">✋</span><span class="row__name">pubblica-la-versione</span><span class="row__note">aspetta te</span>
+        </div>
+        <div class="row" style="--state: var(--state-broke)">
+          <span class="dot" style="--state: var(--state-broke)"></span><span class="row__name">notte</span><span class="row__note">rotto · 02:14</span>
+        </div>
+        <div class="row"><span class="row__lane" style="background: #4ea7fc"></span><span class="row__name">prima-corsa</span><span class="row__note">1 step</span></div>
+      </div>
+      <div class="say">
+        <h3>Proposta: la colonna dice cosa sta succedendo <span class="verdict" data-v="manca">manca</span></h3>
+        <p class="now">Quattro righe, quattro stati diversi, leggibili senza aprire niente: sta correndo (anello + a che punto è), aspetta te (mano), l'ultima corsa si è rotta (e quando), non è mai partito.</p>
+        <p><b>si può fare oggi</b> i fatti ci sono già tutti: le corse vive stanno in <code>executions</code>, quelle finite nel deposito con esito e istante. Nessun cambio di motore.</p>
+      </div>
+    </div>
+
+    <div class="case">
+      <div class="specimen">
+        <div class="row"><span class="row__lane" style="background: #4cb782"></span><span class="row__name">esamina-la-repo</span><span class="row__note" style="color: var(--warn)">non salvato</span></div>
+        <div class="row"><span class="row__name" style="color: var(--danger)">notte</span><span class="row__note" style="color: var(--danger)">unknown fie…</span></div>
+      </div>
+      <div class="say">
+        <h3>Non salvato · file rotto <span class="verdict" data-v="c'è">c'è</span></h3>
+        <p><b>oggi</b> il pallino del non salvato e il flusso illeggibile che resta in lista, in rosso, con il motivo. Un flusso rotto che sparisce sarebbe la bugia peggiore.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ UN TERMINALE ══════════════════════════════════════════════ -->
+  <section>
+    <h2>Un terminale</h2>
+    <p class="about">
+      Tre stati oggi: <code>alive</code>, <code>ended</code>, <code>no longer known</code>. Il
+      flusso di byte esiste già ed è volutamente fuori da React — un <code>setState</code> per
+      pezzo ridisegnerebbe la finestra a ogni riga di una compilazione. Il segno che parla si
+      può accendere senza rientrare in React: basta un contatore che scatta al massimo
+      quattro volte al secondo.
+    </p>
+
+    <div class="case">
+      <div class="specimen">
+        <div class="tab" style="--state: var(--state-went)">
+          <span class="dot" style="--state: var(--state-went)"></span><span>ttys004</span><span class="tab__where">un-albero</span><span class="tab__word">alive</span>
+        </div>
+      </div>
+      <div class="say">
+        <h3>Aperto e zitto <span class="verdict" data-v="c'è">c'è</span></h3>
+        <p><b>oggi</b> il tty come àncora — non un nome di prodotto, non un titolo letto dall'uscita — l'albero in cui sta, e la parola.</p>
+      </div>
+    </div>
+
+    <div class="case">
+      <div class="specimen">
+        <div class="tab" style="--state: var(--state-running)">
+          <span class="ring"></span><span>ttys006</span><span class="tab__where">un-altro</span><span class="tab__word">speaking</span>
+        </div>
+        <div class="stream">
+          <span>Compiling ledger v0.1.0</span>
+          <span>Compiling actions v0.1.0</span>
+          <span>Compiling sailor v0.1.0</span>
+          <span>Finished in 41.2s</span>
+        </div>
+      </div>
+      <div class="say">
+        <h3>Sta parlando <span class="verdict" data-v="manca">manca</span></h3>
+        <p class="now">La cosa che hai chiesto per prima. Con due o tre terminali aperti, quello che si muove si trova a colpo d'occhio invece che leggendo tre riquadri.</p>
+        <p><b>propongo</b> l'anello gira finché arrivano byte, si spegne dopo ~800 ms di silenzio; e sulla linguetta non a fuoco resta il conto di quanto ha detto da quando non la guardi.</p>
+      </div>
+    </div>
+
+    <div class="case">
+      <div class="specimen">
+        <div class="tab" style="--state: var(--state-human)">
+          <span class="hand">✋</span><span>ttys006</span><span class="tab__where">un-altro</span><span class="tab__word">wants you</span>
+        </div>
+      </div>
+      <div class="say">
+        <h3>Aspetta che tu scriva <span class="verdict" data-v="manca">manca</span></h3>
+        <p>Un programma che ha fatto una domanda e aspetta una riga è indistinguibile da uno bloccato. La cassetta della posta esiste già nel motore.</p>
+        <p><b>propongo</b> ✋ anche qui — è lo stesso stato del passo consegnato a una persona, e deve avere lo stesso segno. Da decidere insieme: come si riconosce l'attesa, se dal silenzio dopo una domanda o da un fatto che il motore sa già.</p>
+      </div>
+    </div>
+
+    <div class="case">
+      <div class="specimen">
+        <div class="tab" style="--state: var(--state-waiting)">
+          <span class="dot"></span><span>ttys004</span><span class="tab__where">un-albero</span><span class="tab__word">ended</span>
+        </div>
+        <div class="tab" style="--state: var(--state-capped)">
+          <span class="dot" style="--state: var(--state-capped)"></span><span>ttys009</span><span class="tab__where">una-casa</span><span class="tab__word">no longer known</span>
+        </div>
+      </div>
+      <div class="say">
+        <h3>Finito · non più saputo <span class="verdict" data-v="c'è">c'è</span></h3>
+        <p><b>oggi</b> «finito» quando il processo è morto davvero; «non più saputo» quando è caduto il canale degli eventi — cioè quando la finestra non può più garantire niente. Sono due cose diverse e restano due parole diverse.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ LA FINESTRA ═══════════════════════════════════════════════ -->
+  <section>
+    <h2>La finestra stessa</h2>
+    <p class="about">
+      Il vincolo permanente è «un'interfaccia che nasconde cosa succede è il contrario del
+      prodotto». Vale anche per i guasti della finestra.
+    </p>
+
+    <div class="case">
+      <div class="specimen">
+        <div class="bar">
+          <span class="chip" style="color: var(--warn); border-color: var(--warn)">sample data</span>
+          <span class="chip">no run of this flow yet</span>
+        </div>
+        <div class="bar">
+          <span class="chip" style="color: var(--danger); border-color: var(--danger)">the engine is not answering</span>
+        </div>
+      </div>
+      <div class="say">
+        <h3>Dati d'esempio · motore muto <span class="verdict" data-v="c'è">c'è</span></h3>
+        <p><b>oggi</b> la barra dice sempre da dove vengono i flussi: dal disco, da un campione, o da nessuna parte. Un campione scambiato per il vero è la bugia più costosa che questa finestra possa dire.</p>
+      </div>
+    </div>
+
+    <div class="case">
+      <div class="specimen">
+        <div class="bar">
+          <span class="ring" style="--state: var(--state-running)"></span>
+          <span style="font-family: var(--font-data); font-size: 12px">Sailor — rebuilding…</span>
+        </div>
+        <div class="bar" style="border-color: var(--danger)">
+          <span class="dot" style="--state: var(--state-broke)"></span>
+          <span style="font-family: var(--font-data); font-size: 12px; color: var(--danger)">rebuild FAILED: stai guardando l'ultima versione buona</span>
+        </div>
+      </div>
+      <div class="say">
+        <h3>Si sta ricostruendo · ricostruzione fallita <span class="verdict" data-v="c'è">c'è</span></h3>
+        <p><b>oggi</b> nel titolo della finestra, non solo in pagina: la notizia deve arrivare dal programma <em>già acceso</em>, che è quello vecchio. Se vivesse solo nella pagina, la prima volta che serve non arriverebbe.</p>
+      </div>
+    </div>
+
+    <div class="case">
+      <div class="specimen">
+        <div class="bar">
+          <span class="dot" style="--state: var(--state-went)"></span>
+          <span class="chip">battito · 4 s fa</span>
+        </div>
+        <div class="bar">
+          <span class="dot" style="--state: var(--state-capped)"></span>
+          <span class="chip" style="color: var(--warn); border-color: var(--warn)">battito · 3 min fa</span>
+        </div>
+      </div>
+      <div class="say">
+        <h3>Il battito è in ritardo <span class="verdict" data-v="debole">debole</span></h3>
+        <p><b>oggi</b> il battito arriva come fatto sul canale ed è disegnato, ma il ritardo non cambia niente nello schermo: un battito di tre minuti fa e uno di quattro secondi si leggono uguali.</p>
+        <p><b>propongo</b> oltre la soglia il segno diventa giallo e dice da quanto. È l'unica cosa che distingue «tutto fermo perché non c'è niente da fare» da «tutto fermo perché nessuno guarda più».</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ LE CATENE ═════════════════════════════════════════════════ -->
+  <section>
+    <h2>Una catena intera: il passo consegnato a te</h2>
+    <p class="about">
+      Non uno stato ma una <em>vita</em>, dal momento in cui il flusso ti passa il lavoro a
+      quello in cui riparte. L'ho misurata nel codice invece di supporla: <strong>il motore
+      la sa fare tutta</strong> — le tre azioni esistono, sono registrate e la finestra le
+      chiama davvero. Quello che manca sta in mezzo, ed è esattamente il banco di lavoro che
+      hai descritto.
+    </p>
+
+    <div class="chain">
+      <div class="link">
+        <div class="link__no">1 · c'è</div>
+        <div class="link__what">Il flusso ti consegna</div>
+        <div class="link__how">handed_to_agent: nessun processo nasce, il mandato resta scritto nel record. Il nodo diventa viola e viene isolato.</div>
+      </div>
+      <div class="link">
+        <div class="link__no">2 · c'è</div>
+        <div class="link__what">Lo prendi</div>
+        <div class="link__how">sailor step open --as te. Rifiuta chi ha già chiuso quel passo: giudice e autore non coincidono.</div>
+      </div>
+      <div class="link" data-gap>
+        <div class="link__no">3 · manca</div>
+        <div class="link__what">Il banco di lavoro</div>
+        <div class="link__how">Un terminale nell'albero giusto, col mandato già dentro, dove parli col modello prima di decidere. Oggi lo apri a mano e ci arrivi da solo.</div>
+      </div>
+      <div class="link">
+        <div class="link__no">4 · c'è</div>
+        <div class="link__what">Decidi</div>
+        <div class="link__how">sailor step close --outcome went|broke --said «…». La tua frase entra nel deposito insieme all'esito.</div>
+      </div>
+      <div class="link">
+        <div class="link__no">5 · c'è</div>
+        <div class="link__what">Il flusso riparte</div>
+        <div class="link__how">La corsa riprende dentro questa finestra: la console la segue e Stop la ferma.</div>
+      </div>
+    </div>
+
+    <div class="case" style="border-top: 0; padding-top: 22px">
+      <div class="specimen">
+        <div class="node" data-state="human" data-calls style="--state: var(--state-human)">
+          <div class="node__head">a person <span class="node__state"><span class="hand">✋</span>handed to you</span></div>
+          <div class="node__name">decidi-se-pubblicare</div>
+          <div class="node__foot"><span>da 4 min</span></div>
+        </div>
+        <div class="row" data-open style="--state: var(--state-running)">
+          <span class="ring"></span><span class="row__name">ttys011 · il banco</span><span class="row__note">speaking</span>
+        </div>
+        <div class="bar">
+          <span class="chip" style="color: var(--ok); border-color: var(--ok)">è andato</span>
+          <span class="chip" style="color: var(--danger); border-color: var(--danger)">si è rotto</span>
+          <span class="chip">e scrivi cosa hai visto</span>
+        </div>
+      </div>
+      <div class="say">
+        <h3>Quello che propongo di aggiungere <span class="verdict" data-v="manca">manca</span></h3>
+        <p class="now">Dal nodo stesso: <strong>prendilo</strong> · <strong>aprilo come terminale</strong> · <strong>decidi</strong>. Il terminale nasce nell'albero della corsa (la colonna <code>worktree</code> di quella corsa esiste da ieri), e la prima riga che riceve è <code>sailor step open</code>: l'agente che vive lì dentro legge il mandato e da lì in poi ci parli tu.</p>
+        <p><b>si può fare senza toccare il motore</b> aprire un terminale in un albero e scrivergli dentro una riga sono due poteri che la finestra ha già (<code>terminal_open</code>, la cassetta della posta). Manca la cucitura, non il pezzo.</p>
+        <p><b>da decidere insieme</b> se chiudendo il passo il banco si chiude da solo, resta aperto, o te lo chiede.</p>
+      </div>
+    </div>
+
+    <div class="case">
+      <div class="specimen">
+        <div class="row" style="--state: var(--state-human)"><span class="hand">✋</span><span class="row__name">Runs</span><span class="row__note">l'unico posto</span></div>
+        <div class="row"><span class="row__lane" style="background: var(--muted)"></span><span class="row__name">Board</span><span class="row__note">nessun gesto</span></div>
+        <div class="row"><span class="row__lane" style="background: var(--muted)"></span><span class="row__name">Terminals</span><span class="row__note">nessun gesto</span></div>
+      </div>
+      <div class="say">
+        <h3>Il gesto non sta dove si vede lo stato <span class="verdict" data-v="debole">debole</span></h3>
+        <p>Misurato: <code>take_handed_step</code> e <code>close_handed_step</code> sono chiamati da un solo file, montato in un solo posto — dentro la schermata Runs, sotto una corsa. Il viola però lo vedi sulla lavagna. Vedi lo stato in un posto e il gesto sta in un altro: è la stessa distanza fra «lo so» e «posso farci qualcosa».</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ L'AUDIT ═══════════════════════════════════════════════════ -->
+  <section>
+    <h2>Allargare il controllo a tutto il resto — come lo farei</h2>
+    <p class="about">
+      Chiedevi come verificare il resto del codice con lo stesso occhio. Una catena si rompe
+      sempre in uno di quattro punti, e tutti e quattro si possono controllare a macchina,
+      non a memoria.
+    </p>
+
+    <table class="audit">
+      <thead>
+        <tr><th>anello</th><th>la domanda</th><th>come lo misuro, oggi</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1 · produce</td>
+          <td><b>Il motore sa dirlo?</b> Il fatto esiste come evento, comando o riga del deposito.</td>
+          <td>Elenco dei <code>#[tauri::command]</code> e dei tipi di evento, letti dal sorgente.</td>
+        </tr>
+        <tr>
+          <td>2 · arriva</td>
+          <td><b>La finestra lo riceve?</b> Qualcuno chiama quel comando o legge quell'evento.</td>
+          <td>Fatto adesso: <strong>53 comandi dichiarati, 52 raggiunti</strong>. L'unico mai chiamato è <code>beat_report</code>.</td>
+        </tr>
+        <tr>
+          <td>3 · si vede dove serve</td>
+          <td><b>Il gesto sta dove sta lo stato?</b> Chi vede il problema può agire lì.</td>
+          <td>Mappa comando → schermata. È qui che casca la consegna: gesto in Runs, stato sulla lavagna.</td>
+        </tr>
+        <tr>
+          <td>4 · resta</td>
+          <td><b>Una prova diventa rossa se sparisce?</b> Altrimenti è vero solo oggi.</td>
+          <td>Per ogni segno accettato, un test che lo cerca nello stato che lo richiede.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p class="about" style="margin-top: 18px">
+      Le catene da passare al setaccio, oltre a quella qui sopra: una corsa (avvio → passi →
+      stop chiesto → fine → cosa è costato), un terminale (aperto → parla → cassetta → tenuto
+      da una corsa → chiuso → non più saputo), un albero di lavoro (creato → usato da un passo
+      → pulito), il tetto di spesa (misurato → avvicinato → superato → chi lo alza), un motore
+      (installato → autenticato → quota finita → sostituito). Il primo passaggio l'ho già
+      fatto sui due numeri della riga 2; il resto è lavoro di un pomeriggio, e ogni buco che
+      esce diventa un caso su questa pagina invece di una lamentela.
+    </p>
+  </section>
+
+  <!-- ══ IL METODO ═════════════════════════════════════════════════ -->
+  <div class="method">
+    <h2>Come ti faccio entrare l'idea in testa — la proposta di metodo</h2>
+    <ol>
+      <li><strong>Questa pagina è il pezzo di carta comune.</strong> Ogni caso ha un nome. Da qui in avanti, invece di «i terminali non sono chiari», possiamo dire «il caso <em>sta parlando</em>»: è la stessa frase per tutti e due e indica una cosa sola.</li>
+      <li><strong>Tu commenti sui casi, non sul prodotto.</strong> Un commento per caso: «sì», «no, troppo», «manca questo». Anche solo tre parole. Ogni commento diventa un lavoro con un confine, e i confini sono quello che mi manca quando la richiesta è «migliora la ui».</li>
+      <li><strong>Quello che manca lo aggiungiamo qui prima che nel prodotto.</strong> Se ti viene in mente un caso che non c'è — un flusso in coda, un modello finito, due corse dello stesso flusso insieme — si disegna qui in due minuti e si guarda, invece di costruirlo e scoprirlo dopo.</li>
+      <li><strong>Ogni caso accettato diventa una prova.</strong> Il segno che deve comparire in quello stato lo verifica un test, come per il resto: così «l'anello gira quando parla» smette di essere un'opinione e diventa qualcosa che diventa rosso se sparisce.</li>
+      <li><strong>Un caso alla volta, in ordine di quanto ti fa perdere tempo.</strong> Il mio ordine: l'anello che parla (terminali e passi), la mano ovunque, la colonna che dice cosa sta succedendo, lo stop chiesto, il battito in ritardo. Se il tuo ordine è diverso, il tuo vince.</li>
+    </ol>
+  </div>
+</div>
