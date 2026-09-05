@@ -70,6 +70,17 @@ impl ToolChoice {
     }
 }
 
+/// The engines a step's `with` names, in the order written. One name is a
+/// chain of one — the shape `ToolChoice` already accepts — and a `tool` of
+/// any other shape names none. Every reader of a flow's chains asks here, so
+/// a check cannot read a step one way and the run another.
+pub fn engines_named_in(with: &Value) -> Vec<String> {
+    with.get("tool")
+        .and_then(|tool| serde_json::from_value::<ToolChoice>(tool.clone()).ok())
+        .map(|choice| choice.ids().to_vec())
+        .unwrap_or_default()
+}
+
 /// **PERCHÉ QUESTA STRUTTURA RACCOGLIE CIÒ CHE NON CONOSCE INVECE DI SCARTARLO.**
 ///
 /// Il 30/08/2026 un flusso di prova scriveva `"prompt"` dove va `"stdin"`. Il
@@ -211,3 +222,22 @@ pub const BLIND: &str = "blind";
 /// only word it takes.
 pub const TREE: &str = "tree";
 pub const A_TREE_OF_ITS_OWN: &str = "own";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// A name written as a word and the same name written as a list of one
+    /// are the same chain; a `tool` of any other shape names nobody.
+    #[test]
+    fn one_name_is_a_chain_of_one_and_a_list_keeps_its_order() {
+        assert_eq!(engines_named_in(&json!({"tool": "uno"})), vec!["uno"]);
+        assert_eq!(
+            engines_named_in(&json!({"tool": ["uno", "due"]})),
+            vec!["uno", "due"]
+        );
+        assert!(engines_named_in(&json!({"tool": 3})).is_empty());
+        assert!(engines_named_in(&json!({"bin": "sh"})).is_empty());
+    }
+}
