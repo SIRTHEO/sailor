@@ -651,9 +651,27 @@ Starting point, so the mandate builds on it instead of beside it.
    `state/memory.md` into a tree's `AGENTS.md`/`CLAUDE.md` or a command line's
    settings, and no descriptor has a field that would say how such a pointer
    is written for that line. The sentence above about `@AGENTS.md`,
-   `AGENTS.md` and `context.fileName` is the plan, and it is unmeasured. What
-   is still to write: the descriptor field naming that mechanism per command
-   line, the graft that writes it, and the consolidation flow.
+   `AGENTS.md` and `context.fileName` is the plan, and it is unmeasured.
+   *Later the same night, two of the three:* each engine descriptor in
+   `crates/profiles/command-lines.default.json` now declares
+   `reads_instructions_from` — the files the command line reads at its start,
+   `~`-relative or tree-relative, refused when unknown or absolute, with the
+   engine's name — for the three that document it (the fourth declares no
+   home and gets no guess). `sailor memory where` prints one line per engine
+   of the active profile: the files it reads and whether one of them names
+   the page; it never writes into them. The greeting adds one sentence when
+   the engine of the terminal reads a file that does not name the page, and
+   names the file. And `consolidate-memories`, a shipped flow on a daily
+   schedule at a quiet hour: `memory_list` → an engine step that answers
+   `{keep, drop}` with the wording of feedback kept verbatim →
+   `memory_replace`, which refuses a secret among the kept and a label both
+   kept and dropped, closes the dropped by `valid_until`, writes the kept, and
+   rewrites the page. Proofs in `crates/profiles/tests`, `memory_cmd`,
+   `session_cmd`, `actions::memory` and
+   `crates/sailor/tests/consolidate_memories.rs`, each with a mutant red.
+   *Still to write:* the graft that writes the pointer to the page into the
+   file each engine reads — today `memory where` says who is blind, nobody
+   cures it — and a live run of the consolidation.
 4. **What Sailor remembers of a run is written down, once.** The report of
    every closed run (what went, what broke, what it cost, what was learnt) is
    a store record, and a flow that starts on the same entity reads the last

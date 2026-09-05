@@ -186,8 +186,16 @@ Misurato sull'albero a `b03afc54`, la notte fra il 4 e il 5.
   finestra e `sailor flow tick` avviano `write-down-what-broke` con il nome del
   flusso come mandato; il flusso dei guasti non scrive mai di sé stesso. Nove
   prove, ognuna con il suo mutante. Non ancora visto dal vivo su un ledger vero.
-- **4, 6, 7: no.** La 4 è una decisione di Theo; 6 e 7 sono in lavorazione
-  mentre scrivo.
+- **7, il prossimo guasto come mandato: c'è.** `fault_next` legge il più
+  vecchio guasto ancora aperto dal registro (`crates/actions/src/faults.rs`),
+  e il flusso spedito `take-the-next-fault` lo consegna a un passo motore che
+  parte solo se `open` è vero: il mandato chiede di riprodurre con una prova
+  vista rossa, la modifica più piccola, e una risposta con ciò che è stato
+  misurato. Provato senza motore, con `sh` al posto del motore: senza guasti
+  aperti il passo non si apre; con uno aperto le sue parole sono nello
+  `stdin`. Otto prove con mutante. Mai corso con un motore vero.
+- **4, 6: no.** La 4 è una decisione di Theo; la 6 è in lavorazione mentre
+  scrivo.
 
 E i cinque concetti di Theo della stessa sera:
 
@@ -202,10 +210,12 @@ E i cinque concetti di Theo della stessa sera:
    stessa notte: la pagina delle memorie è un file, `state/memory.md`, riscritto
    da `remember` e da `sailor remember` e nominato nel saluto con le sue prime
    tre righe (`sailor memory page`); eventi e guasti sono nell'indice di
-   `sailor search` (`event:<seq>`, `fault:<n>`). Manca ancora il modo di dire a
-   una riga di comando che legge un file di configurazione dove sta la pagina,
-   e il flusso di consolidamento. Gli annunci fra agenti c'erano già (D.1 del
-   mandato).
+   `sailor search` (`event:<seq>`, `fault:<n>`); ogni motore dichiara nel suo
+   descrittore i file che legge all'avvio, `sailor memory where` dice quali
+   motori vedono la pagina e quali no, il saluto nomina il file cieco, e
+   `consolidate-memories` ripulisce le memorie una volta al giorno. Manca il
+   gesto che scrive il puntatore nel file che il motore legge. Gli annunci
+   fra agenti c'erano già (D.1 del mandato).
 3. **I workflow degli altri e i nostri**:
    `docs/2026-09-05-i-workflow-degli-altri-e-i-flussi-di-sailor.md`.
 4. **La lavagna**: la metà del motore c'è ed è provata dal vivo. `draft-a-flow`
