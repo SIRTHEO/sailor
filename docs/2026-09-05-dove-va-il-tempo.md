@@ -151,3 +151,42 @@ Ogni voce nomina il numero che deve scendere.
 Le prime tre sono strumenti di sviluppo e costano un giorno. La quarta è una
 decisione di Theo su un plugin suo. Le ultime tre sono flussi e innesco, e
 sono il modo in cui Sailor smette di essere sviluppato **accanto** a sé.
+
+## Cosa è entrato la stessa notte, e cosa no
+
+Misurato sull'albero a `b03afc54`, la notte fra il 4 e il 5.
+
+- **1, `sailor ratchet`: c'è.** Trentasei giudici — quelli che leggono le
+  sorgenti, trovati e non elencati — su `git archive HEAD` in
+  `target/ratchet-tree`, con sopra i file modificati e i nuovi che entrano in
+  cartelle che `HEAD` conosce, elencati uno per uno. Un minuto. Nella sua prima
+  notte ha trovato dodici rossi miei prima di ogni commit: una frase scritta nel
+  codice, un blocco di sette righe fatto incollando due commenti, tre semi da
+  abbassare, una data in un commento, due righe in italiano.
+- **2, il rilascio ricorda la suite: c'è.** L'albero (`HEAD^{tree}`) va in
+  `state/<bersaglio>-suite-tree` quando la suite è verde; un rilascio dello
+  stesso albero lo dice e non la rifà.
+- **3, il rilascio spinge il tronco: c'è**, e stasera dice la verità: «non
+  spinto, il remoto è indietro: 403». La credenziale git di questa macchina è
+  di un altro account; il gesto è di Theo (`gh auth switch`, poi
+  `gh auth setup-git`).
+- **4, 5, 6, 7: no.** Non iniziati.
+
+E i cinque concetti di Theo della stessa sera:
+
+1. **Le sessioni analizzate**: questo documento.
+2. **Memoria e comunicazione fra agenti**: la ricerca sui flussi (`flow_search`,
+   `sailor flow search <parole>`, FTS5 in memoria) è entrata; la tabella
+   `memories`, l'indice su corse ed eventi, il file generato per le tre righe di
+   comando no. Gli annunci fra agenti c'erano già (D.1 del mandato).
+3. **I workflow degli altri e i nostri**:
+   `docs/2026-09-05-i-workflow-degli-altri-e-i-flussi-di-sailor.md`.
+4. **La lavagna**: la metà del motore c'è ed è provata dal vivo. `draft-a-flow`
+   prende uno schizzo — blocchi, parole, frecce — e scrive un flusso che sta in
+   piedi dove vivono i flussi della persona; quattro corse, tre difetti trovati
+   e chiusi (86, 87 e un puntatore), la quarta ha scritto
+   `traduci-documentazione-in-inglese.flow.json`, tre passi, valido. La tela
+   nella finestra su cui disegnare lo schizzo non c'è ancora: oggi lo schizzo si
+   scrive come testo, `sailor flow run draft-a-flow "…"`.
+5. **Le prestazioni**: non iniziato. Va fatto con ricerca vera, non a memoria.
+
