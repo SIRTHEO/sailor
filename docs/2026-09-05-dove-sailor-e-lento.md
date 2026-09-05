@@ -31,7 +31,7 @@ I ganci che ogni riga di comando chiama a ogni evento (`sailor session
 event`) pagano l'avvio del processo e un'apertura di SQLite: sotto i cinque
 millisecondi. Non è qui che si perde.
 
-### 2. Il rilascio: da 7 min 44 s a — da misurare — per un commit di sola documentazione
+### 2. Il rilascio: da 7 min 44 s a 47 s per un commit di sola documentazione
 
 **Misurato** il 05/09 alle 02:52:58 → 03:00:42, rilascio di `ed0ca332` (un
 commit che tocca solo `docs/`): **7 min 44 s**, di cui 42 s di compilazione di
@@ -61,10 +61,11 @@ compilato per 34 s soltanto `catalogue` (incorpora `i18n/*.json`, che erano
 cambiati) e `sailor`, ma è uscito rosso per il guasto 89 e non conta come
 misura.
 
-**Cosa si misura dopo:** il rilascio di un commit di sola documentazione, dal
-`inizio` alla `fine` scritti nel log. La previsione — che non vale niente finché
-non è misurata — è sotto i due minuti: il tempo di *eseguire* la suite, non di
-costruirla. Il numero va scritto qui.
+**Misurato, il rilascio 21 (`e5b7b5a7`, sola documentazione): 47 s**
+(03:35:42 → 03:36:29), 0,10 s di compilazione, il resto l'*esecuzione* della
+suite — 122 binari già legati — e il confronto del binario, che era già in
+servizio. **Da 7 min 44 s a 47 s, dieci volte**, per la stessa classe di
+commit. La previsione detta prima («sotto i due minuti») era prudente.
 
 **Il passo successivo, se il numero non basta:** i binari di prova non hanno
 bisogno di LTO pieno. Un profilo `[profile.suite]` che eredita da `release`
