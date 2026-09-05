@@ -53,7 +53,7 @@ fn write_or_print(print: bool) -> i32 {
         }
     };
     if print {
-        println!("{}", actions::memory::page(&memories));
+        println!("{}", actions::memory::page_of_every_tree(&memories));
         return 0;
     }
     let Some(home) = ledger::sailor_home() else {

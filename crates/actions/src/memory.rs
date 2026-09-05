@@ -37,6 +37,11 @@ pub struct Memory {
     pub valid_from: i64,
     #[serde(default)]
     pub valid_until: Option<i64>,
+    /// The tree it was written in, as [`workspace::tree_around`] names it;
+    /// `None` holds in every tree, and so does a record written before trees
+    /// were kept.
+    #[serde(default)]
+    pub tree: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -110,13 +115,17 @@ pub fn remember(ledger: &Ledger, memory: Memory) -> Result<Memory, ActionError> 
     write_under(ledger, key, memory)
 }
 
-fn write_under(ledger: &Ledger, key: String, memory: Memory) -> Result<Memory, ActionError> {
-    let earlier = ledger
-        .read_record(MEMORIES_COLLECTION, &key)
+/// What the store holds under a key, valid or closed.
+fn earlier(ledger: &Ledger, key: &str) -> Result<Option<Memory>, ActionError> {
+    Ok(ledger
+        .read_record(MEMORIES_COLLECTION, key)
         .map_err(|error| ActionError::new("store_unreadable", error.to_string()))?
-        .and_then(|record| serde_json::from_value::<Memory>(record.value).ok());
+        .and_then(|record| serde_json::from_value::<Memory>(record.value).ok()))
+}
+
+fn write_under(ledger: &Ledger, key: String, memory: Memory) -> Result<Memory, ActionError> {
     let kept = Memory {
-        valid_from: earlier.map(|it| it.valid_from).unwrap_or(memory.valid_from),
+        valid_from: earlier(ledger, &key)?.map(|it| it.valid_from).unwrap_or(memory.valid_from),
         ..memory
     };
     let record = StoreRecord {
@@ -142,6 +151,32 @@ pub fn remembered(ledger: &Ledger, at: i64) -> Result<Vec<Memory>, ledger::Ledge
         .collect();
     memories.sort_by(|a, b| b.modified.cmp(&a.modified).then_with(|| a.label.cmp(&b.label)));
     Ok(memories)
+}
+
+/// The memories a tree is handed: its own, and the ones that hold in every
+/// tree. `None` is a place outside any tree, handed the latter alone.
+pub fn seen_from(memories: Vec<Memory>, tree: Option<&str>) -> Vec<Memory> {
+    memories
+        .into_iter()
+        .filter(|memory| memory.tree.is_none() || memory.tree.as_deref() == tree)
+        .collect()
+}
+
+/// The tree a memory is filed under for a place: the checkout around it, or
+/// the place itself where git knows no checkout there, in its real path.
+pub fn tree_of(place: &Path) -> String {
+    workspace::tree_around(place)
+        .unwrap_or_else(|| place.canonicalize().unwrap_or_else(|_| place.to_path_buf()))
+        .display()
+        .to_string()
+}
+
+/// The tree as a person names it: the last segment of its path.
+pub fn tree_name(tree: &str) -> &str {
+    Path::new(tree)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(tree)
 }
 
 /// What one consolidation did: how many it wrote, how many it closed, and the
@@ -171,11 +206,7 @@ pub fn replace(ledger: &Ledger, keep: Vec<Memory>, drop: &[String], at: i64) -> 
     }
     let mut done = Replacement { kept: 0, dropped: 0, unknown: Vec::new() };
     for (label, key) in drop.iter().zip(&dropped_keys) {
-        let live = ledger
-            .read_record(MEMORIES_COLLECTION, key)
-            .map_err(|error| ActionError::new("store_unreadable", error.to_string()))?
-            .and_then(|record| serde_json::from_value::<Memory>(record.value).ok())
-            .filter(|memory| memory.valid_until.is_none_or(|until| until > at));
+        let live = earlier(ledger, key)?.filter(|memory| memory.valid_until.is_none_or(|until| until > at));
         match live {
             Some(memory) => {
                 write_under(ledger, key.clone(), Memory { valid_until: Some(at), modified: at, ..memory })?;
@@ -185,24 +216,63 @@ pub fn replace(ledger: &Ledger, keep: Vec<Memory>, drop: &[String], at: i64) -> 
         }
     }
     for (key, memory) in keys.into_iter().zip(keep) {
+        let memory = with_the_tree_it_had(ledger, &key, memory)?;
         write_under(ledger, key, memory)?;
         done.kept += 1;
     }
     Ok(done)
 }
 
-/// The page every command line is handed at its start: one line per memory,
-/// the most recent first, cut at [`PAGE_LINES`]. One function, so the three
-/// command lines read the same bytes.
-pub fn page(memories: &[Memory]) -> String {
-    let mut lines: Vec<String> = memories
-        .iter()
-        .map(|memory| format!("- **{}** ({}): {}", memory.label, memory.kind, memory.value.replace('\n', " ")))
-        .collect();
+/// A kept memory that names no tree keeps the one its label already had: a
+/// consolidation rewrites values, not where a fact holds.
+fn with_the_tree_it_had(ledger: &Ledger, key: &str, memory: Memory) -> Result<Memory, ActionError> {
+    if memory.tree.is_some() {
+        return Ok(memory);
+    }
+    Ok(Memory { tree: earlier(ledger, key)?.and_then(|it| it.tree), ..memory })
+}
+
+/// The heading the memories that hold in every tree are listed under.
+pub const EVERYWHERE: &str = "in every tree";
+
+/// The page one tree is handed at the start of every command line: what holds
+/// in every tree under one heading, its own under another, the most recent
+/// first and cut at [`PAGE_LINES`]. One function, so the command lines read
+/// the same bytes.
+pub fn page(memories: &[Memory], tree: &str) -> String {
+    let everywhere = memories.iter().filter(|memory| memory.tree.is_none()).collect();
+    let own = memories.iter().filter(|memory| memory.tree.as_deref() == Some(tree)).collect();
+    render(&[(None, everywhere), (Some(tree), own)])
+}
+
+/// The page of the whole machine: what holds in every tree first, then each
+/// tree under its own heading, in the order of their paths.
+pub fn page_of_every_tree(memories: &[Memory]) -> String {
+    let mut groups: Vec<(Option<&str>, Vec<&Memory>)> = vec![(None, Vec::new())];
+    for memory in memories {
+        let tree = memory.tree.as_deref();
+        match groups.iter_mut().find(|(of, _)| *of == tree) {
+            Some((_, listed)) => listed.push(memory),
+            None => groups.push((tree, vec![memory])),
+        }
+    }
+    groups[1..].sort_by(|a, b| a.0.cmp(&b.0));
+    render(&groups)
+}
+
+fn render(groups: &[(Option<&str>, Vec<&Memory>)]) -> String {
+    let mut lines: Vec<String> = Vec::new();
+    for (tree, listed) in groups.iter().filter(|(_, listed)| !listed.is_empty()) {
+        lines.push(format!("## {}", tree.unwrap_or(EVERYWHERE)));
+        for memory in listed {
+            lines.push(format!("- **{}** ({}): {}", memory.label, memory.kind, memory.value.replace('\n', " ")));
+        }
+    }
     if lines.len() > PAGE_LINES {
-        let left = lines.len() - (PAGE_LINES - 1);
+        let total: usize = groups.iter().map(|(_, listed)| listed.len()).sum();
         lines.truncate(PAGE_LINES - 1);
-        lines.push(format!("- … and {left} more: `sailor search <word>` finds them"));
+        let shown = lines.iter().filter(|line| line.starts_with("- ")).count();
+        lines.push(format!("- … and {} more: `sailor search <word>` finds them", total - shown));
     }
     lines.join("\n")
 }
@@ -213,8 +283,9 @@ pub fn page_path(home: &Path) -> PathBuf {
     home.join("state").join("memory.md")
 }
 
-/// Renders the page of the memories valid now and writes it under `home`,
-/// beside first and renamed over the old one: a reader never sees half a page.
+/// Renders the machine's page of the memories valid now and writes it under
+/// `home`, beside first and renamed over the old one: a reader never sees half
+/// a page.
 pub fn write_page(ledger: &Ledger, home: &Path) -> Result<PathBuf, ActionError> {
     let memories = remembered(ledger, now())
         .map_err(|error| ActionError::new("store_unreadable", error.to_string()))?;
@@ -224,7 +295,7 @@ pub fn write_page(ledger: &Ledger, home: &Path) -> Result<PathBuf, ActionError> 
         std::fs::create_dir_all(parent).map_err(unwritten)?;
     }
     let beside = path.with_extension("md.part");
-    std::fs::write(&beside, page(&memories)).map_err(unwritten)?;
+    std::fs::write(&beside, page_of_every_tree(&memories)).map_err(unwritten)?;
     std::fs::rename(&beside, &path).map_err(unwritten)?;
     Ok(path)
 }
@@ -242,7 +313,7 @@ impl RememberAction {
 }
 
 impl Action for RememberAction {
-    fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
+    fn execute(&self, input: &Value, shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         let spec: RememberSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         let ledger = self
@@ -260,6 +331,7 @@ impl Action for RememberAction {
                 modified: at,
                 valid_from: at,
                 valid_until: spec.valid_until,
+                tree: tree_of_the_run(shared),
             },
         )?;
         let page = page_written(ledger, self.home.as_deref())?;
@@ -268,6 +340,7 @@ impl Action for RememberAction {
             "type": kept.kind,
             "modified": kept.modified,
             "valid_from": kept.valid_from,
+            "tree": kept.tree,
             "page": page,
         })))
     }
@@ -275,6 +348,15 @@ impl Action for RememberAction {
     fn species(&self) -> StepSpecies {
         StepSpecies::Repeatable
     }
+}
+
+/// The tree a run writes its memories for: the one around the root the
+/// launcher wrote. A run with no root writes memories that hold in every tree.
+fn tree_of_the_run(shared: &SharedState) -> Option<String> {
+    shared
+        .get(flow::WORKSPACE_ROOT)
+        .and_then(Value::as_str)
+        .map(|root| tree_of(Path::new(root)))
 }
 
 fn page_written(ledger: &Ledger, home: Option<&Path>) -> Result<Option<String>, ActionError> {
@@ -312,6 +394,7 @@ impl Action for MemoryListAction {
                     "value": memory.value,
                     "written": memory.modified,
                     "first_known": memory.valid_from,
+                    "tree": memory.tree,
                 })
             })
             .collect();
@@ -329,6 +412,8 @@ struct KeptSpec {
     kind: String,
     label: String,
     value: String,
+    #[serde(default)]
+    tree: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -374,6 +459,7 @@ impl Action for MemoryReplaceAction {
                 modified: at,
                 valid_from: at,
                 valid_until: None,
+                tree: kept.tree,
             })
             .collect();
         let done = replace(ledger, keep, &spec.drop, at)?;
@@ -410,7 +496,25 @@ mod tests {
             modified: at,
             valid_from: at,
             valid_until: None,
+            tree: None,
         }
+    }
+
+    fn in_tree(memory: Memory, tree: &str) -> Memory {
+        Memory { tree: Some(tree.to_owned()), ..memory }
+    }
+
+    fn a_checkout(under: &Path, name: &str) -> String {
+        let repo = under.join(name);
+        std::fs::create_dir_all(&repo).expect("scratch");
+        let init = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["init", "--quiet"])
+            .status()
+            .expect("git");
+        assert!(init.success());
+        repo.canonicalize().expect("real").display().to_string()
     }
 
     /// Written, read back, and superseded under the same label with its first
@@ -483,9 +587,109 @@ mod tests {
 
         assert_eq!(all.len(), 249, "the closed one is out");
         assert_eq!(all[0].label, "fact 248", "most recent first");
-        let text = page(&all);
+        let text = page_of_every_tree(&all);
         assert_eq!(text.lines().count(), PAGE_LINES);
-        assert!(text.lines().last().expect("a line").contains("and 50 more"), "{text}");
+        let shown = text.lines().filter(|line| line.starts_with("- **")).count();
+        assert_eq!(shown, PAGE_LINES - 2, "one heading and one closing line: {text}");
+        assert!(text.lines().last().expect("a line").contains(&format!("and {} more", 249 - shown)), "{text}");
+    }
+
+    /// **A RECORD WRITTEN BEFORE TREES WERE KEPT STILL READS**, and reads as
+    /// one that holds in every tree: nothing it said is lost to a field it
+    /// could not have had.
+    #[test]
+    fn a_record_without_a_tree_reads_as_one_that_holds_in_every_tree() {
+        let (ledger, dir) = a_ledger("old-record");
+        ledger
+            .put_record(&StoreRecord {
+                collection: MEMORIES_COLLECTION.to_owned(),
+                key: "the-trunk".to_owned(),
+                value: json!({"type": "project", "label": "the trunk", "value": "sorgenti", "provenance": "test", "modified": 10, "valid_from": 10}),
+                written_by: "test".to_owned(),
+                written_at: 10,
+            })
+            .expect("an old record");
+        let all = remembered(&ledger, 20).expect("read");
+        drop(ledger);
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert_eq!(all.len(), 1, "the old record did not read: {all:?}");
+        assert_eq!(all[0].tree, None);
+        assert_eq!(all[0].value, "sorgenti");
+        assert_eq!(seen_from(all, Some("/any/tree")).len(), 1, "an old record is not seen from a tree");
+    }
+
+    /// **ONE TREE'S PAGE HOLDS ITS OWN AND WHAT HOLDS EVERYWHERE**, under a
+    /// heading each, and nothing of another tree; the machine's page holds
+    /// every tree, what holds everywhere first.
+    #[test]
+    fn the_page_of_a_tree_leaves_the_other_trees_out_and_the_machine_page_has_them_all() {
+        let (ledger, dir) = a_ledger("tree-page");
+        remember(&ledger, a_memory("everywhere", "for all", 1)).expect("global");
+        remember(&ledger, in_tree(a_memory("of a", "in a", 2), "/trees/a")).expect("a");
+        remember(&ledger, in_tree(a_memory("of b", "in b", 3), "/trees/b")).expect("b");
+        let all = remembered(&ledger, 10).expect("read");
+        drop(ledger);
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let of_a = page(&all, "/trees/a");
+        assert_eq!(
+            of_a,
+            format!("## {EVERYWHERE}\n- **everywhere** (project): for all\n## /trees/a\n- **of a** (project): in a")
+        );
+        assert!(!of_a.contains("of b"), "another tree's memory is on the page: {of_a}");
+        let of_nowhere = page(&all, "/trees/c");
+        assert_eq!(of_nowhere, format!("## {EVERYWHERE}\n- **everywhere** (project): for all"));
+        assert_eq!(seen_from(all.clone(), Some("/trees/b")).iter().map(|m| m.label.as_str()).collect::<Vec<_>>(), vec!["of b", "everywhere"]);
+        assert_eq!(seen_from(all.clone(), None).len(), 1, "outside any tree only what holds everywhere is seen");
+
+        let whole = page_of_every_tree(&all);
+        assert_eq!(
+            whole,
+            format!(
+                "## {EVERYWHERE}\n- **everywhere** (project): for all\n## /trees/a\n- **of a** (project): in a\n## /trees/b\n- **of b** (project): in b"
+            )
+        );
+    }
+
+    /// The tree is the checkout around the root the launcher wrote, in its
+    /// real path; a root that is no checkout is its own tree; no root, no tree.
+    #[test]
+    fn the_remember_action_writes_the_tree_of_the_run() {
+        let (ledger, dir) = a_ledger("run-tree");
+        let checkout = a_checkout(&dir, "a-checkout");
+        let bare = dir.join("bare");
+        std::fs::create_dir_all(&bare).expect("scratch");
+        let action = RememberAction::new(Some(ledger.clone()), None);
+        let spec = |label: &str| json!({"type": "project", "label": label, "value": "v", "at": 1});
+        let with_root = |root: &Path| {
+            let mut shared = SharedState::default();
+            shared.insert(flow::WORKSPACE_ROOT.to_owned(), json!(root.join("crates").display().to_string()));
+            shared
+        };
+        std::fs::create_dir_all(Path::new(&checkout).join("crates")).expect("scratch");
+        std::fs::create_dir_all(bare.join("crates")).expect("scratch");
+
+        let in_checkout = action.execute(&spec("in a checkout"), &with_root(Path::new(&checkout))).expect("went");
+        action.execute(&spec("in a bare root"), &with_root(&bare)).expect("went");
+        action.execute(&spec("nowhere"), &SharedState::default()).expect("went");
+        let all = remembered(&ledger, 10).expect("read");
+        let bare_tree = bare.join("crates").canonicalize().expect("real").display().to_string();
+        drop(ledger);
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let tree_of_label = |label: &str| all.iter().find(|m| m.label == label).expect("written").tree.clone();
+        assert_eq!(tree_of_label("in a checkout"), Some(checkout.clone()));
+        assert_eq!(tree_of_label("in a bare root"), Some(bare_tree));
+        assert_eq!(tree_of_label("nowhere"), None);
+        let ActionOutcome::Went(output) = in_checkout else { panic!("{in_checkout:?}") };
+        assert_eq!(output["tree"], json!(checkout));
+    }
+
+    #[test]
+    fn a_tree_is_named_by_its_last_segment() {
+        assert_eq!(tree_name("/trees/a-checkout"), "a-checkout");
+        assert_eq!(tree_name("plain"), "plain");
     }
 
     /// The file is the rendering, byte for byte, and writing it again with
@@ -506,7 +710,7 @@ mod tests {
             .flatten()
             .map(|entry| entry.file_name().to_string_lossy().into_owned())
             .collect();
-        let rendered = page(&remembered(&ledger, now()).expect("read"));
+        let rendered = page_of_every_tree(&remembered(&ledger, now()).expect("read"));
         drop(ledger);
         let _ = std::fs::remove_dir_all(&dir);
 
@@ -537,8 +741,8 @@ mod tests {
         drop(ledger);
         let _ = std::fs::remove_dir_all(&dir);
 
-        assert_eq!(after_one, "- **first** (project): v");
-        assert_eq!(after_two, "- **second** (project): v\n- **first** (project): v");
+        assert_eq!(after_one, format!("## {EVERYWHERE}\n- **first** (project): v"));
+        assert_eq!(after_two, format!("## {EVERYWHERE}\n- **second** (project): v\n- **first** (project): v"));
         assert_eq!(untouched, after_two, "a page was refreshed with no home to write it in");
     }
 
@@ -561,8 +765,38 @@ mod tests {
         assert_eq!(output["count"], 1, "{output}");
         assert_eq!(
             output["memories"][0],
-            json!({"type": "project", "label": "the trunk", "value": "sorgenti", "written": 10, "first_known": 10})
+            json!({"type": "project", "label": "the trunk", "value": "sorgenti", "written": 10, "first_known": 10, "tree": null})
         );
+    }
+
+    /// **A REPLACEMENT KEEPS EACH MEMORY'S TREE.** The consolidation names no
+    /// trees, so a kept memory takes the one its label had; one that names a
+    /// tree keeps that; a new label with none holds in every tree.
+    #[test]
+    fn a_replacement_keeps_the_tree_of_each_memory() {
+        let (ledger, dir) = a_ledger("replace-tree");
+        remember(&ledger, in_tree(a_memory("of a", "old words", 10), "/trees/a")).expect("a");
+        remember(&ledger, in_tree(a_memory("moved", "here", 11), "/trees/a")).expect("moved");
+        let done = replace(
+            &ledger,
+            vec![
+                a_memory("of a", "new words", 50),
+                in_tree(a_memory("moved", "there", 50), "/trees/b"),
+                a_memory("fresh", "new", 50),
+            ],
+            &[],
+            50,
+        )
+        .expect("replaced");
+        let all = remembered(&ledger, 60).expect("read");
+        drop(ledger);
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert_eq!(done.kept, 3);
+        let tree_of_label = |label: &str| all.iter().find(|m| m.label == label).expect("kept").tree.clone();
+        assert_eq!(tree_of_label("of a"), Some("/trees/a".to_owned()), "{all:?}");
+        assert_eq!(tree_of_label("moved"), Some("/trees/b".to_owned()));
+        assert_eq!(tree_of_label("fresh"), None);
     }
 
     /// Dropped ones leave the live set, kept ones land, and a kept one that
@@ -656,8 +890,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
 
         let ActionOutcome::Went(output) = went else { panic!("the replacement went: {went:?}") };
-        assert_eq!(before, "- **old** (project): v");
-        assert_eq!(after, "- **new** (feedback): w");
+        assert_eq!(before, format!("## {EVERYWHERE}\n- **old** (project): v"));
+        assert_eq!(after, format!("## {EVERYWHERE}\n- **new** (feedback): w"));
         assert_eq!(output["kept"], 1);
         assert_eq!(output["dropped"], 1);
         assert_eq!(output["page"], json!(page_path(&home).display().to_string()));

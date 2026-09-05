@@ -39,6 +39,7 @@ pub fn run(args: &[String]) -> i32 {
         modified: at,
         valid_from: at,
         valid_until: None,
+        tree: None,
     };
     match kept_by_hand(&ledger, ledger::sailor_home().as_deref(), memory) {
         Ok(kept) => {
@@ -91,6 +92,7 @@ mod tests {
             modified: 10,
             valid_from: 10,
             valid_until: None,
+            tree: None,
         };
 
         let kept = kept_by_hand(&ledger, Some(&home), memory).expect("kept");
@@ -99,6 +101,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
 
         assert_eq!(kept.label, "the trunk");
-        assert_eq!(page, "- **the trunk** (project): sorgenti");
+        assert_eq!(page, format!("## {}\n- **the trunk** (project): sorgenti", actions::memory::EVERYWHERE));
     }
 }
