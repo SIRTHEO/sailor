@@ -36,6 +36,11 @@ pub const DECLARED_ORIGIN: &str = "declared";
 /// set and nothing declared.
 pub const YOUR_ORIGIN: &str = "yours";
 
+/// The shipped flow that turns a broken run into a line of the fault register.
+/// Named here because the beat starts it by itself, and must never start it
+/// about its own failures.
+pub const FAULT_WRITER: &str = "write-down-what-broke";
+
 /// The flows the product ships with: flow name and file text. Embedded like
 /// `toolbox::descriptor::BUILTIN` and for the same reason — a freshly installed
 /// binary, or one copied to another machine, has to answer without anyone
@@ -68,7 +73,7 @@ pub const FLOWS: &[(&str, &str)] = &[
     // What follows a fault is a check, and nobody writes it while repairing:
     // this asks the ledger how a run broke and leaves the line in the register.
     (
-        "write-down-what-broke",
+        FAULT_WRITER,
         include_str!("../system/write-down-what-broke.flow.json"),
     ),
     // The watch this terminal keeps: three readings and no engine, so it can
