@@ -177,7 +177,10 @@ impl DryProbe for RealDryProbe {
             // ma un motore che esce **zero** senza domanda è a maggior ragione
             // qualcosa da guardare, e buttarlo via lo nasconderebbe.
             EngineResult::Ok { stdout, stderr }
-            | EngineResult::ExitError { stdout, stderr, .. } => DryRun::Answered { stdout, stderr },
+            | EngineResult::ExitError { stdout, stderr, .. }
+            | EngineResult::WaitingForAPerson { stdout, stderr } => {
+                DryRun::Answered { stdout, stderr }
+            }
             EngineResult::TimedOut => DryRun::NoAnswer {
                 why: format!(
                     "nessuna risposta entro {} secondi",
@@ -408,7 +411,10 @@ impl LoginProbe for RealDryProbe {
         });
         match result {
             EngineResult::Ok { stdout, stderr }
-            | EngineResult::ExitError { stdout, stderr, .. } => DryRun::Answered { stdout, stderr },
+            | EngineResult::ExitError { stdout, stderr, .. }
+            | EngineResult::WaitingForAPerson { stdout, stderr } => {
+                DryRun::Answered { stdout, stderr }
+            }
             EngineResult::TimedOut => DryRun::NoAnswer {
                 why: format!(
                     "nessuna risposta entro {} secondi",

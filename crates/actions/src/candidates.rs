@@ -74,6 +74,7 @@ impl ExternalEngineAction {
                     unusable_when: Vec::new(),
                     exhausted_when: Vec::new(),
                     cooldown_secs: None,
+                    waits_for_a_person_when: Vec::new(),
                     declared_usage: None,
                     // Un comando scritto a mano non ha un descrittore: non c'è
                     // niente che dichiari che sia un motore, e infatti la riga
@@ -196,6 +197,10 @@ impl ExternalEngineAction {
                                 .map(|recipe| recipe.exhausted_when.clone())
                                 .unwrap_or_default(),
                             cooldown_secs: declared.as_ref().and_then(|recipe| recipe.cooldown_secs),
+                            waits_for_a_person_when: declared
+                                .as_ref()
+                                .map(|recipe| recipe.waits_for_a_person_when.clone())
+                                .unwrap_or_default(),
                             unusable_when: declared
                                 .map(|recipe| recipe.unusable_when)
                                 .unwrap_or_default(),
@@ -224,6 +229,7 @@ impl ExternalEngineAction {
                             unusable_when: recipe.unusable_when,
                             exhausted_when: recipe.exhausted_when,
                             cooldown_secs: recipe.cooldown_secs,
+                            waits_for_a_person_when: recipe.waits_for_a_person_when,
                             declared_usage: recipe.usage.map(|usage| usage.declared),
                             // Siamo dentro il ramo che ha trovato una ricetta
                             // `ask`: questo strumento è per definizione un
@@ -286,6 +292,9 @@ pub(crate) struct Candidate {
     /// aside when they appear; the descriptor's, or empty.
     pub(crate) exhausted_when: Vec<String>,
     pub(crate) cooldown_secs: Option<u64>,
+    /// The words after which this engine only waits for a person and is
+    /// stopped; the descriptor's, or empty.
+    pub(crate) waits_for_a_person_when: Vec<String>,
     /// Dove leggere il consumo nell'uscita di questo motore. `None` quando il
     /// descrittore non lo dichiara, o quando le opzioni le ha scritte il passo.
     pub(crate) declared_usage: Option<Declared>,
@@ -458,6 +467,7 @@ mod tests {
                     refuses_without_prompt: Vec::new(),
                     exhausted_when: Vec::new(),
                     cooldown_secs: None,
+                    waits_for_a_person_when: Vec::new(),
                     usage: None,
                 }),
                 "vivo" => Some(AskRecipe {
@@ -469,6 +479,7 @@ mod tests {
                     refuses_without_prompt: Vec::new(),
                     exhausted_when: Vec::new(),
                     cooldown_secs: None,
+                    waits_for_a_person_when: Vec::new(),
                     usage: None,
                 }),
                 "rotto" => Some(AskRecipe {
@@ -480,6 +491,7 @@ mod tests {
                     refuses_without_prompt: Vec::new(),
                     exhausted_when: Vec::new(),
                     cooldown_secs: None,
+                    waits_for_a_person_when: Vec::new(),
                     usage: None,
                 }),
                 // Risolvibile ma senza ricetta: un passo che non scrive le
@@ -798,6 +810,7 @@ mod tests {
                         refuses_without_prompt: Vec::new(),
                     exhausted_when: Vec::new(),
                     cooldown_secs: None,
+                    waits_for_a_person_when: Vec::new(),
                         usage: None,
                     }),
                     other => Chain.ask_recipe(other),

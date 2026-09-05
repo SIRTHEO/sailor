@@ -79,7 +79,8 @@ pub use probe::{
     DRY_PROBE_TIMEOUT,
 };
 pub use process::{
-    invoke_external_engine, invoke_external_engine_watched, run_shell_check,
+    invoke_external_engine, invoke_external_engine_watched, invoke_external_engine_watched_until,
+    run_shell_check,
     run_shell_check_watched, run_with_timeout, run_with_timeout_and_stdin,
     run_with_timeout_and_stdin_watched, run_with_timeout_watched, CheckInvocation, CheckResult,
     EngineInvocation, EngineResult, LiveSink, Pipe, RunOutcome, StepSinks,
@@ -89,7 +90,7 @@ pub use recipe::{
     UsageRecipe, SESSION_PLACEHOLDER,
 };
 pub use shell::ShellCheckAction;
-pub use spec::{A_TREE_OF_ITS_OWN, BLIND, TREE};
+pub use spec::{engines_named_in, A_TREE_OF_ITS_OWN, BLIND, TREE};
 
 pub(crate) use answer::{check_tolerance, tolerates};
 pub(crate) use process::sink_for_step;

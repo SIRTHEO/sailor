@@ -555,30 +555,11 @@ fn tools_wanted(graph: &Graph) -> BTreeSet<String> {
         .collect()
 }
 
-/// I motori che un `with` nomina, **nell'ordine in cui li ha scritti chi ha
-/// scritto il passo**: un nome solo, o una catena.
-///
-/// **UNA COPIA SOLA PERCHÉ LA DOMANDA È UNA SOLA.** Fino al 31/08/2026 questa
-/// lettura stava scritta due volte — dentro `tools_wanted` e dentro
-/// `capabilities_wanted` — e la seconda era nata perché la prima buttava via il
-/// passo. Due copie della stessa regola divergono sul primo dettaglio che
-/// qualcuno cambia a una sola delle due, ed è il guasto 10: qui ne serviva una
-/// terza, e la terza è il momento giusto per fermarsi.
-///
-/// **L'ORDINE È UN DATO, NON UN CASO.** In una catena il primo è quello che si
-/// prova per primo e gli altri sono il ripiego; un `BTreeSet` lo perderebbe, e
-/// chi legge il rapporto non saprebbe più su quale motore finisce una corsa
-/// quando il primo muore.
+/// The engines a `with` names, in the order written: one name or a chain.
+/// The reader is the action's own, so the check and the run cannot read one
+/// step in two ways; the order is data, since the first is tried first.
 pub(super) fn engines_of(with: &Value) -> Vec<String> {
-    match with.get("tool") {
-        Some(Value::String(id)) => vec![id.clone()],
-        Some(Value::Array(chain)) => chain
-            .iter()
-            .filter_map(Value::as_str)
-            .map(str::to_owned)
-            .collect(),
-        _ => Vec::new(),
-    }
+    actions::engines_named_in(with)
 }
 
 #[cfg(test)]
