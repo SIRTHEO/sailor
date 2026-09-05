@@ -6,7 +6,7 @@ use crate::answer::{
     ENGINE_FAILURES,
 };
 use crate::candidates::{strengths_path, Candidate, Refused};
-use crate::cost::{now_secs, record_the_call, recording_for, Recording, Spent};
+use crate::cost::{now_secs, record_the_call, recording_for, Chain, Recording, Spent};
 use crate::equipment::current_equipment_for;
 use crate::process::{
     invoke_external_engine_watched_until, sink_for_step, EngineInvocation, EngineResult, LiveSink,
@@ -374,7 +374,7 @@ impl ExternalEngineAction {
         set_aside: &[String],
         solo: bool,
         record: Option<&Recording<'_>>,
-        tried_before: &[String],
+        chain: &Chain,
     ) -> Result<(Asked, Ran), ActionError> {
         let prepared = compose(candidate, spec, live, set_aside, record);
         let ran = prepared.invocation.ran();
@@ -389,7 +389,7 @@ impl ExternalEngineAction {
             set_aside,
             solo,
             record,
-            tried_before,
+            chain,
             &prepared,
         );
         match started {
@@ -409,7 +409,7 @@ impl ExternalEngineAction {
         set_aside: &[String],
         solo: bool,
         record: Option<&Recording<'_>>,
-        tried_before: &[String],
+        chain: &Chain,
         prepared: &Prepared,
     ) -> Result<Asked, ActionError> {
         let Prepared {
@@ -446,7 +446,7 @@ impl ExternalEngineAction {
                 record_the_call(
                     record,
                     candidate,
-                    tried_before,
+                    chain,
                     Spent {
                         reading,
                         error_type,
@@ -575,7 +575,7 @@ impl ExternalEngineAction {
                         // divergenti appena nate.
                         return engine_cannot_work(named, solo, &stdout, &stderr);
                     }
-                    let chain = if set_aside.is_empty() {
+                    let before = if set_aside.is_empty() {
                         String::new()
                     } else {
                         format!(" (before: {})", each_one_why(set_aside))
@@ -583,7 +583,7 @@ impl ExternalEngineAction {
                     return Err(ActionError::new(
                         "engine_exit_error",
                         format!(
-                            "{named} {}; {}{chain}",
+                            "{named} {}; {}{before}",
                             how_it_exited(code),
                             what_it_said(&stdout, &stderr)
                         ),
@@ -803,7 +803,10 @@ impl Action for ExternalEngineAction {
         // Gli identificativi dei motori già provati, per la catena di ripiego
         // scritta nella riga: `set_aside` porta frasi per una persona, questo
         // porta nomi che una somma può raggruppare.
-        let mut tried_before: Vec<String> = Vec::new();
+        let mut chain = Chain {
+            tried_before: Vec::new(),
+            fell_back_from: self.fell_back_from(&spec, &candidates),
+        };
         let mut last_ran = None;
         for candidate in &candidates {
             let (asked, ran) = self.ask(
@@ -814,7 +817,7 @@ impl Action for ExternalEngineAction {
                 &set_aside,
                 solo,
                 record.as_ref(),
-                &tried_before,
+                &chain,
             )?;
             match asked {
                 Asked::Answered(outcome) => return Ok((outcome, Some(ran))),
@@ -822,7 +825,7 @@ impl Action for ExternalEngineAction {
                     last_ran = Some(ran);
                     set_aside.push(why);
                     if let Some(id) = &candidate.id {
-                        tried_before.push(id.clone());
+                        chain.tried_before.push(id.clone());
                     }
                 }
             }

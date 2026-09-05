@@ -73,7 +73,7 @@ fn parse_model_call_row(row: &Value) -> Option<ModelCallRecord> {
         engine_identity: opt_str_at(cols, 15)
             .map(|text| EngineIdentity::from_column(&text))
             .unwrap_or_default(),
-        retry_chain: retry_chain_at(cols, 16),
+        retry_chain: ids_at(cols, 16),
         error_type: opt_str_at(cols, 17),
         started_at: i64_at(cols, 18)?,
         ended_at: opt_i64_at(cols, 19),
@@ -95,6 +95,8 @@ fn parse_model_call_row(row: &Value) -> Option<ModelCallRecord> {
         // rediscovering.
         session_id: opt_str_at(cols, 27),
         work_kind: opt_str_at(cols, 28),
+        // Version 14, the preferred engine that was not there.
+        fell_back_from: ids_at(cols, 29),
     })
 }
 
@@ -123,7 +125,7 @@ fn u64_at(cols: &[Value], index: usize) -> Option<u64> {
         .or_else(|| value.as_str().and_then(|text| text.parse().ok()))
 }
 
-fn retry_chain_at(cols: &[Value], index: usize) -> Vec<String> {
+fn ids_at(cols: &[Value], index: usize) -> Vec<String> {
     cols.get(index)
         .and_then(Value::as_str)
         .and_then(|text| serde_json::from_str(text).ok())
@@ -195,6 +197,7 @@ mod tests {
             (26, "turns"),
             (27, "session_id"),
             (28, "work_kind"),
+            (29, "fell_back_from"),
         ] {
             assert_eq!(
                 dumped.get(index).copied(),
@@ -204,7 +207,7 @@ mod tests {
         }
         assert_eq!(
             dumped.len(),
-            29,
+            30,
             "the ledger dumps a column this file never reads"
         );
     }
