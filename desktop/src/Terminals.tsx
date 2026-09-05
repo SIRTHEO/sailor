@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAsk } from "./ask";
 import { ChangesScreen } from "./ChangesScreen";
+import { SessionContext } from "./SessionContext";
 import { BORN_COLS, BORN_ROWS, TerminalPane } from "./TerminalPane";
 import {
   closeTerminal,
@@ -339,8 +340,9 @@ export function Terminals({
   }
 
   const opened = asked.value;
-  const visible = opened.some((entry) => entry.id === here) ? here : (opened[0]?.id ?? null);
+  const visible = opened.some((entry) => entry.id === here) ? here : (opened.find((entry) => entry.alive)?.id ?? opened[0]?.id ?? null);
   const watched = opened.find((entry) => entry.id === visible) ?? null;
+  const needsStart = !opened.some((entry) => entry.alive && !closed.has(entry.id));
 
   return (
     <div className="terminals" hidden={!shown}>
@@ -353,13 +355,13 @@ export function Terminals({
           form asking you to confirm what it already knows. */}
       <form
         className="terminals__open"
-        data-asking={detailed || opened.length === 0 || undefined}
+        data-asking={detailed || needsStart || undefined}
         onSubmit={(event) => {
           event.preventDefault();
           void open();
         }}
       >
-        {(detailed || opened.length === 0) && (
+        {(detailed || needsStart) && (
         <>
         <label className="terminals__field">
           <span className="label">Workspace</span>
@@ -506,6 +508,7 @@ export function Terminals({
           {/* EVERY TERMINAL IS ON SCREEN AT ONCE. A day is spent watching two
               agents, and one pane behind tabs meant flipping between them; the
               one in focus is drawn large and first, the others beside it. */}
+          <div className="session-work">
           <div className="terminals__panes" data-count={opened.length}>
             {[...opened]
               .sort((a, b) => Number(b.id === visible) - Number(a.id === visible))
@@ -540,6 +543,8 @@ export function Terminals({
                 />
               );
             })}
+          </div>
+          {watched && <SessionContext key={watched.id} native={native && shown} terminal={watched} lines={lines} />}
           </div>
 
           {visible !== null && watched !== null && (
