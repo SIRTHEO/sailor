@@ -840,6 +840,7 @@ dependencies = [
 name = "flow"
 version = "0.1.0"
 dependencies = [
+ "catalogue",
  "serde",
  "serde_json",
  "sha2",
@@ -2508,6 +2509,7 @@ dependencies = [
 name = "profiles"
 version = "0.1.0"
 dependencies = [
+ "catalogue",
  "ledger",
  "serde",
  "serde_json",
