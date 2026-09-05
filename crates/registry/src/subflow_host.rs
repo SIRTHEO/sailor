@@ -104,6 +104,7 @@ impl SubflowHost for LedgerHost {
                 ended_at: note.ended_at,
                 error: note.error.clone(),
                 started_by: &started_by,
+                stop_reason: note.stop_reason,
             },
             note.parent_run_id,
         )

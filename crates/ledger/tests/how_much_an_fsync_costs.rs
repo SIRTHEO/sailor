@@ -72,6 +72,7 @@ fn run(index: usize) -> RunRecord {
         started_at: 1_700_000_000 + index as i64,
         ended_at: None,
         worktree: None,
+        stop_reason: None,
     }
 }
 

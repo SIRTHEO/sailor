@@ -22,9 +22,9 @@ pub use executor::{
     attempt_relation, latest_for, run_status, same_gates, step_input, Action, ActionError,
     ActionOutcome, ActionRegistry, Clock, Completion, CostReading, Decision, EffectStatus,
     Execution, ExecutionRequest, Executor, FlowError, InMemoryRecordStore, InProcessExecutor,
-    ProcessProbe, Reconciliation, ReconciliationRequest, RecordStore, SharedState, Spend,
-    SpendStop, StepInput, SystemClock, AT_ONCE, CURRENT_CAP, CURRENT_RUN, CURRENT_STEP,
-    WORKDIR_FIELD, WORKSPACE_ROOT,
+    ProcessProbe, Reconciliation, ReconciliationRequest, RecordStore, RunStops, SharedState, Spend,
+    SpendStop, StepInput, StopReason, SystemClock, AT_ONCE, CURRENT_CAP, CURRENT_RUN, CURRENT_STEP,
+    CURRENT_WALL, WALL_REMAINING_SECS, WORKDIR_FIELD, WORKSPACE_ROOT,
 };
 pub use file::FlowFile;
 pub use graph::{Condition, DependencyEdge, Graph, GraphError, Step};
