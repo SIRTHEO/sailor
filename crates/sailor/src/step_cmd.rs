@@ -499,7 +499,7 @@ pub fn close_step_in(
         let turns: u64 = turns
             .parse()
             .map_err(|_| catalogue::say("cli.step.turns_not_a_number", &[("turns", turns)]))?;
-        write_self_declared_turns(&ledger, run_id, step_id, holder, turns, now)?;
+        write_self_declared_turns(ledger, run_id, step_id, holder, turns, now)?;
         let _ = write!(
             report,
             "\n{}",

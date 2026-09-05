@@ -1053,8 +1053,7 @@ fn push_the_trunk(root: &Path) -> Result<String, String> {
     let last_line = |bytes: &[u8]| {
         String::from_utf8_lossy(bytes)
             .lines()
-            .filter(|line| !line.trim().is_empty())
-            .last()
+            .rfind(|line| !line.trim().is_empty())
             .unwrap_or_default()
             .to_string()
     };

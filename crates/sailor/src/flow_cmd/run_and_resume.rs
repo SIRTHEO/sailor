@@ -398,8 +398,8 @@ pub(super) fn run_flow(sources: &[FlowSource], name: &str, mandate: Option<&str>
     let started_at = now_secs()?;
     record_run(&ledger, &flow, &run_id, "running", started_at, None, None)?;
 
-    let mut store = ledger.clone();
-    let result = execute_flow(&flow, &run_id, &mut store, &registry, &mut SystemClock);
+    let store = ledger.clone();
+    let result = execute_flow(&flow, &run_id, &store, &registry, &mut SystemClock);
     match result {
         Ok(execution) => {
             let (status, exit_ok) = execution_status(&execution);
@@ -453,16 +453,18 @@ fn execute_flow(
     store: &dyn RecordStore,
     registry: &ActionRegistry,
     clock: &mut dyn flow::Clock,
-) -> Result<Execution, flow::FlowError> {
+) -> Result<Execution, Box<flow::FlowError>> {
     let root = workspace_root();
     announce_root(root.as_deref());
-    InProcessExecutor.execute(
-        &flow.graph,
-        registry::execution_request(flow, run_id, root.as_deref()),
-        store,
-        registry,
-        clock,
-    )
+    InProcessExecutor
+        .execute(
+            &flow.graph,
+            registry::execution_request(flow, run_id, root.as_deref()),
+            store,
+            registry,
+            clock,
+        )
+        .map_err(Box::new)
 }
 
 /// La radice del progetto per questa corsa, risalendo da dove si è lanciato.
@@ -1056,12 +1058,12 @@ mod tests {
         let inputs = r#"{"root":{"command":"true","env":{},"timeout_secs":1}}"#;
         let json = flow_json("shell_check", "[]", inputs);
         let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
-        let mut store = InMemoryRecordStore::default();
+        let store = InMemoryRecordStore::default();
 
         let execution = execute_flow(
             &flow,
             "corsa-1",
-            &mut store,
+            &store,
             &default_registry(None, None),
             &mut Tick::new(0),
         )

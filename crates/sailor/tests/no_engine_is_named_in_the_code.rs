@@ -129,10 +129,8 @@ fn words_of(identifier: &str) -> Vec<String> {
     let mut words = Vec::new();
     let mut word = String::new();
     for letter in identifier.chars() {
-        if letter == '_' || letter.is_ascii_uppercase() {
-            if !word.is_empty() {
-                words.push(std::mem::take(&mut word));
-            }
+        if (letter == '_' || letter.is_ascii_uppercase()) && !word.is_empty() {
+            words.push(std::mem::take(&mut word));
         }
         if letter != '_' {
             word.push(letter.to_ascii_lowercase());
@@ -214,7 +212,7 @@ fn measure_with(count_in: fn(&str) -> usize) -> (usize, Vec<(usize, PathBuf)>) {
             per_file.push((count, file.strip_prefix(&root).unwrap_or(&file).to_path_buf()));
         }
     }
-    per_file.sort_by(|a, b| b.0.cmp(&a.0));
+    per_file.sort_by_key(|entry| std::cmp::Reverse(entry.0));
     (total, per_file)
 }
 

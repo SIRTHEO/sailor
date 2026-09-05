@@ -64,10 +64,10 @@ pub fn run(args: &[String]) -> i32 {
 
 /// The write, and the page every command line reads refreshed behind it: a
 /// memory kept in the ledger alone is one no command line is handed.
-fn kept_by_hand(ledger: &Ledger, home: Option<&Path>, memory: Memory) -> Result<Memory, ActionError> {
-    let kept = actions::memory::remember(ledger, memory)?;
+fn kept_by_hand(ledger: &Ledger, home: Option<&Path>, memory: Memory) -> Result<Memory, Box<ActionError>> {
+    let kept = actions::memory::remember(ledger, memory).map_err(Box::new)?;
     if let Some(home) = home {
-        actions::memory::write_page(ledger, home)?;
+        actions::memory::write_page(ledger, home).map_err(Box::new)?;
     }
     Ok(kept)
 }

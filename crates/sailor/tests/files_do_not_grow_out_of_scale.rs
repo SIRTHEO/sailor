@@ -46,7 +46,7 @@ fn no_more_files_run_past_the_scale_than_today() {
             (lines > LINES_OUT_OF_SCALE).then_some((lines, path))
         })
         .collect();
-    over.sort_by(|a, b| b.0.cmp(&a.0));
+    over.sort_by_key(|entry| std::cmp::Reverse(entry.0));
     let listed: Vec<String> = over.iter().map(|(n, p)| format!("{n} {}", p.display())).collect();
     assert!(
         over.len() <= OUT_OF_SCALE_TODAY,
