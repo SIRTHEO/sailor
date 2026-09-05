@@ -872,12 +872,32 @@ impl Descriptor {
         if let Some(ask) = self.ask.as_ref() {
             for (field, marks) in [
                 ("unusable_when", &ask.unusable_when),
+                ("exhausted_when", &ask.exhausted_when),
                 ("refuses_without_prompt", &ask.refuses_without_prompt),
             ] {
                 if marks.iter().any(|mark| mark.trim().is_empty()) {
                     found.push(format!(
                         "declares an empty fragment in `ask.{field}`, which is contained in \
                          any output at all: it would always match"
+                    ));
+                }
+            }
+            // A word that means a spent quota must also mean it cannot work:
+            // the run reads the first list, the dry run and the fallback rule
+            // read the second, and a word in the first alone splits the verdict.
+            let unusable: Vec<String> = ask
+                .unusable_when
+                .iter()
+                .map(|mark| mark.trim().to_lowercase())
+                .filter(|mark| !mark.is_empty())
+                .collect();
+            for mark in ask.exhausted_when.iter().filter(|mark| !mark.trim().is_empty()) {
+                let said = mark.trim().to_lowercase();
+                if !unusable.iter().any(|covering| said.contains(covering)) {
+                    found.push(format!(
+                        "declares «{mark}» in `ask.exhausted_when` and no word of \
+                         `ask.unusable_when` covers it: the run would class that output a \
+                         spent quota while the dry run and the fallback rule never see it"
                     ));
                 }
             }
@@ -1832,6 +1852,73 @@ mod the_new_field_is_optional {
             "an `unusable_when` of nothing but empty fragments behaves like an empty \
              list, and that must be said: otherwise the form of a declaration passes \
              for a declaration"
+        );
+    }
+
+    /// **A WORD FOR A SPENT QUOTA IS ONE OF THE WORDS FOR «CANNOT WORK».** The
+    /// run reads `exhausted_when` first and the dry run only `unusable_when`:
+    /// a word in the first that no word of the second covers gives two
+    /// verdicts on one output. Covering is containment, so «insufficient_quota»
+    /// is covered by «quota»; and an empty fragment is refused there as in the
+    /// other two lists.
+    #[test]
+    fn a_word_for_a_spent_quota_that_no_word_for_cannot_work_covers_is_a_contradiction() {
+        let catalog = loaded(
+            "spent-quota-words",
+            r#"[
+              {
+                "id": "coperto", "family": "ai_cli",
+                "detect": { "command": "primo" },
+                "ask": { "args": ["-p"], "prompt": "stdin",
+                         "unusable_when": ["quota", "401"],
+                         "exhausted_when": ["insufficient_quota"] }
+              },
+              {
+                "id": "scoperto", "family": "ai_cli",
+                "detect": { "command": "secondo" },
+                "ask": { "args": ["-p"], "prompt": "stdin",
+                         "unusable_when": ["401"],
+                         "exhausted_when": ["weekly limit"] }
+              },
+              {
+                "id": "frammento-vuoto", "family": "ai_cli",
+                "detect": { "command": "terzo" },
+                "ask": { "args": ["-p"], "prompt": "stdin",
+                         "unusable_when": ["401"],
+                         "exhausted_when": ["   "] }
+              }
+            ]"#,
+        );
+        assert!(catalog.problems.is_empty(), "{:?}", catalog.problems);
+        // Only what is said about this list: the fixtures declare no
+        // capabilities, and that contradiction is another test's.
+        let of = |id: &str| -> Vec<String> {
+            catalog
+                .contradictions()
+                .into_iter()
+                .filter(|found| found.tool == id && found.said.contains("exhausted_when"))
+                .map(|found| found.said)
+                .collect()
+        };
+
+        assert!(
+            of("coperto").is_empty(),
+            "a word contained in a «cannot work» word is covered: {:?}",
+            of("coperto")
+        );
+
+        let uncovered = of("scoperto");
+        assert_eq!(uncovered.len(), 1, "{uncovered:?}");
+        assert!(
+            uncovered[0].contains("weekly limit") && uncovered[0].contains("exhausted_when"),
+            "the contradiction names the word and the field: {}",
+            uncovered[0]
+        );
+
+        let empty = of("frammento-vuoto");
+        assert!(
+            empty.iter().any(|said| said.contains("empty fragment") && said.contains("exhausted_when")),
+            "an empty fragment in `exhausted_when` matches everything and must be named: {empty:?}"
         );
     }
 
