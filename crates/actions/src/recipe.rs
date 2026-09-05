@@ -194,6 +194,9 @@ pub struct AskRecipe {
     /// tell a spent quota from a missing credential.
     pub exhausted_when: Vec<String>,
     pub cooldown_secs: Option<u64>,
+    /// The words after which the engine only waits for a person; on seeing
+    /// one the step stops it instead of paying the wait. Empty: waited in full.
+    pub waits_for_a_person_when: Vec<String>,
     /// Measured: without a question it exits quietly with an empty stdout
     /// instead of refusing in words.
     pub silent_without_prompt: bool,

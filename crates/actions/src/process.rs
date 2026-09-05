@@ -5,7 +5,8 @@ use flow::SharedState;
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::process::{Command, Stdio};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 // ── chi guarda il testo mentre esce ─────────────────────────────────────
@@ -144,13 +145,83 @@ fn spawn_in_its_own_group(cmd: &mut Command) -> std::io::Result<std::process::Ch
 /// Il gruppo porta il numero del capogruppo: il segno meno lo dice a `kill`.
 /// Limite noto: un nipote che si è staccato da solo con `setsid` esce dal
 /// gruppo e sopravvive — lì non arriva nessun segnale nostro.
-fn kill_the_whole_group(child: &mut std::process::Child) {
+fn kill_the_whole_group(child: &mut std::process::Child) -> Option<std::process::ExitStatus> {
     #[cfg(unix)]
     unsafe {
         libc::kill(-(child.id() as libc::pid_t), libc::SIGKILL);
     }
     let _ = child.kill();
-    let _ = child.wait();
+    child.wait().ok()
+}
+
+/// Watches the child's words for the ones after which it only waits for a
+/// person, forwarding every chunk to whoever else watches. The match runs on
+/// a tail of the text, so a word split across two reads is still found and a
+/// talkative child is not searched from its first byte at every read.
+struct StopOnWords<'a> {
+    inner: Option<&'a dyn LiveSink>,
+    marks: Vec<String>,
+    keep: usize,
+    tail: Mutex<String>,
+    found: AtomicBool,
+}
+
+/// How much text is kept behind the longest word, so the tail never trims
+/// away the head of a word that is still arriving.
+const TAIL_SLACK: usize = 4096;
+
+impl<'a> StopOnWords<'a> {
+    fn new(inner: Option<&'a dyn LiveSink>, marks: &[String]) -> Self {
+        let marks: Vec<String> = marks
+            .iter()
+            .map(|mark| mark.trim().to_lowercase())
+            .filter(|mark| !mark.is_empty())
+            .collect();
+        let longest = marks.iter().map(String::len).max().unwrap_or(0);
+        Self {
+            inner,
+            marks,
+            keep: longest + TAIL_SLACK,
+            tail: Mutex::new(String::new()),
+            found: AtomicBool::new(false),
+        }
+    }
+
+    fn watching(&self) -> bool {
+        !self.marks.is_empty()
+    }
+
+    fn found(&self) -> bool {
+        self.found.load(Ordering::SeqCst)
+    }
+}
+
+impl LiveSink for StopOnWords<'_> {
+    fn chunk(&self, pipe: Pipe, bytes: &[u8]) {
+        if let Some(inner) = self.inner {
+            inner.chunk(pipe, bytes);
+        }
+        if !self.watching() || self.found() {
+            return;
+        }
+        // A poisoned lock means this very function panicked on the other
+        // pipe: the watch stops, and the child is waited for as before.
+        let Ok(mut tail) = self.tail.lock() else {
+            return;
+        };
+        tail.push_str(&String::from_utf8_lossy(bytes).to_lowercase());
+        if self.marks.iter().any(|mark| tail.contains(mark.as_str())) {
+            self.found.store(true, Ordering::SeqCst);
+            return;
+        }
+        if tail.len() > self.keep {
+            let mut cut = tail.len() - self.keep;
+            while !tail.is_char_boundary(cut) {
+                cut += 1;
+            }
+            tail.drain(..cut);
+        }
+    }
 }
 
 /// Come `run_with_timeout`, ma consegna a `sink` ogni pezzo di stdout e di
@@ -162,21 +233,43 @@ fn kill_the_whole_group(child: &mut std::process::Child) {
 /// serve li costringerebbe a scrivere `None` per non chiedere niente, e una
 /// promessa additiva che rompe i chiamanti non è additiva.
 pub fn run_with_timeout_watched(
-    mut cmd: Command,
+    cmd: Command,
     limit: Duration,
     sink: Option<&dyn LiveSink>,
 ) -> RunOutcome {
+    run_watched_until(cmd, None, limit, sink, None)
+}
+
+/// The body both public shapes stand on: a piped input when there is text
+/// for it, and a way to stop the child before its limit when whoever watches
+/// asks for it — `None` waits for the limit, as before.
+fn run_watched_until(
+    mut cmd: Command,
+    stdin: Option<&[u8]>,
+    limit: Duration,
+    sink: Option<&dyn LiveSink>,
+    stop: Option<&dyn Fn() -> bool>,
+) -> RunOutcome {
+    if stdin.is_some() {
+        cmd.stdin(Stdio::piped());
+    }
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = match spawn_in_its_own_group(&mut cmd) {
         Ok(c) => c,
         Err(error) => return RunOutcome::SpawnFailed(error.to_string()),
     };
+    if let (Some(bytes), Some(mut pipe)) = (stdin, child.stdin.take()) {
+        let _ = pipe.write_all(bytes);
+        // `pipe` esce di scope qui e chiude il descrittore: il figlio vede
+        // l'EOF anche se non ha altro da leggere.
+    }
     drain_and_wait(
         child.stdout.take(),
         child.stderr.take(),
         &mut child,
         limit,
         sink,
+        stop,
     )
 }
 
@@ -190,30 +283,12 @@ pub fn run_with_timeout_and_stdin(cmd: Command, stdin: &[u8], limit: Duration) -
 
 /// La gemella guardata di `run_with_timeout_and_stdin`, per la stessa ragione.
 pub fn run_with_timeout_and_stdin_watched(
-    mut cmd: Command,
+    cmd: Command,
     stdin: &[u8],
     limit: Duration,
     sink: Option<&dyn LiveSink>,
 ) -> RunOutcome {
-    cmd.stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let mut child = match spawn_in_its_own_group(&mut cmd) {
-        Ok(c) => c,
-        Err(error) => return RunOutcome::SpawnFailed(error.to_string()),
-    };
-    if let Some(mut pipe) = child.stdin.take() {
-        let _ = pipe.write_all(stdin);
-        // `pipe` esce di scope qui e chiude il descrittore: il figlio vede
-        // l'EOF anche se non ha altro da leggere.
-    }
-    drain_and_wait(
-        child.stdout.take(),
-        child.stderr.take(),
-        &mut child,
-        limit,
-        sink,
-    )
+    run_watched_until(cmd, Some(stdin), limit, sink, None)
 }
 
 /// Svuota una pipe fino a EOF, accumulando tutto e consegnando ogni pezzo a chi
@@ -273,8 +348,9 @@ fn drain_and_wait(
     child: &mut std::process::Child,
     limit: Duration,
     sink: Option<&dyn LiveSink>,
+    stop: Option<&dyn Fn() -> bool>,
 ) -> RunOutcome {
-    drain_and_wait_paced(stdout, stderr, child, limit, sink, &mut |how_long| {
+    drain_and_wait_paced(stdout, stderr, child, limit, sink, stop, &mut |how_long| {
         std::thread::sleep(how_long)
     })
 }
@@ -295,6 +371,7 @@ fn drain_and_wait_paced(
     child: &mut std::process::Child,
     limit: Duration,
     sink: Option<&dyn LiveSink>,
+    stop: Option<&dyn Fn() -> bool>,
     pause: &mut dyn FnMut(Duration),
 ) -> RunOutcome {
     let mut out_pipe = stdout.expect("stdout is piped");
@@ -312,6 +389,11 @@ fn drain_and_wait_paced(
             match child.try_wait() {
                 Ok(Some(status)) => break Some(status),
                 Ok(None) => {
+                    // Asked to stop: the child is killed like one over its
+                    // limit, but what it said is kept and its end is reported.
+                    if stop.is_some_and(|asked| asked()) {
+                        break kill_the_whole_group(child);
+                    }
                     if start.elapsed() >= limit {
                         kill_the_whole_group(child);
                         break None;
@@ -377,6 +459,12 @@ pub enum EngineResult {
     SpawnFailed {
         reason: String,
     },
+    /// Stopped by Sailor on the words its descriptor declares mean it only
+    /// waits for a person; what it had said travels with it.
+    WaitingForAPerson {
+        stdout: String,
+        stderr: String,
+    },
 }
 
 pub fn invoke_external_engine(invocation: &EngineInvocation) -> EngineResult {
@@ -393,6 +481,25 @@ pub fn invoke_external_engine_watched(
     invocation: &EngineInvocation,
     sink: Option<&dyn LiveSink>,
 ) -> EngineResult {
+    invoke_external_engine_watched_until(invocation, sink, &[])
+}
+
+/// Like `invoke_external_engine_watched`, and stops the engine the moment its
+/// output carries one of `waits_for_a_person_when`: a sign-in prompt is a wait
+/// no step can end, and paying it at every link of a chain is the whole cost.
+/// With no words this is the call above, byte for byte.
+pub fn invoke_external_engine_watched_until(
+    invocation: &EngineInvocation,
+    sink: Option<&dyn LiveSink>,
+    waits_for_a_person_when: &[String],
+) -> EngineResult {
+    let watch = StopOnWords::new(sink, waits_for_a_person_when);
+    let asked = || watch.found();
+    let (sink, stop): (Option<&dyn LiveSink>, Option<&dyn Fn() -> bool>) = if watch.watching() {
+        (Some(&watch), Some(&asked))
+    } else {
+        (sink, None)
+    };
     let mut cmd = Command::new(&invocation.bin);
     cmd.args(&invocation.args);
     for (key, value) in &invocation.env {
@@ -401,13 +508,16 @@ pub fn invoke_external_engine_watched(
     if let Some(workdir) = &invocation.workdir {
         cmd.current_dir(workdir);
     }
-    let outcome = match &invocation.stdin {
-        Some(bytes) => run_with_timeout_and_stdin_watched(cmd, bytes, invocation.timeout, sink),
-        None => {
-            cmd.stdin(Stdio::null());
-            run_with_timeout_watched(cmd, invocation.timeout, sink)
-        }
-    };
+    if invocation.stdin.is_none() {
+        cmd.stdin(Stdio::null());
+    }
+    let outcome = run_watched_until(
+        cmd,
+        invocation.stdin.as_deref(),
+        invocation.timeout,
+        sink,
+        stop,
+    );
     match outcome {
         RunOutcome::Finished {
             status,
@@ -416,7 +526,9 @@ pub fn invoke_external_engine_watched(
         } => {
             let stdout = String::from_utf8_lossy(&stdout).into_owned();
             let stderr = String::from_utf8_lossy(&stderr).into_owned();
-            if status.success() {
+            if watch.found() {
+                EngineResult::WaitingForAPerson { stdout, stderr }
+            } else if status.success() {
                 EngineResult::Ok { stdout, stderr }
             } else {
                 EngineResult::ExitError {
@@ -921,6 +1033,62 @@ mod tests {
         }
     }
 
+    // ── an engine that only waits for a person ───────────────────────
+
+    fn waiting_engine(script: &str) -> EngineInvocation {
+        EngineInvocation {
+            bin: "sh".to_string(),
+            args: vec!["-c".to_string(), script.to_string()],
+            env: BTreeMap::new(),
+            workdir: None,
+            stdin: None,
+            timeout: secs(30),
+        }
+    }
+
+    /// THE MEASURE THAT COULD COME OUT DIFFERENTLY: the child announces the
+    /// wait and then sleeps twenty seconds under a thirty-second limit. Waited
+    /// in full it would end at the limit; stopped on its words it ends at once,
+    /// and what it said before the stop travels with the result. The control:
+    /// with no words declared the same child is waited for, and hits the limit.
+    #[test]
+    fn an_engine_that_says_it_waits_for_a_person_is_stopped_at_once() {
+        let script = "echo 'Waiting for somebody at the door' 1>&2; exec sleep 20";
+        let words = vec!["waiting for somebody".to_string()];
+        let start = Instant::now();
+        let result = invoke_external_engine_watched_until(&waiting_engine(script), None, &words);
+        let took = start.elapsed();
+        match result {
+            EngineResult::WaitingForAPerson { stderr, .. } => {
+                assert!(stderr.contains("Waiting for somebody at the door"), "{stderr:?}");
+            }
+            _ => panic!("an engine stopped on its words says so"),
+        }
+        assert!(took < secs(10), "the wait was paid: {took:?}");
+
+        let mut unwatched = waiting_engine(script);
+        unwatched.timeout = secs(1);
+        assert!(matches!(
+            invoke_external_engine_watched_until(&unwatched, None, &[]),
+            EngineResult::TimedOut
+        ));
+    }
+
+    /// A word cut in two by the pipe is still one word: the watch keeps a tail
+    /// of what came before, so the second half completes the first.
+    #[test]
+    fn a_word_split_across_two_reads_is_still_found() {
+        let script = "printf 'Waiting for some'; sleep 0.5; printf 'body at the door\\n'; exec sleep 20";
+        let words = vec!["waiting for somebody".to_string()];
+        let start = Instant::now();
+        let result = invoke_external_engine_watched_until(&waiting_engine(script), None, &words);
+        assert!(
+            matches!(result, EngineResult::WaitingForAPerson { .. }),
+            "the two halves were not joined"
+        );
+        assert!(start.elapsed() < secs(10), "the wait was paid: {:?}", start.elapsed());
+    }
+
     // ── run_shell_check ───────────────────────────────────────────────
 
     #[test]
@@ -1026,6 +1194,7 @@ mod tests {
             child.stderr.take(),
             &mut child,
             secs(30),
+            None,
             None,
             &mut |how_long| {
                 asked.push(how_long);
