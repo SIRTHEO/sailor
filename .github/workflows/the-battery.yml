@@ -15,9 +15,9 @@
 # **THE FIRST DRAFT OF THIS FILE NEVER LET THE BATTERY START, AND THAT IS THE
 # FAULT THE PRESENT SHAPE COMES FROM.** It put `cargo fmt --check` and
 # `cargo clippy -- -D warnings` **before** `cargo test`, the way half the world
-# writes it. Measured on this code on 2026-09-01: rustfmt wants to change
-# **445 places across 80 files**, clippy has **173** suspicions. Neither is a
-# defect — they are the gap between rustfmt's habits and a hand-broken style —
+# writes it. Measured on this code: rustfmt wants to change **415 places
+# across 90 files**, clippy has **199** suspicions. Neither is a defect —
+# they are the gap between rustfmt's habits and a hand-broken style —
 # but both fall in ten seconds, and falling first they **kept the battery from
 # running in all three runs there had been**. The result was a light that was
 # always red and said nothing about the thing that matters: whether the code

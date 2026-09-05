@@ -53,7 +53,8 @@ pub struct ActionError {
     pub class: String,
     pub said: String,
     /// Set when a declared check refused a value: which one, and what it saw.
-    pub refusal: Option<Refusal>,
+    /// Boxed: it is the bulk of an error every `Result` in the crate carries.
+    pub refusal: Option<Box<Refusal>>,
 }
 
 impl ActionError {
@@ -66,7 +67,7 @@ impl ActionError {
     }
 
     pub fn refused(mut self, refusal: Refusal) -> Self {
-        self.refusal = Some(refusal);
+        self.refusal = Some(Box::new(refusal));
         self
     }
 }
@@ -1227,7 +1228,7 @@ fn broke(error: ActionError, ended_at: i64) -> Completion {
         output: None,
         said: Some(said),
         failure_class: Some(error.class),
-        refusal: error.refusal,
+        refusal: error.refusal.map(|refusal| *refusal),
         ended_at,
         bytes_seen: None,
         bytes_discarded: None,
@@ -1838,9 +1839,9 @@ mod tests {
             shared: SharedState::new(),
             spend_cap_micros: None,
         };
-        let mut store = InMemoryRecordStore::default();
+        let store = InMemoryRecordStore::default();
         InProcessExecutor
-            .execute(&graph, request, &mut store, &actions, &mut Tick::new(0))
+            .execute(&graph, request, &store, &actions, &Tick::new(0))
             .expect("esecuzione riuscita");
         assert_eq!(
             *seen.lock().expect("nobody panics here"),
@@ -1887,8 +1888,8 @@ mod tests {
             shared: SharedState::new(),
             spend_cap_micros: None,
         };
-        let mut store = InMemoryRecordStore::default();
-        let _ = InProcessExecutor.execute(&graph, request, &mut store, &actions, &mut Tick::new(0));
+        let store = InMemoryRecordStore::default();
+        let _ = InProcessExecutor.execute(&graph, request, &store, &actions, &Tick::new(0));
 
         let records = store.records("run").expect("records");
         let shaped = records
@@ -1972,7 +1973,7 @@ mod tests {
             asked: AtomicUsize::new(0),
         };
         let result = InProcessExecutor
-            .execute(&graph, request, &store, &actions, &mut Tick::new(0))
+            .execute(&graph, request, &store, &actions, &Tick::new(0))
             .expect("the run ends without an error");
         assert_eq!(
             result.decisions,
@@ -2007,9 +2008,9 @@ mod tests {
             shared: [("budget".to_owned(), json!(10))].into_iter().collect(),
             spend_cap_micros: None,
         };
-        let mut store = InMemoryRecordStore::default();
+        let store = InMemoryRecordStore::default();
         let result = InProcessExecutor
-            .execute(&graph, request, &mut store, &actions, &mut Tick::new(0))
+            .execute(&graph, request, &store, &actions, &Tick::new(0))
             .expect("esecuzione riuscita");
         assert_eq!(
             result.decisions,
@@ -2048,10 +2049,10 @@ mod tests {
             shared: SharedState::new(),
             spend_cap_micros: None,
         };
-        let mut store = InMemoryRecordStore::default();
+        let store = InMemoryRecordStore::default();
 
         InProcessExecutor
-            .execute(&graph, request, &mut store, &actions, &mut Tick::new(0))
+            .execute(&graph, request, &store, &actions, &Tick::new(0))
             .expect("esecuzione riuscita");
 
         let records = store.all();
@@ -2075,7 +2076,7 @@ mod tests {
         let mut actions = ActionRegistry::default();
         actions.register("wait", Wait);
         actions.register("echo", Echo);
-        let mut store = InMemoryRecordStore::default();
+        let store = InMemoryRecordStore::default();
         let execution = InProcessExecutor
             .execute(
                 &graph,
@@ -2086,9 +2087,9 @@ mod tests {
                     shared: SharedState::new(),
                     spend_cap_micros: None,
                 },
-                &mut store,
+                &store,
                 &actions,
-                &mut Tick::new(0),
+                &Tick::new(0),
             )
             .expect("waiting is a legitimate outcome");
 
@@ -2124,7 +2125,7 @@ mod tests {
         let mut actions = ActionRegistry::default();
         actions.register("echo", Echo);
         actions.register("empty", Empty);
-        let mut store = InMemoryRecordStore::default();
+        let store = InMemoryRecordStore::default();
         InProcessExecutor
             .execute(
                 &graph,
@@ -2137,9 +2138,9 @@ mod tests {
                     shared: SharedState::new(),
                     spend_cap_micros: None,
                 },
-                &mut store,
+                &store,
                 &actions,
-                &mut Tick::new(0),
+                &Tick::new(0),
             )
             .expect("la giunzione parte");
 
@@ -2165,7 +2166,7 @@ mod tests {
         let graph = Graph::new(vec![step("root", &[], "echo", 1), next]).expect("valid graph");
         let mut actions = ActionRegistry::default();
         actions.register("echo", Echo);
-        let mut store = InMemoryRecordStore::default();
+        let store = InMemoryRecordStore::default();
         InProcessExecutor
             .execute(
                 &graph,
@@ -2181,9 +2182,9 @@ mod tests {
                     shared: SharedState::new(),
                     spend_cap_micros: None,
                 },
-                &mut store,
+                &store,
                 &actions,
-                &mut Tick::new(0),
+                &Tick::new(0),
             )
             .expect("the run goes");
 
@@ -2219,9 +2220,9 @@ mod tests {
             shared: SharedState::new(),
             spend_cap_micros: None,
         };
-        let mut store = InMemoryRecordStore::default();
+        let store = InMemoryRecordStore::default();
         InProcessExecutor
-            .execute(&graph, request, &mut store, &actions, &mut Tick::new(0))
+            .execute(&graph, request, &store, &actions, &Tick::new(0))
             .expect("the second attempt succeeds");
         assert_eq!(
             store
@@ -2258,7 +2259,7 @@ mod tests {
         first.outcome = Some(Outcome::Broke);
         first.failure_class = Some("temporary".to_owned());
         first.ended_at = Some(2);
-        let mut store = InMemoryRecordStore::from_records(vec![first]);
+        let store = InMemoryRecordStore::from_records(vec![first]);
         let mut actions = ActionRegistry::default();
         actions.register("echo", Echo);
 
@@ -2272,9 +2273,9 @@ mod tests {
                     shared: SharedState::new(),
                     spend_cap_micros: None,
                 },
-                &mut store,
+                &store,
                 &actions,
-                &mut Tick::new(2),
+                &Tick::new(2),
             )
             .expect("ripresa riuscita");
 
@@ -2355,9 +2356,9 @@ mod tests {
             shared: SharedState::new(),
             spend_cap_micros: None,
         };
-        let mut store = InMemoryRecordStore::default();
+        let store = InMemoryRecordStore::default();
         let execution = InProcessExecutor
-            .execute(&graph, request, &mut store, &actions, &mut Tick::new(0))
+            .execute(&graph, request, &store, &actions, &Tick::new(0))
             .expect("condizione valutata");
         assert_eq!(count.load(Ordering::SeqCst), 0);
         assert_eq!(store.all()[0].outcome, Some(Outcome::Skipped));
