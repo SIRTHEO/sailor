@@ -652,7 +652,7 @@
   "cli.memory.where_unknown": "{engine}{profile}: nessuno ha stabilito cosa legga all'avvio, quindi niente dice se veda la pagina",
   "cli.memory.link_says": "scrive un rimando alla pagina nei file di istruzioni che i motori leggono in questo albero; quelli sotto la casa della persona restano intatti se non si passa --home",
   "cli.memory.unlink_says": "toglie quel rimando e lascia ogni file con i byte che aveva prima; con --home tocca anche quelli sotto la casa della persona",
-  "cli.memory.link_block_page": "Ciò che Sailor ricorda qui sta in {path}: leggi quella pagina prima di cercarti uno strumento tuo.",
+  "cli.memory.link_block_page": "Ciò che Sailor ricorda in questo albero lo scrive `sailor memory page`: eseguilo, leggi il file che nomina, e fallo prima di ricorrere a uno strumento tuo.",
   "cli.memory.link_block_rules": "Le regole di questo albero, e gli strumenti che ti dà al posto degli altri, sono scritte in {rules}.",
   "cli.memory.linked": "{path}: adesso nomina la pagina",
   "cli.memory.unlinked": "{path}: di nuovo con i byte che aveva prima",

@@ -239,9 +239,14 @@ impl Sight {
     ) -> Sight {
         let reads = profiles::instruction_files(cli, project_root, home, profile_home);
         let needle = page.display().to_string();
+        // The block is the mark; a bare path is one too, so a file linked
+        // before the block named a gesture keeps its answer.
         let names_the_page = reads
             .iter()
-            .find(|file| std::fs::read_to_string(file).is_ok_and(|text| text.contains(&needle)))
+            .find(|file| {
+                std::fs::read_to_string(file)
+                    .is_ok_and(|text| holds_the_block(&text) || text.contains(&needle))
+            })
             .cloned();
         Sight { reads, names_the_page }
     }
@@ -333,12 +338,14 @@ pub fn files_the_engines_read(
     found
 }
 
-/// What goes between the markers: where the page is, and where this tree's
-/// rules are. Both sentences come from the catalogue.
-pub fn block(page: &Path) -> String {
+/// What goes between the markers, from the catalogue: the gesture that renders
+/// the page, and where this tree's rules are. **IT NAMES A GESTURE, NOT A
+/// PATH** — the page sits under one person's home, and a block carrying that
+/// path could never be committed.
+pub fn block(_page: &Path) -> String {
     format!(
         "{BLOCK_OPENS}\n{}\n{}\n{BLOCK_CLOSES}",
-        catalogue::say("cli.memory.link_block_page", &[("path", &page.display().to_string())]),
+        catalogue::say("cli.memory.link_block_page", &[]),
         catalogue::say("cli.memory.link_block_rules", &[("rules", RULES_OF_THIS_TREE)]),
     )
 }
