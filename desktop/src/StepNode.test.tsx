@@ -548,3 +548,28 @@ describe("the state that waits for a person", () => {
     }
   });
 });
+
+/**
+ * **THE PHASE IS SHOWN AS WRITTEN, AND ONLY WHEN WRITTEN.** It is the flow
+ * author's word for where in the process a step sits; the node repeats it over
+ * the name so a person can see, at a glance, which moment a run is at.
+ */
+describe("the phase a step names", () => {
+  test("a step with a phase wears it above its name", () => {
+    const node = mountNode({ step: { ...STEP, phase: "build" } }, new Map());
+    const label = node.querySelector(".step-node__phase");
+    const name = node.querySelector(".step-node__id");
+    expect(label, "no phase label on a step that names one").not.toBeNull();
+    expect(label?.textContent).toBe("build");
+    expect(label?.getAttribute("title")).toBe(t("window.step.phase"));
+    // Above, in the document's own order: a label under the name is a caption.
+    expect(
+      (label as Element).compareDocumentPosition(name as Element) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+  });
+
+  test("a step without a phase wears no label at all", () => {
+    const node = mountNode({}, new Map());
+    expect(node.querySelector(".step-node__phase")).toBeNull();
+  });
+});

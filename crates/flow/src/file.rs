@@ -71,6 +71,52 @@ mod tests {
         assert_eq!(file.id, "prima-corsa");
         assert_eq!(file.graph.steps().len(), 1);
         assert_eq!(file.inputs["clean"]["command"], "true");
+        assert_eq!(file.graph.steps()[0].phase, None);
+    }
+
+    /// A step may name the moment of the process it belongs to. The word goes
+    /// in and comes out as written, and a step that names none writes no key:
+    /// a file rewritten by Sailor must not grow a `"phase": null` its author
+    /// never typed.
+    #[test]
+    fn a_step_may_name_its_phase_and_the_file_keeps_it_as_written() {
+        let text = r#"{
+            "id": "fasi",
+            "description": "one step in a named phase",
+            "graph": {
+                "steps": [{
+                    "id": "build",
+                    "deps": [],
+                    "input_schema": {"type": "any"},
+                    "output_schema": {"type": "any"},
+                    "when": null,
+                    "action": "shell_check",
+                    "max_attempts": 1,
+                    "phase": "construction"
+                }, {
+                    "id": "unphased",
+                    "deps": [],
+                    "input_schema": {"type": "any"},
+                    "output_schema": {"type": "any"},
+                    "when": null,
+                    "action": "shell_check",
+                    "max_attempts": 1
+                }]
+            },
+            "inputs": {}
+        }"#;
+
+        let file: FlowFile = serde_json::from_str(text).expect("valid flow");
+        assert_eq!(file.graph.steps()[0].phase.as_deref(), Some("construction"));
+        assert_eq!(file.graph.steps()[1].phase, None);
+
+        let written = serde_json::to_value(&file).expect("a flow serializes");
+        let steps = &written["graph"]["steps"];
+        assert_eq!(steps[0]["phase"], "construction");
+        assert!(steps[1].get("phase").is_none(), "{steps}");
+
+        let again: FlowFile = serde_json::from_value(written).expect("what was written loads");
+        assert_eq!(again, file);
     }
 
     /// A bare graph is not a flow: without `inputs` nobody knows what values it
