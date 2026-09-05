@@ -25,7 +25,7 @@ si salva nemmeno. Le primitive si corrispondono quasi una a una; la differenza
 | la forma della risposta | `schema` (JSON Schema) sull'agente | `answer_shape` nel `with`, ricopiata in `output_schema` del passo | ogni `*.flow.json` |
 | in parallelo | `parallel([...])` | passi con le stesse `deps`: l'esecutore apre un **fronte** alla volta, con un tetto | `executor.rs`, `std::thread::scope` |
 | in cascata | `pipeline(items, stage1, stage2)` | `deps` tra passi; `{"$from": "/passo/campo"}` porta l'uscita di uno nell'ingresso dell'altro | `graph.rs`, il validatore `accepts` |
-| fasi | `phase('Review')` nel `meta` | non c'è: l'ordine è il grafo | — |
+| fasi | `phase('Review')` nel `meta` | `phase` facoltativo sul passo, disegnato dalla finestra | `graph.rs`, `StepNode.tsx` |
 | un sotto-programma | `Agent` (subagente) o `Skill` | `subflow` — un flusso che ne esegue un altro, con il registro che lega il figlio al passo | `crates/flow/src/subflow.rs` |
 | consegnare a una persona | `AskUserQuestion` (blocca la sessione) | `handed_to_agent`: il passo aspetta chi è vivo nel terminale, con opzioni chiuse e un tempo; la corsa resta «in attesa di una persona» nel ledger | `crates/actions/src/handoff.rs` |
 | quando parte | `/loop`, `CronCreate`, routine | `schedule` nel file (`every_seconds`, `daily_at`, peso) letto dal **battito** della finestra e da `sailor flow tick` | `crates/flow/src/schedule.rs`, `desktop/src-tauri/src/beat.rs` |
@@ -102,16 +102,19 @@ un grafo, un registro o un orologio. Per loro Sailor non «rispecchia» niente:
    flusso con un gesto, e da lì corre su ogni motore con un registro. Fatto: il
    mandato del passo `author` in `crates/flow/system/draft-a-flow.flow.json` ha
    la sezione «IF THE SKETCH IS A SCRIPT» con le quattro corrispondenze, e
-   `crates/sailor/tests/draft_a_flow.rs` prova che ci siano — finché il campo
-   `phase` non esiste, il nome della fase resta nell'id o nella descrizione.
+   `crates/sailor/tests/draft_a_flow.rs` prova che ci siano. Il campo `phase`
+   è arrivato la stessa notte (sotto); il mandato dell'autore va aggiornato per
+   usarlo invece dell'id.
 2. **`for_each`.** Un passo che, ricevuta una lista, apre un `subflow` per
    elemento sotto il tetto del fronte, e restituisce la lista delle uscite. È
    l'unica primitiva di Claude che non abbiamo, ed è quella che fa la
    revisione a più dimensioni (una per ogni tipo di difetto, poi una verifica
    per ogni risultato) — il caso d'uso che Theo ha visto fare al `Workflow`.
-3. **`phase`.** Un campo facoltativo sul passo, e la finestra che lo mostra
-   sopra la corsa. Un pomeriggio di lavoro, e la persona sa in che momento
-   del processo si trova senza leggere il grafo.
+3. **`phase`.** *Fatto la stessa notte:* `Step.phase` facoltativo in
+   `crates/flow/src/graph.rs`, `sailor flow check` lo stampa accanto al passo,
+   la finestra lo disegna sopra il nome del nodo (`StepNode.tsx`,
+   `.step-node__phase`); prove sul file, sul rapporto del check e sul nodo.
+   Nessun flusso spedito lo usa ancora.
 
 ## Cosa non va copiato
 
