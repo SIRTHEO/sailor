@@ -23,6 +23,7 @@ mod extensions;
 mod hazards;
 mod relocate;
 mod run_and_resume;
+pub mod seeds;
 #[cfg(test)]
 mod test_support;
 
@@ -64,6 +65,7 @@ fn dispatch(args: &[String], sources: &[FlowSource]) -> Result<String, String> {
         [command, name, text] if command == "run" => run_flow(sources, name, Some(text)),
         [command, run_id] if command == "resume" => resume_run(run_id),
         [command, name] if command == "cost" => cost_of(name),
+        [command] if command == "seeds" => seeds::seeds_report(),
         [command, name] if command == "relocate" => relocate_flow(sources, name, None),
         [command, name, from] if command == "relocate" => relocate_flow(sources, name, Some(from)),
         [command, name] if command == "cap" => cap_of(sources, name),
@@ -187,6 +189,10 @@ pub const USAGE: &[Form] = &[
     Form {
         form: "sailor flow cost <name>",
         says_key: "",
+    },
+    Form {
+        form: "sailor flow seeds",
+        says_key: "cli.flow.form.seeds",
     },
     // **`micro`, `nessuno`, `leggero` E `pesante` RESTANO COSÌ, E NON È UNA
     // DIMENTICANZA.** Non sono segnaposto: sono le parole che l'utente batte
