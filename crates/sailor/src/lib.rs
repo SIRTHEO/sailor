@@ -33,6 +33,7 @@ pub mod profiles_cmd;
 pub mod publish_cmd;
 pub mod ratchet_cmd;
 pub mod release_cmd;
+pub mod search_cmd;
 pub mod remaining_cmd;
 pub mod run_cmd;
 pub mod session_cmd;
@@ -137,6 +138,12 @@ pub const COMMANDS: &[Command] = &[
         description_key: "cli.command.release",
         usage: release_cmd::USAGE,
         run: release_cmd::run,
+    },
+    Command {
+        name: "search",
+        description_key: "cli.command.search",
+        usage: search_cmd::USAGE,
+        run: search_cmd::run,
     },
     Command {
         name: "ratchet",
