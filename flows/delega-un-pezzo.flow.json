@@ -1,0 +1,164 @@
+{
+  "id": "delega-un-pezzo",
+  "description": "Lo stesso incarico a due motori diversi, che girano insieme e non si vedono. Nessun passo scrive: l'uscita e una ricognizione con file e riga, che una persona traduce in codice. I due motori sono dichiarati uno per passo, cosi una corsa impegna due righe di comando diverse invece di una sola in fila.",
+  "graph": {
+    "steps": [
+      {
+        "id": "innesco",
+        "deps": [],
+        "action": "trigger",
+        "max_attempts": 1,
+        "when": null,
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
+        "id": "primo",
+        "deps": [
+          "innesco"
+        ],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tool": "codex",
+          "args": [
+            "exec",
+            "--sandbox",
+            "read-only"
+          ],
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "findings": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "total": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "findings",
+              "total"
+            ],
+            "allow_extra": false
+          },
+          "stdin": {
+            "$join": [
+              "You are one engine of a Sailor flow, working on Sailor's own tree at the root you are in. Another engine is working on the same mandate right now and you do not see each other. Do not write, move or delete anything: reads, searches and counts only.",
+              "\n\nHOW YOUR ANSWER MUST LOOK\nAnswer with one JSON object and nothing else: no preamble, no greeting, no reasoning outside the fields. It must match exactly this shape, where «properties» are the fields, «required» the mandatory ones and «allow_extra: false» means no others are accepted:\n",
+              {
+                "$json": "/answer_shape"
+              },
+              "\n\nEvery point you find is one line of «findings», and «total» is how many. Name file and line for each.\n\nYOUR MANDATE\n\n",
+              {
+                "$from": "/text"
+              }
+            ]
+          },
+          "tree": "own",
+          "timeout_secs": 1800
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "type": "string"
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "tool",
+            "timeout_secs"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
+        "id": "secondo",
+        "deps": [
+          "innesco"
+        ],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tool": "claude-code",
+          "args": [],
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "findings": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "total": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "findings",
+              "total"
+            ],
+            "allow_extra": false
+          },
+          "stdin": {
+            "$join": [
+              "You are one engine of a Sailor flow, working on Sailor's own tree at the root you are in. Another engine is working on the same mandate right now and you do not see each other. Do not write, move or delete anything: reads, searches and counts only.",
+              "\n\nHOW YOUR ANSWER MUST LOOK\nAnswer with one JSON object and nothing else: no preamble, no greeting, no reasoning outside the fields. It must match exactly this shape, where «properties» are the fields, «required» the mandatory ones and «allow_extra: false» means no others are accepted:\n",
+              {
+                "$json": "/answer_shape"
+              },
+              "\n\nEvery point you find is one line of «findings», and «total» is how many. Name file and line for each.\n\nYOUR MANDATE\n\n",
+              {
+                "$from": "/text"
+              }
+            ]
+          },
+          "tree": "own",
+          "timeout_secs": 1800
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "type": "string"
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "tool",
+            "timeout_secs"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      }
+    ],
+    "skippable_dependencies": []
+  },
+  "inputs": {
+    "innesco": {
+      "source": "manual",
+      "text": "nessun incarico"
+    }
+  }
+}
