@@ -346,7 +346,7 @@ mod tests {
     /// that touches nothing.
     #[test]
     fn without_a_ledger_the_writing_nodes_stay_out_and_the_reading_one_stays_in() {
-        let registry = default_registry(None, None);
+        let registry = registry_in(House::empty(), None, None);
         assert!(
             registry.get("history_ask").is_some(),
             "reading history works without a ledger: the answer is «there is nothing»"
@@ -365,7 +365,7 @@ mod tests {
     /// cannot be traced back to the step that called it.
     #[test]
     fn without_a_ledger_the_subflow_step_is_registered_but_refuses_to_run() {
-        let registry = default_registry(None, None);
+        let registry = registry_in(House::empty(), None, None);
         let step = registry
             .get(flow::subflow::SUBFLOW_ACTION)
             .expect("registered even without a ledger");
