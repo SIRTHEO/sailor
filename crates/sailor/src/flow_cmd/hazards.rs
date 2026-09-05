@@ -3,7 +3,7 @@
 //! match, and steps that contradict themselves.
 
 use flow::reference;
-use flow::FlowFile;
+use flow::{ActionRegistry, FlowFile};
 use serde_json::Value;
 
 use super::check::engines_of;
@@ -278,6 +278,22 @@ pub(super) fn blind_steps_asking_for_a_session(flow: &FlowFile) -> Vec<String> {
             with.get(actions::BLIND).and_then(Value::as_bool) == Some(true)
                 && with.get("session").is_some()
         })
+        .map(|step| step.id.clone())
+        .collect()
+}
+
+/// Steps whose action cannot deliver the verdict `decides_done` promises.
+///
+/// **A MODEL MUST NOT BE THE ONE THAT DECIDES DONE.** That is the approval step
+/// this declaration exists to remove, and a flow that hangs it on an engine
+/// would spend a call to be told what it wanted to hear. The registry answers,
+/// not a list of names written here beside it.
+pub(super) fn deciders_that_are_not_checks(flow: &FlowFile, registry: &ActionRegistry) -> Vec<String> {
+    flow.graph
+        .steps()
+        .iter()
+        .filter(|step| step.decides_done)
+        .filter(|step| !registry.get(&step.action).is_some_and(|action| action.is_a_check()))
         .map(|step| step.id.clone())
         .collect()
 }
@@ -670,6 +686,49 @@ mod tests {
         let flow = flow_with(r#"{"workdir": "crates/flow"}"#);
 
         assert!(hardcoded_paths(&flow).is_empty());
+    }
+
+    /// A flow of one step that declares it decides the run is done.
+    fn deciding_flow(action: &str) -> FlowFile {
+        let json = format!(
+            r#"{{
+                "id": "prova", "description": "un passo solo",
+                "graph": {{"steps": [{{
+                    "id": "unico", "deps": [], "action": "{action}",
+                    "max_attempts": 1, "when": null, "decides_done": true,
+                    "input_schema": {{"type": "any"}},
+                    "output_schema": {{"type": "any"}}
+                }}]}},
+                "inputs": {{}}
+            }}"#
+        );
+        serde_json::from_str(&json).expect("caricare il flusso")
+    }
+
+    fn one_of_each() -> ActionRegistry {
+        let mut registry = ActionRegistry::default();
+        registry.register("shell_check", actions::ShellCheckAction::new());
+        registry.register("external_engine", actions::ExternalEngineAction::new());
+        registry
+    }
+
+    /// **A MODEL MUST NOT BE THE ONE THAT DECIDES DONE.** An engine step
+    /// carrying `decides_done` would spend a call to be told what it wanted to
+    /// hear, which is the approval step this declaration exists to remove. An
+    /// action nobody registered cannot decide either: it never answers.
+    #[test]
+    fn only_an_action_that_returns_a_verdict_may_decide_the_run_is_done() {
+        let registry = one_of_each();
+
+        assert!(deciders_that_are_not_checks(&deciding_flow("shell_check"), &registry).is_empty());
+        assert_eq!(
+            deciders_that_are_not_checks(&deciding_flow("external_engine"), &registry),
+            vec!["unico".to_owned()]
+        );
+        assert_eq!(
+            deciders_that_are_not_checks(&deciding_flow("nessuna"), &registry),
+            vec!["unico".to_owned()]
+        );
     }
 
     /// **UN PUNTATORE NON È UN PERCORSO.** `{"$from": "/answer/verdict"}`

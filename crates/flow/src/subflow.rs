@@ -688,6 +688,7 @@ mod tests {
                 retry_after_secs: None,
                 phase: None,
         stops_when: None,
+        decides_done: false,
             })
             .collect();
         FlowFile {

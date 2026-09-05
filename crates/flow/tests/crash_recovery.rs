@@ -142,6 +142,7 @@ fn opaque_graph() -> Graph {
         retry_after_secs: None,
         phase: None,
         stops_when: None,
+        decides_done: false,
     }])
     .expect("valid test graph")
 }
@@ -382,6 +383,7 @@ fn recovery_graph() -> Graph {
             retry_after_secs: None,
             phase: None,
         stops_when: None,
+        decides_done: false,
         },
         Step {
             id: "next".to_owned(),
@@ -399,6 +401,7 @@ fn recovery_graph() -> Graph {
             retry_after_secs: None,
             phase: None,
         stops_when: None,
+        decides_done: false,
         },
     ])
     .expect("valid test graph")

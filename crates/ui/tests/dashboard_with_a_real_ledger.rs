@@ -282,6 +282,7 @@ fn a_broken_flow_keeps_its_place_in_the_registry_with_its_reason() {
         retry_after_secs: None,
         phase: None,
         stops_when: None,
+        decides_done: false,
     }])
     .expect("valid graph");
     let mut flows = ui::registry::FlowRegistry::new();

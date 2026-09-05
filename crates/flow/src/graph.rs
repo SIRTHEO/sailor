@@ -47,6 +47,14 @@ pub struct Step {
     /// keeps nothing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stops_when: Option<String>,
+    /// This step's verdict closes the run, and closes it as done.
+    ///
+    /// A flag, not a pointer. A pointer would let the author say what passing
+    /// means, and the obvious one — `/status` — is true for `failed` too, any
+    /// string with text in it being truthy. The flow says **which step
+    /// decides**; what a pass is stays beside the action writing the verdict.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub decides_done: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -454,6 +462,7 @@ mod tests {
             retry_after_secs: None,
             phase: None,
         stops_when: None,
+        decides_done: false,
         }
     }
 
