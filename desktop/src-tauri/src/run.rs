@@ -24,7 +24,7 @@
 use actions::{LiveSink, Pipe, StepSinks};
 use flow::{
     ActionRegistry, Completion, Execution, Executor, FlowError, FlowFile, InProcessExecutor,
-    RecordStore, Refusal, StepRecord, SystemClock,
+    Ran, RecordStore, Refusal, StepRecord, SystemClock,
 };
 use ledger::Ledger;
 use serde::Serialize;
@@ -361,7 +361,8 @@ impl RecordStore for WatchedStore {
 
 /// The `step_closed` fact as the window receives it. `Completion` does not
 /// serialise, so the fields a watcher needs are picked by hand: `said` is the
-/// raw text of the step, `refusal` the check that refused and what it saw.
+/// raw text of the step, `refusal` the check that refused and what it saw,
+/// `ran` the program and the arguments the step actually started.
 fn announced_close(step_id: &str, attempt: u32, epoch: u64, completion: &Completion) -> Value {
     json!({
         "step_id": step_id,
@@ -372,6 +373,7 @@ fn announced_close(step_id: &str, attempt: u32, epoch: u64, completion: &Complet
         "said": completion.said,
         "failure_class": completion.failure_class,
         "refusal": completion.refusal,
+        "ran": completion.ran,
         "ended_at": completion.ended_at,
         "bytes_seen": completion.bytes_seen,
         "bytes_discarded": completion.bytes_discarded,
@@ -938,6 +940,9 @@ pub struct StepPassage {
     /// Which check refused, where, by which rule and what it saw: the
     /// structure beside the class, so the window need not parse `said`.
     pub refusal: Option<Refusal>,
+    /// The program and the arguments the step started, after resolution: what
+    /// a person would have to type to reach the same outcome by hand.
+    pub ran: Option<Ran>,
     /// Da dove è partita la corsa: la provenienza, scritta dal sistema.
     pub started_by: String,
     /// Che cosa è entrato in **questo** nodo, quella volta.
@@ -1050,6 +1055,7 @@ fn passage_of(record: &StepRecord, started_by: &str, signal: &RunSignal) -> Step
         outcome: record.outcome.map(|outcome| format!("{outcome:?}")),
         failure_class: record.failure_class.clone(),
         refusal: record.refusal.clone(),
+        ran: record.ran.clone(),
         started_by: started_by.to_owned(),
         input: record.input.clone(),
         mandate: signal.text.clone(),
@@ -1463,6 +1469,7 @@ mod tests {
             said: Some("off shape".to_owned()),
             failure_class: Some("answer_off_shape".to_owned()),
             refusal: Some(refused_by_shape()),
+            ran: None,
             ended_at: 7,
             bytes_seen: None,
             bytes_discarded: None,
@@ -1477,6 +1484,34 @@ mod tests {
         assert!(announced_close("verdict", 1, 0, &plain)["refusal"].is_null());
     }
 
+    fn ran_a_shell_line() -> Ran {
+        Ran::new("sh", ["-c", "echo hi"])
+    }
+
+    /// The line a step started travels in the closing fact, so whoever is
+    /// watching sees the command instead of guessing it from the outcome.
+    #[test]
+    fn a_closing_fact_carries_the_line_the_step_ran() {
+        let completion = Completion {
+            outcome: flow::Outcome::Went,
+            output: None,
+            said: None,
+            failure_class: None,
+            refusal: None,
+            ran: Some(ran_a_shell_line()),
+            ended_at: 7,
+            bytes_seen: None,
+            bytes_discarded: None,
+        };
+        let announced = announced_close("verdict", 1, 0, &completion);
+        assert_eq!(announced["ran"]["program"], "sh");
+        assert_eq!(announced["ran"]["args"][0], "-c");
+        assert_eq!(announced["ran"]["args"][1], "echo hi");
+
+        let quiet = Completion { ran: None, ..completion };
+        assert!(announced_close("verdict", 1, 0, &quiet)["ran"].is_null());
+    }
+
     /// The same structure reaches the history of a step, read back from the
     /// ledger, so an old refusal is as legible as the one just made.
     #[test]
@@ -1489,6 +1524,20 @@ mod tests {
 
         record.refusal = None;
         assert_eq!(passage_of(&record, "window", &RunSignal::default()).refusal, None);
+    }
+
+    /// The same line reaches the history of a step, read back from the ledger,
+    /// so a run from months ago says what it started as plainly as this one.
+    #[test]
+    fn a_passage_carries_the_line_its_record_ran() {
+        let mut record =
+            StepRecord::started("r1", "verdict", 1, 0, Vec::new(), json!({}), Vec::new(), 1);
+        record.ran = Some(ran_a_shell_line());
+        let passage = passage_of(&record, "window", &RunSignal::default());
+        assert_eq!(passage.ran, Some(ran_a_shell_line()));
+
+        record.ran = None;
+        assert_eq!(passage_of(&record, "window", &RunSignal::default()).ran, None);
     }
 
     fn engine_step(id: &str, deps: Vec<&str>, with: Value) -> Value {
