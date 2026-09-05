@@ -99,7 +99,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// learned four cache columns while this stayed at 4, an existing store was
 /// already registered at 4, `4 < 4` is false, the migration never ran, and
 /// every read died with `no such column: cache_write_tokens`.
-const PROJECTION_SCHEMA_VERSION: i64 = 11;
+const PROJECTION_SCHEMA_VERSION: i64 = 12;
 
 pub enum LedgerError {
     Sqlite(rusqlite::Error),
@@ -955,6 +955,7 @@ impl Ledger {
         record.said = completion.said.map(flow::truncate_said);
         record.failure_class = completion.failure_class;
         record.refusal = completion.refusal;
+        record.ran = completion.ran;
         record.ended_at = Some(completion.ended_at);
         record.bytes_seen = completion.bytes_seen;
         record.bytes_discarded = completion.bytes_discarded;
@@ -971,7 +972,7 @@ impl Ledger {
             "SELECT run_id, step_id, attempt, epoch, deps, input_digest, input,
                     gates, attempt_relation, started_at, outcome, output, said,
                     failure_class, ended_at, bytes_seen, bytes_discarded,
-                    held_by_pid, species, refusal
+                    held_by_pid, species, refusal, ran
              FROM steps WHERE run_id = ?1 ORDER BY started_at, step_id, attempt",
         )?;
         let records = statement
@@ -1834,6 +1835,7 @@ fn create_projection_tables(connection: &Connection) -> Result<(), LedgerError> 
              bytes_discarded INTEGER,
              checkpointed INTEGER NOT NULL DEFAULT 0 CHECK(checkpointed IN (0, 1)),
              refusal TEXT,
+             ran TEXT,
              PRIMARY KEY (run_id, step_id, attempt)
          );
          CREATE TABLE IF NOT EXISTS model_calls (
@@ -2001,6 +2003,12 @@ fn add_missing_projection_columns(transaction: &Transaction<'_>) -> Result<(), L
     // `flow cost` prints needs the check named in a column of its own.
     if !column_exists(transaction, "steps", "refusal")? {
         transaction.execute("ALTER TABLE steps ADD COLUMN refusal TEXT", [])?;
+    }
+    // version 12: the line a step ran, program and arguments as started. Of a
+    // step that ran a command the rows kept the outcome and not the text, so
+    // whoever read the run later could not tell what had been executed.
+    if !column_exists(transaction, "steps", "ran")? {
+        transaction.execute("ALTER TABLE steps ADD COLUMN ran TEXT", [])?;
     }
     // version 6: turns. You pay per turn, and no column counted them.
     if !column_exists(transaction, "model_calls", "turns")? {
@@ -2522,9 +2530,9 @@ fn project_step(
          (run_id, step_id, attempt, epoch, deps, input_digest, input, gates,
           attempt_relation, started_at, outcome, output, said, failure_class,
           ended_at, bytes_seen, bytes_discarded, held_by_pid, species,
-          checkpointed, refusal)
+          checkpointed, refusal, ran)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                 ?15, ?16, ?17, ?18, ?19, ?20, ?21)
+                 ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)
          ON CONFLICT(run_id, step_id, attempt) DO UPDATE SET
           epoch=excluded.epoch, deps=excluded.deps,
           input_digest=excluded.input_digest, input=excluded.input,
@@ -2534,7 +2542,8 @@ fn project_step(
           failure_class=excluded.failure_class, ended_at=excluded.ended_at,
           bytes_seen=excluded.bytes_seen, bytes_discarded=excluded.bytes_discarded,
           held_by_pid=excluded.held_by_pid, species=excluded.species,
-          checkpointed=excluded.checkpointed, refusal=excluded.refusal",
+          checkpointed=excluded.checkpointed, refusal=excluded.refusal,
+          ran=excluded.ran",
         params![
             record.run_id,
             record.step_id,
@@ -2562,6 +2571,11 @@ fn project_step(
             checkpointed,
             record
                 .refusal
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()?,
+            record
+                .ran
                 .as_ref()
                 .map(serde_json::to_string)
                 .transpose()?,
@@ -2741,6 +2755,7 @@ fn validate_started(record: &StepRecord) -> Result<(), LedgerError> {
         || record.said.is_some()
         || record.failure_class.is_some()
         || record.refusal.is_some()
+        || record.ran.is_some()
         || record.ended_at.is_some()
         || record.bytes_seen.is_some()
         || record.bytes_discarded.is_some()
@@ -2764,7 +2779,7 @@ fn read_step(
             "SELECT run_id, step_id, attempt, epoch, deps, input_digest, input,
                     gates, attempt_relation, started_at, outcome, output, said,
                     failure_class, ended_at, bytes_seen, bytes_discarded,
-                    held_by_pid, species, refusal
+                    held_by_pid, species, refusal, ran
              FROM steps
              WHERE run_id = ?1 AND step_id = ?2 AND attempt = ?3 AND epoch = ?4",
             params![run_id, step_id, attempt, padded_u64(epoch)],
@@ -2798,6 +2813,7 @@ fn step_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StepRecord> {
     let held_by_pid: Option<i64> = row.get(17)?;
     let species: Option<String> = row.get(18)?;
     let refusal: Option<String> = row.get(19)?;
+    let ran: Option<String> = row.get(20)?;
     Ok(StepRecord {
         run_id: row.get(0)?,
         step_id: row.get(1)?,
@@ -2826,6 +2842,10 @@ fn step_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StepRecord> {
         refusal: refusal
             .as_deref()
             .map(|value| json_column(value, 19))
+            .transpose()?,
+        ran: ran
+            .as_deref()
+            .map(|value| json_column(value, 20))
             .transpose()?,
         ended_at: row.get(14)?,
         bytes_seen: bytes_seen.map(|b| b as u64),
@@ -2955,7 +2975,7 @@ pub const MODEL_CALL_DUMP_COLUMNS: &str = "call_id,run_id,step_id,purpose,cli,re
 fn dump_table(connection: &Connection, table: &str) -> Result<Value, LedgerError> {
     let columns = match table {
         "runs" => "run_id,kind,entity,parent_run_id,started_by,status,total_cost_micros,error,started_at,ended_at",
-        "steps" => "run_id,step_id,attempt,epoch,deps,input_digest,input,gates,attempt_relation,started_at,outcome,output,said,failure_class,ended_at,bytes_seen,bytes_discarded,held_by_pid,species,checkpointed,refusal",
+        "steps" => "run_id,step_id,attempt,epoch,deps,input_digest,input,gates,attempt_relation,started_at,outcome,output,said,failure_class,ended_at,bytes_seen,bytes_discarded,held_by_pid,species,checkpointed,refusal,ran",
         // The two columns born with version 4 sit at the end, and that is not
         // untidiness: readers of this dump go by position, and slotting them in
         // the middle would shift every index downstream without anything
