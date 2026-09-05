@@ -16,7 +16,7 @@ use terminal::Workspace;
 
 /// A short directory: a socket address has a hard length cap.
 fn scratch(name: &str) -> PathBuf {
-    terminal::scratch::directory(name)
+    terminal::scratch::directory(name).expect("a scratch directory")
 }
 
 fn collect(inner: &Arc<Pty>) -> Arc<Mutex<Vec<u8>>> {
