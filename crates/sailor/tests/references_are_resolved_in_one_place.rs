@@ -54,8 +54,13 @@ fn repository_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// Il nome della funzione che scioglie i rinvii, cercato come testo.
-const THE_CALL: &str = "resolve_references(";
+/// The two functions that resolve references, looked for as text: the
+/// executor's, which walks the `with` alone, and the whole one the tests use.
+const THE_CALLS: &[&str] = &["resolve_references(", "resolve_overlay("];
+
+fn names_the_call(text: &str) -> bool {
+    THE_CALLS.iter().any(|call| text.contains(call))
+}
 
 /// I due soli file del codice spedito che possono nominarla, col perché.
 ///
@@ -347,7 +352,7 @@ fn nothing_but_the_place_where_the_input_is_composed_resolves_references() {
             }
         };
         for (number, line) in code.lines().enumerate() {
-            if line.contains(THE_CALL) && !allowed.contains(&relative.as_str()) {
+            if names_the_call(&line) && !allowed.contains(&relative.as_str()) {
                 copies.push(format!("{relative}:{}: {}", number + 1, line.trim()));
             }
         }
@@ -388,7 +393,7 @@ fn the_one_place_that_may_resolve_them_actually_does() {
     let shipped = shipped_code(&text).expect("l'esecutore si legge fino in fondo");
 
     assert!(
-        shipped.contains(THE_CALL),
+        names_the_call(&shipped),
         "`crates/flow/src/executor.rs` non scioglie più nessun rinvio: allora \
          non li scioglie nessuno, e ogni `{{\"$from\": …}}` arriva alle azioni \
          come oggetto"
@@ -398,7 +403,7 @@ fn the_one_place_that_may_resolve_them_actually_does() {
         .map(|(_, after)| after.to_owned())
         .expect("`step_input` esiste");
     assert!(
-        inside_step_input.contains(THE_CALL),
+        names_the_call(&inside_step_input),
         "la chiamata non sta più dentro `step_input`: fuori di lì non è più \
          l'unico punto attraversato da ogni passo"
     );
@@ -450,7 +455,7 @@ const TAIL: &str = "coda";
     let code = shipped_code(text).expect("il blocco di prova si chiude");
 
     assert!(
-        code.contains(THE_CALL),
+        names_the_call(&code),
         "il codice spedito dopo il blocco di prova è sparito:\n{code}"
     );
     assert!(
@@ -497,7 +502,7 @@ fn the_other_escaped_characters_are_still_read_whole() {
         let code = shipped_code(&text).expect("niente blocchi di prova");
 
         assert!(
-            code.contains(THE_CALL),
+            names_the_call(&code),
             "dopo {literal} il codice spedito è sparito:\n{code}"
         );
         assert!(
