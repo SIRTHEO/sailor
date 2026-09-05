@@ -7,7 +7,7 @@
 
 use flow::{ActionOutcome, SharedState};
 use serde_json::{json, Value};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// A sessions file of its own, so no test reads the one this machine keeps.
@@ -36,7 +36,7 @@ fn arrival(tty: &str, worktree: &str, at: i64) -> sessions::Arrival {
     }
 }
 
-fn survey(store: &PathBuf, at: i64) -> Value {
+fn survey(store: &Path, at: i64) -> Value {
     let mut registry = flow::ActionRegistry::default();
     actions::terminals::register_terminals(&mut registry, None);
     let action = registry
