@@ -9,9 +9,10 @@
 // time from the schedule, the ledger and the clock: nothing is remembered
 // between beats, so a window killed and reopened decides the same.
 
-use flow::FlowFile;
+use flow::system::FAULT_WRITER;
+use flow::{FailureStreak, FaultToWrite, FlowFile};
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, TryLockError};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
@@ -22,6 +23,9 @@ pub const EVERY: Duration = Duration::from_secs(60);
 
 /// What the ledger says started a run the beat started.
 pub const ORIGIN: &str = "window · schedule";
+
+/// What the ledger says started a fault the beat asked to be written.
+pub const FAULT_ORIGIN: &str = "window · fault";
 
 /// The event the window hears after each beat, carrying the `Report`.
 pub const EVENT: &str = "flow_beat";
@@ -143,16 +147,84 @@ fn now_secs() -> i64 {
         .unwrap_or(0)
 }
 
-/// When each flow last started, by flow id. A ledger that is not there yet
-/// means nothing has ever run, and then everything is due.
-fn last_started() -> Result<BTreeMap<String, i64>, String> {
+/// What one look at the ledger tells the beat: when each flow last started,
+/// which flows keep failing, and which failures a beat already wrote a fault
+/// about. The ledger stays in hand to note the faults this beat asks for.
+#[derive(Default)]
+struct Glance {
+    last_started: BTreeMap<String, i64>,
+    streaks: Vec<FailureStreak>,
+    faults_written: BTreeSet<String>,
+    ledger: Option<ledger::Ledger>,
+}
+
+/// A ledger that is not there yet means nothing has ever run, and then
+/// everything is due and nothing has failed.
+fn glance() -> Result<Glance, String> {
     let dir = default_ledger_dir();
     if !dir.join("state.db").exists() {
-        return Ok(BTreeMap::new());
+        return Ok(Glance::default());
     }
     ledger::Ledger::open(&dir)
-        .and_then(|ledger| ledger.last_started_at())
+        .and_then(|ledger| {
+            Ok(Glance {
+                last_started: ledger.last_started_at()?,
+                streaks: ledger.failure_streaks(flow::FAILURES_THAT_MAKE_A_FAULT)?,
+                faults_written: ledger.faults_written()?,
+                ledger: Some(ledger),
+            })
+        })
         .map_err(|error| format!("{}: {error}", dir.display()))
+}
+
+/// The faults the beat starts the writer for now: the shared rule, minus the
+/// case only a window has — the writer still busy with an earlier fault, which
+/// is not started on top of itself and is asked again at the next beat.
+pub fn faults_to_start(
+    streaks: &[FailureStreak],
+    faults_written: &BTreeSet<String>,
+    running: &[String],
+) -> Vec<FaultToWrite> {
+    if running.iter().any(|id| id == FAULT_WRITER) {
+        return Vec::new();
+    }
+    flow::faults_due(streaks, faults_written)
+}
+
+/// Starts the fault writer about `fault` and remembers the failed run whatever
+/// the start came to: a writer that cannot run is said once, not every minute.
+fn write_fault(app: &AppHandle, runs: &Arc<crate::run::Runs>, glance: &Glance, fault: &FaultToWrite, now: i64) -> Decision {
+    let times = fault.length.to_string();
+    let not_written = |why: &str| Verdict::Broke {
+        why: catalogue::say(
+            "desktop.beat.fault_not_written",
+            &[("flow", &fault.flow), ("times", &times), ("why", why)],
+        ),
+    };
+    let mut verdict = match crate::run::start(app, runs, FAULT_WRITER, Some(&fault.flow), FAULT_ORIGIN.to_owned()) {
+        Ok(started) => {
+            println!(
+                "beat\t{FAULT_WRITER}\tfault\t{}",
+                catalogue::say(
+                    "desktop.beat.writes_fault",
+                    &[("flow", &fault.flow), ("times", &times), ("run_id", &started.run_id)],
+                )
+            );
+            Verdict::Ran {
+                run_id: started.run_id,
+            }
+        }
+        Err(why) => not_written(&why),
+    };
+    if let Some(ledger) = &glance.ledger {
+        if let Err(error) = ledger.remember_fault_written(&fault.flow, &fault.run_id, FAULT_ORIGIN, now) {
+            verdict = not_written(&error.to_string());
+        }
+    }
+    Decision {
+        flow: FAULT_WRITER.to_owned(),
+        verdict,
+    }
 }
 
 /// One beat, now. Returns nothing when another beat is judging this instant.
@@ -166,7 +238,7 @@ pub fn once(app: &AppHandle) -> Option<Report> {
     let runs = app.state::<Arc<crate::run::Runs>>().inner().clone();
     let now = now_secs();
     let known = load_all_flows(&flow_sources());
-    let decisions = match last_started() {
+    let decisions = match glance() {
         Err(why) => known
             .iter()
             .map(|(flow, _, _)| Decision {
@@ -176,21 +248,34 @@ pub fn once(app: &AppHandle) -> Option<Report> {
                 },
             })
             .collect(),
-        Ok(last) => judge(&known, &last, &runs.running_flows(), now)
-            .into_iter()
-            .map(|(flow, why)| {
-                let verdict = match why {
-                    Some(why) => Verdict::Held { why },
-                    None => match crate::run::start(app, &runs, &flow, None, ORIGIN.to_owned()) {
-                        Ok(started) => Verdict::Ran {
-                            run_id: started.run_id,
+        Ok(glance) => {
+            let running = runs.running_flows();
+            let mut decisions: Vec<Decision> = judge(&known, &glance.last_started, &running, now)
+                .into_iter()
+                .map(|(flow, why)| {
+                    let verdict = match why {
+                        Some(why) => Verdict::Held { why },
+                        None => match crate::run::start(app, &runs, &flow, None, ORIGIN.to_owned()) {
+                            Ok(started) => Verdict::Ran {
+                                run_id: started.run_id,
+                            },
+                            Err(why) => Verdict::Broke { why },
                         },
-                        Err(why) => Verdict::Broke { why },
-                    },
-                };
-                Decision { flow, verdict }
-            })
-            .collect(),
+                    };
+                    Decision { flow, verdict }
+                })
+                .collect();
+            let faults = faults_to_start(&glance.streaks, &glance.faults_written, &running);
+            // The writer's line says what it did this beat, not that it has
+            // no schedule: the fault decisions take its place.
+            if !faults.is_empty() {
+                decisions.retain(|decision| decision.flow != FAULT_WRITER);
+            }
+            for fault in &faults {
+                decisions.push(write_fault(app, &runs, &glance, fault, now));
+            }
+            decisions
+        }
     };
     let report = Report { at: now, decisions };
     let mut held = beat.last.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -360,6 +445,23 @@ mod tests {
         );
         let judged = judge(&known, &last, &[], now);
         assert_eq!(judged[0].1, None, "with nothing running the same flow is due");
+    }
+
+    /// A flow three failures deep has its fault started, unless the writer is
+    /// still busy with an earlier one, or this failure was already written.
+    #[test]
+    fn a_fault_is_started_unless_the_writer_is_still_busy_or_it_was_written() {
+        let streaks = vec![FailureStreak {
+            flow: "relay".to_owned(),
+            length: 3,
+            last_failed_run: "relay-3".to_owned(),
+        }];
+        let nothing_written = BTreeSet::new();
+        let due = faults_to_start(&streaks, &nothing_written, &[]);
+        assert_eq!(due.len(), 1, "{due:?}");
+        assert_eq!((due[0].flow.as_str(), due[0].run_id.as_str()), ("relay", "relay-3"));
+        assert!(faults_to_start(&streaks, &nothing_written, &[FAULT_WRITER.to_owned()]).is_empty());
+        assert!(faults_to_start(&streaks, &BTreeSet::from(["relay-3".to_owned()]), &[]).is_empty());
     }
 
     /// The report the window hears is tagged the way the contract says.
