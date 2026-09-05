@@ -64,11 +64,12 @@ Nessuna di queste è bloccata da lavoro: sono bloccate da una scelta.
 
 ### Aperte il 05/09
 
-6. **La credenziale git di questa macchina non è quella del repository.** Il
-   rilascio spinge il tronco a ogni rilascio e da stasera dice «non spinto, il
-   remoto è indietro: 403»: `sorgenti` è oltre 200 commit avanti a
-   `origin/sorgenti`. Il gesto è di Theo: `gh auth switch -u SIRTHEO && gh auth
-   setup-git`, poi un rilascio qualunque.
+6. ~~**La credenziale git di questa macchina non è quella del repository.**~~
+   Alle 03:00 del 05/09 il rilascio ha spinto: `origin/sorgenti` è a
+   `b70e37e8`, oltre 200 commit in un colpo, con il gestore di credenziali di
+   sistema e senza che nessuno cambiasse niente. I tre rilasci prima avevano
+   detto «403». Resta da capire quale dei due account ha firmato la spinta —
+   `gh auth status` ne ha due — e va guardato sul remoto, non indovinato.
 7. **`origin/main` è la storia prima della riscrittura.** Il tronco è
    `sorgenti`; cosa fare del ramo `main` sul remoto — allinearlo, cancellarlo,
    lasciarlo — è una scelta sul pubblico, e va presa da chi firma.
