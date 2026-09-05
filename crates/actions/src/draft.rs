@@ -41,9 +41,20 @@ impl Action for ActionListAction {
     }
 }
 
+/// The flow, as an object or as its JSON text. Text is how a flow travels
+/// through a run: the resolver walks every object on the way to a step, and a
+/// drafted flow's own `$from` references are data here, not references.
 #[derive(Debug, Deserialize)]
 struct DraftSpec {
     flow: Value,
+}
+
+fn flow_as_value(handed: Value) -> Result<Value, ActionError> {
+    match handed {
+        Value::String(text) => serde_json::from_str(&text)
+            .map_err(|error| ActionError::new("invalid_flow", error.to_string())),
+        other => Ok(other),
+    }
 }
 
 pub struct FlowDraftAction {
@@ -78,7 +89,7 @@ impl Action for FlowDraftAction {
     fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         let spec: DraftSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
-        let flow = self.accept(spec.flow)?;
+        let flow = self.accept(flow_as_value(spec.flow)?)?;
         let flows_dir = self
             .flows_dir
             .as_ref()
@@ -145,6 +156,26 @@ mod tests {
         assert_eq!(said["steps"], json!(2));
         let back: FlowFile = serde_json::from_str(&written.expect("the file")).expect("a flow");
         assert_eq!(back.id, "una-bozza");
+    }
+
+    /// **A DRAFTED FLOW'S OWN `$from` IS DATA, NOT A REFERENCE TO RESOLVE.**
+    /// Handed as an object, the resolver reached into it on the way to this
+    /// step and broke on `/text`, a pointer meant for a run that has not
+    /// happened yet. Handed as text it arrives whole, references included.
+    #[test]
+    fn a_draft_handed_as_text_keeps_its_own_references() {
+        let dir = scratch("as-text");
+        let mut flow = a_flow("work_survey");
+        flow["graph"]["steps"][1]["with"] = json!({ "note": { "$from": "/text" } });
+        let went = drafter(&dir)
+            .execute(&json!({ "flow": flow.to_string() }), &SharedState::default())
+            .expect("the draft stands");
+        let written = std::fs::read_to_string(dir.join("una-bozza.flow.json"));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(matches!(went, ActionOutcome::Went(_)), "{went:?}");
+        let back: Value = serde_json::from_str(&written.expect("the file")).expect("json");
+        assert_eq!(back["graph"]["steps"][1]["with"]["note"]["$from"], json!("/text"));
     }
 
     /// **A DRAFT NAMING AN ACTION THE ENGINE DOES NOT HAVE IS NOT WRITTEN**:
