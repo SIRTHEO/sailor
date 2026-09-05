@@ -117,3 +117,23 @@ perché si fermava al primo `#[cfg(test)]` del file; ora hanno la loro voce.
 La seconda ondata (guasti 74, 37, 17, i quattro difetti di un motore, il
 testo del passo comando, guasti 10 e 5) è partita alle 14:35 e **caduta sul
 limite di sessione** senza un commit; ripresa tre agenti alla volta.
+
+## Cosa è entrato con la seconda ondata
+
+Fusi e verdi al cricchetto (40 giudici) entro le 16:10, tronco a `b2d1e5d5`:
+
+- **74**: la classe `nobody_keeps_the_time` non esiste più; un innesco
+  periodico è rifiutato con `periodic_source_not_read`, e un giudice chiede
+  all'albero se ciò che ogni rifiuto afferma è vero.
+- **37**: `flow cost` nomina i passi che non ha potuto misurare e perché; resta
+  aperta la misura vera del passo consegnato.
+- **17**: `needs_extensions` sul passo, `flow check` dice presente/assente/
+  irraggiungibile/incerta, e il testo che nomina una competenza non dichiarata
+  è segnalato. Chiuso.
+- **I difetti di `agy`**: una stringa in `tool` è una catena di uno;
+  `exhausted_when` validato contro `unusable_when`; il motore che aspetta una
+  persona viene fermato sulla riga che dichiara (`waits_for_a_person_when`)
+  invece di aspettarlo un minuto; la nota sulla casa viaggia nell'identità.
+
+Guasti aperti: **14** su 93. Il testo del passo comando e i guasti 10 e 5 sono
+in corso su due rami.
