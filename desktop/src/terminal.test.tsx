@@ -766,7 +766,7 @@ describe("the terminals screen", () => {
       // With one open, the answers are known — the tree you stand in, the shell
       // you used — and a form asking them again asks you to confirm them.
       await waitFor(() => expect(screen.getByRole("button", { name: "New terminal" })).toBeTruthy());
-      expect(screen.queryByRole("combobox"), "the form still asks where").toBeNull();
+      expect(document.querySelector(".terminals__open select"), "the form still asks where").toBeNull();
 
       await act(async () => {
         fireEvent.click(screen.getByRole("button", { name: "New terminal" }));
@@ -777,7 +777,7 @@ describe("the terminals screen", () => {
       await act(async () => {
         fireEvent.click(screen.getByRole("button", { name: /somewhere else/ }));
       });
-      expect(screen.queryByRole("combobox"), "there is no way to choose another tree").not.toBeNull();
+      expect(document.querySelector(".terminals__open select"), "there is no way to choose another tree").not.toBeNull();
     } finally {
       shell.stop();
     }
