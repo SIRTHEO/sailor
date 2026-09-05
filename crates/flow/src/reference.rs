@@ -1,9 +1,7 @@
-//! How a step receives the previous step's work. The engine hands a step its
-//! dependencies' output and the graph's `with` lays constants over it; with
-//! those two alone a dispatch cannot be written, because the text the main node
-//! produces has to reach the engine invocation and no constant can hold it. The
-//! only route left was the next step being a script — the work leaving the
-//! graph. The hole is closed by a reference, not by an interpreter.
+//! How a step receives the previous step's work. Dependencies' output with the
+//! graph's `with` over it cannot express a dispatch: the text the main node
+//! produces has to reach the engine invocation, and no constant holds it. The
+//! hole is closed by a reference, not by an interpreter.
 
 use crate::ActionError;
 use serde_json::{Map, Value};
@@ -18,13 +16,34 @@ pub const FROM_KEY: &str = "$from";
 /// refuses everything else on purpose: deciding how a number is written belongs
 /// to whoever composes the message, not to whoever delivers it.
 pub const JOIN_KEY: &str = "$join";
-/// The key that writes, as JSON, the value a pointer finds. `$join` alone did
-/// not cover it: since a step can declare *the shape* of its own answer, that
-/// shape has to reach the engine inside the prompt, and rewriting it by hand
-/// there would mean two copies that one day diverge in silence. The only
-/// conversion allowed, over the one thing there is no style choice about — a
-/// structured value, written as JSON.
+/// The key that writes, as JSON, the value a pointer finds. A step declares
+/// *the shape* of its own answer, and that shape has to reach the engine inside
+/// the prompt; rewriting it by hand there would be two copies that diverge.
 pub const JSON_KEY: &str = "$json";
+
+/// What a pointer key does with the value its pointer finds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PointerForm {
+    AsFound,
+    AsJson,
+}
+
+/// Every key whose value *is* a JSON pointer, and what each does with it.
+///
+/// **THE LIST IS THE DISPATCH AND ALSO THE CHECK**: resolution walks it below,
+/// `flow check` walks it to name a dead pointer before a run spends. A second
+/// list is fault 10, and the shorter copy is the one nobody notices — which is
+/// how `$json` was resolved for days and never checked.
+pub const POINTER_KEYS: [(&str, PointerForm); 2] = [
+    (FROM_KEY, PointerForm::AsFound),
+    (JSON_KEY, PointerForm::AsJson),
+];
+
+/// True when this key's value is a JSON pointer: whoever walks a flow file asks
+/// here instead of naming the keys again.
+pub fn carries_a_pointer(key: &str) -> bool {
+    POINTER_KEYS.iter().any(|(name, _)| *name == key)
+}
 
 /// Replaces the references inside a value with what they name in that same
 /// value; a value with no references comes back identical. Tests compose a
@@ -34,10 +53,8 @@ pub fn resolve_references(input: &Value) -> Result<Value, ActionError> {
 }
 
 /// The step's `with`, its references replaced by what they name in the whole
-/// input — the dependencies' output and the `with` itself. Only the `with` is
-/// walked: a `$from` inside a dependency's output is that step's data (a flow a
-/// model drafted carries its own), and whoever writes the flow decides what
-/// gets read, whoever answers does not.
+/// input. Only the `with` is walked: a `$from` inside a dependency's output is
+/// that step's data, and whoever writes the flow decides what gets read.
 pub fn resolve_overlay(with: &Value, input: &Value) -> Result<Value, ActionError> {
     resolve_against(with, input)
 }
@@ -59,34 +76,33 @@ fn resolve_against(value: &Value, root: &Value) -> Result<Value, ActionError> {
     }
 }
 
-/// Dispatches on `$from`, `$join` and `$json`, rebuilding any other object field
-/// by field. A resolved value is never read again: references are hunted in the
-/// input as it arrived, and what comes out takes their place unexamined, so two
-/// references do not chain and a reference cannot be born from data — whoever
-/// writes the flow decides what gets read, whoever answers does not.
+/// A resolved value is never read again: references are hunted in the input as
+/// it arrived, and what comes out takes their place unexamined, so two
+/// references do not chain and a reference cannot be born from data.
 fn resolve_object(fields: &Map<String, Value>, root: &Value) -> Result<Value, ActionError> {
-    if let Some(pointer) = fields.get(FROM_KEY) {
+    for (key, form) in POINTER_KEYS {
+        let Some(pointer) = fields.get(key) else {
+            continue;
+        };
         if fields.len() != 1 {
-            return Err(ambiguous(FROM_KEY));
+            return Err(ambiguous(key));
         }
-        return look_up(pointer, root);
+        let found = look_up(key, pointer, root)?;
+        return Ok(match form {
+            PointerForm::AsFound => found,
+            // `to_string` and not an indented form: this text ends up inside a
+            // prompt, and extra lines are extra tokens on every call.
+            PointerForm::AsJson => Value::String(
+                serde_json::to_string(&found)
+                    .expect("a value already in memory always reserialises"),
+            ),
+        });
     }
     if let Some(parts) = fields.get(JOIN_KEY) {
         if fields.len() != 1 {
             return Err(ambiguous(JOIN_KEY));
         }
         return join(parts, root);
-    }
-    if let Some(pointer) = fields.get(JSON_KEY) {
-        if fields.len() != 1 {
-            return Err(ambiguous(JSON_KEY));
-        }
-        let value = look_up(pointer, root)?;
-        // `to_string` and not an indented form: this text ends up inside a
-        // prompt, and extra lines are extra tokens on every call.
-        return Ok(Value::String(
-            serde_json::to_string(&value).expect("a value already in memory always reserialises"),
-        ));
     }
     let mut resolved = Map::new();
     for (name, value) in fields {
@@ -95,11 +111,11 @@ fn resolve_object(fields: &Map<String, Value>, root: &Value) -> Result<Value, Ac
     Ok(Value::Object(resolved))
 }
 
-fn look_up(pointer: &Value, root: &Value) -> Result<Value, ActionError> {
+fn look_up(key: &str, pointer: &Value, root: &Value) -> Result<Value, ActionError> {
     let Some(pointer) = pointer.as_str() else {
         return Err(ActionError::new(
             "invalid_reference",
-            format!("{FROM_KEY} wants a JSON pointer as text, not {pointer}"),
+            format!("{key} wants a JSON pointer as text, not {pointer}"),
         ));
     };
     // A pointer without its leading slash never finds anything, and without
@@ -270,11 +286,19 @@ mod tests {
         );
     }
 
+    /// **UNDER EVERY POINTER KEY, NOT THE ONE THIS WAS WRITTEN FOR.** A dead
+    /// pointer breaks the step and is never handed over as a literal; the list
+    /// decides which keys are asked, so a key added to it goes red without it.
     #[test]
-    fn a_json_reference_that_finds_nothing_stops_the_step() {
-        let input = json!({"text": {"$json": "/not/here"}});
-        let error = resolve_references(&input).expect_err("the pointer finds nothing");
-        assert_eq!(error.class, "unresolved_reference");
+    fn a_dead_pointer_stops_the_step_under_every_pointer_key() {
+        for (key, _) in POINTER_KEYS {
+            let input = json!({"text": {key: "/not/here"}});
+
+            let error = resolve_references(&input).expect_err("the pointer finds nothing");
+
+            assert_eq!(error.class, "unresolved_reference", "under {key}");
+            assert!(error.said.contains("/not/here"), "under {key}: {}", error.said);
+        }
     }
 
     #[test]
