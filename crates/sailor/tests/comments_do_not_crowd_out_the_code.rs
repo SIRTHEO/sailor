@@ -20,17 +20,17 @@ const MAX_BLOCK: usize = 6;
 
 /// How many blocks run over today. **It can only go down**: lowering it is the
 /// repair, raising it has to be argued and shows in the diff.
-const LONG_BLOCKS_TODAY: usize = 499;
+const LONG_BLOCKS_TODAY: usize = 497;
 
 /// How many comments cite a date. Same rule: downwards only.
-const DATED_COMMENTS_TODAY: usize = 183;
+const DATED_COMMENTS_TODAY: usize = 182;
 
 /// How many comment lines are still not in English.
 ///
 /// **THE ONLY HONEST RAISE** is a merge bringing in non-English comments
 /// written elsewhere: there you re-measure, raise to the measured number, and
 /// say so in the commit. Raising it because it went red is disarming it.
-const COMMENT_LINES_NOT_IN_ENGLISH: usize = 7_092;
+const COMMENT_LINES_NOT_IN_ENGLISH: usize = 7_077;
 
 /// Comment lines per thousand code lines, per crate, as measured today.
 /// Downwards only; a crate under 100 is where the sweep stops.
@@ -39,15 +39,15 @@ const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
     ("catalogue", 268),
     ("desktop", 262),
     ("faults", 190),
-    ("flow", 207),
+    ("flow", 206),
     ("inventory", 277),
-    ("ledger", 160),
+    ("ledger", 159),
     ("models", 274),
     ("profiles", 174),
     ("registry", 401),
     ("relay", 155),
     ("release", 490),
-    ("sailor", 230),
+    ("sailor", 229),
     ("sessions", 252),
     ("supervisor", 286),
     ("terminal", 287),
