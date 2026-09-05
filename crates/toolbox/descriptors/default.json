@@ -193,8 +193,8 @@
       "ask": {
         "args": ["-p"],
         "prompt": "stdin",
-        "unusable_when": ["weekly limit", "usage limit", "rate limit"],
-        "exhausted_when": ["weekly limit", "usage limit", "rate limit"],
+        "unusable_when": ["weekly limit", "usage limit", "rate limit", "session limit"],
+        "exhausted_when": ["weekly limit", "usage limit", "rate limit", "session limit"],
         "cooldown_secs": 1800,
         "refuses_without_prompt": ["input must be provided either through stdin"]
       },
