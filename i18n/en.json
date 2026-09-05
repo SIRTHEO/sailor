@@ -519,5 +519,12 @@
   "window.sketch.drafting": "the author is writing the flow — watch the run",
   "window.sketch.ended": "the run ended: {status}. If it stands, the flow is on the board.",
   "window.sketch.outside": "outside the shell there is no engine to draft it",
-  "window.sketch.as_text": "the sketch as the author reads it"
+  "window.sketch.as_text": "the sketch as the author reads it",
+  "cli.command.remember": "writes a memory by hand: a typed, labelled fact with a provenance, kept in the ledger and handed to every command line at its start",
+  "cli.remember.says": "keeps a fact under a label; the same label written again supersedes it and keeps when it was first known",
+  "cli.remember.wants_three": "a memory is a type, a label and a value; usage: {usage}",
+  "cli.remember.kept": "kept: «{label}» ({type})",
+  "cli.session.remembered": "{count} memor(ies) are kept, the latest {recent}: `sailor search <word>` finds them, `sailor remember` adds one.",
+  "run.failure.bad_memory_type": "a memory is user, feedback, project or reference, and this is none of them",
+  "run.failure.secret_in_memory": "the memory carries what looks like a credential, and a credential is never remembered"
 }

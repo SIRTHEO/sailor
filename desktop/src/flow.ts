@@ -167,6 +167,7 @@ const ACTION_KIND: Record<string, StepKind> = {
   work_survey: "deposit",
   flow_search: "deposit",
   ledger_search: "deposit",
+  remember: "deposit",
   action_list: "deposit",
   // Writes a flow file where the person's flows live: a gesture on the world.
   flow_draft: "gesture",
