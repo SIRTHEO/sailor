@@ -390,7 +390,7 @@ mod tests {
         let input = json!({"tool": "il-motore", "args": ["risolto"], "timeout_secs": 5});
 
         let ActionOutcome::Went(output) = action
-            .execute(&input, &mut SharedState::new())
+            .execute(&input, &SharedState::new())
             .expect("lo strumento si risolve")
         else {
             panic!("un motore che risponde è sempre Went")
@@ -407,7 +407,7 @@ mod tests {
         let input = json!({"tool": "un-altro", "timeout_secs": 5});
 
         let error = action
-            .execute(&input, &mut SharedState::new())
+            .execute(&input, &SharedState::new())
             .expect_err("lo strumento non c'è");
 
         assert_eq!(error.class, "tool_unavailable");
@@ -422,7 +422,7 @@ mod tests {
         let input = json!({"tool": "claude-code", "timeout_secs": 5});
 
         let error = action
-            .execute(&input, &mut SharedState::new())
+            .execute(&input, &SharedState::new())
             .expect_err("nessuno sa risolvere gli strumenti");
 
         assert_eq!(error.class, "no_tool_resolver");
@@ -536,7 +536,7 @@ mod tests {
         let input = json!({"tool": ["esaurito", "vivo"], "timeout_secs": 10});
 
         let ActionOutcome::Went(output) = action
-            .execute(&input, &mut SharedState::new())
+            .execute(&input, &SharedState::new())
             .expect("il secondo motore risponde")
         else {
             panic!("un motore che risponde è sempre Went")
@@ -603,7 +603,7 @@ mod tests {
         let input = json!({"tool": ["esaurito", "vivo"], "timeout_secs": 10});
 
         let ActionOutcome::Went(output) = action
-            .execute(&input, &mut SharedState::new())
+            .execute(&input, &SharedState::new())
             .expect("il secondo motore risponde")
         else {
             panic!("un motore che risponde è sempre Went")
@@ -631,7 +631,7 @@ mod tests {
         let input = json!({"tool": ["esaurito"], "timeout_secs": 10});
 
         let error = action
-            .execute(&input, &mut SharedState::new())
+            .execute(&input, &SharedState::new())
             .expect_err("un motore che dice di non poter lavorare non ha risposto");
 
         assert_eq!(
@@ -695,7 +695,7 @@ mod tests {
         let input = json!({"tool": ["esaurito", "vivo"], "timeout_secs": 10});
 
         let error = action
-            .execute(&input, &mut SharedState::new())
+            .execute(&input, &SharedState::new())
             .expect_err("il passo muore sul primo motore");
 
         assert_eq!(
@@ -760,7 +760,7 @@ mod tests {
         let input = json!({"tool": ["rotto", "vivo"], "timeout_secs": 10});
 
         let error = action
-            .execute(&input, &mut SharedState::new())
+            .execute(&input, &SharedState::new())
             .expect_err("il primo è fallito senza dire di non poter lavorare");
 
         assert_eq!(error.class, "engine_exit_error");
@@ -811,7 +811,7 @@ mod tests {
         let input = json!({"tool": ["rotto", "vivo"], "timeout_secs": 10});
 
         let error = action
-            .execute(&input, &mut SharedState::new())
+            .execute(&input, &SharedState::new())
             .expect_err("un frammento vuoto non è una dichiarazione di esaurimento");
 
         assert_eq!(error.class, "engine_exit_error");
@@ -828,7 +828,7 @@ mod tests {
         let input = json!({"tool": ["esaurito", "non-installato"], "timeout_secs": 10});
 
         let error = action
-            .execute(&input, &mut SharedState::new())
+            .execute(&input, &SharedState::new())
             .expect_err("nessuno dei due può lavorare");
 
         assert_eq!(error.class, "no_usable_engine");
@@ -845,7 +845,7 @@ mod tests {
         let input = json!({"tool": "vivo", "stdin": "la-domanda", "timeout_secs": 10});
 
         let ActionOutcome::Went(output) = action
-            .execute(&input, &mut SharedState::new())
+            .execute(&input, &SharedState::new())
             .expect("risponde")
         else {
             panic!("un motore che risponde è sempre Went")
@@ -864,7 +864,7 @@ mod tests {
         let input = json!({"tool": ["senza-ricetta"], "timeout_secs": 10});
 
         let error = action
-            .execute(&input, &mut SharedState::new())
+            .execute(&input, &SharedState::new())
             .expect_err("non si sa come interrogarlo");
 
         assert_eq!(error.class, "no_usable_engine");
@@ -879,7 +879,7 @@ mod tests {
         let input = json!({"tool": "vivo", "args": ["scritte-nel-passo"], "timeout_secs": 10});
 
         let ActionOutcome::Went(output) = action
-            .execute(&input, &mut SharedState::new())
+            .execute(&input, &SharedState::new())
             .expect("risponde")
         else {
             panic!("un motore che risponde è sempre Went")
@@ -894,7 +894,7 @@ mod tests {
         let input = json!({"bin": "sh", "tool": "il-motore", "timeout_secs": 5});
 
         let error = action
-            .execute(&input, &mut SharedState::new())
+            .execute(&input, &SharedState::new())
             .expect_err("due risposte alla stessa domanda");
 
         assert_eq!(error.class, "invalid_input");
@@ -904,7 +904,7 @@ mod tests {
     fn the_external_engine_action_rejects_an_input_without_a_binary() {
         let action = ExternalEngineAction::new();
         let input = json!({"timeout_secs": 5});
-        let mut shared = SharedState::new();
-        assert!(action.execute(&input, &mut shared).is_err());
+        let shared = SharedState::new();
+        assert!(action.execute(&input, &shared).is_err());
     }
 }

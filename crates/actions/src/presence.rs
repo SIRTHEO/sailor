@@ -171,21 +171,21 @@ pub fn release_claim(ledger: &Ledger, key: &str, at: i64) -> Result<bool, ledger
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Overlap {
     /// Altro albero di lavoro, stessa repo: da sapere, non da fermarsi.
-    SameRepository,
+    Repository,
     /// Stesso albero di lavoro, percorsi dichiarati e disgiunti. Conta lo
     /// stesso: un `git commit` non guarda i percorsi che qualcuno ha dichiarato.
-    SameWorkdir,
+    Workdir,
     /// Stesso albero e percorsi che si toccano — o uno dei due non ne ha
     /// dichiarati, cioè ha preso tutto.
-    SamePaths,
+    Paths,
 }
 
 impl Overlap {
     fn named(self) -> &'static str {
         match self {
-            Overlap::SameRepository => "same_repository",
-            Overlap::SameWorkdir => "same_workdir",
-            Overlap::SamePaths => "same_paths",
+            Overlap::Repository => "same_repository",
+            Overlap::Workdir => "same_workdir",
+            Overlap::Paths => "same_paths",
         }
     }
 }
@@ -261,12 +261,12 @@ fn overlap_between(mine: &ClaimSpec, theirs: &Value) -> Option<Overlap> {
     }
     let my_workdir = mine.workdir.clone().unwrap_or_default();
     if text_at(theirs, "workdir") != my_workdir {
-        return Some(Overlap::SameRepository);
+        return Some(Overlap::Repository);
     }
     if paths_meet(&mine.paths, &paths_at(theirs)) {
-        Some(Overlap::SamePaths)
+        Some(Overlap::Paths)
     } else {
-        Some(Overlap::SameWorkdir)
+        Some(Overlap::Workdir)
     }
 }
 
@@ -353,7 +353,7 @@ impl Action for WorkClaimAction {
         if spec.refuse_when_shared {
             let holding: Vec<String> = collisions
                 .iter()
-                .filter(|c| c["kind"] != json!(Overlap::SameRepository.named()))
+                .filter(|c| c["kind"] != json!(Overlap::Repository.named()))
                 .map(|c| {
                     format!(
                         "{} ({})",
@@ -524,20 +524,20 @@ mod tests {
     #[test]
     fn a_second_agent_in_the_same_workdir_learns_about_the_first() {
         let (ledger, _guard) = store();
-        let mut shared = SharedState::new();
+        let shared = SharedState::new();
         let action = WorkClaimAction::new(ledger);
 
         action
             .execute(
                 &claim("prima", 101, "/casa/progetto", NOON, &[]),
-                &mut shared,
+                &shared,
             )
             .expect("il primo annuncio");
         let second = went(
             action
                 .execute(
                     &claim("seconda", 102, "/casa/progetto", NOON + 10, &[]),
-                    &mut shared,
+                    &shared,
                 )
                 .expect("il secondo annuncio"),
         );
@@ -556,20 +556,20 @@ mod tests {
     #[test]
     fn an_expired_claim_is_not_a_collision() {
         let (ledger, _guard) = store();
-        let mut shared = SharedState::new();
+        let shared = SharedState::new();
         let action = WorkClaimAction::new(ledger);
 
         action
             .execute(
                 &claim("morta", 101, "/casa/progetto", NOON, &[]),
-                &mut shared,
+                &shared,
             )
             .expect("l'annuncio di chi poi muore");
         let later = went(
             action
                 .execute(
                     &claim("viva", 102, "/casa/progetto", NOON + 901, &[]),
-                    &mut shared,
+                    &shared,
                 )
                 .expect("l'annuncio di dopo"),
         );
@@ -619,7 +619,7 @@ mod tests {
         let survey = WorkSurveyAction::new(Some(ledger));
         let answer = went(
             survey
-                .execute(&json!({"at": NOON + 60}), &mut SharedState::new())
+                .execute(&json!({"at": NOON + 60}), &SharedState::new())
                 .expect("il censimento"),
         );
 
@@ -644,32 +644,32 @@ mod tests {
     #[test]
     fn a_renewal_never_erases_another_agents_claim() {
         let (ledger, _guard) = store();
-        let mut shared = SharedState::new();
+        let shared = SharedState::new();
         let action = WorkClaimAction::new(ledger.clone());
         let survey = WorkSurveyAction::new(Some(ledger));
 
         action
             .execute(
                 &claim("prima", 101, "/casa/progetto", NOON, &[]),
-                &mut shared,
+                &shared,
             )
             .expect("prima");
         action
             .execute(
                 &claim("seconda", 102, "/casa/progetto", NOON, &[]),
-                &mut shared,
+                &shared,
             )
             .expect("seconda");
         action
             .execute(
                 &claim("prima", 101, "/casa/progetto", NOON + 60, &[]),
-                &mut shared,
+                &shared,
             )
             .expect("il rinnovo della prima");
 
         let seen = went(
             survey
-                .execute(&json!({"at": NOON + 61}), &mut shared)
+                .execute(&json!({"at": NOON + 61}), &shared)
                 .expect("il censimento"),
         );
         let working = seen["working"].as_array().expect("chi lavora");
@@ -681,20 +681,20 @@ mod tests {
     #[test]
     fn different_worktrees_of_one_repository_see_each_other_as_a_lesser_kind() {
         let (ledger, _guard) = store();
-        let mut shared = SharedState::new();
+        let shared = SharedState::new();
         let action = WorkClaimAction::new(ledger);
 
         action
             .execute(
                 &claim("prima", 101, "/casa/progetto", NOON, &[]),
-                &mut shared,
+                &shared,
             )
             .expect("prima");
         let second = went(
             action
                 .execute(
                     &claim("seconda", 102, "/casa/altro-albero", NOON, &[]),
-                    &mut shared,
+                    &shared,
                 )
                 .expect("seconda"),
         );
@@ -709,20 +709,20 @@ mod tests {
     #[test]
     fn disjoint_declared_paths_in_one_workdir_are_a_lesser_kind() {
         let (ledger, _guard) = store();
-        let mut shared = SharedState::new();
+        let shared = SharedState::new();
         let action = WorkClaimAction::new(ledger);
 
         action
             .execute(
                 &claim("prima", 101, "/casa/progetto", NOON, &["crates/ledger"]),
-                &mut shared,
+                &shared,
             )
             .expect("prima");
         let second = went(
             action
                 .execute(
                     &claim("seconda", 102, "/casa/progetto", NOON, &["crates/actions"]),
-                    &mut shared,
+                    &shared,
                 )
                 .expect("seconda"),
         );
@@ -738,7 +738,7 @@ mod tests {
                         NOON,
                         &["crates/actions/src/lib.rs"],
                     ),
-                    &mut shared,
+                    &shared,
                 )
                 .expect("terza"),
         );
@@ -760,20 +760,20 @@ mod tests {
     #[test]
     fn a_text_prefix_that_is_not_a_path_prefix_is_not_a_collision() {
         let (ledger, _guard) = store();
-        let mut shared = SharedState::new();
+        let shared = SharedState::new();
         let action = WorkClaimAction::new(ledger);
 
         action
             .execute(
                 &claim("prima", 101, "/casa/progetto", NOON, &["crates/actions"]),
-                &mut shared,
+                &shared,
             )
             .expect("prima");
         let second = went(
             action
                 .execute(
                     &claim("seconda", 102, "/casa/progetto", NOON, &["crates/act"]),
-                    &mut shared,
+                    &shared,
                 )
                 .expect("seconda"),
         );
@@ -789,7 +789,7 @@ mod tests {
     #[test]
     fn a_release_stops_holding_at_once_and_stays_distinguishable_from_an_expiry() {
         let (ledger, _guard) = store();
-        let mut shared = SharedState::new();
+        let shared = SharedState::new();
         let action = WorkClaimAction::new(ledger.clone());
         let release = WorkReleaseAction::new(ledger.clone());
         let survey = WorkSurveyAction::new(Some(ledger));
@@ -797,13 +797,13 @@ mod tests {
         action
             .execute(
                 &claim("prima", 101, "/casa/progetto", NOON, &[]),
-                &mut shared,
+                &shared,
             )
             .expect("prima");
         release
             .execute(
                 &json!({"agent": "prima", "pid": 101, "at": NOON + 30}),
-                &mut shared,
+                &shared,
             )
             .expect("il rilascio");
 
@@ -811,7 +811,7 @@ mod tests {
             action
                 .execute(
                     &claim("seconda", 102, "/casa/progetto", NOON + 31, &[]),
-                    &mut shared,
+                    &shared,
                 )
                 .expect("seconda"),
         );
@@ -826,7 +826,7 @@ mod tests {
 
         let seen = went(
             survey
-                .execute(&json!({"at": NOON + 32}), &mut shared)
+                .execute(&json!({"at": NOON + 32}), &shared)
                 .expect("il censimento"),
         );
         let gone = seen["gone"].as_array().expect("chi non c'è più");
@@ -845,20 +845,20 @@ mod tests {
     #[test]
     fn refuse_when_shared_stops_the_second_and_names_the_first() {
         let (ledger, _guard) = store();
-        let mut shared = SharedState::new();
+        let shared = SharedState::new();
         let action = WorkClaimAction::new(ledger);
 
         action
             .execute(
                 &claim("prima", 101, "/casa/progetto", NOON, &[]),
-                &mut shared,
+                &shared,
             )
             .expect("prima");
 
         let mut wanted = claim("seconda", 102, "/casa/progetto", NOON + 1, &[]);
         wanted["refuse_when_shared"] = json!(true);
         let error = action
-            .execute(&wanted, &mut shared)
+            .execute(&wanted, &shared)
             .expect_err("il secondo si ferma perché l'ha chiesto");
         assert_eq!(error.class, "work_is_shared");
         assert!(
@@ -874,13 +874,13 @@ mod tests {
     #[test]
     fn refuse_when_shared_ignores_a_mere_shared_repository() {
         let (ledger, _guard) = store();
-        let mut shared = SharedState::new();
+        let shared = SharedState::new();
         let action = WorkClaimAction::new(ledger);
 
         action
             .execute(
                 &claim("prima", 101, "/casa/progetto", NOON, &[]),
-                &mut shared,
+                &shared,
             )
             .expect("prima");
 
@@ -888,7 +888,7 @@ mod tests {
         wanted["refuse_when_shared"] = json!(true);
         let outcome = went(
             action
-                .execute(&wanted, &mut shared)
+                .execute(&wanted, &shared)
                 .expect("un altro albero non ferma nessuno"),
         );
         assert_eq!(outcome["collisions"][0]["kind"], json!("same_repository"));
@@ -898,26 +898,26 @@ mod tests {
     #[test]
     fn a_survey_separates_the_living_from_the_gone_and_says_why() {
         let (ledger, _guard) = store();
-        let mut shared = SharedState::new();
+        let shared = SharedState::new();
         let action = WorkClaimAction::new(ledger.clone());
         let survey = WorkSurveyAction::new(Some(ledger));
 
         action
             .execute(
                 &claim("morta", 101, "/casa/progetto", NOON, &[]),
-                &mut shared,
+                &shared,
             )
             .expect("chi poi muore");
         action
             .execute(
                 &claim("viva", 102, "/casa/progetto", NOON + 900, &[]),
-                &mut shared,
+                &shared,
             )
             .expect("chi resta");
 
         let seen = went(
             survey
-                .execute(&json!({"at": NOON + 901}), &mut shared)
+                .execute(&json!({"at": NOON + 901}), &shared)
                 .expect("il censimento"),
         );
         let working = seen["working"].as_array().expect("chi lavora");

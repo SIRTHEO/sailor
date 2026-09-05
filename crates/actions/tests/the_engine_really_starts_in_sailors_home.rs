@@ -107,10 +107,10 @@ fn the_engine_really_starts_inside_the_home_the_profile_declares() {
 
     let action = actions::ExternalEngineAction::new();
 
-    let mut shared = SharedState::new();
+    let shared = SharedState::new();
     let said = what_the_engine_said(
         &action
-            .execute(&json!({"bin": bin, "timeout_secs": 30}), &mut shared)
+            .execute(&json!({"bin": bin, "timeout_secs": 30}), &shared)
             .expect("il passo doveva riuscire"),
     );
     assert!(
@@ -118,7 +118,7 @@ fn the_engine_really_starts_inside_the_home_the_profile_declares() {
         "il motore è partito con la casa di chi ha aperto il terminale: {said:?}"
     );
 
-    let mut shared = SharedState::new();
+    let shared = SharedState::new();
     let said = what_the_engine_said(
         &action
             .execute(
@@ -127,7 +127,7 @@ fn the_engine_really_starts_inside_the_home_the_profile_declares() {
                     "env": {"CODEX_HOME": "/una/casa/scritta/nel/passo"},
                     "timeout_secs": 30
                 }),
-                &mut shared,
+                &shared,
             )
             .expect("il passo doveva riuscire"),
     );

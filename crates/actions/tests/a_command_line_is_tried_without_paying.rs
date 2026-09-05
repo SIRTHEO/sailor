@@ -174,10 +174,12 @@ fn an_engine_whose_descriptor_says_nothing_is_not_declared_sound() {
 
 // ── la riga che parte davvero ───────────────────────────────────────────
 
+type Seen = (String, Vec<String>, Option<Vec<u8>>);
+
 /// Chi guarda cosa è stato eseguito, senza eseguire niente.
 #[derive(Default)]
 struct RecordingProbe {
-    seen: Mutex<Vec<(String, Vec<String>, Option<Vec<u8>>)>>,
+    seen: Mutex<Vec<Seen>>,
 }
 
 impl DryProbe for RecordingProbe {

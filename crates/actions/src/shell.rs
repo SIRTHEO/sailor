@@ -200,8 +200,8 @@ mod tests {
     fn the_shell_check_action_reads_its_json_input() {
         let action = ShellCheckAction::new();
         let input = json!({"command": "true", "timeout_secs": 5});
-        let mut shared = SharedState::new();
-        let ActionOutcome::Went(output) = action.execute(&input, &mut shared).unwrap() else {
+        let shared = SharedState::new();
+        let ActionOutcome::Went(output) = action.execute(&input, &shared).unwrap() else {
             panic!("una verifica eseguita è sempre Went")
         };
         assert_eq!(output["status"], "passed");
@@ -226,7 +226,7 @@ mod tests {
                 "timeout_secs": 5
             });
             ShellCheckAction::new()
-                .execute(&with_references_resolved(input), &mut SharedState::new())
+                .execute(&with_references_resolved(input), &SharedState::new())
                 .map(|outcome| {
                     let ActionOutcome::Went(output) = outcome else {
                         panic!("una verifica accettata è sempre Went")
@@ -258,7 +258,7 @@ mod tests {
     fn a_failing_check_breaks_its_step_unless_the_step_says_otherwise() {
         let strict = json!({"command": "echo perche 1>&2; exit 2", "timeout_secs": 5});
         let error = ShellCheckAction::new()
-            .execute(&strict, &mut SharedState::new())
+            .execute(&strict, &SharedState::new())
             .expect_err("una verifica fallita è un passo rotto");
         assert_eq!(error.class, "check_failed");
         assert!(error.said.contains("code 2"), "{}", error.said);
@@ -270,7 +270,7 @@ mod tests {
             "timeout_secs": 5
         });
         let ActionOutcome::Went(output) = ShellCheckAction::new()
-            .execute(&tolerant, &mut SharedState::new())
+            .execute(&tolerant, &SharedState::new())
             .expect("l'esito è dichiarato accettabile")
         else {
             panic!("un esito tollerato resta un dato")
@@ -310,7 +310,7 @@ mod tests {
         });
 
         let ActionOutcome::Went(output) = ShellCheckAction::new()
-            .execute(&input, &mut SharedState::new())
+            .execute(&input, &SharedState::new())
             .expect("il comando riesce e risponde nella forma dichiarata")
         else {
             panic!("una verifica eseguita è sempre Went")
@@ -348,7 +348,7 @@ mod tests {
             "timeout_secs": 5
         });
         let error = ShellCheckAction::new()
-            .execute(&non_json, &mut SharedState::new())
+            .execute(&non_json, &SharedState::new())
             .expect_err("un comando che non emette JSON non ha prodotto una lettura");
         assert_eq!(error.class, "answer_not_json");
 
@@ -358,7 +358,7 @@ mod tests {
             "timeout_secs": 5
         });
         let error = ShellCheckAction::new()
-            .execute(&fuori_forma, &mut SharedState::new())
+            .execute(&fuori_forma, &SharedState::new())
             .expect_err("JSON valido ma fuori dalla forma dichiarata");
         assert_eq!(error.class, "answer_off_shape");
     }
@@ -380,7 +380,7 @@ mod tests {
             "timeout_secs": 5
         });
         let refusal = ShellCheckAction::new()
-            .execute(&off_shape, &mut SharedState::new())
+            .execute(&off_shape, &SharedState::new())
             .expect_err("off shape")
             .refusal
             .expect("a shape that refuses says so");
@@ -395,7 +395,7 @@ mod tests {
             "timeout_secs": 5
         });
         let refusal = ShellCheckAction::new()
-            .execute(&not_json, &mut SharedState::new())
+            .execute(&not_json, &SharedState::new())
             .expect_err("not json")
             .refusal
             .expect("a text that is not JSON is refused by the shape");
@@ -405,7 +405,7 @@ mod tests {
 
         let red = json!({"command": "echo perche 1>&2; exit 2", "timeout_secs": 5});
         let refusal = ShellCheckAction::new()
-            .execute(&red, &mut SharedState::new())
+            .execute(&red, &SharedState::new())
             .expect_err("a red command")
             .refusal
             .expect("a command that exits red is a check that refused");
@@ -435,7 +435,7 @@ mod tests {
         });
 
         let ActionOutcome::Went(output) = ShellCheckAction::new()
-            .execute(&input, &mut SharedState::new())
+            .execute(&input, &SharedState::new())
             .expect("l'esito è dichiarato accettabile")
         else {
             panic!("un esito tollerato resta un dato")
@@ -471,7 +471,7 @@ mod tests {
         });
 
         let error = ShellCheckAction::new()
-            .execute(&input, &mut SharedState::new())
+            .execute(&input, &SharedState::new())
             .expect_err("sopra il tetto il passo si ferma invece di tagliare");
         assert_eq!(error.class, "answer_too_large");
     }
