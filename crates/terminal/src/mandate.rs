@@ -65,7 +65,7 @@ mod tests {
     use super::*;
 
     fn scratch(name: &str) -> PathBuf {
-        crate::scratch::directory(&format!("mandate-{name}"))
+        crate::scratch::directory(&format!("mandate-{name}")).expect("a scratch directory")
     }
 
     #[test]
