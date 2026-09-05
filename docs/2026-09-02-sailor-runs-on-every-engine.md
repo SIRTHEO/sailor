@@ -580,8 +580,22 @@ Starting point, so the mandate builds on it instead of beside it.
    document with an id that says which it is (`run:…`, `step:…/…#n`,
    `store:…/…`). *Proof:* `what_the_ledger_holds_is_found_by_its_words` in
    `ledger::search`, one document of each kind found by a word only it says.
-   The `memories` table, the index over events and faults, the generated file
-   and the consolidation flow are still not written.
+   And the memories, as a collection of the store and not a table of their
+   own — the store is already event-sourced, keyed, and searched: `remember`
+   is the one action that writes one (`type` among the four, `label`, `value`,
+   `provenance`, `modified`, `valid_from` kept across rewrites, `valid_until`
+   instead of deletion), `sailor remember` the person's seat, and **a secret
+   is refused before the first byte lands** — prefixes and framings a person
+   can read (`ghp_`, `sk-`, `AKIA`, `-----BEGIN`, `Bearer `, a JWT), not
+   entropy. The greeting of every tracked terminal says how many are kept and
+   names the latest three; `page()` is the one function that renders them,
+   most recent first, cut at 200 lines like the command lines cut their own
+   index. *Proof:* `a_memory_carrying_a_secret_is_refused_and_nothing_is_written`
+   and `the_page_is_recent_first_valid_only_and_cut_at_two_hundred_lines` in
+   `actions::memory`; `the_greeting_names_what_is_remembered` in `session_cmd`.
+   *Still not written:* the page as a file handed to the three command lines
+   (today the greeting carries the count and the labels, not the page), the
+   index over events and faults, and the consolidation flow.
 4. **What Sailor remembers of a run is written down, once.** The report of
    every closed run (what went, what broke, what it cost, what was learnt) is
    a store record, and a flow that starts on the same entity reads the last

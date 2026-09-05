@@ -519,5 +519,12 @@
   "window.sketch.drafting": "l'autore sta scrivendo il flusso — guarda la corsa",
   "window.sketch.ended": "la corsa è finita: {status}. Se sta in piedi, il flusso è sulla tela.",
   "window.sketch.outside": "fuori dal guscio non c'è un motore che la scriva",
-  "window.sketch.as_text": "lo schizzo come lo legge l'autore"
+  "window.sketch.as_text": "lo schizzo come lo legge l'autore",
+  "cli.command.remember": "scrive una memoria a mano: un fatto con tipo, etichetta e provenienza, tenuto nel ledger e consegnato a ogni riga di comando all'avvio",
+  "cli.remember.says": "tiene un fatto sotto un'etichetta; la stessa etichetta riscritta lo sostituisce e conserva da quando si sapeva",
+  "cli.remember.wants_three": "una memoria è un tipo, un'etichetta e un valore; uso: {usage}",
+  "cli.remember.kept": "tenuta: «{label}» ({type})",
+  "cli.session.remembered": "{count} memorie tenute, le ultime {recent}: `sailor search <parola>` le trova, `sailor remember` ne aggiunge una.",
+  "run.failure.bad_memory_type": "una memoria è user, feedback, project o reference, e questa non è nessuna delle quattro",
+  "run.failure.secret_in_memory": "la memoria porta quel che sembra una credenziale, e una credenziale non si ricorda mai"
 }
