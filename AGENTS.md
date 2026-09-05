@@ -10,14 +10,16 @@ Il metro di ogni lavoro: *questa cosa toglie a Theo un'approvazione, o gli porta
 un dubbio migliore?* Se non fa né l'una né l'altra, non è lavoro.
 
 **Prima di correggere qualunque cosa, leggi `docs/decisioni.md`** — i vincoli
-permanenti e le scelte che non si riaprono — **e `docs/da-fare.md`**, che dice a
-che punto siamo e cosa sta per sparire. Riparare un pezzo che deve sparire è
-lavoro contro il piano, e nessun controllo locale lo mostra: resta tutto verde.
+permanenti e le scelte che non si riaprono — **e la nota `da-fare`**, che dice a
+che punto siamo e cosa sta per sparire: `sailor notes show da-fare`. Riparare un
+pezzo che deve sparire è lavoro contro il piano, e nessun controllo locale lo
+mostra: resta tutto verde.
 
-Queste due stanno nel repo di proposito. Fino al 30/08/2026 questa riga mandava
-a `~/.claude/docs/sailor-adesso.md`, che la pulizia del 28/08 aveva cancellato:
-per due giorni la prima istruzione di ogni sessione è stata un indirizzo vuoto,
-e nessuno se n'è accorto perché un puntatore rotto in un documento non è rosso.
+Le decisioni stanno nel repo di proposito, gli appunti di lavoro nell'archivio
+di Sailor. Una volta questa riga mandava a un documento che una pulizia aveva
+già cancellato: per due giorni la prima istruzione di ogni sessione è stata un
+indirizzo vuoto, e nessuno se n'è accorto perché un puntatore rotto in un
+documento non è rosso.
 
 ## L'ordine dei lavori, deciso da Theo
 

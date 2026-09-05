@@ -324,7 +324,7 @@ pub struct ModelCallRecord {
     pub ended_at: Option<i64>,
     /// **THE SESSION THIS CALL RAN UNDER, WHEN IT IS KNOWN.** What lets a later
     /// step **resume** instead of rediscover; on disk, not in memory, because
-    /// the "wait for an exhausted engine" branch `docs/piano-consumo-e-profili.md`
+    /// the "wait for an exhausted engine" branch the note `piano-consumo-e-profili`
     /// leaves uncovered must resume tomorrow from another process. `None` when
     /// the engine opens no sessions, the step asked for none, or it **branched**:
     /// there the parent's id would resume the trunk, silently, as if the branch.
