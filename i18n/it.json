@@ -461,6 +461,7 @@
   "run.refusal.rule.not_json": "la risposta non è JSON",
   "run.refusal.rule.too_long": "il valore supera il tetto",
   "run.refusal.rule.exit_code": "il comando è uscito con un errore",
+  "run.ran": "esegue {line}",
   "run.failure.child_run_not_recorded": "la corsa figlia non si è potuta registrare nel deposito",
   "run.failure.clock_before_epoch": "l'orologio della macchina segna una data prima del 1970 — il sotto-flusso non è partito",
   "run.failure.clock_broke": "l'orologio della macchina non ha saputo dire l'ora",

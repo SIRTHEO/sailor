@@ -1,4 +1,4 @@
-use crate::record::{truncate_said, Refusal};
+use crate::record::{truncate_said, Ran, Refusal};
 use crate::reference;
 use crate::{AttemptRelation, Graph, Outcome, SchemaError, Step, StepRecord, StepSpecies};
 use serde_json::Value;
@@ -55,6 +55,9 @@ pub struct ActionError {
     /// Set when a declared check refused a value: which one, and what it saw.
     /// Boxed: it is the bulk of an error every `Result` in the crate carries.
     pub refusal: Option<Box<Refusal>>,
+    /// Set when the action had started a process before failing: the line it
+    /// ran, for the record. Boxed for the same reason as the refusal.
+    pub ran: Option<Box<Ran>>,
 }
 
 impl ActionError {
@@ -63,11 +66,17 @@ impl ActionError {
             class: class.into(),
             said: said.into(),
             refusal: None,
+            ran: None,
         }
     }
 
     pub fn refused(mut self, refusal: Refusal) -> Self {
         self.refusal = Some(Box::new(refusal));
+        self
+    }
+
+    pub fn having_run(mut self, ran: Ran) -> Self {
+        self.ran = Some(Box::new(ran));
         self
     }
 }
@@ -112,6 +121,18 @@ pub enum ActionOutcome {
 
 pub trait Action: Send + Sync {
     fn execute(&self, input: &Value, shared: &SharedState) -> Result<ActionOutcome, ActionError>;
+
+    /// `execute`, and beside the outcome the process the action started to
+    /// reach it. The executor asks this one: an action whose work is a process
+    /// answers it, and every other action answers `execute` through this
+    /// default, having started nothing.
+    fn execute_and_report(
+        &self,
+        input: &Value,
+        shared: &SharedState,
+    ) -> Result<(ActionOutcome, Option<Ran>), ActionError> {
+        self.execute(input, shared).map(|outcome| (outcome, None))
+    }
 
     /// The fields of a hand-written `with` that this action does *not* know.
     ///
@@ -189,6 +210,7 @@ pub struct Completion {
     pub said: Option<String>,
     pub failure_class: Option<String>,
     pub refusal: Option<Refusal>,
+    pub ran: Option<Ran>,
     pub ended_at: i64,
     pub bytes_seen: Option<u64>,
     pub bytes_discarded: Option<u64>,
@@ -354,6 +376,7 @@ impl RecordStore for InMemoryRecordStore {
             || record.said.is_some()
             || record.failure_class.is_some()
             || record.refusal.is_some()
+            || record.ran.is_some()
             || record.ended_at.is_some()
             || record.bytes_seen.is_some()
             || record.bytes_discarded.is_some()
@@ -434,6 +457,7 @@ impl RecordStore for InMemoryRecordStore {
         record.said = completion.said;
         record.failure_class = completion.failure_class;
         record.refusal = completion.refusal;
+        record.ran = completion.ran;
         record.ended_at = Some(completion.ended_at);
         record.bytes_seen = completion.bytes_seen;
         record.bytes_discarded = completion.bytes_discarded;
@@ -1073,22 +1097,31 @@ fn run_one(
 
     let completion = match work.action {
         None => closed(Outcome::Skipped, None, None, None, clock.now()?),
-        Some(action) => match action.execute(&work.input, &mine) {
-            Ok(ActionOutcome::Went(output)) => match step.output_schema.validate(&output) {
-                Ok(()) => closed(Outcome::Went, Some(output), None, None, clock.now()?),
-                Err(error) => broke(
-                    ActionError::new("invalid_output", error.to_string())
-                        .refused(error.refused_by("output_schema")),
-                    clock.now()?,
-                ),
-            },
-            Ok(ActionOutcome::Waiting(reason)) => {
-                closed(Outcome::Waiting, None, Some(reason), None, clock.now()?)
-            }
-            // No `failure_class`: not yet is not a failure, and a class here
-            // would put an ordinary poll into every count of what went wrong.
-            Ok(ActionOutcome::NotYet(reason)) => {
-                closed(Outcome::NotYet, None, Some(reason), None, clock.now()?)
+        Some(action) => match action.execute_and_report(&work.input, &mine) {
+            Ok((outcome, ran)) => {
+                let mut completion = match outcome {
+                    ActionOutcome::Went(output) => match step.output_schema.validate(&output) {
+                        Ok(()) => closed(Outcome::Went, Some(output), None, None, clock.now()?),
+                        Err(error) => broke(
+                            ActionError::new("invalid_output", error.to_string())
+                                .refused(error.refused_by("output_schema")),
+                            clock.now()?,
+                        ),
+                    },
+                    ActionOutcome::Waiting(reason) => {
+                        closed(Outcome::Waiting, None, Some(reason), None, clock.now()?)
+                    }
+                    // No `failure_class`: not yet is not a failure, and a class
+                    // here would put an ordinary poll into every count of what
+                    // went wrong.
+                    ActionOutcome::NotYet(reason) => {
+                        closed(Outcome::NotYet, None, Some(reason), None, clock.now()?)
+                    }
+                };
+                // Whatever the outcome says of it, that process ran: an output
+                // the schema refused was still produced by it.
+                completion.ran = ran;
+                completion
             }
             Err(error) => broke(error, clock.now()?),
         },
@@ -1209,6 +1242,7 @@ fn closed(
         said,
         failure_class: failure_class.map(str::to_owned),
         refusal: None,
+        ran: None,
         ended_at,
         bytes_seen: None,
         bytes_discarded: None,
@@ -1229,6 +1263,7 @@ fn broke(error: ActionError, ended_at: i64) -> Completion {
         said: Some(said),
         failure_class: Some(error.class),
         refusal: error.refusal.map(|refusal| *refusal),
+        ran: error.ran.map(|ran| *ran),
         ended_at,
         bytes_seen: None,
         bytes_discarded: None,
@@ -1914,6 +1949,70 @@ mod tests {
         assert_eq!(refusal.seen, "\"not a number\"");
     }
 
+    /// What an action reports it ran reaches the closed record, on the step
+    /// that went and on the one that broke alike: whoever reads the run later
+    /// must see what was executed, not only how it ended.
+    #[test]
+    fn the_record_keeps_the_line_the_action_ran_whether_it_went_or_broke() {
+        struct Running;
+
+        impl Action for Running {
+            fn execute(
+                &self,
+                _input: &Value,
+                _shared: &SharedState,
+            ) -> Result<ActionOutcome, ActionError> {
+                Ok(ActionOutcome::Went(json!({"status": "passed"})))
+            }
+
+            fn execute_and_report(
+                &self,
+                input: &Value,
+                shared: &SharedState,
+            ) -> Result<(ActionOutcome, Option<Ran>), ActionError> {
+                let ran = Ran::new("sh", ["-c", "true"]);
+                if input.get("break").is_some() {
+                    return Err(ActionError::new("check_failed", "exit 2").having_run(ran));
+                }
+                self.execute(input, shared).map(|outcome| (outcome, Some(ran)))
+            }
+        }
+
+        let graph = Graph::new(vec![
+            step("went", &[], "running", 1),
+            step("broke", &[], "running", 1),
+        ])
+        .expect("valid graph");
+        let mut actions = ActionRegistry::default();
+        actions.register("running", Running);
+        let mut roots = BTreeMap::new();
+        roots.insert("broke".to_owned(), json!({"break": true}));
+        let request = ExecutionRequest {
+            run_id: "run".to_owned(),
+            root_inputs: roots,
+            gates: vec![],
+            shared: SharedState::new(),
+            spend_cap_micros: None,
+        };
+        let store = InMemoryRecordStore::default();
+        let _ = InProcessExecutor.execute(&graph, request, &store, &actions, &Tick::new(0));
+
+        let records = store.records("run").expect("records");
+        let expected = Some(Ran::new("sh", ["-c", "true"]));
+        let went = records
+            .iter()
+            .find(|record| record.step_id == "went")
+            .expect("the step that went ran");
+        assert_eq!(went.outcome, Some(Outcome::Went));
+        assert_eq!(went.ran, expected, "the line was dropped on the way to the record");
+        let broke = records
+            .iter()
+            .find(|record| record.step_id == "broke")
+            .expect("the step that broke ran");
+        assert_eq!(broke.outcome, Some(Outcome::Broke));
+        assert_eq!(broke.ran, expected, "a broken step forgot the line it ran");
+    }
+
     /// A store that answers "stop" once a number of fronts have asked.
     struct HaltAfter {
         inner: InMemoryRecordStore,
@@ -2319,6 +2418,7 @@ mod tests {
                 said: None,
                 failure_class: None,
                 refusal: None,
+                ran: None,
                 ended_at: 4,
                 bytes_seen: None,
                 bytes_discarded: None,

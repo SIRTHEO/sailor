@@ -57,6 +57,7 @@ fn seed(dir: &Path) {
                 said: None,
                 failure_class: None,
                 refusal: None,
+                ran: None,
                 ended_at: 1010,
                 bytes_seen: None,
                 bytes_discarded: None,
