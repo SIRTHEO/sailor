@@ -117,12 +117,43 @@ di perdere le *ultime* transazioni se manca la corrente ([SQLite, WAL e
 `synchronous`](https://www.sqlite.org/wal.html); la stessa lettura in
 [Sensible SQLite defaults](https://briandouglas.ie/sqlite-defaults/) e in
 [SQLite performance tuning](https://phiresky.github.io/blog/2020/sqlite-performance-tuning/)).
-Il ledger scrive a ogni gancio di ogni terminale: su un SSD un `fsync` costa
-millisecondi, e non si vede — **non è misurato che pesi**. Prima di cambiare
-va misurato: cento `session event` in fila con FULL e con NORMAL. Se la
-differenza non si vede, resta FULL: un registro che non perde l'ultima riga
-vale più di un millisecondo. `mmap_size` e `cache_size` idem: si provano quando
-un'interrogazione risulta lenta, e oggi nessuna lo è.
+Il ledger scrive a ogni gancio di ogni terminale: `sailor session event`
+finisce in `Ledger::put_record` (la presenza del terminale, `announce` in
+`session_cmd.rs`), cioè una transazione sul log e una sulla proiezione, e con
+FULL la seconda paga un `fsync`. **Misurato il 05/09** con
+`crates/ledger/tests/how_much_an_fsync_costs.rs` — ignorata di default, si
+lancia con `cargo test -p ledger --test how_much_an_fsync_costs -- --ignored
+--nocapture` — duecento scritture in fila su un ledger di prova in
+`temp_dir()`, stesso volume APFS della casa. Il ledger non espone
+`synchronous`, e non deve: il confronto con NORMAL rifà a mano le stesse due
+transazioni, istruzione per istruzione, e la riga «a mano, FULL» dice quanto
+la copia somiglia all'originale. Tre corse; vale la terza, la mediana.
+
+| mediana su 200 scritture (totale) | 1ª corsa | 2ª corsa | **3ª corsa** |
+|---|---|---|---|
+| `put_record` dal ledger, FULL | 0,226 ms (48,5 ms) | 0,244 ms (51,2 ms) | **0,241 ms (50,3 ms)** |
+| `record_run` dal ledger, FULL | 0,175 ms (38,1 ms) | 0,180 ms (39,7 ms) | **0,200 ms (42,2 ms)** |
+| `put_record` a mano, FULL | 0,231 ms (49,2 ms) | 0,246 ms (50,8 ms) | **0,227 ms (47,8 ms)** |
+| `put_record` a mano, NORMAL | 0,192 ms (71,3 ms) | 0,199 ms (41,8 ms) | **0,187 ms (39,6 ms)** |
+| `put_record` a mano, FULL e `fullfsync` | 3,866 ms (779 ms) | 3,993 ms (818 ms) | **3,940 ms (753 ms)** |
+
+FULL costa **0,04–0,05 ms a scrittura** più di NORMAL: dieci millisecondi ogni
+duecento eventi, un quarto di millisecondo per gancio. **Resta FULL**: un
+registro che non perde l'ultima riga vale più di quel ventesimo di
+millisecondo, e nessun pragma cambia. (I 71,3 ms della prima corsa NORMAL
+sono una scrittura sola da 17,5 ms, un checkpoint del WAL: capita in entrambi
+i modi e non è l'`fsync`.)
+
+Perché costa così poco: su macOS `fsync` non svuota la cache del disco, e
+SQLite chiede lo svuotamento vero (`F_FULLFSYNC`) solo con `PRAGMA fullfsync =
+ON`, che il ledger non imposta. Con quello ogni scrittura costa **3,9 ms**,
+sedici volte tanto: è il prezzo della durabilità contro la mancanza di corrente
+che FULL promette e che su questo sistema oggi non compra. Se la si vuole è
+una decisione a sé, di Theo, e quello è il suo prezzo; il documento non la
+propone, perché nessuno ha ancora perso una riga.
+
+`mmap_size` e `cache_size` idem: si provano quando un'interrogazione risulta
+lenta, e oggi nessuna lo è.
 
 Crescita: `watch-the-crew` ogni mezz'ora scrive 5 passi, 240 righe al giorno,
 ~90 000 l'anno — una decina di MB. Su una macchina accesa per anni è il costo
@@ -168,9 +199,10 @@ vincolo, e il prezzo — nessun orologio a finestra chiusa — sta in `da-fare.m
    `inizio`/`fine` nel log del prossimo rilascio di sola documentazione.
 2. **Solo se non basta: il profilo della suite senza LTO pieno** — stessa
    misura.
-3. **`synchronous NORMAL` su `state.db`, se cento eventi in fila lo
-   giustificano** — misura prima, decisione poi; è una scelta di durabilità e
-   la prende Theo.
+3. ~~**`synchronous NORMAL` su `state.db`, se cento eventi in fila lo
+   giustificano**~~ — misurato il 05/09 (§4): duecento eventi in fila
+   costano dieci millisecondi in più con FULL. Non lo giustificano; resta
+   FULL.
 4. **`max_attempts` dei passi da mezzo dollaro**, letti dal ledger: quante volte
    il secondo tentativo ha salvato la corsa.
 5. **La finestra si profila prima di toccarla.**
