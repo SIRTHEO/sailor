@@ -47,7 +47,7 @@ const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
     ("registry", 389),
     ("relay", 155),
     ("release", 490),
-    ("sailor", 219),
+    ("sailor", 218),
     ("sessions", 252),
     ("supervisor", 286),
     ("terminal", 287),

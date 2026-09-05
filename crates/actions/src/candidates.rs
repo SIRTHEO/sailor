@@ -148,7 +148,7 @@ impl ExternalEngineAction {
                     // The pact first: it is permanent, and a cap that would
                     // be named instead suggests raising it would help.
                     let pact = tools.data_pact(id);
-                    if spec.data == Some(DataClass::Private) && pact != models::pact::DataPact::DoesNotTrain {
+                    if spec.data == Some(DataClass::Private) && !pact.accepts_private() {
                         refused.push(Refused {
                             id: id.clone(),
                             reason: format!(
