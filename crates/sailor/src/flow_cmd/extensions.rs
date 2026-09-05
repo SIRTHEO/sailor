@@ -2,13 +2,21 @@
 //! command — and whether this machine has it. A mandate that leans on one
 //! nobody declared runs worse elsewhere and says nothing: see fault 17.
 
-use flow::FlowFile;
+use flow::{reference, FlowFile};
 use inventory::{Inventory, Kind, Reach};
 use serde_json::Value;
+use std::collections::BTreeSet;
 
 /// The field of `with` a step declares them in, each written `kind:name` in
 /// the words `sailor inventory` prints: `skill:<name>`, `command:/<name>`.
 pub(super) const NEEDS_EXTENSIONS: &str = "needs_extensions";
+
+/// The path segment a mandate names a skill by: `skills/<name>/SKILL.md`.
+const SKILLS_SEGMENT: &str = "skills/";
+
+/// What may open a slash command in prose besides a space. A `/` glued to a
+/// letter is a path, glued to a quote it is a pointer quoted as an example.
+const OPENS_A_WORD: &[char] = &['(', '`', '«', '‹'];
 
 /// One need a step declares, as written.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -154,6 +162,119 @@ pub(super) fn extensions_of_this_machine_into(report: &mut String, flow: &FlowFi
     }
     let survey = inventory::default_roots(ledger::sailor_home().as_deref());
     extensions_into(report, flow, &inventory::collect_survey(&survey));
+}
+
+// ── what the text leans on without declaring it ──────────────────────────
+
+/// A skill or command a step's text names.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct NamedExtension {
+    pub(super) step: String,
+    pub(super) field: String,
+    pub(super) name: String,
+}
+
+/// The names a step's text leans on and `needs_extensions` does not declare.
+/// Two shapes are read, the two the fault was found in: a skill by its file,
+/// `skills/<name>/SKILL.md`, and a slash command, `/<name>`, opening a word.
+pub(super) fn undeclared_extensions_named_in_text(flow: &FlowFile) -> Vec<NamedExtension> {
+    let wanted = extensions_wanted(flow);
+    let mut found = Vec::new();
+    for step in flow.graph.steps() {
+        let declared: BTreeSet<&str> = wanted
+            .iter()
+            .filter(|need| need.step == step.id)
+            .map(|need| need.name.trim_start_matches('/'))
+            .collect();
+        let places = [step.with.as_ref(), flow.inputs.get(&step.id)];
+        for place in places.into_iter().flatten() {
+            walk_text("", place, &mut |field, text| {
+                for name in extensions_named_in(text) {
+                    if !declared.contains(name.as_str()) {
+                        found.push(NamedExtension {
+                            step: step.id.clone(),
+                            field: field.to_owned(),
+                            name,
+                        });
+                    }
+                }
+            });
+        }
+    }
+    found.sort();
+    found.dedup();
+    found
+}
+
+/// Every piece of text a person wrote, with the field it sits in. The value of
+/// a pointer is skipped — it opens with `/` and names an output, not a skill —
+/// and so is the declaration itself; a `$join` is the field's own text in parts.
+fn walk_text(field: &str, value: &Value, visit: &mut dyn FnMut(&str, &str)) {
+    match value {
+        Value::Object(fields) => {
+            for (key, inner) in fields {
+                if key == reference::FROM_KEY || key == reference::JSON_KEY || key == NEEDS_EXTENSIONS
+                {
+                    continue;
+                }
+                let trail = if field.is_empty() {
+                    key.clone()
+                } else if key == reference::JOIN_KEY {
+                    field.to_owned()
+                } else {
+                    format!("{field}.{key}")
+                };
+                walk_text(&trail, inner, visit);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                walk_text(field, item, visit);
+            }
+        }
+        Value::String(text) => visit(field, text),
+        _ => {}
+    }
+}
+
+/// The skill and command names a piece of text carries.
+pub(super) fn extensions_named_in(text: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut rest = text;
+    while let Some(at) = rest.find(SKILLS_SEGMENT) {
+        rest = &rest[at + SKILLS_SEGMENT.len()..];
+        let name = leading_name(rest);
+        if !name.is_empty() {
+            names.push(name.to_owned());
+        }
+    }
+    let mut before: Option<char> = None;
+    for (at, letter) in text.char_indices() {
+        let opens_a_word = before.is_none_or(|b| b.is_whitespace() || OPENS_A_WORD.contains(&b));
+        before = Some(letter);
+        if letter != '/' || !opens_a_word {
+            continue;
+        }
+        let name = leading_name(&text[at + 1..]);
+        // A path goes on past its first segment; a command does not.
+        if name.is_empty() || text[at + 1 + name.len()..].starts_with('/') {
+            continue;
+        }
+        names.push(name.to_owned());
+    }
+    names
+}
+
+/// The word a name is: opened by a small letter, then letters, digits, dashes
+/// and underscores. `/Users` and `/<field>` are not names.
+fn leading_name(text: &str) -> &str {
+    if !text.starts_with(|c: char| c.is_ascii_lowercase()) {
+        return "";
+    }
+    let end = text
+        .find(|c: char| !(c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_'))
+        .unwrap_or(text.len());
+    &text[..end]
 }
 
 #[cfg(test)]
@@ -315,6 +436,80 @@ mod tests {
             assert!(
                 !report.contains("campi che l'azione non conosce"),
                 "{action}: {report}"
+            );
+        }
+    }
+
+    /// The two shapes the fault was found in: a skill by its file, and a slash
+    /// command opening a word.
+    #[test]
+    fn a_skill_named_by_its_file_or_as_a_slash_command_is_read_from_the_text() {
+        let names = extensions_named_in(
+            "the way is in skills/first-one/SKILL.md; then run /second-one and (/third) — done",
+        );
+        assert_eq!(names, vec!["first-one", "second-one", "third"]);
+    }
+
+    /// What is not a skill name: a pointer, a path, a slash inside a word, an
+    /// example quoted from the pointer rule. Each would have been a false alarm
+    /// on a shipped flow, and a warning that cries wolf is switched off.
+    #[test]
+    fn a_pointer_a_path_and_a_quoted_example_are_not_skill_names() {
+        let text = "read /answer/verdict and crates/flow/system/ and either/or; the text is \
+                    \"/text\"; https://x/y; /Users/x; the skills/ directory";
+        assert_eq!(extensions_named_in(text), Vec::<String>::new());
+    }
+
+    /// A step that declares what it names is clean; the same name undeclared
+    /// is reported with its field, so the fix is one line away.
+    #[test]
+    fn a_named_skill_is_reported_only_when_the_step_does_not_declare_it() {
+        let declaring = flow_with(
+            r#"{"stdin": "follow skills/first/SKILL.md and run /second",
+                "needs_extensions": ["skill:first", "command:/second"], "timeout_secs": 1}"#,
+        );
+        assert_eq!(undeclared_extensions_named_in_text(&declaring), Vec::new());
+
+        let silent = flow_with(
+            r#"{"stdin": {"$join": ["follow skills/first/SKILL.md", {"$from": "/text"}]},
+                "timeout_secs": 1}"#,
+        );
+        let found = undeclared_extensions_named_in_text(&silent);
+        assert_eq!(
+            found,
+            vec![NamedExtension {
+                step: "root".to_owned(),
+                field: "stdin".to_owned(),
+                name: "first".to_owned(),
+            }]
+        );
+    }
+
+    /// And the check says it, before the run.
+    #[test]
+    fn the_check_names_what_a_step_leans_on_without_declaring() {
+        let flow = flow_with(r#"{"stdin": "run /first", "timeout_secs": 1}"#);
+
+        let (report, _) = check_report(&flow, &default_registry(None, None), None, None);
+
+        let said = catalogue::say(
+            "cli.flow.extensions_named_not_declared",
+            &[("fields", "root in «stdin» (first)")],
+        );
+        assert!(report.contains(&said), "{report}");
+    }
+
+    /// The judge over what ships: a shipped flow leaning on a skill nobody
+    /// declared is fault 17 inside the binary, where the user cannot fix it.
+    #[test]
+    fn no_shipped_flow_names_a_skill_it_does_not_declare() {
+        for (name, text) in flow::system::FLOWS {
+            let flow: FlowFile = serde_json::from_str(text)
+                .unwrap_or_else(|why| panic!("the shipped flow «{name}» does not load: {why}"));
+            let found = undeclared_extensions_named_in_text(&flow);
+            assert!(
+                found.is_empty(),
+                "«{name}» leans on what it does not declare: {found:?}"
             );
         }
     }
