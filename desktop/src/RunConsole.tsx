@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Refusal, RunEvent, RunSnapshot } from "./engine";
+import type { Ran, Refusal, RunEvent, RunSnapshot } from "./engine";
 import { tryT } from "./i18n";
 import { totalsArePartial, type RunUsage } from "./flow";
 import { StepRefusal } from "./StepRefusal";
+import { StepRan } from "./StepRan";
 
 /**
  * A run as it goes: what is running, what finished, what it said.
@@ -188,6 +189,8 @@ interface StepPane {
   failure: string | null;
   /** Which check refused, and what it saw, when the failure is a refusal. */
   refusal: Refusal | null;
+  /** The program and the arguments the step started, when it started one. */
+  ran: Ran | null;
   lines: ConsoleLine[];
   /** Vero se il passo ha prodotto del testo suo, oltre alle righe di sistema. */
   spoke: boolean;
@@ -221,6 +224,7 @@ export function panesFromEvents(events: RunEvent[]): StepPane[] {
         outcome: null,
         failure: null,
         refusal: null,
+        ran: null,
         lines: [],
         spoke: false,
         // Il record del passo porta l'input, da cui si legge cosa esegue.
@@ -235,6 +239,7 @@ export function panesFromEvents(events: RunEvent[]): StepPane[] {
         pane.outcome = typeof payload?.outcome === "string" ? payload.outcome : null;
         pane.failure = typeof payload?.failure_class === "string" ? payload.failure_class : null;
         pane.refusal = readRefusal(payload?.refusal);
+        pane.ran = readRan(payload?.ran);
         pane.output = payload?.output ?? null;
       }
     }
@@ -260,6 +265,16 @@ export function readRefusal(value: unknown): Refusal | null {
     return null;
   }
   return { check, path, rule, seen };
+}
+
+/** The line a closing fact carries, when it carries one whole. */
+export function readRan(value: unknown): Ran | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const { program, args } = record;
+  if (typeof program !== "string" || !Array.isArray(args)) return null;
+  if (!args.every((word) => typeof word === "string")) return null;
+  return { program, args: args as string[] };
 }
 
 /**
@@ -548,6 +563,10 @@ export function RunConsole({
                     <pre className="pane__code">{JSON.stringify(pane.input, null, 2)}</pre>
                   </details>
                 )}
+                {/* WHAT IT ACTUALLY STARTED, between what came in and what it
+                    said: the template is in the flow, the resolved line is the
+                    only place a person can see which program really ran. */}
+                {pane.ran && <StepRan ran={pane.ran} />}
                 {/* «Righe» non è «testo del passo»: le righe di sistema —
                     partito, ha chiuso — ci sono sempre, e contarle come testo
                     farebbe sparire la nota proprio nei riquadri che ne hanno
