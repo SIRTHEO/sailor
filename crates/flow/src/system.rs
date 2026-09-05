@@ -92,6 +92,12 @@ pub const FLOWS: &[(&str, &str)] = &[
         "consolidate-memories",
         include_str!("../system/consolidate-memories.flow.json"),
     ),
+    // Development takes the oldest open fault as its mandate, and the engine
+    // is never started when nothing is open.
+    (
+        "take-the-next-fault",
+        include_str!("../system/take-the-next-fault.flow.json"),
+    ),
 ];
 
 /// A place where flows are looked for, with the name a reader sees.

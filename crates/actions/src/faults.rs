@@ -1,4 +1,4 @@
-//! The two nodes with which a flow reads and writes the fault register.
+//! The nodes with which a flow reads and writes the fault register.
 //!
 //! Without these the register is a filing cabinet in a room only a person can
 //! enter: a flow that finds a defect has nowhere to write it, and the step that
@@ -15,6 +15,8 @@ use std::path::PathBuf;
 pub const FAULT_LIST_ACTION: &str = "fault_list";
 /// Records one fault and lets the store give it its number.
 pub const FAULT_RECORD_ACTION: &str = "fault_record";
+/// Hands development its next mandate: the oldest fault still open.
+pub const FAULT_NEXT_ACTION: &str = "fault_next";
 
 /// Said when this machine has no register. The node stays registered and
 /// declares it, the same way `history_ask` declares an absent ledger: a node
@@ -24,6 +26,7 @@ const REGISTER_PRESENT: &str = "present";
 
 pub fn register_faults(registry: &mut flow::ActionRegistry, store: Option<PathBuf>) {
     registry.register(FAULT_LIST_ACTION, FaultListAction::new(store.clone()));
+    registry.register(FAULT_NEXT_ACTION, FaultNextAction::new(store.clone()));
     registry.register(FAULT_RECORD_ACTION, FaultRecordAction::new(store));
 }
 
@@ -102,6 +105,52 @@ impl Action for FaultListAction {
             "open": open_now,
             "total": all.len(),
             "shown": shown.len(),
+        })))
+    }
+
+    fn species(&self) -> StepSpecies {
+        StepSpecies::Repeatable
+    }
+}
+
+// ── the next one to take ─────────────────────────────────────────────────
+
+/// The oldest fault still open, whole, so a flow can make it a mandate without
+/// a second reading. `open` is a boolean here and not the count `fault_list`
+/// gives: it is what a step's `when` reads to leave an engine unstarted.
+pub struct FaultNextAction {
+    store: Option<PathBuf>,
+}
+
+impl FaultNextAction {
+    pub fn new(store: Option<PathBuf>) -> Self {
+        Self { store }
+    }
+}
+
+impl Action for FaultNextAction {
+    fn execute(&self, _input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
+        let Some(store) = open(&self.store)? else {
+            return Ok(ActionOutcome::Went(
+                json!({"register": REGISTER_ABSENT, "open": false, "remaining": 0}),
+            ));
+        };
+        let remaining = store.still_open().map_err(unreadable)?;
+        let Some(fault) = store.next_open().map_err(unreadable)? else {
+            return Ok(ActionOutcome::Went(
+                json!({"register": REGISTER_PRESENT, "open": false, "remaining": 0}),
+            ));
+        };
+        Ok(ActionOutcome::Went(json!({
+            "register": REGISTER_PRESENT,
+            "open": true,
+            "remaining": remaining,
+            "number": fault.number,
+            "happened_on": fault.happened_on,
+            "what_happened": fault.what_happened,
+            "how_it_showed": fault.how_it_showed,
+            "what_would_prevent": fault.what_would_prevent,
+            "status": fault.status,
         })))
     }
 
@@ -261,6 +310,75 @@ mod tests {
         assert_eq!(said["open"], 1, "the closed one is not open");
         assert_eq!(said["shown"], 1);
         assert_eq!(said["faults"][0]["number"], 2);
+    }
+
+    /// The next fault is the oldest still open, not the oldest: the closed one
+    /// in front of it is passed over, and the one behind it waits its turn.
+    #[test]
+    fn the_next_fault_is_the_oldest_still_open() {
+        let path = scratch("next");
+        let writer = FaultRecordAction::new(Some(path.clone()));
+        for what in ["one", "two", "three"] {
+            writer
+                .execute(&a_draft(what), &SharedState::new())
+                .expect("recording");
+        }
+        Faults::open(&path)
+            .expect("opening")
+            .set_status(1, "**chiuso** with a mutant")
+            .expect("closing the oldest");
+
+        let node = FaultNextAction::new(Some(path));
+        let ActionOutcome::Went(said) = node
+            .execute(&json!({}), &SharedState::new())
+            .expect("reading")
+        else {
+            panic!("reading is not a refusal");
+        };
+
+        assert_eq!(said["open"], true);
+        assert_eq!(said["number"], 2, "the closed one is passed over: {said}");
+        assert_eq!(said["what_happened"], "two");
+        assert_eq!(said["happened_on"], "01/09");
+        assert_eq!(said["remaining"], 2, "counted over the register, not over the answer");
+    }
+
+    /// Nothing open is an answer with `open: false`, not a failure: the flow
+    /// that asks has a `when` to read it, and an error would break the run.
+    #[test]
+    fn with_nothing_open_the_next_fault_says_so_and_does_not_fail() {
+        let path = scratch("none-open");
+        FaultRecordAction::new(Some(path.clone()))
+            .execute(&a_draft("the only one"), &SharedState::new())
+            .expect("recording");
+        Faults::open(&path)
+            .expect("opening")
+            .set_status(1, "**chiuso** in the same test")
+            .expect("closing it");
+
+        let ActionOutcome::Went(said) = FaultNextAction::new(Some(path))
+            .execute(&json!({}), &SharedState::new())
+            .expect("nothing open is not a refusal")
+        else {
+            panic!("reading is not a refusal");
+        };
+
+        assert_eq!(said["open"], false, "{said}");
+        assert_eq!(said["register"], REGISTER_PRESENT);
+        assert!(said.get("number").is_none(), "no fault is named: {said}");
+    }
+
+    /// A machine with no register has nothing open, and says so the same way.
+    #[test]
+    fn without_a_register_the_next_fault_is_none() {
+        let ActionOutcome::Went(said) = FaultNextAction::new(None)
+            .execute(&json!({}), &SharedState::new())
+            .expect("an absent register is not a fault of the flow")
+        else {
+            panic!("reading is not a refusal");
+        };
+        assert_eq!(said["open"], false);
+        assert_eq!(said["register"], REGISTER_ABSENT);
     }
 
     /// A machine with no register answers, it does not fail: a flow that asks

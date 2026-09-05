@@ -356,6 +356,10 @@ impl Faults {
         Ok(self.all()?.iter().filter(|f| f.still_open()).count())
     }
 
+    pub fn next_open(&self) -> Result<Option<Fault>, FaultError> {
+        Ok(self.all()?.into_iter().find(Fault::still_open))
+    }
+
     /// Every fault as one document, `fault:<number>`, in the shape the
     /// ledger's ranking takes: what happened, how it showed, what would
     /// prevent it, and where it stands.
