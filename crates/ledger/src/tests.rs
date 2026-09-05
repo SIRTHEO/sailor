@@ -118,6 +118,7 @@ fn sample_all(ledger: &Ledger) {
             ended_at: Some(110),
             session_id: None,
             work_kind: None,
+            fell_back_from: Vec::new(),
         })
         .expect("record the call");
     ledger
@@ -1937,6 +1938,7 @@ fn call_with(call_id: &str, tokens: Option<u64>, cost: Option<i64>) -> ModelCall
         ended_at: Some(110),
         session_id: None,
         work_kind: None,
+            fell_back_from: Vec::new(),
     }
 }
 
@@ -2305,6 +2307,30 @@ fn a_store_from_before_the_work_kind_column_gains_it_on_reopening() {
     let dump = ledger.projection_dump().expect("read the projection");
     let rows = dump["model_calls"].as_array().expect("the list is there");
     assert_eq!(rows[0][28], json!("mechanical"));
+}
+
+/// A column added without the version moving reads as «no such column».
+#[test]
+fn a_store_from_before_the_fell_back_from_column_gains_it_on_reopening() {
+    let directory = TestDirectory::new("before-fell-back-from");
+    {
+        let ledger = Ledger::open(&directory.0).expect("open the ledger");
+        let connection = ledger.connection.lock().expect("nobody panics here");
+        connection
+            .execute_batch("ALTER TABLE model_calls DROP COLUMN fell_back_from;")
+            .expect("the shape before the column");
+        connection
+            .pragma_update(None, "user_version", 13i64)
+            .expect("declared at the version before it");
+    }
+
+    let ledger = Ledger::open(&directory.0).expect("reopen the ledger");
+    let mut call = call_with("with-fallback", Some(7), Some(11));
+    call.fell_back_from = vec!["ollama".to_owned()];
+    ledger.record_model_call(&call).expect("a call naming what it fell back from is written");
+    let dump = ledger.projection_dump().expect("read the projection");
+    let rows = dump["model_calls"].as_array().expect("the list is there");
+    assert_eq!(rows[0][29], json!(r#"["ollama"]"#));
 }
 
 /// **A STORE THAT CLAIMS TO BE CURRENT WHEN IT IS NOT.**
