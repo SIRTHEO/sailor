@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 
 /// Every `.rs` directly under a package's `tests/`, the window's shell included.
-const TEST_BINARIES_TODAY: usize = 112;
+const TEST_BINARIES_TODAY: usize = 113;
 
 /// Every `#[test]` in the tree, the window's shell included.
 const TEST_FUNCTIONS_TODAY: usize = 1521;
