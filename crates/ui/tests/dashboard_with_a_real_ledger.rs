@@ -116,6 +116,7 @@ fn seed(dir: &Path) {
             session_id: None,
             work_kind: None,
             fell_back_from: Vec::new(),
+            session_mode: None,
         })
         .expect("recording the model call");
 }
@@ -201,7 +202,8 @@ fn a_record_comes_back_from_the_projection_field_for_field() {
         ended_at: Some(909),
         session_id: Some("session-only".into()),
         work_kind: None,
-            fell_back_from: Vec::new(),
+        fell_back_from: Vec::new(),
+        session_mode: Some(ledger::SessionMode::ColdFallback),
     };
 
     {

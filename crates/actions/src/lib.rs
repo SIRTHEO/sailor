@@ -69,7 +69,9 @@ mod spec;
 /// da questa parte del confine sarebbe una seconda definizione della stessa
 /// cosa: due strutture gemelle divergono al primo campo che qualcuno aggiunge a
 /// una sola delle due.
-pub use models::usage::{read_declared, read_scalar, read_text, Declared, Pointer, Reading, Shape};
+pub use models::usage::{
+    read_declared, read_scalar, read_text, Declared, Pointer, Reading, Reports, Shape,
+};
 
 pub use cost::{current_price_list, price_list_from};
 pub use engine::ExternalEngineAction;
