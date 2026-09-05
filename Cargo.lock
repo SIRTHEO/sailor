@@ -49,6 +49,7 @@ name = "catalogue"
 version = "0.1.0"
 dependencies = [
  "serde_json",
+ "workspace",
 ]
 
 [[package]]

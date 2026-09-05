@@ -30,8 +30,14 @@ const NAMES_THAT_ARE_A_PERSONS: &[&str] = &[
     ".env",
 ];
 
-fn tracked() -> Vec<String> {
+/// The tracked files. `None` and not an empty list where there is nothing to
+/// ask: an empty list reads as «nothing reserved is tracked» — fault 100.
+fn tracked() -> Option<Vec<String>> {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    if !workspace::is_the_top_of_its_repository(&root) {
+        workspace::measured_nothing("this tree is not the top of a repository, so nothing is tracked here to refuse");
+        return None;
+    }
     let listed = Command::new("git")
         .arg("-C")
         .arg(&root)
@@ -39,17 +45,22 @@ fn tracked() -> Vec<String> {
         .output()
         .expect("git lists the tree");
     assert!(listed.status.success(), "git ls-files answers");
-    String::from_utf8_lossy(&listed.stdout)
-        .split('\0')
-        .filter(|path| !path.is_empty())
-        .map(str::to_owned)
-        .collect()
+    Some(
+        String::from_utf8_lossy(&listed.stdout)
+            .split('\0')
+            .filter(|path| !path.is_empty())
+            .map(str::to_owned)
+            .collect(),
+    )
 }
 
 #[test]
 fn only_the_shipped_flows_and_this_projects_own_are_tracked() {
+    let Some(tracked) = tracked() else {
+        return;
+    };
     let allowed = flows_that_may_be_tracked();
-    let strangers: Vec<String> = tracked()
+    let strangers: Vec<String> = tracked
         .into_iter()
         .filter(|path| path.ends_with(".flow.json"))
         .filter(|path| !allowed.contains(path))
@@ -62,7 +73,10 @@ fn only_the_shipped_flows_and_this_projects_own_are_tracked() {
 
 #[test]
 fn no_file_that_is_a_persons_is_tracked() {
-    let personal: Vec<String> = tracked()
+    let Some(tracked) = tracked() else {
+        return;
+    };
+    let personal: Vec<String> = tracked
         .into_iter()
         .filter(|path| {
             let name = path.rsplit('/').next().unwrap_or(path);
