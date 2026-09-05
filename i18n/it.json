@@ -544,5 +544,6 @@
   "cli.memory.no_home": "nessuna casa in cui scrivere la pagina: HOME non è impostata",
   "run.failure.bad_memory_type": "una memoria è user, feedback, project o reference, e questa non è nessuna delle quattro",
   "run.failure.secret_in_memory": "la memoria porta quel che sembra una credenziale, e una credenziale non si ricorda mai",
-  "run.failure.page_unwritten": "la pagina delle memorie non si è potuta scrivere, e le righe di comando leggono ancora la vecchia"
+  "run.failure.page_unwritten": "la pagina delle memorie non si è potuta scrivere, e le righe di comando leggono ancora la vecchia",
+  "run.failure.kept_and_dropped": "un'etichetta è chiesta tenuta e tolta nello stesso passaggio — il deposito non può tenere tutte e due le risposte, e non si è scritto niente"
 }
