@@ -1810,6 +1810,7 @@ mod tests {
             max_attempts,
             ask_again_after_secs: None,
             retry_after_secs: None,
+            phase: None,
         }
     }
 

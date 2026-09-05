@@ -2585,6 +2585,30 @@ tr[data-followable]:hover {
   color: var(--state-human);
 }
 
+/* The phase over the name, in the register of the species: a label, not a
+   second name. Muted so the name below stays the figure. */
+.step-node__phase {
+  padding: var(--space-2) var(--space-3) 0;
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.step-node__phase + .step-node__id {
+  padding-top: var(--space-1);
+}
+
+/* Ten pixels at the far zoom is nothing anyone reads: the phase goes with the
+   rest of the detail, and the plate keeps the band and the name. */
+.step-node[data-far] .step-node__phase {
+  display: none;
+}
+
 /* THE JUMP IN SCALE EXISTS. The name against the species is 18 to 10, which is
    1.8x; at 15 it was 1.5x, and 1.5x is not a hierarchy, it is a hesitation. */
 .step-node__id {

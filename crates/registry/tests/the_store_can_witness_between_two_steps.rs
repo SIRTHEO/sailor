@@ -72,6 +72,7 @@ fn step(id: &str, deps: &[&str], action: &str, with: Value) -> Step {
         max_attempts: 1,
         ask_again_after_secs: None,
         retry_after_secs: None,
+        phase: None,
         when: None,
         with: Some(with),
         input_schema: ValueSchema::Any,
