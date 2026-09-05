@@ -26,9 +26,10 @@
     "",
     "CAREFUL, AND IT HOLDS FOR EVERY `terminal` ENTRY: Sailor listens to no",
     "terminal today. These entries declare the shape, and a step using one stops",
-    "and says what is missing. The same holds for `periodic`: the beat exists",
-    "(`sailor flow tick`) but nobody calls it on a schedule, so such a step stops",
-    "too. Only `manual` really works, and none is shipped periodic."
+    "and says what is missing. The same holds for `periodic`: the clock is kept —",
+    "the window beats every minute and `sailor flow tick` judges the same way —",
+    "but both read the flow's `schedule`, not this declaration, so such a step",
+    "stops too. Only `manual` really works, and none is shipped periodic."
   ],
   "triggers": [
     {
