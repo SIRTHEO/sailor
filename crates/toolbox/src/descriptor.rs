@@ -157,6 +157,12 @@ pub struct Ask {
     /// is tried again every time, as before.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cooldown_secs: Option<u64>,
+    /// The words after which this engine only waits for a person — a browser
+    /// to visit, a code to type. A step has nobody to send, so on seeing one
+    /// the engine is stopped at once instead of being paid its wait, and what
+    /// it had said is read as its refusal. Empty means it is waited for in full.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub waits_for_a_person_when: Vec<String>,
     /// How this engine refuses the line **composed without the question**: the
     /// only harmless way to try a real command line, since no provider is called
     /// yet the same argument parsing runs. Data, because each refuses in its own
@@ -873,6 +879,7 @@ impl Descriptor {
             for (field, marks) in [
                 ("unusable_when", &ask.unusable_when),
                 ("exhausted_when", &ask.exhausted_when),
+                ("waits_for_a_person_when", &ask.waits_for_a_person_when),
                 ("refuses_without_prompt", &ask.refuses_without_prompt),
             ] {
                 if marks.iter().any(|mark| mark.trim().is_empty()) {
@@ -1920,6 +1927,30 @@ mod the_new_field_is_optional {
             empty.iter().any(|said| said.contains("empty fragment") && said.contains("exhausted_when")),
             "an empty fragment in `exhausted_when` matches everything and must be named: {empty:?}"
         );
+    }
+
+    /// An empty fragment among the words for waiting on a person would stop
+    /// every engine on its first byte: it is named like the other lists'.
+    #[test]
+    fn an_empty_fragment_among_the_words_for_waiting_on_a_person_is_named() {
+        let catalog = loaded(
+            "waiting-words",
+            r#"[
+              {
+                "id": "aspetta-su-niente", "family": "ai_cli",
+                "detect": { "command": "primo" },
+                "ask": { "args": ["-p"], "prompt": "stdin",
+                         "unusable_when": ["401"],
+                         "waits_for_a_person_when": ["Waiting for a code", " "] }
+              }
+            ]"#,
+        );
+        assert!(catalog.problems.is_empty(), "{:?}", catalog.problems);
+        let named = catalog
+            .contradictions()
+            .into_iter()
+            .any(|found| found.said.contains("empty fragment") && found.said.contains("waits_for_a_person_when"));
+        assert!(named, "the empty fragment must be named with its field");
     }
 
     /// The shipped `codex` descriptor declares how its usage is read, in the

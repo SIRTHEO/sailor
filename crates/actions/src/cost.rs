@@ -328,6 +328,7 @@ mod what_it_cost {
             refuses_without_prompt: Vec::new(),
             exhausted_when: Vec::new(),
             cooldown_secs: None,
+            waits_for_a_person_when: Vec::new(),
             usage: Some(UsageRecipe {
                 args: vec!["--output-format".to_owned(), "json".to_owned()],
                 declared: Declared {
@@ -524,6 +525,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
                 refuses_without_prompt: Vec::new(),
                 exhausted_when: Vec::new(),
                 cooldown_secs: None,
+                waits_for_a_person_when: Vec::new(),
                 usage: None,
             }),
         })
@@ -1263,6 +1265,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
                     refuses_without_prompt: Vec::new(),
                     exhausted_when: Vec::new(),
                     cooldown_secs: None,
+                    waits_for_a_person_when: Vec::new(),
                     usage: None,
                 }),
             })
@@ -1474,6 +1477,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
                 refuses_without_prompt: Vec::new(),
                 exhausted_when: Vec::new(),
                 cooldown_secs: None,
+                waits_for_a_person_when: Vec::new(),
                 usage: None,
             }),
         })

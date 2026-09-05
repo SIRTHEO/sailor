@@ -9,8 +9,8 @@ use crate::candidates::{strengths_path, Candidate, Refused};
 use crate::cost::{now_secs, record_the_call, recording_for, Recording, Spent};
 use crate::equipment::current_equipment_for;
 use crate::process::{
-    invoke_external_engine_watched, sink_for_step, EngineInvocation, EngineResult, LiveSink, Pipe,
-    StepSinks,
+    invoke_external_engine_watched_until, sink_for_step, EngineInvocation, EngineResult, LiveSink,
+    Pipe, StepSinks,
 };
 use crate::recipe::{PromptVia, ToolResolver};
 use crate::session::session_plan;
@@ -311,7 +311,11 @@ impl ExternalEngineAction {
         // Gli istanti si prendono stretti attorno alla chiamata: è la durata di
         // *questa* invocazione, non del passo che la contiene.
         let started_at = now_secs();
-        let result = invoke_external_engine_watched(&invocation, live);
+        let result = invoke_external_engine_watched_until(
+            &invocation,
+            live,
+            &candidate.waits_for_a_person_when,
+        );
         let ended_at = now_secs();
         // Il consumo si legge da ciò che il motore ha detto, secondo quanto il
         // suo descrittore dichiara. Chi non dichiara niente lascia tutto
@@ -471,6 +475,34 @@ impl ExternalEngineAction {
                     // Un motore che ha parlato deve rispettare la forma anche
                     // quando il passo gli perdona l'uscita in errore: quella
                     // tolleranza riguarda il codice di uscita, non la risposta.
+                    Some(shape) => {
+                        return shaped_answer(shape, &stdout).map(|answer| {
+                            Asked::Answered(ActionOutcome::Went(
+                                json!({"status": "exit_error", "answer": answer}),
+                            ))
+                        })
+                    }
+                    None => EngineOutcomeJson {
+                        status: "exit_error",
+                        stdout,
+                        stderr,
+                    },
+                }
+            }
+            EngineResult::WaitingForAPerson { stdout, stderr } => {
+                // Stopped on the words its descriptor declares mean it only
+                // waits for a person: a refusal by declaration, so the class is
+                // the declared one and never a plain exit error, and the wait
+                // it would have cost is the whole reason it was stopped.
+                let reading = read(&stdout, &stderr);
+                let class = candidate.declared_class(&stdout, &stderr).unwrap_or("exhausted");
+                note(reading.clone(), Some(class), &stdout);
+                self.set_aside_if_spent(candidate, Some(class), ended_at, &stdout, &stderr);
+                if !tolerates(&spec.accept, "exit_error") {
+                    return engine_cannot_work(&named, solo, &stdout, &stderr);
+                }
+                let stdout = reading.answer.unwrap_or(stdout);
+                match shape {
                     Some(shape) => {
                         return shaped_answer(shape, &stdout).map(|answer| {
                             Asked::Answered(ActionOutcome::Went(

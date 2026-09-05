@@ -299,6 +299,7 @@ mod resuming_instead_of_rediscovering {
             unusable_when: Vec::new(),
             exhausted_when: Vec::new(),
             cooldown_secs: None,
+            waits_for_a_person_when: Vec::new(),
             declared_usage: None,
             can_be_asked: true,
             why: None,
@@ -417,6 +418,7 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
                 refuses_without_prompt: Vec::new(),
                 exhausted_when: Vec::new(),
                 cooldown_secs: None,
+                waits_for_a_person_when: Vec::new(),
                 usage: None,
             })
         }
