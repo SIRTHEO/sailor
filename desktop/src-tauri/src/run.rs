@@ -166,10 +166,7 @@ impl Runs {
         payload: Value,
     ) {
         let event = {
-            let mut runs = self
-                .0
-                .lock()
-                .expect("il registro delle corse non è avvelenato");
+            let mut runs = self.lock_map();
             let Some(state) = runs.get_mut(run_id) else {
                 return;
             };
@@ -191,11 +188,12 @@ impl Runs {
         crate::events::emit(app, "run", &event);
     }
 
+    /// A run that ended says so even when another run's thread died holding
+    /// the registry: a status dropped there leaves the window showing a run
+    /// still going for as long as it stays open.
     fn set_status(&self, run_id: &str, status: &str) {
-        if let Ok(mut runs) = self.0.lock() {
-            if let Some(state) = runs.get_mut(run_id) {
-                state.status = status.to_owned();
-            }
+        if let Some(state) = self.lock_map().get_mut(run_id) {
+            state.status = status.to_owned();
         }
     }
 
@@ -237,7 +235,7 @@ struct StepText {
 impl LiveSink for StepText {
     fn chunk(&self, pipe: Pipe, bytes: &[u8]) {
         let text = {
-            let mut tails = self.tails.lock().expect("the tails are not poisoned");
+            let mut tails = crate::locks::locked(&self.tails);
             let buffer = match pipe {
                 Pipe::Stdout => &mut tails.0,
                 Pipe::Stderr => &mut tails.1,
@@ -902,9 +900,7 @@ pub(crate) fn known_runs(runs: State<'_, Arc<Runs>>) -> Vec<RunSnapshot> {
 
 impl Runs {
     fn lock_map(&self) -> std::sync::MutexGuard<'_, HashMap<String, RunState>> {
-        self.0
-            .lock()
-            .expect("il registro delle corse non è avvelenato")
+        crate::locks::locked(&self.0)
     }
 
     /// The flows this window is running right now, by flow id.
@@ -1449,6 +1445,25 @@ mod tests {
         assert!(unknown.contains("no run nobody"), "{unknown}");
     }
 
+    /// A run that ends is marked even when another thread died holding the
+    /// registry. Dropped, the window shows that run going for as long as it
+    /// stays open, and nothing anywhere says why.
+    #[test]
+    fn a_run_that_ends_is_marked_after_a_thread_died_holding_the_registry() {
+        let runs = Arc::new(Runs::default());
+        held_run(&runs, "live", "running");
+
+        let taken = runs.clone();
+        let died = std::thread::spawn(move || {
+            let _held = taken.lock_map();
+            panic!("a thread dies holding the registry");
+        });
+        assert!(died.join().is_err(), "the thread had to die holding it");
+
+        runs.set_status("live", "complete");
+        assert_eq!(runs.lock_map()["live"].status, "complete");
+    }
+
     fn refused_by_shape() -> Refusal {
         Refusal::new("answer_shape", "$.verdict", flow::RefusalRule::NotAllowed, "\"remvoe\"")
     }
@@ -1463,6 +1478,7 @@ mod tests {
             said: Some("off shape".to_owned()),
             failure_class: Some("answer_off_shape".to_owned()),
             refusal: Some(refused_by_shape()),
+            ran: None,
             ended_at: 7,
             bytes_seen: None,
             bytes_discarded: None,

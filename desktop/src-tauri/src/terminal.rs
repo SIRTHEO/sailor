@@ -189,9 +189,7 @@ fn following() -> &'static Mutex<HashSet<String>> {
 /// attach to.
 fn follow(app: &AppHandle, id: &str) {
     {
-        let mut followed = following()
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut followed = crate::locks::locked(following());
         if !followed.insert(id.to_owned()) {
             return;
         }
@@ -223,10 +221,7 @@ fn follow(app: &AppHandle, id: &str) {
                 }
             });
         }
-        following()
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .remove(&id);
+        crate::locks::locked(following()).remove(&id);
     });
 }
 

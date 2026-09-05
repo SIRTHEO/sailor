@@ -278,7 +278,7 @@ pub fn once(app: &AppHandle) -> Option<Report> {
         }
     };
     let report = Report { at: now, decisions };
-    let mut held = beat.last.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut held = crate::locks::locked(&beat.last);
     for decision in news(held.as_ref(), &report) {
         let (word, rest) = said(&decision.verdict);
         println!("beat\t{}\t{word}\t{rest}", decision.flow);
@@ -310,10 +310,7 @@ pub fn keep(app: &AppHandle) {
 /// The last beat's report, for whoever wants to know what was held and why.
 #[tauri::command]
 pub(crate) fn beat_report(beat: tauri::State<'_, Arc<Beat>>) -> Option<Report> {
-    beat.last
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .clone()
+    crate::locks::locked(&beat.last).clone()
 }
 
 #[cfg(test)]
