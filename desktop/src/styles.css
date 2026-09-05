@@ -3788,6 +3788,20 @@ tr[data-followable]:hover {
   word-break: break-all;
 }
 
+/* ── the line a step started ────────────────────────────────────────────── */
+
+.step-ran {
+  display: block;
+  margin-top: var(--space-2);
+  padding: 0 var(--space-1);
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--muted);
+  background: var(--raised);
+  border-radius: var(--radius);
+  word-break: break-all;
+}
+
 /* ── what went into a step, over time ───────────────────────────────────── */
 
 .history {
