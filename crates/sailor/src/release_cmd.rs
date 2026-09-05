@@ -620,6 +620,17 @@ fn say_what_the_name_finds(selected: &Target, safe: &Path) -> release::OnPath {
     seen
 }
 
+/// The release tree is kept between releases, and `cp -R` into a directory
+/// that exists copies *inside* it: the modules of the last release would gain
+/// a second copy of themselves, and the page two copies of every library.
+fn clear_for_the_borrow(cloned_modules: &Path) -> Result<(), String> {
+    if cloned_modules.is_dir() {
+        fs::remove_dir_all(cloned_modules)
+            .map_err(|error| format!("{}: {error}", cloned_modules.display()))?;
+    }
+    Ok(())
+}
+
 /// The page of the clone, built where the shell will look for it.
 ///
 /// **THE MODULES ARE BORROWED WHEN THE LOCK IS THE SAME, AND NEVER OTHERWISE.**
@@ -635,6 +646,7 @@ fn build_the_page(root: &Path, repository: &Path, page_rel: &str) -> Result<(), 
         tree_page.join("node_modules").is_dir(),
     );
     let borrowed = matches!(modules, release::Modules::Borrow) && {
+        clear_for_the_borrow(&cloned_page.join("node_modules"))?;
         // **COPIED WITH `-c`, NOT LINKED.** A symlink leaves the modules outside
         // the clone, and the page's own builder refuses to read a file from
         // outside the tree it was pointed at — measured, and the page did not
@@ -1364,6 +1376,22 @@ mod tests {
 
         let refused = said.expect_err("no remote to push to");
         assert!(!refused.is_empty(), "git's line, not an empty one");
+    }
+
+    /// The modules left by the last release are cleared before the tree's are
+    /// cloned over them, or the clone lands inside them.
+    #[test]
+    fn the_modules_of_the_last_release_are_cleared_before_the_borrow() {
+        let scratch = std::env::temp_dir().join(format!("sailor-borrow-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&scratch);
+        let modules = scratch.join("node_modules");
+        fs::create_dir_all(modules.join("react")).expect("scratch");
+        fs::write(modules.join("react").join("index.js"), "old").expect("write");
+        clear_for_the_borrow(&modules).expect("cleared");
+        let gone = !modules.exists();
+        clear_for_the_borrow(&modules).expect("nothing to clear is not an error");
+        let _ = fs::remove_dir_all(&scratch);
+        assert!(gone, "the old modules are still there");
     }
 
     /// A red suite names its red tests: the tail alone ended on cargo's count.
