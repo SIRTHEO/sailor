@@ -118,9 +118,18 @@ pub fn default_registry(
     // step names a real action without opening anything. Running without one
     // refuses instead, because a child run nobody can trace back to the step
     // that asked for it is the opacity this step was built against.
+    let host: Arc<dyn flow::subflow::SubflowHost> =
+        Arc::new(LedgerHost::new(ledger.clone(), watcher));
     registry.register(
         flow::subflow::SUBFLOW_ACTION,
-        flow::subflow::SubflowAction::new(Arc::new(LedgerHost::new(ledger.clone(), watcher))),
+        flow::subflow::SubflowAction::new(Arc::clone(&host)),
+    );
+    // The same flow once per element of a list, through the same host: the
+    // children are subflow runs in the ledger, and one nesting level still
+    // builds one registry.
+    registry.register(
+        flow::for_each::FOR_EACH_ACTION,
+        flow::for_each::ForEachAction::new(host),
     );
     // Who is working on what, because an **agent** must be able to ask. The
     // reading half goes in without a store; the two that write stay out.
@@ -168,6 +177,7 @@ mod tests {
             // The window has always offered the `subflow` node; the engine did
             // not know it, so a flow drawn with it was refused as unknown.
             flow::subflow::SUBFLOW_ACTION,
+            flow::for_each::FOR_EACH_ACTION,
             // The watch reads the terminals too, store or no store.
             actions::terminals::TERMINAL_SURVEY_ACTION,
         ] {
