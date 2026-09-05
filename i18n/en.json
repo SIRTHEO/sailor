@@ -238,7 +238,7 @@
   "cli.release.cannot_start_git_clone": "cannot start git clone: {error}",
   "cli.release.cannot_start_the_suite": "cannot start the suite: {error}",
   "cli.release.checkout_failed": "checking HEAD out in the clone failed",
-  "cli.release.cloning_head": "== cloning HEAD ({head}) of {root} into a throwaway tree ==",
+  "cli.release.cloning_head": "== bringing the release tree under target/ to HEAD ({head}) of {root} ==",
   "cli.release.commits_touching_the_parts": "({count} commit(s) touching {parts}, from {from} to {to})",
   "cli.release.dry_run": "== dry run: the binary in service was NOT replaced ==",
   "cli.release.head_does_not_compile": "HEAD does not compile: nothing was replaced and the binary in service is intact",
@@ -506,5 +506,6 @@
   "cli.search.no_words": "a search needs a word; usage: {usage}",
   "cli.search.flows_found": "flows: {count} mention «{query}»",
   "cli.search.ledger_found": "ledger: {count} run(s), step(s) or store entr(ies) mention «{query}»",
-  "cli.search.ledger_closed": "ledger: could not be opened, so nothing of it was searched ({error})"
+  "cli.search.ledger_closed": "ledger: could not be opened, so nothing of it was searched ({error})",
+  "cli.release.tree_not_brought_to_head": "the release tree could not be brought to HEAD (git {step} failed): remove target/release-tree and release again"
 }

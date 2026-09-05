@@ -159,7 +159,6 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     }
 
     let temporary = make_temporary_tree()?;
-    let repository = temporary.path.join("repo");
     println!(
         "{}",
         catalogue::say(
@@ -167,7 +166,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
             &[("head", &head_short), ("root", &root.display().to_string())],
         )
     );
-    clone_repository(&root, &repository)?;
+    let repository = release_tree(&root)?;
     command_success(
         Command::new("git")
             .arg("-C")
@@ -488,6 +487,31 @@ fn command_success(command: &mut Command, context: &str) -> Result<(), String> {
     } else {
         Err(format!("{context} ({})", status_description(status)))
     }
+}
+
+/// The tree the release builds from: a clone under `target/`, kept from one
+/// release to the next and brought to HEAD by a checkout.
+///
+/// **A FRESH CLONE MADE EVERY CRATE RECOMPILE AND EVERY TEST BINARY RELINK**:
+/// cargo judges staleness by path and mtime, and a new `mktemp` directory has
+/// both new. A checkout touches only what changed.
+fn release_tree(root: &Path) -> Result<PathBuf, String> {
+    let tree = root.join("target").join("release-tree");
+    if !tree.join(".git").is_dir() {
+        clone_repository(root, &tree)?;
+        return Ok(tree);
+    }
+    for args in [
+        vec!["fetch", "--quiet", &root.display().to_string(), "HEAD"],
+        vec!["checkout", "--quiet", "--force", "FETCH_HEAD"],
+        vec!["clean", "-fdq"],
+    ] {
+        command_success(
+            Command::new("git").arg("-C").arg(&tree).args(&args),
+            &catalogue::say("cli.release.tree_not_brought_to_head", &[("step", args[0])]),
+        )?;
+    }
+    Ok(tree)
 }
 
 fn clone_repository(root: &Path, repository: &Path) -> Result<(), String> {
@@ -1311,6 +1335,44 @@ mod tests {
 
         let refused = said.expect_err("no remote to push to");
         assert!(!refused.is_empty(), "git's line, not an empty one");
+    }
+
+    /// **THE RELEASE TREE IS BROUGHT TO HEAD, NOT REMADE.** A file the new
+    /// commit did not touch keeps its mtime, which is what lets cargo leave its
+    /// crate alone; a file the commit did touch arrives.
+    #[test]
+    fn the_release_tree_is_kept_and_only_what_changed_is_touched() {
+        use std::os::unix::fs::MetadataExt;
+        let scratch = std::env::temp_dir().join(format!("sailor-release-tree-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&scratch);
+        let root = scratch.join("sources");
+        fs::create_dir_all(&root).expect("scratch");
+        let git = |args: &[&str]| {
+            let out = Command::new("git").arg("-C").arg(&root).args(args).output().expect("git");
+            assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+        };
+        git(&["init", "--quiet"]);
+        git(&["config", "user.email", "t@example.invalid"]);
+        git(&["config", "user.name", "t"]);
+        fs::write(root.join("untouched.txt"), "stays").expect("write");
+        git(&["add", "."]);
+        git(&["commit", "--quiet", "-m", "first"]);
+
+        let tree = release_tree(&root).expect("first tree");
+        let before = fs::metadata(tree.join("untouched.txt")).expect("cloned").mtime_nsec();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        fs::write(root.join("new.txt"), "arrives").expect("write");
+        git(&["add", "."]);
+        git(&["commit", "--quiet", "-m", "second"]);
+
+        let again = release_tree(&root).expect("second tree");
+        let after = fs::metadata(again.join("untouched.txt")).expect("still there").mtime_nsec();
+        let arrived = again.join("new.txt").is_file();
+        let _ = fs::remove_dir_all(&scratch);
+
+        assert_eq!(again, tree, "one tree, not one per release");
+        assert!(arrived, "the second commit's file is in the tree");
+        assert_eq!(before, after, "the untouched file was not rewritten");
     }
 
     // I tre casi qui sotto nominavano `notte` fino al 01/09/2026. `parse_options`
