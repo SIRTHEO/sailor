@@ -12,6 +12,7 @@ mod record;
 pub mod reference;
 mod schedule;
 mod schema;
+mod streak;
 pub mod subflow;
 pub mod system;
 pub mod workspace;
@@ -31,3 +32,4 @@ pub use record::{
 };
 pub use schedule::{is_due, Recurrence, Schedule, Weight};
 pub use schema::{SchemaError, ValueSchema};
+pub use streak::{faults_due, FailureStreak, FaultToWrite, FAILURES_THAT_MAKE_A_FAULT};
