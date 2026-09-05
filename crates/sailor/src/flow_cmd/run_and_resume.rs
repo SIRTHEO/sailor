@@ -170,7 +170,6 @@ pub fn resume_run_with(
     let started_at = header.started_at;
     let now = now_secs()?;
 
-    let mut clock = SystemClock;
     // THE RESUME GOES THROUGH THE ONE CONSTRUCTOR, like the first run, and
     // keeps the same id: a request built by hand would lose the workspace
     // root in silence, and a new id would redo every step already paid for.
@@ -187,7 +186,7 @@ pub fn resume_run_with(
             actions: &registry,
             shared: &shared,
             processes: &probe,
-            clock: &mut clock,
+            clock: &SystemClock,
         })
         .map_err(|error| format!("cannot reconcile run {run_id}: {error}"))?;
 
@@ -433,7 +432,7 @@ pub(super) fn run_flow(sources: &[FlowSource], name: &str, mandate: Option<&str>
     record_run(&ledger, &flow, &run_id, "running", started_at, None, None)?;
 
     let store = ledger.clone();
-    let result = execute_flow(&flow, &run_id, &store, &registry, &mut SystemClock);
+    let result = execute_flow(&flow, &run_id, &store, &registry, &SystemClock);
     match result {
         Ok(execution) => {
             let (status, exit_ok) = execution_status(&execution);
@@ -486,7 +485,7 @@ fn execute_flow(
     run_id: &str,
     store: &dyn RecordStore,
     registry: &ActionRegistry,
-    clock: &mut dyn flow::Clock,
+    clock: &dyn flow::Clock,
 ) -> Result<Execution, Box<flow::FlowError>> {
     let root = workspace_root();
     announce_root(root.as_deref());
@@ -699,7 +698,6 @@ mod tests {
         let registry = registry_in(House::empty(), None, None);
         let shared = flow::SharedState::new();
         let probe = HandoffLease { now: 1_100 };
-        let mut clock = SystemClock;
         let report = InProcessExecutor
             .reconcile(flow::ReconciliationRequest {
                 graph: &flow.graph,
@@ -708,7 +706,7 @@ mod tests {
                 actions: &registry,
                 shared: &shared,
                 processes: &probe,
-                clock: &mut clock,
+                clock: &SystemClock,
             })
             .expect("la riconciliazione risponde");
 
@@ -1175,7 +1173,7 @@ mod tests {
             "corsa-1",
             &store,
             &registry_in(House::empty(), None, None),
-            &mut Tick::new(0),
+            &Tick::new(0),
         )
         .expect("eseguire il flusso");
 
