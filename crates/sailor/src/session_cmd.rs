@@ -1184,10 +1184,29 @@ struct StillOpen {
     waiting: Vec<ledger::WaitingRun>,
     ask_again: Vec<ledger::WaitingRun>,
     remembered: Vec<actions::memory::Memory>,
+    page: Option<PageOnDisk>,
+}
+
+/// The page of memories as it sits on disk: its address, and how it opens.
+struct PageOnDisk {
+    path: PathBuf,
+    opening: String,
+}
+
+/// How many of the page's lines the greeting repeats.
+const PAGE_OPENING_LINES: usize = 3;
+
+/// The page, where the home has one. **A missing file is `None`**, not an
+/// empty page: the greeting must not send a reader to a file that is not there.
+fn page_on_disk(home: Option<&std::path::Path>) -> Option<PageOnDisk> {
+    let path = actions::memory::page_path(home?);
+    let text = std::fs::read_to_string(&path).ok()?;
+    let opening = text.lines().take(PAGE_OPENING_LINES).collect::<Vec<_>>().join("\n");
+    Some(PageOnDisk { path, opening })
 }
 
 /// The two lists and the memories, from a ledger already open.
-fn still_open_in(deposit: &ledger::Ledger) -> Result<StillOpen, String> {
+fn still_open_in(deposit: &ledger::Ledger, home: Option<&std::path::Path>) -> Result<StillOpen, String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
@@ -1196,6 +1215,7 @@ fn still_open_in(deposit: &ledger::Ledger) -> Result<StillOpen, String> {
         waiting: deposit.waiting_runs().map_err(|error| error.to_string())?,
         ask_again: deposit.runs_to_ask_again().map_err(|error| error.to_string())?,
         remembered: actions::memory::remembered(deposit, now).map_err(|error| error.to_string())?,
+        page: page_on_disk(home),
     })
 }
 
@@ -1216,7 +1236,7 @@ fn deposit() -> Result<Option<ledger::Ledger>, String> {
 /// The same, from this machine's home.
 fn still_open() -> Result<Option<StillOpen>, String> {
     match deposit()? {
-        Some(deposit) => still_open_in(&deposit).map(Some),
+        Some(deposit) => still_open_in(&deposit, ledger::sailor_home().as_deref()).map(Some),
         None => Ok(None),
     }
 }
@@ -1333,6 +1353,15 @@ fn what_is_still_open(found: &StillOpen) -> Option<String> {
             &[
                 ("count", &found.remembered.len().to_string()),
                 ("recent", &recent.join(", ")),
+            ],
+        ));
+    }
+    if let Some(page) = &found.page {
+        lines.push(catalogue::say(
+            "cli.session.memory_page",
+            &[
+                ("path", &page.path.display().to_string()),
+                ("opening", &page.opening),
             ],
         ));
     }
@@ -2449,10 +2478,45 @@ mod tests {
             waiting: Vec::new(),
             ask_again: Vec::new(),
             remembered: vec![memory("the trunk", 3), memory("the home", 2)],
+            page: None,
         };
         let said = what_is_still_open(&found).expect("something to say");
         assert!(said.contains("«the trunk»") && said.contains("«the home»"), "{said}");
         assert!(said.contains('2'), "the count: {said}");
+    }
+
+    /// The page's address and its first lines travel in the greeting **only
+    /// while the file is there**: a path to nothing is a promise nobody keeps.
+    #[test]
+    fn the_greeting_names_the_page_only_where_the_file_exists() {
+        let scratch = Scratch::new("pagina-delle-memorie");
+        let home = scratch.directory.join("home");
+        let absent = page_on_disk(Some(&home));
+        let path = actions::memory::page_path(&home);
+        std::fs::create_dir_all(path.parent().expect("a parent")).expect("the state dir");
+        std::fs::write(&path, "- **one** (project): 1\n- **two** (project): 2\n- **three** (project): 3\n- **four** (project): 4")
+            .expect("a page");
+        let present = page_on_disk(Some(&home)).expect("a page on disk");
+
+        let quiet = what_is_still_open(&StillOpen {
+            waiting: Vec::new(),
+            ask_again: Vec::new(),
+            remembered: Vec::new(),
+            page: None,
+        });
+        let said = what_is_still_open(&StillOpen {
+            waiting: Vec::new(),
+            ask_again: Vec::new(),
+            remembered: Vec::new(),
+            page: Some(present),
+        })
+        .expect("something to say");
+
+        assert!(absent.is_none(), "a page was found where none was written");
+        assert!(quiet.is_none(), "the greeting speaks of a page it has not got: {quiet:?}");
+        assert!(said.contains(&path.display().to_string()), "the path is not named: {said}");
+        assert!(said.contains("**three**") && !said.contains("**four**"), "the opening is not the first three lines: {said}");
+        assert!(page_on_disk(None).is_none(), "a page with no home to look in");
     }
 
     /// **A NEIGHBOUR ELSEWHERE IS NAMED WITH THE ELSEWHERE.** Same repository,
@@ -2542,6 +2606,7 @@ mod tests {
             waiting: vec![a_run("un-flusso-1788423534", "un-flusso")],
             ask_again: Vec::new(),
             remembered: Vec::new(),
+            page: None,
         }));
 
         let said = welcome(&arriving_in(&scratch), None, &open, &Ok(()));
@@ -2568,12 +2633,14 @@ mod tests {
             waiting: vec![same()],
             ask_again: Vec::new(),
             remembered: Vec::new(),
+            page: None,
         })
         .expect("una corsa in attesa si dice");
         let again = what_is_still_open(&StillOpen {
             waiting: Vec::new(),
             ask_again: vec![same()],
             remembered: Vec::new(),
+            page: None,
         })
         .expect("una corsa da rilanciare si dice");
 
@@ -2586,6 +2653,7 @@ mod tests {
             waiting: vec![a_run("in-attesa-1", "un-flusso")],
             ask_again: vec![a_run("non-ancora-1", "un-altro")],
             remembered: Vec::new(),
+            page: None,
         })
         .expect("le due liste insieme si dicono");
         assert_eq!(both.lines().count(), 2, "{both}");
@@ -2604,6 +2672,7 @@ mod tests {
                 waiting: Vec::new(),
                 ask_again: Vec::new(),
                 remembered: Vec::new(),
+                page: None,
             }),
             None
         );
@@ -2653,7 +2722,7 @@ mod tests {
                 .expect("registrare la corsa");
         }
 
-        let found = still_open_in(&deposit).expect("leggere le due liste");
+        let found = still_open_in(&deposit, None).expect("leggere le due liste");
 
         assert_eq!(
             found.waiting.iter().map(|run| run.run_id.as_str()).collect::<Vec<_>>(),
