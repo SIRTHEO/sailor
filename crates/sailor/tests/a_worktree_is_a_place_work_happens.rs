@@ -38,7 +38,7 @@ fn every_tree_is_read_with_its_branch() {
 fn a_detached_tree_carries_no_branch_instead_of_the_last_one_seen() {
     let trees = parse_worktrees(PORCELAIN);
     assert_eq!(trees[2].branch, None);
-    let shown = render(Path::new("/somewhere/project"), &trees);
+    let shown = render(&trees);
     let line = shown
         .lines()
         .find(|line| line.starts_with("staccato"))
@@ -61,7 +61,7 @@ fn git_tells_us_when_a_tree_is_locked_or_its_directory_is_gone() {
     let trees = parse_worktrees("worktree /a\nHEAD abc\nbranch refs/heads/x\nlocked because I said so\nprunable gitdir file points to non-existent location\n");
     assert!(trees[0].locked);
     assert!(trees[0].prunable);
-    assert!(render(Path::new("/a-repo"), &trees).contains("its directory is gone"));
+    assert!(render(&trees).contains("its directory is gone"));
 }
 
 /// A branch is allowed a slash and a directory name is not: `work/thing` would
@@ -91,7 +91,7 @@ fn a_new_tree_is_cut_beside_the_repository_not_within_it() {
 
 #[test]
 fn nothing_at_all_reads_as_nothing_at_all() {
-    assert_eq!(render(Path::new("/a-repo"), &[]), "no worktrees");
+    assert_eq!(render(&[]), "no worktrees");
     assert!(parse_worktrees("").is_empty());
 }
 
@@ -104,7 +104,7 @@ fn a_tree_kept_from_a_step_is_listed_with_its_run_and_counted() {
          worktree /somewhere/project-worktrees/corsa-1/implementa\nHEAD def\ndetached\n",
     );
 
-    let shown = render(Path::new("/somewhere/project"), &trees);
+    let shown = render(&trees);
     let line = shown
         .lines()
         .find(|line| line.starts_with("implementa"))

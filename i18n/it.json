@@ -455,7 +455,7 @@
   "cli.worktree.cut_for": "aperta per il passo {step} della corsa {run}",
   "cli.worktree.detached": "staccato",
   "cli.worktree.directory_gone": "la sua cartella non c'è più",
-  "cli.worktree.kept_from_runs": "{count} di queste sono state aperte per un passo di una corsa e tenute, perché toglierle avrebbe perso quello che contengono.",
+  "cli.worktree.kept_from_runs": "{count} di queste sono state aperte per un passo di una corsa e sono ancora in piedi: un passo toglie il proprio albero, a meno che quello che contiene se ne andrebbe con lui.",
   "cli.worktree.locked": "bloccato",
   "engine.tree_kept_over_a_commit": "L'albero {tree} resta: sta sul commit {commit}, e nessun ramo di questo repository ha quel commit.",
   "engine.tree_kept_over_work": "L'albero {tree} resta, perché git non ha voluto toglierlo: {said}",

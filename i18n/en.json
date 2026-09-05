@@ -455,7 +455,7 @@
   "cli.worktree.cut_for": "cut for step {step} of run {run}",
   "cli.worktree.detached": "detached",
   "cli.worktree.directory_gone": "its directory is gone",
-  "cli.worktree.kept_from_runs": "{count} of these were cut for a step of a run and kept, because taking them down would have lost what they hold.",
+  "cli.worktree.kept_from_runs": "{count} of these were cut for a step of a run and are still standing: a step takes its own tree down unless what it holds would go with it.",
   "cli.worktree.locked": "locked",
   "engine.tree_kept_over_a_commit": "The tree {tree} stays: it sits on commit {commit}, and no branch of this repository holds that commit.",
   "engine.tree_kept_over_work": "The tree {tree} stays, because git would not take it down: {said}",
