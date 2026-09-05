@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { RunEvent, RunSnapshot } from "./engine";
+import type { Refusal, RunEvent, RunSnapshot } from "./engine";
 import { tryT } from "./i18n";
 import { totalsArePartial, type RunUsage } from "./flow";
+import { StepRefusal } from "./StepRefusal";
 
 /**
  * A run as it goes: what is running, what finished, what it said.
@@ -185,6 +186,8 @@ interface StepPane {
   endedAt: number | null;
   outcome: string | null;
   failure: string | null;
+  /** Which check refused, and what it saw, when the failure is a refusal. */
+  refusal: Refusal | null;
   lines: ConsoleLine[];
   /** Vero se il passo ha prodotto del testo suo, oltre alle righe di sistema. */
   spoke: boolean;
@@ -217,6 +220,7 @@ export function panesFromEvents(events: RunEvent[]): StepPane[] {
         endedAt: null,
         outcome: null,
         failure: null,
+        refusal: null,
         lines: [],
         spoke: false,
         // Il record del passo porta l'input, da cui si legge cosa esegue.
@@ -230,6 +234,7 @@ export function panesFromEvents(events: RunEvent[]): StepPane[] {
         pane.endedAt = event.at;
         pane.outcome = typeof payload?.outcome === "string" ? payload.outcome : null;
         pane.failure = typeof payload?.failure_class === "string" ? payload.failure_class : null;
+        pane.refusal = readRefusal(payload?.refusal);
         pane.output = payload?.output ?? null;
       }
     }
@@ -244,6 +249,17 @@ export function panesFromEvents(events: RunEvent[]): StepPane[] {
   }
 
   return Array.from(panes.values());
+}
+
+/** The refusal a closing fact carries, when it carries one whole. */
+export function readRefusal(value: unknown): Refusal | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const { check, path, rule, seen } = record;
+  if (typeof check !== "string" || typeof path !== "string" || typeof rule !== "string" || typeof seen !== "string") {
+    return null;
+  }
+  return { check, path, rule, seen };
 }
 
 /**
@@ -553,6 +569,7 @@ export function RunConsole({
                     {line.text}
                   </div>
                 ))}
+                {pane.refusal && <StepRefusal refusal={pane.refusal} />}
                 {pane.failure && <div className="pane__failure">{whyFailed(pane.failure)}</div>}
               </div>
             </article>

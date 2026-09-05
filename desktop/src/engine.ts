@@ -564,6 +564,19 @@ export async function listenToSailorEvents(
 // ── cosa è entrato in un nodo, nel tempo ─────────────────────────────────
 
 /**
+ * Which declared check refused a value, where in it, by which rule, and an
+ * excerpt of what it saw. Structure beside the failure class, as the ledger
+ * keeps it: the window shows the rule and the path without parsing prose.
+ */
+export interface Refusal {
+  check: string;
+  /** The path of the field that failed; empty when the whole value did. */
+  path: string;
+  rule: string;
+  seen: string;
+}
+
+/**
  * Una volta in cui un passo è stato attraversato.
  *
  * Viene dal deposito, non dalla memoria di questa finestra: le corse che questa
@@ -578,6 +591,7 @@ export interface StepPassage {
   ended_at: number | null;
   outcome: string | null;
   failure_class: string | null;
+  refusal: Refusal | null;
   /** Da dove è partita la corsa: la provenienza, scritta dal sistema. */
   started_by: string;
   /** Che cosa è entrato in questo nodo, quella volta. */
