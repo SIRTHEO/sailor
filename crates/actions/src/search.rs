@@ -2,6 +2,7 @@
 //! text searched is the whole flow file — id, description, every mandate and
 //! `with` — so a word written once in one step's prompt finds that flow.
 
+use crate::memory::{tree_name, Memory, MEMORIES_COLLECTION};
 use faults::Faults;
 use flow::{Action, ActionError, ActionOutcome, FlowFile, SharedState, StepSpecies};
 use ledger::search::Hit;
@@ -45,6 +46,21 @@ pub fn search_the_ledger_and_the_faults(
         documents.extend(register.documents_to_search().map_err(|error| error.to_string())?);
     }
     ledger::search::rank_texts(&documents, query).map_err(|error| error.to_string())
+}
+
+/// The memory a hit stands for, when its id names one: the label and the tree
+/// the id alone does not say. `None` for every other kind of hit.
+pub fn memory_behind(ledger: &Ledger, hit: &Hit) -> Option<Memory> {
+    let key = hit
+        .id
+        .strip_prefix("store:")?
+        .strip_prefix(MEMORIES_COLLECTION)?
+        .strip_prefix('/')?;
+    ledger
+        .read_record(MEMORIES_COLLECTION, key)
+        .ok()
+        .flatten()
+        .and_then(|record| serde_json::from_value(record.value).ok())
 }
 
 /// What a flow is known as when loaded: its name, where it came from, and the
@@ -129,7 +145,16 @@ impl Action for LedgerSearchAction {
             .map_err(|reason| ActionError::new("search_refused", reason))?;
         let hits: Vec<Value> = hits
             .into_iter()
-            .map(|hit| json!({ "id": hit.id, "rank": hit.rank, "excerpt": hit.excerpt }))
+            .map(|hit| {
+                let memory = memory_behind(ledger, &hit).map(|memory| {
+                    json!({ "label": memory.label, "tree": memory.tree.as_deref().map(tree_name) })
+                });
+                let mut found = json!({ "id": hit.id, "rank": hit.rank, "excerpt": hit.excerpt });
+                if let Some(memory) = memory {
+                    found["memory"] = memory;
+                }
+                found
+            })
             .collect();
         Ok(ActionOutcome::Went(json!({ "query": spec.query, "hits": hits })))
     }
@@ -142,6 +167,50 @@ impl Action for LedgerSearchAction {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **A MEMORY FOUND SAYS ITS TREE**, by the short name a person calls it,
+    /// beside its label; one that holds in every tree says no tree; a hit that
+    /// is no memory says nothing of the kind.
+    #[test]
+    fn the_ledger_search_action_names_the_tree_of_a_memory_it_finds() {
+        let dir = std::env::temp_dir().join(format!("sailor-search-memory-tree-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let ledger = Ledger::open(&dir).expect("a ledger");
+        let memory = |label: &str, value: &str, tree: Option<&str>| Memory {
+            kind: "project".to_owned(),
+            label: label.to_owned(),
+            value: value.to_owned(),
+            provenance: "test".to_owned(),
+            modified: 1,
+            valid_from: 1,
+            valid_until: None,
+            tree: tree.map(str::to_owned),
+        };
+        crate::memory::remember(&ledger, memory("the trunk", "a quokka sits on sorgenti", Some("/trees/a-checkout")))
+            .expect("kept");
+        crate::memory::remember(&ledger, memory("the home", "a quokka sits under state", None)).expect("kept");
+        ledger
+            .put_record(&ledger::StoreRecord {
+                collection: "notes".to_owned(),
+                key: "one".to_owned(),
+                value: json!({ "text": "a quokka in the notes" }),
+                written_by: "test".to_owned(),
+                written_at: 3,
+            })
+            .expect("a record");
+        let went = LedgerSearchAction::new(Some(ledger.clone()), None)
+            .execute(&json!({"query": "quokka"}), &SharedState::default())
+            .expect("searched");
+        drop(ledger);
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let ActionOutcome::Went(output) = went else { panic!("the search went: {went:?}") };
+        let hits = output["hits"].as_array().expect("hits");
+        let by_id = |id: &str| hits.iter().find(|hit| hit["id"] == id).unwrap_or_else(|| panic!("{id} among {hits:?}"));
+        assert_eq!(by_id("store:memories/the-trunk")["memory"], json!({"label": "the trunk", "tree": "a-checkout"}));
+        assert_eq!(by_id("store:memories/the-home")["memory"], json!({"label": "the home", "tree": null}));
+        assert!(by_id("store:notes/one").get("memory").is_none(), "a note is called a memory: {hits:?}");
+    }
 
     fn shipped() -> Vec<Known> {
         flow::system::load_all(&[flow::system::FlowSource::builtin()])

@@ -241,3 +241,52 @@ pub fn root() -> Result<PathBuf, String> {
     }
     Ok(PathBuf::from(String::from_utf8_lossy(&top.stdout).trim()))
 }
+
+/// The checkout around a directory, as git names it and with every symlink
+/// resolved, so the same tree reached by two paths is one tree. `None` outside
+/// any repository, or with no git to ask.
+pub fn tree_around(here: &Path) -> Option<PathBuf> {
+    let top = Command::new("git")
+        .arg("-C")
+        .arg(here)
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .ok()?;
+    if !top.status.success() {
+        return None;
+    }
+    let found = String::from_utf8_lossy(&top.stdout).trim().to_owned();
+    if found.is_empty() {
+        return None;
+    }
+    let path = PathBuf::from(found);
+    Some(path.canonicalize().unwrap_or(path))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A directory deep in a checkout names that checkout, in its real path;
+    /// a directory outside every checkout names nothing.
+    #[test]
+    fn the_tree_around_a_directory_is_its_checkout_and_none_outside_one() {
+        let scratch = std::env::temp_dir().join(format!("sailor-workspace-tree-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&scratch);
+        let repo = scratch.join("a-checkout");
+        let inside = repo.join("crates").join("deep");
+        std::fs::create_dir_all(&inside).expect("scratch");
+        let init = Command::new("git").arg("-C").arg(&repo).args(["init", "--quiet"]).status().expect("git");
+        assert!(init.success());
+        let outside = scratch.join("nowhere");
+        std::fs::create_dir_all(&outside).expect("scratch");
+
+        let found = tree_around(&inside);
+        let none = tree_around(&outside);
+        let real_repo = repo.canonicalize().expect("real");
+        let _ = std::fs::remove_dir_all(&scratch);
+
+        assert_eq!(found, Some(real_repo));
+        assert!(none.is_none(), "{none:?}");
+    }
+}

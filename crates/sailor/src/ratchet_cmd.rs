@@ -168,22 +168,8 @@ fn clean_tree_with_changes(root: &Path, into: &Path) -> Result<usize, String> {
 /// The tree the command is run in, when it is one: a checkout other than the
 /// sources in service — a worktree, a clone — is measured for itself, and
 /// two checkouts never share one `target/ratchet-tree`.
-fn tree_around(here: &Path) -> Option<PathBuf> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(here)
-        .args(["rev-parse", "--show-toplevel"])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let top = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-    (!top.is_empty()).then(|| PathBuf::from(top))
-}
-
 fn root_to_measure() -> Result<PathBuf, String> {
-    match std::env::current_dir().ok().and_then(|here| tree_around(&here)) {
+    match std::env::current_dir().ok().and_then(|here| workspace::tree_around(&here)) {
         Some(tree) => Ok(tree),
         None => crate::release_cmd::sources_root(),
     }
@@ -281,27 +267,6 @@ mod tests {
         assert!(names.contains(&"comments_do_not_crowd_out_the_code"), "{names:?}");
         assert!(names.contains(&"no_engine_is_named_in_the_code"), "{names:?}");
         assert!(names.contains(&"no_product_home_is_written_into_the_code"), "{names:?}");
-    }
-
-    /// The tree measured is the one the command runs in: a worktree measures
-    /// itself, and a place outside any checkout falls back to the sources.
-    #[test]
-    fn the_tree_around_the_command_is_the_one_measured() {
-        let scratch = std::env::temp_dir().join(format!("sailor-ratchet-root-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&scratch);
-        let repo = scratch.join("a-checkout");
-        let inside = repo.join("crates").join("deep");
-        std::fs::create_dir_all(&inside).expect("scratch");
-        let init = Command::new("git").arg("-C").arg(&repo).args(["init", "--quiet"]).status().expect("git");
-        assert!(init.success());
-        let found = tree_around(&inside).and_then(|tree| tree.canonicalize().ok());
-        let real_repo = repo.canonicalize().expect("real");
-        let outside = scratch.join("nowhere");
-        std::fs::create_dir_all(&outside).expect("scratch");
-        let none = tree_around(&outside);
-        let _ = std::fs::remove_dir_all(&scratch);
-        assert_eq!(found, Some(real_repo));
-        assert!(none.is_none(), "{none:?}");
     }
 
     /// A test that never opens the sources is not a judge, whatever its name.
