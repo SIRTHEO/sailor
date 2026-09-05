@@ -4,6 +4,8 @@
 //! this would answer differently about which branch a tree is on, and the one
 //! that acts on the answer is `remove`.
 
+pub mod branches;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -113,6 +115,17 @@ pub fn list(repo: &Path) -> Result<Vec<Worktree>, String> {
         repo,
         &["worktree", "list", "--porcelain"],
     )?))
+}
+
+/// Local refs only: a remote-tracking name is somebody else's choice.
+pub fn branch_names(repo: &Path) -> Result<Vec<String>, String> {
+    let listed = git(repo, &["for-each-ref", "--format=%(refname:short)", "refs/heads"])?;
+    Ok(listed
+        .lines()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .collect())
 }
 
 /// Cuts a tree for `branch`, creating the branch if it does not exist yet.

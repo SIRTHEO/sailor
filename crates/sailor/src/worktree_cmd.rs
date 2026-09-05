@@ -6,7 +6,8 @@
 //! is meant to move, had no idea trees existed at all.
 
 use crate::Form;
-use workspace::{create, list, remove, root, run_and_step_of, Worktree};
+use workspace::branches::against_the_convention;
+use workspace::{branch_names, create, list, remove, root, run_and_step_of, Worktree};
 
 pub const USAGE: &[Form] = &[
     Form {
@@ -19,6 +20,10 @@ pub const USAGE: &[Form] = &[
     },
     Form {
         form: "sailor worktree remove <name>",
+        says_key: "",
+    },
+    Form {
+        form: "sailor worktree names",
         says_key: "",
     },
 ];
@@ -55,8 +60,25 @@ fn dispatch(args: &[String]) -> Result<String, String> {
             let path = remove(&repo, name)?;
             Ok(format!("taken down: {}", path.display()))
         }
+        [command] if command == "names" => names(&branch_names(&repo)?),
         _ => Err(crate::forms_as_lines(USAGE).join("\n")),
     }
+}
+
+/// The verdict on the branch names, as an error when one breaks the rule.
+///
+/// An error and not a line of prose: whoever runs this wants an exit code to
+/// act on, and a check that says its bad news on standard output at exit zero
+/// is a check nothing can be built upon.
+fn names(all: &[String]) -> Result<String, String> {
+    let against = against_the_convention(all);
+    if against.is_empty() {
+        return Ok(catalogue::say("cli.worktree.names_follow", &[]));
+    }
+    let count = against.len().to_string();
+    let mut lines = vec![catalogue::say("cli.worktree.names_against", &[("count", &count)])];
+    lines.extend(against);
+    Err(lines.join("\n"))
 }
 
 /// One line per tree, with the state a person acts on beside the name.

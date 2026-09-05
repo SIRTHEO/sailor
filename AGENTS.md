@@ -278,6 +278,22 @@ non un lavoro.
   di 179 commit per un giorno perché l'accesso attivo non era il proprietario,
   e ogni rilascio lo diceva onestamente mentre niente si muoveva.
 
+**La forma del nome ha un giudice, e il giudice è puro.** Sono quattro forme e
+nient'altro: `sorgenti`, il tronco; `main`, la storia precedente alla
+riscrittura, esente e nominata come tale; `work/<cosa-fa>` con minuscole, cifre
+e trattini nel topic; `worktree-agent-<id>`, che è scritto dal meccanismo e non
+lo sceglie nessuno. La prova è `cargo test -p sailor --test
+a_branch_is_named_for_the_work_it_carries`, e chi vuole il verdetto su questo
+albero batte `sailor worktree names`, che esce diverso da zero e stampa i nomi
+fuori convenzione.
+
+Il giudice legge una tabella di nomi scritta dentro la prova, **mai i rami di
+questa macchina**: un controllo che diventa rosso perché un altro ha lasciato in
+piedi un ramo suo dà un verdetto sulla macchina, non sul lavoro, e chi lo riceve
+non può farci niente. Il comando, che i rami veri li legge, è l'altra metà. E il
+giudice guarda la forma soltanto: che `work/fusione-sera` racconti una sera
+invece di un lavoro lo dice la riga qui sopra, e nessun confronto può dirlo.
+
 ## Come si esplora questo albero prima di cambiarlo
 
 **Prima di cercare a mano, si chiede all'indice.** SocratiCode ha questo
