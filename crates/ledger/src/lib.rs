@@ -20,6 +20,7 @@ use tracing_subscriber::layer::{Context, Layer};
 
 pub mod identity;
 pub mod search;
+pub mod reports;
 pub mod streaks;
 
 pub use identity::EngineIdentity;

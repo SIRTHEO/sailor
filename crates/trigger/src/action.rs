@@ -31,6 +31,9 @@ struct TriggerSpec {
     who: Option<String>,
     #[serde(default, rename = "where")]
     where_from: Option<String>,
+    /// The last closed run's report, put here by whoever launches.
+    #[serde(default)]
+    previous_report: Option<serde_json::Value>,
     /// Descriptor files or directories to use beyond the usual ones.
     #[serde(default)]
     descriptor_paths: Vec<String>,
@@ -104,6 +107,7 @@ impl Action for TriggerAction {
                     where_from: spec.where_from.unwrap_or_default(),
                     source: descriptor.id.clone(),
                     kind: "manual".to_owned(),
+                    previous_report: spec.previous_report,
                 };
                 Ok(ActionOutcome::Went(
                     serde_json::to_value(signal)
@@ -239,6 +243,27 @@ mod tests {
             ActionOutcome::Waiting(reason) => panic!("no trigger stays waiting: {reason}"),
             ActionOutcome::NotYet(reason) => panic!("no trigger postpones itself: {reason}"),
         }
+    }
+
+    /// A run with nothing behind it carries nothing, not an empty report.
+    #[test]
+    fn the_signal_carries_the_previous_report_and_omits_it_when_there_is_none() {
+        let carried = fire(json!({
+            "source": "manual",
+            "text": "un incarico",
+            "previous_report": {"run_id": "corsa-1", "status": "failed"}
+        }))
+        .expect("the manual trigger ships with the product");
+
+        assert_eq!(carried["previous_report"]["run_id"], "corsa-1");
+
+        let first = fire(json!({"source": "manual", "text": "un incarico"}))
+            .expect("the manual trigger ships with the product");
+
+        assert!(
+            first.get("previous_report").is_none(),
+            "a first run carries no report at all: {first}"
+        );
     }
 
     /// **THE ENTRY NODE IS REAL.** The text the signal carried comes out in the

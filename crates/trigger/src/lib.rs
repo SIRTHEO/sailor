@@ -48,6 +48,10 @@ pub struct Signal {
     pub source: String,
     /// The shape of the source: `manual`, `terminal`, `periodic`.
     pub kind: String,
+    /// What the last closed run of this flow left, when there is one: absent
+    /// rather than empty, or a first run reads as one that learnt nothing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_report: Option<serde_json::Value>,
 }
 
 /// Where trigger descriptors are taken from.
