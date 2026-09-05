@@ -12,8 +12,10 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use supervisor::child::{Process, Spec};
-use supervisor::{close_the_ones_that_stopped_breathing, left_running, Running, DEV_PORT};
+use supervisor::child::Spec;
+use supervisor::{
+    close_the_ones_that_stopped_breathing, left_running, Running, Supervisor, DEV_PORT,
+};
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -50,18 +52,16 @@ impl Drop for TestDirectory {
 fn stopping_a_process_also_stops_the_one_it_started() {
     let dir = TestDirectory::new("nipote");
     let pidfile = dir.0.join("nipote.pid");
-    let mut process = Process::start(
-        Spec {
+    let mut process = Supervisor::over(None)
+        .start(Spec {
             command: "/bin/sh".to_owned(),
             args: vec![
                 "-c".to_owned(),
                 format!("sleep 300 & echo $! > {}; wait", pidfile.display()),
             ],
             ..sleeper("padre-di-qualcuno", None)
-        },
-        None,
-    )
-    .expect("accendere il padre");
+        })
+        .expect("accendere il padre");
 
     let grandchild = wait_for_pid(&pidfile);
     assert!(
@@ -131,11 +131,14 @@ fn sleeper(process_id: &str, port: Option<u16>) -> Spec {
 fn tomorrow_someone_can_ask_who_holds_the_port() {
     let directory = TestDirectory::new("orfano");
 
-    let store = ledger::Ledger::open(&directory.0).expect("aprire il deposito");
-    let mut process = Process::start(sleeper("live-frontend", Some(DEV_PORT)), Some(&store))
+    let supervisor = Supervisor::over(Some(
+        ledger::Ledger::open(&directory.0).expect("aprire il deposito"),
+    ));
+    let mut process = supervisor
+        .start(sleeper("live-frontend", Some(DEV_PORT)))
         .expect("accendere il processo");
     let pid = process.pid();
-    drop(store);
+    drop(supervisor);
 
     // Da qui in poi si è la persona del giorno dopo: il processo è ancora
     // acceso, ma di chi l'ha avviato non resta niente in memoria — solo il
@@ -185,24 +188,26 @@ fn tomorrow_someone_can_ask_who_holds_the_port() {
 #[test]
 fn the_dead_are_closed_and_the_living_are_left_alone() {
     let directory = TestDirectory::new("fantasmi");
-    let store = ledger::Ledger::open(&directory.0).expect("aprire il deposito");
+    let supervisor = Supervisor::over(Some(
+        ledger::Ledger::open(&directory.0).expect("aprire il deposito"),
+    ));
+    let store = supervisor.ledger().expect("il deposito appena aperto");
 
-    let mut alive =
-        Process::start(sleeper("ancora-qui", None), Some(&store)).expect("accendere il vivo");
+    let mut alive = supervisor
+        .start(sleeper("ancora-qui", None))
+        .expect("accendere il vivo");
 
     // Un processo che muore da solo e che **nessuno registra come finito**: è
     // il fantasma. `exited` lo raccoglie — cioè lo toglie davvero dalla tabella
     // dei processi — e `forget` impedisce al distruttore di scriverne la
     // chiusura, che è ciò che succede quando a morire è chi lo teneva.
-    let mut doomed = Process::start(
-        Spec {
+    let mut doomed = supervisor
+        .start(Spec {
             command: "/bin/sh".to_owned(),
             args: vec!["-c".to_owned(), "exit 0".to_owned()],
             ..sleeper("gia-morto", None)
-        },
-        Some(&store),
-    )
-    .expect("accendere il condannato");
+        })
+        .expect("accendere il condannato");
     let mut reaped = false;
     for _ in 0..200 {
         if doomed.exited().is_some() {
@@ -214,7 +219,7 @@ fn the_dead_are_closed_and_the_living_are_left_alone() {
     assert!(reaped, "il condannato non è morto entro quattro secondi");
     std::mem::forget(doomed);
 
-    let before = left_running(&store).expect("leggere prima");
+    let before = left_running(store).expect("leggere prima");
     assert_eq!(before.len(), 2, "il deposito non ha scritto tutti e due");
     assert_eq!(
         before.iter().filter(|item| item.still_alive).count(),
@@ -223,10 +228,10 @@ fn the_dead_are_closed_and_the_living_are_left_alone() {
     );
 
     let closed =
-        close_the_ones_that_stopped_breathing(&store, 1_700_000_000).expect("chiudere i morti");
+        close_the_ones_that_stopped_breathing(store, 1_700_000_000).expect("chiudere i morti");
     assert_eq!(closed, 1, "chiusi {closed} invece di uno solo");
 
-    let after = left_running(&store).expect("leggere dopo");
+    let after = left_running(store).expect("leggere dopo");
     let names: Vec<&str> = after
         .iter()
         .map(|item| item.record.process_id.as_str())
@@ -239,7 +244,7 @@ fn the_dead_are_closed_and_the_living_are_left_alone() {
 
     alive.stop().expect("spegnere il vivo");
     assert!(
-        left_running(&store).expect("leggere alla fine").is_empty(),
+        left_running(store).expect("leggere alla fine").is_empty(),
         "spegnere non ha scritto la chiusura"
     );
 }
