@@ -36,6 +36,7 @@ import { World, OF_THIS_TREE, type FlowGroup } from "./World";
 import { liveOf, newestPerFlow } from "./flowlive";
 import { amongThese, rememberWhere, whereYouWere } from "./whereyouwere";
 import { ChangesScreen } from "./ChangesScreen";
+import { Sketch } from "./Sketch";
 import type { Project } from "./workspaces";
 import {
   DropdownMenu,
@@ -1464,6 +1465,19 @@ export default function App() {
                 name={standingIn.name}
               />
             )}
+          </div>
+        </div>
+      )}
+      {/* THE WHITEBOARD IS WHERE A FLOW IS ASKED FOR, NOT DRAWN: blocks and
+          words go to `draft-a-flow`, and the board shows what came back. */}
+      {place === "sketch" && (
+        <div className="section">
+          <div className="section__body">
+            <Sketch
+              native={NATIVE}
+              onStarted={(runId) => setWatching(runId)}
+              onDrafted={() => readFlows(() => true)}
+            />
           </div>
         </div>
       )}
