@@ -22,7 +22,7 @@ fn registry() -> flow::ActionRegistry {
 fn run(name: &str, input: Value) -> Result<ActionOutcome, flow::ActionError> {
     let registry = registry();
     let node = registry.get(name).expect("the node is registered");
-    node.execute(&input, &mut SharedState::new())
+    node.execute(&input, &SharedState::new())
 }
 
 fn went(outcome: ActionOutcome) -> Value {
@@ -193,8 +193,7 @@ fn emptying_a_command_line_nobody_measured_refuses_by_name() {
         relay::EMPTY_TERMINAL_ACTION,
         json!({"tty": "ttys004", "cli": "codex", "store": directory}),
     )
-    .err()
-    .expect("an undeclared command line must refuse");
+    .expect_err("an undeclared command line must refuse");
     assert_eq!(error.class, "reset_not_declared");
     assert!(error.said.contains("codex"), "{}", error.said);
     let _ = std::fs::remove_dir_all(&directory);
@@ -210,8 +209,7 @@ fn typing_into_a_terminal_sailor_does_not_hold_refuses_by_name() {
         relay::TYPE_INTO_TERMINAL_ACTION,
         json!({"tty": "ttys004", "line": "hello", "store": directory}),
     )
-    .err()
-    .expect("typing into nothing must refuse");
+    .expect_err("typing into nothing must refuse");
     assert_eq!(error.class, "terminal_not_held");
     let _ = std::fs::remove_dir_all(&directory);
 }

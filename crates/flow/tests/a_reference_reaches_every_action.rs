@@ -82,7 +82,7 @@ fn what_the_action_saw(graph: &Graph, root_inputs: BTreeMap<String, Value>) -> V
     let seen = Arc::new(Mutex::new(Vec::new()));
     let mut actions = flow::ActionRegistry::default();
     actions.register("keeps-what-it-gets", KeepsWhatItGets(seen.clone()));
-    let mut store = InMemoryRecordStore::default();
+    let store = InMemoryRecordStore::default();
     InProcessExecutor
         .execute(
             graph,
@@ -93,7 +93,7 @@ fn what_the_action_saw(graph: &Graph, root_inputs: BTreeMap<String, Value>) -> V
                 shared: SharedState::new(),
                 spend_cap_micros: None,
             },
-            &mut store,
+            &store,
             &actions,
             &Tick(AtomicI64::new(0)),
         )
@@ -238,7 +238,7 @@ fn run_and_read(graph: &Graph, guard_says: &str) -> (Vec<Decision>, Vec<flow::St
     let seen = Arc::new(Mutex::new(Vec::new()));
     let mut actions = flow::ActionRegistry::default();
     actions.register("keeps-what-it-gets", KeepsWhatItGets(seen));
-    let mut store = InMemoryRecordStore::default();
+    let store = InMemoryRecordStore::default();
     let mut root_inputs = BTreeMap::new();
     root_inputs.insert(
         "guard".to_owned(),
@@ -254,7 +254,7 @@ fn run_and_read(graph: &Graph, guard_says: &str) -> (Vec<Decision>, Vec<flow::St
                 shared: SharedState::new(),
                 spend_cap_micros: None,
             },
-            &mut store,
+            &store,
             &actions,
             &Tick(AtomicI64::new(0)),
         )
@@ -267,7 +267,7 @@ fn closed_outcome(records: &[flow::StepRecord], step_id: &str) -> Option<Outcome
     records
         .iter()
         .filter(|record| record.step_id == step_id)
-        .find_map(|record| record.outcome.clone())
+        .find_map(|record| record.outcome)
 }
 
 /// A pointer that finds nothing breaks that step, and only that one. Stronger
@@ -293,7 +293,7 @@ fn a_pointer_that_finds_nothing_breaks_that_step_and_only_that_one() {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let mut actions = flow::ActionRegistry::default();
     actions.register("keeps-what-it-gets", KeepsWhatItGets(seen.clone()));
-    let mut store = InMemoryRecordStore::default();
+    let store = InMemoryRecordStore::default();
     let execution = InProcessExecutor
         .execute(
             &graph,
@@ -304,7 +304,7 @@ fn a_pointer_that_finds_nothing_breaks_that_step_and_only_that_one() {
                 shared: SharedState::new(),
                 spend_cap_micros: None,
             },
-            &mut store,
+            &store,
             &actions,
             &Tick(AtomicI64::new(0)),
         )
