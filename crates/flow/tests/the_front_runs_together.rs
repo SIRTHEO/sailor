@@ -170,7 +170,7 @@ fn the_ceiling_holds_and_the_run_still_ends() {
     let (decisions, _, outcomes) = run_front(5, 5);
     assert_eq!(outcomes.len(), 5, "all five steps were opened");
     assert!(
-        outcomes.iter().any(|outcome| *outcome == Outcome::Broke),
+        outcomes.contains(&Outcome::Broke),
         "whoever waited past the ceiling says so instead of hanging"
     );
     assert!(
