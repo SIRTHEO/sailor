@@ -2540,6 +2540,7 @@ mod tests {
             modified,
             valid_from: modified,
             valid_until: None,
+            tree: None,
         };
         let found = StillOpen {
             waiting: Vec::new(),
