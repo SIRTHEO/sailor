@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sailor — sei layout per la stessa schermata</title>
+<style>
+:root{
+  --bg:#f2f0e9; --paper:#fbfaf6; --raised:#fff; --line:#d8d7ce;
+  --ink:#20241f; --muted:#656b63; --focus:#1a5f96; --warn:#92531b;
+  --prose:"Avenir Next","Segoe UI",system-ui,sans-serif;
+  --data:"SF Mono",ui-monospace,Menlo,monospace;
+  --disp:"DIN Alternate","Avenir Next",system-ui,sans-serif;
+  /* I toni delle scatole: non sono colori del prodotto, sono ruoli di spazio.
+     A bassa fedeltà il colore mente — dice «bello» invece che «dove». */
+  --nav:#dcdad1; --lista:#e7e5dc; --scena:#f7f6f1; --dett:#cfd6dc; --barra:#e2e0d7;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#e6e4dc;color:var(--ink);font:14px/1.55 var(--prose)}
+.page{max-width:1500px;margin:0 auto;padding:30px 24px 90px}
+
+h1{font:600 26px/1.2 var(--prose);margin:0 0 8px;letter-spacing:-.01em}
+.lede{margin:0 0 6px;color:#4b504a;max-width:78ch}
+.lede b{font-weight:600}
+.how{margin:18px 0 30px;padding:13px 15px;background:var(--paper);
+     border:1px solid var(--line);border-radius:8px;max-width:78ch}
+.how ol{margin:6px 0 0;padding-left:20px}
+.how li{margin:3px 0}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(430px,1fr));gap:20px}
+
+.card{background:var(--paper);border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.card > figure{margin:0}
+.cap{display:flex;align-items:baseline;gap:9px;padding:12px 14px 8px}
+.num{font:700 13px/1 var(--disp);color:var(--paper);background:var(--ink);
+     border-radius:50%;width:23px;height:23px;display:grid;place-items:center;flex:none}
+.nm{font-weight:600;font-size:15px}
+.tag{margin-left:auto;font:600 9.5px/1 var(--disp);letter-spacing:.09em;text-transform:uppercase;
+     color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:4px 8px}
+.tag[data-t=oggi]{color:var(--warn);border-color:var(--warn)}
+.say{padding:0 14px 12px;color:#4b504a;font-size:13px}
+.trade{padding:0 14px 14px;font-size:12.5px;display:grid;grid-template-columns:auto 1fr;
+       gap:2px 8px;align-items:baseline}
+.trade dt{font:700 9px/1.6 var(--disp);letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.trade dd{margin:0}
+
+/* ── lo scheletro: scatole grigie, nessun contenuto ────────────────────── */
+.mock{border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+      background:var(--bg);padding:11px;display:flex;flex-direction:column;gap:5px;height:250px}
+.bar{height:22px;background:var(--barra);border:1px solid var(--line);border-radius:4px;
+     display:flex;align-items:center;padding:0 7px;gap:6px;flex:none}
+.bar i{display:block;height:7px;background:#c9c7bd;border-radius:2px}
+.row{flex:1;display:flex;gap:5px;min-height:0}
+.col{display:flex;flex-direction:column;gap:5px;min-height:0}
+.b{border:1px solid var(--line);border-radius:4px;display:flex;align-items:center;
+   justify-content:center;text-align:center;font:600 9px/1.25 var(--disp);letter-spacing:.06em;
+   text-transform:uppercase;color:#5d635c;padding:3px;overflow:hidden}
+.nav{background:var(--nav);width:34px;flex:none}
+.nav.wide{width:64px}
+.lista{background:var(--lista);width:74px;flex:none}
+.scena{background:var(--scena);flex:1;min-width:0;position:relative}
+.dett{background:var(--dett);width:82px;flex:none}
+.dett.basso{width:auto;height:64px}
+.strip{background:var(--lista);height:24px;flex:none}
+/* Il dettaglio che galleggia: sta dentro la scena, non le toglie larghezza. */
+.float{position:absolute;right:9px;top:9px;width:76px;height:104px;background:var(--dett);
+       border:1px solid #b9c2ca;border-radius:4px;box-shadow:0 3px 9px rgb(32 36 31/.16);
+       display:grid;place-items:center;font:600 9px/1.25 var(--disp);letter-spacing:.06em;
+       text-transform:uppercase;color:#46505a}
+.nodi{position:absolute;left:12px;right:12px;top:50%;transform:translateY(-50%);
+      display:flex;gap:6px;align-items:center}
+.nodi span{height:26px;flex:1;background:var(--paper);border:1px solid var(--line);border-radius:3px}
+.nodi span:nth-child(n+6){opacity:.35}
+
+.key{margin:26px 0 0;display:flex;flex-wrap:wrap;gap:16px;align-items:center;
+     font-size:12.5px;color:#4b504a}
+.key span{display:flex;align-items:center;gap:6px}
+.key i{width:13px;height:13px;border:1px solid var(--line);border-radius:3px;display:block}
+
+.ask{margin:34px 0 0;padding:15px 17px;background:var(--paper);border:1px solid var(--line);
+     border-radius:9px;max-width:88ch}
+.ask h2{font:600 17px/1.25 var(--prose);margin:0 0 9px}
+.ask p{margin:0 0 8px;color:#4b504a}
+.ask ul{margin:0;padding-left:20px}
+.ask li{margin:4px 0}
+kbd{font:600 11px var(--data);background:var(--bg);border:1px solid var(--line);
+    border-radius:4px;padding:1px 5px}
+</style></head><body>
+<div class="page">
+
+<h1>Sei layout per la stessa schermata</h1>
+<p class="lede">Tutti mostrano <b>la lavagna dei flussi</b>, che è la schermata più fitta e quella
+che decide le altre. Scatole grigie e nessun contenuto di proposito: a bassa fedeltà si vede
+<b>dove stanno le cose</b>, che è la domanda, invece di quanto sono belle, che non lo è ancora.</p>
+
+<div class="how">
+  <b>Come rispondere</b> — basta un numero.
+  <ol>
+    <li>«<b>il 4</b>» — lo costruisco e lo fotografo.</li>
+    <li>«<b>il 4 ma il dettaglio a destra</b>» — le parti si mescolano, sono indipendenti.</li>
+    <li>«<b>nessuno, è più tipo così</b>» + uno scarabocchio su uno screenshot. Le immagini le leggo.</li>
+  </ol>
+</div>
+
+<div class="grid">
+
+  <!-- 1 ───────────────────────────────────────────────────────────────── -->
+  <div class="card"><figure>
+    <div class="mock">
+      <div class="bar"><i style="width:44px"></i><i style="width:70px"></i><i style="width:26px;margin-left:auto"></i><i style="width:34px"></i></div>
+      <div class="row">
+        <div class="b nav">posti</div>
+        <div class="b lista">flussi</div>
+        <div class="b scena"><div class="nodi"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div></div>
+        <div class="b dett">passo scelto</div>
+      </div>
+    </div>
+    <div class="cap"><span class="num">1</span><span class="nm">Quattro colonne</span><span class="tag" data-t=oggi>oggi</span></div>
+    <p class="say">Com'è adesso. Posti, flussi, tela, dettaglio: ogni cosa ha la sua colonna e
+    non se ne va mai.</p>
+    <dl class="trade">
+      <dt>vince</dt><dd>tutto è raggiungibile senza un clic.</dd>
+      <dt>costa</dt><dd>a 1440px le colonne si prendono 520px e la tela resta a 1062: sette passi
+      ne vogliono 2024, quindi le corsie escono dallo schermo.</dd>
+    </dl>
+  </figure></div>
+
+  <!-- 2 ───────────────────────────────────────────────────────────────── -->
+  <div class="card"><figure>
+    <div class="mock">
+      <div class="bar"><i style="width:44px"></i><i style="width:70px"></i><i style="width:26px;margin-left:auto"></i><i style="width:34px"></i></div>
+      <div class="row">
+        <div class="col" style="width:64px;flex:none">
+          <div class="b nav wide" style="height:74px">posti</div>
+          <div class="b lista" style="width:64px;flex:1">flussi</div>
+        </div>
+        <div class="b scena"><div class="nodi"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+          <div class="float">passo</div></div>
+      </div>
+    </div>
+    <div class="cap"><span class="num">2</span><span class="nm">Una colonna sola</span></div>
+    <p class="say">I flussi stanno <b>dentro</b> la colonna dei posti, sotto «Board». Il dettaglio
+    del passo galleggia accanto al nodo che hai scelto, invece di stare in fondo a destra.</p>
+    <dl class="trade">
+      <dt>vince</dt><dd>la tela prende ~1300px su 1440: le corsie ci stanno.</dd>
+      <dt>costa</dt><dd>una scheda che galleggia copre un pezzo di tela, e va spostata.</dd>
+    </dl>
+  </figure></div>
+
+  <!-- 3 ───────────────────────────────────────────────────────────────── -->
+  <div class="card"><figure>
+    <div class="mock">
+      <div class="bar"><i style="width:44px"></i><i style="width:70px"></i><i style="width:26px;margin-left:auto"></i><i style="width:34px"></i></div>
+      <div class="b strip">flussi, in fila</div>
+      <div class="row">
+        <div class="b nav">posti</div>
+        <div class="b scena"><div class="nodi"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div></div>
+        <div class="b dett">passo scelto</div>
+      </div>
+    </div>
+    <div class="cap"><span class="num">3</span><span class="nm">I flussi in orizzontale</span></div>
+    <p class="say">I flussi diventano una striscia sopra la tela, come le schede di un browser.
+    Il dettaglio resta una colonna vera a destra.</p>
+    <dl class="trade">
+      <dt>vince</dt><dd>i flussi si vedono tutti insieme e costano 24px invece di 232.</dd>
+      <dt>costa</dt><dd>con venti flussi la striscia scorre, e un elenco che scorre in orizzontale
+      si legge peggio di uno in verticale.</dd>
+    </dl>
+  </figure></div>
+
+  <!-- 4 ───────────────────────────────────────────────────────────────── -->
+  <div class="card"><figure>
+    <div class="mock">
+      <div class="bar"><i style="width:44px"></i><i style="width:70px"></i><i style="width:26px;margin-left:auto"></i><i style="width:34px"></i></div>
+      <div class="row">
+        <div class="b nav">posti</div>
+        <div class="col" style="flex:1;min-width:0">
+          <div class="b scena" style="flex:1"><div class="nodi"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div></div>
+          <div class="b dett basso">passo scelto · larghezza intera</div>
+        </div>
+        <div class="b lista">flussi</div>
+      </div>
+    </div>
+    <div class="cap"><span class="num">4</span><span class="nm">Dettaglio in basso</span></div>
+    <p class="say">Il passo scelto si apre <b>sotto</b> la tela, largo quanto la finestra. I flussi
+    passano a destra, dove sta anche il resto della navigazione locale.</p>
+    <dl class="trade">
+      <dt>vince</dt><dd>il dettaglio è largo: prompt, ingresso e uscita si leggono su una riga
+      invece che a capo ogni sei parole.</dd>
+      <dt>costa</dt><dd>mangia altezza alla tela proprio mentre guardi un nodo.</dd>
+    </dl>
+  </figure></div>
+
+  <!-- 5 ───────────────────────────────────────────────────────────────── -->
+  <div class="card"><figure>
+    <div class="mock">
+      <div class="bar"><i style="width:44px"></i><i style="width:70px"></i><i style="width:26px;margin-left:auto"></i><i style="width:34px"></i></div>
+      <div class="row">
+        <div class="b nav">posti</div>
+        <div class="b scena"><div class="nodi"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+          <div class="float">passo</div></div>
+        <div class="col" style="width:82px;flex:none">
+          <div class="b dett" style="width:82px;flex:1">chi lavora ora</div>
+          <div class="b lista" style="width:82px;height:74px">flussi</div>
+        </div>
+      </div>
+    </div>
+    <div class="cap"><span class="num">5</span><span class="nm">La colonna è la guardia</span></div>
+    <p class="say">La colonna fissa non è il dettaglio del passo: è <b>cosa sta succedendo adesso</b>
+    — terminali vivi, corse aperte, cosa aspetta una persona. Il dettaglio galleggia sul nodo.</p>
+    <dl class="trade">
+      <dt>vince</dt><dd>la cosa sempre visibile è quella che cambia da sola, che è il motivo per cui
+      questa finestra sta aperta tutto il giorno.</dd>
+      <dt>costa</dt><dd>la tela torna a ~1100px, e serve che la guardia abbia davvero qualcosa da dire.</dd>
+    </dl>
+  </figure></div>
+
+  <!-- 6 ───────────────────────────────────────────────────────────────── -->
+  <div class="card"><figure>
+    <div class="mock">
+      <div class="bar"><i style="width:44px"></i><i style="width:70px"></i><i style="width:26px;margin-left:auto"></i><i style="width:34px"></i></div>
+      <div class="row">
+        <div class="b scena" style="flex:1"><div class="nodi"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+          <div class="float">passo</div></div>
+      </div>
+      <div class="b strip" style="height:28px">posti · flussi · gesti, tutto qui sotto</div>
+    </div>
+    <div class="cap"><span class="num">6</span><span class="nm">Solo tela</span></div>
+    <p class="say">Nessuna colonna. La tela è tutta la finestra; navigazione e gesti stanno in una
+    barra sola, e tutto il resto si apre con <kbd>⌘K</kbd> o galleggia.</p>
+    <dl class="trade">
+      <dt>vince</dt><dd>1440px di tela: ci stanno tre corsie affiancate senza rimpicciolire niente.</dd>
+      <dt>costa</dt><dd>chi non sa che esiste <kbd>⌘K</kbd> non trova più niente. Va bene per chi ci
+      lavora tutti i giorni, male per il primo giorno.</dd>
+    </dl>
+  </figure></div>
+
+</div>
+
+<div class="key">
+  <span><i style="background:var(--nav)"></i> navigazione globale — i posti</span>
+  <span><i style="background:var(--lista)"></i> navigazione locale — i flussi</span>
+  <span><i style="background:var(--scena)"></i> la scena — la tela</span>
+  <span><i style="background:var(--dett)"></i> il dettaglio</span>
+</div>
+
+<div class="ask">
+  <h2>Se preferisci rispondere a parole, bastano tre risposte</h2>
+  <p>Sono le tre decisioni da cui discende tutto il resto. Non servono pixel.</p>
+  <ul>
+    <li><b>Cosa deve essere sempre visibile</b>, anche mentre guardi un nodo? (i flussi · cosa sta
+    girando adesso · niente)</li>
+    <li><b>Dove va il dettaglio di un passo</b>: colonna a destra, fascia in basso, o scheda che
+    galleggia sul nodo?</li>
+    <li><b>Come si cambia flusso</b>: elenco in colonna, striscia di schede, o <kbd>⌘K</kbd>?</li>
+  </ul>
+</div>
+
+</div>
+</body></html>
