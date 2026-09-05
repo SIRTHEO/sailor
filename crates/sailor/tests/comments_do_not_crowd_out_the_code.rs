@@ -30,7 +30,7 @@ const DATED_COMMENTS_TODAY: usize = 184;
 /// **THE ONLY HONEST RAISE** is a merge bringing in non-English comments
 /// written elsewhere: there you re-measure, raise to the measured number, and
 /// say so in the commit. Raising it because it went red is disarming it.
-const COMMENT_LINES_NOT_IN_ENGLISH: usize = 7_113;
+const COMMENT_LINES_NOT_IN_ENGLISH: usize = 7_112;
 
 /// Comment lines per thousand code lines, per crate, as measured today.
 /// Downwards only; a crate under 100 is where the sweep stops.
@@ -39,7 +39,7 @@ const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
     ("catalogue", 268),
     ("desktop", 264),
     ("faults", 205),
-    ("flow", 221),
+    ("flow", 220),
     ("inventory", 277),
     ("ledger", 169),
     ("models", 274),
