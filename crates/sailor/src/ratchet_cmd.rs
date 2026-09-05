@@ -200,7 +200,10 @@ fn measured(only: &Option<String>) -> Result<bool, String> {
         ));
         let out = Command::new("cargo")
             .current_dir(&clean)
-            .env("CARGO_TARGET_DIR", root.join("target").join("from-head"))
+            // Its own target: sharing `target/from-head` with the release put two
+            // trees' binaries in one place, and a release running at the same
+            // time went red on a target it could not name.
+            .env("CARGO_TARGET_DIR", root.join("target").join("ratchet"))
             .args(["test", "--quiet", "-p", &judge.package, "--test", &judge.test])
             .output()
             .map_err(|error| format!("cargo test: {error}"))?;
