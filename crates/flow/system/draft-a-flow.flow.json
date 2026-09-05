@@ -1,0 +1,233 @@
+{
+  "id": "draft-a-flow",
+  "description": "A SKETCH BECOMES A FLOW. The person draws blocks and writes words on them — what each step does, what comes before what — and hands the drawing here as the mandate. One reading, no engine: the list of actions the engine actually has. One engine call, kind «writing»: it reads the sketch and the vocabulary and writes a whole flow file, keeping the person's words as the mandates and their arrows as the dependencies. One gesture: the draft is accepted only if it stands — the graph validates and every action named is real — and then written where the person's flows live, so the window shows it beside the others and they open it, correct it, and run it. A draft that does not stand is refused with the reason, and nothing is written.",
+  "graph": {
+    "steps": [
+      {
+        "id": "trigger",
+        "deps": [],
+        "action": "trigger",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "source": "manual"
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "who": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "text"
+          ],
+          "allow_extra": false
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "who": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "vocabulary",
+        "deps": [
+          "trigger"
+        ],
+        "action": "action_list",
+        "max_attempts": 1,
+        "when": null,
+        "with": {},
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "actions": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "actions"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "author",
+        "deps": [
+          "trigger",
+          "vocabulary"
+        ],
+        "action": "external_engine",
+        "max_attempts": 2,
+        "when": null,
+        "with": {
+          "tool": [
+            "claude-code",
+            "codex",
+            "agy"
+          ],
+          "kind": "writing",
+          "data": "public",
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "flow": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "allow_extra": true
+              },
+              "notes": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "flow",
+              "notes"
+            ],
+            "allow_extra": false
+          },
+          "stdin": {
+            "$join": [
+              "You turn a sketch into a flow file for Sailor. The sketch is blocks and words drawn by a person: each block is a step they want, the words on it say what the step does, the arrows say what comes before what. Keep their words as the mandates and their order as the dependencies; invent nothing they did not draw, and where the sketch is silent choose the plainest reading.\n\nTHE SKETCH\n\n",
+              {
+                "$from": "/trigger/text"
+              },
+              "\n\nTHE ACTIONS THE ENGINE HAS — the only names a step may use, exactly as written:\n",
+              {
+                "$json": "/vocabulary/actions"
+              },
+              "\n\nHOW A FLOW FILE IS SHAPED\nA flow is one JSON object: «id» (lowercase words joined by dashes, chosen from the sketch's subject), «description» (one or two sentences, what it does and when it runs), «graph» with «steps» (a list) and «skippable_dependencies» (an empty list), and «inputs» — an object with one entry per step that has no dependencies, holding that step's starting input.\nEvery step has: «id» (lowercase, dashes or underscores), «deps» (the ids it waits for; the first step has none), «action» (one of the names above), «max_attempts» (1), «input_schema» and «output_schema» (write {\"type\": \"any\"} for both unless you know the exact shape), and «with» — the step's own settings.\nThe first step is always «action»: «trigger» with «with»: {\"source\": \"manual\"}; its entry in «inputs» is {\"text\": \"<what the person types when they start the flow>\", \"who\": \"\"}. A step that needs an engine — reading, writing, judging, researching — is «action»: «external_engine» with «with»: {\"tool\": [\"claude-code\", \"codex\", \"agy\"], \"kind\": one of \"mechanical\", \"research\", \"implementation\", \"judgement\", \"writing\", \"data\": \"public\", \"timeout_secs\": 900, \"stdin\": <the mandate, as text or as {\"$join\": [parts]} where a part may be {\"$from\": \"/<step id>/<field>\"} to carry an earlier step's output>}. A step that hands work to the person alive in the terminal is «action»: «handed_to_agent» with «with»: {\"mandate\": <text>, \"holder\": \"whoever is alive in the terminal\", \"handoff_timeout_secs\": 86400, \"options\": [{\"label\": \"done\", \"facts\": \"...\"}, {\"label\": \"refused\", \"facts\": \"...\"}]}. Readings of what Sailor keeps use the other names above with an empty «with» where the sketch gives no settings.\n\nHOW YOUR ANSWER MUST LOOK\nAnswer with one JSON object and nothing else: «flow» is the whole flow file as described, «notes» says in two or three lines what you read in the sketch and what you had to decide. It must match exactly this shape, where «properties» are the fields, «required» the mandatory ones and «allow_extra: false» means no others are accepted:\n",
+              {
+                "$json": "/answer_shape"
+              }
+            ]
+          },
+          "timeout_secs": 900
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "tool",
+            "timeout_secs"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "ok"
+              ]
+            },
+            "answer": {
+              "type": "object",
+              "properties": {
+                "flow": {
+                  "type": "object",
+                  "properties": {},
+                  "required": [],
+                  "allow_extra": true
+                },
+                "notes": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "flow",
+                "notes"
+              ],
+              "allow_extra": false
+            }
+          },
+          "required": [
+            "status",
+            "answer"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "draft",
+        "deps": [
+          "author"
+        ],
+        "action": "flow_draft",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "flow": {
+            "$from": "/author/answer/flow"
+          }
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "flow": {
+              "type": "string"
+            },
+            "steps": {
+              "type": "number"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "flow",
+            "steps",
+            "path"
+          ],
+          "allow_extra": false
+        }
+      }
+    ],
+    "skippable_dependencies": []
+  },
+  "inputs": {
+    "trigger": {
+      "text": "a sketch: blocks, the words on them, and the arrows between them",
+      "who": ""
+    }
+  }
+}

@@ -77,6 +77,10 @@ pub const FLOWS: &[(&str, &str)] = &[
         "watch-the-crew",
         include_str!("../system/watch-the-crew.flow.json"),
     ),
+    (
+        "draft-a-flow",
+        include_str!("../system/draft-a-flow.flow.json"),
+    ),
 ];
 
 /// A place where flows are looked for, with the name a reader sees.

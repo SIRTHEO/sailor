@@ -448,7 +448,7 @@
   "run.failure.patch_refused": "the patch was not applied: it names a file nobody assented to, or one behind the wall no assent opens",
   "run.failure.tree_not_cut": "the step asked for a tree of its own and git could not cut it, so it was not run in the shared one",
   "run.failure.unjoinable_reference": "only text can be joined, and one of the pieces is not text",
-  "run.failure.unknown_action": "the step calls for an action nobody here knows",
+  "run.failure.unknown_action": "the draft names an action the engine does not have",
   "run.failure.unknown_command_line": "no descriptor is loaded for that command line — it may be missing, switched off, or broken",
   "run.failure.unknown_step": "the flow being resumed has no step by that name",
   "run.failure.unknown_subflow": "no flow by that name, in any of the places flows are looked for",
@@ -497,5 +497,8 @@
   "cli.release.not_pushed": "not pushed, the remote is behind: {line}",
   "cli.flow.search_nothing": "no flow mentions «{query}»",
   "cli.flow.search_found": "{count} flow(s) mention «{query}», best first:",
-  "run.failure.search_refused": "the search was refused — a word is needed, or the flows could not be ranked"
+  "run.failure.search_refused": "the search was refused — a word is needed, or the flows could not be ranked",
+  "run.failure.invalid_flow": "the drafted flow does not stand: the engine's own validation refused it",
+  "run.failure.no_flows_dir": "there is no home to write the draft into",
+  "run.failure.draft_not_written": "the draft stands but could not be written"
 }

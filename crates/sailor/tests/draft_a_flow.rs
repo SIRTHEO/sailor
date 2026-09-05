@@ -1,0 +1,75 @@
+//! The shipped `draft-a-flow`: a sketch in, a flow file out, and every name it
+//! uses is one the engine answers to.
+
+use flow::system::{load_all, FlowSource};
+use flow::FlowFile;
+
+const FLOW_ID: &str = "draft-a-flow";
+
+fn shipped() -> FlowFile {
+    load_all(&[FlowSource::builtin()])
+        .into_iter()
+        .find(|(name, _, _)| name == FLOW_ID)
+        .map(|(_, _, entry)| entry.expect("the shipped flow loads"))
+        .expect("the flow is shipped")
+}
+
+/// **THE DRAFT IS THE LAST WORD, AND THE VOCABULARY COMES BEFORE THE AUTHOR**:
+/// an author writing without the list would name actions from memory.
+#[test]
+fn the_sketch_is_read_then_written_then_kept_only_if_it_stands() {
+    let flow = shipped();
+    let steps: Vec<(&str, &str)> = flow
+        .graph
+        .steps()
+        .iter()
+        .map(|step| (step.id.as_str(), step.action.as_str()))
+        .collect();
+    assert_eq!(
+        steps,
+        vec![
+            ("trigger", "trigger"),
+            ("vocabulary", "action_list"),
+            ("author", "external_engine"),
+            ("draft", "flow_draft"),
+        ]
+    );
+    let author = &flow.graph.steps()[2];
+    assert_eq!(author.deps, vec!["trigger", "vocabulary"]);
+    let draft = &flow.graph.steps()[3];
+    assert_eq!(
+        draft.with.as_ref().and_then(|with| with["flow"]["$from"].as_str()),
+        Some("/author/answer/flow"),
+        "the draft takes the flow the author answered with"
+    );
+}
+
+/// Every action the flow names is one the default registry has — the same
+/// check `flow_draft` applies to what the author writes, applied to the
+/// drafter itself.
+#[test]
+fn every_action_the_drafter_names_is_registered() {
+    let registry = registry::default_registry(None, None);
+    let names = registry.names();
+    for step in shipped().graph.steps() {
+        assert!(
+            names.contains(&step.action.as_str()),
+            "«{}» names «{}», which the engine does not have",
+            step.id,
+            step.action
+        );
+    }
+}
+
+/// The author is told the whole vocabulary and the whole shape — a mandate that
+/// left either out would get a flow that fails at `flow_draft` every time.
+#[test]
+fn the_author_is_handed_the_vocabulary_and_the_shape_of_a_flow() {
+    let flow = shipped();
+    let author = &flow.graph.steps()[2];
+    let stdin = serde_json::to_string(&author.with.as_ref().expect("with")["stdin"]).expect("json");
+    assert!(stdin.contains("/vocabulary/actions"), "the list of actions is carried in");
+    assert!(stdin.contains("/trigger/text"), "the sketch is carried in");
+    assert!(stdin.contains("/answer_shape"), "the answer's shape is carried in");
+    assert!(stdin.contains("skippable_dependencies"), "the file's shape is spelled out");
+}
