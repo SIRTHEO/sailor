@@ -142,6 +142,45 @@ impl ExternalEngineAction {
     }
 }
 
+/// The tree one step works in, taken down when that step ends however it ends.
+///
+/// Closed on drop and not by a line at the bottom: an engine step leaves by a
+/// dozen paths, and a tree closed on one of them is a tree left open on the
+/// other eleven. See fault 89.
+struct OwnTree {
+    repo: PathBuf,
+    at: PathBuf,
+    live: Option<Arc<dyn LiveSink>>,
+}
+
+impl OwnTree {
+    /// A kept tree is named where the tree was announced, or the run ends with
+    /// disk nobody accounted for.
+    fn say(&self, sentence: String) {
+        match self.live.as_deref() {
+            Some(live) => live.chunk(Pipe::Stderr, format!("[sailor] {sentence}\n").as_bytes()),
+            None => eprintln!("{sentence}"),
+        }
+    }
+}
+
+impl Drop for OwnTree {
+    fn drop(&mut self) {
+        let at = self.at.to_string_lossy().into_owned();
+        match workspace::close_tree(&self.repo, &self.at) {
+            workspace::Closing::TakenDown => {}
+            workspace::Closing::GitRefused(said) => self.say(catalogue::say(
+                "engine.tree_kept_over_work",
+                &[("tree", &at), ("said", said.trim())],
+            )),
+            workspace::Closing::HoldsACommitNobodyElseHas(commit) => self.say(catalogue::say(
+                "engine.tree_kept_over_a_commit",
+                &[("tree", &at), ("commit", &commit)],
+            )),
+        }
+    }
+}
+
 /// The worktree this step works in, cut now if it is not there yet.
 ///
 /// Refused rather than run in the tree everybody shares: a step that asked to
@@ -149,7 +188,8 @@ impl ExternalEngineAction {
 fn tree_of_its_own(
     spec: &EngineSpec,
     shared: &SharedState,
-) -> Result<Option<std::path::PathBuf>, ActionError> {
+    live: Option<Arc<dyn LiveSink>>,
+) -> Result<Option<OwnTree>, ActionError> {
     let Some(asked) = spec.tree.as_deref() else {
         return Ok(None);
     };
@@ -182,8 +222,9 @@ fn tree_of_its_own(
             ),
         ));
     };
-    workspace::tree_for(std::path::Path::new(&root), &run, &step)
-        .map(Some)
+    let repo = PathBuf::from(&root);
+    workspace::tree_for(&repo, &run, &step)
+        .map(|at| Some(OwnTree { repo, at, live }))
         .map_err(|why| ActionError::new("tree_not_cut", why))
 }
 
@@ -718,14 +759,17 @@ impl Action for ExternalEngineAction {
         let mut spec: EngineSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         check_tolerance(&spec.accept, &ENGINE_FAILURES)?;
-        if let Some(cut) = tree_of_its_own(&spec, shared)? {
+        // Held until this step returns, and taken down then: the binding is
+        // what closes the tree, so it outlives every path out of here.
+        let own_tree = tree_of_its_own(&spec, shared, live.clone())?;
+        if let Some(cut) = &own_tree {
             if let Some(live) = live.as_deref() {
                 live.chunk(
                     Pipe::Stderr,
-                    format!("[sailor] this step works in {}\n", cut.display()).as_bytes(),
+                    format!("[sailor] this step works in {}\n", cut.at.display()).as_bytes(),
                 );
             }
-            spec.workdir = Some(cut.to_string_lossy().into_owned());
+            spec.workdir = Some(cut.at.to_string_lossy().into_owned());
         }
         if let Some(written) = &written_shape {
             shape_was_asked_for(written, &spec)?;

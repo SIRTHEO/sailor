@@ -26,6 +26,9 @@ rust-version.workspace = true
 # vicino — e due corse dello stesso flusso non erano la stessa misura. Stessa
 # direzione di `models`: `profiles` dipende solo da serde, quindi non c'e' ciclo.
 [dependencies]
+# A tree kept because it holds work is a line a person reads, so it is read
+# from the catalogue like every other. No cycle: `catalogue` depends on serde.
+catalogue = { path = "../catalogue" }
 flow = { path = "../flow" }
 faults = { path = "../faults" }
 ledger = { path = "../ledger" }
