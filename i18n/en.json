@@ -48,6 +48,8 @@
   "cli.flow.held_deadline_not_passed": "held, the deadline has not passed: {steps}",
   "cli.flow.in_the_store": "in the store: {runs} runs, of which {costed} spent something known",
   "cli.flow.in_turns": "in {turns} turns",
+  "cli.flow.refusals_heading": "refused by a declared check:",
+  "cli.flow.refused_by_check": "  {step}: {attempts} attempts refused by {check} ({rules})",
   "cli.flow.last_run_minutes_ago": "last run {minutes} minutes ago",
   "cli.flow.model_absent_from_the_list": "{model} (no entry in the price list)",
   "cli.flow.model_listed_without_price": "{model} (an entry with no prices)",
