@@ -6,6 +6,7 @@
 import { useState } from "react";
 import { useAsk, useClock } from "./ask";
 import { executionHistory, type Execution, type ModelCall } from "./engine";
+import { t } from "./i18n";
 
 /** Ogni quanto si rilegge: la storia cresce piano. */
 const REFRESH_MS = 15000;
@@ -113,7 +114,7 @@ function Calls({ calls }: { calls: ModelCall[] }) {
                   {call.error_type !== null && <span className="now__why">{call.error_type}</span>}
                 </td>
                 <td className="now__when">
-                  {call.actual_model === "" ? "model not declared" : call.actual_model}
+                  {call.actual_model === "" ? t("ui.cost.model_not_declared") : call.actual_model}
                 </td>
                 <td className="now__num">{tokens < 0 ? "not said" : tokens.toLocaleString("en-GB")}</td>
                 <td className="now__num">{call.cost_micros === null ? "not said" : money(call.cost_micros)}</td>
