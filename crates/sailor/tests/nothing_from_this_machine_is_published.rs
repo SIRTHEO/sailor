@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 /// the author's own tree — were invisible while the walker reported over a
 /// hundred files scanned. A list of what to read is a list of what to skip.
 const READ_AS_TEXT: &[&str] = &[
-    ".rs", ".ts", ".tsx", ".css", ".mjs", ".md", ".json", ".toml", ".yml", ".html",
+    ".rs", ".ts", ".tsx", ".css", ".mjs", ".md", ".json", ".toml", ".yml", ".yaml", ".html",
 ];
 
 /// The places a reader of the published repository looks in.
