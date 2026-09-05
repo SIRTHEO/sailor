@@ -2,6 +2,8 @@
 //! line reads at its start, written under Sailor's home or printed.
 //! `sailor memory where`: which engines read a file that names that page, and
 //! which do not — said, never written into their files.
+//! `sailor memory link` and `sailor memory unlink`: the same files, written
+//! into and cleaned out again, and only the ones this tree owns unless asked.
 
 use profiles::{KnownCli, Profile, ProfileStore};
 use std::path::{Path, PathBuf};
@@ -15,6 +17,14 @@ pub const USAGE: &[crate::Form] = &[
         form: "sailor memory where",
         says_key: "cli.memory.where_says",
     },
+    crate::Form {
+        form: "sailor memory link [--home]",
+        says_key: "cli.memory.link_says",
+    },
+    crate::Form {
+        form: "sailor memory unlink [--home]",
+        says_key: "cli.memory.unlink_says",
+    },
 ];
 
 pub fn run(args: &[String]) -> i32 {
@@ -27,6 +37,15 @@ pub fn run(args: &[String]) -> i32 {
             }
         },
         Some((form, [])) if form == "where" => where_the_page_is_read(),
+        Some((form, options)) if form == "link" || form == "unlink" => {
+            match home_option(options, form) {
+                Ok(home_too) => point_the_engines(form == "link", home_too),
+                Err(message) => {
+                    eprintln!("sailor memory: {message}");
+                    2
+                }
+            }
+        }
         _ => {
             let forms: Vec<&str> = USAGE.iter().map(|form| form.form).collect();
             eprintln!(
@@ -119,31 +138,88 @@ fn write_or_print(asked: &PageAsked) -> i32 {
     }
 }
 
+/// Where the page is, whose home the engines start in, and which tree the
+/// command was typed in. The project root is that tree: it is where an engine
+/// opened here would be started.
+struct Places {
+    page: PathBuf,
+    user_home: PathBuf,
+    store: ProfileStore,
+    project_root: PathBuf,
+}
+
+fn the_places() -> Result<Places, String> {
+    let home = ledger::sailor_home().ok_or_else(|| catalogue::say("cli.memory.no_home", &[]))?;
+    let user_home = profiles::store_io::home_dir()?;
+    let store = profiles::store_io::load_store()?;
+    let project_root = std::env::current_dir().map_err(|error| error.to_string())?;
+    Ok(Places { page: actions::memory::page_path(&home), user_home, store, project_root })
+}
+
 /// The engines of this machine, one line each, under the profile in force.
-/// The project root is where the command is typed: that is the tree the
-/// engine would be started in.
 fn where_the_page_is_read() -> i32 {
-    let Some(home) = ledger::sailor_home() else {
-        eprintln!("sailor memory: {}", catalogue::say("cli.memory.no_home", &[]));
-        return 1;
-    };
-    let gathered = profiles::store_io::home_dir().and_then(|user_home| {
-        let store = profiles::store_io::load_store()?;
-        let project_root = std::env::current_dir().map_err(|error| error.to_string())?;
-        Ok((user_home, store, project_root))
-    });
-    let (user_home, store, project_root) = match gathered {
-        Ok(gathered) => gathered,
+    let places = match the_places() {
+        Ok(places) => places,
         Err(why) => {
             eprintln!("sailor memory: {why}");
             return 1;
         }
     };
-    let page = actions::memory::page_path(&home);
-    for line in where_lines(profiles::known_clis(), &store, &project_root, &user_home, &page) {
+    let lines = where_lines(
+        profiles::known_clis(),
+        &places.store,
+        &places.project_root,
+        &places.user_home,
+        &places.page,
+    );
+    for line in lines {
         println!("{line}");
     }
     0
+}
+
+/// The pointer written into those same files, or taken back out of them.
+fn point_the_engines(linking: bool, home_too: bool) -> i32 {
+    let places = match the_places() {
+        Ok(places) => places,
+        Err(why) => {
+            eprintln!("sailor memory: {why}");
+            return 1;
+        }
+    };
+    let files = files_the_engines_read(
+        profiles::known_clis(),
+        &places.store,
+        &places.project_root,
+        &places.user_home,
+        &places.page,
+    );
+    let lines = if linking {
+        link_files(&files, &places.project_root, home_too, &block(&places.page))
+    } else {
+        unlink_files(&files, &places.project_root, home_too)
+    };
+    for line in lines {
+        println!("{line}");
+    }
+    0
+}
+
+fn home_option(options: &[String], form: &str) -> Result<bool, String> {
+    let mut home_too = false;
+    for word in options {
+        match word.as_str() {
+            "--home" => home_too = true,
+            other => {
+                let usage = USAGE.iter().find(|shape| shape.form.split(' ').nth(2) == Some(form));
+                return Err(catalogue::say(
+                    "cli.memory.link_unknown_option",
+                    &[("option", other), ("usage", usage.map(|shape| shape.form).unwrap_or_default())],
+                ));
+            }
+        }
+    }
+    Ok(home_too)
 }
 
 /// What an engine sees of the page at its start: the files it reads, and the
@@ -220,6 +296,161 @@ pub fn where_lines(
         } else {
             values.push(("files", listed.as_str()));
             catalogue::say("cli.memory.where_blind", &values)
+        });
+    }
+    lines
+}
+
+/// The two lines that bound what Sailor writes into somebody else's file.
+/// Everything outside them belongs to whoever wrote it and is kept byte for
+/// byte.
+pub const BLOCK_OPENS: &str = "<!-- sailor:memories -->";
+pub const BLOCK_CLOSES: &str = "<!-- /sailor:memories -->";
+
+/// The file this tree keeps its own rules in, named to the engine so it stops
+/// reaching for tools of its own.
+pub const RULES_OF_THIS_TREE: &str = "AGENTS.md";
+
+/// Every file the engines read at their start, once each, in the order the
+/// engines declare them: the very list `where` reports on.
+pub fn files_the_engines_read(
+    clis: &[KnownCli],
+    store: &ProfileStore,
+    project_root: &Path,
+    home: &Path,
+    page: &Path,
+) -> Vec<PathBuf> {
+    let mut found: Vec<PathBuf> = Vec::new();
+    for cli in clis {
+        let profile = active_profile(store, &cli.id);
+        let sight = Sight::of(cli, project_root, home, profile.map(|it| it.home_dir.as_path()), page);
+        for file in sight.reads {
+            if !found.contains(&file) {
+                found.push(file);
+            }
+        }
+    }
+    found
+}
+
+/// What goes between the markers: where the page is, and where this tree's
+/// rules are. Both sentences come from the catalogue.
+pub fn block(page: &Path) -> String {
+    format!(
+        "{BLOCK_OPENS}\n{}\n{}\n{BLOCK_CLOSES}",
+        catalogue::say("cli.memory.link_block_page", &[("path", &page.display().to_string())]),
+        catalogue::say("cli.memory.link_block_rules", &[("rules", RULES_OF_THIS_TREE)]),
+    )
+}
+
+/// Where the block sits: the opening marker's first byte, and the byte after
+/// the closing one.
+fn markers(text: &str) -> Option<(usize, usize)> {
+    let opens = text.find(BLOCK_OPENS)?;
+    let closes = text[opens..].find(BLOCK_CLOSES)? + opens + BLOCK_CLOSES.len();
+    Some((opens, closes))
+}
+
+pub fn holds_the_block(text: &str) -> bool {
+    markers(text).is_some()
+}
+
+/// `text` with the block in it: what stands between the markers is replaced
+/// where it stands, so everything else is kept byte for byte. With no block
+/// yet it is appended after one newline — the one `without_block` takes off.
+pub fn with_block(text: &str, block: &str) -> String {
+    match markers(text) {
+        Some((opens, closes)) => format!("{}{block}{}", &text[..opens], &text[closes..]),
+        None if text.is_empty() => format!("{block}\n"),
+        None => format!("{text}\n{block}\n"),
+    }
+}
+
+/// `text` without the block, and without the newline on either side of it: a
+/// file linked and then unlinked holds the bytes it held before.
+pub fn without_block(text: &str) -> String {
+    let Some((opens, closes)) = markers(text) else {
+        return text.to_owned();
+    };
+    let from = if text[..opens].ends_with('\n') { opens - 1 } else { opens };
+    let to = if text[closes..].starts_with('\n') { closes + 1 } else { closes };
+    format!("{}{}", &text[..from], &text[to..])
+}
+
+/// Whether a file is this tree's to write into. One outside it is the
+/// person's own configuration, and it is written only when asked for.
+fn ours(file: &Path, project_root: &Path, home_too: bool) -> bool {
+    home_too || file.starts_with(project_root)
+}
+
+fn said(key: &str, path: &Path) -> String {
+    catalogue::say(key, &[("path", &path.display().to_string())])
+}
+
+fn unwritten(path: &Path, why: &std::io::Error) -> String {
+    catalogue::say(
+        "cli.memory.link_unwritten",
+        &[("path", &path.display().to_string()), ("why", &why.to_string())],
+    )
+}
+
+/// What the file holds now, and nothing when it is not there yet: that is the
+/// one case linking creates a file instead of appending to one.
+fn held(file: &Path) -> Result<String, std::io::Error> {
+    match std::fs::read_to_string(file) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        other => other,
+    }
+}
+
+fn write_it(file: &Path, text: &str) -> Result<(), std::io::Error> {
+    if let Some(parent) = file.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(file, text)
+}
+
+/// The block written into the files this tree owns, one line said per file.
+/// A file outside the tree is named and left alone unless `home_too`.
+pub fn link_files(files: &[PathBuf], project_root: &Path, home_too: bool, block: &str) -> Vec<String> {
+    let mut lines = Vec::new();
+    for file in files {
+        if !ours(file, project_root, home_too) {
+            lines.push(said("cli.memory.link_left_alone", file));
+            continue;
+        }
+        let written = held(file).and_then(|text| write_it(file, &with_block(&text, block)));
+        lines.push(match written {
+            Ok(()) => said("cli.memory.linked", file),
+            Err(error) => unwritten(file, &error),
+        });
+    }
+    lines
+}
+
+/// The block taken back out. A file left holding nothing is one Sailor made,
+/// so it goes with the block rather than staying behind empty.
+pub fn unlink_files(files: &[PathBuf], project_root: &Path, home_too: bool) -> Vec<String> {
+    let mut lines = Vec::new();
+    for file in files {
+        if !ours(file, project_root, home_too) {
+            lines.push(said("cli.memory.link_left_alone", file));
+            continue;
+        }
+        let text = std::fs::read_to_string(file).unwrap_or_default();
+        if !holds_the_block(&text) {
+            lines.push(said("cli.memory.link_nothing", file));
+            continue;
+        }
+        let left = without_block(&text);
+        let (key, done) = if left.is_empty() {
+            ("cli.memory.link_removed", std::fs::remove_file(file))
+        } else {
+            ("cli.memory.unlinked", write_it(file, &left))
+        };
+        lines.push(match done {
+            Ok(()) => said(key, file),
+            Err(error) => unwritten(file, &error),
         });
     }
     lines
