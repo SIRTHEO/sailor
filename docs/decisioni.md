@@ -789,3 +789,28 @@ quanta quota gli resta, che è il ripiego di sempre. Vincolo permanente
   ne sono in volo. Senza nessun costo osservato non si stringe: restituire 1 «per
   prudenza» renderebbe seriale ogni corsa con un tetto, per sempre, sulla base di
   un numero che non esiste.
+
+### Non si aggiungono chiamate per risparmiare chiamate
+
+**05/09/2026**, dalla consulenza sui costi chiesta a due motori esterni.
+
+Niente instradatore a modello che sceglie la seduta, niente riassuntore fra un
+passo e l'altro, niente compressione del contesto affidata a un motore, niente
+giudice automatico su ogni passo. Sono le quattro forme che un sistema come
+questo adotta per sembrare intelligente, e ognuna aggiunge almeno un turno.
+
+**La misura che lo decide.** Un flusso a quattro passi costa **2,07 volte** i
+turni di una sessione sola che fa lo stesso lavoro, e legge solo l'**8%** in più
+per turno. Il conto lo decidono i turni, non il peso di ciascuno: comprimere il
+contesto tocca l'8%, aggiungere un passo di servizio tocca il moltiplicatore.
+Un'ottimizzazione che paga una chiamata per accorciarne un'altra parte in
+perdita, e nasconde anche come i passi si passano le informazioni, che è il
+vincolo permanente della chiarezza per chi guarda.
+
+**Cosa la ribalterebbe.** Una misura che mostri un turno di riassunto ridurre i
+turni successivi più di quanti ne aggiunge. Finché quella misura non esiste, una
+proposta di questa famiglia si scarta senza discuterla.
+
+Dove il risparmio c'è davvero: nei passi che proseguono la stessa sessione
+invece di aprirne una fredda — su una chiamata misurata la scrittura in cache è
+stata il **96%** del costo — e nel non rifare i passi già riusciti al rilancio.
