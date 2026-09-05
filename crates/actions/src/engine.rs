@@ -452,7 +452,17 @@ impl ExternalEngineAction {
                 // lavorare — cioè il difetto sopravviveva dentro il proprio
                 // rimedio, in un angolo. L'ha trovato un giudice che non aveva
                 // scritto il lavoro.
-                let class = candidate.declared_class(&stdout, &stderr);
+                // **AN ANSWER IN THE DECLARED SHAPE IS WORK DONE**, and the
+                // words that mean a refusal are not looked for inside it: an
+                // engine reading a tree whose own documents discuss quotas
+                // prints those words while working, and would refuse itself.
+                let answered = reading.answer.clone().unwrap_or_else(|| stdout.clone());
+                let in_shape = shape.is_some_and(|shape| shaped_answer(shape, &answered).is_ok());
+                let class = if in_shape {
+                    None
+                } else {
+                    candidate.declared_class(&stdout, &stderr)
+                };
                 let cannot_work = class.is_some();
                 // The class is the same as the other branch's: a spent quota
                 // or a door shut for another reason, never the exit code.
