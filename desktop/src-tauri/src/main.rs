@@ -28,6 +28,7 @@ mod handoff;
 mod keeps;
 mod ledger;
 mod live;
+mod locks;
 mod manual;
 mod models;
 mod profiles;
