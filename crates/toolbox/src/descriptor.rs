@@ -241,6 +241,10 @@ pub struct Usage {
     /// Which pipe carries the usage: `stdout` (the default), `stderr`, `both`.
     #[serde(default)]
     pub from: ReadFrom,
+    /// Whose numbers those are: `per_call` (the default, and how every reading
+    /// has been treated) or `per_session`, written only where it was measured.
+    #[serde(default)]
+    pub reports: models::usage::Reports,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_tokens: Option<Where>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

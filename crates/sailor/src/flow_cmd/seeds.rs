@@ -349,6 +349,7 @@ mod tests {
             ended_at: Some(1),
             session_id: None,
             work_kind: None,
+            session_mode: None,
         };
         let run = ledger::RunRecord {
             run_id,

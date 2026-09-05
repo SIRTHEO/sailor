@@ -315,6 +315,7 @@ fn usage_recipe(usage: &crate::descriptor::Usage) -> actions::UsageRecipe {
                 crate::descriptor::ReadFrom::Stderr => models::usage::Heard::Stderr,
                 crate::descriptor::ReadFrom::Both => models::usage::Heard::Both,
             },
+            reports: usage.reports,
             input_tokens: usage.input_tokens.as_ref().map(pointer),
             output_tokens: usage.output_tokens.as_ref().map(pointer),
             cached_tokens: usage.cached_tokens.as_ref().map(pointer),
