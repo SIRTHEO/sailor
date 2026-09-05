@@ -473,6 +473,7 @@ mod tests {
             ended_at: None,
             session_id: None,
             work_kind: None,
+            fell_back_from: Vec::new(),
         }
     }
 

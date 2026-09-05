@@ -94,6 +94,7 @@ fn a_call_that_cost(call_id: &str, run_id: &str, micros: i64) -> ModelCallRecord
         // opens nor resumes one is the normal case.
         session_id: None,
         work_kind: None,
+        fell_back_from: Vec::new(),
         purpose: "external_engine".to_owned(),
         cli: "test-engine".to_owned(),
         requested_model: String::new(),
