@@ -53,7 +53,12 @@ fn report(sources: &[FlowSource], ledger_dir: &std::path::Path, query: &str) -> 
                 &[("count", &hits.len().to_string()), ("query", query)],
             ));
             for hit in &hits {
-                lines.push(format!("  {}\n      {}", hit.id, hit.excerpt.replace('\n', " ")));
+                lines.push(format!(
+                    "  {}{}\n      {}",
+                    hit.id,
+                    memory_named(&ledger, hit),
+                    hit.excerpt.replace('\n', " ")
+                ));
             }
         }
         Err(error) => lines.push(catalogue::say(
@@ -62,4 +67,60 @@ fn report(sources: &[FlowSource], ledger_dir: &std::path::Path, query: &str) -> 
         )),
     }
     Ok(lines.join("\n"))
+}
+
+/// A memory among the hits, named for a person: its label, and the tree it
+/// holds in by the tree's short name. Nothing for any other kind of hit.
+fn memory_named(ledger: &Ledger, hit: &ledger::search::Hit) -> String {
+    let Some(memory) = actions::search::memory_behind(ledger, hit) else {
+        return String::new();
+    };
+    let said = match &memory.tree {
+        Some(tree) => catalogue::say(
+            "cli.search.memory_in_tree",
+            &[("label", &memory.label), ("tree", actions::memory::tree_name(tree))],
+        ),
+        None => catalogue::say("cli.search.memory_everywhere", &[("label", &memory.label)]),
+    };
+    format!(" · {said}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// **A MEMORY FOUND IS NAMED WITH ITS TREE**, by the short name, beside its
+    /// label; one that holds in every tree says so instead.
+    #[test]
+    fn a_memory_found_is_named_with_its_tree() {
+        let dir = std::env::temp_dir().join(format!("sailor-search-cmd-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let ledger = Ledger::open(&dir).expect("a ledger");
+        let memory = |label: &str, value: &str, tree: Option<&str>| actions::memory::Memory {
+            kind: "project".to_owned(),
+            label: label.to_owned(),
+            value: value.to_owned(),
+            provenance: "test".to_owned(),
+            modified: 1,
+            valid_from: 1,
+            valid_until: None,
+            tree: tree.map(str::to_owned),
+        };
+        actions::memory::remember(&ledger, memory("the trunk", "a quokka sits on sorgenti", Some("/trees/a-checkout")))
+            .expect("kept");
+        actions::memory::remember(&ledger, memory("the home", "a quokka sits under state", None)).expect("kept");
+        drop(ledger);
+
+        let text = report(&[], &dir, "quokka").expect("a report");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(
+            text.contains(&catalogue::say("cli.search.memory_in_tree", &[("label", "the trunk"), ("tree", "a-checkout")])),
+            "{text}"
+        );
+        assert!(
+            text.contains(&catalogue::say("cli.search.memory_everywhere", &[("label", "the home")])),
+            "{text}"
+        );
+    }
 }
