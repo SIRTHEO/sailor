@@ -382,15 +382,11 @@ pub fn close_step_in(
 
     let output = match outcome {
         Outcome::Went => match found.get("output-file") {
-            // **SENZA UN FILE NON SI SCRIVE UN'USCITA VUOTA, SI RIFIUTA SE
-            // QUALCUNO LA ASPETTA.** Il deposito non sa distinguere «uscita
-            // nulla» da «nessuna uscita»: nel registro degli eventi tutte e due
-            // diventano `"output": null`, e rileggendo tornano `None` (guasto
-            // 31, misurato sulla prima corsa vera del 31/08/2026). Chiudere
-            // `went` senza uscita mentre un altro passo dipende da questo fa
-            // fallire quel passo con «non ha uscita tipata» — cioè il difetto
-            // ricompare più tardi, su un passo innocente, che è esattamente ciò
-            // che questa funzione esiste per impedire.
+            // Closing `went` with no output while another step depends on this
+            // one would stop the run there, with «no typed output», on a step
+            // that is not at fault. The log keeps a null output apart from no
+            // output (fault 33); the refusal stays because a defect should show
+            // where it is born, not three steps later.
             None => {
                 let waiting_on_it = dependents_of(flow, step_id);
                 if !waiting_on_it.is_empty() {
@@ -1163,15 +1159,11 @@ mod tests {
         .expect("il passo lo dichiara ammesso, quindi passa");
     }
 
-    /// **CHIUDERE «ANDATO» SENZA USCITA, MENTRE QUALCUNO L'ASPETTA, SI
-    /// RIFIUTA.**
-    ///
-    /// Il deposito non distingue «uscita nulla» da «nessuna uscita»: nel
-    /// registro degli eventi diventano tutte e due `"output": null` e tornano
-    /// `None` (guasto 31). Senza questo rifiuto la corsa si ferma al passo
-    /// **dopo**, con «non ha uscita tipata», e chi guarda va a cercare il difetto
-    /// nel passo sbagliato. È la stessa ragione per cui l'uscita si valida qui:
-    /// un difetto che si manifesta lontano da dove è nato costa il doppio.
+    /// **CLOSING «WENT» WITH NO OUTPUT, WHILE SOMEONE WAITS FOR IT, IS
+    /// REFUSED.** Without the refusal the run stops at the step *after*, with
+    /// «no typed output», and whoever looks hunts the defect in the wrong step.
+    /// The log keeps a null output apart from no output (fault 33); the refusal
+    /// is about where a defect shows, not about what the log can say.
     #[test]
     fn closing_as_went_without_an_output_is_refused_when_a_step_waits_for_it() {
         let directory = TestDirectory::new("uscita-che-manca");
