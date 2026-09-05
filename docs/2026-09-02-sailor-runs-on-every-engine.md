@@ -593,9 +593,49 @@ Starting point, so the mandate builds on it instead of beside it.
    index. *Proof:* `a_memory_carrying_a_secret_is_refused_and_nothing_is_written`
    and `the_page_is_recent_first_valid_only_and_cut_at_two_hundred_lines` in
    `actions::memory`; `the_greeting_names_what_is_remembered` in `session_cmd`.
-   *Still not written:* the page as a file handed to the three command lines
-   (today the greeting carries the count and the labels, not the page), the
-   index over events and faults, and the consolidation flow.
+   *Where it landed, 05/09/2026, the page as a file:* `sailor memory page`
+   renders `page()` of the memories still valid and writes it to
+   `<sailor home>/state/memory.md`, beside first and renamed over the old one;
+   `--print` prints it instead. `sailor remember` and the `remember` action
+   rewrite the same file after every successful write, through the one
+   function `actions::memory::write_page`, so the file is never a stale copy
+   of the ledger. Byte-identical for the three command lines because there is
+   one file and one rendering, not three. *Proof:*
+   `the_page_is_written_as_a_file_identical_to_its_rendering` and
+   `the_remember_action_leaves_the_page_fresh` in `actions::memory`,
+   `a_memory_written_by_hand_is_on_the_page` in `remember_cmd`; mutants (a
+   trailing byte added to the file, the rewrite dropped from the action and
+   from the command) red.
+   *How the command lines are handed context today, measured in the tree:*
+   one channel exists, and it is the greeting. Each descriptor's
+   `session_hooks` block (`crates/toolbox/descriptors/default.json`) declares
+   where the command line keeps its hooks and what it calls the four moments;
+   `sailor session install` grafts `sailor session open --cli <id>` into that
+   file (`installed` for the JSON settings of two of them, `grafted_into_toml`
+   for the third), and on `SessionStart` the hook's standard output is the
+   greeting, wrapped as `hookSpecificOutput.additionalContext`. The greeting
+   now names the page's path and repeats its first three lines when the file
+   exists, and says nothing of it when it does not (`page_on_disk`,
+   `cli.session.memory_page`; proof
+   `the_greeting_names_the_page_only_where_the_file_exists`, mutants — the
+   block dropped, the cut at three lines dropped, a missing file reported as
+   an empty page — red). That wrapper's shape is the one measured on the line
+   Sailor grew up grafted into; for the other two the descriptors declare the
+   event and the handler shape, not what they do with the stdout of a
+   `SessionStart` hook, and nothing in this tree has measured it.
+   *What is not wired, and is not claimed:* a command line that reads a file
+   named in its configuration rather than a hook's output gets nothing from
+   Sailor yet. `launch.env` (`sailor run`, built by
+   `profiles::build_environment` and the endpoint variables) carries the
+   profile's home variable and the endpoint's URL and key, nothing else; no
+   code writes `context.fileName`, an `@`-import, or any pointer to
+   `state/memory.md` into a tree's `AGENTS.md`/`CLAUDE.md` or a command line's
+   settings, and no descriptor has a field that would say how such a pointer
+   is written for that line. The sentence above about `@AGENTS.md`,
+   `AGENTS.md` and `context.fileName` is the plan, and it is unmeasured. What
+   is still to write: the descriptor field naming that mechanism per command
+   line, the graft that writes it, the index over events and faults, and the
+   consolidation flow.
 4. **What Sailor remembers of a run is written down, once.** The report of
    every closed run (what went, what broke, what it cost, what was learnt) is
    a store record, and a flow that starts on the same entity reads the last
