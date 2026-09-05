@@ -90,3 +90,30 @@ aspettare una notifica in sfondo, mai `git stash` (è condiviso), non toccare i
 documenti, un commit per pezzo, ogni prova con il suo mutante. Undici agenti
 la notte prima hanno consegnato undici pezzi; quattro difetti sono stati
 trovati rileggendo il codice fuso, non eseguendolo (guasti 90–93).
+
+## Cosa è entrato con la prima ondata, misurato a `5d9e98a4`
+
+Nove agenti in worktree, lanciati alle 12:20, tutti fusi e verdi alle 14:40.
+Suite intera verde fuori dal perimetro, vitest 433/433, quaranta giudici.
+
+| voce | prima | dopo |
+|---|---|---|
+| avvisi clippy nel workspace | 344 | **0**, e un giudice per crate (`clippy_only_ever_gets_quieter`) |
+| `unwrap`/`expect`/`panic!` nel codice di produzione | non contati | **44**, contati per crate (`production_code_does_not_panic_on_purpose`); 19 nel crate dei terminali |
+| file oltre le 2 000 righe | 6 | **4**: `actions/src/lib.rs` è dodici moduli (il più grande 1 757), `flow_cmd.rs` una cartella di nove (il più grande 1 187) |
+| binari di prova, funzioni `#[test]`, flussi | non contati | 111 / 1 506 / 10, e un numero che scende senza dichiararlo è rosso (`the_battery_does_not_shrink_in_silence`) |
+| percorsi `flows/…` nominati nel codice | non verificati | ognuno deve esistere (`every_flow_path_the_code_names_exists`) |
+| sezioni dei documenti che dichiarano un controllo | 37 in sola prosa, nessuno lo sapeva | 37 contate, solo in discesa; ogni nome di prova nominato deve esistere |
+| memoria | senza albero | `Memory.tree`; pagina per albero più le globali; `sailor remember --global`; la ricerca dice l'albero |
+| guasti aperti | 17 | **15** (52 e 67 chiusi dai loro giudici; 33 e G.5: `output` è un campo solo con il suo serializzatore) |
+| G.4 | assente | `supervisor::StartToken`, due `compile_fail` |
+
+Due cose imparate. **La misura di stamattina era sbagliata per difetto** sul
+conto dei `panic!`: contava 139/1 063/83 con le prove in linea; il giudice, che
+le esclude, ne trova 44. **Un giudice nuovo sposta i vecchi**: la scissione di
+`flow_cmd.rs` ha scoperto 26 frasi che il giudice del catalogo non leggeva,
+perché si fermava al primo `#[cfg(test)]` del file; ora hanno la loro voce.
+
+La seconda ondata (guasti 74, 37, 17, i quattro difetti di un motore, il
+testo del passo comando, guasti 10 e 5) è partita alle 14:35 e **caduta sul
+limite di sessione** senza un commit; ripresa tre agenti alla volta.
