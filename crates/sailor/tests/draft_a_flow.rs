@@ -100,4 +100,18 @@ fn a_script_is_an_accepted_sketch_and_the_author_is_told_how_to_read_it() {
         stdin.contains("pipeline(items, stage1, stage2) is a chain of «deps»"),
         "a pipeline is a chain of dependencies"
     );
+    assert!(
+        stdin.contains("phase('…') is the step's «phase»"),
+        "a phase is the step's own field, not a word hidden in its id"
+    );
+    assert!(!stdin.contains("has no phase field"), "the mandate does not deny a field the step has");
+}
+
+/// The author writes «phase» on the steps of a sketch that names its moments.
+#[test]
+fn the_author_is_told_a_step_may_carry_its_phase() {
+    let flow = shipped();
+    let author = &flow.graph.steps()[2];
+    let stdin = serde_json::to_string(&author.with.as_ref().expect("with")["stdin"]).expect("json");
+    assert!(stdin.contains("«phase» (optional: the short name of the moment"), "the step shape names the field");
 }
