@@ -536,6 +536,8 @@
   "cli.memory.wants_page": "the only form is `page`; usage: {usage}",
   "cli.memory.written": "{count} memor(ies) on the page, written to {path}",
   "cli.memory.no_home": "no home to write the page into: HOME is not set",
+  "profiles.command_line_refused": "command line «{id}» is refused as a whole: {why}",
+  "profiles.instructions_path_refused": "command line «{id}» reads its instructions from «{path}», which is neither under the project root nor under ~",
   "run.failure.bad_memory_type": "a memory is user, feedback, project or reference, and this is none of them",
   "run.failure.secret_in_memory": "the memory carries what looks like a credential, and a credential is never remembered",
   "run.failure.page_unwritten": "the page of memories could not be written, so the command lines still read the old one"
