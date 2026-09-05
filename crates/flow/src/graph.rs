@@ -35,6 +35,11 @@ pub struct Step {
     /// set in the same loop, so the attempts burn together.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retry_after_secs: Option<u32>,
+    /// The moment of the process this step belongs to, for whoever watches a
+    /// run. Free text written by the flow's author, read by nothing that
+    /// executes: absent is written absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -401,6 +406,7 @@ mod tests {
             max_attempts: 1,
             ask_again_after_secs: None,
             retry_after_secs: None,
+            phase: None,
         }
     }
 

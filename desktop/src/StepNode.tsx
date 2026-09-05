@@ -82,6 +82,9 @@ const STATE_LABEL = group("window.step.state.") as Record<StepState, string>;
 /** What a running step says instead, while its output is arriving. */
 const SPEAKING_LABEL = t("window.step.speaking");
 
+/** What the phase label is, for whoever pauses on it: the word itself is data. */
+const PHASE_TITLE = t("window.step.phase");
+
 /**
  * **TWO REGISTERS OF ATTENTION.** Live runs share one quiet breathing dot that
  * says "alive", not "look at me". Singling out is kept for the one thing a view
@@ -508,6 +511,14 @@ export function StepNode({ data, selected }: NodeProps) {
           {speaking ? SPEAKING_LABEL : STATE_LABEL[state]}
         </span>
       </div>
+
+      {/* The phase sits over the name, in the register of the species: it says
+          where in the process this is, and it is drawn only when written. */}
+      {step.phase ? (
+        <div className="step-node__phase" title={PHASE_TITLE}>
+          {step.phase}
+        </div>
+      ) : null}
 
       {/* The name, at the size that makes it the figure. It outlives the far
           zoom with the band above it: those two are the plate. */}
