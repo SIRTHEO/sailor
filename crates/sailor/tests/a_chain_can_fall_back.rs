@@ -276,6 +276,21 @@ fn what_agy_declares_matches_what_agy_really_said() {
              combaciano più con quello che agy dice davvero"
         ),
     }
+
+    // The line it prints right before the sixty-second wait is the one the
+    // step stops it on: it must be in the same measured output, or nothing
+    // stops and every step of a chain pays the minute.
+    assert!(
+        !recipe.waits_for_a_person_when.is_empty(),
+        "the shipped descriptor declares no words for the wait, so the wait is paid"
+    );
+    let said = stderr.to_lowercase();
+    for word in &recipe.waits_for_a_person_when {
+        assert!(
+            said.contains(&word.to_lowercase()),
+            "«{word}» is declared as the word before the wait and the engine never said it"
+        );
+    }
 }
 
 /// **E UNA RISPOSTA QUALUNQUE NON DEVE COMBACIARE.**
