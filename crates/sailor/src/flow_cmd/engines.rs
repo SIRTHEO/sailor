@@ -3,7 +3,6 @@
 
 use flow::Graph;
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::Write as _;
 
 use super::check::{engines_of, EngineWorld};
 
@@ -89,10 +88,9 @@ pub(super) fn login_states_into(
         );
 
         let Some(recipe) = tools.login_recipe(&wanted.tool) else {
-            unknown.push(format!(
-                "{who}: il suo descrittore non dichiara come chiedergli se è \
-                 autenticato (`login_status`), quindi nessuno ha guardato — che \
-                 non vuol dire che lo sia"
+            unknown.push(catalogue::say(
+                "cli.flow.engine_login_not_declared",
+                &[("who", &who)],
             ));
             continue;
         };
@@ -101,13 +99,13 @@ pub(super) fn login_states_into(
             // LE PAROLE DEL MOTORE, come per una riga rotta: «non autenticato»
             // detto da noi non dice quale credenziale manca, e la frase sua sì.
             LoginVerdict::LoggedOut { said } => unauthenticated.push(format!("{who}: «{said}»")),
-            LoginVerdict::NotDeclared => unknown.push(format!(
-                "{who}: il suo descrittore dichiara `login_status` a metà — servono \
-                 le parole del sì e quelle del no — quindi non si può leggere niente"
+            LoginVerdict::NotDeclared => unknown.push(catalogue::say(
+                "cli.flow.engine_login_half_declared",
+                &[("who", &who)],
             )),
-            LoginVerdict::Unrecognised { said } => unknown.push(format!(
-                "{who}: ha risposto «{said}», che non somiglia a nessuna delle due \
-                 forme dichiarate"
+            LoginVerdict::Unrecognised { said } => unknown.push(catalogue::say(
+                "cli.flow.engine_login_unrecognised",
+                &[("who", &who), ("said", &said)],
             )),
             LoginVerdict::NoAnswer { why } => {
                 unknown.push(format!("{who}: nessuna risposta — {why}"))
@@ -116,26 +114,22 @@ pub(super) fn login_states_into(
     }
 
     if !unauthenticated.is_empty() {
-        let _ = write!(
-            report,
-            "\nCASE SENZA CREDENZIALI (la corsa parte lo stesso, e le chiamate a \
-             questi motori partiranno NON AUTENTICATE): {}",
-            unauthenticated.join("; ")
-        );
+        report.push_str(&catalogue::say(
+            "cli.flow.homes_without_credentials",
+            &[("engines", &unauthenticated.join("; "))],
+        ));
     }
     if !authenticated.is_empty() {
-        let _ = write!(
-            report,
-            "\ncase autenticate (chiesto al motore, senza spendere): {}",
-            authenticated.join("; ")
-        );
+        report.push_str(&catalogue::say(
+            "cli.flow.homes_authenticated",
+            &[("engines", &authenticated.join("; "))],
+        ));
     }
     if !unknown.is_empty() {
-        let _ = write!(
-            report,
-            "\ncase di cui non si sa se sono autenticate: {}",
-            unknown.join("; ")
-        );
+        report.push_str(&catalogue::say(
+            "cli.flow.homes_unknown",
+            &[("engines", &unknown.join("; "))],
+        ));
     }
 }
 
@@ -265,12 +259,13 @@ pub(super) fn engine_lines_into(
 
         let who = format!("{} → {}", wanted.step, wanted.tool);
         match judged.get(&wanted.tool).expect("appena inserito") {
-            EngineOutcome::NotHere(reason) => {
-                untried.push(format!("{who}: il motore non è invocabile qui — {reason}"))
-            }
-            EngineOutcome::NotAssemblable => unassemblable.push(format!(
-                "{who}: il suo descrittore non dichiara un blocco `ask`, quindi non \
-                 esiste nessuna riga da montare e il passo dovrà scrivere da sé le opzioni"
+            EngineOutcome::NotHere(reason) => untried.push(catalogue::say(
+                "cli.flow.engine_not_invocable_here",
+                &[("who", &who), ("reason", reason)],
+            )),
+            EngineOutcome::NotAssemblable => unassemblable.push(catalogue::say(
+                "cli.flow.engine_line_not_assemblable",
+                &[("who", &who)],
             )),
             EngineOutcome::Tried { line, verdict } => match verdict {
                 ProbeVerdict::Sound => sound.push(who),
@@ -279,58 +274,52 @@ pub(super) fn engine_lines_into(
                 // bandiera aveva mangiato quale argomento: una diagnosi che
                 // nessuna parola nostra avrebbe potuto sostituire. Tagliarla, o
                 // riassumerla, riporterebbe chi legge a indovinare.
-                ProbeVerdict::Broken { said } => broken.push(format!(
-                    "{who}: riga montata «{line}»; il motore ha risposto: «{said}»"
+                ProbeVerdict::Broken { said } => broken.push(catalogue::say(
+                    "cli.flow.engine_line_broken",
+                    &[("who", &who), ("line", line), ("said", said)],
                 )),
                 ProbeVerdict::CannotWork { said } => exhausted.push(format!("{who}: «{said}»")),
-                ProbeVerdict::NotDeclared => untried.push(format!(
-                    "{who}: il suo descrittore non dichiara come rifiuta la riga senza \
-                     domanda (`refuses_without_prompt`), quindi non c'è modo di dire se \
-                     la riga «{line}» sia sana — si misura eseguendola senza la domanda"
+                ProbeVerdict::NotDeclared => untried.push(catalogue::say(
+                    "cli.flow.engine_refusal_not_declared",
+                    &[("who", &who), ("line", line)],
                 )),
-                ProbeVerdict::TimedOut { why } => untried.push(format!(
-                    "{who}: nessuna risposta alla riga «{line}» — {why}"
+                ProbeVerdict::TimedOut { why } => untried.push(catalogue::say(
+                    "cli.flow.engine_no_answer_to_line",
+                    &[("who", &who), ("line", line), ("why", why)],
                 )),
             },
         }
     }
 
     if !sound.is_empty() {
-        let _ = write!(
-            report,
-            "\nrighe di comando sane (montate e provate senza domanda, senza spendere): {}",
-            sound.join("; ")
-        );
+        report.push_str(&catalogue::say(
+            "cli.flow.command_lines_sound",
+            &[("engines", &sound.join("; "))],
+        ));
     }
     if !broken.is_empty() {
-        let _ = write!(
-            report,
-            "\nrighe di comando ROTTE (il motore si è lamentato di qualcosa che non è \
-             la domanda mancante): {}",
-            broken.join("; ")
-        );
+        report.push_str(&catalogue::say(
+            "cli.flow.command_lines_broken",
+            &[("engines", &broken.join("; "))],
+        ));
     }
     if !exhausted.is_empty() {
-        let _ = write!(
-            report,
-            "\nmotori che adesso non possono lavorare (la riga non c'entra, si \
-             riprova quando tornano): {}",
-            exhausted.join("; ")
-        );
+        report.push_str(&catalogue::say(
+            "cli.flow.engines_that_cannot_work_now",
+            &[("engines", &exhausted.join("; "))],
+        ));
     }
     if !untried.is_empty() {
-        let _ = write!(
-            report,
-            "\nrighe di comando non provate (non si sa se siano sane): {}",
-            untried.join("; ")
-        );
+        report.push_str(&catalogue::say(
+            "cli.flow.command_lines_untried",
+            &[("engines", &untried.join("; "))],
+        ));
     }
     if !unassemblable.is_empty() {
-        let _ = write!(
-            report,
-            "\nrighe di comando non montabili (non c'è niente da provare): {}",
-            unassemblable.join("; ")
-        );
+        report.push_str(&catalogue::say(
+            "cli.flow.command_lines_not_assemblable",
+            &[("engines", &unassemblable.join("; "))],
+        ));
     }
 }
 
@@ -472,7 +461,7 @@ mod tests {
             }),
         );
         assert!(
-            report.contains("CASE SENZA CREDENZIALI"),
+            report.contains("HOMES WITHOUT CREDENTIALS"),
             "una casa senza credenziali si applica in silenzio: {report}"
         );
         assert!(
@@ -484,7 +473,7 @@ mod tests {
             "le parole del motore sono la diagnosi: {report}"
         );
         assert!(
-            report.contains("righe di comando sane"),
+            report.contains("sound command lines"),
             "il vaglio a secco continua a dire la sua, e continua a dire il vero: {report}"
         );
         assert!(
@@ -507,11 +496,11 @@ mod tests {
             }),
         );
         assert!(
-            report.contains("case autenticate"),
+            report.contains("authenticated homes"),
             "una casa piena deve risultare piena: {report}"
         );
         assert!(
-            !report.contains("CASE SENZA CREDENZIALI"),
+            !report.contains("HOMES WITHOUT CREDENTIALS"),
             "e non deve comparire fra quelle vuote: {report}"
         );
     }
@@ -546,16 +535,16 @@ mod tests {
         );
 
         assert!(
-            report.contains("case di cui non si sa se sono autenticate")
-                && report.contains("nessuno ha guardato"),
+            report.contains("homes whose authentication nobody could read")
+                && report.contains("nobody looked"),
             "un'assenza deve dirsi: {report}"
         );
         assert!(
-            !report.contains("case autenticate"),
+            !report.contains("authenticated homes"),
             "«nessuno ha guardato» non è «è autenticato»: {report}"
         );
         assert!(
-            !report.contains("CASE SENZA CREDENZIALI"),
+            !report.contains("HOMES WITHOUT CREDENTIALS"),
             "e non è nemmeno «non è autenticato»: inventare un no dove non si è \
              guardato manderebbe a riparare una casa sana: {report}"
         );
@@ -683,7 +672,7 @@ mod tests {
             Some(&EngineWorld::without_profiles(&probe)),
         );
 
-        assert!(report.contains("righe di comando sane"), "{report}");
+        assert!(report.contains("sound command lines"), "{report}");
         assert!(report.contains("chiedi → motore"), "{report}");
     }
 
@@ -707,13 +696,13 @@ mod tests {
             Some(&EngineWorld::without_profiles(&probe)),
         );
 
-        assert!(report.contains("righe di comando ROTTE"), "{report}");
+        assert!(report.contains("BROKEN command lines"), "{report}");
         assert!(
             report.contains("--print took \"--output-format\" as its prompt"),
             "senza le parole del motore la riga rossa non dice cosa correggere: {report}"
         );
         assert!(
-            report.contains("riga montata «") && report.contains("-p»"),
+            report.contains("assembled line «") && report.contains("-p»"),
             "e senza la riga montata non si sa nemmeno cosa è stato provato: {report}"
         );
     }
@@ -773,11 +762,11 @@ mod tests {
 
         let untried = report
             .lines()
-            .find(|line| line.starts_with("righe di comando non provate"))
+            .find(|line| line.starts_with("command lines not tried"))
             .unwrap_or_else(|| panic!("manca la riga «non provate»: {report}"));
         let unassemblable = report
             .lines()
-            .find(|line| line.starts_with("righe di comando non montabili"))
+            .find(|line| line.starts_with("command lines that cannot be assembled"))
             .unwrap_or_else(|| panic!("manca la riga «non montabili»: {report}"));
 
         assert!(untried.contains("senza-rifiuto"), "{untried}");
@@ -809,11 +798,11 @@ mod tests {
         );
 
         assert!(
-            report.contains("motori che adesso non possono lavorare"),
+            report.contains("engines that cannot work right now"),
             "{report}"
         );
         assert!(
-            !report.contains("righe di comando ROTTE"),
+            !report.contains("BROKEN command lines"),
             "la riga è sana, è la quota che è finita: {report}"
         );
     }
@@ -829,7 +818,7 @@ mod tests {
 
         let (report, _) = check_report(&flow, &default_registry(None, None), Some(&tools), None);
 
-        assert!(!report.contains("righe di comando"), "{report}");
+        assert!(!report.contains("command lines"), "{report}");
     }
 
     /// I passi che scrivono i propri `args` non compongono nessuna riga dal
@@ -867,6 +856,6 @@ mod tests {
             Some(&EngineWorld::without_profiles(&probe)),
         );
 
-        assert!(!report.contains("righe di comando"), "{report}");
+        assert!(!report.contains("command lines"), "{report}");
     }
 }
