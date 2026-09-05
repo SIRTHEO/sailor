@@ -89,6 +89,10 @@ struct HandoffSpec {
     /// facts it rests on. A question in free text is not a step.
     #[serde(default)]
     options: Vec<Choice>,
+    /// What the mandate leans on beside the engine, `kind:name`, the same
+    /// field as `EngineSpec::needs_extensions`: read by `flow check`, not here.
+    #[serde(default)]
+    needs_extensions: Vec<String>,
     /// Ciò che questa azione non riconosce, per la stessa ragione di
     /// `EngineSpec::extra`: un refuso nel `with` si nomina a `flow check`, cioè
     /// prima di spendere.
