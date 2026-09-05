@@ -1610,6 +1610,16 @@ fn json_body(said: &str) -> &str {
 /// costo di portarselo dietro per tutta la catena.
 fn pruned(shape: &ValueSchema, value: Value) -> Value {
     match (shape, value) {
+        // No field declared and extras allowed: the shape says «an object,
+        // whatever it holds», and pruning it would forward `{}` every time.
+        (
+            ValueSchema::Object {
+                properties,
+                allow_extra: true,
+                ..
+            },
+            value @ Value::Object(_),
+        ) if properties.is_empty() => value,
         (ValueSchema::Object { properties, .. }, Value::Object(fields)) => {
             let mut kept = serde_json::Map::new();
             for (name, item) in fields {
@@ -4303,6 +4313,19 @@ mod tests {
 
         assert_eq!(error.class, "answer_off_shape");
         assert!(error.said.contains("parecchi"), "{}", error.said);
+    }
+
+    /// **A SHAPE WITH NO FIELD AND EXTRAS ALLOWED IS «ANY OBJECT»**, not «no
+    /// field»: pruned to its declaration it came out `{}`, and the flow a model
+    /// had drafted whole reached the next step empty.
+    #[test]
+    fn an_object_shape_declaring_no_field_hands_the_whole_object_on() {
+        let shape: ValueSchema = serde_json::from_value(json!({
+            "type": "object", "properties": {}, "required": [], "allow_extra": true
+        }))
+        .expect("a shape");
+        let whole = json!({"id": "una-bozza", "graph": {"steps": []}});
+        assert_eq!(pruned(&shape, whole.clone()), whole);
     }
 
     #[test]
