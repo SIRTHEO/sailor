@@ -231,7 +231,7 @@ fn clean_tree_with_changes(root: &Path, into: &Path) -> Result<Overlay, String> 
 /// The tree the command is run in, when it is one: a checkout other than the
 /// sources in service — a worktree, a clone — is measured for itself, and
 /// two checkouts never share one `target/ratchet-tree`.
-fn root_to_measure() -> Result<PathBuf, String> {
+pub(crate) fn root_to_measure() -> Result<PathBuf, String> {
     match std::env::current_dir().ok().and_then(|here| workspace::tree_around(&here)) {
         Some(tree) => Ok(tree),
         None => crate::release_cmd::sources_root(),
