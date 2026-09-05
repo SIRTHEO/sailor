@@ -5,6 +5,7 @@ use flow::StepRecord;
 use models::pricing::{Known, PriceList};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
+use std::path::Path;
 
 use super::{default_ledger_dir, now_secs};
 
@@ -25,8 +26,13 @@ use super::{default_ledger_dir, now_secs};
 /// fattura. E ci sono motori che i token li dichiarano e il costo no: mostrare
 /// solo il costo li renderebbe invisibili.
 pub(super) fn cost_of(flow: &str) -> Result<String, String> {
-    let dir = default_ledger_dir()?;
-    let Some(data) = ui::gather::gather(&dir).map_err(|error| error.to_string())? else {
+    cost_of_in(&default_ledger_dir()?, flow)
+}
+
+/// The same report over a declared ledger directory, so a test can hand in a
+/// scratch one and read the whole road from the rows to the sentences.
+fn cost_of_in(dir: &Path, flow: &str) -> Result<String, String> {
+    let Some(data) = ui::gather::gather(dir).map_err(|error| error.to_string())? else {
         return Err(catalogue::say(
             "cli.flow.no_store_here",
             &[("path", &dir.display().to_string())],
@@ -163,6 +169,16 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
             " {}",
             catalogue::say("cli.flow.in_turns", &[("turns", &tokens.turns.to_string())])
         );
+        // A handed step's turns are a number the agent gave, not one anybody
+        // counted: the qualifier sits in the line of the number, or the reader
+        // keeps the number and drops the qualifier.
+        let declared = self_declared_turns(&view.calls);
+        if declared > 0 {
+            report.push_str(&catalogue::say(
+                "cli.flow.turns_self_declared",
+                &[("declared", &declared.to_string())],
+            ));
+        }
     }
     let _ = write!(
         report,
@@ -197,6 +213,10 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
         "\n{}",
         ui::dashboard::how_the_cost_reads(&tokens.cost_reading())
     );
+    // The floor and the names travel together: «at least» without the steps
+    // that made it a floor sends the reader to redo the sum by hand and land
+    // on the wrong total again.
+    report.push_str(&unmeasured_report(&view.calls, prices));
     // **QUELLO CHE MANCA SI DICE, O IL TOTALE SI LEGGE COME COMPLETO.** È la
     // stessa regola della finestra: una somma che tace su ciò che non ha
     // contato è una rassicurazione, non una misura. Resta anche adesso che il
@@ -227,6 +247,7 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
             .tokens_by_model
             .keys()
             .filter(|name| !name.trim().is_empty())
+            .filter(|name| name.as_str() != ui::dashboard::MODEL_NOT_DECLARED)
             .cloned()
             .collect(),
     );
@@ -265,6 +286,62 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
         }
     }
     report
+}
+
+/// The turns of a run that an agent declared of itself and nobody measured.
+fn self_declared_turns(calls: &[ui::dashboard::CallView]) -> u64 {
+    calls
+        .iter()
+        .filter(|call| call.engine_identity == ledger::EngineIdentity::DeclaredByAnAgent)
+        .filter_map(|call| call.turns)
+        .sum()
+}
+
+/// One line per unmeasured (step, reason), in order of appearance; a step
+/// retried three times without a cost is one line, the count is in the floor.
+fn unmeasured_report(calls: &[ui::dashboard::CallView], prices: &PriceList) -> String {
+    let mut lines: Vec<String> = Vec::new();
+    for call in calls.iter().filter(|call| call.cost_micros.is_none()) {
+        let line = why_unmeasured(call, prices);
+        if !lines.contains(&line) {
+            lines.push(line);
+        }
+    }
+    if lines.is_empty() {
+        return String::new();
+    }
+    let mut report = format!("\n{}", catalogue::say("cli.flow.unmeasured_heading", &[]));
+    for line in lines {
+        let _ = write!(report, "\n{line}");
+    }
+    report
+}
+
+/// A handed step is told apart by the identity its row declares, not by a
+/// word in its purpose. The other two reasons are repaired in other places: a
+/// model the list cannot price by writing the entry, a call that declared no
+/// cost by the engine that wrote it.
+fn why_unmeasured(call: &ui::dashboard::CallView, prices: &PriceList) -> String {
+    let step = call
+        .step_id
+        .clone()
+        .unwrap_or_else(|| catalogue::say("cli.flow.call_outside_any_step", &[]));
+    if call.engine_identity == ledger::EngineIdentity::DeclaredByAnAgent {
+        return catalogue::say("cli.flow.unmeasured_handed_step", &[("step", &step)]);
+    }
+    let model = call.actual_model.trim();
+    let unpriced = if model.is_empty() {
+        None
+    } else {
+        cannot_be_priced(prices, &BTreeSet::from([model.to_owned()])).pop()
+    };
+    match unpriced {
+        Some(model) => catalogue::say(
+            "cli.flow.unmeasured_model_unpriced",
+            &[("step", &step), ("model", &model)],
+        ),
+        None => catalogue::say("cli.flow.unmeasured_no_cost_declared", &[("step", &step)]),
+    }
 }
 
 /// Quanto costa una unità di valuta in micro. Un milione: `1_000_000` è un
@@ -932,6 +1009,126 @@ mod tests {
         assert!(
             !report.contains("at least"),
             "niente pavimenti dove non manca niente.\n{report}"
+        );
+        assert!(
+            !report.contains(&catalogue::say("cli.flow.unmeasured_heading", &[])),
+            "and nobody is named as unmeasured.\n{report}"
+        );
+    }
+
+    /// The row `step close --turns` writes for a handed step: no cost, no
+    /// tokens, the turns the agent counted, and the identity that says so.
+    fn a_handed_call(step_id: &str, turns: u64) -> ledger::ModelCallRecord {
+        let mut call = a_call_named(&format!("handed-{step_id}"), None);
+        call.step_id = Some(step_id.to_owned());
+        call.purpose = "handed_to_agent:self_declared".to_owned();
+        call.requested_model = String::new();
+        call.actual_model = String::new();
+        call.input_tokens = None;
+        call.output_tokens = None;
+        call.cached_tokens = None;
+        call.turns = Some(turns);
+        call.engine_identity = ledger::EngineIdentity::DeclaredByAnAgent;
+        call
+    }
+
+    fn a_measured_call(step_id: &str, cost: i64) -> ledger::ModelCallRecord {
+        let mut call = a_call_named(&format!("measured-{step_id}"), Some(cost));
+        call.step_id = Some(step_id.to_owned());
+        call
+    }
+
+    fn the_line_naming(report: &str, step: &str) -> String {
+        report
+            .lines()
+            .find(|line| line.trim_start().starts_with(&format!("{step}:")))
+            .unwrap_or_default()
+            .to_owned()
+    }
+
+    /// The floor and the name travel together: whoever reads «at least» sees
+    /// which step kept the total from being one, and that its number was
+    /// declared by the agent rather than measured — in the line of the turns
+    /// too, not beside it.
+    #[test]
+    fn a_handed_step_is_named_as_self_declared_where_its_cost_would_be() {
+        let report = report_for(&[
+            a_measured_call("ask", 1_667_400),
+            a_handed_call("build", 33),
+        ]);
+
+        assert!(report.contains("at least 1.6674"), "{report}");
+        assert!(!report.contains(&bare_total(1_667_400)), "{report}");
+        assert!(
+            the_line_naming(&report, "build").contains("self-declared"),
+            "the handed step is named with its reason where its cost would be.\n{report}"
+        );
+        assert!(
+            the_line_naming(&report, "ask").is_empty(),
+            "the measured step is not accused.\n{report}"
+        );
+        assert!(
+            report.contains("in 36 turns, of which 33 self-declared"),
+            "the declared turns are qualified in the line of the number.\n{report}"
+        );
+        assert!(
+            !report.contains("(model not declared) ("),
+            "a step no engine served is not a model missing from the price list.\n{report}"
+        );
+    }
+
+    /// The other reason a call has no cost, told apart from a handed step:
+    /// the two are repaired in different places.
+    #[test]
+    fn a_call_the_price_list_cannot_price_is_named_with_the_model_not_as_handed() {
+        let mut judged = a_call_named("judged", None);
+        judged.step_id = Some("judge".to_owned());
+        judged.actual_model = "mai-visto".to_owned();
+        let report = report_for(&[a_measured_call("ask", 1_000_000), judged]);
+
+        let named = the_line_naming(&report, "judge");
+        assert!(
+            named.contains("mai-visto (no entry in the price list)"),
+            "{report}"
+        );
+        assert!(!named.contains("self-declared"), "{report}");
+    }
+
+    /// The whole road on a scratch ledger: the rows the engine and `step close
+    /// --turns` write, gathered and reported as the command prints them.
+    #[test]
+    fn on_a_scratch_ledger_the_report_floors_the_total_and_names_the_handed_step() {
+        let directory = TestDirectory::new();
+        let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+        let flow: FlowFile = serde_json::from_str(&flow_json("shell_check", "[]", "{}"))
+            .expect("caricare il flusso");
+        let mut measured = a_measured_call("ask", 1_667_400);
+        measured.run_id = "corsa-consegnata".to_owned();
+        let mut handed = a_handed_call("build", 33);
+        handed.run_id = "corsa-consegnata".to_owned();
+        for call in [&measured, &handed] {
+            ledger
+                .record_model_call(call)
+                .expect("registrare la chiamata");
+        }
+        record_run(
+            &ledger,
+            &flow,
+            "corsa-consegnata",
+            "complete",
+            100,
+            Some(110),
+            None,
+        )
+        .expect("registrare la corsa");
+
+        let report = cost_of_in(&directory.0, "prova").expect("il rapporto si scrive");
+
+        assert!(report.contains("at least 1.6674"), "{report}");
+        assert!(!report.contains(&bare_total(1_667_400)), "{report}");
+        assert!(
+            the_line_naming(&report, "build").contains("self-declared"),
+            "{report}"
         );
     }
 
