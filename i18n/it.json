@@ -238,7 +238,7 @@
   "cli.release.cannot_start_git_clone": "non riesco ad avviare git clone: {error}",
   "cli.release.cannot_start_the_suite": "non riesco ad avviare la batteria: {error}",
   "cli.release.checkout_failed": "l'estrazione di HEAD nel clone è fallita",
-  "cli.release.cloning_head": "== clono HEAD ({head}) di {root} in un albero usa-e-getta ==",
+  "cli.release.cloning_head": "== porto l'albero di rilascio sotto target/ a HEAD ({head}) di {root} ==",
   "cli.release.commits_touching_the_parts": "({count} commit che toccano {parts}, da {from} a {to})",
   "cli.release.dry_run": "== prova a vuoto: il binario in servizio NON è stato sostituito ==",
   "cli.release.head_does_not_compile": "HEAD non compila: non è stato sostituito niente e il binario in servizio è intatto",
@@ -506,5 +506,6 @@
   "cli.search.no_words": "una ricerca vuole una parola; uso: {usage}",
   "cli.search.flows_found": "flussi: {count} nominano «{query}»",
   "cli.search.ledger_found": "ledger: {count} corse, passi o voci di deposito nominano «{query}»",
-  "cli.search.ledger_closed": "ledger: non si è aperto, quindi non vi ho cercato niente ({error})"
+  "cli.search.ledger_closed": "ledger: non si è aperto, quindi non vi ho cercato niente ({error})",
+  "cli.release.tree_not_brought_to_head": "l'albero di rilascio non si è potuto portare a HEAD (git {step} fallito): togli target/release-tree e rilascia di nuovo"
 }
