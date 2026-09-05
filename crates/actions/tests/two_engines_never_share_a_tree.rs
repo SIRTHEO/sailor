@@ -10,6 +10,7 @@ use serde_json::json;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 struct TempDir(PathBuf);
 
@@ -74,13 +75,47 @@ fn a_repository_in(dir: &Path) -> PathBuf {
 }
 
 fn an_engine_that_prints_where_it_stands(dir: &Path) -> String {
-    let path = dir.join("dove");
-    fs::write(&path, "#!/bin/sh\npwd\n").expect("write the engine");
+    an_engine_called(dir, "dove", "pwd\n")
+}
+
+/// It reads the project's own file from where it stands, so the tree is
+/// measured as a checkout while the step is alive, not by what survives it.
+fn an_engine_that_reads_the_project(dir: &Path) -> String {
+    an_engine_called(dir, "legge", "pwd\ncat README\n")
+}
+
+/// It leaves a file nobody committed, which is the state git refuses to lose.
+fn an_engine_that_leaves_work_behind(dir: &Path) -> String {
+    an_engine_called(dir, "lascia", "pwd\necho half a thought > left-behind\n")
+}
+
+fn an_engine_called(dir: &Path, name: &str, body: &str) -> String {
+    let path = dir.join(name);
+    fs::write(&path, format!("#!/bin/sh\n{body}")).expect("write the engine");
     fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("make it executable");
     path.to_string_lossy().into_owned()
 }
 
-fn stood_in(outcome: &ActionOutcome) -> String {
+/// What the person watching was told, kept so a test can read it back.
+#[derive(Clone, Default)]
+struct Overheard(Arc<Mutex<String>>);
+
+impl Overheard {
+    fn words(&self) -> String {
+        self.0.lock().expect("the words").clone()
+    }
+}
+
+impl actions::StepSinks for Overheard {
+    fn sink_for(&self, _step: &str) -> Arc<dyn actions::LiveSink> {
+        let heard = Arc::clone(&self.0);
+        Arc::new(move |_pipe: actions::Pipe, bytes: &[u8]| {
+            heard.lock().expect("the words").push_str(&String::from_utf8_lossy(bytes));
+        })
+    }
+}
+
+fn what_it_printed(outcome: &ActionOutcome) -> String {
     let ActionOutcome::Went(value) = outcome else {
         panic!("the step had to go: {outcome:?}");
     };
@@ -88,8 +123,12 @@ fn stood_in(outcome: &ActionOutcome) -> String {
         .get("stdout")
         .and_then(serde_json::Value::as_str)
         .expect("what the engine printed")
-        .trim()
         .to_owned()
+}
+
+/// The first line, which is where the engine printed its own directory.
+fn stood_in(outcome: &ActionOutcome) -> String {
+    what_it_printed(outcome).lines().next().unwrap_or_default().to_owned()
 }
 
 fn shared_for(root: &Path, run: &str, step: &str) -> SharedState {
@@ -105,8 +144,9 @@ fn each_step_asking_for_a_tree_of_its_own_gets_one_and_nobody_shares() {
     let dir = TempDir::new();
     let repo = a_repository_in(dir.path());
     let bin = an_engine_that_prints_where_it_stands(dir.path());
+    let reads = an_engine_that_reads_the_project(dir.path());
     let action = actions::ExternalEngineAction::new();
-    let asks_for_a_tree = json!({"bin": bin, "tree": "own", "timeout_secs": 30});
+    let asks_for_a_tree = json!({"bin": reads, "tree": "own", "timeout_secs": 30});
 
     // The control: a step that asks for nothing stands where the run stands.
     let shared = shared_for(&repo, "corsa-1", "engine_a");
@@ -121,37 +161,69 @@ fn each_step_asking_for_a_tree_of_its_own_gets_one_and_nobody_shares() {
     );
 
     let shared = shared_for(&repo, "corsa-1", "engine_a");
-    let first = stood_in(&action.execute(&asks_for_a_tree, &shared).expect("the step had to go"));
+    let told = action.execute(&asks_for_a_tree, &shared).expect("the step had to go");
+    let first = stood_in(&told);
+    assert!(
+        what_it_printed(&told).contains("a tree to cut from"),
+        "the tree is a checkout of the project and not an empty directory: {first}"
+    );
     let shared = shared_for(&repo, "corsa-1", "engine_b");
     let second = stood_in(&action.execute(&asks_for_a_tree, &shared).expect("the step had to go"));
 
     assert_ne!(first, second, "two steps of one run were given the same tree");
     for stood in [&first, &second] {
         assert!(stood.contains("corsa-1"), "the tree is named after the run: {stood}");
-        assert!(
-            Path::new(stood).join("README").exists(),
-            "the tree is a checkout of the project and not an empty directory: {stood}"
-        );
     }
     assert!(first.ends_with("engine_a") && second.ends_with("engine_b"), "{first} / {second}");
 
-    // A retried step finds the tree its first attempt left, or the work of the
-    // attempt before it would be invisible to the one after.
-    let shared = shared_for(&repo, "corsa-1", "engine_a");
-    let again = stood_in(&action.execute(&asks_for_a_tree, &shared).expect("the step had to go"));
-    assert_eq!(again, first, "a second attempt was cut a second tree");
+    // A step that answered and left nothing takes its tree with it: it is the
+    // pairing that bounds the disk, so it is measured on git and on the disk.
+    let listed = what_git_has_cut(&repo);
+    assert!(
+        !listed.contains(&first) && !listed.contains(&second),
+        "git still holds the trees of two steps that left nothing:\n{listed}"
+    );
+    for stood in [&first, &second] {
+        assert!(!Path::new(stood).exists(), "the tree is still on disk: {stood}");
+    }
+}
 
+fn what_git_has_cut(repo: &Path) -> String {
     let listed = std::process::Command::new("git")
         .arg("-C")
-        .arg(&repo)
+        .arg(repo)
         .args(["worktree", "list"])
         .output()
         .expect("git lists what it cut");
-    let listed = String::from_utf8_lossy(&listed.stdout);
-    assert!(
-        listed.contains(&first) && listed.contains(&second),
-        "git does not know the two trees, so they are directories and not checkouts:\n{listed}"
-    );
+    String::from_utf8_lossy(&listed.stdout).into_owned()
+}
+
+/// The refusal is the whole safety property: a step that left something not
+/// committed keeps its tree, the person is told which tree and why, and the
+/// next attempt lands in it and finds the work.
+#[test]
+fn a_step_that_leaves_work_keeps_its_tree_and_the_person_is_told() {
+    let dir = TempDir::new();
+    let repo = a_repository_in(dir.path());
+    let bin = an_engine_that_leaves_work_behind(dir.path());
+    let overheard = Overheard::default();
+    let action = actions::ExternalEngineAction::new()
+        .watched_by(Some(Arc::new(overheard.clone()) as Arc<dyn actions::StepSinks>));
+    let asks_for_a_tree = json!({"bin": bin, "tree": "own", "timeout_secs": 30});
+
+    let shared = shared_for(&repo, "corsa-3", "lascia");
+    let kept = stood_in(&action.execute(&asks_for_a_tree, &shared).expect("the step had to go"));
+
+    assert!(Path::new(&kept).join("left-behind").exists(), "the work was lost: {kept}");
+    assert!(what_git_has_cut(&repo).contains(&kept), "git no longer holds the tree");
+    let words = overheard.words();
+    assert!(words.contains(&kept), "the kept tree was never named:\n{words}");
+    assert!(words.contains("stays"), "nobody was told why it stays:\n{words}");
+
+    // The next attempt finds what the one before it left.
+    let shared = shared_for(&repo, "corsa-3", "lascia");
+    let again = stood_in(&action.execute(&asks_for_a_tree, &shared).expect("the step had to go"));
+    assert_eq!(again, kept, "a second attempt was cut a second tree");
 }
 
 #[test]
