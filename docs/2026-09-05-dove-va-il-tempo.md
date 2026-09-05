@@ -178,7 +178,16 @@ Misurato sull'albero a `b03afc54`, la notte fra il 4 e il 5.
   la stessa notte — l'albero di rilascio vive in `target/release-tree` e viene
   portato a HEAD con un checkout — e il numero dopo è **47 s** (rilascio 21,
   03:35:42 → 03:36:29): dieci volte. Con tre crate toccati, 5 min 27 s.
-- **4, 5, 6, 7: no.** Non iniziati.
+- **5, il guasto scritto da sé: c'è.** La regola è pura e sta in
+  `crates/flow/src/streak.rs`: una serie di corse chiuse `failed`, non
+  interrotte da una che non ha fallito, lunga almeno tre; il ledger le legge
+  (`crates/ledger/src/streaks.rs`) e ricorda in `beat-faults` l'ultima corsa
+  su cui ha scritto, così un guasto si scrive una volta sola. Il battito della
+  finestra e `sailor flow tick` avviano `write-down-what-broke` con il nome del
+  flusso come mandato; il flusso dei guasti non scrive mai di sé stesso. Nove
+  prove, ognuna con il suo mutante. Non ancora visto dal vivo su un ledger vero.
+- **4, 6, 7: no.** La 4 è una decisione di Theo; 6 e 7 sono in lavorazione
+  mentre scrivo.
 
 E i cinque concetti di Theo della stessa sera:
 
