@@ -530,7 +530,7 @@
   "run.failure.no_store": "nessuno sa dove sia il deposito",
   "run.failure.no_tool_resolver": "nessuno sa dove trovare quello strumento",
   "run.failure.no_usable_engine": "nessuno dei motori chiesti dal passo ha potuto lavorare",
-  "run.failure.periodic_source_not_read": "nessuno legge la ricorrenza che questa sorgente dichiara: l'orologio è tenuto sulla pianificazione del flusso, ed è quella che il battito fa partire",
+  "run.failure.periodic_source_not_read": "nessuno legge la ricorrenza che una sorgente di innesco dichiara per sé: chi tiene il tempo qui legge la `schedule` del flusso — il battito della finestra finché la finestra è aperta, e `sailor flow tick` quando qualcuno lo chiama",
   "run.failure.reset_not_declared": "nessuno ha scritto come si svuota una sessione di quella riga di comando",
   "run.failure.shape_not_in_prompt": "la forma pretesa non è stata chiesta al motore",
   "run.failure.store_refused": "il deposito non ha accettato la scrittura",

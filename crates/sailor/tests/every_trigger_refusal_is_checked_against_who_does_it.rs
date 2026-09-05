@@ -5,7 +5,7 @@
 //! re-reading it lies exactly like a sensor that confuses «zero» with «I did
 //! not look». See fault 74.
 
-use flow::{Action, ActionError, ActionOutcome, SharedState};
+use flow::{Action, ActionError, ActionOutcome, Reads, SharedState};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -58,9 +58,12 @@ struct Claim {
     /// Marks of somebody doing what the class says nobody does, looked for in
     /// the code that ships outside the trigger crate. None may be there.
     signs_somebody_does_it: &'static [&'static str],
-    /// The keeper the class points at instead: a file, and the line in it that
-    /// does the keeping. Every one has to be there.
-    who_does_it_instead: &'static [(&'static str, &'static str)],
+    /// What the refusal declares nothing reads. The census answers, and a
+    /// keeper for it turns the refusal into a lie.
+    nobody_reads: Option<Reads>,
+    /// What the refusal points at instead. Who keeps it is not written here:
+    /// it is asked of the census, so one list answers for the whole tree.
+    kept_instead: Option<Reads>,
 }
 
 const CLAIMS: &[Claim] = &[
@@ -72,19 +75,15 @@ const CLAIMS: &[Claim] = &[
             "Listen::CursorCommand",
             "trigger::Listen",
         ],
-        who_does_it_instead: &[],
+        nobody_reads: None,
+        kept_instead: None,
     },
     Claim {
         class: "periodic_source_not_read",
         names: &["schedule"],
         signs_somebody_does_it: &[".periodic", "MissedRun", "Kind::Periodic"],
-        who_does_it_instead: &[
-            (
-                "crates/sailor/src/flow_cmd/beat.rs",
-                "flow::is_due(schedule",
-            ),
-            ("desktop/src-tauri/src/beat.rs", "flow::is_due(schedule"),
-        ],
+        nobody_reads: Some(Reads::TriggerRecurrence),
+        kept_instead: Some(Reads::FlowSchedule),
     },
 ];
 
@@ -291,18 +290,22 @@ fn a_refusal_that_names_a_keeper_finds_the_keeper_in_the_tree() {
     let root = root();
     let refused = refusals();
     for claim in CLAIMS {
-        for (file, keeping) in claim.who_does_it_instead {
-            let text = std::fs::read_to_string(root.join(file)).unwrap_or_else(|error| {
-                panic!(
-                    "«{}» points at {file}, which cannot be read: {error}",
-                    claim.class
-                )
-            });
-            assert!(
-                text.contains(keeping),
-                "«{}» points at {file} as the keeper, and it no longer holds `{keeping}`",
-                claim.class
-            );
+        for keeper in claim.kept_instead.into_iter().flat_map(flow::keepers_reading) {
+            let text =
+                std::fs::read_to_string(root.join(keeper.lives_in)).unwrap_or_else(|error| {
+                    panic!(
+                        "the census names {} as a keeper, and it cannot be read: {error}",
+                        keeper.lives_in
+                    )
+                });
+            for line in keeper.the_lines {
+                assert!(
+                    text.contains(line),
+                    "the census calls «{}» a keeper in {}, and that file no longer holds `{line}`",
+                    keeper.name,
+                    keeper.lives_in
+                );
+            }
         }
         let key = format!("run.failure.{}", claim.class);
         let english = catalogue::look("en", &key, &[])
@@ -340,22 +343,59 @@ fn a_refusal_that_names_a_keeper_finds_the_keeper_in_the_tree() {
     }
 }
 
+/// The general rule this file exists for: a refusal may say nothing reads a
+/// thing only while the census says so too, and what it puts in the reader's
+/// hands instead has to be the census's own words, not a copy of them.
+#[test]
+fn a_refusal_that_says_nothing_reads_it_is_answered_by_the_census_and_quotes_it() {
+    let refused = refusals();
+    for claim in CLAIMS {
+        let Some((_, error)) = refused.iter().find(|(_, one)| one.class == claim.class) else {
+            continue;
+        };
+        if let Some(reads) = claim.nobody_reads {
+            let keepers: Vec<&str> = flow::keepers_reading(reads)
+                .map(|keeper| keeper.name)
+                .collect();
+            assert!(
+                keepers.is_empty(),
+                "«{}» refuses because nothing reads {reads:?}, and the census now names \
+                 {keepers:?}: either the refusal fires, or it is a lie",
+                claim.class
+            );
+        }
+        if let Some(reads) = claim.kept_instead {
+            let said = flow::keepers_said(reads);
+            assert!(!said.is_empty(), "the census keeps nobody for {reads:?}");
+            assert!(
+                error.said.contains(&said),
+                "«{}» points at the keepers of {reads:?} in words of its own. The census says \
+                 «{said}», and the refusal says:\n{}",
+                claim.class,
+                error.said
+            );
+        }
+    }
+}
+
 /// The row that asked for this file: in a tree where a beat starts what is
 /// due, a periodic trigger may be refused, but never as if nobody kept the time.
 #[test]
 fn a_periodic_trigger_in_a_tree_with_a_beat_is_not_refused_as_if_nobody_kept_the_time() {
     let root = root();
-    for beat in [
-        "crates/sailor/src/flow_cmd/beat.rs",
-        "desktop/src-tauri/src/beat.rs",
-    ] {
-        let text = std::fs::read_to_string(root.join(beat)).expect("the beat is there");
+    let mut beats = 0usize;
+    for keeper in flow::keepers_reading(Reads::FlowSchedule) {
+        let text =
+            std::fs::read_to_string(root.join(keeper.lives_in)).expect("the keeper is there");
         assert!(
             text.contains("flow::is_due(schedule"),
-            "{beat} no longer judges a schedule: the beat is gone, and every claim about it \
-             has to be re-read"
+            "{} no longer judges a schedule: the beat is gone, and every claim about it \
+             has to be re-read",
+            keeper.lives_in
         );
+        beats += 1;
     }
+    assert!(beats >= 2, "the census lost a keeper of the flow's schedule");
     let periodic = SHAPES
         .iter()
         .find(|shape| shape.kind == "periodic")

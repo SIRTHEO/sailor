@@ -16,6 +16,7 @@ mod schema;
 mod streak;
 pub mod subflow;
 pub mod system;
+pub mod timekeeping;
 pub mod workspace;
 
 pub use executor::{
@@ -34,4 +35,7 @@ pub use record::{
 };
 pub use schedule::{is_due, Recurrence, Schedule, Weight};
 pub use schema::{SchemaError, ValueSchema};
+pub use timekeeping::{
+    keepers_reading, keepers_said, Keeper, Reads, KEEPERS, WINDOW_BEAT_EVERY_SECONDS,
+};
 pub use streak::{faults_due, FailureStreak, FaultToWrite, FAILURES_THAT_MAKE_A_FAULT};

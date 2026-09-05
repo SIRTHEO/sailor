@@ -188,8 +188,8 @@ fn not_listening_yet(descriptor: &TriggerDescriptor) -> String {
     said
 }
 
-/// What the descriptor declared, handed back next to the keeper of time that
-/// does exist, and what that keeper would not honour.
+/// What the descriptor declared, next to the keepers `flow::timekeeping` hands
+/// back. Naming one from here would age the moment it moved.
 fn periodic_source_not_read(descriptor: &TriggerDescriptor) -> String {
     let declared = match &descriptor.periodic {
         Some(periodic) => format!(
@@ -199,16 +199,15 @@ fn periodic_source_not_read(descriptor: &TriggerDescriptor) -> String {
         // Loading prevents this; reaching it means the fault is there.
         None => "it declares nothing about when it fires".to_owned(),
     };
+    let on_the_schedule = flow::keepers_said(flow::Reads::FlowSchedule);
     let mut said = format!(
-        "the trigger «{}» is fired by the clock, and the clock is kept on the flow's own \
-         `schedule`, not on this source: the window beats every minute and `sailor flow tick` \
-         judges the same way, and both read the recurrence off the flow file. \
-         This source declares {declared}, and nothing reads it. \
+        "the trigger «{}» would be fired by a clock, and nothing in Sailor reads the \
+         recurrence a trigger source declares for itself. This source declares {declared}. \
+         What does keep time reads the flow's own `schedule` instead: {on_the_schedule}. \
          What works today: move that recurrence into the flow's `schedule` and give this step \
          the manual shape, which carries the signal with it. \
-         Know what that keeper does not cover: the beat lives only while the window is open, \
-         nobody catches up the occurrences that went by while it was closed, and outside it \
-         `sailor flow tick` runs when something calls it.",
+         Know what those keepers do not cover: nobody catches up the occurrences that go by \
+         while none of them is looking.",
         descriptor.id
     );
     if let Some(periodic) = &descriptor.periodic {
