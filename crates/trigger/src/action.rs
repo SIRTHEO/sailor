@@ -123,8 +123,8 @@ impl Action for TriggerAction {
             // The same border, on the other side: the clock is wound, but on
             // the flow's own schedule, and nothing reads the one declared here.
             Kind::Periodic => Err(ActionError::new(
-                "nobody_keeps_the_time",
-                nobody_keeps_the_time(descriptor),
+                "periodic_source_not_read",
+                periodic_source_not_read(descriptor),
             )),
         }
     }
@@ -186,7 +186,7 @@ fn not_listening_yet(descriptor: &TriggerDescriptor) -> String {
 
 /// What the descriptor declared, handed back next to the keeper of time that
 /// does exist, and what that keeper would not honour.
-fn nobody_keeps_the_time(descriptor: &TriggerDescriptor) -> String {
+fn periodic_source_not_read(descriptor: &TriggerDescriptor) -> String {
     let declared = match &descriptor.periodic {
         Some(periodic) => format!(
             "it declares {:?}, a missed run answered with {:?}, and at most {} run(s) at once",
@@ -340,9 +340,9 @@ mod tests {
             "descriptor_paths": [file.to_string_lossy()],
             "include_defaults": false
         }))
-        .expect_err("nobody keeps the time");
+        .expect_err("nothing reads this source's recurrence");
 
-        assert_eq!(error.class, "nobody_keeps_the_time");
+        assert_eq!(error.class, "periodic_source_not_read");
         assert!(error.said.contains("ogni-mezz-ora"), "{}", error.said);
         // What it declared comes back out: the missing piece is a reader of the
         // declaration, not the declaration.
@@ -374,6 +374,7 @@ mod tests {
         }))
         .expect_err("nothing reads this declaration");
 
+        assert_eq!(error.class, "periodic_source_not_read");
         assert!(error.said.contains("`schedule`"), "{}", error.said);
         assert!(error.said.contains("flow tick"), "{}", error.said);
         // And the hole that keeper leaves, which is the half a reader would
