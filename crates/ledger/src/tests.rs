@@ -3091,3 +3091,166 @@ fn a_store_from_before_the_line_opens_and_reads_its_steps() {
     let steps = reopened.steps("run-2").expect("read it back");
     assert_eq!(steps[0].ran, Some(a_line()));
 }
+
+// ── how many calls a record would have answered ──────────────────────────
+
+fn engine_call(
+    ledger: &Ledger,
+    run_id: &str,
+    input: Value,
+    model: &str,
+    outcome: Outcome,
+    cost: Option<i64>,
+) {
+    let record = StepRecord::started(run_id, "ask", 1, 7, vec![], input, vec![], 100);
+    ledger
+        .append_step_started(&record)
+        .expect("start the step");
+    ledger
+        .close_step(
+            run_id,
+            "ask",
+            1,
+            7,
+            Completion {
+                outcome,
+                output: Some(json!({})),
+                said: None,
+                failure_class: None,
+                ..completion()
+            },
+        )
+        .expect("close the step");
+    let mut call = call_with(&format!("{run_id}-call"), Some(10), cost);
+    call.run_id = run_id.to_owned();
+    call.step_id = Some("ask".to_owned());
+    call.actual_model = model.to_owned();
+    call.started_at = 100 + run_id.len() as i64;
+    ledger
+        .record_model_call(&call)
+        .expect("record the call");
+}
+
+fn asking(text: &str) -> Value {
+    json!({"tool": "an-engine", "stdin": text})
+}
+
+/// The measurement's floor: counting nothing here says zero on a store full of
+/// repeats, and the decision would be taken on a lie.
+#[test]
+fn a_repeat_of_a_successful_call_would_have_been_answered() {
+    let directory = TestDirectory::new("repeats");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    engine_call(&ledger, "run-a", asking("count the crates"), "m", Outcome::Went, Some(30));
+    engine_call(&ledger, "run-b", asking("count the crates"), "m", Outcome::Went, Some(70));
+
+    let tally = ledger.repeated_engine_calls().expect("count the repeats");
+    assert_eq!(tally.calls, 2, "{tally:?}");
+    assert_eq!(tally.served, 1, "{tally:?}");
+    assert_eq!(tally.served_micros, 70, "{tally:?}");
+    assert_eq!(tally.spent_micros, 100, "{tally:?}");
+}
+
+/// Drop the prompt from the key and the second call is answered with the
+/// first one's output: the stale answer the whole idea risks.
+#[test]
+fn a_changed_prompt_is_not_the_same_call() {
+    let directory = TestDirectory::new("other-question");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    engine_call(&ledger, "run-a", asking("count the crates"), "m", Outcome::Went, Some(30));
+    engine_call(&ledger, "run-b", asking("count the tests"), "m", Outcome::Went, Some(70));
+
+    let tally = ledger.repeated_engine_calls().expect("count the repeats");
+    assert_eq!(tally.served, 0, "{tally:?}");
+    assert_eq!(tally.served_micros, 0, "{tally:?}");
+}
+
+/// Same words, other engine: the recorded output is that engine's, and handing
+/// it back as this one's is an answer nobody gave.
+#[test]
+fn another_model_is_another_call() {
+    let directory = TestDirectory::new("other-model");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    engine_call(&ledger, "run-a", asking("count the crates"), "one", Outcome::Went, Some(30));
+    engine_call(&ledger, "run-b", asking("count the crates"), "two", Outcome::Went, Some(70));
+
+    let tally = ledger.repeated_engine_calls().expect("count the repeats");
+    assert_eq!(tally.served, 0, "{tally:?}");
+}
+
+/// A broken step has an output too, and it is the shape of the failure: served
+/// back it turns one failed run into every later run failing the same way.
+#[test]
+fn a_call_that_broke_never_answers_for_a_later_one() {
+    let directory = TestDirectory::new("broken-answers-nothing");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    engine_call(&ledger, "run-a", asking("count the crates"), "m", Outcome::Broke, Some(30));
+    engine_call(&ledger, "run-b", asking("count the crates"), "m", Outcome::Went, Some(70));
+
+    let tally = ledger.repeated_engine_calls().expect("count the repeats");
+    assert_eq!(tally.served, 0, "{tally:?}");
+}
+
+/// The step can read `Went` while the engine declared an error type.
+#[test]
+fn a_call_the_engine_refused_never_answers_for_a_later_one() {
+    let directory = TestDirectory::new("refused-answers-nothing");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    let record = StepRecord::started("run-a", "ask", 1, 7, vec![], asking("ask"), vec![], 100);
+    ledger.append_step_started(&record).expect("start the step");
+    ledger
+        .close_step(
+            "run-a",
+            "ask",
+            1,
+            7,
+            Completion {
+                outcome: Outcome::Went,
+                output: Some(json!({})),
+                said: None,
+                failure_class: None,
+                ..completion()
+            },
+        )
+        .expect("close the step");
+    let mut refused = call_with("run-a-call", Some(10), Some(30));
+    refused.run_id = "run-a".to_owned();
+    refused.step_id = Some("ask".to_owned());
+    refused.error_type = Some("quota_exhausted".to_owned());
+    refused.started_at = 100;
+    ledger.record_model_call(&refused).expect("record the call");
+    engine_call(&ledger, "run-b", asking("ask"), "", Outcome::Went, Some(70));
+
+    let tally = ledger.repeated_engine_calls().expect("count the repeats");
+    assert_eq!(tally.served, 0, "{tally:?}");
+}
+
+/// A step that broke while resolving a reference records the pointer, not the
+/// prompt: two such records match whatever the two prompts would have been.
+#[test]
+fn a_pointer_the_record_never_resolved_is_counted_apart() {
+    let directory = TestDirectory::new("pointer");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    let unresolved = json!({"tool": "an-engine", "stdin": {"$from": "/before/stdout"}});
+    engine_call(&ledger, "run-a", unresolved.clone(), "m", Outcome::Went, Some(30));
+    engine_call(&ledger, "run-b", unresolved, "m", Outcome::Went, Some(70));
+
+    let tally = ledger.repeated_engine_calls().expect("count the repeats");
+    assert_eq!(tally.served, 1, "{tally:?}");
+    assert_eq!(tally.served_on_an_unresolved_prompt, 1, "{tally:?}");
+}
+
+/// An engine that declares no cost leaves the row at `NULL`; folded into the
+/// money it reports a saving of nothing on a call that really was paid for.
+#[test]
+fn a_repeat_no_engine_priced_is_held_apart_from_the_money() {
+    let directory = TestDirectory::new("repeat-without-a-price");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    engine_call(&ledger, "run-a", asking("count"), "m", Outcome::Went, Some(30));
+    engine_call(&ledger, "run-b", asking("count"), "m", Outcome::Went, None);
+
+    let tally = ledger.repeated_engine_calls().expect("count the repeats");
+    assert_eq!(tally.served, 1, "{tally:?}");
+    assert_eq!(tally.served_without_a_cost, 1, "{tally:?}");
+    assert_eq!(tally.served_micros, 0, "{tally:?}");
+}
