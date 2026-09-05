@@ -188,6 +188,9 @@ const ACTION_KIND: Record<string, StepKind> = {
   // on the world, which is what it is.
   apply_patch: "gesture",
   subflow: "subflow",
+  // The same flow once per element of a list: a subflow repeated, so it draws
+  // in that family rather than inventing one.
+  for_each: "subflow",
 };
 
 export function kindOf(action: string): StepKind {
