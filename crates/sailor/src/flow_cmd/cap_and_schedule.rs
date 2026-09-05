@@ -252,7 +252,7 @@ pub(super) fn set_cap(sources: &[FlowSource], name: &str, value: &str) -> Result
             "cli.flow.cap_unchanged",
             &[
                 ("flow", name),
-                ("origin", &source.origin.to_string()),
+                ("origin", source.origin),
                 ("cap", &said_cap(before)),
             ],
         ));
@@ -263,7 +263,7 @@ pub(super) fn set_cap(sources: &[FlowSource], name: &str, value: &str) -> Result
         "cli.flow.cap_written",
         &[
             ("flow", name),
-            ("origin", &source.origin.to_string()),
+            ("origin", source.origin),
             ("before", &said_cap(before)),
             ("after", &said_cap(wanted)),
             ("directory", &source.dir.display().to_string()),
@@ -525,7 +525,7 @@ pub(super) fn set_schedule(
             "cli.flow.schedule_unchanged",
             &[
                 ("flow", name),
-                ("origin", &source.origin.to_string()),
+                ("origin", source.origin),
                 ("before", &before),
             ],
         ));
@@ -537,7 +537,7 @@ pub(super) fn set_schedule(
         "cli.flow.schedule_written",
         &[
             ("flow", name),
-            ("origin", &source.origin.to_string()),
+            ("origin", source.origin),
             ("before", &before),
             ("after", &after),
             ("directory", &source.dir.display().to_string()),
@@ -565,7 +565,7 @@ fn where_it_lives<'a>(
                     "cli.flow.does_not_load_so_not_rewritten",
                     &[
                         ("flow", name),
-                        ("origin", &source.origin.to_string()),
+                        ("origin", source.origin),
                         ("reason", &reason),
                     ],
                 ))

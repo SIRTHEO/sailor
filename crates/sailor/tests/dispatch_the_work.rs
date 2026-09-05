@@ -155,7 +155,7 @@ fn run_with(
     registry: &ActionRegistry,
 ) -> (Execution, InMemoryRecordStore) {
     let project = Project::new();
-    let mut store = InMemoryRecordStore::default();
+    let store = InMemoryRecordStore::default();
     let mut shared = SharedState::new();
     shared.insert(
         flow::WORKSPACE_ROOT.to_owned(),
@@ -172,7 +172,7 @@ fn run_with(
         spend_cap_micros: None,
     };
     let execution = InProcessExecutor
-        .execute(graph, request, &mut store, registry, &mut Tick::new(0))
+        .execute(graph, request, &store, registry, &Tick::new(0))
         .expect("l'esecuzione non deve rompersi");
     (execution, store)
 }
@@ -815,7 +815,7 @@ fn the_declared_reference_puts_the_dispatch_answer_on_the_engines_input() {
     shared.insert(flow::CURRENT_RUN.to_owned(), json!("prova"));
     shared.insert(flow::CURRENT_STEP.to_owned(), json!("engine_a"));
     let outcome = action
-        .execute(&input, &mut shared)
+        .execute(&input, &shared)
         .expect("l'azione legge il rinvio e la forma è nel prompt");
     let flow::ActionOutcome::Went(output) = outcome else {
         panic!("un motore che risponde è sempre Went")
