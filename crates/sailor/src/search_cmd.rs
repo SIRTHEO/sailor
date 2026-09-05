@@ -46,7 +46,12 @@ fn report(sources: &[FlowSource], ledger_dir: &std::path::Path, query: &str) -> 
     match Ledger::open(ledger_dir) {
         Ok(ledger) => {
             let hits = ledger
-                .search(query, actions::search::RECENT_RUNS, actions::search::RECENT_STEPS)
+                .search(
+                    query,
+                    actions::search::RECENT_RUNS,
+                    actions::search::RECENT_STEPS,
+                    actions::search::RECENT_EVENTS,
+                )
                 .map_err(|error| error.to_string())?;
             lines.push(catalogue::say(
                 "cli.search.ledger_found",
