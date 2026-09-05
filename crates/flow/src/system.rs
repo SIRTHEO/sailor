@@ -86,6 +86,12 @@ pub const FLOWS: &[(&str, &str)] = &[
         "draft-a-flow",
         include_str!("../system/draft-a-flow.flow.json"),
     ),
+    // Development takes the oldest open fault as its mandate, and the engine
+    // is never started when nothing is open.
+    (
+        "take-the-next-fault",
+        include_str!("../system/take-the-next-fault.flow.json"),
+    ),
 ];
 
 /// A place where flows are looked for, with the name a reader sees.
