@@ -462,6 +462,8 @@
   "cli.worktree.directory_gone": "la sua cartella non c'è più",
   "cli.worktree.kept_from_runs": "{count} di queste sono state aperte per un passo di una corsa e sono ancora in piedi: un passo toglie il proprio albero, a meno che quello che contiene se ne andrebbe con lui.",
   "cli.worktree.locked": "bloccato",
+  "cli.worktree.names_against": "{count} rami sono chiamati contro la convenzione — il tronco è «sorgenti», il lavoro sta su «work/<cosa-fa>», e un albero aperto dal meccanismo si nomina da sé:",
+  "cli.worktree.names_follow": "ogni ramo è chiamato per il lavoro che fa",
   "engine.tree_kept_over_a_commit": "L'albero {tree} resta: sta sul commit {commit}, e nessun ramo di questo repository ha quel commit.",
   "engine.tree_kept_over_work": "L'albero {tree} resta, perché git non ha voluto toglierlo: {said}",
   "flow.for_each.child_died": "il filo che eseguiva l'elemento {index} è morto prima di poter dire com'è finito",
