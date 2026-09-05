@@ -217,6 +217,7 @@ fn calling_step(id: &str, calls: &str, inputs: Value) -> Step {
         max_attempts: 1,
         ask_again_after_secs: None,
         retry_after_secs: None,
+        phase: None,
     }
 }
 
