@@ -58,7 +58,7 @@ and opens terminals that know which engine runs in them.
 
 ```sh
 cargo build --workspace
-cargo test --workspace --no-fail-fast   # 1,267 tests across 112 binaries
+cargo test --workspace --no-fail-fast   # 1,613 tests across 120 binaries
 ```
 
 Rust 1.89 or newer. No service and no database to start: the store is a SQLite
