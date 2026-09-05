@@ -89,7 +89,7 @@ fn step(id: &str, deps: &[&str], action: &str, with: Value) -> Step {
 #[test]
 fn a_key_decided_by_the_step_before_reaches_the_real_store() {
     let dir = TestDirectory::new("chiave-dal-passo-prima");
-    let ledger = Ledger::open(&dir.0.join("deposito")).expect("aprire il deposito");
+    let ledger = Ledger::open(dir.0.join("deposito")).expect("aprire il deposito");
     let actions = registry::default_registry(Some(ledger.clone()), None);
 
     let graph = Graph::new(vec![
@@ -120,7 +120,7 @@ fn a_key_decided_by_the_step_before_reaches_the_real_store() {
     ])
     .expect("grafo valido");
 
-    let mut store = ledger.clone();
+    let store = ledger.clone();
     InProcessExecutor
         .execute(
             &graph,
@@ -131,7 +131,7 @@ fn a_key_decided_by_the_step_before_reaches_the_real_store() {
                 shared: SharedState::new(),
                 spend_cap_micros: None,
             },
-            &mut store,
+            &store,
             &actions,
             &SystemClock,
         )
@@ -145,7 +145,6 @@ fn a_key_decided_by_the_step_before_reaches_the_real_store() {
         .filter_map(|record| {
             record
                 .outcome
-                .clone()
                 .map(|outcome| (record.step_id.clone(), outcome))
         })
         .collect();
