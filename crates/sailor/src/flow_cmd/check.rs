@@ -12,7 +12,8 @@ use super::cost::{in_units, models_seen_by, what_is_priced};
 use super::engines::{engine_lines_into, login_states_into};
 use super::extensions::{extensions_of_this_machine_into, undeclared_extensions_named_in_text};
 use super::hazards::{
-    blind_steps_asking_for_a_session, handed_without_choices, hardcoded_paths,
+    blind_steps_asking_for_a_session, deciders_that_are_not_checks, handed_without_choices,
+    hardcoded_paths,
     outside_text_in_command, pointers_that_cannot_match, undelimited_commits, HardcodedPath,
 };
 use super::{missing_actions, one_flow, open_default_ledger};
@@ -33,9 +34,10 @@ pub(super) fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) 
         probe: &real,
         profiles: &profiles,
     };
+    let registry = default_registry(open_default_ledger(), None);
     let (mut report, unknown) = check_report(
         &flow,
-        &default_registry(open_default_ledger(), None),
+        &registry,
         Some(&tools),
         if try_engines { Some(&world) } else { None },
     );
@@ -120,6 +122,16 @@ pub(super) fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) 
         return Err(catalogue::say(
             "cli.flow.blind_and_asking_for_a_session",
             &[("flow", &flow.id), ("steps", &seeing.join(", "))],
+        ));
+    }
+    // An error, not a warning: a run that closes on this step closes without
+    // asking anybody, and the whole saving depends on what said yes.
+    let deciding = deciders_that_are_not_checks(&flow, &registry);
+    if !deciding.is_empty() {
+        println!("{report}");
+        return Err(catalogue::say(
+            "cli.flow.decides_done_without_a_check",
+            &[("flow", &flow.id), ("steps", &deciding.join(", "))],
         ));
     }
     let unasked = handed_without_choices(&flow);

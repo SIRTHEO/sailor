@@ -74,7 +74,7 @@ pub fn halted_by_hand(execution: &Execution) -> Option<String> {
     }
 }
 
-/// Which of the four reasons closed the run, if one of them did.
+/// Which of the reasons closed the run, if one of them did.
 pub fn how_it_stopped(execution: &Execution) -> Option<StopReason> {
     match execution.decisions.last() {
         Some(Decision::Halted { reason, .. }) => Some(*reason),
@@ -95,11 +95,12 @@ pub fn why_it_halted(reason: StopReason, not_started: &[String]) -> String {
     )
 }
 
-/// What one of the four reasons says to a person.
+/// What the reason says to a person.
 pub fn say_the_reason(reason: StopReason) -> String {
     catalogue::say(
         match reason {
             StopReason::Promise => "run.stopped.promise",
+            StopReason::Checked => "run.stopped.checked",
             StopReason::Turns => "run.stopped.turns",
             StopReason::ByHand => "run.stopped.by_hand",
             StopReason::Wall => "run.stopped.wall",
