@@ -163,6 +163,56 @@ fn take_out_of(tree: &Path, relative: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// How one judge came back. **Not measured is its own state**: a judge whose
+/// oracle is missing said nothing about the tree — fault 100.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Verdict {
+    Green,
+    Red,
+    NotMeasured,
+}
+
+/// Passing is not the same as having measured, and the judge is the only one
+/// that can tell: it says so on its own output, and this reads it there.
+fn verdict_of(passed: bool, said: &str) -> Verdict {
+    if !passed {
+        Verdict::Red
+    } else if said.contains(workspace::MEASURED_NOTHING) {
+        Verdict::NotMeasured
+    } else {
+        Verdict::Green
+    }
+}
+
+/// The tally of the run, kept apart so a green count never absorbs the others.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Verdicts {
+    green: usize,
+    red: usize,
+    not_measured: usize,
+}
+
+impl Verdicts {
+    /// All three numbers whichever way the run went, with each key written out
+    /// where the scan over both catalogues can see it.
+    fn closing_line(&self) -> String {
+        let held = [
+            ("green", self.green.to_string()),
+            ("red", self.red.to_string()),
+            ("not_measured", self.not_measured.to_string()),
+        ];
+        let said: Vec<(&str, &str)> =
+            held.iter().map(|(name, value)| (*name, value.as_str())).collect();
+        if self.red > 0 {
+            catalogue::say("cli.ratchet.some_red", &said)
+        } else if self.not_measured > 0 {
+            catalogue::say("cli.ratchet.nothing_red_but_unmeasured", &said)
+        } else {
+            catalogue::say("cli.ratchet.all_green", &said)
+        }
+    }
+}
+
 /// How far the change moved the archive, in the two directions a person needs
 /// told apart before trusting the verdict.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -260,7 +310,7 @@ fn measured(only: &Option<String>) -> Result<bool, String> {
             ],
         )
     );
-    let mut all_green = true;
+    let mut counted = Verdicts::default();
     for judge in &judges {
         // Touched so it recompiles: `env!("CARGO_MANIFEST_DIR")` is baked in at
         // compile time, and a cached binary would measure the previous tree.
@@ -278,28 +328,36 @@ fn measured(only: &Option<String>) -> Result<bool, String> {
             // trees' binaries in one place, and a release running at the same
             // time went red on a target it could not name.
             .env("CARGO_TARGET_DIR", root.join("target").join("ratchet"))
-            .args(["test", "--quiet", "-p", &judge.package, "--test", &judge.test])
+            // `--nocapture`: saying it measured nothing is what a judge does
+            // while passing, and a passing judge's words are otherwise dropped.
+            .args(["test", "--quiet", "-p", &judge.package, "--test", &judge.test, "--", "--nocapture"])
             .output()
             .map_err(|error| format!("cargo test: {error}"))?;
-        if out.status.success() {
-            println!("  {} {}", catalogue::say("cli.ratchet.green", &[]), judge.test);
-            continue;
-        }
-        all_green = false;
-        println!("  {} {}", catalogue::say("cli.ratchet.red", &[]), judge.test);
         let text = String::from_utf8_lossy(&out.stdout) + String::from_utf8_lossy(&out.stderr);
-        for line in text.lines().filter(|line| says_what_to_write(line)) {
-            println!("      {}", line.trim());
+        match verdict_of(out.status.success(), &text) {
+            Verdict::Green => {
+                counted.green += 1;
+                println!("  {} {}", catalogue::say("cli.ratchet.green", &[]), judge.test);
+            }
+            Verdict::NotMeasured => {
+                counted.not_measured += 1;
+                println!("  {} {}", catalogue::say("cli.ratchet.not_measured", &[]), judge.test);
+                let said = |line: &&str| line.contains(workspace::MEASURED_NOTHING);
+                for line in text.lines().filter(said) {
+                    println!("      {}", line.trim());
+                }
+            }
+            Verdict::Red => {
+                counted.red += 1;
+                println!("  {} {}", catalogue::say("cli.ratchet.red", &[]), judge.test);
+                for line in text.lines().filter(|line| says_what_to_write(line)) {
+                    println!("      {}", line.trim());
+                }
+            }
         }
     }
-    println!(
-        "{}",
-        catalogue::say(
-            if all_green { "cli.ratchet.all_green" } else { "cli.ratchet.some_red" },
-            &[],
-        )
-    );
-    Ok(all_green)
+    println!("{}", counted.closing_line());
+    Ok(counted.red == 0)
 }
 
 /// The lines of a red judge worth reading: what the judge said, and the
@@ -437,6 +495,34 @@ mod tests {
         )
         .expect("the sentence");
         assert!(said.contains("1 removed file(s) taken away"), "{said}");
+    }
+
+    /// **A RUN WITH NOTHING RED IS NOT YET A CLEAN RUN**, and the closing line
+    /// refuses to say every seed holds while a judge measured nothing.
+    #[test]
+    fn a_judge_that_measured_nothing_is_not_counted_among_the_ones_that_held() {
+        let clean = Verdicts { green: 44, red: 0, not_measured: 0 };
+        let blind = Verdicts { green: 41, red: 0, not_measured: 3 };
+        let fallen = Verdicts { green: 40, red: 1, not_measured: 3 };
+
+        assert!(clean.closing_line().contains("every seed holds"), "{}", clean.closing_line());
+        assert!(!blind.closing_line().contains("every seed holds"), "{}", blind.closing_line());
+        assert!(blind.closing_line().contains("3 not measured"), "{}", blind.closing_line());
+        assert!(blind.closing_line().contains("41 green"), "{}", blind.closing_line());
+        assert!(fallen.closing_line().contains("a seed does not hold"), "{}", fallen.closing_line());
+        assert!(fallen.closing_line().contains("3 not measured"), "{}", fallen.closing_line());
+    }
+
+    /// **PASSING IS NOT MEASURING.** A judge that exits zero having said it
+    /// measured nothing is the false green of fault 100, and only its own
+    /// output tells the two apart.
+    #[test]
+    fn a_judge_that_passed_without_measuring_is_not_counted_green() {
+        let blind = format!("running 2 tests\n{} nothing to ask\nok.", workspace::MEASURED_NOTHING);
+        assert_eq!(verdict_of(true, &blind), Verdict::NotMeasured);
+        assert_eq!(verdict_of(true, "running 2 tests\nok."), Verdict::Green);
+        assert_eq!(verdict_of(false, &blind), Verdict::Red);
+        assert_eq!(verdict_of(false, "assertion failed"), Verdict::Red);
     }
 
     /// Only the lines a person acts on come through.
