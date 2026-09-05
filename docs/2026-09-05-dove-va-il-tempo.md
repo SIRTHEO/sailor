@@ -189,10 +189,14 @@ E i cinque concetti di Theo della stessa sera:
    pure — `remember` come azione e `sailor remember` a mano, quattro tipi,
    provenienza, `valid_from` che resta e `valid_until` invece della
    cancellazione, **un segreto rifiutato prima di essere scritto** — e il saluto
-   di ogni terminale ne dice il numero e le ultime tre. Manca il file generato
-   per le tre righe di comando (la funzione che lo rende c'è, `page()`, provata
-   su 250 memorie) e l'indice su eventi e guasti. Gli annunci fra agenti c'erano
-   già (D.1 del mandato).
+   di ogni terminale ne dice il numero e le ultime tre. Poi, dagli agenti della
+   stessa notte: la pagina delle memorie è un file, `state/memory.md`, riscritto
+   da `remember` e da `sailor remember` e nominato nel saluto con le sue prime
+   tre righe (`sailor memory page`); eventi e guasti sono nell'indice di
+   `sailor search` (`event:<seq>`, `fault:<n>`). Manca ancora il modo di dire a
+   una riga di comando che legge un file di configurazione dove sta la pagina,
+   e il flusso di consolidamento. Gli annunci fra agenti c'erano già (D.1 del
+   mandato).
 3. **I workflow degli altri e i nostri**:
    `docs/2026-09-05-i-workflow-degli-altri-e-i-flussi-di-sailor.md`.
 4. **La lavagna**: la metà del motore c'è ed è provata dal vivo. `draft-a-flow`
@@ -206,5 +210,8 @@ E i cinque concetti di Theo della stessa sera:
    fine corsa la tela rilegge i flussi. Da provare nella finestra rilasciata
    (`sailor release window`); dalla riga di comando lo schizzo resta testo,
    `sailor flow run draft-a-flow "…"`.
-5. **Le prestazioni**: non iniziato. Va fatto con ricerca vera, non a memoria.
+5. **Le prestazioni**: `docs/2026-09-05-dove-sailor-e-lento.md`, tutto
+   misurato: il rilascio da 7 min 44 s a 47 s per un commit di sola
+   documentazione; il costo dell'`fsync` (0,24 ms, resta FULL; `fullfsync` è
+   una scelta di Theo); il passo motore come costo vero di un flusso.
 
