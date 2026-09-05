@@ -604,6 +604,7 @@ fn write_self_declared_turns(
             // conversazione non è di Sailor e non si può riprendere da qui.
             session_id: None,
             work_kind: None,
+            fell_back_from: Vec::new(),
             // Il perché della riga sta nel `purpose`: chi somma le chiamate di
             // una corsa deve poter separare ciò che il motore ha misurato da ciò
             // che qualcuno ha dichiarato di sé.

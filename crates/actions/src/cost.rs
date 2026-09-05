@@ -93,6 +93,17 @@ pub(crate) fn now_secs() -> i64 {
         .unwrap_or_default()
 }
 
+/// What the chain did before this engine was asked.
+///
+/// The two lists answer two different questions and never merge: `tried_before`
+/// is who was started and could not work, `fell_back_from` is who was never
+/// reached at all.
+#[derive(Default)]
+pub(crate) struct Chain {
+    pub(crate) tried_before: Vec<String>,
+    pub(crate) fell_back_from: Vec<String>,
+}
+
 /// Ciò che si sa di una chiamata appena finita, prima di darle un prezzo.
 pub(crate) struct Spent {
     pub(crate) reading: Reading,
@@ -128,7 +139,7 @@ pub(crate) struct Spent {
 pub(crate) fn record_the_call(
     record: &Recording<'_>,
     candidate: &Candidate,
-    tried_before: &[String],
+    chain: &Chain,
     spent: Spent,
 ) {
     let Some(cli) = candidate.id.as_deref() else {
@@ -216,7 +227,8 @@ pub(crate) fn record_the_call(
         // da sé la variabile di casa faceva partire il motore altrove, e qui
         // finiva scritto il nome del profilo attivo.
         engine_identity: spent.identity,
-        retry_chain: tried_before.to_vec(),
+        retry_chain: chain.tried_before.clone(),
+        fell_back_from: chain.fell_back_from.clone(),
         error_type: spent.error_type.map(str::to_owned),
         started_at: spent.started_at,
         ended_at: Some(spent.ended_at),
@@ -1144,6 +1156,80 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         with_price_list(None, || plain.execute(&input, &shared("corsa-2", "passo")))
             .expect("the chain's engine answers");
         assert_eq!(calls_in(&dir.join("deposito-2"))[0].cli, "catena");
+    }
+
+    /// **A PREFERRED ENGINE THAT IS NOT HERE IS WRITTEN DOWN.**
+    ///
+    /// The step answers on the chain it already had, and the row of whoever
+    /// answered names the engine it fell back from: without that, a paid run
+    /// reads like one the local engine did for free. Never started is not
+    /// failed, so it goes in its own column and not in the retry chain.
+    #[test]
+    fn an_absent_preferred_engine_is_named_on_the_row_of_whoever_answered() {
+        let dir = scratch("ripiego-scritto");
+        let chained = fake_engine(&dir, "catena", WRAPS_ON_DEMAND);
+        let table = dir.join("strengths.json");
+        std::fs::write(&table, r#"{"measured_on": "a test", "rows": {"mechanical": ["locale"]}}"#)
+            .expect("write the table");
+
+        let action = ExternalEngineAction::resolving_with(TwoEngines {
+            bins: [("catena", chained)].into_iter().collect(),
+        })
+        .recording_to(Some(Ledger::open(dir.join("deposito")).expect("open")))
+        .strong_by(Some(table));
+        let input = json!({"tool": "catena", "kind": "mechanical", "stdin": "ciao", "timeout_secs": 10});
+        with_price_list(None, || action.execute(&input, &shared("corsa-1", "passo")))
+            .expect("the chain answers when the table's engine is not here");
+
+        let calls = calls_in(&dir.join("deposito"));
+        assert_eq!(calls[0].cli, "catena", "the chain did the work");
+        assert_eq!(
+            calls[0].fell_back_from,
+            ["locale"],
+            "the row must say the preferred engine was not there"
+        );
+        assert!(calls[0].retry_chain.is_empty(), "nobody was started before it");
+    }
+
+    /// **A STEP THAT DECLARES NO KIND IS NOT MOVED, AND FELL BACK FROM NOBODY.**
+    ///
+    /// Both directions a mutant can break: with the table's engine here the
+    /// chain must still answer, because a preference belongs to a declared
+    /// kind; with it absent the column must stay empty, because a step that
+    /// asked for nothing fell back from nothing.
+    #[test]
+    fn a_step_without_a_kind_keeps_its_chain_and_falls_back_from_nobody() {
+        let dir = scratch("nessuna-forza-dichiarata");
+        let local = fake_engine(&dir, "locale", WRAPS_ON_DEMAND);
+        let chained = fake_engine(&dir, "catena", WRAPS_ON_DEMAND);
+        let table = dir.join("strengths.json");
+        std::fs::write(&table, r#"{"measured_on": "a test", "rows": {"mechanical": ["locale"]}}"#)
+            .expect("write the table");
+        let input = json!({"tool": "catena", "stdin": "ciao", "timeout_secs": 10});
+
+        let both = ExternalEngineAction::resolving_with(TwoEngines {
+            bins: [("locale", local), ("catena", chained.clone())].into_iter().collect(),
+        })
+        .recording_to(Some(Ledger::open(dir.join("deposito")).expect("open")))
+        .strong_by(Some(table.clone()));
+        with_price_list(None, || both.execute(&input, &shared("corsa-1", "passo")))
+            .expect("a step without a kind runs as it always did");
+        let calls = calls_in(&dir.join("deposito"));
+        assert_eq!(calls[0].cli, "catena", "the table must not move a step that declared no kind");
+        assert!(calls[0].fell_back_from.is_empty(), "it fell back from nobody");
+
+        // And with the table's engine missing there is still nothing to name.
+        let alone = ExternalEngineAction::resolving_with(TwoEngines {
+            bins: [("catena", chained)].into_iter().collect(),
+        })
+        .recording_to(Some(Ledger::open(dir.join("deposito-2")).expect("open")))
+        .strong_by(Some(table));
+        with_price_list(None, || alone.execute(&input, &shared("corsa-2", "passo")))
+            .expect("the chain answers");
+        assert!(
+            calls_in(&dir.join("deposito-2"))[0].fell_back_from.is_empty(),
+            "a step that declared no kind fell back from nobody"
+        );
     }
 
     /// **E IL DEPOSITO DEVE DIRLO ANCHE QUANDO L'USCITA È ZERO.**
