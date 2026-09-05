@@ -166,28 +166,22 @@ pub(crate) struct EngineSpec {
     /// quando la forma tollererebbe campi in più.
     #[serde(default)]
     pub(crate) answer_shape: Option<ValueSchema>,
-    /// Le capacità che questo passo chiede al motore: `response_shape`,
-    /// `resume_session`, e qualunque altro nome un descrittore dichiari.
-    ///
-    /// **DICHIARATO QUI E NON ANCORA USATO, DI PROPOSITO.** Chi lo legge oggi è
-    /// `sailor flow check`, che avvisa prima di spendere quando il motore
-    /// scelto non dichiara quella capacità. L'esecuzione non cambia: chi non sa
-    /// imporre una forma alla risposta continua a farsela chiedere nel prompt
-    /// con `answer_shape`, e paga più token — è il vincolo permanente
-    /// «indipendenza dal modello», e quel ripiego resta il ripiego.
-    ///
-    /// **E STA NELLA SPECIFICA PER NON DIVENTARE UN REFUSO.** I campi che
-    /// questa azione non riconosce finiscono in `extra`, e il controllo li
-    /// nomina come «campi che l'azione non conosce»: un passo che dichiara
-    /// onestamente ciò che gli serve si vedrebbe accusare di un errore di
-    /// battitura.
-    ///
-    /// Nessuno lo legge da qui dentro finché le azioni non useranno le
-    /// capacità: il permesso è sulla riga sopra e non su tutta la struttura,
-    /// così il giorno che qualcuno lo usa il permesso sparisce con lui.
+    /// The capabilities this step asks of the engine — `response_shape`,
+    /// `resume_session`, any name a descriptor declares. Read by `flow check`
+    /// alone, which warns before spending when the chosen engine lacks one;
+    /// the run does not change, and asking in the prompt stays the fallback.
+    /// Declared here so the check does not call an honest field a typo.
     #[allow(dead_code)]
     #[serde(default)]
     pub(crate) needs_capabilities: Vec<String>,
+    /// What this step needs installed beside the engine, each `kind:name` as
+    /// `sailor inventory` lists them (`skill:<name>`, `command:/<name>`).
+    /// Read by `flow check` alone, which says per step what this machine has
+    /// and lacks; an absence is a warning, because the step must then work
+    /// worse, not silently. See fault 17.
+    #[allow(dead_code)]
+    #[serde(default)]
+    pub(crate) needs_extensions: Vec<String>,
     /// Se questo passo apre una sessione, ne riprende una, o ne ramifica una.
     ///
     /// Assente — il valore predefinito — vuol dire che il passo apre un
