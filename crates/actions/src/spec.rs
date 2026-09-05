@@ -81,6 +81,13 @@ pub fn engines_named_in(with: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Whether a step's `with` declares its text private. Absent is public, and
+/// any other word is not private either: the run refuses it when it parses the
+/// step, and a check must not call a malformed flow private on its own.
+pub fn private_data_asked_in(with: &Value) -> bool {
+    with.get("data").and_then(Value::as_str) == Some("private")
+}
+
 /// **PERCHÉ QUESTA STRUTTURA RACCOGLIE CIÒ CHE NON CONOSCE INVECE DI SCARTARLO.**
 ///
 /// Il 30/08/2026 un flusso di prova scriveva `"prompt"` dove va `"stdin"`. Il

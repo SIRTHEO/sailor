@@ -278,6 +278,7 @@ pub(super) fn check_report(
             }
             capabilities_into(&mut report, &flow.graph, tools);
             fallbacks_into(&mut report, &flow.graph, tools);
+            data_pacts_into(&mut report, &flow.graph, tools);
             // Senza sonda il rapporto **tace** su questo, invece di dichiarare
             // sane righe che non ha guardato: è la stessa regola del rilevatore
             // assente qui sopra.
@@ -472,6 +473,55 @@ fn capabilities_into(report: &mut String, graph: &Graph, tools: &toolbox::Tools)
 /// sopra: un flusso con un ripiego che non scatta gira, e fa il suo lavoro
 /// finché il primo motore risponde. Non è rotto: è un flusso che ha meno
 /// ripieghi di quanti sembra averne, e chi lancia deve saperlo prima.
+/// A step whose text is private, and the pact of every engine it names. An
+/// engine nobody measured is not a maybe: the run refuses it before spending,
+/// so a flow all of whose engines are refused cannot run anywhere, and saying
+/// so before the run is the whole point of a check.
+fn data_pacts_into(report: &mut String, graph: &Graph, tools: &toolbox::Tools) {
+    use actions::ToolResolver as _;
+
+    let mut shut = Vec::new();
+    for step in graph.steps() {
+        let Some(with) = step.with.as_ref() else {
+            continue;
+        };
+        if !actions::private_data_asked_in(with) {
+            continue;
+        }
+        let chain = engines_of(with);
+        if chain.is_empty() {
+            continue;
+        }
+        let refused: Vec<String> = chain
+            .iter()
+            .filter(|id| !tools.data_pact(id).accepts_private())
+            .map(|id| {
+                catalogue::say(
+                    "cli.flow.private_step_engine_refused",
+                    &[
+                        ("step", &step.id),
+                        ("engine", id),
+                        ("pact", &tools.data_pact(id).to_string()),
+                    ],
+                )
+            })
+            .collect();
+        if refused.len() == chain.len() {
+            shut.extend(refused);
+        }
+    }
+    if !shut.is_empty() {
+        let _ = write!(
+            report,
+            "{}",
+            catalogue::say(
+                "cli.flow.private_step_no_engine_may_run",
+                &[("steps", &shut.join("; "))],
+            )
+        );
+    }
+}
+
 fn fallbacks_into(report: &mut String, graph: &Graph, tools: &toolbox::Tools) {
     let mut plugs = Vec::new();
     for step in graph.steps() {
@@ -857,6 +907,109 @@ mod tests {
             !report.contains("dichiara di non averla"),
             "e tacere non è dichiarare un'assenza: {report}"
         );
+    }
+
+    /// A flow whose private step names only engines nobody measured cannot run
+    /// anywhere, and the check says so before a run finds out by failing.
+    #[test]
+    fn a_private_step_whose_engines_may_not_take_it_is_named_by_the_check() {
+        let flow = private_flow_wanting(&["muto", "taciturno"]);
+        let tools = tools_with_pacts(&[("muto", "unknown"), ("taciturno", "trains")]);
+
+        let (report, _) =
+            check_report(&flow, &registry_in(House::empty(), None, None), Some(&tools), None);
+
+        assert!(
+            report.contains("cannot run anywhere") || report.contains("da nessuna parte"),
+            "the flow cannot run anywhere and the check must say it: {report}"
+        );
+        assert!(
+            report.contains("muto") && report.contains("taciturno"),
+            "and it names every engine that may not take it: {report}"
+        );
+    }
+
+    /// One engine that may take it is enough: a chain falls back, and a check
+    /// that shouted at every unmeasured engine in a chain would stop being read.
+    #[test]
+    fn a_private_step_with_one_engine_that_may_take_it_raises_no_warning() {
+        let flow = private_flow_wanting(&["muto", "misurato"]);
+        let tools = tools_with_pacts(&[("muto", "unknown"), ("misurato", "does_not_train")]);
+
+        let (report, _) =
+            check_report(&flow, &registry_in(House::empty(), None, None), Some(&tools), None);
+
+        assert!(
+            !report.contains("cannot run anywhere") && !report.contains("da nessuna parte"),
+            "one engine may take it, so the step runs: {report}"
+        );
+    }
+
+    /// A step that says nothing about its text is public, and a public step
+    /// goes to any engine: the check must not read silence as a demand.
+    #[test]
+    fn a_step_that_declares_no_data_is_not_read_as_private() {
+        let flow = flow_wanting_tool("muto");
+        let tools = tools_with_pacts(&[("muto", "unknown")]);
+
+        let (report, _) =
+            check_report(&flow, &registry_in(House::empty(), None, None), Some(&tools), None);
+
+        assert!(
+            !report.contains("cannot run anywhere") && !report.contains("da nessuna parte"),
+            "silence is public: {report}"
+        );
+    }
+
+    /// Engines declaring the pact each is given, and a flow whose only step is
+    /// private and names the chain asked for.
+    fn tools_with_pacts(pacts: &[(&str, &str)]) -> toolbox::Tools {
+        static SERIAL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let entries: Vec<String> = pacts
+            .iter()
+            .map(|(id, pact)| {
+                format!(
+                    r#"{{"id":"{id}","family":"ai_cli","label":"{id}",
+                        "detect":{{"command":"{id}"}},"data_pact":"{pact}"}}"#
+                )
+            })
+            .collect();
+        let file = std::env::temp_dir().join(format!(
+            "prova-patti-{}-{}.json",
+            std::process::id(),
+            SERIAL.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        ));
+        std::fs::write(&file, format!(r#"{{"tools":[{}]}}"#, entries.join(","))).expect("scrivere");
+        toolbox::Tools::new(
+            toolbox::Catalog::load(&[toolbox::Source::File(file)]),
+            toolbox::Machine::bare(std::path::PathBuf::from(toolbox::probe::NOWHERE)),
+        )
+    }
+
+    fn private_flow_wanting(chain: &[&str]) -> FlowFile {
+        let tools: Vec<String> = chain.iter().map(|id| format!("\"{id}\"")).collect();
+        let json = format!(
+            r#"{{
+                "id": "prova",
+                "description": "flusso di prova",
+                "graph": {{
+                    "steps": [{{
+                        "id": "root",
+                        "deps": [],
+                        "action": "external_engine",
+                        "max_attempts": 1,
+                        "when": null,
+                        "with": {{"tool": [{}], "data": "private", "timeout_secs": 10}},
+                        "input_schema": {{"type": "any"}},
+                        "output_schema": {{"type": "any"}}
+                    }}],
+                    "skippable_dependencies": []
+                }},
+                "inputs": {{}}
+            }}"#,
+            tools.join(",")
+        );
+        serde_json::from_str(&json).expect("caricare il flusso")
     }
 
     /// Una capacità dichiarata e ottenibile non produce nessun avviso: un
