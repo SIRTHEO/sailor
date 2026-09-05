@@ -807,9 +807,20 @@ Un'ottimizzazione che paga una chiamata per accorciarne un'altra parte in
 perdita, e nasconde anche come i passi si passano le informazioni, che è il
 vincolo permanente della chiarezza per chi guarda.
 
+**I due motori concordano, interrogati separatamente.** Il secondo ha aggiunto
+la cifra al contrario: riportare a una sola sessione il lavoro che oggi sta in
+quattro passi toglie il **52%** dei turni (1 − 1/2,07). È una riduzione di
+turni, non un risparmio misurato sul conto, e va letta così.
+
 **Cosa la ribalterebbe.** Una misura che mostri un turno di riassunto ridurre i
 turni successivi più di quanti ne aggiunge. Finché quella misura non esiste, una
 proposta di questa famiglia si scarta senza discuterla.
+
+**Il rovescio della decisione, che invece si fa.** Se non si aggiunge un passo
+per giudicare, a chiudere una corsa dev'essere un **controllo deterministico**:
+dove il criterio di accettazione è eseguibile, lo esegue il codice, e un motore
+si richiama solo su ciò che resta irrisolto. Un passo di modello che approva è
+esattamente la chiamata in più che questa decisione vieta.
 
 Dove il risparmio c'è davvero: nei passi che proseguono la stessa sessione
 invece di aprirne una fredda — su una chiamata misurata la scrittura in cache è
