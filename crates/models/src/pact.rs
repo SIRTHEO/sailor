@@ -15,6 +15,14 @@ pub enum DataPact {
     Unknown,
 }
 
+impl DataPact {
+    /// Whether a private step may go to a model under this pact: only a
+    /// measured «does not train» does, and `unknown` is not a yes.
+    pub fn accepts_private(self) -> bool {
+        self == DataPact::DoesNotTrain
+    }
+}
+
 impl fmt::Display for DataPact {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
