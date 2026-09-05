@@ -1,7 +1,7 @@
 //! Running a child within a time limit, and handing its output to whoever
 //! watches while it runs: the primitive both actions stand on.
 
-use flow::SharedState;
+use flow::{Ran, SharedState};
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::process::{Command, Stdio};
@@ -354,6 +354,13 @@ pub struct EngineInvocation {
     pub timeout: Duration,
 }
 
+impl EngineInvocation {
+    /// The line as `invoke_external_engine` starts it, for the record.
+    pub fn ran(&self) -> Ran {
+        Ran::new(&self.bin, &self.args)
+    }
+}
+
 /// L'esito di un'invocazione: successo con l'uscita catturata, o una delle
 /// forme di fallimento che un motore esterno può dare — mai un panico, e mai
 /// un giudizio su cosa quel fallimento significhi per chi ha chiamato.
@@ -448,6 +455,21 @@ pub struct CheckInvocation {
     pub workdir: Option<String>,
 }
 
+impl CheckInvocation {
+    /// The program and the arguments a check is started with: the shell, told
+    /// to read the command as text. One place, read by the spawn and by the
+    /// record alike, so the two cannot drift apart.
+    fn command_line(&self) -> (&'static str, [&str; 2]) {
+        ("sh", ["-c", self.command.as_str()])
+    }
+
+    /// The line as `run_shell_check` starts it, for the record.
+    pub fn ran(&self) -> Ran {
+        let (program, args) = self.command_line();
+        Ran::new(program, args)
+    }
+}
+
 /// Asimmetrico di proposito: chi passa non ha niente da spiegare, chi fallisce
 /// sì — e senza queste due righe un passo rosso non lascia in mano a nessuno il
 /// motivo, perché l'uscita tipata di un passo rotto non si scrive.
@@ -480,8 +502,9 @@ pub fn run_shell_check_watched(
     invocation: &CheckInvocation,
     sink: Option<&dyn LiveSink>,
 ) -> CheckResult {
-    let mut cmd = Command::new("sh");
-    cmd.arg("-c").arg(&invocation.command).stdin(Stdio::null());
+    let (program, args) = invocation.command_line();
+    let mut cmd = Command::new(program);
+    cmd.args(args).stdin(Stdio::null());
     for (key, value) in &invocation.env {
         cmd.env(key, value);
     }
