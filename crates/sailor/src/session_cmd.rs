@@ -1259,7 +1259,8 @@ fn page_on_disk(home: Option<&std::path::Path>) -> Option<PageOnDisk> {
     Some(PageOnDisk { path, opening })
 }
 
-/// The two lists and the memories, from a ledger already open.
+/// The two lists and the memories this tree is handed, from a ledger already
+/// open: a fact about one repository is not news in the next.
 fn still_open_in(
     deposit: &ledger::Ledger,
     home: Option<&std::path::Path>,
@@ -1270,10 +1271,14 @@ fn still_open_in(
         .map(|d| d.as_secs() as i64)
         .unwrap_or_default();
     let page = page_on_disk(home);
+    let tree = workspace::tree_around(&started.worktree).map(|tree| tree.display().to_string());
     Ok(StillOpen {
         waiting: deposit.waiting_runs().map_err(|error| error.to_string())?,
         ask_again: deposit.runs_to_ask_again().map_err(|error| error.to_string())?,
-        remembered: actions::memory::remembered(deposit, now).map_err(|error| error.to_string())?,
+        remembered: actions::memory::seen_from(
+            actions::memory::remembered(deposit, now).map_err(|error| error.to_string())?,
+            tree.as_deref(),
+        ),
         page_unseen: page_unseen(started, page.as_ref()),
         page,
     })
@@ -2540,6 +2545,7 @@ mod tests {
             modified,
             valid_from: modified,
             valid_until: None,
+            tree: None,
         };
         let found = StillOpen {
             waiting: Vec::new(),
@@ -2551,6 +2557,54 @@ mod tests {
         let said = what_is_still_open(&found).expect("something to say");
         assert!(said.contains("«the trunk»") && said.contains("«the home»"), "{said}");
         assert!(said.contains('2'), "the count: {said}");
+    }
+
+    /// **THE GREETING COUNTS THIS TREE'S MEMORIES AND THE ONES THAT HOLD IN
+    /// EVERY TREE**, and not another tree's; outside any checkout, only the
+    /// latter.
+    #[test]
+    fn the_greeting_counts_the_memories_of_this_tree_and_those_that_hold_everywhere() {
+        let scratch = Scratch::new("memorie-dell-albero");
+        let checkout = scratch.directory.join("a-checkout");
+        let deep = checkout.join("deep");
+        std::fs::create_dir_all(&deep).expect("the tree");
+        let init = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&checkout)
+            .args(["init", "--quiet"])
+            .status()
+            .expect("git");
+        assert!(init.success());
+        let real = checkout.canonicalize().expect("real").display().to_string();
+        let ledger = ledger::Ledger::open(scratch.directory.join("ledger")).expect("a ledger");
+        let memory = |label: &str, tree: Option<&str>| actions::memory::Memory {
+            kind: "project".to_owned(),
+            label: label.to_owned(),
+            value: "…".to_owned(),
+            provenance: "test".to_owned(),
+            modified: 1,
+            valid_from: 1,
+            valid_until: None,
+            tree: tree.map(str::to_owned),
+        };
+        actions::memory::remember(&ledger, memory("of this tree", Some(&real))).expect("kept");
+        actions::memory::remember(&ledger, memory("of another", Some("/elsewhere/other"))).expect("kept");
+        actions::memory::remember(&ledger, memory("everywhere", None)).expect("kept");
+        let started_in = |worktree: &std::path::Path| Started {
+            engine: None,
+            profile_home: None,
+            worktree: worktree.to_path_buf(),
+            home: None,
+        };
+
+        let here = still_open_in(&ledger, None, &started_in(&deep)).expect("open");
+        let outside = still_open_in(&ledger, None, &started_in(&scratch.directory)).expect("open");
+        let labels = |found: &StillOpen| found.remembered.iter().map(|m| m.label.clone()).collect::<Vec<_>>();
+        let said = what_is_still_open(&here).expect("something to say");
+
+        assert_eq!(labels(&here), vec!["everywhere", "of this tree"]);
+        assert_eq!(labels(&outside), vec!["everywhere"]);
+        assert!(said.contains("2 ") && !said.contains("of another"), "{said}");
     }
 
     /// The page's address and its first lines travel in the greeting **only

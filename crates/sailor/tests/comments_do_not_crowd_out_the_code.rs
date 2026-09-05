@@ -35,7 +35,7 @@ const COMMENT_LINES_NOT_IN_ENGLISH: usize = 7_077;
 /// Comment lines per thousand code lines, per crate, as measured today.
 /// Downwards only; a crate under 100 is where the sweep stops.
 const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
-    ("actions", 319),
+    ("actions", 315),
     ("catalogue", 268),
     ("desktop", 262),
     ("faults", 190),
@@ -54,7 +54,7 @@ const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
     ("toolbox", 296),
     ("trigger", 238),
     ("ui", 192),
-    ("workspace", 181),
+    ("workspace", 175),
 ];
 
 /// How far a seed may drift above what the tree actually holds. **Zero.**
