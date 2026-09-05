@@ -79,7 +79,7 @@ fn the_mentions_in_prose_only_ever_fall() {
     let total: usize = counted.iter().map(|(_, here)| here).sum();
 
     let mut heaviest = counted.clone();
-    heaviest.sort_by(|left, right| right.1.cmp(&left.1));
+    heaviest.sort_by_key(|entry| std::cmp::Reverse(entry.1));
     let where_they_are: Vec<String> = heaviest
         .iter()
         .take(5)

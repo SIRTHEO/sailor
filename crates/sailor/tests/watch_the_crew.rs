@@ -111,7 +111,7 @@ fn registry(scratch: &Scratch, ledger: &Ledger) -> ActionRegistry {
 }
 
 fn run(scratch: &Scratch, ledger: &Ledger, graph: &Graph) -> (Execution, InMemoryRecordStore) {
-    let mut store = InMemoryRecordStore::default();
+    let store = InMemoryRecordStore::default();
     let request = ExecutionRequest {
         run_id: "guardia".to_owned(),
         root_inputs: flow_file().inputs.clone(),
@@ -123,9 +123,9 @@ fn run(scratch: &Scratch, ledger: &Ledger, graph: &Graph) -> (Execution, InMemor
         .execute(
             graph,
             request,
-            &mut store,
+            &store,
             &registry(scratch, ledger),
-            &mut Tick(0.into()),
+            &Tick(0.into()),
         )
         .expect("the execution does not break");
     (execution, store)

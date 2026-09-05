@@ -1372,7 +1372,7 @@ fn stop_announcing(request: &Request<'_>, arrival: &Arrival) -> Result<(), Strin
         return Ok(());
     };
     let key = actions::presence::terminal_claim_key(&arrival.anchor.tty);
-    actions::presence::release_claim(&deposit, &key, request.at)
+    actions::presence::release_claim(deposit, &key, request.at)
         .map(|_| ())
         .map_err(|error| error.to_string())
 }

@@ -79,7 +79,7 @@ fn resolve_with(
     // calcola il collegamento atteso; chi lancia lo confronta con quello vero.
     let expected_link = match &cli.home {
         HomeMechanism::CredentialSymlink { relative_path } => {
-            Some(symlink_swap(fixed_home, &relative_path, &profile.home_dir))
+            Some(symlink_swap(fixed_home, relative_path, &profile.home_dir))
         }
         _ => None,
     };
