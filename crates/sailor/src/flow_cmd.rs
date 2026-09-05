@@ -4193,6 +4193,7 @@ mod tests {
                     output: Some(serde_json::json!({})),
                     said: None,
                     failure_class: None,
+                    refusal: None,
                     ended_at: 1_500,
                     bytes_seen: None,
                     bytes_discarded: None,
