@@ -86,6 +86,12 @@ pub const FLOWS: &[(&str, &str)] = &[
         "draft-a-flow",
         include_str!("../system/draft-a-flow.flow.json"),
     ),
+    // The memories would otherwise only ever grow: once a day an engine reads
+    // them all and answers with what to keep and what to drop.
+    (
+        "consolidate-memories",
+        include_str!("../system/consolidate-memories.flow.json"),
+    ),
 ];
 
 /// A place where flows are looked for, with the name a reader sees.

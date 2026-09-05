@@ -1,0 +1,323 @@
+{
+  "id": "consolidate-memories",
+  "description": "THE MEMORIES DO NOT GROW FOREVER. Once a day, at a quiet hour, one reading and no engine: every memory still valid, with its type, its label, its value and when it was written. One engine call, kind «writing», on private data: it reads them all and answers with two lists — what to keep, merged and reworded where two said the same thing, and what to drop because it is stale or contradicted by a later one. Feedback is never reworded: the person's own words are the memory. One gesture: the dropped labels are closed and the kept memories written, in one pass that refuses a secret and refuses a label on both lists, and the page every command line reads at its start is written again. Light, because a consolidation that costs a heavy run is one somebody switches off.",
+  "schedule": {
+    "recurrence": {
+      "kind": "daily_at",
+      "hour": 4,
+      "minute": 30
+    },
+    "weight": "light"
+  },
+  "graph": {
+    "steps": [
+      {
+        "id": "trigger",
+        "deps": [],
+        "action": "trigger",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "source": "manual"
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "who": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "text"
+          ],
+          "allow_extra": false
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "who": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "memories",
+        "deps": [
+          "trigger"
+        ],
+        "action": "memory_list",
+        "max_attempts": 1,
+        "when": null,
+        "with": {},
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "count": {
+              "type": "number"
+            },
+            "memories": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  },
+                  "written": {
+                    "type": "number"
+                  },
+                  "first_known": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "type",
+                  "label",
+                  "value",
+                  "written"
+                ],
+                "allow_extra": true
+              }
+            }
+          },
+          "required": [
+            "count",
+            "memories"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "editor",
+        "deps": [
+          "memories"
+        ],
+        "action": "external_engine",
+        "max_attempts": 2,
+        "when": null,
+        "with": {
+          "tool": [
+            "claude-code",
+            "codex",
+            "agy"
+          ],
+          "kind": "writing",
+          "data": "private",
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "keep": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "one_of",
+                      "values": [
+                        "user",
+                        "feedback",
+                        "project",
+                        "reference"
+                      ]
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "label",
+                    "value"
+                  ],
+                  "allow_extra": false
+                }
+              },
+              "drop": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "keep",
+              "drop"
+            ],
+            "allow_extra": false
+          },
+          "stdin": {
+            "$join": [
+              "You consolidate the memories Sailor keeps: typed, labelled facts a person and their agents wrote down so that the next session does not rediscover them. They are listed below with their type, their label, their value and the time each was written, as seconds since the epoch. Read them all before you decide anything.\n\nTHE MEMORIES\n\n",
+              {
+                "$json": "/memories"
+              },
+              "\n\nWHAT TO DO\nMerge duplicates into one memory: two or more that say the same thing become one, under the clearest of their labels, with one value that loses no fact either carried. Drop what is stale or contradicted: a memory a later one overrides, or one that describes a state of things that no longer holds, is dropped and the later one kept. Keep the type of every memory exactly as it is — a memory never changes type, and a merge of two types is not a merge. Never reword feedback: keep the wording of feedback verbatim, character for character, because the person's own words are the memory; merge two feedback memories only when their values are identical. Leave alone what is neither duplicated nor stale: a memory you do not name in either list stays as it is, so name only what changes. A memory you keep is written again with the value you give it — under a label that already exists it replaces the old one, under a new label it is added. A label you drop is closed, and a label may not appear in both lists.\n\nHOW YOUR ANSWER MUST LOOK\nAnswer with one JSON object and nothing else: no preamble, no greeting, no reasoning outside the fields. «keep» is the list of memories to write, each with its «type», its «label» and its «value»; «drop» is the list of labels to close, exactly as they are written above. It must match exactly this shape, where «properties» are the fields, «required» the mandatory ones and «allow_extra: false» means no others are accepted:\n",
+              {
+                "$json": "/answer_shape"
+              }
+            ]
+          },
+          "timeout_secs": 900
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "tool",
+            "timeout_secs"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "ok"
+              ]
+            },
+            "answer": {
+              "type": "object",
+              "properties": {
+                "keep": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "one_of",
+                        "values": [
+                          "user",
+                          "feedback",
+                          "project",
+                          "reference"
+                        ]
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "label",
+                      "value"
+                    ],
+                    "allow_extra": false
+                  }
+                },
+                "drop": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "keep",
+                "drop"
+              ],
+              "allow_extra": false
+            }
+          },
+          "required": [
+            "status",
+            "answer"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "replace",
+        "deps": [
+          "editor"
+        ],
+        "action": "memory_replace",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "keep": {
+            "$from": "/answer/keep"
+          },
+          "drop": {
+            "$from": "/answer/drop"
+          },
+          "provenance": "consolidate-memories"
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "kept": {
+              "type": "number"
+            },
+            "dropped": {
+              "type": "number"
+            },
+            "unknown": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "kept",
+            "dropped",
+            "unknown"
+          ],
+          "allow_extra": true
+        }
+      }
+    ],
+    "skippable_dependencies": []
+  },
+  "inputs": {
+    "trigger": {
+      "text": "consolidate the memories: merge duplicates, drop what is stale, keep the rest as it is",
+      "who": ""
+    }
+  }
+}
