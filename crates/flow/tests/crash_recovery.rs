@@ -465,6 +465,7 @@ fn killed_process_reconstructs_the_same_next_decision_without_replaying_effect()
                 output: Some(json!({"path": effect_path})),
                 said: None,
                 failure_class: None,
+                refusal: None,
                 ended_at: 11,
                 bytes_seen: None,
                 bytes_discarded: None,

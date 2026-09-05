@@ -31,17 +31,14 @@ pub fn register_faults(registry: &mut flow::ActionRegistry, store: Option<PathBu
 }
 
 fn unreadable(error: impl std::fmt::Display) -> ActionError {
-    ActionError {
-        class: "store_unreadable".to_owned(),
-        said: format!("the fault register cannot be read: {error}"),
-    }
+    ActionError::new(
+        "store_unreadable",
+        format!("the fault register cannot be read: {error}"),
+    )
 }
 
 fn wrong_input(said: impl Into<String>) -> ActionError {
-    ActionError {
-        class: "invalid_input".to_owned(),
-        said: said.into(),
-    }
+    ActionError::new("invalid_input", said)
 }
 
 fn open(store: &Option<PathBuf>) -> Result<Option<Faults>, ActionError> {
