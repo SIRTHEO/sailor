@@ -318,6 +318,36 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     !needle.is_empty() && haystack.windows(needle.len()).any(|window| window == needle)
 }
 
+/// A receipt name split from its process-number suffix. The format belongs to
+/// whoever writes the receipts, which is this crate.
+pub fn split_receipt_name(name: &str) -> (String, Option<u32>) {
+    match name.rsplit_once('.') {
+        Some((base, suffix))
+            if !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()) =>
+        {
+            (base.to_string(), suffix.parse().ok())
+        }
+        _ => (name.to_string(), None),
+    }
+}
+
+/// Whether a process with that number still exists.
+///
+/// **An error that is not "no such process" counts as alive** — typically the
+/// pid exists but is not ours. A false "dead" steps over somebody else's lock;
+/// a false "alive" costs one more wait.
+pub fn process_exists(pid: u32) -> bool {
+    unsafe extern "C" {
+        fn kill(pid: i32, sig: i32) -> i32;
+    }
+    const ESRCH: i32 = 3;
+    let ret = unsafe { kill(pid as i32, 0) };
+    if ret == 0 {
+        return true;
+    }
+    std::io::Error::last_os_error().raw_os_error() != Some(ESRCH)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -589,34 +619,4 @@ mod tests {
             "\n   \n# why it was reconstructed\n\t abc123 \n# and a note after it\ndef456\n";
         assert_eq!(read_stamp(contents).as_deref(), Some("abc123"));
     }
-}
-
-/// A receipt name split from its process-number suffix. The format belongs to
-/// whoever writes the receipts, which is this crate.
-pub fn split_receipt_name(name: &str) -> (String, Option<u32>) {
-    match name.rsplit_once('.') {
-        Some((base, suffix))
-            if !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()) =>
-        {
-            (base.to_string(), suffix.parse().ok())
-        }
-        _ => (name.to_string(), None),
-    }
-}
-
-/// Whether a process with that number still exists.
-///
-/// **An error that is not "no such process" counts as alive** — typically the
-/// pid exists but is not ours. A false "dead" steps over somebody else's lock;
-/// a false "alive" costs one more wait.
-pub fn process_exists(pid: u32) -> bool {
-    unsafe extern "C" {
-        fn kill(pid: i32, sig: i32) -> i32;
-    }
-    const ESRCH: i32 = 3;
-    let ret = unsafe { kill(pid as i32, 0) };
-    if ret == 0 {
-        return true;
-    }
-    std::io::Error::last_os_error().raw_os_error() != Some(ESRCH)
 }

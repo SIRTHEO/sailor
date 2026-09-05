@@ -41,8 +41,7 @@ pub fn execution_request(flow: &FlowFile, run_id: &str, root: Option<&Path>) -> 
         root_inputs: flow.inputs.clone(),
         gates: Vec::new(),
         shared,
-        // The cap belongs to the flow and travels with the run: the launcher
-        // carries it rather than inventing one.
+        // The cap is the flow's and travels with the run: the launcher only carries it.
         spend_cap_micros: flow.spend_cap_micros,
     }
 }
@@ -228,14 +227,14 @@ mod tests {
         let flow: FlowFile = serde_json::from_str(json).expect("loading the flow");
         let request = execution_request(&flow, "corsa-1", Some(Path::new("/una/radice")));
 
-        let mut store = flow::InMemoryRecordStore::default();
+        let store = flow::InMemoryRecordStore::default();
         flow::InProcessExecutor
             .execute(
                 &flow.graph,
                 request,
-                &mut store,
+                &store,
                 &registry,
-                &mut flow::SystemClock,
+                &flow::SystemClock,
             )
             .expect("the run goes");
 
