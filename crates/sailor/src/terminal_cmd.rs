@@ -48,8 +48,6 @@ pub const USAGE: &[Form] = &[
     },
 ];
 
-const FORMS: &[&str] = &["run", "press", "reset", "mandate", "list", "host"];
-
 pub fn run(args: &[String]) -> i32 {
     match dispatch(args) {
         Ok(code) => code,
@@ -68,7 +66,7 @@ fn dispatch(args: &[String]) -> Result<i32, String> {
         println!("{}", usage_text());
         return Ok(0);
     }
-    if !FORMS.contains(&form.as_str()) {
+    if !crate::is_a_form(USAGE, form) {
         return Err(format!(
             "{}\n{}",
             catalogue::say("cli.no_such_form", &[("verb", form)]),
@@ -540,21 +538,6 @@ mod tests {
 
     fn words(of: &[&str]) -> Vec<String> {
         of.iter().map(|word| (*word).to_owned()).collect()
-    }
-
-    #[test]
-    fn every_form_the_usage_promises_is_accepted() {
-        for line in USAGE {
-            let promised = line
-                .form
-                .split_whitespace()
-                .nth(2)
-                .expect("every usage line names its own form");
-            assert!(
-                FORMS.contains(&promised),
-                "«{promised}» is promised by the help and the dispatch does not accept it"
-            );
-        }
     }
 
     #[test]
