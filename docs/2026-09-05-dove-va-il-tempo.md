@@ -194,8 +194,17 @@ Misurato sull'albero a `b03afc54`, la notte fra il 4 e il 5.
   misurato. Provato senza motore, con `sh` al posto del motore: senza guasti
   aperti il passo non si apre; con uno aperto le sue parole sono nello
   `stdin`. Otto prove con mutante. Mai corso con un motore vero.
-- **4, 6: no.** La 4 è una decisione di Theo; la 6 è in lavorazione mentre
-  scrivo.
+- **6, `check_failed` si spiega: c'è.** Una risposta respinta lascia nel
+  ledger un `Refusal` — quale controllo (`answer_shape`, `output_schema`,
+  `command`), a quale percorso, con quale regola (campo mancante, campo
+  ignoto, tipo sbagliato, valore non ammesso, codice d'uscita) e un estratto
+  di ciò che ha visto, tagliato a 160 byte su un confine di carattere
+  (`crates/flow/src/record.rs`); la colonna `refusal` sui passi arriva con la
+  migrazione 11 e un deposito vecchio si apre. La frase del passo comincia
+  con la spiegazione, e `sailor flow cost` aggiunge una riga per (passo,
+  controllo) con quante volte ha respinto e con quali regole. Otto prove,
+  ognuna col mutante. La finestra legge ancora solo la frase.
+- **4: no.** È una decisione di Theo su un plugin suo.
 
 E i cinque concetti di Theo della stessa sera:
 
