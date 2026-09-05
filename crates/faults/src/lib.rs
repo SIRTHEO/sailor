@@ -355,6 +355,26 @@ impl Faults {
     pub fn still_open(&self) -> Result<usize, FaultError> {
         Ok(self.all()?.iter().filter(|f| f.still_open()).count())
     }
+
+    /// Every fault as one document, `fault:<number>`, in the shape the
+    /// ledger's ranking takes: what happened, how it showed, what would
+    /// prevent it, and where it stands.
+    pub fn documents_to_search(&self) -> Result<Vec<(String, String)>, FaultError> {
+        Ok(self
+            .all()?
+            .into_iter()
+            .map(|fault| {
+                let text = [
+                    fault.what_happened,
+                    fault.how_it_showed,
+                    fault.what_would_prevent,
+                    fault.status,
+                ]
+                .join(" ");
+                (format!("fault:{}", fault.number), text)
+            })
+            .collect())
+    }
 }
 
 // ── Markdown: one rendering, and one door in ─────────────────────────────
