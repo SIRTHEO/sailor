@@ -5,6 +5,92 @@ use std::collections::BTreeMap;
 
 pub const MAX_SAID_BYTES: usize = 16 * 1024;
 
+/// The longest excerpt of an offending value a refusal keeps: enough to
+/// recognise the value, and a bound that keeps a row from growing with it.
+pub const MAX_SEEN_BYTES: usize = 160;
+
+/// Which declared check refused a value, where in it, by which rule, and an
+/// excerpt of what it saw. Written next to the failure class so that a person
+/// reads the rule and a count can be taken per check without parsing prose.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Refusal {
+    pub check: String,
+    /// The path of the field that failed; empty when the whole value did.
+    pub path: String,
+    pub rule: RefusalRule,
+    pub seen: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RefusalRule {
+    MissingField,
+    UnknownField,
+    WrongType,
+    NotAllowed,
+    NotJson,
+    TooLong,
+    ExitCode,
+}
+
+impl RefusalRule {
+    pub fn name(self) -> &'static str {
+        match self {
+            RefusalRule::MissingField => "missing_field",
+            RefusalRule::UnknownField => "unknown_field",
+            RefusalRule::WrongType => "wrong_type",
+            RefusalRule::NotAllowed => "not_allowed",
+            RefusalRule::NotJson => "not_json",
+            RefusalRule::TooLong => "too_long",
+            RefusalRule::ExitCode => "exit_code",
+        }
+    }
+}
+
+impl Refusal {
+    pub fn new(
+        check: impl Into<String>,
+        path: impl Into<String>,
+        rule: RefusalRule,
+        seen: &str,
+    ) -> Self {
+        Self {
+            check: check.into(),
+            path: path.into(),
+            rule,
+            seen: head(seen.trim(), MAX_SEEN_BYTES),
+        }
+    }
+
+    /// The sentence a person reads for it, from the catalogue.
+    pub fn explain(&self) -> String {
+        let rule = catalogue::say(&format!("run.refusal.rule.{}", self.rule.name()), &[]);
+        let values = [
+            ("check", self.check.as_str()),
+            ("path", self.path.as_str()),
+            ("rule", rule.as_str()),
+            ("seen", self.seen.as_str()),
+        ];
+        if self.path.is_empty() {
+            catalogue::say("run.refusal.whole", &values)
+        } else {
+            catalogue::say("run.refusal.at_path", &values)
+        }
+    }
+}
+
+/// The first `limit` bytes of `text`, cut on a character boundary.
+fn head(text: &str, limit: usize) -> String {
+    if text.len() <= limit {
+        return text.to_owned();
+    }
+    let mut end = limit;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    text[..end].to_owned()
+}
+
 /// A step as a durable record.
 /// Intent is written BEFORE running; the outcome AFTER.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -71,6 +157,9 @@ pub struct StepRecord {
     /// Filled by the engine, not by a model. A class, not a diagnosis.
     #[serde(deserialize_with = "required_option")]
     pub failure_class: Option<String>,
+    /// Which check refused, and what it saw, when the class is a refusal.
+    #[serde(default)]
+    pub refusal: Option<Refusal>,
     #[serde(deserialize_with = "required_option")]
     pub ended_at: Option<i64>,
     /// Total bytes emitted; not part of the typed data channel.
@@ -152,6 +241,7 @@ impl StepRecord {
             output_was_written: false,
             said: None,
             failure_class: None,
+            refusal: None,
             ended_at: None,
             bytes_seen: None,
             bytes_discarded: None,
@@ -239,6 +329,43 @@ mod tests {
         let value = format!("{}é", "a".repeat(MAX_SAID_BYTES - 1));
         let truncated = truncate_said(value);
         assert_eq!(truncated, "a".repeat(MAX_SAID_BYTES - 1));
+    }
+
+    /// The excerpt is bounded, or a refusal of a long answer would carry the
+    /// whole answer into every row that records it.
+    #[test]
+    fn a_refusal_keeps_a_bounded_excerpt_cut_on_a_character_boundary() {
+        let long = format!("{}é{}", "a".repeat(MAX_SEEN_BYTES - 1), "b".repeat(50));
+        let refusal = Refusal::new("answer_shape", "$", RefusalRule::TooLong, &long);
+        assert_eq!(refusal.seen, "a".repeat(MAX_SEEN_BYTES - 1));
+
+        let short = Refusal::new("answer_shape", "$.verdict", RefusalRule::NotAllowed, " remvoe ");
+        assert_eq!(short.seen, "remvoe");
+    }
+
+    /// A record written before refusals existed still reads, and reads back
+    /// without one — an old event log is the only thing a store is rebuilt from.
+    #[test]
+    fn a_refusal_survives_the_record_and_an_old_record_has_none() {
+        let mut record = StepRecord::started("run", "step", 1, 1, vec![], json!(null), vec![], 1);
+        record.outcome = Some(Outcome::Broke);
+        record.refusal = Some(Refusal::new(
+            "output_schema",
+            "$.count",
+            RefusalRule::WrongType,
+            "\"three\"",
+        ));
+        let text = serde_json::to_string(&record).expect("serializable record");
+        let back: StepRecord = serde_json::from_str(&text).expect("readable record");
+        assert_eq!(back.refusal, record.refusal);
+
+        let mut value = serde_json::to_value(&record).expect("serializable record");
+        value
+            .as_object_mut()
+            .expect("the record is an object")
+            .remove("refusal");
+        let old: StepRecord = serde_json::from_value(value).expect("an old record reads");
+        assert_eq!(old.refusal, None);
     }
 
     #[test]
