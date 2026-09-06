@@ -1,3 +1,4 @@
+use crate::graph::Judgement;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -215,6 +216,10 @@ pub struct StepRecord {
     /// record from before the field, and on every step that starts none.
     #[serde(default)]
     pub ran: Option<Ran>,
+    /// Why the engine did with this step what it did. **At open, not at close**:
+    /// a step that never closes is exactly the one whose reason is wanted.
+    #[serde(default)]
+    pub why: Option<Why>,
     #[serde(deserialize_with = "required_option")]
     pub ended_at: Option<i64>,
     /// Total bytes emitted; not part of the typed data channel.
@@ -223,6 +228,18 @@ pub struct StepRecord {
     /// Bytes cut for running past the configured cap.
     #[serde(default)]
     pub bytes_discarded: Option<u64>,
+}
+
+/// The reasons the engine can give for what it did with a step. An enum for one
+/// case, because the others are known and unrecorded — which engine took it,
+/// why an attempt is a retry, which gate let it through — and each becomes a
+/// case here without rewriting a reader.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "because", rename_all = "snake_case")]
+pub enum Why {
+    /// What judging the step's `when` saw, whether it held or not: running is
+    /// a decision too.
+    Condition(Judgement),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -301,6 +318,7 @@ impl StepRecord {
             failure_class: None,
             refusal: None,
             ran: None,
+            why: None,
             ended_at: None,
             bytes_seen: None,
             bytes_discarded: None,
