@@ -24,14 +24,14 @@ pub use executor::{
     ActionOutcome, ActionRegistry, Clock, Completion, CostReading, Decision, EffectStatus,
     Execution, ExecutionRequest, Executor, FlowError, InMemoryRecordStore, InProcessExecutor,
     ProcessProbe, Reconciliation, ReconciliationRequest, RecordStore, RunStops, SharedState, Spend,
-    SpendStop, StepInput, StopReason, SystemClock, AT_ONCE, CURRENT_CAP, CURRENT_RUN, CURRENT_STEP,
-    CURRENT_WALL, WALL_REMAINING_SECS, WORKDIR_FIELD, WORKSPACE_ROOT,
+    SpendStop, StepInput, StopReason, SystemClock, AFTER_REFUSAL, AT_ONCE, CURRENT_CAP,
+    CURRENT_RUN, CURRENT_STEP, CURRENT_WALL, WALL_REMAINING_SECS, WORKDIR_FIELD, WORKSPACE_ROOT,
 };
 pub use file::FlowFile;
 pub use graph::{Condition, DependencyEdge, Graph, GraphError, Step};
 pub use record::{
     digest_input, truncate_said, AttemptRelation, Outcome, Ran, Refusal, RefusalRule, StepRecord,
-    StepSpecies, MAX_SAID_BYTES, MAX_SEEN_BYTES,
+    StepSpecies, ANSWER_SHAPE_CHECK, MAX_SAID_BYTES, MAX_SEEN_BYTES,
 };
 pub use schedule::{is_due, Recurrence, Schedule, Weight};
 pub use schema::{SchemaError, ValueSchema};
