@@ -67,7 +67,7 @@ impl Fault {
 /// misurare il blocco: dalla prima riga che comincia con `|` all'ultima, ogni
 /// riga in mezzo deve essere una riga di tabella.
 fn faults() -> Vec<Fault> {
-    let path = repository_root().join("docs/guasti-incontrati.md");
+    let path = repository_root().join("docs/faults-encountered.md");
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("leggere {}: {error}", path.display()));
     let rows: Vec<Fault> = text
@@ -354,7 +354,7 @@ fn the_counts_written_in_prose_match_the_table_they_come_from() {
     let open = faults.iter().filter(|fault| fault.still_open()).count();
     let total = faults.len();
 
-    let path = repository_root().join("docs/guasti-incontrati.md");
+    let path = repository_root().join("docs/faults-encountered.md");
     let text = std::fs::read_to_string(&path).expect("leggere il file dei guasti");
     let prose = text
         .split_once("## Cosa dice questa tabella")

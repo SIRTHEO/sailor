@@ -28,9 +28,9 @@ fn table() -> Option<String> {
         .parent()
         .and_then(|crates| crates.parent())
         .expect("the crate lives in <root>/crates/faults")
-        .join("docs/guasti-incontrati.md");
+        .join("docs/faults-encountered.md");
     let Ok(text) = std::fs::read_to_string(&file) else {
-        workspace::measured_nothing("this tree carries no docs/guasti-incontrati.md to read");
+        workspace::measured_nothing("this tree carries no docs/faults-encountered.md to read");
         return None;
     };
     workspace::measured(text.lines().count(), "lines of the fault table read");

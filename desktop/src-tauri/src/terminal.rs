@@ -8,7 +8,7 @@
 //! `crates/terminal`, provable with `cargo test -p terminal`.
 //!
 //! **THE NAMES AND SHAPES COME FROM THE CONTRACT**, not from this file:
-//! `docs/2026-09-01-il-contratto-del-terminale.md`. Whoever changes one
+//! `docs/the-terminal-contract.md`. Whoever changes one
 //! changes it there and says so.
 
 use std::collections::HashSet;

@@ -609,7 +609,7 @@ quattro eccezioni non scritte — che è esattamente come la finestra è arrivat
 offrire otto tipi di passo mentre il motore ne esegue tre.
 
 *Per esteso, con le tre proprietà di un sistema aperto e i numeri del
-censimento*: `docs/2026-08-31-le-quattro-superfici.md`.
+censimento*: `docs/the-four-surfaces.md`.
 
 ### Chi non dichiara come si esaurisce non sta in mezzo a una catena
 

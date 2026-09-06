@@ -1011,7 +1011,7 @@ mod tests {
     /// 01/09/2026 questa e la sorella qui sopra si chiamavano tutte e due
     /// `a_call`, nate su due rami diversi lo stesso giorno. Git le ha fuse senza
     /// segnalare niente — nessuna riga in comune — e a rifiutare l'albero è
-    /// stato `cargo`. È il guasto 36 di `docs/guasti-incontrati.md` che si
+    /// stato `cargo`. È il guasto 36 di `docs/faults-encountered.md` che si
     /// ripete: il confine sui file non vede i nomi che vivono nello stesso
     /// modulo.
     fn a_call_named(call_id: &str, cost: Option<i64>) -> ledger::ModelCallRecord {

@@ -253,5 +253,5 @@ una memoria da giorni: chi ha riscritto la sorveglianza — cioè chi aveva appe
 finito di riparare il guasto 12 — non l'ha consultata e ci è ricaduto dentro
 venti minuti dopo. È la prova che una lezione scritta non vale niente se non c'è
 il momento in cui qualcuno la va a leggere. Per i flussi quel momento adesso
-esiste, ed è `docs/decisioni.md`, letto in tre punti del flusso di sviluppo. Per
+esiste, ed è `docs/decisions.md`, letto in tre punti del flusso di sviluppo. Per
 chi scrive a mano no.

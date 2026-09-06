@@ -10,7 +10,7 @@ body:
         and what stopped you, decides more than a proposed design does.
 
         Some choices are already made and do not reopen without a measurement —
-        they are in `docs/decisioni.md`, and `AGENTS.md` points at them. Worth a
+        they are in `docs/decisions.md`, and `AGENTS.md` points at them. Worth a
         look before writing, in case the answer is already there.
 
   - type: textarea

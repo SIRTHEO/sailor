@@ -3,7 +3,7 @@
 //! **SUPERFICIE: `gate`. POTERI PRETESI: nessuno.** Non legge il mondo, non lo
 //! tocca, non scrive nel deposito di suo: offre un mandato e si mette in
 //! attesa. La dichiarazione è scritta qui perché le quattro superfici di
-//! `docs/2026-08-31-le-quattro-superfici.md` non esistono ancora nel codice, e
+//! `docs/the-four-surfaces.md` non esistono ancora nel codice, e
 //! un'azione nuova che tace mentre il criterio nasce diventa la prima eccezione
 //! non scritta — che è il modo in cui la finestra è arrivata a otto tipi di
 //! passo contro tre eseguiti. Chi porta le superfici nel registro trova questa

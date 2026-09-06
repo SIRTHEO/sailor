@@ -859,9 +859,9 @@ mod tests {
     #[test]
     fn a_delimited_commit_is_clean() {
         for args in [
-            r#"["commit", "-m", "un messaggio", "--", "docs/decisioni.md"]"#,
-            r#"["commit", "--only", "docs/decisioni.md", "-m", "un messaggio"]"#,
-            r#"["commit", "--include", "docs/decisioni.md", "-m", "un messaggio"]"#,
+            r#"["commit", "-m", "un messaggio", "--", "docs/decisions.md"]"#,
+            r#"["commit", "--only", "docs/decisions.md", "-m", "un messaggio"]"#,
+            r#"["commit", "--include", "docs/decisions.md", "-m", "un messaggio"]"#,
         ] {
             let flow = flow_with(&format!(r#"{{"tool": "git", "args": {args}}}"#));
 
@@ -872,7 +872,7 @@ mod tests {
         }
 
         let on_one_line = shell_flow_with(
-            r#"{"command": "git commit -m 'un messaggio' -- docs/decisioni.md", "timeout_secs": 5}"#,
+            r#"{"command": "git commit -m 'un messaggio' -- docs/decisions.md", "timeout_secs": 5}"#,
         );
 
         assert!(undelimited_commits(&on_one_line).is_empty());

@@ -1,4 +1,4 @@
-//! The guard `docs/2026-09-01-il-tempo-e-l-ultima-scelta.md` specifies: walk the
+//! The guard `docs/time-is-the-last-choice.md` specifies: walk the
 //! trigger descriptors and fail if a periodic one does not declare what it does
 //! with a missed run and what its concurrency limit is.
 
