@@ -9,32 +9,14 @@ use super::check::{engines_of, EngineWorld};
 
 // ── le case di credenziali, chieste al motore ────────────────────────────
 
-/// **UNA CASA DICHIARATA E VUOTA SI APPLICA IN SILENZIO, ED È QUELLO CHE QUESTA
-/// SEZIONE ROMPE.**
-///
-/// Dal 01/09/2026 un motore lanciato da un passo parte nella casa del profilo
-/// attivo — è la cura del guasto 18 — e un profilo che punta a una cartella
-/// senza credenziali fa partire ogni chiamata **non autenticata** senza che
-/// niente lo dica. Il vaglio a secco non può vederlo e non deve provarci: toglie
-/// la domanda apposta, quindi il motore si ferma su «non mi hai dato niente da
-/// fare» e non arriva mai ai controlli che vengono dopo. È il guasto 39, e la
-/// metà che restava scoperta.
-///
-/// **SI CHIEDE AL MOTORE, E COME SI CHIEDE LO DICE IL DESCRITTORE.** Non si va a
-/// cercare `auth.json` sul disco: sarebbe una seconda copia della verità, una per
-/// motore, da tenere allineata a mano. Chi non dichiara `login_status` non fa
-/// scattare niente — **vuoto vuol dire «nessuno ha guardato», mai «è
-/// autenticato»** — ed è la stessa regola di `refuses_without_prompt`.
-///
-/// **NON FA FALLIRE IL CONTROLLO, E IL VERSO È DELIBERATO.** Fermare un flusso
-/// perché un profilo non è autenticato punirebbe chi non c'entra — è la cura
-/// sbagliata del guasto 35 — e chi controlla un flusso lo fa anche per capirlo,
-/// non solo per lanciarlo. Deve **vedersi**, e basta.
-///
-/// **COSTA ZERO E LO STESSO ESEGUE.** `codex login status` e `claude auth status`
-/// leggono un file locale: nessun modello, nessun fornitore, nessun denaro.
-/// Restano processi avviati, quindi vivono dietro la stessa sonda delle righe di
-/// comando e tacciono insieme a lei con `--no-engines`.
+/// **A HOME DECLARED AND EMPTY APPLIES IN SILENCE.** A profile pointing at a
+/// directory with no credentials makes every call go out unauthenticated, and
+/// the dry check cannot see it: it takes the question away, so the engine stops
+/// on «you gave me nothing to do» before any of that. So the engine is asked,
+/// the way its descriptor says; declaring nothing raises nothing, because empty
+/// means «nobody looked» and never «authenticated». It does not fail the check —
+/// stopping a flow over a profile would punish whoever did not set it — and it
+/// costs nothing: these read a local file, no model and no money.
 pub(super) fn login_states_into(
     report: &mut String,
     graph: &Graph,

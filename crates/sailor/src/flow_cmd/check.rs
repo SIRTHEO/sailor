@@ -461,24 +461,86 @@ fn prices_for(
         .unwrap_or_default()
 }
 
-/// Writes what kind of cap this flow declares, and every reason it is not one.
+/// Why a run of this flow would not start, when it would not.
+///
+/// Only a flow asking for a guaranteed cap is ever refused: the default is the
+/// stop threshold, which almost every shipped step can offer. Whoever asks for
+/// the guarantee and cannot have it is told before the run opens, rather than
+/// when the bill arrives.
+pub(super) fn why_the_run_would_not_start(
+    flow: &FlowFile,
+    tools: &dyn actions::ToolResolver,
+    prices: &models::pricing::PriceList,
+) -> Option<String> {
+    if flow.required_cap_kind() != flow::CapKind::Guaranteed {
+        return None;
+    }
+    let because = match flow.spend_cap_micros {
+        None => catalogue::say("cli.flow.no_cap_to_guarantee", &[]),
+        Some(_) => {
+            let verdict = actions::reserve::verdict_on(&cap_facts(flow, tools, prices));
+            if verdict.kind == flow::CapKind::Guaranteed {
+                return None;
+            }
+            verdict.because.join("; ")
+        }
+    };
+    Some(catalogue::say(
+        "cli.flow.run_not_started_without_a_guaranteed_cap",
+        &[("because", &because)],
+    ))
+}
+
+/// The same question asked of this machine: its descriptors, its price list.
+/// Both launchers — the command line and the window — ask it here, so a run
+/// refused in one is refused in the other.
+pub fn why_a_run_here_would_not_start(flow: &FlowFile) -> Option<String> {
+    why_the_run_would_not_start(
+        flow,
+        &toolbox::Tools::current(),
+        &actions::current_price_list(),
+    )
+}
+
+/// Writes what kind of cap this flow declares, every reason it is not one, and
+/// whether a run of it would start at all.
 fn what_the_cap_is_into(
     report: &mut String,
     flow: &FlowFile,
     tools: &dyn actions::ToolResolver,
     prices: &models::pricing::PriceList,
 ) {
-    if flow.spend_cap_micros.is_none() {
-        return;
+    if let Some(_cap) = flow.spend_cap_micros {
+        let verdict = actions::reserve::verdict_on(&cap_facts(flow, tools, prices));
+        report.push_str(&match verdict.kind {
+            actions::reserve::CapKind::Guaranteed => {
+                catalogue::say("cli.flow.cap_is_guaranteed", &[])
+            }
+            actions::reserve::CapKind::StopThreshold => catalogue::say(
+                "cli.flow.cap_is_a_stop_threshold",
+                &[("because", &verdict.because.join("; "))],
+            ),
+        });
     }
-    let verdict = actions::reserve::verdict_on(&cap_facts(flow, tools, prices));
-    report.push_str(&match verdict.kind {
-        actions::reserve::CapKind::Guaranteed => catalogue::say("cli.flow.cap_is_guaranteed", &[]),
-        actions::reserve::CapKind::StopThreshold => catalogue::say(
-            "cli.flow.cap_is_a_stop_threshold",
-            &[("because", &verdict.because.join("; "))],
-        ),
-    });
+    // A flow that neither caps nor asks for a kind of cap gets no line: there
+    // is nothing about money that could hold it back, and a verdict here would
+    // invent a subject.
+    if flow.spend_cap_micros.is_some() || flow.spend_cap_kind.is_some() {
+        report.push_str(&would_the_run_start(flow, tools, prices));
+    }
+}
+
+/// The line that answers the question whoever runs `flow check` is really
+/// asking: would this thing start.
+fn would_the_run_start(
+    flow: &FlowFile,
+    tools: &dyn actions::ToolResolver,
+    prices: &models::pricing::PriceList,
+) -> String {
+    match why_the_run_would_not_start(flow, tools, prices) {
+        None => catalogue::say("cli.flow.the_run_would_start", &[]),
+        Some(why) => catalogue::say("cli.flow.the_run_would_not_start", &[("why", &why)]),
+    }
 }
 
 fn capabilities_wanted(graph: &Graph) -> Vec<WantedCapability> {
@@ -1373,6 +1435,83 @@ mod tests {
         let without = of("motore-senza-tetto");
         assert!(without.contains("stop threshold"), "{without}");
         assert!(without.contains("native_spend_cap"), "{without}");
+    }
+
+    /// **THE FLOW SAYS WHICH OF THE TWO IT WANTS, AND THE ANSWER CHANGES.**
+    /// One flow, one engine that takes no ceiling: the default starts under a
+    /// stop threshold, the guarantee does not start at all and says why.
+    ///
+    /// *Mutant run*: make `why_the_run_would_not_start` answer `None` always.
+    /// The second half goes red, and so does `flow check`'s line.
+    #[test]
+    fn a_flow_that_requires_a_guaranteed_cap_and_cannot_have_one_does_not_start() {
+        let prices = models::pricing::PriceList::default();
+        let flow = a_flow_of(&a_step(
+            "chiedi",
+            "external_engine",
+            r#"{"tool": "motore-senza-tetto", "stdin": "ciao", "timeout_secs": 10}"#,
+        ));
+        assert_eq!(
+            why_the_run_would_not_start(&flow, &SomeHoldToACeiling, &prices),
+            None,
+            "the default is the stop threshold, and it starts"
+        );
+
+        let mut demanding = flow.clone();
+        demanding.spend_cap_kind = Some(flow::CapKind::Guaranteed);
+        let refused = why_the_run_would_not_start(&demanding, &SomeHoldToACeiling, &prices)
+            .expect("a guarantee this flow cannot give");
+        assert!(refused.contains("Run not started"), "{refused}");
+        assert!(refused.contains("native_spend_cap"), "{refused}");
+
+        // And `flow check` says it before anyone launches.
+        let mut said = String::new();
+        what_the_cap_is_into(&mut said, &demanding, &SomeHoldToACeiling, &prices);
+        assert!(said.contains("would a run start: no"), "{said}");
+        let mut allowed = String::new();
+        what_the_cap_is_into(&mut allowed, &flow, &SomeHoldToACeiling, &prices);
+        assert!(allowed.contains("would a run start: yes"), "{allowed}");
+    }
+
+    /// **THE GUARANTEE HELD, AND THE RUN STARTS.** The same demand against an
+    /// engine that does take a ceiling: nothing holds the run back.
+    #[test]
+    fn a_guaranteed_cap_that_can_be_had_starts() {
+        let mut flow = a_flow_of(&a_step(
+            "chiedi",
+            "external_engine",
+            r#"{"tool": "motore-con-tetto", "stdin": "ciao", "timeout_secs": 10, "max_spend_micros": 600000}"#,
+        ));
+        flow.spend_cap_kind = Some(flow::CapKind::Guaranteed);
+        assert_eq!(
+            why_the_run_would_not_start(
+                &flow,
+                &SomeHoldToACeiling,
+                &models::pricing::PriceList::default()
+            ),
+            None
+        );
+    }
+
+    /// **A GUARANTEE OVER NOTHING IS REFUSED TOO.** A flow demanding the
+    /// guaranteed kind and declaring no cap has nothing to guarantee, and
+    /// starting it would leave the demand with no effect at all.
+    #[test]
+    fn a_guaranteed_cap_with_no_cap_declared_does_not_start() {
+        let mut flow = a_flow_of(&a_step(
+            "chiedi",
+            "external_engine",
+            r#"{"tool": "motore-con-tetto", "stdin": "ciao", "timeout_secs": 10, "max_spend_micros": 600000}"#,
+        ));
+        flow.spend_cap_micros = None;
+        flow.spend_cap_kind = Some(flow::CapKind::Guaranteed);
+        let refused = why_the_run_would_not_start(
+            &flow,
+            &SomeHoldToACeiling,
+            &models::pricing::PriceList::default(),
+        )
+        .expect("there is no cap to guarantee");
+        assert!(refused.contains("spend_cap_micros"), "{refused}");
     }
 
     /// **A CAP THE FLOW DOES NOT DECLARE GETS NO VERDICT**: there is nothing

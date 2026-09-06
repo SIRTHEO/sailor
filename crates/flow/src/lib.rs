@@ -27,7 +27,7 @@ pub use executor::{
     SpendStop, StepInput, StopReason, SystemClock, AFTER_REFUSAL, AT_ONCE, CURRENT_CAP,
     CURRENT_RUN, CURRENT_STEP, CURRENT_WALL, WALL_REMAINING_SECS, WORKDIR_FIELD, WORKSPACE_ROOT,
 };
-pub use file::FlowFile;
+pub use file::{CapKind, FlowFile};
 pub use graph::{Condition, DependencyEdge, Graph, GraphError, Step};
 pub use record::{
     digest_input, truncate_said, AttemptRelation, Outcome, Ran, Refusal, RefusalRule, StepRecord,
