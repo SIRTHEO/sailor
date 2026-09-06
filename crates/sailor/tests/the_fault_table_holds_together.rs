@@ -57,6 +57,9 @@ fn register() -> String {
 /// stay correctly numbered and the table goes on «holding together». Closing
 /// that gap means to stop filtering and measure the block instead: from the
 /// first line starting with `|` to the last, every line between must be a row.
+/// The columns the header declares: number, date, three questions, standing.
+const COLUMNS: usize = 6;
+
 fn faults_in(text: &str) -> Vec<Fault> {
     text.lines()
         .filter_map(|line| {
@@ -141,6 +144,45 @@ fn every_fault_has_its_own_number_and_none_is_missing() {
 /// **The document has no door to refuse at, so it is guarded here.** The store
 /// turns away a status the count cannot read; a markdown table takes anything
 /// typed into it, and an unreadable status leaves the open tally in silence.
+/// How many columns a Markdown reader sees: a `|` splits, `\|` does not.
+fn columns_a_reader_sees(row: &str) -> usize {
+    let mut bars: usize = 0;
+    let mut escaped = false;
+    for letter in row.trim().chars() {
+        match letter {
+            _ if escaped => escaped = false,
+            '\\' => escaped = true,
+            '|' => bars += 1,
+            _ => {}
+        }
+    }
+    bars.saturating_sub(1)
+}
+
+/// **A CHECK THAT READS THE ENDS OF A ROW PROVES NOTHING ABOUT ITS MIDDLE.**
+/// A status quoting `||` unescaped split its row into eight columns on the
+/// page, and every guard stayed green: the number is the first cell and the
+/// standing the last, and a split between them leaves both where they were.
+#[test]
+fn no_row_carries_more_columns_than_the_header_does() {
+    let text = register();
+    let rows: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with('|'))
+        .collect();
+    assert!(rows.len() > 100, "only {} rows read: the filter is not looking", rows.len());
+    let wide: Vec<&&str> = rows
+        .iter()
+        .filter(|row| columns_a_reader_sees(row) != COLUMNS)
+        .collect();
+    assert!(
+        wide.is_empty(),
+        "a row a reader sees with the wrong number of columns; escape the `|` inside it as `\\|`: {:?}",
+        wide.iter().map(|row| &row[..80.min(row.len())]).collect::<Vec<_>>()
+    );
+}
+
 #[test]
 fn every_row_says_where_it_stands_in_words_the_count_can_read() {
     let unread: Vec<usize> = faults()
