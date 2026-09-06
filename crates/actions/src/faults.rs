@@ -227,7 +227,7 @@ mod tests {
             "what_happened": what,
             "how_it_showed": "by running it",
             "what_would_prevent": "a test that is born red",
-            "status": "**aperto**",
+            "status": "**open**",
         })
     }
 
@@ -292,7 +292,7 @@ mod tests {
         }
         let store = Faults::open(&path).expect("opening");
         store
-            .set_status(1, "**chiuso** with a mutant")
+            .set_status(1, "**closed** with a mutant")
             .expect("closing one");
 
         let node = FaultListAction::new(Some(path));
@@ -322,7 +322,7 @@ mod tests {
         }
         Faults::open(&path)
             .expect("opening")
-            .set_status(1, "**chiuso** with a mutant")
+            .set_status(1, "**closed** with a mutant")
             .expect("closing the oldest");
 
         let node = FaultNextAction::new(Some(path));
@@ -350,7 +350,7 @@ mod tests {
             .expect("recording");
         Faults::open(&path)
             .expect("opening")
-            .set_status(1, "**chiuso** in the same test")
+            .set_status(1, "**closed** in the same test")
             .expect("closing it");
 
         let ActionOutcome::Went(said) = FaultNextAction::new(Some(path))
