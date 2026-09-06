@@ -113,11 +113,12 @@ to `9768998b`, by two fresh-context judges whose findings were fixed in the
 last two commits. Outcome first, then what the judges left open, then what is
 still Theo's.
 
-- **Four places, not eleven.** `Rail.tsx` draws Board / Terminals / Memory /
-  Sailor in a column, grouped «work · what happened · itself», each with a
-  sub-rail: Memory has runs / ledger / spend / faults, Sailor has keeps / can
-  do / profiles / models / equipment / commands, Terminals has live / projects
-  / worktrees. The column counts the flows and the open terminals.
+- **Four places, not eleven.** The column drew Board / Terminals / Memory /
+  Sailor, grouped «work · what happened · itself», each with a sub-rail:
+  Memory had runs / ledger / spend / faults, Sailor had keeps / can do /
+  profiles / models / equipment / commands, Terminals had live / projects /
+  worktrees. The column counted the flows and the open terminals. **The last
+  section of this document says what became of that shape.**
 - **The bar speaks from anywhere, and says when it cannot.** Breadcrumbs say
   where you are, down to the ledger table open; chips say what runs, what it
   costs today (a floor when a call had no price; it opens Memory › spend),
@@ -173,10 +174,31 @@ still Theo's.
 
 ### What is still Theo's: the gestures
 
-1. Open the window and walk the four places; the bar must never go silent.
+1. Open the window and walk the sections; the bar must never go silent.
 2. Memory › ledger: type `select * from runs order by 1 desc limit 5`.
 3. Sailor › keeps: every path listed must exist where it says.
 4. Terminals: open two, type `git status` under one, watch the line route.
 5. Start the relay from the board, press Stop, read the console's last line.
 6. Terminals › projects: «work here» on another project; the board changes.
 7. Set the machine to dark; nothing must become unreadable.
+
+## What became of the four places, 06/09/2026
+
+Four entries in a column was the right answer to «every capability asks for its
+own entry», and the wrong answer to where the work happens. The window now
+opens **on the terminals**, and they are not a destination among several: they
+are the ground the stage holds until a section is asked for.
+
+The shape today, in `desktop/src/places.ts`, is **three grounds rather than one
+list**. What belongs to the tree you stand in hangs under that tree — Board,
+Changes, Whiteboard, Runs. What belongs to this machine — profiles, engines,
+models, quota, what Sailor keeps, what it can do — is the same wherever you
+stand, and is reached by its own name through ⌘K instead of hiding two clicks
+deep under a noun. `World.tsx` draws the column; there is no `Rail.tsx` any
+more, and the six sections a person can stand in are named once, in `SECTIONS`.
+
+Two things this cost, and both are recorded as faults rather than smoothed
+over: a section that draws no canvas had a bar still speaking of a flow, and
+the picture-taking that checks these screens was blind on the four scenes it
+could not reach. **A document that names a file which no longer exists is the
+same defect in prose**, which is why this section exists at all.
