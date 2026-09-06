@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Ran, Refusal, RunEvent, RunSnapshot } from "./engine";
-import { tryT } from "./i18n";
+import { t as translate, tryT } from "./i18n";
 import { totalsArePartial, type RunUsage } from "./flow";
 import { StepRefusal } from "./StepRefusal";
 import { StepRan } from "./StepRan";
@@ -378,12 +378,21 @@ function tokens(count: number): string {
  * propri conteggi, o non aveva un prezzo, la cifra qui sotto è più bassa del
  * vero: tacerlo sarebbe presentare una somma che nasconde ciò che le manca.
  */
-function Spend({ usage }: { usage: RunUsage }) {
+export function costReading(usage: Pick<RunUsage, "tokens" | "total_cost_micros">): string {
+  const { calls, calls_without_cost } = usage.tokens;
+  if (calls === 0) return translate("ui.cost.nothing");
+  if (calls_without_cost === calls) return translate("ui.cost.unknown", { calls });
+  return translate(calls_without_cost > 0 ? "ui.cost.at_least" : "ui.cost.exact", {
+    units: money(usage.total_cost_micros), calls, calls_without_cost,
+  });
+}
+
+export function Spend({ usage }: { usage: RunUsage }) {
   const t = usage.tokens;
   if (t.calls === 0) return null;
   return (
     <div className="console__spend">
-      <span className="console__spend-cost">{money(usage.total_cost_micros)}</span>
+      <span className="console__spend-cost">{costReading(usage)}</span>
       <span>
         {t.calls} {t.calls === 1 ? "call" : "calls"}
       </span>
@@ -503,13 +512,8 @@ export function RunConsole({
         </button>
       </header>
 
-      {/* LA FRASE CHE IMPEDISCE DI CREDERE A UNA COSA FALSA. Lo stato dei passi
-          arriva mentre accade; il testo che un passo produce arriva tutto alla
-          sua chiusura, perché il motore lo legge fino in fondo prima di
-          consegnarlo. Chi guarda deve saperlo mentre guarda, non dopo. */}
       <div className="console__truth">
-        steps are seen opening and closing as it happens; the text a step produces arrives all
-        at once when it closes — the engine reads it to the end before handing it over
+        {translate("window.session.execution_truth")}
       </div>
 
       {listenFailure && <div className="console__truth">{listenFailure}</div>}

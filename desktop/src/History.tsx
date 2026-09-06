@@ -85,7 +85,7 @@ function seenTokens(call: ModelCall): number {
  * 31/08/2026 manca a Langfuse, LangSmith e Phoenix — tutti e tre con bug
  * pubblici sui numeri, tutti e tre senza una seconda fonte da confrontare.
  */
-function Calls({ calls }: { calls: ModelCall[] }) {
+export function Calls({ calls }: { calls: ModelCall[] }) {
   if (calls.length === 0) return null;
   return (
     <details className="calls">
