@@ -224,6 +224,7 @@ dependencies = [
  "serde_json",
  "tracing",
  "tracing-subscriber",
+ "workspace",
 ]
 
 [[package]]
