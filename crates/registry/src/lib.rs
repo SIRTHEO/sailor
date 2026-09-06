@@ -148,9 +148,9 @@ pub fn registry_in(
     let flows = home.as_ref().map(|home| home.join("flows"));
     let mut registry = ActionRegistry::default();
     actions::register_default(&mut registry);
-    // Detecting what is on this machine is an action like any other: a step can
-    // ask "which tools do I have here" instead of assuming.
-    toolbox::register_default(&mut registry);
+    // Detecting what is here is an action like any other, and it detects on
+    // the house's machine, read back from the tools the house built on it.
+    toolbox::register_default(&mut registry, tools.machine().clone());
     // "Do these flows run here?" — the missing half, because a list of what
     // exists does not tell anyone what will stop working.
     toolbox::register_needs(&mut registry);

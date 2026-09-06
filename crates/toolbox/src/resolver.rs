@@ -52,6 +52,12 @@ impl Tools {
         self
     }
 
+    /// The world this detector was built on, so that whoever else needs the
+    /// same machine reads it here instead of deciding it a second time.
+    pub fn machine(&self) -> &Machine {
+        &self.machine
+    }
+
     /// Is there a descriptor with this identifier?
     ///
     /// **NOT "IS IT ON THE MACHINE", AND THE DIFFERENCE IS EVERYTHING.** A flow
