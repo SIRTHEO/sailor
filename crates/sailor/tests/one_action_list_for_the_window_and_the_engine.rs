@@ -89,7 +89,7 @@ fn scratch_dir(label: &str) -> PathBuf {
 }
 
 /// The names the engine really registers, asked of the registry rather than
-/// copied. **THE STORE MATTERS**: six actions register only when there is one,
+/// copied. **THE STORE MATTERS**: two actions register only when there is one,
 /// and the window is right to draw them all the same. The house is this test's
 /// own, so nothing of the machine's home or tools decides the list.
 fn engine_action_names(label: &str) -> BTreeSet<String> {

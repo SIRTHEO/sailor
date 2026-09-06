@@ -131,9 +131,9 @@ pub fn default_registry(
 /// **The ledger is optional, and the difference is declared.** Running passes
 /// one and gets the spend rows; a static check has none and must not — opening
 /// a store to check a graph would create files for a question that touches
-/// nothing. Nodes that *write* stay out when it is missing; the one that
-/// *reads* history is registered anyway, because "no run recorded" is a good
-/// answer rather than a failure.
+/// nothing. A node that needs one is registered anyway and refuses to run, so
+/// `flow check` can say the step names a real action; the one that *reads*
+/// history answers "no run recorded", which is an answer rather than a failure.
 pub fn registry_in(
     house: House,
     ledger: Option<Ledger>,
@@ -221,9 +221,10 @@ pub fn registry_in(
         ledger.clone(),
         in_store(faults::FAULTS_FILE),
     );
-    if let Some(ledger) = ledger {
-        actions::store::register_store(&mut registry, ledger);
-    }
+    // The three nodes of the store, registered **even without one**, for the
+    // reason declared above `subflow`. Running without a store refuses instead:
+    // a step that writes into nothing is worse than a step that stops.
+    actions::store::register_store(&mut registry, ledger);
     // Last: the list it hands out is everything above.
     actions::draft::register_draft(&mut registry, flows);
     registry
@@ -361,20 +362,47 @@ mod tests {
         );
     }
 
-    /// Without a ledger the writing nodes stay out and the reading one stays
-    /// in: the difference between a static check that creates files and one
-    /// that touches nothing.
+    /// Without a ledger the store nodes are named and refuse to run.
+    ///
+    /// The names are asked of the constants, never spelled here: the assertion
+    /// this replaces interrogated `store_put`, which is no action's name, and
+    /// was true whatever the registry held.
     #[test]
-    fn without_a_ledger_the_writing_nodes_stay_out_and_the_reading_one_stays_in() {
+    fn without_a_ledger_the_store_nodes_are_named_and_refuse_to_run() {
         let registry = registry_in(House::empty(), None, None);
         assert!(
             registry.get("history_ask").is_some(),
             "reading history works without a ledger: the answer is «there is nothing»"
         );
-        assert!(
-            registry.get("store_put").is_none(),
-            "writing does not: without a ledger it has nowhere to put anything"
-        );
+
+        let shared = flow::SharedState::new();
+        for (name, asked) in [
+            (
+                actions::store::STORE_WRITE_ACTION,
+                serde_json::json!({"collection": "c", "key": "k", "value": 1, "written_by": "chi"}),
+            ),
+            (
+                actions::store::STORE_READ_ACTION,
+                serde_json::json!({"collection": "c", "key": "k"}),
+            ),
+            (
+                actions::store::STORE_LIST_ACTION,
+                serde_json::json!({"collection": "c"}),
+            ),
+        ] {
+            let step = registry
+                .get(name)
+                .unwrap_or_else(|| panic!("«{name}» is registered even without a ledger"));
+            let refused = step
+                .execute(&asked, &shared)
+                .expect_err("without a ledger it must not run");
+            assert_eq!(refused.class, "no_store", "«{name}»");
+            assert!(
+                refused.said.contains("where the store lives"),
+                "and it says why, not only that it cannot: {}",
+                refused.said
+            );
+        }
     }
 
     /// `subflow` is there without a ledger, and refuses to run.
