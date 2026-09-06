@@ -213,8 +213,7 @@ fn walk_text(field: &str, value: &Value, visit: &mut dyn FnMut(&str, &str)) {
     match value {
         Value::Object(fields) => {
             for (key, inner) in fields {
-                if key == reference::FROM_KEY || key == reference::JSON_KEY || key == NEEDS_EXTENSIONS
-                {
+                if reference::carries_a_pointer(key) || key == NEEDS_EXTENSIONS {
                     continue;
                 }
                 let trail = if field.is_empty() {
