@@ -139,7 +139,7 @@ fn a_flow_step_launches_the_engine_inside_the_profiles_home() {
     assert_eq!(
         equipment.env.get("CODEX_HOME").map(String::as_str),
         Some("/case/codex/lavoro"),
-        "il passo eredita ancora la casa di chi ha aperto il terminale"
+        "the step still inherits the home of whoever opened the terminal"
     );
 }
 
@@ -157,12 +157,12 @@ fn what_the_step_declares_beats_the_profile_never_the_other_way_round() {
     let equipment = equipment_for(
         &a_store_with_one_active_profile(),
         "/opt/homebrew/bin/codex",
-        &step_env(&[("CODEX_HOME", "/una/casa/scritta/nel/passo")]),
+        &step_env(&[("CODEX_HOME", "/a/home/written/in/the/step")]),
     );
 
     assert_eq!(
         equipment.env.get("CODEX_HOME").map(String::as_str),
-        Some("/una/casa/scritta/nel/passo")
+        Some("/a/home/written/in/the/step")
     );
 }
 
@@ -264,16 +264,16 @@ fn a_step_that_writes_the_home_variable_is_recorded_as_the_one_who_chose() {
     let equipment = equipment_for(
         &a_store_with_one_active_profile(),
         "codex",
-        &step_env(&[("CODEX_HOME", "/una/casa/scritta/nel/passo")]),
+        &step_env(&[("CODEX_HOME", "/a/home/written/in/the/step")]),
     );
 
     assert_eq!(
         equipment.identity,
         EngineIdentity::ChosenByTheStep {
             cli_id: "codex".to_owned(),
-            home_dir: PathBuf::from("/una/casa/scritta/nel/passo"),
+            home_dir: PathBuf::from("/a/home/written/in/the/step"),
         },
-        "la riga direbbe un profilo che il processo non ha usato"
+        "the row would name a profile the process never used"
     );
 }
 
@@ -305,11 +305,11 @@ fn a_cli_whose_home_no_variable_moves_says_so_with_its_reason() {
         why,
     } = equipment.identity
     else {
-        panic!("un profilo non messo in forza si legge come qualcos'altro");
+        panic!("a profile never put in force reads as something else");
     };
     assert_eq!(cli_id, "antigravity");
     assert_eq!(profile_name, "lavoro");
-    assert!(!why.is_empty(), "manca la ragione, che è metà del dato");
+    assert!(!why.is_empty(), "the reason is missing, and it is half the datum");
 }
 
 /// **STATE NAMING A VANISHED PROFILE INVENTS NO HOME.**

@@ -32,11 +32,11 @@ impl TempDir {
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .expect("l'orologio non va all'indietro")
+                .expect("the clock does not run backwards")
                 .as_nanos()
         );
         let path = std::env::temp_dir().join(unique);
-        fs::create_dir_all(&path).expect("cartella di prova");
+        fs::create_dir_all(&path).expect("the scratch directory");
         TempDir(path)
     }
 
@@ -56,20 +56,20 @@ impl Drop for TempDir {
 /// knowing, which home it received.
 fn a_fake_codex_that_prints_its_home(dir: &Path) -> String {
     let path = dir.join("codex");
-    fs::write(&path, "#!/bin/sh\nprintf 'CASA=%s\\n' \"$CODEX_HOME\"\n")
-        .expect("scrivere il finto motore");
+    fs::write(&path, "#!/bin/sh\nprintf 'HOME_IS=%s\\n' \"$CODEX_HOME\"\n")
+        .expect("write the fake engine");
     fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("renderlo eseguibile");
     path.to_string_lossy().into_owned()
 }
 
 fn what_the_engine_said(outcome: &ActionOutcome) -> String {
     let ActionOutcome::Went(value) = outcome else {
-        panic!("il passo doveva andare: {outcome:?}");
+        panic!("the step had to go: {outcome:?}");
     };
     value
         .get("stdout")
         .and_then(serde_json::Value::as_str)
-        .expect("l'uscita del motore")
+        .expect("the engine's output")
         .to_owned()
 }
 
@@ -102,7 +102,7 @@ fn the_engine_really_starts_inside_the_home_the_profile_declares() {
         })
         .to_string(),
     )
-    .expect("scrivere lo stato dei profili");
+    .expect("write the profiles state");
     std::env::set_var("PROFILES_STATE_PATH", &state);
 
     let action = actions::ExternalEngineAction::new();
@@ -111,11 +111,11 @@ fn the_engine_really_starts_inside_the_home_the_profile_declares() {
     let said = what_the_engine_said(
         &action
             .execute(&json!({"bin": bin, "timeout_secs": 30}), &shared)
-            .expect("il passo doveva riuscire"),
+            .expect("the step had to go through"),
     );
     assert!(
-        said.contains(&format!("CASA={}", home_of_the_profile.display())),
-        "il motore è partito con la casa di chi ha aperto il terminale: {said:?}"
+        said.contains(&format!("HOME_IS={}", home_of_the_profile.display())),
+        "the engine started with the home of whoever opened the terminal: {said:?}"
     );
 
     let shared = SharedState::new();
@@ -124,15 +124,15 @@ fn the_engine_really_starts_inside_the_home_the_profile_declares() {
             .execute(
                 &json!({
                     "bin": bin,
-                    "env": {"CODEX_HOME": "/una/casa/scritta/nel/passo"},
+                    "env": {"CODEX_HOME": "/a/home/written/in/the/step"},
                     "timeout_secs": 30
                 }),
                 &shared,
             )
-            .expect("il passo doveva riuscire"),
+            .expect("the step had to go through"),
     );
     assert!(
-        said.contains("CASA=/una/casa/scritta/nel/passo"),
-        "il profilo ha scavalcato ciò che il passo dichiara: {said:?}"
+        said.contains("HOME_IS=/a/home/written/in/the/step"),
+        "the profile overrode what the step declares: {said:?}"
     );
 }

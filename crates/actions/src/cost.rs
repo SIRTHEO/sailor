@@ -252,18 +252,18 @@ mod what_it_cost {
 
     fn scratch(name: &str) -> std::path::PathBuf {
         let dir =
-            std::env::temp_dir().join(format!("sailor-consumo-{}-{name}", std::process::id()));
+            std::env::temp_dir().join(format!("sailor-cost-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("cartella di lavoro");
+        std::fs::create_dir_all(&dir).expect("the scratch directory");
         dir
     }
 
     /// An executable script that behaves as it is told.
     fn fake_engine(dir: &std::path::Path, name: &str, body: &str) -> String {
         let path = dir.join(name);
-        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).expect("scrivere il finto motore");
+        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).expect("write the fake engine");
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
-            .expect("renderlo eseguibile");
+            .expect("make it executable");
         path.to_string_lossy().into_owned()
     }
 
@@ -281,7 +281,7 @@ mod what_it_cost {
 
     fn write_price_list(dir: &std::path::Path) -> std::path::PathBuf {
         let path = dir.join("pricing.json");
-        std::fs::write(&path, PRICE_LIST).expect("scrivere il listino");
+        std::fs::write(&path, PRICE_LIST).expect("write the price list");
         path
     }
 
@@ -305,7 +305,7 @@ mod what_it_cost {
         fn resolve(&self, id: &str) -> Result<String, String> {
             match id {
                 "motore-di-prova" => Ok(self.bin.clone()),
-                other => Err(format!("«{other}» non è su questa macchina")),
+                other => Err(format!("«{other}» is not on this machine")),
             }
         }
         fn ask_recipe(&self, _id: &str) -> Option<AskRecipe> {
@@ -410,9 +410,9 @@ printf '%s' '{"result":"la risposta vera","num_turns":36,"total_cost_usd":20.009
     const WRAPS_ON_DEMAND: &str = r#"cat > /dev/null
 printf '%s\n' "$@" > "$(dirname "$0")/argv"
 if [ "$1" = "--output-format" ] && [ "$2" = "json" ]; then
-  printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd":0.5,"usage":{"input_tokens":1000000,"output_tokens":1000000,"cache_read_input_tokens":1000000}}'
+  printf '{"result":"the true answer","model":"modello-di-prova","total_cost_usd":0.5,"usage":{"input_tokens":1000000,"output_tokens":1000000,"cache_read_input_tokens":1000000}}'
 else
-  printf 'la risposta vera'
+  printf 'the true answer'
 fi"#;
 
     /// **AN ENGINE THAT ANSWERS IN JSON WITHOUT ANYBODY ASKING IT TO.** It
@@ -421,12 +421,12 @@ fi"#;
     /// vendor's keys to appear in here, its tokens would be read all the same,
     /// which is exactly what the model-independence constraint forbids.
     const ALWAYS_WRAPS: &str = r#"cat > /dev/null
-printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd":0.5,"usage":{"input_tokens":1000000,"output_tokens":1000000,"cache_read_input_tokens":1000000}}'"#;
+printf '{"result":"the true answer","model":"modello-di-prova","total_cost_usd":0.5,"usage":{"input_tokens":1000000,"output_tokens":1000000,"cache_read_input_tokens":1000000}}'"#;
 
     /// The command line the fake engine was really invoked with.
     fn argv_of(dir: &std::path::Path) -> Vec<String> {
         std::fs::read_to_string(dir.join("argv"))
-            .expect("il motore finto ha scritto la propria riga di comando")
+            .expect("the fake engine wrote down its own command line")
             .lines()
             .filter(|line| !line.is_empty())
             .map(str::to_owned)
@@ -434,10 +434,10 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     }
 
     fn calls_in(dir: &std::path::Path) -> Vec<ledger::ModelCallRecord> {
-        let ledger = Ledger::open(dir).expect("riaprire il deposito");
+        let ledger = Ledger::open(dir).expect("reopen the ledger");
         let dump = ledger
             .projection_dump()
-            .expect("il deposito sa dire cosa contiene");
+            .expect("the ledger can say what it holds");
         // **ONE READER OF THE PROJECTION, AND IT IS NOT HERE.** A private copy
         // of `ui::parse::parse_model_call_row` — twenty-eight hand-written
         // indices — would let a moved column break **both readings the same
@@ -461,7 +461,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         match price_list {
             Some(path) => std::env::set_var(PRICING_ENV, path),
-            None => std::env::set_var(PRICING_ENV, "/nessun/listino/qui"),
+            None => std::env::set_var(PRICING_ENV, "/no/price/list/here"),
         }
         let out = body();
         std::env::remove_var(PRICING_ENV);
@@ -476,10 +476,10 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// the one the engine itself states.
     #[test]
     fn a_declaring_engine_writes_a_row_with_true_tokens_and_a_cost_from_the_price_list() {
-        let dir = scratch("dichiara");
+        let dir = scratch("declares");
         let price_list = write_price_list(&dir);
         let bin = fake_engine(&dir, "motore", WRAPS_ON_DEMAND);
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {
             bin,
             recipe: Some(declaring_recipe()),
@@ -490,13 +490,13 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let outcome = with_price_list(Some(&price_list), || {
             action.execute(&input, &shared("corsa-1", "passo-1"))
         })
-        .expect("il motore risponde");
+        .expect("the engine answers");
         let ActionOutcome::Went(output) = outcome else {
-            panic!("un motore che risponde è sempre Went")
+            panic!("an engine that answers is always Went")
         };
 
         let calls = calls_in(&dir.join("deposito"));
-        assert_eq!(calls.len(), 1, "una chiamata, una riga");
+        assert_eq!(calls.len(), 1, "one call, one row");
         let call = &calls[0];
         assert_eq!(call.run_id, "corsa-1");
         assert_eq!(call.step_id.as_deref(), Some("passo-1"));
@@ -507,7 +507,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         assert_eq!(
             call.cached_tokens,
             Some(1_000_000),
-            "la cache ha una colonna sua e non finisce dentro l'ingresso"
+            "the cache has a column of its own and does not end up inside the input"
         );
         // 1M at 3 $ + 1M at 15 $ + 1M of cache at 0.30 $ = 18.30 $ = 18 300 000 micros.
         assert_eq!(call.cost_micros, Some(18_300_000));
@@ -520,18 +520,18 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         assert!(call.ended_at.is_some());
 
         // And the step's output is the text, not the envelope.
-        assert_eq!(output["stdout"], "la risposta vera");
+        assert_eq!(output["stdout"], "the true answer");
     }
 
     /// The row of a call that crossed two models: the engine's own figure, and
     /// **no** figure from the price list. See fault 121.
     #[test]
     fn a_call_across_two_models_leaves_the_price_list_figure_unknown() {
-        let dir = scratch("due-modelli");
+        let dir = scratch("two-models");
         let price_list = dir.join("pricing.json");
-        std::fs::write(&price_list, TWO_MODEL_PRICE_LIST).expect("scrivere il listino");
+        std::fs::write(&price_list, TWO_MODEL_PRICE_LIST).expect("write the price list");
         let bin = fake_engine(&dir, "motore", ANSWERS_FOR_TWO_MODELS);
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {
             bin,
             recipe: Some(counting_each_model_apart()),
@@ -542,7 +542,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let outcome = with_price_list(Some(&price_list), || {
             action.execute(&input, &shared("corsa-121", "struttura"))
         })
-        .expect("il motore risponde");
+        .expect("the engine answers");
         assert!(matches!(outcome, ActionOutcome::Went(_)));
 
         let calls = calls_in(&dir.join("deposito"));
@@ -576,10 +576,10 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
                 .unwrap()
                 .micros(),
         );
-        assert_eq!(solo_cache, Some(300_000), "1M di cache costa 0,30 $");
+        assert_eq!(solo_cache, Some(300_000), "1M of cache costs 0.30 $");
         assert!(
             solo_cache.unwrap() * 5 < 3_000_000,
-            "e non i 3,00 $ che costerebbe come ingresso fresco"
+            "and not the 3.00 $ it would cost as fresh input"
         );
     }
 
@@ -590,10 +590,10 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// zero: a zero sums, and no downstream view can correct it.
     #[test]
     fn an_engine_that_declares_nothing_is_unchanged_and_leaves_the_tokens_unknown() {
-        let dir = scratch("non-dichiara");
+        let dir = scratch("declares-nothing");
         let price_list = write_price_list(&dir);
         let bin = fake_engine(&dir, "motore", WRAPS_ON_DEMAND);
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {
             bin,
             recipe: Some(AskRecipe {
@@ -615,29 +615,29 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let outcome = with_price_list(Some(&price_list), || {
             action.execute(&input, &shared("corsa-2", "passo-2"))
         })
-        .expect("il motore risponde");
+        .expect("the engine answers");
         let ActionOutcome::Went(output) = outcome else {
-            panic!("un motore che risponde è sempre Went")
+            panic!("an engine that answers is always Went")
         };
 
         // The same output as always: no extra field, no envelope.
         assert_eq!(output["status"], "ok");
-        assert_eq!(output["stdout"], "la risposta vera");
+        assert_eq!(output["stdout"], "the true answer");
         assert_eq!(
             output.as_object().unwrap().keys().collect::<Vec<_>>(),
             vec!["status", "stdout", "stderr"],
-            "l'uscita del passo non guadagna campi perché qualcuno misura"
+            "the step's output gains no field because somebody is measuring"
         );
 
         let calls = calls_in(&dir.join("deposito"));
-        assert_eq!(calls.len(), 1, "la chiamata si registra comunque");
+        assert_eq!(calls.len(), 1, "the call is recorded all the same");
         let call = &calls[0];
-        assert_eq!(call.input_tokens, None, "sconosciuto, non zero");
-        assert_eq!(call.output_tokens, None, "sconosciuto, non zero");
-        assert_eq!(call.cached_tokens, None, "sconosciuto, non zero");
+        assert_eq!(call.input_tokens, None, "unknown, not zero");
+        assert_eq!(call.output_tokens, None, "unknown, not zero");
+        assert_eq!(call.cached_tokens, None, "unknown, not zero");
         assert_eq!(call.total_tokens, None);
-        assert_eq!(call.cost_micros, None, "senza token non c'è nessun costo");
-        assert_eq!(call.actual_model, "", "nessun modello dichiarato");
+        assert_eq!(call.cost_micros, None, "no tokens, no cost");
+        assert_eq!(call.actual_model, "", "no model was declared");
     }
 
     // ── (c) a failed call writes its row all the same ──────────────────
@@ -647,13 +647,13 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// would understate spending in the very minutes before an exhaustion.
     #[test]
     fn a_failed_call_still_writes_its_row_with_the_cause() {
-        let dir = scratch("fallita");
+        let dir = scratch("failed");
         let bin = fake_engine(
             &dir,
             "motore",
-            "cat > /dev/null\necho 'è andata male' >&2\nexit 3",
+            "cat > /dev/null\necho 'it went badly' >&2\nexit 3",
         );
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {
             bin,
             recipe: Some(declaring_recipe()),
@@ -664,14 +664,14 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let error = with_price_list(None, || {
             action.execute(&input, &shared("corsa-3", "passo-3"))
         })
-        .expect_err("un'uscita diversa da zero rompe il passo");
+        .expect_err("an exit other than zero breaks the step");
         assert_eq!(error.class, "engine_exit_error");
 
         let calls = calls_in(&dir.join("deposito"));
-        assert_eq!(calls.len(), 1, "anche un fallimento lascia la sua riga");
+        assert_eq!(calls.len(), 1, "a failure leaves its row too");
         assert_eq!(calls[0].error_type.as_deref(), Some("exit_error"));
         assert_eq!(calls[0].cli, "motore-di-prova");
-        assert_eq!(calls[0].input_tokens, None, "non ha fatto in tempo a dirlo");
+        assert_eq!(calls[0].input_tokens, None, "it had no time to say");
     }
 
     /// **SPENT AND BROKEN ARE TWO THINGS, EVEN WITH A LONE ENGINE.**
@@ -686,13 +686,13 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// that mixes spent quotas with real faults tells nobody anything.
     #[test]
     fn a_single_engine_that_ran_out_is_not_reported_as_broken() {
-        let dir = scratch("esaurito-da-solo");
+        let dir = scratch("spent-alone");
         let bin = fake_engine(
             &dir,
             "motore-esaurito",
             "cat > /dev/null\necho \"You've hit your weekly limit · resets 7am\"\nexit 1",
         );
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let mut recipe = declaring_recipe();
         recipe.unusable_when = vec!["weekly limit".to_owned()];
         let action = ExternalEngineAction::resolving_with(Declares {
@@ -705,24 +705,24 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let error = with_price_list(None, || {
             action.execute(&input, &shared("corsa-esaurita", "passo-1"))
         })
-        .expect_err("un motore esaurito e solo non può fare il lavoro");
+        .expect_err("a spent engine on its own cannot do the work");
 
         assert_eq!(
             error.class, "engine_exhausted",
-            "non «engine_exit_error»: chi legge deve sapere che è finita la quota"
+            "not «engine_exit_error»: whoever reads it has to know the quota ran out"
         );
         assert!(
             error.said.contains("quota"),
-            "e il messaggio lo dice a parole: {}",
+            "and the message says so in words: {}",
             error.said
         );
 
         let calls = calls_in(&dir.join("deposito"));
-        assert_eq!(calls.len(), 1, "la chiamata ha bruciato quota: la riga c'è");
+        assert_eq!(calls.len(), 1, "the call burned quota: the row is there");
         assert_eq!(
             calls[0].error_type.as_deref(),
             Some("exhausted"),
-            "e la riga distingue la quota finita da un guasto"
+            "and the row tells a spent quota apart from a fault"
         );
     }
 
@@ -732,13 +732,13 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// would pass green.
     #[test]
     fn a_single_engine_that_truly_broke_is_still_reported_as_broken() {
-        let dir = scratch("rotto-da-solo");
+        let dir = scratch("broken-alone");
         let bin = fake_engine(
             &dir,
             "motore-rotto",
-            "cat > /dev/null\necho 'errore: il mandato non ha senso' >&2\nexit 3",
+            "cat > /dev/null\necho 'error: the brief makes no sense' >&2\nexit 3",
         );
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let mut recipe = declaring_recipe();
         recipe.unusable_when = vec!["weekly limit".to_owned()];
         let action = ExternalEngineAction::resolving_with(Declares {
@@ -751,7 +751,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let error = with_price_list(None, || {
             action.execute(&input, &shared("corsa-rotta", "passo-1"))
         })
-        .expect_err("un'uscita diversa da zero rompe il passo");
+        .expect_err("an exit other than zero breaks the step");
 
         assert_eq!(error.class, "engine_exit_error");
         let calls = calls_in(&dir.join("deposito"));
@@ -762,15 +762,15 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// the words that mean a refusal are not looked for inside its answer.
     #[test]
     fn an_answer_in_the_declared_shape_is_not_read_as_a_refusal() {
-        let dir = scratch("forma-contro-rifiuto");
+        let dir = scratch("shape-against-refusal");
         // The answer says the word the descriptor declares, because it is about
         // it: an engine reading this tree prints it while working.
         let bin = fake_engine(
             &dir,
-            "motore-che-parla-di-quote",
+            "engine-that-talks-about-quotas",
             "cat > /dev/null\necho '{\"found\": \"the weekly limit sentence lives in the descriptor\"}'",
         );
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let mut recipe = declaring_recipe();
         recipe.unusable_when = vec!["weekly limit".to_owned()];
         recipe.exhausted_when = vec!["weekly limit".to_owned()];
@@ -784,7 +784,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         .cooling_down_in(Some(aside.clone()));
         let input = json!({
             "tool": "motore-di-prova",
-            "stdin": "guarda l'albero, e rispondi in questa forma: {\"type\":\"object\",\"properties\":{\"found\":{\"type\":\"string\"}},\"required\":[\"found\"],\"allow_extra\":false}",
+            "stdin": "look at the tree, and answer in this shape: {\"type\":\"object\",\"properties\":{\"found\":{\"type\":\"string\"}},\"required\":[\"found\"],\"allow_extra\":false}",
             "timeout_secs": 10,
             "answer_shape": {
                 "type": "object",
@@ -818,13 +818,13 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// `in_shape` as «a shape was declared» and the whole crate stays green.
     #[test]
     fn an_answer_off_the_declared_shape_is_still_read_as_a_refusal() {
-        let dir = scratch("fuori-forma-e-rifiuto");
+        let dir = scratch("off-shape-and-refusal");
         let bin = fake_engine(
             &dir,
             "motore-a-secco-in-forma-libera",
             "cat > /dev/null\necho \"You've hit your weekly limit · resets 7am\"",
         );
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let mut recipe = declaring_recipe();
         recipe.unusable_when = vec!["weekly limit".to_owned()];
         recipe.exhausted_when = vec!["weekly limit".to_owned()];
@@ -838,7 +838,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         .cooling_down_in(Some(aside.clone()));
         let input = json!({
             "tool": "motore-di-prova",
-            "stdin": "guarda l'albero, e rispondi in questa forma: {\"type\":\"object\",\"properties\":{\"found\":{\"type\":\"string\"}},\"required\":[\"found\"],\"allow_extra\":false}",
+            "stdin": "look at the tree, and answer in this shape: {\"type\":\"object\",\"properties\":{\"found\":{\"type\":\"string\"}},\"required\":[\"found\"],\"allow_extra\":false}",
             "timeout_secs": 10,
             "answer_shape": {
                 "type": "object",
@@ -867,13 +867,13 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// plain `exhausted` of before, and nobody is set aside.
     #[test]
     fn a_spent_quota_is_its_own_class_and_sets_the_engine_aside() {
-        let dir = scratch("quota-spesa");
+        let dir = scratch("quota-spent");
         let bin = fake_engine(
             &dir,
             "motore-a-secco",
             "cat > /dev/null\necho \"You've hit your weekly limit · resets 7am\"\nexit 1",
         );
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let mut recipe = declaring_recipe();
         recipe.unusable_when = vec!["weekly limit".to_owned()];
         recipe.exhausted_when = vec!["weekly limit".to_owned()];
@@ -924,10 +924,10 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// before spending, naming the sum. A cap on another engine changes nothing.
     #[test]
     fn an_engine_over_its_budget_is_refused_before_spending() {
-        let dir = scratch("tetto");
+        let dir = scratch("a-cap");
         let price_list = write_price_list(&dir);
         let bin = fake_engine(&dir, "motore", WRAPS_ON_DEMAND);
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let budgets = dir.join("budgets.json");
         // One priced call costs 18.30 $ and is checked before it is made: under
         // a cap of 10 $ the first goes through, and fills the window.
@@ -979,7 +979,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// starting it — naming until when, and what it said.
     #[test]
     fn an_engine_that_said_its_quota_was_spent_is_not_started_again() {
-        let dir = scratch("da-parte");
+        let dir = scratch("set-aside");
         let bin = fake_engine(
             &dir,
             "motore-esaurito",
@@ -993,7 +993,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
             bin: bin.clone(),
             recipe: Some(recipe.clone()),
         })
-        .recording_to(Some(Ledger::open(dir.join("deposito")).expect("aprire il deposito")))
+        .recording_to(Some(Ledger::open(dir.join("deposito")).expect("open the ledger")))
         .cooling_down_in(Some(aside.clone()));
         let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
 
@@ -1070,7 +1070,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     #[test]
     fn a_private_step_never_goes_where_the_pact_is_not_a_no() {
         use models::pact::DataPact;
-        let dir = scratch("patto");
+        let dir = scratch("the-pact");
         let bin = fake_engine(&dir, "motore", WRAPS_ON_DEMAND);
         let run = |pact: DataPact, input: serde_json::Value| {
             let action = ExternalEngineAction::resolving_with(Pacted { bin: bin.clone(), pact });
@@ -1167,7 +1167,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// stays as written.
     #[test]
     fn a_window_that_would_expire_unused_is_spent_first() {
-        let dir = scratch("carburante");
+        let dir = scratch("fuel");
         let long = fake_engine(&dir, "a-lungo", WRAPS_ON_DEMAND);
         let short = fake_engine(&dir, "a-breve", WRAPS_ON_DEMAND);
         let fuel = |engine: &str, left: f64, resets_in: i64| models::fuel::Fuel {
@@ -1212,7 +1212,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// reached is refused before spending, with the profile's reason.
     #[test]
     fn a_profile_whose_endpoint_is_refused_holds_the_engine_back_before_spending() {
-        let dir = scratch("endpoint-rifiutato");
+        let dir = scratch("endpoint-refused");
         let bin = fake_engine(&dir, "codex", WRAPS_ON_DEMAND);
         let store = dir.join("profili.json");
         std::fs::write(
@@ -1241,7 +1241,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// for the kind the chain's first answers. The ledger row names the kind.
     #[test]
     fn a_kind_of_work_goes_first_where_the_table_says_and_the_ledger_names_it() {
-        let dir = scratch("forze");
+        let dir = scratch("strengths");
         let local = fake_engine(&dir, "locale", WRAPS_ON_DEMAND);
         let chained = fake_engine(&dir, "catena", WRAPS_ON_DEMAND);
         let engines = || TwoEngines {
@@ -1280,7 +1280,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// failed, so it goes in its own column and not in the retry chain.
     #[test]
     fn an_absent_preferred_engine_is_named_on_the_row_of_whoever_answered() {
-        let dir = scratch("ripiego-scritto");
+        let dir = scratch("the-fallback-written-down");
         let chained = fake_engine(&dir, "catena", WRAPS_ON_DEMAND);
         let table = dir.join("strengths.json");
         std::fs::write(&table, r#"{"measured_on": "a test", "rows": {"mechanical": ["locale"]}}"#)
@@ -1313,7 +1313,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// asked for nothing fell back from nothing.
     #[test]
     fn a_step_without_a_kind_keeps_its_chain_and_falls_back_from_nobody() {
-        let dir = scratch("nessuna-forza-dichiarata");
+        let dir = scratch("no-strength-declared");
         let local = fake_engine(&dir, "locale", WRAPS_ON_DEMAND);
         let chained = fake_engine(&dir, "catena", WRAPS_ON_DEMAND);
         let table = dir.join("strengths.json");
@@ -1357,13 +1357,13 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// of `exhausted` would slip under the other two.
     #[test]
     fn a_zero_exit_refusal_is_recorded_as_exhausted_not_as_a_clean_call() {
-        let dir = scratch("esaurito-a-zero-nel-deposito");
+        let dir = scratch("spent-at-zero-in-the-ledger");
         let bin = fake_engine(
             &dir,
             "motore-esaurito-a-zero",
             "cat > /dev/null\necho \"You've hit your weekly limit · resets 7am\"\nexit 0",
         );
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let mut recipe = declaring_recipe();
         recipe.unusable_when = vec!["weekly limit".to_owned()];
         let action = ExternalEngineAction::resolving_with(Declares {
@@ -1376,16 +1376,16 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let error = with_price_list(None, || {
             action.execute(&input, &shared("corsa-esaurita-a-zero", "passo-1"))
         })
-        .expect_err("un motore che dice di non poter lavorare non ha risposto");
+        .expect_err("an engine saying it cannot work has not answered");
         assert_eq!(error.class, "engine_exhausted");
 
         let calls = calls_in(&dir.join("deposito"));
-        assert_eq!(calls.len(), 1, "la chiamata è stata fatta, e va registrata");
+        assert_eq!(calls.len(), 1, "the call was made, and goes on the record");
         assert_eq!(
             calls[0].error_type.as_deref(),
             Some("exhausted"),
-            "un motore esaurito che esce zero non è una chiamata pulita: la riga \
-             che lo dice è l'unica traccia che resta"
+            "a spent engine that exits zero is not a clean call: the row saying \
+             so is the only trace left"
         );
     }
 
@@ -1409,14 +1409,14 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
                 "cat > /dev/null\necho \"You've hit your weekly limit\"\nexit 0",
             ),
             (
-                "uno",
+                "one",
                 1,
                 "cat > /dev/null\necho \"You've hit your weekly limit\"\nexit 1",
             ),
         ] {
-            let dir = scratch(&format!("esaurito-tollerato-{name}"));
+            let dir = scratch(&format!("tolerated-refusal-{name}"));
             let bin = fake_engine(&dir, "motore-esaurito", script);
-            let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+            let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
             let mut recipe = declaring_recipe();
             recipe.unusable_when = vec!["weekly limit".to_owned()];
             let action = ExternalEngineAction::resolving_with(Declares {
@@ -1438,13 +1438,13 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
             })
             .unwrap_or_else(|error| {
                 panic!(
-                    "il passo tollera il fallimento, non deve rompersi: {}",
+                    "the step tolerates the failure, so it must not break: {}",
                     error.said
                 )
             });
             assert!(
                 matches!(outcome, ActionOutcome::Went(_)),
-                "la tolleranza resta quella di prima: il passo prosegue (uscita {exit})"
+                "the tolerance is what it always was: the step carries on (exit {exit})"
             );
 
             let calls = calls_in(&dir.join("deposito"));
@@ -1452,9 +1452,9 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
             assert_eq!(
                 calls[0].error_type.as_deref(),
                 Some("exhausted"),
-                "uscita {exit}: il passo ha tollerato il fallimento, ma la riga del \
-                 deposito deve dire lo stesso che quel motore non poteva lavorare. \
-                 La tolleranza decide cosa fa la corsa, non cosa resta scritto"
+                "exit {exit}: the step tolerated the failure, but the ledger row must \
+                 say all the same that this engine could not work. The tolerance \
+                 decides what the run does, not what stays written"
             );
         }
     }
@@ -1464,10 +1464,10 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// the second engine first.
     #[test]
     fn an_engine_that_never_starts_leaves_its_own_row_too() {
-        let dir = scratch("mai-partito");
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let dir = scratch("never-started");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {
-            bin: "/nessun/binario/qui-di-sicuro".to_owned(),
+            bin: "/no/binary/here-for-sure".to_owned(),
             recipe: Some(declaring_recipe()),
         })
         .recording_to(Some(ledger));
@@ -1476,7 +1476,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let error = with_price_list(None, || {
             action.execute(&input, &shared("corsa-4", "passo-4"))
         })
-        .expect_err("un binario che non c'è rompe il passo");
+        .expect_err("a binary that is not there breaks the step");
         assert_eq!(error.class, "engine_spawn_failed");
 
         let calls = calls_in(&dir.join("deposito"));
@@ -1494,13 +1494,13 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// switched on.
     #[test]
     fn asking_for_a_json_envelope_does_not_change_what_the_step_receives() {
-        let dir = scratch("involucro");
+        let dir = scratch("envelope");
         let price_list = write_price_list(&dir);
         let bin = fake_engine(&dir, "motore", WRAPS_ON_DEMAND);
         let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
 
         let without = {
-            let ledger = Ledger::open(dir.join("senza")).expect("deposito");
+            let ledger = Ledger::open(dir.join("without")).expect("the ledger");
             let action = ExternalEngineAction::resolving_with(Declares {
                 bin: bin.clone(),
                 recipe: Some(AskRecipe {
@@ -1520,14 +1520,14 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
             let ActionOutcome::Went(output) = with_price_list(Some(&price_list), || {
                 action.execute(&input, &shared("corsa-5", "passo-5"))
             })
-            .expect("risponde") else {
+            .expect("it answers") else {
                 panic!("Went")
             };
             output
         };
 
         let with = {
-            let ledger = Ledger::open(dir.join("con")).expect("deposito");
+            let ledger = Ledger::open(dir.join("with")).expect("the ledger");
             let action = ExternalEngineAction::resolving_with(Declares {
                 bin,
                 recipe: Some(declaring_recipe()),
@@ -1536,7 +1536,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
             let ActionOutcome::Went(output) = with_price_list(Some(&price_list), || {
                 action.execute(&input, &shared("corsa-6", "passo-6"))
             })
-            .expect("risponde") else {
+            .expect("it answers") else {
                 panic!("Went")
             };
             output
@@ -1544,16 +1544,16 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
 
         assert_eq!(
             without, with,
-            "misurare non deve cambiare di una virgola ciò che il passo consegna a valle"
+            "measuring must not change by one comma what the step hands downstream"
         );
         // And the measure really happened: without this, the proof would pass
         // even if the `usage` block never reached the invocation.
         assert_eq!(
-            calls_in(&dir.join("con"))[0].input_tokens,
+            calls_in(&dir.join("with"))[0].input_tokens,
             Some(1_000_000),
-            "l'involucro è stato chiesto e letto"
+            "the envelope was asked for and read"
         );
-        assert_eq!(calls_in(&dir.join("senza"))[0].input_tokens, None);
+        assert_eq!(calls_in(&dir.join("without"))[0].input_tokens, None);
     }
 
     // ── without a place to write, nothing is written ───────────────────
@@ -1562,7 +1562,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// with no ledger, or no run, nothing is recorded.
     #[test]
     fn without_a_ledger_or_without_a_run_nothing_is_written() {
-        let dir = scratch("senza-appigli");
+        let dir = scratch("nothing-to-hold-on-to");
         let bin = fake_engine(&dir, "motore", WRAPS_ON_DEMAND);
         let recipe = declaring_recipe();
 
@@ -1577,7 +1577,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
             .is_ok());
 
         // With the ledger but no run key: no row.
-        let ledger = Ledger::open(dir.join("deposito")).expect("deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {
             bin,
             recipe: Some(recipe),
@@ -1588,7 +1588,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         assert!(action.execute(&input, &only_the_step).is_ok());
         assert!(
             calls_in(&dir.join("deposito")).is_empty(),
-            "senza corsa non si attribuisce nessuna spesa a nessuno"
+            "with no run, no spending is attributed to anybody"
         );
     }
 
@@ -1597,8 +1597,8 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// view this work exists to make readable.
     #[test]
     fn a_hand_written_bin_is_not_a_model_call() {
-        let dir = scratch("bin-a-mano");
-        let ledger = Ledger::open(dir.join("deposito")).expect("deposito");
+        let dir = scratch("a-hand-written-bin");
+        let ledger = Ledger::open(dir.join("deposito")).expect("the ledger");
         let action = ExternalEngineAction::new().recording_to(Some(ledger));
         let input = json!({"bin": "echo", "args": ["ciao"], "timeout_secs": 10});
 
@@ -1625,9 +1625,9 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// guesses.
     #[test]
     fn a_tool_that_cannot_be_asked_anything_is_not_a_model_call() {
-        let dir = scratch("non-e-un-motore");
-        let bin = fake_engine(&dir, "finto-cargo", "printf 'ok'");
-        let ledger = Ledger::open(dir.join("deposito")).expect("deposito");
+        let dir = scratch("not-an-engine");
+        let bin = fake_engine(&dir, "fake-cargo", "printf 'ok'");
+        let ledger = Ledger::open(dir.join("deposito")).expect("the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {
             bin,
             // No `ask` recipe: this is how `cargo` is declared in the shipped
@@ -1645,8 +1645,8 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
 
         assert!(
             calls_in(&dir.join("deposito")).is_empty(),
-            "una riga di `cargo` nel conto delle chiamate ai modelli rende falso \
-             ogni totale che la somma: {:?}",
+            "a `cargo` row among the model calls makes false every total that sums \
+             it: {:?}",
             calls_in(&dir.join("deposito"))
         );
     }
@@ -1662,17 +1662,17 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// proof above would stay green.
     #[test]
     fn when_the_step_writes_its_own_args_the_usage_is_not_asked_for() {
-        let dir = scratch("args-del-passo");
+        let dir = scratch("the-steps-own-args");
         let price_list = write_price_list(&dir);
         let bin = fake_engine(&dir, "motore", WRAPS_ON_DEMAND);
-        let ledger = Ledger::open(dir.join("deposito")).expect("deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {
             bin,
             recipe: Some(declaring_recipe()),
         })
         .recording_to(Some(ledger));
         let input = json!({
-            "tool": "motore-di-prova", "args": ["--a-modo-mio"],
+            "tool": "motore-di-prova", "args": ["--my-own-way"],
             "stdin": "ciao", "timeout_secs": 10
         });
 
@@ -1683,19 +1683,19 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
             panic!("Went")
         };
 
-        assert_eq!(output["stdout"], "la risposta vera");
+        assert_eq!(output["stdout"], "the true answer");
         // **THE ARM THAT COUNTS**: the command line is EXACTLY the one the step
         // wrote. Appending the usage options would add, behind its author's
         // back, a question they never asked, and from outside it would be
         // invisible: the difference shows up in the process argv and nowhere else.
         assert_eq!(
             argv_of(&dir),
-            vec!["--a-modo-mio".to_owned()],
-            "nessuna opzione aggiunta di nascosto"
+            vec!["--my-own-way".to_owned()],
+            "no option added behind anybody's back"
         );
         let calls = calls_in(&dir.join("deposito"));
-        assert_eq!(calls.len(), 1, "la chiamata si registra lo stesso");
-        assert_eq!(calls[0].input_tokens, None, "ma non misurata");
+        assert_eq!(calls.len(), 1, "the call is recorded all the same");
+        assert_eq!(calls[0].input_tokens, None, "but not measured");
     }
 
     /// **THE MODEL-INDEPENDENCE CONSTRAINT, AT THE POINT WHERE IT BREAKS.** An
@@ -1705,10 +1705,10 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// this proof would go red, and it must.
     #[test]
     fn output_that_merely_looks_familiar_is_not_read_without_a_declaration() {
-        let dir = scratch("nessun-ramo-cablato");
+        let dir = scratch("no-branch-wired-to-a-vendor");
         let price_list = write_price_list(&dir);
         let bin = fake_engine(&dir, "motore", ALWAYS_WRAPS);
-        let ledger = Ledger::open(dir.join("deposito")).expect("deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {
             bin,
             recipe: Some(AskRecipe {
@@ -1738,7 +1738,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         assert_eq!(calls.len(), 1);
         assert_eq!(
             calls[0].input_tokens, None,
-            "quei numeri ci sono, ma nessun descrittore ha detto di leggerli"
+            "those numbers are there, but no descriptor said to read them"
         );
         assert_eq!(calls[0].cost_micros, None);
         assert_eq!(calls[0].actual_model, "");
@@ -1746,7 +1746,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         // nothing is unwrapped, because nobody said where to look.
         assert!(
             output["stdout"].as_str().unwrap().starts_with('{'),
-            "l'involucro resta tale e quale: {}",
+            "the envelope stays exactly as it came: {}",
             output["stdout"]
         );
     }
@@ -1764,7 +1764,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         std::env::set_var("PROFILES_STATE_PATH", state);
-        std::env::set_var(PRICING_ENV, "/nessun/listino/qui");
+        std::env::set_var(PRICING_ENV, "/no/price/list/here");
         let out = body();
         std::env::remove_var("PROFILES_STATE_PATH");
         std::env::remove_var(PRICING_ENV);
@@ -1785,7 +1785,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// which is why there are two.
     #[test]
     fn the_row_says_under_which_equipment_the_call_ran() {
-        let dir = scratch("dotazione");
+        let dir = scratch("equipment");
         // The file name IS the link: `cli_for_executable` recognises the command
         // line from the executable, not from the descriptor's id.
         let bin = fake_engine(&dir, "codex", ALWAYS_WRAPS);
@@ -1800,9 +1800,9 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
             })
             .to_string(),
         )
-        .expect("scrivere lo stato dei profili");
+        .expect("write the profiles state");
 
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {
             bin,
             recipe: Some(declaring_recipe()),
@@ -1813,10 +1813,10 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         with_profiles_state(&state, || {
             action.execute(&input, &shared("corsa-1", "passo-1"))
         })
-        .expect("il motore risponde");
+        .expect("the engine answers");
 
         let calls = calls_in(&dir.join("deposito"));
-        assert_eq!(calls.len(), 1, "una chiamata, una riga");
+        assert_eq!(calls.len(), 1, "one call, one row");
         assert_eq!(
             calls[0].engine_identity,
             EngineIdentity::ProfileInForce {
@@ -1825,7 +1825,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
                 home_dir: dir.join("casa"),
                 endpoint: None,
             },
-            "la riga non dice con quale identità la chiamata è girata"
+            "the row does not say under which identity the call ran"
         );
     }
 
@@ -1839,13 +1839,13 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// the home of whoever opened the terminal, and which command line it was.
     #[test]
     fn with_no_profile_in_force_the_row_says_the_identity_was_inherited() {
-        let dir = scratch("nessuna-dotazione");
+        let dir = scratch("no-equipment");
         let bin = fake_engine(&dir, "codex", ALWAYS_WRAPS);
         let state = dir.join("profili.json");
         std::fs::write(&state, r#"{"profiles":[],"active":{}}"#)
-            .expect("scrivere lo stato dei profili");
+            .expect("write the profiles state");
 
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {
             bin,
             recipe: Some(declaring_recipe()),
@@ -1856,7 +1856,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         with_profiles_state(&state, || {
             action.execute(&input, &shared("corsa-1", "passo-1"))
         })
-        .expect("il motore risponde");
+        .expect("the engine answers");
 
         let calls = calls_in(&dir.join("deposito"));
         assert_eq!(
@@ -1873,7 +1873,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// half the defect.
     const WRITES_DOWN_ITS_HOME: &str = r#"cat > /dev/null
 printf '%s' "$CODEX_HOME" > "$(dirname "$0")/casa"
-printf '{"result":"la risposta vera","model":"modello-di-prova","usage":{"input_tokens":1,"output_tokens":1}}'"#;
+printf '{"result":"the true answer","model":"modello-di-prova","usage":{"input_tokens":1,"output_tokens":1}}'"#;
 
     /// **THE LEDGER RECORDS AN IDENTITY THE PROCESS NEVER USED.**
     ///
@@ -1888,7 +1888,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","usage":{"input_
     /// defect inside.
     #[test]
     fn the_row_does_not_name_a_profile_the_step_replaced() {
-        let dir = scratch("dotazione-scavalcata");
+        let dir = scratch("equipment-overridden");
         let bin = fake_engine(&dir, "codex", WRITES_DOWN_ITS_HOME);
         let state = dir.join("profili.json");
         std::fs::write(
@@ -1901,9 +1901,9 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","usage":{"input_
             })
             .to_string(),
         )
-        .expect("scrivere lo stato dei profili");
+        .expect("write the profiles state");
 
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {
             bin,
             recipe: Some(declaring_recipe()),
@@ -1912,31 +1912,31 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","usage":{"input_
         let input = json!({
             "tool": "motore-di-prova",
             "stdin": "ciao",
-            "env": {"CODEX_HOME": "/una/casa/scritta/nel/passo"},
+            "env": {"CODEX_HOME": "/a/home/written/in/the/step"},
             "timeout_secs": 10
         });
 
         with_profiles_state(&state, || {
             action.execute(&input, &shared("corsa-1", "passo-1"))
         })
-        .expect("il motore risponde");
+        .expect("the engine answers");
 
         let home_it_started_in =
-            std::fs::read_to_string(dir.join("casa")).expect("il motore ha scritto la sua casa");
+            std::fs::read_to_string(dir.join("casa")).expect("the engine wrote down its home");
         assert_eq!(
-            home_it_started_in, "/una/casa/scritta/nel/passo",
-            "il verso della sovrapposizione è cambiato: il profilo ha scavalcato il passo"
+            home_it_started_in, "/a/home/written/in/the/step",
+            "the overlay runs the other way now: the profile overrode the step"
         );
 
         let calls = calls_in(&dir.join("deposito"));
-        assert_eq!(calls.len(), 1, "una chiamata, una riga");
+        assert_eq!(calls.len(), 1, "one call, one row");
         assert_eq!(
             calls[0].engine_identity,
             EngineIdentity::ChosenByTheStep {
                 cli_id: "codex".to_owned(),
-                home_dir: PathBuf::from("/una/casa/scritta/nel/passo"),
+                home_dir: PathBuf::from("/a/home/written/in/the/step"),
             },
-            "la riga nomina un'identità che il processo non ha usato: è partito in {home_it_started_in}"
+            "the row names an identity the process never used: it started in {home_it_started_in}"
         );
     }
 
@@ -1951,7 +1951,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","usage":{"input_
     /// one red and no other.
     #[test]
     fn no_secret_from_the_step_ends_up_in_the_recorded_identity() {
-        let dir = scratch("nessun-gettone");
+        let dir = scratch("no-token");
         let bin = fake_engine(&dir, "codex", ALWAYS_WRAPS);
         let state = dir.join("profili.json");
         std::fs::write(
@@ -1964,9 +1964,9 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","usage":{"input_
             })
             .to_string(),
         )
-        .expect("scrivere lo stato dei profili");
+        .expect("write the profiles state");
 
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {
             bin,
             recipe: Some(declaring_recipe()),
@@ -1976,24 +1976,24 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","usage":{"input_
         let input = json!({
             "tool": "motore-di-prova",
             "stdin": "ciao",
-            "env": {"OPENAI_API_KEY": "sk-questo-non-deve-comparire"},
+            "env": {"OPENAI_API_KEY": "sk-this-must-never-show-up"},
             "timeout_secs": 10
         });
 
         with_profiles_state(&state, || {
             action.execute(&input, &shared("corsa-1", "passo-1"))
         })
-        .expect("il motore risponde");
+        .expect("the engine answers");
 
         let calls = calls_in(&dir.join("deposito"));
         let written = calls[0].engine_identity.to_column();
         assert!(
-            !written.contains("sk-questo-non-deve-comparire"),
-            "un gettone del passo è finito nell'identità registrata: {written}"
+            !written.contains("sk-this-must-never-show-up"),
+            "a token from the step ended up in the recorded identity: {written}"
         );
         assert!(
             !calls[0].engine_identity.to_string().contains("sk-"),
-            "un gettone del passo è finito in ciò che si stampa a una persona"
+            "a token from the step ended up in what is printed to a person"
         );
     }
 }

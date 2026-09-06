@@ -935,7 +935,7 @@ mod tests {
                 std::process::id()
             ));
             let _ = fs::remove_dir_all(&root);
-            fs::create_dir_all(&root).expect("la cartella di prova si crea");
+            fs::create_dir_all(&root).expect("the scratch directory is created");
             Sandbox { root }
         }
     }
@@ -973,7 +973,7 @@ mod tests {
         }
         body.push_str("  esac\ndone\n");
         let path = sandbox.root.join(format!("{name}.sh"));
-        fs::write(&path, body).expect("il server finto si scrive");
+        fs::write(&path, body).expect("the fake server is written");
         ServerSpec {
             command: "sh".to_owned(),
             args: vec![path.to_string_lossy().into_owned()],
@@ -1016,15 +1016,15 @@ mod tests {
         fake_server(sandbox, name, &borrowed)
     }
 
-    const ROOT: &str = "/casa/progetto";
+    const ROOT: &str = "/home/project";
 
     fn root_check() -> PreflightCheck {
         PreflightCheck {
-            name: "l'indice è di questa cartella".to_owned(),
+            name: "the index is of this directory".to_owned(),
             server_tool: "list_projects".to_owned(),
             arguments: json!({}),
             proves: ROOT.to_owned(),
-            blind_if: vec!["archivio vettoriale non raggiungibile".to_owned()],
+            blind_if: vec!["vector store not reachable".to_owned()],
         }
     }
 
@@ -1049,7 +1049,7 @@ mod tests {
     fn went(outcome: ActionOutcome) -> Value {
         match outcome {
             ActionOutcome::Went(value) => value,
-            ActionOutcome::Waiting(said) => panic!("nessuna attesa: {said}"),
+            ActionOutcome::Waiting(said) => panic!("nothing waits here: {said}"),
             ActionOutcome::NotYet(said) => panic!("nothing is postponed here: {said}"),
         }
     }
@@ -1072,7 +1072,7 @@ mod tests {
         let mut pairs = handshake("[{\"name\":\"impact\"},{\"name\":\"list_projects\"}]");
         pairs.push((
             "\"name\":\"list_projects\"",
-            text_reply("archivio vettoriale non raggiungibile"),
+            text_reply("vector store not reachable"),
         ));
         let spec = server(&sandbox, "blind", pairs);
 
@@ -1081,11 +1081,11 @@ mod tests {
                 &ask_input(&spec, vec![root_check()], vec!["could_not_look"]),
                 &SharedState::new(),
             )
-            .expect("l'esito è tollerato, quindi il passo va avanti col dato");
+            .expect("the outcome is tolerated, so the step carries on with the datum");
         let value = went(outcome);
         assert_eq!(
             value["status"], "could_not_look",
-            "cieco non è negativo: {}",
+            "blind is not negative: {}",
             value["said"]
         );
         assert_eq!(value["checks"][0]["state"], "could_not_look");
@@ -1111,11 +1111,11 @@ mod tests {
                 &ask_input(&spec, vec![root_check()], vec![]),
                 &SharedState::new(),
             )
-            .expect_err("uno strumento che il server non offre rompe il passo");
+            .expect_err("a tool the server does not offer breaks the step");
         assert_eq!(error.class, "tool_not_offered");
         assert!(
             error.said.contains("two different facts"),
-            "il messaggio deve dire perché rispondere e offrire non sono la stessa cosa: {}",
+            "the message has to say why answering and offering are not the same thing: {}",
             error.said
         );
     }
@@ -1128,7 +1128,7 @@ mod tests {
         let spec = ServerSpec {
             command: sandbox
                 .root
-                .join("questo-comando-non-esiste")
+                .join("this-command-does-not-exist")
                 .to_string_lossy()
                 .into_owned(),
             args: Vec::new(),
@@ -1140,7 +1140,7 @@ mod tests {
                 &ask_input(&spec, vec![root_check()], vec![]),
                 &SharedState::new(),
             )
-            .expect_err("un server che non parte rompe il passo");
+            .expect_err("a server that will not start breaks the step");
         assert_eq!(error.class, "unreachable");
     }
 
@@ -1156,7 +1156,7 @@ mod tests {
         let mut pairs = handshake("[{\"name\":\"impact\"},{\"name\":\"list_projects\"}]");
         pairs.push((
             "\"name\":\"list_projects\"",
-            text_reply("/casa/un-altro-progetto"),
+            text_reply("/home/another-project"),
         ));
         let spec = server(&sandbox, "other-project", pairs);
 
@@ -1165,14 +1165,14 @@ mod tests {
                 &ask_input(&spec, vec![root_check()], vec!["check_failed"]),
                 &SharedState::new(),
             )
-            .expect("tollerato");
+            .expect("tolerated");
         let value = went(outcome);
         assert_eq!(value["status"], "check_failed", "{}", value["said"]);
         assert_eq!(value["checks"][0]["state"], "failed");
         assert_eq!(
             value.get("text"),
             None,
-            "una verifica fallita non lascia passare nessuna risposta dello strumento"
+            "a failed check lets no answer of the tool through"
         );
     }
 
@@ -1190,11 +1190,11 @@ mod tests {
             handshake("[{\"name\":\"impact\"},{\"name\":\"list_projects\"},{\"name\":\"status\"}]");
         pairs.push((
             "\"name\":\"list_projects\"",
-            text_reply("archivio vettoriale non raggiungibile"),
+            text_reply("vector store not reachable"),
         ));
         pairs.push((
             "\"name\":\"status\"",
-            text_reply("indicizzato al 12 percento"),
+            text_reply("indexed to 12 percent"),
         ));
         let spec = server(&sandbox, "blind-and-no", pairs);
 
@@ -1214,7 +1214,7 @@ mod tests {
                 ),
                 &SharedState::new(),
             )
-            .expect("tollerato");
+            .expect("tolerated");
         let value = went(outcome);
         assert_eq!(value["status"], "could_not_look", "{}", value["said"]);
         assert_eq!(value["checks"][0]["state"], "could_not_look");
@@ -1234,7 +1234,7 @@ mod tests {
         pairs.push(("\"name\":\"list_projects\"", text_reply(ROOT)));
         pairs.push((
             "\"name\":\"impact\"",
-            text_reply("22 file usano questo crate"),
+            text_reply("22 files use this crate"),
         ));
         let spec = server(&sandbox, "ready", pairs);
 
@@ -1243,17 +1243,17 @@ mod tests {
                 &ask_input(&spec, vec![root_check()], vec![]),
                 &SharedState::new(),
             )
-            .expect("un giro riuscito non rompe niente");
+            .expect("a round that went through breaks nothing");
         let value = went(outcome);
         assert_eq!(value["status"], "ok", "{}", value["said"]);
         assert_eq!(value["checks"][0]["state"], "passed");
-        assert_eq!(value["text"], "22 file usano questo crate");
+        assert_eq!(value["text"], "22 files use this crate");
         assert!(
             value["caveat"]
                 .as_str()
-                .expect("la regola viaggia con la risposta")
+                .expect("the rule travels with the answer")
                 .contains("not for deciding"),
-            "la regola sul perimetro deve uscire insieme alla risposta"
+            "the rule about the perimeter has to come out beside the answer"
         );
     }
 
@@ -1268,22 +1268,22 @@ mod tests {
     fn a_step_cannot_question_an_index_without_saying_whose_it_is() {
         let sandbox = Sandbox::new("no-preflight");
         let mut pairs = handshake("[{\"name\":\"impact\"}]");
-        pairs.push(("\"name\":\"impact\"", text_reply("che ore sono")));
+        pairs.push(("\"name\":\"impact\"", text_reply("what time is it")));
         let spec = server(&sandbox, "no-preflight", pairs);
 
         let error = McpAskAction
             .execute(&ask_input(&spec, vec![], vec![]), &SharedState::new())
-            .expect_err("senza verifica preliminare il passo non parte");
+            .expect_err("with no preflight check the step does not start");
         assert_eq!(error.class, "no_preflight");
 
         // With a written waiver, though, it does start: tolerance is a
         // declared decision, not a default.
         let mut waived = ask_input(&spec, vec![], vec!["check_failed", "could_not_look"]);
         waived["checks_waived_because"] =
-            json!("questo server non sa niente di cartelle: risponde sull'ora del sistema");
+            json!("this server knows nothing of directories: it answers about the system clock");
         McpAskAction
             .execute(&waived, &SharedState::new())
-            .expect("con la rinuncia scritta il passo parte");
+            .expect("with the waiver written down the step does start");
     }
 
     /// **A REFERENCE REACHES THE SERVER RESOLVED.**
@@ -1311,7 +1311,7 @@ mod tests {
             "arguments": {"target": {"$from": "/repo"}},
             "project_root": {"$from": "/repo"},
             "checks": [{
-                "name": "l'indice è di questa cartella",
+                "name": "the index is of this directory",
                 "server_tool": "list_projects",
                 "proves": {"$from": "/repo"},
             }],
@@ -1323,7 +1323,7 @@ mod tests {
                     &crate::tests::with_references_resolved(input),
                     &SharedState::new(),
                 )
-                .expect("una cartella presa con un rinvio arriva risolta"),
+                .expect("a directory taken through a reference arrives resolved"),
         );
         assert_eq!(value["status"], "ok", "{}", value["said"]);
         assert_eq!(value["project_root"], ROOT);
@@ -1345,23 +1345,23 @@ mod tests {
             "server_tool": "impact",
             "project_root": ROOT,
             "checks": [{
-                "name": "l'indice è di questa cartella",
+                "name": "the index is of this directory",
                 "server_tool": "list_projects",
                 "proves": ROOT,
-                "blind_if": ["archivio vettoriale non raggiungibile"],
+                "blind_if": ["vector store not reachable"],
             }],
             "timeout_secs": 20,
         });
         let value = went(
             McpReadyAction
                 .execute(&input, &SharedState::new())
-                .expect("la verifica passa"),
+                .expect("the check passes"),
         );
         assert_eq!(value["status"], "ready", "{}", value["said"]);
         assert_eq!(
             value.get("text"),
             None,
-            "la verifica non chiama lo strumento"
+            "the check does not call the tool"
         );
     }
 
@@ -1382,7 +1382,7 @@ mod tests {
         let mut pairs = handshake("[{\"name\":\"impact\"},{\"name\":\"list_projects\"}]");
         pairs.push((
             "\"name\":\"list_projects\"",
-            text_reply("archivio vettoriale non raggiungibile"),
+            text_reply("vector store not reachable"),
         ));
         pairs.push(("\"name\":\"impact\"", text_reply("visto")));
         let spec = server(&sandbox, "empty-proof", pairs);
@@ -1394,7 +1394,7 @@ mod tests {
                 &ask_input(&spec, vec![blank], vec!["could_not_look", "check_failed"]),
                 &SharedState::new(),
             )
-            .expect_err("una verifica che non dice cosa prova non parte");
+            .expect_err("a check that does not say what it proves never starts");
         assert_eq!(error.class, "invalid_input");
 
         // The same trap one rung up: with no declared directory, the tie
@@ -1403,7 +1403,7 @@ mod tests {
         rootless["project_root"] = json!("");
         let error = McpAskAction
             .execute(&rootless, &SharedState::new())
-            .expect_err("un passo che non dice di quale cartella parla non parte");
+            .expect_err("a step that does not say which directory it speaks of never starts");
         assert_eq!(error.class, "no_preflight");
     }
 
@@ -1419,7 +1419,7 @@ mod tests {
                 &ask_input(&spec, vec![root_check()], vec!["ok"]),
                 &SharedState::new(),
             )
-            .expect_err("«ok» non è un fallimento e non si tollera");
+            .expect_err("«ok» is no failure, and nothing tolerates it");
         assert_eq!(error.class, "invalid_input");
         assert!(error.said.contains("accept"), "{}", error.said);
     }

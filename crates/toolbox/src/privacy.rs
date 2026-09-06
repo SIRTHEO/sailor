@@ -100,28 +100,28 @@ mod tests {
 
     #[test]
     fn comments_and_blank_lines_are_not_names() {
-        let names = names_in("# quelli di questa macchina\n\nunmotore\n  senza-casa  \n");
-        assert_eq!(names, vec!["unmotore", "senza-casa"]);
+        let names = names_in("# the ones of this machine\n\nanengine\n  homeless  \n");
+        assert_eq!(names, vec!["anengine", "homeless"]);
     }
 
     /// **A REFUSAL THAT ECHOES THE SECRET HAS PUBLISHED IT.** What comes back
     /// says where, never what.
     #[test]
     fn a_private_name_is_found_and_never_carried_back() {
-        let names = vec!["unmotore".to_owned()];
-        let found = what_cannot_be_published("il passo chiama unmotore e finisce", &names, None);
-        assert_eq!(found, vec![Reason::APrivateName { at: 16 }]);
+        let names = vec!["anengine".to_owned()];
+        let found = what_cannot_be_published("the step calls anengine and stops", &names, None);
+        assert_eq!(found, vec![Reason::APrivateName { at: 15 }]);
 
         let said = format!("{found:?}");
-        assert!(!said.contains("unmotore"), "the refusal carries the name: {said}");
+        assert!(!said.contains("anengine"), "the refusal carries the name: {said}");
     }
 
     /// Written another way it is the same name to whoever reads it after.
     #[test]
     fn a_name_written_in_capitals_is_the_same_name() {
-        let names = vec!["unmotore".to_owned()];
+        let names = vec!["anengine".to_owned()];
         assert_eq!(
-            what_cannot_be_published("UnMotore risponde", &names, None),
+            what_cannot_be_published("AnEngine answers", &names, None),
             vec![Reason::APrivateName { at: 0 }]
         );
     }
@@ -130,9 +130,9 @@ mod tests {
     #[test]
     fn a_path_of_this_machine_is_found_too() {
         let found = what_cannot_be_published(
-            "measured in /casa/di-chiunque/personal/sailor",
+            "measured in /home/anybody/personal/sailor",
             &[],
-            Some("/casa/di-chiunque"),
+            Some("/home/anybody"),
         );
         assert_eq!(found, vec![Reason::APathOfThisMachine { at: 12 }]);
     }
@@ -141,7 +141,7 @@ mod tests {
     /// answering an empty list rather than by refusing everything.
     #[test]
     fn an_unarmed_machine_forbids_nothing() {
-        assert!(what_cannot_be_published("qualunque cosa", &[], None).is_empty());
-        assert!(what_cannot_be_published("qualunque cosa", &[String::new()], Some("")).is_empty());
+        assert!(what_cannot_be_published("anything at all", &[], None).is_empty());
+        assert!(what_cannot_be_published("anything at all", &[String::new()], Some("")).is_empty());
     }
 }

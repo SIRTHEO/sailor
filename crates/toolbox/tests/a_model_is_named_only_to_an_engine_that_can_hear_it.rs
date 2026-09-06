@@ -5,7 +5,7 @@ use toolbox::{CapabilityState, Catalog, Source, CHOOSE_MODEL};
 
 fn scratch(name: &str) -> std::path::PathBuf {
     let directory =
-        std::env::temp_dir().join(format!("sailor-un-modello-{}-{name}", std::process::id()));
+        std::env::temp_dir().join(format!("sailor-a-model-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&directory);
     std::fs::create_dir_all(&directory).expect("working directory");
     directory
@@ -25,13 +25,13 @@ fn a_capability_without_a_place_for_the_name_cannot_carry_a_model() {
     let catalog = loaded(
         "how-a-model-is-named",
         r#"[
-          { "id": "col-valore", "family": "ai_cli", "detect": { "command": "col-valore" },
+          { "id": "with-a-value", "family": "ai_cli", "detect": { "command": "with-a-value" },
             "capabilities": { "choose_model": { "args": ["--model"], "takes_value": true } } },
-          { "id": "senza-valore", "family": "ai_cli", "detect": { "command": "senza-valore" },
+          { "id": "without-a-value", "family": "ai_cli", "detect": { "command": "without-a-value" },
             "capabilities": { "choose_model": { "args": ["--model"] } } },
-          { "id": "solo-un-si", "family": "ai_cli", "detect": { "command": "solo-un-si" },
+          { "id": "only-a-yes", "family": "ai_cli", "detect": { "command": "only-a-yes" },
             "capabilities": { "choose_model": true } },
-          { "id": "muto", "family": "ai_cli", "detect": { "command": "muto" } }
+          { "id": "mute", "family": "ai_cli", "detect": { "command": "mute" } }
         ]"#,
     );
     assert!(catalog.problems.is_empty(), "{:?}", catalog.problems);
@@ -45,10 +45,10 @@ fn a_capability_without_a_place_for_the_name_cannot_carry_a_model() {
             .model_option()
     };
 
-    assert_eq!(option("col-valore"), Some(vec!["--model".to_owned()]));
-    assert_eq!(option("senza-valore"), None, "nowhere to put the name");
-    assert_eq!(option("solo-un-si"), None, "a yes is not an instruction");
-    assert_eq!(option("muto"), None);
+    assert_eq!(option("with-a-value"), Some(vec!["--model".to_owned()]));
+    assert_eq!(option("without-a-value"), None, "nowhere to put the name");
+    assert_eq!(option("only-a-yes"), None, "a yes is not an instruction");
+    assert_eq!(option("mute"), None);
 }
 
 /// The shipped engines that can be asked also say how a model is named to

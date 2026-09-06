@@ -171,7 +171,7 @@ impl DryProbe for RealDryProbe {
             }
             EngineResult::TimedOut => DryRun::NoAnswer {
                 why: format!(
-                    "nessuna risposta entro {} secondi",
+                    "no answer within {} seconds",
                     DRY_PROBE_TIMEOUT.as_secs()
                 ),
             },
@@ -413,7 +413,7 @@ impl LoginProbe for RealDryProbe {
             }
             EngineResult::TimedOut => DryRun::NoAnswer {
                 why: format!(
-                    "nessuna risposta entro {} secondi",
+                    "no answer within {} seconds",
                     DRY_PROBE_TIMEOUT.as_secs()
                 ),
             },

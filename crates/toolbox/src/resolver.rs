@@ -443,19 +443,19 @@ mod tests {
     #[test]
     fn an_id_becomes_the_path_of_the_executable_that_is_here() {
         let dir = temp_dir("present");
-        fake_executable(&dir, "un-motore");
+        fake_executable(&dir, "an-engine");
         let catalog = catalog_of(
-            r#"[{"id": "il-motore", "family": "ai_cli", "label": "The engine",
-                 "detect": {"command": "un-motore"}}]"#,
+            r#"[{"id": "the-engine", "family": "ai_cli", "label": "The engine",
+                 "detect": {"command": "an-engine"}}]"#,
             &dir,
         );
         let tools = Tools::new(catalog, machine(&dir));
 
         let path = tools
-            .resolve("il-motore")
+            .resolve("the-engine")
             .expect("the binary is on the path");
 
-        assert_eq!(path, dir.join("un-motore").to_string_lossy());
+        assert_eq!(path, dir.join("an-engine").to_string_lossy());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -463,19 +463,19 @@ mod tests {
     fn a_tool_that_is_not_here_says_what_it_looked_for_and_where_it_comes_from() {
         let dir = temp_dir("absent");
         let catalog = catalog_of(
-            r#"[{"id": "il-motore", "family": "ai_cli", "label": "The engine",
-                 "detect": {"command": "un-motore"},
-                 "note": "install it with `npm i -g un-motore`"}]"#,
+            r#"[{"id": "the-engine", "family": "ai_cli", "label": "The engine",
+                 "detect": {"command": "an-engine"},
+                 "note": "install it with `npm i -g an-engine`"}]"#,
             &dir,
         );
         let tools = Tools::new(catalog, machine(&dir));
 
         let reason = tools
-            .resolve("il-motore")
+            .resolve("the-engine")
             .expect_err("there is no such binary");
 
-        assert!(reason.contains("il-motore"), "{reason}");
-        assert!(reason.contains("un-motore"), "{reason}");
+        assert!(reason.contains("the-engine"), "{reason}");
+        assert!(reason.contains("an-engine"), "{reason}");
         assert!(reason.contains("npm i -g"), "{reason}");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -484,15 +484,15 @@ mod tests {
     fn an_id_nobody_declared_lists_the_ones_that_exist() {
         let dir = temp_dir("unknown");
         let catalog = catalog_of(
-            r#"[{"id": "il-motore", "family": "ai_cli", "detect": {"command": "un-motore"}}]"#,
+            r#"[{"id": "the-engine", "family": "ai_cli", "detect": {"command": "an-engine"}}]"#,
             &dir,
         );
         let tools = Tools::new(catalog, machine(&dir));
 
-        let reason = tools.resolve("un-altro").expect_err("nobody declares it");
+        let reason = tools.resolve("another-one").expect_err("nobody declares it");
 
-        assert!(reason.contains("un-altro"), "{reason}");
-        assert!(reason.contains("il-motore"), "{reason}");
+        assert!(reason.contains("another-one"), "{reason}");
+        assert!(reason.contains("the-engine"), "{reason}");
         assert!(reason.contains("tools.d"), "{reason}");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -678,18 +678,18 @@ mod tests {
     #[test]
     fn a_descriptor_without_usage_gives_a_recipe_without_it() {
         let dir = temp_dir("usage-absent");
-        fake_executable(&dir, "muto");
+        fake_executable(&dir, "mute");
         let catalog = catalog_of(
             r#"[{
-              "id": "muto", "family": "ai_cli",
-              "detect": { "command": "muto" },
+              "id": "mute", "family": "ai_cli",
+              "detect": { "command": "mute" },
               "ask": { "args": ["-p"], "prompt": "stdin" }
             }]"#,
             &dir,
         );
         let tools = Tools::new(catalog, machine(&dir));
 
-        let recipe = tools.ask_recipe("muto").expect("the recipe is there");
+        let recipe = tools.ask_recipe("mute").expect("the recipe is there");
         assert!(recipe.usage.is_none());
         assert_eq!(recipe.args, vec!["-p"], "the rest of the recipe is intact");
     }

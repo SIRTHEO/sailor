@@ -75,7 +75,7 @@ fn a_repository_in(dir: &Path) -> PathBuf {
 }
 
 fn an_engine_that_prints_where_it_stands(dir: &Path) -> String {
-    an_engine_called(dir, "dove", "pwd\n")
+    an_engine_called(dir, "where", "pwd\n")
 }
 
 /// It reads the project's own file from where it stands, so the tree is
@@ -285,7 +285,7 @@ fn a_step_with_nowhere_to_write_the_tree_down_is_refused_a_tree() {
     let bin = an_engine_that_prints_where_it_stands(dir.path());
     let action = actions::ExternalEngineAction::new();
 
-    let shared = shared_for(&repo, "corsa-4", "senza-deposito");
+    let shared = shared_for(&repo, "corsa-4", "with-no-ledger");
     let refused = action
         .execute(&json!({"bin": bin, "tree": "own", "timeout_secs": 30}), &shared)
         .expect_err("a tree nobody would write down");

@@ -129,7 +129,7 @@ mod tests {
     /// `crates/flow/tests/a_reference_reaches_every_action.rs`, which goes
     /// through the executor instead of resolving by hand.
     pub(crate) fn with_references_resolved(input: Value) -> Value {
-        flow::reference::resolve_references(&input).expect("i rinvii della prova si sciolgono")
+        flow::reference::resolve_references(&input).expect("the test's references resolve")
     }
 
     #[test]

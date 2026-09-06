@@ -411,10 +411,10 @@ mod tests {
 
     fn a_flow_asking(tool: Value) -> FlowFile {
         let document = json!({
-            "id": "un-flusso",
+            "id": "a-flow",
             "description": "d",
             "graph": {"steps": [{
-                "id": "leggi", "deps": [], "action": "external_engine",
+                "id": "read", "deps": [], "action": "external_engine",
                 "max_attempts": 1, "when": null,
                 "input_schema": {"type": "any"}, "output_schema": {"type": "any"},
                 "with": {"tool": tool}
@@ -429,14 +429,14 @@ mod tests {
     /// ones this went blind on — and the report said nothing was missing.
     #[test]
     fn a_tool_declared_as_a_list_is_asked_for_by_every_name_in_it() {
-        let asked = tools_named_by(&a_flow_asking(json!(["unmotore", "un-altro"])));
+        let asked = tools_named_by(&a_flow_asking(json!(["the-engine", "another-one"])));
         let names: Vec<&str> = asked.iter().map(|(tool, _)| tool.as_str()).collect();
-        assert_eq!(names, vec!["un-altro", "unmotore"], "asked: {asked:?}");
-        assert!(asked.iter().all(|(_, step)| step == "leggi"));
+        assert_eq!(names, vec!["another-one", "the-engine"], "asked: {asked:?}");
+        assert!(asked.iter().all(|(_, step)| step == "read"));
 
         // The control: the string still counts, and nothing else does.
-        assert_eq!(tools_named_by(&a_flow_asking(json!("unmotore"))).len(), 1);
-        assert!(tools_named_by(&a_flow_asking(json!({"id": "unmotore"}))).is_empty());
+        assert_eq!(tools_named_by(&a_flow_asking(json!("the-engine"))).len(), 1);
+        assert!(tools_named_by(&a_flow_asking(json!({"id": "the-engine"}))).is_empty());
         assert!(tools_named_by(&a_flow_asking(json!([1, true]))).is_empty());
     }
 

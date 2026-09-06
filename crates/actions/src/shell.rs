@@ -253,7 +253,7 @@ mod tests {
         let input = json!({"command": "true", "timeout_secs": 5});
         let shared = SharedState::new();
         let ActionOutcome::Went(output) = action.execute(&input, &shared).unwrap() else {
-            panic!("una verifica eseguita è sempre Went")
+            panic!("a check that ran is always Went")
         };
         assert_eq!(output["status"], "passed");
     }
@@ -280,7 +280,7 @@ mod tests {
                 .execute(&with_references_resolved(input), &SharedState::new())
                 .map(|outcome| {
                     let ActionOutcome::Went(output) = outcome else {
-                        panic!("una verifica accettata è sempre Went")
+                        panic!("a check that was accepted is always Went")
                     };
                     output["status"].as_str().unwrap().to_owned()
                 })
@@ -288,17 +288,17 @@ mod tests {
         };
 
         assert_eq!(
-            verdict("ho guardato i file\nVERDETTO: APPROVATO\n"),
+            verdict("I looked at the files\nVERDETTO: APPROVATO\n"),
             Ok("passed".to_owned())
         );
         assert_eq!(
-            verdict("mancano due sezioni\nVERDETTO: RESPINTO\n"),
+            verdict("two sections are missing\nVERDETTO: RESPINTO\n"),
             Err("check_failed".to_owned())
         );
         assert_eq!(
             verdict(""),
             Err("check_failed".to_owned()),
-            "un motore muto non approva"
+            "a mute engine does not approve"
         );
     }
 
@@ -307,13 +307,13 @@ mod tests {
     /// how to do, not a choice.
     #[test]
     fn a_failing_check_breaks_its_step_unless_the_step_says_otherwise() {
-        let strict = json!({"command": "echo perche 1>&2; exit 2", "timeout_secs": 5});
+        let strict = json!({"command": "echo because 1>&2; exit 2", "timeout_secs": 5});
         let error = ShellCheckAction::new()
             .execute(&strict, &SharedState::new())
-            .expect_err("una verifica fallita è un passo rotto");
+            .expect_err("a failed check is a broken step");
         assert_eq!(error.class, "check_failed");
         assert!(error.said.contains("code 2"), "{}", error.said);
-        assert!(error.said.contains("perche"), "{}", error.said);
+        assert!(error.said.contains("because"), "{}", error.said);
 
         let tolerant = json!({
             "command": "exit 2",
@@ -322,9 +322,9 @@ mod tests {
         });
         let ActionOutcome::Went(output) = ShellCheckAction::new()
             .execute(&tolerant, &SharedState::new())
-            .expect("l'esito è dichiarato accettabile")
+            .expect("the outcome is declared acceptable")
         else {
-            panic!("un esito tollerato resta un dato")
+            panic!("a tolerated outcome stays a datum")
         };
         assert_eq!(output["status"], "failed");
     }
@@ -333,9 +333,9 @@ mod tests {
     /// ninety lines above: `shaped_answer` validates against the declared
     /// shape, and `pruned` cuts what the shape did not promise.
     ///
-    /// THE MEASURE THAT COULD HAVE COME OUT DIFFERENTLY: `spurio` comes out of
+    /// THE MEASURE THAT COULD HAVE COME OUT DIFFERENTLY: `stray` comes out of
     /// the command but **not** of the shape. Were the pruning not applied, the
-    /// assertion on `answer.spurio` would find it and this test would go red.
+    /// assertion on `answer.stray` would find it and this test would go red.
     /// And were the raw text forwarded beside the value, `stdout` would appear
     /// in the output: the shortcut that would make the shape useless, and
     /// `an_engine_step_declares_what_it_can_return_and_what_it_hands_on`
@@ -343,7 +343,7 @@ mod tests {
     #[test]
     fn a_check_that_declares_a_shape_hands_on_a_value_not_only_a_verdict() {
         let input = json!({
-            "command": r#"echo '{"conta": 3, "spurio": "non promesso"}'"#,
+            "command": r#"echo '{"count": 3, "stray": "never promised"}'"#,
             // **`allow_extra` TRUE IS THE POINT OF THE TEST, NOT AN OVERSIGHT.**
             // With `false` an extra field is a refusal and the pruning never
             // comes into play; with `true` validation tolerates the field, and
@@ -351,8 +351,8 @@ mod tests {
             // this test green for the wrong reason.
             "answer_shape": {
                 "type": "object",
-                "properties": {"conta": {"type": "number"}},
-                "required": ["conta"],
+                "properties": {"count": {"type": "number"}},
+                "required": ["count"],
                 "allow_extra": true
             },
             "timeout_secs": 5
@@ -360,21 +360,21 @@ mod tests {
 
         let ActionOutcome::Went(output) = ShellCheckAction::new()
             .execute(&input, &SharedState::new())
-            .expect("il comando riesce e risponde nella forma dichiarata")
+            .expect("the command goes through and answers in the declared shape")
         else {
-            panic!("una verifica eseguita è sempre Went")
+            panic!("a check that ran is always Went")
         };
 
         assert_eq!(output["status"], "passed");
-        assert_eq!(output["answer"]["conta"], 3);
+        assert_eq!(output["answer"]["count"], 3);
         assert!(
-            output["answer"].get("spurio").is_none(),
-            "a valle passa solo ciò che la forma ha promesso: {}",
+            output["answer"].get("stray").is_none(),
+            "only what the shape promised goes downstream: {}",
             output["answer"]
         );
         assert!(
             output.get("stdout").is_none(),
-            "il testo grezzo non esce dal passo: consegna «answer», o niente — {output}"
+            "the raw text does not leave the step: it hands «answer», or nothing — {output}"
         );
     }
 
@@ -384,31 +384,31 @@ mod tests {
     /// `--json` or `| jq`, and the red tells them so.
     #[test]
     fn a_reading_that_is_not_json_or_not_in_shape_breaks_the_step() {
-        let forma = json!({
+        let shape = json!({
             "type": "object",
-            "properties": {"conta": {"type": "number"}},
-            "required": ["conta"],
+            "properties": {"count": {"type": "number"}},
+            "required": ["count"],
             "allow_extra": false
         });
 
-        let non_json = json!({
-            "command": "echo non sono json",
-            "answer_shape": forma.clone(),
+        let not_json = json!({
+            "command": "echo I am not json",
+            "answer_shape": shape.clone(),
             "timeout_secs": 5
         });
         let error = ShellCheckAction::new()
-            .execute(&non_json, &SharedState::new())
-            .expect_err("un comando che non emette JSON non ha prodotto una lettura");
+            .execute(&not_json, &SharedState::new())
+            .expect_err("a command emitting no JSON produced no reading");
         assert_eq!(error.class, "answer_not_json");
 
-        let fuori_forma = json!({
-            "command": r#"echo '{"conta": "tre"}'"#,
-            "answer_shape": forma,
+        let off_shape = json!({
+            "command": r#"echo '{"count": "three"}'"#,
+            "answer_shape": shape,
             "timeout_secs": 5
         });
         let error = ShellCheckAction::new()
-            .execute(&fuori_forma, &SharedState::new())
-            .expect_err("JSON valido ma fuori dalla forma dichiarata");
+            .execute(&off_shape, &SharedState::new())
+            .expect_err("valid JSON but off the declared shape");
         assert_eq!(error.class, "answer_off_shape");
     }
 
@@ -419,12 +419,12 @@ mod tests {
     fn a_refusal_names_the_check_the_field_and_what_it_saw() {
         let shape = json!({
             "type": "object",
-            "properties": {"conta": {"type": "number"}},
-            "required": ["conta"],
+            "properties": {"count": {"type": "number"}},
+            "required": ["count"],
             "allow_extra": false
         });
         let off_shape = json!({
-            "command": r#"echo '{"conta": "tre"}'"#,
+            "command": r#"echo '{"count": "three"}'"#,
             "answer_shape": shape.clone(),
             "timeout_secs": 5
         });
@@ -434,12 +434,12 @@ mod tests {
             .refusal
             .expect("a shape that refuses says so");
         assert_eq!(refusal.check, "answer_shape");
-        assert_eq!(refusal.path, "$.conta");
+        assert_eq!(refusal.path, "$.count");
         assert_eq!(refusal.rule, RefusalRule::WrongType);
-        assert_eq!(refusal.seen, "\"tre\"");
+        assert_eq!(refusal.seen, "\"three\"");
 
         let not_json = json!({
-            "command": "echo non sono json",
+            "command": "echo I am not json",
             "answer_shape": shape,
             "timeout_secs": 5
         });
@@ -450,9 +450,9 @@ mod tests {
             .expect("a text that is not JSON is refused by the shape");
         assert_eq!(refusal.check, "answer_shape");
         assert_eq!(refusal.rule, RefusalRule::NotJson);
-        assert_eq!(refusal.seen, "non sono json");
+        assert_eq!(refusal.seen, "I am not json");
 
-        let red = json!({"command": "echo perche 1>&2; exit 2", "timeout_secs": 5});
+        let red = json!({"command": "echo because 1>&2; exit 2", "timeout_secs": 5});
         let refusal = ShellCheckAction::new()
             .execute(&red, &SharedState::new())
             .expect_err("a red command")
@@ -460,7 +460,7 @@ mod tests {
             .expect("a command that exits red is a check that refused");
         assert_eq!(refusal.check, "command");
         assert_eq!(refusal.rule, RefusalRule::ExitCode);
-        assert_eq!(refusal.seen, "perche");
+        assert_eq!(refusal.seen, "because");
     }
 
     /// **WHAT IS OPEN COMES FROM BOTH PIPES.** A step after this one receives
@@ -471,23 +471,23 @@ mod tests {
     #[test]
     fn a_failed_check_hands_on_what_is_still_unresolved() {
         let input = json!({
-            "command": "echo 'section tre is empty'; echo 'exit 1' >&2; exit 1",
+            "command": "echo 'section three is empty'; echo 'exit 1' >&2; exit 1",
             "accept": ["failed"],
             "timeout_secs": 5
         });
 
         let ActionOutcome::Went(output) = ShellCheckAction::new()
             .execute(&input, &SharedState::new())
-            .expect("l'esito è dichiarato accettabile")
+            .expect("the outcome is declared acceptable")
         else {
-            panic!("un esito tollerato resta un dato")
+            panic!("a tolerated outcome stays a datum")
         };
 
         assert_eq!(output["status"], "failed");
         let unresolved = output["unresolved"]
             .as_str()
             .unwrap_or_else(|| panic!("a failing check names what is left: {output}"));
-        assert!(unresolved.contains("section tre is empty"), "{unresolved}");
+        assert!(unresolved.contains("section three is empty"), "{unresolved}");
         assert!(unresolved.contains("exit 1"), "{unresolved}");
     }
 
@@ -499,9 +499,9 @@ mod tests {
 
         let ActionOutcome::Went(output) = ShellCheckAction::new()
             .execute(&input, &SharedState::new())
-            .expect("il controllo passa")
+            .expect("the check passes")
         else {
-            panic!("un controllo passato è un dato")
+            panic!("a check that passed is a datum")
         };
 
         assert_eq!(output["status"], "passed");
@@ -520,13 +520,13 @@ mod tests {
 
         let ActionOutcome::Went(output) = ShellCheckAction::new()
             .execute(&input, &SharedState::new())
-            .expect("l'esito è dichiarato accettabile")
+            .expect("the outcome is declared acceptable")
         else {
-            panic!("un esito tollerato resta un dato")
+            panic!("a tolerated outcome stays a datum")
         };
 
         assert_eq!(output["status"], "timed_out");
-        let unresolved = output["unresolved"].as_str().expect("dice cosa è successo");
+        let unresolved = output["unresolved"].as_str().expect("it says what happened");
         assert!(unresolved.contains("1 seconds"), "{unresolved}");
     }
 
@@ -539,12 +539,12 @@ mod tests {
     #[test]
     fn a_tolerated_failure_hands_on_no_value_at_all() {
         let input = json!({
-            "command": r#"echo '{"conta": 3}'; exit 2"#,
+            "command": r#"echo '{"count": 3}'; exit 2"#,
             "accept": ["failed"],
             "answer_shape": {
                 "type": "object",
-                "properties": {"conta": {"type": "number"}},
-                "required": ["conta"],
+                "properties": {"count": {"type": "number"}},
+                "required": ["count"],
                 "allow_extra": false
             },
             "timeout_secs": 5
@@ -552,15 +552,15 @@ mod tests {
 
         let ActionOutcome::Went(output) = ShellCheckAction::new()
             .execute(&input, &SharedState::new())
-            .expect("l'esito è dichiarato accettabile")
+            .expect("the outcome is declared acceptable")
         else {
-            panic!("un esito tollerato resta un dato")
+            panic!("a tolerated outcome stays a datum")
         };
 
         assert_eq!(output["status"], "failed");
         assert!(
             output.get("answer").is_none(),
-            "un comando fallito non ha prodotto la lettura richiesta: {output}"
+            "a command that failed produced no reading of the kind asked for: {output}"
         );
     }
 
@@ -586,7 +586,7 @@ mod tests {
 
         let error = ShellCheckAction::new()
             .execute(&input, &SharedState::new())
-            .expect_err("sopra il tetto il passo si ferma invece di tagliare");
+            .expect_err("above the ceiling the step stops instead of cutting");
         assert_eq!(error.class, "answer_too_large");
     }
 

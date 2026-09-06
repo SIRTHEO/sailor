@@ -284,7 +284,7 @@ mod tests {
             "sailor-actions-store-{}-{sequence}",
             std::process::id()
         ));
-        let ledger = Ledger::open(&path).expect("aprire il deposito");
+        let ledger = Ledger::open(&path).expect("open the ledger");
         (ledger, TestStore(path))
     }
 
@@ -306,25 +306,25 @@ mod tests {
                     "collection": "mandate",
                     "key": "current",
                     "value": {"file": "2026-08-28-sailor.md"},
-                    "written_by": "flusso-mandato-corrente",
+                    "written_by": "the-current-mandate-flow",
                     "written_at": 1_756_400_000i64,
                 }),
                 &shared,
             )
-            .expect("scrittura");
+            .expect("the writing");
 
         let outcome = read
             .execute(
                 &json!({"collection": "mandate", "key": "current"}),
                 &shared,
             )
-            .expect("lettura");
+            .expect("the reading");
         let ActionOutcome::Went(value) = outcome else {
-            panic!("un nodo che legge un deposito locale non aspetta nessuno");
+            panic!("a node reading a local ledger waits for nobody");
         };
         assert_eq!(value["found"], json!(true));
         assert_eq!(value["value"], json!({"file": "2026-08-28-sailor.md"}));
-        assert_eq!(value["written_by"], json!("flusso-mandato-corrente"));
+        assert_eq!(value["written_by"], json!("the-current-mandate-flow"));
     }
 
     // **THE SYMPTOM OF FAULT 28 IS TESTED WHERE IT HAPPENS, NOT HERE.** A test
@@ -350,15 +350,15 @@ mod tests {
                 &json!({"collection": "mandate", "key": "current"}),
                 &shared,
             )
-            .expect("la lettura di una voce assente non è un errore");
+            .expect("reading an absent entry is no error");
         let ActionOutcome::Went(value) = outcome else {
-            panic!("nessuna attesa");
+            panic!("nothing waits here");
         };
         assert_eq!(value["found"], json!(false));
         assert_eq!(
             value.get("value"),
             None,
-            "non si inventa un valore che nessuno ha scritto"
+            "no value nobody wrote is invented"
         );
     }
 
@@ -384,24 +384,24 @@ mod tests {
                         "collection": "posta/theo",
                         "key": key,
                         "value": {"oggetto": key},
-                        "written_by": "prova",
+                        "written_by": "a-test",
                         "written_at": 1_756_400_000i64,
                     }),
                     &shared,
                 )
-                .expect("scrittura");
+                .expect("the writing");
         }
 
         let ActionOutcome::Went(all) = list
             .execute(&json!({"collection": "posta/theo"}), &shared)
-            .expect("elenco")
+            .expect("the listing")
         else {
-            panic!("nessuna attesa");
+            panic!("nothing waits here");
         };
         assert_eq!(all["count"], json!(3));
         let keys: Vec<&str> = all["entries"]
             .as_array()
-            .expect("elenco")
+            .expect("the listing")
             .iter()
             .map(|e| e["key"].as_str().expect("chiave"))
             .collect();
@@ -416,11 +416,11 @@ mod tests {
                 &json!({"collection": "posta/theo", "after": "2026-08-28T02"}),
                 &shared,
             )
-            .expect("elenco")
+            .expect("the listing")
         else {
-            panic!("nessuna attesa");
+            panic!("nothing waits here");
         };
-        assert_eq!(fresh["count"], json!(1), "il già letto non si ripaga");
+        assert_eq!(fresh["count"], json!(1), "what was read is not paid for twice");
         assert_eq!(fresh["entries"][0]["key"], json!("2026-08-28T03"));
     }
 
@@ -437,9 +437,9 @@ mod tests {
 
         let ActionOutcome::Went(empty) = list
             .execute(&json!({"collection": "posta/nessuno"}), &shared)
-            .expect("elenco")
+            .expect("the listing")
         else {
-            panic!("nessuna attesa");
+            panic!("nothing waits here");
         };
         assert_eq!(empty["count"], json!(0));
         assert_eq!(empty["last_key"], json!(null));
@@ -461,11 +461,11 @@ mod tests {
                     "collection": "",
                     "key": "current",
                     "value": 1,
-                    "written_by": "prova",
+                    "written_by": "a-test",
                 }),
                 &shared,
             )
-            .expect_err("una collezione vuota non si scrive");
+            .expect_err("an empty collection is not written");
         assert_eq!(error.class, "store_refused");
     }
 
@@ -478,7 +478,7 @@ mod tests {
         let (ledger, _guard) = store();
         let write = StoreWriteAction::new(Some(ledger.clone()));
         let list = StoreListAction::new(Some(ledger));
-        for run in ["corsa-prima", "corsa-seconda"] {
+        for run in ["the-first-run", "the-second-run"] {
             let mut shared = SharedState::new();
             shared.insert(flow::CURRENT_RUN.to_owned(), json!(run));
             let ActionOutcome::Went(written) = write
@@ -486,23 +486,23 @@ mod tests {
                     &json!({
                         "collection": "consultations",
                         "value": {"diagnosis": run},
-                        "written_by": "prova",
+                        "written_by": "a-test",
                         "written_at": 1_756_400_000i64,
                     }),
                     &shared,
                 )
-                .expect("scrittura")
+                .expect("the writing")
             else {
-                panic!("nessuna attesa");
+                panic!("nothing waits here");
             };
             assert_eq!(written["key"], json!(run));
         }
 
         let ActionOutcome::Went(all) = list
             .execute(&json!({"collection": "consultations"}), &SharedState::new())
-            .expect("elenco")
+            .expect("the listing")
         else {
-            panic!("nessuna attesa");
+            panic!("nothing waits here");
         };
         assert_eq!(
             all["count"],
@@ -518,7 +518,7 @@ mod tests {
         let (ledger, _guard) = store();
         let error = StoreWriteAction::new(Some(ledger))
             .execute(
-                &json!({"collection": "consultations", "value": 1, "written_by": "prova"}),
+                &json!({"collection": "consultations", "value": 1, "written_by": "a-test"}),
                 &SharedState::new(),
             )
             .expect_err("with no run there is no key to invent");
@@ -533,7 +533,7 @@ mod tests {
     fn without_a_store_each_node_refuses_and_says_what_it_cannot_do() {
         let shared = SharedState::new();
         let asked = [
-            json!({"collection": "c", "key": "k", "value": 1, "written_by": "prova"}),
+            json!({"collection": "c", "key": "k", "value": 1, "written_by": "a-test"}),
             json!({"collection": "c", "key": "k"}),
             json!({"collection": "c"}),
         ];
@@ -546,11 +546,11 @@ mod tests {
         for (node, input) in nodes.iter().zip(asked.iter()) {
             let refused = node
                 .execute(input, &shared)
-                .expect_err("senza deposito non si fa finta");
+                .expect_err("with no store, nothing is pretended");
             assert_eq!(refused.class, "no_store");
             assert!(
                 refused.said.contains("where the store lives"),
-                "il rifiuto dice perché, non solo che non può: {}",
+                "the refusal says why, not merely that it cannot: {}",
                 refused.said
             );
         }
