@@ -163,26 +163,71 @@ fn take_out_of(tree: &Path, relative: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// How one judge came back. **Not measured is its own state**: a judge whose
-/// oracle is missing said nothing about the tree — fault 100.
+/// How one judge came back. Not measured and no receipt are two states and
+/// not one: declaring an empty oracle is evidence, handing in nothing is the
+/// absence of it, and the design begins by refusing to read one as the other.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Verdict {
+pub enum Verdict {
     Green,
     Red,
     NotMeasured,
+    NoReceipt,
+}
+
+/// What a judge's own words prove about the perimeter it walked. **WHAT THIS
+/// CANNOT CATCH**: a judge printing a perimeter it never walked is green here
+/// and nothing below can tell. The gate demands evidence, it does not audit it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Receipt {
+    Walked { perimeter: usize, oracle: Option<usize> },
+    Absent,
+    Incomplete,
+}
+
+/// The first number, when it is one and not zero: a walk of nothing and an
+/// oracle of nothing are the emptiness this line stops.
+fn a_standing_count(text: &str) -> Option<usize> {
+    text.split_whitespace().next()?.parse::<usize>().ok().filter(|held| *held > 0)
+}
+
+/// Read off the line the judge began, not from anywhere in the text: a judge
+/// quoting the word in an assertion never walked a tree. Exiting zero says the
+/// process ended, and only this line says the tree was opened.
+fn receipt_in(said: &str) -> Receipt {
+    let found = said.lines().map(str::trim).find(|line| line.starts_with(workspace::MEASURED));
+    let Some(line) = found else {
+        return Receipt::Absent;
+    };
+    let rest = &line[workspace::MEASURED.len()..];
+    let Some(perimeter) = a_standing_count(rest) else {
+        return Receipt::Incomplete;
+    };
+    match rest.split_once(workspace::AGAINST) {
+        None => Receipt::Walked { perimeter, oracle: None },
+        Some((_, weighed)) => match a_standing_count(weighed) {
+            Some(oracle) => Receipt::Walked { perimeter, oracle: Some(oracle) },
+            None => Receipt::Incomplete,
+        },
+    }
 }
 
 /// Passing is not the same as having measured, and the judge is the only one
 /// that can tell: it says so on its own output, and this reads it there.
-fn verdict_of(passed: bool, said: &str) -> Verdict {
+pub fn verdict_of(passed: bool, said: &str) -> Verdict {
     if !passed {
         Verdict::Red
     } else if said.contains(workspace::MEASURED_NOTHING) {
         Verdict::NotMeasured
-    } else {
+    } else if matches!(receipt_in(said), Receipt::Walked { .. }) {
         Verdict::Green
+    } else {
+        Verdict::NoReceipt
     }
 }
+
+/// How many judges hand in no receipt today. **It can only fall**, and no run
+/// is called clean while it stands above zero.
+const NO_RECEIPT_TODAY: usize = 36;
 
 /// The tally of the run, kept apart so a green count never absorbs the others.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -190,26 +235,95 @@ struct Verdicts {
     green: usize,
     red: usize,
     not_measured: usize,
+    no_receipt: usize,
 }
 
 impl Verdicts {
-    /// All three numbers whichever way the run went, with each key written out
-    /// where the scan over both catalogues can see it.
+    fn saw(&mut self, verdict: Verdict) {
+        match verdict {
+            Verdict::Green => self.green += 1,
+            Verdict::Red => self.red += 1,
+            Verdict::NotMeasured => self.not_measured += 1,
+            Verdict::NoReceipt => self.no_receipt += 1,
+        }
+    }
+
+    /// All four numbers, with each key written where the scan can see it.
     fn closing_line(&self) -> String {
         let held = [
             ("green", self.green.to_string()),
             ("red", self.red.to_string()),
             ("not_measured", self.not_measured.to_string()),
+            ("no_receipt", self.no_receipt.to_string()),
         ];
         let said: Vec<(&str, &str)> =
             held.iter().map(|(name, value)| (*name, value.as_str())).collect();
         if self.red > 0 {
             catalogue::say("cli.ratchet.some_red", &said)
-        } else if self.not_measured > 0 {
+        } else if self.not_measured > 0 || self.no_receipt > 0 {
             catalogue::say("cli.ratchet.nothing_red_but_unmeasured", &said)
         } else {
             catalogue::say("cli.ratchet.all_green", &said)
         }
+    }
+}
+
+/// What one judge handed the gate. It weighs nothing else, and an exit code
+/// alone is not enough.
+pub struct Handed<'a> {
+    pub judge: &'a str,
+    pub passed: bool,
+    pub said: &'a str,
+}
+
+/// The gate's public verdict over a run.
+#[derive(Debug, Default)]
+pub struct Gate {
+    counted: Verdicts,
+}
+
+impl Gate {
+    pub fn over(handed: &[Handed]) -> Self {
+        let mut gate = Gate::default();
+        for one in handed {
+            gate.counted.saw(verdict_of(one.passed, one.said));
+        }
+        gate
+    }
+
+    pub fn green(&self) -> usize {
+        self.counted.green
+    }
+
+    pub fn red(&self) -> usize {
+        self.counted.red
+    }
+
+    pub fn measured_nothing(&self) -> usize {
+        self.counted.not_measured
+    }
+
+    /// Judges that proved no perimeter: receipt absent or incomplete.
+    pub fn unmeasured(&self) -> usize {
+        self.counted.no_receipt
+    }
+
+    pub fn closing_line(&self) -> String {
+        self.counted.closing_line()
+    }
+
+    /// A red stops the run, and so does a judge that proved no perimeter.
+    /// `silent_allowed` is the declared debt, passed at the call rather than
+    /// hidden here: a run weighed on its own terms is asked for zero.
+    pub fn lets_through(&self, silent_allowed: usize) -> bool {
+        self.counted.red == 0 && self.counted.no_receipt <= silent_allowed
+    }
+
+    /// The seed sits above what this run holds, so the debt can be paid now.
+    /// Only over a whole run: one judge alone says nothing about the rest.
+    fn seed_may_fall_to(&self, whole_run: bool) -> Option<usize> {
+        (whole_run && self.counted.no_receipt < NO_RECEIPT_TODAY)
+            .then_some(self.counted.no_receipt)
     }
 }
 
@@ -334,21 +448,27 @@ fn measured(only: &Option<String>) -> Result<bool, String> {
             .output()
             .map_err(|error| format!("cargo test: {error}"))?;
         let text = String::from_utf8_lossy(&out.stdout) + String::from_utf8_lossy(&out.stderr);
-        match verdict_of(out.status.success(), &text) {
+        let verdict = verdict_of(out.status.success(), &text);
+        counted.saw(verdict);
+        match verdict {
             Verdict::Green => {
-                counted.green += 1;
                 println!("  {} {}", catalogue::say("cli.ratchet.green", &[]), judge.test);
             }
             Verdict::NotMeasured => {
-                counted.not_measured += 1;
                 println!("  {} {}", catalogue::say("cli.ratchet.not_measured", &[]), judge.test);
                 let said = |line: &&str| line.contains(workspace::MEASURED_NOTHING);
                 for line in text.lines().filter(said) {
                     println!("      {}", line.trim());
                 }
             }
+            Verdict::NoReceipt => {
+                println!("  {} {}", catalogue::say("cli.ratchet.no_receipt", &[]), judge.test);
+                let started = |line: &&str| line.trim_start().starts_with(workspace::MEASURED);
+                for line in text.lines().filter(started) {
+                    println!("      {}", line.trim());
+                }
+            }
             Verdict::Red => {
-                counted.red += 1;
                 println!("  {} {}", catalogue::say("cli.ratchet.red", &[]), judge.test);
                 for line in text.lines().filter(|line| says_what_to_write(line)) {
                     println!("      {}", line.trim());
@@ -356,8 +476,18 @@ fn measured(only: &Option<String>) -> Result<bool, String> {
             }
         }
     }
-    println!("{}", counted.closing_line());
-    Ok(counted.red == 0)
+    let gate = Gate { counted };
+    println!("{}", gate.closing_line());
+    if let Some(fallen) = gate.seed_may_fall_to(only.is_none()) {
+        println!(
+            "{}",
+            catalogue::say(
+                "cli.ratchet.receipt_seed_may_fall",
+                &[("seed", &NO_RECEIPT_TODAY.to_string()), ("measured", &fallen.to_string())],
+            )
+        );
+    }
+    Ok(gate.lets_through(NO_RECEIPT_TODAY))
 }
 
 /// The lines of a red judge worth reading: what the judge said, and the
@@ -501,9 +631,9 @@ mod tests {
     /// refuses to say every seed holds while a judge measured nothing.
     #[test]
     fn a_judge_that_measured_nothing_is_not_counted_among_the_ones_that_held() {
-        let clean = Verdicts { green: 44, red: 0, not_measured: 0 };
-        let blind = Verdicts { green: 41, red: 0, not_measured: 3 };
-        let fallen = Verdicts { green: 40, red: 1, not_measured: 3 };
+        let clean = Verdicts { green: 44, red: 0, not_measured: 0, no_receipt: 0 };
+        let blind = Verdicts { green: 41, red: 0, not_measured: 3, no_receipt: 0 };
+        let fallen = Verdicts { green: 40, red: 1, not_measured: 3, no_receipt: 0 };
 
         assert!(clean.closing_line().contains("every seed holds"), "{}", clean.closing_line());
         assert!(!blind.closing_line().contains("every seed holds"), "{}", blind.closing_line());
@@ -513,14 +643,89 @@ mod tests {
         assert!(fallen.closing_line().contains("3 not measured"), "{}", fallen.closing_line());
     }
 
+    /// **A RUN WITH A SILENT JUDGE IN IT IS NOT A CLEAN RUN EITHER.** The count
+    /// is its own column, and the closing line refuses the word «clean» while
+    /// it stands above zero.
+    #[test]
+    fn a_judge_that_handed_in_no_receipt_is_counted_and_the_run_is_not_clean() {
+        let silent = Verdicts { green: 43, red: 0, not_measured: 0, no_receipt: 1 };
+
+        assert!(!silent.closing_line().contains("every seed holds"), "{}", silent.closing_line());
+        assert!(
+            silent.closing_line().contains("1 without a receipt"),
+            "{}",
+            silent.closing_line()
+        );
+    }
+
+    /// The receipt is read off the judge's own line, and the numbers in it have
+    /// to stand: a walk of none and an oracle of none are the emptiness the
+    /// whole receipt exists to stop being read as a result.
+    #[test]
+    fn a_receipt_is_read_only_where_its_numbers_stand() {
+        let walked = format!("{} 214 sources under crates", workspace::MEASURED);
+        let weighed = format!(
+            "{} 214 sources{}214 paths git tracks",
+            workspace::MEASURED,
+            workspace::AGAINST
+        );
+        assert_eq!(receipt_in(&walked), Receipt::Walked { perimeter: 214, oracle: None });
+        assert_eq!(
+            receipt_in(&weighed),
+            Receipt::Walked { perimeter: 214, oracle: Some(214) }
+        );
+        assert_eq!(receipt_in("running 2 tests\nok."), Receipt::Absent);
+        assert_eq!(
+            receipt_in(&format!("{} 0 sources under crates", workspace::MEASURED)),
+            Receipt::Incomplete
+        );
+        assert_eq!(
+            receipt_in(&format!("{} many sources", workspace::MEASURED)),
+            Receipt::Incomplete
+        );
+        assert_eq!(
+            receipt_in(&format!("{} 9 sources{}0 tracked", workspace::MEASURED, workspace::AGAINST)),
+            Receipt::Incomplete
+        );
+    }
+
+    /// **AN EXIT CODE OF ZERO IS NOT A MEASUREMENT.** A judge that passes and
+    /// says nothing about what it opened is the emptiness of the diagnosis, and
+    /// the gate has only its words to tell that from a real walk.
+    #[test]
+    fn passing_without_a_receipt_is_not_green() {
+        let mute = "running 3 tests\ntest result: ok. 3 passed";
+        let handed = format!("running 3 tests\n{} 214 sources under crates", workspace::MEASURED);
+        assert_eq!(verdict_of(true, mute), Verdict::NoReceipt);
+        assert_eq!(verdict_of(true, &handed), Verdict::Green);
+        // A red is a red whatever it wrote: the receipt is not a way out.
+        assert_eq!(verdict_of(false, &handed), Verdict::Red);
+        // Declaring an empty oracle stays its own state, not folded into this.
+        let blind = format!("{} nothing to ask", workspace::MEASURED_NOTHING);
+        assert_eq!(verdict_of(true, &blind), Verdict::NotMeasured);
+    }
+
+    /// The seed is a debt, and the run says so the moment it holds less than
+    /// the seed claims — but only when the whole battery was asked.
+    #[test]
+    fn the_receipt_seed_is_nudged_down_only_over_a_whole_run() {
+        let mut gate = Gate::default();
+        gate.counted.no_receipt = NO_RECEIPT_TODAY - 1;
+        assert_eq!(gate.seed_may_fall_to(true), Some(NO_RECEIPT_TODAY - 1));
+        assert_eq!(gate.seed_may_fall_to(false), None);
+        gate.counted.no_receipt = NO_RECEIPT_TODAY;
+        assert_eq!(gate.seed_may_fall_to(true), None);
+    }
+
     /// **PASSING IS NOT MEASURING.** A judge that exits zero having said it
     /// measured nothing is the false green of fault 100, and only its own
     /// output tells the two apart.
     #[test]
     fn a_judge_that_passed_without_measuring_is_not_counted_green() {
         let blind = format!("running 2 tests\n{} nothing to ask\nok.", workspace::MEASURED_NOTHING);
+        let handed = format!("running 2 tests\n{} 7 files under crates\nok.", workspace::MEASURED);
         assert_eq!(verdict_of(true, &blind), Verdict::NotMeasured);
-        assert_eq!(verdict_of(true, "running 2 tests\nok."), Verdict::Green);
+        assert_eq!(verdict_of(true, &handed), Verdict::Green);
         assert_eq!(verdict_of(false, &blind), Verdict::Red);
         assert_eq!(verdict_of(false, "assertion failed"), Verdict::Red);
     }
