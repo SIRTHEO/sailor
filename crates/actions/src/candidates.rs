@@ -1020,7 +1020,8 @@ mod tests {
         };
 
         assert_eq!(
-            output["stdout"], "--ha-risposto-sa-il-modello --mode plan --model il-modello-forte --print la-domanda\n",
+            output["stdout"],
+            "--ha-risposto-sa-il-modello --mode plan --model il-modello-forte --print la-domanda\n",
             "il nome del modello sta dopo le opzioni della ricetta e prima di `--print`"
         );
     }
