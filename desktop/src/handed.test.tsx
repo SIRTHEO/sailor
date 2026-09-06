@@ -45,7 +45,7 @@ const REVIEW = {
   holder: "theo",
   mandate: "read the diff and say whether it holds",
   since: 100,
-  worktree: "/work/un-albero",
+  worktree: "/work/a-tree",
 };
 
 describe("a step handed to a person", () => {
@@ -123,7 +123,7 @@ describe("the bench: the work and the decision in the same place", () => {
     const shell = pretendShell((command) => {
       if (command === "handed_steps") return [REVIEW];
       if (command === "terminal_open") {
-        return { id: "t-9", device: "ttys009", workspaceRoot: "/work/un-albero", workspaceName: "un-albero" };
+        return { id: "t-9", device: "ttys009", workspaceRoot: "/work/a-tree", workspaceName: "a-tree" };
       }
       throw new Error(`no ${command}`);
     });
@@ -138,7 +138,7 @@ describe("the bench: the work and the decision in the same place", () => {
       fireEvent.click(screen.getByRole("button", { name: "open it as a terminal" }));
       await waitFor(() => expect(asked).not.toBeNull());
       expect(shell.calls.find((call) => call.command === "terminal_open")?.args).toMatchObject({
-        workspaceRoot: "/work/un-albero",
+        workspaceRoot: "/work/a-tree",
       });
       expect(asked).toEqual({
         terminalId: "t-9",

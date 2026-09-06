@@ -21,7 +21,7 @@ const CLIS = [
     native_profiles_note: "`-p/--profile` layers a config file over the base one.",
     home_mechanism: "variable" as const, home_detail: "CODEX_HOME",
     home_note: "checked with `codex doctor`.",
-    home_already_here: "/una/casa/.codex",
+    home_already_here: "/a/home/.codex",
   },
   {
     id: "antigravity", display_name: "Antigravity", executable: "antigravity",
@@ -147,12 +147,12 @@ describe("the home that is already here", () => {
     anEngineThatAnswers();
     render(<ProfileList native />);
     await waitFor(() => expect(screen.getByText("Codex")).toBeTruthy());
-    expect(screen.getByRole("button", { name: /Adopt \/una\/casa\/\.codex/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Adopt \/a\/home\/\.codex/ })).toBeTruthy();
 
     const codex = CLIS[0];
-    expect(toAdopt(codex, ROWS)).toBe("/una/casa/.codex");
+    expect(toAdopt(codex, ROWS)).toBe("/a/home/.codex");
     expect(
-      toAdopt(codex, [...ROWS, { ...ROWS[0], name: "gia-presa", home_dir: "/una/casa/.codex" }]),
+      toAdopt(codex, [...ROWS, { ...ROWS[0], name: "already-taken", home_dir: "/a/home/.codex" }]),
       "a second profile on one home is the same account under two names",
     ).toBeNull();
     expect(toAdopt(CLIS[1], ROWS), "nothing to adopt where nobody found a home").toBeNull();

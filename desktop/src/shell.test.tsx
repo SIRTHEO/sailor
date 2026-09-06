@@ -482,10 +482,10 @@ describe("a window replaced by a build", () => {
   test("A FLOW THAT IS NOT THERE ANY MORE IS NOT A PLACE", () => {
     // Renamed, deleted, or belonging to a tree nobody stands in now: the board
     // opens where everybody starts instead of on a name nothing answers to.
-    window.localStorage.setItem("sailor.where", JSON.stringify({ place: "board", focus: "un-fantasma" }));
+    window.localStorage.setItem("sailor.where", JSON.stringify({ place: "board", focus: "a-ghost" }));
     const { container } = render(<App />);
     const open = container.querySelectorAll("button.rail__item[data-open]");
     expect(open, "the board opened on nothing, or on two things").toHaveLength(1);
-    expect(open[0].querySelector(".rail__label")?.textContent).not.toBe("un-fantasma");
+    expect(open[0].querySelector(".rail__label")?.textContent).not.toBe("a-ghost");
   });
 });

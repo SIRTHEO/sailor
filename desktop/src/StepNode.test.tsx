@@ -107,19 +107,19 @@ function runIn(state: StepRun["state"]): StepRun {
  */
 const SAYS = (state: StepRun["state"]) => t(`window.step.state.${state}`);
 
-describe("il nodo e lo stato della corsa", () => {
+describe("the node and the state of the run", () => {
   test("without any run it says «not run yet», never «waiting»: nothing is waited on", () => {
     mountNode({}, new Map());
     expect(screen.getByText(SAYS("idle"))).toBeDefined();
     expect(screen.queryByText(SAYS("waiting"))).toBeNull();
   });
 
-  test("con una corsa vera dice quello che sta succedendo, adesso", () => {
+  test("with a real run it says what is happening, right now", () => {
     mountNode({}, new Map([["sviluppa-sailor::implementa", runIn("running")]]));
     expect(screen.getByText(SAYS("running"))).toBeDefined();
   });
 
-  test("LA CORSA VERA VINCE SUI DATI D'ESEMPIO PORTATI DAL NODO", () => {
+  test("THE REAL RUN WINS OVER THE SAMPLE DATA THE NODE CARRIES", () => {
     // The fault, in its exact shape: the node carried in its own `data` a state
     // that on real flows was always absent, and nobody passed it the real one.
     // Here both are present, and the real one wins.
@@ -130,11 +130,11 @@ describe("il nodo e lo stato della corsa", () => {
     expect(screen.getByText(SAYS("broke"))).toBeDefined();
   });
 
-  test("lo stato di un passo omonimo di un ALTRO flusso non arriva qui", () => {
+  test("the state of a same-named step of ANOTHER flow does not reach here", () => {
     // Among this machine's real flows `verifica`, `trigger` and `verdetto`
     // repeat: with an unqualified key the node would colour itself with the run
     // of a flow that is not its own.
-    mountNode({}, new Map([["un-altro-flusso::implementa", runIn("went")]]));
+    mountNode({}, new Map([["another-flow::implementa", runIn("went")]]));
     expect(screen.getByText(SAYS("idle"))).toBeDefined();
   });
 });
@@ -147,8 +147,8 @@ describe("il nodo e lo stato della corsa", () => {
  * declared model was there; missing were the absence of an engine —
  * indistinguishable from «I did not look» — and all the run had measured.
  */
-describe("il nodo e il motore che lo esegue", () => {
-  test("UN PASSO SENZA MOTORE LO DICE, invece di lasciare un vuoto", () => {
+describe("the node and the engine that runs it", () => {
+  test("A STEP WITH NO ENGINE SAYS SO, instead of leaving a blank", () => {
     // Before, the box did not appear at all: a step that runs here on the
     // machine and a step whose engine nobody looked at drew identically.
     mountNode({}, new Map());
@@ -157,15 +157,15 @@ describe("il nodo e il motore che lo esegue", () => {
     expect(screen.getByText("external_engine")).toBeDefined();
   });
 
-  test("E NON SI CONTRADDICE CON LA RIGA SOTTO", () => {
+  test("AND IT DOES NOT CONTRADICT THE LINE BELOW", () => {
     // «no engine» above `external_engine` — that is, above «external engine» —
     // is a contradiction for whoever looks, and it is not even what the data
     // says: the field is missing, not the engine.
     mountNode({}, new Map());
-    expect(screen.queryByText("nessun motore")).toBeNull();
+    expect(screen.queryByText("no engine")).toBeNull();
   });
 
-  test("UNA CATENA DI MOTORI SI LEGGE: il primo, e i ricambi come tali", () => {
+  test("A CHAIN OF ENGINES READS: the first, and the spares as spares", () => {
     // **THE FAULT, IN ITS EXACT SHAPE.** `tool` is a `ToolChoice` —
     // `One(String)` or `Chain(Vec<String>)` — and the window read it only as a
     // string: on a chain it answered «nothing», and the node drew «no engine»
@@ -177,10 +177,10 @@ describe("il nodo e il motore che lo esegue", () => {
     );
     expect(screen.getByText("claude-code")).toBeDefined();
     expect(screen.getByText("if missing: agy, codex")).toBeDefined();
-    expect(screen.queryByText("motore non dichiarato")).toBeNull();
+    expect(screen.queryByText("engine not declared")).toBeNull();
   });
 
-  test("L'IDENTIFICATIVO NON SI TRAVESTE DA NOME: stesso carattere della catena", () => {
+  test("THE IDENTIFIER DOES NOT DRESS UP AS A NAME: the same face as the chain", () => {
     // `tool?.name ?? id`: until discovery has answered, the name slot holds the
     // identifier — a datum, not a name. In prose, `claude-code` came out in one
     // face on the box's first line and in monospace on the second: the same
@@ -194,29 +194,29 @@ describe("il nodo e il motore che lo esegue", () => {
       new Map(),
     );
     const name = node.querySelector(".step-node__tool-name");
-    expect(name?.textContent, "lo slot mostra l'identificativo, non un nome").toBe("claude-code");
+    expect(name?.textContent, "the slot shows the identifier, not a name").toBe("claude-code");
     expect(
       name?.hasAttribute("data-raw"),
-      "senza `data-raw` il foglio non può distinguere un nome da un identificativo",
+      "without `data-raw` the sheet cannot tell a name from an identifier",
     ).toBe(true);
     expect(stylesheetSource).toMatch(
       /\.step-node__tool-name\[data-raw\]\s*\{[^}]*font-family:\s*var\(--font-data\)/,
     );
   });
 
-  test("un motore solo non si porta dietro una catena vuota", () => {
+  test("a single engine does not drag an empty chain behind it", () => {
     mountNode({ step: { ...STEP, with: { tool: "codex" } } as Step }, new Map());
     expect(screen.getByText("codex")).toBeDefined();
     expect(screen.queryByText(/if missing/)).toBeNull();
   });
 
-  test("senza nessuna chiamata non mostra un conto, invece di mostrare zeri", () => {
+  test("with no call at all it shows no count, instead of showing zeros", () => {
     mountNode({}, new Map());
-    expect(screen.queryByText(/token entrati/)).toBeNull();
+    expect(screen.queryByText(/tokens in/)).toBeNull();
     expect(document.querySelector(".step-node__meter")).toBeNull();
   });
 
-  test("dopo una chiamata dice cosa è entrato, cosa è uscito e quanto è costato", () => {
+  test("after a call it says what went in, what came out and what it cost", () => {
     mountNode(
       {},
       new Map(),
@@ -232,7 +232,7 @@ describe("il nodo e il motore che lo esegue", () => {
     expect(screen.getByText("$0.1285")).toBeDefined();
   });
 
-  test("UN COSTO CHE NESSUNO HA DICHIARATO SI DICE, e non diventa zero", () => {
+  test("A COST NOBODY DECLARED IS SAID, and does not become zero", () => {
     // Codex declares the token total and not the two sides: a `$0.0000` here
     // would be a measurement invented on the face of the node.
     mountNode(
@@ -268,19 +268,19 @@ describe("a row gives up a line, never a fact", () => {
   function declarationsOf(selector: string): Map<string, string> {
     const node = mountNode({}, new Map());
     const element = node.matches(selector) ? node : node.querySelector(selector);
-    expect(element, `manca ${selector}`).not.toBeNull();
+    expect(element, `${selector} is missing`).not.toBeNull();
     const style = styleTree(document.documentElement, sheet).get(element as Element);
-    expect(style, `manca lo stile calcolato di ${selector}`).toBeDefined();
+    expect(style, `the computed style of ${selector} is missing`).toBeDefined();
     return (style as { declarations: Map<string, string> }).declarations;
   }
 
-  test("IL GENERE HA UN FONDO, ed è dichiarato in `ch`", () => {
+  test("THE SPECIES HAS A FLOOR, and it is declared in `ch`", () => {
     // In px the floor would be right only on the machine where it was measured:
     // `--font-display` is a local family, and where it is absent the fallback
     // changes and the widths change with it. `ch` is one character's width in
     // the face that is really running.
     const floor = declarationsOf(".step-node__kind").get("min-width");
-    expect(`min-width del genere: ${String(floor)}`).toMatch(/: \d+(\.\d+)?ch$/);
+    expect(`min-width of the species: ${String(floor)}`).toMatch(/: \d+(\.\d+)?ch$/);
     expect(Number.parseFloat(String(floor))).toBeGreaterThan(0);
   });
 
@@ -302,10 +302,10 @@ describe("a row gives up a line, never a fact", () => {
     };
 
     const borders =
-      number(node.get("border"), "il filo del nodo") +
-      number(node.get("border-left"), "il filo di stato del nodo");
-    const padding = number(String(foot.get("padding")).split(/\s+/)[1], "il respiro del fondo");
-    const gap = number(foot.get("gap"), "lo stacco fra i pezzi del fondo");
+      number(node.get("border"), "the node's hairline") +
+      number(node.get("border-left"), "the node's state hairline");
+    const padding = number(String(foot.get("padding")).split(/\s+/)[1], "the foot's breathing room");
+    const gap = number(foot.get("gap"), "the gap between the foot's pieces");
     const room = STEP_WIDTH - borders - padding * 2;
     const wanted = STATE + PID + ATTEMPT + ELAPSED + gap * 3;
 
@@ -314,7 +314,7 @@ describe("a row gives up a line, never a fact", () => {
     expect(wanted).toBeGreaterThan(room);
     expect(
       foot.get("flex-wrap"),
-      `stato, pid, tentativo e durata chiedono ${wanted}px e il fondo ne ha ${room}: senza andare a capo, uno sparisce`,
+      `state, pid, attempt and duration ask for ${wanted}px and the foot has ${room}: without wrapping, one of them vanishes`,
     ).toBe("wrap");
   });
 });

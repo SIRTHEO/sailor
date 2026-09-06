@@ -76,7 +76,7 @@ describe("a failed step in the run view", () => {
   test("a refusal of the whole value says so instead of showing an empty path", () => {
     const { container } = consoleOf([
       started(1, "verdict"),
-      broke(2, "verdict", { check: "answer_shape", path: "", rule: "not_json", seen: "non sono json" }),
+      broke(2, "verdict", { check: "answer_shape", path: "", rule: "not_json", seen: "this is not json" }),
     ]);
     expect(container.querySelector(".step-refusal__path")?.textContent).toBe("the whole value");
     expect(container.querySelector(".step-refusal__rule")?.textContent).toBe("the answer is not JSON");

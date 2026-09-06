@@ -223,7 +223,7 @@ function whatComesFromTheBox(
     const declarations = styles.get(box)?.declarations;
     if (declarations !== undefined) {
       const path = declarations.get("clip-path");
-      if (path !== undefined && path !== "none") faults.push(`ritagliato via (clip-path: ${path})`);
+      if (path !== undefined && path !== "none") faults.push(`clipped away (clip-path: ${path})`);
 
       // The old twin of `clip-path`, the screen-reader-only recipe. It bites
       // **only on a positioned box**: declaring it elsewhere removes nobody, and
@@ -232,7 +232,7 @@ function whatComesFromTheBox(
       const edges = clip?.match(/^rect\((.*)\)$/i)?.[1].split(/[,\s]+/) ?? [];
       const positioned = ["absolute", "fixed"].includes(declarations.get("position") ?? "");
       if (positioned && edges.length === 4 && edges.every((edge) => NO_SIZE.test(edge))) {
-        faults.push(`ritagliato via (clip: ${clip})`);
+        faults.push(`clipped away (clip: ${clip})`);
       }
 
       fontSize ??= declarations.get("font-size");
@@ -241,13 +241,13 @@ function whatComesFromTheBox(
       const height = declarations.get("height") ?? declarations.get("max-height");
       const cut = overflow.split(/\s+/).some((word) => CLIPPING.includes(word));
       if (cut && height !== undefined && FIXED_LENGTH.test(height)) {
-        faults.push(`dentro una scatola alta ${height} che taglia il resto`);
+        faults.push(`inside a box ${height} tall that cuts off the rest`);
       }
     }
     if (box === root) break;
     box = box.parentElement;
   }
-  if (fontSize !== undefined && NO_SIZE.test(fontSize)) faults.push("corpo del testo a zero");
+  if (fontSize !== undefined && NO_SIZE.test(fontSize)) faults.push("text size at zero");
   return faults;
 }
 
@@ -283,21 +283,21 @@ function whatHidesThem(
   for (const [selector, atLeast] of wanted) {
     const found = Array.from(root.querySelectorAll(selector));
     if (found.length < atLeast) {
-      faults.add(`${selector}: ${found.length} invece di ${atLeast}`);
+      faults.add(`${selector}: ${found.length} instead of ${atLeast}`);
       continue;
     }
     for (const element of found) {
       const style = styles.get(element);
       if (style === undefined) {
-        faults.add(`${selector}: fuori dall'albero misurato`);
+        faults.add(`${selector}: outside the measured tree`);
         continue;
       }
-      if (style.hidden) faults.add(`${selector}: nascosto`);
-      if (style.opacity === 0) faults.add(`${selector}: trasparente`);
-      if (flattened(style.declarations)) faults.add(`${selector}: schiacciato`);
+      if (style.hidden) faults.add(`${selector}: hidden`);
+      if (style.opacity === 0) faults.add(`${selector}: transparent`);
+      if (flattened(style.declarations)) faults.add(`${selector}: flattened`);
       for (const property of SIZES) {
         const value = style.declarations.get(property);
-        if (value !== undefined && NO_SIZE.test(value)) faults.add(`${selector}: ${property} a zero`);
+        if (value !== undefined && NO_SIZE.test(value)) faults.add(`${selector}: ${property} at zero`);
       }
       for (const fault of whatComesFromTheBox(element, root, styles)) {
         faults.add(`${selector}: ${fault}`);
@@ -906,9 +906,9 @@ describe("the three states of the canvas with no flows", () => {
     // A flow created while the engine is silent could not be saved: offering it
     // would be a promise nobody can keep.
     const { container } = render(
-      <BlankCanvas state="failed" failure="il motore non risponde" brokenCount={0} onCreate={() => {}} />,
+      <BlankCanvas state="failed" failure="the engine does not answer" brokenCount={0} onCreate={() => {}} />,
     );
     expect(container.querySelectorAll("button")).toHaveLength(0);
-    expect(container.textContent ?? "").toContain("il motore non risponde");
+    expect(container.textContent ?? "").toContain("the engine does not answer");
   });
 });

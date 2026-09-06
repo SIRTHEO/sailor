@@ -58,18 +58,18 @@ describe("outcomeOf", () => {
     expect(outcomeOf(both)).toBe("broke");
   });
 
-  test("un errore scritto basta, anche senza passi caduti", () => {
-    expect(outcomeOf(run({ error: "il deposito non risponde", steps_broke: 0 }))).toBe("broke");
+  test("a written error is enough, even with no step fallen", () => {
+    expect(outcomeOf(run({ error: "the ledger does not answer", steps_broke: 0 }))).toBe("broke");
   });
 
-  test("uno stato che non conosciamo non diventa «andata»", () => {
+  test("a state we do not know does not become «went»", () => {
     // «other» is ugly to read and honest: inventing a success on a state the
     // engine never declared is how a view starts to lie with nobody there to
     // contradict it.
     expect(outcomeOf(run({ status: "waiting", steps_open: [] }))).toBe("other");
   });
 
-  test("i tentativi non cambiano l'esito", () => {
+  test("the attempts do not change the outcome", () => {
     // A step repeated and then successful is a run that went, and the effort
     // reads in the retried column instead of in a red that is not there.
     expect(outcomeOf(run({ steps_retried: 2 }))).toBe("went");
@@ -77,13 +77,13 @@ describe("outcomeOf", () => {
 });
 
 describe("lastedOf", () => {
-  test("una corsa mai finita non dura zero", () => {
+  test("a run that never ended does not last zero", () => {
     // `0 s` on a run that never ended is the convenient lie: it looks
     // instantaneous rather than interrupted.
     expect(lastedOf(null)).toBe("—");
   });
 
-  test("le durate salgono di scala invece di allungarsi", () => {
+  test("the durations climb a scale instead of getting longer", () => {
     expect(lastedOf(45)).toBe("45 s");
     expect(lastedOf(90)).toBe("1 min");
     expect(lastedOf(3 * 3600 + 25 * 60)).toBe("3 h 25 min");
@@ -91,7 +91,7 @@ describe("lastedOf", () => {
 });
 
 describe("whenOf", () => {
-  test("oggi si scrive solo l'ora, un altro giorno porta la data", () => {
+  test("today writes only the time, another day carries the date", () => {
     const now = new Date(2026, 7, 31, 21, 0, 0).getTime() / 1000;
     const thisMorning = new Date(2026, 7, 31, 9, 5, 0).getTime() / 1000;
     const yesterday = new Date(2026, 7, 30, 9, 5, 0).getTime() / 1000;
@@ -101,13 +101,13 @@ describe("whenOf", () => {
 });
 
 describe("countByFamily", () => {
-  test("le famiglie a zero restano nell'elenco", () => {
+  test("the families at zero stay in the list", () => {
     // A family that disappears when empty makes you believe it does not exist:
     // whoever has yet to write a hook must see «hooks 0», not silence.
     const entries: InstalledEntry[] = [
-      { kind: "skill", name: "a", description: "", origin: "casa", path: "/a", reach: { state: "active" }, by_model: true },
-      { kind: "skill", name: "b", description: "", origin: "casa", path: "/b", reach: { state: "active" }, by_model: true },
-      { kind: "hook", name: "c", description: "", origin: "casa", path: "/c", reach: { state: "active" }, by_model: false },
+      { kind: "skill", name: "a", description: "", origin: "home", path: "/a", reach: { state: "active" }, by_model: true },
+      { kind: "skill", name: "b", description: "", origin: "home", path: "/b", reach: { state: "active" }, by_model: true },
+      { kind: "hook", name: "c", description: "", origin: "home", path: "/c", reach: { state: "active" }, by_model: false },
     ];
     expect(countByFamily(entries)).toEqual({ skill: 2, agent: 0, command: 0, rule: 0, hook: 1 });
   });
@@ -120,12 +120,12 @@ describe("countByFamily", () => {
  * belong to.
  */
 describe("the runs of one tree", () => {
-  const mine = run({ run_id: "mine", worktree: "/t/un-progetto/un-albero" });
-  const theirs = run({ run_id: "theirs", worktree: "/t/un-progetto/un-altro" });
+  const mine = run({ run_id: "mine", worktree: "/t/a-project/a-tree" });
+  const theirs = run({ run_id: "theirs", worktree: "/t/a-project/another" });
   const older = run({ run_id: "older", worktree: null });
 
   test("a tree gets its own, and nothing it cannot claim", () => {
-    expect(runsIn([mine, theirs, older], "/t/un-progetto/un-albero").map((one) => one.run_id)).toEqual([
+    expect(runsIn([mine, theirs, older], "/t/a-project/a-tree").map((one) => one.run_id)).toEqual([
       "mine",
     ]);
   });

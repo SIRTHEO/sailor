@@ -24,8 +24,8 @@ function declarationsOf(property: string): Array<{ selector: string; value: stri
   return found;
 }
 
-describe("divieto 1 — tre famiglie di caratteri, e solo quelle", () => {
-  test("nessuna pila di caratteri scritta a mano fuori dai ruoli", () => {
+describe("prohibition 1 — three type families, and only those", () => {
+  test("no font stack written by hand outside the roles", () => {
     // A `system-ui` stack on a tool's monogram, and two monospace stacks copied
     // into the console and the code boxes.
     const wrong = declarationsOf("font-family").filter(
@@ -35,8 +35,8 @@ describe("divieto 1 — tre famiglie di caratteri, e solo quelle", () => {
   });
 });
 
-describe("divieto 2 — due raggi e una pillola", () => {
-  test("nessun raggio scritto a mano", () => {
+describe("prohibition 2 — two radii and a pill", () => {
+  test("no radius written by hand", () => {
     // `border-radius: 2px` on a lane's mark, `50%` on a trigger's. The rule
     // admits three values, and they are three roles.
     const allowed = /^var\(--radius(-lg|-pill)?\)$/;
@@ -45,8 +45,8 @@ describe("divieto 2 — due raggi e una pillola", () => {
   });
 });
 
-describe("divieto 3 — una sola ombra", () => {
-  test("l'unica ombra è `--shadow`; un anello interno non è un'ombra", () => {
+describe("prohibition 3 — one shadow only", () => {
+  test("the only shadow is `--shadow`; an inner ring is not a shadow", () => {
     // `inset` floats nothing: it is the focus hairline drawn inside the border,
     // and the rule is about what sits above the canvas.
     const wrong = declarationsOf("box-shadow").filter(
@@ -56,8 +56,8 @@ describe("divieto 3 — una sola ombra", () => {
   });
 });
 
-describe("divieto 8 — i corpi stanno nella scala", () => {
-  test("nessun corpo scritto a mano", () => {
+describe("prohibition 8 — the sizes stay in the scale", () => {
+  test("no size written by hand", () => {
     const wrong = declarationsOf("font-size").filter(
       ({ value }) => !/^var\(--text-[a-z]+\)$/.test(value),
     );
@@ -65,8 +65,8 @@ describe("divieto 8 — i corpi stanno nella scala", () => {
   });
 });
 
-describe("ogni colore passa da un ruolo", () => {
-  test("FUORI DA `:root` NON C'È NESSUN COLORE LETTERALE", () => {
+describe("every colour goes through a role", () => {
+  test("OUTSIDE `:root` THERE IS NO LITERAL COLOUR", () => {
     // No literal colour outside `:root`. It is the precondition for a dark
     // theme: with every tint coming from a role, the second theme is blocked
     // only by the measurements it still needs.
@@ -82,7 +82,7 @@ describe("ogni colore passa da un ruolo", () => {
     expect(wrong).toEqual([]);
   });
 
-  test("ogni ruolo di `:root` che nomina un colore è un colore leggibile", () => {
+  test("every `:root` role that names a colour is a colour that reads", () => {
     // A misspelled role does not fail: it resolves to nothing and the element
     // inherits its container's colour. Nobody notices.
     const root = sheet.rules.find((rule) => rule.selector === ":root");
@@ -99,8 +99,8 @@ describe("ogni colore passa da un ruolo", () => {
   });
 });
 
-describe("il foglio si legge tutto", () => {
-  test("QUELLO CHE ARRIVA QUI È IL FOGLIO SCRITTO, non una copia lavorata", () => {
+describe("the sheet is read whole", () => {
+  test("WHAT ARRIVES HERE IS THE SHEET AS WRITTEN, not a worked copy", () => {
     // `vitest` returns an empty string for every CSS import until told
     // `css: true`: without this line every check in this file would be green
     // for having read nothing.
@@ -109,7 +109,7 @@ describe("il foglio si legge tutto", () => {
     expect(sheet.rules.length).toBeGreaterThan(200);
   });
 
-  test("nessun colore dentro una regola-@", () => {
+  test("no colour inside an @-rule", () => {
     expect(sheet.colorsInsideAtRules).toBe(0);
   });
 
@@ -140,7 +140,7 @@ describe("il foglio si legge tutto", () => {
     expect(pinned?.declarations).toEqual(sheet.otherRoot);
   });
 
-  test("il divieto 7 è scritto nel foglio, non solo nel commento", () => {
+  test("prohibition 7 is written into the sheet, not only into the comment", () => {
     // `--faint` was abolished by making it identical to `--muted`. If somebody
     // lightens it again, this line says so before the contrast check does.
     const root = sheet.rules.find((rule) => rule.selector === ":root");
@@ -157,7 +157,7 @@ describe("il foglio si legge tutto", () => {
  * `npm run check:canvas` measures the drawn geometry; this one reads the cause
  * out of the sheet, in milliseconds and without a browser.
  */
-describe("divieto 11 — una colonna fissa dichiara come si comporta da stretta", () => {
+describe("prohibition 11 — a fixed column says how it behaves when narrow", () => {
   /** The narrowest window this project declares it supports: the width at
    *  which `scripts/screenshots.ts` captures, that is, the one somebody has
    *  already decided the window is to be looked at. */
@@ -190,14 +190,14 @@ describe("divieto 11 — una colonna fissa dichiara come si comporta da stretta"
     })
     .filter((found): found is { selector: string; width: number } => found !== null);
 
-  test("la prova guarda le colonne, non i pallini", () => {
+  test("the test looks at the columns, not at the dots", () => {
     // If one day this list empties, the test below turns green for having
     // looked at nothing — and that is how a check dies in silence.
     expect(rigid.length).toBeGreaterThan(0);
     expect(rigid.every((column) => column.width >= 100)).toBe(true);
   });
 
-  test("le colonne rigide non si mangiano da sole la finestra più stretta", () => {
+  test("the rigid columns do not eat the narrowest window on their own", () => {
     const total = rigid.reduce((sum, column) => sum + column.width, 0);
     if (total < NARROWEST) return; // they fit: no way out is needed
 
@@ -209,11 +209,11 @@ describe("divieto 11 — una colonna fissa dichiara come si comporta da stretta"
     const unguarded = rigid.filter(({ selector }) => !inside.includes(selector));
 
     expect({
-      totale: `${total}px di colonne rigide contro una finestra di ${NARROWEST}px`,
-      senzaViaDUscita: unguarded.map((column) => `${column.selector} (${column.width}px)`),
+      total: `${total}px of rigid columns against a window of ${NARROWEST}px`,
+      withNoWayOut: unguarded.map((column) => `${column.selector} (${column.width}px)`),
     }).toEqual({
-      totale: `${total}px di colonne rigide contro una finestra di ${NARROWEST}px`,
-      senzaViaDUscita: [],
+      total: `${total}px of rigid columns against a window of ${NARROWEST}px`,
+      withNoWayOut: [],
     });
   });
 });
@@ -275,7 +275,7 @@ describe("the name of a step reads the same at every zoom", () => {
  * 454 green tests: prohibition 11 wants three conditions it did not have. The
  * question here is narrower — no signal declares a width at all.
  */
-describe("i tre segnali non tolgono spazio al terminale", () => {
+describe("the three signals take no room from the terminal", () => {
   const SIGNALS = [".pane__where", ".pane__tree", ".pane__notch", ".pane__progress"];
   const WIDTHS = ["width", "min-width", "flex-basis"];
 
@@ -288,7 +288,7 @@ describe("i tre segnali non tolgono spazio al terminale", () => {
     });
   }
 
-  test("la prova guarda dei segnali che esistono davvero", () => {
+  test("the test looks at signals that really exist", () => {
     // Rename a class and the tests below go green for having looked at
     // nothing: that is how a check dies in silence.
     const seen = SIGNALS.filter((signal) =>
@@ -301,16 +301,16 @@ describe("i tre segnali non tolgono spazio al terminale", () => {
   /** `min-width: 0` is no floor: it is the valve that lets a thing shrink. */
   const NO_FLOOR = new Set(["0", "0px", "auto", "none"]);
 
-  test("NESSUN SEGNALE DICHIARA UNA LARGHEZZA, in nessuna unità", () => {
+  test("NO SIGNAL DECLARES A WIDTH, in any unit", () => {
     const guilty = ofSignals().flatMap((rule) =>
       rule.declarations
         .filter(([property, value]) => WIDTHS.includes(property) && !NO_FLOOR.has(value.trim()))
         .map(([property, value]) => `${rule.selector.trim()} { ${property}: ${value.trim()} }`),
     );
-    expect(guilty, "un segnale con una larghezza è una colonna, e la toglie al terminale").toEqual([]);
+    expect(guilty, "a signal with a width is a column, and it takes it from the terminal").toEqual([]);
   });
 
-  test("LA TACCA È FUORI DAL FLUSSO: sta sul bordo, non in fila nell'intestazione", () => {
+  test("THE NOTCH IS OUT OF THE FLOW: it sits on the border, not in line in the header", () => {
     const notch = new Map(
       sheet.rules
         .filter((rule) => rule.selector.trim() === ".pane__notch")
@@ -323,14 +323,14 @@ describe("i tre segnali non tolgono spazio al terminale", () => {
    * **NOTHING MOVES WHEN NOTHING HAPPENED.** A mark that pulses makes a silent
    * agent look alive, and a crossing is a colour that stops, not a motion.
    */
-  test("NESSUN SEGNALE E NESSUN RISALTO DICHIARA UN'ANIMAZIONE", () => {
+  test("NO SIGNAL AND NO HIGHLIGHT DECLARES AN ANIMATION", () => {
     const moving = ["animation", "animation-name", "transition", "transform"];
     const guilty = ofSignals(true).flatMap((rule) =>
       rule.declarations
         .filter(([property]) => moving.includes(property))
         .map(([property, value]) => `${rule.selector.trim()} { ${property}: ${value.trim()} }`),
     );
-    expect(guilty, "un segnale che si muove da solo").toEqual([]);
+    expect(guilty, "a signal that moves on its own").toEqual([]);
   });
 });
 
