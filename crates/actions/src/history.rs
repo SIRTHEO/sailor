@@ -583,13 +583,13 @@ mod tests {
             "sailor-actions-history-{label}-{}-{sequence}",
             std::process::id()
         ));
-        let ledger = Ledger::open(&path).expect("aprire il deposito");
+        let ledger = Ledger::open(&path).expect("open the ledger");
         (ledger, TestStore(path))
     }
 
     /// The text that must never come out: it goes in as the input and as the
     /// output of every test step, so a leak shows at a glance in the answer.
-    const SECRET: &str = "PROMPT-SEGRETO-CHE-NON-DEVE-USCIRE";
+    const SECRET: &str = "SECRET-PROMPT-THAT-MUST-NEVER-COME-OUT";
 
     fn a_run(ledger: &Ledger, run_id: &str, flow: &str, started_at: i64, ended_at: Option<i64>) {
         ledger
@@ -598,7 +598,7 @@ mod tests {
                 kind: "flow".to_owned(),
                 entity: flow.to_owned(),
                 parent_run_id: None,
-                started_by: "prova".to_owned(),
+                started_by: "a-test".to_owned(),
                 status: "done".to_owned(),
                 total_cost_micros: 0,
                 error: None,
@@ -607,7 +607,7 @@ mod tests {
                 worktree: None,
                 stop_reason: None,
             })
-            .expect("registrare la corsa");
+            .expect("record the run");
     }
 
     fn a_step(
@@ -631,7 +631,7 @@ mod tests {
         );
         ledger
             .append_step_started(&record)
-            .expect("registrare l'intenzione");
+            .expect("record the intention");
         ledger
             .close_step(
                 run_id,
@@ -640,8 +640,8 @@ mod tests {
                 1,
                 Completion {
                     outcome,
-                    output: Some(json!({"risposta": SECRET})),
-                    said: Some(format!("{SECRET} detto da {step_id}")),
+                    output: Some(json!({"answer": SECRET})),
+                    said: Some(format!("{SECRET} said by {step_id}")),
                     failure_class: failure_class.map(str::to_owned),
                     refusal: None,
                     ran: None,
@@ -650,16 +650,16 @@ mod tests {
                     bytes_discarded: Some(0),
                 },
             )
-            .expect("chiudere il passo");
+            .expect("close the step");
     }
 
     fn went(action: &HistoryAskAction, question: Value) -> Value {
         let shared = SharedState::new();
         let outcome = action
             .execute(&question, &shared)
-            .expect("la domanda risponde");
+            .expect("the question answers");
         let ActionOutcome::Went(value) = outcome else {
-            panic!("una lettura locale non aspetta nessuno");
+            panic!("a local reading waits for nobody");
         };
         value
     }
@@ -669,12 +669,12 @@ mod tests {
     /// would make the count right and the next gesture unknown.
     #[test]
     fn what_is_still_open_says_which_runs_are_resumed_and_which_are_waited_on() {
-        let (ledger, _kept) = store("aperte");
-        a_run(&ledger, "finita", "un-flusso", 10, Some(20));
-        a_step(&ledger, "finita", "passo", 10, Outcome::Went, None, 20);
-        a_run(&ledger, "a-meta", "un-flusso", 30, None);
-        a_step_left_open(&ledger, "a-meta", "passo", 30);
-        a_waiting_run(&ledger, "in-attesa", "un-altro", 40);
+        let (ledger, _kept) = store("open");
+        a_run(&ledger, "finished", "a-flow", 10, Some(20));
+        a_step(&ledger, "finished", "passo", 10, Outcome::Went, None, 20);
+        a_run(&ledger, "left-halfway", "a-flow", 30, None);
+        a_step_left_open(&ledger, "left-halfway", "passo", 30);
+        a_waiting_run(&ledger, "waiting", "another-flow", 40);
 
         let action = HistoryAskAction::new(Some(ledger));
         let value = went(&action, json!({"ask": "open_runs"}));
@@ -686,14 +686,14 @@ mod tests {
             .iter()
             .map(|run| run["run_id"].as_str().expect("a run id"))
             .collect();
-        assert_eq!(halfway, vec!["a-meta"], "a closed run is not open, {value}");
+        assert_eq!(halfway, vec!["left-halfway"], "a closed run is not open, {value}");
         let waiting: Vec<&str> = value["answer"]["waiting"]
             .as_array()
             .expect("the runs waiting")
             .iter()
             .map(|run| run["run_id"].as_str().expect("a run id"))
             .collect();
-        assert_eq!(waiting, vec!["in-attesa"], "{value}");
+        assert_eq!(waiting, vec!["waiting"], "{value}");
         assert!(
             !serde_json::to_string(&value).expect("it serialises").contains(SECRET),
             "what passed through the flow does not come back out: {value}"
@@ -705,15 +705,15 @@ mod tests {
     /// the first real run of `watch-the-crew`, which reported itself.
     #[test]
     fn the_run_that_asks_is_not_among_the_ones_left_open() {
-        let (ledger, _kept) = store("chiede");
-        a_run(&ledger, "chi-chiede", "la-guardia", 30, None);
-        a_step_left_open(&ledger, "chi-chiede", "passo", 30);
-        a_run(&ledger, "un-altra", "un-flusso", 40, None);
-        a_step_left_open(&ledger, "un-altra", "passo", 40);
+        let (ledger, _kept) = store("asks");
+        a_run(&ledger, "the-asking-run", "the-watch", 30, None);
+        a_step_left_open(&ledger, "the-asking-run", "passo", 30);
+        a_run(&ledger, "another-run", "a-flow", 40, None);
+        a_step_left_open(&ledger, "another-run", "passo", 40);
 
         let action = HistoryAskAction::new(Some(ledger));
         let mut shared = SharedState::new();
-        shared.insert(flow::CURRENT_RUN.to_owned(), json!("chi-chiede"));
+        shared.insert(flow::CURRENT_RUN.to_owned(), json!("the-asking-run"));
         let ActionOutcome::Went(value) = action
             .execute(&json!({"ask": "open_runs"}), &shared)
             .expect("the question answers")
@@ -729,7 +729,7 @@ mod tests {
             .collect();
         assert_eq!(
             halfway,
-            vec!["un-altra"],
+            vec!["another-run"],
             "the asking run counted itself: {value}"
         );
     }
@@ -743,7 +743,7 @@ mod tests {
                 kind: "flow".to_owned(),
                 entity: flow.to_owned(),
                 parent_run_id: None,
-                started_by: "prova".to_owned(),
+                started_by: "a-test".to_owned(),
                 status: "waiting".to_owned(),
                 total_cost_micros: 0,
                 error: None,
@@ -752,7 +752,7 @@ mod tests {
                 worktree: None,
                 stop_reason: None,
             })
-            .expect("registrare la corsa in attesa");
+            .expect("record the waiting run");
     }
 
     /// A step whose intent is recorded and whose outcome never was.
@@ -769,7 +769,7 @@ mod tests {
         );
         ledger
             .append_step_started(&record)
-            .expect("registrare l'intenzione");
+            .expect("record the intention");
     }
 
     /// With no store the question still gets an answer, and the answer says
@@ -789,7 +789,7 @@ mod tests {
         assert_eq!(
             value.get("answer"),
             None,
-            "senza deposito non c'è nessuna risposta da dare"
+            "with no store there is no answer to give"
         );
     }
 
@@ -812,7 +812,7 @@ mod tests {
         assert_eq!(
             empty.get("answer"),
             None,
-            "sul deposito vuoto la chiave non c'è, nemmeno a null: {empty}"
+            "on an empty store the key is absent, not even at null: {empty}"
         );
 
         a_run(&ledger, "run-1", "alpha", 100, Some(200));
@@ -826,7 +826,7 @@ mod tests {
         assert_eq!(
             quiet["answer"]["failures"],
             json!(0),
-            "zero guasti è il numero zero"
+            "zero failures is the number zero"
         );
         assert_eq!(quiet["answer"]["attempts"], json!(1));
         assert_eq!(quiet["runs_considered"], json!(1));
@@ -871,7 +871,7 @@ mod tests {
 
         let error = action
             .execute(&json!({"ask": "select_star_from_steps"}), &shared)
-            .expect_err("non esiste");
+            .expect_err("it does not exist");
 
         assert_eq!(error.class, "invalid_input");
         assert!(error.said.contains("last_run"), "{}", error.said);
@@ -885,7 +885,7 @@ mod tests {
     /// that does not exist today.
     #[test]
     fn a_last_run_answer_never_carries_what_passed_through_the_flow() {
-        let (ledger, _guard) = store("senza-detto");
+        let (ledger, _guard) = store("with-no-said");
         a_run(&ledger, "run-1", "alpha", 100, Some(400));
         a_step(
             &ledger,
@@ -907,10 +907,10 @@ mod tests {
             value["answer"]["steps"][0]["failure_class"],
             json!("timeout")
         );
-        assert!(!text.contains(SECRET), "il canale dati non esce: {text}");
+        assert!(!text.contains(SECRET), "the data channel stays in: {text}");
         assert!(
             !text.contains("\"said\""),
-            "il testo grezzo non esce senza che sia chiesto: {text}"
+            "the raw text does not come out unless it is asked for: {text}"
         );
         assert!(!text.contains("\"input\""), "{text}");
         assert!(!text.contains("\"output\""), "{text}");
@@ -924,13 +924,13 @@ mod tests {
     /// does not prove the policy.
     #[test]
     fn said_comes_out_only_when_asked_and_only_from_broken_steps() {
-        let (ledger, _guard) = store("con-detto");
+        let (ledger, _guard) = store("with-said");
         a_run(&ledger, "run-1", "alpha", 100, Some(400));
-        a_step(&ledger, "run-1", "riuscito", 100, Outcome::Went, None, 150);
+        a_step(&ledger, "run-1", "went", 100, Outcome::Went, None, 150);
         a_step(
             &ledger,
             "run-1",
-            "rotto",
+            "broke",
             200,
             Outcome::Broke,
             Some("timeout"),
@@ -944,16 +944,16 @@ mod tests {
         );
         let said = value["answer"]["said"]
             .as_array()
-            .expect("l'elenco c'è")
+            .expect("the listing is there")
             .clone();
 
-        assert_eq!(said.len(), 1, "solo il passo rotto: {said:?}");
-        assert_eq!(said[0]["step_id"], json!("rotto"));
-        assert!(said[0]["said"].as_str().expect("testo").contains("rotto"));
+        assert_eq!(said.len(), 1, "the broken step alone: {said:?}");
+        assert_eq!(said[0]["step_id"], json!("broke"));
+        assert!(said[0]["said"].as_str().expect("the text").contains("broke"));
         assert_eq!(said[0]["said_truncated"], json!(false));
         // The step that passed has a `said` in the store and it does not come
         // out: the gap is for diagnosing a fault, not for reading good runs.
-        assert!(!value.to_string().contains("detto da riuscito"), "{value}");
+        assert!(!value.to_string().contains("said by went"), "{value}");
     }
 
     /// The duration question measures what passed, counts the failures apart,
@@ -993,7 +993,7 @@ mod tests {
         assert_eq!(
             summary.get("median"),
             None,
-            "una mediana di niente non si scrive: {summary}"
+            "a median of nothing is not written: {summary}"
         );
         assert_eq!(summary.get("last"), None);
     }
@@ -1021,7 +1021,7 @@ mod tests {
                 &json!({"ask": "failure_classes", "within_last_runs": 5000}),
                 &shared,
             )
-            .expect_err("oltre il tetto");
+            .expect_err("past the ceiling");
 
         assert_eq!(error.class, "invalid_input");
         assert!(error.said.contains("500"), "{}", error.said);
