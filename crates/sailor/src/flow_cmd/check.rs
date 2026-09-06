@@ -1268,7 +1268,7 @@ mod tests {
         assert!(!report.contains("strument"), "{report}");
     }
 
-    // ── che tetto è: garantito o soglia di arresto ──────────────────────
+    // ── what kind of cap: guaranteed, or a stop threshold ───────────────
 
     /// An engine that can be told the most one call may spend, and one that
     /// cannot: the two facts the verdict is made of.
@@ -1309,12 +1309,10 @@ mod tests {
 
     /// **A HANDED STEP TAKES THE GUARANTEE AWAY FROM THE WHOLE RUN.** The two
     /// flows differ by one step, and that step asks no engine of its own: what
-    /// changes is only that it can start calls outside the control before the
-    /// call. Astra's rule, decided statically and said before anything runs.
+    /// changes is only that it can start calls outside this control.
     ///
     /// *Mutant run*: in `cap_facts`, treat `handed_to_agent` as any other
-    /// action (drop the first branch). Both reports then say «guaranteed» and
-    /// this test goes red.
+    /// action. Both reports then say «guaranteed» and this goes red.
     #[test]
     fn a_flow_with_a_handed_step_is_not_a_guaranteed_cap() {
         let bounded = a_step(

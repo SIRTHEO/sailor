@@ -239,16 +239,14 @@ impl actions::ToolResolver for Tools {
             .model_option()
     }
 
-    /// How this engine is told the most one call may spend, from the same
-    /// block the model option comes from and with the same rule: what is not
-    /// written is not there.
+    /// The same rule as the model option: what is not written is not there.
     fn spend_ceiling_option(&self, id: &str) -> Option<actions::reserve::CeilingOption> {
-        self.catalog
+        let loaded = self
+            .catalog
             .live()
             .into_iter()
-            .find(|loaded| loaded.descriptor.id == id)?
-            .descriptor
-            .spend_ceiling_option()
+            .find(|loaded| loaded.descriptor.id == id)?;
+        spend_ceiling_option_of(&loaded.descriptor)
     }
 
     fn fuel(&self, id: &str) -> Vec<models::fuel::Fuel> {
@@ -306,6 +304,25 @@ impl actions::ToolResolver for Tools {
             logged_out_when: login.logged_out_when.clone(),
         })
     }
+}
+
+/// How a descriptor says the most one call may spend: the options, and the
+/// unit. **Both or neither** — a form with no unit is a number nobody can
+/// convert, and `None` leaves a cap over this engine a stop threshold.
+pub fn spend_ceiling_option_of(
+    descriptor: &crate::descriptor::Descriptor,
+) -> Option<actions::reserve::CeilingOption> {
+    let forms = descriptor
+        .capabilities
+        .get(actions::reserve::NATIVE_SPEND_CAP)?
+        .forms();
+    forms
+        .iter()
+        .find(|form| form.takes_value && !form.args.is_empty() && !form.unit.is_empty())
+        .map(|form| actions::reserve::CeilingOption {
+            args: form.args.clone(),
+            unit: form.unit.clone(),
+        })
 }
 
 /// The recipe a descriptor declares, in the shape the actions know. **A
