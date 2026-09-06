@@ -375,9 +375,10 @@ describe("the window at rest", () => {
   test("no text/background pair below 4.5:1", () => {
     render(<App />);
     goToFlows();
-    // The threshold leaves room for someone removing a piece of the window, not
-    // for someone losing half of it.
-    expect(measure(70)).toEqual([]);
+    // Re-measured, not guessed: the permanent menu of destinations left the
+    // ordinary view, and with it ten rows of text this scene used to weigh.
+    // The threshold leaves room for removing a piece, not for losing half.
+    expect(measure(60)).toEqual([]);
   });
 });
 

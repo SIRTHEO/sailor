@@ -1416,9 +1416,7 @@ export default function App() {
       <World
         native={NATIVE}
         here={place}
-        hereTab={sailorTab}
         onGo={setPlace}
-        onOpen={goToMachine}
         counts={{ board: flows.size, terminals: terminalCount }}
         terminals={openTerminals}
         onMoved={() => readFlows(() => true)}

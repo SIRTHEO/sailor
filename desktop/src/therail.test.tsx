@@ -110,9 +110,7 @@ describe("a flow's row and its state", () => {
       <World
         native={false}
         here="board"
-        hereTab="engines"
         onGo={() => {}}
-        onOpen={() => {}}
         counts={{ board: 1 }}
         terminals={[]}
         onMoved={() => {}}
