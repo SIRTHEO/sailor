@@ -50,7 +50,7 @@ export function TerminalsSection({
   onBenchClosed?: (answer: string) => void;
 }) {
   return (
-    <div className="section" hidden={!shown}>
+    <div className="section section--sessions" hidden={!shown}>
       <SubRail here={tab} onGo={onTab} tabs={TERMINALS_TABS} />
       <div className="section__body section__body--terminals">
         <Terminals

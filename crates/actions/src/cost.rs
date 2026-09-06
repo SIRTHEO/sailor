@@ -754,12 +754,9 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
 
     /// **THE TWIN, AND THE HALF THAT WAS UNGUARDED.** Same recipe, same
     /// declared shape, same words: only the engine's output changes, and it
-    /// does not fit the shape. Then the words are all we have, and they mean a
-    /// refusal — the step closes `exhausted` and the engine goes aside.
-    ///
-    /// Without this, `in_shape` could be «a shape was declared» instead of
-    /// «the answer fits it» and the whole crate stays green: a step declaring
-    /// a shape would never be refused again, whatever the engine printed.
+    /// does not fit the shape. Then the words are all we have and they mean a
+    /// refusal — the step closes `exhausted` and the engine goes aside. Read
+    /// `in_shape` as «a shape was declared» and the whole crate stays green.
     #[test]
     fn an_answer_off_the_declared_shape_is_still_read_as_a_refusal() {
         let dir = scratch("fuori-forma-e-rifiuto");
