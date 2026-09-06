@@ -1472,11 +1472,14 @@ export default function App() {
       {place === "sailor" && (
         <SailorScreen
           native={NATIVE}
-          now={now}
           tab={sailorTab}
           onTerminalOpened={() => {
             setPlace("terminals");
             setTerminalsTab("live");
+          }}
+          onQuota={() => {
+            setPlace("memory");
+            setMemoryTab("spend");
           }}
         />
       )}
