@@ -24,69 +24,69 @@ struct CheckSpec {
     command: String,
     #[serde(default)]
     env: BTreeMap<String, String>,
-    /// Come per il motore: vuoto vuol dire che una verifica fallita è un passo
-    /// rotto. `["failed"]` la rimette fra i dati, per chi sul risultato ci vuole
-    /// ramificare invece di fermarsi.
+    /// As for the engine: empty means a failed check is a broken step.
+    /// `["failed"]` puts it back among the data, for whoever wants to branch on
+    /// the result rather than stop.
     #[serde(default)]
     accept: Vec<String>,
     timeout_secs: u64,
-    /// Dove gira la verifica. Non lo scrive quasi mai una persona: ce lo mette
-    /// l'esecutore quando compone l'ingresso, prendendolo dalla radice del
-    /// progetto. Un percorso assoluto scritto qui a mano non arriva mai fin
-    /// qui — `step_input` lo rifiuta prima.
+    /// Where the check runs. A person hardly ever writes it: the executor puts
+    /// it there as it composes the input, taking it from the project root. An
+    /// absolute path written here by hand never gets this far — `step_input`
+    /// refuses it first.
     #[serde(default)]
     workdir: Option<String>,
-    /// La forma della lettura, quando questo passo non verifica soltanto ma
-    /// **legge**. Assente vuol dire come prima: a valle va solo l'esito.
+    /// The shape of the reading, when this step does not only check but
+    /// **reads**. Absent means as before: only the verdict goes downstream.
     ///
-    /// Il controllo gemello del motore — `shape_was_asked_for`, che si rifiuta
-    /// di spendere se la forma non compare nel prompt — qui non ha analogo, e
-    /// fingerlo sarebbe peggio che non averlo: `git` non riceve la tua forma e
-    /// non può conformarsi. Perciò il patto è l'altro: **il comando deve già
-    /// emettere JSON**. Se non lo fa il passo va rosso dicendo esattamente
-    /// cosa aggiungere — `--json`, `--format=json`, `| jq` — invece di
-    /// indovinare come si legge un testo che un giorno cambierà formato.
+    /// The engine's twin control — `shape_was_asked_for`, refusing to spend
+    /// when the shape is absent from the prompt — has no analogue here, and
+    /// faking one would be worse than having none: `git` never receives your
+    /// shape and cannot conform. So the pact is the other one: **the command
+    /// must already emit JSON**, and if it does not the step goes red naming
+    /// what to add — `--json`, `--format=json`, `| jq` — rather than guessing
+    /// at a text whose format will change one day.
     #[serde(default)]
     answer_shape: Option<ValueSchema>,
-    /// Ciò che non è riconosciuto, per la stessa ragione di `EngineSpec::extra`.
+    /// What is not recognised, for the same reason as `EngineSpec::extra`.
     #[serde(flatten)]
     extra: BTreeMap<String, Value>,
 }
 
-/// **IL PRIMO TETTO SUL VOLUME CHE QUESTO PROGETTO ABBIA.** L'unico tetto che
-/// c'era è sul tempo: un comando lento viene ucciso, un comando logorroico no.
-/// Un motore ha un freno naturale perché paga a token; un comando stampa
-/// gratis, e senza un limite ciò che stampa finirebbe nel deposito.
+/// **THE FIRST CEILING ON VOLUME THIS PROJECT HAS.** The only ceiling there
+/// was is on time: a slow command is killed, a talkative one is not. An engine
+/// has a natural brake because it pays by token; a command prints for free,
+/// and with no limit what it prints would end up in the store.
 ///
-/// Un milione di caratteri — un libro di seicento pagine — è largo per un uso
-/// vero e stretto abbastanza da prendere gli incidenti. Sopra il tetto si va in
-/// rosso e **non si tronca**: un valore mozzato sembra intero, e chi lo legge a
-/// valle non ha modo di sapere che manca un pezzo.
+/// A million characters — a six-hundred-page book — is wide for real use and
+/// narrow enough to catch the accidents. Past the ceiling the step goes red
+/// and **does not truncate**: a lopped value looks whole, and whoever reads it
+/// downstream has no way to know a piece is missing.
 const MAX_ANSWER_BYTES: usize = 1_000_000;
 
-/// Esegue una verifica di shell con un tempo massimo, leggendo comando,
-/// ambiente e tetto dall'ingresso tipato del passo. Stessa regola dell'azione
-/// gemella, e per la stessa ragione: una verifica che fallisce rompe il proprio
-/// passo, salvo che il passo dichiari `"accept": ["failed"]`.
+/// Runs a shell check under a time limit, reading command, environment and
+/// ceiling from the step's typed input. Same rule as the twin action, and for
+/// the same reason: a check that fails breaks its own step, unless the step
+/// declares `"accept": ["failed"]`.
 ///
-/// **Un rinvio a ciò che ha detto un motore va in `env`, mai in `command`.**
-/// Il comando è testo di shell e viene eseguito; una risposta di modello
-/// incollata lì dentro è un comando scritto da chi ha risposto. Dentro una
-/// variabile d'ambiente resta un dato, e il comando la legge fra virgolette.
+/// **A reference to what an engine said goes in `env`, never in `command`.**
+/// The command is shell text and gets executed; a model's answer pasted in
+/// there is a command written by whoever answered. Inside an environment
+/// variable it stays data, and the command reads it between quotes.
 #[derive(Default)]
 pub struct ShellCheckAction {
     watcher: Option<Arc<dyn StepSinks>>,
 }
 
 impl ShellCheckAction {
-    /// Senza nessuno che guarda: il testo della verifica si vede solo alla fine,
-    /// come è sempre stato.
+    /// With nobody watching: the check's text is seen at the end, as it has
+    /// always been.
     pub fn new() -> Self {
         Self { watcher: None }
     }
 
-    /// Con qualcuno che guarda. Vale per una verifica quanto per un motore: una
-    /// suite di prove che gira dieci minuti è cieca esattamente come lui.
+    /// With somebody watching. It holds for a check as for an engine: a test
+    /// suite running ten minutes is exactly as blind as one.
     pub fn watched_by(mut self, watcher: Option<Arc<dyn StepSinks>>) -> Self {
         self.watcher = watcher;
         self
@@ -100,7 +100,7 @@ impl Action for ShellCheckAction {
         false
     }
 
-    /// Come per il motore, e dalla stessa struttura.
+    /// As for the engine, and out of the same struct.
     fn unknown_fields(&self, declared: &Value) -> Vec<String> {
         match serde_json::from_value::<CheckSpec>(declared.clone()) {
             Ok(spec) => spec.extra.into_keys().collect(),
@@ -141,11 +141,11 @@ impl Action for ShellCheckAction {
         }
     }
 
-    /// Una verifica interrotta si rifà: il suo mestiere è rileggere il mondo
-    /// e dire com'è, non cambiarlo. Chi ci infila dentro un comando che
-    /// modifica ha già rotto il contratto di questa azione, e lo aveva già
-    /// rotto prima: il motore riesegue la verifica a ogni tentativo anche
-    /// senza nessuna interruzione di mezzo.
+    /// An interrupted check is simply redone: its trade is to reread the world
+    /// and say how it is, not to change it. Whoever slips a command that
+    /// modifies inside it has broken this action's contract, and had broken it
+    /// before: the engine reruns the check on every attempt, interruption or
+    /// no interruption.
     fn species(&self) -> StepSpecies {
         StepSpecies::Repeatable
     }
@@ -197,12 +197,11 @@ fn run_and_read(
         }
     };
     let unresolved = unresolved.map(Value::String);
-    // **LA FORMA SI APPLICA SOLO A UN COMANDO RIUSCITO**, e qui il comando
-    // si separa dal motore di proposito. Il motore pretende la forma anche
-    // in `exit_error`, perché un motore che fallisce ha comunque parlato;
-    // un comando fallito non ha prodotto la lettura richiesta. Chi ha
-    // scritto `accept` ramifica già sullo stato, altrimenti non l'avrebbe
-    // scritto.
+    // **THE SHAPE APPLIES ONLY TO A COMMAND THAT PASSED**, and here the
+    // command parts from the engine on purpose. The engine demands the shape
+    // even in `exit_error`, because an engine that fails has spoken anyway; a
+    // failed command did not produce the reading asked of it. Whoever wrote
+    // `accept` branches on the status, or would not have written it.
     let Some((shape, said)) = spec.answer_shape.as_ref().zip(said) else {
         return Ok(ActionOutcome::Went(verdict(status, unresolved, None)));
     };
@@ -221,10 +220,10 @@ fn run_and_read(
             &said,
         )));
     }
-    // **IL TESTO GREZZO NON ESCE DAL PASSO**: consegna `answer`, o niente.
-    // È la stessa scelta che `an_engine_step_declares_what_it_can_return_and_what_it_hands_on`
-    // pretende già dal motore, e lasciarlo passare accanto al valore
-    // renderebbe la forma un ornamento.
+    // **THE RAW TEXT DOES NOT LEAVE THE STEP**: `answer`, or nothing. It is
+    // the same choice `an_engine_step_declares_what_it_can_return_and_what_it_hands_on`
+    // demands of the engine, and letting it through beside the value would
+    // make the shape an ornament.
     let answer = shaped_answer(shape, &said)?;
     Ok(ActionOutcome::Went(verdict(status, unresolved, Some(answer))))
 }
@@ -259,10 +258,10 @@ mod tests {
         assert_eq!(output["status"], "passed");
     }
 
-    /// La verifica finale legge il verdetto del modello da una variabile
-    /// d'ambiente. **Tre casi, perché uno solo non proverebbe niente**: lo
-    /// stesso comando deve passare su un verdetto e rompere il passo sugli
-    /// altri due — il verdetto contrario e il motore muto.
+    /// The final check reads the model's verdict from an environment variable.
+    /// **Three cases, because one alone would prove nothing**: the same command
+    /// must pass on one verdict and break the step on the other two — the
+    /// opposite verdict, and the mute engine.
     #[test]
     fn the_verdict_check_reads_the_models_answer_and_can_say_no() {
         let command =
@@ -303,9 +302,9 @@ mod tests {
         );
     }
 
-    /// Una verifica fallita rompe il passo, e chi vuole ramificarci sopra lo
-    /// dichiara. Senza questa seconda metà, «rosso» sarebbe l'unica cosa che
-    /// una verifica sa fare, non una scelta.
+    /// A failed check breaks its step, and whoever wants to branch on it says
+    /// so. Without this second half, «red» would be the one thing a check knows
+    /// how to do, not a choice.
     #[test]
     fn a_failing_check_breaks_its_step_unless_the_step_says_otherwise() {
         let strict = json!({"command": "echo perche 1>&2; exit 2", "timeout_secs": 5});
@@ -330,28 +329,26 @@ mod tests {
         assert_eq!(output["status"], "failed");
     }
 
-    /// **UNA VERIFICA CHE LEGGE, NON SOLO CHE GIUDICA.** Oggi `shell_check`
-    /// consegna a valle una cosa sola — se è andata bene — e ciò che il comando
-    /// ha detto muore dentro il passo. Il macchinario per non buttarlo esiste
-    /// già novanta righe più su: `shaped_answer` valida contro la forma
-    /// dichiarata e `pruned` taglia ciò che la forma non ha promesso.
+    /// **A CHECK THAT READS, NOT ONLY ONE THAT JUDGES.** The machinery lives
+    /// ninety lines above: `shaped_answer` validates against the declared
+    /// shape, and `pruned` cuts what the shape did not promise.
     ///
-    /// LA MISURA CHE POTEVA VENIRE DIVERSA: `spurio` esce dal comando ma **non**
-    /// dalla forma. Se la potatura non venisse applicata, l'asserzione su
-    /// `answer.spurio` lo troverebbe e questa prova diventerebbe rossa. E se il
-    /// testo grezzo venisse inoltrato accanto al valore, `stdout` comparirebbe
-    /// nell'uscita: è la scorciatoia che renderebbe inutile la forma, e
-    /// `an_engine_step_declares_what_it_can_return_and_what_it_hands_on` la
-    /// vieta già per il motore.
+    /// THE MEASURE THAT COULD HAVE COME OUT DIFFERENTLY: `spurio` comes out of
+    /// the command but **not** of the shape. Were the pruning not applied, the
+    /// assertion on `answer.spurio` would find it and this test would go red.
+    /// And were the raw text forwarded beside the value, `stdout` would appear
+    /// in the output: the shortcut that would make the shape useless, and
+    /// `an_engine_step_declares_what_it_can_return_and_what_it_hands_on`
+    /// forbids it for the engine already.
     #[test]
     fn a_check_that_declares_a_shape_hands_on_a_value_not_only_a_verdict() {
         let input = json!({
             "command": r#"echo '{"conta": 3, "spurio": "non promesso"}'"#,
-            // **`allow_extra` VERO È IL PUNTO DELLA PROVA, NON UNA SVISTA.** Con
-            // `false` un campo in più è un rifiuto e la potatura non entra mai
-            // in gioco; con `true` il campo è tollerato dalla validazione, e
-            // ciò che lo toglie è `pruned`. Metterlo a `false` qui renderebbe
-            // questa prova verde per il motivo sbagliato.
+            // **`allow_extra` TRUE IS THE POINT OF THE TEST, NOT AN OVERSIGHT.**
+            // With `false` an extra field is a refusal and the pruning never
+            // comes into play; with `true` validation tolerates the field, and
+            // what removes it is `pruned`. Setting it `false` here would make
+            // this test green for the wrong reason.
             "answer_shape": {
                 "type": "object",
                 "properties": {"conta": {"type": "number"}},
@@ -381,10 +378,10 @@ mod tests {
         );
     }
 
-    /// I due modi di sbagliare, con lo stesso nome che usa già il motore.
-    /// Scartata l'interpretazione del testo a righe: un pavimento che cede in
-    /// silenzio il giorno che il comando cambia formato. Chi scrive il flusso
-    /// aggiunge `--json` o `| jq`, e il rosso glielo dice.
+    /// The two ways to be wrong, under the name the engine uses already.
+    /// Line-wise reading of the text was discarded: a floor that gives way in
+    /// silence the day the command changes format. Whoever writes the flow adds
+    /// `--json` or `| jq`, and the red tells them so.
     #[test]
     fn a_reading_that_is_not_json_or_not_in_shape_breaks_the_step() {
         let forma = json!({
@@ -533,12 +530,12 @@ mod tests {
         assert!(unresolved.contains("1 seconds"), "{unresolved}");
     }
 
-    /// **QUI IL COMANDO SI SEPARA DAL MOTORE, E NON PER SVISTA.** Il motore
-    /// pretende la forma anche in `exit_error`, perché un motore che fallisce ha
-    /// comunque parlato. Un comando fallito non ha prodotto la lettura che gli
-    /// è stata chiesta: lasciar passare un valore lì dentro vorrebbe dire
-    /// leggere da uno strumento rotto. Chi ha scritto `accept` ramifica già
-    /// sullo stato, altrimenti non l'avrebbe scritto.
+    /// **HERE THE COMMAND PARTS FROM THE ENGINE, AND NOT BY OVERSIGHT.** The
+    /// engine demands the shape even in `exit_error`, because an engine that
+    /// fails has spoken anyway. A failed command did not produce the reading
+    /// asked of it: letting a value through there would mean reading off a
+    /// broken instrument. Whoever wrote `accept` branches on the status, or
+    /// would not have written it.
     #[test]
     fn a_tolerated_failure_hands_on_no_value_at_all() {
         let input = json!({
@@ -567,18 +564,16 @@ mod tests {
         );
     }
 
-    /// **IL PRIMO TETTO SUL VOLUME CHE SAILOR ABBIA.** Cercato in tutto
-    /// `crates/`: non ce n'è nessuno, né nelle azioni né nel deposito né nel
-    /// registro. L'unico tetto esistente è sul *tempo* — un comando lento viene
-    /// ucciso, un comando logorroico no. Un motore ha un freno naturale perché
-    /// paga a token; un comando stampa gratis.
-    ///
-    /// Rosso e non troncamento: un valore mozzato sembra intero, e chi lo legge
-    /// a valle non ha modo di sapere che manca un pezzo.
+    /// **THE FIRST CEILING ON VOLUME SAILOR HAS.** Searched across all of
+    /// `crates/`: there is none, not in the actions, the store or the registry.
+    /// The only ceiling is on *time* — a slow command is killed, a talkative
+    /// one is not; an engine has a natural brake because it pays by token, a
+    /// command prints for free. Red and no truncation: a lopped value looks
+    /// whole, and whoever reads it downstream cannot know a piece is missing.
     #[test]
     fn a_reading_above_the_ceiling_is_refused_instead_of_being_cut() {
         let input = json!({
-            // Due milioni di caratteri: il doppio della soglia.
+            // Two million characters: twice the ceiling.
             "command": "printf '\"a\": \"'; head -c 2000000 /dev/zero | tr '\\0' 'a'",
             "answer_shape": {
                 "type": "object",

@@ -1,19 +1,19 @@
-//! Il motore parte **davvero** dentro la casa che il profilo dichiara.
+//! The engine **really** starts inside the home the profile declares.
 //!
-//! **PERCHÉ QUESTA PROVA ESISTE ACCANTO A `the_equipment_reaches_the_engines`.**
-//! Quella prova la *regola* — quale ambiente si deve comporre — e resterebbe
-//! verde con la regola scollegata: basta che `ExternalEngineAction` continui a
-//! passare `spec.env` all'invocazione, ed è esattamente il guasto 18. Una regola
-//! giusta che nessuno chiama è indistinguibile da una regola assente guardando
-//! le prove. Qui si guarda l'unica cosa che non si può fingere: un processo
-//! vero, avviato dal passo, che stampa la variabile che ha ricevuto.
+//! **WHY THIS PROOF SITS BESIDE `the_equipment_reaches_the_engines`.** That one
+//! proves the *rule* — which environment must be composed — and would stay green
+//! with the rule unplugged: `ExternalEngineAction` need only go on passing
+//! `spec.env` to the invocation, which is exactly fault 18. A correct rule
+//! nobody calls is indistinguishable from an absent rule when you read the
+//! tests. Here we watch the one thing that cannot be faked: a real process,
+//! started by the step, printing the variable it received.
 //!
-//! **UN SOLO `#[test]` IN QUESTO FILE, E NON È PIGRIZIA.** La prova deve
-//! dichiarare `PROFILES_STATE_PATH`, che è di **processo**: `cargo test` manda
-//! le prove di uno stesso binario su più fili dello stesso processo, e una
-//! seconda prova qui dentro leggerebbe una variabile scritta da questa mentre
-//! gira. Un file a sé è un processo a sé. I due casi che contano stanno quindi
-//! in due bracci dello stesso corpo.
+//! **ONE `#[test]` IN THIS FILE, AND IT IS NOT LAZINESS.** The test must declare
+//! `PROFILES_STATE_PATH`, which belongs to the **process**: `cargo test` runs
+//! one binary's tests on several threads of the same process, so a second test
+//! in here would read a variable this one wrote while running. A file of its own
+//! is a process of its own. The two cases that matter are therefore two arms of
+//! one body.
 
 use flow::{Action, ActionOutcome, SharedState};
 use serde_json::json;
@@ -21,8 +21,8 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-/// Una cartella usa-e-getta sotto `$TMPDIR`, cancellata a fine prova. Nessuna
-/// dipendenza esterna: lo stesso schema già usato altrove nell'albero.
+/// A throwaway directory under `$TMPDIR`, deleted when the test ends. No
+/// external dependency: the same pattern used elsewhere in the tree.
 struct TempDir(PathBuf);
 
 impl TempDir {
@@ -51,9 +51,9 @@ impl Drop for TempDir {
     }
 }
 
-/// Un finto `codex`: si chiama come l'eseguibile vero — che è il legame su cui
-/// `profiles::cli_for_executable` lavora — e stampa la sola cosa che serve
-/// sapere, cioè quale casa ha ricevuto.
+/// A fake `codex`: named after the real executable — the link
+/// `profiles::cli_for_executable` works on — printing the one thing worth
+/// knowing, which home it received.
 fn a_fake_codex_that_prints_its_home(dir: &Path) -> String {
     let path = dir.join("codex");
     fs::write(&path, "#!/bin/sh\nprintf 'CASA=%s\\n' \"$CODEX_HOME\"\n")
@@ -73,18 +73,18 @@ fn what_the_engine_said(outcome: &ActionOutcome) -> String {
         .to_owned()
 }
 
-/// **IL GUASTO 18 CONTRO UN PROCESSO VERO.**
+/// **FAULT 18 AGAINST A REAL PROCESS.**
 ///
-/// Primo braccio: un passo che non dichiara niente deve far partire il motore
-/// nella casa del profilo attivo. Prima del 01/09/2026 partiva con quella di chi
-/// aveva aperto il terminale, e `CODEX_HOME` arrivava vuota.
+/// First arm: a step declaring nothing must start the engine in the active
+/// profile's home. It used to start with the home of whoever opened the
+/// terminal, and `CODEX_HOME` arrived empty.
 ///
-/// Secondo braccio: un passo che dichiara la variabile vince. Serve tutto e due
-/// insieme — il primo da solo resterebbe verde se il profilo scavalcasse il
-/// passo, il secondo da solo resterebbe verde se il profilo non arrivasse mai.
+/// Second arm: a step declaring the variable wins. Both are needed — the first
+/// alone would stay green if the profile overrode the step, the second alone
+/// would stay green if the profile never arrived.
 ///
-/// *Mutante eseguito*: rimettere `env: spec.env.clone()` nell'invocazione. Il
-/// primo braccio diventa rosso, il secondo resta verde.
+/// *Mutant run*: put `env: spec.env.clone()` back in the invocation. The first
+/// arm turns red, the second stays green.
 #[test]
 fn the_engine_really_starts_inside_the_home_the_profile_declares() {
     let dir = TempDir::new();

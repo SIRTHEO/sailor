@@ -5,38 +5,35 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-/// Cosa un passo chiede alla sessione del motore.
+/// What a step asks of the engine's session.
 ///
-/// **UN PASSO NOMINA UN PASSO, NON UN IDENTIFICATIVO.** L'identificativo di una
-/// sessione nasce mentre la corsa gira; chi scrive un flusso non lo può
-/// conoscere, e un flusso che lo contenesse varrebbe per una corsa sola. Si
-/// scrive quindi da chi si continua — `{"fork": "scopri"}` — e l'identificativo
-/// lo va a cercare il deposito, che è il posto dove il passo `scopri` l'ha
-/// posato.
+/// **A STEP NAMES A STEP, NOT AN IDENTIFIER.** A session's identifier is born
+/// while the run goes; whoever writes a flow cannot know it, and a flow holding
+/// one would be good for a single run. So the step names who it continues from
+/// — `{"fork": "scopri"}` — and the ledger looks the identifier up, since that
+/// is where the `scopri` step laid it down.
 ///
-/// **RIPRENDERE E RAMIFICARE NON SONO LA STESSA COSA, E CONFONDERLE COSTA.**
-/// Chi riprende continua la sessione: due passi che riprendessero lo stesso
-/// tronco si scriverebbero addosso a vicenda, e in un fronte parallelo
-/// l'ordine con cui lo fanno non è deciso da nessuno. Chi ramifica parte dallo
-/// stesso contesto e prosegue per conto suo: è il modo giusto per tre passi
-/// indipendenti che guardano lo stesso albero, ed è il caso che rende di più —
-/// la scoperta si paga una volta invece di tre.
+/// **RESUMING AND FORKING ARE NOT THE SAME, AND CONFUSING THEM COSTS.** A
+/// resume continues the session: two steps resuming the same trunk write over
+/// each other, and on a parallel front nobody decides in which order. A fork
+/// starts from the same context and goes its own way: the right shape for three
+/// independent steps looking at one tree, and the one that pays best — the
+/// discovery is bought once instead of three times.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum SessionUse {
-    /// `"session": "open"` — apre una sessione nuova e la registra, così i
-    /// passi dopo possono continuarla.
+    /// `"session": "open"` — opens a new session and records it, so later
+    /// steps can continue it.
     Open,
-    /// `"session": {"resume": "scopri"}` — continua la sessione del passo
-    /// nominato.
+    /// `"session": {"resume": "scopri"}` — continues the named step's session.
     Resume(String),
-    /// `"session": {"fork": "scopri"}` — parte dal contesto del passo nominato
-    /// senza toccarlo.
+    /// `"session": {"fork": "scopri"}` — starts from the named step's context
+    /// without touching it.
     Fork(String),
 }
 
 impl SessionUse {
-    /// Il modo, detto a parole per chi guarda.
+    /// The mode, in words, for whoever is watching.
     pub(crate) fn word(&self) -> &'static str {
         match self {
             SessionUse::Open => "open a session",
@@ -46,14 +43,13 @@ impl SessionUse {
     }
 }
 
-/// Chi eseguire: un motore, o una catena di motori da provare in ordine.
+/// Whom to run: one engine, or a chain of engines to try in order.
 ///
-/// **PERCHÉ UNA CATENA E NON UN RIPIEGO SOLO.** Un ripiego singolo copre il
-/// caso di stanotte e non quello di domani: i motori esauriscono a scaglioni,
-/// e chi ne ha tre installati vuole che il lavoro trovi il primo che può
-/// farlo. La catena si legge nell'ordine in cui è scritta, e quell'ordine è
-/// una scelta di chi ha scritto il flusso — il migliore per primo, non il più
-/// economico.
+/// **WHY A CHAIN AND NOT A SINGLE FALLBACK.** One fallback covers tonight's
+/// case and not tomorrow's: engines run out in stages, and whoever has three
+/// installed wants the work to find the first that can do it. The chain is read
+/// in the order written, and that order is a choice made by whoever wrote the
+/// flow — the best first, not the cheapest.
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum ToolChoice {
@@ -118,34 +114,31 @@ pub fn private_data_asked_in(with: &Value) -> bool {
     with.get("data").and_then(Value::as_str) == Some("private")
 }
 
-/// **PERCHÉ QUESTA STRUTTURA RACCOGLIE CIÒ CHE NON CONOSCE INVECE DI SCARTARLO.**
+/// **WHY THIS STRUCT COLLECTS WHAT IT DOES NOT KNOW INSTEAD OF DROPPING IT.**
 ///
-/// Il 30/08/2026 un flusso di prova scriveva `"prompt"` dove va `"stdin"`. Il
-/// passo è partito lo stesso, il motore ha ricevuto una riga di comando monca,
-/// e l'errore che è tornato era suo: «Input must be provided either through
-/// stdin». Una chiamata a pagamento spesa per un refuso, e nessuno che potesse
-/// dirlo prima. È il guasto 20.
+/// A flow that wrote `"prompt"` where `"stdin"` goes still started the step, the
+/// engine got a truncated command line, and the error that came back was its
+/// own: «Input must be provided either through stdin». A paid call spent on a
+/// typo, with nobody able to say so beforehand. That is fault 20.
 ///
-/// **`deny_unknown_fields` NON È LA RISPOSTA, E ROMPEREBBE TUTTO.** A tempo di
-/// esecuzione l'ingresso di un passo *è* l'uscita della sua dipendenza, col
-/// `with` sovrapposto: arriva quindi ogni campo che il passo prima ha prodotto.
-/// Rifiutarli renderebbe impossibile ogni passo con una dipendenza — lo stesso
-/// motivo per cui `toolbox::needs::NeedsSpec` lo dichiara e lo rifiuta.
+/// **`deny_unknown_fields` IS NOT THE ANSWER, AND WOULD BREAK EVERYTHING.** At
+/// run time a step's input *is* its dependency's output with the `with` overlaid,
+/// so every field the previous step produced arrives here. Refusing them would
+/// make any step with a dependency impossible — the reason
+/// `toolbox::needs::NeedsSpec` declares and refuses it.
 ///
-/// Qui i campi non riconosciuti finiscono in `extra` e vengono ignorati come
-/// prima. La differenza è che adesso **si possono chiedere**, e `flow check` li
-/// chiede sul `with` — che è testo scritto a mano, dove un campo di troppo non è
-/// l'uscita di nessuno: è un refuso.
+/// Unrecognised fields land in `extra` and are ignored as before. The difference
+/// is that now **they can be asked for**, and `flow check` asks them of the
+/// `with` — hand-written text, where a stray field is nobody's output: a typo.
 #[derive(Debug, Deserialize)]
 pub(crate) struct EngineSpec {
-    /// Il comando così com'è. Resta per un comando qualunque — `sh`, `cat`, uno
-    /// script — non per un motore: un motore si chiede per identificativo, o il
-    /// flusso gira solo dove quel nome è nel percorso di chi esegue.
+    /// The command as written. It stays for an arbitrary command — `sh`, `cat`,
+    /// a script — not for an engine: an engine is asked for by identifier, or
+    /// the flow runs only where that name is on the caller's path.
     #[serde(default)]
     pub(crate) bin: Option<String>,
-    /// L'identificativo dello strumento voluto — lo stesso che il rilevatore
-    /// della macchina restituisce — oppure una **catena** di identificativi da
-    /// provare in ordine.
+    /// The wanted tool's identifier — the same one the machine's detector
+    /// returns — or a **chain** of identifiers to try in order.
     #[serde(default)]
     pub(crate) tool: Option<ToolChoice>,
     /// What the text of this step is: `private` never resolves to an engine
@@ -185,30 +178,29 @@ pub(crate) struct EngineSpec {
     /// twice, which the graph does not allow.
     #[serde(default)]
     pub(crate) tree: Option<String>,
-    /// Il testo dell'ingresso, se il motore lo legge da lì invece che da un
-    /// argomento: JSON non porta byte grezzi, un motore binario sull'ingresso
-    /// non è un caso che questa azione copre.
+    /// The text of stdin, when the engine reads it from there instead of from
+    /// an argument: JSON carries no raw bytes, so an engine wanting binary on
+    /// stdin is not a case this action covers.
     #[serde(default)]
     pub(crate) stdin: Option<String>,
-    /// Gli esiti di fallimento che questo passo dichiara accettabili invece che
-    /// rossi. Vuoto — il valore predefinito — significa che ogni fallimento
-    /// rompe il passo.
+    /// The failure outcomes this step declares acceptable instead of red. Empty
+    /// — the default — means every failure breaks the step.
     #[serde(default)]
     pub(crate) accept: Vec<String>,
-    /// La forma che questo passo pretende dalla propria risposta.
+    /// The shape this step demands of its own answer.
     ///
-    /// **PERCHÉ NON È UN CONTROLLO IN PIÙ MA UN CONTRATTO.** Senza, un passo
-    /// restituisce un blocco di testo libero e il passo dopo ci pesca dentro con
-    /// un rinvio sperando che la forma sia quella: un motore che un giorno
-    /// risponde più prolisso rompe la catena in silenzio. Con, la forma è
-    /// scritta una volta, viene chiesta al motore (deve comparire nel prompt, e
-    /// qui si controlla che ci sia) e viene fatta rispettare sulla risposta.
+    /// **A CONTRACT, NOT ONE MORE CHECK.** Without it a step returns a block of
+    /// free text and the next step fishes in it with a reference, hoping the
+    /// shape holds: an engine that answers more verbosely one day breaks the
+    /// chain in silence. With it the shape is written once, asked of the engine
+    /// (it must appear in the prompt, and that is checked here) and enforced on
+    /// the answer.
     ///
-    /// **E PASSA SOLO CIÒ CHE LA FORMA DICHIARA.** I preamboli, i ragionamenti
-    /// e i saluti non entrano nell'uscita del passo: al passo dopo arriva
-    /// l'oggetto potato sui campi dichiarati. È il risparmio che si paga a ogni
-    /// chiamata a valle, ed è la ragione per cui la potatura avviene anche
-    /// quando la forma tollererebbe campi in più.
+    /// **AND ONLY WHAT THE SHAPE DECLARES GETS THROUGH.** Preambles, reasoning
+    /// and pleasantries stay out of the step's output: the next step receives
+    /// the object pruned to the declared fields. That saving is collected on
+    /// every downstream call, which is why the pruning happens even where the
+    /// shape would tolerate extra fields.
     #[serde(default)]
     pub(crate) answer_shape: Option<ValueSchema>,
     /// The capabilities this step asks of the engine — `response_shape`,
@@ -232,13 +224,12 @@ pub(crate) struct EngineSpec {
     /// refusal that never happened.
     #[serde(default)]
     pub(crate) after_refusal: Option<Refusal>,
-    /// Se questo passo apre una sessione, ne riprende una, o ne ramifica una.
+    /// Whether this step opens a session, resumes one, or forks one.
     ///
-    /// Assente — il valore predefinito — vuol dire che il passo apre un
-    /// processo che non sa niente di ciò che è già stato letto: è come ha
-    /// sempre funzionato, ed è ciò che il 31/08/2026 è stato misurato costare
-    /// 2,79 volte un prompt solo, perché quattro passi hanno riscoperto lo
-    /// stesso albero quattro volte.
+    /// Absent — the default — means the step opens a process that knows nothing
+    /// of what has already been read: how it has always worked, and measured to
+    /// cost 2.79 times a single prompt, because four steps rediscovered the same
+    /// tree four times.
     #[serde(default)]
     pub(crate) session: Option<SessionUse>,
     /// The most this step's call may spend, in micro-units, for an engine that
@@ -252,11 +243,11 @@ pub(crate) struct EngineSpec {
     #[serde(default)]
     pub(crate) max_tokens: Option<models::pricing::TokenCounts>,
     pub(crate) timeout_secs: u64,
-    /// Tutto ciò che questa azione non riconosce.
+    /// Everything this action does not recognise.
     ///
-    /// A tempo di esecuzione è l'uscita della dipendenza e si ignora; a tempo di
-    /// controllo, sul solo `with`, è l'elenco dei refusi. Vedi il commento sopra
-    /// la struttura.
+    /// At run time it is the dependency's output and is ignored; at check time,
+    /// on the `with` alone, it is the list of typos. See the comment above the
+    /// struct.
     #[serde(flatten)]
     pub(crate) extra: BTreeMap<String, Value>,
 }

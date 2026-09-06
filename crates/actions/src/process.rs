@@ -9,14 +9,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-// ── chi guarda il testo mentre esce ─────────────────────────────────────
+// ── whoever watches the text as it comes out ────────────────────────────
 
-/// Da quale delle due pipe del figlio viene un pezzo di testo.
+/// Which of the child's two pipes a chunk of text came from.
 ///
-/// La primitiva non le tratta diversamente — accumula l'una e l'altra allo
-/// stesso modo — ma consegnarle a chi guarda senza dire quale sia quale
-/// rimetterebbe l'opacità da un'altra parte: un errore mescolato all'uscita
-/// normale e indistinguibile da lei non è più visibile di prima.
+/// The primitive does not treat them differently — it accumulates both the
+/// same way — but handing them to a watcher without saying which is which
+/// would put the opacity back somewhere else: an error mixed into ordinary
+/// output and indistinguishable from it is no more visible than before.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pipe {
     Stdout,
@@ -24,8 +24,8 @@ pub enum Pipe {
 }
 
 impl Pipe {
-    /// Il nome breve della cosa, non la sua presentazione: chi stampa decide
-    /// come mostrarlo, ma non deve reinventare come si chiama.
+    /// The short name of the thing, not its presentation: whoever prints it
+    /// decides how to show it, but must not reinvent what it is called.
     pub fn name(self) -> &'static str {
         match self {
             Pipe::Stdout => "out",
@@ -34,30 +34,27 @@ impl Pipe {
     }
 }
 
-/// Chi riceve i pezzi di uscita di un figlio **mentre** escono, invece che
-/// quando il figlio è morto.
+/// Whoever receives a child's output chunks **as** they come out, instead of
+/// once the child is dead.
 ///
-/// **SI CONSEGNANO BYTE GREZZI, E LA SCELTA È DICHIARATA.** Una lettura si
-/// ferma dove capita, anche a metà di una sequenza UTF-8 multibyte. Decodificare
-/// qui sostituirebbe l'accento spezzato al bordo con un carattere di
-/// sostituzione — un guasto invisibile e permanente — oppure obbligherebbe
-/// questo crate a trattenere i byte incompleti fino al pezzo dopo, cioè a
-/// reintrodurre in piccolo il ritardo che il meccanismo esiste per togliere. I
-/// byte passano di peso, nel loro ordine e integri: chi guarda li riversa su un
-/// descrittore e la sequenza si ricompone da sé, oppure li accumula e decodifica
-/// quando gli serve. La decodifica è di chi guarda, che è l'unico a sapere cosa
-/// vuole farne.
+/// **RAW BYTES ARE DELIVERED, AND THE CHOICE IS DECLARED.** A read stops
+/// wherever it lands, even mid multibyte UTF-8 sequence. Decoding here would
+/// swap a replacement character for the accent broken at the boundary — an
+/// invisible, permanent fault — or hold the incomplete bytes until the next
+/// chunk, reintroducing in miniature the delay this mechanism exists to
+/// remove. Decoding belongs to the watcher, the only one who knows what it
+/// wants from the bytes, which pass through whole and in order.
 ///
-/// `chunk` non deve bloccare a lungo né panicare: lo chiamano i due fili che
-/// drenano le pipe, e un filo fermo è un figlio bloccato in scrittura. E non
-/// riceve mai un pezzo vuoto: «zero byte» è la fine della pipe, non qualcosa
-/// che il figlio ha detto, e consegnarlo farebbe scrivere una riga a chi guarda
-/// per un fatto che non è accaduto.
+/// `chunk` must neither block for long nor panic: the two threads draining the
+/// pipes call it, and a stalled thread is a child blocked on a write. Nor does
+/// it ever receive an empty chunk: "zero bytes" is the end of the pipe, not
+/// something the child said, and delivering it would make a watcher write a
+/// line for something that never happened.
 pub trait LiveSink: Send + Sync {
     fn chunk(&self, pipe: Pipe, bytes: &[u8]);
 }
 
-/// Una closure basta: un destinatario semplice non deve costare un tipo.
+/// A closure will do: a simple watcher should not cost a type.
 impl<F> LiveSink for F
 where
     F: Fn(Pipe, &[u8]) + Send + Sync,
@@ -67,27 +64,27 @@ where
     }
 }
 
-/// Dato l'identificativo di un passo, a chi consegnare i suoi pezzi.
+/// Given a step's identifier, who its chunks are handed to.
 ///
-/// **PERCHÉ DUE LIVELLI E NON UNO.** La primitiva che legge le pipe non sa cosa
-/// sia un passo e non deve saperlo: sarebbe politica dentro il crate che tocca
-/// il mondo. Chi compone il programma sa entrambe le cose e fa da giunto — è lì
-/// che si decide dove il testo va a finire, non qui. Ed è il punto dove un
-/// secondo consumatore potrà attaccarsi domani, con una fabbrica che ne alimenta
-/// due, senza che una riga di questo file cambi.
+/// **WHY TWO LEVELS AND NOT ONE.** The primitive that reads the pipes does not
+/// know what a step is, and must not: that would be policy inside the crate
+/// that touches the world. Whoever composes the program knows both and acts as
+/// the joint — that is where the text's destination is decided, and where a
+/// second consumer attaches tomorrow, with a factory feeding two, without a
+/// line of this file changing.
 pub trait StepSinks: Send + Sync {
     fn sink_for(&self, step: &str) -> Arc<dyn LiveSink>;
 }
 
-/// Il destinatario del passo in corso, se qualcuno sta guardando.
+/// The watcher for the step in progress, if anybody is watching.
 ///
-/// **PERCHÉ L'IDENTIFICATIVO ARRIVA DALLO STATO CONDIVISO.** `Action::execute`
-/// non riceve il passo, e cambiargli la firma toccherebbe ogni implementatore in
-/// cinque crate per un dato che serve a uno solo. L'esecutore lo scrive in
-/// `SharedState` sotto una chiave riservata (`flow::CURRENT_STEP`) prima di ogni
-/// azione. Senza guardiano, o senza quella chiave, non si guarda: un testo
-/// consegnato senza sapere di chi è sarebbe peggio del silenzio, perché in un
-/// grafo con due passi vivi nessuno saprebbe attribuirlo.
+/// **WHY THE IDENTIFIER COMES FROM SHARED STATE.** `Action::execute` is not
+/// given the step, and changing its signature would touch every implementor in
+/// five crates for a datum only one of them needs. The executor writes it into
+/// `SharedState` under a reserved key (`flow::CURRENT_STEP`) before every
+/// action. With no watcher, or no key, nothing is watched: text delivered
+/// without knowing whose it is would be worse than silence, since in a graph
+/// with two live steps nobody could attribute it.
 pub(crate) fn sink_for_step(
     watcher: &Option<Arc<dyn StepSinks>>,
     shared: &SharedState,
@@ -97,11 +94,11 @@ pub(crate) fn sink_for_step(
     Some(watcher.sink_for(step))
 }
 
-// ── la primitiva: imporre un limite di durata ───────────────────────────
+// ── the primitive: imposing a time limit ─────────────────────────────────
 
-/// L'esito grezzo di un comando entro un tempo massimo. Chi lo consuma
-/// decide se un'uscita diversa da zero conta come un fallimento vero o come
-/// un dato da riportare: questa primitiva non lo sa e non deve saperlo.
+/// The raw outcome of a command within a time limit. Whoever consumes it
+/// decides whether an exit other than zero counts as a real failure or as a
+/// fact to report: this primitive does not know, and must not.
 pub enum RunOutcome {
     Finished {
         status: std::process::ExitStatus,
@@ -109,26 +106,26 @@ pub enum RunOutcome {
         stderr: Vec<u8>,
     },
     TimedOut,
-    /// Col motivo del sistema operativo. «Non si è avviato» da solo manda a
-    /// cercare un binario assente quando il file c'era e non era eseguibile:
-    /// sono due riparazioni diverse, e chi legge deve poterle distinguere.
+    /// With the reason from the operating system. "It did not start" on its
+    /// own sends you hunting a missing binary when the file was there and not
+    /// executable: two different repairs, and a reader must tell them apart.
     SpawnFailed(String),
 }
 
-/// Niente `timeout(1)`: non esiste su ogni macchina che esegue questi
-/// binari. Il tetto è un ciclo di `try_wait` con `kill` alla scadenza, e due
-/// fili drenano le pipe man mano — un figlio che le riempie prima che
-/// qualcuno le legga resterebbe bloccato in scrittura per sempre.
+/// No `timeout(1)`: it does not exist on every machine that runs these
+/// binaries. The cap is a `try_wait` loop with a `kill` at expiry, and two
+/// threads drain the pipes as they fill — a child that fills them before
+/// anybody reads would block on a write forever.
 pub fn run_with_timeout(cmd: Command, limit: Duration) -> RunOutcome {
     run_with_timeout_watched(cmd, limit, None)
 }
 
-/// Accende il figlio in un **gruppo di processi suo**, per uccidere alla
-/// scadenza lui e la sua discendenza in un colpo solo.
+/// Starts the child in a **process group of its own**, so that at expiry it
+/// and all its descendants die in one blow.
 ///
-/// Prezzo dichiarato: fuori dal nostro gruppo non riceve il Ctrl-C del
-/// terminale. A rimetterlo in riga sono il tetto, che ora tronca davvero, e il
-/// sorvegliante che raccoglie i rimasti in piedi.
+/// Declared price: outside our group it does not get the terminal's Ctrl-C.
+/// What keeps it in line is the cap, which now truncates for real, and the
+/// sweeper that collects whatever is left standing.
 #[cfg(unix)]
 fn spawn_in_its_own_group(cmd: &mut Command) -> std::io::Result<std::process::Child> {
     use std::os::unix::process::CommandExt;
@@ -140,11 +137,11 @@ fn spawn_in_its_own_group(cmd: &mut Command) -> std::io::Result<std::process::Ch
     cmd.spawn()
 }
 
-/// Uccide il figlio **e chi ha acceso lui**, poi lo raccoglie.
+/// Kills the child **and whatever it started**, then reaps it.
 ///
-/// Il gruppo porta il numero del capogruppo: il segno meno lo dice a `kill`.
-/// Limite noto: un nipote che si è staccato da solo con `setsid` esce dal
-/// gruppo e sopravvive — lì non arriva nessun segnale nostro.
+/// The group carries the leader's number: the minus sign says so to `kill`.
+/// Known limit: a grandchild that detached itself with `setsid` leaves the
+/// group and survives — no signal of ours reaches it there.
 fn kill_the_whole_group(child: &mut std::process::Child) -> Option<std::process::ExitStatus> {
     #[cfg(unix)]
     unsafe {
@@ -224,14 +221,14 @@ impl LiveSink for StopOnWords<'_> {
     }
 }
 
-/// Come `run_with_timeout`, ma consegna a `sink` ogni pezzo di stdout e di
-/// stderr **appena arriva**, senza aspettare che il figlio muoia. Con `None` il
-/// comportamento è quello di sempre, byte per byte.
+/// Like `run_with_timeout`, but hands `sink` every chunk of stdout and stderr
+/// **as it arrives**, without waiting for the child to die. With `None` the
+/// behaviour is the usual one, byte for byte.
 ///
-/// **AFFIANCATA, NON UN PARAMETRO IN PIÙ SU QUELLA DI PRIMA.** Altri crate
-/// chiamano `run_with_timeout`: cambiarle la firma per un dato che a loro non
-/// serve li costringerebbe a scrivere `None` per non chiedere niente, e una
-/// promessa additiva che rompe i chiamanti non è additiva.
+/// **ALONGSIDE, NOT ONE MORE PARAMETER ON THE OLD ONE.** Other crates call
+/// `run_with_timeout`: changing its signature for a datum they do not need
+/// would force them to write `None` to ask for nothing, and an additive
+/// promise that breaks its callers is not additive.
 pub fn run_with_timeout_watched(
     cmd: Command,
     limit: Duration,
@@ -260,8 +257,8 @@ fn run_watched_until(
     };
     if let (Some(bytes), Some(mut pipe)) = (stdin, child.stdin.take()) {
         let _ = pipe.write_all(bytes);
-        // `pipe` esce di scope qui e chiude il descrittore: il figlio vede
-        // l'EOF anche se non ha altro da leggere.
+        // `pipe` leaves scope here and closes the descriptor: the child sees
+        // the EOF even with nothing else to read.
     }
     drain_and_wait(
         child.stdout.take(),
@@ -273,15 +270,15 @@ fn run_watched_until(
     )
 }
 
-/// Come `run_with_timeout`, ma scrive un testo sullo standard input del
-/// figlio subito dopo averlo avviato, poi lo chiude — un motore che legge il
-/// proprio ingresso da lì (come lo script di prova per OpenRouter) altrimenti
-/// resterebbe in attesa di un EOF che non arriva mai.
+/// Like `run_with_timeout`, but writes a text on the child's standard input
+/// right after starting it, then closes it — an engine that reads its own
+/// input from there (like the OpenRouter test script) would otherwise sit
+/// waiting for an EOF that never comes.
 pub fn run_with_timeout_and_stdin(cmd: Command, stdin: &[u8], limit: Duration) -> RunOutcome {
     run_with_timeout_and_stdin_watched(cmd, stdin, limit, None)
 }
 
-/// La gemella guardata di `run_with_timeout_and_stdin`, per la stessa ragione.
+/// The watched twin of `run_with_timeout_and_stdin`, for the same reason.
 pub fn run_with_timeout_and_stdin_watched(
     cmd: Command,
     stdin: &[u8],
@@ -291,15 +288,15 @@ pub fn run_with_timeout_and_stdin_watched(
     run_watched_until(cmd, Some(stdin), limit, sink, None)
 }
 
-/// Svuota una pipe fino a EOF, accumulando tutto e consegnando ogni pezzo a chi
-/// guarda **una volta sola**.
+/// Drains a pipe to EOF, accumulating everything and handing each chunk to a
+/// watcher **exactly once**.
 ///
-/// **A PEZZI E NON `read_to_end`, ED È TUTTA LA DIFFERENZA.** Con `read_to_end`
-/// i byte esistevano in memoria appena arrivati ma nessuno poteva vederli prima
-/// del `join`, cioè prima della morte del figlio: non c'era un buffer cattivo da
-/// togliere, mancava il destinatario. L'accumulo resta identico e **non dipende
-/// dalla consegna**: chi guarda non può far mancare né raddoppiare ciò che
-/// l'esito riporta.
+/// **IN CHUNKS AND NOT `read_to_end`, AND THAT IS THE WHOLE DIFFERENCE.** With
+/// `read_to_end` the bytes existed in memory the moment they arrived but
+/// nobody could see them before the `join`, that is before the child died:
+/// there was no bad buffer to remove, the recipient was missing. Accumulation
+/// is unchanged and **does not depend on delivery**: a watcher can neither
+/// lose nor double what the outcome reports.
 fn drain(pipe: &mut impl Read, which: Pipe, sink: Option<&dyn LiveSink>) -> Vec<u8> {
     let mut all = Vec::new();
     let mut buf = [0u8; 8192];
@@ -312,9 +309,9 @@ fn drain(pipe: &mut impl Read, which: Pipe, sink: Option<&dyn LiveSink>) -> Vec<
                     sink.chunk(which, &buf[..read]);
                 }
             }
-            // Come faceva `read_to_end`: un segnale arrivato durante la lettura
-            // non è la fine dell'uscita, e trattarlo così troncherebbe il testo
-            // di un figlio sano.
+            // As `read_to_end` did: a signal arriving mid-read is not the end
+            // of the output, and treating it so would truncate the text of a
+            // healthy child.
             Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
             Err(_) => break,
         }
@@ -322,22 +319,22 @@ fn drain(pipe: &mut impl Read, which: Pipe, sink: Option<&dyn LiveSink>) -> Vec<
     all
 }
 
-/// La prima pausa fra due `try_wait`. Piccola apposta: un comando di shell che
-/// dura cinque millisecondi veniva comunque atteso cinquanta, e in un flusso di
-/// molti passi brevi quella era latenza pura, pagata a ogni passo.
+/// The first pause between two `try_wait` calls. Deliberately small: a shell
+/// command lasting five milliseconds was waited on for fifty anyway, and in a
+/// flow of many short steps that was pure latency, paid at every step.
 const FIRST_POLL_PAUSE: Duration = Duration::from_millis(1);
 
-/// Dove la crescita si ferma. **Non un millisecondo sopra i cinquanta di
-/// prima**: su un figlio che dura minuti il numero di risvegli resta quello di
-/// sempre, e lo scarto massimo fra la scadenza del tetto di tempo e il `kill`
-/// che ne discende non peggiora di niente rispetto a ieri.
+/// Where the growth stops. **Not one millisecond above the fifty it used to
+/// be**: on a child lasting minutes the number of wakeups stays what it always
+/// was, and the widest gap between the time cap expiring and the `kill` that
+/// follows from it is no worse than before.
 const MAX_POLL_PAUSE: Duration = Duration::from_millis(50);
 
-/// Raddoppia fino al tetto e lì resta.
+/// Doubles up to the cap and stays there.
 ///
-/// **STA FUORI DAL CICLO PERCHÉ SI POSSA GUARDARE DA SOLA.** Dentro allo
-/// `scope`, in mezzo al `try_wait` e all'uccisione, sarebbe una riga che nessuno
-/// può interrogare senza avviare un processo.
+/// **IT LIVES OUTSIDE THE LOOP SO IT CAN BE LOOKED AT ALONE.** Inside the
+/// `scope`, between the `try_wait` and the kill, it would be a line nobody can
+/// question without starting a process.
 fn next_poll_pause(current: Duration) -> Duration {
     (current * 2).min(MAX_POLL_PAUSE)
 }
@@ -355,16 +352,16 @@ fn drain_and_wait(
     })
 }
 
-/// Il corpo vero, con la pausa passata da fuori.
+/// The real body, with the pause passed in from outside.
 ///
-/// **PERCHÉ LA PAUSA È UN PARAMETRO E NON UNA `sleep` CABLATA.** La sola cosa
-/// che distingue questo ciclo da quello di prima è la *sequenza* delle durate
-/// che chiede: `1ms, 2ms, 4ms…` invece di `50ms, 50ms…`. Cronometrare da fuori
-/// per vederla non funziona — una macchina carica può solo allungare i tempi,
-/// mai accorciarli, quindi la prova o mente quando la macchina è occupata o si
-/// dà un margine così largo da non distinguere più i due codici. È la stessa
-/// trappola che il guasto 7 ha già respinto. Qui invece chi prova osserva la
-/// sequenza, che il codice decide e l'orologio non tocca.
+/// **WHY THE PAUSE IS A PARAMETER AND NOT A HARD-WIRED `sleep`.** The only
+/// thing separating this loop from the old one is the *sequence* of durations
+/// it asks for: `1ms, 2ms, 4ms…` in place of `50ms, 50ms…`. Timing it from
+/// outside to see that does not work — a loaded machine can stretch times,
+/// never shorten them, so the test either lies on a busy machine or gives
+/// itself a margin so wide it can no longer tell the two codes apart. That is
+/// the same trap fault 7 already turned back. Here a test observes the
+/// sequence instead, which the code decides and the clock does not touch.
 fn drain_and_wait_paced(
     stdout: Option<std::process::ChildStdout>,
     stderr: Option<std::process::ChildStderr>,
@@ -376,10 +373,10 @@ fn drain_and_wait_paced(
 ) -> RunOutcome {
     let mut out_pipe = stdout.expect("stdout is piped");
     let mut err_pipe = stderr.expect("stderr is piped");
-    // `scope` e non `spawn`: i fili prendono in prestito il destinatario, che
-    // vive nello stack di chi ha chiamato. Con fili staccati l'API pretenderebbe
-    // un `'static` — cioè un `Arc` — da chiunque voglia guardare, compresa una
-    // prova che cattura una variabile locale.
+    // `scope` and not `spawn`: the threads borrow the watcher, which lives on
+    // the caller's stack. With detached threads the API would demand a
+    // `'static` — an `Arc` — from anybody who wants to watch, a test capturing
+    // a local variable included.
     std::thread::scope(|scope| {
         let out_thread = scope.spawn(move || drain(&mut out_pipe, Pipe::Stdout, sink));
         let err_thread = scope.spawn(move || drain(&mut err_pipe, Pipe::Stderr, sink));
@@ -404,9 +401,9 @@ fn drain_and_wait_paced(
                 Err(_) => break None,
             }
         };
-        // I `join` restano dopo la morte del figlio: è così che le pipe si
-        // chiudono e i fili finiscono. Ciò che era già stato consegnato prima
-        // dell'uccisione è già arrivato a chi guarda, e resta anche qui dentro.
+        // The `join`s stay after the child's death: that is how the pipes close
+        // and the threads end. What was handed over before the kill already
+        // reached the watcher, and stays in here too.
         let stdout = out_thread.join().unwrap_or_default();
         let stderr = err_thread.join().unwrap_or_default();
         match status {
@@ -420,13 +417,13 @@ fn drain_and_wait_paced(
     })
 }
 
-// ── invocare un motore esterno ───────────────────────────────────────────
+// ── invoking an external engine ──────────────────────────────────────────
 
-/// Cosa serve per invocare un motore esterno: un binario già risolto — la
-/// ricerca sul percorso, coi suoi fallback per un servizio senza la shell di
-/// chi lo installa, resta a chi chiama: qui non si cablano posti — i suoi
-/// argomenti, l'ambiente, la cartella di lavoro, un testo opzionale
-/// sull'ingresso, e il tetto di tempo.
+/// What it takes to invoke an external engine: an already-resolved binary —
+/// the path search, with its fallbacks for a service without the installer's
+/// shell, stays with the caller, and no locations are hard-wired here — its
+/// arguments, the environment, the working directory, an optional text on
+/// input, and the time cap.
 pub struct EngineInvocation {
     pub bin: String,
     pub args: Vec<String>,
@@ -443,15 +440,15 @@ impl EngineInvocation {
     }
 }
 
-/// L'esito di un'invocazione: successo con l'uscita catturata, o una delle
-/// forme di fallimento che un motore esterno può dare — mai un panico, e mai
-/// un giudizio su cosa quel fallimento significhi per chi ha chiamato.
+/// The outcome of an invocation: success with the output captured, or one of
+/// the failure shapes an external engine can produce — never a panic, and
+/// never a judgement on what that failure means to the caller.
 ///
-/// I fallimenti portano con sé di che spiegarsi: il codice di uscita (`None`
-/// quando il processo è stato ucciso da un segnale, che non è la stessa cosa di
-/// «uscito con zero») e il motivo del sistema operativo quando non è partito.
-/// Chi trasforma questo esito in un passo rosso perde l'uscita tipata — è per
-/// questo che il perché deve stare qui dentro, non solo nei byte catturati.
+/// Failures carry what they need to explain themselves: the exit code (`None`
+/// when the process was killed by a signal, which is not the same thing as
+/// "exited with zero") and the reason from the operating system when it never
+/// started. Turning this outcome into a red step loses the typed output, which
+/// is why the reason has to live in here, not only in the captured bytes.
 pub enum EngineResult {
     Ok {
         stdout: String,
@@ -478,12 +475,12 @@ pub fn invoke_external_engine(invocation: &EngineInvocation) -> EngineResult {
     invoke_external_engine_watched(invocation, None)
 }
 
-/// Come `invoke_external_engine`, ma passa il destinatario alla primitiva.
+/// Like `invoke_external_engine`, but passes the watcher to the primitive.
 ///
-/// **NESSUN CAMPO NUOVO IN `EngineInvocation`**: chi la costruisce lo fa con un
-/// letterale completo (lo fa `notte`), e un campo in più romperebbe quei
-/// letterali. Il destinatario è un argomento della chiamata, non un pezzo della
-/// ricetta: non descrive *cosa* eseguire, descrive chi sta guardando.
+/// **NO NEW FIELD IN `EngineInvocation`**: it is built from a complete literal
+/// (`notte` does that), and one more field would break those literals. The
+/// watcher is an argument of the call, not a piece of the recipe: it does not
+/// describe *what* to run, it describes who is watching.
 pub fn invoke_external_engine_watched(
     invocation: &EngineInvocation,
     sink: Option<&dyn LiveSink>,
@@ -550,20 +547,19 @@ pub fn invoke_external_engine_watched_until(
     }
 }
 
-// ── eseguire una verifica con un tempo massimo ───────────────────────────
+// ── running a check under a time limit ───────────────────────────────
 
 pub struct CheckInvocation {
     pub command: String,
     pub env: BTreeMap<String, String>,
     pub timeout: Duration,
-    /// Dove gira la verifica.
+    /// Where the check runs.
     ///
-    /// **PRIMA DEL 31/08/2026 NON C'ERA, E IL DIFETTO ERA INVISIBILE**: una
-    /// verifica girava sempre dove sta il processo, cioè dove capita che sia
-    /// stata lanciata la finestra o il terminale. Un `cargo test` che passa
-    /// perché è stato eseguito nell'albero sbagliato non fallisce: dice di sì.
-    /// La gemella `EngineInvocation` questo campo ce l'aveva già, e la
-    /// differenza fra le due non era una scelta.
+    /// **WITHOUT IT THE DEFECT IS INVISIBLE**: a check always ran where the
+    /// process sits, that is wherever the window or the terminal happened to be
+    /// launched from. A `cargo test` that passes because it ran in the wrong
+    /// tree does not fail: it says yes. The twin `EngineInvocation` already had
+    /// this field, and the difference between the two was not a choice.
     pub workdir: Option<String>,
 }
 
@@ -582,16 +578,15 @@ impl CheckInvocation {
     }
 }
 
-/// Asimmetrico di proposito: chi passa non ha niente da spiegare, chi fallisce
-/// sì — e senza queste due righe un passo rosso non lascia in mano a nessuno il
-/// motivo, perché l'uscita tipata di un passo rotto non si scrive.
+/// Asymmetric on purpose: what passes has nothing to explain, what fails does
+/// — and without these two lines a red step leaves nobody holding the reason,
+/// since the typed output of a broken step is never written.
 pub enum CheckResult {
-    /// **L'USCITA VIAGGIA CON L'ESITO.** Prima qui non c'era: `run_with_timeout`
-    /// la catturava e questa conversione la scartava con un `..`, quindi un
-    /// comando poteva dire qualcosa e nessuno poteva riceverlo. La porta solo
-    /// il ramo riuscito: un comando fallito non ha prodotto la lettura che gli
-    /// è stata chiesta, e offrirla lì vorrebbe dire leggere da uno strumento
-    /// rotto.
+    /// **THE OUTPUT TRAVELS WITH THE OUTCOME.** `run_with_timeout` captures it,
+    /// and a conversion that dropped it with a `..` let a command say something
+    /// nobody could receive. Only the passing branch carries it: a failed
+    /// command did not produce the reading it was asked for, and offering it
+    /// there would mean reading from a broken instrument.
     Passed {
         stdout: String,
     },
@@ -608,14 +603,14 @@ pub enum CheckResult {
     TimedOut,
 }
 
-/// Esegue `command` con `sh -c`: la verifica di un compito è testo di shell
-/// scritto da chi lo definisce, non un binario risolto a monte.
+/// Runs `command` with `sh -c`: a task's check is shell text written by
+/// whoever defines the task, not a binary resolved upstream.
 pub fn run_shell_check(invocation: &CheckInvocation) -> CheckResult {
     run_shell_check_watched(invocation, None)
 }
 
-/// Come `run_shell_check`, ma passa il destinatario alla primitiva. Vale la
-/// stessa ragione della gemella: `CheckInvocation` non guadagna campi.
+/// Like `run_shell_check`, but passes the watcher to the primitive. Same
+/// reason as its twin: `CheckInvocation` gains no fields.
 pub fn run_shell_check_watched(
     invocation: &CheckInvocation,
     sink: Option<&dyn LiveSink>,
@@ -648,8 +643,8 @@ pub fn run_shell_check_watched(
             }
         }
         RunOutcome::TimedOut => CheckResult::TimedOut,
-        // Un binario `sh` che non parte è un guasto dell'ambiente, non della
-        // verifica: si tratta come fallita, non come "passata per omissione".
+        // An `sh` binary that will not start is a fault of the environment,
+        // not of the check: treat it as failed, not as "passed by omission".
         RunOutcome::SpawnFailed(reason) => CheckResult::Failed {
             code: None,
             stdout: String::new(),
@@ -681,10 +676,10 @@ mod tests {
         }
     }
 
-    /// LA MISURA CHE POTEVA VENIRE DIVERSA: un comando che dorme più a lungo
-    /// del tetto viene ucciso, non aspettato. Un tetto largo (60s) con un
-    /// limite stretto (1s) renderebbe questa prova rossa se il tetto non
-    /// venisse davvero applicato.
+    /// THE MEASURE THAT COULD COME OUT DIFFERENTLY: a command sleeping longer
+    /// than the cap is killed, not waited for. A wide sleep (60s) against a
+    /// tight limit (1s) would turn this test red if the cap were not really
+    /// applied.
     #[test]
     fn a_slow_command_is_killed_at_the_limit() {
         let mut cmd = Command::new("sh");
@@ -699,12 +694,12 @@ mod tests {
         );
     }
 
-    /// E il nipote, che è il caso vero: un motore che accende un figlio suo.
+    /// And the grandchild, the real case: an engine starting its own child.
     ///
-    /// `sleep & wait` costringe la shell a forkare, così il nipote esiste su
-    /// qualunque shell. Uccidere il figlio lo lascia vivo col capo scrivente
-    /// della pipe in mano, e chi la svuota resta fermo fino alla sua morte
-    /// naturale. L'orologio qui può dare un rosso falso, mai un verde falso.
+    /// `sleep & wait` forces the shell to fork, so the grandchild exists on any
+    /// shell. Killing the child leaves it alive holding the writing end of the
+    /// pipe, and the drainer sits still until its natural death. The clock here
+    /// can give a false red, never a false green.
     #[test]
     fn a_grandchild_does_not_keep_the_cap_waiting() {
         let mut cmd = Command::new("sh");
@@ -739,11 +734,11 @@ mod tests {
         }
     }
 
-    // ── il testo consegnato mentre il figlio è vivo ──────────────────
+    // ── the text delivered while the child is alive ───────────────────
 
-    /// Un destinatario che segna **quando** ha ricevuto ogni pezzo: è l'istante,
-    /// non il contenuto, la cosa che distingue «consegnato mentre girava» da
-    /// «consegnato tutto alla fine».
+    /// A watcher that records **when** it received each chunk: it is the
+    /// instant, not the content, that separates "delivered while it ran" from
+    /// "delivered all at the end".
     struct Recorder {
         start: Instant,
         chunks: std::sync::Mutex<Vec<(Duration, Pipe, Vec<u8>)>>,
@@ -761,7 +756,7 @@ mod tests {
             self.chunks.lock().expect("nessuno panica qui").clone()
         }
 
-        /// Tutti i byte di una pipe, riattaccati nell'ordine di consegna.
+        /// Every byte of one pipe, rejoined in delivery order.
         fn joined(&self, want: Pipe) -> Vec<u8> {
             self.seen()
                 .into_iter()
@@ -781,13 +776,13 @@ mod tests {
         }
     }
 
-    /// LA PROVA CHE CONTA, E CHE COL CODICE DI PRIMA SAREBBE ROSSA: il comando
-    /// stampa, dorme quattro secondi, stampa ancora. Non si guarda che alla
-    /// fine il testo ci sia — sarebbe verde anche consegnando tutto in blocco
-    /// alla morte del figlio — si guarda **quando** è arrivato il primo pezzo.
+    /// THE TEST THAT COUNTS, AND THAT THE OLD CODE WOULD FAIL: the command
+    /// prints, sleeps four seconds, prints again. It does not check the text is
+    /// there at the end — that would pass even delivering it all in one block
+    /// at the child's death — it checks **when** the first chunk arrived.
     ///
-    /// Margini larghi di proposito: quattro secondi di sonno contro una soglia
-    /// di due, perché su una macchina carica la prova non diventi rossa a caso.
+    /// Wide margins on purpose: four seconds of sleep against a threshold of
+    /// two, so a loaded machine does not turn the test red at random.
     #[test]
     fn the_first_chunk_arrives_while_the_child_is_still_alive() {
         let mut cmd = Command::new("sh");
@@ -803,12 +798,12 @@ mod tests {
         );
         let seen = recorder.seen();
         let (when, pipe, bytes) = seen.first().cloned().expect("qualcosa doveva arrivare");
-        // IL TEMPO PRIMA DI TUTTO IL RESTO: è l'istante la cosa che questa prova
-        // misura, e leggerlo per ultimo nasconderebbe il motivo vero di un
-        // rosso. Vale anche contro l'asserzione sul pezzo vuoto qui sotto:
-        // rimettendo la consegna in blocco scatta *anche* quella, perché su una
-        // pipe muta `read_to_end` produce zero byte, e chi legge il rosso
-        // troverebbe il difetto minore al posto di quello grosso.
+        // THE TIME BEFORE ALL THE REST: the instant is what this test measures,
+        // and reading it last would hide the real reason for a red. It holds
+        // against the empty-chunk assertion below too: put block delivery back
+        // and that one fires *as well*, since on a silent pipe `read_to_end`
+        // yields zero bytes, and whoever reads the red would find the lesser
+        // defect in place of the big one.
         assert!(
             when < secs(2),
             "il primo pezzo è arrivato dopo {when:?}, cioè con la fine del \
@@ -833,8 +828,8 @@ mod tests {
         }
     }
 
-    /// Chi guarda deve sapere da quale delle due pipe viene il testo: un errore
-    /// indistinguibile dall'uscita normale non è più visibile di prima.
+    /// A watcher must know which of the two pipes text comes from: an error
+    /// indistinguishable from ordinary output is no more visible than before.
     #[test]
     fn each_chunk_says_which_pipe_produced_it() {
         let mut cmd = Command::new("sh");
@@ -855,10 +850,10 @@ mod tests {
         );
     }
 
-    /// NIENTE PERSO E NIENTE DOPPIO: la somma dei pezzi consegnati è, byte per
-    /// byte, l'uscita che l'esito riporta. Molte righe apposta, perché con una
-    /// sola la pipe si svuoterebbe in una lettura e la prova non direbbe nulla
-    /// su cosa succede quando i pezzi sono tanti.
+    /// NOTHING LOST AND NOTHING DOUBLED: the sum of the delivered chunks is,
+    /// byte for byte, the output the outcome reports. Many lines on purpose:
+    /// with one the pipe would empty in a single read and the test would say
+    /// nothing about what happens when the chunks are many.
     #[test]
     fn the_delivered_chunks_add_up_to_the_accumulated_output() {
         let mut cmd = Command::new("sh");
@@ -875,17 +870,16 @@ mod tests {
         }
     }
 
-    /// IL TETTO CONTINUA A UCCIDERE, e il testo già consegnato prima
-    /// dell'uccisione non sparisce né arriva due volte.
+    /// THE CAP STILL KILLS, and text already delivered before the kill neither
+    /// vanishes nor arrives twice.
     #[test]
     fn what_was_said_before_the_kill_is_delivered_once() {
         let mut cmd = Command::new("sh");
-        // `exec` non è ornamento: senza, `sh` resta il figlio e `sleep` diventa
-        // un nipote che tiene aperta la pipe anche dopo l'uccisione del padre —
-        // e allora si aspetta il nipote, non il tetto. È una proprietà della
-        // shell che c'era già prima di questo lavoro e che questa prova non ha
-        // il compito di giudicare: qui si misura il tetto, quindi si fa in modo
-        // che il processo ucciso sia davvero l'unico che scrive.
+        // `exec` is not ornament: without it `sh` stays the child and `sleep`
+        // becomes a grandchild holding the pipe open past the father's kill —
+        // and then the grandchild is waited for, not the cap. That is a
+        // property of the shell, and not this test's job to judge: the cap is
+        // measured here, so the killed process is made the only writer.
         cmd.arg("-c").arg("echo vivo; exec sleep 60");
         let recorder = Recorder::new();
         let start = Instant::now();
@@ -904,9 +898,9 @@ mod tests {
         );
     }
 
-    /// CHI NON GUARDA OTTIENE ESATTAMENTE QUELLO DI PRIMA: stesso comando, una
-    /// volta col destinatario e una senza, e le due uscite accumulate coincidono
-    /// byte per byte. La consegna in diretta non è un ramo che cambia l'esito.
+    /// NOT WATCHING GETS EXACTLY WHAT IT GOT BEFORE: the same command, once
+    /// with a watcher and once without, and the two accumulated outputs match
+    /// byte for byte. Live delivery is not a branch that changes the outcome.
     #[test]
     fn without_a_watcher_the_outcome_is_byte_for_byte_the_same() {
         let command = "echo prima; echo dopo; echo lamentela 1>&2";
@@ -944,8 +938,8 @@ mod tests {
         }
     }
 
-    /// Il destinatario può essere una closure: chi ne ha uno semplice non deve
-    /// dichiarare un tipo per averlo.
+    /// A watcher can be a closure: a simple one should not require declaring a
+    /// type to have it.
     #[test]
     fn a_closure_is_a_watcher_too() {
         let seen = std::sync::Mutex::new(Vec::new());
@@ -1180,10 +1174,10 @@ mod tests {
         ));
     }
 
-    /// **UNA VERIFICA GIRA DOVE LE SI DICE**, e prima del 31/08/2026 non c'era
-    /// modo di dirglielo: girava dove sta il processo. Un `cargo test` che
-    /// passa perché eseguito nell'albero sbagliato non fallisce — dice di sì,
-    /// ed è il difetto peggiore che una verifica possa avere.
+    /// **A CHECK RUNS WHERE IT IS TOLD TO**, and with no way to tell it, it ran
+    /// where the process sits. A `cargo test` that passes because it ran in the
+    /// wrong tree does not fail — it says yes, and that is the worst defect a
+    /// check can have.
     #[test]
     fn a_check_runs_where_it_is_told() {
         let elsewhere =
@@ -1205,15 +1199,15 @@ mod tests {
         let _ = std::fs::remove_dir_all(&elsewhere);
     }
 
-    // ── la pausa fra due `try_wait` ──────────────────────────────────
+    // ── the pause between two `try_wait` calls ───────────────────────
 
-    /// Avvia un figlio con le pipe collegate e registra ogni durata che il
-    /// ciclo chiede di aspettare, dormendola davvero.
+    /// Starts a child with the pipes attached and records every duration the
+    /// loop asks to wait, actually sleeping it.
     ///
-    /// **QUESTO È IL PUNTO DI INIEZIONE, ED È IL MOTIVO PER CUI QUESTE DUE
-    /// PROVE NON CRONOMETRANO.** La sequenza delle durate la decide il codice:
-    /// è la stessa a macchina ferma e a macchina in ginocchio. Il carico può
-    /// cambiare solo *quanti* elementi ha, e su quello non si afferma niente.
+    /// **THIS IS THE INJECTION POINT, AND THE REASON THESE TWO TESTS DO NOT
+    /// TIME ANYTHING.** The code decides the sequence of durations: it is the
+    /// same on an idle machine and on one brought to its knees. Load can change
+    /// only *how many* elements it has, and nothing is asserted about that.
     fn pauses_asked_while_running(script: &str) -> Vec<Duration> {
         let mut cmd = Command::new("sh");
         cmd.arg("-c").arg(script);
@@ -1239,9 +1233,9 @@ mod tests {
         asked
     }
 
-    /// LA MISURA CHE POTEVA VENIRE DIVERSA: col codice di prima la prima durata
-    /// chiesta era 50 ms, e un comando finito in cinque millisecondi restava
-    /// comunque appeso per quarantacinque.
+    /// THE MEASURE THAT COULD COME OUT DIFFERENTLY: with the old code the first
+    /// duration asked for was 50 ms, and a command finished in five
+    /// milliseconds hung on for forty-five anyway.
     #[test]
     fn the_first_poll_pause_is_short_not_fifty_milliseconds() {
         let asked = pauses_asked_while_running("sleep 0.1");
@@ -1256,25 +1250,23 @@ mod tests {
         );
     }
 
-    /// L'altra metà: la crescita si ferma. Senza tetto un figlio di dieci
-    /// minuti verrebbe raccolto minuti dopo essere morto.
+    /// The other half: the growth stops. With no cap a ten-minute child would
+    /// be reaped minutes after it died. Nothing is asserted about the *number*
+    /// of wakeups — that depends on the child's real duration, that is on the
+    /// machine's load. Only about the shape: it really climbs, then stops at
+    /// the cap and stays there.
     ///
-    /// Nessuna affermazione sul *numero* di risvegli — quello dipende dalla
-    /// durata reale del figlio, cioè dal carico della macchina. Solo sulla
-    /// forma: prima sale davvero, poi si ferma sul tetto e lì resta.
+    /// **"NEVER DECREASING" WAS NOT ENOUGH, and that is the defect this test
+    /// was born with**: the `[50, 50, 50…]` sequence of fixed polling never
+    /// decreases, never exceeds the cap and ends at the cap — it passed
+    /// all three earlier assertions. The climb *before* the cap has to be asked
+    /// for, because that is exactly what the old defect lacks.
     ///
-    /// **«NON DECRESCENTE» NON BASTAVA, ed è il difetto con cui questa prova è
-    /// nata**: la sequenza `[50, 50, 50…]` del polling fisso è non decrescente,
-    /// non supera il tetto e finisce sul tetto — passava tutte e tre le
-    /// asserzioni di prima. Serve chiedere che ci sia una salita *prima* del
-    /// tetto, perché è esattamente quella che il difetto vecchio non ha.
-    /// La regola di crescita interrogata da sola, **senza avviare niente**: è
-    /// quello che il commento su `next_poll_pause` promette a chi legge, e
-    /// finché nessuno lo faceva era una promessa scritta e non mantenuta.
-    ///
-    /// Da sola non prova niente sul ciclo — una `sleep` fissa rimessa dentro al
-    /// `loop` lascerebbe questa verde. È la prova qui sotto che lega la regola
-    /// al ciclo; questa fissa la regola.
+    /// The growth rule questioned alone, **without starting anything**: that is
+    /// what the comment on `next_poll_pause` promises its reader. Alone it
+    /// proves nothing about the loop — a fixed `sleep` put back inside the
+    /// `loop` would leave this green. The test below ties the rule to the loop;
+    /// this one pins the rule.
     #[test]
     fn the_growth_rule_doubles_and_saturates_without_running_anything() {
         let mut pause = FIRST_POLL_PAUSE;

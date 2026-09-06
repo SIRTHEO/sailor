@@ -1,28 +1,27 @@
-//! Un passo consegnato all'**agente già vivo**, invece che a un processo nuovo.
+//! A step handed to the **agent already alive**, instead of to a new process.
 //!
-//! **SUPERFICIE: `gate`. POTERI PRETESI: nessuno.** Non legge il mondo, non lo
-//! tocca, non scrive nel deposito di suo: offre un mandato e si mette in
-//! attesa. La dichiarazione è scritta qui perché le quattro superfici di
-//! `docs/the-four-surfaces.md` non esistono ancora nel codice, e
-//! un'azione nuova che tace mentre il criterio nasce diventa la prima eccezione
-//! non scritta — che è il modo in cui la finestra è arrivata a otto tipi di
-//! passo contro tre eseguiti. Chi porta le superfici nel registro trova questa
-//! riga già scritta e non deve indovinarla.
+//! **SURFACE: `gate`. POWERS CLAIMED: none.** It does not read the world, does
+//! not touch it, does not write to the store on its own account: it offers a
+//! brief and waits. The declaration is written here because the four surfaces
+//! of `docs/the-four-surfaces.md` do not exist in the code yet, and a new
+//! action that stays silent while the criterion is being born becomes the first
+//! unwritten exception — the way the window reached eight kinds of step against
+//! three that are executed. Whoever carries the surfaces into the registry
+//! finds this line written and need not guess it.
 //!
-//! **PERCHÉ ESISTE.** Misurato il 31/08/2026: un flusso di quattro passi costa
-//! **2,79 volte** un singolo prompt sullo stesso compito, e il rapporto dei
-//! consumi è il rapporto dei turni — 62 contro 30. Ogni passo avvia un processo
-//! che riscopre il repository da zero. L'alternativa è che il flusso
-//! **descriva** il lavoro e a eseguirlo sia l'agente già vivo nel terminale, che
-//! il contesto ce l'ha già. Ma un agente che lavora fuori dal motore non scrive
-//! niente nel deposito, e allora sparisce la metà per cui Sailor esiste. Questa
-//! azione tiene insieme le due metà: il passo resta un record, con la sua
-//! intenzione scritta prima e il suo esito scritto dopo; a eseguirlo è qualcun
-//! altro.
+//! **WHY IT EXISTS.** Measured: a four-step flow costs **2.79 times** a single
+//! prompt on the same job, and the ratio of the spend is the ratio of the turns
+//! — 62 against 30. Every step starts a process that rediscovers the repository
+//! from nothing. The alternative is for the flow to **describe** the work and
+//! for the agent already alive in the terminal to carry it out, context in
+//! hand. But an agent working outside the engine writes nothing to the store,
+//! and then the half Sailor exists for disappears. This action holds both
+//! halves: the step stays a record, its intent written before and its outcome
+//! after; someone else executes it.
 //!
-//! **NON AVVIA NIENTE, E NON È UNA MANCANZA.** Il valore di questo passo è
-//! esattamente che nessun processo nasce: se ne avviasse uno saremmo tornati al
-//! costo che l'azione esiste per togliere.
+//! **IT STARTS NOTHING, AND THAT IS NO FAILING.** The value of this step is
+//! exactly that no process is born: starting one would bring back the cost the
+//! action exists to remove.
 
 use crate::{sink_for_step, Pipe, StepSinks};
 use flow::{
@@ -33,56 +32,56 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-/// Il nome sotto cui questa azione si registra in un `flow::ActionRegistry`.
+/// The name this action registers itself under in a `flow::ActionRegistry`.
 pub const HANDED_TO_AGENT_ACTION: &str = "handed_to_agent";
 
-/// La collezione del deposito dove `sailor step close` scrive chi ha chiuso un
-/// passo consegnato.
+/// The store collection where `sailor step close` writes who closed a handed
+/// step.
 ///
-/// **STA QUI E NON NEL COMANDO PERCHÉ LA LEGGONO IN DUE.** Chi chiude scrive,
-/// chi apre il passo dopo legge per rifiutare un giudice che è anche autore. Un
-/// nome ricopiato nei due punti diverge al primo refuso, e il rifiuto
-/// smetterebbe di scattare **in silenzio** — cioè proprio la serratura si
-/// aprirebbe da sola senza che nessuna prova diventi rossa.
+/// **IT LIVES HERE, NOT IN THE COMMAND, BECAUSE TWO SIDES READ IT.** The closer
+/// writes; whoever opens the next step reads it to refuse a judge who is also
+/// the author. A name copied into both places diverges at the first typo, and
+/// the refusal would stop firing **in silence** — the lock would open by itself
+/// with no test ever turning red.
 pub const HOLDER_COLLECTION: &str = "handoff_holders";
 
-/// L'indirizzo, dentro `HOLDER_COLLECTION`, di chi ha chiuso un passo.
+/// The address, inside `HOLDER_COLLECTION`, of whoever closed a step.
 pub fn holder_key(run_id: &str, step_id: &str) -> String {
     format!("{run_id}/{step_id}")
 }
 
-/// Che cosa un passo consegnato dichiara.
+/// What a handed step declares.
 ///
-/// **DUE CAMPI SI DICHIARANO QUI E SI LEGGONO ALTROVE, ED È VOLUTO.**
-/// `handoff_timeout_secs` lo legge `inspect_effect` e `same_holder_ok` lo legge
-/// `sailor step open`, tutti e due direttamente da `record.input` — perché
-/// quando servono la struttura non c'è più: c'è solo un record nel deposito.
-/// Stanno comunque in questa struttura per due ragioni misurabili: senza,
-/// `unknown_fields` li chiamerebbe refusi e `flow check` respingerebbe un passo
-/// scritto bene; e una scadenza mancante o scritta come testo romperebbe il
-/// passo alla ripresa invece che quando si esegue.
+/// **TWO FIELDS ARE DECLARED HERE AND READ ELSEWHERE, ON PURPOSE.**
+/// `inspect_effect` reads `handoff_timeout_secs` and `sailor step open` reads
+/// `same_holder_ok`, both straight from `record.input` — by the time they are
+/// wanted the struct is gone: there is a record in the store and nothing else.
+/// They stay in this struct for two measurable reasons: without them
+/// `unknown_fields` would call them typos and `flow check` would reject a
+/// well-written step; and a deadline missing or written as text would break the
+/// step on resume rather than when it runs.
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct HandoffSpec {
-    /// Il lavoro, per esteso. **Resta intero nell'`input` del record**, che il
-    /// deposito conserva senza troncare; in `said` finisce solo la riga corta,
-    /// perché `said` è tagliato a 16 KB (`flow::MAX_SAID_BYTES`) e un mandato
-    /// lungo ci si perderebbe dentro a metà frase.
+    /// The work, in full. **It stays whole in the record's `input`**, which the
+    /// store keeps untruncated; `said` gets the short line, because `said` is
+    /// cut at 16 KB (`flow::MAX_SAID_BYTES`) and a long brief would be lost in
+    /// there mid-sentence.
     mandate: String,
-    /// A chi è offerto. È un'etichetta per chi guarda e il valore predefinito
-    /// che `sailor step open` suggerisce, **non** una credenziale: vedi la
-    /// debolezza dichiarata in `crates/sailor/src/step_cmd.rs`.
+    /// Who it is offered to. A label for whoever is watching, and the default
+    /// `sailor step open` suggests, **not** a credential: see the weakness
+    /// declared in `crates/sailor/src/step_cmd.rs`.
     holder: String,
-    /// Entro quanti secondi qualcuno deve prenderlo in carico. Oltre, il passo
-    /// risulta non applicato e una ripresa lo rimette fra i pronti.
+    /// How many seconds someone has to take it on. Past that, the step reads as
+    /// unapplied and a resume puts it back among the ready.
     handoff_timeout_secs: u64,
-    /// Se chi ha chiuso una dipendenza può aprire anche questo passo.
+    /// Whether whoever closed a dependency may open this step as well.
     ///
-    /// **NEGAZIONE PREDEFINITA, NON LISTA DI PERMESSI.** `false` vuol dire che
-    /// chi ha prodotto il lavoro non lo giudica — il vincolo permanente «chi
-    /// crea non giudica». Il predefinito è la negazione perché una lista di
-    /// permessi dimenticata lascia passare tutto, mentre una negazione
-    /// dimenticata al massimo ferma un lavoro e lo si vede subito.
+    /// **DENY BY DEFAULT, NOT AN ALLOW LIST.** `false` means whoever produced
+    /// the work does not judge it — the standing constraint «whoever creates
+    /// does not judge». The default is the denial because a forgotten allow
+    /// list lets everything through, while a forgotten denial at worst stops a
+    /// job, and that shows up at once.
     #[serde(default)]
     same_holder_ok: bool,
     /// The closed choices the person may close this step with, each with the
@@ -93,9 +92,9 @@ struct HandoffSpec {
     /// field as `EngineSpec::needs_extensions`: read by `flow check`, not here.
     #[serde(default)]
     needs_extensions: Vec<String>,
-    /// Ciò che questa azione non riconosce, per la stessa ragione di
-    /// `EngineSpec::extra`: un refuso nel `with` si nomina a `flow check`, cioè
-    /// prima di spendere.
+    /// What this action does not recognise, for the same reason as
+    /// `EngineSpec::extra`: a typo in the `with` is named at `flow check`, that
+    /// is, before spending.
     #[serde(flatten)]
     extra: BTreeMap<String, Value>,
 }
@@ -130,16 +129,16 @@ fn choices_lines(options: &[Choice]) -> String {
         .join("\n")
 }
 
-/// L'azione che consegna un passo a chi è già vivo.
+/// The action that hands a step to whoever is already alive.
 pub struct HandoffAction {
     watcher: Option<Arc<dyn StepSinks>>,
-    /// Che ora è, per `inspect_effect`.
+    /// What time it is, for `inspect_effect`.
     ///
-    /// **INIETTABILE PERCHÉ LA SCADENZA SI DEVE POTER PROVARE.** `inspect_effect`
-    /// non riceve un orologio dal tratto — lo riceve `reconcile`, che però non
-    /// glielo passa — e una prova sulla scadenza con l'ora vera dovrebbe
-    /// aspettare davvero, cioè sarebbe un'attesa fissa: il difetto per cui una
-    /// prova di questa casa è già stata rotta nel punto sbagliato.
+    /// **INJECTABLE BECAUSE THE DEADLINE MUST BE TESTABLE.** `inspect_effect`
+    /// gets no clock from the trait — `reconcile` gets one and does not pass it
+    /// on — and a deadline test against the real clock would have to wait for
+    /// real, that is, be a fixed sleep: the fault that has broken a test of
+    /// this house in the wrong place before.
     now: Arc<dyn Fn() -> i64 + Send + Sync>,
 }
 
@@ -161,15 +160,15 @@ impl HandoffAction {
         }
     }
 
-    /// Con qualcuno che guarda: il mandato compare **mentre** il passo lo
-    /// offre, non quando la corsa è finita. È il punto di tutto: una persona
-    /// deve vedere cosa è stato chiesto nel momento in cui viene chiesto.
+    /// With someone watching: the brief appears **while** the step offers it,
+    /// not once the run is over. That is the whole point: a person must see
+    /// what was asked at the moment it is asked.
     pub fn watched_by(mut self, watcher: Option<Arc<dyn StepSinks>>) -> Self {
         self.watcher = watcher;
         self
     }
 
-    /// Con un orologio dichiarato, per le prove sulla scadenza.
+    /// With a declared clock, for the deadline tests.
     pub fn at_time(mut self, now: Arc<dyn Fn() -> i64 + Send + Sync>) -> Self {
         self.now = now;
         self
@@ -177,8 +176,8 @@ impl HandoffAction {
 }
 
 impl Action for HandoffAction {
-    /// Dalla struttura vera, come le due azioni gemelle: un elenco scritto a
-    /// mano qui accanto sarebbe una seconda copia della stessa verità.
+    /// From the real struct, like the two twin actions: a list written by hand
+    /// alongside would be a second copy of the same truth.
     fn unknown_fields(&self, declared: &Value) -> Vec<String> {
         match serde_json::from_value::<HandoffSpec>(declared.clone()) {
             Ok(spec) => spec.extra.into_keys().collect(),
@@ -186,28 +185,28 @@ impl Action for HandoffAction {
         }
     }
 
-    /// **RIFARE QUESTO PASSO È SICURO, E LA RAGIONE È COSA FA DAVVERO.**
-    /// L'effetto dell'azione è *offrire* un mandato, non eseguirlo. Offrirlo due
-    /// volte non duplica niente sul mondo: duplica una riga di testo. Il lavoro
-    /// vero lo fa una persona o un agente, e quello è protetto dal fatto che
-    /// `sailor step open` rifiuta di aprire un passo che non è in attesa.
+    /// **REDOING THIS STEP IS SAFE, AND THE REASON IS WHAT IT REALLY DOES.**
+    /// The action's effect is to *offer* a brief, not to carry it out. Offering
+    /// it twice duplicates nothing in the world: it duplicates a line of text.
+    /// The real work is done by a person or an agent, and that is guarded by
+    /// `sailor step open` refusing to open a step that is not waiting.
     fn species(&self) -> StepSpecies {
         StepSpecies::Repeatable
     }
 
-    /// **NON CHIEDE NIENTE AL SISTEMA OPERATIVO, ED È IL PUNTO.** Chi tiene un
-    /// passo consegnato non è un processo: è una scadenza scritta nel record.
-    /// Interrogare il kernel qui sarebbe il guasto 12 rifatto — dentro il
-    /// perimetro `pgrep` risponde vuoto *senza errore*, e un sensore cieco che
-    /// risponde «nessuno» è peggio di un sensore assente, perché chi sta a valle
-    /// si fida.
+    /// **IT ASKS THE OPERATING SYSTEM NOTHING, AND THAT IS THE POINT.** Whoever
+    /// holds a handed step is no process: it is a deadline written in the
+    /// record. Questioning the kernel here would be fault 12 redone — inside the
+    /// sandbox `pgrep` answers empty *with no error*, and a blind sensor that
+    /// answers «nobody» is worse than an absent one, because downstream trusts
+    /// it.
     ///
-    /// Niente colonna nuova: la scadenza sta in `input`, l'istante di partenza
-    /// in `started_at`, e tutti e due sono già nel record.
+    /// No new column: the deadline sits in `input`, the starting instant in
+    /// `started_at`, and both are in the record already.
     ///
-    /// Prima della scadenza `Unknown` — *non so se qualcuno ci sta lavorando,
-    /// quindi non dichiaro niente*. Dopo, `NotApplied`: nessuno l'ha preso in
-    /// carico nel tempo che il passo si dava.
+    /// Before the deadline, `Unknown` — *I cannot tell whether anyone is on it,
+    /// so I declare nothing*. After it, `NotApplied`: nobody took it on within
+    /// the time the step gave itself.
     fn inspect_effect(
         &self,
         record: &StepRecord,
@@ -218,8 +217,8 @@ impl Action for HandoffAction {
             .get("handoff_timeout_secs")
             .and_then(Value::as_i64)
         else {
-            // Un record senza scadenza leggibile non si dichiara scaduto: una
-            // consegna senza tetto è ambigua, e l'ambiguità si conserva.
+            // A record with no readable deadline is never declared expired: a
+            // handover with no ceiling is ambiguous, and ambiguity is kept.
             return Ok(EffectStatus::Unknown(
                 "the handover declares no readable deadline".to_owned(),
             ));
@@ -237,11 +236,11 @@ impl Action for HandoffAction {
 
     fn execute(&self, input: &Value, shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         let live = sink_for_step(&self.watcher, shared);
-        // **I RINVII ARRIVANO GIÀ SCIOLTI, E QUI SERVONO PIÙ CHE ALTROVE.** Il
-        // mandato di un passo consegnato è quasi sempre il lavoro deciso dal
-        // passo prima: senza `$from` resterebbe una costante scritta il giorno
-        // in cui il flusso è nato, e la consegna non servirebbe a niente. A
-        // scioglierli è `step_input`, per ogni azione e una volta sola.
+        // **REFERENCES ARRIVE ALREADY RESOLVED, AND THEY MATTER MOST HERE.** A
+        // handed step's brief is almost always the work the preceding step
+        // decided: without `$from` it would stay a constant frozen at the
+        // moment the flow was born, and the handover would be worth nothing.
+        // Resolving them is `step_input`'s job, for every action and once.
         let spec: HandoffSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         if spec.mandate.trim().is_empty() {
@@ -259,8 +258,8 @@ impl Action for HandoffAction {
             .and_then(Value::as_str)
             .unwrap_or("<an unknown step>");
 
-        // IL MANDATO SI VEDE MENTRE SUCCEDE, non a corsa finita: chi guarda
-        // deve poterlo prendere in carico adesso.
+        // THE BRIEF IS SEEN AS IT HAPPENS, not once the run is over: whoever
+        // watches must be able to take it on right away.
         if let Some(live) = live.as_deref() {
             let choices = if spec.options.is_empty() {
                 String::new()
@@ -277,10 +276,10 @@ impl Action for HandoffAction {
             );
         }
 
-        // **LA RIGA È CORTA APPOSTA.** Il mandato intero resta nell'`input` del
-        // record, che il deposito conserva senza tagliare; `said` è troncato a
-        // 16 KB, e metterlo lì vorrebbe dire perderne la coda proprio quando è
-        // lungo, cioè quando serve.
+        // **THE LINE IS SHORT ON PURPOSE.** The whole brief stays in the
+        // record's `input`, which the store keeps uncut; `said` is truncated at
+        // 16 KB, and putting it there would lose its tail exactly where it runs
+        // long, which is where it matters.
         Ok(ActionOutcome::Waiting(format!(
             "consegnato a «{}»; il mandato è nell'ingresso del passo, non qui. \
              Prendilo con: sailor step open --run {run_id} --step {step_id} --as {}",
@@ -302,9 +301,9 @@ mod tests {
         shared
     }
 
-    /// **NESSUN PROCESSO NASCE, E LA DECISIONE È «IN ATTESA».** È il valore
-    /// dell'azione detto come misura: se un giorno qualcuno la facesse avviare
-    /// qualcosa, il costo che esiste per togliere tornerebbe.
+    /// **NO PROCESS IS BORN, AND THE VERDICT IS «WAITING».** The action's value
+    /// stated as a measurement: were someone to make it start something, the
+    /// cost it exists to remove would come back.
     #[test]
     fn a_handed_step_waits_instead_of_going() {
         let action = HandoffAction::new();
@@ -338,9 +337,9 @@ mod tests {
         }
     }
 
-    /// **IL MANDATO LUNGO STA NELL'INGRESSO, NON IN `said`.** La riga corta
-    /// resta corta anche con un mandato da 40 KB: è la differenza fra un lavoro
-    /// che si legge intero e uno tagliato a metà frase.
+    /// **A LONG BRIEF LIVES IN THE INPUT, NOT IN `said`.** The short line stays
+    /// short even with a 40 KB brief: the difference between a job that reads
+    /// whole and one cut off mid-sentence.
     #[test]
     fn a_long_mandate_stays_out_of_the_said_line() {
         let long = "ripara ".repeat(6000);
@@ -374,16 +373,7 @@ mod tests {
         );
     }
 
-    // **LA PROVA CHE IL MANDATO PUÒ VENIRE DAL PASSO PRIMA NON STA PIÙ QUI.**
-    // Chiamava `execute` con `{"$from": …}` dentro, e reggeva perché questa
-    // azione risolveva i rinvii da sé. Dal 01/09/2026 li scioglie
-    // `flow::step_input` per tutte: riscritta qui, dovrebbe sciogliere il rinvio
-    // a mano prima di chiamare — cioè misurare la prova invece del prodotto. La
-    // regola si interroga dove vive, in
-    // `crates/flow/tests/a_reference_reaches_every_action.rs`, e lì vale per
-    // ogni azione registrata invece che per questa sola.
-
-    /// Un `with` con un refuso si nomina a controllo, prima di spendere.
+    /// A `with` carrying a typo is named at check time, before spending.
     #[test]
     fn a_misspelled_field_is_named_before_the_run() {
         let action = HandoffAction::new();
@@ -396,9 +386,9 @@ mod tests {
         assert_eq!(unknown, vec!["handoff_timeout_sec".to_owned()]);
     }
 
-    /// **PRIMA DELLA SCADENZA NON SI DICHIARA NIENTE.** È la differenza fra
-    /// «non lo so» e «non è stato fatto», e chiuderla dal lato sbagliato
-    /// toglierebbe il lavoro di mano a chi lo sta facendo.
+    /// **BEFORE THE DEADLINE NOTHING IS DECLARED.** The difference between «I
+    /// cannot tell» and «it was never done»; closing it on the wrong side would
+    /// take the work out of the hands of whoever is doing it.
     #[test]
     fn before_the_deadline_the_effect_is_unknown() {
         let clock = Arc::new(Mutex::new(1_000i64));
@@ -437,7 +427,7 @@ mod tests {
         );
     }
 
-    /// Un mandato vuoto non è un lavoro.
+    /// An empty brief is no job at all.
     #[test]
     fn an_empty_mandate_is_refused() {
         let action = HandoffAction::new();
@@ -450,7 +440,7 @@ mod tests {
         assert_eq!(error.class, "invalid_input");
     }
 
-    /// Rifare una consegna è sicuro: quel che duplica è una riga di testo.
+    /// Redoing a handover is safe: what it duplicates is a line of text.
     #[test]
     fn handing_a_step_over_twice_is_safe() {
         assert_eq!(HandoffAction::new().species(), StepSpecies::Repeatable);
