@@ -65,6 +65,34 @@ impl ValueSchema {
         }
     }
 
+    /// Whether a JSON pointer can find anything in a value of this shape.
+    /// **Declared, not merely possible**: `allow_extra` is not asked here, so
+    /// reaching for what nobody declared stays a promise nobody made.
+    pub fn accepts_pointer(&self, pointer: &str) -> bool {
+        let Some(rest) = pointer.strip_prefix('/') else {
+            // The empty pointer names the whole value, always there.
+            return pointer.is_empty();
+        };
+        let (first, tail) = match rest.split_once('/') {
+            Some((first, tail)) => (first, format!("/{tail}")),
+            None => (rest, String::new()),
+        };
+        match self {
+            ValueSchema::Any => true,
+            ValueSchema::Object { properties, .. } => properties
+                .get(first)
+                .is_some_and(|inner| inner.accepts_pointer(&tail)),
+            ValueSchema::Array { items } => {
+                first.parse::<usize>().is_ok() && items.accepts_pointer(&tail)
+            }
+            // A value the flow wrote itself: what it holds is known exactly.
+            ValueSchema::OneOf { values } => {
+                values.iter().all(|value| value.pointer(pointer).is_some())
+            }
+            _ => false,
+        }
+    }
+
     /// Whether every value the second schema produces is accepted by the first.
     pub fn accepts(&self, produced: &ValueSchema) -> bool {
         match (self, produced) {
