@@ -1,117 +1,120 @@
-# Sailor — istruzioni per chi lavora in questo albero
+# Sailor — instructions for whoever works in this tree
 
-## Cosa stiamo costruendo
+## What we are building
 
-Sailor lancia le righe di comando (Claude Code, Codex, Gemini), applica **un solo
-corpo di regole a tutte**, e fa girare ogni lavorazione come **flusso
-registrato** invece che come script, gancio o binario a sé.
+Sailor launches the command lines (Claude Code, Codex, Gemini), applies **one
+single body of rules to all of them**, and runs every piece of work as a
+**recorded flow** instead of a script, a hook or a binary of its own.
 
-Il metro di ogni lavoro: *questa cosa toglie a Theo un'approvazione, o gli porta
-un dubbio migliore?* Se non fa né l'una né l'altra, non è lavoro.
+The measure of every job: *does this thing take an approval away from Theo, or
+bring him a better doubt?* If it does neither, it is not work.
 
-**Prima di correggere qualunque cosa, leggi `docs/decisions.md`** — i vincoli
-permanenti e le scelte che non si riaprono — **e la nota `da-fare`**, che dice a
-che punto siamo e cosa sta per sparire: `sailor notes show da-fare`. Riparare un
-pezzo che deve sparire è lavoro contro il piano, e nessun controllo locale lo
-mostra: resta tutto verde.
+**Before fixing anything at all, read `docs/decisions.md`** — the permanent
+constraints and the choices that do not reopen — **and the `da-fare` note**,
+which says where we stand and what is about to disappear: `sailor notes show
+da-fare`. Repairing a piece that has to disappear is work against the plan, and
+no local check shows it: everything stays green.
 
-Le decisioni stanno nel repo di proposito, gli appunti di lavoro nell'archivio
-di Sailor. Una volta questa riga mandava a un documento che una pulizia aveva
-già cancellato: per due giorni la prima istruzione di ogni sessione è stata un
-indirizzo vuoto, e nessuno se n'è accorto perché un puntatore rotto in un
-documento non è rosso.
+The decisions are in the repo on purpose, the working notes in Sailor's store.
+This line once pointed at a document a cleanup had already deleted: for two days
+the first instruction of every session was an empty address, and nobody noticed,
+because a broken pointer in a document is not red.
 
-## L'ordine dei lavori, deciso da Theo
+## The order of the work, decided by Theo
 
-**Codice in Sailor → rimozione debito → costruzione del flusso.** Mai il
-contrario. Non si costruisce dentro ciò che deve sparire.
+**Code in Sailor → debt removal → building the flow.** Never the other way
+round. You do not build inside what has to disappear.
 
-## Le decisioni già prese, che non si riaprono senza una misura
+## The decisions already taken, which do not reopen without a measurement
 
-- **Un flusso è un file di dati; i nodi sono azioni registrate in Rust.** Nessun
-  interprete dentro Sailor. Il formato è `{ id, description, graph, inputs }`:
-  `graph` è ciò che `flow::Graph` già carica e valida, `inputs` diventa i
-  `root_inputs` della richiesta. Il primo esempio: `flows/prima-corsa.flow.json`.
-- **Il nome dell'azione sta nel grafo, il codice no** (`graph.rs`, sopra il campo
-  `action`). Un passo nuovo è un'azione Rust registrata in `crates/actions`, mai
-  uno script.
-- **Il freno sta al confine del processo**, non nei ganci nativi di una singola
-  riga di comando. Le righe di comando restano vergini: Sailor legge la loro
-  configurazione e la migra.
+- **A flow is a data file; the nodes are actions registered in Rust.** No
+  interpreter inside Sailor. The format is `{ id, description, graph, inputs }`:
+  `graph` is what `flow::Graph` already loads and validates, `inputs` becomes
+  the `root_inputs` of the request. The first example:
+  `flows/passa-il-testimone.flow.json`.
+- **The name of the action is in the graph, the code is not** (`graph.rs`, above
+  the `action` field). A new step is a Rust action registered in
+  `crates/actions`, never a script.
+- **The brake sits at the boundary of the process**, not in the native hooks of
+  a single command line. The command lines stay untouched: Sailor reads their
+  configuration and migrates it.
 
-## Come si verifica — l'unico oracolo è `cargo`
+## How it is verified — the only oracle is `cargo`
 
-**Mai dichiarare fatto senza evidenza misurata nello stesso turno.** E una misura
-vale solo se poteva venire diversa: **rompi apposta ciò che provi** e guarda
-l'esito cambiare. Se togliendo la riga che dichiari il controllo resta verde, il
-controllo non controlla niente.
+**Never declare a thing done without evidence measured in the same turn.** And a
+measurement is worth something only if it could have come out otherwise: **break
+on purpose the thing you are proving** and watch the outcome change. If the
+check stays green when you remove the line you are claiming, the check checks
+nothing.
 
-Trappole già pagate su questa macchina:
+Traps already paid for on this machine:
 
-- **Mai incanalare `cargo test` in `grep` o `tail`**: il codice d'uscita diventa
-  quello dell'ultimo comando, e una batteria rossa passa per verde. Scrivi
-  l'uscita su un file e leggila.
-- **Una seconda cartella di compilazione sta DENTRO `target/`, mai accanto.**
-  Il `.gitignore` chiede `target-<qualcosa>` e ha risolto il problema di git; il
-  problema del disco l'ha creato. `cargo clean` svuota **solo** `target/`, quindi
-  ogni `target-int`, `target-i18n`, e peggio ogni `sailor-target-*` fratello del
-  repo, resta lì per sempre e nessuno lo vede crescere. Il 04/09/2026 erano
-  **27 GB su quattro cartelle**, di cui 3,9 GB in un `target-i18n` che nessun
-  file dell'albero nominava. Chiamala `target/int`, `target/verifica`, come fa
-  già `release_cmd.rs:171` con `target/from-head`: una riga di `.gitignore` la
-  copre e `cargo clean` la riprende.
-- **Sempre `--no-fail-fast`, e non è un dettaglio di comodità.** Senza,
-  `cargo test` si ferma al **primo binario rosso** e tutto ciò che viene dopo
-  **non viene eseguito** — non fallisce: non parte. Misurato il 01/09/2026
-  dentro il perimetro, dove il sandbox nega `openpty` e `crates/terminal`
-  cade sempre. I binari che non partono sono sempre gli stessi, la coda
-  dell'alfabeto — `toolbox`, `trigger`, `ui` e sette prove d'integrazione. Chi
-  batte `cargo test` lì dentro sta guardando tre quarti dell'albero credendo di
-  guardarlo tutto.
+- **Never pipe `cargo test` into `grep` or `tail`**: the exit code becomes that
+  of the last command, and a red battery passes for green. Write the output to a
+  file and read it.
+- **A second build directory lives INSIDE `target/`, never beside it.** The
+  `.gitignore` asks for `target-<something>` and it solved git's problem; the
+  disk's problem it created. `cargo clean` empties **only** `target/`, so every
+  `target-int`, `target-i18n`, and worse every `sailor-target-*` sibling of the
+  repo, stays there for ever and nobody sees it grow. On 2026-09-04 it was
+  **27 GB across four directories**, 3.9 GB of them in a `target-i18n` that no
+  file of the tree named. Call it `target/int`, `target/verifica`, as
+  `release_cmd.rs:171` already does with `target/from-head`: one line of
+  `.gitignore` covers it and `cargo clean` takes it back.
+- **Always `--no-fail-fast`, and it is not a detail of convenience.** Without
+  it, `cargo test` stops at the **first red binary** and everything that comes
+  after **is not run** — it does not fail: it does not start. Measured on
+  2026-09-01 inside the perimeter, where the sandbox denies `openpty` and
+  `crates/terminal` always falls. The binaries that do not start are always the
+  same ones, the tail of the alphabet — `toolbox`, `trigger`, `ui` and seven
+  integration tests. Whoever types `cargo test` in there is looking at three
+  quarters of the tree believing they are looking at all of it.
 
-  **Le cifre di questo paragrafo erano «36 su 47» ed erano superate.** Rimisurato
-  il 04/09/2026 con `--no-fail-fast` e l'uscita su file: **108 binari più 19
-  doc-target, 1.252 prove, 1.199 verdi, 53 rosse — e tutte e 53 sono il sandbox**
-  (43 per `mkdir /tmp/sr-*` negato, 11 per `openpty` negato). **Zero rosse vere.**
-  In CI il 02/09: 109 binari, 1.134 prove, 2 rosse vere. Tutti e 19 i crate hanno
-  prove. Un numero scritto qui e non rimisurato è una guardia falsa come le altre:
-  chi legge «36 su 47» oggi conclude che manca un quarto dell'albero, e non manca.
+  **The figures of this paragraph were «36 out of 47» and they were out of
+  date.** Re-measured on 2026-09-04 with `--no-fail-fast` and the output on a
+  file: **108 binaries plus 19 doc-targets, 1,252 tests, 1,199 green, 53 red —
+  and all 53 of them are the sandbox** (43 for `mkdir /tmp/sr-*` denied, 11 for
+  `openpty` denied). **Zero truly red.** In CI on 2026-09-02: 109 binaries,
+  1,134 tests, 2 truly red. All 19 crates have tests. A number written here and
+  not re-measured is a false guard like the others: whoever reads «36 out of 47»
+  today concludes that a quarter of the tree is missing, and it is not.
 
-  Quel giorno è costato un lavoro dichiarato finito con una regressione dentro:
-  la prova che cadeva stava in `toolbox`, e il `grep FAILED` di chi la cercava
-  non poteva trovarla perché quella prova non era **mai partita**. È la stessa
-  famiglia della riga qui sopra — un esito verde che non ha guardato niente —
-  e si riconosce solo contando i binari, non le prove.
-- **I semi dei cricchetti si misurano su `HEAD` pulito, non sull'albero di
-  lavoro.** In questo checkout scrivono più sessioni insieme, e i file non
-  committati di un'altra falsano ogni conteggio: il 04/09/2026 ho scritto semi
-  misurati con la prova non committata di un'altra sessione in albero — i suoi
-  commenti italiani alzavano un contatore, le sue righe di codice abbassavano il
-  rapporto di un crate — e i semi descrivevano un albero che a `HEAD` non
-  esiste. `sailor release`, che esegue la suite su un clone di `HEAD`, si è
-  fermato senza sostituire niente, ed è così che si è visto. La misura giusta è
-  un comando, e costa un minuto:
+  That day cost a piece of work declared finished with a regression inside it:
+  the test that was falling was in `toolbox`, and the `grep FAILED` of whoever
+  went looking for it could not find it because that test had **never started**.
+  It is the same family as the line above — a green outcome that looked at
+  nothing — and it is recognised only by counting the binaries, not the tests.
+- **The seeds of the ratchets are measured on a clean `HEAD`, not on the working
+  tree.** More than one session writes in this checkout, and another's
+  uncommitted files falsify every count: on 2026-09-04 I wrote seeds measured
+  with another session's uncommitted test in the tree — its Italian comments
+  raised one counter, its lines of code lowered a crate's ratio — and the seeds
+  described a tree that does not exist at `HEAD`. `sailor release`, which runs
+  the suite on a clone of `HEAD`, stopped without replacing anything, and that
+  is how it was seen. The right measurement is one command, and it costs a
+  minute:
 
   ```sh
-  sailor ratchet                 # tutti i giudici che leggono le sorgenti
+  sailor ratchet                 # every judge that reads the sources
   sailor ratchet --only comments_do_not_crowd_out_the_code
   ```
 
-  Rifà `git archive HEAD` in `target/ratchet-tree`, vi sovrappone i file
-  modificati e quelli nuovi che entrano in una cartella che `HEAD` conosce (li
-  elenca: guarda se ce n'è uno non tuo), e stampa dei giudici rossi solo quello
-  che hanno detto. Il rito a mano — archivio, `cp` file per file, `cargo test
-  --manifest-path` con `CARGO_TARGET_DIR=$PWD/target/from-head` — resta la
-  spiegazione di cosa fa, non più il gesto. Vale anche prima di dire «l'albero è
-  verde»: `git status` mostra chi altro sta scrivendo, e i suoi rossi non sono i
-  tuoi.
-- **`cargo fmt -- <file>` non si limita a quel file**: formatta tutto il
-  workspace. L'albero non è formattato in blocco e non va formattato in blocco.
-- **`cargo test --tests` non aggiorna il binario** che i ganci eseguono.
-- **La compilazione può essere negata** quando lo swap è alto: usa `-j 1`, e se
-  nega ancora **non dichiarare provato ciò che non hai compilato**.
+  It redoes `git archive HEAD` into `target/ratchet-tree`, lays over it the
+  modified files and the new ones that land in a directory `HEAD` knows about
+  (it lists them: look whether one of them is not yours), and prints of the red
+  judges only what they said. The rite by hand — archive, `cp` file by file,
+  `cargo test --manifest-path` with `CARGO_TARGET_DIR=$PWD/target/from-head` —
+  remains the explanation of what it does, no longer the gesture. It holds
+  before saying «the tree is green» too: `git status` shows who else is writing,
+  and their reds are not yours.
+- **`cargo fmt -- <file>` does not confine itself to that file**: it formats the
+  whole workspace. The tree is not formatted wholesale and is not to be
+  formatted wholesale.
+- **`cargo test --tests` does not update the binary** the hooks run.
+- **Compilation can be denied** when swap is high: use `-j 1`, and if it denies
+  again **do not declare proved what you have not compiled**.
 
-## Come si scrive
+## How it is written
 
 - **Everything is in English.** Identifiers, comments, documentation, commit
   messages, and every message a user of the tool can see. There is no inside
@@ -194,155 +197,160 @@ Trappole già pagate su questa macchina:
   lowercase, imperative, no trailing period. The body explains why, not what —
   it is where the chronicle the code must not carry actually belongs. No
   tooling attribution trailers.
-- **Scritture solo con gli strumenti di modifica file**, mai con `sed`, heredoc o
-  uno script interprete: le scritture da interprete saltano i controlli di casa.
-- **Percorsi assoluti**, mai `cd X && comando`.
-- Un commento che afferma qualcosa di falso si corregge subito. Il codice è la
-  fonte; commenti e documenti sono indizi datati.
+- **Writes only with the file-editing tools**, never with `sed`, a heredoc or an
+  interpreter script: writes from an interpreter skip the checks of this house.
+- **Absolute paths**, never `cd X && command`.
+- A comment that states something false is corrected at once. The code is the
+  source; comments and documents are dated clues.
 
-## Le copie di lavoro: chi ne apre una, la chiude
+## The working copies: whoever opens one, closes it
 
-Il 02/09 se ne sono trovate **53 abbandonate, 39 GB**, nate in 28 ore a raffiche
-di sei-otto all'ora. Tutte pulite, nessun processo dentro, e **50 su 53 già
-dentro il tronco byte per byte**: non era lavoro perso, era ingombro.
+On 2026-09-02 **53 abandoned ones were found, 39 GB**, born in 28 hours in
+bursts of six to eight an hour. All clean, no process inside, and **50 out of 53
+already inside the trunk byte for byte**: it was not lost work, it was clutter.
 
-Nessuno le toglieva perché si credeva che rimuoverle cancellasse il ramo. **Non
-è vero, ed è misurato**: `git worktree remove <cartella>` toglie la cartella e
-lascia il riferimento dov'è. Il comando di Orca è un'altra cosa. Quindi chiudere
-una copia non costa niente e non si perde niente.
+Nobody removed them because it was believed that removing them deleted the
+branch. **That is not true, and it is measured**: `git worktree remove
+<directory>` removes the directory and leaves the reference where it is. Orca's
+command is another thing. So closing a copy costs nothing and nothing is lost.
 
-- **Quando hai finito, togli la tua copia.** `git worktree remove` sulla
-  cartella, e il ramo resta consultabile.
-- **Non togliere quella di un altro** senza misurare prima: `git status
-  --porcelain` dentro, e nessun processo con la `cwd` lì. Se una delle due parla,
-  chiedi.
-- **Cancellare il ramo è un'altra decisione**, e non è tua: si prova prima che il
-  contenuto sia già nel tronco, e si chiede.
+- **When you have finished, remove your copy.** `git worktree remove` on the
+  directory, and the branch stays consultable.
+- **Do not remove somebody else's** without measuring first: `git status
+  --porcelain` inside, and no process with its `cwd` there. If either of the two
+  speaks, ask.
+- **Deleting the branch is another decision**, and it is not yours: it is proved
+  first that the content is already in the trunk, and it is asked.
 
-**Il primo gesto in una copia è guardare da dove è stata tagliata.** Non è
-prudenza, è il guasto 101: la sera del 05/09/2026 cinque copie su sei sono nate
-**1120 commit indietro**, sulla vecchia linea di `main`, dove `sailor ratchet`
-non esiste e i file dei semi nemmeno. Un agente ci ha lavorato un turno intero e
-ha consegnato un commit non fondibile, dichiarando semi che non erano di questo
-albero. Il confronto costa un secondo:
+**The first gesture in a copy is to look at where it was cut from.** It is not
+prudence, it is fault 101: on the evening of 2026-09-05 five copies out of six
+were born **1120 commits behind**, on the old line of `main`, where `sailor
+ratchet` does not exist and neither do the files of the seeds. An agent worked
+in one for a whole turn and delivered a commit that could not be merged,
+declaring seeds that were not this tree's. The comparison costs a second:
 
 ```sh
 git log --oneline -1 && git log --oneline -1 main
 ```
 
-Se non coincidono, `git reset --hard main` prima di leggere qualunque file.
-Una copia tagliata da un riferimento che nessuno ha scelto non è isolamento: è
-un altro progetto con lo stesso nome.
+If they do not match, `git reset --hard main` before reading any file at all.
+A copy cut from a reference nobody chose is not isolation: it is another project
+with the same name.
 
-## L'integrazione ha un ramo solo
+## Integration has one branch only
 
-Undici di quelle 53 esistevano **solo per fondere** — `fusione-quattro`,
-`fusione-sei`, `fusione-46`, `fusione-sera`, e così via — e il tronco porta **47
-fusioni per una quarantina di rami di lavoro**. Ogni sessione che finiva apriva
-la propria copia per integrare e rifaceva da capo gli stessi conflitti. È lì che
-se ne sono andati i token: non a scrivere due volte lo stesso codice, ma a
-fonderlo dodici volte in dodici posti.
+Eleven of those 53 existed **only to merge** — `fusione-quattro`, `fusione-sei`,
+`fusione-46`, `fusione-sera`, and so on — and the trunk carries **47 merges for
+some forty work branches**. Every session that finished opened its own copy to
+integrate and redid the same conflicts from scratch. That is where the tokens
+went: not writing the same code twice, but merging it twelve times in twelve
+places.
 
-Non aprire un ramo per fondere. Fondi il tuo lavoro dove si integra già, e se non
-sai dove sia, **chiedi ai vicini prima di aprirne uno**.
+Do not open a branch to merge. Merge your work where it is already integrated,
+and if you do not know where that is, **ask the neighbours before opening one**.
 
-## Come si prova che un ramo è superato
+## How it is proved that a branch is superseded
 
-L'antenato non basta e a volte mente: dopo una riscrittura della storia o uno
-squash, `merge-base --is-ancestor` dice «no» su lavoro che c'è già tutto. **Si
-confronta il contenuto**: fondi il ramo in una copia usa-e-getta del tronco e
-guarda se l'albero cambia.
+The ancestor is not enough and sometimes lies: after a rewrite of the history or
+a squash, `merge-base --is-ancestor` says «no» about work that is already all
+there. **The content is compared**: merge the branch into a throwaway copy of
+the trunk and look at whether the tree changes.
 
-E prima di credere al risultato, **il controllo assurdo**: fai passare dalla
-stessa misura un ramo che *deve* risultare portante — uno con dentro un file che
-il tronco non ha. Se esce «superato», la misura è cieca e ogni numero di quella
-passata si butta.
+And before believing the result, **the absurd check**: put through the same
+measurement a branch that *must* come out as carrying — one with a file in it
+that the trunk does not have. If it comes out «superseded», the measurement is
+blind and every number of that pass is thrown away.
 
-## Il ciclo di un ramo, e come si chiama
+## The life of a branch, and what it is called
 
-Misurato il 05/09/2026: **64 rami locali, 56 con contenuto identico al tronco**
-e cinque copie di lavoro aperte da giorni, tutte pulite e tutte già dentro. Il
-tronco stava **196 commit avanti al remoto** e nessuno aveva spinto. Nomi come
-`work/fusione-sera-guasti` e `innesto-toml-codex-ricucito`: raccontano una sera,
-non un lavoro.
+Measured on 2026-09-05: **64 local branches, 56 with content identical to the
+trunk** and five working copies open for days, all clean and all already inside.
+The trunk was **196 commits ahead of the remote** and nobody had pushed. Names
+like `work/fusione-sera-guasti` and `innesto-toml-codex-ricucito`: they tell of
+an evening, not of a job.
 
-- **Il tronco è `main`**, ed è l'unico ramo: si spinge su `origin/main` **a
-  ogni rilascio**, non «quando ci si ricorda», perché un rilascio che mette in
-  servizio un binario che il remoto non ha mai visto è un rilascio che esiste
-  su una macchina sola. La storia precedente alla riscrittura del 06/09/2026 è
-  il tag `archive/before-the-rewrite`: un tag non si scambia per un posto dove
-  il lavoro continua.
-- **Un ramo si chiama `work/<cosa-fa>`, in inglese, come i commit**:
-  `work/terminal-claims`, non `work/annunci-terminali`; `work/toml-graft`, non
-  `work/innesto-toml`. Il nome dice il lavoro, non il giorno né il gesto
-  (`fusione`, `ricucito`, `sera` non sono lavori).
-- **Nasce da `main`, torna in `main`, e muore.** Fuso il ramo, si prova
-  per contenuto che è superato (sotto) e si cancella nello stesso gesto; la
-  copia di lavoro si toglie con `git worktree remove`. Un ramo che sopravvive
-  alla propria fusione è ingombro che qualcuno dovrà rimisurare.
-- **Chi trova un ramo di un altro non lo cancella**: lo prova per contenuto,
-  e se è superato lo dice a chi lo ha aperto — o a Theo — con la misura
-  accanto.
-- **Ci sono due nomi che non scegli tu, e vanno chiusi lo stesso.** Un agente
-  in copia di lavoro nasce su un ramo che il meccanismo chiama da sé; un passo
-  che chiede un albero tutto suo apre una copia sotto il nome della corsa e del
-  passo. Nessuno dei due si cancella da solo: chi fonde chiude il primo, chi
-  legge il lavoro chiude il secondo. Misurato il 05/09/2026: dodici copie
-  orfane e 905 MB dopo una sera di deleghe, ed è il guasto 89.
-- **Il tronco si spinge a ogni rilascio, e se il remoto lo rifiuta si guarda
-  perché.** Una macchina con più di un accesso a quel remoto deve dire quale
-  possiede il repository: `sailor.pushAs` e `sailor.pushSecretFrom` nella
-  configurazione di questo albero. Il 05/09/2026 il remoto è rimasto indietro
-  di 179 commit per un giorno perché l'accesso attivo non era il proprietario,
-  e ogni rilascio lo diceva onestamente mentre niente si muoveva.
+- **The trunk is `main`**, and it is the only branch: it is pushed to
+  `origin/main` **at every release**, not «when we remember», because a release
+  that puts into service a binary the remote has never seen is a release that
+  exists on one machine only. The history before the rewrite of 2026-09-06 is
+  the tag `archive/before-the-rewrite`: a tag is not to be mistaken for a place
+  where the work continues.
+- **A branch is called `work/<what-it-does>`, in English, like the commits**:
+  `work/terminal-claims`, not `work/annunci-terminali`; `work/toml-graft`, not
+  `work/innesto-toml`. The name says the job, not the day nor the gesture
+  (`fusione`, `ricucito`, `sera` are not jobs).
+- **It is born from `main`, it returns into `main`, and it dies.** Once the
+  branch is merged, it is proved by content that it is superseded (below) and it
+  is deleted in the same gesture; the working copy is removed with `git worktree
+  remove`. A branch that survives its own merge is clutter somebody will have to
+  re-measure.
+- **Whoever finds somebody else's branch does not delete it**: they prove it by
+  content, and if it is superseded they say so to whoever opened it — or to
+  Theo — with the measurement alongside.
+- **There are two names you do not choose, and they have to be closed all the
+  same.** An agent in a working copy is born on a branch the mechanism names by
+  itself; a step that asks for a tree of its own opens a copy under the name of
+  the run and of the step. Neither of the two deletes itself: whoever merges
+  closes the first, whoever reads the work closes the second. Measured on
+  2026-09-05: twelve orphan copies and 905 MB after an evening of delegations,
+  and it is fault 89.
+- **The trunk is pushed at every release, and if the remote refuses it, you look
+  at why.** A machine with more than one access to that remote has to say which
+  one owns the repository: `sailor.pushAs` and `sailor.pushSecretFrom` in the
+  configuration of this tree. On 2026-09-05 the remote stayed 179 commits behind
+  for a day because the active access was not the owner, and every release said
+  so honestly while nothing moved.
 
-**La forma del nome ha un giudice, e il giudice è puro.** Sono tre forme e
-nient'altro: `main`, il tronco; `work/<cosa-fa>` con minuscole, cifre
-e trattini nel topic; `worktree-agent-<id>`, che è scritto dal meccanismo e non
-lo sceglie nessuno. La prova è `cargo test -p sailor --test
-a_branch_is_named_for_the_work_it_carries`, e chi vuole il verdetto su questo
-albero batte `sailor worktree names`, che esce diverso da zero e stampa i nomi
-fuori convenzione.
+**The shape of the name has a judge, and the judge is pure.** There are three
+shapes and nothing else: `main`, the trunk; `work/<what-it-does>` with
+lowercase, digits and hyphens in the topic; `worktree-agent-<id>`, which is
+written by the mechanism and nobody chooses. The proof is `cargo test -p sailor
+--test a_branch_is_named_for_the_work_it_carries`, and whoever wants the verdict
+on this tree types `sailor worktree names`, which exits with a code other than
+zero and prints the names outside the convention.
 
-Il giudice legge una tabella di nomi scritta dentro la prova, **mai i rami di
-questa macchina**: un controllo che diventa rosso perché un altro ha lasciato in
-piedi un ramo suo dà un verdetto sulla macchina, non sul lavoro, e chi lo riceve
-non può farci niente. Il comando, che i rami veri li legge, è l'altra metà. E il
-giudice guarda la forma soltanto: che `work/fusione-sera` racconti una sera
-invece di un lavoro lo dice la riga qui sopra, e nessun confronto può dirlo.
+The judge reads a table of names written inside the test, **never the branches
+of this machine**: a check that goes red because somebody else left a branch of
+theirs standing gives a verdict on the machine, not on the work, and whoever
+receives it can do nothing about it. The command, which does read the real
+branches, is the other half. And the judge looks at the shape only: that
+`work/fusione-sera` tells of an evening instead of a job is said by the line
+above, and no comparison can say it.
 
-## Come si esplora questo albero prima di cambiarlo
+## How this tree is explored before it is changed
 
-**Prima di cercare a mano, si chiede all'indice.** SocratiCode ha questo
-repository indicizzato e risponde per simbolo, per grafo delle dipendenze e per
-ricerca semantica: `codebase_symbol` per dove vive una cosa, `codebase_search`
-per «chi fa X», `codebase_impact` per chi tocchi cambiandola. Un `grep` su un
-albero di quarantamila righe trova le occorrenze, non le relazioni, e chi
-sviluppa senza chiedere all'indice rifà a mano una misura che c'è già.
+**Before searching by hand, the index is asked.** SocratiCode has this
+repository indexed and answers by symbol, by dependency graph and by semantic
+search: `codebase_symbol` for where a thing lives, `codebase_search` for «who
+does X», `codebase_impact` for who you touch by changing it. A `grep` on a tree
+of forty thousand lines finds the occurrences, not the relations, and whoever
+develops without asking the index redoes by hand a measurement that is already
+there.
 
-**Il limite è dichiarato**: l'indice va dietro ai file nuovi di poche ore, e su
-Rust il grafo ha dato falsi orfani (guasto 38). Vale come prima domanda, non
-come verdetto: ciò che l'indice dice si conferma leggendo il file che nomina.
+**The limit is declared**: the index lags behind files a few hours old, and on
+Rust the graph has given false orphans (fault 38). It holds as a first question,
+not as a verdict: what the index says is confirmed by reading the file it names.
 
-**E c'è già una misura di quanto costa non chiedere**: `sailor search <parole>`
-cerca fra flussi, corse, deposito, eventi e guasti di questa macchina, e
-risponde a domande che nessuna lettura del codice può — quante volte un passo è
-fallito, quale guasto è già stato scritto, cosa ha imparato la corsa di ieri.
+**And there is already a measurement of what not asking costs**: `sailor search
+<words>` searches among the flows, the runs, the store, the events and the
+faults of this machine, and answers questions no reading of the code can — how
+many times a step has failed, which fault has already been written, what
+yesterday's run learned.
 
-## Chi crea non giudica
+## Whoever creates does not judge
 
-Il verdetto su un lavoro va a un contesto che non l'ha prodotto. Se hai scritto
-tu la correzione, non sei tu a dichiararla buona: riferisci cosa hai scritto,
-come l'hai provato, e cosa resta incerto.
+The verdict on a piece of work goes to a context that did not produce it. If you
+wrote the correction yourself, it is not you who declares it good: you report
+what you wrote, how you proved it, and what remains uncertain.
 
-## Come si riferisce
+## How it is reported
 
-Frasi corte, un'idea per frase, verbo attivo. **Il risultato prima**, il
-dettaglio dopo solo se cambia una decisione. Prima la cosa, poi il meccanismo: un
-nome di file è un indirizzo, non una spiegazione.
+Short sentences, one idea per sentence, active verb. **The result first**, the
+detail after only if it changes a decision. The thing first, then the mechanism:
+a file name is an address, not an explanation.
 
-Chiudi con un verdetto esplicito: cosa è chiuso **con l'evidenza misurata**, e
-cosa resta aperto.
+Close with an explicit verdict: what is closed **with the measured evidence**,
+and what remains open.
 
 <!-- sailor:memories -->
 What Sailor remembers in this tree is rendered by `sailor memory page`: run it, read the file it names, and do that before you reach for a tool of your own.
