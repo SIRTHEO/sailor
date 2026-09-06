@@ -3189,6 +3189,7 @@ fn attempt_relation_name(relation: AttemptRelation) -> &'static str {
     match relation {
         AttemptRelation::SameInput => "same_input",
         AttemptRelation::SameInputGatesChanged => "same_input_gates_changed",
+        AttemptRelation::SameInputPlusRefusal => "same_input_plus_refusal",
         AttemptRelation::DifferentInput => "different_input",
     }
 }
@@ -3197,6 +3198,7 @@ fn parse_attempt_relation(value: &str) -> rusqlite::Result<AttemptRelation> {
     match value {
         "same_input" => Ok(AttemptRelation::SameInput),
         "same_input_gates_changed" => Ok(AttemptRelation::SameInputGatesChanged),
+        "same_input_plus_refusal" => Ok(AttemptRelation::SameInputPlusRefusal),
         "different_input" => Ok(AttemptRelation::DifferentInput),
         other => Err(rusqlite::Error::FromSqlConversionFailure(
             8,
