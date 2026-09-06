@@ -602,7 +602,19 @@ impl ExternalEngineAction {
                 // `exhausted` è una cosa che passa da sé alle sette del mattino,
                 // `exit_error` no, e una somma che le mescola non dice niente a
                 // nessuno.
-                let class = candidate.declared_class(&stdout, &stderr);
+                //
+                // **AND THE SHAPE IS READ BEFORE THE WORDS HERE TOO.** An exit
+                // code is a veto over an answer in shape, never a reason to
+                // read a refusal inside it: a chain that did would hand the
+                // work on and throw an answer away. Fault 95, in the branch
+                // its remedy never reached.
+                let answered = reading.answer.clone().unwrap_or_else(|| stdout.clone());
+                let in_shape = shape.is_some_and(|shape| shaped_answer(shape, &answered).is_ok());
+                let class = if in_shape {
+                    None
+                } else {
+                    candidate.declared_class(&stdout, &stderr)
+                };
                 let exhausted = class.is_some();
                 note(reading.clone(), Some(class.unwrap_or("exit_error")), &stdout);
                 self.set_aside_if_spent(candidate, class, ended_at, &stdout, &stderr);
