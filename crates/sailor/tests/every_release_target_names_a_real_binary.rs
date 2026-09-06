@@ -95,8 +95,10 @@ fn binaries_of(manifest_rel: &str) -> Vec<String> {
 
 #[test]
 fn every_release_target_names_a_binary_the_workspace_really_builds() {
+    let mut named_by_cargo = 0;
     for candidate in release::TARGETS {
         let binaries = binaries_of(candidate.manifest_rel);
+        named_by_cargo += binaries.len();
         assert!(
             binaries.iter().any(|name| name == candidate.bin),
             "target '{}' wants to build the binary '{}', which that manifest does not produce. \
@@ -125,6 +127,12 @@ fn every_release_target_names_a_binary_the_workspace_really_builds() {
             candidate.name, candidate.live_rel, where_cargo_writes
         );
     }
+    workspace::measured_against(
+        named_by_cargo,
+        "binaries cargo names across the manifests",
+        release::TARGETS.len(),
+        "release targets",
+    );
 }
 
 /// The page a target declares exists, and carries its `package.json`. Without
