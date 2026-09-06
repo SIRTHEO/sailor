@@ -349,6 +349,7 @@ fn pointer_of(condition: &flow::Condition) -> Option<&str> {
     match condition {
         flow::Condition::PointerEquals { pointer, .. } => Some(pointer),
         flow::Condition::PointerExists { pointer } => Some(pointer),
+        flow::Condition::PointerHasValue { pointer } => Some(pointer),
         flow::Condition::Equals { .. } => None,
     }
 }
