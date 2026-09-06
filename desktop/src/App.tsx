@@ -31,7 +31,16 @@ import {
 import { stepUsageOfRun, type StepUsage } from "./stepusage";
 import { stepStatesOfCanvas } from "./runstate";
 import { BlankCanvas, type PlacesAsk } from "./BlankCanvas";
-import { MACHINE, MACHINE_GROUND, PLACES, SECTIONS, onItsOwnName, type MachineRow, type Section } from "./places";
+import {
+  MACHINE,
+  MACHINE_GROUND,
+  PLACES,
+  SECTIONS,
+  TERMINALS_GROUND,
+  onItsOwnName,
+  type MachineRow,
+  type Section,
+} from "./places";
 import { World, OF_THIS_TREE, type FlowGroup } from "./World";
 import { liveOf, newestPerFlow } from "./flowlive";
 import { amongThese, rememberWhere, whereYouWere } from "./whereyouwere";
@@ -267,7 +276,7 @@ export default function App() {
   // EVERY SECTION, NOT EVERY OFFERED PLACE: what the machine's screens live in
   // is named by no row of the place list, and reading that list here would send
   // whoever left the window on Profiles back to the board.
-  const [place, setPlace] = useState<Place>(() => amongThese(wasAt.current.place, SECTIONS, "board"));
+  const [place, setPlace] = useState<Place>(() => amongThese(wasAt.current.place, SECTIONS, "terminals"));
   const [memoryTab, setMemoryTab] = useState<MemoryTab>(() =>
     amongThese(wasAt.current.memoryTab, MEMORY_TABS.map((one) => one.id), "runs"),
   );
@@ -1271,7 +1280,8 @@ export default function App() {
     // A place with no tab inside it is its own name, and nothing else: falling
     // through to the terminals' tab said «Changes › Live», about no terminal.
     if (place !== "terminals") return [section];
-    return [section, TERMINALS_TABS.find((one) => one.id === terminalsTab)?.name ?? terminalsTab];
+    const view = TERMINALS_TABS.find((one) => one.id === terminalsTab)?.name ?? terminalsTab;
+    return [TERMINALS_GROUND, view];
   }, [place, focusName, memoryTab, sailorTab, terminalsTab, ledgerTable]);
 
   const barStatus = useMemo<BarStatus | null>(() => {
@@ -1304,9 +1314,17 @@ export default function App() {
     for (const one of MEMORY_TABS) {
       go.push({ group: "Go to", label: `${history} › ${one.name}`, hint: one.about, run: () => { setPlace("memory"); setMemoryTab(one.id); } });
     }
-    for (const one of TERMINALS_TABS) {
-      go.push({ group: "Go to", label: `Terminals › ${one.name}`, hint: one.about, run: () => { setPlace("terminals"); setTerminalsTab(one.id); } });
-    }
+    // Under the ground they are views of, the way the machine's rows are: the
+    // work is not a place to go to, it is what the window comes back to.
+    const ground: Entry[] = TERMINALS_TABS.map((one) => ({
+      group: TERMINALS_GROUND,
+      label: one.name,
+      hint: one.about,
+      run: () => {
+        setPlace("terminals");
+        setTerminalsTab(one.id);
+      },
+    }));
     // Filed under the machine and not under «go to»: they hold wherever you
     // stand, and «Sailor» as one noun over them named none of the nine.
     const machine: Entry[] = MACHINE.map((one) => ({
@@ -1331,7 +1349,7 @@ export default function App() {
       hint: flows.get(name)?.origin ?? undefined,
       run: () => void handleRun(name),
     }));
-    return [...go, ...machine, ...open, ...run];
+    return [...go, ...ground, ...machine, ...open, ...run];
   }, [flows, handleRun, goToMachine]);
 
   return (

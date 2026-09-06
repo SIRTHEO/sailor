@@ -264,10 +264,10 @@ export function World({
 
   return (
     <nav className="world" aria-label="the world">
-      {/* What holds wherever you are AND belongs to no ground below. Terminals
-          stays here though every live one is a leaf under its tree: with none
-          open there would be no way to open the first. The board hangs under
-          the tree it draws; the machine's places have their own ground. */}
+      {/* What holds wherever you are AND belongs to no ground below. The work
+          is not here: it is the ground the window comes back to, so with no
+          terminal open you are already looking at the place that opens the
+          first. The board hangs under the tree it draws. */}
       <div className="world__above">
         {inTheStrip().map((place) => (
           <button
