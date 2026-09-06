@@ -43,6 +43,8 @@
   "cli.flow.value_mounted_into_an_executed_field": "il flusso {flow} monta dentro un campo eseguito un valore che non ha scritto: {fields}. Il comando è testo di shell e viene eseguito: ciò che arriva da fuori — da un motore o da un altro comando — va in «env», dove resta un dato, e il comando lo legge fra virgolette.",
   "cli.flow.calls_without_cost": "{count} chiamate non hanno dichiarato nessun costo, e non entrano in nessuna delle cifre qui sopra",
   "cli.flow.cap_none_spends_freely": "\ntetto: nessuno — questo flusso può spendere quello che la corsa richiede",
+  "cli.flow.cap_is_guaranteed": "\nche tetto è: un tetto garantito — ogni chiamata di questo flusso è tenuta a un massimo che il suo motore impone e che questa macchina sa prezzare, quindi la corsa si autorizza chiamata per chiamata e non può sforare",
+  "cli.flow.cap_is_a_stop_threshold": "\nche tetto è: una soglia di arresto, non un tetto garantito — può trattenere la chiamata successiva, mai lo sforamento di una già partita. Perché: {because}",
   "cli.flow.cap_unchanged": "flusso {flow} ({origin}): il tetto era già {cap}, non è stato toccato niente",
   "cli.flow.cap_written": "flusso {flow} ({origin}): tetto {before} → {after}; scritto in {directory}",
   "cli.flow.edited": "flusso {flow} ({origin}): {said}; scritto in {directory}",
