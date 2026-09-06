@@ -226,9 +226,11 @@ pub fn verdict_on(facts: &[StepFact]) -> Verdict {
 
 // ── the control before the call ──────────────────────────────────────────
 
-/// The two numbers a suspended run says, and how far they can be trusted.
+/// The numbers a suspended run says, and how far they can be trusted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Suspension {
+    /// The cap the run declared, so the record says what the numbers are of.
+    pub cap_micros: i64,
     /// What is left of the cap: the cap less what is spent and less the
     /// reserves of the calls already under way.
     pub remaining_micros: i64,
@@ -242,9 +244,14 @@ pub struct Suspension {
 /// Whether the next call may be authorised.
 ///
 /// The condition is Astra's: `spend + the reserves in flight + the maximum of
-/// the next call ≤ cap`. Either of two terms can be missing — a reserve nobody
-/// can bound, a spend that reads `AtLeast` — and then what is left is the older
-/// rule, stop when the remainder is gone, which stops the call *after*.
+/// the next call ≤ cap`.
+///
+/// **A SPEND THAT COULD NOT BE COUNTED AUTHORISES NOTHING.** `AtLeast` is a
+/// floor: the remainder computed from it is an upper bound on what is left, and
+/// treating it as a measure turns missing information into permission to spend
+/// more. A reserve nobody can bound is the other, milder case — the spend is
+/// still a sum, so the older rule holds and the remainder still stops the call
+/// after.
 pub fn admits(
     cap_micros: i64,
     spent: &flow::Spend,
@@ -254,15 +261,15 @@ pub fn admits(
     let reading = spent.reading();
     let remaining = cap_micros - spent.micros - in_flight_micros;
     let fits = match (next, reading) {
-        (Reserve::Known(reserve), flow::CostReading::Exact(_) | flow::CostReading::Nothing) => {
-            *reserve <= remaining
-        }
+        (_, flow::CostReading::AtLeast { .. }) => false,
+        (Reserve::Known(reserve), _) => *reserve <= remaining,
         _ => remaining > 0,
     };
     if fits {
         return Ok(());
     }
     Err(Suspension {
+        cap_micros,
         remaining_micros: remaining,
         reserve: next.clone(),
         spent: reading,
@@ -275,8 +282,25 @@ pub fn admits(
 /// by a person deciding whether to raise a cap, and the two numbers must arrive
 /// together with what is not known about them.
 pub fn why_it_is_suspended(stopped: &Suspension) -> String {
+    if let flow::CostReading::AtLeast {
+        known_micros,
+        calls,
+        calls_without_cost,
+    } = stopped.spent
+    {
+        return catalogue::say(
+            "run.suspended.the_spend_cannot_be_counted",
+            &[
+                ("known", &in_units(known_micros)),
+                ("cap", &in_units(stopped.cap_micros)),
+                ("calls", &calls.to_string()),
+                ("without_cost", &calls_without_cost.to_string()),
+                ("ask", &what_the_next_call_asks(&stopped.reserve)),
+            ],
+        );
+    }
     let remaining = in_units(stopped.remaining_micros);
-    let mut said = match stopped.reserve.why() {
+    match stopped.reserve.why() {
         None => catalogue::say(
             "run.suspended.with_a_reserve",
             &[
@@ -291,22 +315,22 @@ pub fn why_it_is_suspended(stopped: &Suspension) -> String {
             "run.suspended.without_a_reserve",
             &[("remaining", &remaining), ("why", why)],
         ),
-    };
-    if let flow::CostReading::AtLeast {
-        calls,
-        calls_without_cost,
-        ..
-    } = stopped.spent
-    {
-        said.push_str(&catalogue::say(
-            "run.suspended.the_spend_is_a_floor",
-            &[
-                ("calls", &calls.to_string()),
-                ("without_cost", &calls_without_cost.to_string()),
-            ],
-        ));
     }
-    said
+}
+
+/// What the call that was not made was asking for, as a fragment of the
+/// sentence above: a figure, or the reason there is no figure.
+fn what_the_next_call_asks(reserve: &Reserve) -> String {
+    match reserve.why() {
+        None => catalogue::say(
+            "run.suspended.the_next_call_asks",
+            &[("reserve", &in_units(reserve.micros().unwrap_or_default()))],
+        ),
+        Some(why) => catalogue::say(
+            "run.suspended.the_next_call_cannot_be_bounded",
+            &[("why", why)],
+        ),
+    }
 }
 
 /// A figure of micro-units as a person reads it. The same scale the run record
@@ -482,21 +506,45 @@ mod tests {
         assert!(refused.reserve.why().is_some());
     }
 
-    /// A spend that reads `AtLeast` is a floor: the guaranteed arithmetic
-    /// cannot be done over it, however well the next call is bounded.
+    /// A spend that reads `AtLeast` is a floor, and a floor is not a remainder:
+    /// the next paid call is refused however well it is bounded and however
+    /// much of the cap looks unspent. *Mutant run*: put `_ => remaining > 0`
+    /// back as the last arm of `admits` and this goes red on the first line.
     #[test]
-    fn a_partial_spend_takes_the_guarantee_away_from_a_bounded_call() {
-        let bounded = Reserve::Known(601);
-        assert!(
-            admits(1_000, &spent(400, 1), 0, &bounded).is_ok(),
-            "with the spend a floor, only an exhausted remainder stops the call"
+    fn a_spend_that_could_not_be_counted_does_not_authorise_the_call_after() {
+        let bounded = Reserve::Known(10_000);
+        let refused = admits(6_000_000, &spent(400_000, 1), 0, &bounded)
+            .expect_err("what is left cannot be known, so nothing is authorised");
+        assert_eq!(refused.cap_micros, 6_000_000);
+        assert_eq!(refused.reserve, bounded);
+        assert_eq!(
+            refused.spent,
+            flow::CostReading::AtLeast {
+                known_micros: 400_000,
+                calls: 2,
+                calls_without_cost: 1,
+            }
         );
-        let refused =
-            admits(1_000, &spent(1_000, 1), 0, &bounded).expect_err("the remainder is gone");
-        assert!(
-            matches!(refused.spent, flow::CostReading::AtLeast { .. }),
-            "{refused:?}"
-        );
+        // The numbers a person needs travel in the sentence, not beside it.
+        let said = why_it_is_suspended(&refused);
+        for figure in ["0.40", "6.00", "1 of the 2", "0.01"] {
+            assert!(said.contains(figure), "«{figure}» is missing from: {said}");
+        }
+    }
+
+    /// The same refusal when the next call cannot be bounded either: it says
+    /// so, instead of showing a reserve nobody measured.
+    #[test]
+    fn an_uncountable_spend_says_the_next_call_cannot_be_bounded() {
+        let refused = admits(
+            1_000,
+            &spent(10, 2),
+            0,
+            &Reserve::Unknown("no tariff for «output»".to_owned()),
+        )
+        .expect_err("neither term of the condition is known");
+        let said = why_it_is_suspended(&refused);
+        assert!(said.contains("«output»"), "{said}");
     }
 
     #[test]
