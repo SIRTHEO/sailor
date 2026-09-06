@@ -1,34 +1,24 @@
 [package]
 name = "terminal"
 version = "0.1.0"
+description = "The pseudo-terminal engine: open one in a workspace, write, read, resize, close."
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
 
-# Il motore dei terminali: apre uno pseudo-terminale dentro uno spazio di lavoro,
-# gli scrive, ne legge l'uscita mentre esce, lo ridimensiona e lo chiude.
-#
-# NESSUNA DIPENDENZA VERSO LA FINESTRA, ED È IL PUNTO. Qui dentro non compare
-# Tauri, non compare `desktop/`, e non compare nessun elemento di interfaccia:
-# così il motore si prova da riga di comando con `cargo test -p terminal`, e la
-# finestra ci si attacca sopra invece di contenerlo.
-#
-# `libc` per lo pseudo-terminale, ed è l'unica dipendenza esterna aggiunta.
-# La scelta è argomentata: `posix_openpt`/`grantpt`/`unlockpt`/`ptsname` sono
-# POSIX e stanno tutte lì, senza nessun crate transitivo e senza codice di
-# nessun altro fra noi e il sistema operativo. `libc` era GIÀ nel `Cargo.lock`
-# di questo workspace (0.2.189, tirato da `rusqlite` per il deposito): aggiungerla
-# qui non scarica niente, non compila niente di nuovo e non allarga la superficie
-# da aggiornare — che è esattamente ciò che il commento sulle dipendenze del
-# `Cargo.toml` del workspace chiede di non fare. Le alternative pesano di più e
-# darebbero meno: `portable-pty` si porta dietro una decina di crate transitivi
-# per darci un'astrazione su Windows che qui non serve.
-#
-# `toolbox` per due cose e nient'altro. `Machine` — espandere `~`, `$VAR` e
-# trovare la casa di Sailor è già risolto lì, e una seconda copia di quella
-# regola è un guasto già pagato il 30/08/2026. E `probe::look_up`, che è la
-# guardia dello smistamento: dice se una parola è un eseguibile su QUESTA
-# macchina, e sa dire «non so» invece di tirare a indovinare.
+# No dependency on the window, and that is the point: no Tauri, no `desktop/`,
+# no element of an interface. The engine is tested with `cargo test -p
+# terminal`, and the window attaches on top instead of containing it.
+# `libc` is the only external dependency: `posix_openpt`, `grantpt`,
+# `unlockpt` and `ptsname` are POSIX, and the crate was already in the lock
+# file, so nothing new is downloaded or built. A pty abstraction would bring
+# a dozen crates for a Windows layer that is not used here.
 [dependencies]
+# For `Machine` (expanding `~` and `$VAR`, finding Sailor's home, solved there
+# once) and for `probe::look_up`, the guard of the dispatch: whether a word is
+# an executable on this machine, with «do not know» as an answer.
 toolbox = { path = "../toolbox" }
 # `sessions` for one thing: the estimate of how many tokens the bytes moved
 # amount to. The row of the list carries it, so the window and `terminal list`
@@ -38,10 +28,10 @@ libc = "0.2"
 serde = { workspace = true }
 serde_json = { workspace = true }
 
-# Solo per la prova che collega lo smistamento al flusso: una richiesta smistata
-# diventa il segnale dell'innesco manuale, e i passi a valle la leggono. Il
-# collegamento si prova, ma non si spedisce: il motore dei terminali non deve
-# dipendere né dai flussi né dagli inneschi per aprire un terminale.
+# Only for the test that ties the dispatch to a flow: a dispatched request
+# becomes the signal of the manual trigger, and downstream steps read it. The
+# tie is tested but not shipped: the terminal engine must depend neither on
+# flows nor on triggers to open a terminal.
 [dev-dependencies]
 trigger = { path = "../trigger" }
 flow = { path = "../flow" }

@@ -1,8 +1,12 @@
 [package]
 name = "inventory"
 version = "0.1.0"
+description = "What this machine can do, and what has appeared or disappeared."
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
 
 [dependencies]
 serde = { workspace = true }

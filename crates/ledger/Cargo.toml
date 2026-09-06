@@ -1,8 +1,12 @@
 [package]
 name = "ledger"
 version = "0.1.0"
+description = "The store: events, and the projections derived from them."
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
 
 [dependencies]
 flow = { path = "../flow" }
@@ -21,4 +25,3 @@ tracing-subscriber = "0.3"
 # runs in: `workspace` declares what an open tree is and depends on nothing, and
 # this crate is the one that knows where Sailor's state lives.
 workspace = { path = "../workspace" }
-

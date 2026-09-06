@@ -1,8 +1,12 @@
 [package]
 name = "ui"
 version = "0.1.0"
+description = "The view the command line and the window share."
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
 
 # No extra dependencies: this crate needs only `flow`, `ledger` and the
 # catalogue its lines for a person are read from, in keeping with the rest of
