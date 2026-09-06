@@ -28,10 +28,10 @@ pub use executor::{
     CURRENT_RUN, CURRENT_STEP, CURRENT_WALL, WALL_REMAINING_SECS, WORKDIR_FIELD, WORKSPACE_ROOT,
 };
 pub use file::{CapKind, FlowFile};
-pub use graph::{Condition, DependencyEdge, Graph, GraphError, Step};
+pub use graph::{Condition, DependencyEdge, Graph, GraphError, Judgement, Step};
 pub use record::{
     digest_input, truncate_said, AttemptRelation, Outcome, Ran, Refusal, RefusalRule, StepRecord,
-    StepSpecies, ANSWER_SHAPE_CHECK, MAX_SAID_BYTES, MAX_SEEN_BYTES,
+    StepSpecies, Why, ANSWER_SHAPE_CHECK, MAX_SAID_BYTES, MAX_SEEN_BYTES,
 };
 pub use schedule::{is_due, Recurrence, Schedule, Weight};
 pub use schema::{SchemaError, ValueSchema};

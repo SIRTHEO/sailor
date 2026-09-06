@@ -1,4 +1,4 @@
-use crate::record::{digest_input, truncate_said, Ran, Refusal};
+use crate::record::{digest_input, truncate_said, Ran, Refusal, Why};
 use crate::reference;
 use crate::{AttemptRelation, Graph, Outcome, SchemaError, Step, StepRecord, StepSpecies};
 use serde_json::Value;
@@ -1039,6 +1039,7 @@ impl Executor for InProcessExecutor {
                 let StepInput {
                     value: input,
                     runs: condition_met,
+                    why,
                 } = input;
                 step.input_schema.validate(&input)?;
                 // `step_input` already decided the condition, and it is the only
@@ -1070,6 +1071,7 @@ impl Executor for InProcessExecutor {
                 // intent, or it is of no use to a resume.
                 started.held_by_pid = Some(std::process::id());
                 started.species = action.map(|action| action.species());
+                started.why = why;
                 store.append_started(started)?;
                 opened.push(Opened {
                     step,
@@ -1764,6 +1766,8 @@ pub struct StepInput {
     pub value: Value,
     /// False when the step's `when` is not satisfied.
     pub runs: bool,
+    /// What judging that `when` saw; `None` when there was nothing to decide.
+    pub why: Option<Why>,
 }
 
 /// How a step's input is composed, and the order is everything: dependency
@@ -1786,14 +1790,14 @@ pub fn step_input(
     // not run must not pay for references to work it will not do. Resolving
     // first took a shipped flow, on the real binary, from "complete" to
     // "failed — `unresolved_reference`".
-    let runs = step
-        .when
-        .as_ref()
-        .is_none_or(|condition| condition.matches(&positioned));
+    let judged = step.when.as_ref().map(|condition| condition.judge(&positioned));
+    let runs = judged.as_ref().is_none_or(|judgement| judgement.held);
+    let why = judged.map(Why::Condition);
     if !runs {
         return Ok(StepInput {
             value: positioned,
             runs,
+            why,
         });
     }
     let value = match step.with.as_ref() {
@@ -1805,7 +1809,7 @@ pub fn step_input(
         None => positioned,
     };
     let value = offer_the_refusal(step, value, latest_for(step, records));
-    Ok(StepInput { value, runs })
+    Ok(StepInput { value, runs, why })
 }
 
 /// Why the last attempt's answer was refused, as the next one is handed it:

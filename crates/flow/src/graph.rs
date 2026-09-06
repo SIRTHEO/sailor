@@ -70,15 +70,69 @@ pub enum Condition {
     PointerHasValue { pointer: String },
 }
 
+/// Why a condition came out as it did: the place read, the demand, what was
+/// there. A `bool` said none of the three.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Judgement {
+    pub held: bool,
+    /// The place that was read, when the condition reads one.
+    pub looked_at: Option<String>,
+    /// What was asked of it, in words a person reads.
+    pub wanted: String,
+    /// What was there. `None` is nothing at that pointer, which is not empty.
+    pub found: Option<Value>,
+}
+
+/// **A REASON IS NOT A COPY OF THE DATA**: kept whole it doubles every input in
+/// a store that must stay small for years. Scalars survive, the rest is shape.
+fn in_few_words(value: &Value) -> Value {
+    const LONGEST: usize = 120;
+    match value {
+        Value::String(text) if text.len() > LONGEST => {
+            Value::String(format!("{}… ({} bytes)", &text[..LONGEST], text.len()))
+        }
+        Value::Array(items) => Value::String(format!("[{} items]", items.len())),
+        Value::Object(fields) => Value::String(format!("{{{} fields}}", fields.len())),
+        other => other.clone(),
+    }
+}
+
 impl Condition {
     pub fn matches(&self, input: &Value) -> bool {
-        match self {
-            Condition::Equals { value } => input == value,
-            Condition::PointerEquals { pointer, value } => input.pointer(pointer) == Some(value),
-            Condition::PointerExists { pointer } => input.pointer(pointer).is_some(),
-            Condition::PointerHasValue { pointer } => {
-                input.pointer(pointer).is_some_and(carries_something)
-            }
+        self.judge(input).held
+    }
+
+    /// The same decision as [`Condition::matches`], with what it was taken on;
+    /// `matches` is written in terms of it so the two cannot disagree.
+    pub fn judge(&self, input: &Value) -> Judgement {
+        let (looked_at, wanted, at_hand) = match self {
+            Condition::Equals { value } => (None, format!("the input equals {value}"), Some(input)),
+            Condition::PointerEquals { pointer, value } => (
+                Some(pointer.clone()),
+                format!("equals {value}"),
+                input.pointer(pointer),
+            ),
+            Condition::PointerExists { pointer } => (
+                Some(pointer.clone()),
+                "is there at all".to_owned(),
+                input.pointer(pointer),
+            ),
+            Condition::PointerHasValue { pointer } => (
+                Some(pointer.clone()),
+                "carries something".to_owned(),
+                input.pointer(pointer),
+            ),
+        };
+        Judgement {
+            held: match self {
+                Condition::Equals { value } => input == value,
+                Condition::PointerEquals { value, .. } => at_hand == Some(value),
+                Condition::PointerExists { .. } => at_hand.is_some(),
+                Condition::PointerHasValue { .. } => at_hand.is_some_and(carries_something),
+            },
+            looked_at,
+            wanted,
+            found: at_hand.map(in_few_words),
         }
     }
 }

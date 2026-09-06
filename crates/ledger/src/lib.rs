@@ -100,7 +100,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// `PROJECTION_MIGRATIONS`, and the tests hold the two against each other. A
 /// column once landed in the migration without this going up, so an existing
 /// store never migrated and every read died on the missing column.
-const PROJECTION_SCHEMA_VERSION: i64 = 15;
+const PROJECTION_SCHEMA_VERSION: i64 = 16;
 
 /// One change to the projections, and the version that introduced it.
 enum ProjectionChange {
@@ -204,6 +204,13 @@ const PROJECTION_MIGRATIONS: &[(i64, ProjectionChange)] = &[
         ProjectionChange::AddColumns {
             table: "model_calls",
             columns: &[("session_mode", "TEXT")],
+        },
+    ),
+    (
+        16,
+        ProjectionChange::AddColumns {
+            table: "steps",
+            columns: &[("why", "TEXT")],
         },
     ),
 ];
@@ -1229,7 +1236,7 @@ impl Ledger {
             "SELECT run_id, step_id, attempt, epoch, deps, input_digest, input,
                     gates, attempt_relation, started_at, outcome, output, said,
                     failure_class, ended_at, bytes_seen, bytes_discarded,
-                    held_by_pid, species, refusal, ran
+                    held_by_pid, species, refusal, ran, why
              FROM steps WHERE run_id = ?1 ORDER BY started_at, step_id, attempt",
         )?;
         let records = statement
@@ -2208,6 +2215,7 @@ fn create_projection_tables(connection: &Connection) -> Result<(), LedgerError> 
              checkpointed INTEGER NOT NULL DEFAULT 0 CHECK(checkpointed IN (0, 1)),
              refusal TEXT,
              ran TEXT,
+             why TEXT,
              PRIMARY KEY (run_id, step_id, attempt)
          );
          CREATE TABLE IF NOT EXISTS model_calls (
@@ -2852,9 +2860,9 @@ fn project_step(
          (run_id, step_id, attempt, epoch, deps, input_digest, input, gates,
           attempt_relation, started_at, outcome, output, said, failure_class,
           ended_at, bytes_seen, bytes_discarded, held_by_pid, species,
-          checkpointed, refusal, ran)
+          checkpointed, refusal, ran, why)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                 ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)
+                 ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)
          ON CONFLICT(run_id, step_id, attempt) DO UPDATE SET
           epoch=excluded.epoch, deps=excluded.deps,
           input_digest=excluded.input_digest, input=excluded.input,
@@ -2865,7 +2873,7 @@ fn project_step(
           bytes_seen=excluded.bytes_seen, bytes_discarded=excluded.bytes_discarded,
           held_by_pid=excluded.held_by_pid, species=excluded.species,
           checkpointed=excluded.checkpointed, refusal=excluded.refusal,
-          ran=excluded.ran",
+          ran=excluded.ran, why=excluded.why",
         params![
             record.run_id,
             record.step_id,
@@ -2898,6 +2906,11 @@ fn project_step(
                 .transpose()?,
             record
                 .ran
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()?,
+            record
+                .why
                 .as_ref()
                 .map(serde_json::to_string)
                 .transpose()?,
@@ -3107,7 +3120,7 @@ fn read_step(
             "SELECT run_id, step_id, attempt, epoch, deps, input_digest, input,
                     gates, attempt_relation, started_at, outcome, output, said,
                     failure_class, ended_at, bytes_seen, bytes_discarded,
-                    held_by_pid, species, refusal, ran
+                    held_by_pid, species, refusal, ran, why
              FROM steps
              WHERE run_id = ?1 AND step_id = ?2 AND attempt = ?3 AND epoch = ?4",
             params![run_id, step_id, attempt, padded_u64(epoch)],
@@ -3142,6 +3155,7 @@ fn step_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StepRecord> {
     let species: Option<String> = row.get(18)?;
     let refusal: Option<String> = row.get(19)?;
     let ran: Option<String> = row.get(20)?;
+    let why: Option<String> = row.get(21)?;
     Ok(StepRecord {
         run_id: row.get(0)?,
         step_id: row.get(1)?,
@@ -3174,6 +3188,10 @@ fn step_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StepRecord> {
         ran: ran
             .as_deref()
             .map(|value| json_column(value, 20))
+            .transpose()?,
+        why: why
+            .as_deref()
+            .map(|value| json_column(value, 21))
             .transpose()?,
         ended_at: row.get(14)?,
         bytes_seen: bytes_seen.map(|b| b as u64),
