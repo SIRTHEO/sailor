@@ -333,3 +333,35 @@ describe("i tre segnali non tolgono spazio al terminale", () => {
     expect(guilty, "un segnale che si muove da solo").toEqual([]);
   });
 });
+
+/**
+ * **NARROW, THE WORK KEEPS THE ROOM.** Three boxes each claiming a share of the
+ * viewport left the graph 99 pixels: what helps you choose work is bounded in
+ * pixels there, what shows the work happening keeps the rest.
+ */
+describe("the narrow window budgets its height", () => {
+  /** The body of the `max-width: 760px` block, read off the raw sheet. */
+  function narrowBlock(): string {
+    const at = stylesheetSource.indexOf("@media (max-width: 760px)");
+    expect(at, "no narrow block in the sheet: this test would guard nothing").toBeGreaterThan(-1);
+    let depth = 0;
+    for (let i = stylesheetSource.indexOf("{", at); i < stylesheetSource.length; i++) {
+      if (stylesheetSource[i] === "{") depth++;
+      if (stylesheetSource[i] === "}" && --depth === 0) return stylesheetSource.slice(at, i);
+    }
+    throw new Error("the narrow block never closes");
+  }
+
+  test("THE COLUMN THAT HELPS YOU CHOOSE IS BOUNDED IN PIXELS, NOT IN VIEWPORTS", () => {
+    const world = narrowBlock().match(/\.world\s*\{([^}]*)\}/);
+    expect(world, "no `.world` rule in the narrow block").not.toBeNull();
+    const cap = world![1].match(/max-height:\s*([\d.]+)(px|vh|dvh|%)/);
+    expect(cap, "`.world` claims no height at all when narrow").not.toBeNull();
+    expect(cap![2], "a share of the viewport shrinks the work as fast as the window").toBe("px");
+    expect(Number(cap![1])).toBeLessThanOrEqual(64);
+  });
+
+  test("AND THE GRAPH CAN GIVE GROUND, or the band pushes it out of its box", () => {
+    expect(narrowBlock()).toMatch(/\.canvas\s*\{[^}]*min-height:\s*0/);
+  });
+});
