@@ -1619,20 +1619,17 @@ export default function App() {
                 }}
               />
             )}
-
-            {/* THE TOOLBOX SITS IN HERE, which is the whole point of the
-                work: whoever composes no longer leaves the canvas to take a
-                tool. Inside `ReactFlow` and not beside it because `Panel` draws
-                outside the box pan and zoom transform — in the canvas, still
-                against it.
-
-                WITH NO FLOW DRAWN IT IS NOT THERE: that moment belongs to the
-                empty canvas, which teaches the first gesture. Two invitations
-                on one screen cancel each other out. */}
-            {focusName !== null && (
-              <Toolbar flowName={focusName} onAdd={(kind) => addStep(focusName, kind)} />
-            )}
           </ReactFlow>
+
+          {/* THE BAND IS THE GRAPH'S SIBLING, NOT ITS TENANT. Inside
+              `ReactFlow` the bar lay over the paper and a step under it took
+              no click; here its height comes off the graph's. */}
+          {/* WITH NO FLOW DRAWN IT IS NOT THERE: that moment belongs to the
+              empty canvas, which teaches the first gesture. Two invitations on
+              one screen cancel each other out. */}
+          {focusName !== null && (
+            <Toolbar flowName={focusName} onAdd={(kind) => addStep(focusName, kind)} />
+          )}
 
           {/* Una tela senza flussi non resta muta: dice cos'è un flusso e offre
               il gesto per farne uno. Il messaggio sparisce da solo appena ce n'è
