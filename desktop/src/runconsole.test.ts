@@ -22,32 +22,32 @@ function closed(seq: number, stepId: string, outcome: string, output?: unknown):
   return { run_id: "r", seq, kind: "step_closed", at: seq * 1000, step_id: stepId, payload: { outcome, output } };
 }
 
-describe("i riquadri di una corsa", () => {
-  test("un riquadro porta cosa è entrato nel passo", () => {
+describe("the panes of a run", () => {
+  test("a pane carries what went into the step", () => {
     const panes = panesFromEvents([
-      started(1, "implementa", { tool: "claude-code", prompt: "ripara il nodo" }),
+      started(1, "implementa", { tool: "claude-code", prompt: "repair the node" }),
       closed(2, "implementa", "Went"),
     ]);
-    expect(panes[0]?.input).toEqual({ tool: "claude-code", prompt: "ripara il nodo" });
+    expect(panes[0]?.input).toEqual({ tool: "claude-code", prompt: "repair the node" });
   });
 
-  test("un passo senza input non porta un oggetto vuoto, che sembrerebbe un input", () => {
+  test("a step with no input carries no empty object, which would look like an input", () => {
     // `null` is «nothing recorded went in»; `{}` would be «an empty record went
     // in», and those are two different facts to whoever reads a run.
     const panes = panesFromEvents([started(1, "verifica", undefined), closed(2, "verifica", "Went")]);
     expect(panes[0]?.input).toBe(null);
   });
 
-  test("ogni passo tiene il proprio input, non quello del vicino", () => {
+  test("every step keeps its own input, not its neighbour's", () => {
     const panes = panesFromEvents([
-      started(1, "uno", { command: "cargo test" }),
-      started(2, "due", { command: "cargo fmt" }),
-      closed(3, "uno", "Went"),
-      closed(4, "due", "Broke"),
+      started(1, "one", { command: "cargo test" }),
+      started(2, "two", { command: "cargo fmt" }),
+      closed(3, "one", "Went"),
+      closed(4, "two", "Broke"),
     ]);
     const byId = new Map(panes.map((p) => [p.stepId, p]));
-    expect(byId.get("uno")?.input).toEqual({ command: "cargo test" });
-    expect(byId.get("due")?.input).toEqual({ command: "cargo fmt" });
+    expect(byId.get("one")?.input).toEqual({ command: "cargo test" });
+    expect(byId.get("two")?.input).toEqual({ command: "cargo fmt" });
   });
 });
 

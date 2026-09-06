@@ -515,7 +515,7 @@ pub(crate) fn start(
     let ledger_dir = default_ledger_dir();
     let ledger = Ledger::open(&ledger_dir).map_err(|error| {
         format!(
-            "non riesco ad aprire il deposito {}: {error}",
+            "cannot open the ledger {}: {error}",
             ledger_dir.display()
         )
     })?;
@@ -554,7 +554,7 @@ pub(crate) fn start(
         .collect();
     if !missing.is_empty() {
         return Err(format!(
-            "il flusso {} nomina azioni che il motore non conosce: {}",
+            "flow {} names actions the engine does not know: {}",
             flow.id,
             missing.join(", ")
         ));
@@ -604,10 +604,10 @@ pub(crate) fn start(
         .ok()
         .and_then(|working| flow::workspace::find_root(&working));
     match root.as_deref() {
-        Some(root) => println!("radice del progetto: {}", root.display()),
+        Some(root) => println!("project root: {}", root.display()),
         None => println!(
-            "radice del progetto: nessuna (nessun {} risalendo da qui); \
-             i passi che dichiarano «workdir» falliranno",
+            "project root: none (no {} walking up from here); \
+             the steps that declare «workdir» will fail",
             flow::workspace::MARKER
         ),
     }
@@ -1179,8 +1179,8 @@ fn mandate_target(flow: &FlowFile) -> MandateTarget {
         if fixed.contains_key(field) {
             return MandateTarget::None {
                 why: format!(
-                    "il passo «{root}» dichiara già il proprio «{field}» nei parametri fissi: \
-                     una consegna scritta qui verrebbe scavalcata senza dirlo"
+                    "step «{root}» already declares its own «{field}» in the fixed parameters: \
+                     a mandate written here would be overridden without saying so"
                 ),
             };
         }
@@ -1238,8 +1238,8 @@ fn inputs_with_mandate(
                     Ok(inputs)
                 }
                 _ => Err(
-                    "gli ingressi del passo di partenza non sono un oggetto: non c'è dove \
-                     scrivere la consegna"
+                    "the root step's inputs are not an object: there is nowhere to \
+                     write the mandate"
                         .to_owned(),
                 ),
             }
@@ -1300,9 +1300,9 @@ pub(crate) fn who() -> String {
 fn origin_label(mandate: Option<&str>) -> String {
     let carried = mandate.is_some_and(|text| !text.trim().is_empty());
     if carried {
-        "finestra · innesco manuale, con consegna".to_owned()
+        "window · pressed by hand, with a mandate".to_owned()
     } else {
-        "finestra · innesco manuale".to_owned()
+        "window · pressed by hand".to_owned()
     }
 }
 
@@ -1397,12 +1397,12 @@ mod tests {
 
     fn flow_with(steps: Value, inputs: Value) -> FlowFile {
         serde_json::from_value(json!({
-            "id": "prova",
+            "id": "trial",
             "description": "",
             "graph": { "steps": steps },
             "inputs": inputs,
         }))
-        .expect("il flusso di prova si carica")
+        .expect("the flow for testing loads")
     }
 
     /// A run as the registry holds it while it runs.
@@ -1410,7 +1410,7 @@ mod tests {
         runs.lock_map().insert(
             run_id.to_owned(),
             RunState {
-                flow: "prova".to_owned(),
+                flow: "trial".to_owned(),
                 started_at: 0,
                 status: status.to_owned(),
                 events: Vec::new(),
@@ -1581,14 +1581,14 @@ mod tests {
     #[test]
     fn a_character_split_across_two_chunks_arrives_whole() {
         let (sink, said) = heard("engine");
-        let text = "perché".as_bytes();
+        let text = "café".as_bytes();
         let split = text.len() - 1;
         sink.chunk(Pipe::Stdout, &text[..split]);
         sink.chunk(Pipe::Stdout, &text[split..]);
 
         let said = said.lock().expect("not poisoned");
         let whole: String = said.iter().map(|(_, text)| text.as_str()).collect();
-        assert_eq!(whole, "perché");
+        assert_eq!(whole, "café");
         assert!(
             !whole.contains('\u{fffd}'),
             "a letter reached the window broken"
@@ -1661,14 +1661,14 @@ mod tests {
                 assert_eq!(step, "dispatch");
                 assert_eq!(field, "stdin");
             }
-            other => panic!("atteso un bersaglio, trovato {other:?}"),
+            other => panic!("expected a target, found {other:?}"),
         }
 
-        let inputs = inputs_with_mandate(&flow, Some("fai questa cosa")).expect("consegna accolta");
+        let inputs = inputs_with_mandate(&flow, Some("do this thing")).expect("the mandate lands");
         assert_eq!(
             inputs["dispatch"]["stdin"],
-            json!("fai questa cosa"),
-            "la consegna deve entrare nello stdin del passo di partenza"
+            json!("do this thing"),
+            "the mandate must go into the root step's stdin"
         );
     }
 
@@ -1684,17 +1684,17 @@ mod tests {
             json!([engine_step(
                 "dispatch",
                 vec![],
-                json!({ "bin": "true", "stdin": "gia' deciso", "timeout_secs": 5 })
+                json!({ "bin": "true", "stdin": "already decided", "timeout_secs": 5 })
             )]),
             json!({}),
         );
         match mandate_target(&flow) {
-            MandateTarget::None { why } => assert!(why.contains("scavalcata"), "{why}"),
-            other => panic!("atteso un rifiuto, trovato {other:?}"),
+            MandateTarget::None { why } => assert!(why.contains("overridden"), "{why}"),
+            other => panic!("expected a refusal, found {other:?}"),
         }
-        let error = inputs_with_mandate(&flow, Some("la mia consegna"))
-            .expect_err("una consegna che verrebbe persa ferma la partenza");
-        assert!(error.contains("scavalcata"), "{error}");
+        let error = inputs_with_mandate(&flow, Some("my own mandate"))
+            .expect_err("a mandate that would be lost stops the start");
+        assert!(error.contains("overridden"), "{error}");
     }
 
     /// A shell check takes a command, not text written by a person: slipping
@@ -1703,14 +1703,14 @@ mod tests {
     fn a_shell_root_has_no_place_for_a_mandate() {
         let flow = flow_with(
             json!([{
-                "id": "solo", "deps": [], "action": "shell_check", "max_attempts": 1,
+                "id": "lone", "deps": [], "action": "shell_check", "max_attempts": 1,
                 "when": null, "input_schema": { "type": "any" }, "output_schema": { "type": "any" }
             }]),
-            json!({ "solo": { "command": "true", "timeout_secs": 5 } }),
+            json!({ "lone": { "command": "true", "timeout_secs": 5 } }),
         );
         match mandate_target(&flow) {
             MandateTarget::None { why } => assert!(why.contains("no text input"), "{why}"),
-            other => panic!("atteso un rifiuto, trovato {other:?}"),
+            other => panic!("expected a refusal, found {other:?}"),
         }
     }
 
@@ -1718,14 +1718,14 @@ mod tests {
     fn two_roots_leave_the_mandate_without_an_address() {
         let flow = flow_with(
             json!([
-                engine_step("uno", vec![], json!({ "bin": "true", "timeout_secs": 5 })),
-                engine_step("due", vec![], json!({ "bin": "true", "timeout_secs": 5 })),
+                engine_step("one", vec![], json!({ "bin": "true", "timeout_secs": 5 })),
+                engine_step("two", vec![], json!({ "bin": "true", "timeout_secs": 5 })),
             ]),
             json!({}),
         );
         match mandate_target(&flow) {
             MandateTarget::None { why } => assert!(why.contains("2 steps"), "{why}"),
-            other => panic!("atteso un rifiuto, trovato {other:?}"),
+            other => panic!("expected a refusal, found {other:?}"),
         }
     }
 
@@ -1735,17 +1735,17 @@ mod tests {
     fn no_mandate_leaves_the_declared_inputs_untouched() {
         let flow = flow_with(
             json!([{
-                "id": "solo", "deps": [], "action": "shell_check", "max_attempts": 1,
+                "id": "lone", "deps": [], "action": "shell_check", "max_attempts": 1,
                 "when": null, "input_schema": { "type": "any" }, "output_schema": { "type": "any" }
             }]),
-            json!({ "solo": { "command": "true", "timeout_secs": 5 } }),
+            json!({ "lone": { "command": "true", "timeout_secs": 5 } }),
         );
-        let inputs = inputs_with_mandate(&flow, None).expect("nessuna consegna, nessun problema");
-        assert_eq!(inputs["solo"]["command"], json!("true"));
+        let inputs = inputs_with_mandate(&flow, None).expect("no mandate, no trouble");
+        assert_eq!(inputs["lone"]["command"], json!("true"));
         // Whitespace is not a mandate: it would be a refusal over a text
         // nobody actually wrote.
-        let blank = inputs_with_mandate(&flow, Some("   ")).expect("il bianco non è una consegna");
-        assert_eq!(blank["solo"]["command"], json!("true"));
+        let blank = inputs_with_mandate(&flow, Some("   ")).expect("whitespace is not a mandate");
+        assert_eq!(blank["lone"]["command"], json!("true"));
     }
 
     fn trigger_step(id: &str, with: Value) -> Value {
@@ -1780,21 +1780,21 @@ mod tests {
                     json!({ "bin": "true", "timeout_secs": 5 })
                 ),
             ]),
-            json!({ "trigger": { "text": "la consegna di ieri" } }),
+            json!({ "trigger": { "text": "yesterday's mandate" } }),
         );
         match mandate_target(&flow) {
             MandateTarget::Field { step, field } => {
                 assert_eq!(step, "trigger");
                 assert_eq!(field, "text");
             }
-            other => panic!("atteso il campo dell'innesco, trovato {other:?}"),
+            other => panic!("expected the trigger's field, found {other:?}"),
         }
 
-        let inputs = inputs_with_mandate(&flow, Some("la consegna di oggi")).expect("accolta");
+        let inputs = inputs_with_mandate(&flow, Some("today's mandate")).expect("it lands");
         assert_eq!(
             inputs["trigger"]["text"],
-            json!("la consegna di oggi"),
-            "la consegna di chi preme deve sostituire quella scritta nel file"
+            json!("today's mandate"),
+            "the mandate of whoever presses must replace the one written in the file"
         );
     }
 
@@ -1809,7 +1809,7 @@ mod tests {
         );
         match mandate_target(&flow) {
             MandateTarget::None { why } => assert!(why.contains("schedule"), "{why}"),
-            other => panic!("atteso un rifiuto, trovato {other:?}"),
+            other => panic!("expected a refusal, found {other:?}"),
         }
     }
 
@@ -1828,11 +1828,11 @@ mod tests {
     fn every_action_of_a_shipped_flow_is_known_to_the_window() {
         let known = registry::registry_in(registry::House::empty(), None, None);
         for name in ["what-this-machine-has", "migrate-to-sailor"] {
-            let flow = load_flow(name).expect("i flussi di sistema si caricano");
+            let flow = load_flow(name).expect("the system flows load");
             for step in flow.graph.steps() {
                 assert!(
                     known.get(&step.action).is_some(),
-                    "«{}» nomina l'azione «{}», che la finestra non conosce",
+                    "«{}» names the action «{}», which the window does not know",
                     name,
                     step.action
                 );
@@ -1853,10 +1853,10 @@ mod tests {
     #[test]
     fn a_flow_shipped_inside_the_binary_is_loadable_from_the_window() {
         let flow = load_flow("what-this-machine-has")
-            .expect("un flusso di sistema si carica ovunque, senza niente sul disco");
+            .expect("a system flow loads anywhere, with nothing on disk");
         assert!(
             !flow.graph.steps().is_empty(),
-            "e arriva col suo grafo, non come guscio vuoto"
+            "and it arrives with its graph, not as a hollow shell"
         );
     }
 
@@ -1869,16 +1869,16 @@ mod tests {
     /// function that achieved it.
     #[test]
     fn a_flow_name_that_climbs_out_of_the_directory_opens_nothing() {
-        for malformed in ["../evaso", "sotto/cartella", "", "/etc/passwd"] {
+        for malformed in ["../escaped", "under/folder", "", "/etc/passwd"] {
             let outcome = load_flow(malformed);
             assert!(
                 outcome.is_err(),
-                "«{malformed}» non è il nome di nessun flusso: non deve caricare niente"
+                "«{malformed}» is the name of no flow: it must load nothing"
             );
             let why = outcome.unwrap_err();
             assert!(
                 why.contains("no flow is called"),
-                "e il motivo dev'essere che non è in elenco, non un errore di lettura: {why}"
+                "and the reason must be that it is not in the list, not a read error: {why}"
             );
         }
     }

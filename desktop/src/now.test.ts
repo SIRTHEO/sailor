@@ -28,26 +28,26 @@ function run(over: Partial<OpenRun>): OpenRun {
 }
 
 describe("howLong", () => {
-  test("arrotonda per difetto, non per eccesso", () => {
+  test("it rounds down, never up", () => {
     // Two hours fifty: «3 h» would make someone step in on a thing that is not
     // yet what it looks like.
     expect(howLong(2 * 3600 + 50 * 60)).toBe("2 h 50 min");
     expect(howLong(119)).toBe("1 min");
   });
 
-  test("i secondi restano secondi finché sono secondi", () => {
+  test("seconds stay seconds for as long as they are seconds", () => {
     expect(howLong(0)).toBe("0 s");
     expect(howLong(59)).toBe("59 s");
     expect(howLong(60)).toBe("1 min");
   });
 
-  test("oltre il giorno non si scrive in ore", () => {
+  test("past a day it is not written in hours", () => {
     // 50 h written «50 h» reads as two days only by counting: whoever looks
     // must see that a run has been open since yesterday without arithmetic.
     expect(howLong(50 * 3600)).toBe("2 d 2 h");
   });
 
-  test("un tempo negativo non diventa un numero enorme", () => {
+  test("a negative time does not become a huge number", () => {
     // The clocks do not agree with each other: the ledger writes one instant,
     // the window reads another, and the difference can come out negative. A
     // «-3 s» is ugly, but «18446744073709 s» is a broken screen.
@@ -56,7 +56,7 @@ describe("howLong", () => {
 });
 
 describe("groupRuns", () => {
-  test("nessuna corsa si perde per strada", () => {
+  test("no run gets lost on the way", () => {
     const runs = [
       run({ run_id: "a", state: "waiting" }),
       run({ run_id: "b", state: "working" }),
@@ -68,13 +68,13 @@ describe("groupRuns", () => {
     expect(waiting.length + working.length).toBe(runs.length);
   });
 
-  test("l'ordine che arriva dal motore non si tocca", () => {
+  test("the order that arrives from the engine is left alone", () => {
     // The engine orders from the oldest. Reordering here would mean two
     // ordering rules in two languages, and nobody would know which one wins.
     const runs = [
-      run({ run_id: "vecchia", state: "waiting", since: 100 }),
-      run({ run_id: "nuova", state: "waiting", since: 900 }),
+      run({ run_id: "older", state: "waiting", since: 100 }),
+      run({ run_id: "newer", state: "waiting", since: 900 }),
     ];
-    expect(groupRuns(runs).waiting.map((entry) => entry.run_id)).toEqual(["vecchia", "nuova"]);
+    expect(groupRuns(runs).waiting.map((entry) => entry.run_id)).toEqual(["older", "newer"]);
   });
 });
