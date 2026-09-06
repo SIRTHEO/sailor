@@ -10,7 +10,7 @@ import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import App from "./App";
 import { MACHINE, PLACES } from "./places";
 import { SAILOR_TABS } from "./sailortabs";
-import { MEMORY_TABS } from "./Memory";
+import { MEMORY_TABS } from "./memorytabs";
 import { TERMINALS_TABS } from "./TerminalsSection";
 
 afterEach(() => {
