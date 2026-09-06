@@ -201,9 +201,8 @@ export function Terminals({
   const [speaking, setSpeaking] = useState<ReadonlySet<string>>(new Set());
   useEffect(() => bus.watchSpeaking((now) => setSpeaking(now)), [bus]);
 
-  /* WHAT MAKES SILENCE VISIBLE. Without a clock a pane keeps the mark it had
-     when the last byte arrived, and an agent that stopped an hour ago would
-     still be drawn getting on with it. The tick moves no pixel by itself. */
+  /* WHAT MAKES SILENCE VISIBLE: without a clock, an agent that stopped an hour
+     ago stays drawn getting on with it. The tick moves no pixel by itself. */
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!native) return;
@@ -575,8 +574,7 @@ export function Terminals({
               <button type="button" onClick={() => setReading((on) => !on)}>
                 {reading ? "hide what changed" : `what changed in ${watched.workspaceName}`}
               </button>
-              {/* THE COST AND THE QUOTA ARE ASKED FOR, NOT STOOD BESIDE. The
-                  band took a column off the terminal on every width. */}
+              {/* ASKED FOR, NOT STOOD BESIDE: the band took a column at every width. */}
               <button type="button" onClick={() => setAsking((on) => !on)}>
                 {t(asking ? "window.session.hide" : "window.session.show")}
               </button>
