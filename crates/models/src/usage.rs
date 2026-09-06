@@ -154,9 +154,21 @@ pub struct Reading {
     pub declared_cost: Option<f64>,
     /// The model the engine says it used.
     pub model: Option<String>,
+    /// How many models the answer counts apart, where it names them as the keys
+    /// of a map. Every count above belongs to one of them.
+    pub models_named: Option<u64>,
     /// The answer text pulled out of the envelope, when the descriptor says
     /// where it sits.
     pub answer: Option<String>,
+}
+
+impl Reading {
+    /// Whether these counts cover the whole call. They do not when the engine
+    /// counted several models apart and the block read holds one of them: see
+    /// fault 121, where two thirds of a call's spend sat under a second name.
+    pub fn counts_the_whole_call(&self) -> bool {
+        !matches!(self.models_named, Some(named) if named > 1)
+    }
 }
 
 /// What a call added to a session whose engine counts cumulatively.
@@ -183,6 +195,7 @@ pub fn share_after(reading: Reading, before: &Reading) -> Reading {
         },
         // Not counters: they belong to this call whatever the numbers do.
         model: reading.model,
+        models_named: reading.models_named,
         answer: reading.answer,
     }
 }
@@ -259,6 +272,7 @@ fn read_from_json(said: &str, declared: &Declared) -> Reading {
         turns: number(&declared.turns),
         declared_cost: walk(&body, declared.cost.as_ref()).and_then(as_money),
         model: read_name(&body, declared.model.as_ref()),
+        models_named: count_names(&body, declared.model.as_ref()),
         answer: walk(&body, declared.answer.as_ref()).and_then(as_text),
     }
 }
@@ -282,6 +296,19 @@ fn read_name(body: &serde_json::Value, pointer: Option<&Pointer>) -> Option<Stri
     }
 }
 
+/// How many models the answer counts apart. Only the map shape can say: any
+/// other pointer leaves it unknown, which is not the same as one.
+fn count_names(body: &serde_json::Value, pointer: Option<&Pointer>) -> Option<u64> {
+    let Pointer::FirstKey(keys) = pointer? else {
+        return None;
+    };
+    let mut here = body;
+    for key in keys {
+        here = here.get(key)?;
+    }
+    Some(here.as_object()?.len() as u64)
+}
+
 fn read_from_text(said: &str, declared: &Declared) -> Reading {
     let capture = |pointer: &Option<Pointer>| match pointer.as_ref() {
         Some(Pointer::Pattern(pattern)) => first_group(said, pattern),
@@ -300,6 +327,7 @@ fn read_from_text(said: &str, declared: &Declared) -> Reading {
         turns: capture(&declared.turns).and_then(|text| digits(&text)),
         declared_cost: capture(&declared.cost).and_then(|text| text.trim().parse().ok()),
         model: capture(&declared.model),
+        models_named: None,
         answer: capture(&declared.answer),
     }
 }
