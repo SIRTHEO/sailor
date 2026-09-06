@@ -538,9 +538,19 @@ mod tests {
     /// **THE JUDGES ARE FOUND, NOT LISTED**, and the finding has to see this
     /// tree's own: a scan that missed the comment ratchet would run green over
     /// the very rite this command replaces.
+    ///
+    /// **THE TREE IS THE ONE THIS FILE IS COMPILED IN, NOT THE ONE CONFIGURED.**
+    /// Asking `sources_root` answers with `SAILOR_SOURCES` or the launcher's
+    /// home, so under the release — which runs the suite in an empty scratch
+    /// home on purpose — it pointed at a directory with no crates in it and
+    /// the scan honestly found nothing. Fault 5, in the shape it keeps taking.
     #[test]
     fn the_judges_of_this_tree_are_found_by_their_seed() {
-        let root = crate::release_cmd::sources_root().expect("the sources");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(std::path::Path::parent)
+            .expect("the crate lives in <root>/crates/sailor")
+            .to_path_buf();
         let found = judges_in(&root);
         let names: Vec<&str> = found.iter().map(|judge| judge.test.as_str()).collect();
         assert!(names.contains(&"comments_do_not_crowd_out_the_code"), "{names:?}");
