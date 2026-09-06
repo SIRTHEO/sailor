@@ -224,22 +224,19 @@ impl actions::ToolResolver for Tools {
             .live()
             .into_iter()
             .find(|loaded| loaded.descriptor.id == id)?;
-        let ask = loaded.descriptor.ask.as_ref()?;
-        Some(actions::AskRecipe {
-            args: ask.args.clone(),
-            prompt: match ask.prompt {
-                crate::descriptor::PromptPlace::Stdin => actions::PromptVia::Stdin,
-                crate::descriptor::PromptPlace::LastArg => actions::PromptVia::LastArg,
-            },
-            args_before_prompt: ask.args_before_prompt.clone(),
-            unusable_when: ask.unusable_when.clone(),
-            exhausted_when: ask.exhausted_when.clone(),
-            cooldown_secs: ask.cooldown_secs,
-            waits_for_a_person_when: ask.waits_for_a_person_when.clone(),
-            refuses_without_prompt: ask.refuses_without_prompt.clone(),
-            silent_without_prompt: ask.silent_without_prompt,
-            usage: loaded.descriptor.usage.as_ref().map(usage_recipe),
-        })
+        ask_recipe_of(&loaded.descriptor)
+    }
+
+    /// The options a model's name is written after, from the capability the
+    /// descriptor declares. No interpretation, as above: an engine that does
+    /// not declare it does not learn to receive one by resemblance.
+    fn model_option(&self, id: &str) -> Option<Vec<String>> {
+        self.catalog
+            .live()
+            .into_iter()
+            .find(|loaded| loaded.descriptor.id == id)?
+            .descriptor
+            .model_option()
     }
 
     fn fuel(&self, id: &str) -> Vec<models::fuel::Fuel> {
@@ -299,9 +296,31 @@ impl actions::ToolResolver for Tools {
     }
 }
 
+/// The recipe a descriptor declares, in the shape the actions know. **A
+/// function and not a method** so that a judge can compose the line a step
+/// would run without a machine to resolve it on: see fault 1.
+pub fn ask_recipe_of(descriptor: &crate::descriptor::Descriptor) -> Option<actions::AskRecipe> {
+    let ask = descriptor.ask.as_ref()?;
+    Some(actions::AskRecipe {
+        args: ask.args.clone(),
+        prompt: match ask.prompt {
+            crate::descriptor::PromptPlace::Stdin => actions::PromptVia::Stdin,
+            crate::descriptor::PromptPlace::LastArg => actions::PromptVia::LastArg,
+        },
+        args_before_prompt: ask.args_before_prompt.clone(),
+        unusable_when: ask.unusable_when.clone(),
+        exhausted_when: ask.exhausted_when.clone(),
+        cooldown_secs: ask.cooldown_secs,
+        waits_for_a_person_when: ask.waits_for_a_person_when.clone(),
+        refuses_without_prompt: ask.refuses_without_prompt.clone(),
+        silent_without_prompt: ask.silent_without_prompt,
+        usage: descriptor.usage.as_ref().map(usage_recipe),
+    })
+}
+
 /// The descriptor's `usage` block translated into the shape the actions know.
-/// No interpretation in here: what is written is copied, and what is not written
-/// stays `None` all the way down.
+/// No interpretation in here: what is written is copied, and what is not
+/// written stays `None` all the way down.
 fn usage_recipe(usage: &crate::descriptor::Usage) -> actions::UsageRecipe {
     actions::UsageRecipe {
         args: usage.args.clone(),

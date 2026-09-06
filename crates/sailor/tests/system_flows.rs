@@ -98,13 +98,19 @@ fn output_of(records: &[flow::StepRecord], step: &str) -> Value {
 
 // ── il vocabolario ───────────────────────────────────────────────────────
 
-/// IL GUASTO CHE QUESTA PROVA ESISTE PER PRENDERE: un flusso spedito che nomina
-/// un'azione che il programma non registra. Chi lo installa vedrebbe il flusso
-/// nell'elenco, lo lancerebbe, e riceverebbe «azione mancante» su un file che
-/// non può correggere perché sta dentro il binario.
+/// THE FAULT THIS TEST EXISTS TO CATCH: a shipped flow naming an action the
+/// program does not register. Whoever installs it would see the flow listed,
+/// run it, and get "missing action" on a file inside the binary. **The
+/// registry is built as a run builds it**, with the store, or it would call
+/// missing an action every real run has. That store is a scratch directory:
+/// this test reads no state of this machine.
 #[test]
 fn every_action_named_by_a_shipped_flow_is_in_the_vocabulary() {
-    let registry = product_registry();
+    let dir = std::env::temp_dir().join(format!("sailor-vocabolario-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("cartella di lavoro");
+    let store = ledger::Ledger::open(&dir).expect("deposito di lavoro");
+    let registry = registry::registry_in(registry::House::empty(), Some(store), None);
     for (name, entry) in system::builtin_registry() {
         let flow = entry.expect("il flusso spedito si carica");
         for step in flow.graph.steps() {
@@ -139,6 +145,77 @@ fn no_shipped_flow_names_a_binary() {
             );
         }
     }
+}
+
+/// **A MODEL NAMED IN THE FILE MUST REACH THE COMMAND LINE.** Flow and
+/// descriptor ship together and never speak: until somebody puts them side by
+/// side, a step can name a model to an engine that cannot receive one and
+/// nothing goes red. The line is composed from the shipped recipe, not a copy
+/// written here. The ordering half bites only for an engine with options glued
+/// to the question; the general rule is measured in `actions`.
+#[test]
+fn a_model_a_shipped_flow_names_reaches_the_command_line_of_that_engine() {
+    let catalog = toolbox::Catalog::load(&[toolbox::Source::Builtin]);
+    assert!(catalog.problems.is_empty(), "{:?}", catalog.problems);
+    let mut asked = 0;
+    for (name, entry) in system::builtin_registry() {
+        let flow = entry.expect("il flusso spedito si carica");
+        for step in flow.graph.steps() {
+            let Some(wanted) = step
+                .with
+                .as_ref()
+                .and_then(|with| with.get("model"))
+                .and_then(Value::as_object)
+            else {
+                continue;
+            };
+            for (id, model) in wanted {
+                let model = model.as_str().expect("un nome di modello è testo");
+                let descriptor = &catalog
+                    .descriptors
+                    .iter()
+                    .find(|loaded| loaded.descriptor.id == *id)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "«{name}» chiede un modello a «{id}», che nessun descrittore dichiara"
+                        )
+                    })
+                    .descriptor;
+                let recipe = toolbox::ask_recipe_of(descriptor).unwrap_or_else(|| {
+                    panic!("«{name}» chiede un modello a «{id}», che non si sa interrogare")
+                });
+                let option = descriptor.model_option().unwrap_or_else(|| {
+                    panic!(
+                        "«{name}» chiede a «{id}» il modello «{model}», e il suo descrittore non \
+                         dichiara come glielo si nomina"
+                    )
+                });
+                let line = actions::command_line_naming_model(&recipe, &option, model);
+                let at = line
+                    .iter()
+                    .position(|written| written == model)
+                    .expect("il nome del modello è sulla riga");
+                for glued in &recipe.args_before_prompt {
+                    let glued_at = line
+                        .iter()
+                        .position(|written| written == glued)
+                        .expect("ciò che sta attaccato alla domanda è sulla riga");
+                    assert!(
+                        at < glued_at,
+                        "«{id}»: il modello «{model}» sta dopo «{glued}», che deve restare \
+                         attaccato alla domanda — verrebbe letto come la domanda. Riga: {line:?}"
+                    );
+                }
+                // The real line, for whoever reads this output instead of the file.
+                println!("«{id}» ← «{model}»: {line:?}");
+                asked += 1;
+            }
+        }
+    }
+    assert!(
+        asked > 0,
+        "nessun flusso spedito nomina un modello: la prova non ha guardato niente"
+    );
 }
 
 /// **NESSUN FLUSSO SPEDITO PORTA UN PERCORSO DI UNA MACCHINA SOLA.**
