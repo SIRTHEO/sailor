@@ -222,7 +222,7 @@ pub fn resume_run_with(
         why.clone(),
         registry::how_it_stopped(&execution),
     )?;
-    let _ = write!(report, "\nstato: {status}");
+    report.push_str(&catalogue::say("cli.flow.run_status", &[("status", status)]));
     if exit_ok {
         Ok(report)
     } else {
@@ -381,9 +381,12 @@ pub(super) fn run_flow(sources: &[FlowSource], name: &str, mandate: Option<&str>
     // lack them and call two existing actions missing.
     let ledger_dir = default_ledger_dir()?;
     let ledger = Ledger::open(&ledger_dir).map_err(|error| {
-        format!(
-            "non riesco ad aprire il deposito {}: {error}",
-            ledger_dir.display()
+        catalogue::say(
+            "cli.flow.ledger_will_not_open",
+            &[
+                ("directory", &ledger_dir.display().to_string()),
+                ("error", &error.to_string()),
+            ],
         )
     })?;
     put_previous_report(&mut flow, &ledger)?;
@@ -395,10 +398,15 @@ pub(super) fn run_flow(sources: &[FlowSource], name: &str, mandate: Option<&str>
     );
     let missing = missing_actions(&flow.graph, &registry);
     if !missing.is_empty() {
-        return Err(format!(
-            "il flusso {} nomina azioni non registrate: {}",
-            flow.id,
-            missing.into_iter().collect::<Vec<_>>().join(", ")
+        return Err(catalogue::say(
+            "cli.flow.names_unregistered_actions",
+            &[
+                ("flow", &flow.id),
+                (
+                    "actions",
+                    &missing.into_iter().collect::<Vec<_>>().join(", "),
+                ),
+            ],
         ));
     }
 
@@ -438,13 +446,19 @@ pub(super) fn run_flow(sources: &[FlowSource], name: &str, mandate: Option<&str>
                 registry::how_it_stopped(&execution),
             )?;
             if exit_ok {
-                Ok(format!("flusso {} completato; corsa {run_id}", flow.id))
+                Ok(catalogue::say(
+                    "cli.flow.run_complete",
+                    &[("flow", &flow.id), ("run", &run_id)],
+                ))
             } else {
                 Err(match why {
-                    Some(why) => format!("flusso {}: {why}; corsa {run_id}", flow.id),
-                    None => format!(
-                        "flusso {} terminato con stato {status}; corsa {run_id}",
-                        flow.id
+                    Some(why) => catalogue::say(
+                        "cli.flow.run_stopped",
+                        &[("flow", &flow.id), ("why", &why), ("run", &run_id)],
+                    ),
+                    None => catalogue::say(
+                        "cli.flow.run_ended_with_status",
+                        &[("flow", &flow.id), ("status", status), ("run", &run_id)],
                     ),
                 })
             }
@@ -461,9 +475,9 @@ pub(super) fn run_flow(sources: &[FlowSource], name: &str, mandate: Option<&str>
                 Some(said.clone()),
                 None,
             )?;
-            Err(format!(
-                "esecuzione del flusso {} fallita: {said}; corsa {run_id}",
-                flow.id
+            Err(catalogue::say(
+                "cli.flow.run_failed",
+                &[("flow", &flow.id), ("said", &said), ("run", &run_id)],
             ))
         }
     }
@@ -505,11 +519,19 @@ pub(super) fn workspace_root() -> Option<PathBuf> {
 /// a step with `workdir` is about to fail.
 fn announce_root(root: Option<&Path>) {
     match root {
-        Some(root) => println!("radice del progetto: {}", root.display()),
+        Some(root) => println!(
+            "{}",
+            catalogue::say(
+                "cli.flow.project_root",
+                &[("root", &root.display().to_string())]
+            )
+        ),
         None => println!(
-            "radice del progetto: nessuna (nessun {} risalendo da qui); \
-             i passi che dichiarano «workdir» falliranno",
-            flow::workspace::MARKER
+            "{}",
+            catalogue::say(
+                "cli.flow.no_project_root",
+                &[("marker", flow::workspace::MARKER)]
+            )
         ),
     }
 }
@@ -595,7 +617,7 @@ mod tests {
     fn a_handed_record(started_at: i64, limit: Option<i64>, pid: Option<u32>) -> StepRecord {
         let input = match limit {
             Some(limit) => serde_json::json!({"handoff_timeout_secs": limit}),
-            None => serde_json::json!({"mandate": "senza scadenza"}),
+            None => serde_json::json!({"mandate": "with no deadline"}),
         };
         let mut record = StepRecord::started(
             "run-1",
@@ -618,14 +640,14 @@ mod tests {
         assert!(
             probe
                 .is_running(&a_handed_record(900, Some(600), None))
-                .expect("la sonda risponde"),
-            "la scadenza è nel futuro: il passo è tenuto"
+                .expect("the probe answers"),
+            "the deadline is in the future: the step is held"
         );
         assert!(
             !probe
                 .is_running(&a_handed_record(100, Some(600), None))
-                .expect("la sonda risponde"),
-            "la scadenza è passata: nessuno l'ha preso in carico"
+                .expect("the probe answers"),
+            "the deadline has passed: nobody took it on"
         );
     }
 
@@ -639,14 +661,14 @@ mod tests {
         assert!(
             probe
                 .is_running(&a_handed_record(1, Some(1), Some(4321)))
-                .expect("la sonda risponde"),
-            "con un pid scritto il passo si tiene, anche con la scadenza passata"
+                .expect("the probe answers"),
+            "with a pid written down the step is held, even with the deadline passed"
         );
         assert!(
             probe
                 .is_running(&a_handed_record(1, None, None))
-                .expect("la sonda risponde"),
-            "senza una scadenza leggibile l'ambiguità si conserva"
+                .expect("the probe answers"),
+            "with no readable deadline the ambiguity is kept"
         );
     }
 
@@ -682,7 +704,7 @@ mod tests {
                 "inputs": {}
             }"#,
         )
-        .expect("il flusso di prova è valido");
+        .expect("the scratch flow is valid");
 
         let mut store =
             InMemoryRecordStore::from_records(vec![a_handed_record(1_000, Some(3_600), None)]);
@@ -699,20 +721,20 @@ mod tests {
                 processes: &probe,
                 clock: &SystemClock,
             })
-            .expect("la riconciliazione risponde");
+            .expect("the reconciliation answers");
 
         assert_eq!(
             report.still_running,
             vec!["implementa".to_owned()],
-            "il passo è tenuto: la scadenza non è passata"
+            "the step is held: the deadline has not passed"
         );
         assert!(
             report.closed_as_broke.is_empty(),
-            "chiuderlo lo rimetterebbe fra i pronti mentre qualcuno ci lavora: {report:?}"
+            "closing it would put it back among the ready while somebody is working on it: {report:?}"
         );
         assert!(
             store.all()[0].outcome.is_none(),
-            "il record deve restare aperto"
+            "the record must stay open"
         );
     }
 
@@ -741,9 +763,9 @@ mod tests {
                 "inputs": {}
             }"#,
         )
-        .expect("il flusso di prova è valido");
+        .expect("the scratch flow is valid");
 
-        let ledger = Ledger::open(&home.0).expect("aprire il deposito");
+        let ledger = Ledger::open(&home.0).expect("the ledger opens");
         ledger
             .record_run(&ledger::RunRecord {
                 run_id: "run-vecchia".to_owned(),
@@ -759,7 +781,7 @@ mod tests {
                 worktree: None,
                 stop_reason: None,
             })
-            .expect("registrare la corsa");
+            .expect("recording the run");
         let mut record = StepRecord::started(
             "run-vecchia",
             "implementa",
@@ -773,7 +795,7 @@ mod tests {
         record.species = Some(flow::StepSpecies::Repeatable);
         ledger
             .append_step_started(&record)
-            .expect("aprire il passo");
+            .expect("opening the step");
         ledger
             .close_step(
                 "run-vecchia",
@@ -792,23 +814,23 @@ mod tests {
                     bytes_discarded: None,
                 },
             )
-            .expect("chiudere il passo");
+            .expect("closing the step");
 
         let report = resume_run_in(&ledger, &flow_file, "run-vecchia")
-            .expect("la corsa si riprende: l'unico passo è già andato");
+            .expect("the run resumes: its only step has already gone");
         assert!(report.contains("complete"), "{report}");
 
         let header = ledger
             .run_header("run-vecchia")
-            .expect("l'intestazione si rilegge")
-            .expect("la corsa esiste");
+            .expect("the header reads back")
+            .expect("the run exists");
         assert_eq!(
             header.started_at, 1_000,
-            "l'istante di partenza resta quello della prima corsa: con l'ora della \
-             ripresa, una corsa consegnata la sera e ripresa il mattino dopo \
-             risulterebbe partita al mattino"
+            "the start instant stays the first run's: with the hour of the resume, \
+             a run handed over at night and resumed the next morning would read \
+             as started in the morning"
         );
-        assert_eq!(header.status, "complete", "la ripresa aggiorna lo stato");
+        assert_eq!(header.status, "complete", "the resume updates the status");
     }
 
     // ── the report the run before it left ────────────────────────────
@@ -831,13 +853,13 @@ mod tests {
             std::process::id()
         ));
         let _ = std::fs::remove_dir_all(&dir);
-        let ledger = Ledger::open(&dir).expect("il deposito si apre");
+        let ledger = Ledger::open(&dir).expect("the ledger opens");
 
-        let mut first: FlowFile = serde_json::from_str(json).expect("caricare il flusso");
-        put_previous_report(&mut first, &ledger).expect("niente da portare");
+        let mut first: FlowFile = serde_json::from_str(json).expect("it loads");
+        put_previous_report(&mut first, &ledger).expect("nothing to carry over");
         assert!(
             first.inputs["innesco"].get("previous_report").is_none(),
-            "senza una corsa chiusa prima, l'innesco non porta niente: {:?}",
+            "with no run closed before it, the trigger carries nothing: {:?}",
             first.inputs["innesco"]
         );
 
@@ -856,17 +878,17 @@ mod tests {
                 worktree: None,
                 stop_reason: None,
             })
-            .expect("la riga della corsa");
+            .expect("the run's row");
         ledger
             .write_run_report("corsa-1", "test", 30)
-            .expect("il rapporto si scrive");
+            .expect("the report is written");
 
-        let mut second: FlowFile = serde_json::from_str(json).expect("caricare il flusso");
-        put_previous_report(&mut second, &ledger).expect("il rapporto entra");
+        let mut second: FlowFile = serde_json::from_str(json).expect("it loads");
+        put_previous_report(&mut second, &ledger).expect("the report goes in");
 
         assert_eq!(
             second.inputs["innesco"]["previous_report"]["run_id"], "corsa-1",
-            "la corsa dopo legge il rapporto di quella prima: {:?}",
+            "the run after reads the report of the one before: {:?}",
             second.inputs["innesco"]
         );
         let _ = std::fs::remove_dir_all(dir);
@@ -894,7 +916,7 @@ mod tests {
             std::process::id()
         ));
         let _ = std::fs::remove_dir_all(&dir);
-        let ledger = Ledger::open(&dir).expect("il deposito si apre");
+        let ledger = Ledger::open(&dir).expect("the ledger opens");
         ledger
             .record_run(&ledger::RunRecord {
                 run_id: "corsa-1".to_owned(),
@@ -910,17 +932,17 @@ mod tests {
                 worktree: None,
                 stop_reason: None,
             })
-            .expect("la riga della corsa");
+            .expect("the run's row");
         ledger
             .write_run_report("corsa-1", "test", 30)
-            .expect("il rapporto si scrive");
+            .expect("the report is written");
 
-        let mut flow: FlowFile = serde_json::from_str(json).expect("caricare il flusso");
-        put_previous_report(&mut flow, &ledger).expect("niente da portare");
+        let mut flow: FlowFile = serde_json::from_str(json).expect("it loads");
+        put_previous_report(&mut flow, &ledger).expect("nothing to carry over");
 
         assert!(
             flow.inputs["innesco"].get("previous_report").is_none(),
-            "un innesco a forma chiusa non riceve il rapporto: {:?}",
+            "a closed-shape trigger does not receive the report: {:?}",
             flow.inputs["innesco"]
         );
         let _ = std::fs::remove_dir_all(dir);
@@ -942,14 +964,14 @@ mod tests {
             }]},
             "inputs": {"innesco": {"source": "manual", "text": "quello di prima"}}
         }"#;
-        let mut flow: FlowFile = serde_json::from_str(json).expect("caricare il flusso");
+        let mut flow: FlowFile = serde_json::from_str(json).expect("it loads");
 
-        put_mandate(&mut flow, "il lavoro di adesso").expect("il mandato entra");
+        put_mandate(&mut flow, "the work of right now").expect("the mandate goes in");
 
-        assert_eq!(flow.inputs["innesco"]["text"], "il lavoro di adesso");
+        assert_eq!(flow.inputs["innesco"]["text"], "the work of right now");
         assert_eq!(
             flow.inputs["innesco"]["source"], "manual",
-            "e non porta via il resto dell'ingresso"
+            "and it does not take the rest of the input away"
         );
     }
 
@@ -959,13 +981,13 @@ mod tests {
     #[test]
     fn a_flow_without_a_trigger_refuses_the_mandate() {
         let json = flow_json("shell_check", "[]", "{}");
-        let mut flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
+        let mut flow: FlowFile = serde_json::from_str(&json).expect("it loads");
 
-        let refused = put_mandate(&mut flow, "un incarico").expect_err("non deve accettarlo");
+        let refused = put_mandate(&mut flow, "an errand").expect_err("it must not accept it");
 
         assert!(
             refused.contains("has no trigger step"),
-            "e dice perché: {refused}"
+            "and it says why: {refused}"
         );
     }
 
@@ -976,7 +998,7 @@ mod tests {
         let mut out = Vec::new();
         let mut state = LineState::default();
         for (pipe, bytes) in chunks {
-            marked(&mut out, &mut state, step, *pipe, bytes).expect("un Vec non fallisce");
+            marked(&mut out, &mut state, step, *pipe, bytes).expect("a Vec does not fail");
         }
         out
     }
@@ -991,7 +1013,7 @@ mod tests {
             ],
         );
         assert_eq!(
-            String::from_utf8(out).expect("ASCII puro"),
+            String::from_utf8(out).expect("plain ASCII"),
             "[prova-le-cose · out] prima\n\
              [prova-le-cose · out] seconda\n\
              [prova-le-cose · err] guasto\n"
@@ -1012,7 +1034,7 @@ mod tests {
             ],
         );
         assert_eq!(
-            String::from_utf8(out).expect("ASCII puro"),
+            String::from_utf8(out).expect("plain ASCII"),
             "[passo · out] una riga spezzata in tre\n"
         );
     }
@@ -1034,7 +1056,7 @@ mod tests {
             ],
         );
         assert_eq!(
-            String::from_utf8(out).expect("il testo si ricompone"),
+            String::from_utf8(out).expect("the text recomposes"),
             "[passo · out] però\n"
         );
     }
@@ -1053,7 +1075,7 @@ mod tests {
             ],
         );
         assert_eq!(
-            String::from_utf8(out).expect("ASCII puro"),
+            String::from_utf8(out).expect("plain ASCII"),
             "[passo · out] a meta\n\
              [passo · err] allarme\n\
              [passo · out]  e poi\n"
@@ -1152,35 +1174,35 @@ mod tests {
         let whole = start.elapsed();
         assert!(
             whole >= Duration::from_secs(4),
-            "il comando doveva davvero durare quattro secondi, altrimenti la \
-             misura non distingue niente: {whole:?}"
+            "the command really had to take four seconds, or the measure tells \
+             nothing apart: {whole:?}"
         );
 
         let shown = screen.shown();
         let (when, bytes) = shown
             .first()
             .cloned()
-            .expect("qualcosa doveva diventare visibile sullo schermo");
+            .expect("something had to become visible on the screen");
         // THE TIME BEFORE THE CONTENT: the instant is what this test measures,
         // and reading it last would hide the real reason for a red.
         assert!(
             when < Duration::from_secs(2),
-            "il primo pezzo è diventato visibile dopo {when:?}, cioè con la fine \
-             del comando e non mentre girava (durata totale {whole:?})"
+            "the first piece became visible after {when:?}, that is with the end \
+             of the command and not while it ran (whole duration {whole:?})"
         );
         let first = String::from_utf8_lossy(&bytes).into_owned();
         assert!(
             first.contains("[un-passo-che-parla · out] primo"),
-            "chi guarda deve sapere passo e pipe già dalla prima riga: {first:?}"
+            "whoever watches must know step and pipe from the very first line: {first:?}"
         );
         let all = screen.visible_text();
         assert!(
             all.contains("[un-passo-che-parla · out] secondo"),
-            "anche ciò che il passo dice dopo deve arrivare: {all:?}"
+            "what the step says afterwards must arrive too: {all:?}"
         );
         assert!(
             matches!(outcome, actions::RunOutcome::Finished { .. }),
-            "doveva finire in tempo"
+            "it had to finish in time"
         );
     }
 
@@ -1188,7 +1210,7 @@ mod tests {
     fn inputs_become_root_inputs_without_being_changed() {
         let inputs = r#"{"root":{"command":"true","env":{},"timeout_secs":1}}"#;
         let json = flow_json("shell_check", "[]", inputs);
-        let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
+        let flow: FlowFile = serde_json::from_str(&json).expect("it loads");
 
         let request = registry::execution_request(None, &flow, "corsa-1", None, 0);
 
@@ -1206,7 +1228,7 @@ mod tests {
     fn run_executes_the_registered_action_with_the_declared_input_plus_the_root() {
         let inputs = r#"{"root":{"command":"true","env":{},"timeout_secs":1}}"#;
         let json = flow_json("shell_check", "[]", inputs);
-        let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
+        let flow: FlowFile = serde_json::from_str(&json).expect("it loads");
         let store = InMemoryRecordStore::default();
 
         let execution = execute_flow(
@@ -1218,20 +1240,20 @@ mod tests {
             &registry_in(House::empty(), None, None),
             &Tick::new(0),
         )
-        .expect("eseguire il flusso");
+        .expect("running the flow");
 
         assert_eq!(execution.decisions.last(), Some(&Decision::Complete));
         assert_eq!(store.all().len(), 1);
         let seen = &store.all()[0].input;
-        for (field, value) in flow.inputs["root"].as_object().expect("un oggetto") {
-            assert_eq!(seen.get(field), Some(value), "«{field}» non deve cambiare");
+        for (field, value) in flow.inputs["root"].as_object().expect("an object") {
+            assert_eq!(seen.get(field), Some(value), "«{field}» must not change");
         }
         assert_eq!(
             seen.get("workdir").and_then(Value::as_str),
             workspace_root()
                 .as_deref()
-                .map(|root| root.to_str().expect("un percorso leggibile")),
-            "la cartella di lavoro è la radice, non dove sta il processo"
+                .map(|root| root.to_str().expect("a readable path")),
+            "the working directory is the root, not where the process sits"
         );
     }
 }
