@@ -83,6 +83,13 @@ fn holes(text: &str) -> BTreeSet<String> {
 #[test]
 fn every_key_the_code_asks_for_is_declared_in_every_language() {
     let asked = keys_the_code_asks_for();
+    let source = catalogue::entries(catalogue::SOURCE_LANGUAGE).expect("a source catalogue");
+    workspace::measured_against(
+        asked.len(),
+        "keys the code asks for",
+        source.len(),
+        "sentences the catalogue declares",
+    );
     let mut missing = Vec::new();
     for (language, _) in catalogue::LANGUAGES {
         let entries = catalogue::entries(language).expect("a catalogue that parses");
