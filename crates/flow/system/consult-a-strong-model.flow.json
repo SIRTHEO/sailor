@@ -1,0 +1,258 @@
+{
+  "id": "consult-a-strong-model",
+  "description": "PORTARE UNA DOMANDA DIFFICILE A UN MODELLO FORTE, CON IL MATERIALE GIÀ IN MANO. Nasce da una misura, non da un'opinione: lo stesso motore, sulla stessa domanda, è costato 154.271 gettoni e non ha consegnato niente quando il mandato gli diceva «leggi prima l'albero», e 14.401 gettoni con le proposte quando il materiale gliel'hanno dato. È il guasto 98. COSA GUARDARE QUI DENTRO. (1) IL MATERIALE ENTRA DALL'INNESCO, e un innesco senza materiale non arriva al motore: il passo «brief» è un controllo deterministico che rifiuta una consulenza vuota prima di spendere. La regola non sta in un commento, sta in un passo. (2) IL PASSO CHIEDE UNA FORMA E NON UN TEMA: «answer_shape» dichiara le sezioni, finisce nel prompt scritto una volta sola con un rinvio, e viene fatta rispettare sulla risposta. Un preambolo non attraversa la catena e non si paga a valle. (3) UN SOLO MOTORE, E NESSUN GIUDICE. Aggiungere un passo che approva sarebbe una chiamata in più per risparmiarne una, che è la famiglia scartata in docs/decisioni.md: un flusso a quattro passi costa 2,07 volte i turni di una sessione sola. (4) IL MURO STA NEL FILE, non nella buona volontà di chi lancia: «wall_secs» chiude la corsa dopo il passo in volo, e «spend_cap_micros» la ferma prima di spendere oltre. Una consulenza che non finisce è la seconda faccia del guasto 98. (5) LA RISPOSTA SI TIENE NEL DEPOSITO, sotto «consultations» e con l'identificativo della corsa come chiave: «sailor search» la ritrova per parole. Una consulenza pagata e non ritrovata si ripaga. (6) NESSUN PASSO NOMINA UN BINARIO: «tool» sono identificativi di descrittori, e su una macchina dove nessuno di quelli è installato il flusso si ferma dicendo quale manca, invece di ripiegare su un modello che non è stato scelto.",
+  "graph": {
+    "steps": [
+      {
+        "id": "trigger",
+        "deps": [],
+        "action": "trigger",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "source": "manual"
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "who": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "brief",
+        "deps": [
+          "trigger"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -e; held=$(printf '%s' \"$BRIEF\" | wc -c | tr -d ' '); if [ \"$held\" -lt 400 ]; then printf 'the brief holds %s bytes, and a consultation with no material sends the engine exploring: that cost 154271 tokens and returned nothing\\n' \"$held\" >&2; exit 1; fi; printf '{\\n  \"bytes\": %s\\n}\\n' \"$held\"",
+          "env": {
+            "BRIEF": {
+              "$from": "/text"
+            }
+          },
+          "timeout_secs": 30,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "bytes": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "bytes"
+            ],
+            "allow_extra": false
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "command",
+            "timeout_secs"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "bytes": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "bytes"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "consult",
+        "deps": [
+          "brief"
+        ],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tool": [
+            "codex",
+            "claude-code",
+            "agy"
+          ],
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "diagnosis": {
+                "type": "string"
+              },
+              "moves": {
+                "type": "any"
+              },
+              "not_covered": {
+                "type": "string"
+              },
+              "would_change_my_mind": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "diagnosis",
+              "moves",
+              "not_covered",
+              "would_change_my_mind"
+            ],
+            "allow_extra": false
+          },
+          "stdin": {
+            "$join": [
+              "Do NOT read any file and do NOT explore: everything you need is in the brief below. If a fact you need is missing, name the measurement that would settle it and write «not measured» — never assume it, and never go looking.\n\nWHAT A GOOD ANSWER LOOKS LIKE HERE\n- «diagnosis» is one paragraph naming the shape underneath the incidents, not a list of them.\n- «moves» is at most five, ranked by (what it unlocks x confidence) / effort. Each names what changes, and the observation that decides whether it worked.\n- «not_covered» is what would still get through. This is the part people skip, and it is the part that decides whether the answer is honest.\n- «would_change_my_mind» is the measurement that would overturn your own first move.\nNo preamble, no compliments, no summary, and do not restate the brief back.",
+              "\n\nHOW YOUR ANSWER MUST BE SHAPED\nAnswer with a JSON object and nothing else. It must match this shape exactly, where «properties» are the fields, «required» the mandatory ones, and «allow_extra: false» means no others are accepted:\n",
+              {
+                "$json": "/answer_shape"
+              },
+              "\n\nTHE BRIEF\n\n",
+              {
+                "$from": "/text"
+              }
+            ]
+          },
+          "timeout_secs": 1800
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "tool",
+            "timeout_secs"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "diagnosis": {
+              "type": "string"
+            },
+            "moves": {
+              "type": "any"
+            },
+            "not_covered": {
+              "type": "string"
+            },
+            "would_change_my_mind": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "diagnosis",
+            "moves",
+            "not_covered",
+            "would_change_my_mind"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "keep",
+        "deps": [
+          "consult"
+        ],
+        "action": "store_write",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "collection": "consultations",
+          "key": {
+            "$from": "/run_id"
+          },
+          "value": {
+            "$json": "/consult"
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "collection": {
+              "type": "string"
+            },
+            "key": {
+              "type": "string"
+            },
+            "value": {
+              "type": "any"
+            }
+          },
+          "required": [
+            "collection",
+            "key",
+            "value"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "written": {
+              "type": "any"
+            }
+          },
+          "required": [],
+          "allow_extra": true
+        }
+      }
+    ]
+  },
+  "inputs": {
+    "trigger": {
+      "source": "manual"
+    }
+  },
+  "wall_secs": 2400,
+  "spend_cap_micros": 5000000
+}

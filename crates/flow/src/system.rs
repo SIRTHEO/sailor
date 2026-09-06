@@ -52,6 +52,14 @@ pub const FLOWS: &[(&str, &str)] = &[
         "what-this-machine-has",
         include_str!("../system/what-this-machine-has.flow.json"),
     ),
+    // A hard question taken to a strong model with the material already in
+    // hand. The refusal of an empty brief is a step, not a comment: the same
+    // engine on the same question spent its whole window exploring and
+    // answered nothing.
+    (
+        "consult-a-strong-model",
+        include_str!("../system/consult-a-strong-model.flow.json"),
+    ),
     (
         "migrate-to-sailor",
         include_str!("../system/migrate-to-sailor.flow.json"),
