@@ -46,10 +46,20 @@
     "",
     "COME SI CORREGGE UN PREZZO SENZA RICOMPILARE. Si riscrive la voce in",
     "~/.config/sailor/pricing.json e vale dalla chiamata dopo. Toccare questo file",
-    "serve solo a cambiare ciò che ricevono tutti; quando lo fai, aggiorna `dated`."
+    "serve solo a cambiare ciò che ricevono tutti; quando lo fai, aggiorna `dated`.",
+    "",
+    "UN NOME CHE UN MOTORE DICHIARA NON È SEMPRE IL NOME CHE IL LISTINO PORTA, ED È",
+    "IL GUASTO 104. Il motore ha risposto `claude-fable-5-1`, il catalogo scaricato",
+    "lo chiama `anthropic/claude-fable-5.1`, e il costo restava sconosciuto per una",
+    "risoluzione di nome che non c'era. Si ripara qui, negli alias, che sono la",
+    "risoluzione dichiarata: indovinarla nel codice prezzerebbe un modello con la",
+    "tariffa di un altro. È una VOCE e non un alias di `claude-fable-5`, perché le",
+    "due non hanno la stessa tariffa: lettura dalla cache 0,25 contro 1,00 per",
+    "milione. I cinque numeri sono letti dal catalogo, la stessa fonte che",
+    "`sailor models list` legge, non derivati dai moltiplicatori dichiarati sopra."
   ],
   "currency": "USD",
-  "dated": "2026-08-30",
+  "dated": "2026-09-06",
   "models": [
     {
       "id": "claude-opus-5",
@@ -74,6 +84,19 @@
       "input_per_million": 10.0,
       "output_per_million": 50.0,
       "cached_per_million": 1.0,
+      "cache_write_per_million": 12.5,
+      "cache_write_long_per_million": 20.0
+    },
+    {
+      "id": "claude-fable-5-1",
+      "aliases": [
+        "claude-fable-5.1",
+        "fable-5.1",
+        "anthropic/claude-fable-5.1"
+      ],
+      "input_per_million": 10.0,
+      "output_per_million": 50.0,
+      "cached_per_million": 0.25,
       "cache_write_per_million": 12.5,
       "cache_write_long_per_million": 20.0
     },
