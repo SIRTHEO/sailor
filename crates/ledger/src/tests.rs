@@ -2276,6 +2276,32 @@ fn a_step_that_ran_twice_hands_over_its_latest_session() {
     );
 }
 
+/// **THE ENGINE'S OWN FIGURE IS THE ONE THE CAP COUNTS.** A long run counted
+/// 6.02 against a declared 20.01: the brake was deciding on a third.
+#[test]
+fn the_spend_counts_what_the_engine_declared_over_what_we_worked_out() {
+    let directory = TestDirectory::new("declared-beats-computed");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    let mut disagreeing = call_in_run("in-disaccordo", "run-1", Some(6));
+    disagreeing.declared_cost_micros = Some(20);
+    ledger
+        .record_model_call(&disagreeing)
+        .expect("record the call the two numbers disagree about");
+    ledger
+        .record_model_call(&call_in_run("solo-calcolata", "run-1", Some(1)))
+        .expect("record one the engine said nothing about");
+
+    let spend = ledger.spent_in_run("run-1").expect("read the spend");
+
+    assert_eq!(spend.micros, 21, "20 declared and 1 worked out, never 6 and 1");
+    assert_eq!(
+        spend.dearest_micros,
+        Some(20),
+        "and the dearest call is dear by the figure that counts"
+    );
+    assert_eq!(spend.calls_without_cost, 0, "both said something");
+}
+
 /// **THE SUM ALSO SAYS HOW MUCH IT DOES NOT KNOW.** Two calls, one that
 /// declared its cost and one that did not: the total is the first one's, and
 /// the second number says a row is outside the count. Looking only at `micros`
