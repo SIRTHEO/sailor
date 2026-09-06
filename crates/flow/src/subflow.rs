@@ -1,5 +1,5 @@
 //! The step that runs another flow. The decision "flows compose, they do not
-//! merge" is in `docs/decisioni.md`; each invariant sits next to what enforces
+//! merge" is in `docs/decisions.md`; each invariant sits next to what enforces
 //! it — [`system::sources`] for precedence, [`call_cycle`] and [`CALL_CHAIN`]
 //! for recursion, [`MAX_DEPTH`] for depth, [`tightest`] and [`remaining_of`]
 //! for the cap and for what it does not promise.

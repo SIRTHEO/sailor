@@ -15,13 +15,13 @@
 //! discutere con lei. Chi ne trova una nuova la aggiunge sotto: è una riga.
 //!
 //! **COSA NON GUARDA.** Commenti, testo dentro le stringhe, e i documenti in
-//! `docs/`: lì l'italiano è la regola, non l'eccezione. E i nomi delle *fixture*
+//! `docs/`: là la lingua è affare di chi li scrive. E i nomi delle *fixture*
 //! dentro le stringhe di prova — `f.name == "assente"` — restano quello che
 //! sono: dati, non identificatori.
 //!
 //! **E NON GUARDA I FLUSSI, PER DECISIONE.** Gli `id` dei flussi e dei passi —
 //! `sviluppa-sailor`, `verdetto` — e i nomi dei file `.flow.json` restano in
-//! italiano: decisione di Theo del 31/08/2026, scritta in `docs/decisioni.md`.
+//! italiano: decisione di Theo del 31/08/2026, scritta in `docs/decisions.md`.
 //! Sono dati che il **deposito conserva**: rinominare un passo farebbe apparire
 //! le corse già registrate come passi sconosciuti, e cambiare il nome di un
 //! flusso spedito farebbe smettere di vincere — in silenzio — il flusso che un

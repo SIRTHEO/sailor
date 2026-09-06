@@ -2,8 +2,8 @@
   "name": "sailor",
   "rules": [
     "AGENTS.md",
-    "docs/decisioni.md",
-    "docs/guasti-incontrati.md"
+    "docs/decisions.md",
+    "docs/faults-encountered.md"
   ],
   "checks": {}
 }
