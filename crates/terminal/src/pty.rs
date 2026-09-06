@@ -60,16 +60,16 @@ impl std::fmt::Display for PtyError {
     fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PtyError::NotOpened(error) => {
-                write!(out, "il sistema non ha dato uno pseudo-terminale: {error}")
+                write!(out, "the system gave no pseudo-terminal: {error}")
             }
             PtyError::FollowerNotReady(error) => write!(
                 out,
-                "lo pseudo-terminale si è aperto, ma il capo del figlio non si è potuto preparare: {error}"
+                "the pseudo-terminal opened, but the child's end could not be prepared: {error}"
             ),
             PtyError::NotStarted(error) => {
-                write!(out, "il programma del terminale non è partito: {error}")
+                write!(out, "the terminal's program did not start: {error}")
             }
-            PtyError::Broken(error) => write!(out, "il terminale non risponde più: {error}"),
+            PtyError::Broken(error) => write!(out, "the terminal no longer answers: {error}"),
             PtyError::NotRegistered(error) => write!(
                 out,
                 "the terminal opened, but its letterbox could not be registered: {error}"
