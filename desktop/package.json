@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "La finestra di Sailor: la tela dei flussi, i nodi e i loro agenti.",
+  "description": "The window of Sailor: the flows, their steps and the agents in them.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vitest run && vite build",
