@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 /**
  * **THE ORDINARY VIEW CARRIES NO MENU OF DESTINATIONS.** A permanent list of
- * where you could be is navigation holding space the work needs; sections and
- * configuration are reached by typing, and from the tree you stand in. What
- * this removes must stay reachable — the whole point is which of the two wins.
+ * where you could be holds space the work needs; sections are reached by
+ * typing. What it removes must stay reachable, or the removal is a loss.
  */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";

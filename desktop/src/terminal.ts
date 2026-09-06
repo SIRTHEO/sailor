@@ -334,27 +334,11 @@ function isPrintable(data: string): boolean {
 
 /**
  * **ENTER AND KEYS ARE TWO DIFFERENT ROADS, AND THIS FUNCTION IS THE FORK.**
- *
- * Only the line confirmed with Enter leaves as `submit`; everything else
- * leaves as `press`. If every key went through routing an editor inside the
- * terminal would be unusable.
- *
- * **WHY COMPOSE THE LINE INSTEAD OF MIRRORING IT.** `terminal_submit` writes
- * the line into the pseudo-terminal itself when it is a command. Had the
- * window already sent those characters, the line would run twice — `lsls`. So
- * while composing **nothing leaves**: the window draws the echo and erases it
- * on Enter, and the shell writes the line once.
- *
- * **THE PRICE, DECLARED — AND WHY `raw` IS THE DEFAULT.** While the window
- * holds the line the shell's `readline` does not: history, arrows and above
- * all Tab are lost, and nothing tells the window a full-screen program just
- * started in there. A terminal is therefore **born a terminal**: `compose` is
- * the explicit choice of whoever wants routing on that line.
- *
- * Inside `compose` a key that is not a character, a backspace or Enter **does
- * not leave** and says why. On an empty line the terminal is a passthrough.
- * Ctrl-C is the exception to everything and always goes through: a way to
- * stop what runs is taken from nobody.
+ * Only a line confirmed with Enter leaves as `submit`. While composing nothing
+ * leaves: the window draws the echo and `terminal_submit` writes the line once,
+ * or the shell would run it twice. The price is that `readline` — history,
+ * arrows, Tab — is the window's while it holds the line, so a terminal is born
+ * `raw` and `compose` is chosen. Ctrl-C always goes through.
  */
 export function keyStroke(mode: KeyMode, draft: string, data: string): Stroke {
   if (mode === "raw") {

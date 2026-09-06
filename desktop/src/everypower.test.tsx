@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 /**
- * **EVERY POWER THE WINDOW DECLARES IS ONE IT CAN REACH.** ⌘K is the one list
- * that holds them all, and it was built from the strip: `changes` and `sketch`
- * hang under the tree, so they were in no list typing could read. What is
- * expected here is read from the declarations, never from the palette itself.
+ * **EVERY POWER THE WINDOW DECLARES IS ONE IT CAN REACH.** ⌘K was built from
+ * the strip, and `changes` and `sketch` hang under the tree: no list typing
+ * could read held them. What is expected here is read from the declarations.
  */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
