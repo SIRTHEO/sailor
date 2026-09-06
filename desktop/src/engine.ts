@@ -582,6 +582,22 @@ export interface Ran {
 }
 
 /**
+ * Why a condition came out as it did. `found_was_there` is not decoration:
+ * JSON writes `null` both for a pointer leading nowhere and one leading to a
+ * null, two different reasons. Read `found` only when it says there was one.
+ */
+export interface Judgement {
+  held: boolean;
+  looked_at: string | null;
+  wanted: string;
+  found: unknown;
+  found_was_there: boolean;
+}
+
+/** The reasons the engine gives, told apart by `because`. One case today. */
+export type Why = { because: "condition" } & Judgement;
+
+/**
  * One time a step was crossed.
  *
  * It comes from the ledger, not from this window's memory: the runs this window
@@ -599,6 +615,8 @@ export interface StepPassage {
   refusal: Refusal | null;
   /** The program and the arguments the step started, after resolution. */
   ran: Ran | null;
+  /** Why the engine did with it what it did, recorded at open. */
+  why: Why | null;
   /** Where the run started from: the provenance, written by the system. */
   started_by: string;
   /** What entered this node, that time. */
