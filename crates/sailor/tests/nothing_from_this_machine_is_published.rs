@@ -32,6 +32,11 @@ const SCANNED_PLACES: &[&str] = &[
 ];
 
 /// Everything a reader of the published repository can open.
+///
+/// **AND ONLY WHAT IS PUBLISHED**: a file git does not track is nobody's but
+/// its author's, and accusing the sketches somebody keeps beside their work is
+/// a red they cannot answer. Where git cannot say, the walk stands as it is —
+/// the direction that accuses more, never less.
 fn published_files() -> Vec<PathBuf> {
     let root = repo_root();
     let mut found = Vec::new();
@@ -44,7 +49,33 @@ fn published_files() -> Vec<PathBuf> {
             found.push(path);
         }
     }
+    let Some(tracked) = tracked_paths(&root) else {
+        return found;
+    };
+    found.retain(|path| {
+        path.strip_prefix(&root)
+            .is_ok_and(|inside| tracked.contains(inside))
+    });
     found
+}
+
+/// What git tracks under this root, or `None` where git cannot answer.
+fn tracked_paths(root: &Path) -> Option<std::collections::BTreeSet<PathBuf>> {
+    let out = std::process::Command::new("git")
+        .args(["ls-files", "-z"])
+        .current_dir(root)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    Some(
+        String::from_utf8_lossy(&out.stdout)
+            .split('\0')
+            .filter(|entry| !entry.is_empty())
+            .map(PathBuf::from)
+            .collect(),
+    )
 }
 
 fn repo_root() -> PathBuf {
