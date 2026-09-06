@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -35,8 +35,6 @@ import { MACHINE, MACHINE_GROUND, PLACES, SECTIONS, TERMINALS_GROUND, onItsOwnNa
 import { World, OF_THIS_TREE, type FlowGroup } from "./World";
 import { liveOf, newestPerFlow } from "./flowlive";
 import { amongThese, rememberWhere, whereYouWere } from "./whereyouwere";
-import { ChangesScreen } from "./ChangesScreen";
-import { Sketch } from "./Sketch";
 import type { Project } from "./workspaces";
 import {
   DropdownMenu,
@@ -52,11 +50,30 @@ import {
 } from "@/components/ui/tooltip";
 import type { TerminalSummary } from "./terminal";
 import { BeatChip, BuildChip, LiveChip, WhoChip } from "./Bar";
-import { Memory } from "./Memory";
 import { MEMORY_TABS, type MemoryTab } from "./memorytabs";
-import { SailorScreen } from "./SailorScreen";
 import { SAILOR_TABS, type SailorTab } from "./sailortabs";
-import { TerminalsSection, TERMINALS_TABS, type TerminalsTab } from "./TerminalsSection";
+import { TERMINALS_TABS, type TerminalsTab } from "./terminalstabs";
+/** THE SECTIONS ARRIVE WHEN ASKED FOR. The window was one 1,122 kB chunk with
+ *  no dynamic import in it, so opening on the terminals fetched every machine
+ *  screen and the emulator first. `lazy` defers the fetch; it does not remount
+ *  what is already on screen. */
+const ChangesScreen = lazy(() =>
+  import("./ChangesScreen").then((module) => ({ default: module.ChangesScreen })),
+);
+const Sketch = lazy(() => import("./Sketch").then((module) => ({ default: module.Sketch })));
+const Memory = lazy(() => import("./Memory").then((module) => ({ default: module.Memory })));
+const SailorScreen = lazy(() =>
+  import("./SailorScreen").then((module) => ({ default: module.SailorScreen })),
+);
+const TerminalsSection = lazy(() =>
+  import("./TerminalsSection").then((module) => ({ default: module.TerminalsSection })),
+);
+
+/** What stands where a section will be: nothing. A section a few hundred
+ *  milliseconds away does not need announcing, and a spinner that flashes is
+ *  worse than the gap it covers. */
+const ARRIVING = null;
+
 import { TopBar } from "./TopBar";
 import { sourceWords, statusOfRun, type BarFlow, type Source } from "./boardhead";
 import { BenchContext, type Bench } from "./Workbench";
@@ -1426,6 +1443,7 @@ export default function App() {
       <WireContext.Provider value={openWireMenu}>
       <StepUsageContext.Provider value={stepUsage}>
       {place === "memory" && (
+        <Suspense fallback={ARRIVING}>
         <Memory
           native={NATIVE}
           now={now}
@@ -1435,6 +1453,7 @@ export default function App() {
           root={standingIn?.root ?? null}
           onOpenRun={(runId) => setWatching(runId)}
         />
+        </Suspense>
       )}
       {/* WHAT IS NOT SAVED YET IS THE TREE'S, so it hangs under the tree and
           not under a terminal — three clicks in, which is where the two most
@@ -1447,11 +1466,13 @@ export default function App() {
                 No tree open: what changed is a question about one.
               </p>
             ) : (
-              <ChangesScreen
-                key={standingIn.root}
-                root={standingIn.root}
-                name={standingIn.name}
-              />
+              <Suspense fallback={ARRIVING}>
+                <ChangesScreen
+                  key={standingIn.root}
+                  root={standingIn.root}
+                  name={standingIn.name}
+                />
+              </Suspense>
             )}
           </div>
         </div>
@@ -1461,15 +1482,18 @@ export default function App() {
       {place === "sketch" && (
         <div className="section">
           <div className="section__body">
-            <Sketch
-              native={NATIVE}
-              onStarted={(runId) => setWatching(runId)}
-              onDrafted={() => readFlows(() => true)}
-            />
+            <Suspense fallback={ARRIVING}>
+              <Sketch
+                native={NATIVE}
+                onStarted={(runId) => setWatching(runId)}
+                onDrafted={() => readFlows(() => true)}
+              />
+            </Suspense>
           </div>
         </div>
       )}
       {place === "sailor" && (
+        <Suspense fallback={ARRIVING}>
         <SailorScreen
           native={NATIVE}
           tab={sailorTab}
@@ -1482,10 +1506,14 @@ export default function App() {
             setMemoryTab("spend");
           }}
         />
+        </Suspense>
       )}
       {/* THE TERMINALS STAY MOUNTED BEHIND THE OTHER PLACES, like the canvas:
           unmounting the screen would destroy every emulator, and a session
-          would come back blank while the process inside is alive. */}
+          would come back blank while the process inside is alive. A boundary
+          of its own for the same reason: sharing one with the sections above
+          would take every emulator down whenever another section arrived. */}
+      <Suspense fallback={ARRIVING}>
       <TerminalsSection
         native={NATIVE}
         now={now}
@@ -1499,6 +1527,7 @@ export default function App() {
         bench={bench}
         onBenchClosed={() => setBench(null)}
       />
+      </Suspense>
 
       {/* Outside the canvas element on purpose: it is positioned in window
           coordinates, and inside it would scroll and scale with the paper. */}
