@@ -2,10 +2,8 @@
 //!
 //! A cap is a **guaranteed cap** only when every call it covers can be bounded
 //! before it starts: an enforceable per-call ceiling, and a tariff to price it
-//! with. Otherwise the cost is known only afterwards, the cap can stop the
-//! *next* call and not the overshoot of the current one, and its honest name is
-//! a **stop threshold**. The difference is decided here, from those two facts,
-//! never from a word somebody wrote by hand.
+//! with. Otherwise the cost is known only afterwards, and its honest name is a
+//! **stop threshold**. Decided here from those facts, never from a word.
 
 use models::pricing::{PriceMicros, TokenCounts};
 use std::collections::BTreeMap;
@@ -242,11 +240,9 @@ pub struct Suspension {
 /// Whether the next call may be authorised.
 ///
 /// The condition is Astra's: `spend + the reserves in flight + the maximum of
-/// the next call ≤ cap`. Two terms can be missing, and either one takes the
-/// guarantee away: a reserve nobody can bound, and a spend that reads `AtLeast`
-/// because some call declared no cost. What is left then is the older rule —
-/// stop when the remainder is gone — which stops the call *after*, never this
-/// one's overshoot.
+/// the next call ≤ cap`. Either of two terms can be missing — a reserve nobody
+/// can bound, a spend that reads `AtLeast` — and then what is left is the older
+/// rule, stop when the remainder is gone, which stops the call *after*.
 pub fn admits(
     cap_micros: i64,
     spent: &flow::Spend,

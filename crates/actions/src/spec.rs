@@ -81,14 +81,12 @@ pub fn engines_named_in(with: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// The per-call ceiling a step's `with` declares, for whoever checks a flow
-/// before it runs.
+/// The per-call ceiling a step's `with` declares, for whoever checks a flow.
 ///
-/// **THE SAME STRUCT THE RUN OBEYS, AND NOT A SECOND READER OF THE SAME TWO
-/// FIELDS.** A `with` is partial by construction, so the one field with no
-/// default is filled before parsing rather than the fields being read twice:
-/// two readers of one declaration drift, and here the drift would be a run
-/// held to a ceiling the check never saw.
+/// **THE SAME STRUCT THE RUN OBEYS, NOT A SECOND READER OF THE SAME FIELDS.** A
+/// `with` is partial by construction, so the one field with no default is
+/// filled before parsing: two readers of one declaration drift, and the drift
+/// here would be a run held to a ceiling the check never saw.
 pub fn ceiling_declared_in(with: &Value) -> crate::reserve::Declared {
     let mut filled = with.clone();
     if let Some(fields) = filled.as_object_mut() {
