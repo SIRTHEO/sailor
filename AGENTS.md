@@ -9,7 +9,7 @@ registrato** invece che come script, gancio o binario a sé.
 Il metro di ogni lavoro: *questa cosa toglie a Theo un'approvazione, o gli porta
 un dubbio migliore?* Se non fa né l'una né l'altra, non è lavoro.
 
-**Prima di correggere qualunque cosa, leggi `docs/decisioni.md`** — i vincoli
+**Prima di correggere qualunque cosa, leggi `docs/decisions.md`** — i vincoli
 permanenti e le scelte che non si riaprono — **e la nota `da-fare`**, che dice a
 che punto siamo e cosa sta per sparire: `sailor notes show da-fare`. Riparare un
 pezzo che deve sparire è lavoro contro il piano, e nessun controllo locale lo
@@ -122,7 +122,7 @@ Trappole già pagate su questa macchina:
   `CLAUDE.md` on an orphan branch with an unrelated history — one commit, never
   published, unreachable from anything. The project then spent days
   rediscovering it piece by piece. The branch is kept as the tag
-  `archivio-primo-abbozzo`; the rest of what it said is in `docs/decisioni.md`.
+  `archivio-primo-abbozzo`; the rest of what it said is in `docs/decisions.md`.
   It is the most expensive shape of the defect this project keeps chasing: not
   a rule nobody interrogates, but **a rule nobody could read**.
 
@@ -154,7 +154,7 @@ Trappole già pagate su questa macchina:
   comment lines, the longest being 66 consecutive lines. The cap hits the tail,
   not the habit. Shortening is not deleting: the first block trimmed was that
   66-line one in `flow/src/subflow.rs`, five decisions that were already in
-  `docs/decisioni.md` plus one limit that now sits next to the function causing
+  `docs/decisions.md` plus one limit that now sits next to the function causing
   it.
 
   **And the reason is not taste.** The semantic index does not strip comments:
@@ -188,7 +188,7 @@ Trappole già pagate su questa macchina:
   reads is language, what the ledger keeps is data.** Renaming a step would
   make already-recorded runs show up as unknown steps, and renaming a shipped
   flow would silently stop a user's own replacement from winning. Decided by
-  Theo on 2026-08-31, in full in `docs/decisioni.md`.
+  Theo on 2026-08-31, in full in `docs/decisions.md`.
 
 - **Commit messages: Conventional Commits.** `<type>(<scope>): <subject>`,
   lowercase, imperative, no trailing period. The body explains why, not what —

@@ -376,7 +376,7 @@ fn closing_a_terminal_stops_it_and_takes_it_off_the_list() {
 
 /// **LA RIGA DELL'ELENCO ESCE COI NOMI CHE LA FINESTRA LEGGE.**
 ///
-/// `docs/2026-09-01-il-contratto-del-terminale.md` dice due cose insieme: che la
+/// `docs/the-terminal-contract.md` dice due cose insieme: che la
 /// riga è questo tipo, e che i suoi campi si chiamano `workspaceRoot`,
 /// `workspaceName`, `processId`. Reggono solo se questa struttura esce così: chi
 /// ne ricopiasse una versione in TypeScript o nel guscio farebbe il guasto 10.
