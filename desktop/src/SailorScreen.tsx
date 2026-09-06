@@ -11,21 +11,22 @@ import { KeepsScreen } from "./KeepsScreen";
 import { LookScreen } from "./LookScreen";
 import { MachineScreen } from "./MachineScreen";
 import { Manual } from "./Manual";
+import { ModelsScreen } from "./ModelsScreen";
 import { ProfileList } from "./ProfileList";
-import { QuotaScreen } from "./QuotaScreen";
 
 
 export function SailorScreen({
   native,
-  now,
   tab,
   onTerminalOpened,
+  onQuota,
 }: {
   native: boolean;
-  now: number;
   tab: SailorTab;
   /** An engine's gesture opened a terminal: whoever holds the places shows it. */
   onTerminalOpened?: () => void;
+  /** The quota is another page's question: this is the way to it. */
+  onQuota?: () => void;
 }) {
   return (
     <div className="section">
@@ -34,7 +35,7 @@ export function SailorScreen({
         {tab === "cando" && <AbilitiesScreen native={native} />}
         {tab === "engines" && <EnginesScreen native={native} onTerminalOpened={onTerminalOpened} />}
         {tab === "profiles" && <ProfileList native={native} />}
-        {tab === "models" && <QuotaScreen native={native} now={now} />}
+        {tab === "models" && <ModelsScreen native={native} onQuota={onQuota} />}
         {tab === "equipment" && (
           <>
             <MachineScreen native={native} />

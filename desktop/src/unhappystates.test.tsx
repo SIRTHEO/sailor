@@ -570,31 +570,30 @@ describe("the bar does not send you to a column this place has not got", () => {
     const bar = () => container.querySelector(".topbar") as HTMLElement;
 
     // The control that makes the absences below worth anything: on the board
-    // the bar really does carry what it knows about the open flow.
-    expect(container.querySelector(".topbar__flow"), "the bar says nothing about the open flow").not.toBeNull();
+    // the head really does carry what is known about the open flow.
+    expect(container.querySelector(".focusbar"), "nothing says anything about the open flow").not.toBeNull();
     expect(bar().textContent ?? "", "the bar still points at the column").not.toMatch(/\brail\b|\bcolumn\b/i);
 
     // Leave the board: **mounted is not in view**. The board sits inside
-    // `.body[hidden]`, and the bar must stop speaking of a flow this place
-    // does not draw.
+    // `.body[hidden]`, and its head must go with it.
     leaveTheBoard();
     expect(container.querySelector(".body[hidden]"), "the board is still in view").not.toBeNull();
     expect(bar().textContent ?? "", "the bar points at a column in a place that has none").not.toMatch(
       /\brail\b|\bcolumn\b/i,
     );
-    expect(container.querySelector(".topbar__flow"), "the bar speaks of a flow off the board").toBeNull();
+    expect(container.querySelector(".focusbar"), "a flow is spoken of off the board").toBeNull();
   });
 
   test("AND THE RUN OF THAT FLOW GOES QUIET WITH IT, not one without the other", () => {
     const { container } = render(<App />);
     goToFlows();
-    const word = () => container.querySelector(".topbar__status-word")?.textContent ?? null;
+    const word = () => container.querySelector(".focusbar__status-word")?.textContent ?? null;
 
-    // The control: on the board the bar really does say how the flow last ran.
-    expect(word(), "the bar says nothing about the run of the open flow").not.toBeNull();
+    // The control: on the board the head really does say how the flow last ran.
+    expect(word(), "nothing says how the open flow last ran").not.toBeNull();
 
     leaveTheBoard();
-    expect(word(), "the bar reports a run of a flow this place does not draw").toBeNull();
+    expect(word(), "a run is reported in a place that draws no flow").toBeNull();
   });
 });
 
