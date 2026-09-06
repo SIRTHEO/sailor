@@ -1,8 +1,12 @@
 [package]
 name = "profiles"
 version = "0.1.0"
+description = "The credential homes, one per command line."
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
 
 # Several profiles per command line, with or without its own support for them.
 # Dependencies already used elsewhere in the tree: nothing extra to download.

@@ -1,17 +1,18 @@
 [package]
 name = "catalogue"
 version = "0.1.0"
+description = "The sentences a person reads, in both languages, from one catalogue."
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
 
 # The sentences Sailor says, in one place, for both surfaces: the window reads
-# `i18n/*.json` through `desktop/src/i18n.ts`, and everything here reads the same
-# two files through this crate. Two readers, one catalogue — because two
-# catalogues over one set of keys drift, and the drift shows up as a language a
-# user did not ask for.
-#
-# No dependency but the parser. This crate sits under the whole workspace, so
-# anything it pulls in, everything pulls in.
+# `i18n/*.json` through `desktop/src/i18n.ts`, and everything here reads the
+# same two files through this crate. Two catalogues over one set of keys
+# drift, and the drift shows up as a language a user did not ask for.
+# No dependency but the parser: this crate sits under the whole workspace.
 [dependencies]
 serde_json = { workspace = true }
 
