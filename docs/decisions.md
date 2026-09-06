@@ -1,36 +1,36 @@
-# Le decisioni
+# The decisions
 
-**Questo file è la memoria delle scelte, e i flussi lo leggono.** Non è un
-diario: ogni voce è una decisione che vincola il lavoro futuro, con chi l'ha
-presa e perché. Un flusso che sta per scegliere cosa fare, o che sta per
-implementare qualcosa, lo consulta **prima** — altrimenti riprende una strada
-già scartata, e nessuno se ne accorge finché non è scritta.
+**This file is the memory of the choices, and the flows read it.** It is not a
+diary: every entry is a decision that binds future work, with who took it and
+why. A flow about to choose what to do, or about to implement something,
+consults it **first** — otherwise it takes up a road already discarded, and
+nobody notices until it is written.
 
-**Perché esiste.** La notte del 29/08/2026 sono state prese sette decisioni. Non
-esistevano da nessuna parte se non nei messaggi di commit e nella conversazione
-in cui erano nate: il flusso lanciato il giorno dopo non poteva conoscerle.
-Questo è il difetto che separa un sistema che impara da uno che ricomincia.
+**Why it exists.** On the night of 29/08/2026 seven decisions were taken. They
+existed nowhere except in the commit messages and in the conversation they were
+born in: the flow launched the next day could not know them. This is the defect
+that separates a system that learns from one that starts over.
 
-**Una decisione si scrive qui quando vincola qualcuno che non era presente.**
-Se riguarda solo chi l'ha presa e finisce con lui, non è una decisione: è una
-scelta di lavoro, e sta nel commit.
+**A decision gets written here when it binds somebody who was not present.** If
+it concerns only whoever took it and ends with them, it is not a decision: it is
+a work choice, and it belongs in the commit.
 
-## I vincoli permanenti
+## The permanent constraints
 
-Non sono decisioni prese una volta: sono il metro con cui ogni altra si giudica.
-Una proposta che li viola si scarta, anche quando è migliore sotto ogni altro
-aspetto.
+They are not decisions taken once: they are the yardstick every other one is
+judged by. A proposal that violates them is discarded, even when it is better in
+every other respect.
 
-| vincolo | cosa vuol dire in pratica |
+| constraint | what it means in practice |
 |---|---|
-| **Indipendenza dal modello** | Sailor funziona con qualunque strumento a riga di comando, compresi quelli che non esistono ancora. Una soluzione che funziona solo su un motore preciso va **dichiarata come capacità** di quello strumento, e chi non ce l'ha deve continuare a funzionare pagando di più. |
-| **Chiarezza per chi guarda** | Sailor esiste perché una persona veda e controlli cosa fanno i suoi strumenti. Un'ottimizzazione che rende opaco come i passi si passano le informazioni è **peggio del costo che risparmia**. Vale anche per l'aspetto: un'interfaccia che nasconde cosa succede è il contrario del prodotto. |
-| **Lo schermo è il giudice** | Una regola di progetto che non si può verificare guardando un'immagine è un'opinione. Viene dai due difetti che né i tipi né le prove hanno visto. |
-| **Chi crea non giudica** | Il verdetto su un lavoro lo dà chi non l'ha scritto. Un motore che verifica se stesso ha già in contesto le proprie conclusioni: non è distratto, è compromesso. |
-| **Una prova vale solo se poteva venire diversa** | Dopo averla scritta si rompe apposta ciò che prova, e si guarda che diventi rossa. Chi dichiara di non averlo fatto viene respinto. |
-| **Programmiamo a codice solo ciò che tocca il mondo** | Il motore che esegue, il deposito che registra, il gate che autorizza. Tutto il resto è un flusso, modificabile senza ricompilare. Il confine è **il potere**, non «esegue contro decide». |
+| **Independence from the model** | Sailor works with any command-line tool, including those that do not exist yet. A solution that works only on one precise engine has to be **declared as a capability** of that tool, and whoever does not have it has to go on working while paying more. |
+| **Clarity for whoever is looking** | Sailor exists so that a person may see and control what their tools do. An optimisation that makes how the steps pass information to each other opaque is **worse than the cost it saves**. It holds for the look as well: an interface that hides what is happening is the opposite of the product. |
+| **The screen is the judge** | A project rule that cannot be checked by looking at an image is an opinion. It comes from the two defects that neither the types nor the tests saw. |
+| **Whoever creates does not judge** | The verdict on a piece of work is given by whoever did not write it. An engine that checks itself already has its own conclusions in context: it is not distracted, it is compromised. |
+| **A test counts only if it could have come out differently** | After writing it you break on purpose the thing it tests, and watch it go red. Whoever declares they did not do this is turned away. |
+| **We write in code only what touches the world** | The engine that runs, the store that records, the gate that authorises. All the rest is a flow, changeable without recompiling. The boundary is **the power**, not «runs versus decides». |
 
-## Le decisioni prese
+## The decisions taken
 
 ### English everywhere, restoring the charter the project was founded with
 
@@ -73,755 +73,776 @@ for the same line twice. The measure is
 count — 11,854 lines the day of the decision — can only go down. This file, and
 the rest of `docs/`, convert as they are touched.
 
-### La lingua si sceglie su chi legge: inglese ciò che vede uno sconosciuto, italiano ciò che vede chi lavora qui
-
-**01/09/2026**, decisa da Theo guardando la CI.
-
-`README`, file della CI e **i messaggi che un utente dello strumento vede** —
-quello che `sailor` stampa, quello che dice quando rifiuta, i testi di
-`--help` — vanno in **inglese**. Commenti dentro il codice, messaggi delle
-prove e tutto ciò che sta sotto `docs/` restano in **italiano**.
-
-**Cosa cambia rispetto a prima.** `AGENTS.md` diceva «commenti e messaggi in
-italiano», in una riga sola, senza distinguere i due tipi di messaggio. Il
-confine che c'era — «ciò che il compilatore legge sta in inglese, ciò che il
-deposito conserva è un dato» — divideva bene il codice e non aveva niente da
-dire sulla vetrina: finché il repo era privato, la vetrina non esisteva. Il
-giorno in cui `main` è diventato Sailor la domanda è nata da sola.
-
-**L'occasione.** Il file della CI, scritto il 31/08, aveva tre lavori chiamati
-`prove`, `stile` e `finestra`: chiavi che leggono `needs:`, le API di GitHub e
-`gh run`, cioè identificatori, su una pagina che chiunque può aprire. La
-regola sugli identificatori c'era già; a mancare era chi la interrogasse sui
-`.yml`, perché `identifiers_are_in_english` leggeva solo i sorgenti Rust. Ora
-legge anche le chiavi dei lavori.
-
-**Il confine è chi legge, non che tipo di file è.** Un `panic!` dentro una
-prova parla a chi lavora qui: italiano. Lo stesso `panic!` su un percorso che
-un utente può battere parla a lui: inglese. Il caso ambiguo si chiede, non si
-risolve scegliendo la lingua comoda.
-
-**Cosa NON tocca.** Gli `id` dei flussi e dei passi e i nomi dei file
-`.flow.json` **restano in italiano**: sono dati che il deposito conserva, e la
-decisione del 31/08/2026 che li protegge vale ancora — rinominare un passo
-farebbe apparire le corse già registrate come passi sconosciuti. Chi legge
-questa voce e pensa che i flussi debbano seguire la vetrina, chieda prima.
-
-### I rinvii si sciolgono in un posto solo, dopo la condizione; e `input` è ciò che il passo ha ricevuto
-
-**01/09/2026**, dal guasto 28.
-
-Come un passo riceve il lavoro del passo prima **non è una scelta della singola
-azione**: è la semantica del grafo, e sta in `flow::step_input` — l'unico punto
-attraversato da ogni passo di ogni corsa. Un'azione non risolve i propri rinvii,
-li riceve già sciolti, come riceve già risolto il `workdir`. Ogni azione
-registrata la eredita, comprese quelle che nessuno ha ancora scritto.
-
-**L'ordine dentro quel punto è la decisione, e non è un dettaglio
-d'implementazione**: comporre le dipendenze col `with`, risolvere il `workdir`,
-valutare il `when`, e sciogliere i rinvii **solo se il passo gira**. *Perché il
-`when` prima*: un passo saltato riceve l'ingresso monco della dipendenza che non
-c'è, quindi i suoi puntatori non trovano niente — e un passo che non gira non
-deve rompersi per un lavoro che non farà. Misurato su
-`flows/chiedi-all-indice.flow.json`, che con l'ordine opposto passava da
-«completato» a «terminato con stato failed». *Il prezzo, dichiarato*: un
-`workdir` scritto come `{"$from": …}` non viene attaccato alla radice. Era già
-così, e vale meno del caso qui sopra.
-
-**Che cosa questo obbliga chi scrive un controllo.** Una prova di comportamento
-resta verde con una copia della risoluzione rimessa dentro un'azione: il
-comportamento non cambia, cambia solo il numero di posti in cui vive la regola —
-che è il guasto. Quindi la guardia **conta i posti**
-(`crates/sailor/tests/references_are_resolved_in_one_place.rs`), e ha a sua
-volta delle prove che interrogano lei: due volte quel lettore è stato cieco in
-silenzio, e un controllo che si può spegnere da solo non è un controllo.
-
-**E che cosa vuol dire `StepRecord::input`, che questa decisione ha cambiato.**
-Una regola sola: *l'ingresso come il passo l'ha ricevuto nel momento in cui ha
-smesso di essere elaborato.* Sciolto se il passo gira; **non** sciolto se è
-saltato o se si è rotto proprio sciogliendo un rinvio — nel secondo caso
-apposta, perché chi legge deve vedere il puntatore da correggere e non il vuoto
-che ne è uscito. **Quale dei tre sia non lo dice quel campo: lo dice `outcome`,
-nello stesso record.** Va scritto qui perché un `{"$from": …}` letto in un
-record non è di per sé un difetto — su `Skipped` è la norma, su `Broke` è la
-diagnosi, su `Went` sarebbe un guasto — e chi legge il deposito senza questa
-riga leggerebbe le tre cose allo stesso modo.
-
-**Il residuo, misurato e non nascosto**: una corsa iniziata prima del 01/09 e
-ripresa dopo confronta un'impronta vecchia grezza con una nuova sciolta, e
-dichiara `DifferentInput` sullo stesso lavoro. È un'etichetta sbagliata su un
-tentativo, non un dato perso, e si esaurisce da sé quando quelle corse finiscono.
-
-### Un passo si può consegnare all'agente vivo; il giudizio no
-**31/08/2026.** Un passo può dichiarare l'azione `handed_to_agent`: descrive il
-lavoro e **non avvia niente**. A eseguirlo è l'agente già vivo nel terminale, che
-poi rientra nel sistema con `sailor step open` e `sailor step close`. Il record
-del passo resta quello di sempre — intenzione scritta prima, esito scritto dopo —
-e la corsa non si accorge di chi c'era in mezzo.
-
-**Perché, con la misura.** Un flusso di quattro passi costa **2,79 volte** un
-singolo prompt sullo stesso compito, e il rapporto dei consumi **è il rapporto
-dei turni**: 62 contro 30. Non legge di più per turno (+8%): fa il doppio dei
-turni, perché ogni passo avvia un processo che riscopre il repository da zero.
-Ingrossare il passaggio fra i passi peggiorerebbe le cose; la cura è non
-riaprire una conversazione che è già aperta.
-
-**Che cosa questo non concede, ed è il punto.** Consegnare l'esecuzione non è
-consegnare il verdetto. Chi ha chiuso un passo **non può aprire né chiudere** un
-passo che da quello dipende: è il vincolo permanente «chi crea non giudica»
-applicato al gesto in cui il giudizio si scrive. Il rifiuto vale in tutti e due i
-punti apposta — solo all'apertura si aggirerebbe aprendo con un nome e chiudendo
-con un altro.
-
-**La negazione è il predefinito, non una lista di permessi.** Un flusso che vuole
-davvero la stessa mano lo dichiara passo per passo con `"same_holder_ok": true`.
-Il verso conta: una lista di permessi dimenticata lascia passare tutto e nessuno
-se ne accorge; una negazione dimenticata al massimo ferma un lavoro, e si vede
-subito.
-
-**Chi tiene un passo consegnato è una scadenza, non un processo.** `held_by_pid`
-resta vuoto e nessuno chiede niente al sistema operativo: è il guasto 12, dove
-`pgrep` dentro il perimetro rispondeva vuoto *senza errore*. La ripresa
-(`sailor flow resume`) confronta `handoff_timeout_secs` con `started_at`; ciò che
-non sa vedere — un record con un pid, o senza scadenza leggibile — **non lo
-dichiara morto**.
-
-**Due debolezze dichiarate, scritte nel codice e non solo qui.** (1) `--as <chi>`
-è un nome che se lo sceglie chi lo scrive: Sailor non ha nessun identificativo di
-sessione da leggere, quindi il rifiuto qui sopra vale contro la distrazione, non
-contro chi vuole aggirarlo. (2) Su un flusso con consegne il **tetto di spesa
-smette di essere una garanzia**, perché il consumo dell'agente è autodichiarato
-(`sailor step close --turns`). Per questo quella riga porta `cost_micros` vuoto e
-non un numero stimato: così entra in `Spend::calls_without_cost`, `is_complete()`
-diventa falso, e ogni posto che mostra il tetto dice già che la spesa vera è più
-alta. Un costo inventato renderebbe *completa* una somma che non lo è.
-
-### La lingua: identificatori in inglese, tutto il resto in italiano
-**31/08/2026.** Ogni cosa che il compilatore legge sta in inglese — funzioni,
-tipi, campi, variabili, moduli, costanti, **nomi di file**, classi CSS, chiavi
-JSON. Ogni cosa che legge una persona sta in italiano: commenti, messaggi
-d'errore, testo nella finestra, documenti, e i **dati** delle prove.
-**Perché sta qui e non solo in `AGENTS.md`.** Ci stava solo lì, e il 31/08 se ne
-contavano 136 violazioni — quasi tutte scritte nei tre giorni precedenti, da
-sessioni che avevano ricevuto «rispondi in italiano» come istruzione forte e
-questa riga come una fra molte in un documento. Questo file è la memoria che si
-rilegge prima di correggere qualunque cosa: se una regola non è qui, non è
-vincolante nei fatti, qualunque cosa dica altrove.
-**E soprattutto ha una misura.** `cargo test -p sailor --test
-identifiers_are_in_english` cerca parole italiane in posizione di dichiarazione,
-e conosce anche i nomi dei file. Non è un analizzatore: è un elenco di parole,
-che non ha falsi positivi e lascia passare quelle che non conosce. Il prezzo è
-dichiarato; l'alternativa era continuare a non misurare niente.
-**La lezione, che vale oltre la lingua.** Una regola che nessun controllo
-interroga non diventa rossa mai — è lo stesso difetto del puntatore morto che
-`AGENTS.md` racconta di sé, e del guasto 22, dove uno zero mai calcolato è
-passato per una misura. Chi scrive una regola nuova scrive anche ciò che la
-rende rossa.
-
-### Gli identificativi dei flussi e dei passi restano in italiano
-**31/08/2026 — Theo.** `sviluppa-sailor`, `verdetto`, `implementa`, i nomi dei
-file `.flow.json`: restano come sono. Il confine non è fra codice e dati in
-astratto — è questo: **ciò che il compilatore legge sta in inglese; ciò che il
-deposito conserva è un dato, e i dati non si rinominano per stile.**
-**Perché**, con le due conseguenze che nessun compilatore prende. (1) Il
-deposito ha corse già registrate con quegli `step_id`: un passo `verdetto`
-diventato `verdict` fa apparire il vecchio come sconosciuto e il nuovo come mai
-eseguito, e la ripresa dopo crash non ritrova più i propri passi. (2) La
-decisione «i flussi di sistema stanno dentro il binario» dice che chi ne vuole
-uno diverso ne scrive uno **con lo stesso nome** in casa propria, e vince il
-suo: cambiare il nome spedito farebbe smettere di vincere, **in silenzio**, un
-flusso che qualcuno ha già scritto.
-**Cosa ne discende.** Il controllo `identifiers_are_in_english` non guarda i
-`.flow.json` e non guarderà mai gli `id`: non è una dimenticanza da completare.
-Chi in futuro lo estende ai dati sta rompendo questa decisione, non applicandola.
-Resta l'asimmetria dichiarata: `flows/dispatch-the-work.flow.json` ha l'id in
-italiano e i passi in inglese, e va bene così — sono tutti e due dati.
-
-### Il tetto di spesa è del flusso, e la larghezza del fronte ne discende
-**31/08/2026.** Un flusso può dichiarare `spend_cap_micros`: quanto una sua
-corsa può spendere. Prima di aprire ogni fronte l'esecutore chiede al deposito
-quanto è stato speso; se il tetto è raggiunto la corsa si ferma con una parola
-sua — `cap_reached`, non `failed` — e dice quali passi non sono partiti.
-**Perché prima di aprire e non dentro l'azione**: un passo che scopre a metà di
-aver sforato ha già pagato. L'unico istante in cui fermarsi costa zero è prima
-di aprire il fronte.
-**Perché una parola sua e non un guasto**: un flusso notturno che tocca il
-proprio tetto ogni notte apparirebbe rotto ogni notte, e chi guarda smetterebbe
-di guardare.
-**Che cosa il tetto non promette**: si misura sui costi che i motori
-dichiarano. Codex dichiara il totale dei token e non i due lati, quindi la sua
-riga resta senza costo e non entra nel conto. Il tetto è una garanzia **su ciò
-che si sa**, e la corsa fermata scrive quante chiamate erano fuori — perché chi
-sta per alzarlo e rilanciare deve saperlo prima, non dopo.
-**Il predefinito è nessun tetto.** `None` non è `Some(0)`: il primo è «nessuno
-ha messo un limite», il secondo è «questo flusso non deve spendere niente». Un
-tetto che comparisse da sé fermerebbe corse che nessuno ha chiesto di fermare, e
-lo farebbe la notte.
-
-### Un tetto non si tara su meno di tre corse costate, e oggi non se ne tara nessuno
-**31/08/2026.** `sailor flow cap <nome>` suggerisce un valore **solo** con
-almeno tre corse di quel flusso che abbiano speso qualcosa di noto. Sotto la
-soglia rifiuta di suggerire e dice cosa c'è. Il suggerimento, quando c'è, è
-*peggiore corsa osservata + chiamata più cara osservata*.
-
-**Perché tre, e perché il secondo addendo.** Con due campioni il massimo e il
-minimo sono gli unici due valori: chiamare «peggiore osservata» il maggiore di
-due è un dato inventato con la faccia di una misura, ed è il guasto 22 in
-un'altra forma. Il secondo addendo non è prudenza: il controllo scatta *prima*
-di aprire un fronte, mai dentro una chiamata, quindi la corsa si ferma con la
-grana di una chiamata e non di un micro — la somma dice «la corsa più cara che
-ho visto, più la grana con cui so fermarmi».
-
-**E oggi nessun flusso raggiunge la soglia. Misurato sul deposito di questa
-macchina il 31/08/2026, in sola lettura**: 34 corse, e **6 con un costo diverso
-da zero** — `come-lo-risolvono-gli-altri` 2, `esamina-la-repo` 2,
-`prova-dei-turni` 1, `sviluppa-sailor` 1. Le altre 28 sono il guasto 22, dove il
-costo era la costante zero fino al 30/08. **La proposta scartata era «mediana +
-50%»**: su quella colonna la mediana darebbe zero per ogni flusso, cioè un tetto
-che ferma ogni corsa prima del primo passo — e lo farebbe di notte, con l'aria
-di una taratura su molti campioni. Chi vorrà tarare i tetti lo farà quando i
-campioni ci saranno, non prima.
-
-**Il tetto non si collega a `native_spend_cap`**, la capacità dichiarata dal
-solo claude-code: portata diversa (una corsa contro un'invocazione), parola
-diversa per fermarsi, e un motore su quattro ce l'ha. Farne dipendere il freno
-significherebbe che il tetto vale o non vale a seconda di chi risponde.
-
-**E la cifra si chiama «costo equivalente» dovunque si mostri.** Resta in micro
-di valuta, ma «spesi 5,00 su un tetto di 5,00» fa credere che sia stata fermata
-una fattura: con una riga di comando locale si paga un abbonamento, e quello che
-si consuma è quota. `sailor flow cost` lo diceva già; `why_it_stopped` no, e lo
-stesso numero si leggeva in due modi a seconda del comando che lo mostrava.
-
-### Le capacità di uno strumento sono un dato, e l'assenza si scrive
-**31/08/2026.** Un descrittore dichiara, oltre a `detect`, `version`, `ask` e
-`usage`, un blocco **`capabilities`**: che cosa quel motore sa fare oltre a
-rispondere — riprendere una sessione, ramificarla, imporre una forma alla
-risposta, isolarsi dalla configurazione di chi lo ospita, ricevere una dotazione,
-tenere un tetto di spesa suo, scegliere il modello, ripiegare su un altro. È una
-mappa da nome a dichiarazione: **il codice non conosce nessun nome di capacità**,
-quindi aggiungerne una a uno strumento nuovo è scrivere un file JSON in
-`~/.config/sailor/tools.d/`, mai ricompilare. Vincolo permanente «programmiamo a
-codice solo ciò che tocca il mondo», applicato a un vocabolario.
-
-**Scrivere `false` non è la stessa cosa che tacere, ed è il punto di tutto il
-blocco.** `false` dice «qualcuno ha guardato e non c'è»; l'assenza della riga
-dice «nessuno ha guardato». Un blocco che permettesse solo di elencare ciò che
-c'è farebbe passare per misurata ogni omissione — ed è la stessa distinzione che
-il rilevamento tiene fra «non c'è» e «non ho potuto guardare». Per questo i
-quattro motori spediti rispondono su **tutte e nove** le capacità del
-vocabolario, e una prova lo pretende.
-
-**Chi non ce l'ha continua a funzionare, e il ripiego resta quello di oggi.** Una
-capacità assente non è un errore: chi non sa imporre una forma alla risposta se
-la fa chiedere nel prompt con `answer_shape` e paga più token. Vincolo permanente
-«indipendenza dal modello». Un passo dichiara ciò che gli serve con
-`needs_capabilities`, e `sailor flow check` **avvisa** nominando passo, motore e
-capacità — non fallisce: un flusso scritto per un motore più capace non è rotto,
-è un flusso che qui costa di più, ed è la stessa ragione per cui uno strumento
-non installato è un avviso e un nome inesistente è un errore.
-
-**Cosa questo non fa, e non deve sembrare che faccia.** Le azioni non usano
-ancora nessuna capacità: il vocabolario e il controllo che lo interroga esistono,
-l'uso no. `needs_capabilities` è dichiarato in `EngineSpec` perché un passo
-onesto non venga accusato di un refuso, e non è letto a esecuzione.
-
-### `flow check` esegue: monta ogni riga di comando e la prova senza la domanda
-**31/08/2026.** Dal guasto 1 in poi la cura scritta accanto a ogni guasto sulle
-righe di comando è la stessa — «una prova che esegue davvero ogni riga di comando
-prima che finisca in un flusso» — ed è rimasta scoperta per tre giorni, perché
-eseguire sembrava voler dire spendere. Non vuol dire. **Un motore invocato con la
-riga vera e senza la domanda non chiama nessun fornitore, e percorre lo stesso
-parsing di argomenti di una chiamata vera**: se la riga è malformata lo dice lì,
-gratis. Da oggi `sailor flow check` monta la riga di ogni motore di ogni catena,
-la esegue senza la domanda, e riporta come sta messa.
-
-**Il verdetto sta nel testo, mai nel codice d'uscita.** Misurato su questa
-macchina: `agy` esce **2** sia quando rifiuta bene («flag needs an argument:
--print») sia quando la riga è quella malformata del guasto 27 («--print took
-"--output-format" as its prompt»). Una sonda che giudicasse dall'esito avrebbe
-visto i due casi identici e sarebbe passata sopra al guasto 27 — che è
-esattamente ciò che è successo. Per questo il descrittore dichiara
-`ask.refuses_without_prompt`, **le parole del motore**, come già fa per
-`unusable_when`; e per questo `judge_dry_run` non riceve nemmeno il codice
-d'uscita, così non c'è modo di usarlo per sbaglio.
-
-**`--help` è la forma innocua sbagliata.** `agy --mode nonsense-value
---not-a-real-flag --help` esce **0**: cortocircuita prima di leggere gli
-argomenti, quindi approva un valore invalido e una bandiera inventata. La forma
-giusta è montare la riga vera e non dare la domanda.
-
-**Cambia la natura del comando, e va detto.** `resolver.rs` dichiara che
-risolvere un nome non deve eseguire niente, e resta vero: è il controllo che
-avvia processi, non la risoluzione. `flow check` non è più solo statico — senza
-rete, senza denaro, con un tetto di tempo esplicito, perché su questa macchina
-`timeout` e `gtimeout` non esistono.
-
-**Acceso in modo predefinito, con `--no-engines` per spegnerlo.** Un controllo
-dietro una bandiera è un controllo che nessuno interroga: nessuno avrebbe scritto
-`--engines` per cercare un difetto che non sapeva di avere. Spento, il rapporto
-**tace** invece di dichiarare sane righe che non ha guardato — stessa regola del
-rilevatore assente.
-
-**Cinque esiti, cinque frasi, perché sono cinque riparazioni diverse:** sana;
-rotta (con le parole del motore per intero e la riga montata); non provata (tre
-motivi distinti: il descrittore tace, il motore non è qui, nessuna risposta); non
-montabile (nessun blocco `ask`); non può lavorare adesso. E `unusable_when` si
-legge **prima** di `refuses_without_prompt`: un motore esaurito non è un motore
-rotto, e letto al contrario manderebbe a correggere un descrittore sano.
-
-**Cosa questo non dice.** Che un motore sia stato **chiamato davvero**: quello lo
-sa il deposito, e resta un asse separato. Mescolarli farebbe passare per usato un
-motore che nessuna corsa ha mai nominato — che è il guasto 32.
-
-### Il potere di un passo: modello Bazel, in osservazione
-**29/08/2026 — Theo.** Un passo dichiara cosa gli serve, e il resto per lui non
-esiste. Il controllo entra come **avviso** e diventa barriera solo con un cambio
-di configurazione, dopo averlo visto funzionare.
-**Perché**: un divieto specifico si aggira, un mondo ristretto no; e la fase di
-osservazione toglie la paura che rende queste cose impossibili da introdurre.
-**Cosa ne discende**: ogni passo dei flussi esistenti dovrà dichiarare cosa
-tocca. Non è gratis. *Non ancora costruito.*
-
-### Il file delle autorizzazioni non esiste
-**29/08/2026 — Theo.** L'autocura non ha un gate suo: è un flusso come gli
-altri, con i poteri che dichiara.
-**Perché**: se il modello Bazel vale per ogni passo, un meccanismo speciale per
-l'autocura sarebbe difendere due volte la stessa cosa. Ed è coerente col fatto
-che i flussi che usiamo per sviluppare Sailor non si spediscono a nessuno.
-
-### I flussi di sistema stanno dentro il binario
-**29/08/2026 — Theo.** Incorporati alla compilazione, non installati come file
-accanto al programma. Chi ne vuole uno diverso ne scrive uno con lo stesso nome
-in casa propria o nel progetto, e vince il suo.
-**Perché**: un flusso spedito come file può mancare, invecchiare o essere
-cancellato, e allora il prodotto si comporta diversamente su macchine diverse
-senza che si capisca perché. *Fatto: `crates/flow/system/`.*
-
-### Niente briglie sul flusso che sviluppa
-**29/08/2026 — Theo.** Il passo che implementa scrive senza chiedere permesso.
-**Perché**: il perimetro non è ancora applicato dal motore, e aspettarlo avrebbe
-fermato tutto. Chi lancia lo sa. **Attenzione**: in un ciclo questo conta il
-doppio — chi lascia girare da solo per ore deve poter vedere cosa fa mentre lo
-fa, e da questo giro il testo di un passo esce su stderr mentre il passo gira.
-
-### Le prove rosse rompono il passo
-**29/08/2026 — dopo il primo giro fallito.** Nessuna tolleranza sul passo che
-esegue le prove nel flusso di sviluppo.
-**Perché**: la tolleranza c'era perché il verificatore vedesse l'esito anche
-quando fallivano, e così **un lavoro che non compilava ha superato il gate** —
-con cinque minuti di verifica spesi su codice che non stava in piedi. Un lavoro
-che non compila non ha niente da far giudicare a nessuno.
-
-### I flussi si compongono, non si fondono
-**29/08/2026 — Theo.** Ricerca, smistamento, sviluppo e interrogazione del
-codice sono le fasi di un ciclo unico, ma restano flussi separati che si
-chiamano fra loro.
-**Perché**: un flusso di dieci passi che fa tutto non si può usare a metà, e la
-ricerca serve anche da sola. **Cosa ne discende**: serve `subflow`, un passo che
-esegue un altro flusso. *Non ancora costruito.*
-
-### Il ciclo sta dentro Sailor, non accanto
-**29/08/2026.** Un flusso a ronda non è un flusso lungo: è un flusso corto
-eseguito molte volte, e chi lo riesegue deve essere Sailor.
-**Perché**: uno script che rilancia è stato scritto e cancellato lo stesso
-giorno. Sarebbe stato un cerotto fuori dal sistema su un buco dentro il sistema,
-e i cerotti restano. **Cosa ne discende**: serve che qualcuno esegua ciò che
-`sailor flow due` già calcola. *Non ancora costruito.*
-
-### Il testo non ripete numeri che il sistema sa dare
-**29/08/2026.** Dove un fatto è già registrato, il testo ci rimanda invece di
-copiarlo.
-**Perché**: una copia a mano invecchia da sola. È già successo: un documento
-diceva «dieci guasti» mentre il file ne elencava undici, e un verificatore ha
-respinto un'intera ricerca per quell'incoerenza — a ragione.
-
-### L'ordine di sblocco è cambiato: prima usare Sailor, poi non servirsi d'altro
-**31/08/2026 — Theo.** L'ordine scritto il 29/08 — chiamate, orchestrazione,
-ciclo — resta valido come sequenza tecnica, ma **non è più il criterio con cui
-si sceglie cosa fare**. Il criterio nuovo è uno solo: *cosa manca perché Theo
-possa passare una giornata di lavoro dentro Sailor.* Tre blocchi, in
-quest'ordine, e il terzo è la conseguenza dei primi due:
-
-1. **Sailor si sviluppa senza morire mentre lo si usa.** Si deve poter
-   aggiustare la macchina di sotto mentre qualcuno ci lavora sopra: niente
-   riavvii, niente finestra che sparisce. Oggi è impedito da due guasti aperti —
-   il **4** (Sailor non sa quali processi ha avviato, quindi non può né
-   spegnerli né riprenderli) e l'**11** (in modalità viva un errore di
-   compilazione in un crate qualunque uccide la finestra invece di lasciarla
-   all'ultima versione buona).
-2. **I terminali.** Un terminale si apre **legato a uno spazio di lavoro** — una
-   repo, un progetto — e ciò che l'utente scrive viene **smistato**: se la
-   richiesta riguarda un flusso, va al flusso; altrimenti resta un terminale
-   normale. Oggi non esiste niente: `desktop/src-tauri` ha quattro file e nessuna
-   riga di pseudo-terminale, e la sorgente d'innesco `sailor-terminal` è
-   dichiarata nel catalogo come «la forma che avrà, non una misura».
-3. **Non servirsi più d'altro**, che non è un lavoro a sé: è ciò che succede
-   quando i primi due sono fatti.
-
-**Perché quest'ordine e non quello di prima.** Il vecchio ordine ottimizzava la
-correttezza del motore; questo ottimizza il momento in cui il sistema smette di
-essere un progetto e diventa lo strumento con cui si lavora. Finché Theo sviluppa
-Sailor altrove, ogni difetto di Sailor lo paga qualcun altro — e nessuno dei
-suoi guasti viene trovato usandolo, che è l'unico modo in cui i guasti di questo
-repo sono stati trovati finora.
-
-**Cosa ne discende, e va detto perché cambia le priorità di chi legge.** Un
-lavoro che rende Sailor più corretto ma non più *usabile da dentro* non viene
-prima di uno che lo rende usabile. Vale anche per i flussi: scriverne di nuovi
-non è nei primi due blocchi, e chi ne scrive uno mentre questi tre sono aperti
-sta lavorando fuori dall'ordine.
-
-### L'ordine di sblocco: prima le chiamate, poi l'orchestrazione, poi il ciclo
-**29/08/2026 — Theo.** Tre blocchi, in quest'ordine, e ognuno si vede funzionare
-prima del successivo:
-
-1. **Le chiamate ai modelli**, profili e fornitori insieme. Comprese le quote
-   gratuite che i fornitori dichiarano e che oggi non sfruttiamo, e le righe di
-   comando che non abbiamo ancora (DeepSeek, Grok, OpenRouter e le altre).
-2. **Orchestrare bene**: mandare il lavoro sul modello giusto per quel lavoro, e
-   disegnare flussi che si reggano.
-3. **Fortificare i flussi di sviluppo**, farli girare in un ciclo, e sotto una
-   catena di smistamento vera che usi la macchina invece di un passo alla volta
-   — sapendo se la macchina è occupata da chi ci lavora o è libera.
-
-**Perché quest'ordine**: senza il primo blocco ogni corsa dipende da un solo
-abbonamento e si ferma quando finisce, come è successo il 29/08. Senza il
-secondo, avere più motori vuol dire solo avere più modi di sprecare. Il terzo è
-quello che rende il tutto un sistema che va avanti da solo, e va per ultimo
-perché fino ad allora ogni difetto si moltiplica per il numero di corse.
-
-**Dopo questi tre**, il resto è miglioria: si seguono le voci in programma.
-
-### Ogni cosa costruita come flusso ha un flusso che la cura
-**29/08/2026 — Theo.** L'autocura e lo sviluppo non sono un progetto a parte:
-sono la coppia di flussi che tiene in piedi tutto ciò che teniamo a livello di
-flusso.
-**Perché**: ciò che non è codice non ha né compilatore né prove che lo
-sorveglino. Un flusso rotto resta rotto in silenzio finché qualcuno non lo
-lancia. Se i flussi sono il posto dove mettiamo tutto ciò che non tocca il
-mondo — ed è il vincolo permanente in cima a questo file — allora la loro
-manutenzione dev'essere altrettanto seria di quella del codice, e automatica per
-la stessa ragione.
-
-### Una voce può essere deprecata o ridecisa, e non da sola
-**29/08/2026 — Theo.** Mentre si sviluppano i flussi, le voci di lavoro
-cambiano: alcune non hanno più senso, altre vanno ripensate. **Questo si fa
-insieme a chi usa il sistema, non in autonomia.**
-**Perché**: una voce che sparisce senza che nessuno lo sappia è indistinguibile
-da una voce dimenticata, e la seconda è un guasto. Vale anche al contrario: un
-flusso che cancella da solo ciò che gli sembra superato decide al posto di chi
-deve decidere — ed è lo stesso motivo per cui la prima regola di scelta è «mai
-una voce che aspetta una decisione».
-**Cosa ne discende**: quando le voci passeranno nel deposito, lo stato non è
-«aperta/chiusa». Serve almeno **deprecata** — non si fa più, e c'è scritto
-perché — e **da ridecidere**, che è una voce che aspetta te e che nessun flusso
-può prendere. E serve che il passaggio a quegli stati sia registrato con chi
-l'ha fatto, come ogni altra cosa nel deposito.
-
-### Il multi-fornitore si costruisce in casa, e non è un proxy
-**30/08/2026 — Theo, dopo aver guardato free-claude-code.** Non si integra
-`free-claude-code` né nessuno degli altri intermediari (Claude Code Router,
-LiteLLM, OmniRoute, 9router). Il pezzo si fa qui.
-
-**Perché, coi numeri che l'hanno deciso.** Quel progetto è 143.000 righe di
-Python 3.14 con 157 pacchetti bloccati e un server sempre acceso, da mettere
-sotto un workspace Rust che tiene tre dipendenze per scelta scritta nel
-`Cargo.toml`. Ha 51.600 stelle e **una persona sola** che lo scrive. E soprattutto:
-**il pezzo per cui lo si voleva non c'è dentro.** Il suo catalogo ha
-identificativo, URL e nome della variabile d'ambiente — nessuna quota, nessun
-limite, niente su cosa il fornitore fa dei dati che riceve. L'«oltre 1,3
-miliardi di token gratis al mese» è **una riga di README senza un dato che la
-sostenga**. Il pezzo caro è la traduzione dei formati fra fornitori: dodicimila
-righe che loro riscrivono due volte e mezza a trimestre, e che diventerebbero
-nostre per sempre.
-
-**Cosa si prende comunque, e cosa si rifiuta.** Da rifiutare senza discussione:
-due dei loro cinquanta fornitori si presentano come un altro programma — il
-client OAuth della CLI di Codex e il suo `User-Agent` — per far passare un
-agente sull'abbonamento di qualcun altro. Non è aggirare una quota, è fingere di
-essere un altro software, e non entra qui. Da prendere, invece, **un dato che
-esiste già ed è sotto MIT**: il catalogo delle fasce gratuite di OmniRoute, che
-è l'unico dei quattro a portare quote mensili documentate per fornitore, la
-metodologia con cui le ha misurate, e — la cosa che vale di più — un verdetto
-sui termini d'uso che marca diciassette fornitori come «da evitare, i loro
-termini vietano il passaggio da un intermediario». Si prende il dataset, non il
-programma.
-
-**La strada che questo apre, e che costa quasi niente.** Sailor lancia già gli
-agenti come sottoprocessi con un ambiente configurabile (`launch.env`), e
-esistono endpoint che parlano **nativamente** il protocollo che quelle CLI già
-usano: si fa puntare lì una variabile, e non c'è nessuna traduzione da scrivere
-né da mantenere. Il lavoro che resta nostro è quello che nessuno ha fatto:
-un catalogo dei fornitori che porti **quanto danno gratis**, **a che patto sui
-dati**, e **quanto ne resta**. Sta in `crates/models`, che già tiene i modelli.
-
-**Cosa ne discende, e non è ancora costruito**: dove vivono le credenziali (oggi
-i profili spostano file e fanno collegamenti simbolici, cioè il segreto sta in
-chiaro sul disco); e la dimensione che va messa fin da subito nella regola di
-instradamento — **non tutti i lavori possono andare ovunque**, perché su certe
-fasce gratuite il patto è che i tuoi dati addestrino il modello, e un flusso che
-legge codice privato non ha lo stesso insieme di destinazioni ammesse di uno che
-riassume un documento pubblico. Aggiungerla dopo vuol dire aver già mandato
-qualcosa nel posto sbagliato.
-
-### Un'azione dichiara la superficie a cui appartiene, e i poteri che pretende
-
-**31/08/2026 — Theo**, dopo il censimento di `dev-stack` (27 script di un altro
-progetto, candidati a diventare flussi).
-
-Le superfici sono quattro, e un'azione ne dichiara **una sola**: `sense` legge il
-mondo senza toccarlo, `act` lo tocca, `remember` è il deposito interrogabile,
-`gate` è dove entra il permesso di una persona. Insieme alla superficie, ogni
-azione dichiara **i poteri che pretende** — rete, disco, processi, denaro,
-segreti — e le `sense` dichiarano in più **cosa rispondono quando non possono
-vedere**.
-
-**Perché non è una tassonomia estetica.** Il censimento cercava «quali script
-diventano flussi» e ha trovato un'altra cosa: 15 voci ferme su **cinque poteri
-mancanti**, non su quindici nodi. La domanda giusta non è quale nodo manca, è
-**quale potere non abbiamo e quale flusso lo dimostra**. E la regola che ne
-discende è una sola riga: *se un'orchestrazione richiede codice nuovo, manca un
-potere — non manca un flusso.*
-
-**Perché la terza dichiarazione esiste.** Viene dal guasto 12: un comando zittito
-dal perimetro rispondeva «vuoto» senza errore, e la sorveglianza ha detto
-«nessun flusso in esecuzione» mentre due giravano. Un sensore che confonde zero
-con cieco è peggio di un sensore assente, perché chi sta a valle si fida.
-
-**Cosa la rende rossa** — senza questo non sarebbe vincolante, come la regola
-sulla lingua prima del 31/08: una prova che scorre il registro delle azioni e
-fallisce se una non dichiara superficie e poteri, e se una `sense` non dichiara
-la propria risposta da cieca. **Nasce rossa su tutte e nove le azioni di oggi.**
-
-> **Quella prova non è mai stata scritta, ed è il guasto 67, aperto.** Verificato
-> il 04/09/2026: cercare `surface` nei crate torna due file, e uno dei due —
-> `crates/actions/src/history.rs` — lo dice di sé, *«the four surfaces do not
-> exist in the code»*. Finché la prova non c'è, questo paragrafo descrive una
-> regola che nessuno può violare, che per la regola qui sopra è una regola che
-> non c'è. La scelta fra scrivere la prova e ritirare la regola è di Theo, e
-> sta nel guasto 67: **questa nota non la prende, la rende visibile.**
-
-**Il debito, dichiarato.** I sette cantieri aperti il 31/08 (`supervisor`,
-`terminal`, `presence`, `mcp`, e gli altri) hanno prodotto crate **prima** di
-questo criterio. Se non si adeguano prima di chiudere, la regola nasce con
-quattro eccezioni non scritte — che è esattamente come la finestra è arrivata a
-offrire otto tipi di passo mentre il motore ne esegue tre.
-
-*Per esteso, con le tre proprietà di un sistema aperto e i numeri del
-censimento*: `docs/the-four-surfaces.md`.
-
-### Chi non dichiara come si esaurisce non sta in mezzo a una catena
-
-**01/09/2026**, dai guasti 16, 31 e 32 — che erano lo stesso difetto visto da
-tre lati.
-
-Un motore che non dichiara `ask.unusable_when` **non può occupare una posizione
-di ripiego**: va in fondo alla catena, o non ci va. Non perché il suo descrittore
-sia sbagliato — l'elenco vuoto dice «nessuno ha guardato», ed è la verità — ma
-perché `says_it_cannot_work` su un elenco vuoto è `false`: il suo esaurirsi passa
-per un fallimento qualunque, il passo muore su di lui, e chi sta dietro non parte
-mai. Una catena `claude-code → agy → codex` aveva l'aria di due ripieghi e ne
-aveva zero: `codex`, che dichiara il proprio 401, **non è mai partito**.
-
-**Cosa la rende rossa**, senza cui non sarebbe vincolante: la regola sta in
-`toolbox::Descriptor::cannot_be_a_fallback`, in un posto solo, e la interrogano
-`every_engine_that_is_not_last_in_a_chain_says_how_it_is_exhausted` sui flussi
-dell'albero e `sailor flow check` sui flussi di chi lo lancia. È nata rossa su
-dodici posizioni in quattro flussi.
-
-**La cosa da ricordare, che vale oltre questo caso.** La regola era scritta da un
-giorno, e la prova che la conteneva era `#[ignore]` con una ragione buona:
-misurare come `agy` dice di aver finito la quota è impossibile finché non lo si
-vede farlo, e inventare quella parola manderebbe un mandato malformato giù per
-tutta la catena. Ma *quella era la ragione per non inventare un dato, ed era
-diventata la ragione per non avere un controllo* — e una regola ha quasi sempre
-**due modi di essere rispettata**. Misurare le parole di chi sta in mezzo, o non
-mettere in mezzo chi non le ha. Il secondo non chiede nessun dato che non esista.
-
-**E il controllo non serve solo a trovare il difetto: serve a rendere sicura la
-riparazione.** `gemini-cli` dichiarava di saper rispondere a una domanda secca e
-non aveva nessuna riga con cui fargliela (guasto 32). Scriverla era considerato
-pericoloso, perché un `ask` senza `unusable_when` avrebbe fatto entrare gemini
-nelle catene senza ripiego — un quarto guasto 31 creato per chiudere il 32.
-Appena la regola sulla posizione esiste, quel pericolo non esiste più, e la riga
-si è potuta scrivere **misurata**: `gemini --prompt` senza la domanda esce 1 e
-dice «Not enough arguments following: prompt», gratis e senza chiamare nessun
-fornitore. Il suo `usage` e le sue parole di esaurimento restano non misurati, e
-quindi non scritti.
-
-**Cosa questo non concede.** Che un `agy` esaurito **in fondo** a una catena
-dica di essere esaurito: non lo dice, muore col proprio messaggio d'errore. Non
-si perde nessun ripiego — dietro di lui non c'è nessuno — e la differenza si
-legge nel motivo del guasto, non nel comportamento. La misura mancante resta
-scritta nel descrittore di `agy`, dove la troverà chi la farà.
-
-### La misura si cerca prima di scegliere la strada che la evita
-
-**01/09/2026, deciso da Theo**, poche ore dopo la voce qui sopra e contro la sua
-seconda metà.
-
-La voce qui sopra dice il vero e resta: una regola ha due modi di essere
-rispettata, e prendere il secondo — non mettere in mezzo chi non dichiara — non
-chiede nessun dato che non esista. Ma quel giorno il dato **si poteva
-misurare**, e nessuno ci aveva provato. «Non inventare un dato» era diventato
-«non cercarlo»: sono due cose diverse, ed è la stessa forma dell'errore che
-quella voce racconta, ripetuta un gradino più in là.
-
-**La regola, adesso.** Davanti a un dato mancante si dichiara **che cosa si è
-provato**. Le strade, in ordine di costo: la documentazione e l'aiuto del
-comando, compresi i sottocomandi annidati — `codex exec fork` non compariva
-nell'aiuto di primo livello, quindi l'aiuto si guarda in profondità; una
-invocazione vera che provochi la condizione senza spendere; il comportamento con
-una casa vuota o senza credenziali. Se la misura viene, si scrive **esattamente
-come è uscita**. Se non viene, si scrive **cosa si è provato e cosa ha
-risposto**: un'assenza misurata vale più di una supposizione, e vale molto più
-di un'assenza non cercata, che non si distingue dalla pigrizia.
-
-`agy` è stato misurato così: `HOME` su una cartella vuota e la riga che Sailor
-monta davvero. Dice di non poter lavorare con parole sue, quelle parole sono nel
-descrittore, e la sua posizione in catena non è più una conseguenza del suo
-silenzio.
-
-### Dove sta un motore in catena si decide su una misura, non su un'abitudine
-
-**01/09/2026, deciso da Theo.**
-
-Dodici posizioni in quattro flussi dichiaravano lo stesso ordine e **nessun
-documento diceva perché**. Un ordine che nessuno ha deciso non è una scelta: è
-un'abitudine, e si difende da sola perché nessuno sa cosa smentirebbe.
-
-Ciò su cui si decide, e che va misurato prima di riordinare: **quanto costa**
-ciascun motore (il listino, `~/.config/sailor/pricing.json`), **quanta quota
-gli resta** (`sailor remaining`), **se è autenticato davvero** — sulla casa del
-profilo attivo, non su quella di chi ha aperto il terminale — e **quante volte
-ha risposto**, dal deposito. Un ordine che non si appoggia ad almeno uno di
-questi quattro non si applica: si scrive nella nota `da-fare` come proposta.
-
-**E il primo esito di questa regola è che due dei quattro numeri non ci sono.**
-Il listino conosce un fornitore su tre, e `sailor remaining` risponde per un
-motore solo: un ordine per costo o per quota residua **oggi non è calcolabile**,
-e chi lo proponesse starebbe indovinando. L'unica cosa che la misura impone oggi
-è che un motore misurato **non autenticato** non stia davanti a uno misurato
-autenticato. I numeri e le proposte che ne restano stanno nella nota `da-fare`.
-
-**Il limite di questa decisione, dichiarato.** Le credenziali sono uno stato che
-cambia; l'ordine scritto in un flusso no. Scrivere il primo dentro il secondo è
-una cura che invecchia, e la forma giusta — che Sailor misuri e scavalchi a
-esecuzione — è una proposta, non una decisione.
-
-### Un totale con dentro un'incognita si mostra come pavimento, mai come cifra
-
-**01/09/2026**, dal guasto 37.
-
-Un totale di costo che contiene anche **una sola** chiamata senza `cost_micros`
-non si stampa come numero. Si legge da `Spend::reading()`, che restituisce uno
-dei tre casi — niente, il totale, **almeno** questo — e chi mostra scrive la
-frase che ne discende: «almeno 1,6674, e il vero è più alto: 3 chiamate su 4 non
-sono misurate». Senza nemmeno una misura si dice **sconosciuto**, non «almeno
-0,0000»: quest'ultimo è vero, non dice niente, e si legge come una spesa piccola.
-
-**Perché la nota accanto non bastava, ed è la parte da ricordare.** La nota
-c'era. `sailor flow cost` stampava già «parziale: 3 chiamate senza costo noto»,
-una riga sotto il numero, e la corsa consegnata dell'A/B del 31/08 è stata letta
-come **1,6674 $** mentre ne era costati **7,2080** — 4,3 volte. *Chi legge un
-totale legge il numero.* Un qualificatore che non occupa il posto della cifra non
-qualifica niente. Vale per ogni cifra che Sailor mostra, non solo per questa.
-
-**E la regola sta in un posto solo.** `Spend` distingueva i tre casi dal giorno
-in cui è nato: la distinzione era giusta nel motore e non arrivava a chi legge,
-perché l'unico modo di interrogarla era un booleano. Chi rifà il confronto nel
-proprio `format!` crea una seconda regola che diverge — e a divergere sarebbe
-quella che una persona legge, cioè la sola che nessun tipo controlla.
-
-### La quota di una persona non è il costo di una corsa, e non stanno insieme
-
-**01/09/2026**, dalla seconda metà del guasto 37.
-
-Sailor sa leggere quanta quota una persona ha già consumato: `models::remaining`
-interroga il canale OAuth di Claude Code — solo lettura, nessun costo — e ne
-ricava `Remaining { engine, unit, used_fraction, resets_at, observed_at }`. È la
-prima cosa in tutto il sistema che **misura** un consumo invece di chiederlo a
-chi lavora.
-
-**Non sostituisce il costo di un passo, e le due non vanno nello stesso
-riquadro.** Quella quota conta *tutte* le sessioni di quella persona: la corsa di
-Sailor, il terminale accanto, il lavoro di ieri che ricade nella stessa finestra
-di sette giorni. Fra due istanti se ne ricava quanta quota è passata, mai quanta
-ne ha consumata una corsa — non c'è modo di sapere chi altro scriveva in mezzo.
-Un numero preso da lì e scritto accanto a un passo sarebbe una misura con la
-faccia giusta e il significato sbagliato, cioè il modo in cui il guasto 37 è
-nato, non la sua cura. Per questo sta in `sailor remaining` e non in `flow cost`:
-due numeri nello stesso rapporto si sottraggono.
-
-**Il consumo autodichiarato resta, marcato.** `sailor step close --turns` non si
-tocca: la dichiarazione di un agente è un dato che vale, purché non si confonda
-con un conto. Resta scritta con `cost_micros` a `None`, così il totale che la
-contiene si legge come pavimento invece che come somma.
-
-**È dichiarata come capacità dello strumento, non cablata.** Il descrittore di
-`claude-code` porta `read_remaining_quota`; `codex` lo porta `false` — provato il
-01/09/2026 e non riuscito, con scritto nella sua nota fin dove si era arrivati,
-che è diverso da impossibile. Chi non ce l'ha continua a funzionare senza sapere
-quanta quota gli resta, che è il ripiego di sempre. Vincolo permanente
-«indipendenza dal modello».
-
-## Raccomandato, non ancora deciso
-
-- **La soglia di un flusso che accompagna va sul prezzo, non sulla qualità.**
-  Misurato: il degrado della qualità non è osservabile (21 sessioni su 44, una
-  moneta); il prezzo di continuare cresce del 34% ed è monotono (37 su 45).
-  Aspetta una decisione di Theo.
-
-- ~~**Il terzo blocco ha un antefatto che non è stato ancora fatto.**~~ Fatto il
-  30/08/2026: il fronte parte insieme. Due passi indipendenti da sei secondi ne
-  impiegano 6,07 invece di 12,07; tre ne impiegano 6,05 invece di 18,14.
-  «Sfruttare la macchina» ora ha dove appoggiarsi.
-
-  ~~**Resta una decisione tua**: quanti passi per ondata.~~ **Sciolta il
-  31/08/2026, e non con una scelta: con un'aritmetica.** Quattro non è più il
-  numero, è il soffitto. Sotto un tetto di spesa la larghezza del fronte la
-  calcola `how_many_fit` dal residuo diviso la chiamata più cara vista in quella
-  corsa. Il motivo per cui non poteva restare una costante: **un tetto non si
-  rispetta con un fronte largo** — quattro chiamate partono nello stesso istante,
-  nessuna sa delle altre, e quando la prima registra il proprio costo le altre
-  tre hanno già speso. Lo sforamento peggiore non è di una chiamata, è di quante
-  ne sono in volo. Senza nessun costo osservato non si stringe: restituire 1 «per
-  prudenza» renderebbe seriale ogni corsa con un tetto, per sempre, sulla base di
-  un numero che non esiste.
-
-### Non si aggiungono chiamate per risparmiare chiamate
-
-**05/09/2026**, dalla consulenza sui costi chiesta a due motori esterni.
-
-Niente instradatore a modello che sceglie la seduta, niente riassuntore fra un
-passo e l'altro, niente compressione del contesto affidata a un motore, niente
-giudice automatico su ogni passo. Sono le quattro forme che un sistema come
-questo adotta per sembrare intelligente, e ognuna aggiunge almeno un turno.
-
-**La misura che lo decide.** Un flusso a quattro passi costa **2,07 volte** i
-turni di una sessione sola che fa lo stesso lavoro, e legge solo l'**8%** in più
-per turno. Il conto lo decidono i turni, non il peso di ciascuno: comprimere il
-contesto tocca l'8%, aggiungere un passo di servizio tocca il moltiplicatore.
-Un'ottimizzazione che paga una chiamata per accorciarne un'altra parte in
-perdita, e nasconde anche come i passi si passano le informazioni, che è il
-vincolo permanente della chiarezza per chi guarda.
-
-**I due motori concordano, interrogati separatamente.** Il secondo ha aggiunto
-la cifra al contrario: riportare a una sola sessione il lavoro che oggi sta in
-quattro passi toglie il **52%** dei turni (1 − 1/2,07). È una riduzione di
-turni, non un risparmio misurato sul conto, e va letta così.
-
-**Cosa la ribalterebbe.** Una misura che mostri un turno di riassunto ridurre i
-turni successivi più di quanti ne aggiunge. Finché quella misura non esiste, una
-proposta di questa famiglia si scarta senza discuterla.
-
-**Il rovescio della decisione, che invece si fa.** Se non si aggiunge un passo
-per giudicare, a chiudere una corsa dev'essere un **controllo deterministico**:
-dove il criterio di accettazione è eseguibile, lo esegue il codice, e un motore
-si richiama solo su ciò che resta irrisolto. Un passo di modello che approva è
-esattamente la chiamata in più che questa decisione vieta.
-
-Dove il risparmio c'è davvero: nei passi che proseguono la stessa sessione
-invece di aprirne una fredda — su una chiamata misurata la scrittura in cache è
-stata il **96%** del costo — e nel non rifare i passi già riusciti al rilancio.
+### The language is chosen by who reads: English what a stranger sees, Italian what whoever works here sees
+
+**01/09/2026**, decided by Theo while looking at the CI.
+
+The `README`, the CI files and **the messages a user of the tool sees** — what
+`sailor` prints, what it says when it refuses, the `--help` texts — go in
+**English**. Comments inside the code, test messages and everything under
+`docs/` stay in **Italian**.
+
+**What changes from before.** `AGENTS.md` said «comments and messages in
+Italian», in a single line, without telling the two kinds of message apart. The
+boundary that was there — «what the compiler reads is in English, what the store
+keeps is data» — divided the code well and had nothing to say about the shop
+window: as long as the repository was private, the shop window did not exist.
+The day `main` became Sailor the question arose on its own.
+
+**The occasion.** The CI file, written on 31/08, had three jobs called `prove`,
+`stile` and `finestra`: keys read by `needs:`, by the GitHub APIs and by
+`gh run`, that is, identifiers, on a page anybody can open. The rule about
+identifiers was already there; what was missing was somebody to interrogate it
+about the `.yml` files, because `identifiers_are_in_english` read the Rust
+sources only. It now reads the job keys as well.
+
+**The boundary is who reads, not what kind of file it is.** A `panic!` inside a
+test speaks to whoever works here: Italian. The same `panic!` on a path a user
+can walk speaks to them: English. The ambiguous case gets asked about, not
+settled by picking the convenient language.
+
+**What it does NOT touch.** The `id`s of the flows and of the steps and the
+names of the `.flow.json` files **stay in Italian**: they are data the store
+keeps, and the decision of 31/08/2026 that protects them still holds — renaming
+a step would make the runs already recorded show up as unknown steps. Whoever
+reads this entry and thinks the flows ought to follow the shop window should ask
+first.
+
+### References are resolved in one place only, after the condition; and `input` is what the step received
+
+**01/09/2026**, from fault 28.
+
+How a step receives the work of the step before **is not a choice of the
+individual action**: it is the semantics of the graph, and it lives in
+`flow::step_input` — the single point every step of every run passes through. An
+action does not resolve its own references, it receives them already resolved,
+as it already receives the `workdir` resolved. Every registered action inherits
+it, including the ones nobody has written yet.
+
+**The order inside that point is the decision, and it is not an implementation
+detail**: compose the dependencies with the `with`, resolve the `workdir`,
+evaluate the `when`, and resolve the references **only if the step runs**. *Why
+the `when` first*: a skipped step receives the input maimed by the dependency
+that is not there, so its pointers find nothing — and a step that does not run
+must not break over work it will not do. Measured on
+`flows/chiedi-all-indice.flow.json`, which with the opposite order went from
+«completed» to «ended with status failed». *The price, declared*: a `workdir`
+written as `{"$from": …}` does not get attached to the root. It was already so,
+and it counts for less than the case above.
+
+**What this forces on whoever writes a check.** A behaviour test stays green
+with a copy of the resolution put back inside an action: the behaviour does not
+change, only the number of places the rule lives in — which is the fault. So the
+guard **counts the places**
+(`crates/sailor/tests/references_are_resolved_in_one_place.rs`), and has in its
+turn tests that interrogate it: twice that reader went blind in silence, and a
+check that can switch itself off is not a check.
+
+**And what `StepRecord::input` means, which this decision changed.** One rule
+only: *the input as the step received it at the moment it stopped being
+processed.* Resolved if the step runs; **not** resolved if it was skipped or if
+it broke precisely while resolving a reference — in the second case on purpose,
+because whoever reads has to see the pointer to be corrected and not the void
+that came out of it. **Which of the three it is is not said by that field: it is
+said by `outcome`, in the same record.** It has to be written here because a
+`{"$from": …}` read in a record is not in itself a defect — on `Skipped` it is
+the norm, on `Broke` it is the diagnosis, on `Went` it would be a fault — and
+whoever reads the store without this line would read the three things the same
+way.
+
+**The residue, measured and not hidden**: a run started before 01/09 and resumed
+after compares an old raw fingerprint with a new resolved one, and declares
+`DifferentInput` on the same work. It is a wrong label on an attempt, not lost
+data, and it dies out on its own as those runs finish.
+
+### A step can be handed to the live agent; the judgement cannot
+**31/08/2026.** A step can declare the action `handed_to_agent`: it describes
+the work and **starts nothing**. It is run by the agent already alive in the
+terminal, who then comes back into the system with `sailor step open` and
+`sailor step close`. The record of the step stays what it always was — intention
+written before, outcome written after — and the run does not notice who was in
+between.
+
+**Why, with the measurement.** A four-step flow costs **2.79 times** a single
+prompt on the same task, and the ratio of the consumption **is the ratio of the
+turns**: 62 against 30. It does not read more per turn (+8%): it does twice the
+turns, because every step starts a process that rediscovers the repository from
+scratch. Fattening the passage between the steps would make things worse; the
+cure is not to reopen a conversation that is already open.
+
+**What this does not concede, and it is the point.** Handing over the execution
+is not handing over the verdict. Whoever closed a step **may not open or close**
+a step that depends on it: it is the permanent constraint «whoever creates does
+not judge» applied to the gesture the judgement gets written in. The refusal
+holds at both points on purpose — at the opening alone it would be got round by
+opening under one name and closing under another.
+
+**Denial is the default, not a list of permissions.** A flow that really wants
+the same hand declares it step by step with `"same_holder_ok": true`. The
+direction matters: a forgotten list of permissions lets everything through and
+nobody notices; a forgotten denial at worst stops a piece of work, and shows up
+at once.
+
+**Whoever holds a handed-over step is a deadline, not a process.** `held_by_pid`
+stays empty and nobody asks the operating system anything: it is fault 12, where
+`pgrep` inside the perimeter answered empty *without an error*. The resumption
+(`sailor flow resume`) compares `handoff_timeout_secs` with `started_at`; what
+it cannot see — a record with a pid, or with no readable deadline — **it does
+not declare dead**.
+
+**Two declared weaknesses, written in the code and not only here.** (1) `--as
+<who>` is a name whoever writes it picks for themselves: Sailor has no session
+identifier to read, so the refusal above holds against carelessness, not against
+somebody who wants to get round it. (2) On a flow with hand-overs the **spending
+ceiling stops being a guarantee**, because the agent's consumption is
+self-declared (`sailor step close --turns`). This is why that row carries
+`cost_micros` empty and not an estimated number: that way it goes into
+`Spend::calls_without_cost`, `is_complete()` becomes false, and every place that
+shows the ceiling already says the real spend is higher. An invented cost would
+make *complete* a sum that is not.
+
+### The language: identifiers in English, all the rest in Italian
+**31/08/2026.** Everything the compiler reads is in English — functions, types,
+fields, variables, modules, constants, **file names**, CSS classes, JSON keys.
+Everything a person reads is in Italian: comments, error messages, text in the
+window, documents, and the **data** of the tests.
+**Why it is here and not only in `AGENTS.md`.** It was only there, and on 31/08
+136 violations were counted — nearly all written in the three preceding days, by
+sessions that had received «answer in Italian» as a strong instruction and this
+line as one among many in a document. This file is the memory that gets read
+again before correcting anything: if a rule is not here, it is not binding in
+fact, whatever it says elsewhere.
+**And above all it has a measurement.** `cargo test -p sailor --test
+identifiers_are_in_english` looks for Italian words in declaring position, and
+knows the file names too. It is not an analyser: it is a list of words, which
+has no false positives and lets through the ones it does not know. The price is
+declared; the alternative was to go on measuring nothing.
+**The lesson, which holds beyond the language.** A rule no check interrogates
+never goes red — it is the same defect as the dead pointer `AGENTS.md` tells
+about itself, and as fault 22, where a zero never computed passed for a
+measurement. Whoever writes a new rule writes what makes it red as well.
+
+### The identifiers of the flows and of the steps stay in Italian
+**31/08/2026 — Theo.** `sviluppa-sailor`, `verdetto`, `implementa`, the names of
+the `.flow.json` files: they stay as they are. The boundary is not between code
+and data in the abstract — it is this: **what the compiler reads is in English;
+what the store keeps is data, and data does not get renamed for style.**
+**Why**, with the two consequences no compiler takes. (1) The store has runs
+already recorded with those `step_id`s: a `verdetto` step turned into `verdict`
+makes the old one look unknown and the new one look never run, and the
+resumption after a crash no longer finds its own steps. (2) The decision «system
+flows live inside the binary» says that whoever wants a different one writes one
+**with the same name** in their own home, and theirs wins: changing the shipped
+name would make a flow somebody has already written stop winning, **in
+silence**.
+**What follows.** The check `identifiers_are_in_english` does not look at the
+`.flow.json` files and never will look at the `id`s: it is not an oversight to
+be completed. Whoever extends it to the data in future is breaking this
+decision, not applying it. The declared asymmetry stays:
+`flows/dispatch-the-work.flow.json` has its id in Italian and its steps in
+English, and that is fine — both are data.
+
+### The spending ceiling belongs to the flow, and the width of the front follows from it
+**31/08/2026.** A flow can declare `spend_cap_micros`: how much one of its runs
+may spend. Before opening each front the executor asks the store how much has
+been spent; if the ceiling is reached the run stops with a word of its own —
+`cap_reached`, not `failed` — and says which steps did not start.
+**Why before opening and not inside the action**: a step that finds out halfway
+through that it has overshot has already paid. The only instant at which
+stopping costs nothing is before opening the front.
+**Why a word of its own and not a fault**: a nightly flow that touches its own
+ceiling every night would look broken every night, and whoever is watching would
+stop watching.
+**What the ceiling does not promise**: it is measured on the costs the engines
+declare. Codex declares the total of the tokens and not the two sides, so its
+row stays without a cost and does not enter the count. The ceiling is a
+guarantee **over what is known**, and the stopped run writes down how many calls
+were outside — because whoever is about to raise it and launch again has to know
+beforehand, not after.
+**The default is no ceiling.** `None` is not `Some(0)`: the first is «nobody put
+a limit», the second is «this flow must spend nothing». A ceiling that appeared
+on its own would stop runs nobody asked to stop, and it would do it at night.
+
+### A ceiling is not calibrated on fewer than three runs that cost something, and today none is calibrated
+**31/08/2026.** `sailor flow cap <name>` suggests a value **only** with at least
+three runs of that flow that spent something known. Below the threshold it
+refuses to suggest and says what is there. The suggestion, when there is one, is
+*worst run observed + dearest call observed*.
+
+**Why three, and why the second addend.** With two samples the maximum and the
+minimum are the only two values: calling the greater of two «worst observed» is
+an invented figure with the face of a measurement, and it is fault 22 in another
+shape. The second addend is not prudence: the check fires *before* opening a
+front, never inside a call, so the run stops with the grain of a call and not of
+a micro — the sum says «the dearest run I have seen, plus the grain I know how
+to stop with».
+
+**And today no flow reaches the threshold. Measured on the store of this
+machine on 31/08/2026, read-only**: 34 runs, and **6 with a cost other than
+zero** — `come-lo-risolvono-gli-altri` 2, `esamina-la-repo` 2, `prova-dei-turni`
+1, `sviluppa-sailor` 1. The other 28 are fault 22, where the cost was the
+constant zero until 30/08. **The discarded proposal was «median + 50%»**: on
+that column the median would give zero for every flow, that is, a ceiling that
+stops every run before the first step — and it would do it at night, with the
+air of a calibration on many samples. Whoever wants to calibrate the ceilings
+will do it when the samples are there, not before.
+
+**The ceiling is not tied to `native_spend_cap`**, the capability declared by
+claude-code alone: different scope (a run against an invocation), a different
+word for stopping, and one engine out of four has it. Making the brake depend on
+it would mean the ceiling holds or does not hold depending on who answers.
+
+**And the figure is called «equivalent cost» wherever it is shown.** It stays in
+micros of currency, but «spent 5.00 against a ceiling of 5.00» makes you believe
+an invoice was stopped: with a local command line you pay a subscription, and
+what gets consumed is quota. `sailor flow cost` said so already; `why_it_stopped`
+did not, and the same number was read two ways depending on the command showing
+it.
+
+### The capabilities of a tool are data, and absence gets written down
+**31/08/2026.** A descriptor declares, besides `detect`, `version`, `ask` and
+`usage`, a **`capabilities`** block: what that engine can do beyond answering —
+resume a session, branch it, impose a shape on the answer, isolate itself from
+the configuration of its host, receive an equipment set, hold a spending ceiling
+of its own, choose the model, fall back on another. It is a map from name to
+declaration: **the code knows no capability name at all**, so adding one to a
+new tool is writing a JSON file in `~/.config/sailor/tools.d/`, never
+recompiling. The permanent constraint «we write in code only what touches the
+world», applied to a vocabulary.
+
+**Writing `false` is not the same as keeping quiet, and it is the point of the
+whole block.** `false` says «somebody looked and it is not there»; the absence of
+the line says «nobody looked». A block that only allowed listing what is there
+would make every omission pass for measured — and it is the same distinction the
+detection keeps between «it is not there» and «I could not look». This is why
+the four shipped engines answer on **all nine** capabilities of the vocabulary,
+and a test demands it.
+
+**Whoever does not have it goes on working, and the fallback stays today's.** An
+absent capability is not an error: whoever cannot impose a shape on the answer
+has it asked for in the prompt with `answer_shape` and pays more tokens. The
+permanent constraint «independence from the model». A step declares what it
+needs with `needs_capabilities`, and `sailor flow check` **warns**, naming step,
+engine and capability — it does not fail: a flow written for a more capable
+engine is not broken, it is a flow that costs more here, and it is the same
+reason a tool that is not installed is a warning and a name that does not exist
+is an error.
+
+**What this does not do, and must not seem to do.** The actions do not use any
+capability yet: the vocabulary and the check that interrogates it exist, the use
+does not. `needs_capabilities` is declared in `EngineSpec` so that an honest
+step is not accused of a typo, and it is not read at execution.
+
+### `flow check` runs: it assembles every command line and tries it without the question
+**31/08/2026.** From fault 1 onwards the cure written next to every fault about
+command lines is the same — «a test that really runs every command line before
+it ends up in a flow» — and it stayed uncovered for three days, because running
+seemed to mean spending. It does not. **An engine invoked with the real line and
+without the question calls no provider, and walks the same argument parsing as a
+real call**: if the line is malformed it says so right there, free. From today
+`sailor flow check` assembles the line of every engine of every chain, runs it
+without the question, and reports how it stands.
+
+**The verdict is in the text, never in the exit code.** Measured on this
+machine: `agy` exits **2** both when it refuses properly («flag needs an
+argument: -print») and when the line is the malformed one of fault 27
+(«--print took "--output-format" as its prompt»). A probe judging by the outcome
+would have seen the two cases as identical and would have walked past fault 27 —
+which is exactly what happened. This is why the descriptor declares
+`ask.refuses_without_prompt`, **the engine's words**, as it already does for
+`unusable_when`; and this is why `judge_dry_run` does not even receive the exit
+code, so there is no way of using it by mistake.
+
+**`--help` is the wrong harmless form.** `agy --mode nonsense-value
+--not-a-real-flag --help` exits **0**: it short-circuits before reading the
+arguments, so it approves an invalid value and an invented flag. The right form
+is to assemble the real line and not give the question.
+
+**It changes the nature of the command, and that has to be said.**
+`resolver.rs` declares that resolving a name must run nothing, and it stays
+true: it is the check that starts processes, not the resolution. `flow check` is
+no longer only static — with no network, no money, with an explicit time ceiling,
+because on this machine `timeout` and `gtimeout` do not exist.
+
+**On by default, with `--no-engines` to switch it off.** A check behind a flag
+is a check nobody interrogates: nobody would have written `--engines` to look
+for a defect they did not know they had. Switched off, the report **keeps
+quiet** instead of declaring healthy lines it did not look at — the same rule as
+the absent detector.
+
+**Five outcomes, five sentences, because they are five different repairs:**
+healthy; broken (with the engine's words in full and the assembled line); not
+tried (three distinct reasons: the descriptor is silent, the engine is not here,
+no answer); not assemblable (no `ask` block); cannot work right now. And
+`unusable_when` is read **before** `refuses_without_prompt`: an exhausted engine
+is not a broken engine, and read the other way round it would send somebody off
+to correct a healthy descriptor.
+
+**What this does not say.** That an engine was **really called**: that is known
+by the store, and it stays a separate axis. Mixing them would make an engine no
+run has ever named pass for used — which is fault 32.
+
+### The power of a step: the Bazel model, under observation
+**29/08/2026 — Theo.** A step declares what it needs, and the rest does not
+exist for it. The check comes in as a **warning** and becomes a barrier only
+with a change of configuration, after it has been seen working.
+**Why**: a specific ban gets got round, a restricted world does not; and the
+observation phase takes away the fear that makes these things impossible to
+introduce.
+**What follows**: every step of the existing flows will have to declare what it
+touches. It is not free. *Not built yet.*
+
+### The authorisations file does not exist
+**29/08/2026 — Theo.** Self-repair has no gate of its own: it is a flow like the
+others, with the powers it declares.
+**Why**: if the Bazel model holds for every step, a special mechanism for
+self-repair would be defending the same thing twice. And it is consistent with
+the fact that the flows we use to develop Sailor are not shipped to anybody.
+
+### The system flows live inside the binary
+**29/08/2026 — Theo.** Embedded at compile time, not installed as files next to
+the program. Whoever wants a different one writes one with the same name in
+their own home or in the project, and theirs wins.
+**Why**: a flow shipped as a file can be missing, go stale or be deleted, and
+then the product behaves differently on different machines without anybody
+understanding why. *Done: `crates/flow/system/`.*
+
+### No bridle on the flow that develops
+**29/08/2026 — Theo.** The step that implements writes without asking
+permission.
+**Why**: the perimeter is not yet enforced by the engine, and waiting for it
+would have stopped everything. Whoever launches knows this. **Careful**: in a
+cycle this counts double — whoever lets it run alone for hours has to be able to
+see what it does while it does it, and from this round on the text of a step
+comes out on stderr while the step runs.
+
+### Red tests break the step
+**29/08/2026 — after the first failed round.** No tolerance on the step that
+runs the tests in the development flow.
+**Why**: the tolerance was there so that the verifier could see the outcome even
+when they failed, and that way **a piece of work that did not compile got past
+the gate** — with five minutes of verification spent on code that did not stand
+up. A piece of work that does not compile has nothing for anybody to judge.
+
+### Flows compose, they do not merge
+**29/08/2026 — Theo.** Research, dispatch, development and interrogation of the
+code are the phases of a single cycle, but they stay separate flows that call
+each other.
+**Why**: a ten-step flow that does everything cannot be used by halves, and the
+research is useful on its own too. **What follows**: `subflow` is needed, a step
+that runs another flow. *Not built yet.*
+
+### The cycle lives inside Sailor, not beside it
+**29/08/2026.** A patrolling flow is not a long flow: it is a short flow run
+many times, and whoever runs it again has to be Sailor.
+**Why**: a script that relaunches was written and deleted the same day. It would
+have been a sticking plaster outside the system over a hole inside the system,
+and sticking plasters stay. **What follows**: somebody is needed to run what
+`sailor flow due` already computes. *Not built yet.*
+
+### The text does not repeat numbers the system can give
+**29/08/2026.** Where a fact is already recorded, the text points at it instead
+of copying it.
+**Why**: a copy made by hand goes stale on its own. It has already happened: a
+document said «ten faults» while the file listed eleven, and a verifier rejected
+a whole piece of research over that inconsistency — rightly.
+
+### The unlocking order has changed: first use Sailor, then need nothing else
+**31/08/2026 — Theo.** The order written on 29/08 — calls, orchestration, cycle
+— stays valid as a technical sequence, but **it is no longer the criterion by
+which what to do is chosen**. The new criterion is one only: *what is missing
+for Theo to be able to spend a working day inside Sailor.* Three blocks, in this
+order, and the third is the consequence of the first two:
+
+1. **Sailor develops without dying while it is being used.** It has to be
+   possible to fix the machine underneath while somebody is working on top of
+   it: no restarts, no window vanishing. Today it is prevented by two open
+   faults — **4** (Sailor does not know which processes it started, so it can
+   neither stop them nor resume them) and **11** (in live mode a compile error
+   in any crate at all kills the window instead of leaving it on the last good
+   version).
+2. **The terminals.** A terminal opens **bound to a workspace** — a repository,
+   a project — and what the user types gets **routed**: if the request concerns
+   a flow, it goes to the flow; otherwise it stays an ordinary terminal. Today
+   none of it exists: `desktop/src-tauri` has four files and not one line of
+   pseudo-terminal, and the trigger source `sailor-terminal` is declared in the
+   catalogue as «the shape it will have, not a measurement».
+3. **Needing nothing else**, which is not a piece of work of its own: it is what
+   happens when the first two are done.
+
+**Why this order and not the previous one.** The old order optimised the
+correctness of the engine; this one optimises the moment the system stops being
+a project and becomes the tool the work is done with. As long as Theo develops
+Sailor elsewhere, every defect of Sailor's is paid for by somebody else — and
+none of its faults gets found by using it, which is the only way the faults of
+this repository have been found so far.
+
+**What follows, and it has to be said because it changes the priorities of
+whoever reads.** A piece of work that makes Sailor more correct but not more
+*usable from inside* does not come before one that makes it usable. It holds for
+the flows too: writing new ones is not in the first two blocks, and whoever
+writes one while these three are open is working outside the order.
+
+### The unlocking order: first the calls, then the orchestration, then the cycle
+**29/08/2026 — Theo.** Three blocks, in this order, and each is seen working
+before the next:
+
+1. **The calls to the models**, profiles and providers together. Including the
+   free quotas the providers declare and which we do not exploit today, and the
+   command lines we do not have yet (DeepSeek, Grok, OpenRouter and the others).
+2. **Orchestrating well**: sending the work to the right model for that work,
+   and drawing flows that stand up.
+3. **Fortifying the development flows**, running them in a cycle, and under a
+   real dispatch chain that uses the machine instead of one step at a time —
+   knowing whether the machine is busy with whoever is working on it or free.
+
+**Why this order**: without the first block every run depends on a single
+subscription and stops when it runs out, as happened on 29/08. Without the
+second, having more engines only means having more ways of wasting. The third is
+what makes the whole thing a system that goes on by itself, and it comes last
+because until then every defect is multiplied by the number of runs.
+
+**After these three**, the rest is improvement: the planned entries are
+followed.
+
+### Everything built as a flow has a flow that tends it
+**29/08/2026 — Theo.** Self-repair and development are not a separate project:
+they are the pair of flows that holds up everything we keep at the flow level.
+**Why**: what is not code has neither a compiler nor tests watching over it. A
+broken flow stays broken in silence until somebody launches it. If flows are the
+place we put everything that does not touch the world — and it is the permanent
+constraint at the top of this file — then their maintenance has to be just as
+serious as the code's, and automatic for the same reason.
+
+### An entry can be deprecated or decided again, and not on its own
+**29/08/2026 — Theo.** While the flows are being developed, the work entries
+change: some no longer make sense, others have to be rethought. **This is done
+together with whoever uses the system, not autonomously.**
+**Why**: an entry that disappears without anybody knowing is indistinguishable
+from a forgotten entry, and the second is a fault. It holds the other way round
+too: a flow that deletes on its own what looks superseded to it decides in place
+of whoever has to decide — and it is the same reason the first rule of choice is
+«never an entry waiting on a decision».
+**What follows**: when the entries move into the store, the state is not
+«open/closed». At least **deprecated** is needed — it is not done any more, and
+it is written why — and **to be decided again**, which is an entry that is
+waiting for you and that no flow may take. And the passage into those states has
+to be recorded with who did it, like everything else in the store.
+
+### Multi-provider is built at home, and is not a proxy
+**30/08/2026 — Theo, after looking at free-claude-code.** Neither
+`free-claude-code` nor any of the other intermediaries (Claude Code Router,
+LiteLLM, OmniRoute, 9router) gets integrated. The piece is made here.
+
+**Why, with the numbers that decided it.** That project is 143,000 lines of
+Python 3.14 with 157 pinned packages and an always-on server, to be put under a
+Rust workspace that keeps three dependencies by a choice written in the
+`Cargo.toml`. It has 51,600 stars and **one single person** writing it. And
+above all: **the piece it was wanted for is not inside it.** Its catalogue has
+an identifier, a URL and the name of the environment variable — no quota, no
+limit, nothing about what the provider does with the data it receives. The «over
+1.3 billion free tokens a month» is **a README line with no figure behind it**.
+The expensive piece is the translation of the formats between providers: twelve
+thousand lines they rewrite two and a half times a quarter, and which would
+become ours for ever.
+
+**What gets taken anyway, and what gets refused.** To be refused without
+discussion: two of their fifty providers present themselves as another program —
+the OAuth client of the Codex CLI and its `User-Agent` — to pass an agent off on
+somebody else's subscription. That is not getting round a quota, it is
+pretending to be another piece of software, and it does not come in here. To be
+taken, instead, **a piece of data that already exists and is under MIT**: the
+catalogue of OmniRoute's free tiers, which is the only one of the four to carry
+documented monthly quotas per provider, the methodology it measured them with,
+and — the thing that is worth most — a verdict on the terms of use marking
+seventeen providers as «to be avoided, their terms forbid going through an
+intermediary». The dataset gets taken, not the program.
+
+**The road this opens, and it costs almost nothing.** Sailor already launches
+the agents as subprocesses with a configurable environment (`launch.env`), and
+there are endpoints that speak **natively** the protocol those CLIs already use:
+a variable gets pointed there, and there is no translation to write or to
+maintain. The work that stays ours is the one nobody has done: a catalogue of
+the providers carrying **how much they give free**, **on what pact about the
+data**, and **how much is left**. It lives in `crates/models`, which already
+keeps the models.
+
+**What follows, and it is not built yet**: where the credentials live (today the
+profiles move files and make symbolic links, that is, the secret is in the clear
+on the disk); and the dimension that has to go into the routing rule from the
+start — **not all jobs can go everywhere**, because on certain free tiers the
+pact is that your data trains the model, and a flow that reads private code does
+not have the same set of permitted destinations as one that summarises a public
+document. Adding it later means having already sent something to the wrong
+place.
+
+### An action declares the surface it belongs to, and the powers it demands
+
+**31/08/2026 — Theo**, after the survey of `dev-stack` (27 scripts of another
+project, candidates to become flows).
+
+The surfaces are four, and an action declares **one only**: `sense` reads the
+world without touching it, `act` touches it, `remember` is the interrogable
+store, `gate` is where a person's permission comes in. Along with the surface,
+every action declares **the powers it demands** — network, disk, processes,
+money, secrets — and the `sense` ones declare in addition **what they answer
+when they cannot see**.
+
+**Why it is not an aesthetic taxonomy.** The survey was looking for «which
+scripts become flows» and found something else: 15 entries stuck on **five
+missing powers**, not on fifteen nodes. The right question is not which node is
+missing, it is **which power we do not have and which flow proves it**. And the
+rule that follows from it is a single line: *if an orchestration calls for new
+code, a power is missing — not a flow.*
+
+**Why the third declaration exists.** It comes from fault 12: a command silenced
+by the perimeter answered «empty» without an error, and the watch said «no flow
+running» while two were running. A sensor that confuses zero with blind is worse
+than an absent sensor, because whoever is downstream trusts it.
+
+**What makes it red** — without this it would not be binding, like the rule
+about the language before 31/08: a test that walks the action registry and fails
+if one does not declare surface and powers, and if a `sense` does not declare
+its own blind answer. **It is born red on all nine of today's actions.**
+
+> **That test was never written, and it is fault 67, open.** Checked on
+> 04/09/2026: searching for `surface` in the crates returns two files, and one
+> of the two — `crates/actions/src/history.rs` — says so of itself, *«the four
+> surfaces do not exist in the code»*. As long as the test is not there, this
+> paragraph describes a rule nobody can violate, which by the rule above is a
+> rule that is not there. The choice between writing the test and withdrawing
+> the rule is Theo's, and it sits in fault 67: **this note does not take it, it
+> makes it visible.**
+
+**The debt, declared.** The seven building sites open on 31/08 (`supervisor`,
+`terminal`, `presence`, `mcp`, and the others) produced crates **before** this
+criterion. If they are not brought into line before it closes, the rule is born
+with four unwritten exceptions — which is exactly how the window came to offer
+eight kinds of step while the engine runs three.
+
+*In full, with the three properties of an open system and the numbers of the
+survey*: `docs/the-four-surfaces.md`.
+
+### Whoever does not declare how they run out does not stand in the middle of a chain
+
+**01/09/2026**, from faults 16, 31 and 32 — which were the same defect seen from
+three sides.
+
+An engine that does not declare `ask.unusable_when` **cannot occupy a fallback
+position**: it goes at the end of the chain, or it does not go there at all. Not
+because its descriptor is wrong — an empty list says «nobody looked», and that
+is the truth — but because `says_it_cannot_work` on an empty list is `false`:
+its running out passes for any old failure, the step dies on it, and whoever is
+behind never starts. A chain `claude-code → agy → codex` had the air of two
+fallbacks and had none: `codex`, which declares its own 401, **never started**.
+
+**What makes it red**, without which it would not be binding: the rule lives in
+`toolbox::Descriptor::cannot_be_a_fallback`, in one place only, and it is
+interrogated by
+`every_engine_that_is_not_last_in_a_chain_says_how_it_is_exhausted` over the
+flows of the tree and by `sailor flow check` over the flows of whoever launches
+it. It was born red on twelve positions in four flows.
+
+**The thing to remember, which holds beyond this case.** The rule had been
+written for a day, and the test that held it was `#[ignore]` with a good reason:
+measuring how `agy` says it has run out of quota is impossible until it is seen
+doing it, and inventing that word would send a malformed mandate down the whole
+chain. But *that was the reason for not inventing a figure, and it had become
+the reason for not having a check* — and a rule almost always has **two ways of
+being respected**. Measure the words of whoever stands in the middle, or do not
+put in the middle whoever does not have them. The second asks for no figure that
+does not exist.
+
+**And the check does not only serve to find the defect: it serves to make the
+repair safe.** `gemini-cli` declared it could answer a plain question and had no
+line to ask it with (fault 32). Writing it was considered dangerous, because an
+`ask` without `unusable_when` would have let gemini into the chains with no
+fallback — a fourth fault 31 created in order to close 32. As soon as the rule
+about position exists, that danger no longer exists, and the line could be
+written **measured**: `gemini --prompt` without the question exits 1 and says
+«Not enough arguments following: prompt», free and without calling any provider.
+Its `usage` and its words for running out stay unmeasured, and therefore
+unwritten.
+
+**What this does not concede.** That an `agy` that has run out **at the end** of
+a chain says it has run out: it does not say it, it dies with its own error
+message. No fallback is lost — there is nobody behind it — and the difference is
+read in the reason for the fault, not in the behaviour. The missing measurement
+stays written in `agy`'s descriptor, where whoever makes it will find it.
+
+### Looking for the measurement comes before choosing the road that avoids it
+
+**01/09/2026, decided by Theo**, a few hours after the entry above and against
+its second half.
+
+The entry above tells the truth and stands: a rule has two ways of being
+respected, and taking the second — do not put in the middle whoever does not
+declare — asks for no figure that does not exist. But that day the figure
+**could be measured**, and nobody had tried. «Do not invent a figure» had become
+«do not look for it»: they are two different things, and it is the same shape as
+the error that entry tells about, repeated one step further on.
+
+**The rule, now.** Faced with a missing figure, you declare **what was tried**.
+The roads, in order of cost: the documentation and the command's help, including
+the nested subcommands — `codex exec fork` did not appear in the top-level help,
+so the help gets looked at in depth; a real invocation that provokes the
+condition without spending; the behaviour with an empty home or with no
+credentials. If the measurement comes, it is written **exactly as it came out**.
+If it does not come, what is written is **what was tried and what it answered**:
+a measured absence is worth more than a supposition, and worth far more than an
+absence nobody looked for, which cannot be told apart from laziness.
+
+`agy` was measured this way: `HOME` on an empty directory and the line Sailor
+really assembles. It says it cannot work in words of its own, those words are in
+the descriptor, and its position in the chain is no longer a consequence of its
+silence.
+
+### Where an engine sits in a chain is decided on a measurement, not on a habit
+
+**01/09/2026, decided by Theo.**
+
+Twelve positions in four flows declared the same order and **no document said
+why**. An order nobody decided is not a choice: it is a habit, and it defends
+itself because nobody knows what would disprove it.
+
+What it gets decided on, and what has to be measured before reordering: **how
+much each engine costs** (the price list,
+`~/.config/sailor/pricing.json`), **how much quota it has left**
+(`sailor remaining`), **whether it is really authenticated** — on the home of
+the active profile, not on that of whoever opened the terminal — and **how many
+times it has answered**, from the store. An order that does not rest on at least
+one of these four is not applied: it gets written in the note `da-fare` as a
+proposal.
+
+**And the first outcome of this rule is that two of the four numbers are not
+there.** The price list knows one provider out of three, and `sailor remaining`
+answers for one engine only: an order by cost or by remaining quota **is not
+computable today**, and whoever proposed one would be guessing. The only thing
+the measurement imposes today is that an engine measured **not authenticated**
+must not stand in front of one measured authenticated. The numbers and the
+proposals that remain are in the note `da-fare`.
+
+**The limit of this decision, declared.** Credentials are a state that changes;
+the order written in a flow is not. Writing the first inside the second is a
+cure that goes stale, and the right shape — that Sailor measure and override at
+execution — is a proposal, not a decision.
+
+### A total with an unknown inside it is shown as a floor, never as a figure
+
+**01/09/2026**, from fault 37.
+
+A cost total that contains even **one single** call without `cost_micros` does
+not get printed as a number. It is read from `Spend::reading()`, which returns
+one of the three cases — nothing, the total, **at least** this — and whoever
+shows it writes the sentence that follows: «at least 1.6674, and the true one is
+higher: 3 calls out of 4 are not measured». With not even one measurement what
+is said is **unknown**, not «at least 0.0000»: the latter is true, says nothing,
+and reads as a small spend.
+
+**Why the note beside it was not enough, and it is the part to remember.** The
+note was there. `sailor flow cost` already printed «partial: 3 calls with no
+known cost», one line under the number, and the handed-over run of the 31/08 A/B
+was read as **$1.6674** when it had cost **$7.2080** — 4.3 times. *Whoever reads
+a total reads the number.* A qualifier that does not take the place of the
+figure qualifies nothing. It holds for every figure Sailor shows, not only for
+this one.
+
+**And the rule lives in one place only.** `Spend` told the three cases apart
+from the day it was born: the distinction was right in the engine and did not
+reach whoever reads, because the only way of interrogating it was a boolean.
+Whoever redoes the comparison in their own `format!` creates a second rule that
+diverges — and the one to diverge would be the one a person reads, that is, the
+only one no type checks.
+
+### A person's quota is not the cost of a run, and the two do not go together
+
+**01/09/2026**, from the second half of fault 37.
+
+Sailor can read how much quota a person has already consumed:
+`models::remaining` interrogates Claude Code's OAuth channel — read-only, no
+cost — and gets from it
+`Remaining { engine, unit, used_fraction, resets_at, observed_at }`. It is the
+first thing in the whole system that **measures** a consumption instead of
+asking whoever is working for it.
+
+**It does not replace the cost of a step, and the two do not go in the same
+box.** That quota counts *all* the sessions of that person: Sailor's run, the
+terminal beside it, yesterday's work that falls in the same seven-day window.
+Between two instants what can be got from it is how much quota went by, never
+how much a run consumed — there is no way of knowing who else was writing in
+between. A number taken from there and written beside a step would be a
+measurement with the right face and the wrong meaning, that is, the way fault 37
+was born, not its cure. This is why it lives in `sailor remaining` and not in
+`flow cost`: two numbers in the same report get subtracted from each other.
+
+**Self-declared consumption stays, marked.** `sailor step close --turns` does
+not get touched: an agent's declaration is a figure that counts, provided it is
+not confused with a reckoning. It stays written with `cost_micros` at `None`, so
+that the total containing it reads as a floor instead of a sum.
+
+**It is declared as a capability of the tool, not hard-wired.** The descriptor
+of `claude-code` carries `read_remaining_quota`; `codex` carries it `false` —
+tried on 01/09/2026 and not managed, with how far it got written in its note,
+which is different from impossible. Whoever does not have it goes on working
+without knowing how much quota is left, which is the fallback as always. The
+permanent constraint «independence from the model».
+
+## Recommended, not yet decided
+
+- **The threshold of a flow that accompanies goes on the price, not on the
+  quality.** Measured: the degradation of the quality is not observable (21
+  sessions out of 44, a coin toss); the price of continuing grows by 34% and is
+  monotonic (37 out of 45). Waiting on a decision of Theo's.
+
+- ~~**The third block has a precondition that has not been done yet.**~~ Done on
+  30/08/2026: the front starts together. Two independent six-second steps take
+  6.07 instead of 12.07; three take 6.05 instead of 18.14. «Exploiting the
+  machine» now has something to rest on.
+
+  ~~**A decision of yours remains**: how many steps per wave.~~ **Settled on
+  31/08/2026, and not with a choice: with an arithmetic.** Four is no longer the
+  number, it is the ceiling. Under a spending ceiling the width of the front is
+  computed by `how_many_fit` from the remainder divided by the dearest call seen
+  in that run. The reason it could not stay a constant: **a ceiling is not
+  respected with a wide front** — four calls start in the same instant, none of
+  them knows about the others, and by the time the first records its own cost
+  the other three have already spent. The worst overshoot is not one call's, it
+  is that of however many are in flight. With no observed cost at all it does
+  not narrow: returning 1 «out of prudence» would make every run with a ceiling
+  serial, for ever, on the basis of a number that does not exist.
+
+### You do not add calls to save calls
+
+**05/09/2026**, from the consultation on costs asked of two external engines.
+
+No model-based router choosing the sitting, no summariser between one step and
+the next, no compression of the context entrusted to an engine, no automatic
+judge on every step. They are the four shapes a system like this adopts in order
+to look intelligent, and each of them adds at least one turn.
+
+**The measurement that decides it.** A four-step flow costs **2.07 times** the
+turns of a single session doing the same work, and reads only **8%** more per
+turn. The reckoning is decided by the turns, not by the weight of each of them:
+compressing the context touches the 8%, adding a service step touches the
+multiplier. An optimisation that pays for one call to shorten another comes out
+at a loss, and it also hides how the steps pass information to each other, which
+is the permanent constraint of clarity for whoever is looking.
+
+**The two engines agree, interrogated separately.** The second added the figure
+the other way round: bringing back to a single session the work that today sits
+in four steps takes away **52%** of the turns (1 − 1/2.07). It is a reduction of
+turns, not a saving measured on the bill, and it is to be read that way.
+
+**What would overturn it.** A measurement showing a summarising turn reduce the
+following turns by more than it adds. Until that measurement exists, a proposal
+of this family is discarded without discussing it.
+
+**The other side of the decision, which does get done.** If a step is not added
+to judge, what closes a run has to be a **deterministic check**: where the
+acceptance criterion is executable, the code runs it, and an engine is called
+again only on what stays unresolved. A model step that approves is exactly the
+extra call this decision forbids.
+
+Where the saving really is: in the steps that carry on the same session instead
+of opening a cold one — on one measured call the cache write was **96%** of the
+cost — and in not redoing at relaunch the steps that already succeeded.
