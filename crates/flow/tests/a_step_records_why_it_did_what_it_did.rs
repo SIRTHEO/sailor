@@ -110,6 +110,35 @@ fn nothing_at_all_reads_differently_from_something_empty() {
     assert_eq!(judged.found, None, "nothing there must not read as empty");
 }
 
+/// **JSON SPELLS BOTH OF THEM `null`.** The distinction above lives in memory
+/// for as long as the process does; a reader reaches it only through the store,
+/// and there it is bytes. Held apart in memory alone is held apart nowhere.
+#[test]
+fn nothing_there_and_a_null_there_stay_apart_through_the_store() {
+    let condition = Condition::PointerHasValue {
+        pointer: "/mandate".to_owned(),
+    };
+    let nothing = Why::Condition(condition.judge(&json!({"something_else": "here"})));
+    let a_null = Why::Condition(condition.judge(&json!({"mandate": null})));
+
+    let written = serde_json::to_string(&nothing).expect("a reason serialises");
+    let written_null = serde_json::to_string(&a_null).expect("a reason serialises");
+    assert_ne!(
+        written, written_null,
+        "the two reasons were written as the same bytes"
+    );
+
+    let Why::Condition(back) = serde_json::from_str::<Why>(&written).expect("a reason reads back");
+    assert_eq!(back.found, None, "nothing found came back as a null found");
+    let Why::Condition(back) =
+        serde_json::from_str::<Why>(&written_null).expect("a reason reads back");
+    assert_eq!(
+        back.found,
+        Some(Value::Null),
+        "a null found came back as nothing found"
+    );
+}
+
 /// Running is a decision too, and costs the same to keep.
 #[test]
 fn a_step_that_did_run_says_why_it_was_allowed_to() {
