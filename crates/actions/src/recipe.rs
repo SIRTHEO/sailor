@@ -72,14 +72,12 @@ pub trait ToolResolver: Send + Sync {
         None
     }
 
-    /// Le opzioni dopo le quali si scrive **il nome del modello** che si vuole
-    /// da `id`, se il suo descrittore dichiara come glielo si dice.
+    /// The options a model's name is written after, when `id`'s descriptor
+    /// says how it is told one.
     ///
-    /// **`None` È UN RIFIUTO, NON UN PREDEFINITO.** Un passo che nomina un
-    /// modello per un motore che non lo sa ricevere non va invocato lo stesso:
-    /// risponderebbe il modello che nessuno ha scelto, e niente lo direbbe. È
-    /// il verso opposto a `session_recipe`, e la differenza è che lì il passo
-    /// non ha chiesto niente, qui sì.
+    /// **`None` IS A REFUSAL, NOT A DEFAULT**, the other way round from
+    /// `session_recipe`: there the step asked for nothing, here it asked, and
+    /// answering from a model nobody chose would say so to nobody.
     fn model_option(&self, _id: &str) -> Option<Vec<String>> {
         None
     }
@@ -178,12 +176,11 @@ pub fn command_line_with(recipe: &AskRecipe, ask_args: &[String]) -> Vec<String>
     args
 }
 
-/// La stessa riga, col nome del modello che il passo ha chiesto scritto sopra.
+/// The same line, with the model the step asked for written on it.
 ///
-/// Le opzioni del modello si accodano a quelle della domanda e restano
-/// **prima** di quelle che devono stare attaccate al testo, per la ragione per
-/// cui `args_before_prompt` esiste: un nome infilato fra il flag che introduce
-/// la domanda e la domanda viene letto come la domanda.
+/// The model's options follow the question's and stay **before** the ones glued
+/// to the text, for the reason `args_before_prompt` exists: a name slipped
+/// between the flag introducing the question and the question is read as it.
 pub fn command_line_naming_model(
     recipe: &AskRecipe,
     option: &[String],
