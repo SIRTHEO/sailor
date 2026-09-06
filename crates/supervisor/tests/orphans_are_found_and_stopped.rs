@@ -265,8 +265,6 @@ fn the_dev_port_matches_the_tauri_config() {
         .expect("il crate sta in <radice>/crates/supervisor")
         .to_path_buf();
     let path = root.join("desktop/src-tauri/tauri.conf.json");
-    // Its absence is the defect this judge exists for, not a state of the
-    // tree: a window without its configuration has no port to agree on.
     let text = std::fs::read_to_string(&path).unwrap_or_else(|error| {
         panic!("desktop/src-tauri/tauri.conf.json is gone, so the port cannot be compared: {error}")
     });

@@ -1,26 +1,12 @@
-//! **La finestra sopravvive a una compilazione fallita — guasto 11.**
+//! **The window survives a build that failed — fault 11.**
 //!
-//! COSA DICEVA IL GUASTO, E PERCHÉ NON ERA ESATTO. La voce 11 di
-//! `docs/faults-encountered.md` diceva: «in modalità viva un errore di
-//! compilazione in un crate qualunque **uccide la finestra**». Leggendo
-//! `tauri-cli` 2.11.4 il meccanismo è un altro, e la differenza cambia la
-//! riparazione. In `src/interface/rust.rs`, dentro `run_dev_watcher`, il giro è:
-//!
-//! ```text
-//! child.kill()          // il programma acceso viene ucciso PRIMA
-//! let _ = child.wait();
-//! child = run(...)?;    // e solo dopo si compila
-//! ```
-//!
-//! La finestra non muore *per* l'errore di compilazione: muore a **ogni** file
-//! toccato, sempre, e l'errore di compilazione è soltanto il motivo per cui non
-//! ne ritorna una. Il difetto non è nella gestione dell'errore — è
-//! **nell'ordine**.
-//!
-//! Da qui la forma della riparazione, che è tutta in una riga di sequenza:
-//! **prima si costruisce, e si tocca ciò che è acceso solo se la costruzione è
-//! riuscita.** Queste prove esistono per tenere quell'ordine, ed è l'ordine —
-//! non un messaggio d'errore — quello che va rotto per vederle rosse.
+//! The register said a build error kills the window; reading `tauri-cli` the
+//! mechanism is another, and the difference is the repair. `run_dev_watcher`
+//! kills the running program *before* it compiles, so the window dies on every
+//! file touched and the error is only why none comes back: the defect is the
+//! order. Hence the repair, one line of sequence — build first, and touch what
+//! is running only if the build went. Break the order, not a message, to see
+//! these red.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
