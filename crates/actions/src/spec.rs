@@ -81,6 +81,32 @@ pub fn engines_named_in(with: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// The per-call ceiling a step's `with` declares, for whoever checks a flow
+/// before it runs.
+///
+/// **THE SAME STRUCT THE RUN OBEYS, AND NOT A SECOND READER OF THE SAME TWO
+/// FIELDS.** A `with` is partial by construction, so the one field with no
+/// default is filled before parsing rather than the fields being read twice:
+/// two readers of one declaration drift, and here the drift would be a run
+/// held to a ceiling the check never saw.
+pub fn ceiling_declared_in(with: &Value) -> crate::reserve::Declared {
+    let mut filled = with.clone();
+    if let Some(fields) = filled.as_object_mut() {
+        fields.entry("timeout_secs").or_insert(Value::from(0));
+    }
+    serde_json::from_value::<EngineSpec>(filled)
+        .map(|spec| ceiling_of(&spec))
+        .unwrap_or_default()
+}
+
+/// The ceiling this step declares, in every unit an engine may take one in.
+pub(crate) fn ceiling_of(spec: &EngineSpec) -> crate::reserve::Declared {
+    crate::reserve::Declared {
+        max_spend_micros: spec.max_spend_micros,
+        max_tokens: spec.max_tokens,
+    }
+}
+
 /// Whether a step's `with` declares its text private. Absent is public, and
 /// any other word is not private either: the run refuses it when it parses the
 /// step, and a check must not call a malformed flow private on its own.
