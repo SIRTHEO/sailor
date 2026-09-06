@@ -109,7 +109,7 @@ fn written_up(already: bool) -> String {
         "what_happened": "the step that reads the price list read an empty file and called it free",
         "how_it_showed": "a run whose cost came out zero on a paid engine",
         "what_would_prevent": "a test that a missing price list refuses instead of pricing at zero",
-        "status": "**aperto**"
+        "status": "**open**"
     })
     .to_string()
 }
