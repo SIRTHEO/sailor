@@ -20,8 +20,11 @@ target*/
 mutants.out/
 mutants.out.old/
 
-# La finestra: dipendenze scaricate e pacchetto compilato.
-desktop/node_modules/
+# La finestra: dipendenze scaricate e pacchetto compilato. Il nome sta senza
+# percorso per la stessa ragione della stella qui sopra: scritto
+# `desktop/node_modules/` teneva fuori una cartella sola, e la cache di vitest
+# alla radice è entrata nel deposito pubblico con un commit di lavoro.
+node_modules/
 desktop/dist/
 
 # Il guscio nativo rigenera questi a ogni compilazione, dall'icona e dalla
