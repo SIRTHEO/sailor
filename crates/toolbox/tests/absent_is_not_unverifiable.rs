@@ -720,8 +720,11 @@ fn the_flow_action_answers_with_the_findings() {
         "version_probes": false
     });
     let shared = SharedState::new();
-    let ActionOutcome::Went(output) = toolbox::DetectToolsAction
-        .execute(&input, &shared)
+    let ActionOutcome::Went(output) = toolbox::DetectToolsAction::on(machine(
+        vec![sandbox.root.clone()],
+        &sandbox.root,
+    ))
+    .execute(&input, &shared)
         .expect("a detection does not fail over how the world is")
     else {
         panic!("a detection that ran is always Went")
@@ -742,15 +745,17 @@ fn the_flow_action_rejects_an_input_it_cannot_read() {
     use flow::{Action, SharedState};
     let shared = SharedState::new();
     let input = serde_json::json!({"famiglia": "ai_cli"});
-    assert!(toolbox::DetectToolsAction
-        .execute(&input, &shared)
-        .is_err());
+    assert!(
+        toolbox::DetectToolsAction::on(Machine::bare(PathBuf::from(toolbox::probe::NOWHERE)))
+            .execute(&input, &shared)
+            .is_err()
+    );
 }
 
 #[test]
 fn the_registry_finds_the_action_by_its_stable_name() {
     let mut registry = flow::ActionRegistry::default();
-    toolbox::register_default(&mut registry);
+    toolbox::register_default(&mut registry, Machine::bare(PathBuf::from(toolbox::probe::NOWHERE)));
     assert!(registry.get(toolbox::DETECT_TOOLS_ACTION).is_some());
 }
 
