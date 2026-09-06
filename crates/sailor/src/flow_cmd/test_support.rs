@@ -15,12 +15,12 @@ impl TestDirectory {
         let serial = NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed);
         let path = std::env::temp_dir()
             .join(format!("sailor-flow-test-{}-{serial}", std::process::id()));
-        fs::create_dir(&path).expect("creare la cartella di prova");
+        fs::create_dir(&path).expect("creating the scratch directory");
         Self(path)
     }
 
     pub(super) fn write(&self, name: &str, contents: &str) {
-        fs::write(self.0.join(name), contents).expect("scrivere il flusso di prova");
+        fs::write(self.0.join(name), contents).expect("writing the scratch flow");
     }
 }
 

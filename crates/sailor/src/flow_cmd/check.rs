@@ -204,16 +204,18 @@ pub(super) fn check_report(
 ) -> (String, Vec<String>) {
     let dependency_count: usize = flow.graph.steps().iter().map(|step| step.deps.len()).sum();
     let missing = missing_actions(&flow.graph, registry);
-    let mut report = format!(
-        "flusso: {}\ndescrizione: {}\npassi: {}\ncicli: nessuno\ndipendenze: {}",
-        flow.id,
-        flow.description,
-        flow.graph.steps().len(),
-        dependency_count
+    let mut report = catalogue::say(
+        "cli.flow.check_heading",
+        &[
+            ("flow", &flow.id),
+            ("description", &flow.description),
+            ("steps", &flow.graph.steps().len().to_string()),
+            ("dependencies", &dependency_count.to_string()),
+        ],
     );
     for step in flow.graph.steps() {
         let dependencies = if step.deps.is_empty() {
-            "nessuna".to_owned()
+            catalogue::say("cli.flow.none_in_sight", &[])
         } else {
             step.deps.join(", ")
         };
@@ -247,19 +249,20 @@ pub(super) fn check_report(
     // only the missing actions answers «does this flow run?» and not «what can
     // I put in the next step». The list comes from the registry, never from a
     // copy written here beside it.
-    let _ = write!(
-        report,
-        "\nazioni disponibili: {}",
-        registry.names().join(", ")
-    );
+    report.push_str(&catalogue::say(
+        "cli.flow.actions_available",
+        &[("actions", &registry.names().join(", "))],
+    ));
     if missing.is_empty() {
-        report.push_str("\nazioni mancanti: nessuna");
+        report.push_str(&catalogue::say("cli.flow.no_missing_actions", &[]));
     } else {
-        let _ = write!(
-            report,
-            "\nazioni mancanti: {}",
-            missing.into_iter().collect::<Vec<_>>().join(", ")
-        );
+        report.push_str(&catalogue::say(
+            "cli.flow.missing_actions",
+            &[(
+                "actions",
+                &missing.into_iter().collect::<Vec<_>>().join(", "),
+            )],
+        ));
     }
 
     let wanted = tools_wanted(&flow.graph);
@@ -273,14 +276,16 @@ pub(super) fn check_report(
                 wanted.into_iter().partition(|id| tools.declares(id));
             unknown = undeclared;
             if !declared.is_empty() {
-                let _ = write!(report, "\nstrumenti chiesti: {}", declared.join(", "));
+                report.push_str(&catalogue::say(
+                    "cli.flow.tools_asked_for",
+                    &[("tools", &declared.join(", "))],
+                ));
             }
             if !unknown.is_empty() {
-                let _ = write!(
-                    report,
-                    "\nstrumenti che nessun descrittore dichiara: {}",
-                    unknown.join(", ")
-                );
+                report.push_str(&catalogue::say(
+                    "cli.flow.tools_nobody_declares",
+                    &[("tools", &unknown.join(", "))],
+                ));
             }
             capabilities_into(&mut report, &flow.graph, tools);
             fallbacks_into(&mut report, &flow.graph, tools);
@@ -302,11 +307,10 @@ pub(super) fn check_report(
     // where a spare field is nobody's output.
     let stray = stray_fields(flow, registry);
     if !stray.is_empty() {
-        let _ = write!(
-            report,
-            "\ncampi che l'azione non conosce (verranno ignorati): {}",
-            stray.join("; ")
-        );
+        report.push_str(&catalogue::say(
+            "cli.flow.fields_the_action_does_not_know",
+            &[("fields", &stray.join("; "))],
+        ));
     }
 
     // What a step's text leans on, named before the run: two steps once
@@ -329,18 +333,16 @@ pub(super) fn check_report(
         .into_iter()
         .partition(|path| path.fatal);
     if !fatal.is_empty() {
-        let _ = write!(
-            report,
-            "\npercorsi assoluti in un campo di posizione: {}",
-            describe_paths(&fatal)
-        );
+        report.push_str(&catalogue::say(
+            "cli.flow.absolute_paths_in_a_place_field",
+            &[("paths", &describe_paths(&fatal))],
+        ));
     }
     if !advisory.is_empty() {
-        let _ = write!(
-            report,
-            "\npercorsi assoluti dentro un testo (il flusso gira, l'istruzione no): {}",
-            describe_paths(&advisory)
-        );
+        report.push_str(&catalogue::say(
+            "cli.flow.absolute_paths_inside_a_text",
+            &[("paths", &describe_paths(&advisory))],
+        ));
     }
     (report, unknown)
 }
@@ -579,30 +581,37 @@ fn capabilities_into(report: &mut String, graph: &Graph, tools: &toolbox::Tools)
         let Some(state) = tools.capability(&wanted.tool, &wanted.capability) else {
             continue;
         };
-        let line = format!(
-            "{} chiede {} a {}",
-            wanted.step, wanted.capability, wanted.tool
+        let line = catalogue::say(
+            "cli.flow.capability_asked_of",
+            &[
+                ("step", &wanted.step),
+                ("capability", &wanted.capability),
+                ("tool", &wanted.tool),
+            ],
         );
         match state {
             toolbox::CapabilityState::Available => available.push(line),
-            toolbox::CapabilityState::Absent => {
-                gaps.push(format!("{line}, che dichiara di non averla"))
-            }
-            toolbox::CapabilityState::NotLookedAt => gaps.push(format!(
-                "{line}, che non la dichiara — nessuno ha guardato se ce l'ha"
+            toolbox::CapabilityState::Absent => gaps.push(catalogue::say(
+                "cli.flow.capability_declared_absent",
+                &[("line", &line)],
+            )),
+            toolbox::CapabilityState::NotLookedAt => gaps.push(catalogue::say(
+                "cli.flow.capability_not_looked_at",
+                &[("line", &line)],
             )),
         }
     }
     if !available.is_empty() {
-        let _ = write!(report, "\ncapacità chieste: {}", available.join("; "));
+        report.push_str(&catalogue::say(
+            "cli.flow.capabilities_asked_for",
+            &[("capabilities", &available.join("; "))],
+        ));
     }
     if !gaps.is_empty() {
-        let _ = write!(
-            report,
-            "\ncapacità che il motore non dichiara (il passo funziona lo stesso, \
-             pagando di più): {}",
-            gaps.join("; ")
-        );
+        report.push_str(&catalogue::say(
+            "cli.flow.capabilities_the_engine_does_not_declare",
+            &[("capabilities", &gaps.join("; "))],
+        ));
     }
 }
 
@@ -698,12 +707,10 @@ fn fallbacks_into(report: &mut String, graph: &Graph, tools: &toolbox::Tools) {
         }
     }
     if !plugs.is_empty() {
-        let _ = write!(
-            report,
-            "\nmotori messi in posizione di ripiego che non possono farlo (il passo \
-             muore su di loro, e i motori dopo non partono): {}",
-            plugs.join("; ")
-        );
+        report.push_str(&catalogue::say(
+            "cli.flow.engines_that_cannot_be_a_fallback",
+            &[("engines", &plugs.join("; "))],
+        ));
     }
 
     // Only the descriptors this flow names: a whole contradictory catalogue is
@@ -717,11 +724,10 @@ fn fallbacks_into(report: &mut String, graph: &Graph, tools: &toolbox::Tools) {
         .map(|found| found.line())
         .collect();
     if !disagreeing.is_empty() {
-        let _ = write!(
-            report,
-            "\ndescrittori che dicono due cose diverse sullo stesso fatto: {}",
-            disagreeing.join("; ")
-        );
+        report.push_str(&catalogue::say(
+            "cli.flow.descriptors_that_disagree",
+            &[("descriptors", &disagreeing.join("; "))],
+        ));
     }
 }
 
@@ -734,7 +740,7 @@ fn stray_fields(flow: &FlowFile, registry: &ActionRegistry) -> Vec<String> {
     let mut found = Vec::new();
     for step in flow.graph.steps() {
         let Some(action) = registry.get(&step.action) else {
-            // The action is absent: `azioni mancanti` already says so, and
+            // The action is absent: `missing actions` already says so, and
             // saying it twice would send the reader hunting two defects.
             continue;
         };
@@ -795,17 +801,17 @@ mod tests {
     fn a_field_the_action_does_not_know_is_named_before_the_run() {
         let inputs = r#"{"root":{"tool":"claude-code","prompt":"ciao","timeout_secs":10}}"#;
         let json = flow_json("external_engine", "[]", inputs);
-        let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
+        let flow: FlowFile = serde_json::from_str(&json).expect("it loads");
 
         let (report, _) = check_report(&flow, &registry_in(House::empty(), None, None), None, None);
 
         assert!(
-            report.contains("campi che l'azione non conosce"),
-            "il controllo deve nominarli: {report}"
+            report.contains("fields the action does not know"),
+            "the check must name them: {report}"
         );
         assert!(
             report.contains("root: prompt"),
-            "e dire in quale passo e quale campo: {report}"
+            "and say in which step and which field: {report}"
         );
     }
 
@@ -822,13 +828,13 @@ mod tests {
             }]},
             "inputs": {}
         }"#;
-        let flow: FlowFile = serde_json::from_str(json).expect("caricare il flusso");
+        let flow: FlowFile = serde_json::from_str(json).expect("it loads");
 
         let (report, _) = check_report(&flow, &registry_in(House::empty(), None, None), None, None);
 
-        assert!(report.contains("ripeti <- nessuna"), "the step is listed: {report}");
+        assert!(report.contains("ripeti <- none"), "the step is listed: {report}");
         assert!(
-            report.contains("azioni mancanti: nessuna"),
+            report.contains("missing actions: none"),
             "the action is one the engine registers: {report}"
         );
         assert!(
@@ -845,13 +851,13 @@ mod tests {
     fn the_same_flow_written_right_says_nothing() {
         let inputs = r#"{"root":{"tool":"claude-code","stdin":"ciao","timeout_secs":10}}"#;
         let json = flow_json("external_engine", "[]", inputs);
-        let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
+        let flow: FlowFile = serde_json::from_str(&json).expect("it loads");
 
         let (report, _) = check_report(&flow, &registry_in(House::empty(), None, None), None, None);
 
         assert!(
-            !report.contains("campi che l'azione non conosce"),
-            "un flusso scritto bene non deve essere accusato: {report}"
+            !report.contains("fields the action does not know"),
+            "a flow written right must not be accused: {report}"
         );
     }
 
@@ -863,10 +869,10 @@ mod tests {
         let registry = registry_in(House::empty(), None, None);
         for (name, text) in flow::system::FLOWS {
             let flow: FlowFile = serde_json::from_str(text)
-                .unwrap_or_else(|why| panic!("il flusso «{name}» non si carica: {why}"));
+                .unwrap_or_else(|why| panic!("the flow «{name}» does not load: {why}"));
             assert!(
                 stray_fields(&flow, &registry).is_empty(),
-                "«{name}» ha campi che nessuno legge: {:?}",
+                "«{name}» has fields nobody reads: {:?}",
                 stray_fields(&flow, &registry)
             );
         }
@@ -913,12 +919,12 @@ mod tests {
                 "inputs": {{}}
             }}"#
         );
-        serde_json::from_str(&json).expect("caricare il flusso")
+        serde_json::from_str(&json).expect("it loads")
     }
 
-    /// The measured defect: `flow check` closed at zero saying «azioni
-    /// mancanti: nessuna» on a flow naming a tool that existed nowhere, and
-    /// the fault was found only by running.
+    /// The measured defect: `flow check` closed at zero saying «missing
+    /// actions: none» on a flow naming a tool that existed nowhere, and the
+    /// fault was found only by running.
     #[test]
     fn a_tool_no_catalogue_declares_is_named_by_the_check() {
         let flow = flow_wanting_tool("questo-non-esiste-in-nessun-catalogo");
@@ -930,7 +936,7 @@ mod tests {
         assert_eq!(unknown, vec!["questo-non-esiste-in-nessun-catalogo"]);
         assert!(
             report.contains(
-                "strumenti che nessun descrittore dichiara: questo-non-esiste-in-nessun-catalogo"
+                "tools no descriptor declares: questo-non-esiste-in-nessun-catalogo"
             ),
             "{report}"
         );
@@ -948,9 +954,9 @@ mod tests {
         let (report, unknown) =
             check_report(&flow, &registry_in(House::empty(), None, None), Some(&tools), None);
 
-        assert!(unknown.is_empty(), "non è un errore: {unknown:?}");
+        assert!(unknown.is_empty(), "it is not an error: {unknown:?}");
         assert!(
-            report.contains("strumenti chiesti: strumento-dichiarato-mai-installato"),
+            report.contains("tools asked for: strumento-dichiarato-mai-installato"),
             "{report}"
         );
     }
@@ -1004,7 +1010,7 @@ mod tests {
                 "inputs": {{}}
             }}"#
         );
-        serde_json::from_str(&json).expect("caricare il flusso")
+        serde_json::from_str(&json).expect("it loads")
     }
 
     /// **THE THIRD CASE THE CHECK COULD NOT TELL.** It told «the tool is not
@@ -1021,17 +1027,17 @@ mod tests {
 
         assert!(
             unknown.is_empty(),
-            "resta un avviso, non un errore: {unknown:?}"
+            "it stays a warning, not an error: {unknown:?}"
         );
-        assert!(report.contains("root"), "nomina il passo: {report}");
-        assert!(report.contains("un-motore"), "nomina il motore: {report}");
+        assert!(report.contains("root"), "it names the step: {report}");
+        assert!(report.contains("un-motore"), "it names the engine: {report}");
         assert!(
             report.contains("response_shape"),
-            "nomina la capacità: {report}"
+            "it names the capability: {report}"
         );
         assert!(
-            report.contains("dichiara di non averla"),
-            "e dice che qualcuno ha guardato: {report}"
+            report.contains("declares it does not have it"),
+            "and it says somebody looked: {report}"
         );
     }
 
@@ -1047,12 +1053,12 @@ mod tests {
         let (report, _) = check_report(&flow, &registry_in(House::empty(), None, None), Some(&tools), None);
 
         assert!(
-            report.contains("nessuno ha guardato"),
-            "il descrittore tace su quella capacità: {report}"
+            report.contains("nobody looked"),
+            "the descriptor is silent about that capability: {report}"
         );
         assert!(
-            !report.contains("dichiara di non averla"),
-            "e tacere non è dichiarare un'assenza: {report}"
+            !report.contains("declares it does not have it"),
+            "and silence is not declaring an absence: {report}"
         );
     }
 
@@ -1156,7 +1162,7 @@ mod tests {
             }}"#,
             tools.join(",")
         );
-        serde_json::from_str(&json).expect("caricare il flusso")
+        serde_json::from_str(&json).expect("it loads")
     }
 
     /// A capability declared and obtainable raises no warning: a check that
@@ -1172,12 +1178,12 @@ mod tests {
         let (report, _) = check_report(&flow, &registry_in(House::empty(), None, None), Some(&tools), None);
 
         assert!(
-            !report.contains("capacità che il motore non dichiara"),
+            !report.contains("capabilities the engine does not declare"),
             "{report}"
         );
         assert!(
-            report.contains("capacità chieste: root chiede response_shape a un-motore"),
-            "quello che c'è si vede lo stesso: {report}"
+            report.contains("capabilities asked for: root asks response_shape of un-motore"),
+            "what is there is seen all the same: {report}"
         );
     }
 
@@ -1193,7 +1199,7 @@ mod tests {
         let (report, _) = check_report(&flow, &registry_in(House::empty(), None, None), Some(&tools), None);
 
         assert!(
-            !report.contains("campi che l'azione non conosce"),
+            !report.contains("fields the action does not know"),
             "{report}"
         );
     }
@@ -1248,7 +1254,7 @@ mod tests {
             },
             "inputs": {}
         }"#;
-        serde_json::from_str(json).expect("caricare il flusso")
+        serde_json::from_str(json).expect("it loads")
     }
 
     /// **FAULT 31, TOLD BEFORE SPENDING AND ON THE LAUNCHER'S OWN FLOWS.**
@@ -1273,13 +1279,13 @@ mod tests {
         let (about_the_speaking, _) = check_report(&flow, &registry, Some(&speaking), None);
 
         assert!(
-            about_the_silent.contains("motori messi in posizione di ripiego che non possono farlo")
+            about_the_silent.contains("engines put in a fallback position that cannot be one")
                 && about_the_silent.contains("root → primo"),
             "{about_the_silent}"
         );
         assert!(
-            !about_the_speaking.contains("posizione di ripiego"),
-            "chi dichiara le proprie parole non va segnalato: {about_the_speaking}"
+            !about_the_speaking.contains("fallback position"),
+            "whoever declares their own words must not be reported: {about_the_speaking}"
         );
         // And the defect is the **first**'s: the last has nobody to hand the
         // work to, and demanding a measure of it would demand it for nothing.
@@ -1327,7 +1333,7 @@ mod tests {
                 "inputs": {{}}
             }}"#
         );
-        let mut flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
+        let mut flow: FlowFile = serde_json::from_str(&json).expect("it loads");
         flow.spend_cap_micros = Some(5_000_000);
         flow
     }
@@ -1519,7 +1525,7 @@ mod tests {
     #[test]
     fn two_flows_that_differ_only_by_the_cap_get_two_different_reports() {
         let json = flow_json("shell_check", "[]", "{}");
-        let without: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
+        let without: FlowFile = serde_json::from_str(&json).expect("it loads");
         let mut with = without.clone();
         with.spend_cap_micros = Some(2_500_000);
 
@@ -1529,7 +1535,7 @@ mod tests {
 
         assert_ne!(
             said_without, said_with,
-            "il tetto non compare nel rapporto: {said_with}"
+            "the cap does not appear in the report: {said_with}"
         );
         assert!(said_without.contains("spend cap: none"), "{said_without}");
         assert!(said_with.contains("2500000 micro"), "{said_with}");
@@ -1544,7 +1550,7 @@ mod tests {
     #[test]
     fn a_cap_in_the_report_declares_what_it_does_not_promise() {
         let json = flow_json("shell_check", "[]", "{}");
-        let mut flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
+        let mut flow: FlowFile = serde_json::from_str(&json).expect("it loads");
         flow.spend_cap_micros = Some(1);
 
         let (report, _) = check_report(&flow, &registry_in(House::empty(), None, None), None, None);
@@ -1557,16 +1563,16 @@ mod tests {
     #[test]
     fn check_reports_steps_dependencies_and_every_missing_action() {
         let json = flow_json("azione_assente", "[]", "{}");
-        let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
+        let flow: FlowFile = serde_json::from_str(&json).expect("it loads");
 
         let (report, _) = check_report(&flow, &registry_in(House::empty(), None, None), None, None);
 
-        assert!(report.contains("passi: 1"), "{report}");
-        assert!(report.contains("cicli: nessuno"), "{report}");
-        assert!(report.contains("dipendenze: 0"), "{report}");
-        assert!(report.contains("root <- nessuna"), "{report}");
+        assert!(report.contains("steps: 1"), "{report}");
+        assert!(report.contains("cycles: none"), "{report}");
+        assert!(report.contains("dependencies: 0"), "{report}");
+        assert!(report.contains("root <- none"), "{report}");
         assert!(
-            report.contains("azioni mancanti: azione_assente"),
+            report.contains("missing actions: azione_assente"),
             "{report}"
         );
     }
@@ -1584,11 +1590,11 @@ mod tests {
             },
             "inputs": {}
         }"#;
-        let flow: FlowFile = serde_json::from_str(json).expect("caricare il flusso");
+        let flow: FlowFile = serde_json::from_str(json).expect("it loads");
 
         let (report, _) = check_report(&flow, &registry_in(House::empty(), None, None), None, None);
 
-        assert!(report.contains("dipendenze: 1"), "{report}");
+        assert!(report.contains("dependencies: 1"), "{report}");
         assert!(report.contains("child <- root"), "{report}");
     }
 
@@ -1617,7 +1623,7 @@ mod tests {
             catalogue::say("cli.flow.step_phase", &[("phase", "build")])
         );
         assert!(report.contains(&labelled), "{report}");
-        assert!(report.contains("root <- nessuna\n"), "{report}");
+        assert!(report.contains("root <- none\n"), "{report}");
     }
 
     #[test]
@@ -1640,7 +1646,7 @@ mod tests {
         assert!(registry.get("history_ask").is_some());
         assert!(
             registry.get("store_write").is_some(),
-            "chi scrive è nominabile: senza deposito rifiuta, ma non è un'azione mancante"
+            "the writer can be named: with no ledger it refuses, but it is not a missing action"
         );
     }
 
@@ -1652,11 +1658,11 @@ mod tests {
     #[test]
     fn the_check_names_the_actions_a_flow_can_use() {
         let json = flow_json("shell_check", "[]", "{}");
-        let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
+        let flow: FlowFile = serde_json::from_str(&json).expect("it loads");
 
         let (report, _) = check_report(&flow, &registry_in(House::empty(), None, None), None, None);
 
-        assert!(report.contains("azioni disponibili: "), "{report}");
+        assert!(report.contains("available actions: "), "{report}");
         assert!(report.contains("history_ask"), "{report}");
         assert!(report.contains("external_engine"), "{report}");
     }
@@ -1681,7 +1687,7 @@ mod tests {
         let registry = registry_in(House::empty(), None, None);
         let engine = registry
             .get("external_engine")
-            .expect("il motore è registrato");
+            .expect("the engine is registered");
         let input = serde_json::json!({
             "tool": "nessuno-strumento-si-chiama-cosi",
             "timeout_secs": 1
@@ -1689,7 +1695,7 @@ mod tests {
 
         let error = engine
             .execute(&input, &flow::SharedState::new())
-            .expect_err("quell'identificativo non esiste");
+            .expect_err("that identifier does not exist");
 
         assert_eq!(error.class, "tool_unavailable", "{}", error.said);
     }
