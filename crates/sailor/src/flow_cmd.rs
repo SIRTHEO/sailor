@@ -16,7 +16,7 @@ use ui::gather::FlowSource;
 
 mod beat;
 mod cap_and_schedule;
-mod check;
+pub mod check;
 mod cost;
 mod edit;
 mod engines;
