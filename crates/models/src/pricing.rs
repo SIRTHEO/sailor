@@ -273,7 +273,8 @@ impl Price {
 /// `Option<u64>`: lined up on a signature, two swapped by mistake compile
 /// perfectly well and get the sum wrong forever, in silence. With a name per
 /// field the swap cannot be written.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct TokenCounts {
     pub input: Option<u64>,
     pub output: Option<u64>,

@@ -206,6 +206,16 @@ pub(crate) struct EngineSpec {
     /// stesso albero quattro volte.
     #[serde(default)]
     pub(crate) session: Option<SessionUse>,
+    /// The most this step's call may spend, in micro-units, for an engine that
+    /// can be told a ceiling in currency. It is what a guaranteed cap is made
+    /// of: without it the run's cap can only stop the call *after* this one.
+    #[serde(default)]
+    pub(crate) max_spend_micros: Option<i64>,
+    /// The same ceiling for an engine that takes one in tokens. Two fields and
+    /// not one converted: converting them here would need a tariff, and a
+    /// ceiling derived from a tariff that may be missing is not a ceiling.
+    #[serde(default)]
+    pub(crate) max_tokens: Option<models::pricing::TokenCounts>,
     pub(crate) timeout_secs: u64,
     /// Tutto ciò che questa azione non riconosce.
     ///

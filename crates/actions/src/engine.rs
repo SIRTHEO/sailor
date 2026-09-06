@@ -6,7 +6,9 @@ use crate::answer::{
     ENGINE_FAILURES,
 };
 use crate::candidates::{strengths_path, Candidate, Refused};
-use crate::cost::{now_secs, record_the_call, recording_for, Chain, Recording, Spent};
+use crate::cost::{
+    current_price_list, now_secs, record_the_call, recording_for, Chain, Recording, Spent,
+};
 use crate::equipment::current_equipment_for;
 use crate::process::{
     invoke_external_engine_watched_until, sink_for_step, EngineInvocation, EngineResult, LiveSink,
@@ -15,7 +17,7 @@ use crate::process::{
 use crate::recipe::{PromptVia, ToolResolver};
 use crate::session::{session_plan, this_step_share, SessionPlan};
 use crate::spec::{EngineSpec, A_TREE_OF_ITS_OWN, TREE};
-use crate::{budget, cooldown, Reading};
+use crate::{budget, cooldown, reserve, Reading};
 use flow::{Action, ActionError, ActionOutcome, Ran, SharedState, StepSpecies, ValueSchema};
 use ledger::{EngineIdentity, Ledger};
 use serde::Serialize;
@@ -765,6 +767,58 @@ impl ExternalEngineAction {
         // worth breaking this step over.
         let _ = cooldown::set_aside(path, id, now, secs, &what_it_said(stdout, stderr));
     }
+
+    /// Whether this call may be authorised under the cap the run declares.
+    ///
+    /// **THE THREE SILENCES ARE DELIBERATE.** No cap, no run, no ledger: each
+    /// means the condition cannot be evaluated here, and refusing on any of
+    /// them would stop runs nobody capped. The front-level brake in the
+    /// executor is unchanged and still there; this is the term it cannot know.
+    fn authorise(
+        &self,
+        candidate: &Candidate,
+        spec: &EngineSpec,
+        shared: &SharedState,
+    ) -> Result<Option<reserve::Held>, ActionError> {
+        let (Some(cap), Some(run_id), Some(ledger)) = (
+            shared.get(flow::CURRENT_CAP).and_then(|value| value.as_i64()),
+            shared
+                .get(flow::CURRENT_RUN)
+                .and_then(|value| value.as_str().map(str::to_owned)),
+            self.ledger.as_ref(),
+        ) else {
+            return Ok(None);
+        };
+        let spent = ledger
+            .spent_in_run(&run_id)
+            .map_err(|error| ActionError::new("store_unreadable", error.to_string()))?;
+        let next = self.reserve_for(candidate, spec);
+        match reserve::admits(cap, &spent, reserve::in_flight(&run_id), &next) {
+            Ok(()) => Ok(next.micros().map(|micros| reserve::hold(&run_id, micros))),
+            Err(stopped) => Err(ActionError::new(
+                "spend_cap_admission",
+                reserve::why_it_is_suspended(&stopped),
+            )),
+        }
+    }
+
+    /// The most this call can cost, as a reserve or as the reason there is none.
+    ///
+    /// The tariffs are those of the model this step asks of this engine. A step
+    /// that names none leaves them empty, which prices no token ceiling: the
+    /// reserve is then unknown, never zero.
+    fn reserve_for(&self, candidate: &Candidate, spec: &EngineSpec) -> reserve::Reserve {
+        let Some(ceiling) = &candidate.ceiling else {
+            return reserve::Reserve::Unknown(candidate.no_ceiling_because.clone());
+        };
+        let prices = candidate
+            .id
+            .as_deref()
+            .and_then(|id| spec.model.get(id))
+            .and_then(|name| current_price_list().find(name).map(|price| price.micros()))
+            .unwrap_or_default();
+        reserve::reserve_of(ceiling, &prices)
+    }
 }
 
 impl Action for ExternalEngineAction {
@@ -862,6 +916,11 @@ impl Action for ExternalEngineAction {
         };
         let mut last_ran = None;
         for candidate in &candidates {
+            // Astra's condition, before the call and not after it: the only
+            // moment at which stopping costs nothing. The reserve is held for
+            // as long as the call runs, so a front of steps sharing one cap
+            // counts what its siblings have already committed.
+            let _held = self.authorise(candidate, &spec, shared)?;
             let (asked, ran) = self.ask(
                 candidate,
                 &spec,

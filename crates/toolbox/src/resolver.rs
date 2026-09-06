@@ -239,6 +239,18 @@ impl actions::ToolResolver for Tools {
             .model_option()
     }
 
+    /// How this engine is told the most one call may spend, from the same
+    /// block the model option comes from and with the same rule: what is not
+    /// written is not there.
+    fn spend_ceiling_option(&self, id: &str) -> Option<actions::reserve::CeilingOption> {
+        self.catalog
+            .live()
+            .into_iter()
+            .find(|loaded| loaded.descriptor.id == id)?
+            .descriptor
+            .spend_ceiling_option()
+    }
+
     fn fuel(&self, id: &str) -> Vec<models::fuel::Fuel> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
