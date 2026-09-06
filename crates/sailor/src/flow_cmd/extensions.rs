@@ -433,7 +433,7 @@ mod tests {
         for (action, with) in [("external_engine", engine), ("handed_to_agent", handed)] {
             let (report, _) = check_report(&flow_of(action, with), &registry, None, None);
             assert!(
-                !report.contains("campi che l'azione non conosce"),
+                !report.contains("fields the action does not know"),
                 "{action}: {report}"
             );
         }

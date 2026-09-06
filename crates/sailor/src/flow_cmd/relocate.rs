@@ -301,7 +301,7 @@ mod tests {
         let mut document = document_with_workdir("/vecchio/albero");
 
         let (moved, left) =
-            relocate_workdirs(&mut document, Path::new("/vecchio/albero")).expect("ha dei passi");
+            relocate_workdirs(&mut document, Path::new("/vecchio/albero")).expect("it has steps");
 
         assert_eq!(moved.len(), 1);
         assert!(left.is_empty());
@@ -316,7 +316,7 @@ mod tests {
     fn a_workdir_under_the_root_keeps_only_the_rest() {
         let mut document = document_with_workdir("/vecchio/albero/desktop");
 
-        relocate_workdirs(&mut document, Path::new("/vecchio/albero")).expect("ha dei passi");
+        relocate_workdirs(&mut document, Path::new("/vecchio/albero")).expect("it has steps");
 
         assert_eq!(document["graph"]["steps"][0]["with"]["workdir"], "desktop");
     }
@@ -329,18 +329,18 @@ mod tests {
     fn removing_a_workdir_does_not_reorder_the_other_fields() {
         let mut document = document_with_workdir("/vecchio/albero");
 
-        relocate_workdirs(&mut document, Path::new("/vecchio/albero")).expect("ha dei passi");
+        relocate_workdirs(&mut document, Path::new("/vecchio/albero")).expect("it has steps");
 
         let keys: Vec<&str> = document["graph"]["steps"][0]["with"]
             .as_object()
-            .expect("un oggetto")
+            .expect("an object")
             .keys()
             .map(String::as_str)
             .collect();
         assert_eq!(
             keys,
             vec!["tool", "timeout_secs", "args"],
-            "l'ordine resta quello: uno swap metterebbe «args» prima di «timeout_secs»"
+            "the order stays what it was: a swap would put «args» before «timeout_secs»"
         );
     }
 
@@ -351,7 +351,7 @@ mod tests {
         let mut document = document_with_workdir("/altro/posto");
 
         let (moved, left) =
-            relocate_workdirs(&mut document, Path::new("/vecchio/albero")).expect("ha dei passi");
+            relocate_workdirs(&mut document, Path::new("/vecchio/albero")).expect("it has steps");
 
         assert!(moved.is_empty());
         assert_eq!(left.len(), 1);
@@ -378,7 +378,7 @@ mod tests {
         });
 
         let (moved, left) =
-            relocate_workdirs(&mut document, Path::new("/vecchio/albero")).expect("ha dei passi");
+            relocate_workdirs(&mut document, Path::new("/vecchio/albero")).expect("it has steps");
 
         assert!(moved.is_empty() && left.is_empty());
         assert_eq!(
@@ -401,7 +401,7 @@ mod tests {
                 "riferimenti": {
                     "workdir": "/vecchio/albero/pagina",
                     "root_path": "/vecchio/albero/pagina",
-                    "brief": "un testo che nomina /vecchio/albero e resta com'è"
+                    "brief": "a text that names /vecchio/albero and stays as it is"
                 },
                 "altrove": {"workdir": "/una/casa/fuori"},
                 "sulla-radice": {"workdir": "/vecchio/albero"}
@@ -423,9 +423,9 @@ mod tests {
         );
         assert!(document["inputs"]["riferimenti"]["brief"]
             .as_str()
-            .expect("il testo")
+            .expect("the text")
             .contains("/vecchio/albero"));
-        assert_eq!(moved.len(), 2, "spostati: {moved:?}");
-        assert_eq!(left.len(), 1, "lasciati: {left:?}");
+        assert_eq!(moved.len(), 2, "moved: {moved:?}");
+        assert_eq!(left.len(), 1, "left alone: {left:?}");
     }
 }

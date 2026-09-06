@@ -477,12 +477,12 @@ mod tests {
              fi\n\
              echo 'Not logged in' >&2; exit 1\n",
         )
-        .expect("scrivere il finto motore");
+        .expect("writing the fake engine");
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755))
-                .expect("bit di esecuzione");
+                .expect("the execute bit");
         }
         let login = if declares_login {
             r#","login_status":{"args":["login","status"],
@@ -527,20 +527,20 @@ mod tests {
     #[test]
     fn the_list_asks_the_engine_whether_each_home_has_credentials() {
         let (dir, tools) = a_machine_with_a_fake_codex(true);
-        let cli = find_cli("codex").expect("codex sta nella tabella");
+        let cli = find_cli("codex").expect("codex is in the table");
         let probe = actions::RealDryProbe;
 
         let empty = dir.join("casa-vuota");
-        std::fs::create_dir_all(&empty).expect("la casa senza credenziali");
+        std::fs::create_dir_all(&empty).expect("the home without credentials");
         let said = access_of(&tools, &probe, cli, &empty).1;
         assert!(
             said.contains("NOT AUTHENTICATED") && said.contains("Not logged in"),
-            "una casa senza credenziali deve vedersi, con le parole del motore: {said}"
+            "a home without credentials has to show, in the engine's own words: {said}"
         );
 
         let full = dir.join("casa-piena");
-        std::fs::create_dir_all(&full).expect("la casa autenticata");
-        std::fs::write(full.join("auth.json"), "{}").expect("le credenziali");
+        std::fs::create_dir_all(&full).expect("the authenticated home");
+        std::fs::write(full.join("auth.json"), "{}").expect("the credentials");
         let said = access_of(&tools, &probe, cli, &full).1;
         assert!(
             said.starts_with("authenticated"),
@@ -559,9 +559,9 @@ mod tests {
 
         let empty = dir.join("senza-credenziali");
         let full = dir.join("con-credenziali");
-        std::fs::create_dir_all(&empty).expect("la casa vuota");
-        std::fs::create_dir_all(&full).expect("la casa piena");
-        std::fs::write(full.join("auth.json"), "{}").expect("le credenziali");
+        std::fs::create_dir_all(&empty).expect("the empty home");
+        std::fs::create_dir_all(&full).expect("the full home");
+        std::fs::write(full.join("auth.json"), "{}").expect("the credentials");
 
         let store = profiles::ProfileStore {
             profiles: vec![
@@ -619,10 +619,10 @@ mod tests {
     #[test]
     fn a_home_nobody_can_ask_about_is_neither_authenticated_nor_broken() {
         let (dir, tools) = a_machine_with_a_fake_codex(false);
-        let cli = find_cli("codex").expect("codex sta nella tabella");
+        let cli = find_cli("codex").expect("codex is in the table");
         let probe = actions::RealDryProbe;
         let empty = dir.join("casa-vuota");
-        std::fs::create_dir_all(&empty).expect("la casa senza credenziali");
+        std::fs::create_dir_all(&empty).expect("the home without credentials");
 
         let said = access_of(&tools, &probe, cli, &empty).1;
         // **THE VERDICT IS THE HEAD OF THE ROW, AND IS READ THERE.** The

@@ -777,12 +777,12 @@ mod tests {
                 "inputs": {}
             }"#,
         )
-        .expect("il flusso di prova è valido")
+        .expect("the scratch flow is valid")
     }
 
     fn handed_input(step_id: &str) -> Value {
         json!({
-            "mandate": format!("fai il lavoro di {step_id}"),
+            "mandate": format!("do the work of {step_id}"),
             "holder": "claude-vivo",
             "handoff_timeout_secs": 3600
         })
@@ -790,7 +790,7 @@ mod tests {
 
     /// A store with a run in it and a step already handed over.
     fn a_handed_run(directory: &TestDirectory, step_id: &str, deps: Vec<String>) -> Ledger {
-        let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+        let ledger = Ledger::open(&directory.0).expect("the ledger opens");
         ledger
             .record_run(&ledger::RunRecord {
                 run_id: "run-1".to_owned(),
@@ -806,7 +806,7 @@ mod tests {
                 worktree: None,
                 stop_reason: None,
             })
-            .expect("registrare la corsa");
+            .expect("recording the run");
         hand_over(&ledger, step_id, deps);
         ledger
     }
@@ -828,7 +828,7 @@ mod tests {
         record.held_by_pid = Some(std::process::id());
         ledger
             .append_step_started(&record)
-            .expect("aprire il passo");
+            .expect("opening the step");
         ledger
             .close_step(
                 "run-1",
@@ -847,7 +847,7 @@ mod tests {
                     bytes_discarded: None,
                 },
             )
-            .expect("consegnarlo");
+            .expect("handing it over");
     }
 
     fn options(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -876,33 +876,33 @@ mod tests {
                 ("as", "chi-lavora"),
             ]),
         )
-        .expect("il passo si prende in carico");
+        .expect("the step is taken on");
         assert!(
-            report.contains("fai il lavoro di implementa"),
-            "il mandato si legge dall'ingresso: {report}"
+            report.contains("do the work of implementa"),
+            "the mandate is read from the input: {report}"
         );
 
-        let records = ledger.steps("run-1").expect("rileggere i passi");
+        let records = ledger.steps("run-1").expect("reading the steps back");
         let opened = records
             .iter()
             .find(|record| record.outcome.is_none())
-            .expect("c'è un tentativo aperto");
+            .expect("there is an open attempt");
         assert_eq!(opened.attempt, 2);
         assert_eq!(opened.epoch, 2);
         assert_eq!(
             opened.input,
             handed_input("implementa"),
-            "l'ingresso si copia tale e quale"
+            "the input is copied exactly as it was"
         );
         assert_eq!(
             opened.attempt_relation,
             Some(AttemptRelation::SameInput),
-            "stesso ingresso e stessi freni: è lo stesso lavoro ripreso"
+            "same input and same brakes: it is the same work taken up again"
         );
         assert_eq!(
             opened.held_by_pid, None,
-            "nessun processo tiene un passo consegnato: scriverci un pid lo farebbe \
-             dichiarare morto alla prima ripresa"
+            "no process holds a handed step: writing a pid there would make it \
+             be declared dead at the first resume"
         );
     }
 
@@ -923,10 +923,10 @@ mod tests {
                 ("as", "chi-giudica"),
             ]),
         )
-        .expect("il passo si prende in carico");
+        .expect("the step is taken on");
 
         let wrong = directory.0.join("uscita.json");
-        std::fs::write(&wrong, r#"{"esito": "va bene"}"#).expect("scrivere l'uscita");
+        std::fs::write(&wrong, r#"{"esito": "va bene"}"#).expect("writing the output");
         let error = close_step_in(
             &ledger,
             &a_flow(),
@@ -935,19 +935,19 @@ mod tests {
                 ("step", "verdetto"),
                 ("as", "chi-giudica"),
                 ("outcome", "went"),
-                ("output-file", wrong.to_str().expect("percorso leggibile")),
+                ("output-file", wrong.to_str().expect("a readable path")),
             ]),
         )
-        .expect_err("un'uscita fuori schema si respinge");
+        .expect_err("an output outside the schema is refused");
         assert!(error.contains("does not meet step"), "{error}");
 
-        let records = ledger.steps("run-1").expect("rileggere i passi");
+        let records = ledger.steps("run-1").expect("reading the steps back");
         assert!(
             records
                 .iter()
                 .any(|record| record.step_id == "verdetto" && record.outcome.is_none()),
-            "il passo resta aperto: respingere e chiudere lo stesso sarebbe peggio di non \
-             controllare"
+            "the step stays open: refusing and closing all the same would be worse \
+             than not checking"
         );
     }
 
@@ -964,10 +964,10 @@ mod tests {
                 ("as", "chi-giudica"),
             ]),
         )
-        .expect("il passo si prende in carico");
+        .expect("the step is taken on");
 
         let good = directory.0.join("uscita.json");
-        std::fs::write(&good, r#"{"verdict": "va bene"}"#).expect("scrivere l'uscita");
+        std::fs::write(&good, r#"{"verdict": "va bene"}"#).expect("writing the output");
         let report = close_step_in(
             &ledger,
             &a_flow(),
@@ -976,23 +976,23 @@ mod tests {
                 ("step", "verdetto"),
                 ("as", "chi-giudica"),
                 ("outcome", "went"),
-                ("output-file", good.to_str().expect("percorso leggibile")),
+                ("output-file", good.to_str().expect("a readable path")),
                 ("turns", "12"),
             ]),
         )
-        .expect("l'uscita dichiarata si accetta");
+        .expect("the declared output is accepted");
         assert!(report.contains("closed"), "{report}");
 
-        let spent = ledger.spent_in_run("run-1").expect("la spesa si chiede");
-        assert_eq!(spent.calls, 1, "i turni dichiarati scrivono una chiamata");
+        let spent = ledger.spent_in_run("run-1").expect("the spend can be asked for");
+        assert_eq!(spent.calls, 1, "the declared turns write a call");
         assert_eq!(
             spent.calls_without_cost, 1,
-            "una chiamata autodichiarata non porta un costo"
+            "a self-declared call carries no cost"
         );
         assert!(
             !spent.is_complete(),
-            "con una consegna dentro, il totale di una corsa smette di essere completo — \
-             ed è ciò che rende il tetto di spesa una garanzia solo su ciò che si sa"
+            "with a hand-over inside it, a run's total stops being complete — and \
+             that is what makes the spend cap a guarantee only over what is known"
         );
     }
 
@@ -1013,9 +1013,9 @@ mod tests {
             &ledger,
             &options(&[("run", "run-1"), ("step", "implementa"), ("as", "autore")]),
         )
-        .expect("l'autore prende il lavoro");
+        .expect("the author takes the work");
         let done = directory.0.join("implementa.json");
-        std::fs::write(&done, r#"{"fatto": true}"#).expect("scrivere l'uscita");
+        std::fs::write(&done, r#"{"fatto": true}"#).expect("writing the output");
         close_step_in(
             &ledger,
             &a_flow(),
@@ -1024,17 +1024,17 @@ mod tests {
                 ("step", "implementa"),
                 ("as", "autore"),
                 ("outcome", "went"),
-                ("output-file", done.to_str().expect("percorso leggibile")),
+                ("output-file", done.to_str().expect("a readable path")),
             ]),
         )
-        .expect("l'autore chiude il proprio lavoro");
+        .expect("the author closes their own work");
 
         // And now it tries to judge itself. Opening is already impossible.
         let refused = open_step_in(
             &ledger,
             &options(&[("run", "run-1"), ("step", "verdetto"), ("as", "autore")]),
         )
-        .expect_err("l'autore non apre il passo che lo giudica");
+        .expect_err("the author does not open the step that judges them");
         assert!(refused.contains("does not judge"), "{refused}");
 
         // Nor closing, entering under any name: the close is the gesture that
@@ -1043,9 +1043,9 @@ mod tests {
             &ledger,
             &options(&[("run", "run-1"), ("step", "verdetto"), ("as", "un-terzo")]),
         )
-        .expect("un terzo prende il giudizio");
+        .expect("a third party takes the judgement");
         let good = directory.0.join("verdetto.json");
-        std::fs::write(&good, r#"{"verdict": "va bene"}"#).expect("scrivere l'uscita");
+        std::fs::write(&good, r#"{"verdict": "va bene"}"#).expect("writing the output");
         let refused = close_step_in(
             &ledger,
             &a_flow(),
@@ -1054,10 +1054,10 @@ mod tests {
                 ("step", "verdetto"),
                 ("as", "autore"),
                 ("outcome", "went"),
-                ("output-file", good.to_str().expect("percorso leggibile")),
+                ("output-file", good.to_str().expect("a readable path")),
             ]),
         )
-        .expect_err("l'autore non chiude il passo che lo giudica");
+        .expect_err("the author does not close the step that judges them");
         assert!(refused.contains("does not judge"), "{refused}");
     }
 
@@ -1103,15 +1103,15 @@ mod tests {
                     bytes_discarded: None,
                 },
             )
-            .expect("consegnarlo");
+            .expect("handing it over");
 
         open_step_in(
             &ledger,
             &options(&[("run", "run-1"), ("step", "implementa"), ("as", "autore")]),
         )
-        .expect("l'autore prende il lavoro");
+        .expect("the author takes the work");
         let done = directory.0.join("implementa.json");
-        std::fs::write(&done, r#"{"fatto": true}"#).expect("scrivere l'uscita");
+        std::fs::write(&done, r#"{"fatto": true}"#).expect("writing the output");
         close_step_in(
             &ledger,
             &a_flow(),
@@ -1120,16 +1120,16 @@ mod tests {
                 ("step", "implementa"),
                 ("as", "autore"),
                 ("outcome", "went"),
-                ("output-file", done.to_str().expect("percorso leggibile")),
+                ("output-file", done.to_str().expect("a readable path")),
             ]),
         )
-        .expect("l'autore chiude");
+        .expect("the author closes");
 
         open_step_in(
             &ledger,
             &options(&[("run", "run-1"), ("step", "verdetto"), ("as", "autore")]),
         )
-        .expect("il passo lo dichiara ammesso, quindi passa");
+        .expect("the step declares them allowed, so it goes through");
     }
 
     /// **CLOSING «WENT» WITH NO OUTPUT, WHILE SOMEONE WAITS FOR IT, IS
@@ -1145,7 +1145,7 @@ mod tests {
             &ledger,
             &options(&[("run", "run-1"), ("step", "implementa"), ("as", "chi")]),
         )
-        .expect("il passo si prende in carico");
+        .expect("the step is taken on");
 
         let error = close_step_in(
             &ledger,
@@ -1157,10 +1157,10 @@ mod tests {
                 ("outcome", "went"),
             ]),
         )
-        .expect_err("senza uscita il passo dopo non partirebbe");
+        .expect_err("with no output the step after would not start");
         assert!(
             error.contains("verdetto"),
-            "deve nominare chi aspetta: {error}"
+            "it must name whoever is waiting: {error}"
         );
         assert!(error.contains("--output-file"), "{error}");
     }
@@ -1175,7 +1175,7 @@ mod tests {
             &ledger,
             &options(&[("run", "run-1"), ("step", "verdetto"), ("as", "chi")]),
         )
-        .expect("il passo si prende in carico");
+        .expect("the step is taken on");
         close_step_in(
             &ledger,
             &a_flow(),
@@ -1186,7 +1186,7 @@ mod tests {
                 ("outcome", "went"),
             ]),
         )
-        .expect("nessuno dipende da «verdetto»: si chiude senza uscita");
+        .expect("nobody depends on «verdetto»: it closes with no output");
     }
 
     /// **A STEP THAT IS REALLY RUNNING IS NOT CLOSED BY HAND.**
@@ -1211,7 +1211,7 @@ mod tests {
             200,
         );
         record.held_by_pid = Some(std::process::id());
-        ledger.append_step_started(&record).expect("il motore apre");
+        ledger.append_step_started(&record).expect("the engine opens it");
 
         let error = close_step_in(
             &ledger,
@@ -1223,15 +1223,15 @@ mod tests {
                 ("outcome", "went"),
             ]),
         )
-        .expect_err("un passo tenuto dal motore non si chiude a mano");
+        .expect_err("a step the engine holds is not closed by hand");
         assert!(error.contains("the engine is running it"), "{error}");
         assert!(
             ledger
                 .steps("run-1")
-                .expect("rileggere i passi")
+                .expect("reading the steps back")
                 .iter()
                 .any(|found| found.attempt == 2 && found.outcome.is_none()),
-            "il tentativo del motore resta aperto: chiuderlo romperebbe la corsa che gira"
+            "the engine's attempt stays open: closing it would break the running run"
         );
     }
 
@@ -1244,19 +1244,19 @@ mod tests {
             &ledger,
             &options(&[("run", "run-1"), ("step", "implementa"), ("as", "chi")]),
         )
-        .expect("il primo lo prende");
+        .expect("the first one takes it");
         let error = open_step_in(
             &ledger,
             &options(&[("run", "run-1"), ("step", "implementa"), ("as", "un-altro")]),
         )
-        .expect_err("un passo già aperto non si riprende");
+        .expect_err("a step already open is not taken up again");
         assert!(error.contains("is open"), "{error}");
     }
 
     #[test]
     fn an_option_without_a_value_is_refused() {
         let error = flags(&words(&["--run", "--step", "implementa"]))
-            .expect_err("un'opzione senza valore si rifiuta");
+            .expect_err("an option with no value is refused");
         assert!(error.contains("the real value is missing"), "{error}");
     }
 
@@ -1270,7 +1270,7 @@ mod tests {
             "--as",
             "chi",
         ]))
-        .expect("le coppie si leggono");
+        .expect("the pairs read back");
         assert_eq!(found.get("run").map(String::as_str), Some("run-1"));
         assert_eq!(found.get("step").map(String::as_str), Some("implementa"));
         assert_eq!(found.get("as").map(String::as_str), Some("chi"));
@@ -1278,7 +1278,7 @@ mod tests {
 
     #[test]
     fn a_missing_option_names_itself() {
-        let error = required(&BTreeMap::new(), "run").expect_err("manca");
+        let error = required(&BTreeMap::new(), "run").expect_err("it is missing");
         assert!(error.contains("--run"), "{error}");
     }
 
@@ -1295,7 +1295,7 @@ mod tests {
         .into_iter()
         .map(|(name, value)| (name.to_owned(), value.to_owned()))
         .collect();
-        let error = close_step(&found).expect_err("«waiting» non si dichiara a mano");
+        let error = close_step(&found).expect_err("«waiting» is not declared by hand");
         assert!(error.contains("`went` and `broke`"), "{error}");
     }
 
