@@ -1,107 +1,110 @@
-# La finestra che mostra sé stessa
+# The window that shows itself
 
-**02/09/2026.** Nasce da una frase di Theo — *«l'utente deve poter vedere tutto
-quello che è Sailor, dalle cose che salva a come le gestisce»* — e da una
-seconda che ne è il metodo: *«non tutto dovrebbe esistere in primo piano»*.
+**02/09/2026.** Born from a sentence of Theo's — *«the user has to be able to
+see everything Sailor is, from the things it saves to how it manages them»* —
+and from a second one that is its method: *«not everything ought to exist in the
+foreground»*.
 
-Non è un disegno nuovo. È il disegno che discende da cose già scritte in questo
-repo, ritrovate invece che inventate.
+It is not a new design. It is the design that follows from things already
+written in this repository, found again rather than invented.
 
-## Il metro, che era già il vincolo permanente
+## The yardstick, which was already the permanent constraint
 
-> **Chiarezza per chi guarda.** Sailor esiste perché una persona veda e
-> controlli cosa fanno i suoi strumenti. Vale anche per l'aspetto: **un'interfaccia
-> che nasconde cosa succede è il contrario del prodotto.**
+> **Clarity for whoever is looking.** Sailor exists so that a person may see and
+> control what their tools do. It holds for the look as well: **an interface
+> that hides what is happening is the opposite of the product.**
 >
-> — `docs/decisions.md`, fra i vincoli permanenti
+> — `docs/decisions.md`, among the permanent constraints
 
-Il guasto 30 è la sua violazione più netta: la tela diceva «in attesa» su ogni
-nodo di ogni flusso mentre il motore lavorava. **Non nascondeva: raccontava il
-falso.** La lezione che ne resta è che una superficie che non sa una cosa deve
-dirlo, non riempire il vuoto con un valore plausibile.
+Fault 30 is its sharpest violation: the canvas said «waiting» on every node of
+every flow while the engine was working. **It was not hiding: it was telling a
+falsehood.** The lesson that remains is that a surface which does not know a
+thing has to say so, not fill the gap with a plausible value.
 
-## La struttura viene dalle quattro superfici, non da un elenco di pagine
+## The structure comes from the four surfaces, not from a list of pages
 
-`docs/the-four-surfaces.md` dà al sistema quattro categorie, e
-ogni azione registrata ne dichiara una:
+`docs/the-four-surfaces.md` gives the system four categories, and every
+registered action declares one of them:
 
-| superficie | cosa fa | dove si vede oggi |
+| surface | what it does | where it shows today |
 |---|---|---|
-| `sense` | legge il mondo senza toccarlo | da nessuna parte |
-| `act` | tocca il mondo | la lavagna, i terminali |
-| `remember` | il deposito, **come fonte a cui si fanno domande** | quasi da nessuna parte |
-| `gate` | chi può cosa, e dove entra una persona | da nessuna parte |
+| `sense` | reads the world without touching it | nowhere |
+| `act` | touches the world | the board, the terminals |
+| `remember` | the store, **as a source you put questions to** | almost nowhere |
+| `gate` | who may do what, and where a person comes in | nowhere |
 
-**Il vuoto più grande è `remember`**, e il documento lo dice già con le parole
-di un mandato di agosto:
+**The biggest gap is `remember`**, and the document already says it in the words
+of a mandate from August:
 
-> *«Sailor registra tutto quello che succede e non torna mai a leggerlo.»*
+> *«Sailor records everything that happens and never goes back to read it.»*
 
-Questa è la pietra miliare che manca. Non una schermata in più: **il deposito
-che diventa interrogabile da chi guarda.**
+This is the milestone that is missing. Not one more screen: **the store becoming
+interrogable by whoever is looking.**
 
-## Undici voci diventano quattro
+## Eleven entries become four
 
-La finestra di oggi ha sette posti in fila, tutti dello stesso peso; la mia
-prima anteprima ne aveva undici. Entrambe sbagliano allo stesso modo, e
-`navigation-patterns` lo nomina: *«mixing navigation levels in the same visual
-component»*. Ma il difetto vero è prima della grafica — **è che ogni capacità
-del motore chiedeva la sua voce.**
+Today's window has seven places in a row, all of the same weight; my first
+preview had eleven. Both are wrong in the same way, and `navigation-patterns`
+names it: *«mixing navigation levels in the same visual component»*. But the
+real defect comes before the graphics — **it is that every capability of the
+engine was asking for its own entry.**
 
-Quattro voci, e ognuna è una domanda che una persona si fa davvero:
+Four entries, and each is a question a person actually asks:
 
-| voce | la domanda | cosa contiene |
+| entry | the question | what it holds |
 |---|---|---|
-| **Board** | «cosa faccio adesso» | i flussi, la tela, la cassetta dei passi |
-| **Terminals** | «cosa sta girando» | i terminali vivi, gli alberi di lavoro |
-| **Memory** | «cos'è successo, e quanto è costato» | corse, costi, guasti, quota — il deposito interrogabile |
-| **Sailor** | «cosa sa di me, e cosa può fare» | profili, motori, modelli, la casa, la dotazione |
+| **Board** | «what am I doing now» | the flows, the canvas, the box of steps |
+| **Terminals** | «what is running» | the live terminals, the worktrees |
+| **Memory** | «what happened, and what did it cost» | runs, costs, faults, quota — the interrogable store |
+| **Sailor** | «what it knows about me, and what it can do» | profiles, engines, models, the home, the equipment |
 
-Le prime due sono `act`: dove si lavora. La terza è `remember`. La quarta è il
-sistema che mostra sé stesso — ed è dove `sense` e `gate` troveranno posto
-quando esisteranno.
+The first two are `act`: where the work happens. The third is `remember`. The
+fourth is the system showing itself — and it is where `sense` and `gate` will
+find their place once they exist.
 
-## Cosa vuol dire «non in primo piano»
+## What «not in the foreground» means
 
-Tre gradi, e la regola per stare in ciascuno:
+Three degrees, and the rule for being in each:
 
-1. **Sempre visibile** — la barra: dove sei, cosa gira, cosa costa. Tre fatti,
-   e nient'altro. Se una corsa è in atto lo devi sapere da qualunque posto.
-2. **A una voce di distanza** — le quattro sezioni. Ognuna apre su ciò che
-   quella domanda vuole, non su un menu di sotto-domande.
-3. **Dentro la sezione** — tutto il resto. I modelli non sono un posto: sono una
-   scheda dentro Sailor. La quota non è un posto: è una riga della barra che si
-   apre in Memory.
+1. **Always visible** — the bar: where you are, what is running, what it costs.
+   Three facts, and nothing else. If a run is under way you have to know it from
+   anywhere.
+2. **One entry away** — the four sections. Each opens on what that question
+   wants, not on a menu of sub-questions.
+3. **Inside the section** — all the rest. The models are not a place: they are a
+   tab inside Sailor. The quota is not a place: it is a line of the bar that
+   opens in Memory.
 
-Il metro per decidere il grado: **quante volte al giorno**. Un profilo si
-cambia una volta a settimana e oggi occupa la stessa larghezza della lavagna.
+The yardstick for deciding the degree: **how many times a day**. A profile gets
+changed once a week and today takes up the same width as the board.
 
-## Cosa deve mostrare «Sailor», in concreto
+## What «Sailor» has to show, concretely
 
-È la voce che oggi non esiste in nessuna forma, ed è quella che risponde alla
-frase da cui questo documento nasce.
+It is the entry that today does not exist in any form, and it is the one that
+answers the sentence this document is born from.
 
-- **Cosa salva**: i flussi e da quale delle tre sorgenti vengono (sistema, casa,
-  progetto); il deposito delle corse; l'inventario della macchina; i guasti; le
-  identità di firma. Con **il percorso vero su disco**, perché un dato di cui
-  non sai dove sta è un dato che non controlli.
-- **Come lo gestisce**: quanto occupa; da quanto tempo; cosa succede quando
-  cresce. Il piano del ciclo di vita dello spazio esiste già ed è misurato:
-  43 GB di scratchpad, 24 GB di cartelle di compilazione.
-- **Cosa può fare**: le azioni registrate con la loro superficie e i poteri che
-  pretendono — rete, disco, processi, denaro, segreti. È già il contratto che
-  ogni azione dichiara; oggi nessuno lo può leggere.
-- **Con cosa lo fa**: motori, profili, il loro stato di accesso, i modelli e i
-  prezzi.
+- **What it saves**: the flows and which of the three sources they come from
+  (system, home, project); the store of runs; the inventory of the machine; the
+  faults; the signing identities. With **the real path on disk**, because a
+  piece of data whose place you do not know is a piece of data you do not
+  control.
+- **How it manages it**: how much room it takes; for how long; what happens when
+  it grows. The plan for the life cycle of the space already exists and is
+  measured: 43 GB of scratchpad, 24 GB of build directories.
+- **What it can do**: the registered actions with their surface and the powers
+  they demand — network, disk, processes, money, secrets. It is already the
+  contract every action declares; today nobody can read it.
+- **What it does it with**: engines, profiles, their access state, the models
+  and the prices.
 
-## La lingua
+## The language
 
-`decisions.md`, decisione del 01/09/2026 presa da Theo: *«English everywhere,
-restoring the charter the project was founded with»* — identificatori, commenti,
-documentazione, **e ogni messaggio che un utente dello strumento può vedere**.
+`decisions.md`, a decision of 01/09/2026 taken by Theo: *«English everywhere,
+restoring the charter the project was founded with»* — identifiers, comments,
+documentation, **and every message a user of the tool can see**.
 
-La prima anteprima era in italiano. Rifatta in inglese: non è una preferenza, è
-una decisione già presa che non avevo letto.
+The first preview was in Italian. Redone in English: it is not a preference, it
+is a decision already taken that I had not read.
 
 ## What this document became on the screen, the evening of 02/09/2026
 
