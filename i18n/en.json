@@ -402,6 +402,7 @@
   "cli.release.receipt_with_no_pid": "warning: receipt with no pid '{name}' (does not block the release)",
   "cli.release.replacing": "== replacing the binary in service ==",
   "cli.release.running_the_suite": "== running the whole suite of {manifest} on HEAD ==",
+  "cli.release.suite_home": "the suite runs with an empty home: {home}",
   "cli.release.service_is_working": "waiting: the service is working on '{task}' with pid {pid}",
   "cli.release.service_restarted": "service restarted: {domain}",
   "cli.release.service_still_on_the_old_one": "the binary is in place, but the service is still running the old one ({why}).\n   To close the gap run: launchctl kickstart -k {domain}",
