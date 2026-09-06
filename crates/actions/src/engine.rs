@@ -834,6 +834,21 @@ impl Action for ExternalEngineAction {
     /// controllo il `with` è **parziale** per costruzione — il resto arriva
     /// dalle dipendenze — e lamentarsi di un `timeout_secs` mancante direbbe
     /// una cosa falsa.
+    /// **A STEP THAT NAMES ONLY TOOLS NOBODY CAN ASK A QUESTION OF SPENDS
+    /// NOTHING**, and that is read off the descriptors, not off a list here:
+    /// an engine declares how it is asked, `cargo` and `npm` declare no such
+    /// thing. Unknown either way — no `with`, no chain, no resolver — counts
+    /// as paying, which narrows the front and never widens it.
+    fn may_spend(&self, declared: Option<&Value>) -> bool {
+        let Some(named) = declared.map(crate::spec::engines_named_in) else {
+            return true;
+        };
+        let (Some(tools), false) = (self.tools.as_ref(), named.is_empty()) else {
+            return true;
+        };
+        named.iter().any(|id| tools.ask_recipe(id).is_some())
+    }
+
     fn unknown_fields(&self, declared: &Value) -> Vec<String> {
         match serde_json::from_value::<EngineSpec>(declared.clone()) {
             Ok(spec) => spec.extra.into_keys().collect(),

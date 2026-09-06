@@ -94,6 +94,12 @@ impl ShellCheckAction {
 }
 
 impl Action for ShellCheckAction {
+    /// A command line of this machine reaches no engine and buys nothing, so
+    /// it takes no room from a paid call in the same front.
+    fn may_spend(&self, _declared: Option<&Value>) -> bool {
+        false
+    }
+
     /// Come per il motore, e dalla stessa struttura.
     fn unknown_fields(&self, declared: &Value) -> Vec<String> {
         match serde_json::from_value::<CheckSpec>(declared.clone()) {

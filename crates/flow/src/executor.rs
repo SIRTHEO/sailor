@@ -156,6 +156,14 @@ pub trait Action: Send + Sync {
         Vec::new()
     }
 
+    /// Whether running this step can spend money. The width of a front is a
+    /// defence against overspending, so it counts only what can overspend.
+    /// `true` by default: an action that does not answer is counted, the
+    /// direction that narrows and never widens.
+    fn may_spend(&self, _declared: Option<&Value>) -> bool {
+        true
+    }
+
     /// Whether this action's output is a verdict a run may be closed on.
     ///
     /// Only an action that answers yes may carry `decides_done`. The default is
@@ -1108,7 +1116,7 @@ impl Executor for InProcessExecutor {
             // the number — under a cap the width narrows as the remainder falls
             // (see `how_many_fit`); with no cap it stays what it always was.
             let mut failure: Option<FlowError> = None;
-            for group in opened.chunks(at_once) {
+            for group in waves(&opened, at_once) {
                 let outcomes: Vec<Result<(), FlowError>> = std::thread::scope(|scope| {
                     let handles: Vec<_> = group
                         .iter()
@@ -1184,6 +1192,28 @@ fn how_many_fit(remaining_micros: i64, dearest_micros: Option<i64>) -> usize {
     // which is the right way — three and a half calls of margin are three.
     let fit = (remaining_micros / dearest).clamp(1, AT_ONCE as i64);
     fit as usize
+}
+
+/// The front cut into waves: **the width counts only the steps that can spend**,
+/// so a remainder that admits one paid call still opens the checks beside it
+/// together.
+fn waves<'a, 'b>(opened: &'b [Opened<'a>], at_once: usize) -> Vec<&'b [Opened<'a>]> {
+    let mut cut = Vec::new();
+    let (mut start, mut paying) = (0, 0);
+    for (at, work) in opened.iter().enumerate() {
+        if !work.may_spend() {
+            continue;
+        }
+        if paying == at_once {
+            cut.push(&opened[start..at]);
+            (start, paying) = (at, 0);
+        }
+        paying += 1;
+    }
+    if start < opened.len() {
+        cut.push(&opened[start..]);
+    }
+    cut
 }
 
 /// Whether the run closes here instead of opening the front, and why.
@@ -1277,6 +1307,14 @@ struct Opened<'a> {
     input: Value,
     attempt: u32,
     action: Option<&'a dyn Action>,
+}
+
+impl Opened<'_> {
+    /// A step whose action nobody resolved counts as paying.
+    fn may_spend(&self) -> bool {
+        self.action
+            .is_none_or(|action| action.may_spend(self.step.with.as_ref()))
+    }
 }
 
 /// Runs a step and closes it, in its own thread. The shared state is a copy,
