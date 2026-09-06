@@ -97,6 +97,18 @@ pub fn ceiling_declared_in(with: &Value) -> crate::reserve::Declared {
         .unwrap_or_default()
 }
 
+/// The model a step's `with` asks of each engine, by engine id.
+///
+/// **THE ONE FIELD AND NOT THE WHOLE STEP**, as `engines_named_in` reads
+/// `tool`: before the run a `stdin` is still a reference and no `EngineSpec`
+/// parses, so reading the struct would find no model in the very steps that
+/// name one. An engine absent from the map runs on a default nobody chose.
+pub fn models_named_in(with: &Value) -> BTreeMap<String, String> {
+    with.get("model")
+        .and_then(|model| serde_json::from_value(model.clone()).ok())
+        .unwrap_or_default()
+}
+
 /// The ceiling this step declares, in every unit an engine may take one in.
 pub(crate) fn ceiling_of(spec: &EngineSpec) -> crate::reserve::Declared {
     crate::reserve::Declared {
@@ -282,5 +294,26 @@ mod tests {
         );
         assert!(engines_named_in(&json!({"tool": 3})).is_empty());
         assert!(engines_named_in(&json!({"bin": "sh"})).is_empty());
+    }
+
+    /// **WHOEVER PRICES A RUN BEFORE IT RUNS READS THE STEP, NOT THE PAST.**
+    /// An engine of the chain with no entry is absent from the map, and that
+    /// absence is the fact a check has to say out loud. **The step still holds
+    /// an unresolved reference**, which is how every step looks before it runs:
+    /// a reader of the whole `EngineSpec` finds nothing here, and finds it
+    /// silently.
+    #[test]
+    fn the_model_a_step_asks_of_each_engine_is_read_off_the_step() {
+        let with = json!({
+            "tool": ["uno", "due"],
+            "model": {"uno": "modello-uno"},
+            "stdin": {"$from": "/trigger/text"}
+        });
+
+        let named = models_named_in(&with);
+
+        assert_eq!(named.get("uno").map(String::as_str), Some("modello-uno"));
+        assert!(!named.contains_key("due"), "{named:?}");
+        assert!(models_named_in(&json!({"tool": "uno"})).is_empty());
     }
 }
