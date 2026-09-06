@@ -503,6 +503,12 @@ pub(crate) fn start(
     origin: String,
 ) -> Result<StartedRun, String> {
     let flow = load_flow(name)?;
+    // The same refusal as `flow_cmd::run_flow`, asked of the one place that
+    // answers it: a flow requiring a guaranteed cap this machine cannot give
+    // must not start from the button either.
+    if let Some(why) = sailor::flow_cmd::check::why_a_run_here_would_not_start(&flow) {
+        return Err(why);
+    }
 
     // IL DEPOSITO PRIMA DEL REGISTRO: `store_write` e `store_read` lo
     // possiedono, e un registro costruito prima dichiarerebbe mancanti due

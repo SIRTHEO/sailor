@@ -698,6 +698,7 @@ mod tests {
             inputs: BTreeMap::new(),
             schedule: None,
             spend_cap_micros: None,
+            spend_cap_kind: None,
             wall_secs: None,
             max_turns: None,
             self_care: false,
