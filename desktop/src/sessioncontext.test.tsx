@@ -51,7 +51,7 @@ test("the session shows folder-scoped facts and opens every existing detail alon
   fireEvent.click(screen.getByRole("button", { name: /Current run cost/ }));
   expect(container.querySelector(".session-context__detail")?.textContent).toContain("not measured");
   fireEvent.click(screen.getByRole("button", { name: /Engine quota/ }));
-  await screen.findByText("Quota and models");
+  await screen.findByText("Quota already spent");
   expect(invoke.mock.calls.filter(([command]) => command === "quota")).toHaveLength(1);
   expect(screen.getByTestId("terminal")).toBe(pane);
   expect(pane.closest("[hidden]")).toBeNull();
