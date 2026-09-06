@@ -23,18 +23,18 @@ function snapshot(flow: string, startedAt: number, events: RunEvent[]): RunSnaps
   return { run_id: `${flow}-${startedAt}`, flow, started_at: startedAt, status: "running", events };
 }
 
-describe("lo stato di una corsa", () => {
-  test("un passo partito e non ancora chiuso sta correndo", () => {
-    const states = stepStatesOfRun([started(1, "piano")]);
-    expect(states.get("piano")?.state).toBe("running");
+describe("the state of a run", () => {
+  test("a step started and not yet closed is running", () => {
+    const states = stepStatesOfRun([started(1, "plan")]);
+    expect(states.get("plan")?.state).toBe("running");
   });
 
-  test("un passo chiuso porta l'esito, non più «in corso»", () => {
-    const states = stepStatesOfRun([started(1, "piano"), closed(2, "piano", "Went")]);
-    expect(states.get("piano")?.state).toBe("went");
+  test("a closed step carries the outcome, no longer «in progress»", () => {
+    const states = stepStatesOfRun([started(1, "plan"), closed(2, "plan", "Went")]);
+    expect(states.get("plan")?.state).toBe("went");
   });
 
-  test("i quattro finali restano distinti, perché non sono intercambiabili", () => {
+  test("the four endings stay distinct, because they are not interchangeable", () => {
     const states = stepStatesOfRun([
       closed(1, "a", "Went"),
       closed(2, "b", "Broke"),
@@ -49,12 +49,12 @@ describe("lo stato di una corsa", () => {
     expect(states.get("d")?.state).toBe("handed_to_human");
   });
 
-  test("un esito che non conosciamo lascia il passo com'era, non lo indovina", () => {
-    const states = stepStatesOfRun([started(1, "x"), closed(2, "x", "Qualcosa_Di_Nuovo")]);
+  test("an outcome we do not know leaves the step as it was, it does not guess", () => {
+    const states = stepStatesOfRun([started(1, "x"), closed(2, "x", "Something_New")]);
     expect(states.get("x")?.state).toBe("running");
   });
 
-  test("gli eventi si leggono in ordine di seq, non di arrivo", () => {
+  test("the events are read in seq order, not in arrival order", () => {
     // An attempt returning late must not rewrite the state of the one that
     // overtook it: here the close (seq 2) arrives AFTER the restart (seq 3).
     const states = stepStatesOfRun([started(1, "x"), started(3, "x", { attempt: 2 }), closed(2, "x", "Broke")]);
@@ -63,21 +63,21 @@ describe("lo stato di una corsa", () => {
   });
 });
 
-describe("lo stato della tela intera", () => {
-  test("la chiave è «flusso::passo»: due flussi con lo stesso id non si contaminano", () => {
+describe("the state of the whole canvas", () => {
+  test("the key is «flow::step»: two flows with the same id do not contaminate each other", () => {
     // It is the real case: among the flows on this machine `verifica`,
     // `trigger` and `verdetto` repeat. With the bare key one's state would
     // colour the other's namesake node — an error that reads as a measurement.
     const states = stepStatesOfCanvas([
-      snapshot("primo", 10, [closed(1, "verifica", "Went")]),
-      snapshot("secondo", 11, [closed(1, "verifica", "Broke")]),
+      snapshot("first", 10, [closed(1, "verifica", "Went")]),
+      snapshot("second", 11, [closed(1, "verifica", "Broke")]),
     ]);
-    expect(states.get("primo::verifica")?.state).toBe("went");
-    expect(states.get("secondo::verifica")?.state).toBe("broke");
+    expect(states.get("first::verifica")?.state).toBe("went");
+    expect(states.get("second::verifica")?.state).toBe("broke");
     expect(states.get("verifica")).toBeUndefined();
   });
 
-  test("di due corse dello stesso flusso conta la più recente", () => {
+  test("of two runs of the same flow the most recent counts", () => {
     const states = stepStatesOfCanvas([
       snapshot("f", 100, [closed(1, "p", "Broke")]),
       snapshot("f", 200, [started(1, "p")]),
@@ -85,7 +85,7 @@ describe("lo stato della tela intera", () => {
     expect(states.get("f::p")?.state).toBe("running");
   });
 
-  test("senza corse nessun nodo ha uno stato, e nessuno ne inventa uno", () => {
+  test("with no runs no node has a state, and nobody invents one", () => {
     expect(stepStatesOfCanvas([]).size).toBe(0);
   });
 });

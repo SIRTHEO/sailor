@@ -87,7 +87,7 @@ mod tests {
         assert_eq!(
             manual.len(),
             sailor::COMMANDS.len(),
-            "il manuale della finestra ha {} comandi, il binario ne ha {}",
+            "the window's manual has {} commands, the binary has {}",
             manual.len(),
             sailor::COMMANDS.len()
         );
@@ -95,7 +95,7 @@ mod tests {
             assert_eq!(page.name, command.name);
             assert!(
                 !page.usage.is_empty(),
-                "'{}' arriva alla finestra senza dire come si scrive",
+                "'{}' reaches the window without saying how it is written",
                 page.name
             );
         }
@@ -120,8 +120,8 @@ mod tests {
     /// 34 usage forms and 0 of them cross the bridge".
     #[test]
     fn the_manual_crosses_the_bridge_as_json() {
-        let json = serde_json::to_string(&manual()).expect("il manuale si serializza");
-        assert!(json.contains("\"flow\""), "manca il comando dei flussi");
+        let json = serde_json::to_string(&manual()).expect("the manual serializes");
+        assert!(json.contains("\"flow\""), "the flow command is missing");
 
         // **IT COUNTS, IT DOES NOT LOOK FOR A PHRASE.** `manual()` is born of
         // `COMMANDS`, so looking for a word here would compare a source with
@@ -130,18 +130,18 @@ mod tests {
         // bridge** — a serde `skip`, a type that will not serialize — and that
         // shows by counting: were `usage` to stop passing, the count falls to
         // zero while the binary declares some thirty.
-        let dichiarate: usize = sailor::COMMANDS
+        let declared: usize = sailor::COMMANDS
             .iter()
             .map(|command| command.usage.len())
             .sum();
-        let arrivate = json.matches("\"form\":").count();
+        let arrived = json.matches("\"form\":").count();
         assert_eq!(
-            arrivate, dichiarate,
-            "il binario dichiara {dichiarate} forme d'uso e ne attraversano il ponte {arrivate}: {json}"
+            arrived, declared,
+            "the binary declares {declared} usage forms and {arrived} of them cross the bridge: {json}"
         );
         assert!(
             json.contains("\"description\"") && json.contains("\"usage\""),
-            "un campo non attraversa il ponte: {json}"
+            "a field does not cross the bridge: {json}"
         );
     }
 }
