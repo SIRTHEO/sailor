@@ -1,16 +1,16 @@
-//! `sailor remaining`: quanta quota **una persona** ha già consumato, letta dal
-//! motore invece che chiesta a chi lavora.
+//! `sailor remaining`: how much quota **a person** has already spent, read off
+//! the engine rather than asked of whoever is working.
 //!
-//! **PERCHÉ UN COMANDO SUO E NON UNA RIGA DENTRO `flow cost`.** Perché è
-//! un'altra domanda, e metterle nello stesso rapporto le farebbe leggere come
-//! la stessa. `flow cost` risponde a «quanto è costata **questa corsa**»; questo
-//! risponde a «quanto **le è rimasto**, contando tutto quello che ha fatto
-//! altrove». Un numero sotto l'altro, nello stesso riquadro, si sottrae — ed è
-//! il modo in cui una misura giusta diventa una conclusione falsa.
+//! **A COMMAND OF ITS OWN, NOT A LINE INSIDE `flow cost`.** It answers another
+//! question, and the same report would make the two read as one. `flow cost`
+//! answers «what did **this run** cost»; this answers «what is **left to her**,
+//! counting everything she did elsewhere». One number under the other, in the
+//! same box, gets subtracted — that is how a right measure becomes a false
+//! conclusion.
 //!
-//! **NON COSTA NIENTE.** Non invoca nessun motore: chiede a un indirizzo quanto
-//! è già stato consumato. Per questo lo si può chiamare prima di decidere se
-//! lanciare qualcosa, che è l'unico momento in cui serve.
+//! **IT COSTS NOTHING.** It invokes no engine: it asks an address how much was
+//! already spent. So it can be called before deciding whether to launch
+//! anything, the one moment it is useful.
 
 use models::remaining::Remaining;
 
@@ -27,7 +27,7 @@ pub fn run(args: &[String]) -> i32 {
     }
 }
 
-/// La forma di `sailor remaining`. Vedi `flow_cmd::USAGE`.
+/// The shape of `sailor remaining`. See `flow_cmd::USAGE`.
 pub const USAGE: &[crate::Form] = &[crate::Form {
     form: "sailor remaining",
     says_key: "",
@@ -116,12 +116,12 @@ fn said_of_the_unasked(engines: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// Le quote per una persona, una per riga.
+/// One person's quotas, one per line.
 ///
-/// **SI SCRIVE «CONSUMATO», NON «RIMASTO».** Il fornitore dichiara quanto è
-/// andato; il resto sarebbe una sottrazione fatta da noi, e su una finestra che
-/// non dice qual è il suo tetto una sottrazione è un'invenzione. Il nome del
-/// comando dice la domanda, la riga dice la misura.
+/// **IT SAYS «USED», NOT «LEFT».** The provider declares how much has gone; the
+/// rest would be a subtraction of ours, and on a window that never says what its
+/// ceiling is a subtraction is an invention. The command's name states the
+/// question, the line states the measure.
 fn report(found: &[Remaining]) -> String {
     if found.is_empty() {
         return catalogue::say("cli.remaining.no_window", &[]);
@@ -190,11 +190,10 @@ mod tests {
         );
     }
 
-    /// **LA RIGA DICE DI CHI È LA QUOTA, PRIMA DI DIRE QUANTA.** È l'avvertenza
-    /// che rende questo numero utilizzabile: senza, chi lo legge sotto un
-    /// rapporto di consumo lo attribuisce alla corsa che ha appena guardato, e
-    /// una quota di sette giorni attribuita a una corsa di dieci minuti è un
-    /// errore di due ordini di grandezza.
+    /// **THE LINE SAYS WHOSE QUOTA IT IS BEFORE SAYING HOW MUCH.** That warning
+    /// is what makes the number usable: without it, a reader who meets it under
+    /// a spend report attributes it to the run just looked at, and a seven-day
+    /// quota attributed to a ten-minute run is off by two orders of magnitude.
     #[test]
     fn the_report_says_whose_quota_it_is_before_saying_how_much() {
         let said = report(&[a_window("seven_day", 0.32, None)]);
@@ -229,9 +228,9 @@ mod tests {
         );
     }
 
-    /// **NESSUNA FINESTRA NON È «QUOTA LIBERA».** Una risposta senza misure è
-    /// una risposta senza misure, e dirlo con uno zero manderebbe a lanciare
-    /// proprio quando non si sa.
+    /// **NO WINDOW IS NOT «QUOTA FREE».** An answer carrying no measures is an
+    /// answer carrying no measures, and saying so with a zero would send people
+    /// launching at exactly the moment nobody knows.
     #[test]
     fn no_window_at_all_is_said_and_never_shown_as_zero() {
         let said = report(&[]);
@@ -239,8 +238,8 @@ mod tests {
         assert!(!said.contains("0.0%"), "{said}");
     }
 
-    /// Il canale è beta: quando smetterà di rispondere, il comando dice cosa è
-    /// successo invece di far finta di aver misurato.
+    /// The channel is beta: when it stops answering, the command says what
+    /// happened instead of pretending it measured something.
     #[test]
     fn a_channel_that_does_not_answer_is_reported_and_not_guessed() {
         let said = format!("{}", RemainingError::NotUnderstood);

@@ -1,24 +1,21 @@
-//! Il contratto fra il flusso che smista il lavoro e le azioni che lo eseguono.
+//! The contract between the flow that dispatches the work and the actions that
+//! run it.
 //!
-//! **PERCHÉ STA QUI E NON NEL CRATE DELLE AZIONI.** Fino al 28/08/2026 stava
-//! là, e andava bene finché il flusso nominava solo azioni di quel crate. Ora
-//! ne nomina di tre — l'innesco viene da `trigger`, e il motore sa risolvere
-//! uno strumento solo se qualcuno gli ha dato un risolutore, che vive in
-//! `toolbox` — e `sailor` è l'unico posto del programma dove i tre si
-//! incontrano. Una prova che non vede tutte le azioni del flusso non può dire
-//! se quel flusso parte.
+//! **WHY IT LIVES HERE AND NOT IN THE ACTIONS CRATE.** The flow now names
+//! actions from three crates — the trigger comes from `trigger`, and the engine
+//! can resolve a tool only if someone handed it a resolver, which lives in
+//! `toolbox` — and `sailor` is the one place in the program where the three
+//! meet. A test that cannot see every action of the flow cannot say whether
+//! that flow starts.
 //!
-//! **IL FILE SI LEGGE A TEMPO DI PROVA, NON DI COMPILAZIONE.** Con `include_str!`
-//! un flusso cancellato non fa cadere una prova: fa cadere la *compilazione*
-//! dell'intero crate, e chi lo scopre non vede il flusso, vede un crate rotto.
-//! È successo il 28/08/2026 alle prove di `sailor`, ferme perché
-//! `flows/prima-corsa.flow.json` non c'era più.
+//! **THE FILE IS READ AT TEST TIME, NOT AT COMPILE TIME.** With `include_str!`
+//! a deleted flow does not fail a test: it fails the *compilation* of the whole
+//! crate, and whoever meets it does not see a flow, they see a broken crate.
 //!
-//! **NESSUNA PROVA QUI INVOCA UN MOTORE VERO.** Gli strumenti nominati dal
-//! flusso si risolvono con un risolutore di prova che li manda tutti su `sh`:
-//! è la stessa strada che percorre una corsa vera — il passo chiede uno
-//! strumento, qualcuno lo risolve — con l'unica differenza che conta, cioè che
-//! non si spende una chiamata.
+//! **NO TEST HERE CALLS A REAL ENGINE.** The tools the flow names are resolved
+//! by a test resolver that sends them all to `sh`: the same road a real run
+//! walks — the step asks for a tool, someone resolves it — with the one
+//! difference that matters, that no call is spent.
 
 use actions::ToolResolver;
 use flow::{
@@ -30,13 +27,12 @@ use std::collections::BTreeMap;
 
 const FLOW_ID: &str = "dispatch-the-work";
 
-/// **IL FLUSSO NON STA PIÙ SU DISCO, E QUESTA PROVA NON DEVE CERCARLO LÌ.**
-/// Fino all'01/09/2026 leggeva `flows/dispatch-the-work.flow.json` dalla radice
-/// del progetto. Poi il flusso è entrato nel binario — le regole di
-/// instradamento spedite lo nominano, e su un'altra macchina la cartella non
-/// c'è — e leggerlo dal disco vorrebbe dire provare un file che il prodotto non
-/// spedisce mentre quello spedito non lo prova nessuno. `system::FLOWS` è la
-/// stessa sorgente da cui lo prende chi lo esegue.
+/// **THE FLOW IS NOT ON DISK ANY MORE, AND THIS TEST MUST NOT LOOK FOR IT
+/// THERE.** The flow went into the binary — the shipped routing rules name it,
+/// and on another machine the directory is missing — so reading it from disk
+/// would mean testing a file the product does not ship while nobody tests the
+/// one it does. `system::FLOWS` is the same source whoever runs it takes it
+/// from.
 fn flow_text() -> String {
     flow::system::FLOWS
         .iter()
@@ -49,8 +45,8 @@ fn flow_file() -> FlowFile {
     serde_json::from_str(&flow_text()).expect("il flusso deve caricarsi come FlowFile")
 }
 
-/// Ogni strumento diventa `sh`: quale comando esegua davvero lo decide poi il
-/// campo `args` del passo, che le prove sostituiscono.
+/// Every tool becomes `sh`: which command actually runs is then decided by the
+/// step's `args` field, which the tests replace.
 struct EveryToolIsShell;
 
 impl ToolResolver for EveryToolIsShell {
@@ -59,8 +55,8 @@ impl ToolResolver for EveryToolIsShell {
     }
 }
 
-/// Il risolutore che non trova niente: serve a provare cosa succede a un flusso
-/// portato su una macchina dove quello strumento non c'è.
+/// The resolver that finds nothing: it tests what happens to a flow carried to
+/// a machine where that tool is missing.
 struct NoToolIsHere;
 
 impl ToolResolver for NoToolIsHere {
@@ -85,8 +81,8 @@ fn registry_with(
     registry
 }
 
-/// Un orologio finto che avanza di uno a ogni domanda. Il contatore è atomico
-/// perché l'orologio ora è condiviso fra i fili di un fronte.
+/// A fake clock that steps forward by one on every question. The counter is
+/// atomic because the clock is now shared between the threads of a front.
 struct Tick(std::sync::atomic::AtomicI64);
 
 impl Tick {
@@ -201,10 +197,10 @@ fn last_decision(execution: &Execution) -> Decision {
         .expect("almeno una decisione")
 }
 
-// ── la forma del file ────────────────────────────────────────────────────
+// ── the shape of the file ────────────────────────────────────────────────
 
-/// I sei nodi e i loro archi: l'innesco che porta la consegna, il nodo che la
-/// divide, i due motori, il passo che verifica, il cancello che ne fa un rosso.
+/// The six nodes and their edges: the trigger carrying the errand, the node that
+/// splits it, the two engines, the verifying step, the gate that makes it red.
 #[test]
 fn the_flow_declares_a_trigger_a_dispatch_two_engines_and_a_verdict() {
     let flow = flow_file();
@@ -233,9 +229,9 @@ fn the_flow_declares_a_trigger_a_dispatch_two_engines_and_a_verdict() {
     assert_eq!(deps("verdict"), vec!["verify".to_owned()]);
 }
 
-/// **UN SOLO NODO DI INGRESSO, ED È UN INNESCO.** Un passo senza dipendenze che
-/// non sia un innesco è un altro posto da cui la consegna può entrare senza che
-/// nessuno l'abbia mandata.
+/// **ONE ENTRY NODE ONLY, AND IT IS A TRIGGER.** A step without dependencies
+/// that is not a trigger is another place the errand can enter from with nobody
+/// having sent it.
 #[test]
 fn the_only_step_without_dependencies_is_the_trigger() {
     let flow = flow_file();
@@ -268,10 +264,10 @@ fn every_action_the_flow_names_is_registered() {
     assert!(missing.is_empty(), "azioni non registrate: {missing:?}");
 }
 
-/// **NESSUN BINARIO DENTRO IL FLUSSO.** `"bin": "claude"` gira solo dove quel
-/// nome è nel percorso di chi esegue; un identificativo di strumento gira
-/// ovunque qualcuno sappia risolverlo, e dove non c'è si ferma dicendo quale.
-/// Questa prova è il guardiano di quella regola per i flussi spediti.
+/// **NO BINARY INSIDE THE FLOW.** `"bin": "claude"` runs only where that name is
+/// on the runner's path; a tool identifier runs wherever someone knows how to
+/// resolve it, and where it is missing it stops saying which. This test is the
+/// guard of that rule for the shipped flows.
 #[test]
 fn no_step_names_a_binary_and_no_path_belongs_to_one_machine() {
     let flow = flow_file();
@@ -290,11 +286,11 @@ fn no_step_names_a_binary_and_no_path_belongs_to_one_machine() {
             step.id
         );
         if step.action == actions::EXTERNAL_ENGINE_ACTION {
-            // UNO O UNA CATENA. Dal 29/08/2026 un passo può dichiarare un
-            // elenco di motori da provare in ordine invece di un nome solo.
-            // Ciò che questa prova sorveglia non cambia — nessun passo esegue
-            // un motore senza dire quale vuole — ma leggere `tool` come sola
-            // stringa lo dichiarerebbe assente proprio dove sono tre.
+            // ONE OR A CHAIN. A step may declare a list of engines to try in
+            // order instead of a single name. What this test guards does not
+            // change — no step runs an engine without saying which it wants —
+            // but reading `tool` as a lone string would call it absent exactly
+            // where there are three.
             let named: Vec<&str> = match with.get("tool") {
                 Some(Value::String(id)) => vec![id.as_str()],
                 Some(Value::Array(chain)) => chain.iter().filter_map(Value::as_str).collect(),
@@ -309,11 +305,11 @@ fn no_step_names_a_binary_and_no_path_belongs_to_one_machine() {
     }
 }
 
-/// **LO SCHEMA D'USCITA DICE CHE UN MOTORE QUI NON PUÒ FALLIRE IN SILENZIO**, e
-/// dice anche che cosa passa al passo dopo. Sono due dichiarazioni diverse e
-/// tutte e due devono stare nel file: `status` ammette solo una chiamata
-/// finita, e `answer` è l'unica cosa che attraversa la catena — non il testo
-/// grezzo di ciò che il motore ha detto.
+/// **THE OUTPUT SCHEMA SAYS AN ENGINE HERE CANNOT FAIL IN SILENCE**, and it also
+/// says what passes to the next step. Two different declarations, and both must
+/// be in the file: `status` admits a finished call and nothing else, and
+/// `answer` is the one thing that crosses the chain — not the raw text of what
+/// the engine said.
 #[test]
 fn an_engine_step_declares_what_it_can_return_and_what_it_hands_on() {
     let flow = flow_file();
@@ -355,9 +351,9 @@ fn an_engine_step_declares_what_it_can_return_and_what_it_hands_on() {
             "il passo {} inoltra ancora il testo grezzo del motore",
             step.id
         );
-        // La forma pretesa e la forma dichiarata nell'uscita sono la stessa
-        // cosa scritta due volte: se divergono, il passo dopo legge un campo
-        // che il motore non ha mai promesso.
+        // The demanded shape and the shape declared in the output are the same
+        // thing written twice: if they diverge, the next step reads a field the
+        // engine never promised.
         let shape: ValueSchema = serde_json::from_value(
             step.with
                 .as_ref()
@@ -397,15 +393,15 @@ fn the_last_step_accepts_only_a_check_that_passed() {
         .is_err());
 }
 
-// ── il flusso, eseguito ──────────────────────────────────────────────────
+// ── the flow, actually run ───────────────────────────────────────────────
 
-/// Il segno che questa prova insegue lungo tutta la catena.
+/// The mark this test chases all the way down the chain.
 const MARK: &str = "SEGNO-DELLA-PROVA";
 
-/// Un motore finto che legge il proprio incarico **dall'ingresso** e risponde
-/// bene solo se ci trova il segno; altrimenti risponde fuori forma, e il suo
-/// passo diventa rosso. È così che si prova che il testo è arrivato davvero,
-/// invece di fidarsi che i rinvii siano scritti bene.
+/// A fake engine that reads its errand **from its input** and answers well only
+/// if it finds the mark there; otherwise it answers out of shape and its step
+/// turns red. That is how the text is proved to have really arrived, instead of
+/// trusting that the references are written right.
 fn reads_stdin(answer: &str) -> Value {
     json!([
         "-c",
@@ -416,9 +412,9 @@ fn reads_stdin(answer: &str) -> Value {
     ])
 }
 
-/// Lo stesso, per il motore che riceve l'incarico **in un argomento**: è la
-/// forma misurata di `agy`, e il rinvio deve arrivare fin dentro l'elenco degli
-/// argomenti.
+/// The same, for the engine that receives its errand **in an argument**: it is
+/// the measured shape of `agy`, and the reference must reach all the way into
+/// the argument list.
 fn reads_args(answer: &str, carried: Value) -> Value {
     json!([
         "-c",
@@ -430,9 +426,9 @@ fn reads_args(answer: &str, carried: Value) -> Value {
     ])
 }
 
-/// Sostituisce gli argomenti dei passi che invocano un motore, lasciando tutto
-/// il resto del file com'è: i rinvii, le forme pretese, gli schemi, gli archi e
-/// l'innesco sono quelli che gireranno.
+/// Replaces the arguments of the steps that call an engine, leaving all the rest
+/// of the file as it is: the references, the demanded shapes, the schemas, the
+/// edges and the trigger are the ones that will run.
 fn chain_with(verdict: &str, engine_a_args: Option<Value>) -> Graph {
     let flow = flow_file();
     let dispatched = json!({
@@ -503,23 +499,23 @@ fn a_dispatch_without_a_why_per_choice_fails_the_shape() {
     }
 }
 
-/// La consegna dell'innesco, col segno dentro: è l'unica cosa che entra nel
-/// flusso, ed è quella che i motori devono vedersi arrivare.
+/// The trigger's errand, with the mark inside: the one thing that enters the
+/// flow, and the one the engines must see arrive.
 fn trigger_input() -> Value {
     let mut signal = flow_file().inputs["trigger"].clone();
     signal["text"] = json!(format!("conta i residui, {MARK}"));
     signal
 }
 
-/// **LA CATENA INTERA, GIRATA DAVVERO, SENZA SPENDERE UNA CHIAMATA.** Dal
-/// segnale al verdetto: il testo entra dall'innesco, arriva al nodo che smista,
-/// da lì ai due motori — uno sull'ingresso, l'altro in un argomento — e le due
-/// risposte più gli incarichi arrivano al verificatore. Ogni motore finto
-/// risponde bene **solo se** ha ricevuto ciò che il flusso gli prometteva:
-/// basta un rinvio scritto male e la corsa diventa rossa.
+/// **THE WHOLE CHAIN, ACTUALLY RUN, WITHOUT SPENDING A CALL.** From the signal
+/// to the verdict: the text enters at the trigger, reaches the dispatching node,
+/// from there the two engines — one on its input, the other in an argument — and
+/// the two answers plus the errands reach the verifier. Every fake engine answers
+/// well **only if** it received what the flow promised it: one badly written
+/// reference and the run turns red.
 ///
-/// Due corse, perché una sola non proverebbe niente: cambia il verdetto e la
-/// corsa cambia colore.
+/// Two runs, because one alone would prove nothing: change the verdict and the
+/// run changes colour.
 #[test]
 fn the_whole_chain_runs_from_the_signal_to_the_verdict() {
     let outcome = |verdict: &str| {
@@ -544,11 +540,10 @@ fn the_whole_chain_runs_from_the_signal_to_the_verdict() {
     );
 }
 
-/// **CIÒ CHE ATTRAVERSA LA CATENA È SOLO CIÒ CHE LA FORMA DICHIARA.** Il segnale
-/// arriva fino ai due motori — lo dimostrano le loro risposte, che escono bene
-/// solo se il segno c'era — e nell'uscita di ogni passo non resta niente del
-/// testo grezzo: né i preamboli del modello, né i campi che nessuno ha
-/// dichiarato.
+/// **ONLY WHAT THE SHAPE DECLARES TRAVELS DOWN THE CHAIN.** The signal reaches
+/// both engines — their answers prove it, since they come out well only if the
+/// mark was there — and in each step's output nothing of the raw text remains:
+/// neither the model's preambles nor the fields nobody declared.
 #[test]
 fn only_what_the_shape_declares_travels_down_the_chain() {
     let graph = chain_with("APPROVATO", None);
@@ -579,8 +574,8 @@ fn only_what_the_shape_declares_travels_down_the_chain() {
             "il passo {engine} porta ancora il testo grezzo del motore: {seen}"
         );
     }
-    // I due motori hanno risposto bene: vuol dire che il loro incarico — nato
-    // dal testo dell'innesco — è arrivato, per due strade diverse.
+    // Both engines answered well: their errand — born from the trigger's text —
+    // arrived, by two different roads.
     assert_eq!(output("engine_a")["answer"]["total"], 1);
     assert_eq!(output("engine_b")["answer"]["total"], 1);
     assert_eq!(output("verify")["answer"]["verdict"], "APPROVATO");
@@ -590,12 +585,12 @@ fn only_what_the_shape_declares_travels_down_the_chain() {
     );
 }
 
-/// **IL DIFETTO MISURATO IL 28/08/2026, PROVATO SUL FLUSSO VERO.** Un motore
-/// che esce in errore rompeva il proprio passo? No: lo chiudeva verde con
-/// `status: exit_error` dentro, e la catena andava avanti. Qui il primo motore
-/// esce con 3, e devono valere tutte e tre le cose: il suo passo è rotto, la
-/// corsa è rossa **per colpa sua**, e i passi che dipendevano da lui non sono
-/// mai partiti — cioè non è stata spesa nessuna chiamata a valle.
+/// **THE MEASURED DEFECT, TESTED ON THE REAL FLOW.** An engine exiting in error
+/// did not break its own step: it closed it green with `status: exit_error`
+/// inside, and the chain went on. Here the first engine exits with 3, and all
+/// three things must hold: its step is broken, the run is red **because of it**,
+/// and the steps that depended on it never started — no call was spent
+/// downstream.
 #[test]
 fn an_engine_that_fails_stops_the_chain_instead_of_colouring_it_green() {
     let graph = chain_with(
@@ -630,18 +625,18 @@ fn an_engine_that_fails_stops_the_chain_instead_of_colouring_it_green() {
             "il passo {never_ran} è partito lo stesso: una chiamata spesa nel vuoto"
         );
     }
-    // L'altro motore, che non dipendeva dal primo, ha girato: fermarsi non vuol
-    // dire fermare tutto.
+    // The other engine, which did not depend on the first, ran: stopping does
+    // not mean stopping everything.
     assert!(store
         .all()
         .iter()
         .any(|record| record.step_id == "engine_b"));
 }
 
-/// **IL FLUSSO PORTATO SU UNA MACCHINA CHE NON HA QUELLO STRUMENTO.** Non parte
-/// e dice quale manca — che è tutto ciò che serve a chi lo riceve. Prima
-/// nemmeno la domanda esisteva: il flusso nominava un binario, e un binario
-/// assente diventava `spawn_failed` dentro un passo verde.
+/// **THE FLOW CARRIED TO A MACHINE THAT LACKS THAT TOOL.** It does not start and
+/// it says which one is missing — all whoever receives it needs. Before, the
+/// question did not exist: the flow named a binary, and a missing binary became
+/// `spawn_failed` inside a green step.
 #[test]
 fn a_machine_without_the_tool_stops_the_flow_saying_which_one() {
     let graph = chain_with("APPROVATO", None);
@@ -661,12 +656,12 @@ fn a_machine_without_the_tool_stops_the_flow_saying_which_one() {
         .iter()
         .find(|record| record.step_id == "dispatch")
         .expect("il passo è stato aperto");
-    // LA CLASSE DIPENDE DA QUANTI NE HA CHIESTI. Un passo che nomina un motore
-    // solo e non lo trova resta `tool_unavailable`, col motivo del risolutore;
-    // uno che ne dichiara una catena e non ne trova nessuno dà
-    // `no_usable_engine`, perché «quello strumento non c'è» sarebbe una risposta
-    // parziale su tre. Ciò che questa prova difende è la stessa cosa in
-    // entrambi i casi: il flusso si ferma DICENDO quale mancava.
+    // THE CLASS DEPENDS ON HOW MANY IT ASKED FOR. A step that names a single
+    // engine and does not find it stays `tool_unavailable`, with the resolver's
+    // reason; one that declares a chain and finds none gives `no_usable_engine`,
+    // since "that tool is missing" would be a partial answer out of three. What
+    // this test defends is the same in both cases: the flow stops SAYING which
+    // one was missing.
     assert!(
         matches!(
             record.failure_class.as_deref(),
@@ -686,13 +681,13 @@ fn a_machine_without_the_tool_stops_the_flow_saying_which_one() {
     );
 }
 
-/// Il cancello finale, eseguito: **lo stesso passo, preso dal file**, con tre
-/// risposte diverse. Un solo caso non proverebbe niente.
+/// The final gate, run: **the same step, taken from the file**, with three
+/// different answers. One case alone would prove nothing.
 ///
-/// Non c'è più il caso «un motore non ha risposto»: quel passo adesso si rompe
-/// da sé, e il cancello non lo vede nemmeno. Il controllo sugli stati altrui
-/// che stava in questo comando era l'unica rete del flusso, ed è la rete che
-/// qualcuno poteva togliere senza accorgersene.
+/// The case "an engine did not answer" is gone: that step now breaks by itself,
+/// and the gate never even sees it. The check on other steps' states that used
+/// to live in this command was the flow's only net, and the net someone could
+/// remove without noticing.
 #[test]
 fn the_verdict_gate_closes_green_only_on_an_approved_verdict() {
     let flow = flow_file();
@@ -724,9 +719,9 @@ fn the_verdict_gate_closes_green_only_on_an_approved_verdict() {
         Decision::Failed(vec!["verdict".to_owned()]),
         "il verdetto contrario deve tingere di rosso la corsa"
     );
-    // Nessun verdetto dove il cancello lo cerca: il rinvio non trova niente e
-    // il passo si rompe. Un cancello che in questo caso approvasse sarebbe il
-    // verde peggiore di tutti, perché nessuno ha giudicato.
+    // No verdict where the gate looks for it: the reference finds nothing and
+    // the step breaks. A gate that approved in this case would be the worst
+    // green of all, because nobody judged.
     assert_eq!(
         outcome(json!({"why": "ho dimenticato la riga che conta"})),
         Decision::Failed(vec!["verdict".to_owned()]),
@@ -734,14 +729,13 @@ fn the_verdict_gate_closes_green_only_on_an_approved_verdict() {
     );
 }
 
-/// **PERCHÉ NESSUN PASSO DI QUESTO FLUSSO PORTA UN `when`.** Un passo saltato
-/// non è un rosso: i suoi discendenti non partono mai, il fronte resta vuoto e
-/// la corsa si chiude `Complete`. Un flusso che smista lavoro a due motori a
-/// pagamento e finisce verde senza averne invocato nessuno è indistinguibile da
-/// uno che ha lavorato.
+/// **WHY NO STEP OF THIS FLOW CARRIES A `when`.** A skipped step is not a red:
+/// its descendants never start, the front stays empty and the run closes
+/// `Complete`. A flow that dispatches work to two paid engines and finishes
+/// green without having called either is indistinguishable from one that worked.
 ///
-/// Questa prova misura il comportamento del motore, non il flusso: se un giorno
-/// un passo saltato tingerà di rosso la corsa, cade qui, e la scelta si riapre.
+/// This test measures the executor's behaviour, not the flow: the day a skipped
+/// step paints the run red, it falls here, and the choice reopens.
 #[test]
 fn a_skipped_step_leaves_the_run_green_and_its_children_unrun() {
     let step = |id: &str, deps: &[&str], when: Option<Value>| Step {
@@ -763,7 +757,7 @@ fn a_skipped_step_leaves_the_run_green_and_its_children_unrun() {
     first.with = None;
     let graph = Graph::new(vec![
         first,
-        // «passed» non è «ok»: la condizione non scatta mai, apposta.
+        // "passed" is not "ok": the condition never fires, on purpose.
         step(
             "middle",
             &["first"],
@@ -786,12 +780,12 @@ fn a_skipped_step_leaves_the_run_green_and_its_children_unrun() {
     );
 }
 
-/// Il rinvio dichiarato nel file arriva davvero al motore, **col `tool` vero
-/// del passo**: si sostituiscono solo gli argomenti, e il binario lo sceglie il
-/// risolutore come farebbe su una macchina qualunque. Il motore finto risponde
-/// bene solo se nel prompt ha trovato l'incarico che il nodo prima gli ha
-/// scritto — e quel prompt deve contenere anche la forma pretesa, o l'azione si
-/// ferma prima di partire.
+/// The reference declared in the file really reaches the engine, **with the
+/// step's real `tool`**: only the arguments are replaced, and the binary is
+/// chosen by the resolver as it would be on any machine. The fake engine answers
+/// well only if it found in the prompt the errand the node before wrote for it —
+/// and that prompt must carry the demanded shape too, or the action stops before
+/// starting.
 #[test]
 fn the_declared_reference_puts_the_dispatch_answer_on_the_engines_input() {
     let flow = flow_file();
@@ -813,14 +807,14 @@ fn the_declared_reference_puts_the_dispatch_answer_on_the_engines_input() {
         "why_second": "the other territory"
     });
 
-    // **L'INGRESSO SI COMPONE COME LO COMPONE L'ESECUTORE.** Dal 01/09/2026 i
-    // rinvii li scioglie `flow::step_input` — un posto solo per tutte le
-    // azioni, guasto 28 — e questa prova chiama `execute` senza passare di lì.
-    // Chiamare la funzione vera è il modo di provare l'azione nel mondo in cui
-    // gira: senza, la si proverebbe in uno che non esiste. Che i rinvii
-    // arrivino sciolti a **ogni** azione lo prova
-    // `crates/flow/tests/a_reference_reaches_every_action.rs`; qui si prova che
-    // l'incarico sciolto finisce davvero nel prompt di questo motore.
+    // **THE INPUT IS COMPOSED THE WAY THE EXECUTOR COMPOSES IT.** References are
+    // resolved by `flow::step_input` — one place for all the actions, fault 28 —
+    // and this test calls `execute` without going through it. Calling the real
+    // function is how the action is tested in the world it runs in; without it,
+    // it would be tested in a world that does not exist. That references reach
+    // **every** action resolved is proved by
+    // `crates/flow/tests/a_reference_reaches_every_action.rs`; here we prove the
+    // resolved errand really lands in this engine's prompt.
     let input = flow::reference::resolve_references(&input).expect("i rinvii si sciolgono");
 
     // The step asks for a tree of its own, so this call needs a project to cut
@@ -846,9 +840,9 @@ fn the_declared_reference_puts_the_dispatch_answer_on_the_engines_input() {
     );
 }
 
-/// Ogni strumento nominato dal flusso è dichiarato da un descrittore: un
-/// identificativo scritto male si scopre qui, non a corsa avviata su una
-/// macchina che quello strumento ce l'ha.
+/// Every tool the flow names is declared by a descriptor: a misspelled
+/// identifier is caught here, not with the run already started on a machine that
+/// does have that tool.
 #[test]
 fn every_tool_the_flow_asks_for_is_declared_by_some_descriptor() {
     let flow = flow_file();

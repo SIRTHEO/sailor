@@ -1,48 +1,45 @@
-//! **I RINVII SI SCIOLGONO IN UN POSTO SOLO, E QUESTO CONTROLLO LO PRETENDE.**
+//! **REFERENCES ARE RESOLVED IN ONE PLACE ONLY, AND THIS CHECK DEMANDS IT.**
 //!
-//! **PERCHÉ ESISTE.** Il guasto 28 non è che il deposito non risolvesse i
-//! rinvii: è che *risolvere i rinvii* fosse una faccenda della singola azione.
-//! Da lì il difetto si è ripresentato due volte con la stessa forma. Prima come
-//! assenza — due azioni su nove ce l'avevano, e le altre sette ricevevano
-//! `{"$from": …}` come oggetto. Poi come **cura peggiore del male**: la riga è
-//! stata ricopiata, e il 01/09/2026 in quest'albero se ne contavano **dodici su
-//! sedici azioni registrate**, con quattro ancora scoperte (`history_ask`,
-//! `detect_tools`, `trigger`, `subflow`). Dodici copie della stessa riga sono il
-//! guasto 10 in dodici esemplari, e ogni azione nuova continuava a nascere
-//! senza che nulla diventasse rosso.
+//! **WHY IT EXISTS.** Fault 28 was not that the ledger failed to resolve
+//! references: it was that *resolving references* was each single action's
+//! business. From there the defect came back twice in the same shape. First as
+//! absence — two actions out of nine had it, and the other seven received
+//! `{"$from": …}` as an object. Then as a **cure worse than the disease**: the
+//! line was copied, and this tree once held **twelve out of sixteen registered
+//! actions**, with four still uncovered (`history_ask`, `detect_tools`,
+//! `trigger`, `subflow`). Twelve copies of the same line are fault 10 in twelve
+//! specimens, and every new action kept being born with nothing turning red.
 //!
-//! **COSA IMPEDISCE, CHE UNA PROVA DI COMPORTAMENTO NON PUÒ.**
-//! `crates/flow/tests/a_reference_reaches_every_action.rs` prova che l'ingresso
-//! arriva sciolto; resterebbe **verde** se domani qualcuno rimettesse la riga
-//! dentro un'azione, perché il comportamento non cambierebbe. Cambierebbe solo
-//! il numero di posti in cui la regola vive — che è il guasto. Questo lo si
-//! misura contando i posti, e si conta qui.
+//! **WHAT IT PREVENTS, THAT A BEHAVIOUR TEST CANNOT.**
+//! `crates/flow/tests/a_reference_reaches_every_action.rs` proves the input
+//! arrives resolved; it would stay **green** if tomorrow someone put the line
+//! back inside an action, because the behaviour would not change. What would
+//! change is the number of places the rule lives in — and that is the fault. It
+//! is measured by counting the places, and the counting happens here.
 //!
-//! **PERCHÉ LEGGE IL CODICE RIPULITO, E LA PRIMA VERSIONE ERA CIECA.** Saltare
-//! i blocchi `#[cfg(test)]` vuol dire contare graffe, e la prima stesura le
-//! contava sul testo grezzo: quelle dentro le stringhe e i commenti entravano
-//! nel conto. Un blocco che non si bilancia **inghiotte tutto fino a fine
-//! file**, in silenzio. Misurato da un giudice il 01/09/2026 su codice
-//! spedito e non toccato da nessuno: cinque file ciechi — `actions/src/lib.rs`
-//! da riga 4200, `models/src/remaining.rs` da 325, `models/src/store.rs` da 37,
-//! `sailor/src/flow_cmd.rs` da 2448, `ui/src/gather.rs` da 240 — e una funzione
-//! vera, che compilava, con dentro una chiamata a `resolve_references`, messa
-//! in fondo a `flow_cmd.rs`: **la prova non l'ha vista**, due verdi e zero
-//! rossi.
+//! **WHY IT READS CLEANED-UP CODE, AND THE FIRST VERSION WAS BLIND.** Skipping
+//! `#[cfg(test)]` blocks means counting braces, and the first draft counted them
+//! on the raw text: the braces inside strings and comments went into the count.
+//! A block that does not balance **swallows everything to the end of the file**,
+//! in silence. Measured on shipped, untouched code: five blind files —
+//! `actions/src/lib.rs` from line 4200, `models/src/remaining.rs` from 325,
+//! `models/src/store.rs` from 37, `sailor/src/flow_cmd.rs` from 2448,
+//! `ui/src/gather.rs` from 240 — and a real, compiling function carrying a call
+//! to `resolve_references`, placed at the end of `flow_cmd.rs`: **the test did
+//! not see it**, two greens and zero reds.
 //!
-//! Il difetto non era il falso positivo, che si vede: era il **falso negativo
-//! silenzioso**, cioè esattamente ciò per cui questo file esiste. La cura è
-//! doppia e le due metà servono a cose diverse: si contano le graffe sul codice
-//! **ripulito** da commenti, stringhe e letterali di carattere; e se uno
-//! scavalcamento arriva comunque a fine file, la prova **diventa rossa
-//! nominando il file** invece di proseguire cieca. Un controllo che può
-//! spegnersi da solo non è un controllo.
+//! The defect was not the false positive, which shows: it was the **silent false
+//! negative**, exactly what this file exists for. The cure is double and the two
+//! halves serve different ends: braces are counted on code **cleaned** of
+//! comments, strings and character literals; and if a skip still runs to the end
+//! of the file, the test **turns red naming the file** instead of carrying on
+//! blind. A check that can switch itself off is not a check.
 //!
-//! **NON È UN ANALIZZATORE.** Non pretende di capire il Rust: riconosce
-//! commenti, stringhe (grezze comprese) e letterali di carattere, e nient'altro.
-//! Il prezzo è dichiarato, ed è il modo in cui questa casa scrive i controlli
-//! sul testo — come `identifiers_are_in_english`. Ma quando non capisce, si
-//! ferma dicendolo.
+//! **IT IS NOT A PARSER.** It does not claim to understand Rust: it recognises
+//! comments, strings (raw ones included) and character literals, and nothing
+//! else. The price is declared, and it is how this house writes text checks —
+//! like `identifiers_are_in_english`. But when it does not understand, it stops
+//! and says so.
 
 use std::path::{Path, PathBuf};
 
@@ -62,12 +59,12 @@ fn names_the_call(text: &str) -> bool {
     THE_CALLS.iter().any(|call| text.contains(call))
 }
 
-/// I due soli file del codice spedito che possono nominarla, col perché.
+/// The only two shipped files that may name it, with the reason why.
 ///
-/// **NON È UN ELENCO DA ALLUNGARE.** Una voce in più qui è una copia in più
-/// della regola, cioè il guasto che questo controllo esiste per fermare. Chi ha
-/// bisogno dei rinvii in un posto nuovo li riceve già sciolti: passa da
-/// `step_input` come tutti.
+/// **NOT A LIST TO LENGTHEN.** One more entry here is one more copy of the rule,
+/// which is the fault this check exists to stop. Whoever needs references in a
+/// new place already receives them resolved: they go through `step_input` like
+/// everyone else.
 const WHERE_IT_MAY_LIVE: [(&str, &str); 2] = [
     (
         "crates/flow/src/reference.rs",
@@ -79,12 +76,12 @@ const WHERE_IT_MAY_LIVE: [(&str, &str); 2] = [
     ),
 ];
 
-/// Ogni `.rs` sotto `crates/*/src`, cioè il codice che gira in produzione.
+/// Every `.rs` under `crates/*/src`, that is the code running in production.
 ///
-/// Le cartelle `tests/` restano fuori apposta: una prova che invoca `execute`
-/// direttamente deve poter comporre l'ingresso come lo comporrebbe l'esecutore,
-/// e chiamare la funzione vera per farlo è giusto — è ricopiarne la *decisione*
-/// dentro un'azione che è il difetto.
+/// The `tests/` directories stay out on purpose: a test calling `execute`
+/// directly must be able to compose the input the way the executor would, and
+/// calling the real function to do it is right — copying its *decision* into an
+/// action is the defect.
 fn shipped_sources(root: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
     let crates = root.join("crates");
@@ -113,23 +110,23 @@ fn collect_rust_files(dir: &Path, found: &mut Vec<PathBuf>) {
     }
 }
 
-/// Il file con commenti, stringhe e letterali di carattere sostituiti da spazi.
+/// The file with comments, strings and character literals replaced by spaces.
 ///
-/// **LE RIGHE RESTANO AL LORO POSTO**: ogni «a capo» dentro ciò che si toglie
-/// viene rimesso, così il numero di riga di una violazione è quello vero e chi
-/// legge il messaggio apre il file al punto giusto.
+/// **THE LINES STAY WHERE THEY ARE**: every newline inside what is taken out is
+/// put back, so the line number of a violation is the true one and whoever reads
+/// the message opens the file at the right point.
 ///
-/// **UN APICE NON È SEMPRE UN CARATTERE**: `'a` è una vita, `'{'` è una graffa
-/// che non conta. Si distinguono guardando avanti — un letterale di carattere si
-/// chiude entro due passi — e chi non si chiude è una vita, di cui si butta via
-/// il solo apice. Senza questa distinzione una vita qualunque farebbe sparire
-/// tutto il codice fino all'apice successivo.
+/// **A QUOTE IS NOT ALWAYS A CHARACTER**: `'a` is a lifetime, `'{'` is a brace
+/// that does not count. They are told apart by looking ahead — a character
+/// literal closes within two steps — and what does not close is a lifetime, of
+/// which only the quote is thrown away. Without this distinction any lifetime
+/// would make all the code up to the next quote disappear.
 fn code_only(text: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
     let mut kept = String::with_capacity(text.len());
     let mut index = 0usize;
 
-    // Ricopia gli «a capo» di un pezzo scartato, per non spostare le righe.
+    // Copies the newlines of a discarded piece, so the lines do not shift.
     let skip_keeping_lines = |kept: &mut String, from: usize, to: usize| {
         for character in &chars[from..to.min(chars.len())] {
             if *character == '\n' {
@@ -142,7 +139,7 @@ fn code_only(text: &str) -> String {
         let current = chars[index];
         let next = chars.get(index + 1).copied();
 
-        // Commento di riga, documentazione compresa.
+        // Line comment, documentation included.
         if current == '/' && next == Some('/') {
             let mut end = index;
             while end < chars.len() && chars[end] != '\n' {
@@ -152,7 +149,7 @@ fn code_only(text: &str) -> String {
             continue;
         }
 
-        // Commento a blocchi, che in Rust si annida.
+        // Block comment, which in Rust nests.
         if current == '/' && next == Some('*') {
             let mut depth = 1usize;
             let mut end = index + 2;
@@ -172,8 +169,8 @@ fn code_only(text: &str) -> String {
             continue;
         }
 
-        // Stringa grezza: `r"…"`, `r#"…"#`, `br##"…"##`. Il prefisso vale solo
-        // se non è la coda di un identificatore.
+        // Raw string: `r"…"`, `r#"…"#`, `br##"…"##`. The prefix counts only if
+        // it is not the tail of an identifier.
         if (current == 'r' || current == 'b') && !preceded_by_identifier(&chars, index) {
             if let Some((end, newlines)) = raw_string_end(&chars, index) {
                 for _ in 0..newlines {
@@ -184,7 +181,7 @@ fn code_only(text: &str) -> String {
             }
         }
 
-        // Stringa normale, con le sue sequenze di escape.
+        // Ordinary string, with its escape sequences.
         if current == '"' {
             let mut end = index + 1;
             while end < chars.len() {
@@ -203,14 +200,14 @@ fn code_only(text: &str) -> String {
             continue;
         }
 
-        // Letterale di carattere, distinto da una vita.
+        // Character literal, told apart from a lifetime.
         if current == '\'' {
             if let Some(end) = char_literal_end(&chars, index) {
                 index = end;
                 continue;
             }
-            // Una vita: si butta il solo apice, il nome resta e non contiene
-            // graffe.
+            // A lifetime: only the quote goes, the name stays and holds no
+            // braces.
             index += 1;
             continue;
         }
@@ -225,8 +222,8 @@ fn preceded_by_identifier(chars: &[char], index: usize) -> bool {
     index > 0 && (chars[index - 1].is_alphanumeric() || chars[index - 1] == '_')
 }
 
-/// Dove finisce una stringa grezza che comincia a `index`, e quante righe
-/// occupa. `None` se lì non ne comincia nessuna.
+/// Where a raw string starting at `index` ends, and how many lines it spans.
+/// `None` if none starts there.
 fn raw_string_end(chars: &[char], index: usize) -> Option<(usize, usize)> {
     let mut cursor = index;
     if chars[cursor] == 'b' {
@@ -261,27 +258,25 @@ fn raw_string_end(chars: &[char], index: usize) -> Option<(usize, usize)> {
     Some((chars.len(), newlines))
 }
 
-/// Dove finisce un letterale di carattere che comincia a `index`. `None` quando
-/// quell'apice apre una vita e non un carattere.
+/// Where a character literal starting at `index` ends. `None` when that quote
+/// opens a lifetime and not a character.
 fn char_literal_end(chars: &[char], index: usize) -> Option<usize> {
     match chars.get(index + 1) {
         Some('\\') => {
-            // `'\n'`, `'\''`, `'\u{7b}'`: si cerca l'apice di chiusura poco
-            // avanti, senza inseguirlo per tutto il file.
+            // `'\n'`, `'\''`, `'\u{7b}'`: the closing quote is looked for just
+            // ahead, without chasing it through the whole file.
             //
-            // **SI PARTE DA `index + 3`, E IL CARATTERE PRIMA ERA UN BUCO.**
-            // Con `index + 2` la ricerca comincia dal carattere **scappato**:
-            // su `'\''` quello è un apice, quindi il letterale veniva chiuso un
-            // carattere troppo presto. L'apice avanzato si ricombinava con ciò
-            // che seguiva — in `['\'','"']` il pezzo `','` passava per un
-            // carattere — e il `"` successivo apriva una **stringa fantasma**
-            // che cancellava in silenzio tutto fino al `"` dopo, codice
-            // spedito compreso. Misurato il 01/09/2026 da un giudice: la stessa
-            // funzione che questa prova deve prendere, messa fra due costanti
-            // così, passava verde. E `'\''` sta già in tre punti dell'albero
-            // (`inventory/src/lib.rs:573` e `:601`, `terminal/src/routing.rs:313`),
-            // salvi solo dallo spazio che rustfmt mette dopo la virgola: un
-            // controllo che si spegne per una spaziatura si spegne per sbaglio.
+            // **THE SEARCH STARTS AT `index + 3`, AND ONE CHARACTER EARLIER WAS
+            // A HOLE.** With `index + 2` it starts at the **escaped** character:
+            // on `'\''` that is a quote, so the literal was closed one character
+            // too soon. The leftover quote recombined with what followed — in
+            // `['\'','"']` the piece `','` passed for a character — and the next
+            // `"` opened a **ghost string** that silently erased everything up
+            // to the `"` after it, shipped code included. And `'\''` already
+            // sits in three places in the tree (`inventory/src/lib.rs:573` and
+            // `:601`, `terminal/src/routing.rs:313`), saved only by the space
+            // rustfmt puts after the comma: a check that switches off over a
+            // spacing switches off by accident.
             (index + 3..=index + 10)
                 .find(|at| chars.get(*at) == Some(&'\''))
                 .map(|at| at + 1)
@@ -291,12 +286,12 @@ fn char_literal_end(chars: &[char], index: usize) -> Option<usize> {
     }
 }
 
-/// Il codice spedito di un file: ripulito, e senza i blocchi `#[cfg(test)]`.
+/// The shipped code of a file: cleaned, and without the `#[cfg(test)]` blocks.
 ///
-/// **UNO SCAVALCAMENTO CHE NON SI CHIUDE È UN ERRORE, NON UN SILENZIO.** Se le
-/// graffe non tornano entro la fine del file, si torna `Err` con la riga da cui
-/// il blocco è cominciato: da lì in poi il controllo non vedrebbe più niente, ed
-/// è il modo in cui questa prova è già stata cieca su cinque file.
+/// **A SKIP THAT DOES NOT CLOSE IS AN ERROR, NOT A SILENCE.** If the braces do
+/// not balance before the end of the file, `Err` is returned with the line the
+/// block started at: from there on the check would see nothing, and that is how
+/// this test has already been blind on five files.
 fn shipped_code(text: &str) -> Result<String, usize> {
     let code = code_only(text);
     let mut kept = String::with_capacity(code.len());
@@ -386,12 +381,12 @@ fn nothing_but_the_place_where_the_input_is_composed_resolves_references() {
     );
 }
 
-/// **E IL POSTO DICHIARATO DEVE ESSERE DAVVERO OCCUPATO.**
+/// **AND THE DECLARED PLACE MUST REALLY BE OCCUPIED.**
 ///
-/// Senza questa metà, la prova qui sopra diventerebbe verde anche togliendo la
-/// risoluzione da tutte le parti: zero copie, e zero cure. È lo stesso difetto
-/// del campo `partly` calcolato e mai interrogato del guasto 40 — una difesa
-/// che si può soddisfare non facendo niente.
+/// Without this half, the test above would go green even with the resolution
+/// removed everywhere: zero copies, and zero cures. It is the same defect as the
+/// `partly` field of fault 40, computed and never questioned — a defence that
+/// can be satisfied by doing nothing.
 #[test]
 fn the_one_place_that_may_resolve_them_actually_does() {
     let root = repository_root();
@@ -416,27 +411,27 @@ fn the_one_place_that_may_resolve_them_actually_does() {
     );
 }
 
-// ── che il modo di leggere veda davvero ──────────────────────────────────
+// ── that the way of reading really sees ──────────────────────────────────
 //
-// **CHI MISURA VA MISURATO.** Le tre prove qui sotto interrogano il lettore,
-// non il codice spedito: sono nate dal fatto che la prima versione di questo
-// file passava, verde, con una chiamata vera davanti agli occhi.
+// **WHOEVER MEASURES MUST BE MEASURED.** The three tests below question the
+// reader, not the shipped code: they were born because the first version of
+// this file passed, green, with a real call right in front of its eyes.
 
-/// Le graffe dentro stringhe, commenti e caratteri **non contano**, e un apice
-/// scappato non apre una stringa fantasma.
+/// Braces inside strings, comments and characters **do not count**, and an
+/// escaped quote does not open a ghost string.
 ///
-/// Ognuno di questi casi, da solo, bastava a mandare cieca una versione di
-/// questo lettore. L'ultimo — `'\''` **senza spazio** dopo la virgola — è il
-/// secondo buco, trovato il 01/09/2026 dopo la prima riparazione: il letterale
-/// si chiudeva un carattere troppo presto, il `","` che seguiva passava per un
-/// carattere, e il `"` dopo apriva una stringa che inghiottiva il codice
-/// spedito fino alla stringa successiva. La `const TAIL` in fondo è lì apposta:
-/// è il `"` che chiudeva la stringa fantasma, cioè ciò che rendeva il difetto
-/// silenzioso invece che rumoroso.
+/// Each of these cases, alone, was enough to blind a version of this reader. The
+/// last — `'\''` **without a space** after the comma — is the second hole, found
+/// after the first repair: the literal closed one character too soon, the `","`
+/// that followed passed for a character, and the `"` after it opened a string
+/// that swallowed the shipped code up to the next string. The `const TAIL` at
+/// the bottom is there on purpose: it is the `"` that closed the ghost string,
+/// which is what made the defect silent instead of loud.
 ///
-/// **LO SPAZIO NON È UN DETTAGLIO DI STILE.** Con `['\'', '"']`, come lo scrive
-/// rustfmt, il difetto non si vedeva; senza, sì. Un controllo che dipende da una
-/// spaziatura si spegne per sbaglio, e `'\''` sta già in tre punti dell'albero.
+/// **THE SPACE IS NOT A STYLE DETAIL.** With `['\'', '"']`, the way rustfmt
+/// writes it, the defect did not show; without it, it did. A check depending on
+/// a spacing switches off by accident, and `'\''` already sits in three places
+/// in the tree.
 #[test]
 fn braces_inside_strings_and_comments_do_not_count() {
     let text = r####"
@@ -476,24 +471,22 @@ const TAIL: &str = "coda";
     );
 }
 
-/// Gli altri escape restano letti giusti, e non è una formalità: la cura è
-/// stata spostare l'inizio della ricerca di un carattere, e un carattere in più
-/// romperebbe `'\n'` senza che nulla lo dica.
+/// The other escapes are still read whole, and it is not a formality: the cure
+/// was to move the start of the search by one character, and one character more
+/// would break `'\n'` with nothing to say so.
 ///
-/// **OGNI CASO PORTA LA CODA CHE MORDE, E PRIMA NO.** Fino a stasera la fixture
-/// era `const C: char = <letterale>;` e un giudice ha misurato che restava
-/// **verde con tutte e tre le mutazioni** del ramo dell'escape — compresa
-/// `index + 4`, cioè proprio la riparazione opposta da cui il commento qui
-/// sopra prometteva di difendere. Il motivo: un letterale letto storto, se non
-/// ha accanto un apice doppio, non apre nessuna stringa fantasma, quindi non
-/// sposta niente e le due asserzioni restano vere qualunque cosa si faccia.
-/// Era una prova che non poteva venire diversa — il metro di casa applicato a
-/// se stesso.
+/// **EVERY CASE CARRIES THE TAIL THAT BITES.** With the fixture written as
+/// `const C: char = <literal>;` it stayed **green under all three mutations** of
+/// the escape branch — `index + 4` included, the very opposite repair the
+/// comment above promised to defend against. The reason: a literal read crooked,
+/// with no double quote beside it, opens no ghost string, so it shifts nothing
+/// and both assertions stay true whatever is done. It was a test that could not
+/// come out any other way — the house measure applied to itself.
 ///
-/// Adesso il letterale sta dentro `[<letterale>,'"']`: se viene consumato di un
-/// carattere sbagliato, l'apice doppio che segue diventa l'apertura di una
-/// stringa che si chiude solo sul `"` della `const T`, e con lei sparisce il
-/// codice in mezzo. Le due asserzioni cominciano a poter fallire.
+/// Now the literal sits inside `[<literal>,'"']`: if it is consumed by the wrong
+/// number of characters, the double quote that follows becomes the opening of a
+/// string that closes only on the `"` of `const T`, and the code in between
+/// disappears with it. The two assertions can start to fail.
 #[test]
 fn the_other_escaped_characters_are_still_read_whole() {
     for (literal, tail) in [
@@ -520,8 +513,8 @@ fn the_other_escaped_characters_are_still_read_whole() {
     }
 }
 
-/// **UNO SCAVALCAMENTO CHE NON SI CHIUDE SI DICHIARA.** È il caso che prima
-/// passava in silenzio, e il silenzio era il difetto.
+/// **A SKIP THAT DOES NOT CLOSE IS DECLARED.** It is the case that used to pass
+/// in silence, and the silence was the defect.
 #[test]
 fn a_test_block_that_never_closes_is_reported_instead_of_swallowing_the_file() {
     let text = "fn prima() {}\n#[cfg(test)]\nmod tests {\n    fn a() {\n";
@@ -531,9 +524,9 @@ fn a_test_block_that_never_closes_is_reported_instead_of_swallowing_the_file() {
     assert_eq!(refused, 2, "la riga da cui il file diventa cieco");
 }
 
-/// Il codice ripulito conserva i numeri di riga: un messaggio che manda alla
-/// riga sbagliata fa cercare nel posto sbagliato, ed è il guasto 11 in
-/// miniatura.
+/// The cleaned code keeps the line numbers: a message that sends you to the
+/// wrong line makes you search in the wrong place, and it is fault 11 in
+/// miniature.
 #[test]
 fn cleaning_the_code_keeps_the_line_numbers() {
     let text = "uno\n/* due\n   tre */\nquattro\n";

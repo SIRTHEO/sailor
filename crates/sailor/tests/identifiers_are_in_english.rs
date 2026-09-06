@@ -1,54 +1,51 @@
-//! Gli identificatori sono in inglese, e adesso qualcuno lo misura.
+//! Identifiers are in English, and now something measures it.
 //!
-//! **PERCHÉ QUESTA PROVA ESISTE.** La regola sta in `AGENTS.md` dal 28/08/2026:
-//! «Identificatori in inglese — nomi di funzione, tipi, campi, opzioni». Il
-//! 31/08 se ne contavano **136 violazioni**, quasi tutte scritte dopo. Nessuna
-//! era un errore di distrazione: la direttiva di sessione dice «italiano» senza
-//! dire «tranne gli identificatori», e una regola che nessuna misura interroga
-//! non diventa rossa mai — è la stessa lezione del puntatore morto che
-//! `AGENTS.md` racconta di sé alle righe 17-20.
+//! **WHY THIS TEST EXISTS.** The rule is in `AGENTS.md`: "Identifiers in English
+//! — function names, types, fields, options". A census counted **136
+//! violations**, nearly all written after it. None was a slip of attention: the
+//! session directive says "Italian" without saying "except identifiers", and a
+//! rule no measure questions never turns red — the same lesson as the dead
+//! pointer `AGENTS.md` tells about itself at lines 17-20.
 //!
-//! **NON È UN ANALIZZATORE, ED È VOLUTO.** Non prova a capire il codice: cerca
-//! parole di un elenco scritto a mano, in posizione di dichiarazione. Il prezzo
-//! è dichiarato — una parola italiana che non è nell'elenco passa — e il
-//! guadagno è che **non ha falsi positivi**, cioè non costringe nessuno a
-//! discutere con lei. Chi ne trova una nuova la aggiunge sotto: è una riga.
+//! **IT IS NOT A PARSER, AND THAT IS WANTED.** It does not try to understand the
+//! code: it looks for words from a hand-written list, in declaration position.
+//! The price is declared — an Italian word missing from the list passes — and
+//! the gain is that it has **no false positives**, so it forces nobody to argue
+//! with it. Whoever meets a new one adds it below: it is one line.
 //!
-//! **COSA NON GUARDA.** Commenti, testo dentro le stringhe, e i documenti in
-//! `docs/`: là la lingua è affare di chi li scrive. E i nomi delle *fixture*
-//! dentro le stringhe di prova — `f.name == "assente"` — restano quello che
-//! sono: dati, non identificatori.
+//! **WHAT IT DOES NOT LOOK AT.** Comments, text inside strings, and the
+//! documents under `docs/`: there the language is the writer's business. And the
+//! *fixture* names inside test strings — `f.name == "assente"` — stay what they
+//! are: data, not identifiers.
 //!
-//! **E NON GUARDA I FLUSSI, PER DECISIONE.** Gli `id` dei flussi e dei passi —
-//! `sviluppa-sailor`, `verdetto` — e i nomi dei file `.flow.json` restano in
-//! italiano: decisione di Theo del 31/08/2026, scritta in `docs/decisions.md`.
-//! Sono dati che il **deposito conserva**: rinominare un passo farebbe apparire
-//! le corse già registrate come passi sconosciuti, e cambiare il nome di un
-//! flusso spedito farebbe smettere di vincere — in silenzio — il flusso che un
-//! utente ha scritto in casa propria per sostituirlo.
+//! **AND IT DOES NOT LOOK AT THE FLOWS, BY DECISION.** The `id`s of flows and
+//! steps — `sviluppa-sailor`, `verdetto` — and the names of the `.flow.json`
+//! files stay in Italian: Theo's decision, written in `docs/decisions.md`. They
+//! are data the **ledger keeps**: renaming a step would make already recorded
+//! runs show unknown steps, and changing the name of a shipped flow would make
+//! the flow a user wrote at home to replace it stop winning — in silence.
 //!
-//! **Chi estende questo controllo ai `.flow.json` sta rompendo quella
-//! decisione, non completandola.** Non è una dimenticanza.
+//! **Whoever extends this check to the `.flow.json` files is breaking that
+//! decision, not completing it.** It is no oversight.
 
 use std::path::{Path, PathBuf};
 
-/// Le parole italiane che non devono comparire in un identificatore.
+/// The Italian words that must not appear in an identifier.
 ///
-/// Sono quelle **viste davvero** nel censimento del 31/08/2026, più i termini
-/// del dominio che il progetto usa continuamente parlando (corsa, passo, flusso,
-/// deposito) e che quindi finiscono in un nome senza che nessuno se ne accorga.
+/// They are the ones **actually seen** in the census, plus the domain terms the
+/// project keeps saying out loud (`corsa`, `passo`, `flusso`, `deposito`) and
+/// which therefore end up in a name with nobody noticing.
 ///
-/// **QUELLE CHE MANCANO APPOSTA.** `solo`, `per`, `come`, `non`, `si`, `e`: sono
-/// parole inglesi valide o troppo corte per essere distinte da un pezzo di nome
-/// composto — `cache_write_per_million` non è italiano. Un elenco che le
-/// contenesse darebbe errori che nessuno può correggere, e il primo che ne
-/// incontra uno lo zittisce insieme a tutti gli altri.
+/// **THE ONES MISSING ON PURPOSE.** `per`, `come`, `si`, `e` and their kin: they
+/// are valid English words, or too short to be told apart from a piece of a
+/// compound name — `cache_write_per_million` is English. A list holding them
+/// would give errors nobody can fix, and the first person to meet one silences
+/// it together with all the others.
 const ITALIAN_WORDS: &[&str] = &[
-    // `batteria`, `stile` e `finestra` sono entrate il 01/09/2026, aggiunte da
-    // chi le ha incontrate — è l'istruzione che questo elenco dà di sé stesso.
-    // Erano le chiavi dei lavori della CI. La quarta, `prove`, **non è entrata
-    // e non può entrare**: è una parola inglese valida, cioè esattamente la
-    // famiglia che il commento qui sopra esclude apposta.
+    // `batteria`, `stile` and `finestra` were added by whoever met them — the
+    // instruction this list gives about itself. They were the keys of the CI
+    // jobs. The fourth, `prove`, **did not come in and cannot**: it is a valid
+    // English word, exactly the family the comment above excludes on purpose.
     "assente",
     "atteso",
     "attesa",
@@ -111,8 +108,8 @@ const ITALIAN_WORDS: &[&str] = &[
     "quanto",
 ];
 
-/// Dove un identificatore può essere dichiarato. Il testo che segue una di
-/// queste parole, fino al primo carattere che non può stare in un nome.
+/// Where an identifier may be declared. The text following one of these words,
+/// up to the first character that cannot be in a name.
 const RUST_DECLARATIONS: &[&str] = &[
     "let ", "let mut ", "fn ", "struct ", "enum ", "mod ", "const ", "static ", "type ", "trait ",
 ];
@@ -127,7 +124,7 @@ const WEB_DECLARATIONS: &[&str] = &[
     "type ",
 ];
 
-/// La radice del repo, da cui questa prova gira.
+/// The root of the repo, from which this test runs.
 fn repository_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -136,7 +133,7 @@ fn repository_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// Ogni sorgente sotto `dir`, saltando quel che non è nostro.
+/// Every source under `dir`, skipping what is not ours.
 fn sources_under(dir: &Path, found: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
@@ -145,26 +142,26 @@ fn sources_under(dir: &Path, found: &mut Vec<PathBuf>) {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
         if path.is_dir() {
-            // `target` e `node_modules` non sono codice nostro; `.git` nemmeno.
+            // `target` and `node_modules` are not our code; nor is `.git`.
             if matches!(name.as_str(), "target" | "node_modules" | ".git" | "dist") {
                 continue;
             }
             sources_under(&path, found);
             continue;
         }
-        // **QUESTO CONTROLLO NON GUARDA SE STESSO.** Contiene apposta i nomi che
-        // rifiuta — l'elenco delle parole, e gli esempi che dà in pasto alle
-        // proprie funzioni — e senza questa riga si accuserebbe da solo, per
-        // sempre, di essere scritto male.
+        // **THIS CHECK DOES NOT LOOK AT ITSELF.** It holds on purpose the names
+        // it refuses — the word list, and the examples it feeds to its own
+        // functions — and without this line it would accuse itself, forever, of
+        // being badly written.
         if name == "identifiers_are_in_english.rs" {
             continue;
         }
-        // **ANCHE GLI `.html`, E NON PER COMPLETEZZA.** `crates/ui/assets/index.html`
-        // porta dentro di sé il JavaScript della pagina del cruscotto: due
-        // `const` italiane vivevano lì, invisibili al primo giro di questo
-        // controllo perché il file non finiva in `.ts`. Nessun type-checker
-        // guarda quel codice, quindi è l'unico posto dove una rinomina
-        // sbagliata non dà errore — cioè quello dove serve di più.
+        // **THE `.html` FILES TOO, AND NOT FOR COMPLETENESS.**
+        // `crates/ui/assets/index.html` carries the dashboard page's JavaScript
+        // inside it: two Italian `const`s lived there, invisible to this check's
+        // first pass because the file did not end in `.ts`. No type-checker looks
+        // at that code, so it is the one place where a wrong rename raises no
+        // error — the place where the check is needed most.
         if matches!(
             path.extension().and_then(|e| e.to_str()),
             Some("rs") | Some("ts") | Some("tsx") | Some("html")
@@ -174,11 +171,11 @@ fn sources_under(dir: &Path, found: &mut Vec<PathBuf>) {
     }
 }
 
-/// La riga senza il commento che la chiude, se ne ha uno.
+/// The line without the comment that closes it, if it has one.
 ///
-/// Approssimazione dichiarata: una riga che ha `//` dentro una stringa viene
-/// tagliata troppo presto. Il risultato è che si guarda **meno** codice, mai
-/// più — questa prova può lasciar passare, non può accusare a torto.
+/// A declared approximation: a line with `//` inside a string is cut too early.
+/// The result is that **less** code is looked at, never more — this test can let
+/// something through, it cannot accuse wrongly.
 fn code_part(line: &str) -> &str {
     match line.find("//") {
         Some(at) => &line[..at],
@@ -186,12 +183,12 @@ fn code_part(line: &str) -> &str {
     }
 }
 
-/// I pezzi di un identificatore: `spesa_totale` e `spesaTotale` danno entrambi
+/// The pieces of an identifier: `spesa_totale` and `spesaTotale` both give
 /// `["spesa", "totale"]`.
-/// **LA GOBBA SI TAGLIA SOLO DOPO UNA MINUSCOLA.** La prima versione tagliava a
-/// ogni maiuscola, e `CASSETTE_KINDS` diventava tredici lettere singole: nessuna
-/// lettera sta nell'elenco, quindi ogni costante urlata sarebbe passata pulita
-/// per sempre. L'ha presa la prova che misura questa prova, non un occhio.
+/// **THE HUMP IS CUT ONLY AFTER A LOWERCASE LETTER.** The first version cut at
+/// every capital, and `CASSETTE_KINDS` became thirteen single letters: no letter
+/// is on the list, so every shouted constant would have passed clean forever.
+/// The test that measures this test caught it, not an eye.
 fn parts_of(identifier: &str) -> Vec<String> {
     let mut parts = Vec::new();
     let mut current = String::new();
@@ -216,10 +213,10 @@ fn parts_of(identifier: &str) -> Vec<String> {
     parts
 }
 
-/// Il nome dichiarato dopo `keyword`, se quella riga ne dichiara uno.
+/// The name declared after `keyword`, if that line declares one.
 fn declared_after<'a>(code: &'a str, keyword: &str) -> Option<&'a str> {
     let at = code.find(keyword)?;
-    // Deve essere una parola intera: `applet ` non contiene una dichiarazione.
+    // It must be a whole word: `applet ` holds no declaration.
     let before = code[..at].chars().next_back();
     if before.is_some_and(|c| c.is_alphanumeric() || c == '_') {
         return None;
@@ -236,7 +233,7 @@ fn declared_after<'a>(code: &'a str, keyword: &str) -> Option<&'a str> {
     }
 }
 
-/// Le parole italiane in un nome, se ce ne sono.
+/// The Italian words in a name, if there are any.
 fn italian_in(name: &str) -> Vec<String> {
     parts_of(name)
         .into_iter()
@@ -244,10 +241,10 @@ fn italian_in(name: &str) -> Vec<String> {
         .collect()
 }
 
-/// **OGNI IDENTIFICATORE DICHIARATO È IN INGLESE.**
+/// **EVERY DECLARED IDENTIFIER IS IN ENGLISH.**
 ///
-/// Il messaggio elenca tutto quello che ha trovato, con percorso e riga: una
-/// prova che dice «ce n'è uno» costringe a ricominciare la ricerca a mano.
+/// The message lists everything it found, with path and line: a test that says
+/// "there is one" forces the search to be started over by hand.
 #[test]
 fn every_declared_identifier_is_in_english() {
     let root = repository_root();
@@ -306,12 +303,12 @@ fn every_declared_identifier_is_in_english() {
     );
 }
 
-/// **ANCHE I NOMI DEI FILE.**
+/// **THE FILE NAMES TOO.**
 ///
-/// In Rust un file *è* un modulo, quindi il suo nome è un identificatore — ma
-/// la regola in `AGENTS.md` elenca «funzione, tipi, campi, opzioni» e i file non
-/// ci sono. È una delle ragioni per cui `smista_il_lavoro.rs` è potuto nascere
-/// senza che niente protestasse.
+/// In Rust a file *is* a module, so its name is an identifier — but the rule in
+/// `AGENTS.md` lists "functions, types, fields, options" and files are absent
+/// from it. That is one of the reasons an Italian-named source file could be
+/// born with nothing protesting.
 #[test]
 fn every_source_file_is_named_in_english() {
     let root = repository_root();
@@ -345,34 +342,27 @@ fn every_source_file_is_named_in_english() {
     );
 }
 
-/// **ANCHE LE CHIAVI DEI LAVORI DELLA CI, E SI È VISTO PERCHÉ IL 01/09/2026.**
+/// **THE CI JOB KEYS TOO.**
 ///
-/// Le due prove qui sopra guardano `.rs`, `.ts`, `.tsx`, `.html`. Un file
-/// `.yml` non è codice per nessuna di loro, quindi
-/// il file della CI — che allora si chiamava `la-batteria.yml`, oggi
-/// `the-battery.yml` — è nato con tre lavori chiamati `prove`,
-/// `stile` e `finestra` e **nessuno ha protestato**. Non è che la regola non
-/// c'era: è che nessuno la interrogava su quel tipo di file, e una regola che
-/// nessuno interroga lì, lì non diventa rossa mai. È la stessa forma per cui
-/// esiste la prova sui nomi dei file, un tipo di file più in là.
+/// The two tests above look at `.rs`, `.ts`, `.tsx`, `.html`. A `.yml` file is
+/// code for neither of them, so the CI file — today `the-battery.yml` — was born
+/// with three jobs called `prove`, `stile` and `finestra` and **nobody
+/// protested**. The rule was there; nothing questioned it on that kind of file,
+/// and a rule nothing questions there never turns red. It is the same shape as
+/// the test on file names, one kind of file further along.
 ///
-/// **IL LIMITE, DICHIARATO: `prove` NON È CATTURABILE.** La prima stesura di
-/// questa prova affermava che `prove` fosse già nell'elenco delle parole
-/// italiane. Non c'era, e non ci può stare: *prove* è una parola inglese
-/// valida, cioè la famiglia che quell'elenco esclude apposta perché
-/// darebbe accuse che nessuno può correggere. A dirlo è stata
-/// `the_check_can_still_see_a_name_it_should_reject`, cinque minuti dopo che
-/// l'affermazione era stata scritta — che è il motivo per cui quella prova
-/// esiste. Quindi qui si catturano `stile`, `finestra` e `batteria`, non
-/// tutto: un controllo che dichiara dove non arriva vale più di uno che
-/// lascia credere di arrivare dappertutto.
+/// **THE DECLARED LIMIT: `prove` CANNOT BE CAUGHT.** It is a valid English word,
+/// the family that list excludes on purpose because it would give accusations
+/// nobody can fix. So `stile`, `finestra` and `batteria` are caught here, and
+/// not everything: a check that declares where it stops is worth more than one
+/// that lets you believe it reaches everywhere.
 ///
-/// **PERCHÉ LE CHIAVI SÌ E I `name:` NO.** Il confine è quello di `AGENTS.md`:
-/// ciò che una macchina legge sta in inglese, ciò che una persona legge no. Le
-/// chiavi le leggono `needs:`, `jobs.<id>` nelle API e i filtri di `gh run` —
-/// sono identificatori quanto un campo di `struct`. I `name:` sono la frase
-/// che compare a chi guarda una corsa: sono messaggi, e i messaggi stanno in
-/// italiano finché quella riga di `AGENTS.md` dice così.
+/// **WHY THE KEYS AND NOT THE `name:` FIELDS.** The border is the one in
+/// `AGENTS.md`: what a machine reads is in English, what a person reads is not.
+/// The keys are read by `needs:`, by `jobs.<id>` in the APIs and by `gh run`
+/// filters — they are identifiers as much as a `struct` field. The `name:`
+/// fields are the sentence shown to whoever watches a run: they are messages,
+/// and messages stay in Italian as long as that line of `AGENTS.md` says so.
 #[test]
 fn every_workflow_job_key_is_in_english() {
     let root = repository_root();
@@ -406,8 +396,8 @@ fn every_workflow_job_key_is_in_english() {
         }
     }
 
-    // Senza questa riga la prova resterebbe verde il giorno in cui la cartella
-    // cambia nome: guarderebbe zero file e non lo direbbe a nessuno.
+    // Without this line the test would stay green the day the directory is
+    // renamed: it would look at zero files and tell nobody.
     assert!(
         looked_at > 0,
         "nessun file .yml letto: la prova non sta guardando niente"
@@ -420,12 +410,12 @@ fn every_workflow_job_key_is_in_english() {
     );
 }
 
-/// Le chiavi di primo livello sotto `jobs:`, cioè le righe rientrate di due
-/// spazi che finiscono in `:` prima che cominci un'altra sezione a colonna
-/// zero. Non è un lettore di YAML e non vuole esserlo: legge la sola forma che
-/// i nostri workflow hanno, e se un giorno non basterà più il conto dei lavori
-/// scenderà a zero — che è il verso giusto in cui sbagliare, perché la riga
-/// `looked_at > 0` qui sopra si accorge del caso limite.
+/// The top-level keys under `jobs:`, that is the lines indented by two spaces
+/// ending in `:` before another section starts at column zero. It is not a YAML
+/// reader and does not want to be: it reads the shape our workflows have, and
+/// the day that shape is no longer enough the job count drops to zero — the
+/// right direction to be wrong in, because the `looked_at > 0` line above
+/// notices that edge case.
 fn job_keys_of(text: &str) -> Vec<String> {
     let mut keys = Vec::new();
     let mut inside = false;
@@ -437,7 +427,7 @@ fn job_keys_of(text: &str) -> Vec<String> {
         if !inside {
             continue;
         }
-        // Una riga a colonna zero che non è vuota chiude la sezione.
+        // A line at column zero that is not blank closes the section.
         if !line.starts_with(' ') && !line.trim().is_empty() {
             break;
         }
@@ -454,14 +444,13 @@ fn job_keys_of(text: &str) -> Vec<String> {
     keys
 }
 
-/// La prova che misura questa prova.
+/// The test that measures this test.
 ///
-/// **CHI MISURA VA MISURATO.** Un controllo che cerca parole in un elenco può
-/// essere rotto in un modo che nessuno vede: se `parts_of` smettesse di spezzare
-/// i nomi composti, o se `declared_after` non trovasse più niente, le due prove
-/// qui sopra resterebbero **verdi per sempre** e nessuno saprebbe che hanno
-/// smesso di guardare. Qui si dà loro in pasto un caso noto e si pretende che lo
-/// vedano.
+/// **WHOEVER MEASURES MUST BE MEASURED.** A check that looks for words in a list
+/// can be broken in a way nobody sees: if `parts_of` stopped splitting compound
+/// names, or `declared_after` found nothing any more, the two tests above would
+/// stay **green forever** and nobody would know they had stopped looking. Here
+/// they are fed a known case and required to see it.
 #[test]
 fn the_check_can_still_see_a_name_it_should_reject() {
     assert_eq!(
@@ -493,8 +482,8 @@ fn the_check_can_still_see_a_name_it_should_reject() {
         "    let x = 1; ",
         "il commento si taglia via, o ogni riga di prosa diventerebbe un'accusa"
     );
-    // E il lettore delle chiavi: deve prendere i lavori e **non** le righe che
-    // stanno dentro un lavoro, o `name`, `steps` e `run` diventerebbero lavori.
+    // And the key reader: it must take the jobs and **not** the lines inside a
+    // job, or `name`, `steps` and `run` would become jobs.
     assert_eq!(
         job_keys_of("name: x\n\njobs:\n  # un commento\n  stile:\n    name: il debito\n    steps:\n      - run: echo\n  desktop:\n    name: la finestra\n"),
         vec!["stile", "desktop"],

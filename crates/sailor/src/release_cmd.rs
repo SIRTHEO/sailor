@@ -178,8 +178,8 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     )?;
 
     let build_target = root.join("target/from-head");
-    // I crate stanno alla radice dell'albero dal trasloco del 27/08/2026: non
-    // c'è più un sottoalbero da cui compilare.
+    // The crates sit at the root of the tree since the move: there is no
+    // sub-tree left to build from.
     let cloned_rust = repository.clone();
     // THE PAGE IS BUILT FIRST, AND INSIDE THE CLONE. The shell embeds `dist/`
     // at compile time: build it after, and the binary carries whatever page was
@@ -461,18 +461,17 @@ pub(crate) fn sources_root() -> Result<PathBuf, String> {
     )
 }
 
-/// La radice dichiarata, o quella dedotta dalla casa: la regola, senza l'ambiente.
+/// The declared root, or the one deduced from the home: the rule, minus the
+/// environment.
 ///
-/// **RICEVE I DUE VALORI INVECE DI LEGGERLI, ED È IL GUASTO 5.** `HOME` è
-/// globale al processo: una prova che lo scrivesse per provare questa regola
-/// rovinerebbe le altre a caso, e una che lo *legge* diventa rossa su una
-/// macchina diversa a codice invariato — misurato il 01/09/2026, casa vuota e
-/// `the_release_builds_from_the_sources_and_not_from_the_configuration` rossa
-/// senza che nessuno avesse toccato una riga. I due chiamanti qui sopra restano
-/// gli unici a guardare l'ambiente, e non decidono niente.
-///
-/// Una variabile dichiarata **vuota** non vale come dichiarazione: sarebbe una
-/// radice alla cartella corrente, cioè il guasto 25 travestito.
+/// **IT IS HANDED THE TWO VALUES INSTEAD OF READING THEM — FAULT 5.** `HOME` is
+/// process-global: a test that wrote it here would wreck the others at random,
+/// and one that *reads* it goes red on another machine with the code unchanged —
+/// measured on an empty home, with
+/// `the_release_builds_from_the_sources_and_not_from_the_configuration` red. The
+/// two callers above stay the only ones looking at the environment, and decide
+/// nothing. A variable declared **empty** is no declaration: it roots at the
+/// current directory, fault 25 in disguise.
 fn root_under(
     declared: Option<OsString>,
     home: Option<OsString>,
@@ -1198,12 +1197,12 @@ fn restart_service(service: Service) {
     }
 }
 
-/// Il dominio launchd da riavviare.
+/// The launchd domain to restart.
 ///
-/// L'ETICHETTA VIENE DALL'AMBIENTE QUANDO C'È. Il nome di un servizio è una
-/// proprietà dell'installazione, non del codice, e questo crate va in un
-/// deposito pubblico: chi installa `notte` altrove non si chiama Theo. Il valore
-/// scritto nella tabella resta il predefinito di questa macchina.
+/// THE LABEL COMES FROM THE ENVIRONMENT WHEN THERE IS ONE. A service's name is
+/// a property of the installation, not of the code, and this crate ships in a
+/// public repository: whoever installs `notte` elsewhere is not called Theo. The
+/// value written in the table stays this machine's default.
 fn service_domain(service: Service) -> String {
     let label = std::env::var("RELEASE_SERVICE_LABEL")
         .ok()
@@ -1212,15 +1211,15 @@ fn service_domain(service: Service) -> String {
     format!("gui/{}/{}", current_uid(), label)
 }
 
-// `getuid` viene dal kernel ed è infallibile; un crate intero per questa sola
-// firma allargherebbe dipendenze e tempi di compilazione senza aggiungere nulla.
+// `getuid` comes from the kernel and cannot fail; a whole crate for this one
+// signature would widen dependencies and build times and add nothing.
 unsafe extern "C" {
     fn getuid() -> u32;
 }
 
 fn current_uid() -> u32 {
-    // SAFETY: `getuid` non prende puntatori, non modifica memoria Rust e non
-    // può fallire; la firma coincide con `uid_t` sulle piattaforme Unix target.
+    // SAFETY: `getuid` takes no pointers, mutates no Rust memory and cannot
+    // fail; the signature matches `uid_t` on the target Unix platforms.
     unsafe { getuid() }
 }
 
@@ -1333,20 +1332,18 @@ mod tests {
         assert!(parse_options(&a(&[])).is_err());
     }
 
-    /// Da dove si costruisce ciò che va in servizio.
+    /// What the thing that goes into service is built from.
     ///
-    /// IL BRACCIO CHE CONTA È IL SECONDO: la cartella della configurazione è
-    /// anche un repo git, e finché il rilascio clonava quella rimetteva in
-    /// servizio l'albero da cui i sorgenti se n'erano andati — un rilascio
-    /// verde che disinstallava il lavoro della mattina.
+    /// THE ARM THAT MATTERS IS THE SECOND: the configuration directory is a git
+    /// repository too, and while the release cloned that one it put back into
+    /// service the tree the sources had left — a green release that uninstalled
+    /// the morning's work.
     ///
-    /// **NON LEGGE PIÙ LA MACCHINA DI CHI LA ESEGUE, ED È IL GUASTO 5.** Fino
-    /// al 01/09/2026 chiedeva `sources_root()`, cioè `$HOME`, e poi guardava
-    /// sul disco se quella cartella conteneva `crates/sailor`. Misurato quel
-    /// giorno con una casa vuota: rossa, a codice invariato — che è
-    /// letteralmente la riga del guasto 5. Adesso la regola si prova con valori
-    /// dichiarati; la forma dell'albero la prova il caso qui sotto, sull'albero
-    /// da cui questa prova è compilata.
+    /// **IT NO LONGER READS THE RUNNER'S MACHINE — FAULT 5.** It used to ask
+    /// `sources_root()`, i.e. `$HOME`, then check on disk whether that folder
+    /// held `crates/sailor`: red on an empty home, code unchanged, which is
+    /// fault 5's own line. The rule is now tested with declared values; the
+    /// tree's shape by the case below, on the tree this test is compiled from.
     #[test]
     fn the_release_builds_from_the_sources_and_not_from_the_configuration() {
         let home = Some(OsString::from("/casa/di-chiunque"));
@@ -1394,17 +1391,16 @@ mod tests {
         assert!(root_under(None, None, "personal/sailor", "SAILOR_SOURCES").is_err());
     }
 
-    /// I sorgenti di Sailor portano il crate che dà il nome al binario.
+    /// Sailor's sources carry the crate the binary is named after.
     ///
-    /// IL PUNTO DI RIFERIMENTO È CAMBIATO IL 29/08/2026, e vale la pena dire
-    /// perché: qui c'era `crates/claude-hooks`, cancellato insieme a tutto ciò
-    /// che non era Sailor. Il rilascio non è cambiato di una riga — è cambiato
-    /// il segnale con cui questa prova lo riconosceva.
+    /// THE LANDMARK CHANGED, and why is worth saying: it was
+    /// `crates/claude-hooks`, deleted along with everything that was not Sailor.
+    /// The release did not change by a line — the signal this test recognised it
+    /// by did.
     ///
-    /// **L'ALBERO GUARDATO È QUELLO DA CUI QUESTA PROVA È COMPILATA**, non
-    /// quello che vive nella casa di chi la esegue: `CARGO_MANIFEST_DIR` è
-    /// versionato e c'è sempre, `$HOME/personal/sailor` è una scommessa sulla
-    /// macchina.
+    /// **THE TREE LOOKED AT IS THE ONE THIS TEST IS COMPILED FROM**, not the one
+    /// living in the runner's home: `CARGO_MANIFEST_DIR` is versioned and always
+    /// there, `$HOME/personal/sailor` is a bet on the machine.
     #[test]
     fn the_sources_of_this_checkout_carry_the_crate_that_names_the_binary() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -1416,23 +1412,21 @@ mod tests {
         assert!(!root.join("rust").exists(), "{root:?}");
     }
 
-    /// Le due radici sono due, e il binario va installato nella seconda.
+    /// The two roots are two, and the binary is installed into the second.
     ///
-    /// IL BRACCIO CHE CONTA è che non coincidano: quando la sorgente si è
-    /// spostata portandosi dietro l'installazione, il rilascio ha scritto il
-    /// binario accanto ai sorgenti e i ganci hanno continuato a eseguire quello
-    /// vecchio — con uscita 0 e nessun avviso.
-    /// **ANCHE QUESTA RICEVE LA CASA INVECE DI LEGGERLA** (guasto 5): non
-    /// falliva a casa vuota — confronta percorsi e non tocca il disco — ma
-    /// `HOME` assente la faceva morire su un `unwrap`, e un caso che dipende
-    /// dall'ambiente per **partire** dipende dall'ambiente.
+    /// THE ARM THAT MATTERS is that they do not coincide: when the sources moved
+    /// and took the installation with them, the release wrote the binary beside
+    /// the sources and the hooks went on running the old one — exit 0, no
+    /// warning. **THIS ONE IS HANDED THE HOME TOO** (fault 5): it never failed
+    /// on an empty home — it compares paths and touches no disk — but an absent
+    /// `HOME` killed it on an `unwrap`, and a case needing the environment to
+    /// **start** depends on the environment.
     ///
-    /// **GUARDA TUTTI I BERSAGLI, NON UNO SCELTO A MANO.** Fino al 01/09/2026
-    /// questa prova chiedeva `target("hooks")` — un bersaglio che nominava un
-    /// binario cancellato dal repo il 28/08 — e con la sua rimozione sarebbe
-    /// morta su un `expect`. Un caso scritto su un nome è una prova che va
-    /// aggiornata a ogni tabella; scritta sulla tabella, copre anche il
-    /// bersaglio che qualcuno aggiungerà domani.
+    /// **IT LOOKS AT EVERY TARGET, NOT ONE PICKED BY HAND.** It used to ask
+    /// `target("hooks")`, a target naming a binary deleted from the repo, and
+    /// would have died on an `expect` when that went. A case written around a
+    /// name is updated with every table; written around the table, it covers the
+    /// target somebody adds tomorrow.
     #[test]
     fn the_binary_is_installed_in_the_home_and_not_next_to_the_sources() {
         let declared_home = Some(OsString::from("/casa/di-chiunque"));
@@ -1565,10 +1559,10 @@ mod tests {
         assert_eq!(before, after, "the untouched file was not rewritten");
     }
 
-    // I tre casi qui sotto nominavano `notte` fino al 01/09/2026. `parse_options`
-    // non giudica il nome — chi non esiste lo scarta `target()` più tardi —
-    // quindi restavano verdi su un bersaglio cancellato: un dato di prova che
-    // racconta un mondo sparito non rompe niente, e per questo invecchia.
+    // The three cases below used to name `notte`. `parse_options` does not judge
+    // the name — `target()` discards a missing one later — so they stayed green
+    // on a deleted target: test data telling of a vanished world breaks nothing,
+    // and that is exactly why it rots.
     #[test]
     fn dry_run_and_skip_tests_are_read_as_flags() {
         let options = parse_options(&a(&["sailor", "--dry-run", "--skip-tests"])).unwrap();

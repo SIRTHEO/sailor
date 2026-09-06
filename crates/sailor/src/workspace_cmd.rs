@@ -1,11 +1,10 @@
-//! `sailor workspace`: il progetto si dichiara, invece di essere indovinato.
+//! `sailor workspace`: the project declares itself instead of being guessed.
 //!
-//! **PERCHÉ È UN COMANDO E NON UN FILE SCRITTO A MANO.** È il guasto 15: per
-//! cambiare l'innesco di un flusso è stato usato uno script Python che
-//! riscrive il JSON, perché Sailor non aveva nessun comando per operare sui
-//! propri file. Uno strumento che si aggira non registra niente di ciò che gli
-//! succede intorno, e nessun controllo se ne accorge. Ogni cosa che una
-//! persona deve fare su un progetto Sailor è un comando di Sailor.
+//! **A COMMAND, NOT A HAND-WRITTEN FILE.** This is fault 15: a flow's trigger
+//! was changed with a Python script that rewrites the JSON, because Sailor had
+//! no command to operate on its own files. A tool people work around records
+//! nothing of what happens near it, and no check notices. Everything a person
+//! must do to a Sailor project is a Sailor command.
 
 use flow::workspace::MARKER;
 use std::path::Path;
@@ -19,12 +18,12 @@ fn now() -> i64 {
         .unwrap_or_default()
 }
 
-/// I documenti che, se ci sono, valgono la pena di essere dichiarati.
+/// The documents worth declaring, when they are there.
 ///
-/// **È UN ELENCO DI CANDIDATI, NON UNA SCOPERTA.** Cercare «tutti i `.md` che
-/// sembrano regole» vorrebbe dire indovinare, e ciò che questo comando scrive
-/// lo legge poi qualcun altro come se fosse stato deciso. Quello che non è in
-/// elenco si aggiunge a mano al file, che è il posto giusto per una decisione.
+/// **A LIST OF CANDIDATES, NOT A DISCOVERY.** Hunting for «every `.md` that
+/// looks like rules» would be guessing, and what this command writes is later
+/// read by somebody else as if it had been decided. Whatever is off the list is
+/// added to the file by hand, which is the right place for a decision.
 const RULE_CANDIDATES: [&str; 4] = [
     "AGENTS.md",
     "CLAUDE.md",
@@ -65,7 +64,7 @@ fn dispatch(args: &[String]) -> Result<String, String> {
     }
 }
 
-/// La forma di `sailor workspace`. Vedi `flow_cmd::USAGE`.
+/// The shapes of `sailor workspace`. See `flow_cmd::USAGE`.
 pub const USAGE: &[crate::Form] = &[
     crate::Form {
         form: "sailor workspace init",
@@ -124,12 +123,12 @@ fn list() -> Result<String, String> {
         .join("\n"))
 }
 
-/// Scrive il marcatore nella cartella data.
+/// Writes the marker into the given folder.
 ///
-/// **`checks` NASCE VUOTO, E NON È PIGRIZIA.** Indovinare `cargo test` per un
-/// progetto qualunque è la stessa presunzione del percorso assoluto che il
-/// guasto 25 racconta: un comando che scrive una verifica che nessuno ha
-/// chiesto la fa poi eseguire a qualcuno che crede l'abbia decisa lui.
+/// **`checks` IS BORN EMPTY, AND THAT IS NOT LAZINESS.** Guessing `cargo test`
+/// for some project is the same presumption as the absolute path fault 25
+/// tells: a command that writes a check nobody asked for gets it run by
+/// somebody who believes he decided it.
 fn init(root: &Path, home: Option<&Path>) -> Result<String, String> {
     let marker = root.join(MARKER);
     if marker.exists() {
@@ -206,8 +205,8 @@ mod tests {
         dir
     }
 
-    /// Il marcatore nasce con le regole che ci sono davvero, e **senza
-    /// verifiche**: quelle le scrive chi sa cosa vuol dire «provato» qui.
+    /// The marker is born with the rules that really are there, and **with no
+    /// checks**: those are written by whoever knows what «tested» means here.
     #[test]
     fn init_writes_the_marker_with_the_rules_it_finds_and_no_checks() {
         let root = scratch("init");
@@ -231,9 +230,9 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 
-    /// Un documento che non c'è non finisce nell'elenco: una regola dichiarata
-    /// e assente manda a leggere un indirizzo vuoto, che è il difetto che
-    /// `AGENTS.md` racconta di sé.
+    /// A document that is not there stays off the list: a rule declared and
+    /// absent sends a reader to an empty address, the very defect `AGENTS.md`
+    /// tells about itself.
     #[test]
     fn a_rule_that_is_not_there_is_not_declared() {
         let root = scratch("senza-regole");
@@ -246,8 +245,8 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 
-    /// **NON SOVRASCRIVE.** Dentro il marcatore ci si può aver scritto a mano:
-    /// riscriverlo perderebbe una dichiarazione senza chiedere.
+    /// **IT DOES NOT OVERWRITE.** The marker may have been edited by hand:
+    /// rewriting it would lose a declaration without asking.
     #[test]
     fn init_refuses_to_overwrite_a_declaration() {
         let root = scratch("gia-dichiarato");

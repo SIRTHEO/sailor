@@ -9,22 +9,12 @@ use std::path::Path;
 
 use super::{default_ledger_dir, now_secs};
 
-/// Quanto ha consumato l'ultima corsa di un flusso.
+/// What a flow's last run consumed: more or less than a single prompt?
+/// Reading it meant opening SQLite by hand, which is fault 15.
 ///
-/// **PERCHÉ ESISTE, E PERCHÉ ADESSO.** Il consumo entra nel deposito dal
-/// 30/08/2026, e fino al 31 l'unico modo di leggerlo era aprire SQLite a mano —
-/// cioè aggirare Sailor, che è il guasto 15: uno strumento aggirato non
-/// registra niente di ciò che gli succede intorno. Serve a rispondere alla
-/// domanda che decide come si scrivono i flussi: **un flusso consuma più o meno
-/// di un prompt solo?** Senza un modo di chiederlo, quella domanda si risponde a
-/// impressione.
-///
-/// **I TOKEN VENGONO PRIMA DEL COSTO, E NON È UNA PREFERENZA DI STILE.** Con una
-/// riga di comando locale non si paga a chiamata: si paga un abbonamento, e
-/// quello che si consuma è **quota**, che si misura in token. La cifra in valuta
-/// è quanto sarebbe costato via API — un metro utile per confrontare, non una
-/// fattura. E ci sono motori che i token li dichiarano e il costo no: mostrare
-/// solo il costo li renderebbe invisibili.
+/// **TOKENS COME BEFORE COST.** A local command line pays a subscription, not a
+/// call: what is spent is quota, in tokens, and the currency figure is only what
+/// the API would have charged. Cost alone hides engines that declare no cost.
 pub(super) fn cost_of(flow: &str) -> Result<String, String> {
     cost_of_in(&default_ledger_dir()?, flow)
 }
@@ -38,8 +28,8 @@ fn cost_of_in(dir: &Path, flow: &str) -> Result<String, String> {
             &[("path", &dir.display().to_string())],
         ));
     };
-    // L'ultima per inizio, non l'ultima scritta: una corsa aperta e una chiusa
-    // possono arrivare in ordine inverso nella proiezione.
+    // The last by start, not the last written: an open run and a closed one
+    // can arrive in reverse order in the projection.
     let run = data
         .runs
         .iter()
@@ -128,11 +118,11 @@ fn refusals_report(steps: &[StepRecord]) -> String {
     report
 }
 
-/// Il consumo di una corsa, per una persona.
+/// What a run consumed, for a person.
 ///
-/// **IL LISTINO ARRIVA DA FUORI, E NON È PIGNOLERIA:** così questa funzione si
-/// interroga con un listino scritto nella prova, invece di dipendere da quale
-/// file esista sulla macchina che esegue la batteria.
+/// **THE PRICE LIST COMES FROM OUTSIDE, AND IT IS NOT FUSSINESS:** it lets this
+/// function be asked with a price list written in the test, rather than
+/// depending on which file exists on the machine running the suite.
 fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> String {
     let tokens = &view.tokens;
     let mut report = catalogue::say(
@@ -147,22 +137,15 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
             ("calls", &tokens.calls.to_string()),
         ],
     );
-    // **I TURNI ACCANTO ALLE CHIAMATE, E NON È UN DETTAGLIO.** Una chiamata a un
-    // motore agentico non è un giro: ne sono decine, e il conto lo fa quel
-    // numero. Misurato il 31/08/2026: una catena di quattro passi legge per
-    // turno l'8% in più di una sessione sola, e consuma il doppio — perché di
-    // turni ne fa il doppio. Chi legge «7 chiamate» senza sapere quanti turni
-    // sono non ha in mano la quantità su cui si interviene.
-    //
-    // **IL CONTEGGIO GREZZO E BASTA: QUI NON SI STAMPA `cache letta ÷ turni`.**
-    // Sembra «il contesto di una richiesta» e non lo è: sui quattro passi di una
-    // corsa vera il quoziente dà 21.165 / 13.566 / 48.984 / 50.885 contro i
-    // 46.702 / 31.651 / 63.266 / 71.173 che le richieste leggono davvero — sbaglia
-    // da 1,29 a 2,33 volte, e il fattore cambia **fra i passi della stessa
-    // corsa**. È la media di una rampa, non il prefisso, e non è confrontabile
-    // né fra passi né fra un flusso e una sessione sola. Un numero stampato
-    // viene usato per decidere: questo manderebbe a intervenire nel posto
-    // sbagliato con l'aria di una misura.
+    // **TURNS BESIDE CALLS, AND IT IS NOT A DETAIL.** One call to an agentic
+    // engine is dozens of turns, and those make the bill: a chain of four steps
+    // reads 8% more per turn than a single session and consumes twice as much,
+    // taking twice the turns. **AND THE RAW COUNT ONLY: no `cache read ÷ turns`
+    // here.** It looks like «the context of a request» and is not — over four
+    // steps of a real run it gives 21.165 / 13.566 / 48.984 / 50.885 against the
+    // 46.702 / 31.651 / 63.266 / 71.173 the requests really read, off by 1,29 to
+    // 2,33 times, with the factor changing **between steps of one run**: the
+    // mean of a ramp, and a printed number gets used to decide.
     if tokens.turns > 0 {
         let _ = write!(
             report,
@@ -203,11 +186,11 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
             )
         );
     }
-    // **LA CIFRA NON SI COMPONE QUI.** Se la scrivesse questa funzione,
-    // rifarebbe la regola dei tre casi in un `format!` — e la prima volta che
-    // qualcuno tocca uno dei due posti le due versioni divergono in silenzio.
-    // Chi decide quanti passi aprire e chi legge il consumo devono leggere la
-    // stessa frase.
+    // **THE FIGURE IS NOT COMPOSED HERE.** Written by this function it would
+    // redo the three-case rule in a `format!` — and the first time somebody
+    // touches one of the two places the two versions diverge in silence.
+    // Whoever decides how many steps to open and whoever reads the consumption
+    // must read the same sentence.
     let _ = write!(
         report,
         "\n{}",
@@ -222,11 +205,10 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
     // that made it a floor sends the reader to redo the sum by hand and land
     // on the wrong total again.
     report.push_str(&unmeasured_report(&view.calls, prices));
-    // **QUELLO CHE MANCA SI DICE, O IL TOTALE SI LEGGE COME COMPLETO.** È la
-    // stessa regola della finestra: una somma che tace su ciò che non ha
-    // contato è una rassicurazione, non una misura. Resta anche adesso che il
-    // costo lo dice da sé: i token mancanti sono un'altra lacuna, e una corsa
-    // può avere quella e non l'altra.
+    // **WHAT IS MISSING IS SAID, OR THE TOTAL READS AS COMPLETE.** Same rule as
+    // the window's: a sum silent about what it did not count is a reassurance,
+    // not a measurement. It stays even where the cost declares itself: missing
+    // tokens are another gap, and a run can have one and not the other.
     if tokens.calls_without_tokens > 0 || tokens.calls_without_cost > 0 {
         let _ = write!(
             report,
@@ -240,12 +222,12 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
             )
         );
     }
-    // **E SI DICE QUALE MODELLO, NON SOLO QUANTE CHIAMATE.** «Tre senza costo
-    // noto» è un numero su cui non si può agire; il nome del modello scoperto è
-    // una riga da scrivere nel listino. È la seconda metà della cura del guasto
-    // 35: chi non ha un prezzo per un modello deve saperlo, non dedurlo da uno
-    // zero. I nomi vengono da `tokens_by_model`, cioè da chi ha davvero
-    // risposto in questa corsa.
+    // **AND WHICH MODEL IS SAID, NOT MERELY HOW MANY CALLS.** «Three with no
+    // known cost» is a number nobody can act on; the name of the uncovered
+    // model is a line to write in the price list. Second half of the cure for
+    // fault 35: whoever has no price for a model must know it, not infer it
+    // from a zero. The names come from `tokens_by_model`, from whoever really
+    // answered in this run.
     let not_declared = ui::dashboard::model_not_declared();
     let unpriced = cannot_be_priced(
         prices,
@@ -267,18 +249,12 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
             )
         );
     }
-    // **CON QUALE IDENTITÀ SONO PARTITI I PROCESSI DI QUESTA CORSA.**
-    //
-    // «Se un processo AI si avvia deve esserci un profilo associato»: fino al
-    // 01/09/2026 quel dato era scritto nel deposito, riletto dentro una
-    // struttura, e non arrivava a **nessuna** schermata né a nessun comando.
-    // Un dato raccolto e mai guardato è a un passo dal diventare un dato
-    // sbagliato che nessuno nota, e questo è il posto dove una persona guarda
-    // quando qualcosa è andato storto.
-    //
-    // **QUI NON COMPARE NESSUN GETTONE**, e non è una svista da riparare: si
-    // dice quale casa e come è stata scelta, che è ciò su cui si va a guardare.
-    // Cosa c'è dentro quella casa non è affare di un rapporto sul consumo.
+    // **WHICH IDENTITY THE PROCESSES OF THIS RUN STARTED WITH.** «If an AI
+    // process starts there must be a profile behind it»: the data was written
+    // in the ledger, reread inside a struct, and reached **no** screen and no
+    // command, and data collected but never looked at is one step from becoming
+    // wrong data nobody notices. **NO TOKEN APPEARS HERE**, and that is not an
+    // oversight: which home and how it was picked is what one goes to look at.
     let identities = ui::dashboard::identities_of(&view.calls);
     if !identities.is_empty() {
         report.push_str(&catalogue::say("cli.flow.identity_heading", &[]));
@@ -383,23 +359,18 @@ fn why_unmeasured(call: &ui::dashboard::CallView, prices: &PriceList) -> String 
     }
 }
 
-/// Quanto costa una unità di valuta in micro. Un milione: `1_000_000` è un
-/// dollaro.
+/// What a unit of currency costs in micros. A million: `1_000_000` is a
+/// dollar.
 const MICROS_IN_A_UNIT: f64 = 1_000_000.0;
 
-/// I modelli che le corse passate di questo flusso hanno davvero usato.
+/// The models past runs of this flow really used.
 ///
-/// **DAL DEPOSITO E NON DAL FLUSSO, PERCHÉ IL FLUSSO NON LO SA.** Un passo nomina
-/// lo strumento — `claude-code`, `codex` — non il modello: quale modello risponda
-/// lo decide quella riga di comando, e lo si scopre solo dopo, da ciò che ha
-/// dichiarato. Un elenco dedotto dal file del flusso sarebbe indovinato.
-///
-/// **`None` NON È UN INSIEME VUOTO, ED È LA DISTINZIONE CHE CONTA.** Un deposito
-/// che non si apre — non c'è, non si legge, i permessi lo negano — non dice
-/// «questo flusso non ha mai usato nessun modello»: dice che nessuno ha potuto
-/// guardare. Confonderli farebbe stampare «mai girato qui» a un flusso girato
-/// cento volte, ed è la stessa regola per cui il rilevatore assente fa tacere il
-/// rapporto invece di dichiarare sano ciò che non ha visto.
+/// **FROM THE LEDGER AND NOT THE FLOW, BECAUSE THE FLOW DOES NOT KNOW.** A step
+/// names the tool — `claude-code`, `codex` — not the model: the command line
+/// picks who answers, and it is found out afterwards from what was declared.
+/// **`None` IS NOT AN EMPTY SET**: a ledger that will not open says nobody
+/// could look, and confusing the two would print «never run here» for a flow
+/// run a hundred times.
 pub(super) fn models_seen_by(flow_id: &str) -> Option<BTreeSet<String>> {
     let dir = default_ledger_dir().ok()?;
     let data = ui::gather::gather(&dir).ok()??;
@@ -409,22 +380,22 @@ pub(super) fn models_seen_by(flow_id: &str) -> Option<BTreeSet<String>> {
             .filter(|run| run.entity == flow_id)
             .filter_map(|run| data.calls_by_run.get(&run.run_id))
             .flatten()
-            // Una chiamata senza modello dichiarato non è un modello senza
-            // prezzo: è un motore che non dice chi ha risposto, e nominare la
-            // stringa vuota fra i modelli scoperti manderebbe a cercare una
-            // voce di listino per un nome che non esiste.
+            // A call with no declared model is not a model with no price: it
+            // is an engine that will not say who answered, and naming the
+            // empty string among the uncovered models would send somebody
+            // hunting a price-list entry for a name that does not exist.
             .filter(|call| !call.actual_model.trim().is_empty())
             .map(|call| call.actual_model.clone())
             .collect(),
     )
 }
 
-/// Le micro-unità come le legge una persona.
+/// The micro-units as a person reads them.
 pub(super) fn in_units(micros: i64) -> String {
     format!("{:.2}", micros as f64 / MICROS_IN_A_UNIT)
 }
 
-// ── quello che il listino non sa prezzare ────────────────────────────────
+// ── what the price list cannot price ─────────────────────────────────────
 
 /// Why this list cannot price a name, or nothing at all when it can.
 ///
@@ -611,11 +582,11 @@ pub(super) fn what_is_priced(
         );
     }
     let past_unpriced = past_models_into(&mut said, prices, seen);
-    // **LA RIGA DEL TETTO SOLO QUANDO LE DUE COSE COINCIDONO.** Un tetto senza
-    // modelli scoperti non ha niente da dichiarare, e modelli scoperti senza
-    // tetto non fermano niente: è la coincidenza a essere pericolosa, ed è la
-    // frase per cui il guasto 35 è stato scritto — un freno che non frena si
-    // deve vedere prima di lanciare, non a fattura arrivata.
+    // **THE CAP LINE ONLY WHERE THE TWO THINGS MEET.** A cap with no uncovered
+    // models has nothing to declare, and uncovered models with no cap stop
+    // nothing: the coincidence is what is dangerous, and it is the sentence
+    // fault 35 was written for — a brake that does not brake must be seen
+    // before launching, not once the bill has arrived.
     if cap.is_some() && (past_unpriced || !unpriced.is_empty()) {
         said.push_str(&catalogue::say("cli.flow.cap_will_not_count_them", &[]));
     }
@@ -630,10 +601,10 @@ mod tests {
     use flow::FlowFile;
     use ledger::Ledger;
 
-    // ── quello che il listino non sa prezzare ────────────────────────────
+    // ── what the price list cannot price ─────────────────────────────────
 
-    /// Un listino che conosce un modello solo, con i suoi prezzi, e una voce
-    /// dichiarata a metà: bastano a distinguere le tre risposte.
+    /// A price list knowing one model with its prices, and one entry declared
+    /// half-way: enough to tell the three answers apart.
     fn a_small_price_list() -> PriceList {
         PriceList::parse(
             r#"{"currency":"USD","models":[
@@ -650,15 +621,15 @@ mod tests {
         ModelsAskedByTheFlow::default()
     }
 
-    /// **CHI NON HA UN PREZZO PER UN MODELLO DEVE SAPERLO, E SAPERE QUALE.**
+    /// **WHOEVER HAS NO PRICE FOR A MODEL MUST KNOW IT, AND KNOW WHICH.**
     ///
-    /// È la seconda metà della cura del guasto 35. Il primo modello è prezzato e
-    /// non deve comparire; gli altri due no, e devono comparire **col perché**,
-    /// perché si riparano in due modi diversi.
+    /// The second half of the cure for fault 35. The first model is priced and
+    /// must not appear; the other two are not, and must appear **with the
+    /// why**, since they are repaired in two different ways.
     ///
-    /// *Mutante eseguito*: far restituire a `cannot_be_priced` un elenco vuoto.
-    /// Il rapporto torna a tacere e questa prova diventa rossa — che è
-    /// esattamente il difetto: uno zero al posto di una risposta.
+    /// *Mutant run*: make `cannot_be_priced` return an empty list. The report
+    /// falls silent again and this test goes red — which is exactly the defect:
+    /// a zero in place of an answer.
     #[test]
     fn a_model_without_a_price_is_named_and_the_reason_with_it() {
         let said = what_is_priced(
@@ -683,9 +654,9 @@ mod tests {
         );
     }
 
-    /// **QUANDO SONO TUTTI PREZZATI LO DICE LO STESSO.** Un rapporto che tace
-    /// lascia chi legge a chiedersi se il controllo abbia guardato — è la stessa
-    /// regola per cui la riga del tetto c'è anche quando il tetto non c'è.
+    /// **WHEN THEY ARE ALL PRICED IT SAYS SO ANYWAY.** A report that falls
+    /// silent leaves the reader wondering whether the check looked at all — the
+    /// same rule that puts the cap line there even where there is no cap.
     #[test]
     fn when_everything_is_priced_the_report_says_so_instead_of_falling_silent() {
         let said = what_is_priced(
@@ -699,16 +670,16 @@ mod tests {
         assert!(!said.contains("no entry"), "{said}");
     }
 
-    /// **«MAI GIRATO QUI» E «NON HO POTUTO GUARDARE» SONO DUE FRASI DIVERSE.**
+    /// **«NEVER RAN HERE» AND «I COULD NOT LOOK» ARE TWO DIFFERENT SENTENCES.**
     ///
-    /// Un deposito che non si apre — non c'è, i permessi lo negano — non dice
-    /// che il flusso non è mai girato: dice che nessuno ha potuto guardare.
-    /// Confonderli fa stampare «mai girato qui» a un flusso girato cento volte,
-    /// ed è la stessa regola per cui il rilevatore assente fa tacere il rapporto
-    /// invece di dichiarare sano ciò che non ha visto.
+    /// A ledger that will not open — absent, or refused by permissions — does
+    /// not say the flow never ran: it says nobody could look. Confusing them
+    /// prints «never run here» for a flow run a hundred times, the same rule
+    /// by which a missing detector silences the report instead of declaring
+    /// healthy what it has not seen.
     ///
-    /// *Mutante eseguito*: far collassare il ramo `None` su quello dell'insieme
-    /// vuoto. Le due frasi diventano una e questa prova diventa rossa.
+    /// *Mutant run*: collapse the `None` branch onto the empty-set one. The two
+    /// sentences become one and this test goes red.
     #[test]
     fn a_ledger_that_could_not_be_read_is_not_a_flow_that_never_ran() {
         let unreadable = what_is_priced(&a_small_price_list(), &naming_nothing(), None, None);
@@ -724,11 +695,11 @@ mod tests {
         assert!(!unreadable.contains("mai girato"), "{unreadable}");
     }
 
-    /// **UN FLUSSO MAI GIRATO QUI NON RICEVE UN ELENCO VUOTO, MA UNA FRASE.**
+    /// **A FLOW THAT NEVER RAN HERE GETS A SENTENCE, NOT AN EMPTY LIST.**
     ///
-    /// Dire «tutti prezzati» senza aver visto niente sarebbe una rassicurazione
-    /// costruita sul nulla — è la stessa distinzione che il rilevatore tiene fra
-    /// «non c'è» e «non ho potuto guardare».
+    /// Saying «all priced» having seen nothing would be a reassurance built on
+    /// air — the same distinction the detector keeps between «it is absent» and
+    /// «I could not look».
     #[test]
     fn a_flow_that_never_ran_here_is_told_that_nothing_is_known_yet() {
         let said = what_is_priced(
@@ -883,16 +854,15 @@ mod tests {
         );
     }
 
-    /// **UN TETTO CHE NON PUÒ SCATTARE SI DEVE VEDERE PRIMA DI LANCIARE.**
+    /// **A CAP THAT CANNOT FIRE MUST BE SEEN BEFORE LAUNCHING.**
     ///
-    /// È la frase per cui il guasto 35 è stato scritto: il tetto si misura sui
-    /// costi noti, quindi un modello senza prezzo lo rende più largo di quanto
-    /// dice — e chi lancia lo scopre a fattura arrivata. La riga compare solo
-    /// quando tutte e due le condizioni ci sono, perché è la loro coincidenza a
-    /// essere pericolosa.
+    /// The sentence fault 35 was written for: the cap is measured on known
+    /// costs, so a model with no price makes it wider than it says — and
+    /// whoever launches finds out once the bill arrives. The line appears where
+    /// both conditions hold, because their coincidence is the danger.
     ///
-    /// *Mutante eseguito*: togliere il ramo che guarda `cap` e stampare la frase
-    /// sempre. Il terzo braccio — flusso senza tetto — diventa rosso.
+    /// *Mutant run*: drop the branch that looks at `cap` and print the sentence
+    /// always. The third arm — a flow with no cap — goes red.
     #[test]
     fn a_cap_that_cannot_fire_is_declared_before_the_run_not_after() {
         let unpriced = names(&["mai-visto"]);
@@ -924,8 +894,8 @@ mod tests {
         );
     }
 
-    /// Una chiamata registrata: il modello che ha risposto, i suoi token, e se
-    /// un costo è stato calcolato o no.
+    /// A recorded call: the model that answered, its tokens, and whether a
+    /// cost was computed.
     fn a_call(actual_model: &str, cost: Option<i64>) -> ledger::ModelCallRecord {
         ledger::ModelCallRecord {
             call_id: format!("call-{actual_model}"),
@@ -979,15 +949,15 @@ mod tests {
         }
     }
 
-    /// **`flow cost` NOMINA IL MODELLO SCOPERTO, NON SOLO QUANTE CHIAMATE.**
+    /// **`flow cost` NAMES THE UNCOVERED MODEL, NOT MERELY HOW MANY CALLS.**
     ///
-    /// «Una chiamata senza costo noto» è un numero su cui non si può agire; il
-    /// nome del modello è una riga da scrivere nel listino. La corsa ha due
-    /// chiamate — una prezzata e una no — e solo la seconda deve comparire:
-    /// nominarle tutte e due manderebbe a correggere una voce che c'è già.
+    /// «One call with no known cost» is a number nobody can act on; the model's
+    /// name is a line to write in the price list. The run has two calls — one
+    /// priced, one not — and the second alone must appear: naming both would
+    /// send somebody to correct an entry that is already there.
     ///
-    /// *Mutante eseguito*: far restituire a `cannot_be_priced` un elenco vuoto.
-    /// Il rapporto torna a dire solo «1 senza costo noto» e questa diventa rossa.
+    /// *Mutant run*: make `cannot_be_priced` return an empty list. The report
+    /// goes back to saying «1 with no known cost» and this test goes red.
     #[test]
     fn the_cost_report_names_the_model_that_has_no_price() {
         let calls = vec![a_call("prezzato", Some(1_000)), a_call("mai-visto", None)];
@@ -1043,21 +1013,17 @@ mod tests {
         );
     }
 
-    /// **IL RAPPORTO DICE CON QUALE IDENTITÀ OGNI PROCESSO È PARTITO.**
+    /// **THE REPORT SAYS WHICH IDENTITY EACH PROCESS STARTED WITH.**
     ///
-    /// Fino al 01/09/2026 quel dato era scritto nel deposito, riletto dentro
-    /// `CallView`, e non arrivava a **nessuna** schermata né a nessun comando —
-    /// cercato in `crates/ui`, `desktop/src` e `crates/sailor`. Un dato raccolto
-    /// e mai guardato è a un passo dal diventare un dato sbagliato che nessuno
-    /// nota; questo è il posto dove una persona guarda quando qualcosa è andato
-    /// storto.
+    /// The data was written in the ledger, reread inside `CallView`, and
+    /// reached **no** screen and no command — searched in `crates/ui`,
+    /// `desktop/src` and `crates/sailor`. Data collected but never looked at is
+    /// one step from wrong data nobody notices, and this is where a person
+    /// looks when something went wrong. **AND THE HOME PATH BELONGS HERE**: a
+    /// profile name says under which label it ran, a path says where to look.
     ///
-    /// **E IL PERCORSO DELLA CASA CI DEVE STARE**, perché è il fondo su cui una
-    /// diagnostica si appoggia: un nome di profilo dice sotto quale etichetta si
-    /// è girato, un percorso dice dove andare a guardare.
-    ///
-    /// *Mutante eseguito*: togliere da `spending_report` il blocco che scrive
-    /// «identità:». Questa diventa rossa e nessun'altra.
+    /// *Mutant run*: take the block writing «identity:» out of
+    /// `spending_report`. This one goes red and no other.
     #[test]
     fn the_cost_report_says_which_identity_each_process_started_with() {
         let mut in_force = a_call("prezzato", Some(1_000));
@@ -1138,8 +1104,8 @@ mod tests {
         assert_ne!(identity_line(&identity, 1), one_in_the_plural, "one call was given the plural");
     }
 
-    /// La gemella: quando tutto è prezzato la riga non compare. Senza di lei un
-    /// mutante che la stampasse sempre passerebbe la prova qui sopra.
+    /// The twin: where everything is priced the line does not appear. Without
+    /// it a mutant printing it always would pass the test above.
     #[test]
     fn a_run_where_everything_is_priced_gets_no_such_line() {
         let calls = vec![a_call("prezzato", Some(1_000))];
@@ -1202,11 +1168,10 @@ mod tests {
         assert_eq!(refusals_report(&steps[3..4]), "");
     }
 
-    /// **IL TOTALE DI UNA CORSA È QUELLO DELLE SUE CHIAMATE, NON UNO ZERO.**
-    /// Il difetto che questa prova esiste per prendere ha vissuto in silenzio
-    /// finché il costo delle chiamate non è diventato vero: `record_run`
-    /// scriveva `total_cost_micros: 0` a mano, e la finestra mostrava quello
-    /// zero accanto alla somma giusta calcolata altrove.
+    /// **A RUN'S TOTAL IS WHAT ITS CALLS COST, NOT A ZERO.** The defect this
+    /// test exists to catch lived in silence until the cost of calls became
+    /// real: `record_run` wrote `total_cost_micros: 0` by hand, and the window
+    /// showed that zero beside the right sum computed elsewhere.
     #[test]
     fn a_runs_total_is_what_its_calls_cost() {
         let directory = TestDirectory::new();
@@ -1245,7 +1210,7 @@ mod tests {
         );
     }
 
-    /// Una chiamata già costata, per misurare il totale di una corsa.
+    /// A call that already cost something, to measure a run's total.
     fn spent_call(call_id: &str, run_id: &str, cost: i64) -> ledger::ModelCallRecord {
         ledger::ModelCallRecord {
             call_id: call_id.to_owned(),
@@ -1282,19 +1247,17 @@ mod tests {
         }
     }
 
-    // ── il totale che contiene un'incognita ──────────────────────────────
+    // ── the total that holds an unknown ──────────────────────────────────
 
-    /// Una chiamata come il deposito la conserva, coi soli campi che questo
-    /// conto guarda. `cost` a `None` è una chiamata **non misurata**: è la
-    /// forma che `sailor step close --turns` scrive per un passo consegnato.
+    /// A call as the ledger keeps it, with the fields this count looks at.
+    /// `cost` at `None` is an **unmeasured** call: the shape
+    /// `sailor step close --turns` writes for a handed step.
     ///
-    /// **IL NOME DICE DA COSA SI RICONOSCE**, e non è pignoleria: fino al
-    /// 01/09/2026 questa e la sorella qui sopra si chiamavano tutte e due
-    /// `a_call`, nate su due rami diversi lo stesso giorno. Git le ha fuse senza
-    /// segnalare niente — nessuna riga in comune — e a rifiutare l'albero è
-    /// stato `cargo`. È il guasto 36 di `docs/faults-encountered.md` che si
-    /// ripete: il confine sui file non vede i nomi che vivono nello stesso
-    /// modulo.
+    /// **THE NAME SAYS WHAT TELLS IT APART.** This one and its sister above
+    /// were both called `a_call`, born on two branches; git merged them without
+    /// a word — no line in common — and `cargo` refused the tree. Fault 36 of
+    /// `docs/faults-encountered.md` repeating: a boundary drawn on files does
+    /// not see names living in the same module.
     fn a_call_named(call_id: &str, cost: Option<i64>) -> ledger::ModelCallRecord {
         ledger::ModelCallRecord {
             call_id: call_id.to_owned(),
@@ -1348,12 +1311,12 @@ mod tests {
         }
     }
 
-    /// **IL LISTINO CONOSCE IL MODELLO DI QUESTE PROVE, ED È DELIBERATO.** Qui
-    /// si guarda una cosa sola: la forma del totale quando una chiamata non è
-    /// misurata. Con un listino che non conoscesse `m`, ogni rapporto porterebbe
-    /// anche la riga dei modelli scoperti — un secondo motivo di lacuna,
-    /// scritto sopra al primo — e una prova rossa non direbbe più quale delle
-    /// due cose si è rotta.
+    /// **THE PRICE LIST KNOWS THE MODEL OF THESE TESTS, DELIBERATELY.** One
+    /// thing is looked at here: the shape of the total when a call is not
+    /// measured. With a list that did not know `m`, every report would also
+    /// carry the uncovered-models line — a second reason for a gap, written
+    /// over the first — and a red test would no longer say which of the two
+    /// broke.
     fn report_for(calls: &[ledger::ModelCallRecord]) -> String {
         let prices = PriceList::parse(
             r#"{"currency":"USD","models":[
@@ -1365,8 +1328,8 @@ mod tests {
         spending_report(&view, &prices)
     }
 
-    /// La cifra secca, come la scriverebbe un totale completo. Se compare in un
-    /// rapporto parziale, chi legge ha in mano un numero che non è il totale.
+    /// The bare figure, as a complete total would write it. Appearing in a
+    /// partial report, it hands the reader a number that is not the total.
     fn bare_total(micros: i64) -> String {
         catalogue::say("ui.cost.exact", &[("units", &units(micros))])
     }
@@ -1388,14 +1351,13 @@ mod tests {
         format!("{:.4}", micros as f64 / 1_000_000.0)
     }
 
-    /// **UN TOTALE CHE CONTIENE UN'INCOGNITA NON È UN TOTALE.**
+    /// **A TOTAL THAT HOLDS AN UNKNOWN IS NOT A TOTAL.**
     ///
-    /// È il guasto 37 misurato: la corsa consegnata dell'A/B del 31/08/2026 ha
-    /// stampato `1,6674` mentre era costata `7,2080` — 4,3 volte — perché tre
-    /// chiamate su quattro non avevano un costo e la nota che lo diceva stava
-    /// **sotto** il numero. Chi legge un totale legge il numero, non la nota.
-    /// Qui la nota prende il posto del numero: la cifra secca non deve esistere
-    /// da nessuna parte nel rapporto.
+    /// Fault 37 measured: the handed run of the A/B printed `1,6674` while it
+    /// had cost `7,2080` — 4,3 times — because three calls out of four had no
+    /// cost and the note saying so sat **below** the number. Whoever reads a
+    /// total reads the number, not the note. Here the note takes the number's
+    /// place: the bare figure must exist nowhere in the report.
     #[test]
     fn a_total_with_an_unmeasured_call_is_never_a_bare_figure() {
         let report = report_for(&[
@@ -1415,9 +1377,9 @@ mod tests {
         );
     }
 
-    /// **E QUANDO SI SA TUTTO, IL NUMERO RESTA SECCO.** Senza questa metà
-    /// l'avviso non varrebbe niente: un rapporto che si dichiara incompleto
-    /// sempre non distingue più i due casi, ed è lo stesso difetto al contrario.
+    /// **AND WHERE EVERYTHING IS KNOWN THE NUMBER STAYS BARE.** Without this
+    /// half the warning is worth nothing: a report always declaring itself
+    /// incomplete no longer tells the two cases apart — the same defect flipped.
     #[test]
     fn a_total_where_every_call_is_measured_stays_a_plain_figure() {
         let report = report_for(&[
@@ -1556,9 +1518,9 @@ mod tests {
         );
     }
 
-    /// **NESSUNA CHIAMATA MISURATA NON È «ALMENO ZERO».** È il terzo caso di
-    /// `Spend`, quello che un `Option` collasserebbe: «almeno 0,0000» è vero e
-    /// non dice niente, e chi lo legge crede di aver visto una spesa piccola.
+    /// **NO MEASURED CALL IS NOT «AT LEAST ZERO».** It is the third case of
+    /// `Spend`, the one an `Option` would collapse: «at least 0,0000» is true
+    /// and says nothing, and its reader believes they saw a small spend.
     #[test]
     fn a_run_where_nothing_is_measured_says_unknown_instead_of_at_least_zero() {
         let report = report_for(&[a_call_named("consegnata", None)]);

@@ -1,31 +1,26 @@
-//! **LA REGOLA DI FERRO DEL TRACCIAMENTO: il nome di un prodotto può comparire
-//! in un'etichetta, mai in una condizione.**
+//! **THE IRON RULE OF THE TRACKING: a product name may appear in a label, never
+//! in a condition.**
 //!
-//! `println!("gira in Orca")` va bene: è un'etichetta, la legge una persona, e
-//! se è sbagliata si vede. `if host == "orca"` è vietato: è una decisione, la
-//! legge il programma, e quando è sbagliata il programma fa un'altra cosa senza
-//! dirlo — su una macchina dove quel prodotto non c'è, o si chiama in un altro
-//! modo, o è stato sostituito.
+//! `println!("gira in Orca")` is fine: a label, read by a person, and visibly
+//! wrong when it is wrong. `if host == "orca"` is forbidden: a decision, read by
+//! the program, which when wrong does something else without saying so — on a
+//! machine where that product is absent, named differently, or replaced.
 //!
-//! **PERCHÉ SERVE UNA PROVA E NON UNA RIGA IN UN DOCUMENTO.** Una regola che
-//! nessuno interroga non diventa rossa mai: è la lezione che `AGENTS.md`
-//! racconta di sé, ed è costata 136 rinomine sugli identificatori. Il primo
-//! `if` su un nome di prodotto entra da solo, sembra ragionevole nel punto in
-//! cui lo si scrive, e da quel momento il tracciamento è specifico di un
-//! prodotto senza che nessun controllo lo dica.
+//! **A TEST AND NOT A LINE IN A DOCUMENT**, because a rule nobody interrogates
+//! never goes red: the lesson `AGENTS.md` tells about itself, and it cost 136
+//! renames on the identifiers. The first `if` on a product name arrives alone,
+//! looks reasonable where it is written, and from then on the tracking is
+//! specific to one product with no check saying so.
 //!
-//! **COSA GUARDA.** I sorgenti del tracciamento e nient'altro: `crates/sessions`
-//! e `sailor session`. Non è un controllo su tutto l'albero — altrove i nomi
-//! dei prodotti sono legittimi, perché altrove si parla di quei prodotti (i
-//! descrittori delle righe di comando, i profili, il catalogo dei modelli).
-//! Qui no: qui l'ancora è `(tty, albero, capostipite)`, e il capostipite è
-//! **solo un'etichetta**.
+//! **WHAT IT WATCHES.** The tracking's sources and nothing else: `crates/sessions`
+//! and `sailor session`. Elsewhere product names are legitimate, because
+//! elsewhere those products are the subject — the command-line descriptors, the
+//! profiles, the model catalogue. Not here: here the anchor is `(tty, tree,
+//! ancestor)`, and the ancestor is **only a label**.
 //!
-//! **QUESTA PROVA SI MISURA DA SOLA.** L'ultima prova del file dà al proprio
-//! rilevatore un pezzo di codice che viola la regola e pretende che lo trovi:
-//! senza, una modifica che spegne il rilevatore lascerebbe tutto verde per
-//! sempre, ed è il guasto che `AGENTS.md` chiama «se togliendo la riga che
-//! dichiari il controllo resta verde, il controllo non controlla niente».
+//! **THE TEST MEASURES ITSELF.** The last test in the file hands its own detector
+//! a piece of code that breaks the rule and demands it be found: without that, a
+//! change switching the detector off would leave everything green for ever.
 
 use std::path::{Path, PathBuf};
 
@@ -77,12 +72,11 @@ const PRODUCT_NAMES: &[&str] = &[
     "jetbrains",
 ];
 
-/// I segni che una riga **decide** invece di raccontare.
+/// The signs that a line **decides** instead of reporting.
 ///
-/// L'elenco è largo di proposito: una riga che nomina un prodotto e contiene
-/// uno di questi va guardata da una persona, e il costo di guardarla è una
-/// riga di commento. Il costo di non guardarla è un tracciamento che funziona
-/// su una macchina sola.
+/// The list is wide on purpose: a line naming a product and holding one of these
+/// wants a person's eye, and looking costs one comment line. Not looking costs a
+/// tracking that works on one machine only.
 const SIGNS_OF_A_DECISION: &[&str] = &[
     "if ",
     "else if",
@@ -114,14 +108,13 @@ fn repository_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// La riga senza il commento che la chiude.
+/// The line without the comment that closes it.
 ///
-/// **È QUI CHE PASSA IL CONFINE FRA ETICHETTA E CONDIZIONE.** Un commento e un
-/// commento di documentazione parlano dei prodotti quanto serve — questo file
-/// per primo — e non decidono niente. Il taglio è approssimato per difetto: una
-/// riga con `//` dentro una stringa si accorcia troppo, e il risultato è che si
-/// guarda **meno** codice, mai di più. Questa prova può lasciar passare, non
-/// può accusare a torto.
+/// **THE BORDER BETWEEN LABEL AND CONDITION RUNS HERE.** A comment, and a doc
+/// comment, name products as much as they need to — this file first of all — and
+/// decide nothing. The cut errs downwards: a line with `//` inside a string is
+/// shortened too far, so **less** code is watched, never more. This test may let
+/// something through; it cannot accuse wrongly.
 fn code_part(line: &str) -> &str {
     match line.find("//") {
         Some(at) => &line[..at],
@@ -206,8 +199,8 @@ fn the_label_compared_with_a_constant_in(text: &str) -> Vec<String> {
     found
 }
 
-/// Le violazioni in un testo: riga per riga, il nome trovato e il segno che
-/// rende quella riga una decisione.
+/// The breaches in a text: line by line, the name found and the sign that makes
+/// that line a decision.
 fn decisions_on_a_product_in(text: &str) -> Vec<String> {
     let mut found = Vec::new();
     for (number, line) in text.lines().enumerate() {
@@ -268,10 +261,9 @@ fn no_product_name_appears_in_a_condition_of_the_tracking() {
     );
 }
 
-/// **CHI MISURA VA MISURATO.** Il rilevatore deve trovare la violazione quando
-/// c'è, e lasciar stare l'etichetta quando è un'etichetta. Senza queste due
-/// righe la prova qui sopra resterebbe verde anche se il rilevatore smettesse
-/// di rilevare, e nessuno se ne accorgerebbe.
+/// **WHOEVER MEASURES GETS MEASURED.** The detector must find the breach when it
+/// is there, and leave the label alone when it is a label. Without these two
+/// lines the test above would stay green even with the detector switched off.
 #[test]
 fn the_check_finds_a_violation_that_is_there_and_leaves_a_label_alone() {
     let forbidden = "    if ancestor.as_deref() == Some(\"Orca\") {\n";

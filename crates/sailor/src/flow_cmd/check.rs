@@ -18,17 +18,17 @@ use super::hazards::{
 };
 use super::{missing_actions, one_flow, open_default_ledger};
 
-/// **LE RIGHE SI PROVANO SE NESSUNO DICE DI NO.** Un controllo dietro una
-/// bandiera è un controllo che nessuno interroga, e il guasto 27 è la prova:
-/// nessuno avrebbe scritto `--engines` per scoprire un difetto che non sapeva
-/// di avere. `--no-engines` resta per chi lavora scollegato o ha fretta.
+/// **THE LINES ARE PROBED UNLESS SOMEONE SAYS NO.** A check behind a flag is a
+/// check nobody asks, and fault 27 is the proof: nobody would have typed
+/// `--engines` to find a defect they did not know they had. `--no-engines`
+/// stays for whoever works offline or is in a hurry.
 pub(super) fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) -> Result<String, String> {
     let (flow, _) = one_flow(sources, name)?;
     let tools = toolbox::Tools::current();
     let real = actions::RealDryProbe;
-    // **UNO STATO DEI PROFILI ILLEGGIBILE NON FERMA IL CONTROLLO**, per la
-    // stessa ragione per cui non ferma una corsa: si guarda un mondo senza
-    // profili, e la sezione delle case tace invece di dire una cosa falsa.
+    // **AN UNREADABLE PROFILE STORE DOES NOT STOP THE CHECK**, for the same
+    // reason it does not stop a run: a world with no profiles is looked at,
+    // and the homes section stays quiet instead of stating a falsehood.
     let profiles = profiles::store_io::load_store().unwrap_or_default();
     let world = EngineWorld {
         probe: &real,
@@ -41,10 +41,10 @@ pub(super) fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) 
         Some(&tools),
         if try_engines { Some(&world) } else { None },
     );
-    // **IL LISTINO SI GUARDA QUI E NON DENTRO `check_report`.** Quel rapporto è
-    // puro — flusso, registro, rilevatore, sonda, tutti passati da fuori — e i
-    // modelli che un flusso ha usato li sa solo il deposito. Tenerlo fuori
-    // lascia `check_report` provabile senza aprirne uno.
+    // **THE PRICE LIST IS READ HERE AND NOT INSIDE `check_report`.** That
+    // report is pure — flow, registry, detector, probe, all passed in — and
+    // only the ledger knows the models a flow has used. Keeping it out leaves
+    // `check_report` testable without opening one.
     let prices = actions::current_price_list();
     // **WHAT KIND OF CAP IT IS, DECIDED HERE AND NOT BELIEVED.** It needs both
     // the machine's descriptors and its price list, so it sits beside the price
@@ -66,9 +66,9 @@ pub(super) fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) 
     if unknown.is_empty() {
         return Ok(report);
     }
-    // IL RAPPORTO SI VEDE ANCHE QUANDO IL FLUSSO È ROTTO. Chi controlla un
-    // flusso lo fa per capirlo: rispondere con la sola riga dell'errore
-    // costringerebbe a rilanciare il comando per vedere il resto.
+    // THE REPORT IS SEEN EVEN WHEN THE FLOW IS BROKEN. Whoever checks a flow
+    // does it to understand it: answering with the error line alone would
+    // force a second run of the command to see the rest.
     println!("{report}");
     Err(catalogue::say(
         "cli.flow.tools_no_descriptor_declares",
@@ -164,31 +164,17 @@ pub fn refusals_of(flow: &FlowFile, registry: &ActionRegistry) -> Vec<String> {
     refused
 }
 
-/// Il rapporto, e i nomi di strumento che nessun descrittore dichiara.
+/// **WHY TWO OUTCOMES AND NOT ONE.** A flow asking for a tool not installed
+/// here is sound — it runs elsewhere, and installing it makes it run here —
+/// while a name no catalogue declares is broken on every machine. Only the
+/// second is an error; the first is a warning, since a product running on
+/// different machines cannot call a flow broken for not being its own.
 ///
-/// **PERCHÉ DUE ESITI E NON UNO.** Un flusso può essere sbagliato in due modi
-/// che si somigliano e non lo sono: chiedere uno strumento che qui non è
-/// installato — e allora il flusso è sano, gira altrove, e installarlo lo fa
-/// girare anche qui — oppure chiedere un nome che nessun catalogo dichiara, e
-/// allora è rotto su qualunque macchina e non c'è niente da installare. Prima
-/// del 28/08/2026 il controllo non vedeva né l'uno né l'altro: `flow check`
-/// chiudeva a zero dicendo «azioni mancanti: nessuna», e il difetto si scopriva
-/// solo eseguendo. Solo il secondo caso è un errore; il primo è un avviso,
-/// perché un prodotto che gira su macchine diverse non può chiamare rotto un
-/// flusso che non è il suo.
-/// Chi fa le domande locali ai motori, e in quale casa gliele fa.
-///
-/// **PERCHÉ I DUE VIAGGIANO INSIEME.** Le domande a costo zero che `flow check`
-/// fa a un motore sono due — «la riga che ti monto è sana?» e «la casa da cui
-/// parti è autenticata?» — e la seconda non ha senso senza sapere quale casa:
-/// lo stato dei profili è l'altra metà della stessa domanda. Passarli separati
-/// costringerebbe ogni luogo di chiamata a portarsi due argomenti che valgono
-/// sempre la stessa cosa insieme.
-///
-/// **LO STATO DEI PROFILI ENTRA DA FUORI, E NON SI LEGGE QUI.** `check_report`
-/// resta puro — flusso, registro, rilevatore, mondo, tutti passati — ed è la sola
-/// ragione per cui una prova può metterci dentro una casa usa-e-getta invece di
-/// dipendere da come è configurata la macchina di chi la esegue.
+/// **THE PROBE AND THE PROFILE STORE TRAVEL TOGETHER.** The two zero-cost
+/// questions `flow check` asks an engine — «is the line I mount sound?» and
+/// «is the home you start from logged in?» — are halves of one question. Both
+/// enter from outside, so `check_report` stays pure and a test can hand it a
+/// throwaway home instead of depending on the running machine's.
 pub(super) struct EngineWorld<'a> {
     pub(super) probe: &'a dyn actions::EngineProbe,
     pub(super) profiles: &'a profiles::ProfileStore,
@@ -196,10 +182,10 @@ pub(super) struct EngineWorld<'a> {
 
 #[cfg(test)]
 impl<'a> EngineWorld<'a> {
-    /// Un mondo in cui **nessun profilo è dichiarato**: è lo stato di una
-    /// macchina appena installata, ed è quello giusto per le prove che parlano
-    /// delle righe di comando e non delle case. Senza profilo attivo la sezione
-    /// delle credenziali tace, quindi quelle prove restano su ciò che provano.
+    /// A world where **no profile is declared**: the state of a freshly
+    /// installed machine, and the right one for tests about command lines
+    /// rather than homes. With no active profile the credentials section stays
+    /// quiet, so those tests stay on what they test.
     pub(super) fn without_profiles(probe: &'a dyn actions::EngineProbe) -> Self {
         static NO_PROFILES: std::sync::OnceLock<profiles::ProfileStore> =
             std::sync::OnceLock::new();
@@ -236,13 +222,13 @@ pub(super) fn check_report(
             report.push_str(&catalogue::say("cli.flow.step_phase", &[("phase", phase)]));
         }
     }
-    // **IL TETTO STA NEL RAPPORTO, E CON LUI CIÒ CHE NON PROMETTE.** Chi
-    // controlla un flusso prima di lanciarlo sta decidendo se può permetterselo:
-    // un tetto invisibile qui si scopre solo a corsa fermata, e uno che si vede
-    // senza i suoi limiti si legge come una garanzia sulla spesa — che non è.
-    // La riga c'è sempre, anche quando il tetto non c'è: la parola di NO_CAP è
-    // un'informazione, e un rapporto che tace quando non c'è niente da dire
-    // lascia chi legge a chiedersi se il controllo abbia guardato.
+    // **THE CAP IS IN THE REPORT, AND WITH IT WHAT IT DOES NOT PROMISE.**
+    // Whoever checks a flow before launching is deciding whether they can
+    // afford it: an invisible cap is found out only once a run is stopped, and
+    // one shown without its limits reads as a guarantee on the spend, which it
+    // is not. The line is always there, cap or no cap: NO_CAP's word is itself
+    // information, and a silent report leaves the reader wondering whether the
+    // check looked at all.
     match flow.spend_cap_micros {
         None => report.push_str(&catalogue::say("cli.flow.no_spend_cap", &[])),
         Some(cap) => {
@@ -257,10 +243,10 @@ pub(super) fn check_report(
             );
         }
     }
-    // **CHI CONTROLLA UN FLUSSO DEVE VEDERE COSA PUÒ SCRIVERCI DENTRO.** Il
-    // rapporto nominava solo le azioni mancanti, cioè rispondeva a «questo
-    // flusso gira?» e non a «cosa posso mettere nel prossimo passo». L'elenco
-    // arriva dal registro, non da una copia scritta qui accanto.
+    // **WHOEVER CHECKS A FLOW MUST SEE WHAT CAN BE WRITTEN INTO IT.** Naming
+    // only the missing actions answers «does this flow run?» and not «what can
+    // I put in the next step». The list comes from the registry, never from a
+    // copy written here beside it.
     let _ = write!(
         report,
         "\nazioni disponibili: {}",
@@ -279,9 +265,8 @@ pub(super) fn check_report(
     let wanted = tools_wanted(&flow.graph);
     let mut unknown = Vec::new();
     match tools {
-        // Senza rilevatore non si dichiara niente: un rapporto che tace è
-        // meglio di uno che chiama sconosciuto ogni strumento perché non ha
-        // avuto modo di guardare.
+        // With no detector nothing is declared: a silent report beats one
+        // calling every tool unknown for want of a way to look.
         None => {}
         Some(tools) => {
             let (declared, undeclared): (Vec<String>, Vec<String>) =
@@ -300,9 +285,9 @@ pub(super) fn check_report(
             capabilities_into(&mut report, &flow.graph, tools);
             fallbacks_into(&mut report, &flow.graph, tools);
             data_pacts_into(&mut report, &flow.graph, tools);
-            // Senza sonda il rapporto **tace** su questo, invece di dichiarare
-            // sane righe che non ha guardato: è la stessa regola del rilevatore
-            // assente qui sopra.
+            // With no probe the report **stays quiet** here instead of calling
+            // sound lines it never looked at: the same rule as the missing
+            // detector above.
             if let Some(world) = world {
                 engine_lines_into(&mut report, &flow.graph, tools, world.probe);
                 login_states_into(&mut report, &flow.graph, tools, world);
@@ -310,11 +295,11 @@ pub(super) fn check_report(
         }
     }
 
-    // **I CAMPI CHE L'AZIONE NON CONOSCE, DETTI PRIMA DI SPENDERE.** Il guasto
-    // 20: `"prompt"` scritto dove va `"stdin"` partiva in silenzio, il motore
-    // riceveva una riga monca, e l'errore che tornava era suo — dopo aver
-    // pagato la chiamata. Qui si guarda solo ciò che una persona ha scritto a
-    // mano nel flusso, dove un campo di troppo non è l'uscita di nessuno.
+    // **FIELDS THE ACTION DOES NOT KNOW, TOLD BEFORE SPENDING.** Fault 20:
+    // `"prompt"` written where `"stdin"` goes started in silence, the engine
+    // got a maimed line, and the error returned was its own — after the call
+    // was paid for. Only what a person hand-wrote in the flow is looked at,
+    // where a spare field is nobody's output.
     let stray = stray_fields(flow, registry);
     if !stray.is_empty() {
         let _ = write!(
@@ -338,8 +323,8 @@ pub(super) fn check_report(
         ));
     }
 
-    // **IL GUASTO 25, DETTO PRIMA DI PARTIRE.** Un `workdir` assoluto non si
-    // vede eseguendo: si vede dopo, guardando quale repository si è sporcato.
+    // **FAULT 25, TOLD BEFORE STARTING.** An absolute `workdir` is not seen by
+    // running: it is seen later, by looking at which repository got dirty.
     let (fatal, advisory): (Vec<HardcodedPath>, Vec<HardcodedPath>) = hardcoded_paths(flow)
         .into_iter()
         .partition(|path| path.fatal);
@@ -360,8 +345,8 @@ pub(super) fn check_report(
     (report, unknown)
 }
 
-/// Passo e campo su ogni riga: un avviso che ne perda uno non si può usare —
-/// «c'è un percorso assoluto» non dice quale dei sette passi cambiare.
+/// Step and field on every line: a warning missing one is unusable — «there is
+/// an absolute path» does not say which of the seven steps to change.
 fn describe_paths(paths: &[HardcodedPath]) -> String {
     paths
         .iter()
@@ -370,25 +355,24 @@ fn describe_paths(paths: &[HardcodedPath]) -> String {
         .join("; ")
 }
 
-/// Una capacità chiesta da un passo a un motore preciso.
+/// A capability one step asks of one precise engine.
 ///
-/// I tre nomi stanno insieme perché un avviso che ne perda uno non si può usare:
-/// «manca `response_shape`» non dice a chi legge quale passo cambiare, e in un
-/// flusso che chiede lo stesso al primo e al terzo motore della catena non dice
-/// nemmeno quale dei due.
+/// The three names travel together because a warning missing one is unusable:
+/// «`response_shape` is absent» does not tell the reader which step to change,
+/// and in a flow asking the same of the first and third engine of a chain it
+/// does not even say which of the two.
 struct WantedCapability {
     step: String,
     tool: String,
     capability: String,
 }
 
-/// Le capacità che i passi chiedono, passo per passo e motore per motore.
+/// The capabilities steps ask for, step by step and engine by engine.
 ///
-/// **IL PRODOTTO CARTESIANO È VOLUTO.** Un passo che scrive `"tool":
-/// ["claude-code", "agy"]` chiede quella capacità a tutti e due: il ripiego può
-/// finire su chiunque della catena, e un controllo che guardasse solo il primo
-/// tacerebbe proprio sul motore su cui la corsa finisce quando il primo muore.
-/// È la stessa ragione per cui `tools_wanted` conta i motori dentro una catena.
+/// **THE CARTESIAN PRODUCT IS WANTED.** A step writing `"tool": ["claude-code",
+/// "agy"]` asks that capability of both: the fallback can land on anyone of the
+/// chain, so a check reading the first alone would stay quiet about the engine
+/// the run ends on when the first dies — as `tools_wanted` counts chains too.
 /// Every step of this flow, as far as its cap is concerned.
 ///
 /// **A HANDED STEP DECIDES ON ITS OWN**, whatever the others say: it can start
@@ -555,7 +539,7 @@ fn capabilities_wanted(graph: &Graph) -> Vec<WantedCapability> {
                 .filter_map(Value::as_str)
                 .map(str::to_owned)
                 .collect(),
-            // Un nome solo si scrive senza le parentesi quadre, come ovunque.
+            // A single name is written without the brackets, as everywhere.
             Some(Value::String(name)) => vec![name.clone()],
             _ => continue,
         };
@@ -573,29 +557,25 @@ fn capabilities_wanted(graph: &Graph) -> Vec<WantedCapability> {
     wanted
 }
 
-/// Scrive nel rapporto le capacità chieste dai passi e come stanno messe.
+/// Writes into the report the capabilities steps ask for, and how they stand.
 ///
-/// **È UN AVVISO, NON UN ERRORE, E LA DIFFERENZA È LA STESSA DEL 28/08/2026.**
-/// Uno strumento che qui non è installato non rende rotto un flusso; una
-/// capacità che un motore non ha non lo rende rotto nemmeno: chi non sa imporre
-/// una forma alla risposta se la fa chiedere nel prompt e paga più token. È il
-/// vincolo permanente «indipendenza dal modello» — una capacità assente è una
-/// condizione dichiarata, non un guasto — e per questo il flusso continua a
-/// passare il controllo. Quello che cambia è che chi lancia lo sa **prima** di
-/// spendere, invece di leggerlo nella risposta del motore.
+/// **IT IS A WARNING, NOT AN ERROR.** An engine lacking a capability does not
+/// break a flow: whoever cannot impose a shape on the answer asks for it in the
+/// prompt and pays more tokens. Under the permanent «model independence»
+/// constraint an absent capability is a declared condition, not a fault — the
+/// flow still passes, and the launcher knows **before** spending instead of
+/// reading it in the engine's answer.
 ///
-/// **E LE DUE ASSENZE SI DICONO CON DUE FRASI DIVERSE.** «Dichiara di non
-/// averla» si ripara cambiando motore; «nessuno ha guardato» si ripara
-/// misurando quello che si ha. Metterle sotto la stessa parola farebbe passare
-/// per misurata ogni omissione — che è esattamente ciò che il blocco
-/// `capabilities` esiste per non fare.
+/// **AND THE TWO ABSENCES GET TWO DIFFERENT SENTENCES.** «Declares it does not
+/// have it» is repaired by changing engine; «nobody looked» is repaired by
+/// measuring. One word for both would pass every omission off as measured —
+/// exactly what the `capabilities` block exists not to do.
 fn capabilities_into(report: &mut String, graph: &Graph, tools: &toolbox::Tools) {
     let mut available = Vec::new();
     let mut gaps = Vec::new();
     for wanted in capabilities_wanted(graph) {
-        // Uno strumento che nessun descrittore dichiara è già stato nominato
-        // sopra: ripeterlo qui con parole diverse manderebbe a cercare due
-        // difetti dove ce n'è uno.
+        // A tool no descriptor declares was named above: repeating it here in
+        // other words would send the reader hunting two defects where one is.
         let Some(state) = tools.capability(&wanted.tool, &wanted.capability) else {
             continue;
         };
@@ -626,28 +606,25 @@ fn capabilities_into(report: &mut String, graph: &Graph, tools: &toolbox::Tools)
     }
 }
 
-/// Scrive nel rapporto **chi non può fare il ripiego che la catena gli
-/// assegna**, e **quali descrittori si contraddicono**.
+/// Writes into the report **who cannot be the fallback the chain assigns**,
+/// and **which descriptors contradict each other**.
 ///
-/// **SONO LO STESSO DIFETTO VISTO DA DUE LATI, ED È PER QUESTO CHE STANNO
-/// INSIEME.** Un descrittore che dichiara una capacità senza la riga per usarla
-/// (guasto 32) e uno che non dichiara come si esaurisce mentre qualcuno lo mette
-/// in mezzo a una catena (guasto 31) sbagliano allo stesso modo: **niente si
-/// rompe**. Il primo fa credere che un motore si possa interrogare, il secondo
-/// fa credere che un passo abbia due ripieghi quando ne ha zero, e in tutti e
-/// due i casi ciò che manca non è un pezzo di codice — è qualcuno che confronti
-/// due dichiarazioni. Qui quel confronto arriva **prima di spendere**, invece
-/// che alla prima corsa in cui il primo motore muore.
+/// **THEY ARE ONE DEFECT SEEN FROM TWO SIDES.** A descriptor declaring a
+/// capability without the line to use it (fault 32) and one not declaring how
+/// it exhausts while placed mid-chain (fault 31) fail the same way: **nothing
+/// breaks**. The first makes an engine look askable, the second makes a step
+/// look like it has two fallbacks when it has none; what is missing in both is
+/// somebody comparing two declarations, and here it happens before spending
+/// rather than on the first run where the first engine dies.
 ///
-/// **LE REGOLE NON SONO SCRITTE QUI.** Vivono in `toolbox::Descriptor`, e le
-/// stesse due funzioni le interrogano le prove sui descrittori spediti. Una
-/// copia scritta dentro `flow check` sarebbe la seconda regola che diverge dalla
-/// prima — il guasto 10 — e a divergere sarebbe quella che una persona legge.
+/// **THE RULES ARE NOT WRITTEN HERE.** They live in `toolbox::Descriptor`, and
+/// the tests on the shipped descriptors ask those same two functions. A copy
+/// inside `flow check` would be the second rule diverging from the first —
+/// fault 10 — and the diverging one is the one a person reads. It stays a
+/// warning: a flow whose fallback never fires still runs and does its work
+/// while the first engine answers, so it is not broken — it has fewer
+/// fallbacks than it looks to have, and the launcher must know beforehand.
 ///
-/// **È UN AVVISO E NON UN ERRORE**, per la stessa ragione delle capacità qui
-/// sopra: un flusso con un ripiego che non scatta gira, e fa il suo lavoro
-/// finché il primo motore risponde. Non è rotto: è un flusso che ha meno
-/// ripieghi di quanti sembra averne, e chi lancia deve saperlo prima.
 /// A step whose text is private, and the pact of every engine it names. An
 /// engine nobody measured is not a maybe: the run refuses it before spending,
 /// so a flow all of whose engines are refused cannot run anywhere, and saying
@@ -703,17 +680,15 @@ fn fallbacks_into(report: &mut String, graph: &Graph, tools: &toolbox::Tools) {
         let Some(with) = step.with.as_ref() else {
             continue;
         };
-        // L'ultimo della catena non ha nessuno a cui passare il lavoro:
-        // pretendere da lui una dichiarazione di esaurimento sarebbe pretendere
-        // una misura che non serve a niente.
+        // The last of the chain has nobody to hand the work to: demanding an
+        // exhaustion declaration of it would demand a useless measure.
         let chain = engines_of(with);
         let Some((_, before_the_last)) = chain.split_last() else {
             continue;
         };
         for tool in before_the_last {
-            // Uno strumento che nessun descrittore dichiara è già nominato
-            // sopra: ripeterlo qui manderebbe a cercare due difetti dove ce
-            // n'è uno.
+            // A tool no descriptor declares was named above: repeating it here
+            // would send the reader hunting two defects where one is.
             if !tools.declares(tool) {
                 continue;
             }
@@ -731,9 +706,9 @@ fn fallbacks_into(report: &mut String, graph: &Graph, tools: &toolbox::Tools) {
         );
     }
 
-    // Solo i descrittori che questo flusso nomina: un catalogo intero
-    // contraddittorio non è un difetto di **questo** flusso, e mostrarlo qui
-    // manderebbe a correggere file che questa corsa non tocca.
+    // Only the descriptors this flow names: a whole contradictory catalogue is
+    // not **this** flow's defect, and showing it here would send someone to
+    // fix files this run never touches.
     let named = tools_wanted(graph);
     let disagreeing: Vec<String> = tools
         .contradictions()
@@ -750,18 +725,17 @@ fn fallbacks_into(report: &mut String, graph: &Graph, tools: &toolbox::Tools) {
     }
 }
 
-/// I campi scritti a mano che l'azione del passo non riconosce.
+/// The hand-written fields the step's action does not recognise.
 ///
-/// Guarda in due posti, e sono i due posti dove scrive una persona: il `with`
-/// del passo nel grafo, e l'ingresso dichiarato in `inputs`. Non guarda
-/// l'ingresso che il passo riceve davvero — quello contiene l'uscita delle
-/// dipendenze, dove i campi estranei sono la normalità e non un errore.
+/// It looks in the two places a person writes: the step's `with` in the graph,
+/// and the input declared in `inputs`. Never the input the step really gets —
+/// that holds the dependencies' output, where stray fields are the norm.
 fn stray_fields(flow: &FlowFile, registry: &ActionRegistry) -> Vec<String> {
     let mut found = Vec::new();
     for step in flow.graph.steps() {
         let Some(action) = registry.get(&step.action) else {
-            // L'azione non c'è: lo dice già `azioni mancanti`, e dirlo due
-            // volte con parole diverse manderebbe a cercare due difetti.
+            // The action is absent: `azioni mancanti` already says so, and
+            // saying it twice would send the reader hunting two defects.
             continue;
         };
         for declared in [step.with.as_ref(), flow.inputs.get(&step.id)]
@@ -777,18 +751,16 @@ fn stray_fields(flow: &FlowFile, registry: &ActionRegistry) -> Vec<String> {
     found
 }
 
-/// Gli strumenti che un flusso chiede per identificativo.
+/// The tools a flow asks for by identifier.
 ///
-/// Legge il campo `tool` di ogni passo, qualunque azione sia: è il nome del
-/// campo a dire che quello è un identificativo di strumento, non l'azione che
-/// lo porta. Un'azione futura che ne chiedesse uno sarebbe controllata senza
-/// che nessuno tocchi questa funzione.
+/// It reads the `tool` field of every step, whatever the action: the field's
+/// name says that is a tool identifier, not the action carrying it. A future
+/// action asking for one would be checked with nobody touching this function.
 ///
-/// **CONTA ANCHE I MOTORI DENTRO UNA CATENA.** Dal 29/08/2026 un passo può
-/// scrivere `"tool": ["claude-code", "agy"]` invece di un nome solo. Chi legge
-/// solo la stringa vede quei passi come se non chiedessero niente, e il
-/// controllo chiuderebbe in verde senza aver guardato metà dei motori del
-/// flusso: sarebbe il guasto 3 rifatto da capo, con la stessa forma.
+/// **IT COUNTS THE ENGINES INSIDE A CHAIN TOO.** A step may write `"tool":
+/// ["claude-code", "agy"]` instead of a single name. Reading the string alone
+/// makes those steps look like they ask for nothing, and the check would close
+/// green having seen half the flow's engines: fault 3 remade in the same shape.
 fn tools_wanted(graph: &Graph) -> BTreeSet<String> {
     graph
         .steps()
@@ -811,14 +783,14 @@ mod tests {
     use super::*;
     use registry::{registry_in, House};
 
-    // ── i campi che l'azione non conosce ─────────────────────────────
+    // ── the fields the action does not know ──────────────────────────
 
-    /// **IL REFUSO DEL 30/08/2026, PRESO PRIMA DI PAGARLO.**
+    /// **THE TYPO, CAUGHT BEFORE IT IS PAID FOR.**
     ///
-    /// Un flusso scriveva `"prompt"` dove va `"stdin"`. Il passo è partito lo
-    /// stesso, il motore ha ricevuto una riga di comando monca, e l'errore che è
-    /// tornato era suo: «Input must be provided either through stdin». Una
-    /// chiamata a pagamento per un refuso di sette lettere.
+    /// A flow wrote `"prompt"` where `"stdin"` goes. The step started anyway,
+    /// the engine got a maimed command line, and the error returned was its
+    /// own: «Input must be provided either through stdin». A paid call for a
+    /// seven-letter typo.
     #[test]
     fn a_field_the_action_does_not_know_is_named_before_the_run() {
         let inputs = r#"{"root":{"tool":"claude-code","prompt":"ciao","timeout_secs":10}}"#;
@@ -865,10 +837,10 @@ mod tests {
         );
     }
 
-    /// La gemella: lo **stesso** flusso col campo giusto non dice niente.
+    /// The twin: the **same** flow with the right field says nothing.
     ///
-    /// Senza di lei, un controllo che si lamentasse sempre passerebbe la prova
-    /// sopra e renderebbe illeggibile ogni rapporto.
+    /// Without it, a check that always complained would pass the test above
+    /// and make every report unreadable.
     #[test]
     fn the_same_flow_written_right_says_nothing() {
         let inputs = r#"{"root":{"tool":"claude-code","stdin":"ciao","timeout_secs":10}}"#;
@@ -883,9 +855,9 @@ mod tests {
         );
     }
 
-    /// **NESSUN FLUSSO SPEDITO PORTA UN CAMPO IGNOTO.** Vale come misura del
-    /// controllo appena aggiunto: se dicesse cose a caso, questa lo direbbe
-    /// subito su codice vero invece che su un flusso inventato.
+    /// **NO SHIPPED FLOW CARRIES AN UNKNOWN FIELD.** It measures the check
+    /// itself: were it saying things at random, this would say so at once on
+    /// real code instead of an invented flow.
     #[test]
     fn no_shipped_flow_carries_a_field_nobody_reads() {
         let registry = registry_in(House::empty(), None, None);
@@ -900,8 +872,8 @@ mod tests {
         }
     }
 
-    /// Un catalogo deciso dalla prova, così l'esito non dipende da cosa è
-    /// installato su chi la esegue.
+    /// A catalogue the test decides, so the outcome does not depend on what is
+    /// installed on whoever runs it.
     fn tools_declaring(ids: &[&str]) -> toolbox::Tools {
         let entries: Vec<String> = ids
             .iter()
@@ -944,9 +916,9 @@ mod tests {
         serde_json::from_str(&json).expect("caricare il flusso")
     }
 
-    /// Il difetto misurato il 28/08/2026: `flow check` chiudeva a zero dicendo
-    /// «azioni mancanti: nessuna» su un flusso che nominava uno strumento
-    /// inesistente, e il guasto si scopriva solo eseguendo.
+    /// The measured defect: `flow check` closed at zero saying «azioni
+    /// mancanti: nessuna» on a flow naming a tool that existed nowhere, and
+    /// the fault was found only by running.
     #[test]
     fn a_tool_no_catalogue_declares_is_named_by_the_check() {
         let flow = flow_wanting_tool("questo-non-esiste-in-nessun-catalogo");
@@ -964,10 +936,10 @@ mod tests {
         );
     }
 
-    /// L'altra metà, ed è quella che rende il prodotto adottabile: uno
-    /// strumento **dichiarato** non è un difetto, nemmeno quando su questa
-    /// macchina non è installato. Un flusso scritto altrove non è un flusso
-    /// rotto, e chiamarlo tale renderebbe inutilizzabile ogni flusso condiviso.
+    /// The other half, and the one that makes the product adoptable: a
+    /// **declared** tool is no defect, even when it is not installed on this
+    /// machine. A flow written elsewhere is not a broken flow, and calling it
+    /// one would make every shared flow unusable.
     #[test]
     fn a_declared_tool_is_reported_but_never_an_error() {
         let flow = flow_wanting_tool("strumento-dichiarato-mai-installato");
@@ -983,12 +955,12 @@ mod tests {
         );
     }
 
-    /// Un catalogo con un motore solo, e le capacità che la prova gli attribuisce.
+    /// A catalogue with a single engine, and the capabilities the test gives it.
     ///
-    /// **IL NOME DEL FILE PORTA UN CONTATORE**, e non è pignoleria: `cargo test`
-    /// manda le prove sullo stesso processo, quindi due prove che scrivono lo
-    /// stesso identificativo si ruberebbero il file a vicenda — è il guasto 21,
-    /// che si vede una volta su venti e sempre su una prova diversa.
+    /// **THE FILE NAME CARRIES A COUNTER**, and it is not fussiness: `cargo
+    /// test` runs the tests in one process, so two tests writing the same
+    /// identifier would steal the file from each other — fault 21, seen once
+    /// in twenty runs and always on a different test.
     fn tools_with_capabilities(id: &str, capabilities: &str) -> toolbox::Tools {
         static SERIAL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let file = std::env::temp_dir().join(format!(
@@ -1035,10 +1007,10 @@ mod tests {
         serde_json::from_str(&json).expect("caricare il flusso")
     }
 
-    /// **IL TERZO CASO CHE IL CONTROLLO NON SAPEVA DIRE.** Sapeva distinguere
-    /// «lo strumento non c'è qui» da «non esiste in nessun catalogo»; un passo
-    /// che chiede a un motore qualcosa che quel motore non sa fare passava per
-    /// buono, e il difetto si scopriva pagando la chiamata.
+    /// **THE THIRD CASE THE CHECK COULD NOT TELL.** It told «the tool is not
+    /// here» from «it exists in no catalogue»; a step asking an engine for
+    /// something that engine cannot do passed for sound, and the defect was
+    /// found by paying for the call.
     #[test]
     fn a_capability_the_engine_declares_absent_is_named_with_step_and_engine() {
         let flow = flow_needing_capability("un-motore", "response_shape");
@@ -1063,10 +1035,10 @@ mod tests {
         );
     }
 
-    /// **E LA DISTINZIONE ARRIVA FINO A CHI LEGGE.** Se le due frasi fossero
-    /// una sola, il blocco `capabilities` avrebbe potuto essere un elenco di ciò
-    /// che c'è, e ogni silenzio passerebbe per una misura. Il rimedio è diverso:
-    /// nel caso di sopra si cambia motore, qui si misura quello che si ha.
+    /// **AND THE DISTINCTION REACHES THE READER.** Were the two sentences one,
+    /// the `capabilities` block could have been a list of what is there, and
+    /// every silence would pass for a measure. The remedy differs: above one
+    /// changes engine, here one measures what one has.
     #[test]
     fn a_capability_nobody_measured_is_told_apart_from_one_declared_absent() {
         let flow = flow_needing_capability("un-motore", "response_shape");
@@ -1187,8 +1159,8 @@ mod tests {
         serde_json::from_str(&json).expect("caricare il flusso")
     }
 
-    /// Una capacità dichiarata e ottenibile non produce nessun avviso: un
-    /// controllo che si lamenta anche quando va tutto bene smette di essere letto.
+    /// A capability declared and obtainable raises no warning: a check that
+    /// complains even when all is well stops being read.
     #[test]
     fn a_capability_the_engine_has_raises_no_warning() {
         let flow = flow_needing_capability("un-motore", "response_shape");
@@ -1209,11 +1181,10 @@ mod tests {
         );
     }
 
-    /// **UN PASSO CHE DICHIARA LE PROPRIE CAPACITÀ NON HA UN CAMPO DI TROPPO.**
-    /// Senza `needs_capabilities` dentro la specifica del motore, lo stesso
-    /// rapporto direbbe anche «campi che l'azione non conosce», e chi legge
-    /// andrebbe a cercare un refuso che non c'è: è il guasto 20 al contrario,
-    /// un avviso vero su un campo giusto.
+    /// **A STEP DECLARING ITS OWN CAPABILITIES HAS NO SPARE FIELD.** Without
+    /// `needs_capabilities` in the engine spec, the same report would also
+    /// raise the stray-fields line, and the reader would hunt a typo that is
+    /// not there: fault 20 reversed, a true warning on a right field.
     #[test]
     fn declaring_needed_capabilities_is_not_a_stray_field() {
         let flow = flow_needing_capability("un-motore", "response_shape");
@@ -1227,10 +1198,10 @@ mod tests {
         );
     }
 
-    // ── chi non può fare il ripiego che la catena gli dà ───────────────
+    // ── who cannot be the fallback the chain gives them ────────────────
 
-    /// Un catalogo di due motori, il primo dei quali dichiara — o tace su —
-    /// come dice di non poter lavorare.
+    /// A catalogue of two engines, the first of which declares — or stays
+    /// quiet about — how it says it cannot work.
     fn tools_where_the_first_says(exhaustion: &str) -> toolbox::Tools {
         static SERIAL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let file = std::env::temp_dir().join(format!(
@@ -1261,7 +1232,7 @@ mod tests {
         )
     }
 
-    /// Un passo con una catena di due motori.
+    /// One step with a chain of two engines.
     fn flow_with_a_chain() -> FlowFile {
         let json = r#"{
             "id": "catena",
@@ -1280,18 +1251,17 @@ mod tests {
         serde_json::from_str(json).expect("caricare il flusso")
     }
 
-    /// **IL GUASTO 31, DETTO PRIMA DI SPENDERE E SUI FLUSSI DI CHI LANCIA.**
+    /// **FAULT 31, TOLD BEFORE SPENDING AND ON THE LAUNCHER'S OWN FLOWS.**
     ///
-    /// Una prova sui flussi di questo albero sorveglia questo albero. Chi scrive
-    /// un flusso suo, con un descrittore suo in `~/.config/sailor/tools.d/`,
-    /// rifarebbe lo stesso difetto senza che nulla diventi rosso da nessuna
-    /// parte: la catena avrebbe l'aria di un ripiego e non ne avrebbe nessuno.
+    /// A test over this tree's flows watches this tree. Whoever writes a flow
+    /// of their own, with a descriptor of their own in
+    /// `~/.config/sailor/tools.d/`, would remake the same defect with nothing
+    /// going red anywhere: the chain would look like a fallback and have none.
     ///
-    /// **I DUE CASI SONO NELLA STESSA PROVA APPOSTA.** L'unica differenza fra i
-    /// due ingressi è che il primo motore dichiari o no le proprie parole: due
-    /// rapporti uguali direbbero che il controllo non le sta guardando, e una
-    /// prova che cercasse solo la frase resterebbe verde davanti a un mutante
-    /// che la stampa sempre.
+    /// **THE TWO CASES SHARE ONE TEST ON PURPOSE.** The inputs differ only in
+    /// whether the first engine declares its own words: two equal reports would
+    /// mean the check is not looking, and a test seeking the phrase alone would
+    /// stay green against a mutant that always prints it.
     #[test]
     fn a_chain_whose_first_engine_cannot_fall_back_is_named_by_the_check() {
         let flow = flow_with_a_chain();
@@ -1311,16 +1281,16 @@ mod tests {
             !about_the_speaking.contains("posizione di ripiego"),
             "chi dichiara le proprie parole non va segnalato: {about_the_speaking}"
         );
-        // E il difetto è del **primo**: l'ultimo non ha nessuno a cui passare il
-        // lavoro, e pretendere da lui una misura sarebbe pretenderla per niente.
+        // And the defect is the **first**'s: the last has nobody to hand the
+        // work to, and demanding a measure of it would demand it for nothing.
         assert!(
             !about_the_silent.contains("root → secondo"),
             "{about_the_silent}"
         );
     }
 
-    /// Senza rilevatore il rapporto tace sugli strumenti invece di chiamarli
-    /// tutti sconosciuti: non aver potuto guardare non è aver visto che manca.
+    /// With no detector the report stays quiet about tools instead of calling
+    /// them all unknown: being unable to look is not having seen a gap.
     #[test]
     fn without_a_detector_the_check_says_nothing_about_tools() {
         let flow = flow_wanting_tool("qualunque");
@@ -1534,19 +1504,18 @@ mod tests {
         assert!(said.is_empty(), "{said}");
     }
 
-    // ── il tetto di spesa: `flow check` e `flow cap` ────────────────────
+    // ── the spend cap: `flow check` and `flow cap` ──────────────────────
 
-    /// **DUE FLUSSI IDENTICI TRANNE IL TETTO DANNO DUE RAPPORTI DIVERSI.**
+    /// **TWO FLOWS DIFFERING ONLY BY THE CAP GET TWO DIFFERENT REPORTS.**
     ///
-    /// **IL CONFRONTO È FRA I DUE RAPPORTI, NON CON UNA PAROLA.** Una prova che
-    /// cercasse «tetto» resterebbe verde davanti a un mutante che stampa sempre
-    /// la stessa riga — la parola ci sarebbe comunque. Qui l'unica differenza
-    /// fra i due ingressi è il tetto, quindi due uscite uguali dicono che il
-    /// controllo non lo sta guardando.
+    /// **THE COMPARISON IS BETWEEN THE TWO REPORTS, NOT AGAINST A WORD.** A
+    /// test seeking the word «cap» would stay green against a mutant always
+    /// printing the same line. Here the inputs differ only by the cap, so two
+    /// equal outputs mean the check is not looking at it.
     ///
-    /// *Mutante eseguito*: nel ramo `Some(cap)` di `check_report` stampare
-    /// `"\ntetto di spesa: nessuno"` come nel ramo `None`. I due rapporti
-    /// diventano identici e questa prova diventa rossa.
+    /// *Mutant run*: in `check_report`'s `Some(cap)` arm, print
+    /// `"\ntetto di spesa: nessuno"` as the `None` arm does. The two reports
+    /// become identical and this test goes red.
     #[test]
     fn two_flows_that_differ_only_by_the_cap_get_two_different_reports() {
         let json = flow_json("shell_check", "[]", "{}");
@@ -1566,12 +1535,12 @@ mod tests {
         assert!(said_with.contains("2500000 micro"), "{said_with}");
     }
 
-    /// **UN TETTO CHE C'È PORTA CON SÉ CIÒ CHE NON PROMETTE.**
+    /// **A CAP THAT IS THERE CARRIES WHAT IT DOES NOT PROMISE.**
     ///
-    /// Un numero da solo si legge come una garanzia sulla spesa. I tre limiti
-    /// veri — il freno non arriva ai motori, il primo fronte non è mai frenato,
-    /// le chiamate senza costo restano fuori — devono stare accanto al numero,
-    /// non in un documento che nessuno apre mentre lancia.
+    /// A number alone reads as a guarantee on the spend. The three real limits
+    /// — the brake does not reach the engines, the first front is never braked,
+    /// costless calls stay out — must sit beside the number, not in a document
+    /// nobody opens while launching.
     #[test]
     fn a_cap_in_the_report_declares_what_it_does_not_promise() {
         let json = flow_json("shell_check", "[]", "{}");
@@ -1658,13 +1627,13 @@ mod tests {
         assert!(registry.get("shell_check").is_some());
     }
 
-    /// **CHI LEGGE E CHI SCRIVE CI SONO ANCHE SENZA DEPOSITO.**
+    /// **THE READER AND THE WRITER ARE THERE EVEN WITH NO LEDGER.**
     ///
-    /// Il mutante che la fa cadere è spostare una delle due registrazioni dentro
-    /// il ramo `if let Some(ledger)`: `flow check` direbbe «azione mancante» di
-    /// un'azione che esiste, e lo direbbe esattamente sulla macchina appena
-    /// installata. Che chi scrive poi rifiuti di girare senza deposito è un'altra
-    /// prova, in `registry`: qui si misura solo che il nome sia noto.
+    /// The mutant that fells it moves one of the two registrations inside the
+    /// `if let Some(ledger)` arm: `flow check` would call an existing action
+    /// missing, and would do so exactly on a freshly installed machine. That
+    /// the writer then refuses to run without a ledger is another test, in
+    /// `registry`: here only the name being known is measured.
     #[test]
     fn the_history_question_is_registered_even_without_a_deposit() {
         let registry = registry_in(House::empty(), None, None);
@@ -1675,11 +1644,11 @@ mod tests {
         );
     }
 
-    /// Il rapporto nomina le azioni **disponibili**, non solo quelle mancanti.
+    /// The report names the **available** actions, not only the missing ones.
     ///
-    /// Cade se l'elenco sparisce o se smette di venire dal registro: chi apre
-    /// un flusso per capire cosa può metterci dentro leggerebbe una riga
-    /// vecchia, o nessuna riga.
+    /// It falls if the list disappears or stops coming from the registry:
+    /// whoever opens a flow to see what can go in it would read a stale line,
+    /// or none at all.
     #[test]
     fn the_check_names_the_actions_a_flow_can_use() {
         let json = flow_json("shell_check", "[]", "{}");
@@ -1692,8 +1661,8 @@ mod tests {
         assert!(report.contains("external_engine"), "{report}");
     }
 
-    /// Il nodo di ingresso e il rilevatore sono azioni come le altre: un flusso
-    /// che li nomina si controlla senza che nessuno le registri a mano.
+    /// The trigger node and the detector are actions like the others: a flow
+    /// naming them is checked with nobody registering them by hand.
     #[test]
     fn the_trigger_and_the_detector_are_known_to_check() {
         let registry = registry_in(House::empty(), None, None);
@@ -1701,12 +1670,12 @@ mod tests {
         assert!(registry.get("detect_tools").is_some());
     }
 
-    /// **IL MOTORE REGISTRATO QUI SA RISOLVERE UNO STRUMENTO.** Il mutante che
-    /// fa cadere questa prova è togliere la riga che lo sostituisce: il passo
-    /// tornerebbe a rispondere «questo motore non ha un modo per risolverlo», e
-    /// un flusso che nomina strumenti invece di binari non partirebbe più.
-    /// L'identificativo cercato non esiste apposta: la risposta che conta è
-    /// *chi* si lamenta, non che lo strumento ci sia.
+    /// **THE ENGINE REGISTERED HERE CAN RESOLVE A TOOL.** The mutant that fells
+    /// this test removes the line that substitutes it: the step would answer
+    /// «this engine has no way to resolve it» again, and a flow naming tools
+    /// instead of binaries would stop starting. The identifier looked up does
+    /// not exist on purpose: what counts is *who* complains, not that the tool
+    /// is there.
     #[test]
     fn the_registered_engine_knows_how_to_resolve_a_tool_id() {
         let registry = registry_in(House::empty(), None, None);
