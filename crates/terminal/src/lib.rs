@@ -77,7 +77,7 @@ impl Workspace {
             return Err(io::Error::new(
                 io::ErrorKind::NotADirectory,
                 format!(
-                    "uno spazio di lavoro è una cartella, e {} non lo è",
+                    "a workspace is a directory, and {} is not one",
                     root.display()
                 ),
             ));
@@ -156,11 +156,11 @@ pub enum Ending {
 impl std::fmt::Display for Ending {
     fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Ending::Exited(code) => write!(out, "uscito con {code}"),
-            Ending::Killed => write!(out, "fermato da un segnale"),
+            Ending::Exited(code) => write!(out, "exited with {code}"),
+            Ending::Killed => write!(out, "stopped by a signal"),
             Ending::StillRunning => write!(
                 out,
-                "l'uscita è finita, ma il processo dentro non è ancora uscito"
+                "the output ended, but the process inside has not exited yet"
             ),
         }
     }

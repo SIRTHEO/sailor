@@ -112,8 +112,8 @@ impl Process {
                 let _ = process.child.kill();
                 let _ = process.child.wait();
                 return Err(format!(
-                    "il processo è partito ma il deposito non l'ha accettato, \
-                     quindi è stato spento invece di restare orfano: {error}"
+                    "the process started but the ledger did not accept it, \
+                     so it was stopped instead of left an orphan: {error}"
                 ));
             }
         }
@@ -202,7 +202,7 @@ pub fn cargo_build(manifest: &Path, jobs: Option<u32>) -> BuildOutcome {
             message: String::from_utf8_lossy(&output.stderr).into_owned(),
         },
         Err(error) => BuildOutcome::Failed {
-            message: format!("`cargo build` non è nemmeno partito: {error}"),
+            message: format!("`cargo build` did not even start: {error}"),
         },
     }
 }
