@@ -4,7 +4,7 @@
  * one question — what did this machine do, and what did it cost — had two doors
  * and neither named the other. The tables are a view, opened without a run.
  */
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import App from "./App";
 import { nameOfPlace, MACHINE, PLACES } from "./places";
@@ -33,13 +33,23 @@ beforeAll(() => {
 /** The section on screen: the terminals stay mounted behind it, hidden. */
 const SHOWN = ".section:not([hidden]) ";
 
+/** A SECTION IS A DYNAMIC IMPORT AWAY. It is fetched when the place asks for
+ *  it, so a query fired in the same tick as the gesture finds the gap the
+ *  fallback leaves and concludes the section is not there. */
+async function theSectionArrives(): Promise<void> {
+  await waitFor(() => {
+    expect(document.querySelector(".section:not([hidden])")).toBeTruthy();
+  });
+}
+
 /** The sections are typed for: the window carries no permanent menu of them. */
-function typeInThePalette(label: string): void {
+async function typeInThePalette(label: string): Promise<void> {
   fireEvent.click(screen.getByRole("button", { name: /Search or run a command/ }));
   const rows = Array.from(document.querySelectorAll<HTMLElement>(".palette__entry"));
   const row = rows.find((one) => one.querySelector(".palette__label")?.textContent === label);
   expect(row, `the palette does not offer «${label}»`).toBeDefined();
   fireEvent.click(row as HTMLElement);
+  await theSectionArrives();
 }
 
 /** A row of the section's own column, by the name it shows. */
@@ -51,9 +61,9 @@ function inTheColumn(root: Element, name: string): HTMLElement {
 }
 
 describe("the history is one place", () => {
-  test("THE TABLES ARE A VIEW INSIDE THE RUNS, not a section beside them", () => {
+  test("THE TABLES ARE A VIEW INSIDE THE RUNS, not a section beside them", async () => {
     const { container } = render(<App />);
-    typeInThePalette(WHY);
+    await typeInThePalette(WHY);
 
     const inside = Array.from(container.querySelectorAll(`${SHOWN}.subrail__name`)).map(
       (one) => one.textContent,
@@ -65,9 +75,9 @@ describe("the history is one place", () => {
     expect(PLACES.map((one) => one.id)).not.toContain("ledger");
   });
 
-  test("AND THEY OPEN WITHOUT PASSING THROUGH A SINGLE RUN", () => {
+  test("AND THEY OPEN WITHOUT PASSING THROUGH A SINGLE RUN", async () => {
     const { container } = render(<App />);
-    typeInThePalette(WHY);
+    await typeInThePalette(WHY);
     // Straight from the history's own column, with no run picked first.
     fireEvent.click(inTheColumn(container, "Ledger"));
 
@@ -76,7 +86,7 @@ describe("the history is one place", () => {
     expect(crumbs, "the bar does not say the tables are part of the history").toEqual([WHY, "Ledger"]);
   });
 
-  test("AND THE MACHINE'S OWN ROW LANDS IN THAT SAME PLACE", () => {
+  test("AND THE MACHINE'S OWN ROW LANDS IN THAT SAME PLACE", async () => {
     // «The ledger has one place of consultation»: the row on the machine's
     // ground is a way in, not a second copy of the screen.
     const row = MACHINE.find((one) => one.id === "ledger");
@@ -84,9 +94,9 @@ describe("the history is one place", () => {
     expect(row?.memoryTab).toBe("ledger");
 
     const { container } = render(<App />);
-    typeInThePalette(WHY);
+    await typeInThePalette(WHY);
     fireEvent.click(inTheColumn(container, "Faults"));
-    typeInThePalette(row?.name ?? "");
+    await typeInThePalette(row?.name ?? "");
 
     expect(container.querySelector(`${SHOWN}.browser`), "the machine's row did not open the tables").not.toBeNull();
   });

@@ -638,6 +638,15 @@ function measure(atLeast: number): string[] {
   return belowThreshold(pairs);
 }
 
+/** A TAB IS PRESSED, NOT CLICKED. A tablist selects on `mousedown` — a real
+ *  pointer sends that before the click, and `fireEvent.click` alone sends only
+ *  the second half of the press, which selects nothing. */
+function pressTab(name: RegExp): void {
+  const tab = screen.getByRole("tab", { name });
+  fireEvent.mouseDown(tab, { button: 0 });
+  fireEvent.click(tab);
+}
+
 describe("the terminals screen", () => {
   test("EVERY TERMINAL IS ON SCREEN AT ONCE, the focused one first, and the line under it goes to routing", async () => {
     const shell = pretendShell({ terminal_list: TWO, terminal_submit: { kind: "command" } });
@@ -647,7 +656,7 @@ describe("the terminals screen", () => {
           <Terminals native />
         </div>,
       );
-      await screen.findByRole("button", { name: /ttys009/ });
+      await screen.findByRole("tab", { name: /ttys009/ });
       const shown = () => Array.from(document.querySelectorAll(".pane:not([hidden])"));
       expect(shown()).toHaveLength(2);
       expect(shown()[0].getAttribute("data-focus")).toBe("true");
@@ -657,7 +666,7 @@ describe("the terminals screen", () => {
 
       // Pressing the other tab brings that pane first and large; the first
       // pane does not disappear, it moves beside.
-      fireEvent.click(screen.getByRole("button", { name: /ttys009/ }));
+      pressTab(/ttys009/);
       expect(shown()).toHaveLength(2);
       expect(shown()[0].querySelector(".pane__device")?.textContent).toBe("ttys009");
       expect(shown()[1].getAttribute("data-focus")).toBeNull();
@@ -685,12 +694,12 @@ describe("the terminals screen", () => {
           <Terminals native />
         </div>,
       );
-      await screen.findByRole("button", { name: /packages/ });
+      await screen.findByRole("tab", { name: /packages/ });
       expect(shell.asked).toContain("terminal_list");
       expect(screen.getAllByText("alive").length).toBeGreaterThan(0);
       // A TAB SAYS WHICH SESSION IT IS: the tty, not a guessed title.
-      expect(screen.getByRole("button", { name: /ttys004/ })).toBeTruthy();
-      expect(screen.getByRole("button", { name: /ttys009/ })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: /ttys004/ })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: /ttys009/ })).toBeTruthy();
       // And the pane on screen says it too, with what it has moved so far.
       expect(document.querySelector(".pane:not([hidden]) .pane__device")?.textContent).toBe("ttys004");
       expect(document.querySelector(".pane:not([hidden]) .pane__moved")?.textContent).toBe("2 KB moved");
@@ -708,7 +717,7 @@ describe("the terminals screen", () => {
           <Terminals native />
         </div>,
       );
-      await screen.findByRole("button", { name: /packages/ });
+      await screen.findByRole("tab", { name: /packages/ });
       expect(screen.queryByText("ended")).toBeNull();
 
       await act(async () => {
@@ -731,7 +740,7 @@ describe("the terminals screen", () => {
           <Terminals native />
         </div>,
       );
-      await screen.findByRole("button", { name: /packages/ });
+      await screen.findByRole("tab", { name: /packages/ });
       expect(screen.queryByText("alive")).toBeNull();
       expect(screen.getAllByText("no longer known").length).toBeGreaterThan(0);
       expect(measure(20)).toEqual([]);
@@ -1023,7 +1032,7 @@ describe("the wiring between the bridge and the screen", () => {
           <Terminals native />
         </div>,
       );
-      await screen.findByRole("button", { name: /ttys004/ });
+      await screen.findByRole("tab", { name: /ttys004/ });
       // The backlog has been asked for and answered empty before any event.
       await waitFor(() => expect(shell.asked).toContain("terminal_backlog"));
 
@@ -1053,7 +1062,7 @@ describe("the wiring between the bridge and the screen", () => {
           <Terminals native />
         </div>,
       );
-      await screen.findByRole("button", { name: /ttys004/ });
+      await screen.findByRole("tab", { name: /ttys004/ });
       await act(async () => {
         shell.emit("terminal_output", { id: "t1", bytes: encodeBytes(keyBytes("before-42\r\n")), at: 0 });
         shell.emit("terminal_output", { id: "t1", bytes: encodeBytes(keyBytes("after-48\r\n")), at: 11 });
@@ -1080,7 +1089,7 @@ describe("the wiring between the bridge and the screen", () => {
           <Terminals native />
         </div>,
       );
-      await screen.findByRole("button", { name: /ttys004/ });
+      await screen.findByRole("tab", { name: /ttys004/ });
       await waitFor(() => expect(paneScreenText()).toContain("printed-while-away"));
       const askedBefore = shell.argsOf("terminal_backlog").length;
       cleanup();
@@ -1091,7 +1100,7 @@ describe("the wiring between the bridge and the screen", () => {
           <Terminals native />
         </div>,
       );
-      await screen.findByRole("button", { name: /ttys004/ });
+      await screen.findByRole("tab", { name: /ttys004/ });
       await waitFor(() => expect(paneScreenText()).toContain("printed-while-away"));
       expect(shell.argsOf("terminal_backlog").length).toBeGreaterThan(askedBefore);
       expect(occurrences(paneScreenText(), "printed-while-away")).toBe(1);
@@ -1112,7 +1121,7 @@ describe("the wiring between the bridge and the screen", () => {
           <Terminals native />
         </div>,
       );
-      await screen.findByRole("button", { name: /ttys004/ });
+      await screen.findByRole("tab", { name: /ttys004/ });
       const keys = keyboardOf();
 
       // HOW IT IS BORN: A TERMINAL IS BORN A TERMINAL, and the letter is what
@@ -1176,7 +1185,7 @@ describe("the wiring between the bridge and the screen", () => {
           <Terminals native />
         </div>,
       );
-      await screen.findByRole("button", { name: /ttys004/ });
+      await screen.findByRole("tab", { name: /ttys004/ });
       const keys = keyboardOf();
       await act(async () => {
         fireEvent.click(screen.getByRole("button", { name: "compose a line to route" }));
@@ -1208,7 +1217,7 @@ describe("the wiring between the bridge and the screen", () => {
           <Terminals native />
         </div>,
       );
-      await screen.findByRole("button", { name: /ttys004/ });
+      await screen.findByRole("tab", { name: /ttys004/ });
       await act(async () => {
         fireEvent.click(screen.getByRole("button", { name: "Close this terminal" }));
       });
@@ -1222,11 +1231,14 @@ describe("the wiring between the bridge and the screen", () => {
 // ── the screen inside the window ─────────────────────────────────────────
 
 describe("the terminals inside the window", () => {
-  test("THE SCREEN STAYS MOUNTED BEHIND THE OTHER PLACES: going to Flows and back destroys no pane", () => {
+  test("THE SCREEN STAYS MOUNTED BEHIND THE OTHER PLACES: going to Flows and back destroys no pane", async () => {
     // Outside the shell the screen is mute, and that is enough: what is
     // measured is that the element survives the change of place, hidden.
     // No click to get here: the terminals are the ground the window opens on.
     const { container } = render(<App />);
+    // The section is a dynamic import away: on the first tick there is only
+    // the gap its fallback leaves.
+    await waitFor(() => expect(container.querySelector(".terminals")).toBeTruthy());
     const terminals = container.querySelector(".terminals");
     expect(terminals, "the terminals screen did not draw").toBeTruthy();
     expect((terminals as HTMLElement).hidden).toBe(false);
@@ -1362,7 +1374,7 @@ describe("the three signals in the panes' borders", () => {
           <Terminals native />
         </div>,
       );
-      await screen.findByRole("button", { name: /packages/ });
+      await screen.findByRole("tab", { name: /packages/ });
 
       const places = panes().map((pane) => {
         const head = pane.querySelector(".pane__head") as HTMLElement;
@@ -1393,7 +1405,7 @@ describe("the three signals in the panes' borders", () => {
           <Terminals native bench={bench} />
         </div>,
       );
-      await screen.findByRole("button", { name: /packages/ });
+      await screen.findByRole("tab", { name: /packages/ });
       const marked = panes().filter((pane) => pane.querySelector(".pane__notch") !== null);
       expect(marked).toHaveLength(1);
       expect(marked[0].querySelector(".pane__device")?.textContent).toBe("ttys009");
@@ -1415,7 +1427,7 @@ describe("the three signals in the panes' borders", () => {
           <Terminals native />
         </div>,
       );
-      await screen.findByRole("button", { name: /packages/ });
+      await screen.findByRole("tab", { name: /packages/ });
       const line = screen.getByLabelText("a line for ttys004") as HTMLInputElement;
       fireEvent.change(line, { target: { value: "git status" } });
       await act(async () => {
@@ -1438,7 +1450,7 @@ describe("the three signals in the panes' borders", () => {
           <Terminals native />
         </div>,
       );
-      await screen.findByRole("button", { name: /packages/ });
+      await screen.findByRole("tab", { name: /packages/ });
       expect(panes().map((pane) => pane.querySelector(".pane__progress")?.textContent)).toEqual([
         PROGRESS_MARK.unsure,
         PROGRESS_MARK.unsure,
@@ -1448,7 +1460,7 @@ describe("the three signals in the panes' borders", () => {
       // AN ORDINARY UPDATE RAISES NOTHING: being redrawn is not an event, and
       // a pane is redrawn all day long.
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: /ttys004/ }));
+        pressTab(/ttys004/);
       });
       expect(
         panes().some((pane) => pane.hasAttribute("data-stirred")),
@@ -1477,7 +1489,7 @@ describe("the three signals in the panes' borders", () => {
           <Terminals native />
         </div>,
       );
-      await screen.findByRole("button", { name: /packages/ });
+      await screen.findByRole("tab", { name: /packages/ });
       const order = () => panes().map((pane) => pane.querySelector(".pane__device")?.textContent);
       expect(order()).toEqual(["ttys004", "ttys009"]);
 
@@ -1508,7 +1520,7 @@ describe("the three signals in the panes' borders", () => {
           <Terminals native />
         </div>,
       );
-      await screen.findByRole("button", { name: /packages/ });
+      await screen.findByRole("tab", { name: /packages/ });
       const work = container.querySelector(".session-work") as HTMLElement;
       expect(Array.from(work.children).map((child) => child.className)).toEqual(["terminals__panes"]);
       expect(container.querySelector(".session-context")).toBeNull();
