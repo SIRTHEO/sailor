@@ -203,12 +203,26 @@ impl DryProbe for RealDryProbe {
 /// qui non darebbe un errore: darebbe un motore che *aspetta*, e la prova a
 /// secco diventerebbe un modo per appendere il controllo.
 pub fn probe_dry_run(probe: &dyn DryProbe, bin: &str, recipe: &AskRecipe) -> ProbeVerdict {
-    let args = command_line(recipe);
+    probe_dry_run_with(probe, bin, recipe, &command_line(recipe))
+}
+
+/// La stessa prova, su una riga già montata da chi chiama.
+///
+/// **PERCHÉ LA RIGA ARRIVA DA FUORI.** Da quando un passo può nominare il
+/// modello che vuole, la riga non viene più dal solo descrittore: montarla di
+/// nuovo qui darebbe una riga senza il modello, e il controllo dichiarerebbe
+/// sana una riga che la corsa non userà. Sono le due porte del guasto 1.
+pub fn probe_dry_run_with(
+    probe: &dyn DryProbe,
+    bin: &str,
+    recipe: &AskRecipe,
+    args: &[String],
+) -> ProbeVerdict {
     let stdin = match recipe.prompt {
         PromptVia::Stdin => Some(Vec::new()),
         PromptVia::LastArg => None,
     };
-    match probe.run(bin, &args, stdin) {
+    match probe.run(bin, args, stdin) {
         DryRun::Answered { stdout, stderr } => judge_dry_run(recipe, &stdout, &stderr),
         DryRun::NoAnswer { why } => ProbeVerdict::TimedOut { why },
     }
