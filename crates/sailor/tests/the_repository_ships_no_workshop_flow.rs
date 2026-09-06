@@ -53,6 +53,16 @@ fn flow_files(directory: &Path) -> BTreeSet<String> {
 #[test]
 fn the_repository_ships_no_flow_of_ours() {
     let here = flow_files(&repository().join("flows"));
+    if here.is_empty() {
+        workspace::measured_nothing("flows/ holds no flow file, so there is nothing here to refuse");
+        return;
+    }
+    workspace::measured_against(
+        here.len(),
+        "flow files under flows/ read",
+        TEMPLATES_THE_PRODUCT_HANDS_OUT.len(),
+        "templates the product hands out",
+    );
     let allowed: BTreeSet<String> = TEMPLATES_THE_PRODUCT_HANDS_OUT
         .iter()
         .map(|name| (*name).to_owned())
