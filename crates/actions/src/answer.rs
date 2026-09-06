@@ -261,7 +261,7 @@ mod tests {
             "type": "object", "properties": {}, "required": [], "allow_extra": true
         }))
         .expect("a shape");
-        let whole = json!({"id": "una-bozza", "graph": {"steps": []}});
+        let whole = json!({"id": "a-draft", "graph": {"steps": []}});
         assert_eq!(pruned(&shape, whole.clone()), whole);
     }
 

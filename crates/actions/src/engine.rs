@@ -987,7 +987,7 @@ mod tests {
                 self.0
                     .said
                     .lock()
-                    .expect("nessuno panica qui")
+                    .expect("nobody panics in here")
                     .extend_from_slice(bytes);
             }
         }
@@ -1001,7 +1001,7 @@ mod tests {
                 self.0
                     .asked
                     .lock()
-                    .expect("nessuno panica qui")
+                    .expect("nobody panics in here")
                     .push(step.to_owned());
                 Arc::new(Branch(self.0.clone()))
             }
@@ -1012,21 +1012,21 @@ mod tests {
             factory.clone(),
         )) as Arc<dyn StepSinks>));
         let mut shared = SharedState::new();
-        shared.insert(flow::CURRENT_STEP.to_owned(), json!("il-passo-che-parla"));
+        shared.insert(flow::CURRENT_STEP.to_owned(), json!("the-step-that-speaks"));
         let outcome = action
             .execute(
-                &json!({"bin": "sh", "args": ["-c", "echo detto-dal-motore"], "timeout_secs": 10}),
+                &json!({"bin": "sh", "args": ["-c", "echo said-by-the-engine"], "timeout_secs": 10}),
                 &shared,
             )
-            .expect("il passo doveva riuscire");
+            .expect("the step had to go through");
         assert!(matches!(outcome, ActionOutcome::Went(_)));
         assert_eq!(
-            *factory.asked.lock().expect("nessuno panica qui"),
-            vec!["il-passo-che-parla".to_owned()]
+            *factory.asked.lock().expect("nobody panics in here"),
+            vec!["the-step-that-speaks".to_owned()]
         );
         let said =
-            String::from_utf8_lossy(&factory.said.lock().expect("nessuno panica qui")).into_owned();
-        assert!(said.contains("detto-dal-motore"), "consegnato: {said:?}");
+            String::from_utf8_lossy(&factory.said.lock().expect("nobody panics in here")).into_owned();
+        assert!(said.contains("said-by-the-engine"), "delivered: {said:?}");
     }
 
     /// With no step key in the shared state nothing is delivered: a text nobody
@@ -1037,7 +1037,7 @@ mod tests {
 
         impl StepSinks for Never {
             fn sink_for(&self, _step: &str) -> Arc<dyn LiveSink> {
-                panic!("non doveva essere chiesto nessun destinatario");
+                panic!("no recipient was to be asked for");
             }
         }
 
@@ -1046,10 +1046,10 @@ mod tests {
         let shared = SharedState::new();
         action
             .execute(
-                &json!({"bin": "sh", "args": ["-c", "echo muto"], "timeout_secs": 10}),
+                &json!({"bin": "sh", "args": ["-c", "echo mute"], "timeout_secs": 10}),
                 &shared,
             )
-            .expect("il passo doveva riuscire lo stesso");
+            .expect("the step had to go through all the same");
     }
 
     /// **A STEP WITH A DEPENDENCY KEEPS RUNNING, AND THERE LIES THE RISK OF
@@ -1066,23 +1066,23 @@ mod tests {
         let action = ExternalEngineAction::new();
         let input = json!({
             "bin": "echo",
-            "args": ["fatto"],
+            "args": ["done"],
             "timeout_secs": 10,
             // What arrives from the previous step, which this action neither
             // knows nor has to know.
             "status": "ok",
-            "stdout": "l'uscita di chi mi precede\n",
+            "stdout": "the output of the step before me\n",
             "stderr": "",
         });
 
         let outcome = action
             .execute(&input, &SharedState::new())
-            .expect("un ingresso con l'uscita della dipendenza deve girare");
+            .expect("an input carrying the dependency's output has to run");
 
         let ActionOutcome::Went(output) = outcome else {
-            panic!("doveva riuscire")
+            panic!("it had to go through")
         };
-        assert_eq!(output["stdout"], "fatto\n", "e fa il proprio lavoro");
+        assert_eq!(output["stdout"], "done\n", "and it does its own work");
     }
 
     /// The twin of the static check, tested **here** where the truth lives: the
@@ -1104,7 +1104,7 @@ mod tests {
                     &json!({"tool": "claude-code", "stdin": "ciao", "timeout_secs": 10})
                 )
                 .is_empty(),
-            "e su un ingresso scritto bene non nomina niente"
+            "and on a well written input it names nothing"
         );
     }
 
@@ -1121,9 +1121,9 @@ mod tests {
         let shared = SharedState::new();
         let outcome = action
             .execute(&input, &shared)
-            .expect("l'azione non fallisce");
+            .expect("the action does not fail");
         let ActionOutcome::Went(output) = outcome else {
-            panic!("un'azione motore riuscita è sempre Went")
+            panic!("an engine action that went is always Went")
         };
         assert_eq!(output["status"], "ok");
         assert!(output["stdout"].as_str().unwrap().contains("answer: 42"));
@@ -1141,17 +1141,17 @@ mod tests {
         let action = ExternalEngineAction::new();
         let input = json!({
             "bin": "sh",
-            "args": ["-c", "echo dettaglio-che-serve 1>&2; exit 3"],
+            "args": ["-c", "echo a-detail-that-matters 1>&2; exit 3"],
             "timeout_secs": 5
         });
 
         let error = action
             .execute(&input, &SharedState::new())
-            .expect_err("un motore uscito in errore rompe il passo");
+            .expect_err("an engine that exited in error breaks the step");
 
         assert_eq!(error.class, "engine_exit_error");
         assert!(error.said.contains("code 3"), "{}", error.said);
-        assert!(error.said.contains("dettaglio-che-serve"), "{}", error.said);
+        assert!(error.said.contains("a-detail-that-matters"), "{}", error.said);
     }
 
     /// The other half, without which the first would prove not a choice but a
@@ -1169,9 +1169,9 @@ mod tests {
 
         let ActionOutcome::Went(output) = action
             .execute(&input, &SharedState::new())
-            .expect("l'esito è dichiarato accettabile")
+            .expect("the outcome is declared acceptable")
         else {
-            panic!("un esito tollerato resta un dato")
+            panic!("a tolerated outcome stays a datum")
         };
 
         assert_eq!(output["status"], "exit_error");
@@ -1191,7 +1191,7 @@ mod tests {
 
         let error = action
             .execute(&input, &SharedState::new())
-            .expect_err("«failed» non è un esito di un motore");
+            .expect_err("«failed» is no outcome of an engine");
 
         assert_eq!(error.class, "invalid_input");
         assert!(error.said.contains("exit_error"), "{}", error.said);
@@ -1202,15 +1202,15 @@ mod tests {
     #[test]
     fn a_binary_that_will_not_start_breaks_the_step_and_names_itself() {
         let action = ExternalEngineAction::new();
-        let input = json!({"bin": "/nessun/binario/qui-di-sicuro", "timeout_secs": 5});
+        let input = json!({"bin": "/no/binary/here-for-sure", "timeout_secs": 5});
 
         let error = action
             .execute(&input, &SharedState::new())
-            .expect_err("un motore che non parte rompe il passo");
+            .expect_err("an engine that will not start breaks the step");
 
         assert_eq!(error.class, "engine_spawn_failed");
         assert!(
-            error.said.contains("/nessun/binario/qui-di-sicuro"),
+            error.said.contains("/no/binary/here-for-sure"),
             "{}",
             error.said
         );
@@ -1223,7 +1223,7 @@ mod tests {
 
         let error = action
             .execute(&input, &SharedState::new())
-            .expect_err("il tempo scaduto rompe il passo");
+            .expect_err("a time limit run out breaks the step");
 
         assert_eq!(error.class, "engine_timed_out");
         assert!(error.said.contains("within 1 seconds"), "{}", error.said);
@@ -1240,7 +1240,7 @@ mod tests {
     /// next step — no preamble, no extra fields, no raw text.
     #[test]
     fn a_declared_shape_is_enforced_and_only_what_it_declares_is_handed_on() {
-        let said = r#"{"paths": ["src/a.rs", "src/b.rs"], "total": 2, "ragionamento": "ho guardato ovunque, e poi ancora"}"#;
+        let said = r#"{"paths": ["src/a.rs", "src/b.rs"], "total": 2, "reasoning": "I looked everywhere, and then again"}"#;
         let input = json!({
             "bin": "sh",
             "args": ["-c", format!("printf '%s' '{said}'")],
@@ -1253,27 +1253,27 @@ mod tests {
                 "required": ["paths", "total"],
                 "allow_extra": true
             },
-            "stdin": {"$join": ["Rispondi in questa forma: ", {"$json": "/answer_shape"}]},
+            "stdin": {"$join": ["Answer in this shape: ", {"$json": "/answer_shape"}]},
             "timeout_secs": 5
         });
 
         let ActionOutcome::Went(output) = ExternalEngineAction::new()
             .execute(&with_references_resolved(input), &SharedState::new())
-            .expect("la risposta rispetta la forma")
+            .expect("the answer keeps to the shape")
         else {
-            panic!("un motore che risponde è sempre Went")
+            panic!("an engine that answers is always Went")
         };
 
         assert_eq!(output["status"], "ok");
         assert_eq!(output["answer"]["total"], 2);
         assert_eq!(output["answer"]["paths"][1], "src/b.rs");
         assert!(
-            output["answer"].get("ragionamento").is_none(),
-            "il ragionamento del motore non deve viaggiare fino al passo dopo: {output}"
+            output["answer"].get("reasoning").is_none(),
+            "the engine's reasoning must not travel as far as the next step: {output}"
         );
         assert!(
             output.get("stdout").is_none() && output.get("stderr").is_none(),
-            "col testo grezzo accanto alla risposta il risparmio non esisterebbe: {output}"
+            "with the raw text beside the answer there would be no saving at all: {output}"
         );
     }
 
@@ -1283,7 +1283,7 @@ mod tests {
     /// out in words would then reach the next step intact.
     #[test]
     fn an_answer_that_does_not_fit_the_shape_breaks_the_step() {
-        let said = r#"{"paths": [], "total": "parecchi"}"#;
+        let said = r#"{"paths": [], "total": "quite a few"}"#;
         let input = json!({
             "bin": "sh",
             "args": ["-c", format!("printf '%s' '{said}'")],
@@ -1302,17 +1302,17 @@ mod tests {
 
         let error = ExternalEngineAction::new()
             .execute(&with_references_resolved(input), &SharedState::new())
-            .expect_err("un motore fuori forma non ha risposto");
+            .expect_err("an engine off the shape has not answered");
 
         assert_eq!(error.class, "answer_off_shape");
-        assert!(error.said.contains("parecchi"), "{}", error.said);
+        assert!(error.said.contains("quite a few"), "{}", error.said);
     }
 
     #[test]
     fn an_answer_that_is_not_json_at_all_breaks_the_step() {
         let input = json!({
             "bin": "sh",
-            "args": ["-c", "printf 'certo, ci penso io'"],
+            "args": ["-c", "printf 'sure, leave it with me'"],
             "answer_shape": {"type": "object", "properties": {}, "required": [], "allow_extra": true},
             "stdin": {"$json": "/answer_shape"},
             "timeout_secs": 5
@@ -1320,10 +1320,10 @@ mod tests {
 
         let error = ExternalEngineAction::new()
             .execute(&with_references_resolved(input), &SharedState::new())
-            .expect_err("non è JSON");
+            .expect_err("it is not JSON");
 
         assert_eq!(error.class, "answer_not_json");
-        assert!(error.said.contains("ci penso io"), "{}", error.said);
+        assert!(error.said.contains("leave it with me"), "{}", error.said);
     }
 
     /// The engine here is `cat`: it answers exactly what reached its input.
@@ -1457,7 +1457,7 @@ mod tests {
         let input = json!({
             "bin": "sh",
             // Raw string: `printf` reads the `\n` sequences, not Rust.
-            "args": ["-c", r#"printf 'Ecco:\n```json\n{"total": 7}\n```\n'"#],
+            "args": ["-c", r#"printf 'Here it is:\n```json\n{"total": 7}\n```\n'"#],
             "answer_shape": {
                 "type": "object",
                 "properties": {"total": {"type": "number"}},
@@ -1470,9 +1470,9 @@ mod tests {
 
         let ActionOutcome::Went(output) = ExternalEngineAction::new()
             .execute(&with_references_resolved(input), &SharedState::new())
-            .expect("il blocco recintato si legge")
+            .expect("the fenced block is read")
         else {
-            panic!("un motore che risponde è sempre Went")
+            panic!("an engine that answers is always Went")
         };
 
         assert_eq!(output["answer"]["total"], 7);
@@ -1484,19 +1484,19 @@ mod tests {
     #[test]
     fn a_shape_that_never_reaches_the_prompt_stops_the_step_before_spending() {
         let input = json!({
-            "bin": "/nessun/binario/qui-di-sicuro",
+            "bin": "/no/binary/here-for-sure",
             "answer_shape": {"type": "object", "properties": {}, "required": [], "allow_extra": true},
-            "stdin": "elenca i percorsi",
+            "stdin": "list the paths",
             "timeout_secs": 5
         });
 
         let error = ExternalEngineAction::new()
             .execute(&input, &SharedState::new())
-            .expect_err("la forma non è stata chiesta a nessuno");
+            .expect_err("the shape was asked of nobody");
 
         assert_eq!(
             error.class, "shape_not_in_prompt",
-            "se fosse partito, il binario assente avrebbe dato un altro errore: {}",
+            "had it started, the missing binary would have given another error: {}",
             error.said
         );
         assert!(error.said.contains("$json"), "{}", error.said);
@@ -1517,7 +1517,7 @@ mod tests {
 
         let error = ExternalEngineAction::new()
             .execute(&with_references_resolved(input), &SharedState::new())
-            .expect_err("le due dichiarazioni non stanno insieme");
+            .expect_err("the two declarations do not live together");
 
         assert_eq!(error.class, "invalid_input");
         assert!(error.said.contains("timed_out"), "{}", error.said);
@@ -1535,11 +1535,11 @@ mod tests {
         let action = ExternalEngineAction::new();
         let input = json!({
             "status": "ok",
-            "stdout": "=== PER CODEX ===\nconta i ganci morti",
+            "stdout": "=== FOR CODEX ===\ncount the dead hooks",
             "stderr": "",
             "bin": "cat",
             "args": [],
-            "stdin": {"$join": ["Esegui solo la tua sezione.\n", {"$from": "/stdout"}]},
+            "stdin": {"$join": ["Run only your own section.\n", {"$from": "/stdout"}]},
             "timeout_secs": 5
         });
         let shared = SharedState::new();
@@ -1548,13 +1548,13 @@ mod tests {
             .execute(&with_references_resolved(input), &shared)
             .unwrap()
         else {
-            panic!("un motore che risponde è sempre Went")
+            panic!("an engine that answers is always Went")
         };
 
         assert_eq!(output["status"], "ok");
         assert_eq!(
-            output["stdout"], "Esegui solo la tua sezione.\n=== PER CODEX ===\nconta i ganci morti",
-            "il motore ha ricevuto sull'ingresso ciò che il passo prima ha scritto"
+            output["stdout"], "Run only your own section.\n=== FOR CODEX ===\ncount the dead hooks",
+            "the engine received on its input what the step before it wrote"
         );
     }
 
