@@ -6653,3 +6653,148 @@ tr[data-followable]:hover {
 .sketch__draft:disabled { opacity: 0.5; cursor: default; }
 .sketch__foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .sketch__text pre { white-space: pre-wrap; font-size: var(--text-small); font-family: var(--font-data); }
+
+/* ── what waits for a person ────────────────────────────────────────────
+   One thing per row, at full width: the plate refuses a third column always
+   lit, because a decision read sideways is a decision postponed. */
+.waiting {
+  flex-grow: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-5) var(--space-6);
+}
+
+.waiting__head {
+  padding-bottom: var(--space-4);
+}
+
+.waiting__title {
+  font-family: var(--font-display);
+  font-size: var(--text-display);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.waiting__sub,
+.waiting__note {
+  font-size: var(--text-body);
+  color: var(--muted);
+}
+
+.waiting__blind {
+  font-size: var(--text-small);
+  padding: var(--space-2) 0;
+}
+
+.waiting__group + .waiting__group {
+  margin-top: var(--space-6);
+}
+
+/* The heading of a section is a plate, not a title: it separates and is not
+   read twice. */
+.waiting__section {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.waiting__span {
+  font-size: var(--text-micro);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.waiting__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+}
+
+/* What happened is not what waits, and the eye has to tell them apart before
+   it reads either. */
+.waiting__row--pale {
+  background: transparent;
+}
+
+.waiting__mark {
+  flex-shrink: 0;
+  display: flex;
+  color: var(--state-waiting);
+}
+
+.waiting__mark svg {
+  width: 20px;
+  height: 20px;
+}
+
+.waiting__mark[data-state="human"] { color: var(--state-human); }
+.waiting__mark[data-state="broke"] { color: var(--state-broke); }
+.waiting__mark[data-state="quota"] { color: var(--state-capped); }
+.waiting__mark[data-state="capped"] { color: var(--state-capped); }
+.waiting__mark[data-state="went"] { color: var(--state-went); }
+.waiting__mark[data-state="stopped"] { color: var(--state-waiting); }
+
+.waiting__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.waiting__what {
+  font-size: var(--text-mid);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.waiting__context {
+  font-size: var(--text-small);
+  color: var(--muted);
+}
+
+/* Prohibition 5: the tint never carries the state on its own. */
+.waiting__word {
+  font-family: var(--font-display);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.waiting__when {
+  flex-shrink: 0;
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.waiting__acts {
+  flex-shrink: 0;
+  display: flex;
+  gap: var(--space-2);
+}
+
+.waiting__act {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-small);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--raised);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.waiting__act--primary {
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  border-color: transparent;
+}
