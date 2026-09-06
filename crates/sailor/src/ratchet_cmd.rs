@@ -395,15 +395,10 @@ pub fn clean_tree_with_changes(root: &Path, into: &Path) -> Result<Overlay, Stri
 }
 
 /// **A JUDGE THAT ASKS GIT MUST HAVE SOMETHING TO ASK.** `git archive` carries
-/// the files and not the `.git`, so a judge that reads what is tracked found
-/// nothing here and said so: the guard against this machine's paths reaching a
-/// public repository never looked at the tree the gate was about to pass. An
-/// index over the laid-over files is all those judges read, so the tree is
-/// given one — and the person's own git settings are shut out, because what the
-/// gate sees must not depend on whose machine it runs on.
-///
-/// `add --all` is safe exactly here and nowhere else: this is a copy under
-/// `target/`, remade at every run, never the shared checkout.
+/// the files and not the `.git`, so the guards that read what is tracked found
+/// nothing here. An index is all they read; the person's own settings are shut
+/// out, because what the gate sees must not depend on whose machine it runs on.
+/// `add --all` is safe exactly here — a copy under `target/`, remade each run.
 fn tracked_by_a_repository_of_its_own(into: &Path) -> Result<(), String> {
     let git = |args: &[&str]| -> Result<(), String> {
         let out = Command::new("git")
