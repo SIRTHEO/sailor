@@ -4,7 +4,6 @@ import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 
 import App from "./App";
 import stylesheetSource from "./styles.css?raw";
-import reactFlowSource from "@xyflow/react/dist/style.css?raw";
 import { parseStylesheet } from "./contrast";
 import { TOOL_GROUPS, TOOLBAR_KINDS, KINDS_WITH_ACTION, Toolbar } from "./Toolbar";
 import { DEFAULT_ACTION_FOR_KIND, KNOWN_ACTIONS, type StepKind } from "./flow";
@@ -30,10 +29,10 @@ vi.mock("./sample", async (importOriginal) => {
 });
 
 /**
- * **THE STEP TOOLBOX, INTERROGATED WHERE IT WOULD GO WRONG.** A screenshot
- * cannot show that the bar sits **inside** the canvas without scrolling away,
- * or that every family offered creates a step with an action the engine knows
- * in both directions.
+ * **THE STEP TOOLBOX, INTERROGATED WHERE IT WOULD GO WRONG.** A screenshot at
+ * one width cannot show that the commands and the paper share no pixel at
+ * every width, or that every family offered creates a step with an action the
+ * engine knows in both directions.
  */
 
 afterEach(() => {
@@ -69,7 +68,7 @@ function focusAFlow(container: HTMLElement): string {
   return name;
 }
 
-/* ── the corridor, read from the stylesheet ─────────────────────────────── */
+/* ── the band, read from the stylesheet and from the tree ───────────────── */
 
 const sheet = parseStylesheet(stylesheetSource);
 
@@ -84,213 +83,109 @@ function declarationsOf(selector: string): Map<string, string> {
 }
 
 /**
- * The declared lengths: the `:root` grid and the `.toolbar` corridor. They are
- * the only ones the arithmetic below can read. What makes a hand-written
- * literal inside a `calc` turn the test red is the empty remainder demanded at
- * the end of `sumOfTerms`, not this list.
+ * What, declared on the band, would take it out of the column and back over
+ * the paper. `position` is the whole family: with it the box leaves the flow,
+ * and every offset below only says where it lands.
  */
-const LENGTHS = new Map<string, number>();
-for (const selector of [":root", ".toolbar"]) {
-  for (const [property, value] of declarationsOf(selector)) {
-    const pixels = /^(\d+(?:\.\d+)?)px$/.exec(value);
-    if (property.startsWith("--") && pixels) LENGTHS.set(property, Number(pixels[1]));
-  }
-}
-
-function lengthOf(name: string): number {
-  const value = LENGTHS.get(name);
-  expect(value, `«${name}» is not a length declared in the stylesheet`).toBeDefined();
-  return value as number;
-}
+const LIFTS_IT_OUT = ["position", "inset", "top", "right", "bottom", "left", "transform"];
 
 /**
- * The signed sum of a `calc`'s terms, the only form the corridor can be read
- * back in. It returns the **fixed pixels**; the canvas width has its own
- * accumulator, and `canvasTimes` says how often it is due. `100%` is counted
- * with sign and coefficient, never stripped: the rule rests on it cancelling.
+ * **THE BAND AND THE PAPER SHARE NO PIXEL.** jsdom lays nothing out, so the
+ * empty intersection is not measured here: what is read are the two things
+ * that make it empty at every width — the tree that keeps the boxes apart, and
+ * the rule that stacks them.
  */
-function sumOfTerms(value: string, canvasTimes: number): number {
-  const body = /^calc\((.*)\)$/.exec(value.trim())?.[1] ?? value.trim();
-  const term = /(^|[+-])\s*(?:(\d+)\s*\*\s*)?(?:var\((--[a-z0-9-]+)\)|(\d+)%)/g;
-  let total = 0;
-  let canvas = 0;
-  let read = 0;
-  let match: RegExpExecArray | null;
-  while ((match = term.exec(body)) !== null) {
-    const sign = match[1] === "-" ? -1 : 1;
-    const times = match[2] === undefined ? 1 : Number(match[2]);
-    if (match[3] !== undefined) total += sign * times * lengthOf(match[3]);
-    else canvas += (sign * times * Number(match[4])) / 100;
-    read += 1;
-  }
-  // A term the arithmetic cannot read would vanish silently and the total would
-  // come out smaller than the truth, which is the reassuring direction.
-  const written = (body.match(/var\(|%/g) ?? []).length;
-  expect(read, `the arithmetic cannot read «${value}»`).toBe(written);
-
-  // AND COUNTING WORDS IS NOT ENOUGH: those are occurrences, not terms. A `px`
-  // literal next to a `var()` keeps the count of `var(` right and still drops
-  // out of the total, and on `margin-left` that loosens instead of tightening.
-
-  // So the right direction is asked of the REMAINDER: once the terms we can
-  // read are consumed, only the separators may be left in the body. Anything
-  // else left over is a piece nobody measured, and it is refused, not guessed.
-  const rest = body.replace(term, "").replace(/[+\-*\s]/g, "");
-  expect(
-    rest,
-    `«${value}» carries «${rest}», which nobody here can measure: the total would skip it silently`,
-  ).toBe("");
-
-  // AND THE CANVAS IS COUNTED, not stripped. The arithmetic below is free of
-  // the canvas width only if `100%` appears exactly as many times as expected:
-  // once in the ceiling, cancelling against the `100%` the minimap band starts
-  // from, and never in the offset, which is a fixed distance from the side.
-  expect(
-    canvas,
-    `«${value}» carries the canvas width ${canvas} times instead of ${canvasTimes}: ` +
-      `the «100%» no longer cancels out, and the arithmetic below would hold at one width only`,
-  ).toBe(canvasTimes);
-  return total;
-}
-
-/**
- * **THE BAR DECLARES THE CORRIDOR IT DOES NOT OCCUPY.** Centring a bar as wide
- * as its tools works at one width only, and in jsdom nothing has dimensions,
- * so no pixels are measured here: the **rule** is read instead — where the bar
- * starts, and how much of the frame its ceiling grants it.
- */
-describe("the corridor the bar does not occupy", () => {
-  test("THE BAR IS MEASURED ON THE CORRIDOR, NOT ON THE SUM OF ITS TOOLS", () => {
-    const toolbar = declarationsOf(".toolbar");
-    const controls = lengthOf("--controls-reserve");
-    const minimap = lengthOf("--minimap-reserve");
-
-    // Where the left edge starts, measured from the side of the canvas: a fixed
-    // distance, hence zero times the canvas width.
-    const offset = toolbar.get("margin-left");
-    expect(offset, "the bar declares no offset from the side of the canvas").toBeDefined();
-    const left = sumOfTerms(offset as string, 0);
-
-    // What the ceiling grants it: the canvas **exactly once**, minus everything
-    // the `calc` takes away.
-    const ceiling = toolbar.get("max-width");
-    expect(ceiling, "the bar declares no width ceiling").toBeDefined();
-    expect(
-      (ceiling as string).replace(/\s+/g, " "),
-      "the bar's ceiling does not start from the canvas width",
-    ).toMatch(/^calc\(100% -/);
-    const kept = -sumOfTerms(ceiling as string, 1);
-
-    // THE RULE. Worst right edge = 100% - kept + left. The minimap starts at
-    // 100% - minimap. The `100%` cancels on both sides — and that there is
-    // exactly one per side has just been checked by `sumOfTerms`, with the
-    // coefficient 1 on the ceiling and 0 on the offset.
-    const reach = kept - left;
-    const where =
-      reach >= 0 ? `${reach}px from the right edge` : `${-reach}px PAST the right edge`;
-    expect(
-      left + minimap,
-      `the bar can enter the minimap band: it starts ${left}px from the left edge ` +
-        `and its ceiling lets it reach ${where} of the canvas, while the minimap takes ${minimap}px`,
-    ).toBeLessThanOrEqual(kept);
-
-    // And from the other side, that the zoom controls stay uncovered.
-    expect(
-      left,
-      `the bar starts at ${left}px and the zoom controls reach ${controls}px`,
-    ).toBeGreaterThanOrEqual(controls);
-  });
-
-  test("the offset only counts if the panel is anchored to a side", () => {
-    // `margin-left` on a `bottom-center` panel takes the bar out of no band at
-    // all: React Flow centres it with a `translateX`, and the declared offset
-    // would merely push it off centre. The rule above would then be true on the
-    // stylesheet and false on screen.
+describe("the band the graph does not reach into", () => {
+  test("THE BAR IS THE GRAPH'S SIBLING, NOT A TENANT OF ITS RECTANGLE", () => {
     const { container } = render(<App />);
     goToFlows();
     focusAFlow(container);
+
     const toolbar = container.querySelector(".toolbar") as HTMLElement;
-    expect(toolbar.classList.contains("left")).toBe(true);
-    expect(toolbar.classList.contains("center")).toBe(false);
+    expect(toolbar, "the bar is not drawn").not.toBeNull();
+    const graph = container.querySelector(".react-flow") as HTMLElement;
+    expect(graph, "the graph is not drawn").not.toBeNull();
+
+    // Inside the graph the two rectangles are one rectangle, and whatever the
+    // stylesheet then says about where in it the bar sits is a blind spot.
+    expect(toolbar.closest(".react-flow"), "the bar is drawn inside the graph").toBeNull();
+    expect(toolbar.closest(".canvas"), "the bar has left the canvas altogether").not.toBeNull();
+    expect(
+      toolbar.parentElement,
+      "the bar and the graph are not two boxes of one column",
+    ).toBe(graph.parentElement);
+
+    // `Panel` marks what it places, so its return is legible in the tree even
+    // before anything is laid out.
+    expect(
+      Array.from(toolbar.classList).filter((name) => name.startsWith("react-flow")),
+      "the bar is a React Flow panel again",
+    ).toEqual([]);
   });
 
-  test("THE RESERVES ARE NOT INVENTED NUMBERS: React Flow dictates them", () => {
-    // The arithmetic above would happily use two reserves that are too small —
-    // they are declared in the same stylesheet that checks them, and two copies
-    // that err together confirm each other. The anchor sits outside both: the
-    // real tenants of the bottom band, read where they can be read without
-    // layout.
-    const theirs = parseStylesheet(reactFlowSource);
-    const declaration = (selector: string, property: string) => {
-      const rule = theirs.rules.find((candidate) => candidate.selector === selector);
-      expect(rule, `React Flow no longer has a «${selector}» rule`).toBeDefined();
-      const value = new Map(rule!.declarations).get(property);
-      expect(value, `«${selector}» no longer declares «${property}»`).toBeDefined();
-      return Number(/^(\d+(?:\.\d+)?)px$/.exec(value as string)?.[1]);
-    };
+  test("THE CANVAS STACKS THEM, AND IT IS THE GRAPH THAT GIVES GROUND", () => {
+    const canvas = declarationsOf(".canvas");
+    expect(canvas.get("display"), "the canvas does not lay its two boxes out").toBe("flex");
+    expect(canvas.get("flex-direction"), "the two boxes sit side by side").toBe("column");
 
-    // The margin React Flow uses to keep EVERY panel off the side: it is what
-    // holds the controls and the minimap away from the edge, and it is also the
-    // one the bar rewrites for itself.
-    const panelMargin = declaration(".react-flow__panel", "margin");
-    const buttonWidth = declaration(".react-flow__controls-button", "width");
+    // Without these three the band would be pushed out of the canvas instead
+    // of taking its height from the graph: React Flow declares `height: 100%`,
+    // which fills the column on its own.
+    const graph = declarationsOf(".canvas > .react-flow");
+    expect(graph.get("height"), "React Flow's own `height: 100%` still stands").toBe("auto");
+    expect(graph.get("min-height"), "the graph cannot shrink below its content").toBe("0");
+    expect(graph.get("flex"), "the graph neither takes the spare room nor gives it back").toMatch(
+      /^1 1\b/,
+    );
 
-    // The minimap has no width in the stylesheet: it comes from the `svg` that
-    // draws it, and an attribute exists even without layout.
-    const { container } = render(<App />);
-    goToFlows();
-    const minimap = container.querySelector(".react-flow__minimap svg") as SVGElement;
-    expect(minimap, "the minimap is not drawn").not.toBeNull();
-    const minimapWidth = Number(minimap.getAttribute("width"));
-    expect(Number.isFinite(minimapWidth) && minimapWidth > 0).toBe(true);
-
+    // The growth of a wrapped band has to come off the graph, never off itself.
     expect(
-      lengthOf("--controls-reserve"),
-      `the zoom controls take ${panelMargin + buttonWidth}px from the side`,
-    ).toBeGreaterThanOrEqual(panelMargin + buttonWidth);
-    expect(
-      lengthOf("--minimap-reserve"),
-      `the minimap takes ${panelMargin + minimapWidth}px from the side`,
-    ).toBeGreaterThanOrEqual(panelMargin + minimapWidth);
+      declarationsOf(".toolbar").get("flex-shrink"),
+      "a taller band would be squeezed instead of shortening the paper",
+    ).toBe("0");
   });
 
-  test("the tools wrap instead of bursting the corridor", () => {
-    // A width ceiling on a flex container does not hold its children: the box
-    // shrinks to the ceiling and the content spills out anyway, over the
-    // minimap, while the bar's `getBoundingClientRect` reports an obedient
-    // narrow box. Without these lines the rule would be true only on paper.
+  test("THE BAR DECLARES NOTHING THAT WOULD LIFT IT BACK OVER THE PAPER", () => {
+    const toolbar = declarationsOf(".toolbar");
+    for (const property of LIFTS_IT_OUT) {
+      expect(
+        toolbar.get(property),
+        `the bar declares «${property}»: out of the column, it can cover the graph again`,
+      ).toBeUndefined();
+    }
 
+    // Ban 3 lends the one shadow to what «really does float above the canvas».
+    // The band does not float, so the exemption is spent with the defect.
+    expect(
+      toolbar.get("box-shadow"),
+      "the band still wears the floating bar's shadow",
+    ).toBeUndefined();
+  });
+
+  test("the tools wrap, and that costs the graph height instead of hiding it", () => {
     // AND THERE ARE TWO, not one. The row's `flex-wrap` saves the case where
     // three groups do not fit side by side; the group's saves the case where a
-    // whole group does not fit, and the corridor drops below the width of a
-    // three-tool group long before it disappears. Interrogating one selector
-    // only would let the other through.
+    // whole group does not fit, and at 375px the band is narrower than a
+    // three-tool group. Interrogating one selector only would let the other
+    // through, and the tools past the edge would be unreachable.
     for (const selector of [".toolbar__row", ".toolbar__group"]) {
       expect(
         declarationsOf(selector).get("flex-wrap"),
-        `«${selector}» does not wrap: a corridor narrower than its content spills over the minimap`,
+        `«${selector}» does not wrap: its content spills out of the window sideways`,
       ).toBe("wrap");
     }
   });
 });
 
 describe("where the bar is", () => {
-  test("IT SITS INSIDE THE CANVAS, AND DOES NOT SCROLL AWAY WITH IT", () => {
+  test("IT IS AT THE CANVAS, AND NOT A PIECE OF THE COLUMN BESIDE IT", () => {
     const { container } = render(<App />);
     goToFlows();
     focusAFlow(container);
 
     const toolbar = container.querySelector(".toolbar") as HTMLElement;
     expect(toolbar).not.toBeNull();
-
-    // Inside the canvas: it is no longer a piece of the rail next to it.
-    expect(toolbar.closest(".react-flow")).not.toBeNull();
     expect(toolbar.closest(".rail")).toBeNull();
-
-    // And it does not scroll away: `.react-flow__viewport` is the element that
-    // carries the pan and zoom `transform`. A bar inside that would drift off on
-    // the first drag, and a screenshot of a still canvas would never say so.
-    expect(toolbar.closest(".react-flow__viewport")).toBeNull();
   });
 
   test("pressing a tool really adds a step to the focused flow", () => {
