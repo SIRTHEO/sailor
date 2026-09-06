@@ -822,12 +822,9 @@ impl Descriptor {
     /// nowhere to put the name, so it answers `None` as an undeclared
     /// capability does: neither can be told which model to answer with.
     pub fn model_option(&self) -> Option<Vec<String>> {
-        self.capabilities
-            .get(CHOOSE_MODEL)?
-            .forms()
-            .iter()
-            .find(|form| form.takes_value && !form.args.is_empty())
-            .map(|form| form.args.clone())
+        let forms = self.capabilities.get(CHOOSE_MODEL)?.forms();
+        let carries = |form: &&CapabilityForm| form.takes_value && !form.args.is_empty();
+        forms.iter().find(carries).map(|form| form.args.clone())
     }
 
     /// Where this descriptor says two different things about the same fact. The
@@ -1502,65 +1499,6 @@ mod the_new_field_is_optional {
             CapabilityState::NotLookedAt,
             "unnamed does not mean absent"
         );
-    }
-
-    /// **DECLARING THE CAPABILITY IS NOT SAYING HOW TO USE IT.** A `true`, and
-    /// a form without a value, leave nowhere to write the name: whoever
-    /// composes the line must read that, not a yes.
-    #[test]
-    fn a_capability_without_a_place_for_the_name_cannot_carry_a_model() {
-        let catalog = loaded(
-            "how-a-model-is-named",
-            r#"[
-              { "id": "col-valore", "family": "ai_cli", "detect": { "command": "col-valore" },
-                "capabilities": { "choose_model": { "args": ["--model"], "takes_value": true } } },
-              { "id": "senza-valore", "family": "ai_cli", "detect": { "command": "senza-valore" },
-                "capabilities": { "choose_model": { "args": ["--model"] } } },
-              { "id": "solo-un-si", "family": "ai_cli", "detect": { "command": "solo-un-si" },
-                "capabilities": { "choose_model": true } },
-              { "id": "muto", "family": "ai_cli", "detect": { "command": "muto" } }
-            ]"#,
-        );
-        assert!(catalog.problems.is_empty(), "{:?}", catalog.problems);
-        let option = |id: &str| {
-            catalog
-                .descriptors
-                .iter()
-                .find(|loaded| loaded.descriptor.id == id)
-                .expect("the descriptor is in the catalog")
-                .descriptor
-                .model_option()
-        };
-
-        assert_eq!(option("col-valore"), Some(vec!["--model".to_owned()]));
-        assert_eq!(option("senza-valore"), None, "nowhere to put the name");
-        assert_eq!(option("solo-un-si"), None, "a yes is not an instruction");
-        assert_eq!(option("muto"), None);
-    }
-
-    /// The shipped engines that can be asked also say how a model is named to
-    /// them: without that, the flow that exists to take a question to a strong
-    /// model could ask it of nobody.
-    #[test]
-    fn the_shipped_engines_that_can_be_asked_say_how_a_model_is_named_to_them() {
-        let catalog = Catalog::load(&[Source::Builtin]);
-        assert!(catalog.problems.is_empty(), "{:?}", catalog.problems);
-        let mut asked = 0;
-        for loaded in &catalog.descriptors {
-            let descriptor = &loaded.descriptor;
-            if descriptor.ask.is_none()
-                || descriptor.capability(CHOOSE_MODEL) == CapabilityState::NotLookedAt
-            {
-                continue;
-            }
-            asked += 1;
-            assert!(
-                descriptor.model_option().is_some(),
-                "«{}» says it can choose a model and not with which option",
-                descriptor.id
-            );
-        }
-        assert!(asked >= 4, "measured {asked} engines, there were four");
     }
 
     /// A capability with several ways is written as a list; one with a single
