@@ -228,6 +228,8 @@ fn nothing_git_tracks_in_those_places_goes_unread() {
         .output()
         .expect("git ls-files");
     assert!(out.status.success(), "git could not list the tracked files");
+    let listed = String::from_utf8_lossy(&out.stdout).split('\0').filter(|p| !p.is_empty()).count();
+    workspace::measured_against(seen.len(), "files opened", listed, "paths git tracks");
 
     // Only what carries no words at all. `.svg` is deliberately absent: it is
     // text, and a path written into one would be published like any other.
@@ -274,7 +276,7 @@ fn nothing_git_tracks_in_those_places_goes_unread() {
 #[test]
 fn the_check_can_still_see_the_files_it_reads() {
     let files = published_files();
-    println!("{} published files scanned", files.len());
+    workspace::measured(files.len(), "published files opened");
     assert!(
         files.len() > 100,
         "only {} files found: the walker is blind",
