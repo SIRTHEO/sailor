@@ -281,8 +281,8 @@ impl Action for HandoffAction {
         // 16 KB, and putting it there would lose its tail exactly where it runs
         // long, which is where it matters.
         Ok(ActionOutcome::Waiting(format!(
-            "consegnato a «{}»; il mandato è nell'ingresso del passo, non qui. \
-             Prendilo con: sailor step open --run {run_id} --step {step_id} --as {}",
+            "handed to «{}»; the brief is in the step's input, not here. \
+             Take it with: sailor step open --run {run_id} --step {step_id} --as {}",
             spec.holder, spec.holder
         )))
     }
@@ -310,23 +310,23 @@ mod tests {
         let outcome = action
             .execute(
                 &json!({
-                    "mandate": "ripara il guasto 25",
+                    "mandate": "repair fault 25",
                     "holder": "claude-vivo",
                     "handoff_timeout_secs": 3600
                 }),
                 &shared_for("run-1", "implementa"),
             )
-            .expect("la consegna non fallisce");
+            .expect("the handover does not fail");
         match outcome {
             ActionOutcome::Waiting(line) => {
                 assert!(
                     line.contains("sailor step open --run run-1 --step implementa"),
-                    "la riga deve portare il comando da eseguire: {line}"
+                    "the line has to carry the command to run: {line}"
                 );
                 assert!(line.contains("claude-vivo"), "{line}");
             }
             ActionOutcome::Went(value) => {
-                panic!("una consegna non conosce il proprio risultato: {value}")
+                panic!("a handover does not know its own result: {value}")
             }
             // A handover waits for **a person**, and a person does not come
             // back by themselves on the next beat: `NotYet` would put the step
@@ -342,10 +342,10 @@ mod tests {
     /// whole and one cut off mid-sentence.
     #[test]
     fn a_long_mandate_stays_out_of_the_said_line() {
-        let long = "ripara ".repeat(6000);
+        let long = "repair ".repeat(6000);
         assert!(
             long.len() > flow::MAX_SAID_BYTES,
-            "la fixture deve superare il tetto di `said`, altrimenti non prova niente"
+            "the fixture has to exceed the `said` ceiling, or it proves nothing"
         );
         let action = HandoffAction::new();
         let outcome = action
@@ -357,18 +357,18 @@ mod tests {
                 }),
                 &shared_for("run-1", "implementa"),
             )
-            .expect("la consegna non fallisce");
+            .expect("the handover does not fail");
         let ActionOutcome::Waiting(line) = outcome else {
-            panic!("una consegna si mette in attesa");
+            panic!("a handover puts itself in waiting");
         };
         assert!(
             !line.contains(&long),
-            "il mandato non deve finire nella riga: sarebbe troncato a {} byte",
+            "the brief must not land in the line: it would be cut at {} bytes",
             flow::MAX_SAID_BYTES
         );
         assert!(
             line.len() < flow::MAX_SAID_BYTES,
-            "la riga deve restare corta: {} byte",
+            "the line has to stay short: {} bytes",
             line.len()
         );
     }
@@ -410,20 +410,20 @@ mod tests {
 
         let inspected = action
             .inspect_effect(&record, &SharedState::new())
-            .expect("la sonda risponde");
+            .expect("the probe answers");
         assert!(
             matches!(inspected, EffectStatus::Unknown(_)),
-            "dentro la finestra non si dichiara: {inspected:?}"
+            "inside the window nothing is declared: {inspected:?}"
         );
 
-        *clock.lock().expect("orologio sano") = 1_601;
+        *clock.lock().expect("a sane clock") = 1_601;
         let inspected = action
             .inspect_effect(&record, &SharedState::new())
-            .expect("la sonda risponde");
+            .expect("the probe answers");
         assert_eq!(
             inspected,
             EffectStatus::NotApplied,
-            "passata la scadenza nessuno l'ha preso in carico"
+            "past the deadline nobody took it up"
         );
     }
 
@@ -433,10 +433,10 @@ mod tests {
         let action = HandoffAction::new();
         let error = action
             .execute(
-                &json!({"mandate": "   ", "holder": "chi", "handoff_timeout_secs": 1}),
+                &json!({"mandate": "   ", "holder": "somebody", "handoff_timeout_secs": 1}),
                 &shared_for("run-1", "implementa"),
             )
-            .expect_err("un mandato vuoto si rifiuta");
+            .expect_err("an empty brief is refused");
         assert_eq!(error.class, "invalid_input");
     }
 

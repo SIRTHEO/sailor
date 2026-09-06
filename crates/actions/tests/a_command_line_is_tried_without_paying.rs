@@ -35,7 +35,7 @@ impl Sandbox {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
         let root = std::env::temp_dir().join(format!("actions-{name}-{}-{n}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).expect("la cartella di prova si crea");
+        fs::create_dir_all(&root).expect("the scratch directory is created");
         Sandbox { root }
     }
 }
@@ -50,7 +50,7 @@ impl Drop for Sandbox {
 /// tell it to have.
 fn fake_binary(dir: &Path, name: &str, script: &str) -> PathBuf {
     let path = dir.join(name);
-    fs::write(&path, format!("#!/bin/sh\n{script}\n")).expect("scrittura dell'eseguibile finto");
+    fs::write(&path, format!("#!/bin/sh\n{script}\n")).expect("writing the fake executable");
     fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("bit di esecuzione");
     path
 }
@@ -78,10 +78,10 @@ fn agy_recipe(refuses: &[&str]) -> AskRecipe {
 /// the line is well assembled, and nobody paid a thing to learn it.
 #[test]
 fn an_engine_that_only_misses_the_prompt_is_declared_sound() {
-    let sandbox = Sandbox::new("sana");
+    let sandbox = Sandbox::new("sound");
     let bin = fake_binary(
         &sandbox.root,
-        "agy-sano",
+        "agy-sound",
         "echo 'flag needs an argument: -print' >&2\nexit 2",
     );
     let verdict = probe_dry_run(
@@ -97,10 +97,10 @@ fn an_engine_that_only_misses_the_prompt_is_declared_sound() {
 /// reaches the reader word for word.
 #[test]
 fn an_engine_that_complains_about_something_else_is_declared_broken_with_its_own_words() {
-    let sandbox = Sandbox::new("rotta");
+    let sandbox = Sandbox::new("broken");
     let bin = fake_binary(
         &sandbox.root,
-        "agy-rotto",
+        "agy-broken",
         "echo 'Error: --print took \"--output-format\" as its prompt, so the intended prompt was left as an argument and ignored.' >&2\nexit 2",
     );
     let verdict = probe_dry_run(
@@ -117,7 +117,7 @@ fn an_engine_that_complains_about_something_else_is_declared_broken_with_its_own
             assert!(said.contains("--print took"), "{said}");
             assert!(said.contains("--output-format"), "{said}");
         }
-        other => panic!("doveva essere rotta, è {other:?}"),
+        other => panic!("it had to be broken, and it is {other:?}"),
     }
 }
 
@@ -126,10 +126,10 @@ fn an_engine_that_complains_about_something_else_is_declared_broken_with_its_own
 /// quota that ran out.
 #[test]
 fn an_exhausted_engine_is_not_called_broken() {
-    let sandbox = Sandbox::new("esaurita");
+    let sandbox = Sandbox::new("spent");
     let bin = fake_binary(
         &sandbox.root,
-        "claude-esaurito",
+        "claude-spent",
         "echo \"You've hit your weekly limit · resets 7am\" >&2\nexit 1",
     );
     let recipe = AskRecipe {
@@ -147,7 +147,7 @@ fn an_exhausted_engine_is_not_called_broken() {
     let verdict = probe_dry_run(&RealDryProbe, &bin.to_string_lossy(), &recipe);
     match verdict {
         ProbeVerdict::CannotWork { said } => assert!(said.contains("weekly limit"), "{said}"),
-        other => panic!("doveva essere «non può lavorare adesso», è {other:?}"),
+        other => panic!("it had to be «cannot work right now», and it is {other:?}"),
     }
 }
 
@@ -157,17 +157,17 @@ fn an_exhausted_engine_is_not_called_broken() {
 /// the `capabilities` block keeps between «it lacks it» and «nobody looked».
 #[test]
 fn an_engine_whose_descriptor_says_nothing_is_not_declared_sound() {
-    let sandbox = Sandbox::new("taciuta");
+    let sandbox = Sandbox::new("unspoken");
     let bin = fake_binary(
         &sandbox.root,
-        "agy-muto",
+        "agy-mute",
         "echo 'flag needs an argument: -print' >&2\nexit 2",
     );
     let verdict = probe_dry_run(&RealDryProbe, &bin.to_string_lossy(), &agy_recipe(&[]));
     assert_eq!(
         verdict,
         ProbeVerdict::NotDeclared,
-        "il motore ha pure rifiutato bene, ma nessuno aveva dichiarato come lo dice"
+        "the engine did refuse properly, but nobody had declared how it says so"
     );
 }
 
@@ -185,7 +185,7 @@ impl DryProbe for RecordingProbe {
     fn run(&self, bin: &str, args: &[String], stdin: Option<Vec<u8>>) -> DryRun {
         self.seen
             .lock()
-            .expect("il registro della sonda finta")
+            .expect("the fake probe's record")
             .push((bin.to_owned(), args.to_vec(), stdin));
         DryRun::Answered {
             stdout: String::new(),
@@ -202,7 +202,7 @@ fn the_line_that_is_tried_is_the_real_one_without_the_prompt() {
     let probe = RecordingProbe::default();
     let _ = probe_dry_run(&probe, "agy", &agy_recipe(&["flag needs an argument"]));
 
-    let seen = probe.seen.lock().expect("il registro");
+    let seen = probe.seen.lock().expect("the record");
     let (bin, args, stdin) = &seen[0];
     assert_eq!(bin, "agy");
     assert_eq!(args, &["--mode", "plan", "--print"]);
@@ -211,7 +211,7 @@ fn the_line_that_is_tried_is_the_real_one_without_the_prompt() {
     // would become a way of hanging the check, on a machine with no `timeout`.
     assert!(
         stdin.is_none(),
-        "la domanda andava in coda, non sull'ingresso"
+        "the question went at the tail, not on the input"
     );
 }
 
@@ -235,7 +235,7 @@ fn an_engine_that_reads_the_prompt_from_stdin_gets_an_empty_closed_one() {
     };
     let _ = probe_dry_run(&probe, "claude", &recipe);
 
-    let seen = probe.seen.lock().expect("il registro");
+    let seen = probe.seen.lock().expect("the record");
     assert_eq!(seen[0].2, Some(Vec::new()));
 }
 
@@ -246,12 +246,12 @@ fn an_engine_that_reads_the_prompt_from_stdin_gets_an_empty_closed_one() {
 fn an_engine_that_never_answers_is_neither_sound_nor_broken() {
     let verdict = probe_dry_run(
         &RealDryProbe,
-        "/questo/percorso/non/esiste/da/nessuna/parte",
+        "/this/path/does/not/exist/anywhere",
         &agy_recipe(&["flag needs an argument"]),
     );
     match verdict {
-        ProbeVerdict::TimedOut { why } => assert!(!why.is_empty(), "il motivo non è vuoto"),
-        other => panic!("doveva essere «nessuna risposta», è {other:?}"),
+        ProbeVerdict::TimedOut { why } => assert!(!why.is_empty(), "the reason is not empty"),
+        other => panic!("it had to be «no answer», and it is {other:?}"),
     }
 }
 
@@ -286,7 +286,7 @@ fn the_exhausted_reading_comes_first_when_the_output_says_both() {
     match verdict {
         ProbeVerdict::CannotWork { .. } => {}
         other => {
-            panic!("l'ordine di lettura è invertito: un motore esaurito è diventato {other:?}")
+            panic!("the reading order is inverted: a spent engine became {other:?}")
         }
     }
 }
@@ -307,7 +307,7 @@ fn the_words_are_matched_whatever_case_the_engine_shouts_them_in() {
 /// the worst defect this check could possibly have.
 #[test]
 fn an_empty_fragment_declares_nothing() {
-    let verdict = judge_dry_run(&agy_recipe(&["", "   "]), "", "un errore qualunque");
+    let verdict = judge_dry_run(&agy_recipe(&["", "   "]), "", "an error like any other");
     assert_eq!(verdict, ProbeVerdict::NotDeclared);
 }
 
@@ -329,7 +329,7 @@ fn two_failures_with_the_same_exit_code_get_two_different_verdicts() {
     assert_eq!(sound, ProbeVerdict::Sound);
     assert!(
         matches!(broken, ProbeVerdict::Broken { .. }),
-        "stesso codice d'uscita, verdetto diverso: {broken:?}"
+        "the same exit code, a different verdict: {broken:?}"
     );
     assert_ne!(sound, broken);
 }
@@ -340,8 +340,8 @@ fn two_failures_with_the_same_exit_code_get_two_different_verdicts() {
 /// looks at the text and nothing else.
 #[test]
 fn an_engine_that_exits_zero_with_a_help_screen_is_not_sound() {
-    let sandbox = Sandbox::new("guida");
-    let bin = fake_binary(&sandbox.root, "agy-guida", "echo 'Usage of agy:'\nexit 0");
+    let sandbox = Sandbox::new("help-screen");
+    let bin = fake_binary(&sandbox.root, "agy-help", "echo 'Usage of agy:'\nexit 0");
     let verdict = probe_dry_run(
         &RealDryProbe,
         &bin.to_string_lossy(),
@@ -349,7 +349,7 @@ fn an_engine_that_exits_zero_with_a_help_screen_is_not_sound() {
     );
     match verdict {
         ProbeVerdict::Broken { said } => assert!(said.contains("Usage of agy"), "{said}"),
-        other => panic!("uscire zero senza domanda non è una riga sana: {other:?}"),
+        other => panic!("exiting zero with no question is no sound line: {other:?}"),
     }
 }
 

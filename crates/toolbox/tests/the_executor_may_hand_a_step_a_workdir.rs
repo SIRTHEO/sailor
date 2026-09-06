@@ -24,7 +24,7 @@ use toolbox::{DetectToolsAction, Machine};
 fn a_folder(name: &str) -> std::path::PathBuf {
     let root = std::env::temp_dir().join(format!("toolbox-workdir-{name}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).expect("la cartella di prova si crea");
+    fs::create_dir_all(&root).expect("the scratch directory is created");
     root
 }
 
@@ -34,29 +34,29 @@ fn descriptor(inside: &std::path::Path, name: &str) -> std::path::PathBuf {
         &file,
         json!({
             "tools": [{
-                "id": "un-nome-che-nessuno-installa",
+                "id": "a-name-nobody-installs",
                 "family": "tool",
-                "label": "esiste solo in questa prova",
-                "detect": [{ "command": "un-binario-che-non-esiste-di-sicuro" }]
+                "label": "it exists only in this test",
+                "detect": [{ "command": "a-binary-that-surely-does-not-exist" }]
             }]
         })
         .to_string(),
     )
-    .expect("il descrittore si scrive");
+    .expect("the descriptor is written");
     file
 }
 
 fn output(outcome: ActionOutcome) -> serde_json::Value {
     match outcome {
         ActionOutcome::Went(value) => value,
-        other => panic!("il passo doveva andare, invece: {other:?}"),
+        other => panic!("the step had to go, and instead: {other:?}"),
     }
 }
 
 #[test]
-fn il_workdir_non_fa_cadere_il_rilevamento() {
-    let root = a_folder("cade");
-    let file = descriptor(&root, "prova.json");
+fn a_workdir_does_not_make_the_detection_fall() {
+    let root = a_folder("falls");
+    let file = descriptor(&root, "test.json");
 
     let outcome = DetectToolsAction::on(Machine::bare(root.clone()))
         .execute(
@@ -68,36 +68,36 @@ fn il_workdir_non_fa_cadere_il_rilevamento() {
             }),
             &SharedState::new(),
         )
-        .expect("l'esecutore può aggiungere il workdir: non è un ingresso sbagliato");
+        .expect("the executor may add the workdir: it is no wrong input");
 
-    assert_eq!(output(outcome)["total"], 1, "il descrittore è stato letto");
+    assert_eq!(output(outcome)["total"], 1, "the descriptor was read");
 }
 
 /// **AND THE FIELD IS NOT A SINK.** A relative path counts from the declared
 /// root. Without this proof "accept it and throw it away" would pass just the
 /// same, and a relative descriptor be sought where the process sits — fault 25.
 #[test]
-fn un_descrittore_relativo_si_conta_dal_workdir() {
-    let root = a_folder("relativo");
-    fs::create_dir_all(root.join("tools.d")).expect("sottocartella");
-    descriptor(&root.join("tools.d"), "prova.json");
+fn a_relative_descriptor_counts_from_the_workdir() {
+    let root = a_folder("relative");
+    fs::create_dir_all(root.join("tools.d")).expect("the subdirectory");
+    descriptor(&root.join("tools.d"), "test.json");
 
     let outcome = DetectToolsAction::on(Machine::bare(root.clone()))
         .execute(
             &json!({
-                "descriptor_paths": ["tools.d/prova.json"],
+                "descriptor_paths": ["tools.d/test.json"],
                 "include_defaults": false,
                 "version_probes": false,
                 "workdir": root.display().to_string(),
             }),
             &SharedState::new(),
         )
-        .expect("il passo va");
+        .expect("the step goes");
 
     let output = output(outcome);
     assert_eq!(
         output["total"], 1,
-        "letto dalla radice, non dal cwd: {}",
+        "read from the root, not from the cwd: {}",
         output["problems"]
     );
 }

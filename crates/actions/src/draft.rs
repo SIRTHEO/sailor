@@ -115,7 +115,7 @@ mod tests {
 
     fn a_flow(action: &str) -> Value {
         json!({
-            "id": "una-bozza",
+            "id": "a-draft",
             "description": "two steps, one of them named by the test",
             "graph": { "steps": [
                 { "id": "trigger", "deps": [], "action": "trigger", "max_attempts": 1,
@@ -149,14 +149,14 @@ mod tests {
         let went = drafter(&dir)
             .execute(&json!({ "flow": a_flow("work_survey") }), &SharedState::default())
             .expect("the draft stands");
-        let written = std::fs::read_to_string(dir.join("una-bozza.flow.json"));
+        let written = std::fs::read_to_string(dir.join("a-draft.flow.json"));
         let _ = std::fs::remove_dir_all(&dir);
 
         let ActionOutcome::Went(said) = went else { panic!("{went:?}") };
-        assert_eq!(said["flow"], json!("una-bozza"));
+        assert_eq!(said["flow"], json!("a-draft"));
         assert_eq!(said["steps"], json!(2));
         let back: FlowFile = serde_json::from_str(&written.expect("the file")).expect("a flow");
-        assert_eq!(back.id, "una-bozza");
+        assert_eq!(back.id, "a-draft");
     }
 
     /// **A DRAFTED FLOW'S OWN `$from` IS DATA, NOT A REFERENCE TO RESOLVE.**
@@ -171,7 +171,7 @@ mod tests {
         let went = drafter(&dir)
             .execute(&json!({ "flow": flow.to_string() }), &SharedState::default())
             .expect("the draft stands");
-        let written = std::fs::read_to_string(dir.join("una-bozza.flow.json"));
+        let written = std::fs::read_to_string(dir.join("a-draft.flow.json"));
         let _ = std::fs::remove_dir_all(&dir);
 
         assert!(matches!(went, ActionOutcome::Went(_)), "{went:?}");

@@ -217,7 +217,7 @@ fn a_call_whose_reserve_does_not_fit_the_remainder_never_starts() {
 /// showing a figure that would be invented.
 #[test]
 fn a_call_nobody_can_reserve_says_so_instead_of_showing_a_number() {
-    let dir = Scratch::new("senza-riserva");
+    let dir = Scratch::new("with-no-reserve");
     let prices = dir.0.join("pricing.json");
     fs::write(&prices, PRICE_LIST).expect("the fake price list is written");
     let action = a_run(&dir.0, false, "deposito");
