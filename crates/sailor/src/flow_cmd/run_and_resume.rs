@@ -15,7 +15,9 @@ use ui::gather::FlowSource;
 use super::{default_ledger_dir, missing_actions, new_run_id, now_secs, one_flow};
 
 /// The last closed run's report, put where the trigger step carries it on.
-/// Nothing to carry is nothing written: a first run must read as a first run.
+/// Nothing to carry is nothing written: a first run must read as a first run,
+/// and a trigger whose shape declares no room for it is handed nothing — an
+/// offer a closed schema refuses kills the run before it spends anything.
 fn put_previous_report(flow: &mut FlowFile, ledger: &Ledger) -> Result<(), String> {
     let Some(report) = ledger
         .last_run_report(&flow.id)
@@ -33,6 +35,7 @@ fn put_previous_report(flow: &mut FlowFile, ledger: &Ledger) -> Result<(), Strin
         .steps()
         .iter()
         .find(|step| step.action == "trigger")
+        .filter(|step| step.input_schema.accepts_property("previous_report"))
         .map(|step| step.id.clone())
     else {
         return Ok(());
@@ -898,6 +901,60 @@ mod tests {
             second.inputs["innesco"]["previous_report"]["run_id"], "corsa-1",
             "la corsa dopo legge il rapporto di quella prima: {:?}",
             second.inputs["innesco"]
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// **A CLOSED TRIGGER IS OFFERED NOTHING IT DECLARED NO ROOM FOR.** Writing
+    /// the report into a schema that forbids extras killed the run on «expected
+    /// declared property» — so a flow whose trigger is closed could be launched
+    /// once and never again, and the second launch died before spending.
+    #[test]
+    fn a_trigger_that_declares_no_room_for_the_report_is_not_handed_one() {
+        let json = r#"{
+            "id": "un-flusso-chiuso", "description": "innesco a forma chiusa",
+            "graph": {"steps": [{
+                "id": "innesco", "deps": [], "action": "trigger", "max_attempts": 1,
+                "when": null, "output_schema": {"type": "any"},
+                "input_schema": {"type": "object", "allow_extra": false,
+                    "required": ["source", "text"],
+                    "properties": {"source": {"type": "string"}, "text": {"type": "string"}}}
+            }]},
+            "inputs": {"innesco": {"source": "manual", "text": "un incarico"}}
+        }"#;
+        let dir = std::env::temp_dir().join(format!(
+            "sailor-innesco-chiuso-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        let ledger = Ledger::open(&dir).expect("il deposito si apre");
+        ledger
+            .record_run(&ledger::RunRecord {
+                run_id: "corsa-1".to_owned(),
+                kind: "flow".to_owned(),
+                entity: "un-flusso-chiuso".to_owned(),
+                parent_run_id: None,
+                started_by: "test".to_owned(),
+                status: "complete".to_owned(),
+                total_cost_micros: 0,
+                error: None,
+                started_at: 10,
+                ended_at: Some(20),
+                worktree: None,
+                stop_reason: None,
+            })
+            .expect("la riga della corsa");
+        ledger
+            .write_run_report("corsa-1", "test", 30)
+            .expect("il rapporto si scrive");
+
+        let mut flow: FlowFile = serde_json::from_str(json).expect("caricare il flusso");
+        put_previous_report(&mut flow, &ledger).expect("niente da portare");
+
+        assert!(
+            flow.inputs["innesco"].get("previous_report").is_none(),
+            "un innesco a forma chiusa non riceve il rapporto: {:?}",
+            flow.inputs["innesco"]
         );
         let _ = std::fs::remove_dir_all(dir);
     }
