@@ -6,8 +6,9 @@ full rules live in [`AGENTS.md`](AGENTS.md) and in `docs/decisions.md`.
 
 Everything committed here is in English — identifiers, comments, documents,
 commit messages, and every message a user of the tool can read. The Italian
-still under `docs/` and in older comments is a measured debt, counted by a test
-whose number may only fall.
+still in older comments is a measured debt, counted by a test whose number may
+only fall. Under `docs/` the one exception is the fault register, whose rows
+are generated from Sailor's own store and are translated nowhere.
 
 ## Build and test
 

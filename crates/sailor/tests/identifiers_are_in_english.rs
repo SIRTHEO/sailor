@@ -15,7 +15,7 @@
 //! discutere con lei. Chi ne trova una nuova la aggiunge sotto: è una riga.
 //!
 //! **COSA NON GUARDA.** Commenti, testo dentro le stringhe, e i documenti in
-//! `docs/`: lì l'italiano è la regola, non l'eccezione. E i nomi delle *fixture*
+//! `docs/`: là la lingua è affare di chi li scrive. E i nomi delle *fixture*
 //! dentro le stringhe di prova — `f.name == "assente"` — restano quello che
 //! sono: dati, non identificatori.
 //!
