@@ -31,7 +31,7 @@ import {
 import { stepUsageOfRun, type StepUsage } from "./stepusage";
 import { stepStatesOfCanvas } from "./runstate";
 import { BlankCanvas, type PlacesAsk } from "./BlankCanvas";
-import { MACHINE, MACHINE_GROUND, PLACES, onItsOwnName, type MachineRow, type Section } from "./places";
+import { MACHINE, MACHINE_GROUND, PLACES, SECTIONS, onItsOwnName, type MachineRow, type Section } from "./places";
 import { World, OF_THIS_TREE, type FlowGroup } from "./World";
 import { liveOf, newestPerFlow } from "./flowlive";
 import { amongThese, rememberWhere, whereYouWere } from "./whereyouwere";
@@ -264,9 +264,10 @@ export default function App() {
      Sailor open means this window is replaced at every build of the engine
      under it; landing on the board each time costs the walk back. */
   const wasAt = useRef(whereYouWere());
-  const [place, setPlace] = useState<Place>(() =>
-    amongThese(wasAt.current.place, PLACES.map((one) => one.id), "board"),
-  );
+  // EVERY SECTION, NOT EVERY OFFERED PLACE: what the machine's screens live in
+  // is named by no row of the place list, and reading that list here would send
+  // whoever left the window on Profiles back to the board.
+  const [place, setPlace] = useState<Place>(() => amongThese(wasAt.current.place, SECTIONS, "board"));
   const [memoryTab, setMemoryTab] = useState<MemoryTab>(() =>
     amongThese(wasAt.current.memoryTab, MEMORY_TABS.map((one) => one.id), "runs"),
   );
@@ -1299,9 +1300,6 @@ export default function App() {
       hint: one.asks,
       run: () => setPlace(one.id),
     }));
-    for (const one of MACHINE) {
-      go.push({ group: "Go to", label: one.name, hint: one.asks, run: () => goToMachine(one) });
-    }
     const history = PLACES.find((one) => one.id === "memory")?.name ?? "Runs";
     for (const one of MEMORY_TABS) {
       go.push({ group: "Go to", label: `${history} › ${one.name}`, hint: one.about, run: () => { setPlace("memory"); setMemoryTab(one.id); } });
@@ -1309,6 +1307,14 @@ export default function App() {
     for (const one of TERMINALS_TABS) {
       go.push({ group: "Go to", label: `Terminals › ${one.name}`, hint: one.about, run: () => { setPlace("terminals"); setTerminalsTab(one.id); } });
     }
+    // Filed under the machine and not under «go to»: they hold wherever you
+    // stand, and «Sailor» as one noun over them named none of the nine.
+    const machine: Entry[] = MACHINE.map((one) => ({
+      group: MACHINE_GROUND,
+      label: one.name,
+      hint: one.asks,
+      run: () => goToMachine(one),
+    }));
     const names = Array.from(flows.keys()).sort();
     const open: Entry[] = names.map((name) => ({
       group: "Open flow",
@@ -1325,7 +1331,7 @@ export default function App() {
       hint: flows.get(name)?.origin ?? undefined,
       run: () => void handleRun(name),
     }));
-    return [...go, ...open, ...run];
+    return [...go, ...machine, ...open, ...run];
   }, [flows, handleRun, goToMachine]);
 
   return (
