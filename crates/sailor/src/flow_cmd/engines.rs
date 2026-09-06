@@ -140,8 +140,8 @@ pub(super) fn login_states_into(
 struct WantedEngine {
     step: String,
     tool: String,
-    /// Il modello che **questo passo** vuole da lui, se ne nomina uno: la riga
-    /// da provare è quella, non quella senza.
+    /// The model **this step** wants of it, if it names one: the line to try
+    /// is that one, not the one without.
     model: Option<String>,
 }
 
@@ -229,15 +229,11 @@ pub(super) fn engine_lines_into(
 ) {
     use actions::{ProbeVerdict, ToolResolver};
 
-    // Un motore si prova UNA VOLTA SOLA anche quando lo nominano sei passi: sei
-    // prove avvierebbero sei processi per sapere sei volte la stessa cosa. Il
-    // rapporto resta passo per passo, che è ciò che chi legge deve correggere.
-    //
-    // **LA CHIAVE PORTA ANCHE IL MODELLO**, perché da quando un passo può
-    // nominarne uno la riga non viene più dal solo descrittore: due passi che
-    // chiedono allo stesso motore due modelli diversi montano due righe
-    // diverse, e provarne una sola dichiarerebbe sana una riga che nessuno ha
-    // guardato.
+    // AN ENGINE IS TRIED ONCE even when six steps name it: six trials would
+    // start six processes to learn one thing six times, and the report stays
+    // step by step anyway. THE KEY CARRIES THE MODEL TOO: two steps asking one
+    // engine for two models assemble two lines, and probing one would call
+    // sound a line nobody looked at.
     let mut judged: BTreeMap<(String, Option<String>), EngineOutcome> = BTreeMap::new();
 
     let mut sound = Vec::new();
@@ -258,10 +254,9 @@ pub(super) fn engine_lines_into(
                 Err(reason) => EngineOutcome::NotHere(reason),
                 Ok(bin) => match (tools.ask_recipe(&wanted.tool), &wanted.model) {
                     (None, _) => EngineOutcome::NotAssemblable,
-                    // Il passo nomina un modello a un motore che non sa
-                    // riceverlo: la corsa lo rifiuterebbe, quindi qui non c'è
-                    // nessuna riga da provare — e dirlo prima di spendere è
-                    // tutto il mestiere di questo controllo.
+                    // A model named to an engine that cannot receive one: the
+                    // run would refuse it, so there is no line to try, and
+                    // saying so before spending is this check's whole trade.
                     (Some(_), Some(_)) if tools.model_option(&wanted.tool).is_none() => {
                         EngineOutcome::NotAssemblable
                     }
@@ -681,8 +676,8 @@ mod tests {
         serde_json::from_str(&json).expect("caricare il flusso")
     }
 
-    /// Come `flow_with_chain`, ma il passo nomina anche quale modello vuole da
-    /// ciascun motore.
+    /// Like `flow_with_chain`, with the step naming which model it wants of
+    /// each engine.
     fn flow_asking_model(chain: &str, model: &str) -> FlowFile {
         let json = format!(
             r#"{{
@@ -707,10 +702,9 @@ mod tests {
         serde_json::from_str(&json).expect("caricare il flusso")
     }
 
-    /// Una sonda che ricorda **com'era fatta la riga** che le è stata data. La
-    /// riga scritta nel rapporto e quella provata sono due cose diverse, e una
-    /// prova che guardasse solo la prima lascerebbe passare un controllo che
-    /// mostra una riga e ne prova un'altra.
+    /// A probe that remembers **the line it was given**. The line written in
+    /// the report and the line tried are two things, and a test reading only
+    /// the first would pass a check that shows one and tries another.
     #[derive(Default)]
     struct RecordingProbe(std::sync::Mutex<Vec<Vec<String>>>);
 
@@ -737,10 +731,9 @@ mod tests {
         }
     }
 
-    /// **LA RIGA PROVATA È QUELLA CHE GIREREBBE.** Da quando un passo nomina il
-    /// modello che vuole, una prova a secco montata dal solo descrittore
-    /// proverebbe una riga senza il modello e la dichiarerebbe sana: sono le
-    /// due porte del guasto 1, e questa prova le tiene attaccate.
+    /// **THE LINE TRIED IS THE ONE THAT WOULD RUN.** Assembled from the
+    /// descriptor alone it would carry no model and still be called sound:
+    /// the two doors of fault 1, held together here.
     #[test]
     fn the_line_tried_without_spending_carries_the_model_the_step_asked_for() {
         let flow = flow_asking_model(r#""motore""#, r#"{"motore": "il-modello-forte"}"#);
@@ -766,9 +759,9 @@ mod tests {
         );
     }
 
-    /// **E UN MODELLO CHIESTO A CHI NON LO SA RICEVERE NON SI PROVA AFFATTO.**
-    /// La corsa lo rifiuterebbe: montargli la riga senza il modello e
-    /// dichiararla sana manderebbe a spendere su una catena che si fermerà.
+    /// **AND ONE ASKED OF AN ENGINE THAT CANNOT HEAR IT IS NOT TRIED.** The run
+    /// would refuse it: assembling the line without the model and calling it
+    /// sound would send a person to spend on a chain that will stop.
     #[test]
     fn an_engine_that_cannot_be_told_a_model_has_no_line_to_try() {
         let flow = flow_asking_model(r#""motore""#, r#"{"motore": "il-modello-forte"}"#);

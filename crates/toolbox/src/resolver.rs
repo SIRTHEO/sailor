@@ -227,9 +227,9 @@ impl actions::ToolResolver for Tools {
         ask_recipe_of(&loaded.descriptor)
     }
 
-    /// Le opzioni dopo le quali si scrive il nome del modello, prese dalla
-    /// capacità che il descrittore dichiara. Nessuna interpretazione, come
-    /// sopra: chi non la dichiara non impara a riceverlo per somiglianza.
+    /// The options a model's name is written after, from the capability the
+    /// descriptor declares. No interpretation, as above: an engine that does
+    /// not declare it does not learn to receive one by resemblance.
     fn model_option(&self, id: &str) -> Option<Vec<String>> {
         self.catalog
             .live()
@@ -296,14 +296,9 @@ impl actions::ToolResolver for Tools {
     }
 }
 
-/// The descriptor's `usage` block translated into the shape the actions know.
-/// The recipe a descriptor declares, in the shape the actions know. No
-/// interpretation: what is not written is not there, and an engine that
-/// declares none does not become usable by guesswork.
-///
-/// **IT IS A FUNCTION AND NOT A METHOD** so that a judge can compose the very
-/// line a step would run without a machine to resolve it on — see fault 1,
-/// whose whole shape is an order that nothing but a real invocation displays.
+/// The recipe a descriptor declares, in the shape the actions know. **A
+/// function and not a method** so that a judge can compose the line a step
+/// would run without a machine to resolve it on: see fault 1.
 pub fn ask_recipe_of(descriptor: &crate::descriptor::Descriptor) -> Option<actions::AskRecipe> {
     let ask = descriptor.ask.as_ref()?;
     Some(actions::AskRecipe {
@@ -323,8 +318,9 @@ pub fn ask_recipe_of(descriptor: &crate::descriptor::Descriptor) -> Option<actio
     })
 }
 
-/// No interpretation in here: what is written is copied, and what is not written
-/// stays `None` all the way down.
+/// The descriptor's `usage` block translated into the shape the actions know.
+/// No interpretation in here: what is written is copied, and what is not
+/// written stays `None` all the way down.
 fn usage_recipe(usage: &crate::descriptor::Usage) -> actions::UsageRecipe {
     actions::UsageRecipe {
         args: usage.args.clone(),
