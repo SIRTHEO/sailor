@@ -348,7 +348,7 @@ impl Action for WorkClaimAction {
         // agenti condividono sempre la repo: un freno che scattasse lì
         // fermerebbe ogni annuncio di ogni giorno, e chi lo subisce lo spegne —
         // dopodiché non frena più niente. È la stessa forma del modello Bazel
-        // in `docs/decisioni.md`: si entra come avviso, si diventa barriera solo
+        // in `docs/decisions.md`: si entra come avviso, si diventa barriera solo
         // dove qualcuno l'ha chiesto.
         if spec.refuse_when_shared {
             let holding: Vec<String> = collisions
