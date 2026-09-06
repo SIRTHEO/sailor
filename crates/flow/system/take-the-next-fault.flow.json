@@ -254,10 +254,41 @@
         }
       },
       {
+        "id": "warrant",
+        "deps": [
+          "repair"
+        ],
+        "when": null,
+        "action": "shell_check",
+        "max_attempts": 1,
+        "input_schema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "any"
+        },
+        "with": {
+          "command": "set -eu\n# The two words the whole round rests on, read by Sailor and not by the\n# engine that wrote them: a repair that reproduced nothing repaired\n# nothing, and a rule drawn from it would be read as an instruction.\n[ \"$REPRODUCED\" = true ] || { echo \"the fault was never seen red: nothing here was reproduced\" >&2; exit 1; }\n[ \"$FIXED\" = true ] || { echo \"the fault is not closed: the test is not green after the change\" >&2; exit 1; }",
+          "env": {
+            "REPRODUCED": {
+              "$json": "/answer/reproduced"
+            },
+            "FIXED": {
+              "$json": "/answer/fixed"
+            }
+          },
+          "timeout_secs": 60
+        }
+      },
+      {
         "id": "learn",
         "deps": [
           "next",
-          "repair"
+          "repair",
+          "warrant"
         ],
         "when": {
           "kind": "pointer_exists",

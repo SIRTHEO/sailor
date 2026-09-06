@@ -159,6 +159,7 @@ fn the_fault_is_read_then_handed_to_the_engine_only_when_one_is_open() {
             ("trigger", "trigger"),
             ("next", "fault_next"),
             ("repair", "external_engine"),
+            ("warrant", "shell_check"),
             ("learn", "remember"),
         ]
     );
@@ -329,5 +330,53 @@ fn a_repair_that_drew_no_rule_keeps_nothing() {
         learn.is_none_or(|record| record.outcome == Some(Outcome::Skipped)),
         "no rule offered, nothing kept — and skipped, not broken: {:?}",
         learn.map(|record| (&record.outcome, &record.failure_class))
+    );
+}
+
+/// The answer that says both things at once: a rule drawn from a repair that
+/// reproduced nothing. A strong model reviewing the design named this exact
+/// case — an answer needs only to carry `learnt` beside `reproduced: false`
+/// for the step to publish a rule the answer itself contradicts.
+fn answering_with_a_rule_it_did_not_earn() -> String {
+    json!({
+        "reproduced": false,
+        "fixed": false,
+        "test": "none: the check could not be written",
+        "changed": "nothing",
+        "left_open": "the whole fault",
+        "learnt": "a reader that cannot read answers «I do not know», never a zero"
+    })
+    .to_string()
+}
+
+/// **SAILOR READS THE TWO WORDS THE ROUND RESTS ON, NOT THE ENGINE.** Whether
+/// the fault was seen red and is green now decides both whether the round
+/// closed and whether anything it says may be handed to the next one; leaving
+/// it to the prompt makes a rule out of an answer that contradicts itself.
+#[test]
+fn a_rule_is_not_published_on_a_repair_that_reproduced_nothing() {
+    let scratch = Scratch::new();
+    let _fault = an_open_fault(&scratch);
+    let (_, store) = run(
+        &scratch,
+        &graph_answering_with(answering_with_a_rule_it_did_not_earn()),
+    );
+
+    let records = store.all();
+    let warrant = records
+        .iter()
+        .find(|record| record.step_id == "warrant")
+        .expect("the warrant was asked");
+    assert_eq!(
+        warrant.outcome,
+        Some(Outcome::Broke),
+        "a repair that reproduced nothing does not pass: {:?}",
+        warrant.failure_class
+    );
+    let learn = records.iter().find(|record| record.step_id == "learn");
+    assert!(
+        learn.is_none_or(|record| record.outcome != Some(Outcome::Went)),
+        "and nothing it said is handed on: {:?}",
+        learn.map(|record| &record.outcome)
     );
 }
