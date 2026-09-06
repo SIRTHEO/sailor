@@ -19,3 +19,8 @@ ledger = { path = "../ledger" }
 rusqlite = { version = "0.37", features = ["bundled"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+# Tests only: the receipt a judge hands to `sailor ratchet`. `workspace`
+# depends on nothing of this workspace, so nothing of it reaches the crate.
+[dev-dependencies]
+workspace = { path = "../workspace" }

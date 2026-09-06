@@ -316,6 +316,12 @@ fn measured() -> Measured {
         }
         stripped.push((path, code));
     }
+    workspace::measured_against(
+        stripped.len(),
+        "shipped sources read",
+        PANICS_TODAY.len(),
+        "crates the panic count is seeded for",
+    );
     let mut per_crate: BTreeMap<String, usize> =
         crates_of(&root).into_iter().map(|name| (name, 0)).collect();
     let mut per_file = Vec::new();

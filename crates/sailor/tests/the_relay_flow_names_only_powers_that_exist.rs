@@ -51,13 +51,16 @@ fn the_flow_loads_and_its_graph_holds_together() {
 #[test]
 fn every_power_the_flow_names_is_registered() {
     let registry = registry::registry_in(registry::House::empty(), None, None);
-    for step in parsed()["graph"]["steps"].as_array().expect("steps") {
+    let steps = parsed();
+    let steps = steps["graph"]["steps"].as_array().expect("steps");
+    for step in steps {
         let named = step["action"].as_str().expect("a step names an action");
         assert!(
             registry.get(named).is_some(),
             "«{named}» is named by the flow and registered nowhere"
         );
     }
+    workspace::measured(steps.len(), "steps of the relay flow looked up in the registry");
 }
 
 /// The most expensive fault of the old relay was invisible declining: it handed

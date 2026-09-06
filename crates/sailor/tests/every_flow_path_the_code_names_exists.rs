@@ -231,7 +231,10 @@ fn every_flow_path_the_code_names_exists() {
         sources.len()
     );
     let named = namings_in(&root);
-    println!("today: {} sources read, {} flow paths named", sources.len(), named.len());
+    workspace::measured(
+        sources.len(),
+        &format!("sources read, naming {} flow paths", named.len()),
+    );
     let broken = broken(&root);
     assert!(
         broken.is_empty(),
