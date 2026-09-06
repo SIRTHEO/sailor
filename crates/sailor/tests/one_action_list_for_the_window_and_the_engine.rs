@@ -1,58 +1,19 @@
-//! La finestra e il motore hanno **una lista di azioni sola**, e adesso
-//! qualcuno la misura.
+//! The window and the engine have **one action list**, and something measures it.
 //!
-//! **IL GUASTO 10, NELLA SUA ULTIMA COPIA RIMASTA.** «La stessa lista di
-//! componenti scritta in due punti del programma»: la cura scritta accanto al
-//! guasto è «una sola fonte, e le altre la chiedono invece di ricopiarla». Sul
-//! lato Rust è già stata applicata — `crates/registry` esiste apposta, e il suo
-//! commento in testa lo racconta. Sul lato della finestra no: `ACTION_KIND` in
-//! `desktop/src/flow.ts` è una seconda lista, scritta a mano, che nessuno
-//! confronta con la prima.
+//! **THIS TEST LIVES IN `crates/sailor`, NOT IN `desktop/`.** `desktop/src-tauri`
+//! declares an empty `[workspace]`: it sits outside the Rust workspace on
+//! purpose, so no `cargo test --workspace` compiles a test written there and it
+//! could never go red. `crates/sailor` is a workspace member, and the gate runs
+//! it.
 //!
-//! **L'ANCORA STA FUORI DA TUTTE E DUE LE COPIE.** I nomi del motore non si
-//! ricopiano qui: si prendono **eseguendo** `registry::default_registry` e
-//! chiedendogli `names()`. Confrontare due elenchi scritti a mano li lascia
-//! sbagliare insieme — è già successo in questo repo, e una prova che lo
-//! facesse resterebbe verde col difetto rimesso.
+//! **THE ANCHOR IS NEITHER COPY.** The engine's action names are taken by
+//! **running** `registry::default_registry` and asking it `names()`, never
+//! transcribed: two hand-written lists drift wrong together.
 //!
-//! **PERCHÉ QUESTA PROVA STA QUI E NON IN `desktop/`.** `desktop/src-tauri`
-//! dichiara un `[workspace]` vuoto: sta fuori dal workspace Rust di proposito,
-//! e nessun `cargo test --workspace` lo compila. Una prova scritta là dentro
-//! non diventa rossa per il gate, qualunque cosa affermi — che è lo stesso
-//! difetto della regola che nessun controllo interroga. `crates/sailor` invece
-//! è un membro del workspace, e il gate del flusso di sviluppo
-//! (`flows/sviluppa-sailor.flow.json`, passo `prove`) lo esegue.
-//!
-//! **IL CONFINE CHE STAVA SCRITTO QUI È CADUTO IL 01/09/2026, E LA RIGA CHE LO
-//! DICHIARAVA ADESSO SAREBBE FALSA.** Diceva: questa prova confronta la
-//! finestra col registro **del motore**, ma ne esiste una **terza** copia —
-//! `action_registry()` in `desktop/src-tauri/src/flows.rs` — che si costruisce
-//! il registro a mano con `actions::register_default`, ed è quella a cui
-//! `save_flow` chiede se un flusso si può salvare: un nodo `handed_to_agent`,
-//! `detect_tools`, `subflow`, `history_ask` o `work_claim` si disegnava con la
-//! famiglia giusta e veniva **respinto al salvataggio**. Il confine era
-//! scritto perché un controllo verde non si prendesse per una promessa più
-//! larga di quella che fa, e l'aveva trovato un giudice che non aveva scritto
-//! quel lavoro.
-//!
-//! **ADESSO `action_registry_with` CHIAMA `registry::default_registry`**, e la
-//! terza copia non c'è più: la riparazione è arrivata da un altro ramo della
-//! stessa giornata, fusa la sera. Il guasto 10 si chiude qui.
-//!
-//! **E LA CHIUSURA SI SORVEGLIA DA QUESTO LATO, NON DA QUELLO.** La prova che
-//! confronta i due registri sta in `desktop/src-tauri`, che dichiara un
-//! `[workspace]` vuoto: nessun `cargo test --workspace` la compila, quindi non
-//! diventa rossa per nessuno. `the_window_shell_asks_the_engine_for_its_action_list`
-//! qui sotto legge quel sorgente dal gate — è la stessa disciplina con cui
-//! questo file legge `flow.ts` — così chi rimettesse tre righe scelte a mano
-//! trova un rosso invece del silenzio.
-//!
-//! **IL PREZZO, DICHIARATO.** Legge testo da un file `.ts`: non ne compila
-//! l'albero sintattico, e una mappa scritta in una forma diversa le sfugge.
-//! Per questo ogni caso pretende di aver letto qualcosa prima di giudicare:
-//! una lettura fallita deve essere rossa, non silenziosamente verde. È la
-//! stessa scelta — e lo stesso motivo — di
-//! `the_shell_builds_no_request_of_its_own.rs`, che sta qui accanto.
+//! **THE PRICE, DECLARED.** It reads text from a `.ts` file and does not parse
+//! it, so a map written in another shape escapes it. Every case therefore
+//! asserts it read something before it judges: a failed read must be red, not
+//! silently green.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -72,10 +33,10 @@ fn window_vocabulary() -> String {
         .unwrap_or_else(|error| panic!("leggere {}: {error}", path.display()))
 }
 
-/// Un contatore, e non il solo orologio: viene dal guasto 21. `cargo test`
-/// manda le prove sullo stesso processo e l'orologio di macOS non ha la
-/// risoluzione del nanosecondo, quindi due cartelle nate nello stesso istante
-/// si rubavano il posto a vicenda.
+/// A counter, and not the clock alone: it comes from fault 21. `cargo test`
+/// runs the tests in one process and macOS's clock has no nanosecond
+/// resolution, so two directories born in the same instant stole each other's
+/// place.
 static NEXT_SCRATCH: AtomicU32 = AtomicU32::new(0);
 
 fn scratch_dir(label: &str) -> PathBuf {
@@ -102,11 +63,11 @@ fn engine_action_names(label: &str) -> BTreeSet<String> {
         .collect()
 }
 
-/// Le coppie `chiave: valore` di un oggetto letterale di `flow.ts`.
+/// The `key: value` pairs of an object literal in `flow.ts`.
 ///
-/// Salta le righe di commento — la mappa ne porta, e devono poterne portare —
-/// e si ferma alla graffa che chiude. Le virgolette si tolgono da tutti e due i
-/// lati perché TypeScript le mette sulle chiavi solo quando servono.
+/// It skips comment lines — the map carries them, and must be free to — and
+/// stops at the closing brace. Quotes are stripped on both sides, because
+/// TypeScript puts them on keys only where they are needed.
 fn object_entries(source: &str, marker: &str) -> Vec<(String, String)> {
     let from = source
         .find(marker)
@@ -143,7 +104,7 @@ fn object_entries(source: &str, marker: &str) -> Vec<(String, String)> {
     entries
 }
 
-/// I nomi di azione che la finestra conosce: le chiavi di `ACTION_KIND`.
+/// The action names the window knows: the keys of `ACTION_KIND`.
 fn window_action_names(source: &str) -> BTreeSet<String> {
     object_entries(source, "const ACTION_KIND")
         .into_iter()
@@ -151,10 +112,10 @@ fn window_action_names(source: &str) -> BTreeSet<String> {
         .collect()
 }
 
-/// **NESSUN NOME INVENTATO NELLA FINESTRA.** Un nome che il motore non registra
-/// non è un bottone che non fa niente: è un nodo che si disegna, si sposta e si
-/// collega, e poi **non si salva** — «il flusso usa azioni che il motore non
-/// conosce». Il difetto non compare mai finché qualcuno non preme quel tasto.
+/// **NO INVENTED NAME IN THE WINDOW.** A name the engine does not register is
+/// not a button doing nothing: it is a node you draw, move and wire, and then
+/// **cannot save** — «the flow uses actions the engine does not know». The
+/// defect never appears until somebody presses that key.
 #[test]
 fn the_window_names_no_action_the_engine_does_not_register() {
     let source = window_vocabulary();
@@ -183,11 +144,10 @@ fn the_window_names_no_action_the_engine_does_not_register() {
     );
 }
 
-/// **E L'ALTRO VERSO, CHE È COME IL DIFETTO PEGGIORE SI NASCONDEVA.** `kindOf`
-/// ripiega su «verifica» per un nome che non conosce: un'azione del motore
-/// senza famiglia non fa apparire nessun errore, fa solo disegnare il nodo
-/// sbagliato. Un solo verso lascerebbe questa prova verde mentre metà del
-/// vocabolario manca.
+/// **AND THE OTHER DIRECTION, WHERE THE WORSE DEFECT HID.** `kindOf` falls back
+/// to `verifica` for a name it does not know: an engine action with no family
+/// raises no error at all, it just draws the wrong node. One direction alone
+/// would leave this test green while half the vocabulary is missing.
 #[test]
 fn every_engine_action_has_a_family_in_the_window() {
     let source = window_vocabulary();
@@ -215,9 +175,9 @@ fn every_engine_action_has_a_family_in_the_window() {
     );
 }
 
-/// **CIÒ CHE LA CASSETTA CREA DEVE ESISTERE.** `DEFAULT_ACTION_FOR_KIND` è il
-/// nome con cui nasce un passo premuto nella cassetta: è la lista che si tocca
-/// per prima, e i suoi valori sono nomi di azione come gli altri.
+/// **WHAT THE PALETTE CREATES MUST EXIST.** `DEFAULT_ACTION_FOR_KIND` is the
+/// name a step is born with when pressed in the palette: the first list anyone
+/// touches, and its values are action names like the rest.
 #[test]
 fn every_action_the_palette_creates_is_registered() {
     let source = window_vocabulary();
@@ -247,22 +207,12 @@ fn every_action_the_palette_creates_is_registered() {
     );
 }
 
-/// **IL GUSCIO CHIEDE LA LISTA AL MOTORE, E NON SE NE COSTRUISCE UNA.**
-///
-/// È la terza copia del registro, quella che `save_flow` interroga per dire se
-/// un flusso si può salvare. Fino al 01/09/2026 si costruiva da sé con tre
-/// righe scelte a mano e rifiutava cinque azioni che dal terminale girano;
-/// adesso delega a `registry::default_registry`.
-///
-/// **STA QUI E NON IN `desktop/src-tauri` PERCHÉ LÀ NON DIVENTEREBBE ROSSA.**
-/// Quel crate dichiara un `[workspace]` vuoto: `cargo test --workspace` non lo
-/// compila, e una prova che nessun gate esegue afferma senza controllare. Il
-/// prezzo è dichiarato — legge testo, non compila l'albero sintattico — quindi
-/// il caso pretende di aver letto qualcosa prima di giudicare, come le prove
-/// qui sopra fanno con `flow.ts`.
-///
-/// Il mutante che la fa cadere: rimettere `actions::register_default(&mut r)`
-/// dentro `action_registry_with`.
+/// **THE SHELL ASKS THE ENGINE FOR THE LIST, IT BUILDS NONE OF ITS OWN.** This
+/// is the third copy of the registry, the one `save_flow` asks whether a flow
+/// can be saved; built by hand from three chosen lines, it refused five actions
+/// that run fine from the terminal. It is guarded from here because
+/// `desktop/src-tauri` declares an empty `[workspace]` and no gate compiles it.
+/// The mutant that fells it: `actions::register_default(&mut r)` put back in.
 #[test]
 fn the_window_shell_asks_the_engine_for_its_action_list() {
     let path = repository_root().join("desktop/src-tauri/src/flows.rs");

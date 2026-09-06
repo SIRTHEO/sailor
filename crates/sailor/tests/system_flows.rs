@@ -1,17 +1,17 @@
-//! I flussi spediti col prodotto, provati eseguendoli.
+//! The flows shipped with the product, tested by running them.
 //!
-//! **PERCHÉ QUI E NON NEL CRATE DEL FLUSSO.** `crates/flow` sa che i due file
-//! incorporati sono flussi validi, e lo prova. Non sa se le azioni che nominano
-//! esistono: il vocabolario lo compone il programma, un pezzo per crate, e
-//! l'unico posto dove si vede intero è questo. Un flusso spedito che nomina
-//! un'azione che nessuno registra è il guasto peggiore possibile per un
-//! prodotto — chi lo installa non può ripararlo, perché il file sta dentro il
-//! binario — e deve cadere qui, prima di uscire di casa.
+//! **WHY HERE AND NOT IN THE FLOW CRATE.** `crates/flow` knows the embedded
+//! files are valid flows, and proves it. It does not know whether the actions
+//! they name exist: the vocabulary is assembled by the program, a piece per
+//! crate, and this is the only place it is seen whole. A shipped flow naming an
+//! action nobody registers is the worst fault a product can carry — whoever
+//! installs it cannot repair it, the file being inside the binary — so it must
+//! fall here, before leaving the house.
 //!
-//! **E POI SI ESEGUONO DAVVERO.** Un flusso che si carica e non gira è un file
-//! JSON ben scritto. Queste prove costruiscono lo stesso registro di
-//! `sailor flow run`, eseguono i due flussi in un deposito in memoria e
-//! guardano cosa hanno prodotto.
+//! **AND THEN THEY REALLY RUN.** A flow that loads and does not run is a
+//! well-written JSON file. These tests build the same registry
+//! `sailor flow run` builds, run the flows over an in-memory store, and look at
+//! what came out.
 
 use flow::system;
 use flow::{
@@ -31,9 +31,9 @@ fn product_registry() -> ActionRegistry {
     registry::registry_in(registry::House::empty(), None, None)
 }
 
-/// Un orologio finto che avanza di uno a ogni domanda. Il contatore è atomico
-/// perché ora l'orologio è condiviso da più fili: un `i64` mutabile qui non
-/// compilerebbe, ed è la stessa ragione per cui il tratto chiede `&self`.
+/// A fake clock that advances by one at every question. The counter is atomic
+/// because the clock is now shared across threads: a mutable `i64` would not
+/// compile here, the same reason the trait asks for `&self`.
 struct Tick(std::sync::atomic::AtomicI64);
 
 impl Tick {
@@ -79,7 +79,7 @@ fn run(flow: &FlowFile) -> (Execution, Vec<flow::StepRecord>) {
     (execution, records)
 }
 
-/// L'uscita di un passo, o il motivo per cui non ce n'è una.
+/// The output of a step, or the reason there is none.
 fn output_of(records: &[flow::StepRecord], step: &str) -> Value {
     let record = records
         .iter()
@@ -98,7 +98,7 @@ fn output_of(records: &[flow::StepRecord], step: &str) -> Value {
         .unwrap_or_else(|| panic!("il passo «{step}» non ha prodotto niente"))
 }
 
-// ── il vocabolario ───────────────────────────────────────────────────────
+// ── the vocabulary ───────────────────────────────────────────────────────
 
 /// THE FAULT THIS TEST EXISTS TO CATCH: a shipped flow naming an action the
 /// program does not register. Whoever installs it would see the flow listed,
@@ -127,9 +127,9 @@ fn every_action_named_by_a_shipped_flow_is_in_the_vocabulary() {
     }
 }
 
-/// I flussi spediti non devono nominare un binario: girerebbero solo dove quel
-/// nome è nel percorso di chi esegue, e un flusso di sistema deve girare su una
-/// macchina qualunque.
+/// A shipped flow must name no binary: it would run only where that name is on
+/// the path of whoever runs it, and a system flow has to run on any machine at
+/// all.
 #[test]
 fn no_shipped_flow_names_a_binary() {
     for (name, entry) in system::builtin_registry() {
@@ -220,13 +220,11 @@ fn a_model_a_shipped_flow_names_reaches_the_command_line_of_that_engine() {
     );
 }
 
-/// **NESSUN FLUSSO SPEDITO PORTA UN PERCORSO DI UNA MACCHINA SOLA.**
-///
-/// La garanzia c'era e stava nel posto sbagliato: sorvegliava i flussi di
-/// sviluppo di questo progetto, che dall'01/09/2026 non stanno più nel repo —
-/// sono andati dove vanno i flussi di chiunque, nella casa di Sailor. Quelli
-/// erano nostri e potevano permettersi un percorso assoluto; **questi vengono
-/// installati su macchine che non conosciamo**, ed è qui che la regola serve.
+/// **NO SHIPPED FLOW CARRIES A PATH FROM ONE MACHINE.** The guarantee existed
+/// and sat in the wrong place: it watched this project's development flows,
+/// which left the repository for Sailor's house, where anybody's flows live.
+/// Those were ours and could afford an absolute path; **these are installed on
+/// machines we do not know**, and that is where the rule is needed.
 #[test]
 fn no_shipped_flow_carries_a_path_from_one_machine() {
     for (name, _) in system::FLOWS {
@@ -366,11 +364,11 @@ fn the_consultation_runs_and_the_store_gets_the_entry_it_demands() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-// ── il primo flusso: cosa c'è qui, e cosa manca ──────────────────────────
+// ── the first flow: what is here, and what is missing ────────────────────
 
-/// SI ESEGUE, E LA SECONDA META' È LA RISPOSTA. Il rilevamento da solo è un
-/// elenco; il passo dopo dice quali strumenti i flussi di questa macchina
-/// chiedono, e quali di quelli non ci sono.
+/// IT RUNS, AND THE SECOND HALF IS THE ANSWER. Detection alone is a list; the
+/// step after it says which tools the flows of this machine ask for, and which
+/// of those are not here.
 #[test]
 fn the_tools_flow_runs_and_answers_which_flows_would_stop() {
     let flow = shipped("what-this-machine-has");
@@ -403,9 +401,8 @@ fn the_tools_flow_runs_and_answers_which_flows_would_stop() {
         report.contains("flows read in"),
         "la risposta deve essere leggibile da una persona: {report}"
     );
-    // GLI STRUMENTI CHIESTI SONO UN INSIEME SOLO: uno strumento non può essere
-    // insieme presente e mancante, e chi legge due elenchi che si sovrappongono
-    // installa due volte la stessa cosa.
+    // THE TOOLS ASKED FOR ARE ONE SET: a tool cannot be present and missing at
+    // once, and a reader of two overlapping lists installs the same thing twice.
     let names = |key: &str| -> Vec<String> {
         answer[key]
             .as_array()
@@ -427,8 +424,8 @@ fn the_tools_flow_runs_and_answers_which_flows_would_stop() {
     );
 }
 
-/// «NON CHIESTA» NON È «NON C'È»: chi spegne i comandi di versione deve vedere
-/// ogni versione diventare una domanda non fatta, non una risposta vuota.
+/// «NOT ASKED» IS NOT «NOT THERE»: whoever turns the version commands off must
+/// see every version become a question never put, not an empty answer.
 #[test]
 fn the_tools_flow_asks_for_versions_only_if_told_to() {
     let flow = shipped("what-this-machine-has");
@@ -442,10 +439,10 @@ fn the_tools_flow_asks_for_versions_only_if_told_to() {
     );
 }
 
-// ── il secondo flusso: cosa automatizzi già ──────────────────────────────
+// ── the second flow: what you already automate ───────────────────────────
 
-/// SI ESEGUE, E LE QUATTRO FAMIGLIE SONO IL VERDETTO. Ogni passo guarda una
-/// famiglia di automazioni, e il nome del passo dice cosa se ne potrebbe fare.
+/// IT RUNS, AND THE FOUR FAMILIES ARE THE VERDICT. Each step looks at one
+/// family of automations, and the step's name says what could be done with it.
 #[test]
 fn the_migration_flow_runs_and_looks_at_four_families() {
     let flow = shipped("migrate-to-sailor");
@@ -491,10 +488,9 @@ fn the_migration_flow_runs_and_looks_at_four_families() {
     );
 }
 
-/// GUARDARE NON DEVE VOLER DIRE AVVIARE. Questo flusso legge la configurazione
-/// personale di chi lo esegue: se un descrittore del catalogo dichiarasse un
-/// comando di versione, il rilevamento **eseguirebbe** un programma per il solo
-/// fatto di essere stato guardato.
+/// LOOKING MUST NOT MEAN LAUNCHING. This flow reads the personal configuration
+/// of whoever runs it: if a catalogue descriptor declared a version command,
+/// detection would **execute** a program for the sole fact of being looked at.
 #[test]
 fn the_migration_flow_never_runs_anything() {
     let flow = shipped("migrate-to-sailor");
@@ -519,10 +515,10 @@ fn the_migration_flow_never_runs_anything() {
     }
 }
 
-/// LE AUTOMAZIONI ALTRUI NON SONO STRUMENTI CHE UN PASSO PUÒ INVOCARE. Stanno in
-/// un catalogo separato apposta: se finissero in quello degli strumenti, il loro
-/// identificativo comparirebbe fra quelli che Sailor propone a chi ne ha scritto
-/// uno sbagliato, e un passo potrebbe nominarne uno come se fosse un binario.
+/// OTHER PEOPLE'S AUTOMATIONS ARE NOT TOOLS A STEP MAY INVOKE. They sit in a
+/// separate catalogue on purpose: in the tools catalogue their identifier would
+/// appear among those Sailor suggests to whoever mistyped one, and a step could
+/// name one as if it were a binary.
 #[test]
 fn the_automations_catalog_does_not_leak_into_the_tools() {
     let tools = registry::House::empty().tools;
@@ -545,9 +541,9 @@ fn the_automations_catalog_does_not_leak_into_the_tools() {
     }
 }
 
-/// Un nome di catalogo sbagliato deve diventare una segnalazione, non un elenco
-/// vuoto: i due si leggono uguale — «qui non c'è niente» — e uno dei due è un
-/// errore di chi ha scritto il passo.
+/// A mistyped catalogue name must become a report, not an empty list: the two
+/// read alike — «nothing here» — and one of them is a mistake by whoever wrote
+/// the step.
 #[test]
 fn a_misspelled_catalog_is_a_problem_not_an_empty_list() {
     let catalog =
@@ -561,17 +557,12 @@ fn a_misspelled_catalog_is_a_problem_not_an_empty_list() {
     );
 }
 
-/// LA REGOLA CHE VIETA DI ESEGUIRE STA NEL CATALOGO, NON SOLO NEL FLUSSO — e
-/// questa prova esiste perché il 29/08/2026 non c'era.
-///
-/// Il flusso di migrazione spegne i comandi di versione con
-/// `"version_probes": false`, e finché lo fa nessuno esegue niente. Ma quella
-/// riga è una scelta scritta in un file, e chi sovrascrive il flusso con uno
-/// suo se la perde senza saperlo. Misurato aggiungendo un `version` a un
-/// descrittore del catalogo delle automazioni: **nessuna prova diventava
-/// rossa**. Questo catalogo guarda la configurazione personale di chi lo
-/// esegue, e non deve poter avviare niente per costruzione, non per
-/// gentilezza di chi scrive il passo.
+/// THE RULE AGAINST EXECUTING LIVES IN THE CATALOGUE, NOT ONLY IN THE FLOW. The
+/// migration flow turns version commands off with `"version_probes": false`, but
+/// that line is a choice in a file, lost without warning by anyone overwriting
+/// the flow with their own. Measured by adding a `version` to an automations
+/// descriptor: **no test went red**. This catalogue reads a person's own
+/// configuration, and must launch nothing by construction, not by courtesy.
 #[test]
 fn no_automation_descriptor_may_run_anything() {
     let catalog =
@@ -587,22 +578,16 @@ fn no_automation_descriptor_may_run_anything() {
     }
 }
 
-// ── il cuore dell'incrocio, su flussi costruiti qui ──────────────────────
+// ── the heart of the crossing, on flows built here ───────────────────────
 
-/// L'INCROCIO STESSO, PROVATO SU FLUSSI NOSTRI — e questa prova esiste perché il
-/// 29/08/2026 non c'era.
-///
-/// Le prove che eseguono il flusso di sistema guardano la macchina vera, dove i
-/// due flussi spediti non chiedono nessuno strumento: svuotando la raccolta
-/// degli strumenti chiesti — misurato, rompendola apposta — **nessuna diventava
-/// rossa**, perché «zero strumenti chiesti» è la risposta giusta su una macchina
-/// pulita e quella sbagliata qui. Qui i flussi li scriviamo noi, quindi la
-/// risposta è nota e la prova poteva venire diversa.
-///
-/// I tre casi che non vanno confusi stanno tutti in un colpo solo: uno strumento
-/// che c'è, uno che nessun descrittore dichiara — che non si ripara installando
-/// niente — e un passo che nomina un binario, che nessun elenco di strumenti
-/// mancanti potrebbe mai vedere.
+/// THE CROSSING ITSELF, ON FLOWS OF OUR OWN. The tests that run the system flow
+/// look at the real machine, where the shipped flows ask for no tool: emptying
+/// the collection of tools asked for — measured, broken on purpose — turned **no
+/// test red**, since «zero tools asked for» is the right answer on a clean
+/// machine and the wrong one here. Here we write the flows, so the answer is
+/// known, and the three cases nobody may confuse come in one shot: a tool that
+/// is present, one no descriptor declares — which installing nothing repairs —
+/// and a step naming a binary, which no list of missing tools could ever see.
 #[test]
 fn the_crossing_says_who_asked_for_what() {
     let dir = std::env::temp_dir().join(format!("sailor-incrocio-{}", std::process::id()));
@@ -685,9 +670,9 @@ fn the_crossing_says_who_asked_for_what() {
     }
 }
 
-/// UNO STRUMENTO RILEVATO E ASSENTE NON È UNO STRUMENTO SCONOSCIUTO, e le due
-/// riparazioni sono opposte: la prima si installa, la seconda si scrive. Un
-/// elenco che le mescola manda a installare un nome che non esiste.
+/// A TOOL DETECTED AND ABSENT IS NOT A TOOL UNKNOWN, and the two repairs are
+/// opposite: the first is installed, the second is written. A list that mixes
+/// them sends someone to install a name that does not exist.
 #[test]
 fn a_tool_that_is_absent_is_not_a_tool_that_is_unknown() {
     let dir = std::env::temp_dir().join(format!("sailor-assente-{}", std::process::id()));
@@ -746,9 +731,9 @@ fn a_tool_that_is_absent_is_not_a_tool_that_is_unknown() {
     assert!(report.contains("si prende da docker.com"), "{report}");
 }
 
-/// UN INGRESSO SENZA RILEVAMENTO È UN ERRORE DI CHI HA SCRITTO IL PASSO, non un
-/// elenco vuoto: senza `findings` ogni strumento chiesto sembrerebbe sconosciuto,
-/// e chi legge andrebbe a scrivere descrittori per strumenti che ha installati.
+/// AN INPUT WITH NO DETECTION IS A MISTAKE BY WHOEVER WROTE THE STEP, not an
+/// empty list: with no `findings` every tool asked for would look unknown, and
+/// the reader would go write descriptors for tools already installed.
 #[test]
 fn without_a_detection_the_step_refuses_instead_of_guessing() {
     let registry = product_registry();

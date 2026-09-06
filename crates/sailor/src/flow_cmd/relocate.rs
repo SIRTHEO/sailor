@@ -8,29 +8,27 @@ use ui::gather::FlowSource;
 use super::hazards::{hardcoded_paths, POSITION_FIELDS};
 use super::run_and_resume::workspace_root;
 
-/// Toglie da un flusso i percorsi assoluti che stanno sotto la radice.
+/// Strips from a flow the absolute paths that sit under the root.
 ///
-/// **PERCHÉ LO FA UN COMANDO E NON UNO SCRIPT.** È il guasto 15: il 29/08/2026
-/// per cambiare l'innesco di un flusso è stato usato uno script Python che
-/// riscriveva il JSON, perché `sailor flow` aveva solo `list`, `due`, `check`
-/// e `run`. Uno strumento che si aggira non registra niente di ciò che gli
-/// succede intorno.
+/// **WHY A COMMAND AND NOT A SCRIPT.** It is fault 15: a flow's trigger was
+/// once changed with a Python script that rewrote the JSON, because
+/// `sailor flow` had only `list`, `due`, `check` and `run`. A tool people work
+/// around records nothing of what happens next to it.
 ///
-/// **RISCRIVE I CAMPI, NON I PROMPT.** Un `workdir` è un campo: il suo valore
-/// ha un significato solo per il programma, e sostituirlo è una traduzione. Il
-/// testo di un prompt è un'istruzione scritta da una persona per un'altra
-/// intelligenza: riscriverlo è riscrivere l'istruzione, e nessuno ha chiesto a
-/// questo comando di farlo. Quelli li **stampa** e basta.
+/// **IT REWRITES FIELDS, NOT PROMPTS.** A `workdir` is a field: its value means
+/// something only to the program, and replacing it is a translation. Prompt
+/// text is an instruction written by a person for another intelligence:
+/// rewriting it rewrites the instruction, and nobody asked this command to do
+/// that. Those it merely **prints**.
 ///
-/// **IL PREFISSO SI PUÒ DICHIARARE, PERCHÉ IL CASO NORMALE È UN ALTRO ALBERO.**
-/// Un flusso da spostare quasi sempre nomina la copia su cui è stato scritto —
-/// un altro clone, o la macchina di qualcun altro — e quel percorso **non sta
-/// sotto** la radice di chi lo sta spostando. Senza dirlo, il comando non può
-/// sapere se `/Users/tizio/progetto` volesse dire «la radice» o una cartella
-/// vera che deve restare dov'è: indovinare qui vorrebbe dire riscrivere un
-/// percorso legittimo. Si dichiara come secondo argomento — posizionale come
-/// il mandato di `run`, che è la forma di questa riga di comando — e quello che
-/// non combacia si vede nel rapporto invece di sparire.
+/// **THE PREFIX CAN BE DECLARED, BECAUSE THE NORMAL CASE IS ANOTHER TREE.** A
+/// flow to be moved almost always names the copy it was written on — another
+/// clone, or somebody else's machine — and that path **does not sit under** the
+/// root of whoever is moving it. Unsaid, the command cannot know whether
+/// `/Users/someone/project` meant «the root» or a real directory that must stay
+/// put: guessing here would rewrite a legitimate path. It is declared as the
+/// second argument — positional like `run`'s mandate, which is the shape of
+/// this command line — and what does not match shows in the report.
 pub(super) fn relocate_flow(sources: &[FlowSource], name: &str, from: Option<&str>) -> Result<String, String> {
     let root = workspace_root().ok_or_else(|| {
         catalogue::say(
@@ -38,8 +36,8 @@ pub(super) fn relocate_flow(sources: &[FlowSource], name: &str, from: Option<&st
             &[("marker", flow::workspace::MARKER)],
         )
     })?;
-    // Il prefisso da togliere: quello dichiarato, o la radice stessa quando il
-    // flusso è stato scritto proprio qui.
+    // The prefix to strip: the declared one, or the root itself when the flow
+    // was written right here.
     let old_root = from.map(PathBuf::from).unwrap_or_else(|| root.clone());
     let path = flow_file_path(sources, name)?;
     let text = std::fs::read_to_string(&path).map_err(|error| {
@@ -48,9 +46,9 @@ pub(super) fn relocate_flow(sources: &[FlowSource], name: &str, from: Option<&st
             &[("path", &path.display().to_string()), ("error", &error.to_string())],
         )
     })?;
-    // Si lavora sul documento grezzo e non sul `FlowFile` tipato: un flusso può
-    // avere campi che questa versione non conosce, e riscriverlo dal tipo li
-    // perderebbe in silenzio — è il guasto 8 applicato a un file dell'utente.
+    // Work on the raw document, not the typed `FlowFile`: a flow may carry
+    // fields this version does not know, and rewriting it from the type would
+    // lose them in silence — fault 8 applied to a user's file.
     let mut document: Value = serde_json::from_str(&text).map_err(|error| {
         catalogue::say(
             "cli.flow.not_valid_json",
@@ -107,7 +105,7 @@ pub(super) fn relocate_flow(sources: &[FlowSource], name: &str, from: Option<&st
             &[("fields", &left_alone.join("; "))],
         ));
     }
-    // I percorsi dentro i testi si mostrano e non si toccano: chi legge decide.
+    // Paths inside texts are shown, never touched: the reader decides.
     let flow: FlowFile = serde_json::from_str(&text).map_err(|error| {
         catalogue::say(
             "cli.flow.not_a_valid_flow",
@@ -181,14 +179,14 @@ fn walk_inputs_for_places(
     }
 }
 
-/// Toglie il prefisso dai `workdir` del documento, senza toccare il disco.
+/// Strips the prefix from the document's `workdir`s, without touching disk.
 ///
-/// Sta separata dal comando perché è la parte che si può provare: quella
-/// intorno legge la cartella corrente e scrive un file, e una prova che
-/// cambiasse la cartella del processo rovinerebbe le altre che girano insieme
-/// — è il guasto 21, che qui si evita non avendo bisogno del processo.
+/// It sits apart from the command because it is the part that can be tested:
+/// what surrounds it reads the current directory and writes a file, and a test
+/// changing the process directory would ruin the others running alongside — it
+/// is fault 21, avoided here by needing no process at all.
 ///
-/// Torna `None` se il documento non ha nemmeno un elenco di passi.
+/// Returns `None` if the document has not even a list of steps.
 fn relocate_workdirs(document: &mut Value, old_root: &Path) -> Option<(Vec<String>, Vec<String>)> {
     let mut moved = Vec::new();
     let mut left_alone = Vec::new();
@@ -204,22 +202,21 @@ fn relocate_workdirs(document: &mut Value, old_root: &Path) -> Option<(Vec<Strin
         let Some(with) = step.get_mut("with").and_then(Value::as_object_mut) else {
             continue;
         };
-        // Solo un testo: un `{"$from": …}` è un rinvio, e va risolto a
-        // esecuzione da chi sa contro cosa. Riscriverlo sarebbe inventare.
+        // Text only: a `{"$from": …}` is a reference, resolved at run time by
+        // whoever knows against what. Rewriting it would be inventing.
         let Some(Value::String(declared)) = with.get(WORKDIR_KEY).cloned() else {
             continue;
         };
         match relative_to(old_root, &declared) {
-            // Coincide con la radice: il campo non serve più, e un `workdir`
-            // che vale la radice è rumore che invita a riscriverlo assoluto.
+            // It equals the root: the field is no longer needed, and a
+            // `workdir` worth the root is noise inviting an absolute rewrite.
             Some(rest) if rest.is_empty() => {
-                // **`shift_remove` E NON `remove`.** Con `preserve_order`
-                // acceso — e lo è — `remove` è uno *swap*: tira l'ultima
-                // chiave dentro il buco e riordina il file. Un comando che
-                // toglie un campo e in cambio rimescola l'oggetto produce un
-                // diff illeggibile, e chi lo rilegge non distingue più ciò che
-                // è stato deciso da ciò che è stato spostato. Misurato il
-                // 31/08/2026: 62 righe cambiate al posto di 7.
+                // **`shift_remove` AND NOT `remove`.** With `preserve_order`
+                // on — and it is — `remove` is a *swap*: it pulls the last key
+                // into the hole and reorders the file. A command that takes a
+                // field away and reshuffles the object in exchange makes an
+                // unreadable diff, where nobody can tell what was decided from
+                // what was moved. Measured: 62 lines changed instead of 7.
                 with.shift_remove(WORKDIR_KEY);
                 moved.push(catalogue::say(
                     "cli.flow.workdir_removed_was_the_root",
@@ -230,18 +227,18 @@ fn relocate_workdirs(document: &mut Value, old_root: &Path) -> Option<(Vec<Strin
                 with.insert(WORKDIR_KEY.to_owned(), Value::String(rest.clone()));
                 moved.push(format!("{step_id}: «{declared}» → «{rest}»"));
             }
-            // Fuori dal prefisso: non è questo comando a decidere cosa voleva
-            // dire chi l'ha scritto.
+            // Outside the prefix: it is not this command that decides what the
+            // writer meant.
             None => left_alone.push(format!("{step_id}: «{declared}»")),
         }
     }
     Some((moved, left_alone))
 }
 
-/// Il file da cui viene un flusso, cercato nelle sorgenti che sono cartelle.
+/// The file a flow comes from, looked for in the sources that are directories.
 fn flow_file_path(sources: &[FlowSource], name: &str) -> Result<PathBuf, String> {
-    // Si guarda dalla più specifica alla meno: è quella che vince a esecuzione,
-    // e riscrivere una che non gira lascerebbe il guasto dov'era.
+    // From the most specific to the least: that is the one that wins at run
+    // time, and rewriting one that never runs leaves the fault where it was.
     for source in sources.iter().rev() {
         if source.is_builtin() {
             continue;
@@ -257,25 +254,25 @@ fn flow_file_path(sources: &[FlowSource], name: &str) -> Result<PathBuf, String>
     ))
 }
 
-/// Il resto di `path` sotto `root`, o `None` se non ci sta sotto.
+/// The rest of `path` under `root`, or `None` if it does not sit under it.
 ///
-/// Restituisce la stringa vuota quando i due coincidono: è il caso in cui il
-/// campo va tolto, non riscritto.
+/// Returns the empty string when the two coincide: the case where the field is
+/// to be taken away, not rewritten.
 fn relative_to(root: &Path, path: &str) -> Option<String> {
     let candidate = Path::new(path);
     let rest = candidate.strip_prefix(root).ok()?;
     Some(rest.display().to_string())
 }
 
-/// Il campo che dice dove un passo lavora. Il nome sta nel crate del flusso:
-/// due costanti con lo stesso valore in due crate sono il guasto 10 in piccolo.
+/// The field that says where a step works. The name lives in the flow crate:
+/// two constants of one value in two crates are fault 10 in miniature.
 const WORKDIR_KEY: &str = flow::WORKDIR_FIELD;
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // ── spostare un flusso da un albero all'altro ─────────────────────
+    // ── moving a flow from one tree to another ────────────────────────
 
     fn document_with_workdir(workdir: &str) -> Value {
         serde_json::json!({
@@ -284,10 +281,10 @@ mod tests {
                 "id": "unico", "deps": [], "action": "external_engine",
                 "max_attempts": 1, "when": null,
                 "input_schema": {"type": "any"}, "output_schema": {"type": "any"},
-                // **`workdir` NON È IL PENULTIMO, E LA POSIZIONE È LA PROVA.**
-                // Togliendo il penultimo campo, lo swap e lo scorrimento danno
-                // lo stesso ordine: una fixture così lascia passare il difetto.
-                // Qui ne restano due dopo, quindi i due modi divergono.
+                // **`workdir` IS NOT THE SECOND TO LAST, AND THE POSITION IS
+                // THE PROOF.** Removing the second-to-last field, swap and
+                // shift give the same order: such a fixture lets the defect
+                // through. Here two follow it, so the two ways diverge.
                 "with": {
                     "tool": "git", "workdir": workdir,
                     "timeout_secs": 5, "args": ["status"]
@@ -297,8 +294,8 @@ mod tests {
         })
     }
 
-    /// Coincide con la radice: il campo sparisce. Tenerlo come `"."` sarebbe
-    /// rumore che invita il prossimo a riscriverlo assoluto.
+    /// It equals the root: the field goes. Keeping it as `"."` would be noise
+    /// inviting the next person to rewrite it absolute.
     #[test]
     fn a_workdir_equal_to_the_root_is_removed() {
         let mut document = document_with_workdir("/vecchio/albero");
@@ -313,8 +310,8 @@ mod tests {
             .is_none());
     }
 
-    /// Sotto la radice: resta il pezzo relativo, che è ciò che rende il flusso
-    /// eseguibile su un clone qualunque.
+    /// Under the root: the relative piece stays, which is what makes the flow
+    /// runnable on any clone.
     #[test]
     fn a_workdir_under_the_root_keeps_only_the_rest() {
         let mut document = document_with_workdir("/vecchio/albero/desktop");
@@ -324,11 +321,10 @@ mod tests {
         assert_eq!(document["graph"]["steps"][0]["with"]["workdir"], "desktop");
     }
 
-    /// **TOGLIERE UN CAMPO NON DEVE RIORDINARE IL FILE.** Con `preserve_order`
-    /// acceso `Map::remove` è uno *swap*: tira l'ultima chiave dentro il buco.
-    /// Misurato il 31/08/2026 sul flusso vero: 62 righe cambiate invece di 7,
-    /// e un diff in cui non si distingue più ciò che è stato deciso da ciò che
-    /// è stato spostato.
+    /// **TAKING A FIELD AWAY MUST NOT REORDER THE FILE.** With `preserve_order`
+    /// on, `Map::remove` is a *swap*: it pulls the last key into the hole.
+    /// Measured on the real flow: 62 lines changed instead of 7, and a diff in
+    /// which what was decided can no longer be told from what was moved.
     #[test]
     fn removing_a_workdir_does_not_reorder_the_other_fields() {
         let mut document = document_with_workdir("/vecchio/albero");
@@ -348,9 +344,8 @@ mod tests {
         );
     }
 
-    /// Fuori dal prefisso: si lascia stare e si dice. Indovinare che
-    /// `/altro/posto` volesse dire «la radice» vorrebbe dire riscrivere un
-    /// percorso che qualcuno aveva messo lì apposta.
+    /// Outside the prefix: left alone, and said. Guessing that `/altro/posto`
+    /// meant «the root» would rewrite a path somebody put there on purpose.
     #[test]
     fn a_workdir_outside_the_prefix_is_left_alone_and_reported() {
         let mut document = document_with_workdir("/altro/posto");
@@ -366,9 +361,9 @@ mod tests {
         );
     }
 
-    /// **UN RINVIO NON SI RISCRIVE.** `{"$from": "/innesco/text"}` è un
-    /// puntatore che si risolve a esecuzione contro l'ingresso vero: qui non
-    /// c'è niente da spostare, e toccarlo vorrebbe dire inventare.
+    /// **A REFERENCE IS NEVER REWRITTEN.** `{"$from": "/innesco/text"}` is a
+    /// pointer resolved at run time against the real input: there is nothing
+    /// here to move, and touching it would be inventing.
     #[test]
     fn a_workdir_that_is_a_reference_is_never_touched() {
         let mut document = serde_json::json!({

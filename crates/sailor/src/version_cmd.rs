@@ -1,8 +1,8 @@
-//! `sailor version`: la build che sta girando, per confrontarla col timbro di
-//! un rilascio (`sailor release <bersaglio> --dry-run` legge lo stesso
-//! timbro) senza dover aprire un debugger.
+//! `sailor version`: the build that is running, to compare it against a
+//! release's stamp (`sailor release <target> --dry-run` reads the same stamp)
+//! without having to open a debugger.
 
-/// La forma di `sailor version`. Vedi `flow_cmd::USAGE`.
+/// The shape of `sailor version`. See `flow_cmd::USAGE`.
 pub const USAGE: &[crate::Form] = &[crate::Form {
     form: "sailor version",
     says_key: "",

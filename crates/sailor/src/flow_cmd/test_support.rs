@@ -30,10 +30,9 @@ impl Drop for TestDirectory {
     }
 }
 
-/// Un orologio finto che avanza di uno a ogni domanda. Il contatore è
-/// atomico perché l'orologio ora è condiviso fra i fili di un fronte: un
-/// `i64` mutabile qui non compilerebbe, ed è la stessa ragione per cui il
-/// tratto chiede `&self`.
+/// A fake clock that advances by one on every question. The counter is atomic
+/// because the clock is shared across the threads of a front: a mutable `i64`
+/// would not compile here, and that is the same reason the trait asks `&self`.
 pub(super) struct Tick(std::sync::atomic::AtomicI64);
 
 impl Tick {

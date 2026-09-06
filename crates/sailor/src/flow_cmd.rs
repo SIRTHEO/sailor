@@ -1,10 +1,10 @@
-//! `sailor flow`: carica i file dichiarativi da `flows/`, mostra anche quelli
-//! guasti, controlla che le azioni nominate esistano ed esegue il grafo nel
-//! deposito durevole comune di Sailor.
+//! `sailor flow`: loads the declarative files from `flows/`, shows the broken
+//! ones too, checks that the actions named exist, and runs the graph in
+//! Sailor's shared durable ledger.
 
-// Il formato del file vive nel crate del flusso: qui si importa, non si
-// ridichiara. Averlo scritto due volte, il 28/08/2026, li ha fatti coincidere
-// per fortuna e non per costruzione.
+// The file format lives in the flow crate: here it is imported, never
+// redeclared. Writing it out twice made the two match by luck instead of by
+// construction.
 use crate::Form;
 use flow::{ActionRegistry, FlowFile, Graph};
 use ledger::Ledger;
@@ -92,25 +92,23 @@ fn dispatch(args: &[String], sources: &[FlowSource]) -> Result<String, String> {
     }
 }
 
-/// I flussi che questa macchina vede, con l'origine di ciascuno.
+/// The flows this machine sees, each with its origin.
 ///
-/// **LA RIGA DI COMANDO E LA FINESTRA DEVONO GUARDARE NEGLI STESSI POSTI.** Fino
-/// al 29/08/2026 questo comando leggeva `flows/` sotto la cartella corrente e
-/// nient'altro: su una macchina appena installata rispondeva «nessun flusso
-/// trovato in flows/» mentre la finestra, dallo stesso binario, ne mostrava due
-/// spediti dentro di esso. Due risposte alla stessa domanda non danno un errore
-/// da leggere — danno due persone che si dicono cose diverse guardando lo stesso
-/// prodotto.
+/// **THE COMMAND LINE AND THE WINDOW MUST LOOK IN THE SAME PLACES.** This
+/// command once read `flows/` under the current directory and nothing else: on
+/// a freshly installed machine it answered «no flow found in flows/» while the
+/// window, from the same binary, showed two shipped inside it. Two answers to
+/// one question give two people telling each other different things about the
+/// same product.
 ///
-/// **UN FLUSSO SI NOMINA, NON SI PERCORRE.** Prima il nome diventava un percorso
-/// e serviva un controllo perché non uscisse dalla cartella. Adesso il nome si
-/// cerca in un elenco già costruito: un nome che quell'elenco non contiene non
-/// apre niente, e non c'è nessun posto da cui scappare.
+/// **A FLOW IS NAMED, NOT WALKED.** The name is looked up in a list already
+/// built: a name that list does not hold opens nothing, so there is nowhere to
+/// escape from — where before the name became a path and needed a guard.
 fn known_flows(sources: &[FlowSource]) -> Vec<(String, &'static str, Result<FlowFile, String>)> {
     ui::gather::load_all_flows(sources)
 }
 
-/// Il flusso che si chiama così, con l'origine da cui viene.
+/// The flow called that, with the origin it comes from.
 fn one_flow(sources: &[FlowSource], name: &str) -> Result<(FlowFile, &'static str), String> {
     let known = known_flows(sources);
     match known.iter().find(|(known, _, _)| known == name) {
@@ -133,8 +131,8 @@ fn one_flow(sources: &[FlowSource], name: &str) -> Result<(FlowFile, &'static st
     }
 }
 
-/// Dove si è guardato, sempre in coda a un elenco vuoto: una lista vuota che non
-/// dice dove ha cercato è indistinguibile da un guasto.
+/// Where it looked, always after an empty list: an empty list that does not
+/// say where it searched is indistinguishable from a fault.
 fn nothing_found(sources: &[FlowSource]) -> String {
     catalogue::say(
         "cli.flow.nothing_found",
@@ -149,23 +147,18 @@ fn nothing_found(sources: &[FlowSource]) -> String {
     )
 }
 
-/// Le forme di `sailor flow`, una per riga.
+/// The forms of `sailor flow`, one per line.
 ///
-/// **L'ELENCO DEI GESTI STA QUI, IN UN POSTO SOLO.** Una prova pretende che
-/// ogni sottocomando che `dispatch` accetta compaia in questo elenco: un gesto
-/// che il programma sa fare e nessuno sa di poter chiedere è un gesto che non
-/// esiste, ed è per non trovarlo che il guasto 15 è stato aggirato con
-/// `python3`.
+/// **THE LIST OF GESTURES IS HERE, IN ONE PLACE ONLY.** A test demands that
+/// every subcommand `dispatch` accepts appear in this list: a gesture the
+/// program can do and nobody knows to ask for does not exist, and not finding
+/// one is how fault 15 got worked around with `python3`.
 ///
-/// **ED È UN `const` E NON UNA STRINGA DENTRO `usage()` PERCHÉ LA LEGGE ANCHE
-/// LA FINESTRA.** Una stringa stampata da una funzione privata non è
-/// interrogabile da un programma: la pagina d'aiuto della finestra sarebbe
-/// stata una seconda copia che diverge alla prima opzione aggiunta.
-/// `Command::usage` punta qui.
-///
-/// Le due regole sono nate lo stesso giorno su due rami diversi e non si
-/// escludono: la prima dice che l'elenco è completo, la seconda che è uno solo.
-/// `schedule` viene dalla prima, la forma a righe dalla seconda.
+/// **AND IT IS A `const`, NOT A STRING INSIDE `usage()`, BECAUSE THE WINDOW
+/// READS IT TOO.** A string printed by a private function cannot be queried by
+/// a program: the window's help page would have been a second copy diverging at
+/// the first option added. `Command::usage` points here. The two rules do not
+/// exclude each other: one says the list is complete, the other that it is one.
 pub const USAGE: &[Form] = &[
     Form {
         form: "sailor flow list",
@@ -203,15 +196,14 @@ pub const USAGE: &[Form] = &[
         form: "sailor flow seeds",
         says_key: "cli.flow.form.seeds",
     },
-    // **`micro`, `nessuno`, `leggero` E `pesante` RESTANO COSÌ, E NON È UNA
-    // DIMENTICANZA.** Non sono segnaposto: sono le parole che l'utente batte
-    // davvero e che il codice confronta, e una `schedule` già scritta le
-    // conserva nel deposito. Tradurle qui senza toccare il parser farebbe
-    // mentire l'aiuto; tradurle in tutti e due i posti romperebbe le
-    // pianificazioni già registrate — che è la stessa ragione per cui gli `id`
-    // dei flussi restano in italiano (`AGENTS.md`, la riga sui dati del
-    // deposito). Se un giorno si vogliono in inglese, la strada è accettarle
-    // in tutte e due le lingue e mostrare la nuova, mai sostituirle.
+    // **`micro`, `nessuno`, `leggero` AND `pesante` STAY AS THEY ARE, AND IT
+    // IS NOT AN OVERSIGHT.** They are the words a user really types and the
+    // code compares, and a `schedule` already written keeps them in the ledger.
+    // Translating them here without the parser would make the help lie;
+    // translating both places would break schedules already registered — the
+    // same reason flow `id`s stay in Italian (`AGENTS.md`, the ledger data
+    // line). If they are ever wanted in English, the way is to accept both
+    // languages and show the new one, never to replace them.
     Form {
         form: "sailor flow cap <name> [micros|none]",
         says_key: "",
@@ -305,9 +297,9 @@ fn list_flows(sources: &[FlowSource]) -> Result<String, String> {
         return Ok(nothing_found(sources));
     }
     let mut report = String::new();
-    // L'ORIGINE STA NELL'ELENCO, e non è ornamento: due flussi con lo stesso
-    // nome in due posti sono uno solo qui dentro — vince il piu' specifico — e
-    // chi non vede da dove viene quello che gira modifica l'altro.
+    // THE ORIGIN IS IN THE LIST, and it is no ornament: two flows of the same
+    // name in two places are one in here — the most specific wins — and whoever
+    // cannot see where the running one comes from edits the other.
     for (name, origin, entry) in known {
         match entry {
             Ok(flow) => {
@@ -328,11 +320,11 @@ fn list_flows(sources: &[FlowSource]) -> Result<String, String> {
     Ok(report)
 }
 
-/// Il deposito predefinito se si apre, `None` se non c'è o non si apre.
+/// The default ledger if it opens, `None` if it is absent or will not open.
 ///
-/// Non riporta l'errore: chi la chiama sta facendo un controllo statico, e un
-/// deposito assente non è un guasto del flusso che sta guardando. Chi invece
-/// deve *eseguire* apre il deposito da sé e pretende che riesca.
+/// It does not report the error: the caller is doing a static check, and an
+/// absent ledger is no fault of the flow it is looking at. Whoever must *run*
+/// opens the ledger itself and demands that it succeed.
 fn open_default_ledger() -> Option<Ledger> {
     let dir = default_ledger_dir().ok()?;
     if !dir.exists() {
@@ -416,22 +408,18 @@ mod tests {
         assert!(error.to_string().contains("backward dependency"), "{error}");
     }
 
-    /// **OGNI GESTO CHE `dispatch` SA FARE È SCRITTO NELL'USO.**
+    /// **EVERY GESTURE `dispatch` CAN DO IS WRITTEN IN THE USAGE.**
     ///
-    /// Un comando che il programma esegue e che nessuno sa di poter chiedere è
-    /// un comando che non esiste: chi non lo trova esce dal sistema, ed è
-    /// esattamente come il guasto 15 è successo — `python3` al posto di un
-    /// gesto che nessuno sapeva di avere. La riga dell'uso è l'unica interfaccia
-    /// di chi sta al terminale.
+    /// A command the program runs and nobody knows to ask for does not exist:
+    /// whoever cannot find it leaves the system, which is how fault 15 happened
+    /// — `python3` in place of a gesture nobody knew they had. The usage line
+    /// is the only interface of whoever is at the terminal.
     ///
-    /// **SI LEGGE IL SORGENTE INVECE DI ESEGUIRE, E LA RAGIONE È IL GUASTO 5.**
-    /// Chiamare `dispatch` per ogni parola farebbe aprire a `cost` e a `resume`
-    /// il deposito **di questa macchina**: una prova che legge lo stato di chi
-    /// la esegue diventa rossa per una pulizia, a codice invariato. Qui si
-    /// contano i bracci dov'è scritto quali sono.
-    ///
-    /// Il mutante che la fa cadere è aggiungere un braccio a `dispatch` senza
-    /// nominarlo in `usage()` — cioè il modo in cui un gesto diventa invisibile.
+    /// **THE SOURCE IS READ INSTEAD OF RUN, AND THE REASON IS FAULT 5.**
+    /// Calling `dispatch` for every word would make `cost` and `resume` open
+    /// **this machine's** ledger: a test reading the state of whoever runs it
+    /// goes red on a cleanup, at unchanged code. The mutant that fells it adds
+    /// an arm to `dispatch` without naming it in `usage()`.
     #[test]
     fn every_arm_of_the_dispatcher_is_written_in_the_usage_line() {
         let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/flow_cmd.rs");
@@ -466,17 +454,16 @@ mod tests {
         );
     }
 
-    /// I FLUSSI DI CHI USA SAILOR NON SONO UNA FIXTURE. Fino al 28/08/2026
-    /// questa prova includeva `flows/prima-corsa.flow.json` a tempo di
-    /// compilazione: il giorno in cui la cartella dei flussi è stata svuotata —
-    /// un gesto legittimo di chi usa il programma — **il crate ha smesso di
-    /// compilare**. Una batteria non può dipendere dai dati dell'utente.
+    /// A USER'S FLOWS ARE NOT A FIXTURE. This test once included a file from
+    /// `flows/` at compile time: the day that folder was emptied — a legitimate
+    /// gesture by whoever uses the program — **the crate stopped compiling**.
+    /// A test suite cannot depend on user data.
     ///
-    /// Quello che la prova voleva dire resta, e vale per tutti: ogni flusso
-    /// presente si carica nella forma decisa e non nomina azioni che il motore
-    /// non sa eseguire. Una cartella vuota non è un fallimento — non c'è niente
-    /// da verificare — ma non si spaccia per una verifica riuscita: il
-    /// conteggio si stampa, così chi legge il verde sa su quanti file è passato.
+    /// What the test meant still holds for all: every flow present loads in the
+    /// decided shape and names no action the engine cannot run. An empty folder
+    /// is no failure — there is nothing to verify — but it does not pass for a
+    /// verification either: the count is printed, so whoever reads the green
+    /// knows how many files it went over.
     #[test]
     fn every_flow_on_disk_loads_and_names_only_registered_actions() {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../flows");
@@ -504,8 +491,8 @@ mod tests {
         println!("flussi verificati: {checked}");
     }
 
-    /// La forma decisa del file, su una fixture nostra: qui la prova deve
-    /// fallire se cambia il formato, non se qualcuno cancella un file suo.
+    /// The decided file shape, on a fixture of ours: this test must fail if the
+    /// format changes, never if someone deletes a file of their own.
     #[test]
     fn the_decided_file_shape_still_loads() {
         let inputs = r#"{"solo":{"command":"true","env":{},"timeout_secs":1}}"#;
@@ -515,12 +502,12 @@ mod tests {
         assert!(missing_actions(&flow.graph, &registry_in(House::empty(), None, None)).is_empty());
     }
 
-    /// UN NOME NON DIVENTA PIÙ UN PERCORSO, e la protezione cambia di natura:
-    /// prima `../segreto` veniva unito alla cartella e serviva un controllo che
-    /// lo rifiutasse; adesso il nome si cerca in un elenco già costruito, quindi
-    /// non apre niente perché non c'è niente che si chiami così. La prova resta
-    /// perché la garanzia deve restare: nessun nome deve poter far leggere un
-    /// file che non è un flusso di questa macchina.
+    /// A NAME NO LONGER BECOMES A PATH, and the protection changes in kind:
+    /// `../segreto` used to be joined to the folder and needed a guard to
+    /// refuse it; the name is now looked up in a list already built, so it
+    /// opens nothing because nothing is called that. The test stays because the
+    /// guarantee must: no name may make a file that is not a flow of this
+    /// machine be read.
     #[test]
     fn a_name_that_is_not_a_known_flow_opens_nothing() {
         let directory = TestDirectory::new();
@@ -548,10 +535,9 @@ mod tests {
         );
     }
 
-    /// I FLUSSI SPEDITI SI VEDONO ANCHE DALLA RIGA DI COMANDO. Il difetto che
-    /// questa prova esiste per prendere: `sailor flow list` rispondeva «nessun
-    /// flusso» su una macchina appena installata mentre la finestra, dallo
-    /// stesso binario, ne mostrava due.
+    /// THE SHIPPED FLOWS ARE SEEN FROM THE COMMAND LINE TOO. The defect this
+    /// test exists to catch: `sailor flow list` answered «no flow» on a freshly
+    /// installed machine while the window, from the same binary, showed two.
     #[test]
     fn the_command_line_sees_the_shipped_flows_too() {
         let report = list_flows(&[FlowSource::builtin()]).expect("elencare i flussi");

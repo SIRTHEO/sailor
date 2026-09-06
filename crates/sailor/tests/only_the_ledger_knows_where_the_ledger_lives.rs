@@ -1,26 +1,21 @@
-//! **UN SOLO POSTO SA DOVE STA IL DEPOSITO.**
+//! **ONE PLACE KNOWS WHERE THE LEDGER LIVES.**
 //!
-//! `ledger::default_directory()` è quel posto: legge `SAILOR_LEDGER` se c'è,
-//! altrimenti sceglie la casa di Sailor. Chi ricompone quel percorso a mano non
-//! fa una copia inerte — ne fa una
-//! **diversa**, perché la copia scritta a mano non guarda `SAILOR_LEDGER`.
+//! `ledger::default_directory()` is that place: it reads `SAILOR_LEDGER` if it is
+//! set, and otherwise picks Sailor's home. Rebuilding that path by hand makes no
+//! inert copy — it makes a **different** one, because a hand-written copy does
+//! not look at `SAILOR_LEDGER`.
 //!
-//! **IL DANNO NON È UN DISALLINEAMENTO, È UNA DIVERGENZA SILENZIOSA.** Trovato
-//! il 01/09/2026: `sailor inventory` componeva `~/.claude/state/flussi` da sé,
-//! quindi con `SAILOR_LEDGER` impostato scriveva il censimento in un deposito e
-//! ogni altro comando lo leggeva da un altro. Nessun errore: due depositi, e
-//! quello che si guarda risulta vuoto. È la forma in cui il guasto 12 si
-//! ripresenta — un elenco vuoto che ha l'aria di una risposta.
+//! **THE HARM IS NOT A MISMATCH, IT IS A SILENT DIVERGENCE.** `sailor inventory`
+//! once composed `~/.claude/state/flussi` itself, so with `SAILOR_LEDGER` set it
+//! wrote the census into one store while every other command read another. No
+//! error: two stores, and the one you look at comes up empty. It is the shape
+//! fault 12 comes back in — an empty list with the air of an answer.
 //!
-//! **L'ANCORA STA FUORI DA TUTTE E DUE LE COPIE**, ed è il motivo per cui questa
-//! prova legge i sorgenti invece di confrontare due funzioni: due copie che
-//! sbagliano insieme si confermano a vicenda. Qui si guarda il **fatto** — che
-//! nessuno, fuori da `crates/ledger`, nomini i pezzi di quel percorso.
-//!
-//! Il commento in `crates/ledger/src/lib.rs` dichiarava di aver unificato la
-//! scoperta della casa il 28/08/2026, «prima che avesse una gemella». Ce l'aveva
-//! già. Una dichiarazione di unicità che nessuna prova sorveglia invecchia senza
-//! che nessuno se ne accorga.
+//! **THE ANCHOR SITS OUTSIDE BOTH COPIES**, which is why this test reads the
+//! sources instead of comparing two functions: two copies wrong together confirm
+//! each other. What is watched is the **fact** — that nobody outside
+//! `crates/ledger` names the pieces of that path. A claim of uniqueness no test
+//! guards goes stale with nobody noticing.
 
 use std::path::{Path, PathBuf};
 
@@ -36,14 +31,13 @@ fn repository_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// Il solo posto autorizzato a comporre il percorso, e le prove che lo
-/// verificano.
+/// The one place allowed to compose the path, and the tests that check it.
 fn is_allowed(path: &Path) -> bool {
     let shown = path.to_string_lossy().replace('\\', "/");
     shown.contains("/crates/ledger/")
-        // Questa prova stessa nomina i pezzi per poterli cercare.
+        // This test itself names the pieces, so that it can look for them.
         || shown.ends_with("only_the_ledger_knows_where_the_ledger_lives.rs")
-        // Il gate della lingua tiene un vocabolario, non un percorso.
+        // The language gate holds a vocabulary, not a path.
         || shown.ends_with("identifiers_are_in_english.rs")
 }
 
@@ -54,9 +48,8 @@ fn sources_under(directory: &Path, found: &mut Vec<PathBuf>) {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            // `target/` è materiale generato: guardarci dentro vorrebbe dire
-            // leggere le stesse righe due volte, e in una copia che non si
-            // corregge.
+            // `target/` is generated material: looking inside would read the
+            // same lines twice, in a copy nobody repairs.
             if path.file_name().is_some_and(|name| name == "target") {
                 continue;
             }
@@ -67,11 +60,11 @@ fn sources_under(directory: &Path, found: &mut Vec<PathBuf>) {
     }
 }
 
-/// **NESSUNO RICOMPONE A MANO IL PERCORSO DEL DEPOSITO.**
+/// **NOBODY REBUILDS THE LEDGER PATH BY HAND.**
 ///
-/// *Mutante che rimette il difetto originale*: far tornare `open_ledger` in
-/// `crates/sailor/src/inventory_cmd.rs` a comporre `HOME/.claude/state/flussi`.
-/// Questa prova torna rossa nominando file e riga.
+/// *The mutant that puts the original defect back*: make `open_ledger` in
+/// `crates/sailor/src/inventory_cmd.rs` compose `HOME/.claude/state/flussi`
+/// again. This test goes red naming the file and the line.
 #[test]
 fn nobody_outside_the_ledger_builds_the_ledger_path_by_hand() {
     let root = repository_root();
@@ -99,14 +92,12 @@ fn nobody_outside_the_ledger_builds_the_ledger_path_by_hand() {
         };
         read += 1;
         for (number, line) in text.lines().enumerate() {
-            // **SI CERCA IL GESTO, NON LA PAROLA**, e il primo tentativo di
-            // questa prova sbagliava proprio qui: cercare `flussi` da solo
-            // prendeva `count(flows_seen, "flusso", "flussi")`, che è una
-            // pluralizzazione; cercare `.claude` con `state` prendeva il file
-            // dei modelli e quello dei profili, che sono verità **diverse** e
-            // hanno il diritto di avere ognuna la propria casa. L'unica cosa che
-            // vuol dire «sto ricomponendo il percorso del deposito» è nominare
-            // il suo ultimo pezzo mentre si costruisce un percorso.
+            // **THE GESTURE IS SOUGHT, NOT THE WORD.** `flussi` alone catches
+            // `count(flows_seen, "flusso", "flussi")`, a pluralisation; `.claude`
+            // with `state` catches the models file and the profiles file, which
+            // are **different** truths and each entitled to its own home. The one
+            // thing that means "I am rebuilding the ledger path" is naming its
+            // last piece while a path is being composed.
             let trimmed = line.trim_start();
             if trimmed.starts_with("//") {
                 continue;
