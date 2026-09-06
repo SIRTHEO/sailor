@@ -1,5 +1,13 @@
 {
   "window.session.attention": "Work needing attention",
+  "window.session.show": "Show the run, the refusals, the cost and the quota",
+  "window.session.hide": "Hide the run, the refusals, the cost and the quota",
+  "window.pane.decision": "This agent is waiting for a decision from you.",
+  "window.pane.blocked": "This agent is stopped by something only you can clear.",
+  "window.pane.working": "Something came out of this terminal in the last minute.",
+  "window.pane.done": "The process in this terminal has ended.",
+  "window.pane.unsure.no_channel": "Without the event channel nobody can say what this agent is doing.",
+  "window.pane.unsure.nothing_since": "This terminal is open and has printed nothing for a while: being alive is not progress.",
   "window.session.run_in": "Follow a run in {folder}",
   "window.session.no_run": "No recorded run in this folder",
   "window.session.no_selected_run": "Choose a recorded run in this folder to read its facts.",

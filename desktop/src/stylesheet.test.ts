@@ -286,3 +286,76 @@ describe("the name of a step reads the same at every zoom", () => {
     expect(near.get("-webkit-line-clamp")).toBe("3");
   });
 });
+
+/**
+ * **UN SEGNALE STA IN UN BORDO, NON IN UN PANNELLO.**
+ *
+ * La fascia scritta la notte del 05/09 dichiarava `width: clamp(280px, …)` e
+ * stava accanto al terminale: sotto i 600 pixel il terminale usciva dalla
+ * finestra, e 454 prove verdi non se ne accorgevano. Il divieto 11 non la
+ * prendeva perché guarda solo `width: Npx` con `flex-shrink: 0` e uno
+ * scorrimento proprio — tre condizioni che quella regola non aveva.
+ *
+ * Qui la domanda è più stretta: **nessuno dei tre segnali dichiara una
+ * larghezza**. Rimetti `min-width: 200px` su `.pane__notch` e questa diventa
+ * rossa.
+ */
+describe("i tre segnali non tolgono spazio al terminale", () => {
+  const SIGNALS = [".pane__where", ".pane__tree", ".pane__notch", ".pane__progress"];
+  const WIDTHS = ["width", "min-width", "flex-basis"];
+
+  /** Le regole del foglio che parlano di uno dei tre segnali o del loro risalto. */
+  function ofSignals(alsoStirred = false): Array<{ selector: string; declarations: Array<[string, string]> }> {
+    return outsideRoot.filter((rule) => {
+      const selector = rule.selector.trim();
+      if (alsoStirred && selector.includes("[data-stirred]")) return true;
+      return SIGNALS.some((signal) => selector.startsWith(signal));
+    });
+  }
+
+  test("la prova guarda dei segnali che esistono davvero", () => {
+    // Rinomina una classe e le prove sotto diventerebbero verdi per non aver
+    // guardato niente: è così che un controllo muore in silenzio.
+    const seen = SIGNALS.filter((signal) =>
+      sheet.rules.some((rule) => rule.selector.trim().startsWith(signal)),
+    );
+    expect(seen).toEqual(SIGNALS);
+    expect(ofSignals(true).length).toBeGreaterThan(SIGNALS.length);
+  });
+
+  /** `min-width: 0` non è un pavimento: è la valvola che lascia stringere. */
+  const NO_FLOOR = new Set(["0", "0px", "auto", "none"]);
+
+  test("NESSUN SEGNALE DICHIARA UNA LARGHEZZA, in nessuna unità", () => {
+    const guilty = ofSignals().flatMap((rule) =>
+      rule.declarations
+        .filter(([property, value]) => WIDTHS.includes(property) && !NO_FLOOR.has(value.trim()))
+        .map(([property, value]) => `${rule.selector.trim()} { ${property}: ${value.trim()} }`),
+    );
+    expect(guilty, "un segnale con una larghezza è una colonna, e la toglie al terminale").toEqual([]);
+  });
+
+  test("LA TACCA È FUORI DAL FLUSSO: sta sul bordo, non in fila nell'intestazione", () => {
+    const notch = new Map(
+      sheet.rules
+        .filter((rule) => rule.selector.trim() === ".pane__notch")
+        .flatMap((rule) => rule.declarations),
+    );
+    expect(notch.get("position")?.trim()).toBe("absolute");
+  });
+
+  /**
+   * **NIENTE SI MUOVE QUANDO NON È SUCCESSO NIENTE.** Un segno che pulsa fa
+   * sembrare vivo un agente muto: è la bugia che il consulto vieta per nome.
+   * Il risalto di un passaggio è un colore che si spegne, non un moto.
+   */
+  test("NESSUN SEGNALE E NESSUN RISALTO DICHIARA UN'ANIMAZIONE", () => {
+    const moving = ["animation", "animation-name", "transition", "transform"];
+    const guilty = ofSignals(true).flatMap((rule) =>
+      rule.declarations
+        .filter(([property]) => moving.includes(property))
+        .map(([property, value]) => `${rule.selector.trim()} { ${property}: ${value.trim()} }`),
+    );
+    expect(guilty, "un segnale che si muove da solo").toEqual([]);
+  });
+});

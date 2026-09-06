@@ -6,9 +6,21 @@ import stylesheetSource from "./styles.css?raw";
 import App from "./App";
 import { belowThreshold, contrastPairs, parseStylesheet, type Stylesheet } from "./contrast";
 import { ANOTHER_PATH, placesOf, shortestTails, Terminals, WORKSPACE_HINT } from "./Terminals";
-import { movedLabel, routingNote, tokensLabel, whoLabel } from "./TerminalPane";
+import {
+  BLOCKED_MARK,
+  DECISION_MARK,
+  movedLabel,
+  PROGRESS_MARK,
+  routingNote,
+  STIR_MS,
+  tokensLabel,
+  useStir,
+  whoLabel,
+} from "./TerminalPane";
 import { declaredCeiling } from "./terminal";
 import {
+  ATTESTED_MS,
+  attentionOf,
   decodeBytes,
   encodeBytes,
   asTyped,
@@ -19,11 +31,14 @@ import {
   livenessWord,
   OutputBus,
   paneGesture,
+  paneOrder,
+  progressOf,
   STILL_SPEAKING_MS,
   splitCommandLine,
   windowGesture,
   windowHold,
   type KeyAction,
+  type Liveness,
   type TerminalSummary,
 } from "./terminal";
 
@@ -1222,5 +1237,296 @@ describe("the terminals inside the window", () => {
     expect(behind, "the terminals screen was unmounted on leaving it").toBeTruthy();
     expect(behind).toBe(terminals);
     expect((behind as HTMLElement).hidden).toBe(true);
+  });
+});
+
+// ── the three facts that stay on screen ──────────────────────────────────
+
+/**
+ * **I TRE FATTI, UNO PER AGENTE, NEI BORDI DEI TERMINALI GIÀ PRESENTI.**
+ *
+ * Il consulto del 06/09 dice che i due comportamenti su cui si regge il
+ * verdetto «cruscotto» erano passati fra 454 prove verdi. Queste sono le
+ * prove che li avrebbero presi: il segnale non toglie spazio al terminale,
+ * niente si muove quando non è successo niente, l'ordine dei pannelli non
+ * dipende da chi parla, e l'assenza di un segnale non è una conclusione.
+ */
+
+describe("se questo agente aspetta proprio me", () => {
+  test("un passo consegnato a una persona è una decisione; un errore che ferma è un blocco", () => {
+    expect(attentionOf({})).toEqual({ need: "none" });
+    expect(attentionOf({ handed: true })).toEqual({ need: "decision" });
+    expect(attentionOf({ blocked: "the engine refused the line" })).toEqual({
+      need: "blocked",
+      why: "the engine refused the line",
+    });
+    // Fermo batte in attesa: chi non può proseguire non sta decidendo.
+    expect(attentionOf({ handed: true, blocked: "no such folder" }).need).toBe("blocked");
+  });
+
+  /**
+   * **IL MUTANTE:** far entrare `recovered` nel conto. Un allarme che scatta
+   * per qualcosa di già rimediato insegna all'occhio a saltare l'angolo dove
+   * comparirà quello vero.
+   */
+  test("UN RIFIUTO CHE IL SISTEMA HA RECUPERATO DA SOLO NON PRODUCE ALLARME", () => {
+    expect(attentionOf({ recovered: "the backlog could not be read; the live output still flows" })).toEqual({
+      need: "none",
+    });
+  });
+});
+
+describe("se procede, ha finito, oppure non sappiamo più cosa faccia", () => {
+  const alive: Liveness = { state: "alive" };
+
+  test("ciò che è attestato si dice, e nient'altro", () => {
+    expect(progressOf({ state: "closed", status: "exited with 0" }, 1000, 1000)).toEqual({ how: "done" });
+    expect(progressOf({ state: "unknown", why: "no channel" }, 1000, 1000)).toEqual({
+      how: "unsure",
+      because: "no_channel",
+    });
+    expect(progressOf(alive, 1000, 1000 + ATTESTED_MS - 1)).toEqual({ how: "working" });
+  });
+
+  /**
+   * **IL MUTANTE:** trattare l'assenza di segnale come conclusione, cioè
+   * rispondere `done` quando `spokeAt` è nullo. Un agente che non stampa da
+   * un'ora è indistinguibile, da qui, da uno che sta pensando: dirlo è
+   * l'unica cosa vera che questa finestra può dire.
+   */
+  test("STATO SCONOSCIUTO NON È STATO FERMO: senza un segnale attendibile esce l'incertezza", () => {
+    expect(progressOf(alive, null, 5000)).toEqual({ how: "unsure", because: "nothing_since" });
+    expect(progressOf(alive, 1000, 1000 + ATTESTED_MS + 1)).toEqual({ how: "unsure", because: "nothing_since" });
+    // Essere vivo non è avanzare: nessuno dei due casi sopra è una spunta.
+    expect(PROGRESS_MARK.unsure).not.toBe(PROGRESS_MARK.done);
+  });
+});
+
+describe("l'ordine dei terminali", () => {
+  /**
+   * **IL MUTANTE:** riordinare per stato. La firma è la prova: chi decide
+   * l'ordine non riceve né l'uscita né lo stato, quindi non può leggerli.
+   */
+  test("NON CAMBIA ALL'ARRIVO DI USCITA O AL CAMBIO DI STATO", () => {
+    const list = [{ id: "a" }, { id: "b" }, { id: "c" }];
+    expect(paneOrder(list, null).map((one) => one.id)).toEqual(["a", "b", "c"]);
+    expect(paneOrder(list, "c").map((one) => one.id)).toEqual(["c", "a", "b"]);
+    // Chiamata due volte con gli stessi argomenti risponde lo stesso: l'unica
+    // cosa che muove un pannello è la scelta di guardarlo.
+    expect(paneOrder(list, "c").map((one) => one.id)).toEqual(paneOrder(list, "c").map((one) => one.id));
+  });
+});
+
+describe("il risalto di un passaggio", () => {
+  function Probe({ value }: { value: string | null }) {
+    return <i data-testid="probe" data-stirred={useStir(value) || undefined} />;
+  }
+  const stirred = () => screen.getByTestId("probe").getAttribute("data-stirred");
+
+  /**
+   * **IL MUTANTE:** togliere la guardia `was === null`. La seconda riga è il
+   * difetto che questa prova ha preso mentre la scrivevo: la finestra apre
+   * senza sapere ancora in quale albero sta, e il primo albero che arriva
+   * faceva partire un risalto **all'avvio**. L'aggiornamento ordinario è
+   * misurato sui pannelli veri, più sotto.
+   */
+  test("ARRIVARE NON È UN PASSAGGIO, E IL RISALTO SI SPEGNE", () => {
+    vi.useFakeTimers();
+    try {
+      const { rerender } = render(<Probe value={null} />);
+      expect(stirred(), "la prima apparizione non è un passaggio").toBeNull();
+
+      rerender(<Probe value="/work/sailor" />);
+      expect(stirred(), "il primo albero conosciuto ha fatto un risalto all'avvio").toBeNull();
+
+      rerender(<Probe value="/work/sailor" />);
+      expect(stirred(), "un aggiornamento ordinario ha prodotto un risalto").toBeNull();
+
+      rerender(<Probe value="/work/other" />);
+      expect(stirred(), "il passaggio non ha richiamato l'occhio").toBe("true");
+
+      // E si ferma: richiama l'occhio una volta, poi il segnale resta fermo.
+      act(() => vi.advanceTimersByTime(STIR_MS + 10));
+      expect(stirred(), "il risalto non si è spento: è diventato un lampeggio").toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("i tre segnali nei bordi dei pannelli", () => {
+  const panes = () => Array.from(document.querySelectorAll<HTMLElement>(".pane:not([hidden])"));
+
+  test("OGNI AGENTE PORTA I SUOI TRE, SEMPRE NELLO STESSO PUNTO", async () => {
+    const shell = pretendShell({ terminal_list: TWO });
+    try {
+      render(
+        <div className="app">
+          <Terminals native />
+        </div>,
+      );
+      await screen.findByRole("button", { name: /packages/ });
+
+      const places = panes().map((pane) => {
+        const head = pane.querySelector(".pane__head") as HTMLElement;
+        const foot = pane.querySelector(".pane__foot") as HTMLElement;
+        return {
+          tree: pane.querySelector(".pane__where .pane__tree")?.textContent,
+          whereAt: Array.from(head.children).indexOf(pane.querySelector(".pane__where") as Element),
+          progressAt: Array.from(foot.children).indexOf(pane.querySelector(".pane__progress") as Element),
+        };
+      });
+      expect(places.map((place) => place.tree)).toEqual(["sailor", "packages"]);
+      // Nessun colore sostituisce l'identità, e la posizione è la stessa in
+      // tutti e due i pannelli: è ciò che permette di riconoscerli di sbieco.
+      expect(places.map((place) => place.whereAt)).toEqual([0, 0]);
+      expect(places.map((place) => place.progressAt)).toEqual([0, 0]);
+      expect(measure(20)).toEqual([]);
+    } finally {
+      shell.stop();
+    }
+  });
+
+  test("un passo consegnato alza la tacca su quel terminale e su nessun altro", async () => {
+    const bench = { terminalId: "t2", runId: "run-01", stepId: "leggi", mandate: "read the diff" };
+    const shell = pretendShell({ terminal_list: TWO });
+    try {
+      render(
+        <div className="app">
+          <Terminals native bench={bench} />
+        </div>,
+      );
+      await screen.findByRole("button", { name: /packages/ });
+      const marked = panes().filter((pane) => pane.querySelector(".pane__notch") !== null);
+      expect(marked).toHaveLength(1);
+      expect(marked[0].querySelector(".pane__device")?.textContent).toBe("ttys009");
+      expect(marked[0].querySelector(".pane__notch")?.getAttribute("data-need")).toBe("decision");
+      expect(marked[0].querySelector(".pane__notch")?.textContent).toBe(DECISION_MARK);
+      expect(measure(20)).toEqual([]);
+    } finally {
+      shell.stop();
+    }
+  });
+
+  test("una riga che il motore rifiuta è un quadrato, non una tacca", async () => {
+    // Nessun `terminal_submit` nel guscio finto: la riga non passa, e il
+    // lavoro resta fermo finché qualcuno non fa qualcosa.
+    const shell = pretendShell({ terminal_list: TWO });
+    try {
+      render(
+        <div className="app">
+          <Terminals native />
+        </div>,
+      );
+      await screen.findByRole("button", { name: /packages/ });
+      const line = screen.getByLabelText("a line for ttys004") as HTMLInputElement;
+      fireEvent.change(line, { target: { value: "git status" } });
+      await act(async () => {
+        fireEvent.submit(line.closest("form") as HTMLFormElement);
+      });
+      const notch = panes()[0].querySelector(".pane__notch");
+      expect(notch?.getAttribute("data-need")).toBe("blocked");
+      expect(notch?.textContent).toBe(BLOCKED_MARK);
+      expect(measure(20)).toEqual([]);
+    } finally {
+      shell.stop();
+    }
+  });
+
+  test("VIVO E MUTO PORTA IL ROMBO, NON LA SPUNTA; la fine porta la spunta, e il passaggio un risalto", async () => {
+    const shell = pretendShell({ terminal_list: TWO });
+    try {
+      render(
+        <div className="app">
+          <Terminals native />
+        </div>,
+      );
+      await screen.findByRole("button", { name: /packages/ });
+      expect(panes().map((pane) => pane.querySelector(".pane__progress")?.textContent)).toEqual([
+        PROGRESS_MARK.unsure,
+        PROGRESS_MARK.unsure,
+      ]);
+      expect(panes().some((pane) => pane.hasAttribute("data-stirred"))).toBe(false);
+
+      // UN AGGIORNAMENTO ORDINARIO NON PRODUCE RISALTO: ridisegnare non è un
+      // avvenimento, e i pannelli vengono ridisegnati tutto il giorno.
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /ttys004/ }));
+      });
+      expect(
+        panes().some((pane) => pane.hasAttribute("data-stirred")),
+        "un aggiornamento ordinario ha prodotto un risalto",
+      ).toBe(false);
+
+      await act(async () => {
+        shell.emit("terminal_closed", { id: "t1", status: "exited with 0" });
+      });
+      const ended = panes()[0];
+      expect(ended.querySelector(".pane__device")?.textContent).toBe("ttys004");
+      expect(ended.querySelector(".pane__progress")?.textContent).toBe(PROGRESS_MARK.done);
+      expect(ended.getAttribute("data-stirred"), "il passaggio non ha richiamato l'occhio").toBe("true");
+      // E solo il passaggio: l'altro pannello non ha attraversato niente.
+      expect(panes()[1].hasAttribute("data-stirred")).toBe(false);
+    } finally {
+      shell.stop();
+    }
+  });
+
+  test("L'ORDINE DEI PANNELLI NON CAMBIA quando arriva uscita o cambia lo stato", async () => {
+    const shell = pretendShell({ terminal_list: TWO });
+    try {
+      render(
+        <div className="app">
+          <Terminals native />
+        </div>,
+      );
+      await screen.findByRole("button", { name: /packages/ });
+      const order = () => panes().map((pane) => pane.querySelector(".pane__device")?.textContent);
+      expect(order()).toEqual(["ttys004", "ttys009"]);
+
+      await act(async () => {
+        shell.emit("terminal_output", { id: "t2", bytes: encodeBytes(keyBytes("hello")), at: 0 });
+      });
+      expect(order(), "chi parla si è preso il posto di chi si sta guardando").toEqual(["ttys004", "ttys009"]);
+
+      await act(async () => {
+        shell.emit("terminal_closed", { id: "t1", status: "exited with 0" });
+      });
+      expect(order(), "un cambio di stato ha riordinato i pannelli").toEqual(["ttys004", "ttys009"]);
+    } finally {
+      shell.stop();
+    }
+  });
+
+  /**
+   * **LA FASCIA CEDE IL POSTO.** Accanto al terminale prendeva una colonna a
+   * ogni larghezza, e sotto i 600 pixel il terminale usciva dalla finestra.
+   * Il dettaglio resta raggiungibile: si chiede, e arriva sotto.
+   * **IL MUTANTE:** rimettila dentro `.session-work` e questa diventa rossa.
+   */
+  test("IL TERMINALE NON CEDE SPAZIO A UN SEGNALE: la fascia non è più sempre a schermo", async () => {
+    const shell = pretendShell({ terminal_list: TWO });
+    try {
+      const { container } = render(
+        <div className="app">
+          <Terminals native />
+        </div>,
+      );
+      await screen.findByRole("button", { name: /packages/ });
+      const work = container.querySelector(".session-work") as HTMLElement;
+      expect(Array.from(work.children).map((child) => child.className)).toEqual(["terminals__panes"]);
+      expect(container.querySelector(".session-context")).toBeNull();
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /Show the run/ }));
+      });
+      expect(container.querySelector(".session-context"), "il dettaglio non è più raggiungibile").toBeTruthy();
+      expect(
+        container.querySelector(".session-work .session-context"),
+        "il dettaglio è tornato a stare accanto al terminale",
+      ).toBeNull();
+    } finally {
+      shell.stop();
+    }
   });
 });
