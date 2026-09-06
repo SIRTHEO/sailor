@@ -400,15 +400,10 @@ pub fn profile_home_path(
 }
 
 /// The environment to overlay to launch `cli` with its home at `profile_home`.
-/// Empty when the mechanism uses no variable: there the swap is a filesystem
-/// operation, see [`symlink_swap`].
-///
-/// **NAMING THE USUAL HOME IS NOT THE SAME AS SAYING NOTHING**, and this is
-/// measured, not reasoned: `claude` reads its credentials from the machine's
-/// keyring when the variable is unset and from a file inside the directory
-/// when it is set — so the same path, written down, moved the engine from an
-/// authenticated home to an expired copy of it. A profile that adopts the
-/// place the engine already keeps its home therefore overlays nothing.
+/// Empty for a mechanism with no variable (see [`symlink_swap`]) and for a
+/// profile adopting the place the engine already keeps its home: **naming the
+/// usual home is not the same as saying nothing** — `claude` reads the keyring
+/// when the variable is unset and a file inside the directory when it is set.
 pub fn build_environment(
     cli: &KnownCli,
     profile_home: &Path,
@@ -425,8 +420,8 @@ pub fn build_environment(
 }
 
 /// Whether `profile_home` is the very place `cli` keeps its home unaided.
-/// False where the machine will not say where the person lives: not knowing is
-/// not «it is elsewhere», and the overlay stays as it was.
+/// False where nobody says where the person lives: not knowing is not
+/// «elsewhere».
 pub fn home_is_where_the_engine_keeps_it(
     cli: &KnownCli,
     profile_home: &Path,
@@ -574,13 +569,9 @@ mod tests {
         assert_eq!(env.len(), 1);
     }
 
-    /// **THE FAULT THIS TEST HOLDS SHUT.** A profile that adopts the home the
-    /// engine already keeps — the only honest way to give it credentials,
-    /// since a token is never copied — was handed the variable anyway, with
-    /// that same path inside it. Writing it is not a null gesture: `claude`
-    /// reads its credentials from the keyring when it is unset and from a file
-    /// inside the directory when it is set. The authenticated engine became an
-    /// expired one, and the flow started all the same.
+    /// **THE FAULT THIS TEST HOLDS SHUT**: a profile adopting the home the
+    /// engine keeps was handed the variable anyway, and the authenticated
+    /// engine became an expired one.
     #[test]
     fn a_profile_that_adopts_the_usual_home_overlays_nothing() {
         let cli = known_clis().iter().find(|c| c.id == "codex").unwrap();
@@ -599,9 +590,8 @@ mod tests {
         );
     }
 
-    /// Not knowing where the launcher lives is not «lives elsewhere»: without
-    /// `HOME` the variable is written as before, the direction that moves the
-    /// home rather than the one that leaves it in place on a guess.
+    /// Without `HOME` the variable is written as before, never left out on a
+    /// guess.
     #[test]
     fn without_a_home_the_overlay_stays_as_it_was() {
         let cli = known_clis().iter().find(|c| c.id == "codex").unwrap();

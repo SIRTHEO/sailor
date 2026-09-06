@@ -206,10 +206,8 @@ fn access_of(
     // cui `LoginProbe` prende l'ambiente come argomento invece di andarselo a
     // leggere: chiedere sempre al profilo attivo darebbe la stessa risposta a
     // tutte le righe dell'elenco, e sarebbe la risposta di uno solo.
-    // **A HOME THAT DOES NOT MOVE IS NOT A HOME ALREADY IN PLACE**: the first
-    // has no variable to write, the second has one that must not be written.
-    // Only the first is a verdict; the second is asked like every other, with
-    // the environment the engine would have on its own.
+    // **A HOME THAT DOES NOT MOVE IS NOT A HOME ALREADY IN PLACE**: only the
+    // first is a verdict, the second is asked like every other.
     let env = profiles::build_environment(cli, home, &|name| std::env::var(name).ok());
     if !matches!(cli.home, HomeMechanism::EnvVar(_)) {
         return (
