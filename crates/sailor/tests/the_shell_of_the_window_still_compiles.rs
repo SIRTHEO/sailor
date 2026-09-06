@@ -140,10 +140,22 @@ fn measured(root: &Path) -> Verdict {
 /// 43 s cold into an empty build directory, 1.3 s with the dependencies warm
 /// and the shell re-checked. Without cargo, or with nothing to build with,
 /// nothing is compared and the test says so.
+/// The workspace crates the shell is built against, read off its manifest:
+/// the perimeter a successful build has walked.
+fn crates_the_shell_links(root: &Path) -> usize {
+    std::fs::read_to_string(root.join(SHELL_MANIFEST))
+        .map(|text| text.lines().filter(|line| line.contains("path = \"../../crates/")).count())
+        .unwrap_or(0)
+}
+
 #[test]
 fn the_shell_compiles_against_the_crates_it_is_built_from() {
-    match measured(&root()) {
-        Verdict::Compiles => {}
+    let root = root();
+    match measured(&root) {
+        Verdict::Compiles => workspace::measured(
+            crates_the_shell_links(&root),
+            "workspace crates the shell links, compiled through its manifest",
+        ),
         Verdict::Broken(first) => panic!(
             "the shell does not compile, and no workspace test builds it. \
              The compiler's first word:\n      {first}"
@@ -154,7 +166,7 @@ fn the_shell_compiles_against_the_crates_it_is_built_from() {
              every clean tree. Cargo said:\n      {said}"
         ),
         Verdict::NothingMeasured(why) => {
-            println!("the shell was not built here: nothing measured, nothing compared — {why}")
+            workspace::measured_nothing(&format!("the shell was not built here: {why}"))
         }
     }
 }
