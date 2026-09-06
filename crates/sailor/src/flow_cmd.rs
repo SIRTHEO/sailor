@@ -18,6 +18,7 @@ mod beat;
 mod cap_and_schedule;
 pub mod check;
 mod cost;
+mod create_and_delete;
 mod edit;
 mod engines;
 mod extensions;
@@ -32,6 +33,7 @@ use beat::{due_flows, tick_flows, waiting_report};
 use cap_and_schedule::{cap_of, schedule_of, set_cap, set_schedule};
 use check::check_flow;
 use cost::cost_of;
+use create_and_delete::{delete_flow, new_flow};
 use edit::edit_flow;
 use relocate::relocate_flow;
 use run_and_resume::{resume_run, run_flow};
@@ -80,6 +82,8 @@ fn dispatch(args: &[String], sources: &[FlowSource]) -> Result<String, String> {
         [command, name, gesture @ ..] if command == "edit" && !gesture.is_empty() => {
             edit_flow(sources, name, gesture)
         }
+        [command, name] if command == "new" => new_flow(sources, name),
+        [command, name] if command == "delete" => delete_flow(sources, name),
         [command] if command == "publish" => crate::publish_cmd::publish_flows(sources, None),
         [command, remote] if command == "publish" => {
             crate::publish_cmd::publish_flows(sources, Some(remote))
@@ -247,6 +251,14 @@ pub const USAGE: &[Form] = &[
     Form {
         form: "sailor flow edit <name> field <step> <key> <value|none>",
         says_key: "cli.flow.form.field",
+    },
+    Form {
+        form: "sailor flow new <name>",
+        says_key: "cli.flow.form.new",
+    },
+    Form {
+        form: "sailor flow delete <name>",
+        says_key: "cli.flow.form.delete",
     },
     Form {
         form: "sailor flow relocate <name> [prefix-to-strip]",
