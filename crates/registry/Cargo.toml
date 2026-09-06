@@ -1,19 +1,17 @@
 [package]
 name = "registry"
 version = "0.1.0"
+description = "The one list of actions the engine and the window share."
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
 
-# QUALI AZIONI SA ESEGUIRE SAILOR: una funzione sola, e il crate esiste per
-# quello.
-#
-# Non porta logica propria e non aggiunge nessuna dipendenza esterna: mette
-# insieme quelle che c'erano già. Esiste perché la stessa lista era scritta due
-# volte — una nel comando `sailor flow run`, una nel guscio della finestra — e le
-# due copie si sono disallineate almeno tre volte, l'ultima il 30/08/2026 alle
-# 09:05, quando la misura del consumo è entrata da una parte sola. Il commento
-# sopra la copia della finestra diceva testualmente «QUESTA LISTA SI DISALLINEA,
-# E L'HA GIÀ FATTO»: era vero, ed è rimasto vero finché la lista è stata due.
+# One function, and the crate exists for it: which actions Sailor can run.
+# No logic of its own and no external dependency; it assembles the ones that
+# were there. The same list was written twice, in `sailor flow run` and in
+# the window's shell, and the two copies drifted apart more than once.
 
 [dependencies]
 actions = { path = "../actions" }
@@ -23,8 +21,8 @@ catalogue = { path = "../catalogue" }
 flow = { path = "../flow" }
 faults = { path = "../faults" }
 ledger = { path = "../ledger" }
-# Dove stanno i terminali che Sailor segue: qui si prende solo il percorso, e
-# lo sa dire un posto solo.
+# Where the terminals Sailor tracks live: only the path is taken from here,
+# and one place knows it.
 sessions = { path = "../sessions" }
 toolbox = { path = "../toolbox" }
 trigger = { path = "../trigger" }
@@ -32,16 +30,11 @@ trigger = { path = "../trigger" }
 # and `terminal` sits downstream of `actions` in the graph.
 relay = { path = "../relay" }
 
-# SOLO PER LE PROVE, e la riga sopra resta vera: il crate spedito non porta
-# nessuna dipendenza esterna propria. Qui serve a scrivere un flusso a mano nel
-# corpo di una prova, a costruire l'ingresso di un passo e a rileggere la
-# proiezione del deposito — cose che si scrivono in JSON perché è in JSON che
-# vivono.
-#
-# UNA SEZIONE SOLA, E STA IN FONDO. Il 31/08/2026 due rami hanno aggiunto
-# ciascuno la propria `[dev-dependencies]`, in due punti diversi del file: git
-# le ha fuse senza vedere nessun conflitto, e cargo ha rifiutato l'intero
-# workspace con «duplicate key». Un manifesto TOML non ha una prova che lo
-# guardi: la difesa è tenerne una sola, qui.
+# Tests only, so the shipped crate still brings no external dependency of its
+# own: a flow written by hand in a test body, a step's input, the store's
+# projection read back, all of them JSON because that is where they live.
+# One section, and it sits last: two branches once each added their own
+# `[dev-dependencies]` in two places, git merged them without a conflict,
+# and cargo refused the whole workspace with «duplicate key».
 [dev-dependencies]
 serde_json = { workspace = true }

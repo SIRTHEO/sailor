@@ -1,8 +1,12 @@
 [package]
 name = "flow"
 version = "0.1.0"
+description = "The flow engine: graph, parallel fronts, spending cap, resume."
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
 
 [dependencies]
 catalogue = { path = "../catalogue" }
@@ -10,18 +14,10 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = "0.10"
 
-# IL DEPOSITO VERO ENTRA SOLO NELLE PROVE, E IL VERSO È VOLUTO.
-#
-# `ledger` dipende da `flow` — implementa `RecordStore` per `Ledger` — quindi
-# metterlo fra le dipendenze normali sarebbe un ciclo che cargo rifiuta. Qui è
-# un ciclo di sole prove, che cargo ammette apposta: la libreria `flow` continua
-# a non sapere niente di SQLite, e a saperlo è solo la prova che verifica i due
-# insieme.
-#
-# **PERCHÉ SERVE.** `the_spending_cap.rs` finge `spent()` con un deposito
-# scritto nella prova stessa, e `spent_in_run` è provato da solo in `ledger`.
-# Nessuna delle due dice che l'esecutore, con un `Ledger` vero sotto, veda
-# salire la spesa **mentre la corsa gira** — che è il solo istante in cui il
-# tetto funziona o non funziona.
+# The real store enters only in tests, and the direction is deliberate:
+# `ledger` implements `RecordStore` for `Ledger`, so as a normal dependency it
+# would be a cycle cargo refuses. A test-only cycle is allowed, and it is the
+# one place that proves the executor sees the spend rise while a run is
+# going, which is the only instant the cap works or does not.
 [dev-dependencies]
 ledger = { path = "../ledger" }

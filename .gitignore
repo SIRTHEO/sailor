@@ -1,43 +1,28 @@
 # Build products: they are remade, and they weigh more than the source.
-# `target/` alone was 1.9 GB of a 2.2 GB tree on 28/08/2026.
-#
-# THE STAR IS NOT TIDINESS. `target/` named one directory, and on 01/09/2026 a
-# session that set `CARGO_TARGET_DIR=<worktree>/target-int` — to stop parallel
-# agents sharing one build directory — committed **1.58 GB in 14,247 files**
-# with a `git add -A`. A name keeps out what it names; a shape keeps out what
-# it is. Whoever needs a second build directory calls it `target-<something>`
-# and nothing happens.
-#
-# That rule fixed git and created the disk problem, so it has a second half now.
-# `cargo clean` empties `target/` and nothing else, so every `target-int` and
-# `target-i18n` — and every `sailor-target-*` left beside the repo — grows and
-# is never reclaimed. On 04/09/2026 that was **27 GB across four directories**,
-# 3.9 GB of it in a `target-i18n` no file in the tree named. A second build
-# directory belongs INSIDE `target/`: call it `target/int`, the way
-# `release_cmd.rs:171` already calls its own `target/from-head`. One line here
-# keeps it out of git, and `cargo clean` takes it back.
+# The star is not tidiness. `target/` named one directory, and a second build
+# directory called `target-int` once went in with an add of everything: 1.58 GB
+# in 14,247 files. A name keeps out what it names; a shape keeps out what it is.
+# But `cargo clean` empties `target/` and nothing else, so a sibling grows and
+# is never reclaimed: a second build directory belongs INSIDE `target/`.
 target*/
 mutants.out/
 mutants.out.old/
 
-# La finestra: dipendenze scaricate e pacchetto compilato. Il nome sta senza
-# percorso per la stessa ragione della stella qui sopra: scritto
-# `desktop/node_modules/` teneva fuori una cartella sola, e la cache di vitest
-# alla radice è entrata nel deposito pubblico con un commit di lavoro.
+# The window: downloaded dependencies and the built bundle. The name stands
+# without a path for the same reason as the star above: `desktop/node_modules/`
+# kept out one directory, and a test runner's cache at the root went in.
 node_modules/
 desktop/dist/
 
-# Il guscio nativo rigenera questi a ogni compilazione, dall'icona e dalla
-# configurazione che invece sono versionate. Le icone di Android e iOS le
-# produce lo stesso comando: Sailor è un programma da scrivania, e tenerle qui
-# vorrebbe dire versionare centoventi file per due piattaforme che non esistono.
+# The native shell regenerates these on every build, from the icon and the
+# configuration that are versioned. Android and iOS icons come from the same
+# command: Sailor is a desktop program, and keeping them would version a
+# hundred files for two platforms that do not exist.
 desktop/src-tauri/gen/
 desktop/src-tauri/icons/android/
 desktop/src-tauri/icons/ios/
 
-# La configurazione di chi lavora qui, non del prodotto. Dentro ci sono anche
-# 332 file del prodotto chiuso il 17/08/2026 — screenshot, sessioni, piani —
-# che non appartengono a questo deposito e non devono seguirlo su SIRTHEO.
+# The configuration of whoever works here, not of the product.
 .claude/
 
 .DS_Store

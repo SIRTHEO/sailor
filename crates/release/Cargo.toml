@@ -1,8 +1,13 @@
 [package]
 name = "release"
 version = "0.1.0"
+description = "Release targets, the stamp a binary carries, and service readiness."
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
 
-# leggere già lui, e due letture dello stesso formato divergono al primo dubbio.
+# A library only: the gestures of a release, I/O and processes, live in
+# `sailor release`.
 [dependencies]
