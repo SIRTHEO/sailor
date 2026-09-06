@@ -175,10 +175,11 @@ Few, and they count for more than style preferences. In full in
   it came to light and **what would have stopped it** — because what follows a
   fault is a check, not a task assigned to somebody.
 - **Everything in the tree is in English**: identifiers, comments, documents,
-  commit messages, what a user of the tool reads. The comments and documents
-  written in Italian before that rule are a measured debt, counted by a test
-  that lets the number only fall, so expect some of the fault log and the
-  decision record linked above to still be in Italian while it is paid.
+  commit messages, what a user of the tool reads. What was written in Italian
+  before that rule was a measured debt, counted by a test that lets the number
+  only fall — **6,947 comment lines, now one**, a fixture inside a raw string
+  that the line rule counts as a comment. The same test retired its own
+  dated-comment seed the day that count reached zero.
 
 ## Licence
 
