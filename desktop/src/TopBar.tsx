@@ -28,19 +28,42 @@ export function runProgress(run: RunSnapshot): { done: number; running: number }
   return { done, running };
 }
 
+/**
+ * What the right-hand side of the bar may say about a run. The verdict of a
+ * check is not here: `sailor flow check` has no door into this window, and
+ * borrowing a verdict nobody gave is worse than showing none.
+ */
+export function statusOfRun(run: RunSnapshot | undefined, steps: number): BarStatus {
+  if (run === undefined) return { live: false, word: "no run of this flow yet" };
+  const { done, running } = runProgress(run);
+  if (run.status === "running") {
+    const at = Math.min(steps, done + (running > 0 ? 1 : 0));
+    return { live: true, word: `a run in progress · step ${at} of ${steps}` };
+  }
+  return { live: false, word: `last run ${run.status} · ${done} of ${steps} steps closed` };
+}
+
+/**
+ * Everything the bar says about the flow in focus, as one value. Passed apart,
+ * each field carries its own chance of being drawn where no flow is — see
+ * fault 120.
+ */
+export interface BarFlow {
+  steps: number;
+  dirty: boolean;
+  busy: boolean;
+  starting: boolean;
+  status: BarStatus;
+}
+
 interface TopBarProps {
   /** Where the person is: the section, and the entry inside it. */
   crumbs: string[];
   /** What runs, what it costs, who as: drawn from every place. */
   chips?: ReactNode;
-  flowName: string | null;
-  steps: number;
-  dirty: boolean;
-  busy: boolean;
-  starting: boolean;
+  flow: BarFlow | null;
   source: Source;
   sourceWord: string;
-  status: BarStatus | null;
   onWatch?: () => void;
   onSave: () => void;
   onRun: () => void;
@@ -59,22 +82,17 @@ interface TopBarProps {
 export function TopBar({
   crumbs,
   chips,
-  flowName,
-  steps,
-  dirty,
-  busy,
-  starting,
+  flow,
   source,
   sourceWord,
-  status,
   onWatch,
   onSave,
   onRun,
 }: TopBarProps) {
-  const statusBody = status && (
+  const statusBody = flow && (
     <>
-      <span className="topbar__live" data-idle={status.live ? undefined : true} />
-      <span className="topbar__status-word">{status.word}</span>
+      <span className="topbar__live" data-idle={flow.status.live ? undefined : true} />
+      <span className="topbar__status-word">{flow.status.word}</span>
     </>
   );
 
@@ -111,10 +129,10 @@ export function TopBar({
       {/* NOTHING IS SAID ABOUT A FLOW WHERE THERE IS NONE. «No flow in focus —
           pick one in the rail» named a column six places have not got, and asked
           for a gesture the board now makes on its own. */}
-      {flowName !== null && (
+      {flow !== null && (
         <span className="topbar__flow">
-          <span className="topbar__steps">{steps} steps</span>
-          {dirty && (
+          <span className="topbar__steps">{flow.steps} steps</span>
+          {flow.dirty && (
             <span className="topbar__dirty">
               <span className="topbar__dot" />
               unsaved changes
@@ -131,7 +149,7 @@ export function TopBar({
         {sourceWord}
       </span>
 
-      {status !== null &&
+      {flow !== null &&
         (onWatch ? (
           <button type="button" className="topbar__status" onClick={onWatch}>
             {statusBody}
@@ -146,9 +164,9 @@ export function TopBar({
         type="button"
         className="topbar__save"
         onClick={onSave}
-        disabled={flowName === null || !dirty || busy}
+        disabled={flow === null || !flow.dirty || flow.busy}
       >
-        {busy ? "Saving…" : "Save"}
+        {flow?.busy ? "Saving…" : "Save"}
       </button>
       {/* THE ACCENT MEANS «THE ACTION», and this is the action. Not a green:
           green is a step that went well, and prohibition 4 keeps the state
@@ -157,12 +175,12 @@ export function TopBar({
         type="button"
         className="topbar__run is-primary"
         onClick={onRun}
-        disabled={flowName === null || starting}
+        disabled={flow === null || flow.starting}
       >
         <span className="topbar__glyph" aria-hidden="true">
           ▶
         </span>
-        {starting ? "Starting…" : "Run"}
+        {flow?.starting ? "Starting…" : "Run"}
       </button>
     </header>
   );
