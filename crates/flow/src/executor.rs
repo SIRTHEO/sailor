@@ -1,4 +1,4 @@
-use crate::record::{truncate_said, Ran, Refusal};
+use crate::record::{digest_input, truncate_said, Ran, Refusal};
 use crate::reference;
 use crate::{AttemptRelation, Graph, Outcome, SchemaError, Step, StepRecord, StepSpecies};
 use serde_json::Value;
@@ -55,6 +55,10 @@ pub const CURRENT_WALL: &str = "flow.wall_deadline_at";
 /// How many seconds are left of the wall, offered to a step whose schema can
 /// receive it, as the project root is.
 pub const WALL_REMAINING_SECS: &str = "wall_remaining_secs";
+
+/// The key under which a retried step is handed why its last answer was
+/// refused. See [`why_it_was_refused`].
+pub const AFTER_REFUSAL: &str = "after_refusal";
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct ActionError {
@@ -1773,7 +1777,45 @@ pub fn step_input(
         }
         None => positioned,
     };
+    let value = offer_the_refusal(step, value, latest_for(step, records));
     Ok(StepInput { value, runs })
+}
+
+/// Why the last attempt's answer was refused, as the next one is handed it:
+/// the refusal as it stands, the class beside it, and never the answer, which
+/// in fault 103 was 21 KB. Only a refused *shape* is worth telling — a
+/// finished quota is not cured by hearing about itself. See fault 103.
+fn why_it_was_refused(record: &StepRecord) -> Option<Value> {
+    if record.outcome != Some(Outcome::Broke) {
+        return None;
+    }
+    let refusal = record
+        .refusal
+        .as_ref()
+        .filter(|refusal| refusal.check == crate::ANSWER_SHAPE_CHECK)?;
+    let mut told = serde_json::to_value(refusal).ok()?;
+    told.as_object_mut()?.insert(
+        "class".to_owned(),
+        Value::String(record.failure_class.clone().unwrap_or_default()),
+    );
+    Some(told)
+}
+
+/// The reason laid beside the question, under the same rule as the wall: only
+/// to a step whose schema can receive it. What the step makes of it is the
+/// action's: the executor knows an attempt, not a prompt.
+fn offer_the_refusal(step: &Step, input: Value, previous: Option<&StepRecord>) -> Value {
+    let Some(told) = previous.and_then(why_it_was_refused) else {
+        return input;
+    };
+    if !step.input_schema.accepts_property(AFTER_REFUSAL) {
+        return input;
+    }
+    let Value::Object(mut fields) = input else {
+        return input;
+    };
+    fields.insert(AFTER_REFUSAL.to_owned(), told);
+    Value::Object(fields)
 }
 
 /// The input *as the step receives it*: the dependencies' output with `with`
@@ -1901,6 +1943,9 @@ pub fn attempt_relation(records: &[StepRecord], started: &StepRecord) -> Option<
         })
         .max_by_key(|record| (record.attempt, record.epoch))?;
     if previous.input_digest != started.input_digest {
+        if asks_again_with_the_reason(previous, started) {
+            return Some(AttemptRelation::SameInputPlusRefusal);
+        }
         Some(AttemptRelation::DifferentInput)
     } else {
         let origin = records
@@ -1916,6 +1961,24 @@ pub fn attempt_relation(records: &[StepRecord], started: &StepRecord) -> Option<
             Some(AttemptRelation::SameInputGatesChanged)
         }
     }
+}
+
+/// Whether this attempt is the previous question with the reason it was
+/// refused added, and nothing else. Read from the two records, so that whoever
+/// reads the ledger later reaches the same verdict.
+fn asks_again_with_the_reason(previous: &StepRecord, started: &StepRecord) -> bool {
+    started.input.get(AFTER_REFUSAL).is_some()
+        && digest_input(&without_the_reason(&previous.input))
+            == digest_input(&without_the_reason(&started.input))
+}
+
+fn without_the_reason(input: &Value) -> Value {
+    let Value::Object(fields) = input else {
+        return input.clone();
+    };
+    let mut kept = fields.clone();
+    kept.remove(AFTER_REFUSAL);
+    Value::Object(kept)
 }
 
 pub fn latest_for<'a>(step: &Step, records: &'a [StepRecord]) -> Option<&'a StepRecord> {
@@ -2618,6 +2681,160 @@ mod tests {
             Some(AttemptRelation::SameInputGatesChanged)
         );
         assert_eq!(attempts[1].said, None);
+    }
+
+    /// The question the pretend engine is asked, so a test can say whether the
+    /// second attempt asked the same one.
+    const THE_QUESTION: &str = "answer in this shape: {\"verdict\": \"keep\"}";
+
+    /// A step that breaks the first time it is asked and answers the second,
+    /// keeping every input it was handed. `refusal` is what refused the first
+    /// answer, or nothing where the failure left no answer to refuse.
+    struct BreaksOnce {
+        seen: Arc<std::sync::Mutex<Vec<Value>>>,
+        calls: Arc<AtomicUsize>,
+        class: &'static str,
+        refusal: Option<Refusal>,
+    }
+
+    impl Action for BreaksOnce {
+        fn execute(
+            &self,
+            input: &Value,
+            _shared: &SharedState,
+        ) -> Result<ActionOutcome, ActionError> {
+            self.seen
+                .lock()
+                .expect("nobody panics here")
+                .push(input.clone());
+            if self.calls.fetch_add(1, Ordering::SeqCst) > 0 {
+                return Ok(ActionOutcome::Went(json!({"verdict": "keep"})));
+            }
+            let error = ActionError::new(self.class, "what came back was refused");
+            Err(match &self.refusal {
+                Some(refusal) => error.refused(refusal.clone()),
+                None => error,
+            })
+        }
+    }
+
+    fn asked_again_after(
+        class: &'static str,
+        refusal: Option<Refusal>,
+    ) -> (Vec<StepRecord>, Vec<Value>) {
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let graph = Graph::new(vec![step("plan", &[], "engine", 2)]).expect("valid graph");
+        let mut actions = ActionRegistry::default();
+        actions.register(
+            "engine",
+            BreaksOnce {
+                seen: Arc::clone(&seen),
+                calls: Arc::new(AtomicUsize::new(0)),
+                class,
+                refusal,
+            },
+        );
+        let store = InMemoryRecordStore::default();
+        InProcessExecutor
+            .execute(
+                &graph,
+                ExecutionRequest {
+                    run_id: "run".to_owned(),
+                    root_inputs: [("plan".to_owned(), json!({"stdin": THE_QUESTION}))]
+                        .into_iter()
+                        .collect(),
+                    gates: vec![],
+                    shared: SharedState::new(),
+                    spend_cap_micros: None,
+                    stops: RunStops::default(),
+                },
+                &store,
+                &actions,
+                &Tick::new(0),
+            )
+            .expect("the run goes");
+        let handed = seen.lock().expect("nobody panics here").clone();
+        (store.all(), handed)
+    }
+
+    fn refused_shape(seen: &str) -> Option<Refusal> {
+        Some(Refusal::new(
+            crate::ANSWER_SHAPE_CHECK,
+            "",
+            crate::RefusalRule::NotJson,
+            seen,
+        ))
+    }
+
+    /// **ASKING THE SAME QUESTION TWICE IS A LOTTERY; ASKING IT WITH THE
+    /// REASON IS A CURE.** Fault 103: an answer broken at one character closed
+    /// a run that had already paid for the steps before it.
+    #[test]
+    fn a_second_attempt_is_told_why_the_first_answer_was_refused() {
+        let (records, handed) = asked_again_after("answer_not_json", refused_shape("{\"a\": \"b\""));
+
+        assert_eq!(records[1].outcome, Some(Outcome::Went));
+        let told = &handed[1][AFTER_REFUSAL];
+        assert_eq!(told["class"], json!("answer_not_json"));
+        assert_eq!(told["check"], json!(crate::ANSWER_SHAPE_CHECK));
+        assert_eq!(told["rule"], json!("not_json"));
+        assert_eq!(told["seen"], json!("{\"a\": \"b\""));
+        assert_eq!(
+            handed[1]["stdin"], json!(THE_QUESTION),
+            "the same question, with the reason beside it"
+        );
+        assert!(
+            handed[0].get(AFTER_REFUSAL).is_none(),
+            "the first attempt has nothing to be told"
+        );
+    }
+
+    /// The two attempts are not the same work, and the store says so: the
+    /// digest moves because the input moved, and the relation names why.
+    #[test]
+    fn the_store_tells_a_retry_that_carries_the_reason_from_one_that_does_not() {
+        let (records, _) = asked_again_after("answer_not_json", refused_shape("nope"));
+
+        assert_ne!(records[0].input_digest, records[1].input_digest);
+        assert_eq!(
+            records[1].attempt_relation,
+            Some(AttemptRelation::SameInputPlusRefusal)
+        );
+    }
+
+    /// **A FINISHED QUOTA IS NOT A MISTAKE THE ENGINE CAN CORRECT.** Telling
+    /// it what went wrong would buy a second refusal at the price of the
+    /// first, so the attempt goes back as it was.
+    #[test]
+    fn a_failure_the_engine_cannot_answer_is_retried_as_it_was() {
+        let (records, handed) = asked_again_after("engine_exhausted", None);
+
+        assert!(handed[1].get(AFTER_REFUSAL).is_none());
+        assert_eq!(records[0].input_digest, records[1].input_digest);
+        assert_eq!(records[1].attempt_relation, Some(AttemptRelation::SameInput));
+    }
+
+    /// **THE REASON IS SHORT, AND THE ANSWER STAYS WHERE IT DIED.** The answer
+    /// of fault 103 was 21,193 bytes: sending it back would double the price
+    /// of the attempt that is there to save the run.
+    #[test]
+    fn what_goes_back_is_the_reason_and_not_the_answer() {
+        let long = "x".repeat(21_193);
+        let (_, handed) = asked_again_after("answer_not_json", refused_shape(&long));
+
+        let told = handed[1].get(AFTER_REFUSAL).expect("the reason went back");
+        assert_eq!(
+            told["seen"].as_str().map(str::len),
+            Some(crate::MAX_SEEN_BYTES),
+            "the excerpt is cut where every quoted value is"
+        );
+        let told = serde_json::to_string(told).expect("it reserialises");
+        assert!(
+            told.len() < 400,
+            "the reason went back as {} bytes: {told}",
+            told.len()
+        );
+        assert!(told.len() * 20 < long.len(), "{} bytes", told.len());
     }
 
     #[test]
