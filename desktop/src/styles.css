@@ -1843,67 +1843,50 @@ tr[data-followable]:hover {
   border-color: var(--ink);
 }
 
+/* THE CANVAS IS TWO STACKED BOXES: the graph, and the band of commands under
+   it. The graph takes what the band leaves — `min-height: 0` is what lets it
+   give ground — so a band that grows shortens the paper instead of covering
+   it, and no node ever scrolls under a command. */
 .canvas {
   flex-grow: 1;
   min-width: 0;
   position: relative;
+  display: flex;
+  flex-direction: column;
 }
 
-/* ── the step toolbox, inside the canvas ─────────────────────────────────
-   React Flow does the placing (`.react-flow__panel.bottom.left`) and draws it
-   OUTSIDE the transformed frame: inside the canvas, still with respect to it.
-   Only the look and the corridor live here. */
+/* React Flow declares `height: 100%`, which in a column would push the band
+   out of the box it belongs to. */
+.canvas > .react-flow {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+}
 
-/* THE CORRIDOR IS NOT SYMMETRIC. React Flow already has two tenants along the
-   bottom edge: the zoom controls on the left (26px of buttons plus the
-   panel's 15px margin — 41 from the side) and the minimap on the right
-   (200 + 15 = 215). A CENTRED bar may only use twice the narrower side, so it
-   throws away the whole difference and then still does not fit. */
-
-/* THE RULE IS NOT A NUMBER. The bar's cap is the corridor minus the two
-   reserves, and its left offset clears the controls: the worst-case right
-   edge stays out of the minimap band AT EVERY WIDTH, not at the one somebody
-   happened to look at. `Toolbar.test.tsx` re-reads these two values from here
-   and redoes the arithmetic. The reserves are rounded UP to the 4px grid
-   (41 -> 44, 215 -> 216): clearance can only grow, and rule 8 survives. */
-
-/* THE FLOOR IS DECLARED, NOT DEFENDED. Below a 865px window the bar breaks
-   the corridor, losing one pixel per pixel of window. At 865 the canvas is
-   345 wide and a node takes 240: the window is already unusable on its own.
-   What binds down there is the PAINTED extent, not the declared box — under
-   the cap the box shrinks and the content overflows anyway, and
-   `.toolbar__group` holds a 65px minimum (56 + 9). */
+/* ── the step toolbox, the band under the canvas ─────────────────────────
+   It has no corridor to run and no reserves to leave: the zoom controls and
+   the minimap are tenants of the graph's rectangle, which the band no longer
+   enters. A hairline is the whole separation — with the band outside the
+   paper, ban 3's exemption for what «really floats above the canvas» is spent,
+   and the shadow goes with it. */
 .toolbar {
-  /* What the bar leaves free for the two tenants of the bottom band. */
-  --controls-reserve: 44px;
-  --minimap-reserve: 216px;
-
-  /* `Panel` ships `margin: 15px`: bottom and side are rewritten here, and
-     `--space-2` is the air between the bar and what sits beside it. */
-  margin-bottom: var(--space-3);
-  margin-left: calc(var(--controls-reserve) + var(--space-2));
-  max-width: calc(100% - var(--controls-reserve) - var(--minimap-reserve) - 2 * var(--space-2));
+  flex-shrink: 0;
   /* ONE LINE, NOT THREE. Stacked — a caption row, then marks over words — the
      bar was the tallest object on the paper and the paper is what the window
-     is for. Laid along its own corridor it costs one row and says the same. */
+     is for. Laid along its own band it costs one row and says the same. */
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2) var(--space-3);
   padding: var(--space-2) var(--space-3);
   background: var(--paper);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  /* The only shadow, and this is the case rule 3 admits: the bar really does
-     float above the canvas. */
-  box-shadow: var(--shadow);
+  border-top: 1px solid var(--line);
 }
 
-/* THE TOOLS WRAP, and this is half the corridor rule. A max-width on a flex
-   container does NOT restrain its children: the box shrinks to the cap and the
-   row overflows anyway, over the minimap, while the bar's
-   `getBoundingClientRect` reports an obedient narrow box. Wrapping grows the
-   bar upwards instead, where nobody lives. */
+/* THE TOOLS WRAP, and now that costs the graph height instead of hiding it.
+   Without it a band narrower than its content spills sideways out of the
+   window, and the tools at the end become unreachable rather than merely
+   lower. */
 .toolbar__row {
   display: flex;
   flex-wrap: wrap;
@@ -1915,9 +1898,9 @@ tr[data-followable]:hover {
    one, three and three read. 1px separates them without paying for the
    padding of three boxes in a bar where space costs. */
 
-/* Wrapping applies inside a group too: below a 981px window the corridor is
-   narrower than a three-tool group (185px), and without this the group would
-   overflow all the same. */
+/* Wrapping applies inside a group too: at 375px the band is narrower than a
+   three-tool group (185px), and without this the group would overflow all the
+   same. */
 .toolbar__group {
   display: flex;
   flex-wrap: wrap;
