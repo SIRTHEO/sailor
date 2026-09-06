@@ -57,7 +57,8 @@ import { MEMORY_TABS, type MemoryTab } from "./memorytabs";
 import { SailorScreen } from "./SailorScreen";
 import { SAILOR_TABS, type SailorTab } from "./sailortabs";
 import { TerminalsSection, TERMINALS_TABS, type TerminalsTab } from "./TerminalsSection";
-import { statusOfRun, TopBar, type BarFlow, type Source } from "./TopBar";
+import { TopBar } from "./TopBar";
+import { sourceWords, statusOfRun, type BarFlow, type Source } from "./boardhead";
 import { BenchContext, type Bench } from "./Workbench";
 import { declaredCeiling } from "./terminal";
 import { Palette, isPaletteKey, type Entry } from "./Palette";
@@ -1343,11 +1344,6 @@ export default function App() {
     <TooltipProvider>
     <div className="app">
       <Palette entries={paletteEntries} open={paletteOpen} onClose={() => setPaletteOpen(false)} />
-      {/* THE BAR NAMES THE FLOW IT IS ABOUT.
-          Until now it said «6 flows, one system» — true, and about nothing you
-          could act on: neither which flow was on screen, nor whether it was
-          saved, nor whether it was running, nor a way to run it. Save and Run
-          need a subject, and the subject is the flow the rail has in focus. */}
       <TopBar
         crumbs={crumbs}
         chips={
@@ -1370,24 +1366,6 @@ export default function App() {
             <WhoChip native={NATIVE} />
           </>
         }
-        flow={barFlow}
-        source={source}
-        sourceWord={
-          source === "engine"
-            ? `${flows.size + broken.length} flows from the disk`
-            : source === "failed"
-              ? `the engine is not answering: ${failure}`
-              : source === "loading"
-                ? "asking the engine for the flows…"
-                : "sample data"
-        }
-        onWatch={focusedRun ? () => setWatching(focusedRun.run_id) : undefined}
-        onSave={() => {
-          if (focusName) void handleSave(focusName);
-        }}
-        onRun={() => {
-          if (focusName) void handleRun(focusName);
-        }}
       />
 
       {/* The places, in a column, divided by what you are doing. */}
@@ -1412,19 +1390,33 @@ export default function App() {
       />
       <div className="stage">
 
-      {place === "board" && focusName && focusedWorking && focusedBand && (
-        <FocusBar
-          key={focusName}
-          name={focusName}
-          color={focusedBand.color}
-          flow={focusedWorking.flow}
-          neverSaved={focusedWorking.saved === null}
-          busy={saving.has(focusName)}
-          error={saveErrors[focusName]}
-          onRename={(next) => renameFlow(focusName, next)}
-          onDescription={(text) => updateFlow(focusName, (flow) => ({ ...flow, description: text }))}
-          onDelete={() => void handleDeleteFlow(focusName)}
-        />
+      {/* THE BOARD'S HEAD, AND EVERY CONTROL THE BAR USED TO HOLD FOR IT.
+          Where the flows came from describes the collection, so it stands with
+          or without one in focus; the rest has the focused flow for a subject
+          and stands only with it. */}
+      {place === "board" && (
+        <div className="boardhead">
+          <span className="boardhead__source" data-source={source}>
+            {sourceWords(source, flows.size + broken.length, failure)}
+          </span>
+          {focusName && focusedWorking && focusedBand && barFlow && (
+            <FocusBar
+              key={focusName}
+              name={focusName}
+              color={focusedBand.color}
+              flow={focusedWorking.flow}
+              bar={barFlow}
+              neverSaved={focusedWorking.saved === null}
+              error={saveErrors[focusName]}
+              onRename={(next) => renameFlow(focusName, next)}
+              onDescription={(text) => updateFlow(focusName, (flow) => ({ ...flow, description: text }))}
+              onDelete={() => void handleDeleteFlow(focusName)}
+              onWatch={focusedRun ? () => setWatching(focusedRun.run_id) : undefined}
+              onSave={() => void handleSave(focusName)}
+              onRun={() => void handleRun(focusName)}
+            />
+          )}
+        </div>
       )}
 
       <RunContext.Provider value={controls}>
@@ -1729,33 +1721,45 @@ interface FocusBarProps {
   name: string;
   color: string;
   flow: FlowFile;
+  bar: BarFlow;
   neverSaved: boolean;
-  busy: boolean;
   error?: string;
   onRename: (next: string) => void;
   onDescription: (text: string) => void;
   onDelete: () => void;
+  onWatch?: () => void;
+  onSave: () => void;
+  onRun: () => void;
 }
 
 /**
- * The focused flow's bar: name, description and delete. Save left it when the
- * top bar took it — two Save buttons a hand apart ask which one saves what. The
- * name is editable only before the first save, since it is the filename; drafts
- * settle on `blur`, or a rename would fire once per letter typed.
+ * The focused flow's bar: everything that has this flow for a subject, and
+ * nothing that does not. One Save, beside the thing it saves, which is all the
+ * two-Save objection ever asked. The name is editable only until the first save,
+ * since it is the filename; drafts settle on `blur`, or a rename fires per letter.
  */
 function FocusBar({
   name,
   color,
   flow,
+  bar,
   neverSaved,
-  busy,
   error,
   onRename,
   onDescription,
   onDelete,
+  onWatch,
+  onSave,
+  onRun,
 }: FocusBarProps) {
   const [nameDraft, setNameDraft] = useState(name);
   const [descDraft, setDescDraft] = useState(flow.description);
+  const statusBody = (
+    <>
+      <span className="focusbar__live" data-idle={bar.status.live ? undefined : true} />
+      <span className="focusbar__status-word">{bar.status.word}</span>
+    </>
+  );
 
   return (
     <div className="focusbar">
@@ -1776,6 +1780,7 @@ function FocusBar({
           {name}
         </span>
       )}
+      <span className="focusbar__steps">{bar.steps} steps</span>
       <input
         className="focusbar__desc-input"
         value={descDraft}
@@ -1788,6 +1793,19 @@ function FocusBar({
         }}
       />
       <div className="focusbar__spacer" />
+      {onWatch ? (
+        <button type="button" className="focusbar__status" onClick={onWatch}>
+          {statusBody}
+        </button>
+      ) : (
+        <span className="focusbar__status">{statusBody}</span>
+      )}
+      {bar.dirty && (
+        <span className="focusbar__dirty">
+          <span className="focusbar__dirty-dot" />
+          unsaved changes
+        </span>
+      )}
       {error && <span className="focusbar__error">{error}</span>}
       {/* DELETING IS NOT WHAT THIS BAR IS FOR. A red button beside the name of
           the thing it destroys is the loudest object on the screen, and it is
@@ -1796,7 +1814,7 @@ function FocusBar({
       <DropdownMenu>
         <Tooltip>
           <TooltipTrigger asChild>
-            <DropdownMenuTrigger asChild disabled={busy}>
+            <DropdownMenuTrigger asChild disabled={bar.busy}>
               <button type="button" className="focusbar__more" aria-label="more for this flow">
                 ⋯
               </button>
@@ -1812,6 +1830,22 @@ function FocusBar({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      {/* THE TWO GESTURES STAY TOGETHER AND DO NOT WRAP: the words beside them
+          give ground first, so Run keeps one place at every width. */}
+      <div className="focusbar__actions">
+        <button type="button" className="focusbar__save" onClick={onSave} disabled={!bar.dirty || bar.busy}>
+          {bar.busy ? "Saving…" : "Save"}
+        </button>
+        {/* THE ACCENT MEANS «THE ACTION», and this is the action. Not a green:
+            green is a step that went well, and prohibition 4 keeps the state
+            colours for states. */}
+        <button type="button" className="focusbar__run is-primary" onClick={onRun} disabled={bar.starting}>
+          <span className="focusbar__glyph" aria-hidden="true">
+            ▶
+          </span>
+          {bar.starting ? "Starting…" : "Run"}
+        </button>
+      </div>
     </div>
   );
 }
