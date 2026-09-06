@@ -5,7 +5,7 @@
  * is. A thing can also sit outside every workspace, a place of its own.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MACHINE, MACHINE_GROUND, PLACES, UNDER_A_TREE, inTheStrip, type Section } from "./places";
+import { MACHINE, MACHINE_GROUND, PLACES, UNDER_A_TREE, inTheStrip, type MachineRow, type Section } from "./places";
 import { grouped, treeName } from "./workspacetrees";
 import { projects, workHere, type Project } from "./workspaces";
 import type { SailorTab } from "./sailortabs";
@@ -144,8 +144,8 @@ export function World({
   /** Which tab of the machine ground is open, when one of them is. */
   hereTab: SailorTab;
   onGo: (section: Section) => void;
-  /** Opens a place and, where the place has tabs, the tab itself. */
-  onOpen: (section: Section, tab?: SailorTab) => void;
+  /** Opens a row of the machine's ground: the row says where it lands. */
+  onOpen: (row: MachineRow) => void;
   counts: Partial<Record<Section, number>>;
   terminals: TerminalSummary[];
   /** Called once the window has moved into another tree. */
@@ -397,7 +397,7 @@ export function World({
           data-here={
             (here === row.section && (row.tab === undefined || hereTab === row.tab)) || undefined
           }
-          onClick={() => onOpen(row.section, row.tab)}
+          onClick={() => onOpen(row)}
           title={row.asks}
         >
           <span className="world__glyph" aria-hidden="true">

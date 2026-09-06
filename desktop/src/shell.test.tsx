@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeAll, describe, expect, test } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import App from "./App";
 import { beatWords, buildWords, hears, liveWords, spendWords, whoWords, LiveChip } from "./Bar";
 import { BlankCanvas } from "./BlankCanvas";
@@ -123,12 +123,13 @@ describe("the column is the world", () => {
     // the section in view counts.
     const shown = ".section:not([hidden]) ";
     const entries = Array.from(container.querySelectorAll(`${shown}.subrail__name`)).map((one) => one.textContent);
-    expect(entries).toEqual(["Runs", "Spend and quota", "Faults"]);
+    expect(entries).toEqual(["Runs", "Spend and quota", "Faults", "Ledger"]);
 
-    // The ledger is a place of its own: it is a database, and buried under
-    // another question nobody found it.
-    fireEvent.click(screen.getByRole("button", { name: /Ledger/ }));
-    expect(crumbs()).toEqual(["this mac", "Ledger"]);
+    // The ledger is one view of what happened: consulted beside the runs it
+    // came from, and reached from the machine's ground without a run first.
+    const ledger = MACHINE.find((one) => one.id === "ledger");
+    fireEvent.click(container.querySelector(`.world__global[title="${ledger?.asks ?? ""}"]`) as HTMLElement);
+    expect(crumbs()).toEqual(["Runs", "Ledger"]);
 
     // ONE CLICK, NOT TWO: the machine's places are rows of the column, and
     // landing on one lands on the screen itself, not on a list that asks again.
@@ -449,6 +450,9 @@ describe("the machine's ground and the screens it holds", () => {
  * everything else did not — every build cost the walk back.
  */
 describe("a window replaced by a build", () => {
+  // Cleared on the way in as well: what an earlier test left behind is a place
+  // this window would honestly reopen on, and the subject here is its own.
+  beforeEach(() => window.localStorage.clear());
   afterEach(() => window.localStorage.clear());
 
   test("OPENS WHERE IT WAS LEFT, place and all", () => {
