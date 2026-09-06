@@ -96,13 +96,117 @@ fn env_path(name: &str) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
-/// The shape of the projections this code expects.
-///
-/// **RAISE IT TOGETHER WITH THE COLUMNS, AND ONCE IT WAS NOT**: the migration
-/// learned four cache columns while this stayed at 4, an existing store was
-/// already registered at 4, `4 < 4` is false, the migration never ran, and
-/// every read died with `no such column: cache_write_tokens`.
+/// The shape of the projections this code expects: the highest version in
+/// `PROJECTION_MIGRATIONS`, and the tests hold the two against each other. A
+/// column once landed in the migration without this going up, so an existing
+/// store never migrated and every read died on the missing column.
 const PROJECTION_SCHEMA_VERSION: i64 = 15;
+
+/// One change to the projections, and the version that introduced it.
+enum ProjectionChange {
+    AddColumns {
+        table: &'static str,
+        columns: &'static [(&'static str, &'static str)],
+    },
+    RelaxModelCalls,
+    RenameMandateToEngineIdentity,
+}
+
+/// Applied in this order, one version per entry; the columns of a table end up
+/// in the order of its `CREATE TABLE`, and rows are written by position.
+const PROJECTION_MIGRATIONS: &[(i64, ProjectionChange)] = &[
+    (
+        2,
+        ProjectionChange::AddColumns {
+            table: "steps",
+            columns: &[("bytes_seen", "INTEGER"), ("bytes_discarded", "INTEGER")],
+        },
+    ),
+    (
+        3,
+        ProjectionChange::AddColumns {
+            table: "steps",
+            columns: &[("held_by_pid", "INTEGER"), ("species", "TEXT")],
+        },
+    ),
+    (4, ProjectionChange::RelaxModelCalls),
+    (
+        5,
+        ProjectionChange::AddColumns {
+            table: "model_calls",
+            columns: &[
+                ("cache_write_tokens", "TEXT"),
+                ("cache_write_long_tokens", "TEXT"),
+                ("cache_write_price_micros_per_million", "INTEGER"),
+                ("cache_write_long_price_micros_per_million", "INTEGER"),
+            ],
+        },
+    ),
+    (
+        6,
+        ProjectionChange::AddColumns {
+            table: "model_calls",
+            columns: &[("turns", "TEXT")],
+        },
+    ),
+    (
+        7,
+        ProjectionChange::AddColumns {
+            table: "model_calls",
+            columns: &[("session_id", "TEXT")],
+        },
+    ),
+    (8, ProjectionChange::RenameMandateToEngineIdentity),
+    (
+        9,
+        ProjectionChange::AddColumns {
+            table: "model_calls",
+            columns: &[("work_kind", "TEXT")],
+        },
+    ),
+    (
+        10,
+        ProjectionChange::AddColumns {
+            table: "runs",
+            columns: &[("worktree", "TEXT")],
+        },
+    ),
+    (
+        11,
+        ProjectionChange::AddColumns {
+            table: "steps",
+            columns: &[("refusal", "TEXT")],
+        },
+    ),
+    (
+        12,
+        ProjectionChange::AddColumns {
+            table: "steps",
+            columns: &[("ran", "TEXT")],
+        },
+    ),
+    (
+        13,
+        ProjectionChange::AddColumns {
+            table: "runs",
+            columns: &[("stop_reason", "TEXT")],
+        },
+    ),
+    (
+        14,
+        ProjectionChange::AddColumns {
+            table: "model_calls",
+            columns: &[("fell_back_from", "TEXT")],
+        },
+    ),
+    (
+        15,
+        ProjectionChange::AddColumns {
+            table: "model_calls",
+            columns: &[("session_mode", "TEXT")],
+        },
+    ),
+];
 
 pub enum LedgerError {
     Sqlite(rusqlite::Error),
@@ -2179,113 +2283,46 @@ fn create_projection_indexes(connection: &Connection) -> Result<(), LedgerError>
     Ok(())
 }
 
-/// Brings an existing store's projection up to the current version by adding
-/// the optional columns born after it. Not a chain of numbered migrations: each
-/// column is added if missing, so the same function carries a store of any past
-/// version home, and re-running it does nothing. None of this invalidates the
-/// existing projections or forces a re-read of the event log — the values of
-/// already-written records stay null, which is exactly what they were.
+/// Walks `PROJECTION_MIGRATIONS` in order. Not a chain gated on the stored
+/// version: each column is added if missing, so the same walk carries a store
+/// of any past version home and re-running it does nothing. Already-written
+/// rows keep null in the new columns, which is exactly what they were.
 fn add_missing_projection_columns(transaction: &Transaction<'_>) -> Result<(), LedgerError> {
-    for (column, kind) in [
-        // version 2
-        ("bytes_seen", "INTEGER"),
-        ("bytes_discarded", "INTEGER"),
-        // version 3: who held the step, and whether redoing it is safe
-        ("held_by_pid", "INTEGER"),
-        ("species", "TEXT"),
-    ] {
-        if !column_exists(transaction, "steps", column)? {
-            transaction.execute(&format!("ALTER TABLE steps ADD COLUMN {column} {kind}"), [])?;
+    for (_, change) in PROJECTION_MIGRATIONS {
+        match change {
+            ProjectionChange::AddColumns { table, columns } => {
+                for (column, kind) in *columns {
+                    if !column_exists(transaction, table, column)? {
+                        transaction.execute(
+                            &format!("ALTER TABLE {table} ADD COLUMN {column} {kind}"),
+                            [],
+                        )?;
+                    }
+                }
+            }
+            ProjectionChange::RelaxModelCalls => relax_model_calls(transaction)?,
+            ProjectionChange::RenameMandateToEngineIdentity => {
+                rename_mandate_to_engine_identity(transaction)?;
+            }
         }
     }
-    // version 4: a call's counts and prices may be unknown.
-    relax_model_calls(transaction)?;
-    // version 5: the cache is not one entry. Reading it and writing it are two
-    // gestures with two prices, and the missing one — the write — is the dearer.
-    // They go at the end, in the same order as in the `CREATE TABLE`: rows are
-    // written by position.
-    for (column, kind) in [
-        ("cache_write_tokens", "TEXT"),
-        ("cache_write_long_tokens", "TEXT"),
-        ("cache_write_price_micros_per_million", "INTEGER"),
-        ("cache_write_long_price_micros_per_million", "INTEGER"),
-    ] {
-        if !column_exists(transaction, "model_calls", column)? {
-            transaction.execute(
-                &format!("ALTER TABLE model_calls ADD COLUMN {column} {kind}"),
-                [],
-            )?;
-        }
-    }
-    // version 10: where a run was born. Everything a workspace owns could be
-    // asked for by tree except its runs, so the window showed every tree's runs
-    // mixed and had no way to ask for one.
-    if !column_exists(transaction, "runs", "worktree")? {
-        transaction.execute("ALTER TABLE runs ADD COLUMN worktree TEXT", [])?;
-    }
-    // version 11: which check refused a step's value, and what it saw. A
-    // failure class says only that a check refused; the count per check that
-    // `flow cost` prints needs the check named in a column of its own.
-    if !column_exists(transaction, "steps", "refusal")? {
-        transaction.execute("ALTER TABLE steps ADD COLUMN refusal TEXT", [])?;
-    }
-    // version 12: the line a step ran, program and arguments as started. Of a
-    // step that ran a command the rows kept the outcome and not the text, so
-    // whoever read the run later could not tell what had been executed.
-    if !column_exists(transaction, "steps", "ran")? {
-        transaction.execute("ALTER TABLE steps ADD COLUMN ran TEXT", [])?;
-    }
-    // version 13: which of the four reasons closed a run short. The status
-    // already said `stopped`, and one word for four endings cannot be counted.
-    if !column_exists(transaction, "runs", "stop_reason")? {
-        transaction.execute("ALTER TABLE runs ADD COLUMN stop_reason TEXT", [])?;
-    }
-    // version 6: turns. You pay per turn, and no column counted them.
-    if !column_exists(transaction, "model_calls", "turns")? {
-        transaction.execute("ALTER TABLE model_calls ADD COLUMN turns TEXT", [])?;
-    }
-    // version 7: the session. A chain of four steps read 2,545,109 tokens from
-    // cache to look at the same tree four times; the cure is the second step
-    // continuing the first one's session, and continuing it means knowing its
-    // name. Without a column to put the name in, "resume the previous step's
-    // session" cannot even be expressed — and the constant above goes up with
-    // it, or on an existing store this line never runs at all.
-    if !column_exists(transaction, "model_calls", "session_id")? {
-        transaction.execute("ALTER TABLE model_calls ADD COLUMN session_id TEXT", [])?;
-    }
-    // version 9: the kind of work, for a sum per kind of who did what.
-    if !column_exists(transaction, "model_calls", "work_kind")? {
-        transaction.execute("ALTER TABLE model_calls ADD COLUMN work_kind TEXT", [])?;
-    }
-    // version 14: which preferred engine was not there.
-    if !column_exists(transaction, "model_calls", "fell_back_from")? {
-        transaction.execute("ALTER TABLE model_calls ADD COLUMN fell_back_from TEXT", [])?;
-    }
-    // version 15: what a step asked of the session, and whether it got it. A
-    // run of cold calls looked exactly like one that resumed throughout.
-    if !column_exists(transaction, "model_calls", "session_mode")? {
-        transaction.execute("ALTER TABLE model_calls ADD COLUMN session_mode TEXT", [])?;
-    }
-    // version 8: the identity the process started with, replacing two columns
-    // left over from a `current_mandate` table that no longer exists.
-    //
-    // **A RENAME, NOT A COLUMN AT THE END.** Readers go **by position**:
-    // `mandate_name` was the sixteenth and `engine_identity` must sit there;
-    // keeping both would say one thing in two ways — the next silent divergence.
+    Ok(())
+}
+
+/// A rename and not a column at the end: readers go by position, and
+/// `engine_identity` must keep the seat `mandate_name` had. The text already
+/// written reads back as `EngineIdentity::Unrecorded`, the only true thing to
+/// say of a row written while that field could still lie. `mandate_version`
+/// goes because a profile has no version, so it was empty by construction.
+fn rename_mandate_to_engine_identity(transaction: &Transaction<'_>) -> Result<(), LedgerError> {
     if column_exists(transaction, "model_calls", "mandate_name")?
         && !column_exists(transaction, "model_calls", "engine_identity")?
     {
-        // The text already written stays where it is and reads back as
-        // `EngineIdentity::Unrecorded`, the only true thing to say of a row
-        // written while that field could still lie.
         transaction.execute(
             "ALTER TABLE model_calls RENAME COLUMN mandate_name TO engine_identity",
             [],
         )?;
     }
-    // And `mandate_version` goes: it was empty by construction — a profile has
-    // no version — and an always-empty column is the emptiness this work exists
-    // to remove.
     if column_exists(transaction, "model_calls", "mandate_version")? {
         transaction.execute("ALTER TABLE model_calls DROP COLUMN mandate_version", [])?;
     }
@@ -3226,7 +3263,7 @@ fn dump_table(connection: &Connection, table: &str) -> Result<Value, LedgerError
         // predates them simply finds no cell.
         "runs" => "run_id,kind,entity,parent_run_id,started_by,status,total_cost_micros,error,started_at,ended_at,worktree,stop_reason",
         "steps" => "run_id,step_id,attempt,epoch,deps,input_digest,input,gates,attempt_relation,started_at,outcome,output,said,failure_class,ended_at,bytes_seen,bytes_discarded,held_by_pid,species,checkpointed,refusal,ran",
-        // The two columns born with version 4 sit at the end, and that is not
+        // The two columns born with `relax_model_calls` sit at the end, and that is not
         // untidiness: readers of this dump go by position, and slotting them in
         // the middle would shift every index downstream without anything
         // noticing until a token appeared where a price should be.
