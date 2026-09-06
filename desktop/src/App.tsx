@@ -57,7 +57,7 @@ import { MEMORY_TABS, type MemoryTab } from "./memorytabs";
 import { SailorScreen } from "./SailorScreen";
 import { SAILOR_TABS, type SailorTab } from "./sailortabs";
 import { TerminalsSection, TERMINALS_TABS, type TerminalsTab } from "./TerminalsSection";
-import { runProgress, TopBar, type BarStatus, type Source } from "./TopBar";
+import { statusOfRun, TopBar, type BarFlow, type Source } from "./TopBar";
 import { BenchContext, type Bench } from "./Workbench";
 import { declaredCeiling } from "./terminal";
 import { Palette, isPaletteKey, type Entry } from "./Palette";
@@ -1242,12 +1242,6 @@ export default function App() {
   const focusedWorking = focusName ? flows.get(focusName) : undefined;
   const focusedDirty = focusedWorking ? isDirty(focusedWorking) : false;
 
-  /**
-   * WHAT THE RIGHT-HAND SIDE OF THE BAR MAY SAY. The count is folded from the
-   * run's own events and the steps the flow declares. The verdict of a check
-   * is not: `sailor flow check` has no door into this window, and borrowing a
-   * verdict nobody gave is worse than not showing one.
-   */
   const focusedRun = focusName ? latestByFlow.get(focusName) : undefined;
   // WHERE YOU ARE, IN WORDS: the section and the entry inside it. A window
   // that changes content without saying where it is makes the person read it
@@ -1275,19 +1269,21 @@ export default function App() {
     return [TERMINALS_GROUND, view];
   }, [place, focusName, memoryTab, sailorTab, terminalsTab, ledgerTable]);
 
-  const barStatus = useMemo<BarStatus | null>(() => {
-    if (focusName === null || focusedWorking === undefined) return null;
-    const total = focusedWorking.flow.graph.steps.length;
-
-
-    if (focusedRun === undefined) return { live: false, word: "no run of this flow yet" };
-    const { done, running } = runProgress(focusedRun);
-    if (focusedRun.status === "running") {
-      const at = Math.min(total, done + (running > 0 ? 1 : 0));
-      return { live: true, word: `a run in progress · step ${at} of ${total}` };
-    }
-    return { live: false, word: `last run ${focusedRun.status} · ${done} of ${total} steps closed` };
-  }, [focusName, focusedWorking, focusedDirty, focusedRun]);
+  /* THE BAR SPEAKS OF THE FLOW ONLY WHERE THE FLOW IS DRAWN: its name, its
+     size, its unsaved mark, its run and the two gestures that act on it ride
+     one value, so the guard cannot hold for some of them and lapse for the
+     rest — see fault 120. */
+  const barFlow = useMemo<BarFlow | null>(() => {
+    if (place !== "board" || focusName === null || focusedWorking === undefined) return null;
+    const steps = focusedWorking.flow.graph.steps.length;
+    return {
+      steps,
+      dirty: focusedDirty,
+      busy: saving.has(focusName),
+      starting: starting.has(focusName),
+      status: statusOfRun(focusedRun, steps),
+    };
+  }, [place, focusName, focusedWorking, focusedDirty, focusedRun, saving, starting]);
 
   // WHAT ⌘K CAN REACH: every place and entry, every flow to open or to run.
   // The palette computes nothing; the gestures are the same the rail and the
@@ -1374,14 +1370,7 @@ export default function App() {
             <WhoChip native={NATIVE} />
           </>
         }
-        /* THE BAR SPEAKS OF THE FLOW ONLY WHERE THE FLOW IS DRAWN: its size,
-           its unsaved mark and the two gestures that act on it stood in every
-           place, about a flow the place in view does not show. */
-        flowName={place === "board" ? focusName : null}
-        steps={focusedWorking ? focusedWorking.flow.graph.steps.length : 0}
-        dirty={focusedDirty}
-        busy={focusName !== null && saving.has(focusName)}
-        starting={focusName !== null && starting.has(focusName)}
+        flow={barFlow}
         source={source}
         sourceWord={
           source === "engine"
@@ -1392,7 +1381,6 @@ export default function App() {
                 ? "asking the engine for the flows…"
                 : "sample data"
         }
-        status={barStatus}
         onWatch={focusedRun ? () => setWatching(focusedRun.run_id) : undefined}
         onSave={() => {
           if (focusName) void handleSave(focusName);
