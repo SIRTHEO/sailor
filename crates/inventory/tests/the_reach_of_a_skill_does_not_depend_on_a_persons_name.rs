@@ -114,22 +114,35 @@ fn a_plugin_that_is_switched_off_is_still_switched_off() {
 #[test]
 fn no_ones_name_decides_what_is_reachable() {
     let crate_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut lines_of_code = 0usize;
     for file in ["lib.rs", "discovery.rs"] {
         let source = fs::read_to_string(crate_root.join(file)).expect("the source");
-        let code: String = source
+        let code: Vec<&str> = source
             .lines()
             .filter(|line| {
                 let trimmed = line.trim_start();
                 !trimmed.starts_with("//") && !trimmed.starts_with("///")
             })
-            .collect::<Vec<_>>()
-            .join("\n");
+            .collect();
+        lines_of_code += code.len();
+        let code = code.join("\n");
 
-        assert!(
-            !code.contains("mattpocock"),
-            "`{file}` names a single collection again. Reachability is decided \
-             on the **origin** — plugin cache, or folder — not on the identity \
-             of whoever published the skills."
-        );
+        for name in NAMES_THAT_ARE_A_PERSONS {
+            assert!(
+                !code.contains(name),
+                "`{file}` names a single collection again. Reachability is decided \
+                 on the **origin** — plugin cache, or folder — not on the identity \
+                 of whoever published the skills."
+            );
+        }
     }
+    workspace::measured_against(
+        lines_of_code,
+        "lines of code of the inventory crate read",
+        NAMES_THAT_ARE_A_PERSONS.len(),
+        "name(s) of a person that must not decide reachability",
+    );
 }
+
+/// The name that once decided reachability, and must not again.
+const NAMES_THAT_ARE_A_PERSONS: [&str; 1] = ["mattpocock"];
