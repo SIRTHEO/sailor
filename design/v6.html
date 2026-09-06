@@ -1,0 +1,674 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Sailor — bozza due</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --s0:#19171D; --s1:#211E26; --s2:#2B2731; --s3:#332E3A; --border:#423A4B; --border-2:#302B37;
+  --t1:#F1EDF3; --t2:#C4BDCC; --t3:#A49BAB;
+  --accent:#AC9AF2;
+  --went:#86C5AE; --running:#87B5ED; --waiting:#A49BAB; --broke:#F08F9B; --capped:#EBA374; --human:#E8C079;
+  --mono:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --num:"Geist",Inter,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0e0d11;font-family:Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased;padding:26px 26px 40px}
+.cap{width:1440px;margin:0 auto 9px;color:#8c8394;font:400 12.5px/18px Inter}
+.cap b{color:#e2dbe8;font-weight:600} .cap i{font-style:normal;color:var(--accent)}
+.cap q{color:#cfc6d6;font-style:italic}
+.plate{width:1440px;background:var(--s0);color:var(--t1);display:flex;flex-direction:column;
+       border:1px solid var(--border);border-radius:8px;overflow:hidden;margin:0 auto 30px;font-size:13px;line-height:20px}
+.num{font-family:var(--num);font-variant-numeric:tabular-nums lining-nums;font-weight:500}
+
+.bar{height:46px;flex:0 0 46px;display:flex;align-items:center;gap:10px;padding:0 12px;background:var(--s1);border-bottom:1px solid var(--border)}
+.logo{display:flex;align-items:center;gap:8px;font-weight:600;padding-right:11px;border-right:1px solid var(--border)}
+.logo .m{width:15px;height:15px;border:1.5px solid var(--accent);border-radius:3px;transform:rotate(45deg)}
+.live{display:flex;align-items:center;gap:14px;font-size:12.5px;color:var(--t2)}
+.live .it{display:flex;align-items:center;gap:6px}
+.k{margin-left:auto;display:flex;align-items:center;gap:8px;height:30px;padding:0 10px;border:1px solid var(--border);
+   border-radius:6px;color:var(--t3);font-size:13px;width:230px;background:var(--s0)}
+kbd{font:500 11px var(--mono);border:1px solid var(--border);border-radius:4px;padding:0 4px;color:var(--t3);margin-left:auto}
+.me{display:flex;align-items:center;gap:8px;height:30px;padding:0 10px 0 6px;border:1px solid var(--border);border-radius:15px;background:var(--s0)}
+.me .av{width:20px;height:20px;border-radius:50%;background:var(--accent);color:#221a3a;font:600 11px Inter;display:flex;align-items:center;justify-content:center}
+.me .who{line-height:12px} .me .who b{font-size:12px;font-weight:600;display:block} .me .who span{font-size:10px;color:var(--t3)}
+.b{height:30px;padding:0 12px;border-radius:6px;border:1px solid var(--border);background:var(--s2);color:var(--t1);
+   font:400 13px Inter;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.b.p{background:var(--accent);border-color:var(--accent);color:#221a3a;font-weight:600}
+.b.sm{height:26px;padding:0 10px;font-size:12px}
+.body{flex:1;display:flex;min-height:0}
+.dot{width:7px;height:7px;border-radius:50%;flex:0 0 7px}
+
+/* ── la colonna: progetto › albero › sessione, come Orca. E «fuori» È UN POSTO. ── */
+.side{width:250px;flex:0 0 250px;background:var(--s1);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:8px 8px 0;overflow:hidden}
+.grp{padding:13px 8px 4px;font:500 11px Inter;color:var(--t3);letter-spacing:.06em;text-transform:uppercase;display:flex;align-items:center;gap:6px}
+.grp:first-child{padding-top:3px}
+.grp .n{margin-left:auto;font-family:var(--num);letter-spacing:0;text-transform:none}
+.r{height:30px;display:flex;align-items:center;gap:8px;padding:0 8px;border-radius:6px;color:var(--t2);font-size:13px}
+.r .i{width:16px;flex:0 0 16px;display:flex;align-items:center;justify-content:center;color:var(--t3)}
+.r .c{margin-left:auto;font:500 12px var(--num);color:var(--t3);font-variant-numeric:tabular-nums}
+.r.on{background:var(--s3);color:var(--t1);font-weight:600} .r.on .i{color:var(--accent)}
+.r.prj{font-weight:600;color:var(--t1)}
+.r.tree{padding-left:26px;height:28px;min-width:0}
+.r.tree>*:nth-child(2),.r.tree{overflow:hidden}
+.r.tree .br{font:400 11px var(--mono);color:var(--t3);margin-left:auto;padding-left:6px;
+            overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:96px}
+.r.sess{padding-left:44px;height:26px;font-size:12.5px;color:var(--t2)}
+.r.sess .ag{color:var(--t3);font-size:11.5px}
+.r.gone{color:var(--t3);text-decoration:line-through;text-decoration-color:var(--border)}
+.side .btm{margin-top:auto;padding:6px 0;border-top:1px solid var(--border-2)}
+.scroll{overflow:hidden;flex:1}
+
+.stage{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}
+.crumb{height:38px;flex:0 0 38px;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid var(--border);color:var(--t2);font-size:13px}
+.crumb b{color:var(--t1);font-weight:600}
+.crumb .rt{margin-left:auto;display:flex;gap:8px;align-items:center}
+.seg{display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;height:26px}
+.seg span{padding:0 11px;display:flex;align-items:center;font-size:12px;color:var(--t3);border-right:1px solid var(--border)}
+.seg span:last-child{border-right:none}
+.seg span.on{background:var(--s3);color:var(--t1);font-weight:500}
+
+.insp{width:288px;flex:0 0 288px;border-left:1px solid var(--border);background:var(--s1);padding:14px;overflow:hidden}
+.insp .lb{font:500 11px Inter;color:var(--t3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:7px}
+.insp h3{font:600 17px/22px Inter;margin-bottom:2px}
+.insp .u{font:400 12px var(--mono);color:var(--t3);margin-bottom:15px}
+.fld{margin-bottom:15px}
+.kv{display:flex;font-size:12.5px;padding:3px 0;align-items:baseline}
+.kv b{width:92px;flex:0 0 92px;color:var(--t3);font-weight:400}
+.kv span{color:var(--t1);font-family:var(--mono);font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acts{display:flex;flex-direction:column;gap:6px}
+.acts .b{width:100%;justify-content:center}
+.note{font-size:12px;line-height:18px;color:var(--t3);border-left:2px solid var(--border);padding-left:9px}
+
+.tiles{flex:1;display:flex;gap:1px;background:var(--border);min-height:0}
+.col{display:flex;flex-direction:column;gap:1px;min-width:0}
+.tile{background:var(--s0);display:flex;flex-direction:column;min-height:0;flex:1;position:relative}
+.tile.sel{box-shadow:inset 0 0 0 1px var(--accent)}
+.th{height:28px;flex:0 0 28px;display:flex;align-items:center;gap:8px;padding:0 10px;background:var(--s1);border-bottom:1px solid var(--border-2);font-size:12px}
+.th b{font-weight:600;color:var(--t1)} .th .eng{color:var(--t3)}
+.th .pa{margin-left:auto;color:var(--t3);font:400 11px var(--mono)}
+.th .x{color:var(--t3);padding-left:8px}
+.out{flex:1;padding:9px 10px;font:400 12.5px/18px var(--mono);color:#c2b9cb;overflow:hidden;white-space:pre}
+.ti{height:26px;flex:0 0 26px;display:flex;align-items:center;padding:0 10px;border-top:1px solid var(--border-2);font:400 12px var(--mono);color:var(--t3);gap:7px}
+.cur{width:7px;height:13px;background:var(--t2);display:inline-block;margin-left:auto}
+.d3{color:var(--t3)} .gn{color:var(--went)} .am{color:var(--human)} .rd{color:var(--broke)} .bl{color:var(--running)} .wh{color:var(--t1)} .or{color:var(--capped)}
+
+.tbls{width:198px;flex:0 0 198px;border-right:1px solid var(--border);padding:8px;background:var(--s0);overflow:hidden}
+.tb{height:26px;display:flex;align-items:center;padding:0 8px;border-radius:5px;font:400 12px var(--mono);color:var(--t2)}
+.tb .c{margin-left:auto;font-family:var(--num);font-size:11.5px;color:var(--t3);font-variant-numeric:tabular-nums}
+.tb.on{background:var(--s3);color:var(--t1)}
+.q{height:40px;flex:0 0 40px;display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--border)}
+.q .fake{flex:1;height:28px;background:var(--s0);border:1px solid var(--border);border-radius:6px;padding:0 10px;font:400 12.5px/28px var(--mono);color:var(--t1);overflow:hidden;white-space:nowrap}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{text-align:left;font:500 11px Inter;color:var(--t3);letter-spacing:.05em;text-transform:uppercase;padding:7px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:7px 10px;border-bottom:1px solid var(--border-2);font-family:var(--mono);font-size:12px;color:var(--t2);white-space:nowrap}
+td.nm{font-family:Inter;color:var(--t1);font-weight:500;font-size:13px}
+tr.on td{background:var(--s2);color:var(--t1)}
+td.nul{color:var(--t3);font-style:italic}
+
+.fab{position:absolute;right:18px;bottom:18px;height:40px;padding:0 16px 0 13px;border-radius:20px;background:var(--accent);
+     color:#221a3a;font:600 13px Inter;display:flex;align-items:center;gap:8px;box-shadow:0 6px 20px rgba(0,0,0,.5)}
+.chat{position:absolute;right:18px;bottom:18px;width:420px;background:var(--s1);border:1px solid var(--border);
+      border-radius:10px;box-shadow:0 18px 50px rgba(0,0,0,.6);overflow:hidden}
+.chat h4{height:36px;display:flex;align-items:center;gap:8px;padding:0 12px;font:600 13px Inter;border-bottom:1px solid var(--border)}
+.chat h4 .sm2{margin-left:auto;font:400 11px var(--mono);color:var(--t3)}
+.msgs{padding:12px;display:flex;flex-direction:column;gap:11px}
+.msg{font-size:12.5px;line-height:19px}
+.msg.you{align-self:flex-end;background:var(--s3);border-radius:9px 9px 2px 9px;padding:7px 11px;max-width:310px}
+.msg.it{color:var(--t2)} .msg.it b{color:var(--t1)}
+.msg .src{margin-top:7px;font:400 11px/17px var(--mono);color:var(--t3);border-left:2px solid var(--border);padding-left:8px}
+.msg .src a{color:var(--accent);text-decoration:none}
+.ask{height:38px;display:flex;align-items:center;padding:0 12px;border-top:1px solid var(--border);color:var(--t3);font-size:12.5px}
+
+.gcards{display:flex;gap:12px;padding:14px;flex-wrap:wrap}
+.gc{width:calc(33.33% - 8px);border:1px solid var(--border);border-radius:8px;background:var(--s1);overflow:hidden}
+.gc .gh{height:34px;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid var(--border-2);font-size:13px}
+.gc .gh b{font-weight:600} .gc .gh .pa{margin-left:auto;color:var(--t3);font:400 11px var(--mono)}
+.gr{display:flex;align-items:center;gap:8px;padding:6px 12px;font-size:12.5px;color:var(--t2);border-bottom:1px solid var(--border-2)}
+.gr:last-child{border-bottom:none}
+.gr .c{margin-left:auto;font:500 12px var(--num);color:var(--t3);font-variant-numeric:tabular-nums}
+svg.ic{width:16px;height:16px;stroke-width:1.75;fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
+svg.ic.s12{width:13px;height:13px}
+.pane{flex:1;overflow:hidden;display:flex;flex-direction:column;min-width:0;position:relative}
+.map{flex:1;position:relative;background:radial-gradient(circle at 1px 1px,#2d2834 1px,transparent 0) 0 0/24px 24px,var(--s0);overflow:hidden}
+.fn{position:absolute;background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:9px 11px;width:150px}
+.fn .kk{font:500 10.5px Inter;letter-spacing:.05em;text-transform:uppercase;color:var(--t3);margin-bottom:3px;display:flex;align-items:center;gap:5px}
+.fn .nn{font:500 12.5px var(--mono);color:var(--t1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fn .st{font-size:11px;color:var(--t3);margin-top:3px}
+.fn.sys{background:#241f2e;border-color:#4a3f5e}
+.fn.sel{border-color:var(--accent);box-shadow:0 0 0 2px rgba(172,154,242,.2)}
+.wire{position:absolute;height:1px;background:var(--border)}
+.wire.v{width:1px;height:auto}
+.leg{position:absolute;left:12px;bottom:10px;display:flex;gap:14px;font-size:11.5px;color:var(--t3);align-items:center}
+.leg i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+</style></head><body>
+<svg style="display:none"><defs>
+ <g id="run"><circle cx="12" cy="12" r="9"/><path d="M10 8.5l5 3.5-5 3.5z"/></g>
+ <g id="ask"><path d="M12 3l9 9-9 9-9-9z"/><path d="M12 8v4.5M12 16h.01"/></g>
+ <g id="fail"><path d="M8.5 3h7L21 8.5v7L15.5 21h-7L3 15.5v-7z"/><path d="M9.5 9.5l5 5M14.5 9.5l-5 5"/></g>
+ <g id="done"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.2l2.5 2.5 4.5-5"/></g>
+ <g id="cap"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></g>
+ <g id="term"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/></g>
+ <g id="flows"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="12" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M8.5 6h4a3 3 0 013 3v.5M8.5 18h4a3 3 0 003-3v-.5"/></g>
+ <g id="db"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></g>
+ <g id="clock"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></g>
+ <g id="cog"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M22 12h-3M5 12H2M19 19l-2-2M7 7L5 5M19 5l-2 2M7 17l-2 2"/></g>
+ <g id="all"><rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="14" y="4" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></g>
+ <g id="chat"><path d="M21 12a8 8 0 01-8 8H7l-4 3v-6.5A8 8 0 1121 12z"/><path d="M8.5 11h7M8.5 14.5h4"/></g>
+ <g id="anchor"><circle cx="12" cy="5" r="2.5"/><path d="M12 7.5V21M5 13a7 7 0 0014 0M8.5 10h7"/></g>
+ <g id="box"><path d="M3 8l9-5 9 5v8l-9 5-9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></g>
+ <g id="tree"><path d="M6 3v12M6 21v-2M18 9v10"/><circle cx="6" cy="17" r="2"/><circle cx="18" cy="7" r="2"/><path d="M6 15a6 6 0 006-6h4"/></g>
+ <g id="board"><path d="M4 4h16v12H4z"/><path d="M9 20l3-4 3 4"/></g>
+ <g id="pen"><path d="M3 21l3.5-1 11-11-2.5-2.5-11 11z"/><path d="M14 6.5L17.5 10"/></g>
+ <g id="mem"><path d="M12 3a4 4 0 00-4 4v1a3 3 0 000 6v2a4 4 0 008 0v-2a3 3 0 000-6V7a4 4 0 00-4-4z"/></g>
+</defs></svg>
+
+<!-- ═════════ 1 ═════════ -->
+<div class="cap"><b>1 — La colonna che avevi chiesto: progetto › albero › sessione.</b> Un workspace <i>non è un albero</i>: è un progetto che si è dichiarato con un <i>sailor.json</i>, e <b>ha più alberi</b> — un worktree per ramo. La v5 li aveva schiacciati in una cosa sola: è l'errore. E in fondo c'è <q>fuori da ogni workspace</q>, perché l'avevi detto tu: <q>ogni terminale può esistere in un workspace o anche fuori</q> — fuori è un posto, non un'assenza.</div>
+<div class="plate" style="height:800px">
+  <div class="bar">
+    <div class="logo"><i class="m"></i>Sailor</div>
+    <div class="live">
+      <span class="it"><svg class="ic s12" style="color:var(--running)"><use href="#run"/></svg>3 in corsa</span>
+      <span class="it"><svg class="ic s12" style="color:var(--human)"><use href="#ask"/></svg>1 aspetta te</span>
+      <span class="it"><svg class="ic s12" style="color:var(--broke)"><use href="#fail"/></svg>1 rotto</span>
+      <span class="it" style="color:var(--t3)">battito 12s fa</span>
+      <span class="it num" style="color:var(--t3)">$4,12 oggi</span>
+    </div>
+    <div class="k">Cerca o esegui un comando <kbd>⌘K</kbd></div>
+    <button class="b">Nuovo terminale</button>
+    <div class="me"><i class="av">T</i><span class="who"><b>Theo</b><span>codex · work</span></span><i class="dot" style="background:var(--went)"></i></div>
+  </div>
+  <div class="body">
+    <nav class="side">
+      <div class="scroll">
+      <div class="grp">Workspace<span class="n">2</span></div>
+      <div class="r prj on"><span class="i"><svg class="ic"><use href="#box"/></svg></span>sailor<span class="c">4</span></div>
+      <div class="r tree" style="color:var(--t1)"><span class="i"><i class="dot" style="background:var(--human)"></i></span>~/personal/sailor<span class="br">main</span></div>
+      <div class="r sess"><span class="i"><svg class="ic s12" style="color:var(--running)"><use href="#run"/></svg></span>relay<span class="ag">claude · 12m</span></div>
+      <div class="r sess"><span class="i"><svg class="ic s12" style="color:var(--broke)"><use href="#fail"/></svg></span>notte<span class="ag">claude · 1h</span></div>
+      <div class="r tree"><span class="i"><i class="dot" style="background:var(--went)"></i></span>…/worktrees/checks<span class="br">work/checks</span></div>
+      <div class="r sess"><span class="i"><svg class="ic s12" style="color:var(--went)"><use href="#done"/></svg></span>checks<span class="ag">codex · 3m</span></div>
+      <div class="r tree"><span class="i"><i class="dot" style="background:var(--human)"></i></span>…/worktrees/review<span class="br">work/review</span></div>
+      <div class="r sess"><span class="i"><svg class="ic s12" style="color:var(--human)"><use href="#ask"/></svg></span>review<span class="ag">codex · aspetta 2m</span></div>
+      <div class="r prj"><span class="i"><svg class="ic"><use href="#box"/></svg></span>a-workspace<span class="c">1</span></div>
+      <div class="r tree"><span class="i"><i class="dot" style="background:var(--waiting)"></i></span>~/a-workspace/work<span class="br">main</span></div>
+      <div class="r tree gone"><span class="i"><i class="dot" style="background:var(--border)"></i></span>…/work/pinniped<span class="br">sparito</span></div>
+      <div class="grp">Fuori da ogni workspace<span class="n">1</span></div>
+      <div class="r sess" style="padding-left:26px"><span class="i"><svg class="ic s12"><use href="#term"/></svg></span>ttys008<span class="ag">zsh · ~/Downloads</span></div>
+      </div>
+      <div class="btm">
+        <div class="r"><span class="i"><svg class="ic"><use href="#all"/></svg></span>Guarda globalmente</div>
+        <div class="r"><span class="i"><svg class="ic"><use href="#anchor"/></svg></span>Sailor stesso</div>
+      </div>
+    </nav>
+    <div class="pane">
+      <div class="crumb"><b>sailor</b><span class="d3">›</span>3 alberi<span class="d3">·</span>4 terminali
+        <div class="rt">
+          <span class="seg"><span class="on">Terminali</span><span>Flussi 3</span><span>Lavagna</span><span>Modifiche 7</span><span>Corse 31</span><span>Memoria 32</span></span>
+          <button class="b sm">Affiancati ▾</button></div></div>
+      <div class="tiles">
+        <div class="col" style="flex:1.5">
+          <div class="tile sel">
+            <div class="th"><i class="dot" style="background:var(--running)"></i><b>relay</b><span class="eng">claude · opus-5</span><span class="pa">~/personal/sailor · main</span><span class="x">×</span></div>
+<div class="out"><span class="d3">›</span> sailor flow run relay
+  <span class="gn">went</span>  chain-brake        0.4s
+  <span class="gn">went</span>  pane-is-idle       0.2s
+  <span class="bl">···</span>   write-the-baton   12s   $0.08
+
+<span class="d3">›</span> cargo test -p sailor --no-fail-fast
+   Compiling sailor v0.1.0
+<span class="or">warning</span>: unused variable «ledger»
+  --> crates/sailor/src/system.rs:214:9
+running 247 tests
+test result: <span class="gn">ok</span>. 247 passed; 0 failed</div>
+            <div class="ti">›<span class="d3">scrivi un comando, o chiedi di un flusso</span><i class="cur"></i></div>
+          </div>
+        </div>
+        <div class="col" style="flex:1">
+          <div class="tile">
+            <div class="th"><i class="dot" style="background:var(--went)"></i><b>checks</b><span class="eng">codex</span><span class="pa">…/checks · work/checks</span><span class="x">×</span></div>
+<div class="out"><span class="d3">›</span> npm run build
+   Test Files 23 passed
+   Tests 491 passed
+ <span class="gn">✓</span> built in 1.22s</div>
+            <div class="ti">›<span class="d3">scrivi un comando…</span><i class="cur"></i></div>
+          </div>
+          <div class="tile">
+            <div class="th"><i class="dot" style="background:var(--human)"></i><b>review</b><span class="eng">codex</span><span class="pa">…/review · work/review</span><span class="x">×</span></div>
+<div class="out"><span class="am">◆</span> <span class="wh">Cambia un comportamento da cui</span>
+  <span class="wh">dipendono altri due alberi.</span>
+  Metto un tetto di 30s all'attesa
+  e do a connect() una scadenza?
+  <span class="d3">[↵] sì   [p] mostrami la patch</span></div>
+            <div class="ti">›<span class="d3">aspetta te da 2m 14s</span><i class="cur"></i></div>
+          </div>
+          <div class="tile">
+            <div class="th"><i class="dot" style="background:var(--broke)"></i><b>notte</b><span class="eng">claude</span><span class="pa">~/personal/sailor · main</span><span class="x">×</span></div>
+<div class="out"><span class="d3">›</span> sailor flow run notte
+<span class="rd">error</span>: campo sconosciuto «retries»
+  in flows/notte.flow.json:14
+  <span class="am">forse</span>: intendevi «max_attempts»?</div>
+            <div class="ti">›<span class="d3">scrivi un comando…</span><i class="cur"></i></div>
+          </div>
+        </div>
+      </div>
+      <button class="fab"><svg class="ic"><use href="#chat"/></svg>Chiedi a Sailor</button>
+    </div>
+    <aside class="insp">
+      <div class="lb">Terminale scelto</div>
+      <h3>relay</h3>
+      <div class="u">ttys004 · pid 21315 · da 2h 06m</div>
+      <div class="fld">
+        <div class="kv"><b>workspace</b><span>sailor</span></div>
+        <div class="kv"><b>albero</b><span>~/personal/sailor</span></div>
+        <div class="kv"><b>ramo</b><span>main</span></div>
+        <div class="kv"><b>motore</b><span>claude 2.1.4</span></div>
+        <div class="kv"><b>profilo</b><span style="color:var(--accent)">codex · work</span></div>
+        <div class="kv"><b>modello</b><span>opus-5</span></div>
+        <div class="kv"><b>speso qui</b><span>$0,34</span></div>
+      </div>
+      <div class="lb">Cosa ci gira</div>
+      <div class="fld">
+        <div class="kv"><b>corsa</b><span>relay · 4 di 7</span></div>
+        <div class="kv"><b>processi</b><span>2 vivi</span></div>
+      </div>
+      <div class="lb">Gesti</div>
+      <div class="acts">
+        <button class="b">Ferma la corsa</button>
+        <button class="b">Passa il testimone</button>
+        <button class="b" style="color:var(--broke);border-color:#5a3038">Chiudi, e ferma i 2 processi</button>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<!-- ═════════ 2 ═════════ -->
+<div class="cap"><b>2 — I flussi, separati per chi li possiede.</b> Oggi la finestra mette <i>tutto ciò che non è del progetto</i> in un mucchio solo chiamato <q>flows everywhere</q>: 30 righe indistinte contro 1. Qui sono quattro posti: <i>di questo workspace</i>, <i>miei</i>, <i>condivisi</i>, <i>di sistema</i> — e i flussi di sistema dicono <b>quando girano da soli</b>, che oggi non lo sa nessuno.</div>
+<div class="plate" style="height:610px">
+  <div class="bar">
+    <div class="logo"><i class="m"></i>Sailor</div>
+    <div class="live"><span class="it"><svg class="ic s12" style="color:var(--running)"><use href="#run"/></svg>3 in corsa</span>
+      <span class="it"><svg class="ic s12" style="color:var(--human)"><use href="#ask"/></svg>1 aspetta te</span>
+      <span class="it" style="color:var(--t3)">battito 12s fa</span></div>
+    <div class="k">Cerca o esegui un comando <kbd>⌘K</kbd></div>
+    <div class="me"><i class="av">T</i><span class="who"><b>Theo</b><span>codex · work</span></span><i class="dot" style="background:var(--went)"></i></div>
+  </div>
+  <div class="body">
+    <nav class="side">
+      <div class="scroll">
+      <div class="grp">Workspace<span class="n">2</span></div>
+      <div class="r prj on"><span class="i"><svg class="ic"><use href="#box"/></svg></span>sailor<span class="c">4</span></div>
+      <div class="r tree" style="color:var(--t1)"><span class="i"><i class="dot" style="background:var(--human)"></i></span>~/personal/sailor<span class="br">main</span></div>
+      <div class="r tree"><span class="i"><i class="dot" style="background:var(--went)"></i></span>…/worktrees/checks<span class="br">work/checks</span></div>
+      <div class="r tree"><span class="i"><i class="dot" style="background:var(--human)"></i></span>…/worktrees/review<span class="br">work/review</span></div>
+      <div class="r prj"><span class="i"><svg class="ic"><use href="#box"/></svg></span>a-workspace<span class="c">1</span></div>
+      <div class="r tree"><span class="i"><i class="dot" style="background:var(--waiting)"></i></span>~/a-workspace/work<span class="br">main</span></div>
+      <div class="grp">Fuori da ogni workspace<span class="n">1</span></div>
+      <div class="r sess" style="padding-left:26px"><span class="i"><svg class="ic s12"><use href="#term"/></svg></span>ttys008<span class="ag">zsh</span></div>
+      </div>
+      <div class="btm">
+        <div class="r"><span class="i"><svg class="ic"><use href="#all"/></svg></span>Guarda globalmente</div>
+        <div class="r"><span class="i"><svg class="ic"><use href="#anchor"/></svg></span>Sailor stesso</div>
+      </div>
+    </nav>
+    <div class="pane">
+      <div class="crumb"><b>sailor</b><span class="d3">›</span>Flussi
+        <div class="rt"><span class="seg"><span>Terminali</span><span class="on">Flussi</span><span>Lavagna</span><span>Modifiche</span><span>Corse</span><span>Memoria</span></span>
+          <button class="b sm">Disegnane uno</button><button class="b sm p">Nuovo flusso</button></div></div>
+      <div style="flex:1;overflow:hidden">
+        <table>
+          <tr><th style="width:30%">Flusso</th><th>Passi</th><th>Gira da solo</th><th>Ultima corsa</th><th>Esito</th><th>Costo medio</th><th></th></tr>
+        </table>
+        <div class="grp" style="padding:12px 12px 4px">Di questo workspace<span class="n" style="color:var(--t3)">flows/ · 1</span></div>
+        <table>
+          <tr><td class="nm" style="width:30%">passa-il-testimone</td><td>6</td><td class="nul">a mano</td><td>3h fa</td><td style="color:var(--went)">andato</td><td>$0,21</td><td style="text-align:right;color:var(--t3)">Apri</td></tr>
+        </table>
+        <div class="grp" style="padding:12px 12px 4px">Miei<span class="n" style="color:var(--t3)">~/.config/sailor/flows · 20</span></div>
+        <table>
+          <tr><td class="nm" style="width:30%">sviluppa-sailor</td><td>9</td><td class="nul">a mano</td><td>41m fa</td><td style="color:var(--went)">andato</td><td>$1,94</td><td style="text-align:right;color:var(--t3)">Apri</td></tr>
+          <tr><td class="nm">chiedi-all-indice</td><td>5</td><td class="nul">a mano</td><td>4g fa</td><td style="color:var(--went)">andato</td><td>$0,04</td><td style="text-align:right;color:var(--t3)">Apri</td></tr>
+          <tr><td class="nm">decidi-la-direzione</td><td>4</td><td class="nul">a mano</td><td>ieri</td><td style="color:var(--capped)">al tetto</td><td>$2,00</td><td style="text-align:right;color:var(--t3)">Apri</td></tr>
+        </table>
+        <div class="grp" style="padding:12px 12px 4px">Condivisi<span class="n" style="color:var(--t3)">crew/flows · 4 · aggiornabili 1</span></div>
+        <table>
+          <tr><td class="nm" style="width:30%">review-the-branch</td><td>7</td><td class="nul">a mano</td><td>2m fa</td><td style="color:var(--human)">a una persona</td><td>$0,38</td><td style="text-align:right;color:var(--accent)">Aggiorna</td></tr>
+        </table>
+        <div class="grp" style="padding:12px 12px 4px">Di sistema<span class="n" style="color:var(--t3)">dentro il binario · 10 · non modificabili</span></div>
+        <table>
+          <tr><td class="nm" style="width:30%">watch-the-crew</td><td>3</td><td style="color:var(--running)">ogni 30 min</td><td>8m fa</td><td style="color:var(--went)">andato</td><td>—</td><td style="text-align:right;color:var(--t3)">Guarda</td></tr>
+          <tr><td class="nm">consolidate-memories</td><td>4</td><td style="color:var(--running)">ogni giorno 04:30</td><td>stanotte</td><td style="color:var(--went)">andato</td><td>$0,18</td><td style="text-align:right;color:var(--t3)">Guarda</td></tr>
+          <tr><td class="nm">write-down-what-broke</td><td>3</td><td style="color:var(--running)">quando una corsa si rompe</td><td>1h fa</td><td style="color:var(--went)">andato</td><td>$0,03</td><td style="text-align:right;color:var(--t3)">Guarda</td></tr>
+          <tr><td class="nm">draft-a-flow</td><td>4</td><td class="nul">dalla lavagna</td><td>ieri</td><td style="color:var(--went)">andato</td><td>$0,44</td><td style="text-align:right;color:var(--t3)">Guarda</td></tr>
+          <tr><td class="nm">take-the-next-fault</td><td>5</td><td class="nul">a mano</td><td>2g fa</td><td style="color:var(--broke)">rotto</td><td>$0,90</td><td style="text-align:right;color:var(--t3)">Guarda</td></tr>
+        </table>
+      </div>
+    </div>
+    <aside class="insp">
+      <div class="lb">Flusso scelto</div>
+      <h3>watch-the-crew</h3>
+      <div class="u">di sistema · dentro il binario</div>
+      <div class="fld">
+        <div class="kv"><b>gira</b><span style="color:var(--running)">ogni 1800s</span></div>
+        <div class="kv"><b>motori</b><span>nessuno</span></div>
+        <div class="kv"><b>costa</b><span>$0,00</span></div>
+        <div class="kv"><b>dati</b><span>private</span></div>
+      </div>
+      <div class="lb">Cosa fa</div>
+      <div class="fld" style="font-size:12.5px;line-height:19px;color:var(--t2)">
+        Tre letture, nessun motore: chi lavora su cosa, dove, da quando, e cosa è morto.
+      </div>
+      <div class="lb">Perché non si modifica</div>
+      <div class="fld"><div class="note">Non sta in una cartella: sta dentro il binario. Aprirlo e salvarlo creerebbe una copia tua — e da lì i due si separano senza dirtelo.</div></div>
+      <div class="acts">
+        <button class="b">Esegui adesso</button>
+        <button class="b">Vedi le sue 214 corse</button>
+        <button class="b">Copiane uno mio</button>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<!-- ═════════ 3 ═════════ -->
+<div class="cap"><b>3 — La mappa globale: tutti i flussi, connessi.</b> Il punto 3 della tua lista del 3 settembre, mai costruito. I nodi sono <i>flussi</i>, i fili sono le chiamate <i>subflow</i>: si vede chi chiama chi attraverso i workspace, quali sono orfani, e quali di sistema stanno dentro il lavoro tuo.</div>
+<div class="plate" style="height:560px">
+  <div class="bar">
+    <div class="logo"><i class="m"></i>Sailor</div>
+    <div class="live"><span class="it"><svg class="ic s12" style="color:var(--running)"><use href="#run"/></svg>6 in corsa</span>
+      <span class="it"><svg class="ic s12" style="color:var(--human)"><use href="#ask"/></svg>2 aspettano te</span>
+      <span class="it num" style="color:var(--t3)">$12,60 oggi</span></div>
+    <div class="k">Cerca o esegui un comando <kbd>⌘K</kbd></div>
+    <div class="me"><i class="av">T</i><span class="who"><b>Theo</b><span>codex · work</span></span><i class="dot" style="background:var(--went)"></i></div>
+  </div>
+  <div class="body">
+    <nav class="side">
+      <div class="scroll">
+      <div class="grp">Workspace<span class="n">2</span></div>
+      <div class="r prj"><span class="i"><svg class="ic"><use href="#box"/></svg></span>sailor<span class="c">4</span></div>
+      <div class="r prj"><span class="i"><svg class="ic"><use href="#box"/></svg></span>a-workspace<span class="c">1</span></div>
+      <div class="grp">Fuori da ogni workspace<span class="n">1</span></div>
+      <div class="r sess" style="padding-left:26px"><span class="i"><svg class="ic s12"><use href="#term"/></svg></span>ttys008<span class="ag">zsh</span></div>
+      </div>
+      <div class="btm">
+        <div class="r on"><span class="i"><svg class="ic"><use href="#all"/></svg></span>Guarda globalmente</div>
+        <div class="r"><span class="i"><svg class="ic"><use href="#anchor"/></svg></span>Sailor stesso</div>
+      </div>
+    </nav>
+    <div class="pane">
+      <div class="crumb"><b>Guarda globalmente</b><span class="d3">›</span>La mappa dei flussi
+        <div class="rt"><span class="seg"><span>Progetti</span><span class="on">Mappa</span><span>Corse</span><span>Spesa</span><span>Terminali</span></span>
+          <button class="b sm">Solo quelli che girano da soli</button></div></div>
+      <div class="map">
+        <div class="wire" style="left:216px;top:82px;width:74px"></div>
+        <div class="wire" style="left:216px;top:154px;width:74px"></div>
+        <div class="wire" style="left:216px;top:226px;width:74px"></div>
+        <div class="wire v" style="left:216px;top:82px;height:144px"></div>
+        <div class="wire" style="left:456px;top:154px;width:74px"></div>
+        <div class="wire" style="left:456px;top:82px;width:74px"></div>
+        <div class="wire v" style="left:456px;top:82px;height:72px"></div>
+        <div class="wire" style="left:696px;top:118px;width:74px"></div>
+        <div class="wire v" style="left:696px;top:82px;height:36px"></div>
+        <div class="fn sel" style="left:60px;top:60px">
+          <div class="kk"><svg class="ic s12" style="color:var(--running)"><use href="#run"/></svg>Mio · in corsa</div>
+          <div class="nn">sviluppa-sailor</div><div class="st">9 passi · chiama 3</div></div>
+        <div class="fn" style="left:300px;top:60px">
+          <div class="kk"><svg class="ic s12" style="color:var(--went)"><use href="#done"/></svg>Mio</div>
+          <div class="nn">delega-un-pezzo</div><div class="st">6 passi · chiama 2</div></div>
+        <div class="fn" style="left:300px;top:132px">
+          <div class="kk"><svg class="ic s12" style="color:var(--went)"><use href="#done"/></svg>Del workspace</div>
+          <div class="nn">passa-il-testimone</div><div class="st">6 passi</div></div>
+        <div class="fn sys" style="left:300px;top:204px">
+          <div class="kk"><svg class="ic s12" style="color:var(--accent)"><use href="#anchor"/></svg>Di sistema</div>
+          <div class="nn">consult-a-strong-model</div><div class="st">4 passi · tetto $6</div></div>
+        <div class="fn" style="left:540px;top:60px">
+          <div class="kk"><svg class="ic s12" style="color:var(--human)"><use href="#ask"/></svg>Condiviso</div>
+          <div class="nn">review-the-branch</div><div class="st">7 passi · a una persona</div></div>
+        <div class="fn sys" style="left:540px;top:132px">
+          <div class="kk"><svg class="ic s12" style="color:var(--accent)"><use href="#anchor"/></svg>Di sistema</div>
+          <div class="nn">sweep-the-tree</div><div class="st">5 passi</div></div>
+        <div class="fn sys" style="left:780px;top:96px">
+          <div class="kk"><svg class="ic s12" style="color:var(--accent)"><use href="#anchor"/></svg>Di sistema</div>
+          <div class="nn">write-down-what-broke</div><div class="st">3 passi · sul rotto</div></div>
+        <div class="fn sys" style="left:1020px;top:60px">
+          <div class="kk"><svg class="ic s12" style="color:var(--running)"><use href="#run"/></svg>Di sistema · da solo</div>
+          <div class="nn">watch-the-crew</div><div class="st">ogni 30 min · orfano</div></div>
+        <div class="fn sys" style="left:1020px;top:150px">
+          <div class="kk"><svg class="ic s12" style="color:var(--running)"><use href="#run"/></svg>Di sistema · da solo</div>
+          <div class="nn">consolidate-memories</div><div class="st">04:30 · orfano</div></div>
+        <div class="fn" style="left:1020px;top:240px">
+          <div class="kk"><svg class="ic s12" style="color:var(--waiting)"><use href="#cap"/></svg>Mio · mai corso</div>
+          <div class="nn">costruisci-una-pagina</div><div class="st">7 passi · orfano</div></div>
+        <div class="leg">
+          <span><i style="background:var(--s2);border:1px solid var(--border)"></i>tuo o del workspace</span>
+          <span><i style="background:#241f2e;border:1px solid #4a3f5e"></i>di sistema</span>
+          <span>— il filo è una chiamata <b style="color:var(--t2)">subflow</b></span>
+          <span style="color:var(--capped)">3 orfani: nessuno li chiama</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═════════ 4 ═════════ -->
+<div class="cap"><b>4 — Il deposito, e tutto il resto che Sailor tiene.</b> Le nove tabelle vere del ledger <i>più</i> le collezioni di <b>store</b>, che è dove vivono memorie, note, rivendicazioni di lavoro, worktree aperti — e che oggi non si possono nemmeno scoprire, perché bisogna già sapere il nome della collezione. In cima <i>di quale workspace</i>. Sotto, i depositi che nessuna schermata apre.</div>
+<div class="plate" style="height:620px">
+  <div class="bar">
+    <div class="logo"><i class="m"></i>Sailor</div>
+    <div class="live"><span class="it"><svg class="ic s12" style="color:var(--running)"><use href="#run"/></svg>3 in corsa</span>
+      <span class="it" style="color:var(--t3)">deposito scritto 12s fa</span></div>
+    <div class="k">Cerca o esegui un comando <kbd>⌘K</kbd></div>
+    <div class="me"><i class="av">T</i><span class="who"><b>Theo</b><span>codex · work</span></span><i class="dot" style="background:var(--went)"></i></div>
+  </div>
+  <div class="body">
+    <nav class="side">
+      <div class="scroll">
+      <div class="grp">Workspace<span class="n">2</span></div>
+      <div class="r prj on"><span class="i"><svg class="ic"><use href="#box"/></svg></span>sailor<span class="c">4</span></div>
+      <div class="r tree"><span class="i"><i class="dot" style="background:var(--human)"></i></span>~/personal/sailor<span class="br">main</span></div>
+      <div class="r tree"><span class="i"><i class="dot" style="background:var(--went)"></i></span>…/worktrees/checks<span class="br">work/checks</span></div>
+      <div class="r prj"><span class="i"><svg class="ic"><use href="#box"/></svg></span>a-workspace<span class="c">1</span></div>
+      <div class="grp">Fuori da ogni workspace<span class="n">1</span></div>
+      <div class="r sess" style="padding-left:26px"><span class="i"><svg class="ic s12"><use href="#term"/></svg></span>ttys008<span class="ag">zsh</span></div>
+      </div>
+      <div class="btm">
+        <div class="r"><span class="i"><svg class="ic"><use href="#all"/></svg></span>Guarda globalmente</div>
+        <div class="r"><span class="i"><svg class="ic"><use href="#anchor"/></svg></span>Sailor stesso</div>
+      </div>
+    </nav>
+    <div class="tbls">
+      <div class="grp" style="padding:3px 8px 4px">events.db<span class="n" style="color:var(--t3)">la verità</span></div>
+      <div class="tb">events<span class="c">18.402</span></div>
+      <div class="grp" style="padding:12px 8px 4px">state.db<span class="n" style="color:var(--t3)">proiezione</span></div>
+      <div class="tb">runs<span class="c">312</span></div>
+      <div class="tb">steps<span class="c">2.088</span></div>
+      <div class="tb">model_calls<span class="c">947</span></div>
+      <div class="tb on">store<span class="c">126</span></div>
+      <div class="tb">snapshots<span class="c">44</span></div>
+      <div class="tb">inventory_items<span class="c">310</span></div>
+      <div class="tb">processes<span class="c">2</span></div>
+      <div class="grp" style="padding:12px 8px 4px">Collezioni di store</div>
+      <div class="tb" style="padding-left:16px">memories<span class="c">32</span></div>
+      <div class="tb" style="padding-left:16px">notes<span class="c">14</span></div>
+      <div class="tb" style="padding-left:16px">work-claims<span class="c">3</span></div>
+      <div class="tb" style="padding-left:16px">open-worktrees<span class="c">8</span></div>
+      <div class="tb" style="padding-left:16px">beat-faults<span class="c">2</span></div>
+      <div class="grp" style="padding:12px 8px 4px">Altri depositi</div>
+      <div class="tb">faults.db<span class="c">126</span></div>
+      <div class="tb">sessions.db<span class="c">17</span></div>
+      <div class="tb">profili.json<span class="c">2</span></div>
+      <div class="tb">cooldowns.json<span class="c">1</span></div>
+      <div class="tb">budgets.json<span class="c">3</span></div>
+    </div>
+    <div class="pane">
+      <div class="crumb"><b>Deposito</b><span class="d3">›</span>store<span class="d3">›</span>memories
+        <div class="rt"><span class="seg"><span class="on">Di sailor</span><span>Di ogni workspace</span></span><button class="b sm">Esporta</button></div></div>
+      <div class="q"><div class="fake">select * from store where collection = 'memories' and json_extract(value,'$.tree') = '~/personal/sailor' order by written_at desc</div><button class="b sm p">Esegui</button></div>
+      <div style="flex:1;overflow:hidden">
+        <table>
+          <tr><th>key</th><th>type</th><th>tree</th><th>written_by</th><th>written_at</th></tr>
+          <tr class="on"><td>la-sera-del-06-09</td><td>project</td><td>~/personal/sailor</td><td>ttys004</td><td>21:04</td></tr>
+          <tr><td>un-artifact-si-pubblica-solo-se-richiesto</td><td>feedback</td><td class="nul">ogni albero</td><td>ttys013</td><td>18:31</td></tr>
+          <tr><td>la-notte-del-05-09</td><td>project</td><td>~/personal/sailor</td><td>ttys004</td><td>ieri 23:58</td></tr>
+          <tr><td>i-cancelli-ciechi</td><td>project</td><td>~/personal/sailor</td><td>ttys009</td><td>ieri 03:12</td></tr>
+          <tr><td>profili-case-gia-autenticate</td><td>reference</td><td class="nul">ogni albero</td><td>ttys004</td><td>04/09</td></tr>
+        </table>
+      </div>
+      <div style="padding:10px 12px;border-top:1px solid var(--border);color:var(--t3);font-size:12px;line-height:18px">
+        <b style="color:var(--capped);font-weight:500">Quello che oggi non si vede.</b> <b style="color:var(--t2);font-weight:500">events</b> non compare nemmeno nell'elenco delle tabelle — è agganciato come secondo schema e chi non sa già il nome non lo trova. E <b style="color:var(--t2);font-weight:500">steps</b>, <b style="color:var(--t2);font-weight:500">model_calls</b>, <b style="color:var(--t2);font-weight:500">snapshots</b> e <b style="color:var(--t2);font-weight:500">inventory_items</b> non portano il workspace: si arriva al progetto solo passando per <span style="font-family:var(--mono)">runs.worktree</span>, che è un percorso, non una chiave. «Organizzato per workspace» è prima un lavoro sui dati, poi una schermata.
+      </div>
+    </div>
+    <aside class="insp">
+      <div class="lb">Riga scelta</div>
+      <h3>la-sera-del-06-09</h3>
+      <div class="u">store · memories · riga 1 di 32</div>
+      <div class="fld">
+        <div class="kv"><b>collection</b><span>memories</span></div>
+        <div class="kv"><b>key</b><span>la-sera-del-06-09</span></div>
+        <div class="kv"><b>tree</b><span>~/personal/sailor</span></div>
+        <div class="kv"><b>written_by</b><span>ttys004</span></div>
+        <div class="kv"><b>written_at</b><span>2026-09-06 21:04</span></div>
+      </div>
+      <div class="lb">Il valore</div>
+      <div class="fld"><div class="note" style="font-family:var(--mono);font-size:11.5px">{ "type": "project",<br>&nbsp;&nbsp;"tree": "~/personal/sailor",<br>&nbsp;&nbsp;"said": "la repo parla inglese;<br>&nbsp;&nbsp;&nbsp;47 giudici verdi; 6.947→1" }</div></div>
+      <div class="lb">Chi l'ha letta</div>
+      <div class="fld" style="font-size:12.5px;color:var(--t2)">4 terminali all'apertura, oggi</div>
+      <div class="acts">
+        <button class="b">Apri la pagina delle memorie</button>
+        <button class="b">Vedi l'evento che l'ha scritta</button>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<!-- ═════════ 5 ═════════ -->
+<div class="cap"><b>5 — Profili e motori: quello che c'è davvero.</b> Un profilo <i>è una casa già autenticata</i> — Sailor legge il gettone e non lo rinnova mai, e non lo tiene: quindi qui non c'è nessun token, c'è <b>il percorso della casa</b>. Quello che manca al modello dei dati lo dico invece di fingerlo: la <i>quota è per motore, non per profilo</i>, e <i>l'account non è registrato da nessuna parte</i>.</div>
+<div class="plate" style="height:600px">
+  <div class="bar">
+    <div class="logo"><i class="m"></i>Sailor</div>
+    <div class="live"><span class="it" style="color:var(--capped)"><svg class="ic s12"><use href="#cap"/></svg>claude al 62% · azzera 04:00</span>
+      <span class="it num" style="color:var(--t3)">$4,12 oggi</span></div>
+    <div class="k">Cerca o esegui un comando <kbd>⌘K</kbd></div>
+    <div class="me"><i class="av">T</i><span class="who"><b>Theo</b><span>codex · work</span></span><i class="dot" style="background:var(--went)"></i></div>
+  </div>
+  <div class="body">
+    <nav class="side">
+      <div class="scroll">
+      <div class="grp">Workspace<span class="n">2</span></div>
+      <div class="r prj"><span class="i"><svg class="ic"><use href="#box"/></svg></span>sailor<span class="c">4</span></div>
+      <div class="r prj"><span class="i"><svg class="ic"><use href="#box"/></svg></span>a-workspace<span class="c">1</span></div>
+      <div class="grp">Fuori da ogni workspace<span class="n">1</span></div>
+      <div class="r sess" style="padding-left:26px"><span class="i"><svg class="ic s12"><use href="#term"/></svg></span>ttys008<span class="ag">zsh</span></div>
+      </div>
+      <div class="btm">
+        <div class="r"><span class="i"><svg class="ic"><use href="#all"/></svg></span>Guarda globalmente</div>
+        <div class="r on"><span class="i"><svg class="ic"><use href="#anchor"/></svg></span>Sailor stesso</div>
+      </div>
+    </nav>
+    <div class="pane">
+      <div class="crumb"><b>Sailor stesso</b><span class="d3">›</span>Motori e profili
+        <div class="rt"><span class="seg"><span class="on">Motori e profili</span><span>Modelli e prezzi</span><span>Attrezzatura</span><span>Comandi 53</span><span>Depositi</span><span>Aspetto</span></span></div></div>
+      <div style="flex:1;overflow:hidden">
+        <div class="grp" style="padding:12px 12px 4px">Righe di comando su questa macchina<span class="n" style="color:var(--t3)">3 di 4 collegate</span></div>
+        <table>
+          <tr><th style="width:20%">Motore</th><th>Versione</th><th>Profilo in uso</th><th>La casa si sposta con</th><th>Quota</th><th>Speso oggi</th><th></th></tr>
+          <tr class="on"><td class="nm">claude</td><td>2.1.4</td><td style="color:var(--accent)">work</td><td>CLAUDE_CONFIG_DIR</td><td style="color:var(--capped)">62% · 04:00</td><td>$3,12</td><td style="text-align:right;color:var(--t3)">Apri</td></tr>
+          <tr><td class="nm">codex</td><td>0.153.4</td><td style="color:var(--accent)">work</td><td>CODEX_HOME</td><td>18% · 09:00</td><td>$0,98</td><td style="text-align:right;color:var(--t3)">Apri</td></tr>
+          <tr><td class="nm">gemini</td><td>3.0.1</td><td style="color:var(--accent)">reading</td><td>GEMINI_CLI_HOME</td><td>4%</td><td>$0,02</td><td style="text-align:right;color:var(--t3)">Apri</td></tr>
+          <tr><td class="nm" style="color:var(--t3)">antigravity</td><td class="nul">trovato</td><td style="color:var(--human)">nessun profilo</td><td class="nul">la casa non si sposta</td><td>—</td><td>—</td><td style="text-align:right;color:var(--accent)">Collega</td></tr>
+        </table>
+        <div class="grp" style="padding:16px 12px 4px">Profili<span class="n" style="color:var(--t3)">case già autenticate · profili.json</span></div>
+        <table>
+          <tr><th style="width:20%">Profilo</th><th>Motore</th><th>La casa</th><th>Accesso</th><th>Chiamate</th><th>Speso oggi</th><th></th></tr>
+          <tr><td class="nm">work</td><td>claude</td><td>~/.claude</td><td style="color:var(--went)">collegato</td><td>612</td><td>$3,12</td><td style="text-align:right;color:var(--t3)">Apri</td></tr>
+          <tr><td class="nm">work</td><td>codex</td><td>~/.codex</td><td style="color:var(--went)">collegato</td><td>289</td><td>$0,98</td><td style="text-align:right;color:var(--t3)">Apri</td></tr>
+          <tr><td class="nm">reading</td><td>gemini</td><td>…/profiles-homes/gemini/reading</td><td style="color:var(--went)">collegato</td><td>46</td><td>$0,02</td><td style="text-align:right;color:var(--t3)">Apri</td></tr>
+        </table>
+        <div style="padding:14px 12px;color:var(--t3);font-size:12px;line-height:18px">
+          <b style="color:var(--capped);font-weight:500">Due colonne qui sopra sono una bugia comoda, e le segno.</b>
+          «Quota» è misurata <b style="color:var(--t2);font-weight:500">per motore</b>, non per profilo: due profili sullo stesso motore mostrerebbero lo stesso numero. E <b style="color:var(--t2);font-weight:500">di quale account</b> sia un profilo non è registrato da nessuna parte — né in <span style="font-family:var(--mono)">profili.json</span> né nel deposito. Il gettone non lo teniamo apposta. «Speso oggi» invece è vero: si ricava da <span style="font-family:var(--mono)">model_calls.engine_identity</span>, che porta il profilo di ogni chiamata — e nessuna schermata lo mostra oggi.
+        </div>
+      </div>
+    </div>
+    <aside class="insp">
+      <div class="lb">Motore scelto</div>
+      <h3>claude</h3>
+      <div class="u">2.1.4 · /usr/local/bin/claude</div>
+      <div class="fld">
+        <div class="kv"><b>profilo</b><span style="color:var(--accent)">work</span></div>
+        <div class="kv"><b>casa</b><span>~/.claude</span></div>
+        <div class="kv"><b>si sposta</b><span>CLAUDE_CONFIG_DIR</span></div>
+        <div class="kv"><b>modello</b><span>opus-5</span></div>
+        <div class="kv"><b>legge</b><span>CLAUDE.md, AGENTS.md</span></div>
+        <div class="kv"><b>quota</b><span style="color:var(--capped)">62% · 04:00</span></div>
+      </div>
+      <div class="lb">Il patto sui dati</div>
+      <div class="fld"><div class="note">Non dichiara il patto: <b style="color:var(--t2)">ogni passo «data: private» lo rifiuta</b>, a costo zero, prima di partire.</div></div>
+      <div class="lb">Gesti</div>
+      <div class="acts">
+        <button class="b">Cambia profilo</button>
+        <button class="b">Apri la casa</button>
+        <button class="b">Vedi le sue 612 chiamate</button>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<!-- ═════════ 6 ═════════ -->
+<div class="cap"><b>6 — Chiedi a Sailor: il FAB.</b> Una chat con un <i>flusso di sistema</i>. L'architettura esiste già tutta — <span style="font-family:var(--mono);font-size:11.5px">draft-a-flow</span> fa esattamente questa forma per la lavagna. <b>Ogni risposta dice da dove viene e ci si clicca sopra</b>: se non dice la fonte, ha inventato. Quello che manca davvero non è la chat: sono le <i>letture</i> — profili, motori, modelli, quota e workspace non sono leggibili da un passo di flusso.</div>
+<div class="plate" style="height:600px">
+  <div class="bar">
+    <div class="logo"><i class="m"></i>Sailor</div>
+    <div class="live"><span class="it"><svg class="ic s12" style="color:var(--running)"><use href="#run"/></svg>3 in corsa</span>
+      <span class="it"><svg class="ic s12" style="color:var(--human)"><use href="#ask"/></svg>1 aspetta te</span>
+      <span class="it num" style="color:var(--t3)">$4,12 oggi</span></div>
+    <div class="k">Cerca o esegui un comando <kbd>⌘K</kbd></div>
+    <div class="me"><i class="av">T</i><span class="who"><b>Theo</b><span>codex · work</span></span><i class="dot" style="background:var(--went)"></i></div>
+  </div>
+  <div class="body">
+    <nav class="side">
+      <div class="scroll">
+      <div class="grp">Workspace<span class="n">2</span></div>
+      <div class="r prj on"><span class="i"><svg class="ic"><use href="#box"/></svg></span>sailor<span class="c">4</span></div>
+      <div class="r tree"><span class="i"><i class="dot" style="background:var(--human)"></i></span>~/personal/sailor<span class="br">main</span></div>
+      <div class="r tree"><span class="i"><i class="dot" style="background:var(--went)"></i></span>…/worktrees/checks<span class="br">work/checks</span></div>
+      <div class="r prj"><span class="i"><svg class="ic"><use href="#box"/></svg></span>a-workspace<span class="c">1</span></div>
+      <div class="grp">Fuori da ogni workspace<span class="n">1</span></div>
+      <div class="r sess" style="padding-left:26px"><span class="i"><svg class="ic s12"><use href="#term"/></svg></span>ttys008<span class="ag">zsh</span></div>
+      </div>
+      <div class="btm">
+        <div class="r"><span class="i"><svg class="ic"><use href="#all"/></svg></span>Guarda globalmente</div>
+        <div class="r"><span class="i"><svg class="ic"><use href="#anchor"/></svg></span>Sailor stesso</div>
+      </div>
+    </nav>
+    <div class="pane">
+      <div class="crumb"><b>sailor</b><span class="d3">›</span>Corse<span class="d3">·</span>31 oggi
+        <div class="rt"><span class="seg"><span>Terminali</span><span>Flussi</span><span>Lavagna</span><span>Modifiche</span><span class="on">Corse</span><span>Memoria</span></span></div></div>
+      <div style="flex:1;overflow:hidden">
+        <table>
+          <tr><th style="width:24%">Corsa</th><th>Albero</th><th>Motore</th><th>Passi</th><th>Gettoni</th><th>Costo</th><th>Tetto</th><th>Esito</th></tr>
+          <tr><td class="nm">review-the-branch</td><td>…/review</td><td>codex</td><td>3 di 7</td><td>42.180</td><td>$0,38</td><td>$2,00</td><td style="color:var(--human)">a una persona</td></tr>
+          <tr><td class="nm">sviluppa-sailor</td><td>~/personal/sailor</td><td>claude</td><td>9 di 9</td><td>311.904</td><td>$1,12</td><td>$3,00</td><td style="color:var(--went)">andato</td></tr>
+          <tr><td class="nm">decidi-la-direzione</td><td>~/personal/sailor</td><td>claude</td><td>3 di 4</td><td>528.300</td><td style="color:var(--capped)">$2,00</td><td>$2,00</td><td style="color:var(--capped)">al tetto</td></tr>
+          <tr><td class="nm">notte</td><td>~/personal/sailor</td><td>claude</td><td>0 di 6</td><td>0</td><td>$0,00</td><td>$1,00</td><td style="color:var(--broke)">rotto</td></tr>
+          <tr><td class="nm">watch-the-crew</td><td class="nul">nessuno</td><td class="nul">nessuno</td><td>3 di 3</td><td>0</td><td>$0,00</td><td>—</td><td style="color:var(--went)">andato</td></tr>
+        </table>
+      </div>
+      <div class="chat">
+        <h4><svg class="ic" style="color:var(--accent)"><use href="#chat"/></svg>Chiedi a Sailor<span class="sm2">chiedi-a-sailor · di sistema</span></h4>
+        <div class="msgs">
+          <div class="msg you">quanto ho speso su questo workspace con codex questa settimana, e qual è stato il flusso più caro?</div>
+          <div class="msg it"><b>$18,40</b> con <b>codex</b> dal 31/08, su 214 chiamate, tutte sotto il profilo <b>work</b>. Il più caro è <b>sviluppa-sailor</b>: $9,12, cioè la metà, su 11 corse — e due si sono fermate al tetto.
+            <div class="src">letto da: model_calls (214 righe, filtrate su runs.worktree) · runs (31)<br><a>→ apri la tabella</a> · <a>→ apri sviluppa-sailor</a></div></div>
+          <div class="msg you">e perché due si sono fermate al tetto?</div>
+          <div class="msg it">Il tetto del flusso è <b>$2,00</b> a corsa. Il passo <b>read-the-diff</b> da solo ne chiede 1,80 quando il diff supera le 400 righe: la seconda chiamata diventa inammissibile e la corsa si ferma lì.
+            <div class="src">letto da: steps (esito «al tetto», 2) · flows/sviluppa-sailor.flow.json:31<br><a>→ apri il passo</a> · <a>→ alza il tetto a $4</a></div></div>
+          <div class="msg you">e ci sono terminali morti in giro?</div>
+          <div class="msg it"><b>Sì, dieci.</b> Il registro dice 17 terminali aperti; solo 7 hanno davvero un processo. Uno di quelli vivi — ttys008 — non è tracciato affatto.
+            <div class="src">letto da: sessions.db · censimento dei processi, ora<br><a>→ vedili</a> · <a>→ chiudi i dieci morti</a></div></div>
+        </div>
+        <div class="ask">Chiedi dei tuoi flussi, profili, corse, spese, memorie…<kbd>↵</kbd></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body></html>
