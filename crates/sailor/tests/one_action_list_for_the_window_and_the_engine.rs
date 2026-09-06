@@ -167,6 +167,12 @@ fn the_window_names_no_action_the_engine_does_not_register() {
     );
 
     let registered = engine_action_names("inventate");
+    workspace::measured_against(
+        named.len(),
+        "action names the window declares",
+        registered.len(),
+        "actions the engine registers",
+    );
     let invented: Vec<&String> = named.difference(&registered).collect();
     assert!(
         invented.is_empty(),
@@ -193,6 +199,12 @@ fn every_engine_action_has_a_family_in_the_window() {
     );
 
     let registered = engine_action_names("senza-famiglia");
+    workspace::measured_against(
+        registered.len(),
+        "actions the engine registers",
+        named.len(),
+        "action names the window declares",
+    );
     let orphans: Vec<&String> = registered.difference(&named).collect();
     assert!(
         orphans.is_empty(),
@@ -220,6 +232,12 @@ fn every_action_the_palette_creates_is_registered() {
     );
 
     let registered = engine_action_names("cassetta");
+    workspace::measured_against(
+        created.len(),
+        "actions the palette creates",
+        registered.len(),
+        "actions the engine registers",
+    );
     let invented: Vec<&String> = created.difference(&registered).collect();
     assert!(
         invented.is_empty(),

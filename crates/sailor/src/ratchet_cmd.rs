@@ -227,7 +227,7 @@ pub fn verdict_of(passed: bool, said: &str) -> Verdict {
 
 /// How many judges hand in no receipt today. **It can only fall**, and no run
 /// is called clean while it stands above zero.
-const NO_RECEIPT_TODAY: usize = 36;
+const NO_RECEIPT_TODAY: usize = 0;
 
 /// The tally of the run, kept apart so a green count never absorbs the others.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -321,9 +321,8 @@ impl Gate {
 
     /// The seed sits above what this run holds, so the debt can be paid now.
     /// Only over a whole run: one judge alone says nothing about the rest.
-    fn seed_may_fall_to(&self, whole_run: bool) -> Option<usize> {
-        (whole_run && self.counted.no_receipt < NO_RECEIPT_TODAY)
-            .then_some(self.counted.no_receipt)
+    fn seed_may_fall_to(&self, whole_run: bool, seed: usize) -> Option<usize> {
+        (whole_run && self.counted.no_receipt < seed).then_some(self.counted.no_receipt)
     }
 }
 
@@ -506,7 +505,7 @@ fn measured(only: &Option<String>) -> Result<bool, String> {
     }
     let gate = Gate { counted };
     println!("{}", gate.closing_line());
-    if let Some(fallen) = gate.seed_may_fall_to(only.is_none()) {
+    if let Some(fallen) = gate.seed_may_fall_to(only.is_none(), NO_RECEIPT_TODAY) {
         println!(
             "{}",
             catalogue::say(
@@ -737,12 +736,13 @@ mod tests {
     /// the seed claims — but only when the whole battery was asked.
     #[test]
     fn the_receipt_seed_is_nudged_down_only_over_a_whole_run() {
+        let seed = 3;
         let mut gate = Gate::default();
-        gate.counted.no_receipt = NO_RECEIPT_TODAY - 1;
-        assert_eq!(gate.seed_may_fall_to(true), Some(NO_RECEIPT_TODAY - 1));
-        assert_eq!(gate.seed_may_fall_to(false), None);
-        gate.counted.no_receipt = NO_RECEIPT_TODAY;
-        assert_eq!(gate.seed_may_fall_to(true), None);
+        gate.counted.no_receipt = seed - 1;
+        assert_eq!(gate.seed_may_fall_to(true, seed), Some(seed - 1));
+        assert_eq!(gate.seed_may_fall_to(false, seed), None);
+        gate.counted.no_receipt = seed;
+        assert_eq!(gate.seed_may_fall_to(true, seed), None);
     }
 
     /// **PASSING IS NOT MEASURING.** A judge that exits zero having said it

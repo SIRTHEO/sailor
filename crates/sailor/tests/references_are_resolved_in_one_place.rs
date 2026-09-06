@@ -336,13 +336,14 @@ fn nothing_but_the_place_where_the_input_is_composed_resolves_references() {
 
     let mut copies: Vec<String> = Vec::new();
     let mut blind: Vec<String> = Vec::new();
-    for file in shipped_sources(&root) {
+    let files = shipped_sources(&root);
+    for file in &files {
         let relative = file
             .strip_prefix(&root)
             .expect("i file vengono da sotto la radice")
             .display()
             .to_string();
-        let text = std::fs::read_to_string(&file)
+        let text = std::fs::read_to_string(file)
             .unwrap_or_else(|error| panic!("leggere {relative}: {error}"));
         let code = match shipped_code(&text) {
             Ok(code) => code,
@@ -357,6 +358,12 @@ fn nothing_but_the_place_where_the_input_is_composed_resolves_references() {
             }
         }
     }
+    workspace::measured_against(
+        files.len(),
+        "shipped sources read",
+        THE_CALLS.len(),
+        "calls that resolve a reference",
+    );
 
     assert!(
         blind.is_empty(),

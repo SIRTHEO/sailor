@@ -21,14 +21,20 @@ fn scratch(label: &str) -> PathBuf {
     dir.join(faults::FAULTS_FILE)
 }
 
-fn table() -> String {
+/// The fault table as written. `None` where the tree carries no table: an
+/// empty string would pass every comparison below for having nothing in it.
+fn table() -> Option<String> {
     let file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(|crates| crates.parent())
         .expect("the crate lives in <root>/crates/faults")
         .join("docs/guasti-incontrati.md");
-    std::fs::read_to_string(&file)
-        .unwrap_or_else(|error| panic!("reading {}: {error}", file.display()))
+    let Ok(text) = std::fs::read_to_string(&file) else {
+        workspace::measured_nothing("this tree carries no docs/guasti-incontrati.md to read");
+        return None;
+    };
+    workspace::measured(text.lines().count(), "lines of the fault table read");
+    Some(text)
 }
 
 /// Nothing is lost coming in. The real rows, brought in and written back, must
@@ -36,7 +42,9 @@ fn table() -> String {
 /// the information.
 #[test]
 fn every_row_survives_the_move_word_for_word() {
-    let source = table();
+    let Some(source) = table() else {
+        return;
+    };
     let read = faults::parse(&source);
     assert!(
         read.len() > 40,
@@ -365,7 +373,10 @@ fn a_newer_store_says_it_is_newer_and_not_broken() {
 /// line between this and a diary.
 #[test]
 fn a_row_without_the_check_that_would_have_stopped_it_is_not_finished() {
-    let read = faults::parse(&table());
+    let Some(source) = table() else {
+        return;
+    };
+    let read = faults::parse(&source);
     for fault in &read {
         assert!(
             !fault.what_would_prevent.is_empty(),
@@ -386,7 +397,10 @@ fn a_row_without_the_check_that_would_have_stopped_it_is_not_finished() {
 /// and from here on they cannot be got wrong.
 #[test]
 fn the_numbers_that_come_in_have_no_gaps_and_no_twins() {
-    let read: Vec<Fault> = faults::parse(&table());
+    let Some(source) = table() else {
+        return;
+    };
+    let read: Vec<Fault> = faults::parse(&source);
     let mut numbers: Vec<i64> = read.iter().map(|f| f.number).collect();
     numbers.sort_unstable();
     let mut expected: Vec<i64> = (1..=numbers.len() as i64).collect();

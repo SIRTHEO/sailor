@@ -39,8 +39,10 @@ fn families_the_window_names(source: &str) -> Vec<String> {
 #[test]
 fn the_window_names_the_kinds_the_inventory_has() {
     let path = repository_root().join("desktop/src/Installed.tsx");
-    let source = std::fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("reading {}: {error}", path.display()));
+    let Ok(source) = std::fs::read_to_string(&path) else {
+        workspace::measured_nothing("this tree carries no desktop/src/Installed.tsx to read");
+        return;
+    };
 
     let named = families_the_window_names(&source);
     assert!(
@@ -53,6 +55,12 @@ fn the_window_names_the_kinds_the_inventory_has() {
         .into_iter()
         .map(|kind| kind.label().to_owned())
         .collect();
+    workspace::measured_against(
+        named.len(),
+        "families the window names read",
+        kinds.len(),
+        "kinds the inventory has",
+    );
 
     let extra: Vec<&String> = named.iter().filter(|word| !kinds.contains(word)).collect();
     let missing: Vec<&String> = kinds.iter().filter(|word| !named.contains(word)).collect();

@@ -33,23 +33,26 @@ fn declared(main: &str) -> Vec<String> {
 }
 
 /// Everything the page ships, tests apart: a command reached only by a test is
-/// reached by nobody who uses the product.
-fn page(under: &Path, out: &mut String) {
+/// reached by nobody who uses the product. Returns how many files were read.
+fn page(under: &Path, out: &mut String) -> usize {
     let Ok(entries) = std::fs::read_dir(under) else {
-        return;
+        return 0;
     };
+    let mut read = 0;
     for entry in entries.flatten() {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
         if path.is_dir() {
             if name != "node_modules" {
-                page(&path, out);
+                read += page(&path, out);
             }
         } else if (name.ends_with(".ts") || name.ends_with(".tsx")) && !name.contains(".test.") {
             out.push_str(&std::fs::read_to_string(&path).unwrap_or_default());
             out.push('\n');
+            read += 1;
         }
     }
+    read
 }
 
 #[test]
@@ -68,8 +71,9 @@ fn no_power_is_declared_and_left_unreachable() {
     assert!(list.len() > 10, "the declaration was not read: {list:?}");
 
     let mut written = String::new();
-    page(&root.join("desktop/src"), &mut written);
+    let read = page(&root.join("desktop/src"), &mut written);
     assert!(!written.is_empty(), "the page was not read");
+    workspace::measured_against(read, "page sources read", list.len(), "commands the shell declares");
 
     let unreached: Vec<&String> = list
         .iter()
