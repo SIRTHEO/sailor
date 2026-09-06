@@ -51,21 +51,21 @@
 
 :root {
   /* --- SURFACES. Four grounds, each a step out of the night. --- */
-  --bg: #08090a;      /* la tela e la colonna: il fondo di tutto */
-  --paper: #0f1011;   /* nodi, pannelli, schede: ciò che sta sopra il fondo */
-  --raised: #18191a;  /* campi di testo e ciò che si apre sopra un pannello */
-  --rail: #08090a;    /* alias storico, = --bg */
-  --line: #23252a;    /* filo di 1px, mai portatore di stato da solo */
+  --bg: #08090a;      /* the canvas and the column: the ground under everything */
+  --paper: #0f1011;   /* nodes, panels, cards: what sits above the ground */
+  --raised: #18191a;  /* text fields, and what opens above a panel */
+  --rail: #08090a;    /* an older name for --bg */
+  --line: #23252a;    /* a 1px thread, never a carrier of state on its own */
   /* The veil under a lane: the panel is visible, and it moves no contrast
      pair. */
   --band-fill: rgb(247 248 248 / 3.5%);
 
   /* --- TEXT. Two levels, both legible everywhere. Measured:
-         ink   su --paper 18,4:1 · su --bg 19,3:1
-         muted su --paper  5,9:1 · su --bg  6,1:1 · su --raised 5,5:1 --- */
+         ink   on --paper 18.4:1 · on --bg 19.3:1
+         muted on --paper  5.9:1 · on --bg  6.1:1 · on --raised 5.5:1 --- */
   --ink: #f7f8f8;
   --muted: #8a8f98;
-  --faint: #8a8f98;   /* VOLUTAMENTE identico a --muted: vedi il divieto 7 */
+  --faint: #8a8f98;   /* DELIBERATELY the same as --muted: see prohibition 7 */
 
   /* --- STEP STATE. Six endings, not interchangeable. All measured on
          --paper (#0f1011), all above 4.5:1:
@@ -433,16 +433,59 @@ body {
   flex-grow: 1;
 }
 
-/* The focused branch bar: name, description, save and delete. It does not
-   change canvas, it acts on the flow the rail has focused. */
-.focusbar {
+/* THE BOARD'S HEAD. Where its flows came from describes the collection, so it
+   stands whether or not one is in focus; the focused flow's bar is the rest of
+   this box, so a flow in focus costs no second strip of the paper's height. */
+.boardhead {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  padding: 8px 16px;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-4);
   border-bottom: 1px solid var(--line);
   background: var(--rail);
   flex-shrink: 0;
+}
+
+/* Where the flows on screen come from: discreet when it is the disk, loud when
+   it is a sample or a mute engine — the two cases where someone risks reading
+   as true what is not. It is never hidden by width: in the bar it was the
+   first thing a narrow window dropped, which is where a fabricated screen is
+   least likely to be doubted. */
+.boardhead__source {
+  font-size: var(--text-small);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* A sample is a condition, not an event: it says what you are looking at and
+   then gets out of the way. A failure keeps its fill. */
+.boardhead__source[data-source="sample"] {
+  color: var(--warn);
+}
+
+.boardhead__source[data-source="failed"] {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+/* The focused flow's bar: name, size, description, how it last ran, and the
+   two gestures that act on it. It does not change canvas, it acts on the flow
+   the column has focused. */
+.focusbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-grow: 1;
+  min-width: 0;
 }
 
 .focusbar__dot {
@@ -495,14 +538,69 @@ body {
   background: var(--paper);
 }
 
+/* The flow's size, as a number the flow really carries. No version sits beside
+   the name: a flow has none — not in `flow::FlowFile`, not in the `.flow.json`
+   on disk — and the Rust type refuses unknown fields. */
+.focusbar__steps {
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  color: var(--muted);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 2px var(--space-1);
+  flex-shrink: 0;
+}
+
+.focusbar__status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-small);
+  color: var(--muted);
+  background: none;
+  border: none;
+  padding: 0;
+  min-width: 0;
+}
+
+.focusbar__status-word {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.focusbar__live {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--state-running);
+  flex-shrink: 0;
+}
+
+.focusbar__live[data-idle] {
+  background: var(--state-waiting);
+}
+
+/* Unsaved work: the dot carries the eye, the word carries the meaning —
+   prohibition 5 forbids the tint from being the only carrier. */
 .focusbar__dirty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
   font-size: var(--text-small);
   font-weight: 600;
-  padding: 2px 7px;
-  border-radius: var(--radius-pill);
   color: var(--warn);
-  border: 1px solid var(--warn);
-  background: var(--warn-soft);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.focusbar__dirty-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--warn);
+  flex-shrink: 0;
 }
 
 .focusbar__error {
@@ -512,6 +610,24 @@ body {
 
 .focusbar__spacer {
   flex-grow: 1;
+}
+
+/* Save and Run stay side by side and never wrap: the words to their left give
+   ground first, so Run keeps one place at every width. */
+.focusbar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.focusbar__save,
+.focusbar__run {
+  white-space: nowrap;
+}
+
+.focusbar__glyph {
+  margin-right: var(--space-1);
 }
 
 button.is-danger {
@@ -5076,97 +5192,6 @@ tr[data-followable]:hover {
   flex-shrink: 0;
 }
 
-/* ── which flow is open ─────────────────────────────────────────────────── */
-
-.topbar__flow {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.topbar__flow-name {
-  font-size: var(--text-mid);
-  font-weight: 600;
-  color: var(--ink);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.topbar__steps {
-  font-family: var(--font-data);
-  font-size: var(--text-micro);
-  color: var(--muted);
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 2px var(--space-1);
-  flex-shrink: 0;
-}
-
-/* Unsaved work: the dot carries the eye, the word carries the meaning —
-   prohibition 5 forbids the tint from being the only carrier. */
-.topbar__dirty {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  font-size: var(--text-small);
-  font-weight: 600;
-  color: var(--warn);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.topbar__dot {
-  width: 7px;
-  height: 7px;
-  border-radius: var(--radius-pill);
-  background: var(--warn);
-  flex-shrink: 0;
-}
-
-/* ── the three tabs ─────────────────────────────────────────────────────── */
-
-.topbar__tabs {
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  margin-left: var(--space-4);
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  flex-shrink: 0;
-}
-
-/* A tab is not a plate: it says which of three views of the same flow you are
-   looking at. Where you are rides on the surface and on the weight of the
-   word, never on a tint. */
-.topbar__tab {
-  font-family: var(--font-prose);
-  font-size: var(--text-small);
-  color: var(--muted);
-  background: none;
-  border: 1px solid transparent;
-  border-radius: var(--radius);
-  padding: var(--space-1) var(--space-3);
-  cursor: pointer;
-}
-
-.topbar__tab[data-here] {
-  color: var(--ink);
-  font-weight: 600;
-  background: var(--paper);
-  border-color: var(--line);
-}
-
-.topbar__tab:disabled {
-  color: var(--muted);
-  background: none;
-  border-style: dashed;
-  cursor: not-allowed;
-}
-
 .topbar__spacer {
   flex-grow: 1;
   min-width: var(--space-2);
@@ -5174,21 +5199,7 @@ tr[data-followable]:hover {
 
 /* ── what the machine is doing, on the right ────────────────────────────── */
 
-.topbar__status {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: var(--text-small);
-  color: var(--muted);
-  min-width: 0;
-}
-
-.topbar__status-word {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
+/* The bead a chip wears to say whether what it names is alive. */
 .topbar__live {
   width: 7px;
   height: 7px;
@@ -5199,45 +5210,6 @@ tr[data-followable]:hover {
 
 .topbar__live[data-idle] {
   background: var(--state-waiting);
-}
-
-/* Where the flows on screen come from: discreet when it is the disk, loud when
-   it is a sample or a mute engine — the two cases where someone risks reading
-   as true what is not. */
-.topbar__source {
-  font-size: var(--text-small);
-  padding: 2px var(--space-2);
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--line);
-  color: var(--muted);
-  white-space: nowrap;
-  max-width: 320px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex-shrink: 0;
-}
-
-/* A sample is a condition, not an event: it says what you are looking at and
-   then gets out of the way. A failure keeps its fill. */
-.topbar__source[data-source="sample"] {
-  color: var(--warn);
-  border-color: var(--line);
-}
-
-.topbar__source[data-source="failed"] {
-  color: var(--danger);
-  border-color: var(--danger);
-  background: var(--danger-soft);
-}
-
-.topbar__save,
-.topbar__run {
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
-.topbar__glyph {
-  margin-right: var(--space-1);
 }
 
 /* ── the code tab ───────────────────────────────────────────────────────── */
@@ -5287,16 +5259,17 @@ tr[data-followable]:hover {
     padding: var(--space-2) var(--space-3);
   }
 
-  .topbar__rule,
-  .topbar__source {
+  .topbar__rule {
     display: none;
   }
 
-  .topbar__tabs {
-    margin-left: 0;
+  /* WHAT A NARROW WINDOW GIVES UP IS THE WORDS, NEVER THE GESTURE: the run
+     of the focused flow takes a line of its own so Save and Run keep theirs. */
+  .focusbar {
+    flex-wrap: wrap;
   }
 
-  .topbar__status {
+  .focusbar__status {
     order: 1;
     flex-basis: 100%;
   }
