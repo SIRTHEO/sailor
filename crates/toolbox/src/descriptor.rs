@@ -818,10 +818,9 @@ impl Descriptor {
         }
     }
 
-    /// The options a model's name is written after, when this tool declares a
-    /// form that carries one. A capability declared without a value has no
-    /// place to put the name: it answers `None`, exactly as an undeclared one
-    /// does, because neither can be told which model to answer with.
+    /// The options a model's name is written after. A form without a value has
+    /// nowhere to put the name, so it answers `None` as an undeclared
+    /// capability does: neither can be told which model to answer with.
     pub fn model_option(&self) -> Option<Vec<String>> {
         self.capabilities
             .get(CHOOSE_MODEL)?
@@ -962,12 +961,8 @@ impl Descriptor {
 /// copies of one truth drift apart uncompared. The comparison needs the name.
 pub const ASK_WITHOUT_INTERACTION: &str = "ask_without_interaction";
 
-/// The name of the capability that says how an engine is told **which model**
-/// to answer with.
-///
-/// The code utters it to read a form, never to decide anything about one
-/// engine: the options are the descriptor's, and an engine that declares no
-/// form carrying a value cannot be told a model at all.
+/// The name of the capability saying how an engine is told which model to
+/// answer with. The code reads a form; the options are the descriptor's.
 pub const CHOOSE_MODEL: &str = "choose_model";
 
 /// A descriptor that says two different things about the same fact.
@@ -1509,12 +1504,9 @@ mod the_new_field_is_optional {
         );
     }
 
-    /// **DECLARARE LA CAPACITÀ NON È DICHIARARE COME SI USA.** Un `true`
-    /// afferma che il motore un modello lo sa scegliere, e non lascia nessun
-    /// posto dove scriverne il nome; una forma senza valore nemmeno. In tutti e
-    /// due i casi la risposta è la stessa di chi non l'ha dichiarata affatto,
-    /// perché in tutti e tre un nome di modello non gli si può dire — e chi
-    /// costruisce la riga di comando deve leggere quello, non un sì.
+    /// **DECLARING THE CAPABILITY IS NOT SAYING HOW TO USE IT.** A `true`, and
+    /// a form without a value, leave nowhere to write the name: whoever
+    /// composes the line must read that, not a yes.
     #[test]
     fn a_capability_without_a_place_for_the_name_cannot_carry_a_model() {
         let catalog = loaded(
@@ -1535,20 +1527,20 @@ mod the_new_field_is_optional {
                 .descriptors
                 .iter()
                 .find(|loaded| loaded.descriptor.id == id)
-                .expect("il descrittore è nel catalogo")
+                .expect("the descriptor is in the catalog")
                 .descriptor
                 .model_option()
         };
 
         assert_eq!(option("col-valore"), Some(vec!["--model".to_owned()]));
-        assert_eq!(option("senza-valore"), None, "nessun posto per il nome");
-        assert_eq!(option("solo-un-si"), None, "un sì non è un'istruzione");
+        assert_eq!(option("senza-valore"), None, "nowhere to put the name");
+        assert_eq!(option("solo-un-si"), None, "a yes is not an instruction");
         assert_eq!(option("muto"), None);
     }
 
-    /// I motori spediti che si sanno interrogare dichiarano anche **come gli
-    /// si nomina un modello**: senza, il flusso che esiste per portare una
-    /// domanda a un modello forte non saprebbe chiederlo a nessuno.
+    /// The shipped engines that can be asked also say how a model is named to
+    /// them: without that, the flow that exists to take a question to a strong
+    /// model could ask it of nobody.
     #[test]
     fn the_shipped_engines_that_can_be_asked_say_how_a_model_is_named_to_them() {
         let catalog = Catalog::load(&[Source::Builtin]);
@@ -1564,11 +1556,11 @@ mod the_new_field_is_optional {
             asked += 1;
             assert!(
                 descriptor.model_option().is_some(),
-                "«{}» dichiara di saper scegliere un modello e non dice con quale opzione",
+                "«{}» says it can choose a model and not with which option",
                 descriptor.id
             );
         }
-        assert!(asked >= 4, "misurati {asked} motori, ce n'erano quattro");
+        assert!(asked >= 4, "measured {asked} engines, there were four");
     }
 
     /// A capability with several ways is written as a list; one with a single

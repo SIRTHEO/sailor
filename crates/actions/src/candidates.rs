@@ -83,10 +83,8 @@ impl ExternalEngineAction {
     /// Restituisce anche i motori che **non** si possono usare qui, col motivo:
     /// se nessuno resta, quel motivo è tutto ciò che chi legge avrà.
     pub(crate) fn candidates(&self, spec: &EngineSpec) -> Result<(Vec<Candidate>, Vec<Refused>), ActionError> {
-        // Chi si è scritto le opzioni ha già scritto lì dentro quale modello
-        // vuole: una seconda risposta alla stessa domanda vorrebbe una
-        // precedenza, ed è la stessa ragione per cui `bin` e `tool` non
-        // convivono.
+        // Whoever wrote the options wrote which model in them: a second answer
+        // to one question would want a precedence, as `bin` and `tool` would.
         if !spec.model.is_empty() && !spec.args.is_empty() {
             return Err(ActionError::new(
                 "invalid_input",
@@ -249,10 +247,9 @@ impl ExternalEngineAction {
                         });
                         continue;
                     }
-                    // Il modello chiesto per questo motore, e le opzioni con cui
-                    // il suo descrittore dice che glielo si nomina. Chi non le
-                    // dichiara non viene invocato col proprio predefinito:
-                    // risponderebbe un modello che nessuno ha scelto.
+                    // The model asked of this engine, and the options its
+                    // descriptor names one with. An engine declaring none is not
+                    // run on its own default: nobody chose that model.
                     let wanted = spec.model.get(id);
                     let option = match wanted {
                         Some(model) => match tools.model_option(id) {
@@ -959,14 +956,13 @@ mod tests {
         assert_eq!(output["stdout"], "scritte-nel-passo\n");
     }
 
-    // ── quale modello si vuole ────────────────────────────────────────
+    // ── which model is wanted ─────────────────────────────────────────
 
-    /// Due motori uguali in tutto tranne in due cose: il primo dichiara come
-    /// gli si nomina un modello e il secondo no, e ognuno **firma la propria
-    /// riga** — senza quella firma i due si echeggiano identici, e una prova
-    /// sulla catena non saprebbe dire chi ha risposto. Le opzioni della
-    /// domanda sono scelte perché ce n'è una che **deve restare attaccata** al
-    /// testo: è lì che si vede se il nome del modello è finito nel posto giusto.
+    /// Two engines alike but for two things: the first says how a model is
+    /// named to it and the second does not, and each **signs its own line** —
+    /// unsigned they echo identically and no chain test could say who
+    /// answered. One of the question's options must stay glued to the text:
+    /// that is where the model's place on the line shows.
     struct Models;
 
     impl ToolResolver for Models {
@@ -998,10 +994,9 @@ mod tests {
         }
     }
 
-    /// Il passo nomina un modello per un motore che sa riceverlo: la riga
-    /// costruita lo porta, **dopo** le opzioni della ricetta e **prima** di
-    /// quella che deve restare attaccata alla domanda. Un nome infilato dopo
-    /// `--print` verrebbe letto come la domanda.
+    /// The step names a model for an engine that can receive one: the line
+    /// carries it **after** the recipe's options and **before** the one glued
+    /// to the question, which would otherwise read the name as the question.
     #[test]
     fn a_named_model_lands_before_the_option_glued_to_the_question() {
         let action = ExternalEngineAction::resolving_with(Models);
@@ -1026,10 +1021,9 @@ mod tests {
         );
     }
 
-    /// Il motore che non sa ricevere un modello **non** viene invocato col
-    /// proprio predefinito: si mette da parte, e la catena prosegue. Il
-    /// secondo, che nessuna voce nomina, gira col suo predefinito — cioè senza
-    /// nessuna opzione di modello sulla riga.
+    /// An engine that cannot be told a model is **not** run on its own: it is
+    /// set aside and the chain goes on. The second, named by no entry, runs on
+    /// its default — that is, with no model option on the line.
     #[test]
     fn an_engine_that_cannot_be_told_a_model_is_set_aside_and_the_chain_goes_on() {
         let action = ExternalEngineAction::resolving_with(Models);
@@ -1053,10 +1047,9 @@ mod tests {
         );
     }
 
-    /// **E DA SOLO LO DICE.** Senza nessun motore dietro non c'è niente da
-    /// salvare, ma resta il motivo: chi legge sa che quel modello non gli si
-    /// può chiedere, invece di leggere una risposta venuta da un modello che
-    /// non ha scelto e che niente nomina.
+    /// **AND ALONE IT SAYS SO.** With nobody behind it there is nothing to
+    /// save, but the reason remains: the reader learns that model cannot be
+    /// asked of it, instead of reading an answer from a model nothing names.
     #[test]
     fn alone_it_says_why_instead_of_answering_from_a_model_nobody_chose() {
         let action = ExternalEngineAction::resolving_with(Models);
@@ -1076,8 +1069,8 @@ mod tests {
         assert!(error.said.contains("il-modello-forte"), "{}", error.said);
     }
 
-    /// Chi si è scritto le opzioni ha già scritto lì quale modello vuole: due
-    /// risposte alla stessa domanda non convivono, come `bin` e `tool`.
+    /// Whoever wrote the options wrote which model in them: two answers to one
+    /// question do not live together, as `bin` and `tool` do not.
     #[test]
     fn a_step_cannot_write_its_own_options_and_name_a_model() {
         let action = ExternalEngineAction::resolving_with(Models);

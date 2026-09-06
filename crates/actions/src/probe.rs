@@ -206,12 +206,12 @@ pub fn probe_dry_run(probe: &dyn DryProbe, bin: &str, recipe: &AskRecipe) -> Pro
     probe_dry_run_with(probe, bin, recipe, &command_line(recipe))
 }
 
-/// La stessa prova, su una riga già montata da chi chiama.
+/// The same trial, on a line the caller already assembled.
 ///
-/// **PERCHÉ LA RIGA ARRIVA DA FUORI.** Da quando un passo può nominare il
-/// modello che vuole, la riga non viene più dal solo descrittore: montarla di
-/// nuovo qui darebbe una riga senza il modello, e il controllo dichiarerebbe
-/// sana una riga che la corsa non userà. Sono le due porte del guasto 1.
+/// **WHY THE LINE COMES FROM OUTSIDE.** Since a step may name the model it
+/// wants, the line no longer comes from the descriptor alone: assembling it
+/// again here would try one without the model and call sound a line the run
+/// will not use. Those are the two doors of fault 1.
 pub fn probe_dry_run_with(
     probe: &dyn DryProbe,
     bin: &str,
