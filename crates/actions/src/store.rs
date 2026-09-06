@@ -54,7 +54,12 @@ fn deposit<'a>(ledger: &'a Option<Ledger>, without: &str) -> Result<&'a Ledger, 
 #[derive(Debug, Deserialize)]
 struct WriteSpec {
     collection: String,
-    key: String,
+    /// Where the entry goes. **Absent means "this run"**: the key becomes the
+    /// run's own id, which the flow cannot name — it reaches no step's input
+    /// and is born after the file. A fixed key written here would overwrite
+    /// the previous run's entry on every turn.
+    #[serde(default)]
+    key: Option<String>,
     value: Value,
     /// Chi lo sta scrivendo. Il flusso lo dichiara perché chi rilegge la voce
     /// sappia da dove viene: una voce senza autore si può leggere, ma non si
@@ -70,6 +75,26 @@ struct WriteSpec {
 struct ReadSpec {
     collection: String,
     key: String,
+}
+
+/// The run's id, for an entry that declares no key of its own.
+///
+/// Read from shared state and not from the step's input: offering it to every
+/// step is the shape that already killed a shipped flow on `unknown field`,
+/// because a closed action spec refuses what the executor adds. Whoever needs
+/// it reads it here, as the node that hands work to a person already does.
+fn key_of_this_run(shared: &SharedState) -> Result<String, ActionError> {
+    shared
+        .get(flow::CURRENT_RUN)
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            ActionError::new(
+                "no_run",
+                "the entry names no key and there is no run to name it after: writing it \
+                 under a made-up key would overwrite somebody else's",
+            )
+        })
 }
 
 fn now() -> i64 {
@@ -97,7 +122,7 @@ impl StoreWriteAction {
 }
 
 impl Action for StoreWriteAction {
-    fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
+    fn execute(&self, input: &Value, shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         // L'ingresso arriva già coi rinvii risolti: li scioglie `step_input`,
         // dove l'ingresso si compone, per ogni azione e una volta sola. È così
         // che ciò che un passo ha prodotto arriva al deposito senza uscire dal
@@ -105,10 +130,14 @@ impl Action for StoreWriteAction {
         // nel flusso, cioè non potrebbe fare il testimone fra due passi.
         let spec: WriteSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
+        let key = match spec.key {
+            Some(key) => key,
+            None => key_of_this_run(shared)?,
+        };
         let ledger = deposit(&self.ledger, "there is nowhere to put this entry")?;
         let record = StoreRecord {
             collection: spec.collection,
-            key: spec.key,
+            key,
             value: spec.value,
             written_by: spec.written_by,
             written_at: spec.written_at.unwrap_or_else(now),
@@ -450,6 +479,62 @@ mod tests {
             )
             .expect_err("una collezione vuota non si scrive");
         assert_eq!(error.class, "store_refused");
+    }
+
+    /// **TWO RUNS, TWO ENTRIES.** A flow keeping what it paid for cannot name
+    /// its own run, and a fixed key written in the file would overwrite the
+    /// entry before it. Two runs and not one: with one, a constant key would
+    /// pass this.
+    #[test]
+    fn an_entry_with_no_key_of_its_own_is_kept_under_the_run() {
+        let (ledger, _guard) = store();
+        let write = StoreWriteAction::new(Some(ledger.clone()));
+        let list = StoreListAction::new(Some(ledger));
+        for run in ["corsa-prima", "corsa-seconda"] {
+            let mut shared = SharedState::new();
+            shared.insert(flow::CURRENT_RUN.to_owned(), json!(run));
+            let ActionOutcome::Went(written) = write
+                .execute(
+                    &json!({
+                        "collection": "consultations",
+                        "value": {"diagnosis": run},
+                        "written_by": "prova",
+                        "written_at": 1_756_400_000i64,
+                    }),
+                    &shared,
+                )
+                .expect("scrittura")
+            else {
+                panic!("nessuna attesa");
+            };
+            assert_eq!(written["key"], json!(run));
+        }
+
+        let ActionOutcome::Went(all) = list
+            .execute(&json!({"collection": "consultations"}), &SharedState::new())
+            .expect("elenco")
+        else {
+            panic!("nessuna attesa");
+        };
+        assert_eq!(
+            all["count"],
+            json!(2),
+            "the second run wrote over the first"
+        );
+    }
+
+    /// With no run and no key the node refuses: making one up here would be
+    /// choosing which entry of the store to overwrite.
+    #[test]
+    fn an_entry_with_no_key_and_no_run_is_refused() {
+        let (ledger, _guard) = store();
+        let error = StoreWriteAction::new(Some(ledger))
+            .execute(
+                &json!({"collection": "consultations", "value": 1, "written_by": "prova"}),
+                &SharedState::new(),
+            )
+            .expect_err("with no run there is no key to invent");
+        assert_eq!(error.class, "no_run");
     }
 
     /// Without a store the three nodes refuse, and say what they cannot do.

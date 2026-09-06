@@ -1,6 +1,6 @@
 {
   "id": "consult-a-strong-model",
-  "description": "PORTARE UNA DOMANDA DIFFICILE A UN MODELLO FORTE, CON IL MATERIALE GIÀ IN MANO. Nasce da una misura, non da un'opinione: lo stesso motore, sulla stessa domanda, è costato 154.271 gettoni e non ha consegnato niente quando il mandato gli diceva «leggi prima l'albero», e 14.401 gettoni con le proposte quando il materiale gliel'hanno dato. È il guasto 98. COSA GUARDARE QUI DENTRO. (1) IL MATERIALE ENTRA DALL'INNESCO, e un innesco senza materiale non arriva al motore: il passo «brief» è un controllo deterministico che rifiuta una consulenza vuota prima di spendere. La regola non sta in un commento, sta in un passo. (2) IL PASSO CHIEDE UNA FORMA E NON UN TEMA: «answer_shape» dichiara le sezioni, finisce nel prompt scritto una volta sola con un rinvio, e viene fatta rispettare sulla risposta. Un preambolo non attraversa la catena e non si paga a valle. (3) UN SOLO MOTORE, E NESSUN GIUDICE. Aggiungere un passo che approva sarebbe una chiamata in più per risparmiarne una, che è la famiglia scartata in docs/decisioni.md: un flusso a quattro passi costa 2,07 volte i turni di una sessione sola. (4) IL MURO STA NEL FILE, non nella buona volontà di chi lancia: «wall_secs» chiude la corsa dopo il passo in volo, e «spend_cap_micros» la ferma prima di spendere oltre. Una consulenza che non finisce è la seconda faccia del guasto 98. (5) LA RISPOSTA SI TIENE NEL DEPOSITO, sotto «consultations» e con l'identificativo della corsa come chiave: «sailor search» la ritrova per parole. Una consulenza pagata e non ritrovata si ripaga. La chiave è dichiarata «any» e non «string» perché arriva da un rinvio: il grafo confronta ciò che sta scritto nel file, e un rinvio scritto è un oggetto, non il testo che diventerà durante la corsa. Dichiararla «string» rendeva l'intero flusso non caricabile — nessuno degli altri flussi spediti dichiara il tipo di un campo che riceve da un rinvio. (6) NESSUN PASSO NOMINA UN BINARIO: «tool» sono identificativi di descrittori, e su una macchina dove nessuno di quelli è installato il flusso si ferma dicendo quale manca, invece di ripiegare su un modello che non è stato scelto. (7) IL MODELLO FORTE È NOMINATO, e non è il predefinito di chi risponde per primo: «model» è una mappa da identificativo di motore a nome di modello, perché un nome di modello lo conia il fornitore e per gli altri non vuol dire niente. Come glielo si comunichi lo dice il descrittore del motore, con «capabilities.choose_model»: chi non lo dichiara viene rifiutato col motivo invece di essere invocato in silenzio col proprio predefinito, e la catena prosegue con gli altri. Un motore che nessuna voce nomina gira col proprio predefinito, ed è un ripiego dichiarato, non un silenzio.",
+  "description": "PORTARE UNA DOMANDA DIFFICILE A UN MODELLO FORTE, CON IL MATERIALE GIÀ IN MANO. Nasce da una misura, non da un'opinione: lo stesso motore, sulla stessa domanda, è costato 154.271 gettoni e non ha consegnato niente quando il mandato gli diceva «leggi prima l'albero», e 14.401 gettoni con le proposte quando il materiale gliel'hanno dato. È il guasto 98. COSA GUARDARE QUI DENTRO. (1) IL MATERIALE ENTRA DALL'INNESCO, e un innesco senza materiale non arriva al motore: il passo «brief» è un controllo deterministico che rifiuta una consulenza vuota prima di spendere. La regola non sta in un commento, sta in un passo. Il passo che consulta dipende da tutti e due — dall'innesco per il materiale, dal controllo perché non si spenda prima che abbia detto sì — e con due dipendenze l'ingresso è indicizzato per nome di passo: il materiale si prende da «/trigger/text», non da «/text», che il controllo non produce. (2) IL PASSO CHIEDE UNA FORMA E NON UN TEMA: «answer_shape» dichiara le sezioni, finisce nel prompt scritto una volta sola con un rinvio, e viene fatta rispettare sulla risposta. Un preambolo non attraversa la catena e non si paga a valle. (3) UN SOLO MOTORE, E NESSUN GIUDICE. Aggiungere un passo che approva sarebbe una chiamata in più per risparmiarne una, che è la famiglia scartata in docs/decisioni.md: un flusso a quattro passi costa 2,07 volte i turni di una sessione sola. (4) IL MURO STA NEL FILE, non nella buona volontà di chi lancia: «wall_secs» chiude la corsa dopo il passo in volo, e «spend_cap_micros» la ferma prima di spendere oltre. Una consulenza che non finisce è la seconda faccia del guasto 98. (5) LA RISPOSTA SI TIENE NEL DEPOSITO, sotto «consultations» e con l'identificativo della corsa come chiave: «sailor search» la ritrova per parole. Una consulenza pagata e non ritrovata si ripaga. La chiave non sta scritta qui, e non è una dimenticanza: la corsa nasce dopo il file e non passa dall'ingresso di nessun passo, quindi il flusso non ha modo di nominarla e il nodo che scrive la legge dove la corsa già sta. Una chiave fissa scritta qui riscriverebbe a ogni giro la consulenza del giro prima, che è buttare via lavoro pagato. E ciò che si tiene è «/answer», la risposta sagomata: lo stato del motore non è la consulenza. (6) NESSUN PASSO NOMINA UN BINARIO: «tool» sono identificativi di descrittori, e su una macchina dove nessuno di quelli è installato il flusso si ferma dicendo quale manca, invece di ripiegare su un modello che non è stato scelto. (7) IL MODELLO FORTE È NOMINATO, e non è il predefinito di chi risponde per primo: «model» è una mappa da identificativo di motore a nome di modello, perché un nome di modello lo conia il fornitore e per gli altri non vuol dire niente. Come glielo si comunichi lo dice il descrittore del motore, con «capabilities.choose_model»: chi non lo dichiara viene rifiutato col motivo invece di essere invocato in silenzio col proprio predefinito, e la catena prosegue con gli altri. Un motore che nessuna voce nomina gira col proprio predefinito, ed è un ripiego dichiarato, non un silenzio.",
   "graph": {
     "steps": [
       {
@@ -91,12 +91,25 @@
         "output_schema": {
           "type": "object",
           "properties": {
-            "bytes": {
-              "type": "number"
+            "status": {
+              "type": "string"
+            },
+            "answer": {
+              "type": "object",
+              "properties": {
+                "bytes": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "bytes"
+              ],
+              "allow_extra": false
             }
           },
           "required": [
-            "bytes"
+            "status",
+            "answer"
           ],
           "allow_extra": true
         }
@@ -104,6 +117,7 @@
       {
         "id": "consult",
         "deps": [
+          "trigger",
           "brief"
         ],
         "action": "external_engine",
@@ -151,7 +165,7 @@
               },
               "\n\nTHE BRIEF\n\n",
               {
-                "$from": "/text"
+                "$from": "/trigger/text"
               }
             ]
           },
@@ -179,24 +193,37 @@
         "output_schema": {
           "type": "object",
           "properties": {
-            "diagnosis": {
+            "status": {
               "type": "string"
             },
-            "moves": {
-              "type": "any"
-            },
-            "not_covered": {
-              "type": "string"
-            },
-            "would_change_my_mind": {
-              "type": "string"
+            "answer": {
+              "type": "object",
+              "properties": {
+                "diagnosis": {
+                  "type": "string"
+                },
+                "moves": {
+                  "type": "any"
+                },
+                "not_covered": {
+                  "type": "string"
+                },
+                "would_change_my_mind": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "diagnosis",
+                "moves",
+                "not_covered",
+                "would_change_my_mind"
+              ],
+              "allow_extra": false
             }
           },
           "required": [
-            "diagnosis",
-            "moves",
-            "not_covered",
-            "would_change_my_mind"
+            "status",
+            "answer"
           ],
           "allow_extra": true
         }
@@ -211,12 +238,10 @@
         "when": null,
         "with": {
           "collection": "consultations",
-          "key": {
-            "$from": "/run_id"
-          },
           "value": {
-            "$json": "/consult"
-          }
+            "$from": "/answer"
+          },
+          "written_by": "consult-a-strong-model"
         },
         "input_schema": {
           "type": "object",
@@ -224,17 +249,17 @@
             "collection": {
               "type": "string"
             },
-            "key": {
-              "type": "any"
-            },
             "value": {
               "type": "any"
+            },
+            "written_by": {
+              "type": "string"
             }
           },
           "required": [
             "collection",
-            "key",
-            "value"
+            "value",
+            "written_by"
           ],
           "allow_extra": true
         },
