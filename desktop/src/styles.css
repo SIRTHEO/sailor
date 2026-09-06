@@ -29,7 +29,8 @@
    6. No text/background pair below 4.5:1. Measured, not eyeballed.
    7. TWO text levels, not three. Emphasis is weight, caps and tracking. */
 
-/*  8. No size outside the scale, no space outside the 4px grid.
+/*  8. No size outside the scale, no space outside the 4px grid, AND NOTHING
+       UNDER 12px: below the floor a label is recognised, not read.
     9. No gradients, frosted glass or blurs, and no pill-shaped button: the
        pill belongs to status badges and to nothing else.
    10. Numbers compared across rows live in `--font-data`, tabular figures:
@@ -39,8 +40,11 @@
        pixels with `flex-shrink: 0` keeps it whatever the window does, and two
        of them beside an elastic canvas divide the window before the canvas
        gets a say: at 375px the rail and the inspector came to 520 and the
-       canvas — the surface this window exists for — was zero pixels wide.
-   12. The ground is never pure black: night here starts at #08090a. */
+       canvas — the surface this window exists for — was zero pixels wide. */
+
+/* 12. The ground is never pure black, and never neutral: the greys carry a
+       plum undertone so that the ANSI green and red the terminal prints read
+       as the only pure hues on the screen. */
 
 /* HOW THESE PROHIBITIONS TURN RED. `stylesheet.test.ts` reads this sheet and
    rejects a font, a radius, a shadow or a colour that skips a role;
@@ -50,48 +54,61 @@
    with a screen full of unreadable text. */
 
 :root {
-  /* --- SURFACES. Four grounds, each a step out of the night. --- */
-  --bg: #08090a;      /* the canvas and the column: the ground under everything */
-  --paper: #0f1011;   /* nodes, panels, cards: what sits above the ground */
-  --raised: #18191a;  /* text fields, and what opens above a panel */
-  --rail: #08090a;    /* an older name for --bg */
-  --line: #23252a;    /* a 1px thread, never a carrier of state on its own */
+  /* --- THREE GROUNDS, named for their distance from the floor. --- */
+  --surface-0: #19171d;  /* the terminal and the canvas: the floor */
+  --surface-1: #211e26;  /* the rail and the chrome around the work */
+  --surface-2: #2b2731;  /* hover, menus, nodes: what lifts off the chrome */
+  --border: #423a4b;     /* a 1px thread, never a carrier of state on its own */
+
+  /* --- THREE TEXT LEVELS. Lowest pair on any ground, 5.5:1. --- */
+  --text-1: #f1edf3;
+  --text-2: #c4bdcc;
+  --text-3: #a49bab;
+
+  /* --- SELECTION AND FOCUS, AND NOTHING ELSE. Violet because the terminal
+         under it prints ANSI green and red all day. --- */
+  --accent: #ac9af2;
+  --on-accent: #19171d;
+
+  /* --- MACHINE STATE, on an icon and the word, never on a whole row. --- */
+  --running: #87b5ed;
+  --needs-human: #e8c079;
+  --finished: #86c5ae;
+  --failed: #f08f9b;
+  --spend-warning: #eba374;
+
+  /* --- THE OLDER ROLE NAMES, each pointing at the token that owns it. --- */
+  --bg: var(--surface-0);
+  --paper: var(--surface-1);
+  --raised: var(--surface-2);
+  --rail: var(--surface-1);
+  --line: var(--border);
   /* The veil under a lane: the panel is visible, and it moves no contrast
      pair. */
-  --band-fill: rgb(247 248 248 / 3.5%);
+  --band-fill: rgb(241 237 243 / 3.5%);
 
-  /* --- TEXT. Two levels, both legible everywhere. Measured:
-         ink   on --paper 18.4:1 · on --bg 19.3:1
-         muted on --paper  5.9:1 · on --bg  6.1:1 · on --raised 5.5:1 --- */
-  --ink: #f7f8f8;
-  --muted: #8a8f98;
-  --faint: #8a8f98;   /* DELIBERATELY the same as --muted: see prohibition 7 */
+  --ink: var(--text-1);
+  --muted: var(--text-2);
+  --faint: var(--text-2);  /* DELIBERATELY the same as --muted: prohibition 7 */
 
-  /* --- STEP STATE. Six endings, not interchangeable. All measured on
-         --paper (#0f1011), all above 4.5:1:
-         waiting 5.9 · running 7.6 · went 7.7 · broke 5.5 ·
-         capped 12.1 · human 7.1 --- */
-  --state-waiting: #8a8f98;
-  --state-running: #4ea7fc;
-  --state-went: #4cb782;
-  --state-broke: #eb5757;
-  --state-capped: #f2c94c;
-  --state-human: #a78bfa;
+  /* Not a colour, just quiet text: `--text-3` measures 4.33:1 on a lane's
+     veil in the day, and a state that does not read is not a state. */
+  --state-waiting: var(--text-2);
+  --state-running: var(--running);
+  --state-went: var(--finished);
+  --state-broke: var(--failed);
+  --state-capped: var(--spend-warning);
+  --state-human: var(--needs-human);
 
-  /* --- SEVERITY. The board's three, plus their faint backgrounds. --- */
-  --ok: #4cb782;
-  --ok-soft: #10261c;
-  --warn: #f2c94c;
-  --warn-soft: #2a2312;
-  --danger: #eb5757;
-  --danger-soft: #2a1618;
+  --ok: var(--finished);
+  --ok-soft: #1b2c26;
+  --warn: var(--needs-human);
+  --warn-soft: #2e2718;
+  --danger: var(--failed);
+  --danger-soft: #2f1d22;
 
-  /* --- THE ACCENT. One hue, two jobs: `--focus` says "here" and is read as
-         text (6,7:1 on --paper); `--accent-fill` carries the one action a
-         screen is for, with `--on-accent` on top (4,7:1). --- */
-  --focus: #828fff;
-  --accent-fill: #5e6ad2;
-  --on-accent: #ffffff;
+  --focus: var(--accent);
+  --accent-fill: var(--accent);
 
   /* --- FAMILIES. Three roles on two faces: display and prose share one on
          purpose, since emphasis here is weight, caps and tracking.
@@ -102,13 +119,13 @@
   --font-prose: "Inter Variable", Inter, "Helvetica Neue", sans-serif;
   --font-data: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
 
-  /* --- SIZES. Six, from 10 to 22. Nothing outside the scale. --- */
-  --text-micro: 10px;  /* solo targa, maiuscolo, +0.09em */
+  /* --- SIZES. FOUR, AND THE SMALLEST IS 12. --- */
   --text-small: 12px;
   --text-body: 13px;
-  --text-mid: 15px;
+  --text-mid: 14px;
   --text-large: 18px;
-  --text-display: 22px;
+  --text-micro: var(--text-small);
+  --text-display: var(--text-large);
 
   /* --- SPACE. A 4px grid, seven steps. Nothing outside it. --- */
   --space-1: 4px;
@@ -120,8 +137,10 @@
   --space-7: 48px;
 
   /* --- SHAPES. Two radii and one pill. `--radius-lg` is declared once, in
-         the `@theme` block at the foot — also Tailwind's name for it. --- */
-  --radius: 4px;
+         the `@theme` block at the foot — also Tailwind's name for it. A
+         control is 6, a menu is 8, and the terminal is square by declaring no
+         radius at all rather than by a fourth role. --- */
+  --radius: 6px;
   --radius-pill: 999px;
 
   /* --- THE ONLY SHADOW, and only for what floats above the canvas. --- */
@@ -143,19 +162,18 @@
   /* Figures line up in a column everywhere: comparing them is the job. */
   font-variant-numeric: tabular-nums;
 
-  /* The plate under a console or a code block: a step further into the night,
-     not a tint. --on-ink 19,9:1 on it, --on-ink-muted 6,3:1. */
-  --ink-surface: #060708;
-  --on-ink: #f7f8f8;
-  --on-ink-muted: #8a8f98;
+  /* `--surface-0` itself and not a step further, or the window has two
+     blacks and the eye reads a seam between them. */
+  --ink-surface: var(--surface-0);
+  --on-ink: var(--text-1);
+  --on-ink-muted: var(--text-2);
 
-  /* A skippable dependency is neither a gravity nor a state.
-     4.1:1 on --bg (WCAG 1.4.11 asks 3). */
-  --optional: #6b7280;
+  /* A skippable dependency is neither a gravity nor a state. */
+  --optional: var(--text-3);
   /* Graph paper at two pitches, both under 1.5:1 on --bg: a grid that reads
      competes with the nodes, and the nodes are the figure. */
-  --grid-fine: #0d0e10;
-  --grid-coarse: #131417;
+  --grid-fine: #1d1b22;
+  --grid-coarse: #232029;
 
   /* One tint per flow lane, generated rather than picked: hues evenly spaced,
      lightness solved so each clears 3:1 on both grounds, closest pair 0.070
@@ -173,24 +191,25 @@
   /* --- THE ROLES A shadcn COMPONENT ASKS FOR. Not a second palette: each is
          an alias of a role above, so the dark scheme reaches the components
          without redefining a thing. --- */
-  --background: var(--bg);
-  --foreground: var(--ink);
-  --card: var(--paper);
-  --card-foreground: var(--ink);
-  --popover: var(--raised);
-  --popover-foreground: var(--ink);
-  --primary: var(--accent-fill);
+  --background: var(--surface-0);
+  --foreground: var(--text-1);
+  --card: var(--surface-1);
+  --card-foreground: var(--text-1);
+  --popover: var(--surface-2);
+  --popover-foreground: var(--text-1);
+  --primary: var(--accent);
   --primary-foreground: var(--on-accent);
-  --secondary: var(--paper);
-  --secondary-foreground: var(--ink);
-  --ui-muted: var(--paper);
-  --muted-foreground: var(--muted);
-  --accent: var(--paper);
-  --accent-foreground: var(--ink);
-  --destructive: var(--danger);
-  --border: var(--line);
-  --input: var(--line);
-  --ring: var(--focus);
+  --secondary: var(--surface-2);
+  --secondary-foreground: var(--text-1);
+  --ui-muted: var(--surface-1);
+  --muted-foreground: var(--text-2);
+  /* shadcn calls its HOVER GROUND `accent`, which here is the violet: renamed
+     as `--ui-muted` already was, or menu rows light up on hover. */
+  --ui-accent: var(--surface-2);
+  --accent-foreground: var(--text-1);
+  --destructive: var(--failed);
+  --input: var(--border);
+  --ring: var(--accent);
   --chart-1: var(--lane-1);
   --chart-2: var(--lane-2);
   --chart-3: var(--lane-3);
@@ -200,10 +219,10 @@
   --sidebar-foreground: var(--ink);
   --sidebar-primary: var(--accent-fill);
   --sidebar-primary-foreground: var(--on-accent);
-  --sidebar-accent: var(--paper);
-  --sidebar-accent-foreground: var(--ink);
-  --sidebar-border: var(--line);
-  --sidebar-ring: var(--focus);
+  --sidebar-accent: var(--surface-2);
+  --sidebar-accent-foreground: var(--text-1);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--accent);
 
 }
 
@@ -214,45 +233,34 @@
    values in place. Day, for whoever works by a window. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
-    --bg: #f7f8f8;
-    --paper: #ffffff;
-    --raised: #ffffff;
-    --rail: #f7f8f8;
-    --line: #e4e5e7;
-    --band-fill: rgb(8 9 10 / 3.5%);
+    --surface-0: #f7f4f8;
+    --surface-1: #eeebf1;
+    --surface-2: #ffffff;
+    --border: #d5cdd9;
+    --band-fill: rgb(41 35 47 / 3.5%);
 
-    --ink: #08090a;
-    --muted: #626169;
-    --faint: #626169;
+    --text-1: #29232f;
+    --text-2: #514958;
+    --text-3: #706676;
 
-    --state-waiting: #626169;
-    --state-running: #1a5f96;
-    --state-went: #146447;
-    --state-broke: #a13930;
-    --state-capped: #92531b;
-    --state-human: #6b46a8;
-
-    --ok: #146447;
-    --ok-soft: #dcebe3;
-    --warn: #92531b;
-    --warn-soft: #f7e8ce;
-    --danger: #a13930;
-    --danger-soft: #f6dedb;
-
-    --focus: #4f5bc4;
-    --accent-fill: #5e6ad2;
+    --accent: #6750a4;
     --on-accent: #ffffff;
 
-    --shadow: 0 8px 24px rgb(8 9 10 / 10%);
-    --scrim: rgb(8 9 10 / 40%);
+    --running: #245c96;
+    --needs-human: #805b15;
+    --finished: #236b53;
+    --failed: #b02b45;
+    --spend-warning: #9d461c;
 
-    --ink-surface: #08090a;
-    --on-ink: #f7f8f8;
-    --on-ink-muted: #a1a1aa;
+    --ok-soft: #dceae4;
+    --warn-soft: #f4e7d0;
+    --danger-soft: #f7dfe3;
 
-    --optional: #7c8a9f;
-    --grid-fine: #eceded;
-    --grid-coarse: #e2e3e5;
+    --shadow: 0 8px 24px rgb(41 35 47 / 10%);
+    --scrim: rgb(41 35 47 / 40%);
+
+    --grid-fine: #efebf1;
+    --grid-coarse: #e6e1e9;
 
     --lane-1: #d26b71;
     --lane-2: #c87436;
@@ -274,45 +282,34 @@
    compares the two declaration by declaration. Night needs no twin — it is the
    ground, and the `:not()` above is what steps aside for it. */
 :root[data-theme="light"] {
-  --bg: #f7f8f8;
-  --paper: #ffffff;
-  --raised: #ffffff;
-  --rail: #f7f8f8;
-  --line: #e4e5e7;
-  --band-fill: rgb(8 9 10 / 3.5%);
+  --surface-0: #f7f4f8;
+  --surface-1: #eeebf1;
+  --surface-2: #ffffff;
+  --border: #d5cdd9;
+  --band-fill: rgb(41 35 47 / 3.5%);
 
-  --ink: #08090a;
-  --muted: #626169;
-  --faint: #626169;
+  --text-1: #29232f;
+  --text-2: #514958;
+  --text-3: #706676;
 
-  --state-waiting: #626169;
-  --state-running: #1a5f96;
-  --state-went: #146447;
-  --state-broke: #a13930;
-  --state-capped: #92531b;
-  --state-human: #6b46a8;
-
-  --ok: #146447;
-  --ok-soft: #dcebe3;
-  --warn: #92531b;
-  --warn-soft: #f7e8ce;
-  --danger: #a13930;
-  --danger-soft: #f6dedb;
-
-  --focus: #4f5bc4;
-  --accent-fill: #5e6ad2;
+  --accent: #6750a4;
   --on-accent: #ffffff;
 
-  --shadow: 0 8px 24px rgb(8 9 10 / 10%);
-  --scrim: rgb(8 9 10 / 40%);
+  --running: #245c96;
+  --needs-human: #805b15;
+  --finished: #236b53;
+  --failed: #b02b45;
+  --spend-warning: #9d461c;
 
-  --ink-surface: #08090a;
-  --on-ink: #f7f8f8;
-  --on-ink-muted: #a1a1aa;
+  --ok-soft: #dceae4;
+  --warn-soft: #f4e7d0;
+  --danger-soft: #f7dfe3;
 
-  --optional: #7c8a9f;
-  --grid-fine: #eceded;
-  --grid-coarse: #e2e3e5;
+  --shadow: 0 8px 24px rgb(41 35 47 / 10%);
+  --scrim: rgb(41 35 47 / 40%);
+
+  --grid-fine: #efebf1;
+  --grid-coarse: #e6e1e9;
 
   --lane-1: #d26b71;
   --lane-2: #c87436;
@@ -2301,7 +2298,7 @@ tr[data-followable]:hover {
 
 .panel__flow {
   font-size: var(--text-small);
-  font-weight: 700;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -3098,7 +3095,7 @@ tr[data-followable]:hover {
   font-family: var(--font-data);
   font-size: var(--text-mid);
   line-height: 1.2;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--ink);
 }
 
@@ -3177,7 +3174,7 @@ tr[data-followable]:hover {
   border-radius: var(--radius);
   background: var(--mark-tint, var(--muted));
   color: var(--paper);
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.02em;
   line-height: 1;
   /* A tool's initials are a plate, not a sentence, so they use the display
@@ -3234,7 +3231,7 @@ tr[data-followable]:hover {
 .panel__subtitle {
   margin-top: 14px;
   font-size: var(--text-small);
-  font-weight: 700;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
@@ -4769,6 +4766,8 @@ tr[data-followable]:hover {
   color: var(--on-ink-muted);
 }
 
+/* SQUARE, AND THE ONE BOX IN THIS SHEET THAT IS: a radius with `overflow:
+   hidden` clips the emulator's corner cells. */
 .pane {
   position: relative;
   display: flex;
@@ -4776,7 +4775,6 @@ tr[data-followable]:hover {
   flex-grow: 1;
   min-height: 0;
   border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
   background: var(--paper);
   overflow: hidden;
 }
@@ -6531,7 +6529,7 @@ tr[data-followable]:hover {
   --color-border: var(--border);
   --color-destructive: var(--destructive);
   --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
+  --color-accent: var(--ui-accent);
   --color-muted-foreground: var(--muted-foreground);
   --color-muted: var(--ui-muted);
   --color-secondary-foreground: var(--secondary-foreground);

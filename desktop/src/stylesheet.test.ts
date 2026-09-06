@@ -63,6 +63,114 @@ describe("prohibition 8 — the sizes stay in the scale", () => {
     );
     expect(wrong).toEqual([]);
   });
+
+  /** The roles of `:root`, so a `var()` can be followed to a number. */
+  function rootRoles(): Map<string, string> {
+    const root = sheet.rules.find((rule) => rule.selector === ":root");
+    expect(root, "no `:root`: every check below would follow nothing").toBeDefined();
+    return new Map((root as { declarations: Array<[string, string]> }).declarations);
+  }
+
+  /** Under 12px a label is recognised by its shape and never read. Followed
+   *  through `var()`, so renaming a role below the floor is still red. */
+  const FLOOR = 12;
+
+  test("THE SCALE ITSELF HAS NOTHING UNDER THE FLOOR", () => {
+    const roles = rootRoles();
+    const scale = [...roles].filter(([name]) => /^--text-/.test(name));
+    expect(scale.length, "no size roles at all: this test would guard nothing").toBeGreaterThan(3);
+    const under = scale
+      .map(([name, value]) => [name, Number.parseFloat(resolveVars(value, roles))] as const)
+      .filter(([, pixels]) => Number.isFinite(pixels) && pixels < FLOOR);
+    expect(under, `a size role under ${FLOOR}px`).toEqual([]);
+  });
+
+  test("AND NO RULE IN THE SHEET DECLARES A SIZE UNDER THE FLOOR", () => {
+    const roles = rootRoles();
+    const declared = declarationsOf("font-size");
+    expect(declared.length, "no rule sets a size: this test would guard nothing").toBeGreaterThan(50);
+    const under = declared
+      .map(({ selector, value }) => ({
+        selector,
+        pixels: Number.parseFloat(resolveVars(value, roles)),
+      }))
+      .filter(({ pixels }) => Number.isFinite(pixels) && pixels < FLOOR);
+    expect(under, `a rule painting text under ${FLOOR}px`).toEqual([]);
+  });
+
+  /** The three weights, and nothing between or beyond them. */
+  test("three weights, and only those", () => {
+    const allowed = new Set(["400", "500", "600", "normal", "inherit"]);
+    const wrong = declarationsOf("font-weight").filter(({ value }) => !allowed.has(value));
+    expect(wrong, "a weight outside 400 / 500 / 600").toEqual([]);
+  });
+});
+
+/** A token defined only inside `@media (prefers-color-scheme: …)` is unset for
+ *  whoever asked for neither, and an unset property paints nothing — invisible
+ *  in `jsdom`, which skips at-rule bodies. */
+describe("the token system", () => {
+  /** The thirteen the whole sheet is built out of. */
+  const TOKENS = [
+    "--surface-0",
+    "--surface-1",
+    "--surface-2",
+    "--border",
+    "--text-1",
+    "--text-2",
+    "--text-3",
+    "--accent",
+    "--running",
+    "--needs-human",
+    "--finished",
+    "--failed",
+    "--spend-warning",
+  ];
+
+  test("EVERY TOKEN IS A COLOUR ON BARE `:root`, not only under a media query", () => {
+    const root = sheet.rules.find((rule) => rule.selector === ":root");
+    const declared = new Map((root as { declarations: Array<[string, string]> }).declarations);
+    const missing = TOKENS.filter((name) => parseColor(declared.get(name) ?? "") === null);
+    expect(missing, "a token that bare `:root` does not define as a colour").toEqual([]);
+  });
+
+  test("and the other scheme gives every one of them a colour of its own", () => {
+    const other = new Map(sheet.otherRoot ?? []);
+    expect(other.size, "there is no other scheme any more").toBeGreaterThan(0);
+    const missing = TOKENS.filter((name) => parseColor(other.get(name) ?? "") === null);
+    expect(missing, "a token the other scheme leaves at the first scheme's value").toEqual([]);
+  });
+
+  /** Under this window sits a terminal where green already means «it worked»:
+   *  a green running step tells the eye the opposite of the truth. */
+  test("RUNNING IS BLUE AND FINISHED IS GREEN, under both schemes", () => {
+    function hue(text: string): number {
+      const color = parseColor(text);
+      expect(color, `${text} is not a colour`).not.toBeNull();
+      const { r, g, b } = color as { r: number; g: number; b: number };
+      const [max, min] = [Math.max(r, g, b), Math.min(r, g, b)];
+      if (max === min) return -1;
+      const span = max - min;
+      const raw =
+        max === r ? (g - b) / span : max === g ? 2 + (b - r) / span : 4 + (r - g) / span;
+      return ((raw * 60) % 360 + 360) % 360;
+    }
+
+    const root = new Map(
+      (sheet.rules.find((rule) => rule.selector === ":root") as {
+        declarations: Array<[string, string]>;
+      }).declarations,
+    );
+    const other = new Map(sheet.otherRoot ?? []);
+    for (const [scheme, roles] of [["night", root], ["day", other]] as const) {
+      const running = hue(roles.get("--running") ?? "");
+      const finished = hue(roles.get("--finished") ?? "");
+      expect(running, `${scheme}: running is not blue`).toBeGreaterThan(180);
+      expect(running, `${scheme}: running is not blue`).toBeLessThan(260);
+      expect(finished, `${scheme}: finished is not green`).toBeGreaterThan(90);
+      expect(finished, `${scheme}: finished is not green`).toBeLessThan(180);
+    }
+  });
 });
 
 describe("every colour goes through a role", () => {
