@@ -4,6 +4,7 @@
  * and what belongs to THIS MACHINE is the same wherever you stand. Folded into
  * one noun called «Sailor», those seven cost two clicks and were named nowhere.
  */
+import { t } from "./i18n";
 import type { MemoryTab } from "./memorytabs";
 import type { SailorTab } from "./sailortabs";
 import { SAILOR_TABS } from "./sailortabs";
@@ -36,7 +37,6 @@ export const PLACES: Place[] = [
     asks: "draw the flow you want, in blocks and words",
     group: "work",
   },
-  { id: "terminals", name: "Terminals", glyph: "▮", asks: "what is running", group: "work" },
   {
     id: "memory",
     name: "Runs",
@@ -67,7 +67,15 @@ export const SECTIONS: Section[] = [
    itself and not on a column that asks again. */
 
 /** What the column writes over that ground, and what the bar says you are in. */
-export const MACHINE_GROUND = "this mac";
+export const MACHINE_GROUND = t("window.ground.machine");
+
+/**
+ * **THE WINDOW IS THE ARRANGEMENT OF THE TERMINALS.** Not a destination among
+ * seven, where reaching the centre of the work was a choice to make again at
+ * every rebuild: it is what holds the stage until a section is asked for, and
+ * this is the name the bar and the palette give that ground.
+ */
+export const TERMINALS_GROUND = t("window.ground.terminals");
 
 /** A place of that ground, and the tab inside it when the place has tabs. */
 export interface MachineRow {
