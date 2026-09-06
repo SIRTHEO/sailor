@@ -45,7 +45,13 @@
           "properties": {
             "open": { "type": "boolean" },
             "register": { "type": "string" },
-            "remaining": { "type": "number" }
+            "remaining": { "type": "number" },
+            "number": { "type": "number" },
+            "happened_on": { "type": "string" },
+            "what_happened": { "type": "string" },
+            "how_it_showed": { "type": "string" },
+            "what_would_prevent": { "type": "string" },
+            "status": { "type": "string" }
           },
           "required": ["open", "register"],
           "allow_extra": true
