@@ -102,9 +102,20 @@ fn output_of(records: &[flow::StepRecord], step: &str) -> Value {
 /// un'azione che il programma non registra. Chi lo installa vedrebbe il flusso
 /// nell'elenco, lo lancerebbe, e riceverebbe «azione mancante» su un file che
 /// non può correggere perché sta dentro il binario.
+///
+/// **IL REGISTRO VA COSTRUITO COME LO COSTRUISCE UNA CORSA**, cioè col
+/// deposito: i nodi che scrivono nel deposito lo possiedono, e senza di esso
+/// restano fuori. Un registro a casa vuota dichiarerebbe mancante un'azione che
+/// ogni corsa vera ha, e manderebbe a togliere da un flusso spedito un passo
+/// sano. Il deposito è una cartella di lavoro: questa prova non legge niente di
+/// questa macchina.
 #[test]
 fn every_action_named_by_a_shipped_flow_is_in_the_vocabulary() {
-    let registry = product_registry();
+    let dir = std::env::temp_dir().join(format!("sailor-vocabolario-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("cartella di lavoro");
+    let store = ledger::Ledger::open(&dir).expect("deposito di lavoro");
+    let registry = registry::registry_in(registry::House::empty(), Some(store), None);
     for (name, entry) in system::builtin_registry() {
         let flow = entry.expect("il flusso spedito si carica");
         for step in flow.graph.steps() {
@@ -139,6 +150,86 @@ fn no_shipped_flow_names_a_binary() {
             );
         }
     }
+}
+
+/// **UN MODELLO CHIESTO NEL FILE DEVE FINIRE SULLA RIGA DI COMANDO.**
+///
+/// I due file sono spediti insieme e non si parlano: il flusso nomina un
+/// modello, il descrittore dice con quale opzione lo si comunica, e fino a che
+/// nessuno li mette uno accanto all'altro un passo può nominare un modello a un
+/// motore che non lo sa ricevere senza che niente diventi rosso. È il guasto 1
+/// con un'altra faccia: un ordine, o un'assenza, che solo l'invocazione vera
+/// mostrerebbe.
+///
+/// Qui la riga si compone davvero — la ricetta è quella del descrittore
+/// spedito, non una copia scritta nella prova — e si guarda che il nome del
+/// modello ci sia e stia **prima** di ciò che deve restare attaccato alla
+/// domanda. La seconda metà morde solo per un motore che di quelle opzioni ne
+/// abbia: la regola in generale è misurata in `actions`, su motori di fantasia
+/// scelti apposta perché ne abbiano una.
+#[test]
+fn a_model_a_shipped_flow_names_reaches_the_command_line_of_that_engine() {
+    let catalog = toolbox::Catalog::load(&[toolbox::Source::Builtin]);
+    assert!(catalog.problems.is_empty(), "{:?}", catalog.problems);
+    let mut asked = 0;
+    for (name, entry) in system::builtin_registry() {
+        let flow = entry.expect("il flusso spedito si carica");
+        for step in flow.graph.steps() {
+            let Some(wanted) = step
+                .with
+                .as_ref()
+                .and_then(|with| with.get("model"))
+                .and_then(Value::as_object)
+            else {
+                continue;
+            };
+            for (id, model) in wanted {
+                let model = model.as_str().expect("un nome di modello è testo");
+                let descriptor = &catalog
+                    .descriptors
+                    .iter()
+                    .find(|loaded| loaded.descriptor.id == *id)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "«{name}» chiede un modello a «{id}», che nessun descrittore dichiara"
+                        )
+                    })
+                    .descriptor;
+                let recipe = toolbox::ask_recipe_of(descriptor).unwrap_or_else(|| {
+                    panic!("«{name}» chiede un modello a «{id}», che non si sa interrogare")
+                });
+                let option = descriptor.model_option().unwrap_or_else(|| {
+                    panic!(
+                        "«{name}» chiede a «{id}» il modello «{model}», e il suo descrittore non \
+                         dichiara come glielo si nomina"
+                    )
+                });
+                let line = actions::command_line_naming_model(&recipe, &option, model);
+                let at = line
+                    .iter()
+                    .position(|written| written == model)
+                    .expect("il nome del modello è sulla riga");
+                for glued in &recipe.args_before_prompt {
+                    let glued_at = line
+                        .iter()
+                        .position(|written| written == glued)
+                        .expect("ciò che sta attaccato alla domanda è sulla riga");
+                    assert!(
+                        at < glued_at,
+                        "«{id}»: il modello «{model}» sta dopo «{glued}», che deve restare \
+                         attaccato alla domanda — verrebbe letto come la domanda. Riga: {line:?}"
+                    );
+                }
+                // La riga vera, per chi legge l'uscita della prova invece del file.
+                println!("«{id}» ← «{model}»: {line:?}");
+                asked += 1;
+            }
+        }
+    }
+    assert!(
+        asked > 0,
+        "nessun flusso spedito nomina un modello: la prova non ha guardato niente"
+    );
 }
 
 /// **NESSUN FLUSSO SPEDITO PORTA UN PERCORSO DI UNA MACCHINA SOLA.**
