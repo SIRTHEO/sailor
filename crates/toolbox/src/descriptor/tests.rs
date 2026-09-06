@@ -515,24 +515,24 @@ fn the_guard_names_every_way_two_blocks_can_disagree() {
         "contradictory",
         r#"[
           {
-            "id": "dice-di-si-e-non-ha-la-riga", "family": "ai_cli",
-            "detect": { "command": "primo" },
+            "id": "says-yes-and-has-no-line", "family": "ai_cli",
+            "detect": { "command": "first" },
             "capabilities": { "ask_without_interaction": { "args": ["-p"] } }
           },
           {
-            "id": "ha-la-riga-e-tace", "family": "ai_cli",
-            "detect": { "command": "secondo" },
+            "id": "has-the-line-and-stays-silent", "family": "ai_cli",
+            "detect": { "command": "second" },
             "ask": { "args": ["-p"], "prompt": "stdin", "unusable_when": ["quota"] }
           },
           {
-            "id": "due-opzioni-diverse", "family": "ai_cli",
-            "detect": { "command": "terzo" },
+            "id": "two-different-options", "family": "ai_cli",
+            "detect": { "command": "third" },
             "ask": { "args": ["-p"], "prompt": "stdin", "unusable_when": ["quota"] },
             "capabilities": { "ask_without_interaction": { "args": ["--print"] } }
           },
           {
-            "id": "un-frammento-vuoto", "family": "ai_cli",
-            "detect": { "command": "quarto" },
+            "id": "an-empty-fragment", "family": "ai_cli",
+            "detect": { "command": "fourth" },
             "ask": { "args": ["-p"], "prompt": "stdin", "unusable_when": ["   "] },
             "capabilities": { "ask_without_interaction": { "args": ["-p"] } }
           }
@@ -552,19 +552,19 @@ fn the_guard_names_every_way_two_blocks_can_disagree() {
         "one per descriptor, and there are four: {said:?}"
     );
     assert!(
-        said["dice-di-si-e-non-ha-la-riga"].contains("no `ask` block"),
+        said["says-yes-and-has-no-line"].contains("no `ask` block"),
         "{said:?}"
     );
     assert!(
-        said["ha-la-riga-e-tace"].contains("does not declare that it can receive one"),
+        said["has-the-line-and-stays-silent"].contains("does not declare that it can receive one"),
         "{said:?}"
     );
     assert!(
-        said["due-opzioni-diverse"].contains("--print"),
+        said["two-different-options"].contains("--print"),
         "the option that does not match is named, or there is no knowing what to fix: {said:?}"
     );
     assert!(
-        said["un-frammento-vuoto"].contains("empty fragment"),
+        said["an-empty-fragment"].contains("empty fragment"),
         "{said:?}"
     );
 }
@@ -584,18 +584,18 @@ fn only_an_engine_that_says_how_it_runs_out_can_be_a_fallback() {
         "fallbacks",
         r#"[
           {
-            "id": "dice-come-finisce", "family": "ai_cli",
-            "detect": { "command": "primo" },
+            "id": "says-how-it-runs-out", "family": "ai_cli",
+            "detect": { "command": "first" },
             "ask": { "args": ["-p"], "prompt": "stdin", "unusable_when": ["weekly limit"] }
           },
           {
-            "id": "tace", "family": "ai_cli",
-            "detect": { "command": "secondo" },
+            "id": "stays-silent", "family": "ai_cli",
+            "detect": { "command": "second" },
             "ask": { "args": ["-p"], "prompt": "stdin" }
           },
           {
-            "id": "dice-solo-frammenti-vuoti", "family": "ai_cli",
-            "detect": { "command": "terzo" },
+            "id": "says-only-empty-fragments", "family": "ai_cli",
+            "detect": { "command": "third" },
             "ask": { "args": ["-p"], "prompt": "stdin", "unusable_when": ["   "] }
           }
         ]"#,
@@ -612,11 +612,11 @@ fn only_an_engine_that_says_how_it_runs_out_can_be_a_fallback() {
     };
 
     assert!(
-        of("dice-come-finisce").is_none(),
+        of("says-how-it-runs-out").is_none(),
         "an engine that declares its own words can sit in the middle: the work moves on"
     );
 
-    let why = of("tace").expect("an engine that declares nothing cannot be a fallback");
+    let why = of("stays-silent").expect("an engine that declares nothing cannot be a fallback");
     assert!(why.contains("unusable_when"), "{why}");
     assert!(
         why.contains("never start"),
@@ -628,7 +628,7 @@ fn only_an_engine_that_says_how_it_runs_out_can_be_a_fallback() {
     // is a plug exactly like a silent one — while to whoever reads the
     // descriptor it looks as though somebody had looked.
     assert!(
-        of("dice-solo-frammenti-vuoti").is_some(),
+        of("says-only-empty-fragments").is_some(),
         "an `unusable_when` of nothing but empty fragments behaves like an empty \
          list, and that must be said: otherwise the form of a declaration passes \
          for a declaration"
@@ -648,21 +648,21 @@ fn a_word_for_a_spent_quota_that_no_word_for_cannot_work_covers_is_a_contradicti
         r#"[
           {
             "id": "coperto", "family": "ai_cli",
-            "detect": { "command": "primo" },
+            "detect": { "command": "first" },
             "ask": { "args": ["-p"], "prompt": "stdin",
                      "unusable_when": ["quota", "401"],
                      "exhausted_when": ["insufficient_quota"] }
           },
           {
             "id": "scoperto", "family": "ai_cli",
-            "detect": { "command": "secondo" },
+            "detect": { "command": "second" },
             "ask": { "args": ["-p"], "prompt": "stdin",
                      "unusable_when": ["401"],
                      "exhausted_when": ["weekly limit"] }
           },
           {
             "id": "frammento-vuoto", "family": "ai_cli",
-            "detect": { "command": "terzo" },
+            "detect": { "command": "third" },
             "ask": { "args": ["-p"], "prompt": "stdin",
                      "unusable_when": ["401"],
                      "exhausted_when": ["   "] }
@@ -710,8 +710,8 @@ fn an_empty_fragment_among_the_words_for_waiting_on_a_person_is_named() {
         "waiting-words",
         r#"[
           {
-            "id": "aspetta-su-niente", "family": "ai_cli",
-            "detect": { "command": "primo" },
+            "id": "waits-on-nothing", "family": "ai_cli",
+            "detect": { "command": "first" },
             "ask": { "args": ["-p"], "prompt": "stdin",
                      "unusable_when": ["401"],
                      "waits_for_a_person_when": ["Waiting for a code", " "] }

@@ -52,11 +52,11 @@ impl TempDir {
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .expect("l'orologio non va all'indietro")
+                .expect("the clock does not run backwards")
                 .as_nanos()
         );
         let path = std::env::temp_dir().join(unique);
-        fs::create_dir_all(&path).expect("cartella di prova");
+        fs::create_dir_all(&path).expect("the scratch directory");
         TempDir(path)
     }
 
@@ -75,8 +75,8 @@ impl Drop for TempDir {
 /// `profiles::cli_for_executable` works on — printing the one thing worth knowing.
 fn a_fake_codex_that_prints_its_home(dir: &Path) -> String {
     let path = dir.join("codex");
-    fs::write(&path, "#!/bin/sh\nprintf 'CASA=%s\\n' \"$CODEX_HOME\"\n")
-        .expect("scrivere il finto motore");
+    fs::write(&path, "#!/bin/sh\nprintf 'HOME_IS=%s\\n' \"$CODEX_HOME\"\n")
+        .expect("write the fake engine");
     fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("renderlo eseguibile");
     path.to_string_lossy().into_owned()
 }
@@ -84,7 +84,7 @@ fn a_fake_codex_that_prints_its_home(dir: &Path) -> String {
 /// **THE DRY PROBE AND THE REAL RUN MUST START FROM THE SAME HOME.**
 ///
 /// *The mutant that puts the original defect back*: `env: BTreeMap::new()`
-/// inside `RealDryProbe::run`. This turns red with an empty `CASA=`, which is
+/// inside `RealDryProbe::run`. This turns red with an empty `HOME_IS=`, which is
 /// exactly what the probe used to print.
 #[test]
 fn the_dry_probe_starts_inside_the_home_the_profile_declares() {
@@ -103,16 +103,16 @@ fn the_dry_probe_starts_inside_the_home_the_profile_declares() {
         })
         .to_string(),
     )
-    .expect("scrivere lo stato dei profili");
+    .expect("write the profiles state");
     std::env::set_var("PROFILES_STATE_PATH", &state);
 
     let DryRun::Answered { stdout, .. } = RealDryProbe.run(&bin, &[], None) else {
-        panic!("il finto motore risponde sempre: qui non c'è niente da aspettare");
+        panic!("the fake engine always answers: there is nothing to wait for here");
     };
 
     assert!(
-        stdout.contains(&format!("CASA={}", home_of_the_profile.display())),
-        "il vaglio a secco ha provato la riga in una casa diversa da quella in cui \
-         girerà: {stdout:?}"
+        stdout.contains(&format!("HOME_IS={}", home_of_the_profile.display())),
+        "the dry probe tried the line in a home other than the one it will run \
+         in: {stdout:?}"
     );
 }

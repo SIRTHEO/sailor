@@ -326,7 +326,7 @@ mod resuming_instead_of_rediscovering {
         let dir =
             std::env::temp_dir().join(format!("sailor-sessione-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("cartella di lavoro");
+        std::fs::create_dir_all(&dir).expect("the scratch directory");
         dir
     }
 
@@ -334,11 +334,11 @@ mod resuming_instead_of_rediscovering {
     /// The word is the flow's, not ours: no kind of work is read as a judge.
     #[test]
     fn a_step_declared_blind_carries_no_option_that_would_continue_a_session() {
-        let dir = scratch("cieco");
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let dir = scratch("blind");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         ledger
             .record_model_call(&a_call_that_opened("s-1"))
-            .expect("una sessione lasciata dal passo di prima");
+            .expect("a session left behind by the step before");
         let candidate = a_candidate_that_can_resume();
         let record = Recording {
             ledger: &ledger,
@@ -448,15 +448,15 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
 
     fn engine_that(dir: &std::path::Path, body: &str) -> String {
         let path = dir.join("engine");
-        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).expect("scrivere il finto motore");
+        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).expect("write the fake engine");
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
-            .expect("renderlo eseguibile");
+            .expect("make it executable");
         path.to_string_lossy().into_owned()
     }
 
     fn invocations(dir: &std::path::Path) -> Vec<String> {
         std::fs::read_to_string(dir.join("invocations"))
-            .expect("il motore finto ha scritto le proprie invocazioni")
+            .expect("the fake engine wrote down its own invocations")
             .lines()
             .map(str::to_owned)
             .collect()
@@ -483,7 +483,7 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
         fn resolve(&self, id: &str) -> Result<String, String> {
             match id {
                 TOOL => Ok(self.bin.clone()),
-                other => Err(format!("«{other}» non è su questa macchina")),
+                other => Err(format!("«{other}» is not on this machine")),
             }
         }
         fn ask_recipe(&self, _id: &str) -> Option<AskRecipe> {
@@ -559,7 +559,7 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
     fn ran(action: &ExternalEngineAction, input: &Value, run: &str, step: &str) {
         match action.execute(input, &shared(run, step)) {
             Ok(ActionOutcome::Went(_)) => {}
-            other => panic!("il passo «{step}» doveva andare: {other:?}"),
+            other => panic!("the step «{step}» had to go: {other:?}"),
         }
     }
 
@@ -569,9 +569,9 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
     /// step, indistinguishable from a session that was never opened.
     #[test]
     fn a_step_that_opens_a_session_hands_it_to_the_engine_and_writes_it_down() {
-        let dir = scratch("apre");
+        let dir = scratch("opens");
         let bin = fake_engine(&dir);
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {
             bin,
             sessions: Some(knows_all_three()),
@@ -583,12 +583,12 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
         let line = invocations(&dir).remove(0);
         let written = ledger
             .session_opened_by("corsa-1", "scopri", TOOL)
-            .expect("il deposito risponde")
-            .expect("e ha registrato la sessione");
+            .expect("the ledger answers")
+            .expect("and it recorded the session");
         assert!(
             line.contains("--session-id") && line.contains(&written),
-            "il motore deve ricevere lo stesso identificativo che il deposito conserva: \
-             riga «{line}», registrato «{written}»"
+            "the engine has to receive the very identifier the ledger keeps: \
+             line «{line}», recorded «{written}»"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -604,9 +604,9 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
     /// silence, which is the worst way.
     #[test]
     fn three_independent_steps_fork_one_discovery_instead_of_doing_it_three_times() {
-        let dir = scratch("ramifica");
+        let dir = scratch("forks");
         let bin = fake_engine(&dir);
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {
             bin,
             sessions: Some(knows_all_three()),
@@ -625,23 +625,23 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
 
         let trunk = ledger
             .session_opened_by("corsa-2", "scopri", TOOL)
-            .expect("il deposito risponde")
-            .expect("il tronco è registrato");
+            .expect("the ledger answers")
+            .expect("the trunk is recorded");
         let lines = invocations(&dir);
-        assert_eq!(lines.len(), 4, "una scoperta e tre rami");
+        assert_eq!(lines.len(), 4, "one discovery and three branches");
         for line in &lines[1..] {
             assert!(
                 line.contains(&trunk) && line.contains("--fork-session"),
-                "ogni ramo parte dal tronco senza continuarlo: «{line}»"
+                "every branch starts from the trunk without continuing it: «{line}»"
             );
         }
         for step in ["struttura", "rischi", "attrito"] {
             assert_eq!(
                 ledger
                     .session_opened_by("corsa-2", step, TOOL)
-                    .expect("il deposito risponde"),
+                    .expect("the ledger answers"),
                 None,
-                "il ramo di «{step}» ha un identificativo che il motore non ci ha detto"
+                "the branch of «{step}» carries an identifier the engine never told us"
             );
         }
         let _ = std::fs::remove_dir_all(&dir);
@@ -651,9 +651,9 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
     /// steps in a row must be able to continue from one another.
     #[test]
     fn resuming_keeps_the_same_session_so_the_next_step_can_take_it_too() {
-        let dir = scratch("riprende");
+        let dir = scratch("resumes");
         let bin = fake_engine(&dir);
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {
             bin,
             sessions: Some(knows_all_three()),
@@ -676,19 +676,19 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
 
         let trunk = ledger
             .session_opened_by("corsa-3", "scopri", TOOL)
-            .expect("il deposito risponde")
-            .expect("il tronco è registrato");
+            .expect("the ledger answers")
+            .expect("the trunk is recorded");
         assert_eq!(
             ledger
                 .session_opened_by("corsa-3", "piano", TOOL)
-                .expect("risponde"),
+                .expect("it answers"),
             Some(trunk.clone()),
-            "chi riprende non cambia sessione, e per questo la può passare avanti"
+            "whoever resumes does not change session, and can therefore pass it on"
         );
         let lines = invocations(&dir);
         assert!(
             lines[2].contains(&trunk) && !lines[2].contains("--fork-session"),
-            "il terzo passo continua lo stesso tronco: «{}»",
+            "the third step continues the very same trunk: «{}»",
             lines[2]
         );
         let _ = std::fs::remove_dir_all(&dir);
@@ -700,9 +700,9 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
     /// no problem», this test would catch them.
     #[test]
     fn an_engine_that_cannot_fork_starts_over_instead_of_breaking() {
-        let dir = scratch("non-sa-ramificare");
+        let dir = scratch("cannot-fork");
         let bin = fake_engine(&dir);
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {
             bin,
             sessions: Some(SessionRecipe {
@@ -725,7 +725,7 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
         let lines = invocations(&dir);
         assert_eq!(
             lines[1], "--ask",
-            "chi non sa ramificare riceve la riga di sempre, non una riga monca"
+            "an engine that cannot fork gets the usual line, not a truncated one"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -735,9 +735,9 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
     /// engines installed on this machine.
     #[test]
     fn an_engine_that_declares_no_sessions_works_exactly_as_before() {
-        let dir = scratch("muto");
+        let dir = scratch("mute");
         let bin = fake_engine(&dir);
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {
             bin,
             sessions: None,
@@ -750,9 +750,9 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
         assert_eq!(
             ledger
                 .session_opened_by("corsa-5", "scopri", TOOL)
-                .expect("risponde"),
+                .expect("it answers"),
             None,
-            "non c'è nessuna sessione da registrare, e non se ne inventa una"
+            "there is no session to record, and none is invented"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -762,9 +762,9 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
     /// of whoever forks from a step that landed on another engine that day.
     #[test]
     fn forking_from_a_step_that_left_no_session_starts_over() {
-        let dir = scratch("nessun-tronco");
+        let dir = scratch("no-trunk");
         let bin = fake_engine(&dir);
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {
             bin,
             sessions: Some(knows_all_three()),
@@ -773,7 +773,7 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
 
         ran(
             &action,
-            &step_that(json!({ "fork": "un-passo-che-non-c-e" })),
+            &step_that(json!({ "fork": "a-step-that-is-not-there" })),
             "corsa-6",
             "rischi",
         );
@@ -793,9 +793,9 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
     /// discovery, and no error would say so — a wrong context would just land.
     #[test]
     fn an_engine_that_names_its_own_session_is_read_and_its_branch_is_continuable() {
-        let dir = scratch("si-nomina-da-se");
+        let dir = scratch("names-itself");
         let bin = engine_that(&dir, ANNOUNCES_ITS_SESSION);
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {
             bin,
             sessions: Some(mints_its_own()),
@@ -819,25 +819,25 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
         assert_eq!(
             ledger
                 .session_opened_by("corsa-7", "scopri", TOOL)
-                .expect("risponde"),
+                .expect("it answers"),
             Some("sessione-1".to_owned()),
-            "l'identificativo lo dice il motore, non lo decidiamo noi"
+            "the identifier is the engine's word, not ours to decide"
         );
         assert_eq!(
             ledger
                 .session_opened_by("corsa-7", "rischi", TOOL)
-                .expect("risponde"),
+                .expect("it answers"),
             Some("sessione-2".to_owned()),
-            "e il ramo ha il proprio, non quello del tronco"
+            "and the branch has one of its own, not the trunk's"
         );
         let lines = invocations(&dir);
         assert_eq!(
             lines[1], "--ask fork sessione-1",
-            "il ramo parte dal tronco"
+            "the branch starts from the trunk"
         );
         assert_eq!(
             lines[2], "--ask fork sessione-2",
-            "e il ramo dopo parte dal ramo"
+            "and the next branch starts from that branch"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -848,9 +848,9 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
     /// on that machine — and it would find out having spent first.
     #[test]
     fn a_session_we_cannot_name_is_not_named_by_us() {
-        let dir = scratch("nome-non-consegnabile");
+        let dir = scratch("a-name-that-cannot-be-delivered");
         let bin = fake_engine(&dir);
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {
             bin,
             // Opens on the usual line and does not say where it writes its own
@@ -868,9 +868,9 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
         assert_eq!(
             ledger
                 .session_opened_by("corsa-8", "scopri", TOOL)
-                .expect("risponde"),
+                .expect("it answers"),
             None,
-            "una sessione che non si sa nominare resta senza nome nel deposito"
+            "a session nobody knows how to name stays nameless in the ledger"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -884,7 +884,7 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
         for _ in 0..1000 {
             assert!(
                 seen.insert(fresh_session_id()),
-                "un identificativo ripetuto"
+                "a repeated identifier"
             );
         }
         // And the shape is the one the command lines ask for: five groups
@@ -894,10 +894,10 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
         assert_eq!(
             groups.iter().map(|group| group.len()).collect::<Vec<_>>(),
             vec![8, 4, 4, 4, 12],
-            "«{one}» non ha la forma di un UUID"
+            "«{one}» has not the shape of a UUID"
         );
         assert!(one.starts_with(|c: char| c.is_ascii_hexdigit()));
-        assert!(groups[2].starts_with('4'), "la versione: «{one}»");
+        assert!(groups[2].starts_with('4'), "the version: «{one}»");
     }
 
     // ── what the ledger says a call did with the session ────────────────
@@ -925,9 +925,9 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
     /// nothing is written in the session columns.
     #[test]
     fn a_step_that_declares_no_session_is_invoked_and_recorded_as_before() {
-        let dir = scratch("dichiara-niente");
+        let dir = scratch("declares-nothing");
         let bin = fake_engine(&dir);
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {
             bin,
             sessions: Some(knows_all_three()),
@@ -955,9 +955,9 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
     /// bill would read exactly like a run where every step resumed.
     #[test]
     fn a_step_that_had_to_start_over_says_so_in_the_ledger() {
-        let dir = scratch("ripiego-registrato");
+        let dir = scratch("fallback-recorded");
         let bin = fake_engine(&dir);
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {
             bin,
             // Opens, cannot resume: three of the four engines on this machine.
@@ -990,9 +990,9 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
     /// check never walked still leaves a trace of what it asked for.
     #[test]
     fn a_blind_step_gets_a_cold_call_and_the_ledger_records_the_fallback() {
-        let dir = scratch("cieco-registrato");
+        let dir = scratch("blind-recorded");
         let bin = fake_engine(&dir);
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {
             bin,
             sessions: Some(knows_all_three()),
@@ -1024,9 +1024,9 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
     /// told apart by the row and not by whoever remembers the run.
     #[test]
     fn a_call_that_really_resumed_is_written_down_as_resumed() {
-        let dir = scratch("ripresa-registrata");
+        let dir = scratch("resume-recorded");
         let bin = fake_engine(&dir);
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {
             bin,
             sessions: Some(knows_all_three()),
@@ -1076,7 +1076,7 @@ printf '{"result":"ok","usage":{"input_tokens":%s}}' "$((n * 1000))""#;
         fn resolve(&self, id: &str) -> Result<String, String> {
             match id {
                 TOOL => Ok(self.bin.clone()),
-                other => Err(format!("«{other}» non è su questa macchina")),
+                other => Err(format!("«{other}» is not on this machine")),
             }
         }
         fn ask_recipe(&self, _id: &str) -> Option<AskRecipe> {
@@ -1116,7 +1116,7 @@ printf '{"result":"ok","usage":{"input_tokens":%s}}' "$((n * 1000))""#;
     fn charged_to_each_step(label: &str, reports: Reports) -> Vec<Option<u64>> {
         let dir = scratch(label);
         let bin = engine_that(&dir, COUNTS_THE_WHOLE_SESSION);
-        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let action = ExternalEngineAction::resolving_with(Counting { bin, reports })
             .recording_to(Some(ledger));
 

@@ -48,11 +48,11 @@ fn with_nothing_in_the_users_home_a_real_call_still_gets_a_cost() {
     let prices = actions::price_list_from(None);
     let entry = prices
         .find(AS_THE_ENGINE_NAMED_IT)
-        .unwrap_or_else(|| panic!("il listino spedito non conosce «{AS_THE_ENGINE_NAMED_IT}»"));
+        .unwrap_or_else(|| panic!("the shipped price list does not know «{AS_THE_ENGINE_NAMED_IT}»"));
     assert_eq!(
         cost_micros(MEASURED, entry.micros()),
         Some(128_541),
-        "senza un listino spedito questa chiamata costava zero, e nessun tetto scattava"
+        "with no shipped price list this call cost zero, and no cap ever tripped"
     );
     assert_eq!(prices.currency, "USD");
 }
@@ -70,11 +70,11 @@ fn what_the_user_writes_at_home_still_beats_what_is_shipped() {
     let prices = actions::price_list_from(Some(home));
     let entry = prices
         .find(AS_THE_ENGINE_NAMED_IT)
-        .expect("la voce di casa");
+        .expect("the entry from home");
     assert_eq!(
         entry.input_per_million,
         Some(1.0),
-        "ha vinto quella spedita"
+        "the shipped one won"
     );
     // And what the home file does not name still comes from the shipped one.
     assert_eq!(prices.knows("claude-haiku-4-5"), Known::Priced);
@@ -85,7 +85,7 @@ fn what_the_user_writes_at_home_still_beats_what_is_shipped() {
 /// without telling anybody.
 #[test]
 fn a_broken_file_at_home_falls_back_to_what_is_shipped() {
-    let prices = actions::price_list_from(Some("questo non è JSON"));
+    let prices = actions::price_list_from(Some("this is not JSON"));
     assert_eq!(prices.knows("claude-opus-5"), Known::Priced);
 }
 
@@ -109,6 +109,6 @@ fn a_model_nobody_priced_is_reported_as_absent_not_as_free() {
                 .unwrap_or_default()
         ),
         None,
-        "un modello senza prezzo non costa zero: non si sa"
+        "a model with no price does not cost zero: nobody knows"
     );
 }
