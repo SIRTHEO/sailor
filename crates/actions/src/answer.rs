@@ -172,8 +172,10 @@ fn pruned(shape: &ValueSchema, value: Value) -> Value {
     }
 }
 
-/// The name under which the declared shape of an answer refuses one.
-pub(crate) const ANSWER_SHAPE_CHECK: &str = "answer_shape";
+/// The name under which the declared shape of an answer refuses one. One name
+/// for two crates: the executor asks for it to know which refusal is worth a
+/// second attempt.
+pub(crate) use flow::ANSWER_SHAPE_CHECK;
 
 /// Legge la risposta di un motore secondo la forma che il passo ha dichiarato.
 pub(crate) fn shaped_answer(shape: &ValueSchema, said: &str) -> Result<Value, ActionError> {
