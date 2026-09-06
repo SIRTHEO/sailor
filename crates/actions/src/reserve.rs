@@ -170,14 +170,10 @@ pub fn why_no_ceiling(option: Option<&CeilingOption>, declared: &Declared) -> St
 
 // ── what a cap is, over a whole run ──────────────────────────────────────
 
-/// What a declared cap is, as a fact about the run it covers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CapKind {
-    /// Every call is bounded and priced before it starts: the cap holds.
-    Guaranteed,
-    /// The cap stops the next call, not the overshoot of the current one.
-    StopThreshold,
-}
+/// What a declared cap is. It lives with the flow file, which is where a flow
+/// declares which of the two it requires: one name for the fact and for the
+/// requirement, or the report and the declaration would drift apart.
+pub use flow::CapKind;
 
 /// A step, as far as a cap is concerned.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -243,15 +239,10 @@ pub struct Suspension {
 
 /// Whether the next call may be authorised.
 ///
-/// The condition is Astra's: `spend + the reserves in flight + the maximum of
-/// the next call ≤ cap`.
-///
-/// **A SPEND THAT COULD NOT BE COUNTED AUTHORISES NOTHING.** `AtLeast` is a
-/// floor: the remainder computed from it is an upper bound on what is left, and
-/// treating it as a measure turns missing information into permission to spend
-/// more. A reserve nobody can bound is the other, milder case — the spend is
-/// still a sum, so the older rule holds and the remainder still stops the call
-/// after.
+/// Astra's condition: `spend + reserves in flight + the maximum of the next
+/// call ≤ cap`. **A spend that could not be counted authorises nothing**:
+/// `AtLeast` is a floor, so the remainder over it bounds what is left instead
+/// of measuring it. A reserve nobody can bound is milder: the older rule holds.
 pub fn admits(
     cap_micros: i64,
     spent: &flow::Spend,
