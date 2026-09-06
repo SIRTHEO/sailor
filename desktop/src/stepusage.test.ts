@@ -37,12 +37,12 @@ function usageWith(calls: CallView[]): RunUsage {
   return { calls } as unknown as RunUsage;
 }
 
-describe("la spesa per passo", () => {
-  test("senza corsa non inventa niente", () => {
+describe("the spend per step", () => {
+  test("with no run it invents nothing", () => {
     expect(stepUsageOfRun(null, "sviluppa-sailor").size).toBe(0);
   });
 
-  test("la chiave porta il flusso, così la spesa non finisce sul nodo di un altro", () => {
+  test("the key carries the flow, so the spend does not land on somebody else's node", () => {
     // `verifica` and `verdetto` exist in several real flows of this machine:
     // with a bare key the node would show the spend of a flow not its own.
     const perStep = stepUsageOfRun(usageWith([call({})]), "sviluppa-sailor");
@@ -50,7 +50,7 @@ describe("la spesa per passo", () => {
     expect(perStep.get("implementa")).toBeUndefined();
   });
 
-  test("due chiamate dello stesso passo si sommano", () => {
+  test("two calls of the same step add up", () => {
     const perStep = stepUsageOfRun(usageWith([call({}), call({ call_id: "d", cost_micros: 500 })]), "f");
     const found = perStep.get("f::implementa");
     expect(found?.calls).toBe(2);
@@ -58,7 +58,7 @@ describe("la spesa per passo", () => {
     expect(found?.inputTokens).toBe(200);
   });
 
-  test("UN COSTO ASSENTE RESTA ASSENTE, non diventa zero", () => {
+  test("AN ABSENT COST STAYS ABSENT, it does not become zero", () => {
     // Codex declares the token total and not the two sides, so its row stays
     // without a cost: showing `$0.0000` would be an invented measurement.
     const perStep = stepUsageOfRun(usageWith([call({ cost_micros: null })]), "f");
@@ -67,7 +67,7 @@ describe("la spesa per passo", () => {
     expect(usageIsPartial(found!)).toBe(true);
   });
 
-  test("una chiamata senza costo abbassa il totale, e il passo lo dichiara", () => {
+  test("a call without a cost lowers the total, and the step says so", () => {
     const perStep = stepUsageOfRun(usageWith([call({}), call({ call_id: "d", cost_micros: null })]), "f");
     const found = perStep.get("f::implementa");
     expect(found?.costMicros).toBe(1000);
@@ -75,7 +75,7 @@ describe("la spesa per passo", () => {
     expect(usageIsPartial(found!)).toBe(true);
   });
 
-  test("il modello vero è quello che il motore ha risposto, e i ritentativi ne portano più d'uno", () => {
+  test("the real model is the one the engine answered with, and retries bring more than one", () => {
     const perStep = stepUsageOfRun(
       usageWith([call({}), call({ call_id: "d", actual_model: "claude-opus-4" })]),
       "f",
@@ -83,7 +83,7 @@ describe("la spesa per passo", () => {
     expect(perStep.get("f::implementa")?.models).toEqual(["claude-sonnet-4", "claude-opus-4"]);
   });
 
-  test("le chiamate della corsa, che non sono di un passo, restano fuori dai nodi", () => {
+  test("the run's own calls, which belong to no step, stay out of the nodes", () => {
     const perStep = stepUsageOfRun(usageWith([call({ step_id: null })]), "f");
     expect(perStep.size).toBe(0);
   });

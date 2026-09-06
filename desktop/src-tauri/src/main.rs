@@ -229,7 +229,7 @@ fn main() {
             changes::who_opens_files
         ])
         .run(tauri::generate_context!())
-        .expect("la finestra di Sailor non si è aperta");
+        .expect("Sailor's window did not open");
 }
 
 #[cfg(test)]

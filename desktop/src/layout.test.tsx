@@ -42,7 +42,7 @@ beforeAll(() => {
 const BAND: FlowBandData = {
   name: "prima-corsa",
   description:
-    "Il flusso più piccolo che esista: una verifica sola, per vedere il motore girare da un capo all'altro.",
+    "The smallest flow there is: one check alone, to watch the engine run end to end.",
   stepCount: 1,
   color: "#2563eb",
   dimmed: false,
@@ -98,12 +98,12 @@ function headerHeight(far: boolean): number {
   const read = (selector: string) => {
     const element = band.querySelector(selector) ?? band;
     const style = styles.get(element);
-    expect(style, `manca lo stile calcolato di ${selector}`).toBeDefined();
+    expect(style, `the computed style of ${selector} is missing`).toBeDefined();
     return (style as { declarations: Map<string, string> }).declarations;
   };
 
   const bandStyle = styles.get(band)?.declarations as Map<string, string>;
-  const padTop = pixels(String(bandStyle.get("padding")).split(/\s+/)[0], "padding della corsia");
+  const padTop = pixels(String(bandStyle.get("padding")).split(/\s+/)[0], "the lane's padding");
   const name = lineHeight(read(".flow-band__name"), ".flow-band__name");
   const count = lineHeight(read(".flow-band__count"), ".flow-band__count");
   const desc = read(".flow-band__desc");
@@ -113,18 +113,18 @@ function headerHeight(far: boolean): number {
   return padTop + Math.max(name, count) + gap + descLine * BAND_DESC_LINES;
 }
 
-describe("lo spazio riservato all'intestazione di una corsia", () => {
-  test("DA VICINO ci sta, col respiro dichiarato", () => {
+describe("the room set aside for a lane's header", () => {
+  test("FROM NEAR it fits, with the declared breathing room", () => {
     expect(BAND_PAD_TOP).toBeGreaterThanOrEqual(headerHeight(false) + BAND_HEAD_GAP);
   });
 
-  test("DA LONTANO ci sta — ed è la vista d'apertura, non un caso limite", () => {
+  test("FROM FAR it fits — and that is the opening view, not an edge case", () => {
     // The fault sat entirely here: from near the header almost fitted, from far
     // it did not, and from far is how the window opens.
     expect(BAND_PAD_TOP).toBeGreaterThanOrEqual(headerHeight(true) + BAND_HEAD_GAP);
   });
 
-  test("da lontano l'intestazione è davvero più alta che da vicino", () => {
+  test("from far the header really is taller than from near", () => {
     // Without this one, the two tests above would stay green even if the
     // `[data-far]` rules vanished: they would measure the same scene twice.
     expect(headerHeight(true)).toBeGreaterThan(headerHeight(false));

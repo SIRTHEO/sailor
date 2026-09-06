@@ -222,9 +222,9 @@ describe("where a node gets its own ports from", () => {
     ]);
   });
 
-  test("when the dependency declares `any` NOBODY IS BLAMED: it is «non lo so»", () => {
+  test("when the dependency declares `any` NOBODY IS BLAMED: it is «I do not know»", () => {
     // Three states and not two, as the tool's own panel already does: saying
-    // «manca» about an input that may well arrive is an invented accusation.
+    // «missing» about an input that may well arrive is an invented accusation.
     const upstream = stepOf({ id: "monte", output_schema: ANY });
     const step = stepOf({
       id: "valle",
@@ -473,7 +473,7 @@ describe("the two registers of attention", () => {
       {},
       new Map([
         ["sviluppa-sailor::implementa", run("handed_to_human")],
-        ["zeta-flusso::coda", run("handed_to_human")],
+        ["zeta-flow::tail", run("handed_to_human")],
       ]),
     );
     expect(node.getAttribute("data-calls")).toBe("true");
@@ -484,7 +484,7 @@ describe("the two registers of attention", () => {
     const node = mountNode(
       {},
       new Map([
-        ["altro-flusso::alfa", run("handed_to_human")],
+        ["other-flow::alpha", run("handed_to_human")],
         ["sviluppa-sailor::implementa", run("handed_to_human")],
       ]),
     );

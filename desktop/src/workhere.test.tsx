@@ -40,7 +40,7 @@ function pretendShell(answer: (command: string, args?: Record<string, unknown>) 
 }
 
 const HERE = { root: "/work/sailor", name: "sailor", first_seen: 1, last_seen: 2, standing: "declared", current: true };
-const THERE = { root: "/work/un-altro", name: "un-altro", first_seen: 1, last_seen: 2, standing: "declared", current: false };
+const THERE = { root: "/work/another", name: "another", first_seen: 1, last_seen: 2, standing: "declared", current: false };
 const GONE = { root: "/work/lost", name: "lost", first_seen: 1, last_seen: 2, standing: "gone", current: false };
 
 describe("moving the window into a project", () => {
@@ -67,12 +67,12 @@ describe("moving the window into a project", () => {
       fireEvent.click(buttons[0]);
       await waitFor(() => expect(told).toBe(1));
       const asked = shell.calls.find((call) => call.command === "work_here");
-      expect(asked?.args).toEqual({ root: "/work/un-altro" });
+      expect(asked?.args).toEqual({ root: "/work/another" });
 
       // The list is the engine's answer, read again: «here» moved with it.
       await waitFor(() => {
         const here = document.querySelector("tr[data-here]");
-        expect(here?.textContent).toContain("un-altro");
+        expect(here?.textContent).toContain("another");
       });
     } finally {
       shell.stop();
@@ -82,7 +82,7 @@ describe("moving the window into a project", () => {
   test("a refused move is written with the engine's reason, and nothing moves", async () => {
     const shell = pretendShell((command) => {
       if (command === "workspaces") return [HERE, THERE];
-      if (command === "work_here") throw new Error("no sailor.json at or above /work/un-altro: not a project");
+      if (command === "work_here") throw new Error("no sailor.json at or above /work/another: not a project");
       throw new Error(`no ${command}`);
     });
     let told = 0;

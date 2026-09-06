@@ -162,17 +162,17 @@ mod tests {
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).expect("creazione cartella di prova");
+        fs::create_dir_all(&dir).expect("the scratch folder is created");
         dir
     }
 
     fn valid_flow(id: &str) -> serde_json::Value {
         json!({
             "id": id,
-            "description": "flusso di prova",
+            "description": "a flow for testing",
             "graph": {
                 "steps": [{
-                    "id": "solo",
+                    "id": "lone",
                     "deps": [],
                     "action": "shell_check",
                     "max_attempts": 1,
@@ -181,13 +181,13 @@ mod tests {
                     "output_schema": {"type": "any"}
                 }]
             },
-            "inputs": {"solo": {"command": "true", "timeout_secs": 5}}
+            "inputs": {"lone": {"command": "true", "timeout_secs": 5}}
         })
     }
 
     fn entries(dir: &Path) -> Vec<String> {
         fs::read_dir(dir)
-            .expect("cartella leggibile")
+            .expect("the folder is readable")
             .flatten()
             .map(|entry| entry.file_name().to_string_lossy().into_owned())
             .collect()
@@ -205,9 +205,9 @@ mod tests {
     #[test]
     fn save_flow_rejects_an_empty_id_and_writes_nothing() {
         let dir = scratch_dir("empty-id");
-        let error = save_flow_in(&dir, valid_flow("")).expect_err("id vuoto rifiutato");
+        let error = save_flow_in(&dir, valid_flow("")).expect_err("an empty id is refused");
         assert!(error.contains("empty"), "{error}");
-        assert!(entries(&dir).is_empty(), "nessun file deve comparire");
+        assert!(entries(&dir).is_empty(), "no file must appear");
     }
 
     // ── a graph the engine would refuse never touches the disk ──────────
@@ -221,8 +221,8 @@ mod tests {
     fn save_flow_rejects_a_cyclic_graph_and_writes_nothing() {
         let dir = scratch_dir("cyclic-graph");
         let cyclic = json!({
-            "id": "ciclico",
-            "description": "due passi che si aspettano a vicenda",
+            "id": "cyclic",
+            "description": "two steps waiting on each other",
             "graph": {
                 "steps": [
                     {
@@ -237,11 +237,11 @@ mod tests {
             },
             "inputs": {}
         });
-        let error = save_flow_in(&dir, cyclic).expect_err("grafo ciclico rifiutato");
+        let error = save_flow_in(&dir, cyclic).expect_err("a cyclic graph is refused");
         assert!(error.contains("fails the engine's validation"), "{error}");
         assert!(
             entries(&dir).is_empty(),
-            "un grafo rifiutato non deve toccare il disco"
+            "a refused graph must not touch the disk"
         );
     }
 
@@ -249,32 +249,32 @@ mod tests {
     fn save_flow_rejects_a_missing_dependency_and_writes_nothing() {
         let dir = scratch_dir("missing-dependency");
         let broken = json!({
-            "id": "guasto",
-            "description": "dipende da un passo che non esiste",
+            "id": "broken",
+            "description": "depends on a step that does not exist",
             "graph": {
                 "steps": [{
-                    "id": "solo", "deps": ["fantasma"], "action": "shell_check", "max_attempts": 1,
+                    "id": "lone", "deps": ["ghost"], "action": "shell_check", "max_attempts": 1,
                     "when": null, "input_schema": {"type": "any"}, "output_schema": {"type": "any"}
                 }]
             },
             "inputs": {}
         });
-        let error = save_flow_in(&dir, broken).expect_err("dipendenza mancante rifiutata");
+        let error = save_flow_in(&dir, broken).expect_err("a missing dependency is refused");
         assert!(error.contains("fails the engine's validation"), "{error}");
         assert!(entries(&dir).is_empty());
     }
 
-    /// THE MEASURE THAT COULD HAVE COME OUT OTHERWISE: `azione-mai-registrata`
+    /// THE MEASURE THAT COULD HAVE COME OUT OTHERWISE: `never-registered`
     /// is neither `shell_check` nor `external_engine` nor an action of the
     /// ledger. Lacking `reject_unknown_actions` (mutant: making it always
     /// return `Ok`) the file would show up all the same, and this test turn red.
     #[test]
     fn save_flow_rejects_an_unknown_action_and_writes_nothing() {
         let dir = scratch_dir("unknown-action");
-        let mut flow = valid_flow("azione-ignota");
-        flow["graph"]["steps"][0]["action"] = json!("azione-mai-registrata");
-        let error = save_flow_in(&dir, flow).expect_err("azione sconosciuta rifiutata");
-        assert!(error.contains("azione-mai-registrata"), "{error}");
+        let mut flow = valid_flow("unknown-action");
+        flow["graph"]["steps"][0]["action"] = json!("never-registered");
+        let error = save_flow_in(&dir, flow).expect_err("an unknown action is refused");
+        assert!(error.contains("never-registered"), "{error}");
         assert!(entries(&dir).is_empty());
     }
 
@@ -284,7 +284,7 @@ mod tests {
         assert!(save_flow_in(&dir, valid_flow("shell-ok")).is_ok());
         let mut with_engine = valid_flow("engine-ok");
         with_engine["graph"]["steps"][0]["action"] = json!("external_engine");
-        with_engine["inputs"]["solo"] = json!({"bin": "true", "timeout_secs": 5});
+        with_engine["inputs"]["lone"] = json!({"bin": "true", "timeout_secs": 5});
         assert!(save_flow_in(&dir, with_engine).is_ok());
     }
 
@@ -312,7 +312,7 @@ mod tests {
             .collect();
         assert!(
             missing.is_empty(),
-            "il motore sa eseguire {} azioni che la finestra rifiuta al salvataggio: {}",
+            "the engine can run {} actions the window refuses at save time: {}",
             missing.len(),
             missing.join(", ")
         );
@@ -334,17 +334,17 @@ mod tests {
     fn the_window_vocabulary_names_only_actions_the_engine_registers() {
         let source =
             fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../src/flow.ts"))
-                .expect("il vocabolario della finestra si legge da desktop/src/flow.ts");
+                .expect("the window's vocabulary is read from desktop/src/flow.ts");
         let named = action_names_in(&source, "const ACTION_KIND");
         assert!(
             named.len() > 4,
-            "il vocabolario non è stato letto: {} nomi trovati",
+            "the vocabulary was not read: {} names found",
             named.len()
         );
         // With the ledger **open**, because six actions register then and not
         // before, and the window is right to draw them all the same.
-        let dir = scratch_dir("vocabolario");
-        let ledger = ledger::Ledger::open(&dir).expect("un deposito di prova");
+        let dir = scratch_dir("vocabulary");
+        let ledger = ledger::Ledger::open(&dir).expect("a ledger for testing");
         let engine = registry::registry_in(registry::House::under(&dir), Some(ledger), None);
         let known: BTreeSet<&str> = engine.names().into_iter().collect();
         let invented: Vec<&String> = named
@@ -353,7 +353,7 @@ mod tests {
             .collect();
         assert!(
             invented.is_empty(),
-            "la finestra nomina {} azioni che il motore non registra: {:?}",
+            "the window names {} actions the engine does not register: {:?}",
             invented.len(),
             invented
         );
@@ -369,8 +369,8 @@ mod tests {
             .collect();
         assert!(
             undrawn.is_empty(),
-            "il motore registra {} azioni che la finestra non sa disegnare, e che \
-             ricadrebbero in silenzio su «verifica»: {}",
+            "the engine registers {} actions the window cannot draw, and that \
+             would fall back on «check» in silence: {}",
             undrawn.len(),
             undrawn.join(", ")
         );
@@ -405,7 +405,7 @@ mod tests {
     #[test]
     fn delete_flow_reports_a_flow_that_was_never_written() {
         let dir = scratch_dir("delete-missing");
-        let error = delete_flow_in(&dir, "mai-esistito").expect_err("cancellazione di un assente");
+        let error = delete_flow_in(&dir, "never-existed").expect_err("deleting an absent flow");
         assert!(error.contains("does not exist"), "{error}");
     }
 }
