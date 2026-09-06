@@ -112,10 +112,8 @@ fn every_row_survives_the_move_word_for_word() {
 
 /// A cell the table cannot hold must be refused, not written and lost.
 ///
-/// **BORN RED, WITH A ROW ALREADY GONE.** Fault 60 in the store carried newlines
-/// inside a cell: rendered, that row breaks into pieces with the wrong number of
-/// columns and `parse` drops every one. The round trip above could not see it —
-/// it fills the store from the table, which holds only what a table can hold.
+/// The round trip above cannot see this: it fills the store from the table,
+/// which holds only what a table can hold. See fault 60.
 #[test]
 fn a_cell_the_table_cannot_hold_is_refused_at_the_door() {
     let store = Faults::open(scratch("newline")).expect("opening");
@@ -124,7 +122,7 @@ fn a_cell_the_table_cannot_hold_is_refused_at_the_door() {
         what_happened: "a fault whose story\nruns over two lines".to_owned(),
         how_it_showed: "by rendering it".to_owned(),
         what_would_prevent: "this test".to_owned(),
-        status: "**aperto**".to_owned(),
+        status: "**open**".to_owned(),
     });
 
     let Err(said) = refused else {
@@ -142,26 +140,28 @@ fn a_cell_the_table_cannot_hold_is_refused_at_the_door() {
     );
 }
 
-/// **«NOT OPEN» AND «NOT UNDERSTOOD» MUST NOT BE THE SAME ANSWER.**
-///
-/// The old predicate answered yes or no, so a status it could not read left the
-/// open tally silently, and the total moved the reassuring way. Latent when
-/// found — every row on record classified — which makes it no smaller: a latent
-/// fault is one nobody has met yet.
+/// **«NOT OPEN» AND «NOT UNDERSTOOD» MUST NOT BE THE SAME ANSWER.** A predicate
+/// answering yes or no leaves the open tally silently, and the total moves the
+/// reassuring way.
 #[test]
 fn a_status_nobody_taught_this_is_refused_and_never_counted_as_closed() {
     assert_eq!(
         faults::standing_of("closed on the first, with a mutant"),
         faults::Standing::Unrecognised,
-        "a status in another language must read as unrecognised, never as closed"
+        "a status that never wrote the marker must read as unrecognised, never as closed"
     );
     assert_eq!(
-        faults::standing_of("**riaperto** il 02/09"),
+        faults::standing_of("**chiuso** il 02/09"),
+        faults::Standing::Unrecognised,
+        "a marker in the language the register left behind must be refused, not silently closed"
+    );
+    assert_eq!(
+        faults::standing_of("**reopened** on 02/09"),
         faults::Standing::Unrecognised,
         "a nuance nobody taught this must be refused, not silently closed"
     );
 
-    let store = Faults::open(scratch("stato-ignoto")).expect("opening");
+    let store = Faults::open(scratch("unknown-status")).expect("opening");
     let refused = store.record(&Draft {
         happened_on: "01/09".to_owned(),
         what_happened: "something".to_owned(),
@@ -178,7 +178,7 @@ fn a_status_nobody_taught_this_is_refused_and_never_counted_as_closed() {
     // And the half-closed reading is asked before the closed one, because the
     // second is a prefix of nothing and the first begins with the other's word.
     assert_eq!(
-        faults::standing_of("**chiuso in parte** il 01/09"),
+        faults::standing_of("**closed in part** on 01/09"),
         faults::Standing::PartlyClosed,
         "asking in the other order takes every half-closed row out of the tally"
     );
@@ -198,7 +198,7 @@ fn no_door_into_the_store_takes_a_cell_the_table_cannot_hold() {
         what_happened: "something on one line".to_owned(),
         how_it_showed: "by running it".to_owned(),
         what_would_prevent: "this test".to_owned(),
-        status: "**aperto**".to_owned(),
+        status: "**open**".to_owned(),
     };
     let written = store.record(&sound).expect("a sound row goes in");
 
@@ -265,7 +265,7 @@ fn a_newline_in_a_cell_makes_the_row_vanish_on_the_way_back() {
         what_happened: "a story\nover two lines".to_owned(),
         how_it_showed: "by rendering it".to_owned(),
         what_would_prevent: "refusing it at the door".to_owned(),
-        status: "**aperto**".to_owned(),
+        status: "**open**".to_owned(),
     };
 
     let back = faults::parse(&faults::render(&[broken]));
@@ -291,7 +291,7 @@ fn the_store_hands_out_the_number_and_never_the_same_one_twice() {
         what_happened: what.to_owned(),
         how_it_showed: "by running it".to_owned(),
         what_would_prevent: "a test that is born red".to_owned(),
-        status: "**aperto**".to_owned(),
+        status: "**open**".to_owned(),
     };
 
     let first = store.record(&draft("the first")).expect("recording");
@@ -316,10 +316,10 @@ fn the_store_hands_out_the_number_and_never_the_same_one_twice() {
 fn a_half_closed_fault_still_counts_as_open() {
     let store = Faults::open(scratch("count")).expect("opening");
     for status in [
-        "**aperto**",
-        "**aperto** — le difese di procedura sono in vigore, il codice no",
-        "**chiuso in parte** il 01/09, riaperto il 02/09",
-        "**chiuso** il 01/09 — con mutante",
+        "**open**",
+        "**open** — the procedural defences are in force, the code is not",
+        "**closed in part** on 01/09, reopened on 02/09",
+        "**closed** on 01/09 — with a mutant",
     ] {
         store
             .record(&Draft {
@@ -347,7 +347,7 @@ fn a_half_closed_fault_still_counts_as_open() {
 fn closing_a_fault_that_does_not_exist_says_so() {
     let store = Faults::open(scratch("unknown")).expect("opening");
     let refused = store
-        .set_status(99, "**chiuso** oggi")
+        .set_status(99, "**closed** today")
         .expect_err("a fault that is not there cannot be closed");
     assert!(refused.to_string().contains("99"), "{refused}");
 }

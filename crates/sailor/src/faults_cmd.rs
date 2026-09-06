@@ -419,7 +419,7 @@ mod tests {
                 what_happened: "what the store holds".to_owned(),
                 how_it_showed: "reading it".to_owned(),
                 what_would_prevent: "a check that reads it back".to_owned(),
-                status: "**aperto**".to_owned(),
+                status: "**open**".to_owned(),
             })
             .expect("recording");
         let written = dir.join("table.md");
@@ -471,7 +471,7 @@ mod tests {
                 what_happened: "what the store holds now".to_owned(),
                 how_it_showed: "by running it".to_owned(),
                 what_would_prevent: "this test".to_owned(),
-                status: "**aperto**".to_owned(),
+                status: "**open**".to_owned(),
             })
             .expect("recording");
 
@@ -479,7 +479,7 @@ mod tests {
         std::fs::write(
             &older,
             "| 1 | 01/09 | what an older checkout says | by running it | \
-             this test | **aperto** |\n",
+             this test | **open** |\n",
         )
         .expect("writing the older table");
 
@@ -502,7 +502,7 @@ mod tests {
         std::fs::write(
             &table,
             "| 1 | 01/09 | a first fault | by running it | this test | \
-             **aperto** |\n",
+             **open** |\n",
         )
         .expect("writing the table");
 
