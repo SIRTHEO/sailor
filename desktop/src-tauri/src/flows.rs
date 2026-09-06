@@ -1,37 +1,37 @@
-//! Le scritture della tela: creare, modificare, cancellare un flusso.
+//! The canvas writes: creating, editing and deleting a flow.
 //!
-//! **QUI NON VIVE PIÙ NESSUNA CONOSCENZA SUL DISCO.** Dove stanno i file, quale
-//! nome è sicuro, come si sostituisce un file senza farlo vedere a metà: tutto
-//! questo è passato in `flow::system` il 31/08/2026, perché `sailor flow cap`
-//! deve riscrivere un `.flow.json` e questo modulo sta **fuori dal workspace
-//! Rust** — la riga di comando non lo può chiamare. Le due copie che ne
-//! sarebbero nate sono il guasto 10.
+//! **NO KNOWLEDGE OF THE DISK LIVES HERE ANY MORE.** Where the files are, which
+//! name is safe, how a file is replaced without ever being seen half written:
+//! all of it moved into `flow::system`, because `sailor flow cap` has to
+//! rewrite a `.flow.json` and this module sits **outside the Rust workspace** —
+//! the command line cannot call it. The two copies that would have been born of
+//! that are fault 10.
 //!
-//! Quel che resta è ciò che appartiene davvero al guscio: prendere il JSON che
-//! arriva dalla tela, farlo passare per la validazione del motore
-//! (`flow::FlowFile`, e con lui `flow::Graph::validate`) e rifiutare un flusso
-//! che nomina azioni che il motore non conosce — `registry::default_registry`,
-//! la stessa lista che usa `sailor flow check`, mai una copia riscritta qui.
+//! What remains is what truly belongs to the shell: taking the JSON that
+//! arrives from the canvas, running it through the engine's validation
+//! (`flow::FlowFile`, and with it `flow::Graph::validate`) and refusing a flow
+//! that names actions the engine does not know — `registry::default_registry`,
+//! the same list `sailor flow check` uses, never a copy rewritten here.
 //!
-//! **QUESTA FRASE ERA GIÀ SCRITTA, E FINO AL 01/09/2026 ERA FALSA.** Diceva
-//! «`actions::register_default` / `register_store`», che sono due righe delle
-//! sedici del registro: il guscio ne era la quinta copia. Il modo in cui una
-//! regola smette di essere un'affermazione e diventa una difesa è che una
-//! prova la interroghi — qui `the_window_knows_every_action_the_engine_can_run`.
+//! **THAT LAST SENTENCE STOOD HERE WHILE IT WAS FALSE.** It said
+//! "`actions::register_default` / `register_store`", two lines out of the
+//! sixteen of the registry: the shell was its fifth copy. A rule stops being an
+//! assertion and becomes a defence when a test interrogates it — here
+//! `the_window_knows_every_action_the_engine_can_run`.
 
 use flow::{ActionRegistry, FlowFile};
 use std::path::Path;
 
 use ui::gather::{default_ledger_dir, ledger_present};
 
-/// Il comando che la tela chiama per creare o modificare un flusso.
+/// The command the canvas calls to create or edit a flow.
 #[tauri::command]
 pub(crate) fn save_flow(flow: serde_json::Value) -> Result<String, String> {
-    // L'identificativo si legge qui solo per sapere DOVE scrivere. Che sia
-    // valido lo decide `save_flow_in`, che ha già tutte le sue regole: un id
-    // assente o non testuale finisce nella cartella dei flussi nuovi e viene
-    // rifiutato là, col messaggio giusto, invece di essere rifiutato qui con un
-    // messaggio peggiore.
+    // The identifier is read here just to learn WHERE to write. Whether it is
+    // valid is decided by `save_flow_in`, which holds all its own rules: an id
+    // absent or not textual lands in the folder of the new flows and is refused
+    // there, with the right message, rather than being refused here with a
+    // worse message.
     let id = flow
         .get("id")
         .and_then(|id| id.as_str())
@@ -40,33 +40,31 @@ pub(crate) fn save_flow(flow: serde_json::Value) -> Result<String, String> {
     save_flow_in(&dir, flow).map(|()| origin.to_owned())
 }
 
-/// Il comando che la tela chiama per cancellare un flusso.
+/// The command the canvas calls to delete a flow.
 #[tauri::command]
 pub(crate) fn delete_flow(name: String) -> Result<(), String> {
     delete_flow_in(&super::place_for(&name).1, &name)
 }
 
-/// Cuore di `save_flow`, con la cartella passata invece che letta
-/// dall'ambiente: le prove scrivono in una cartella usa-e-getta, non fra i
-/// flussi veri.
+/// The heart of `save_flow`, with the folder passed in rather than read from
+/// the environment: the tests write into a throwaway folder, not among the real
+/// flows.
 ///
-/// Qui c'era il numero di quei flussi scritto a mano — «i quattordici flussi
-/// veri» — e affermava il falso. Non si aggiorna: si toglie. Un conteggio
-/// copiato in un commento invecchia da solo, e `docs/decisions.md` lo vieta
-/// proprio per questo — dove un fatto è già registrato, il testo ci rimanda
-/// invece di copiarlo. Il numero lo dice `sailor flow list`, che li conta tutti
-/// e tre i posti da cui vengono.
+/// A count copied into a comment ages on its own, and `docs/decisions.md`
+/// forbids it for exactly that reason — where a fact is already recorded, the
+/// text points at it rather than copying it. The number is said by
+/// `sailor flow list`, which counts all three of the places they come from.
 fn save_flow_in(flows_dir: &Path, flow_json: serde_json::Value) -> Result<(), String> {
-    // Deserializzare `FlowFile` richiama `Graph::try_from`, che chiama
-    // `Graph::validate`: cicli, dipendenze mancanti o incompatibili sono
-    // rifiutati qui dentro, non ricontrollati a mano.
+    // Deserializing `FlowFile` invokes `Graph::try_from`, which calls
+    // `Graph::validate`: cycles, missing or incompatible dependencies are
+    // refused in there, never rechecked by hand.
     let flow: FlowFile = serde_json::from_value(flow_json)
         .map_err(|error| format!("the flow fails the engine's validation: {error}"))?;
     reject_unknown_actions(&flow)?;
     flow::system::save_in(flows_dir, &flow)
 }
 
-/// Cuore di `delete_flow`, stessa ragione della cartella passata a mano.
+/// The heart of `delete_flow`, same reason for the folder passed by hand.
 fn delete_flow_in(flows_dir: &Path, name: &str) -> Result<(), String> {
     flow::system::delete_in(flows_dir, name)
 }
@@ -88,10 +86,10 @@ pub(crate) fn engine_actions() -> Vec<String> {
     names
 }
 
-/// Le azioni note al motore, per rifiutare al salvataggio un flusso che una
-/// corsa vera respingerebbe con `azione sconosciuta`. Il deposito entra nel
-/// registro solo se esiste già — una verifica statica non deve crearne uno,
-/// per la stessa ragione di `sailor flow check`.
+/// The actions the engine knows, so that saving refuses a flow a real run would
+/// throw back with `unknown action`. The ledger enters the registry if it
+/// exists already, and not otherwise — a static check must create none, for the
+/// same reason as `sailor flow check`.
 fn action_registry() -> ActionRegistry {
     let ledger_dir = default_ledger_dir();
     let ledger = ledger_present(&ledger_dir)
@@ -100,27 +98,27 @@ fn action_registry() -> ActionRegistry {
     action_registry_with(ledger)
 }
 
-/// Il registro **senza deposito**: la forma che una prova può costruire senza
-/// leggere la macchina di chi la esegue (guasto 5).
+/// The registry **with no ledger**: the shape a test can build without reading
+/// the machine of whoever runs it (fault 5).
 #[cfg(test)]
 fn action_registry_without_deposit() -> ActionRegistry {
     action_registry_with(None)
 }
 
-/// **LA LISTA È UNA SOLA, E FINO AL 01/09/2026 QUESTA ERA LA QUINTA COPIA.**
+/// **THERE IS ONE LIST, AND THIS USED TO BE THE FIFTH COPY.**
 ///
-/// Qui stavano tre righe scelte a mano — `register_default`, `trigger`, e lo
-/// `store` se il deposito esiste — mentre `crates/registry` ne registra
-/// sedici. Il risultato è che la finestra **rifiutava al salvataggio** cinque
-/// azioni che dal terminale girano: `detect_tools`, `tool_needs`,
-/// `history_ask`, `subflow` e — la più grave — `handed_to_agent`, cioè il
-/// passo che consegna il lavoro a chi è già vivo nel terminale. Una funzione
-/// centrale del prodotto non si poteva comporre dalla finestra.
+/// Three hand-picked lines lived here — `register_default`, `trigger`, and the
+/// `store` when the ledger exists — while `crates/registry` registers sixteen.
+/// So the window **refused at save time** five actions that do run from the
+/// terminal: `detect_tools`, `tool_needs`, `history_ask`, `subflow` and — the
+/// gravest — `handed_to_agent`, the step that hands the work to whoever is
+/// already alive in the terminal. A central function of the product could not
+/// be composed from the window.
 ///
-/// È il guasto 10 alla quinta occorrenza, e stavolta il commento in testa al
-/// file dichiarava già la regola giusta — «la stessa lista che usa `sailor
-/// flow check`, mai una copia riscritta qui» — sopra il codice che la
-/// violava. Una regola scritta e non verificata non è una difesa.
+/// It is fault 10 at its fifth occurrence, and this time the comment at the
+/// head of the file already declared the right rule — "the same list
+/// `sailor flow check` uses, never a copy rewritten here" — above the code that
+/// violated it. A rule written and never verified is no defence.
 fn action_registry_with(ledger: Option<ledger::Ledger>) -> ActionRegistry {
     registry::default_registry(ledger, None)
 }
@@ -155,8 +153,8 @@ mod tests {
 
     static NEXT: AtomicU64 = AtomicU64::new(0);
 
-    /// Una cartella usa-e-getta per ogni prova: si vede da sola quando resta
-    /// vuota, cosa che una cartella condivisa fra prove non garantirebbe.
+    /// A throwaway folder for each test: it shows for itself when it stays
+    /// empty, which a folder shared between tests would fail to guarantee.
     fn scratch_dir(label: &str) -> PathBuf {
         let sequence = NEXT.fetch_add(1, Ordering::Relaxed);
         let dir = std::env::temp_dir().join(format!(
@@ -195,15 +193,14 @@ mod tests {
             .collect()
     }
 
-    // ── ciò che il guscio decide da sé ──────────────────────────────────
+    // ── what the shell decides for itself ───────────────────────────────
     //
-    // Le prove su nomi pericolosi, collisioni di maiuscole, sostituzione
-    // atomica e cancellazione sono passate in `crates/flow/src/system.rs`
-    // insieme al codice che provano — e da lì `cargo test --workspace` le
-    // esegue, cosa che qui non faceva: questo modulo sta fuori dal workspace.
-    // Quella qui sotto resta perché prova il **collegamento**: se un giorno
-    // `save_flow_in` smettesse di passare da `flow::system::save_in`, nessuna
-    // delle prove laggiù se ne accorgerebbe.
+    // The tests on dangerous names, case collisions, atomic replacement and
+    // deletion moved into `crates/flow/src/system.rs` together with the code
+    // they test — and from there `cargo test --workspace` runs them, which it
+    // did not do here: this module sits outside the workspace. The one below
+    // stays because it tests the **wiring**: were `save_flow_in` to stop going
+    // through `flow::system::save_in`, no test over there would notice.
 
     #[test]
     fn save_flow_rejects_an_empty_id_and_writes_nothing() {
@@ -213,13 +210,13 @@ mod tests {
         assert!(entries(&dir).is_empty(), "nessun file deve comparire");
     }
 
-    // ── un grafo che il motore rifiuterebbe non tocca il disco ──────────
+    // ── a graph the engine would refuse never touches the disk ──────────
 
-    /// LA MISURA CHE POTEVA VENIRE DIVERSA: `a` e `b` dipendono l'uno
-    /// dall'altro. `Graph::validate` lo respinge con un ciclo. Se la
-    /// validazione venisse saltata (mutante: scrivere `text` senza prima
-    /// passare da `serde_json::from_value::<FlowFile>`), il file comparirebbe
-    /// comunque nella cartella e questa prova diventerebbe rossa.
+    /// THE MEASURE THAT COULD HAVE COME OUT OTHERWISE: `a` and `b` depend on
+    /// each other. `Graph::validate` throws that back as a cycle. Were the
+    /// validation skipped (mutant: writing `text` without going through
+    /// `serde_json::from_value::<FlowFile>` first), the file would show up in
+    /// the folder all the same and this test would turn red.
     #[test]
     fn save_flow_rejects_a_cyclic_graph_and_writes_nothing() {
         let dir = scratch_dir("cyclic-graph");
@@ -267,10 +264,10 @@ mod tests {
         assert!(entries(&dir).is_empty());
     }
 
-    /// LA MISURA CHE POTEVA VENIRE DIVERSA: `azione-mai-registrata` non è né
-    /// `shell_check` né `external_engine` né una delle azioni del deposito.
-    /// Senza `reject_unknown_actions` (mutante: farla tornare sempre `Ok`) il
-    /// file comparirebbe comunque, e questa prova diventerebbe rossa.
+    /// THE MEASURE THAT COULD HAVE COME OUT OTHERWISE: `azione-mai-registrata`
+    /// is neither `shell_check` nor `external_engine` nor an action of the
+    /// ledger. Lacking `reject_unknown_actions` (mutant: making it always
+    /// return `Ok`) the file would show up all the same, and this test turn red.
     #[test]
     fn save_flow_rejects_an_unknown_action_and_writes_nothing() {
         let dir = scratch_dir("unknown-action");
@@ -291,18 +288,18 @@ mod tests {
         assert!(save_flow_in(&dir, with_engine).is_ok());
     }
 
-    /// **LA FINESTRA DEVE SAPER SALVARE TUTTO CIÒ CHE IL MOTORE SA ESEGUIRE.**
+    /// **THE WINDOW MUST BE ABLE TO SAVE ALL THE ENGINE CAN RUN.**
     ///
-    /// Il commento in testa a questo file dichiara «la stessa lista che usa
-    /// `sailor flow check`, mai una copia riscritta qui». `action_registry`
-    /// era invece la copia: `register_default` più due righe scelte a mano,
-    /// mentre il motore passa da `registry::default_registry`. È il guasto 10
-    /// per la quinta volta, e stavolta rifiutava al salvataggio dei flussi che
-    /// dal terminale partono — il contrario del difetto gemello, che offriva
-    /// nella tavolozza azioni che il motore non conosce.
+    /// The comment at the head of this file declares "the same list
+    /// `sailor flow check` uses, never a copy rewritten here". `action_registry`
+    /// was that copy instead: `register_default` plus two hand-picked lines,
+    /// while the engine goes through `registry::default_registry`. It is fault
+    /// 10 for the fifth time, and this time it refused at save time flows that
+    /// do start from the terminal — the reverse of the twin defect, which
+    /// offered in the palette actions the engine does not know.
     ///
-    /// Il confronto è **senza deposito da tutte e due le parti**, o la prova
-    /// leggerebbe lo stato della macchina di chi la esegue (guasto 5).
+    /// The comparison runs **with no ledger on either side**, or the test would
+    /// read the state of the machine of whoever runs it (fault 5).
     #[test]
     fn the_window_knows_every_action_the_engine_can_run() {
         let engine = registry::registry_in(registry::House::empty(), None, None);
@@ -321,18 +318,18 @@ mod tests {
         );
     }
 
-    /// **LA TAVOLOZZA NON DEVE OFFRIRE NIENTE CHE IL MOTORE RIFIUTI.**
+    /// **THE PALETTE MUST OFFER NOTHING THE ENGINE WOULD REFUSE.**
     ///
-    /// Il difetto gemello del precedente, e quello che si vede a mano: fino al
-    /// 01/09/2026 `ACTION_KIND` nominava sei azioni che non esistono in nessun
-    /// crate — `pane_until_idle`, `signal_is_gone`, `deposit_write`,
-    /// `pane_send`, `hand_to_human`, `pane_read` — e quattro erano nella
-    /// cassetta dei passi: premere «attesa», «deposito», «gesto» o «a una
-    /// persona» creava un nodo che poi non si salvava.
+    /// The twin defect of the previous one, and the one visible by hand:
+    /// `ACTION_KIND` named six actions that exist in no crate at all —
+    /// `pane_until_idle`, `signal_is_gone`, `deposit_write`, `pane_send`,
+    /// `hand_to_human`, `pane_read` — and four of them sat in the box of the
+    /// steps: pressing "wait", "ledger", "gesture" or "to a person" created a
+    /// node that then failed to save.
     ///
-    /// L'ancora sta **fuori da tutte e due le copie**: il vocabolario della
-    /// finestra si legge dal suo file e si confronta col registro del motore.
-    /// Confrontare due mappe scritte a mano le lascerebbe sbagliare insieme.
+    /// The anchor sits **outside both copies**: the window's vocabulary is read
+    /// from its own file and compared against the engine's registry. Comparing
+    /// two hand-written maps would let them be wrong together.
     #[test]
     fn the_window_vocabulary_names_only_actions_the_engine_registers() {
         let source =
@@ -344,8 +341,8 @@ mod tests {
             "il vocabolario non è stato letto: {} nomi trovati",
             named.len()
         );
-        // Col deposito **aperto**, perché sei azioni si registrano solo allora
-        // e la finestra ha ragione a saperle disegnare comunque.
+        // With the ledger **open**, because six actions register then and not
+        // before, and the window is right to draw them all the same.
         let dir = scratch_dir("vocabolario");
         let ledger = ledger::Ledger::open(&dir).expect("un deposito di prova");
         let engine = registry::registry_in(registry::House::under(&dir), Some(ledger), None);
@@ -361,10 +358,10 @@ mod tests {
             invented
         );
 
-        // E l'altro verso, che è come si nascondeva il difetto peggiore:
-        // `kindOf` ripiega su «verifica» per un nome che non conosce, quindi
-        // i sette passi `trigger` dei flussi veri si disegnavano come nodi di
-        // controllo, in silenzio e senza che niente diventasse rosso.
+        // And the other direction, which is how the worse defect hid itself:
+        // `kindOf` falls back on "check" for a name it does not know, so the
+        // seven `trigger` steps of the real flows were drawn as control nodes,
+        // in silence and with nothing turning red.
         let undrawn: Vec<&str> = engine
             .names()
             .into_iter()
@@ -379,11 +376,11 @@ mod tests {
         );
     }
 
-    /// I nomi di azione dentro un blocco `const NOME: … = { chiave: valore }`
-    /// del sorgente della finestra. Sta qui e non in un lettore generico
-    /// perché è una lettura sola e deve restare leggibile: se un giorno il
-    /// blocco cambia forma, la prova sopra fallisce sul conto minimo invece di
-    /// passare su un elenco vuoto.
+    /// The action names inside a `const NAME: … = { key: value }` block of the
+    /// window's source. It lives here and not in a generic reader because it is
+    /// a single read and must stay readable: were the block to change shape one
+    /// day, the test above fails on the minimum count rather than passing over
+    /// an empty list.
     fn action_names_in(source: &str, header: &str) -> Vec<String> {
         let Some(start) = source.find(header) else {
             return Vec::new();
@@ -403,8 +400,8 @@ mod tests {
             .collect()
     }
 
-    /// La cancellazione passa dallo stesso posto: se il guscio smettesse di
-    /// delegare, questa riga se ne accorgerebbe.
+    /// Deletion goes through the same place: were the shell to stop delegating,
+    /// this line would notice.
     #[test]
     fn delete_flow_reports_a_flow_that_was_never_written() {
         let dir = scratch_dir("delete-missing");

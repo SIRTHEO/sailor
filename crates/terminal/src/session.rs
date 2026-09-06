@@ -1,20 +1,19 @@
-//! I terminali aperti: quali sono, in quale spazio di lavoro, e cosa succede a
-//! una riga che ci viene scritta dentro.
+//! The open terminals: which they are, in which workspace, and what happens to
+//! a line typed into one.
 //!
-//! **QUI SI INCONTRANO LE DUE METÀ.** Sotto c'è lo pseudo-terminale, che tocca
-//! il sistema operativo; accanto c'è lo smistamento, che è un elenco di dati. Un
-//! [`Terminal`] è il punto in cui la riga scritta dall'utente viene prima
-//! guardata e poi — solo se è un comando — eseguita.
+//! **THE TWO HALVES MEET HERE.** Below is the pseudo-terminal, which touches
+//! the operating system; alongside is the routing, which is a list of data. A
+//! [`Terminal`] is the point where the line the user wrote is first looked at
+//! and then — and this only if it is a command — run.
 //!
-//! **QUESTO CRATE NON ESEGUE FLUSSI, E LA RIGA DI CONFINE È VOLUTA.**
-//! [`Terminal::submit`] restituisce [`Routed::Flow`] e non fa partire niente.
-//! Far partire una corsa vuol dire il motore dei flussi, il deposito e gli
-//! inneschi: farli entrare qui dentro renderebbe impossibile aprire un terminale
-//! senza portarsi dietro tutto Sailor, e un terminale deve poter aprirsi anche
-//! quando i flussi sono rotti. Chi compone il programma prende quel `Flow` e lo
-//! consegna all'innesco manuale — la prova
-//! `a_routed_request_reaches_the_trigger` fa esattamente questo, ed è lì che si
-//! vede il collegamento completo.
+//! **THIS CRATE RUNS NO FLOWS, AND THE BORDER IS DELIBERATE.**
+//! [`Terminal::submit`] returns [`Routed::Flow`] and starts nothing. Starting a
+//! run means the flow engine, the ledger and the triggers: letting those in
+//! here would make it impossible to open a terminal without dragging all of
+//! Sailor along, and a terminal must be able to open even when the flows are
+//! broken. Whoever composes the program takes that `Flow` and hands it to the
+//! manual trigger — the test `a_routed_request_reaches_the_trigger` does
+//! exactly that, and that is where the whole link is visible.
 
 use crate::inbox::{self, Inbox};
 use crate::pty::{Pty, PtyError, Size};
@@ -27,20 +26,20 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-/// Come si apre un terminale: cosa avviare, dove, quanto grande.
+/// How a terminal opens: what to start, where, how big.
 ///
-/// **UNA STRUTTURA E NON SEI ARGOMENTI** perché i valori predefiniti sono la
-/// parte che conta: chi apre un terminale normale dice solo lo spazio di lavoro,
-/// e chi ne apre uno particolare cambia un campo — senza che l'aggiunta del
-/// campo dopo rompa chi chiama.
+/// **A STRUCT AND NOT SIX ARGUMENTS** because the defaults are the part which
+/// counts: opening an ordinary terminal names the workspace and nothing else,
+/// and opening a particular one changes one field — without a field added
+/// later breaking the callers.
 #[derive(Debug, Clone)]
 pub struct Opening {
-    /// Il programma da avviare dentro il terminale. Predefinito: la shell di
-    /// chi lancia, letta da `SHELL`.
+    /// The program to start inside the terminal. Default: the launcher's own
+    /// shell, read from `SHELL`.
     pub program: OsString,
     pub args: Vec<OsString>,
     pub size: Size,
-    /// Variabili aggiunte a quelle ereditate.
+    /// Variables added to the inherited ones.
     pub environment: Vec<(String, String)>,
     /// The profile the program runs under, as whoever opens knows it; `None`
     /// when no profile applies to that program.
@@ -55,20 +54,20 @@ impl Default for Opening {
             size: Size::default(),
             profile: None,
             environment: vec![
-                // Senza `TERM` un programma non sa che tipo di terminale ha
-                // davanti e si comporta come se non ne avesse nessuno: niente
-                // colori, niente posizionamento del cursore.
+                // Without `TERM` a program does not know what kind of terminal
+                // it faces and behaves as if it had none at all: no colours,
+                // no cursor positioning.
                 ("TERM".to_string(), "xterm-256color".to_string()),
-                // Chi gira dentro deve poter sapere di essere dentro Sailor:
-                // è la sola via perché un programma annidato non riapra un
-                // terminale dentro il terminale.
+                // Whatever runs inside must be able to know it is inside
+                // Sailor: it is the sole way a nested program does not reopen
+                // a terminal inside the terminal.
                 ("SAILOR_TERMINAL".to_string(), "1".to_string()),
             ],
         }
     }
 }
 
-/// Un terminale aperto, legato al proprio spazio di lavoro.
+/// An open terminal, bound to its own workspace.
 pub struct Terminal {
     id: String,
     workspace: Workspace,
@@ -116,13 +115,12 @@ impl Terminal {
         self.counters.total()
     }
 
-    /// **LA RIGA CHE L'UTENTE HA SCRITTO, GUARDATA PRIMA DI ESSERE ESEGUITA.**
+    /// **THE LINE THE USER WROTE, LOOKED AT BEFORE IT RUNS.**
     ///
-    /// Se è un comando, ci finisce dentro col ritorno a capo, come se fosse
-    /// stata digitata, e la risposta dice perché è passata. Se è una richiesta
-    /// che riguarda un flusso, **non ci finisce dentro**: la risposta dice quale
-    /// regola l'ha riconosciuta, a quale flusso va e con quale testo, e chi
-    /// chiama decide cosa farne.
+    /// If it is a command, it goes in with the newline, as if typed, and the
+    /// answer says why it passed. If it is a request about a flow, **it does
+    /// not go in**: the answer says which rule recognised it, which flow it
+    /// goes to and with what text, and the caller decides what to do with it.
     pub fn submit(&self, line: &str) -> Result<Routed, PtyError> {
         let decision = self.router.route(line);
         if let Routed::Command { line, .. } = &decision {
@@ -133,13 +131,12 @@ impl Terminal {
         Ok(decision)
     }
 
-    /// Byte grezzi sull'ingresso, senza passare dallo smistamento: un Ctrl-C,
-    /// una freccia, la risposta a una domanda interattiva.
+    /// Raw bytes on the input, with no routing at all: a Ctrl-C, an arrow key,
+    /// the answer to an interactive question.
     ///
-    /// **NON SI SMISTA CIÒ CHE NON È UNA RIGA.** Lo smistamento guarda una
-    /// richiesta intera; un tasto premuto dentro un editor non è una richiesta,
-    /// e passarlo di qui vorrebbe dire farlo esaminare da un elenco di regole
-    /// che non lo riguarda.
+    /// **WHAT IS NOT A LINE IS NOT ROUTED.** Routing looks at a whole request;
+    /// a key pressed inside an editor is no request, and passing it through
+    /// here would have it weighed by a list of rules it has nothing to do with.
     pub fn press(&self, bytes: &[u8]) -> Result<(), PtyError> {
         self.pty.write(bytes)?;
         self.counters
@@ -157,7 +154,7 @@ impl Terminal {
         self.pty.close()
     }
 
-    /// Cosa mostrare di questo terminale in un elenco.
+    /// What to show of this terminal in a list.
     pub fn summary(&self) -> Summary {
         Summary {
             id: self.id.clone(),
@@ -191,16 +188,15 @@ pub fn estimated_tokens(moved: u64) -> u64 {
     sessions::fullness::measure(moved, &sessions::fullness::Model::default(), 0).estimated_tokens
 }
 
-/// Una riga dell'elenco dei terminali aperti.
+/// One row of the list of open terminals.
 ///
-/// **QUESTO TIPO È LA RIGA CHE LA FINESTRA RICEVE, E NON SE NE RICOPIA UNA
-/// SECONDA.** `docs/the-terminal-contract.md` lo dice per
-/// esteso: il ponte risponde con questa struttura tale e quale, invece di
-/// dichiarare i cinque campi una seconda volta in TypeScript e una terza in un
-/// tipo di comodo dentro il guscio. I nomi escono in `camelCase` perché è la
-/// forma in cui il contratto li scrive e in cui la finestra li legge; restano
-/// identificatori inglesi da tutte e due le parti, che è ciò che `AGENTS.md`
-/// chiede.
+/// **THIS TYPE IS THE ROW THE WINDOW RECEIVES, AND NO SECOND COPY OF IT IS
+/// MADE.** `docs/the-terminal-contract.md` says it at length: the bridge
+/// answers with this struct as it stands, instead of declaring the five fields
+/// a second time in TypeScript and a third in a convenience type inside the
+/// shell. The names come out in `camelCase` because it is the form the
+/// contract writes them in and the window reads them in; they stay English
+/// identifiers on both sides, which is what `AGENTS.md` asks.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Summary {
@@ -223,14 +219,13 @@ pub struct Summary {
     pub profile: Option<String>,
 }
 
-/// I terminali aperti da questo processo.
+/// The terminals opened by this process.
 ///
-/// **L'ELENCO STA QUI E NON IN UN FILE**, perché è la risposta alla domanda
-/// «quali terminali ho aperto **io**»: un elenco su disco sopravvivrebbe al
-/// processo e direbbe che sono aperti terminali che sono morti con lui — che è
-/// il guasto 4 raccontato di nuovo, un passo più in là. Il giorno in cui i
-/// terminali devono sopravvivere a chi li ha aperti, chi li registra è il
-/// deposito, non questa struttura.
+/// **THE LIST LIVES HERE AND NOT IN A FILE**, because it answers the question
+/// «which terminals have **I** opened»: a list on disk would outlive the
+/// process and claim terminals are open which died with it — which is fault 4
+/// told again, one step further along. The day terminals must outlive whoever
+/// opened them, what records them is the ledger, not this struct.
 pub struct Terminals {
     open: Mutex<Vec<Arc<Terminal>>>,
     router: Arc<Router>,
@@ -240,14 +235,14 @@ pub struct Terminals {
 }
 
 impl Terminals {
-    /// I terminali di questo processo, con le regole di smistamento spedite col
-    /// prodotto e quelle scritte dall'utente.
+    /// This process's terminals, with the routing rules shipped with the
+    /// product and those written by the user.
     pub fn current() -> Terminals {
         Terminals::with_router(Arc::new(Router::current()))
     }
 
-    /// Con un elenco di regole dichiarato da chi chiama: è la forma che usano le
-    /// prove, e quella che userà chi vuole regole diverse per terminali diversi.
+    /// With a rule list declared by the caller: the shape the tests use, and
+    /// the one for whoever wants different rules for different terminals.
     pub fn with_catalog(catalog: &Catalog) -> Terminals {
         Terminals::with_router(Arc::new(Router::new(
             catalog,
@@ -281,21 +276,21 @@ impl Terminals {
         &self.router
     }
 
-    /// Apre un terminale dentro `workspace` e consegna la sua uscita **mentre
-    /// esce** al destinatario che `make_output` fabbrica.
+    /// Opens a terminal inside `workspace` and hands its output **as it comes
+    /// out** to the sink `make_output` builds.
     ///
-    /// Il filo che legge nasce qui e muore quando il terminale finisce: leggere
-    /// a richiesta vorrebbe dire o un buffer che cresce senza che nessuno lo
-    /// svuoti, o un figlio che si blocca in scrittura quando nessuno chiede.
+    /// The reading thread is born here and dies when the terminal ends: reading
+    /// on demand would mean either a buffer growing with nobody draining it, or
+    /// a child blocked in a write while nobody asks.
     ///
-    /// **IL DESTINATARIO SI FABBRICA COL NOME DEL TERMINALE IN MANO, E NON LO
-    /// RICEVE DOPO.** Chi consegna l'uscita altrove — a una finestra, a una
-    /// rete — deve dire *di quale* terminale è ogni pezzo, e l'identificativo lo
-    /// assegna questa funzione. Passando un destinatario già fatto restava un
-    /// istante in cui i primi byte esistevano e il nome no: l'invito della shell
-    /// esce lì dentro, cioè proprio il pezzo che chi guarda si aspetta per
-    /// primo. Un `FnOnce(&str)` toglie quell'istante per costruzione, invece di
-    /// coprirlo con una coda d'attesa.
+    /// **THE SINK IS BUILT WITH THE TERMINAL'S NAME IN HAND, AND DOES NOT
+    /// RECEIVE IT AFTERWARDS.** Whoever hands the output elsewhere — to a
+    /// window, to a network — must say *which* terminal each piece belongs to,
+    /// and this function is what assigns the id. Passing a ready-made sink left
+    /// an instant in which the first bytes existed and the name did not: the
+    /// shell prompt comes out in there, the very piece a watcher expects first.
+    /// An `FnOnce(&str)` removes that instant by construction, instead of
+    /// covering it with a waiting queue.
     pub fn open(
         &self,
         workspace: Workspace,
@@ -336,9 +331,9 @@ impl Terminals {
             let mut buffer = [0u8; 8192];
             loop {
                 match reader.read(&mut buffer) {
-                    // Zero byte è la fine del terminale, non qualcosa che è
-                    // stato detto: consegnarlo farebbe scrivere una riga a chi
-                    // guarda per un fatto che non è accaduto.
+                    // Zero bytes is the end of the terminal, not something
+                    // said: handing it on would make a watcher write a line
+                    // for a fact which never happened.
                     Ok(0) => break,
                     Ok(read) => {
                         draining
@@ -347,14 +342,14 @@ impl Terminals {
                             .fetch_add(read as u64, Ordering::Relaxed);
                         output.chunk(&buffer[..read]);
                     }
-                    // Un segnale arrivato durante la lettura non è la fine
-                    // dell'uscita, e trattarlo così troncherebbe il testo di un
-                    // terminale sano.
+                    // A signal which arrived during the read is not the end of
+                    // the output, and treating it as such would truncate the
+                    // text of a healthy terminal.
                     Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-                    // Su Linux l'ultimo lettore di uno pseudo-terminale il cui
-                    // figlio è morto riceve `EIO`, non zero byte: è la fine, e
-                    // chiamarla guasto farebbe apparire rotto ogni terminale
-                    // chiuso normalmente.
+                    // On Linux the last reader of a pseudo-terminal whose
+                    // child has died gets `EIO`, not zero bytes: it is the
+                    // end, and calling it a fault would make every normally
+                    // closed terminal look broken.
                     Err(_) => break,
                 }
             }
@@ -367,7 +362,7 @@ impl Terminals {
         Ok(terminal)
     }
 
-    /// Quali terminali sono aperti e in quale spazio di lavoro.
+    /// Which terminals are open and in which workspace.
     pub fn list(&self) -> Vec<Summary> {
         locked(&self.open)
             .iter()
@@ -382,7 +377,7 @@ impl Terminals {
             .map(Arc::clone)
     }
 
-    /// Chiude un terminale e lo toglie dall'elenco.
+    /// Closes a terminal and takes it off the list.
     pub fn close(&self, id: &str) -> Option<Result<(), PtyError>> {
         let mut open = locked(&self.open);
         let at = open.iter().position(|terminal| terminal.id == id)?;
@@ -390,8 +385,8 @@ impl Terminals {
         Some(terminal.close())
     }
 
-    /// Chiude tutto. Chi apre terminali deve avere un gesto solo per la fine,
-    /// o ne dimentica uno.
+    /// Closes everything. Whoever opens terminals needs a single gesture for
+    /// the end, or they forget one.
     pub fn close_all(&self) {
         let taken: Vec<Arc<Terminal>> = std::mem::take(&mut *locked(&self.open));
         for terminal in taken {
@@ -450,22 +445,21 @@ fn register(terminal: &Arc<Terminal>, mailroom: &std::path::Path) -> Result<Regi
     })
 }
 
-/// Quanto si insiste a chiedere com'è finito, dopo che l'uscita è finita.
+/// How long to keep asking how it ended, once the output has ended.
 ///
-/// **NON È UN'ATTESA PER SICUREZZA, È IL TEMPO FRA DUE FATTI DIVERSI.** Che
-/// l'ultimo descrittore del terminale si chiuda e che il processo sia stato
-/// raccolto dal sistema sono due cose, e nell'ordine sbagliato per chi legge: il
-/// figlio muore, l'uscita finisce, e solo poco dopo `try_wait` ha un esito da
-/// dare. Due secondi sono lunghi rispetto a quella distanza e corti rispetto a
-/// chi guarda.
+/// **NOT A WAIT FOR SAFETY, BUT THE TIME BETWEEN TWO DIFFERENT FACTS.** The
+/// terminal's last descriptor closing and the process being reaped by the
+/// system are two things, and in the wrong order for a reader: the child dies,
+/// the output ends, and a little later `try_wait` has a verdict to give. Two
+/// seconds are long against that gap and short against a watcher.
 const HOW_LONG_TO_ASK: std::time::Duration = std::time::Duration::from_secs(2);
 
-/// Com'è finito il processo dentro, chiesto senza mai bloccare.
+/// How the process inside ended, asked without ever blocking.
 ///
-/// **SCADUTA LA PAZIENZA SI DICE «ANCORA VIVO», NON «USCITO CON ZERO».** Un
-/// programma che chiude i propri descrittori e continua a girare esiste, ed è
-/// raro: proprio per questo un esito inventato al posto suo non lo troverebbe
-/// nessuno.
+/// **WHEN PATIENCE RUNS OUT IT SAYS «STILL ALIVE», NOT «EXITED ZERO».** A
+/// program which closes its own descriptors and keeps running exists, and is
+/// rare: which is exactly why a verdict invented in its place would be found
+/// by nobody.
 fn how_it_ended(pty: &Pty) -> Ending {
     let until = std::time::Instant::now() + HOW_LONG_TO_ASK;
     loop {

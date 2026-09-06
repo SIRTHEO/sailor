@@ -8,20 +8,19 @@ import { useAsk, useClock } from "./ask";
 import { executionHistory, type Execution, type ModelCall } from "./engine";
 import { t } from "./i18n";
 
-/** Ogni quanto si rilegge: la storia cresce piano. */
+/** How often it is reread: the history grows slowly. */
 const REFRESH_MS = 15000;
 
-/** Quante ne mostra. La domanda «cosa si ripete» si esaurisce molto prima. */
+/** How many it shows. The question «what repeats» is exhausted well before. */
 const SHOWN = 120;
 
 /**
- * Com'è finita una corsa, in una parola.
+ * How a run ended, in one word.
  *
- * **ROTTA VINCE SU APERTA**, e non è un dettaglio: una corsa con un passo
- * caduto e un altro ancora in volo è un guasto che sta ancora bruciando.
- * Metterla fra le aperte la toglierebbe dall'occhio di chi cerca i guasti — ed
- * è la stessa regola che il motore applica nel riepilogo di giornata, scritta
- * là in `board.rs`. Se una delle due cambia, cambiano tutte e due.
+ * **BROKE BEATS OPEN**, and that is no detail: a run with one step down and one
+ * still in flight is a fault still burning. Filing it among the open ones takes it
+ * out of the eye of whoever hunts faults — and it is the same rule the engine
+ * applies in the day's summary, written over in `board.rs`. Change one, change both.
  */
 export function outcomeOf(run: Execution): "broke" | "open" | "went" | "other" {
   if (run.error !== null || run.steps_broke > 0 || ["failed", "broke", "error"].includes(run.status)) {
@@ -39,7 +38,7 @@ const OUTCOME_WORD: Record<ReturnType<typeof outcomeOf>, string> = {
   other: "other",
 };
 
-/** Quando è successo, in ore e minuti. La data solo se non è oggi. */
+/** When it happened, in hours and minutes. The date only if it is not today. */
 export function whenOf(startedAt: number, now: number): string {
   const then = new Date(startedAt * 1000);
   const today = new Date(now * 1000);
@@ -52,7 +51,7 @@ export function whenOf(startedAt: number, now: number): string {
   return `${then.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit" })} ${time}`;
 }
 
-/** Quanto è durata. `null` è una corsa che non è mai finita, e si dice. */
+/** How long it lasted. `null` is a run that never ended, and that is said. */
 export function lastedOf(seconds: number | null): string {
   if (seconds === null) return "—";
   if (seconds < 60) return `${seconds} s`;
@@ -66,24 +65,24 @@ function money(micros: number): string {
   return `$${(micros / 1_000_000).toFixed(3)}`;
 }
 
-/** Token visti da una chiamata: quelli che ha dichiarato, non una stima. */
+/** Tokens seen from a call: the ones it declared, not an estimate. */
 function seenTokens(call: ModelCall): number {
   const parts = [call.input_tokens, call.output_tokens, call.cached_tokens, call.cache_write_tokens];
   const known = parts.filter((part): part is number => part !== null);
-  // NESSUN NUMERO NON E' ZERO. Una chiamata che non ha dichiarato token non ne
-  // ha consumati zero: non lo sappiamo, e scrivere zero e' la bugia comoda.
+  // NO NUMBER IS NOT ZERO. A call that declared no tokens did not consume zero
+  // of them: we do not know, and writing zero is the convenient lie.
   if (known.length === 0) return call.total_tokens ?? -1;
   return known.reduce((sum, part) => sum + part, 0);
 }
 
 /**
- * Le chiamate al modello di una corsa, aperte solo se si chiedono.
+ * A run's calls to the model, opened only if asked for.
  *
- * **IL COSTO CALCOLATO E QUELLO DICHIARATO STANNO AFFIANCATI.** Uno lo ricava
- * Sailor dai token, l'altro lo dice il motore: se divergono, il posto in cui
- * accorgersene e' questo. E' il controllo che nella ricognizione del
- * 31/08/2026 manca a Langfuse, LangSmith e Phoenix — tutti e tre con bug
- * pubblici sui numeri, tutti e tre senza una seconda fonte da confrontare.
+ * **THE COMPUTED COST AND THE DECLARED ONE SIT SIDE BY SIDE.** Sailor derives one
+ * from the tokens, the engine states the other: if they diverge, this is the place
+ * to notice. It is the check the survey found missing from Langfuse, LangSmith and
+ * Phoenix — all three with public bugs on their numbers, all three with no second
+ * source to compare against.
  */
 export function Calls({ calls }: { calls: ModelCall[] }) {
   if (calls.length === 0) return null;
@@ -215,11 +214,11 @@ export function History({ native, root }: { native: boolean; root: string | null
               <tr key={run.run_id}>
                 <td className="now__entity">
                   {run.entity === "" ? <span className="now__unnamed">unnamed</span> : run.entity}
-                  {/* L'ERRORE STA SULLA RIGA, NON DIETRO UN CLIC. Su GitHub
-                      Actions «perché è caduta la build» costa un paio di link e
-                      migliaia di righe di registro, ed è la lamentela più
-                      citata di quel prodotto. Qui la prima riga del motivo si
-                      legge da fuori. */}
+                  {/* THE ERROR IS ON THE ROW, NOT BEHIND A CLICK. On GitHub
+                      Actions «why the build fell over» costs a couple of links
+                      and thousands of log lines, and it is that product's most
+                      cited complaint. Here the first line of the reason reads
+                      from outside. */}
                   {run.error !== null && <span className="now__why">{run.error}</span>}
                 </td>
                 <td className="now__state" data-outcome={outcome}>
@@ -230,17 +229,16 @@ export function History({ native, root }: { native: boolean; root: string | null
                 <td className="now__num">
                   {run.steps_went}/{run.steps_total}
                 </td>
-                {/* Zero non si scrive: una colonna piena di zeri nasconde i
-                    numeri che contano. */}
+                {/* Zero is not written: a column full of zeros hides the
+                    numbers that count. */}
                 <td className="now__num">{run.steps_retried === 0 ? "—" : run.steps_retried}</td>
                 <td className="now__num">{money(run.total_cost_micros)}</td>
               </tr>
             );
-            // LE CHIAMATE STANNO SOTTO LA CORSA, CHIUSE. Aperte sempre, una
-            // corsa con quaranta chiamate seppellirebbe le altre righe; in una
-            // pagina a parte, il confronto fra costo calcolato e costo
-            // dichiarato costerebbe un viaggio. Chiuse qui e' il compromesso
-            // che tiene tutte e due le domande a portata.
+            // THE CALLS SIT UNDER THE RUN, CLOSED. Always open, a run with forty
+            // calls would bury the other rows; on a page of their own, comparing
+            // computed cost against declared cost would cost a trip. Closed here
+            // is the compromise that keeps both questions within reach.
             const detail = run.calls.length > 0 && (
               <tr key={`${run.run_id}::calls`} className="now__detail">
                 <td colSpan={7}>

@@ -228,10 +228,10 @@ fn calling_step(id: &str, calls: &str, inputs: Value) -> Step {
 /// of something nobody ever put there.
 const PARENT_ONLY: &str = "parents-secret";
 
-/// La radice che il padre ha, e che il figlio deve ereditare. Sta accanto a
-/// `PARENT_ONLY` di proposito: le due chiavi provano le due metà della stessa
-/// regola — quello che il figlio *riceve* è solo ciò che il passo dichiara,
-/// ma *dove lavora* non è un ingresso e scende comunque.
+/// The root the parent has, and the child must inherit. It sits beside
+/// `PARENT_ONLY` on purpose: the two keys prove the two halves of one rule —
+/// what the child *receives* is only what the step declares, but *where it
+/// works* is not an input and comes down anyway.
 const A_ROOT: &str = "/una/radice";
 
 /// Runs a one-step graph that calls `calls`.
@@ -406,20 +406,20 @@ fn the_child_gets_the_declared_inputs_and_not_the_parent_state() {
         !shared.contains_key(PARENT_ONLY),
         "nothing of the parent's shared state reaches the child: {shared:?}"
     );
-    // L'eccezione è una sola e ha un nome: la radice del progetto, che non è
-    // stato del padre ma la stessa macchina sotto tutti e due. La prova che la
-    // difende sta qui sotto.
+    // There is one exception and it has a name: the project root, which is not
+    // the parent's state but the same machine under both. The proof defending
+    // it is just below.
 }
 
-/// **DOVE LAVORA IL FIGLIO NON È UN INGRESSO: È LA RADICE DEL PADRE.**
+/// **WHERE THE CHILD WORKS IS NOT AN INPUT: IT IS THE PARENT'S ROOT.**
 ///
-/// Senza questa riga in `subflow.rs` il figlio non riceve `workspace.root`, e
-/// ogni suo passo cade sulla cartella del processo: `shell_check` applica
-/// `current_dir` solo se `workdir` è `Some`, e nessuno gliela offre. Non
-/// fallisce — lavora nel posto sbagliato, che è il guasto 25 preso dalla porta
-/// di servizio, e proprio la forma che rende il riuso per chiamata inservibile:
-/// un flusso «accendi la macchina» chiamato da un altro accenderebbe la
-/// macchina di qualunque cartella si trovi a essere il `cwd`.
+/// Without that line in `subflow.rs` the child never receives `workspace.root`,
+/// and each of its steps falls back on the process directory: `shell_check`
+/// applies `current_dir` only when `workdir` is `Some`, and nobody offers it
+/// one. It does not fail — it works in the wrong place, which is fault 25 taken
+/// by the back door, and exactly the shape that makes reuse by call useless: a
+/// "start the machine" flow called by another would start the machine of
+/// whatever directory happens to be the `cwd`.
 #[test]
 fn the_child_works_where_the_parent_works() {
     let scratch = Scratch::new("radice");
@@ -441,9 +441,9 @@ fn the_child_works_where_the_parent_works() {
     );
 }
 
-/// **E UN PADRE SENZA RADICE NON NE INVENTA UNA.** Assente resta assente: il
-/// figlio fallirà dicendolo, come lo direbbe il padre. Un ripiego qui sarebbe
-/// il guasto 25 scritto due volte.
+/// **AND A PARENT WITHOUT A ROOT INVENTS NONE.** Absent stays absent: the child
+/// will fail saying so, as the parent would have said it. A fallback here would
+/// be fault 25 written twice.
 #[test]
 fn a_parent_without_a_root_hands_the_child_none() {
     let scratch = Scratch::new("senza-radice");

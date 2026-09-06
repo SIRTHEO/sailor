@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use supervisor::{rebuild_then_swap, BuildOutcome, LiveState, LiveStatus, Rebuild, Running};
 
-/// Un programma finto che conta quante volte lo hanno fermato.
+/// A fake program that counts how many times it was stopped.
 struct Fake {
     label: String,
     stops: std::rc::Rc<std::cell::Cell<usize>>,
@@ -26,12 +26,12 @@ impl Running for Fake {
     }
 }
 
-/// **IL CUORE DEL GUASTO 11.**
+/// **THE HEART OF FAULT 11.**
 ///
-/// Con l'ordine di `tauri-cli` — fermare, poi costruire — questa prova è rossa
-/// su tutte e tre le asserzioni: `stops` vale 1, `running` è `None`, e l'esito
-/// non è `KeptRunning`. È la mutazione da fare per verificarla, e non un
-/// messaggio d'errore da cambiare: il difetto originale era la sequenza.
+/// Under `tauri-cli`'s order — stop, then build — this proof is red on all
+/// three assertions: `stops` is 1, `running` is `None`, and the outcome is not
+/// `KeptRunning`. That is the mutation to make to verify it, not an error
+/// message to change: the original defect was the sequence.
 #[test]
 fn a_failed_build_never_stops_what_is_running() {
     let stops = std::rc::Rc::new(std::cell::Cell::new(0));
@@ -72,10 +72,10 @@ fn a_failed_build_never_stops_what_is_running() {
     }
 }
 
-/// L'altra metà: quando la costruzione riesce, il vecchio **deve** cedere il
-/// posto. Senza questa prova la riparazione più comoda — non fermare mai
-/// niente — passerebbe la prova di sopra e lascerebbe la modalità viva ferma
-/// alla prima versione per sempre.
+/// The other half: when the build succeeds, the old one **must** give up its
+/// place. Without this proof the most convenient repair — never stop anything —
+/// would pass the proof above and leave live mode stuck on the first version
+/// for ever.
 #[test]
 fn a_good_build_replaces_what_is_running() {
     let stops = std::rc::Rc::new(std::cell::Cell::new(0));
@@ -105,12 +105,12 @@ fn a_good_build_replaces_what_is_running() {
     assert!(matches!(outcome, Rebuild::Replaced), "esito: {outcome:?}");
 }
 
-/// **UN PROCESSO VERO, NON UN FINTO.**
+/// **A REAL PROCESS, NOT A FAKE.**
 ///
-/// Le due prove di sopra misurano l'ordine su un oggetto costruito apposta per
-/// obbedire. Questa accende un processo del sistema operativo, fa fallire la
-/// costruzione, e poi chiede al sistema se quel pid respira ancora. È la
-/// differenza fra «ho scritto il codice che dovrebbe» e «l'ho visto».
+/// The two proofs above measure the order on an object built to obey. This one
+/// lights an operating-system process, makes the build fail, then asks the
+/// system whether that pid still breathes. It is the difference between "I
+/// wrote the code that should" and "I saw it".
 #[test]
 fn a_real_child_is_still_breathing_after_a_broken_build() {
     let child = std::process::Command::new("/bin/sh")
@@ -160,7 +160,7 @@ fn a_real_child_is_still_breathing_after_a_broken_build() {
         "il processo acceso è morto per una compilazione fallita: pid {pid}"
     );
 
-    // E ora si spegne davvero, o questa prova lascerebbe l'orfano del guasto 4.
+    // And now it really stops, or this proof would leave fault 4's own orphan.
     running
         .as_mut()
         .expect("è ancora acceso")
@@ -182,14 +182,14 @@ fn temporary_path(label: &str) -> PathBuf {
     ))
 }
 
-/// **NON BASTA SOPRAVVIVERE: DEVE DIRLO.**
+/// **SURVIVING IS NOT ENOUGH: IT MUST SAY SO.**
 ///
-/// Il vincolo permanente è «un'interfaccia che nasconde cosa succede è il
-/// contrario del prodotto», e una finestra che resta aperta mostrando codice
-/// vecchio *senza dirlo* è peggio di una che sparisce — chi guarda crede che
-/// la sua modifica non abbia avuto effetto. Il messaggio esce dal supervisore
-/// per un file, perché chi deve leggerlo è il programma **già acceso**: quello
-/// vecchio, che non ha nessun canale col supervisore appena nato.
+/// The permanent constraint is "an interface that hides what is happening is
+/// the opposite of the product", and a window that stays open showing old code
+/// *without saying so* is worse than one that vanishes — whoever looks believes
+/// their change had no effect. The message leaves the supervisor by a file,
+/// because its reader is the program **already running**: the old one, which
+/// has no channel to a supervisor just born.
 #[test]
 fn the_failure_message_reaches_whoever_is_watching() {
     let path = temporary_path("stato");

@@ -1,36 +1,34 @@
-// I comandi di Sailor, dichiarati dal binario e non ricopiati qui.
+// The Sailor commands, declared by the binary and not copied out here.
 //
-// **QUESTO FILE NON CONTIENE IL NOME DI NESSUN COMANDO.** È la sua unica
-// regola, e vale più di come è impaginato. Sailor ha dieci comandi e una
-// trentina di forme: scriverli in TypeScript sarebbe stato mezz'ora di lavoro
-// e una pagina che diverge dal binario alla prima opzione aggiunta. È il
-// guasto 10 — la stessa verità in più posti, senza niente che li confronti —
-// che in questo repo si è già ripresentato cinque volte, l'ultima il
-// 01/09/2026 sul vocabolario delle azioni, dove la finestra offriva sei nomi
-// che il motore non conosceva e ne rifiutava cinque che sapeva eseguire.
+// **THIS FILE CONTAINS THE NAME OF NO COMMAND.** That is its one rule, and it matters
+// more than how it is laid out. Sailor has ten commands and some thirty forms: writing
+// them in TypeScript would have been half an hour of work and a page that diverges from
+// the binary at the first option added. It is fault 10 — the same truth in more than one
+// place, with nothing comparing them — which in this repo has already come back five
+// times, the last on the vocabulary of the actions, where the window offered six names
+// the engine did not know and refused five it could execute.
 //
-// Quindi `crates/sailor` è diventato lib+bin, `manual` traduce solo la forma,
-// e qui si dispone. Se domani nasce un comando, questa pagina lo mostra senza
-// che nessuno la apra; se ne sparisce uno, sparisce anche da qui.
+// So `crates/sailor` became lib+bin, `manual` translates only the shape, and here it
+// is laid out. If a command is born tomorrow, this page shows it without anybody
+// opening the page; if one disappears, it disappears from here too.
 //
-// FUORI DAL GUSCIO NON SI INVENTA UN ELENCO. Nel browser il motore non
-// risponde, e la pagina lo dice invece di mostrare un esempio plausibile: un
-// manuale finto è peggio di un manuale assente, perché si legge uguale.
+// OUTSIDE THE SHELL NO LIST IS INVENTED. In the browser the engine does not answer,
+// and the page says so instead of showing a plausible example: a fake manual is worse
+// than an absent one, because it reads the same.
 
 import { useMemo, useState } from "react";
 import { useAsk } from "./ask";
 import { manual, type CommandDoc } from "./engine";
 
-/** Il manuale è compilato dentro il binario: si chiede una volta. */
+/** The manual is compiled into the binary: it is asked once. */
 const ONCE = null;
 
 const EMPTY: CommandDoc[] = [];
 
 /**
- * Le parole di una forma d'uso, separate in ciò che si digita e ciò che si
- * sostituisce. Serve a dare peso diverso alle due cose senza che nessuno
- * riscriva le righe a mano: `<nome>` e `[opzioni]` sono buchi da riempire,
- * tutto il resto è testo letterale.
+ * The words of a usage form, split into what you type and what you replace. It
+ * gives the two different weight without anybody rewriting the lines by hand:
+ * `<nome>` and `[opzioni]` are holes to fill, all the rest is literal text.
  */
 export function pieces(line: string): { text: string; hole: boolean }[] {
   return line
@@ -42,7 +40,7 @@ export function pieces(line: string): { text: string; hole: boolean }[] {
     }));
 }
 
-/** Quante forme in tutto: il numero che dice se il manuale è arrivato intero. */
+/** How many forms in all: the number that says whether the manual arrived whole. */
 export function shapeCount(commands: CommandDoc[]): number {
   return commands.reduce((total, command) => total + command.usage.length, 0);
 }

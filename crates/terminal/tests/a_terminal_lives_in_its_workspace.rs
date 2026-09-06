@@ -1,29 +1,28 @@
-//! Uno pseudo-terminale vero, aperto dentro uno spazio di lavoro vero.
+//! A real pseudo-terminal, opened inside a real workspace.
 //!
-//! **QUESTE PROVE AVVIANO PROCESSI.** Non simulano niente: aprono un terminale,
-//! ci scrivono dentro come farebbe un dito su una tastiera, e leggono ciò che ne
-//! esce. Se la macchina non avesse pseudo-terminali, queste prove non
-//! passerebbero — ed è il punto: una prova che non tocca il sistema operativo
-//! non dice niente su un crate che esiste per toccarlo.
+//! **THESE PROOFS START PROCESSES.** They simulate nothing: they open a
+//! terminal, type into it as a finger on a keyboard would, and read what comes
+//! out. On a machine with no pseudo-terminals they would not pass — which is
+//! the point: a proof that never touches the operating system says nothing
+//! about a crate that exists to touch it.
 //!
-//! **PERCHÉ `echo ci"a"o` E NON `echo ciao`.** Un terminale riscrive ciò che gli
-//! si digita: `echo ciao` comparirebbe nell'uscita *due volte* — una perché il
-//! terminale rimanda indietro i tasti, una perché la shell ha eseguito — e una
-//! prova che cerca «ciao» resterebbe **verde anche se la shell non avesse
-//! eseguito niente**. Con le virgolette in mezzo le due cose si distinguono: la
-//! riga rimandata indietro è `echo ci"a"o`, e la parola `ciao` compare solo se
-//! qualcuno l'ha eseguita. È la stessa trappola per cui l'uscita di un terminale
-//! non si può leggere come si legge una pipe.
+//! **WHY `echo ci"a"o` AND NOT `echo ciao`.** A terminal echoes back what is
+//! typed at it: `echo ciao` would appear in the output *twice* — once because
+//! the terminal sends the keys back, once because the shell ran — and a proof
+//! looking for "ciao" would stay **green even had the shell run nothing**. With
+//! the quotes in the middle the two are told apart: the echoed line is
+//! `echo ci"a"o`, and the word `ciao` appears only if somebody ran it. It is
+//! the same trap that stops a terminal's output being read like a pipe's.
 
 use std::sync::Arc;
 use std::time::Duration;
 use terminal::{Buffer, Ending, Opening, Passed, Routed, Router, Size, Terminals, Workspace};
 
-/// Quanto si aspetta una risposta prima di dire che non è arrivata. Largo: su
-/// una macchina che sta compilando, avviare una shell può prendere secondi.
+/// How long an answer is waited for before it is called missing. Generous: on
+/// a machine that is compiling, starting a shell can take seconds.
 const PATIENCE: Duration = Duration::from_secs(10);
 
-/// Una cartella vuota che fa da spazio di lavoro, cancellata alla fine.
+/// An empty directory standing in for a workspace, deleted at the end.
 struct Scratch {
     workspace: Workspace,
 }
@@ -51,8 +50,8 @@ impl Drop for Scratch {
     }
 }
 
-/// Un terminale che non smista niente: qui si prova lo pseudo-terminale, e una
-/// regola di smistamento di mezzo renderebbe ambiguo quale dei due ha fallito.
+/// A terminal that routes nothing: what is proved here is the pseudo-terminal,
+/// and a routing rule in the middle would blur which of the two failed.
 fn plain_terminals() -> Terminals {
     Terminals::with_router(Arc::new(Router::without_routes(Arc::new(
         terminal::PathLookup::on(toolbox::Machine::bare(std::path::PathBuf::from(
@@ -63,19 +62,20 @@ fn plain_terminals() -> Terminals {
 
 fn shell() -> Opening {
     Opening {
-        // `/bin/sh` e non la shell dell'utente: `zsh` con la configurazione di
-        // qualcuno stampa banner, cambia l'invito e a volte esegue cose. La
-        // prova deve parlare del terminale, non della casa di chi la lancia.
+        // `/bin/sh` and not the user's shell: `zsh` with somebody's own
+        // configuration prints banners, changes the prompt and sometimes runs
+        // things. The proof must speak of the terminal, not of whose house it
+        // is launched in.
         program: "/bin/sh".into(),
         ..Opening::default()
     }
 }
 
-/// **IL TERMINALE È VERO: GLI SI SCRIVE E RISPONDE.**
+/// **THE TERMINAL IS REAL: WRITE TO IT AND IT ANSWERS.**
 ///
-/// Il mutante che fa cadere questa prova è una scrittura che non arriva
-/// all'ingresso del figlio — ed è il difetto da cui difende, perché un terminale
-/// che accetta una riga e non la esegue sembra funzionare.
+/// The mutant that brings this proof down is a write that never reaches the
+/// child's input — the very defect it guards against, because a terminal that
+/// takes a line and does not run it looks as though it works.
 #[test]
 fn a_terminal_runs_what_is_written_into_it() {
     let scratch = Scratch::make("echo");
@@ -100,8 +100,8 @@ fn a_terminal_runs_what_is_written_into_it() {
     );
 }
 
-/// **NASCE DENTRO LO SPAZIO DI LAVORO, NON CI VA DOPO.** Nessuno ha scritto un
-/// `cd`: la cartella è parte di com'è stato aperto.
+/// **IT IS BORN INSIDE THE WORKSPACE, IT DOES NOT WALK THERE.** Nobody typed a
+/// `cd`: the directory is part of how it was opened.
 #[test]
 fn a_terminal_starts_inside_its_workspace() {
     let scratch = Scratch::make("pwd");
@@ -123,12 +123,12 @@ fn a_terminal_starts_inside_its_workspace() {
     );
 }
 
-/// **L'USCITA ARRIVA MENTRE ESCE, NON QUANDO IL COMANDO FINISCE.**
+/// **THE OUTPUT ARRIVES AS IT LEAVES, NOT WHEN THE COMMAND ENDS.**
 ///
-/// La misura è il secondo di attesa in mezzo: se i pezzi arrivassero alla fine,
-/// «primo» e «secondo» comparirebbero insieme, e la seconda asserzione
-/// cadrebbe. È la stessa proprietà che `actions` prova sulle pipe, e il motivo
-/// per cui il filo che legge esiste invece di un `read_to_end`.
+/// The measure is the second of waiting in between: were the pieces to arrive
+/// at the end, "primo" and "secondo" would appear together and the second
+/// assertion would fall. It is the property `actions` proves on pipes, and the
+/// reason the reading thread exists instead of a `read_to_end`.
 #[test]
 fn the_output_arrives_while_it_is_being_produced() {
     let scratch = Scratch::make("live");
@@ -161,16 +161,16 @@ fn the_output_arrives_while_it_is_being_produced() {
     );
 }
 
-/// **LA FINE SI ANNUNCIA, E DICE COM'È ANDATA.**
+/// **THE END ANNOUNCES ITSELF, AND SAYS HOW IT WENT.**
 ///
-/// Senza questo annuncio chi guarda non ha modo di distinguere un terminale
-/// morto da uno che tace: continuerebbe a mostrarlo vivo per sempre. È la
-/// proprietà su cui poggia l'evento `terminal_closed` del contratto.
+/// Without that announcement whoever watches cannot tell a dead terminal from
+/// a silent one: it would go on showing it alive for ever. It is the property
+/// the contract's `terminal_closed` event rests on.
 ///
-/// LA MISURA CHE POTEVA VENIRE DIVERSA: si sceglie `exit 7` e non `exit`,
-/// perché un codice qualunque diverso da zero cade su ogni scorciatoia — un
-/// annuncio che non arriva, e anche un annuncio che arriva con un esito
-/// inventato riuscito.
+/// THE MEASURE THAT COULD HAVE COME OUT OTHERWISE: `exit 7` is chosen and not
+/// `exit`, because a code other than zero falls on every shortcut — an
+/// announcement that never comes, and equally one that comes with an invented
+/// successful outcome.
 #[test]
 fn the_end_of_a_terminal_is_announced_with_how_it_ended() {
     let scratch = Scratch::make("fine");
@@ -199,25 +199,25 @@ fn the_end_of_a_terminal_is_announced_with_how_it_ended() {
     );
 }
 
-/// **IL DESTINATARIO SA DI QUALE TERMINALE È PRIMA DI RICEVERE IL PRIMO BYTE.**
+/// **THE SINK KNOWS WHICH TERMINAL IT BELONGS TO BEFORE THE FIRST BYTE.**
 ///
-/// Chi porta l'uscita fuori di qui — la finestra — deve marcare ogni pezzo con
-/// l'identificativo del terminale, e quell'identificativo lo assegna `open`.
-/// Ricevendo un destinatario già fatto resterebbe un istante in cui i byte
-/// esistono e il nome no, e ci cade dentro l'invito della shell: il primo pezzo
-/// che chi guarda si aspetta di vedere.
+/// Whoever carries the output out of here — the window — must mark every piece
+/// with the terminal's identifier, and that identifier is assigned by `open`.
+/// Taking a ready-made sink would leave an instant where the bytes exist and
+/// the name does not, and the shell's prompt falls into it: the first piece
+/// whoever watches expects to see.
 ///
-/// LA MISURA CHE POTEVA VENIRE DIVERSA: il nome viene registrato **dal
-/// destinatario, alla propria nascita**, non chiesto al terminale dopo. Se
-/// `open` fabbricasse il destinatario senza nome — o lo ricevesse già fatto —
-/// qui resterebbe una stringa vuota.
+/// THE MEASURE THAT COULD HAVE COME OUT OTHERWISE: the name is recorded **by
+/// the sink, at its own birth**, not asked of the terminal afterwards. Were
+/// `open` to build the sink nameless — or receive it ready-made — an empty
+/// string would be left here.
 #[test]
 fn the_output_is_told_which_terminal_it_belongs_to() {
     let scratch = Scratch::make("nome");
     let terminals = plain_terminals();
 
-    /// Un destinatario che si ricorda il nome ricevuto alla nascita e quello
-    /// che aveva quando è arrivato il primo pezzo.
+    /// A sink that remembers the name it was given at birth and the one it had
+    /// when the first piece arrived.
     struct Named {
         at_birth: String,
         at_first_chunk: std::sync::Mutex<Option<String>>,
@@ -255,7 +255,7 @@ fn the_output_is_told_which_terminal_it_belongs_to() {
         "il nome dato al destinatario non è quello del terminale"
     );
 
-    // Qualcosa deve pur uscire, o la seconda asserzione non misurerebbe niente.
+    // Something must come out, or the second assertion measures nothing.
     terminal.submit("printf 'ec''co\\n'").expect("scrivere");
     assert!(
         seen_something(&made, PATIENCE),
@@ -281,9 +281,9 @@ fn the_output_is_told_which_terminal_it_belongs_to() {
     }
 }
 
-/// **IL RIDIMENSIONAMENTO ARRIVA AL PROGRAMMA DENTRO.** Non si guarda una
-/// variabile nostra: si chiede al terminale, con `stty`, quanto crede di essere
-/// grande. È l'unico modo in cui questa prova poteva venire diversa.
+/// **THE RESIZE REACHES THE PROGRAM INSIDE.** No variable of ours is consulted:
+/// the terminal is asked, with `stty`, how big it believes it is. It is the
+/// only way this proof could have come out otherwise.
 #[test]
 fn a_resize_is_seen_by_the_program_inside() {
     let scratch = Scratch::make("size");
@@ -310,8 +310,8 @@ fn a_resize_is_seen_by_the_program_inside() {
     );
 }
 
-/// **L'ELENCO DICE QUALI SONO APERTI E IN QUALE SPAZIO**, che è la domanda a cui
-/// serve rispondere per attaccarci sopra un'interfaccia.
+/// **THE LIST SAYS WHICH ARE OPEN AND IN WHICH WORKSPACE**, the question that
+/// must be answered before an interface can be built on top.
 #[test]
 fn the_list_says_which_terminals_are_open_and_where() {
     let here = Scratch::make("qui");
@@ -352,9 +352,9 @@ fn the_list_says_which_terminals_are_open_and_where() {
     );
 }
 
-/// Chiudere spegne il processo e toglie la riga dall'elenco. Senza il `wait`
-/// dentro `close`, il processo resterebbe zombie e `alive` continuerebbe a dire
-/// di sì.
+/// Closing stops the process and takes the row out of the list. Without the
+/// `wait` inside `close` the process would stay a zombie and `alive` would go
+/// on saying yes.
 #[test]
 fn closing_a_terminal_stops_it_and_takes_it_off_the_list() {
     let scratch = Scratch::make("chiusura");
@@ -374,17 +374,17 @@ fn closing_a_terminal_stops_it_and_takes_it_off_the_list() {
     assert!(terminals.list().is_empty(), "{:?}", terminals.list());
 }
 
-/// **LA RIGA DELL'ELENCO ESCE COI NOMI CHE LA FINESTRA LEGGE.**
+/// **THE LIST'S ROW COMES OUT WITH THE NAMES THE WINDOW READS.**
 ///
-/// `docs/the-terminal-contract.md` dice due cose insieme: che la
-/// riga è questo tipo, e che i suoi campi si chiamano `workspaceRoot`,
-/// `workspaceName`, `processId`. Reggono solo se questa struttura esce così: chi
-/// ne ricopiasse una versione in TypeScript o nel guscio farebbe il guasto 10.
+/// `docs/the-terminal-contract.md` says two things at once: that the row is
+/// this type, and that its fields are called `workspaceRoot`, `workspaceName`,
+/// `processId`. Both hold only if this struct comes out that way: copying a
+/// version of it into TypeScript or the shell would be fault 10.
 ///
-/// LA MISURA CHE POTEVA VENIRE DIVERSA: togliendo `rename_all = "camelCase"` da
-/// [`terminal::Summary`] i nomi tornano con l'underscore, la finestra legge
-/// `undefined` su tre campi su cinque, e non se ne accorge nessuno — un campo
-/// assente in JavaScript non è un errore, è un vuoto.
+/// THE MEASURE THAT COULD HAVE COME OUT OTHERWISE: take `rename_all =
+/// "camelCase"` off [`terminal::Summary`] and the names come back with
+/// underscores, the window reads `undefined` on three fields of five, and
+/// nobody notices — a missing field in JavaScript is not an error, it is a void.
 #[test]
 fn the_list_row_carries_the_names_the_window_reads() {
     let row = terminal::Summary {
@@ -487,9 +487,9 @@ fn the_device_in_the_list_is_the_one_the_program_inside_reports() {
     );
 }
 
-/// Uno spazio di lavoro che non esiste si rifiuta all'apertura, non allo
-/// `spawn`: altrimenti il messaggio parlerebbe della shell invece che della
-/// cartella, e chi legge cercherebbe nel posto sbagliato.
+/// A workspace that does not exist is refused at the open, not at the `spawn`:
+/// otherwise the message would speak of the shell instead of the directory,
+/// and whoever reads it would look in the wrong place.
 #[test]
 fn a_workspace_that_is_not_there_is_refused_before_anything_starts() {
     let missing = std::env::temp_dir().join(format!(
@@ -500,8 +500,8 @@ fn a_workspace_that_is_not_there_is_refused_before_anything_starts() {
     assert!(Workspace::open(&missing).is_err());
 }
 
-/// Un comando ordinario passa, e il motivo dice perché: senza il motivo, uno
-/// smistamento che non scatta è muto.
+/// An ordinary command passes, and the reason says why: without the reason, a
+/// routing that does not fire is mute.
 #[test]
 fn a_plain_command_passes_and_says_why() {
     let scratch = Scratch::make("motivo");

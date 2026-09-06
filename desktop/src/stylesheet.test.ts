@@ -158,24 +158,24 @@ describe("il foglio si legge tutto", () => {
  * out of the sheet, in milliseconds and without a browser.
  */
 describe("divieto 11 — una colonna fissa dichiara come si comporta da stretta", () => {
-  /** La finestra più stretta che questo progetto dichiara di sostenere: è la
-   *  larghezza a cui `scripts/screenshots.ts` cattura, cioè quella a cui
-   *  qualcuno ha già deciso che la finestra va guardata. */
+  /** The narrowest window this project declares it supports: the width at
+   *  which `scripts/screenshots.ts` captures, that is, the one somebody has
+   *  already decided the window is to be looked at. */
   const NARROWEST = 375;
 
   /**
-   * Le COLONNE rigide: larghezza fissa in pixel, `flex-shrink: 0`, **e uno
-   * scorrimento proprio**.
+   * The rigid COLUMNS: fixed width in pixels, `flex-shrink: 0`, **and a scroll
+   * of their own**.
    *
-   * L'ultima condizione non è un dettaglio, è ciò che separa una colonna da un
-   * pallino. Alla prima scrittura questa prova pescava anche `.focusbar__dot`
-   * (9px), `.flow-band__mark` (10px) e `.trigger-node__mark` (7px): segni
-   * grafici che sono rigidi di proposito e non impaginano niente. Un controllo
-   * che li avesse contati avrebbe fatto scrivere regole-@ sui puntini — cioè
-   * avrebbe fatto cambiare il mondo per un numero sbagliato.
+   * The last condition is not a detail, it is what separates a column from a
+   * dot. Without it this test also caught `.focusbar__dot` (9px),
+   * `.flow-band__mark` (10px) and `.trigger-node__mark` (7px): graphic marks
+   * rigid on purpose that lay out nothing. A check that counted them would have
+   * had @-rules written onto dots — it would have changed the world over a
+   * wrong number.
    *
-   * Un elemento che scorre da sé **contiene** qualcosa: è una colonna. È un
-   * criterio strutturale, non una soglia di pixel scelta a occhio.
+   * An element that scrolls by itself **contains** something: it is a column.
+   * A structural criterion, not a pixel threshold picked by eye.
    */
   const rigid = outsideRoot
     .map((rule) => {
@@ -191,20 +191,19 @@ describe("divieto 11 — una colonna fissa dichiara come si comporta da stretta"
     .filter((found): found is { selector: string; width: number } => found !== null);
 
   test("la prova guarda le colonne, non i pallini", () => {
-    // Se un giorno questo elenco si svuota, la prova sotto diventa verde per
-    // non aver guardato niente — ed è il modo in cui un controllo muore in
-    // silenzio.
+    // If one day this list empties, the test below turns green for having
+    // looked at nothing — and that is how a check dies in silence.
     expect(rigid.length).toBeGreaterThan(0);
     expect(rigid.every((column) => column.width >= 100)).toBe(true);
   });
 
   test("le colonne rigide non si mangiano da sole la finestra più stretta", () => {
     const total = rigid.reduce((sum, column) => sum + column.width, 0);
-    if (total < NARROWEST) return; // ci stanno: non serve nessuna via d'uscita
+    if (total < NARROWEST) return; // they fit: no way out is needed
 
-    // Non ci stanno. Allora ognuna deve comparire dentro una regola-@ che ne
-    // cambia la larghezza o la toglie di mezzo: senza, ciò che sta in mezzo
-    // viene schiacciato a zero e nessuno lo vede.
+    // They do not fit. Then each must appear inside an @-rule that changes its
+    // width or takes it out of the way: without one, what sits between them is
+    // crushed to zero and nobody sees it.
     const atRules = stylesheetSource.match(/@media[^{]+\{(?:[^{}]|\{[^{}]*\})*\}/g) ?? [];
     const inside = atRules.join("\n");
     const unguarded = rigid.filter(({ selector }) => !inside.includes(selector));
