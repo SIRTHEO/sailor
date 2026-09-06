@@ -5,14 +5,14 @@ use crate::spec::EngineSpec;
 use flow::{ActionError, Refusal, RefusalRule, ValueSchema};
 use serde_json::Value;
 
-/// Gli esiti di fallimento che un motore esterno può produrre.
+/// The failure outcomes an external engine can produce.
 pub(crate) const ENGINE_FAILURES: [&str; 3] = ["exit_error", "timed_out", "spawn_failed"];
-/// Quelli di una verifica di shell.
+/// Those of a shell check.
 pub(crate) const CHECK_FAILURES: [&str; 2] = ["failed", "timed_out"];
 
-/// Un `accept` che nomina un esito impossibile è un errore di chi ha scritto il
-/// passo, non un silenzio: darebbe una tolleranza che non si applica mai, e il
-/// passo diventerebbe rosso il giorno in cui serviva che non lo fosse.
+/// An `accept` naming an impossible outcome is a mistake by whoever wrote the
+/// step, not a silence: it grants a tolerance that never applies, and the step
+/// turns red on the very day it was meant not to.
 pub(crate) fn check_tolerance(accept: &[String], known: &[&str]) -> Result<(), ActionError> {
     for name in accept {
         if !known.contains(&name.as_str()) {
@@ -32,16 +32,15 @@ pub(crate) fn tolerates(accept: &[String], status: &str) -> bool {
     accept.iter().any(|name| name == status)
 }
 
-/// Gli esiti che non lasciano nessuna risposta da mettere in forma.
+/// The outcomes that leave no answer to shape at all.
 const SILENT_FAILURES: [&str; 2] = ["timed_out", "spawn_failed"];
 
-/// **CHIEDERE SENZA VERIFICARE E VERIFICARE SENZA CHIEDERE SONO LO STESSO
-/// DIFETTO**, e questo controllo chiude il cerchio dalla parte che di solito
-/// resta aperta: un motore non rispetta una forma perché qualcuno l'ha
-/// dichiarata in un campo, la rispetta se gliel'hanno detta. Qui si guarda che
-/// il testo della forma compaia davvero in ciò che sta per partire — sia esso
-/// l'ingresso o un argomento — e se non c'è il passo si ferma **prima** di
-/// spendere una chiamata che fallirebbe di sicuro.
+/// **ASKING WITHOUT CHECKING AND CHECKING WITHOUT ASKING ARE THE SAME DEFECT**,
+/// and this closes the circle on the side usually left open: an engine does not
+/// honour a shape because somebody declared it in a field, it honours one it was
+/// told. So the shape's text must really appear in what is about to be sent —
+/// stdin or an argument — and if it does not, the step stops **before** paying
+/// for a call that would surely fail.
 pub(crate) fn shape_was_asked_for(written: &str, spec: &EngineSpec) -> Result<(), ActionError> {
     if let Some(silent) = SILENT_FAILURES
         .iter()
@@ -82,13 +81,13 @@ pub(crate) fn asked_again(asked: &str, told: &Refusal) -> String {
     )
 }
 
-/// Quanto di ciò che ha detto un comando entra nel messaggio di un passo rotto.
+/// How much of what a command said goes into a broken step's message.
 const SAID_TAIL: usize = 1200;
 
-/// **LE ULTIME RIGHE, NON LE PRIME.** Un motore che fallisce scrive l'errore in
-/// fondo, dopo pagine di avvio. E servono davvero qui dentro: un passo rotto non
-/// scrive nessuna uscita tipata, quindi senza questo testo stdout e stderr
-/// muoiono col processo e chi guarda il deposito trova un rosso senza motivo.
+/// **THE LAST LINES, NOT THE FIRST.** An engine that fails writes the error at
+/// the bottom, after pages of startup. And they belong in here: a broken step
+/// writes no typed output, so without this text stdout and stderr die with the
+/// process and whoever reads the ledger finds a red with no reason.
 fn tail(text: &str) -> &str {
     let text = text.trim_end();
     if text.len() <= SAID_TAIL {
@@ -115,8 +114,8 @@ pub(crate) fn what_it_said(stdout: &str, stderr: &str) -> String {
     parts.join("\n")
 }
 
-/// `None` non è «uscito con zero»: è un processo ucciso da un segnale, e
-/// confonderli manda a cercare un guasto nel posto sbagliato.
+/// `None` is not «exited with zero»: it is a process killed by a signal, and
+/// confusing the two sends the reader hunting a fault in the wrong place.
 pub(crate) fn how_it_exited(code: Option<i32>) -> String {
     match code {
         Some(code) => format!("it exited with code {code}"),
@@ -124,20 +123,20 @@ pub(crate) fn how_it_exited(code: Option<i32>) -> String {
     }
 }
 
-/// Il testo da leggere come JSON dentro ciò che un motore ha detto.
+/// The text to read as JSON inside what an engine said.
 ///
-/// Un modello incornicia spesso la risposta in un blocco recintato, a volte
-/// dopo una riga di cortesia: si accetta **il primo blocco recintato**, e se non
-/// ce n'è nessuno tutto il testo. Non si cercano le parentesi più esterne dentro
-/// una frase: quella regola accetterebbe anche mezza risposta, o un esempio
-/// citato nel discorso, e un dato sbagliato che passa è peggio di un rosso.
+/// A model often frames its answer in a fenced block, sometimes after a line of
+/// courtesy: **the first fenced block** wins, and failing that the whole text.
+/// The outermost braces inside a sentence are not hunted for — that rule would
+/// also accept half an answer, or an example quoted in passing, and wrong data
+/// getting through is worse than a red.
 fn json_body(said: &str) -> &str {
     let trimmed = said.trim();
     let Some(open) = trimmed.find("```") else {
         return trimmed;
     };
     let after = &trimmed[open + 3..];
-    // La riga della recinzione può portare il nome del linguaggio: si scarta.
+    // The fence line may carry the language name: it is thrown away.
     let body = match after.find('\n') {
         Some(end) => &after[end + 1..],
         None => return trimmed,
@@ -148,10 +147,10 @@ fn json_body(said: &str) -> &str {
     }
 }
 
-/// Tiene solo i campi che la forma dichiara. `allow_extra` dice cosa si
-/// **tollera** nella risposta; questa potatura dice cosa si **inoltra**, e sono
-/// due domande diverse: la prima difende dal motore prolisso, la seconda dal
-/// costo di portarselo dietro per tutta la catena.
+/// Keeps only the fields the shape declares. `allow_extra` says what is
+/// **tolerated** in the answer; this pruning says what is **forwarded**, and
+/// they are two questions: the first guards against a verbose engine, the
+/// second against the cost of carrying it down the whole chain.
 fn pruned(shape: &ValueSchema, value: Value) -> Value {
     match (shape, value) {
         // No field declared and extras allowed: the shape says «an object,
@@ -217,7 +216,7 @@ fn byte_at(text: &str, line: usize, column: usize) -> Option<usize> {
     None
 }
 
-/// Legge la risposta di un motore secondo la forma che il passo ha dichiarato.
+/// Reads an engine's answer against the shape the step declared.
 pub(crate) fn shaped_answer(shape: &ValueSchema, said: &str) -> Result<Value, ActionError> {
     let body = json_body(said);
     let value: Value = serde_json::from_str(body).map_err(|error| {
