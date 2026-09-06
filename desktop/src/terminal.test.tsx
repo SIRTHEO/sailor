@@ -1226,8 +1226,8 @@ describe("the terminals inside the window", () => {
   test("THE SCREEN STAYS MOUNTED BEHIND THE OTHER PLACES: going to Flows and back destroys no pane", () => {
     // Outside the shell the screen is mute, and that is enough: what is
     // measured is that the element survives the change of place, hidden.
+    // No click to get here: the terminals are the ground the window opens on.
     const { container } = render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /^Terminals/ }));
     const terminals = container.querySelector(".terminals");
     expect(terminals, "the terminals screen did not draw").toBeTruthy();
     expect((terminals as HTMLElement).hidden).toBe(false);

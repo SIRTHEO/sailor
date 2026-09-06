@@ -634,6 +634,8 @@
   "window.flow.live.stopping": "si sta fermando · {done} di {steps}",
   "window.flow.live.waiting": "aspetta te",
   "window.flow.live.went": "è andato",
+  "window.ground.machine": "questo mac",
+  "window.ground.terminals": "i terminali",
   "window.step.kind.branch": "ramo",
   "window.step.kind.check": "verifica",
   "window.step.kind.deposit": "deposito",

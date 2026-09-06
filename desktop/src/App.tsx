@@ -31,7 +31,7 @@ import {
 import { stepUsageOfRun, type StepUsage } from "./stepusage";
 import { stepStatesOfCanvas } from "./runstate";
 import { BlankCanvas, type PlacesAsk } from "./BlankCanvas";
-import { MACHINE, MACHINE_GROUND, PLACES, inTheStrip, type Section } from "./places";
+import { MACHINE, MACHINE_GROUND, PLACES, SECTIONS, TERMINALS_GROUND, onItsOwnName, type MachineRow, type Section } from "./places";
 import { World, OF_THIS_TREE, type FlowGroup } from "./World";
 import { liveOf, newestPerFlow } from "./flowlive";
 import { amongThese, rememberWhere, whereYouWere } from "./whereyouwere";
@@ -52,8 +52,8 @@ import {
 } from "@/components/ui/tooltip";
 import type { TerminalSummary } from "./terminal";
 import { BeatChip, BuildChip, LiveChip, WhoChip } from "./Bar";
-import { LedgerBrowser } from "./LedgerBrowser";
-import { Memory, MEMORY_TABS, type MemoryTab } from "./Memory";
+import { Memory } from "./Memory";
+import { MEMORY_TABS, type MemoryTab } from "./memorytabs";
 import { SailorScreen } from "./SailorScreen";
 import { SAILOR_TABS, type SailorTab } from "./sailortabs";
 import { TerminalsSection, TERMINALS_TABS, type TerminalsTab } from "./TerminalsSection";
@@ -264,9 +264,10 @@ export default function App() {
      Sailor open means this window is replaced at every build of the engine
      under it; landing on the board each time costs the walk back. */
   const wasAt = useRef(whereYouWere());
-  const [place, setPlace] = useState<Place>(() =>
-    amongThese(wasAt.current.place, PLACES.map((one) => one.id), "board"),
-  );
+  // EVERY SECTION, NOT EVERY OFFERED PLACE: what the machine's screens live in
+  // is named by no row of the place list, and reading that list here would send
+  // whoever left the window on Profiles back to the board.
+  const [place, setPlace] = useState<Place>(() => amongThese(wasAt.current.place, SECTIONS, "terminals"));
   const [memoryTab, setMemoryTab] = useState<MemoryTab>(() =>
     amongThese(wasAt.current.memoryTab, MEMORY_TABS.map((one) => one.id), "runs"),
   );
@@ -290,6 +291,15 @@ export default function App() {
   }, []);
   const [ledgerTable, setLedgerTable] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // ONE WAY IN PER ROW OF THE MACHINE'S GROUND, whether it is pressed in the
+  // column or typed into the palette: the row says which view it lands on, and
+  // a second copy of that here is a second answer waiting to disagree.
+  const goToMachine = useCallback((row: MachineRow) => {
+    if (row.tab !== undefined) setSailorTab(row.tab);
+    if (row.memoryTab !== undefined) setMemoryTab(row.memoryTab);
+    setPlace(row.section);
+  }, []);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -1247,20 +1257,22 @@ export default function App() {
     if (place === "board") return focusName === null ? [section] : [section, focusName];
     if (place === "memory") {
       const tab = MEMORY_TABS.find((one) => one.id === memoryTab)?.name ?? memoryTab;
+      // The table picked is the entry inside the view, the way a flow is the
+      // entry inside the board.
+      if (memoryTab === "ledger" && ledgerTable !== null) return [section, tab, ledgerTable];
       return [section, tab];
     }
     // «Sailor» is not a place a person picks any more: what used to hide under
     // it is a ground, and the bar says the ground and then the row.
-    if (place === "ledger") {
-      const row = MACHINE.find((one) => one.section === "ledger");
-      const named = [MACHINE_GROUND, row?.name ?? section];
-      return ledgerTable === null ? named : [...named, ledgerTable];
-    }
     if (place === "sailor") {
       const row = MACHINE.find((one) => one.tab === sailorTab);
       return [MACHINE_GROUND, row?.name ?? sailorTab];
     }
-    return [section, TERMINALS_TABS.find((one) => one.id === terminalsTab)?.name ?? terminalsTab];
+    // A place with no tab inside it is its own name, and nothing else: falling
+    // through to the terminals' tab said «Changes › Live», about no terminal.
+    if (place !== "terminals") return [section];
+    const view = TERMINALS_TABS.find((one) => one.id === terminalsTab)?.name ?? terminalsTab;
+    return [TERMINALS_GROUND, view];
   }, [place, focusName, memoryTab, sailorTab, terminalsTab, ledgerTable]);
 
   const barStatus = useMemo<BarStatus | null>(() => {
@@ -1283,35 +1295,35 @@ export default function App() {
   const paletteEntries = useMemo<Entry[]>(() => {
     // The same words the column uses. It said «Sailor › Profiles» while the
     // column said «Profiles», so searching for what you can see found nothing.
-    const go: Entry[] = inTheStrip().map((one) => ({
+    const go: Entry[] = onItsOwnName().map((one) => ({
       group: "Go to",
       label: one.name,
       hint: one.asks,
       run: () => setPlace(one.id),
     }));
-    go.push({
-      group: "Go to",
-      label: "Board",
-      hint: PLACES[0].asks,
-      run: () => setPlace("board"),
-    });
-    for (const one of MACHINE) {
-      go.push({
-        group: "Go to",
-        label: one.name,
-        hint: one.asks,
-        run: () => {
-          if (one.tab !== undefined) setSailorTab(one.tab);
-          setPlace(one.section);
-        },
-      });
-    }
+    const history = PLACES.find((one) => one.id === "memory")?.name ?? "Runs";
     for (const one of MEMORY_TABS) {
-      go.push({ group: "Go to", label: `Memory › ${one.name}`, hint: one.about, run: () => { setPlace("memory"); setMemoryTab(one.id); } });
+      go.push({ group: "Go to", label: `${history} › ${one.name}`, hint: one.about, run: () => { setPlace("memory"); setMemoryTab(one.id); } });
     }
-    for (const one of TERMINALS_TABS) {
-      go.push({ group: "Go to", label: `Terminals › ${one.name}`, hint: one.about, run: () => { setPlace("terminals"); setTerminalsTab(one.id); } });
-    }
+    // Under the ground they are views of, the way the machine's rows are: the
+    // work is not a place to go to, it is what the window comes back to.
+    const ground: Entry[] = TERMINALS_TABS.map((one) => ({
+      group: TERMINALS_GROUND,
+      label: one.name,
+      hint: one.about,
+      run: () => {
+        setPlace("terminals");
+        setTerminalsTab(one.id);
+      },
+    }));
+    // Filed under the machine and not under «go to»: they hold wherever you
+    // stand, and «Sailor» as one noun over them named none of the nine.
+    const machine: Entry[] = MACHINE.map((one) => ({
+      group: MACHINE_GROUND,
+      label: one.name,
+      hint: one.asks,
+      run: () => goToMachine(one),
+    }));
     const names = Array.from(flows.keys()).sort();
     const open: Entry[] = names.map((name) => ({
       group: "Open flow",
@@ -1328,8 +1340,8 @@ export default function App() {
       hint: flows.get(name)?.origin ?? undefined,
       run: () => void handleRun(name),
     }));
-    return [...go, ...open, ...run];
-  }, [flows, handleRun]);
+    return [...go, ...ground, ...machine, ...open, ...run];
+  }, [flows, handleRun, goToMachine]);
 
   return (
     <TooltipProvider>
@@ -1395,12 +1407,7 @@ export default function App() {
       <World
         native={NATIVE}
         here={place}
-        hereTab={sailorTab}
         onGo={setPlace}
-        onOpen={(section, tab) => {
-          if (tab !== undefined) setSailorTab(tab);
-          setPlace(section);
-        }}
         counts={{ board: flows.size, terminals: terminalCount }}
         terminals={openTerminals}
         onMoved={() => readFlows(() => true)}
@@ -1444,6 +1451,7 @@ export default function App() {
           now={now}
           tab={memoryTab}
           onTab={setMemoryTab}
+          onTable={setLedgerTable}
           root={standingIn?.root ?? null}
           onOpenRun={(runId) => setWatching(runId)}
         />
@@ -1478,13 +1486,6 @@ export default function App() {
               onStarted={(runId) => setWatching(runId)}
               onDrafted={() => readFlows(() => true)}
             />
-          </div>
-        </div>
-      )}
-      {place === "ledger" && (
-        <div className="section">
-          <div className="section__body">
-            <LedgerBrowser native={NATIVE} onTable={setLedgerTable} />
           </div>
         </div>
       )}

@@ -4,16 +4,10 @@
 import { useState } from "react";
 import { FaultsScreen } from "./FaultsScreen";
 import { History } from "./History";
+import { LedgerBrowser } from "./LedgerBrowser";
+import { MEMORY_TABS, type MemoryTab } from "./memorytabs";
 import { Now } from "./Now";
 import { QuotaScreen } from "./QuotaScreen";
-
-export type MemoryTab = "runs" | "spend" | "faults";
-
-export const MEMORY_TABS: { id: MemoryTab; name: string; about: string }[] = [
-  { id: "runs", name: "Runs", about: "open now, and every one before" },
-  { id: "spend", name: "Spend and quota", about: "what it cost, what is left" },
-  { id: "faults", name: "Faults", about: "and what would have prevented each" },
-];
 
 export function Memory({
   native,
@@ -21,6 +15,7 @@ export function Memory({
   tab,
   onTab,
   onOpenRun,
+  onTable,
   root,
 }: {
   native: boolean;
@@ -28,6 +23,8 @@ export function Memory({
   tab: MemoryTab;
   onTab: (tab: MemoryTab) => void;
   onOpenRun: (runId: string) => void;
+  /** The table the browser has open, for whoever draws the breadcrumbs. */
+  onTable: (table: string | null) => void;
   /** The tree the window stands in, or `null` outside every workspace. */
   root: string | null;
 }) {
@@ -43,6 +40,9 @@ export function Memory({
         )}
         {tab === "spend" && <QuotaScreen native={native} now={now} />}
         {tab === "faults" && <FaultsScreen native={native} />}
+        {/* THE TABLES ARE A VIEW OF THE DATA, not a section beside the runs:
+            the same question had two doors, and neither named the other. */}
+        {tab === "ledger" && <LedgerBrowser native={native} onTable={onTable} />}
       </div>
     </div>
   );
