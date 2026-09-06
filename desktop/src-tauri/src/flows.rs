@@ -52,7 +52,7 @@ pub(crate) fn delete_flow(name: String) -> Result<(), String> {
 ///
 /// Qui c'era il numero di quei flussi scritto a mano — «i quattordici flussi
 /// veri» — e affermava il falso. Non si aggiorna: si toglie. Un conteggio
-/// copiato in un commento invecchia da solo, e `docs/decisioni.md` lo vieta
+/// copiato in un commento invecchia da solo, e `docs/decisions.md` lo vieta
 /// proprio per questo — dove un fatto è già registrato, il testo ci rimanda
 /// invece di copiarlo. Il numero lo dice `sailor flow list`, che li conta tutti
 /// e tre i posti da cui vengono.

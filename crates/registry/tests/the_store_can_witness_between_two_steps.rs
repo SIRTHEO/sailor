@@ -6,7 +6,7 @@
 //! prima moriva con «invalid type: map, expected a string»: `store_write` non
 //! scioglieva i rinvii, quindi riceveva `{"$from": "/stdout"}` come oggetto.
 //! Il deposito accettava solo valori scritti a mano dentro il flusso, cioè non
-//! poteva fare il testimone che `docs/decisioni.md` gli attribuisce. A rivelarlo
+//! poteva fare il testimone che `docs/decisions.md` gli attribuisce. A rivelarlo
 //! era stata una corsa da **8,95 $** morta sull'ultimo passo; le due fixture che
 //! l'hanno inchiodato — `flows/prova-deposito.flow.json` e la gemella con la
 //! chiave letterale — non esistono più nell'albero, e la loro misura si era

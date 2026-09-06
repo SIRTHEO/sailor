@@ -194,7 +194,7 @@ pub fn estimated_tokens(moved: u64) -> u64 {
 /// Una riga dell'elenco dei terminali aperti.
 ///
 /// **QUESTO TIPO È LA RIGA CHE LA FINESTRA RICEVE, E NON SE NE RICOPIA UNA
-/// SECONDA.** `docs/2026-09-01-il-contratto-del-terminale.md` lo dice per
+/// SECONDA.** `docs/the-terminal-contract.md` lo dice per
 /// esteso: il ponte risponde con questa struttura tale e quale, invece di
 /// dichiarare i cinque campi una seconda volta in TypeScript e una terza in un
 /// tipo di comodo dentro il guscio. I nomi escono in `camelCase` perché è la

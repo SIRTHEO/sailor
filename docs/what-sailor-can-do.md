@@ -122,7 +122,7 @@ radice». Dentro può dichiarare:
 | campo | cosa dice |
 |---|---|
 | `name` | come si chiama il progetto |
-| `rules[]` | quali documenti valgono come regole (AGENTS.md, decisioni.md…) |
+| `rules[]` | quali documenti valgono come regole (AGENTS.md, decisions.md…) |
 | `checks{}` | i controlli del progetto, per nome |
 | `equipment` | quale dotazione pretende |
 | *(campi ignoti)* | conservati, mai motivo di scarto — è il guasto 8 |
@@ -187,7 +187,7 @@ scelta: *«un ascolto simulato sarebbe peggio di un ascolto assente, perché un
 flusso verde direbbe che qualcuno ha parlato»*.
 
 Manca del tutto **il tempo**: `flow` ha già `Schedule`, `Recurrence`, `is_due`,
-`tick` — e il documento `2026-09-01-il-tempo-e-l-ultima-scelta.md` elenca le
+`tick` — e il documento `time-is-the-last-choice.md` elenca le
 cinque decisioni da prendere prima di scriverne il nodo.
 
 ### 4.5 Il deposito — otto tabelle, e **questo paragrafo diceva il falso**
@@ -237,7 +237,7 @@ nessuno sa quanto restava — che è il fatto da cui è nata la ricerca del 29/0
 
 `faults` sa registrarli, elencarli, verificarli, importarli, renderizzarli, e
 dire lo stato di ciascuno (`Standing`). Misurati **66** in
-`docs/guasti-incontrati.md`. Nella finestra: niente.
+`docs/faults-encountered.md`. Nella finestra: niente.
 
 ---
 

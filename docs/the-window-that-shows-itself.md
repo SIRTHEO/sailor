@@ -13,7 +13,7 @@ repo, ritrovate invece che inventate.
 > controlli cosa fanno i suoi strumenti. Vale anche per l'aspetto: **un'interfaccia
 > che nasconde cosa succede è il contrario del prodotto.**
 >
-> — `docs/decisioni.md`, fra i vincoli permanenti
+> — `docs/decisions.md`, fra i vincoli permanenti
 
 Il guasto 30 è la sua violazione più netta: la tela diceva «in attesa» su ogni
 nodo di ogni flusso mentre il motore lavorava. **Non nascondeva: raccontava il
@@ -22,7 +22,7 @@ dirlo, non riempire il vuoto con un valore plausibile.
 
 ## La struttura viene dalle quattro superfici, non da un elenco di pagine
 
-`docs/2026-08-31-le-quattro-superfici.md` dà al sistema quattro categorie, e
+`docs/the-four-surfaces.md` dà al sistema quattro categorie, e
 ogni azione registrata ne dichiara una:
 
 | superficie | cosa fa | dove si vede oggi |
@@ -96,7 +96,7 @@ frase da cui questo documento nasce.
 
 ## La lingua
 
-`decisioni.md`, decisione del 01/09/2026 presa da Theo: *«English everywhere,
+`decisions.md`, decisione del 01/09/2026 presa da Theo: *«English everywhere,
 restoring the charter the project was founded with»* — identificatori, commenti,
 documentazione, **e ogni messaggio che un utente dello strumento può vedere**.
 
