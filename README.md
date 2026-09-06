@@ -11,7 +11,7 @@ and repeated instead of recounted.
 
 > **Status: under construction, and used every day by the people writing it.**
 > Interfaces change. What is here works and is tested; what is missing is
-> written down in `docs/guasti-incontrati.md`, open defects included. What
+> written down in `docs/faults-encountered.md`, open defects included. What
 > would make it *finished* is written down too, as a termination condition
 > Sailor keeps in its own store: `sailor search termination condition` finds it.
 
@@ -80,7 +80,7 @@ not taste: `cargo tauri dev` closes the window on **every** touched file,
 *before* compiling, so a compile error makes it vanish and it does not come
 back. `sailor-live` builds first and touches what is running **only if** the
 build succeeded: the window survives, changes its title and shows the error.
-The long version is fault 11 in `docs/guasti-incontrati.md`.
+The long version is fault 11 in `docs/faults-encountered.md`.
 
 And a build no longer takes the window away either. It builds on every save —
 that is how you learn the code compiles — but the swap **waits to be asked**:
@@ -154,7 +154,7 @@ responsibilities divide rather than where it was convenient:
 ## The rules this project holds itself to
 
 Few, and they count for more than style preferences. In full in
-[`AGENTS.md`](AGENTS.md) and [`docs/decisioni.md`](docs/decisioni.md).
+[`AGENTS.md`](AGENTS.md) and [`docs/decisions.md`](docs/decisions.md).
 
 - **A test counts only if it can come out differently.** It is written before
   the repair, watched being born red, and verified by putting the **original**
@@ -167,7 +167,7 @@ Few, and they count for more than style preferences. In full in
   does not come from whoever wrote it.
 - **A rule in a comment is not a defence: it is the shape of one.** It counts
   only where a list applies it or a check interrogates it.
-- **Every defect gets written down**, in `docs/guasti-incontrati.md`, with how
+- **Every defect gets written down**, in `docs/faults-encountered.md`, with how
   it came to light and **what would have stopped it** — because what follows a
   fault is a check, not a task assigned to somebody.
 - **Everything in the tree is in English**: identifiers, comments, documents,
