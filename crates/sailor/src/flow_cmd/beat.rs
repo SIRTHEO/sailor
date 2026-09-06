@@ -9,12 +9,12 @@ use ui::gather::FlowSource;
 use super::run_and_resume::{run_flow, seat_of};
 use super::{default_ledger_dir, known_flows, nothing_found};
 
-/// Le corse ferme in attesa di qualcuno, in coda a un elenco.
+/// The runs stopped waiting for somebody, at the foot of a list.
 ///
-/// **STA IN CODA A `list` E A `due` PERCHÉ È LÌ CHE SI GUARDA.** Una consegna
-/// che nessuno raccoglie non compare da nessuna parte: non è un passo aperto,
-/// quindi `unfinished_runs` non la trova, e il flusso da cui viene risulta
-/// «girato di recente», quindi `due` lo dichiara non dovuto. Sparisce due volte.
+/// **IT SITS UNDER `list` AND `due` BECAUSE THAT IS WHERE PEOPLE LOOK.** A
+/// handover nobody picks up shows up nowhere: it is no open step, so
+/// `unfinished_runs` misses it, and the flow it came from reads as «ran
+/// recently», so `due` calls it not due. It vanishes twice.
 pub(super) fn waiting_report() -> String {
     let ledger = default_ledger_dir()
         .ok()
@@ -135,17 +135,13 @@ fn last_runs() -> LastRuns {
     }
 }
 
-/// Quali flussi sono dovuti adesso, e quando ciascuno è girato l'ultima volta.
+/// Which flows are due now, and when each of them last ran.
 ///
-/// PERCHÉ QUESTO COMANDO ESISTE PRIMA DI UNO SCHEDULATORE. Finché nessuno sa
-/// dire *che cosa dovrebbe girare adesso*, un cron non si può convertire in
-/// flusso: si convertirebbe che cosa fa, perdendo quando lo fa. Qui la domanda
-/// riceve una risposta che una persona può leggere e smentire — che è il
-/// gradino prima di lasciarla eseguire a una macchina.
-///
-/// L'ora si legge **una volta sola** e si passa a tutti: due flussi giudicati su
-/// due istanti diversi non sono confrontabili, e la differenza si vede solo nei
-/// casi rari, cioè quando fa più danno.
+/// WHY THIS COMES BEFORE A SCHEDULER. Until somebody can say *what should run
+/// right now*, a cron cannot become a flow: what it does would convert, when it
+/// does it would be lost. Here a person reads the answer and can contradict it.
+/// The clock is read **once** for all: flows judged on two different instants
+/// are not comparable, and that shows up in rare cases, where it hurts most.
 /// One beat: what is due right now, and nothing remembered between beats.
 ///
 /// The decision is a function of the schedule, the last run and the clock, all

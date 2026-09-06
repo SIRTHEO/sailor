@@ -50,11 +50,11 @@ fn put_previous_report(flow: &mut FlowFile, ledger: &Ledger) -> Result<(), Strin
     Ok(())
 }
 
-/// Mette il mandato nell'ingresso del passo di innesco.
+/// Puts the mandate into the trigger step's input.
 ///
-/// Il passo si riconosce dall'**azione** che nomina, non dal suo identificativo:
-/// un flusso può chiamare il proprio innesco come vuole, e cercare un passo di
-/// nome «trigger» funzionerebbe solo su quelli scritti finora.
+/// The step is found by the **action** it names, not by its id: a flow may call
+/// its own trigger whatever it likes, and looking for a step named «trigger»
+/// would work on the ones written so far and on nothing else.
 fn put_mandate(flow: &mut FlowFile, text: &str) -> Result<(), String> {
     let trigger = flow
         .graph
@@ -79,20 +79,12 @@ fn put_mandate(flow: &mut FlowFile, text: &str) -> Result<(), String> {
     }
 }
 
-/// Chi tiene un passo consegnato: **una scadenza scritta nel record**, non un
-/// processo.
-///
-/// **NON CHIEDE NIENTE AL SISTEMA OPERATIVO, E IL DIVIETO HA UN NUMERO.** È il
-/// guasto 12: dentro il perimetro `pgrep` risponde vuoto *senza errore*, e una
-/// sorveglianza ha dichiarato «nessun flusso in esecuzione» mentre due giravano.
-/// Un agente in un terminale non è comunque figlio di questo processo, e il
-/// kernel non lo distingue da nessun altro: la domanda giusta non è «vive
-/// ancora?» ma «il tempo che si era dato è passato?».
-///
-/// **UN RECORD CON UN PID SI DICHIARA TENUTO, SEMPRE.** Quel record l'ha aperto
-/// l'esecutore in processo, non una consegna: questa sonda non ha modo di
-/// guardare quel processo, e *non so vedere* non è *è morto*. Dichiararlo morto
-/// chiuderebbe sotto i piedi di chi lavora un passo che sta girando davvero.
+/// What holds a handed step: **a deadline written in the record**, not a process.
+/// **IT ASKS THE OPERATING SYSTEM NOTHING, AND THE BAN HAS A NUMBER.** Fault 12:
+/// inside the perimeter `pgrep` answers empty *without an error*, and a watch
+/// said «no flows running» while two ran. An agent in a terminal is no child of
+/// this process; the question is «has the time it gave itself passed?». A record
+/// with a pid is held, always: *I cannot see* is not *it is dead*.
 struct HandoffLease {
     now: i64,
 }
@@ -107,37 +99,29 @@ impl flow::ProcessProbe for HandoffLease {
             .get("handoff_timeout_secs")
             .and_then(Value::as_i64)
         else {
-            // Nessuna scadenza leggibile: si tiene. L'ambiguità si conserva,
-            // non si chiude dalla parte comoda.
+            // No readable deadline: it is held. The ambiguity is kept, it is
+            // not settled on the convenient side.
             return Ok(true);
         };
         Ok(self.now < record.started_at.saturating_add(limit))
     }
 }
 
-/// Riprende una corsa: prima riconcilia ciò che è rimasto aperto, poi esegue
-/// **con lo stesso identificativo**.
-///
-/// **PERCHÉ È SEPARATO DA `sailor step close`.** Sono due poteri diversi e vanno
-/// tenuti separati: `close` **ricorda** — scrive un esito e non spende niente —
-/// mentre `resume` **agisce**, apre fronti e paga chiamate a pagamento. Fonderli
-/// vorrebbe dire che dichiarare com'è andato un lavoro fa partire il lavoro
-/// dopo, cioè che una scrittura nel deposito spende soldi. Chi chiude a mezzanotte
-/// non ha chiesto quello.
-///
-/// **`reconcile` NON ERA MAI STATO ESEGUITO IN PRODUZIONE.** Fino al 31/08/2026
-/// lo chiamavano solo le prove: nessun comando del programma ci passava. Questa
-/// è la sua prima messa in servizio, ed è il motivo per cui la sonda qui sopra è
-/// scritta per non dichiarare morto niente di cui non sa niente.
+/// Resumes a run: first reconciles what was left open, then executes **with the
+/// same id**. **SEPARATE FROM `sailor step close`, BECAUSE THEY ARE TWO POWERS.**
+/// `close` **remembers** — writes an outcome, spends nothing — while `resume`
+/// **acts**, opens fronts and pays for billed calls; merging them would make a
+/// write to the store spend money. `reconcile` had never run outside the tests,
+/// hence a probe written to declare dead nothing it cannot see.
 pub(super) fn resume_run(run_id: &str) -> Result<String, String> {
     let ledger = crate::step_cmd::open_ledger()?;
     let flow = crate::step_cmd::flow_of_run(&ledger, run_id)?;
     resume_run_in(&ledger, &flow, run_id)
 }
 
-/// Il corpo di `resume`, col deposito e il flusso dichiarati invece che dedotti
-/// da `HOME` e dalla cartella corrente: sono tutti e due globali al processo, e
-/// una prova che li scrivesse rovinerebbe le altre a caso.
+/// The body of `resume`, with the store and the flow declared rather than
+/// derived from `HOME` and the working directory: both are global to the
+/// process, and a test that wrote them would spoil the others at random.
 pub fn resume_run_in(ledger: &Ledger, flow: &FlowFile, run_id: &str) -> Result<String, String> {
     let root = workspace_root();
     announce_root(root.as_deref());
@@ -164,12 +148,11 @@ pub fn resume_run_with(
         Some(ledger.clone()),
         Some(Arc::new(TerminalWatcher::new()) as Arc<dyn actions::StepSinks>),
     );
-    // **L'ISTANTE DI PARTENZA È QUELLO DI PRIMA, NON ADESSO.** L'intestazione si
-    // riscrive intera a ogni aggiornamento: mettere qui l'ora della ripresa
-    // farebbe risultare la corsa partita quando è stata ripresa. Ne dipendono
-    // `last_started_at` — cioè quali flussi `sailor flow due` dichiara dovuti — e
-    // la durata che la finestra mostra. Una corsa consegnata e ripresa il giorno
-    // dopo risulterebbe durata un minuto.
+    // **THE START INSTANT IS THE OLD ONE, NOT THE HOUR OF THE RESUME.** The
+    // header is rewritten whole on every update: the resume hour here would make
+    // the run look started when it was resumed. `last_started_at` depends on it —
+    // which flows `sailor flow due` calls due — and so does the duration the
+    // window shows. A run handed over and resumed a day later would read a minute.
     let started_at = header.started_at;
     let now = now_secs()?;
 
@@ -177,8 +160,8 @@ pub fn resume_run_with(
     // keeps the same id: a request built by hand would lose the workspace
     // root in silence, and a new id would redo every step already paid for.
     let request = registry::execution_request(Some(ledger), flow, run_id, root, started_at);
-    // La riconciliazione vede quello che vedrà l'esecuzione: stessa radice,
-    // stesso stato condiviso.
+    // Reconciliation sees what the execution will see: same root, same shared
+    // state.
     let shared = request.shared.clone();
     let probe = HandoffLease { now };
     let reconciled = InProcessExecutor
@@ -250,30 +233,23 @@ pub fn resume_run_with(
     }
 }
 
-// ── il testo di un passo mentre il passo gira ──────────────────────────
+// ── the text of a step while the step runs ────────────────────────────
 
-/// Da che pipe veniva la riga ancora aperta, se ce n'è una.
+/// Which pipe the still-open line came from, if there is one.
 ///
-/// `None` vuol dire «siamo a inizio riga», cioè il prossimo byte vuole un
-/// marcatore davanti.
+/// `None` means «we are at the start of a line»: the next byte wants a marker
+/// in front of it.
 #[derive(Default)]
 struct LineState {
     open: Option<actions::Pipe>,
 }
 
-/// Riversa i byte così come sono arrivati, anteponendo `[passo · out]` o
-/// `[passo · err]` a ogni riga.
-///
-/// **NON DECODIFICA NIENTE.** I byte del testo escono di peso, nell'ordine in
-/// cui sono entrati: una sequenza UTF-8 spezzata fra due letture si ricompone da
-/// sé sul terminale, e non c'è nessun punto in cui possa diventare un carattere
-/// di sostituzione o far panicare qualcuno. L'unica cosa che questa funzione
-/// aggiunge sono i marcatori, che sono ASCII e stanno a inizio riga.
-///
-/// **UNA RIGA APPARTIENE A UNA PIPE SOLA.** Se stdout ha lasciato una riga
-/// aperta e arriva stderr, la riga si chiude prima: altrimenti due testi diversi
-/// finirebbero sotto lo stesso marcatore, e chi guarda leggerebbe un errore
-/// attribuito all'uscita normale — che è peggio di non vederlo.
+/// Pours the bytes out as they arrived, prefixing `[step · out]` or
+/// `[step · err]` to each line. **IT DECODES NOTHING**: bytes leave in the order
+/// they came in, so a UTF-8 sequence split across two reads recomposes itself on
+/// the terminal rather than becoming a replacement character or a panic; the
+/// markers added are ASCII, at line start. **A LINE BELONGS TO ONE PIPE ONLY**:
+/// stderr mid stdout line closes it first, or an error would read as normal output.
 fn marked(
     out: &mut impl IoWrite,
     state: &mut LineState,
@@ -306,70 +282,67 @@ fn marked(
     Ok(())
 }
 
-/// Dove finisce il testo dei passi.
+/// Where the steps' text ends up.
 ///
-/// **UNA FABBRICA E NON UNO SCRITTORE SOLO**, perché la presa sul terminale si
-/// prende e si lascia a ogni pezzo: tenerla aperta fra una consegna e l'altra
-/// bloccherebbe chiunque altro scriva, e i due fili che drenano le pipe
-/// consegnano insieme.
+/// **A FACTORY AND NOT ONE WRITER**, because the handle on the terminal is taken
+/// and released per chunk: holding it open between deliveries would block anyone
+/// else writing, and the two threads draining the pipes deliver together.
 type Screenward = Arc<dyn Fn() -> Box<dyn IoWrite> + Send + Sync>;
 
-/// Il destinatario di un passo: scrive sul terminale ciò che il passo dice,
-/// mentre lo dice.
+/// A step's sink: writes to the terminal what the step says, while it says it.
 struct StepEcho {
     step: String,
-    /// Un lucchetto solo per passo: i due fili che drenano stdout e stderr
-    /// chiamano insieme, e senza serializzazione le righe si intreccerebbero a
-    /// metà — compreso il marcatore.
+    /// One lock per step: the two threads draining stdout and stderr call
+    /// together, and with no serialising the lines would interleave halfway —
+    /// the marker included.
     state: Mutex<LineState>,
     out: Screenward,
 }
 
 impl actions::LiveSink for StepEcho {
     fn chunk(&self, pipe: actions::Pipe, bytes: &[u8]) {
-        // Un lucchetto avvelenato non è una ragione per far cadere il passo:
-        // qui si sta solo mostrando del testo, e il lavoro vero è altrove.
+        // A poisoned lock is no reason to drop the step: all that happens here
+        // is showing text, and the real work is elsewhere.
         let mut state = match self.state.lock() {
             Ok(state) => state,
             Err(poisoned) => poisoned.into_inner(),
         };
-        // **SU STDERR, NON SU STDOUT.** Il rapporto finale esce da stdout e non
-        // cambia forma: chi lo redirige in un file non deve trovarci dentro il
-        // testo dei passi. Quale descrittore sia lo dice la fabbrica, decisa da
-        // chi ha costruito il destinatario.
+        // **ON STDERR, NOT ON STDOUT.** The final report leaves by stdout and
+        // keeps its shape: redirecting it to a file must not catch the steps'
+        // text there. Which descriptor it is, the factory says — chosen by
+        // whoever built the sink.
         let mut out = (self.out)();
         let _ = marked(&mut out, &mut state, &self.step, pipe, bytes);
-        // Il flush a ogni pezzo è il punto del lavoro: senza, il testo
-        // resterebbe fermo in un buffer fino alla fine, cioè il difetto di prima
-        // spostato di un metro.
+        // The flush per chunk is the point of the work: without it the text
+        // would sit in a buffer until the end — the old defect moved a metre.
         let _ = out.flush();
     }
 }
 
-/// Chi mostra sul terminale il testo dei passi di una corsa.
+/// Shows a run's step text on the terminal.
 ///
-/// Sta qui e non in `actions` perché è una decisione di presentazione: dove il
-/// testo va a finire lo sceglie chi compone il programma. Un secondo
-/// consumatore — un file, la finestra, il deposito — sarebbe un'altra
-/// implementazione di `StepSinks`, non una modifica del crate che esegue.
+/// It lives here and not in `actions` because it is a presentation decision:
+/// where the text goes is picked by whoever composes the program. A second
+/// consumer — a file, the window, the store — would be another `StepSinks`
+/// implementation, not a change to the crate that executes.
 struct TerminalWatcher {
     out: Screenward,
 }
 
 impl TerminalWatcher {
-    /// Il terminale vero: stderr.
+    /// The real terminal: stderr.
     fn new() -> Self {
         Self {
             out: Arc::new(|| Box::new(std::io::stderr().lock())),
         }
     }
 
-    /// La stessa catena verso un'altra destinazione.
+    /// The same chain towards another destination.
     ///
-    /// **ESISTE PERCHÉ L'ARRIVO DEL TESTO SI POSSA CRONOMETRARE.** Con stderr
-    /// cablato dentro `chunk` l'unica verifica possibile era rileggere il codice
-    /// e trovarlo convincente — che è esattamente il modo in cui il difetto di
-    /// prima è passato: consegnava tutto alla fine e sembrava giusto.
+    /// **IT EXISTS SO THE TEXT'S ARRIVAL CAN BE TIMED.** With stderr wired into
+    /// `chunk`, the only check available was rereading the code and finding it
+    /// convincing — exactly how the old defect got through: it delivered
+    /// everything at the end and looked right.
     #[cfg(test)]
     fn writing_to(out: Screenward) -> Self {
         Self { out }
@@ -386,20 +359,12 @@ impl actions::StepSinks for TerminalWatcher {
     }
 }
 
-/// Esegue un flusso, con un mandato facoltativo che entra dall'innesco.
-///
-/// **PERCHÉ IL MANDATO SI PASSA E NON SI SCRIVE NEL FILE.** Il 31/08/2026, per
-/// misurare quanto consuma un flusso rispetto a un prompt solo, serviva dare a
-/// tutti e due lo stesso identico incarico. Dalla riga di comando non si poteva:
-/// l'unico modo era riscrivere il `.flow.json` a mano prima di ogni corsa —
-/// esattamente il guasto 15, «Sailor non ha nessun comando per operare sui
-/// propri flussi, quindi chi ci lavora lo aggira». Un flusso il cui incarico si
-/// cambia modificando il file non si può nemmeno lanciare due volte di seguito
-/// con due incarichi diversi.
-///
-/// Il testo sostituisce il campo `text` dell'ingresso del passo di innesco, che
-/// è dove i flussi già lo mettono. Un flusso senza innesco lo rifiuta dicendolo,
-/// invece di ignorarlo in silenzio — che sarebbe il guasto 20 su un'altra porta.
+/// Runs a flow, with an optional mandate that enters through the trigger.
+/// **THE MANDATE IS PASSED, NOT WRITTEN INTO THE FILE.** Measuring a flow against
+/// a bare prompt needs both to get the same brief; the only way was rewriting the
+/// `.flow.json` by hand before each run — fault 15, «Sailor has no command for its
+/// own flows, so whoever works with it works around it». The text replaces the
+/// trigger input's `text`; a flow with no trigger refuses it aloud (fault 20).
 pub(super) fn run_flow(sources: &[FlowSource], name: &str, mandate: Option<&str>) -> Result<String, String> {
     let (mut flow, _) = one_flow(sources, name)?;
     if let Some(text) = mandate {
@@ -411,9 +376,9 @@ pub(super) fn run_flow(sources: &[FlowSource], name: &str, mandate: Option<&str>
     if let Some(why) = super::check::why_a_run_here_would_not_start(&flow) {
         return Err(why);
     }
-    // IL DEPOSITO PRIMA DEL REGISTRO, e non è un dettaglio d'ordine: i nodi
-    // `store_write`/`store_read` lo possiedono, quindi un registro costruito
-    // prima non li avrebbe e dichiarerebbe mancanti due azioni che esistono.
+    // THE STORE BEFORE THE REGISTRY, and it is no detail of ordering: the
+    // `store_write`/`store_read` nodes own it, so a registry built first would
+    // lack them and call two existing actions missing.
     let ledger_dir = default_ledger_dir()?;
     let ledger = Ledger::open(&ledger_dir).map_err(|error| {
         format!(
@@ -422,8 +387,8 @@ pub(super) fn run_flow(sources: &[FlowSource], name: &str, mandate: Option<&str>
         )
     })?;
     put_previous_report(&mut flow, &ledger)?;
-    // CHI GUARDA È IL TERMINALE, e solo qui: `flow check` non esegue niente e
-    // non ha testo da mostrare.
+    // THE WATCHER IS THE TERMINAL, and only here: `flow check` executes nothing
+    // and has no text to show.
     let registry = default_registry(
         Some(ledger.clone()),
         Some(Arc::new(TerminalWatcher::new()) as Arc<dyn actions::StepSinks>),
@@ -456,10 +421,10 @@ pub(super) fn run_flow(sources: &[FlowSource], name: &str, mandate: Option<&str>
     match result {
         Ok(execution) => {
             let (status, exit_ok) = execution_status(&execution);
-            // Il tetto raggiunto porta con sé i numeri: finiscono nella riga
-            // della corsa, così chi rilegge lo storico fra una settimana sa
-            // quanto era il tetto allora e quanto si era speso. A run that
-            // stopped itself says which of the four reasons did it.
+            // The cap reached carries its numbers: they land in the run's row,
+            // so rereading the history a week later tells what the cap was then
+            // and how much had been spent. A run that stopped itself says which
+            // of the four reasons did it.
             let why = registry::stopped_by_cap(&execution)
                 .or_else(|| registry::halted_by_hand(&execution));
             record_run(
@@ -526,19 +491,18 @@ fn execute_flow(
         .map_err(Box::new)
 }
 
-/// La radice del progetto per questa corsa, risalendo da dove si è lanciato.
+/// The project root for this run, walking up from where it was launched.
 pub(super) fn workspace_root() -> Option<PathBuf> {
     let working = std::env::current_dir().ok()?;
     flow::workspace::find_root(&working)
 }
 
-/// **CHI LANCIA DICE DOVE HA DECISO DI LAVORARE, PRIMA DI PARTIRE.**
+/// **THE LAUNCHER SAYS WHERE IT DECIDED TO WORK, BEFORE STARTING.**
 ///
-/// Senza questa riga il piano ha un modo silenzioso di sbagliare, ed è
-/// **lo stesso** del guasto che chiude: il flusso lavora in un posto che
-/// nessuno ha visto scritto da nessuna parte. Che la radice manchi è
-/// un'informazione quanto il suo valore — dice in anticipo perché un passo con
-/// `workdir` sta per fallire.
+/// Without this line the plan has a silent way of going wrong, **the same** as
+/// the fault that closes: the flow works in a place nobody saw written down. A
+/// missing root is information as much as its value is — it says in advance why
+/// a step with `workdir` is about to fail.
 fn announce_root(root: Option<&Path>) {
     match root {
         Some(root) => println!("radice del progetto: {}", root.display()),
@@ -550,19 +514,18 @@ fn announce_root(root: Option<&Path>) {
     }
 }
 
-/// Com'è finita la corsa. Il corpo sta in `registry`, con la sua gemella del
-/// guscio: erano due, e un `Decision` nuovo le avrebbe fatte divergere.
+/// How the run ended. The body lives in `registry`, with its twin from the
+/// shell: there were two, and a new `Decision` would have made them diverge.
 fn execution_status(execution: &Execution) -> (&'static str, bool) {
     registry::execution_status(execution)
 }
 
-/// Registra l'intestazione della corsa.
+/// Records the run's header.
 ///
-/// **IL CORPO STA IN `registry`, E NON PER ELEGANZA.** Queste venti righe erano
-/// scritte anche nel guscio della finestra, con un commento che lo dichiarava.
-/// Fino al 31/08/2026 tutte e due scrivevano `total_cost_micros: 0` a mano su
-/// un campo che la finestra mostra: riparare una sola delle due avrebbe dato
-/// due totali diversi per la stessa corsa a seconda di chi l'aveva lanciata.
+/// **THE BODY LIVES IN `registry`, AND NOT FOR ELEGANCE.** These twenty lines
+/// were written in the window's shell too, and both wrote `total_cost_micros: 0`
+/// by hand into a field the window shows: repairing one of the two would give
+/// two different totals for the same run, depending on who had launched it.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn record_run(
     ledger: &Ledger,
@@ -613,10 +576,10 @@ pub(crate) fn seat_of(in_a_sailor_terminal: bool) -> &'static str {
     }
 }
 
-/// Il registro delle azioni sta in `crates/registry`, e ci sta per una ragione
-/// misurata: questa lista era scritta anche nel guscio della finestra, le due
-/// copie si sono disallineate tre volte, e l'ultima — il 30/08/2026 — ha fatto
-/// girare lo stesso flusso in due modi diversi a seconda di chi lo lanciava.
+/// The action registry lives in `crates/registry`, for a measured reason: this
+/// list was written in the window's shell too, the two copies drifted apart
+/// three times, and the last drift ran the same flow in two different ways
+/// depending on who launched it.
 use registry::default_registry;
 
 #[cfg(test)]
@@ -627,7 +590,7 @@ mod tests {
     use registry::{registry_in, House};
     use std::time::{Duration, Instant};
 
-    // ── la sonda della consegna ──────────────────────────────────────────
+    // ── the handoff probe ────────────────────────────────────────────────
 
     fn a_handed_record(started_at: i64, limit: Option<i64>, pid: Option<u32>) -> StepRecord {
         let input = match limit {
@@ -648,7 +611,7 @@ mod tests {
         record
     }
 
-    /// La scadenza nel futuro tiene il passo; passata, lo lascia andare.
+    /// A deadline in the future holds the step; once passed, it lets it go.
     #[test]
     fn the_lease_reads_the_deadline_and_not_the_kernel() {
         let probe = HandoffLease { now: 1_000 };
@@ -666,10 +629,10 @@ mod tests {
         );
     }
 
-    /// **NON SO VEDERE, QUINDI NON DICHIARO MORTO.** Un record con un pid l'ha
-    /// aperto l'esecutore in processo; questa sonda non ha modo di guardare quel
-    /// processo — e non deve chiederlo al sistema operativo, che è il guasto 12.
-    /// Lo stesso vale per un record senza scadenza leggibile.
+    /// **I CANNOT SEE, SO I DO NOT DECLARE IT DEAD.** A record with a pid was
+    /// opened by the in-process executor; this probe has no way to look at that
+    /// process — and must not ask the operating system, which is fault 12. The
+    /// same holds for a record with no readable deadline.
     #[test]
     fn what_the_lease_cannot_see_it_does_not_declare_dead() {
         let probe = HandoffLease { now: 1_000_000 };
@@ -696,12 +659,11 @@ mod tests {
         assert_ne!(seat_of(true), seat_of(false));
     }
 
-    /// **UNA CONSEGNA VIVA NON SI CHIUDE SOTTO I PIEDI DI CHI CI LAVORA.**
+    /// **A LIVE HANDOFF IS NOT CLOSED UNDER THE AGENT WORKING ON IT.**
     ///
-    /// È il mutante che conta di tutto questo lavoro: una sonda che risponde
-    /// sempre «no» fa chiudere `Broke` un passo che qualcuno sta eseguendo, e la
-    /// ripresa lo rilancia — due agenti sullo stesso mandato, e nessuno dei due
-    /// lo sa.
+    /// It is the mutant that counts in all this work: a probe that always
+    /// answers «no» closes as `Broke` a step someone is executing, and the
+    /// resume relaunches it — two agents on one mandate, neither of them aware.
     #[test]
     fn a_live_handoff_is_not_closed_under_the_agent_who_holds_it() {
         let flow: FlowFile = serde_json::from_str(
@@ -754,13 +716,12 @@ mod tests {
         );
     }
 
-    /// **UNA RIPRESA NON RISCRIVE L'ISTANTE DI PARTENZA.**
+    /// **A RESUME DOES NOT REWRITE THE START INSTANT.**
     ///
-    /// L'intestazione di una corsa si riscrive intera a ogni aggiornamento.
-    /// Mettendoci l'ora della ripresa, una corsa consegnata la sera e ripresa il
-    /// mattino dopo risulterebbe partita al mattino: `sailor flow due` la
-    /// crederebbe appena girata e non dichiarerebbe dovuto il suo flusso, e la
-    /// durata mostrata sarebbe un minuto invece di dieci ore.
+    /// A run's header is rewritten whole on every update. With the resume hour in
+    /// it, a run handed over at night and resumed next morning would read as
+    /// started in the morning: `sailor flow due` would call its flow not due, and
+    /// the duration shown would be a minute instead of ten hours.
     #[test]
     fn resuming_a_run_keeps_the_hour_it_started() {
         let home = TestDirectory::new();
@@ -965,12 +926,12 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    // ── il mandato che entra dall'innesco ────────────────────────────
+    // ── the mandate that enters through the trigger ──────────────────
 
-    /// **LO STESSO FLUSSO CON DUE MANDATI DIVERSI, SENZA TOCCARE IL FILE.**
-    /// Prima l'unico modo era riscrivere il `.flow.json`, quindi due corse di
-    /// seguito con due incarichi diversi non erano possibili — ed è il difetto
-    /// che ha reso impossibile misurare un flusso contro un prompt.
+    /// **ONE FLOW WITH TWO DIFFERENT MANDATES, WITHOUT TOUCHING THE FILE.**
+    /// The way in used to be rewriting the `.flow.json`, so two runs back to
+    /// back with two different briefs were impossible — the defect that made
+    /// measuring a flow against a prompt impossible.
     #[test]
     fn a_mandate_from_the_command_line_reaches_the_trigger() {
         let json = r#"{
@@ -992,9 +953,9 @@ mod tests {
         );
     }
 
-    /// Un flusso senza innesco **rifiuta** il mandato invece di ingoiarlo: un
-    /// incarico che non arriva da nessuna parte farebbe girare il flusso su
-    /// tutt'altro, e chi lo ha scritto crederebbe di averlo indirizzato.
+    /// A flow with no trigger **refuses** the mandate rather than swallowing it:
+    /// a brief that lands nowhere would run the flow on something else, while
+    /// whoever wrote it would believe they had aimed it.
     #[test]
     fn a_flow_without_a_trigger_refuses_the_mandate() {
         let json = flow_json("shell_check", "[]", "{}");
@@ -1008,9 +969,9 @@ mod tests {
         );
     }
 
-    // ── il marcatore del testo in diretta ────────────────────────────
+    // ── the marker on the live text ──────────────────────────────────
 
-    /// Il testo prodotto da `marked`, senza toccare nessun terminale.
+    /// The text `marked` produces, without touching any terminal.
     fn marking(step: &str, chunks: &[(actions::Pipe, &[u8])]) -> Vec<u8> {
         let mut out = Vec::new();
         let mut state = LineState::default();
@@ -1037,9 +998,9 @@ mod tests {
         );
     }
 
-    /// UN PEZZO NON È UNA RIGA: una lettura si ferma dove capita, e il marcatore
-    /// va messo a inizio riga, non a inizio pezzo — altrimenti una riga spezzata
-    /// in tre ne stamperebbe tre.
+    /// A CHUNK IS NOT A LINE: a read stops where it stops, and the marker goes
+    /// at the start of a line, not of a chunk — or a line split in three would
+    /// print three of them.
     #[test]
     fn a_line_split_across_chunks_gets_one_marker_only() {
         let out = marking(
@@ -1056,12 +1017,12 @@ mod tests {
         );
     }
 
-    /// NIENTE TESTO CORROTTO E NIENTE PANICO su una sequenza UTF-8 tagliata a
-    /// metà fra due letture: i byte non vengono decodificati mai, escono di peso
-    /// nell'ordine in cui sono entrati, e il carattere si ricompone da sé.
+    /// NO CORRUPTED TEXT AND NO PANIC on a UTF-8 sequence cut in half between
+    /// two reads: the bytes are never decoded, they leave in the order they came
+    /// in, and the character recomposes itself.
     #[test]
     fn a_multibyte_character_split_between_chunks_comes_out_intact() {
-        // «però» in UTF-8: la `ò` sono due byte, e qui il taglio cade in mezzo.
+        // «però» in UTF-8: the `ò` is two bytes, and the cut falls between them.
         let text = "però".as_bytes();
         let cut = text.len() - 1;
         let out = marking(
@@ -1078,9 +1039,9 @@ mod tests {
         );
     }
 
-    /// Una riga appartiene a una pipe sola: se stderr interrompe una riga di
-    /// stdout ancora aperta, quella si chiude prima — altrimenti un errore
-    /// finirebbe sotto il marcatore dell'uscita normale.
+    /// A line belongs to one pipe only: if stderr interrupts a still-open stdout
+    /// line, that line closes first — or an error would land under the marker of
+    /// normal output.
     #[test]
     fn stderr_never_lands_inside_an_open_stdout_line() {
         let out = marking(
@@ -1099,16 +1060,15 @@ mod tests {
         );
     }
 
-    // ── il testo arriva allo schermo mentre il passo gira ────────────
+    // ── the text reaches the screen while the step runs ──────────────
 
-    /// Uno schermo finto che si comporta come un terminale con buffer: ciò che
-    /// gli si scrive resta invisibile finché non gli si chiede il flush.
+    /// A fake screen that behaves like a buffered terminal: what is written to
+    /// it stays invisible until it is asked to flush.
     ///
-    /// **REGISTRA L'ISTANTE SUL FLUSH E NON SULLA `write`**, ed è la scelta che
-    /// rende questa prova capace di venire diversa: un registratore che segna
-    /// l'ora a ogni scrittura resterebbe verde anche togliendo il flush dal
-    /// codice vero, cioè proverebbe la metà che non è in discussione. «Scritto»
-    /// e «visibile» sono due fatti distinti, e qui si misura il secondo.
+    /// **IT RECORDS THE INSTANT ON THE FLUSH, NOT ON THE `write`**: a recorder
+    /// stamping the hour on every write would stay green with the flush taken
+    /// out of the real code. «Written» and «visible» are two facts; this is the
+    /// second one.
     struct Screen {
         start: Instant,
         pending: Mutex<Vec<u8>>,
@@ -1128,7 +1088,7 @@ mod tests {
             self.shown.lock().expect("nessuno panica qui").clone()
         }
 
-        /// Tutto ciò che è diventato visibile, nell'ordine.
+        /// Everything that became visible, in order.
         fn visible_text(&self) -> String {
             let joined: Vec<u8> = self
                 .shown()
@@ -1139,8 +1099,8 @@ mod tests {
         }
     }
 
-    /// La presa che la fabbrica consegna a ogni pezzo: scrive nello schermo
-    /// condiviso, così le prese successive continuano lo stesso testo.
+    /// The handle the factory hands out per chunk: it writes to the shared
+    /// screen, so the handles after it continue the same text.
     struct ScreenHandle(Arc<Screen>);
 
     impl IoWrite for ScreenHandle {
@@ -1168,15 +1128,13 @@ mod tests {
         }
     }
 
-    /// LA CATENA INTERA, CRONOMETRATA: pipe del figlio → `drain` →
-    /// `StepEcho::chunk` → `marked` → scrittura → flush → schermo. Il comando
-    /// stampa, dorme quattro secondi, stampa ancora, e non si guarda che alla
-    /// fine il testo ci sia — sarebbe verde anche mostrando tutto sulla morte
-    /// del figlio — si guarda **quando** la prima riga è diventata visibile.
-    ///
-    /// Margini larghi come nella prova gemella dentro `actions`: quattro secondi
-    /// di sonno contro una soglia di due, perché su una macchina carica non
-    /// diventi rossa a caso.
+    /// THE WHOLE CHAIN, TIMED: child pipe → `drain` → `StepEcho::chunk` →
+    /// `marked` → write → flush → screen. The command prints, sleeps four
+    /// seconds, prints again, and what is checked is **when** the first line
+    /// became visible: checking the text is there at the end would be green even
+    /// if it all showed on the child's death. Wide margins as in the twin test in
+    /// `actions` — four seconds of sleep against a threshold of two, so a loaded
+    /// machine does not redden it at random.
     #[test]
     fn the_terminal_shows_a_step_talking_while_the_step_is_still_running() {
         let start = Instant::now();
@@ -1203,8 +1161,8 @@ mod tests {
             .first()
             .cloned()
             .expect("qualcosa doveva diventare visibile sullo schermo");
-        // IL TEMPO PRIMA DEL CONTENUTO: è l'istante la cosa che questa prova
-        // misura, e leggerlo per ultimo nasconderebbe il motivo vero di un rosso.
+        // THE TIME BEFORE THE CONTENT: the instant is what this test measures,
+        // and reading it last would hide the real reason for a red.
         assert!(
             when < Duration::from_secs(2),
             "il primo pezzo è diventato visibile dopo {when:?}, cioè con la fine \
@@ -1238,14 +1196,12 @@ mod tests {
         assert_eq!(request.run_id, "corsa-1");
     }
 
-    /// **CIÒ CHE IL FLUSSO DICHIARA ARRIVA ALL'AZIONE, PIÙ LA RADICE.**
+    /// **WHAT THE FLOW DECLARES REACHES THE ACTION, PLUS THE ROOT.**
     ///
-    /// Fino al 31/08/2026 questa prova chiedeva l'uguaglianza esatta con
-    /// l'ingresso dichiarato. Adesso non vale più, ed è voluto: chi compone
-    /// l'ingresso ci aggiunge `workdir`, altrimenti un passo senza cartella
-    /// dichiarata girerebbe dove sta il processo — che è il guasto 25. La
-    /// prova chiede tutte e due le cose, perché sono due garanzie diverse:
-    /// quello che una persona ha scritto non viene toccato, e la radice c'è.
+    /// Exact equality with the declared input no longer holds, and it is meant:
+    /// whoever composes the input adds `workdir`, or a step with no declared
+    /// directory would run where the process sits — fault 25. The test asks for
+    /// two guarantees: what a person wrote is untouched, and the root is there.
     #[test]
     fn run_executes_the_registered_action_with_the_declared_input_plus_the_root() {
         let inputs = r#"{"root":{"command":"true","env":{},"timeout_secs":1}}"#;

@@ -1,8 +1,8 @@
-//! `sailor models`: elencare, mostrare la scelta corrente, cambiarla — tre
-//! operazioni sul catalogo scaricato da OpenRouter. Il giudizio (filtro,
-//! regola dei soli gratuiti, formattazione) vive nella libreria `models`;
-//! qui solo l'interpretazione degli argomenti. Prima del 27/08/2026 questo
-//! era il `main.rs` di un binario a sé (`models`).
+//! `sailor models`: list, show the current choice, change it — three operations
+//! on the catalogue downloaded from OpenRouter. The judgement (filter, the
+//! free-only rule, formatting) lives in the `models` library; only argument
+//! parsing lives here. This used to be the `main.rs` of a binary of its own
+//! (`models`).
 
 use crate::Form;
 use models::catalog::{Catalog, Filter};
@@ -25,7 +25,7 @@ pub fn run(args: &[String]) -> i32 {
     }
 }
 
-/// Le forme di `sailor models`, una per riga. Vedi `flow_cmd::USAGE`.
+/// The shapes of `sailor models`, one per line. See `flow_cmd::USAGE`.
 pub const USAGE: &[Form] = &[
     Form {
         form: "sailor models list [--free-only] [--paid-only] [--modality text|image|audio|video] [--min-context N]",

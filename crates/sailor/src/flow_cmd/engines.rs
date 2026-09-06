@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::check::{engines_of, EngineWorld};
 
-// ── le case di credenziali, chieste al motore ────────────────────────────
+// ── the credential homes, asked of the engine ────────────────────────────
 
 /// **A HOME DECLARED AND EMPTY APPLIES IN SILENCE.** A profile pointing at a
 /// directory with no credentials makes every call go out unauthenticated, and
@@ -31,22 +31,22 @@ pub(super) fn login_states_into(
 
     let mut asked: BTreeSet<String> = BTreeSet::new();
     for wanted in engines_wanted(graph) {
-        // Un motore si interroga UNA VOLTA SOLA anche quando lo nominano sei
-        // passi: la casa viene dal profilo attivo, non dal passo, quindi sei
-        // domande darebbero sei volte la stessa risposta. Il rapporto nomina il
-        // motore e il profilo, che è ciò che chi legge deve cambiare.
+        // AN ENGINE IS ASKED ONCE even when six steps name it: the home comes
+        // from the active profile, not from the step, so six questions would
+        // give the same answer six times. The report names the engine and the
+        // profile, which is what the reader has to change.
         if !tools.declares(&wanted.tool) || !asked.insert(wanted.tool.clone()) {
             continue;
         }
-        // Un motore che non è invocabile qui è già nominato dalla sezione delle
-        // righe: ripeterlo manderebbe a cercare due difetti dove ce n'è uno.
+        // An engine not invocable here is already named by the line section:
+        // repeating it would send a person hunting two defects, not one.
         let Ok(bin) = tools.resolve(&wanted.tool) else {
             continue;
         };
-        // **SOLO DOVE UN PROFILO È IN FORZA.** Senza profilo attivo il motore
-        // parte nella casa di chi ha aperto il terminale, che è la casa di
-        // sempre: non c'è nessuna scelta di Sailor da rendere visibile, e
-        // un avviso qui parlerebbe di una cosa che questo comando non governa.
+        // **ONLY WHERE A PROFILE IS IN FORCE.** With no active profile the
+        // engine starts in the home of whoever opened the terminal, the usual
+        // home: there is no Sailor choice to make visible, and a warning here
+        // would speak of something this command does not govern.
         let equipment = actions::equipment_for(world.profiles, &bin, &BTreeMap::new());
         let ledger::EngineIdentity::ProfileInForce {
             cli_id,
@@ -56,9 +56,9 @@ pub(super) fn login_states_into(
         else {
             continue;
         };
-        // La casa si mostra come la riceve il motore — variabile e valore — e
-        // non ricalcolata da un'altra parte: due strade che compongono la stessa
-        // cosa divergono al primo che cambia.
+        // The home is shown as the engine receives it — variable and value —
+        // not recomputed elsewhere: two roads assembling the same thing
+        // diverge at the first one that changes.
         let home = equipment
             .env
             .iter()
@@ -79,8 +79,8 @@ pub(super) fn login_states_into(
         };
         match actions::probe_login_status(world.probe, &bin, &equipment.env, &recipe) {
             LoginVerdict::LoggedIn { .. } => authenticated.push(who),
-            // LE PAROLE DEL MOTORE, come per una riga rotta: «non autenticato»
-            // detto da noi non dice quale credenziale manca, e la frase sua sì.
+            // THE ENGINE'S OWN WORDS, as for a broken line: «not logged in»
+            // said by us omits which credential is missing; its sentence says.
             LoginVerdict::LoggedOut { said } => unauthenticated.push(format!("{who}: «{said}»")),
             LoginVerdict::NotDeclared => unknown.push(catalogue::say(
                 "cli.flow.engine_login_half_declared",
@@ -116,9 +116,9 @@ pub(super) fn login_states_into(
     }
 }
 
-// ── le righe di comando, montate e provate senza domanda ────────────────
+// ── the command lines, assembled and tried with no question ─────────────
 
-/// Un motore su cui un passo si affida al descrittore per comporre la riga.
+/// An engine whose line a step leaves to the descriptor to assemble.
 struct WantedEngine {
     step: String,
     tool: String,
@@ -127,21 +127,12 @@ struct WantedEngine {
     model: Option<String>,
 }
 
-/// I motori di cui `flow check` deve provare la riga, passo per passo e
-/// **motore per motore della catena**.
-///
-/// **TUTTA LA CATENA, NON IL PRIMO.** Il guasto 16 è nato da sei passi che
-/// nominavano un motore solo; il guasto 27 dice che il difetto stava nel
-/// *secondo* — nessun flusso mette `agy` per primo, quindi quel ramo non era
-/// mai stato eseguito e la riga sbagliata è vissuta indisturbata. Guardare solo
-/// il primo motore è non guardare dove il difetto era.
-///
-/// **E SOLO I PASSI CHE LA RIGA NON SE LA SCRIVONO.** Un passo che dichiara i
-/// propri `args` vince sulla ricetta — lo decide `ExternalEngineAction`, e qui
-/// si legge la stessa regola, non una seconda copia di essa. Sono i passi che
-/// invocano `cargo` o `git` attraverso la stessa azione: la loro riga non viene
-/// da nessun blocco `ask`, e chiamarla «non montabile» sarebbe un allarme su un
-/// passo sano.
+/// The engines whose line `flow check` must try, step by step and **engine by
+/// engine of the chain**: fault 16 came of six steps naming one engine, and
+/// fault 27 sat in the *second* — no flow puts `agy` first, so that branch had
+/// never run. **AND ONLY THE STEPS THAT DO NOT WRITE THEIR OWN LINE.** A step
+/// declaring its own `args` wins over the recipe — `ExternalEngineAction`
+/// decides that, and here the same rule is read, never copied a second time.
 fn engines_wanted(graph: &Graph) -> Vec<WantedEngine> {
     let mut wanted = Vec::new();
     for step in graph.steps() {
@@ -167,42 +158,29 @@ fn engines_wanted(graph: &Graph) -> Vec<WantedEngine> {
     wanted
 }
 
-/// Cosa si è potuto sapere della riga di un motore.
+/// What could be learned about an engine's line.
 enum EngineOutcome {
-    /// Il motore non è invocabile qui, e il rilevatore dice perché.
+    /// The engine is not invocable here, and the detector says why.
     NotHere(String),
-    /// Nessun blocco `ask`: la riga non si compone affatto, e non c'è niente
-    /// da provare. È un'assenza nel descrittore, non un difetto della riga.
+    /// No `ask` block: the line does not assemble at all, and there is nothing
+    /// to try. An absence in the descriptor, not a defect of the line.
     NotAssemblable,
-    /// La riga si è montata e si è provata: ecco com'è venuta e cosa ha detto.
+    /// The line assembled and was tried: how it came out, and what it said.
     Tried {
         line: String,
         verdict: actions::ProbeVerdict,
     },
 }
 
-/// Monta la riga di ogni motore di ogni catena, la prova **senza dare la
-/// domanda**, e scrive nel rapporto come sta messa.
+/// Assembles the line of every engine of every chain, tries it **without
+/// giving the question**, and writes into the report how it stands.
 ///
-/// **QUI `flow check` CAMBIA NATURA, E VA DETTO.** `resolver.rs` dichiara in
-/// testa che risolvere un nome non deve eseguire niente, e resta vero: è questa
-/// funzione che avvia processi, non la risoluzione. Da qui in poi `flow check`
-/// avvia un processo per ogni motore dichiarato — **senza rete, senza denaro,
-/// con un tetto di tempo**, perché senza la domanda nessuno di quei processi
-/// chiama un fornitore. Il prezzo è che un controllo statico non è più solo
-/// statico; il ricavo è che la cura scritta accanto al guasto 1 esiste davvero.
-///
-/// **ACCESO IN MODO PREDEFINITO.** Un controllo dietro una bandiera è un
-/// controllo che nessuno interroga: il guasto 27 sarebbe rimasto invisibile
-/// esattamente come è rimasto, perché nessuno avrebbe scritto la bandiera. Chi
-/// non lo vuole scrive `--no-engines`, e allora il rapporto **tace** invece di
-/// dichiarare sane righe che non ha guardato.
-///
-/// **L'ASSE «È STATO CHIAMATO DAVVERO» NON È QUESTO, E RESTA SEPARATO.** Una
-/// riga sana non dice che quel motore abbia mai risposto a una domanda vera:
-/// quello lo sa il deposito, che registra le chiamate. Mescolare le due cose
-/// farebbe passare per «usato» un motore che nessuna corsa ha mai nominato —
-/// che è precisamente il guasto 32.
+/// **HERE `flow check` STARTS PROCESSES** — no network, no money, a time cap —
+/// which is why the cure beside fault 1 exists at all; `resolver.rs` still runs
+/// nothing. **ON BY DEFAULT**: a check behind a flag is one nobody asks, and
+/// fault 27 stayed invisible exactly so. `--no-engines` makes the report **stay
+/// silent** rather than call unlooked-at lines sound. **AND A SOUND LINE IS NOT
+/// «IT WAS REALLY CALLED»**: the ledger knows that, and mixing them is fault 32.
 pub(super) fn engine_lines_into(
     report: &mut String,
     graph: &Graph,
@@ -225,8 +203,8 @@ pub(super) fn engine_lines_into(
     let mut exhausted = Vec::new();
 
     for wanted in engines_wanted(graph) {
-        // Uno strumento che nessun descrittore dichiara è già nominato sopra:
-        // ripeterlo qui manderebbe a cercare due difetti dove ce n'è uno.
+        // A tool no descriptor declares is already named above: repeating it
+        // here would send a person hunting two defects where there is one.
         if !tools.declares(&wanted.tool) {
             continue;
         }
@@ -275,11 +253,11 @@ pub(super) fn engine_lines_into(
             )),
             EngineOutcome::Tried { line, verdict } => match verdict {
                 ProbeVerdict::Sound => sound.push(who),
-                // LE PAROLE DEL MOTORE PER INTERO, E LA RIGA CHE LE HA
-                // PRODOTTE. Sul guasto 27 la frase di `agy` diceva quale
-                // bandiera aveva mangiato quale argomento: una diagnosi che
-                // nessuna parola nostra avrebbe potuto sostituire. Tagliarla, o
-                // riassumerla, riporterebbe chi legge a indovinare.
+                // THE ENGINE'S WORDS IN FULL, AND THE LINE THAT PRODUCED
+                // THEM. On fault 27 `agy`'s sentence said which flag had
+                // eaten which argument: a diagnosis no word of ours could
+                // replace. Cutting it, or summarising it, sends the reader
+                // back to guessing.
                 ProbeVerdict::Broken { said } => broken.push(catalogue::say(
                     "cli.flow.engine_line_broken",
                     &[("who", &who), ("line", line), ("said", said)],
@@ -337,18 +315,17 @@ mod tests {
     use registry::{registry_in, House};
     use std::path::{Path, PathBuf};
 
-    // ── le case di credenziali ────────────────────────────────────────
+    // ── the credential homes ──────────────────────────────────────────
 
-    /// Un finto `codex` che si comporta come quello vero **su questa domanda**:
-    /// risponde su stderr, dice «Not logged in» quando in casa non c'è
-    /// `auth.json`, e «Logged in using ChatGPT» quando c'è. Anche i due codici
-    /// d'uscita sono quelli misurati il 01/09/2026 — 1 e 0 — apposta: se un
-    /// giorno qualcuno facesse dipendere il verdetto dall'esito, questa prova
-    /// resterebbe verde, e la prova gemella in `crates/actions/tests` dice
-    /// perché non basterebbe.
+    /// A fake `codex` behaving like the real one **on this one question**: it
+    /// answers on stderr, says «Not logged in» when the home holds no
+    /// `auth.json`, and «Logged in using ChatGPT» when it does. The two exit
+    /// codes are the measured ones — 1 and 0 — on purpose: were the verdict
+    /// ever made to depend on the status, this test would stay green, and the
+    /// twin test in `crates/actions/tests` says why that is not enough.
     ///
-    /// **SI CHIAMA `codex` PERCHÉ IL LEGAME È L'ESEGUIBILE**: è su quel nome che
-    /// `profiles::cli_for_executable` decide quale variabile sposta la casa.
+    /// **IT IS CALLED `codex` BECAUSE THE BOND IS THE EXECUTABLE**: on that
+    /// name `profiles::cli_for_executable` decides which variable moves the home.
     fn a_fake_codex_that_answers_about_its_home(dir: &Path) -> String {
         let path = dir.join("codex");
         std::fs::write(
@@ -373,7 +350,7 @@ mod tests {
         path.to_string_lossy().into_owned()
     }
 
-    /// Una cartella usa-e-getta con dentro il finto motore e il suo descrittore.
+    /// A throwaway directory holding the fake engine and its descriptor.
     fn a_machine_with_a_real_fake_codex(declares_login: bool) -> (PathBuf, toolbox::Tools) {
         static SERIAL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let serial = SERIAL.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -413,7 +390,7 @@ mod tests {
         (dir, tools)
     }
 
-    /// Uno stato dei profili che dichiara una casa sola, attiva.
+    /// A profile store declaring one home, and active.
     fn a_store_pointing_at(home: &Path) -> profiles::ProfileStore {
         profiles::ProfileStore {
             profiles: vec![profiles::Profile {
@@ -428,26 +405,26 @@ mod tests {
         }
     }
 
-    /// **IL GUASTO 39, L'ALTRA METÀ, CONTRO UN PROCESSO VERO.**
+    /// **FAULT 39, THE OTHER HALF, AGAINST A REAL PROCESS.**
     ///
-    /// Il vaglio a secco continua a dire «riga sana» in tutti e due i casi — è
-    /// quello che deve fare, toglie la domanda apposta — e accanto compare la
-    /// cosa che nessuno diceva: da quale casa parte questo motore, e se quella
-    /// casa ha delle credenziali.
+    /// The dry sift keeps saying «sound line» in both arms — that is its job,
+    /// it takes the question away on purpose — and beside it appears what
+    /// nobody said: which home this engine starts from, and whether that home
+    /// holds credentials.
     ///
-    /// **DUE BRACCI, E SERVONO TUTTI E DUE.** Il primo da solo resterebbe verde
-    /// con un controllo che gridasse sempre; il secondo da solo resterebbe verde
-    /// con un controllo che non guarda niente. Insieme dicono che la risposta
-    /// viene dalla casa.
+    /// **TWO ARMS, AND BOTH ARE NEEDED.** The first alone would stay green
+    /// under a check that always shouted; the second alone would stay green
+    /// under a check that looks at nothing. Together they say the answer comes
+    /// from the home.
     ///
-    /// **E LA SONDA È QUELLA VERA.** `RealDryProbe` avvia un processo: una
-    /// finta risponderebbe quello che le diciamo noi, cioè proverebbe che
-    /// sappiamo scrivere una risposta. Qui il motore la legge dal disco.
+    /// **AND THE PROBE IS THE REAL ONE.** `RealDryProbe` starts a process: a
+    /// fake would answer what we tell it, proving only that we can write an
+    /// answer. Here the engine reads it off the disk.
     ///
-    /// *Mutanti eseguiti*: (a) leggere `logged_in_when` prima di
-    /// `logged_out_when` in `judge_login_status` — il primo braccio diventa
-    /// rosso, cioè si rimette il silenzio originale; (b) togliere
-    /// `login_status` dal descrittore — vedi la prova qui sotto.
+    /// *Mutants run*: (a) reading `logged_in_when` before `logged_out_when` in
+    /// `judge_login_status` — the first arm goes red, i.e. the original silence
+    /// comes back; (b) removing `login_status` from the descriptor — see the
+    /// test below.
     #[test]
     fn a_flow_check_says_which_home_the_engine_starts_from_and_whether_it_has_credentials() {
         let (dir, tools) = a_machine_with_a_real_fake_codex(true);
@@ -511,16 +488,15 @@ mod tests {
         );
     }
 
-    /// **CHI NON DICHIARA IL BLOCCO NON FA SCATTARE NIENTE — E NON DICE
-    /// «AUTENTICATO».**
+    /// **A DESCRIPTOR WITHOUT THE BLOCK TRIPS NOTHING — AND DOES NOT SAY
+    /// «AUTHENTICATED».**
     ///
-    /// È il mutante (b) scritto una volta per tutte invece che eseguito una
-    /// volta sola: la casa è vuota identica a quella del primo braccio qui
-    /// sopra, e il solo cambiamento è che il descrittore non dice come si
-    /// chiede. Il rapporto deve dire **che nessuno ha guardato**, mai tacere e
-    /// mai rassicurare. Un predefinito comodo qui rimetterebbe il difetto per
-    /// ogni motore che il blocco non ce l'ha ancora — cioè per tutti quelli che
-    /// verranno.
+    /// Mutant (b) written once and for all instead of run once: the home is
+    /// empty, identical to the first arm above, and the sole change is that the
+    /// descriptor does not say how to ask. The report must say **nobody
+    /// looked**, never stay quiet and never reassure. A convenient default here
+    /// would put the defect back for every engine without such a block yet —
+    /// that is, for all the ones still to come.
     #[test]
     fn a_descriptor_without_the_block_makes_the_check_say_nobody_looked() {
         let (dir, tools) = a_machine_with_a_real_fake_codex(false);
@@ -556,13 +532,13 @@ mod tests {
         );
     }
 
-    // ── le righe di comando provate a secco ───────────────────────────
+    // ── the command lines tried dry ───────────────────────────────────
 
-    /// Una macchina finta con dei motori dentro, e i loro descrittori.
+    /// A fake machine with engines inside it, and their descriptors.
     ///
-    /// Niente dipende da cosa è installato su chi esegue: il percorso è una
-    /// cartella temporanea, e i motori sono file vuoti col bit di esecuzione —
-    /// non vengono mai avviati, perché la sonda di queste prove è finta.
+    /// Nothing depends on what is installed on whoever runs: the path is a
+    /// temporary directory, and the engines are empty files with the execute
+    /// bit — never started, since the probe of these tests is a fake.
     fn tools_with_engines(entries: &[(&str, &str)]) -> toolbox::Tools {
         static SERIAL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let serial = SERIAL.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -598,8 +574,8 @@ mod tests {
         )
     }
 
-    /// Una sonda che non esegue niente e risponde ciò che le diciamo, in base a
-    /// come si chiama l'eseguibile che le viene passato.
+    /// A probe that runs nothing and answers what we tell it, keyed on the
+    /// name of the executable handed to it.
     struct ScriptedProbe(Vec<(&'static str, &'static str)>);
 
     impl actions::DryProbe for ScriptedProbe {
@@ -617,10 +593,10 @@ mod tests {
         }
     }
 
-    /// Alla domanda sulle credenziali non risponde niente: queste prove parlano
-    /// delle righe di comando, e senza profilo attivo la domanda non si fa
-    /// nemmeno. Un finto che rispondesse qualcosa direbbe qualcosa di questo
-    /// mondo, e ci sono prove apposta per quello.
+    /// It answers nothing about credentials: these tests are about command
+    /// lines, and with no active profile the question is not even asked. A fake
+    /// that answered would be claiming something about that world, and there
+    /// are tests for it on purpose.
     impl actions::LoginProbe for ScriptedProbe {
         fn ask(
             &self,
@@ -769,9 +745,8 @@ mod tests {
     const SAYS_NOTHING: &str = r#","ask":{"args":["-p"],"prompt":"stdin"}"#;
     const NO_ASK: &str = "";
 
-    /// **UNA RIGA SANA SI VEDE, E COSTA ZERO.** È il controllo che il guasto 1
-    /// aveva chiesto il 28/08 e che nessuno aveva scritto perché sembrava voler
-    /// dire spendere.
+    /// **A SOUND LINE CAN BE SEEN, AND IT COSTS ZERO.** It is the check fault 1
+    /// asked for and nobody wrote, because it looked like it meant spending.
     #[test]
     fn a_line_the_engine_only_complains_about_the_missing_prompt_is_called_sound() {
         let flow = flow_with_chain(r#""motore""#);
@@ -789,10 +764,10 @@ mod tests {
         assert!(report.contains("chiedi → motore"), "{report}");
     }
 
-    /// **LE PAROLE DEL MOTORE SONO LA DIAGNOSI, E VANNO SCRITTE PER INTERO.**
-    /// Sul guasto 27 la frase di `agy` diceva quale bandiera aveva mangiato
-    /// quale argomento; un rapporto che dicesse solo «rotta» rimanderebbe a
-    /// indovinare, cioè non varrebbe più della sua assenza.
+    /// **THE ENGINE'S WORDS ARE THE DIAGNOSIS, AND GO IN WHOLE.** On fault 27
+    /// `agy`'s sentence said which flag had eaten which argument; a report
+    /// saying only «broken» sends the reader back to guessing, and is worth no
+    /// more than its own absence.
     #[test]
     fn a_broken_line_is_reported_with_the_engines_own_words_and_the_line_that_produced_it() {
         let flow = flow_with_chain(r#""motore""#);
@@ -820,11 +795,10 @@ mod tests {
         );
     }
 
-    /// **SI GUARDA TUTTA LA CATENA, NON IL PRIMO.** Il guasto 27 stava nel
-    /// **secondo** motore di ogni catena, ed è vissuto indisturbato proprio
-    /// perché nessun flusso lo metteva per primo. Un controllo che leggesse
-    /// solo il primo motore sarebbe un controllo che non guarda dov'era il
-    /// difetto.
+    /// **THE WHOLE CHAIN IS LOOKED AT, NOT THE FIRST.** Fault 27 sat in the
+    /// **second** engine of every chain, and lived undisturbed precisely
+    /// because no flow put it first. A check reading the first engine alone is
+    /// a check that does not look where the defect was.
     #[test]
     fn every_engine_of_the_chain_is_tried_not_only_the_first() {
         let flow = flow_with_chain(r#"["primo", "secondo", "terzo"]"#);
@@ -854,12 +828,12 @@ mod tests {
         assert!(report.contains("chiedi → terzo"), "né il terzo: {report}");
     }
 
-    /// **«NON PROVATA» E «NON MONTABILE» SONO DUE FATTI DIVERSI.** Un motore
-    /// senza blocco `ask` non ha nessuna riga da provare — si ripara scrivendo
-    /// il descrittore; uno che ha la riga ma non dichiara come rifiuta ce l'ha
-    /// e nessuno l'ha guardata — si ripara eseguendola. Sotto la stessa parola
-    /// manderebbero a fare il lavoro sbagliato, ed è il guasto 32 che vive
-    /// nella prima delle due.
+    /// **«NOT TRIED» AND «NOT ASSEMBLABLE» ARE TWO DIFFERENT FACTS.** An engine
+    /// with no `ask` block has no line to try — cured by writing the
+    /// descriptor; one that has the line but does not declare how it refuses
+    /// has a line nobody looked at — cured by running it. Under one word they
+    /// would send a person to do the wrong work, and fault 32 lives in the
+    /// first of the two.
     #[test]
     fn a_missing_ask_block_is_not_confused_with_a_line_nobody_looked_at() {
         let flow = flow_with_chain(r#"["senza-ask", "senza-rifiuto"]"#);
@@ -891,9 +865,9 @@ mod tests {
         assert!(!unassemblable.contains("senza-rifiuto"), "{unassemblable}");
     }
 
-    /// **UN MOTORE ESAURITO NON È UNA RIGA ROTTA**, e la sua frase è la quarta.
-    /// Confonderli manderebbe a correggere un descrittore sano mentre bastava
-    /// aspettare.
+    /// **AN EXHAUSTED ENGINE IS NOT A BROKEN LINE**, and its sentence is the
+    /// fourth. Confusing them would send a person to correct a healthy
+    /// descriptor when waiting was enough.
     #[test]
     fn an_engine_that_cannot_work_now_gets_its_own_sentence() {
         let flow = flow_with_chain(r#""motore""#);
@@ -920,10 +894,10 @@ mod tests {
         );
     }
 
-    /// **SENZA SONDA IL RAPPORTO TACE**, non dichiara sane righe che non ha
-    /// guardato: è la stessa regola del rilevatore assente, e senza di essa
-    /// `--no-engines` diventerebbe un modo per far dire al controllo una cosa
-    /// che non ha verificato.
+    /// **WITH NO PROBE THE REPORT STAYS SILENT**, it does not call sound lines
+    /// it never looked at: the same rule as the absent detector, and without it
+    /// `--no-engines` would become a way to make the check state something it
+    /// never verified.
     #[test]
     fn with_no_engines_the_report_says_nothing_about_command_lines() {
         let flow = flow_with_chain(r#""motore""#);
@@ -934,10 +908,10 @@ mod tests {
         assert!(!report.contains("command lines"), "{report}");
     }
 
-    /// I passi che scrivono i propri `args` non compongono nessuna riga dal
-    /// descrittore: sono quelli che invocano `cargo` o `git` attraverso la
-    /// stessa azione, e chiamarli «non montabili» sarebbe un allarme su un
-    /// passo sano — cioè rumore che insegna a non leggere il rapporto.
+    /// Steps that write their own `args` assemble no line from the descriptor:
+    /// they are the ones invoking `cargo` or `git` through the same action, and
+    /// calling them «not assemblable» would be an alarm on a healthy step —
+    /// noise that teaches people to stop reading the report.
     #[test]
     fn a_step_that_writes_its_own_arguments_is_not_reported_as_unassemblable() {
         let json = r#"{

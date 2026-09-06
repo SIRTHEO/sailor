@@ -1,29 +1,24 @@
-//! **IL CENSIMENTO È INNESCATO, NON A OROLOGIO.**
+//! **THE CENSUS IS TRIGGERED, NOT CLOCKED.** Theo ruled timeouts out: no timer,
+//! no wait loop, no watching in the background. The census is a function called
+//! when an event arrives, and at no other moment.
 //!
-//! Theo ha escluso esplicitamente i timeout: niente timer, niente cicli di
-//! attesa, niente sorveglianza in sottofondo. Il censimento è una funzione che
-//! si chiama quando arriva un evento, e in nessun altro momento.
+//! **A TEST AND NOT A LINE OF DESIGN**, because a poller is the most natural
+//! thing to add: whoever comes next wants the state fresh, drops in a five-second
+//! loop, and from then on Sailor eats the machine it claims to watch — a machine
+//! that sleeps some seventy times a day, where a loop wakes to a world it did not
+//! leave. A constraint written only in a document never goes red.
 //!
-//! **PERCHÉ UNA PROVA E NON UNA RIGA DI DISEGNO.** Un poller è la cosa più
-//! naturale da aggiungere al mondo: chi arriva dopo vuole «lo stato aggiornato»
-//! e mette un ciclo da cinque secondi, e da quel momento Sailor consuma la
-//! macchina che dice di osservare — su una macchina che dorme circa settanta
-//! volte al giorno, per giunta, dove un ciclo si sveglia e trova un mondo
-//! diverso da quello che aveva lasciato. Un vincolo scritto solo in un
-//! documento non diventa rosso mai.
-//!
-//! Questa prova guarda la **forma** del codice, non il suo comportamento, e lo
-//! dichiara: è un controllo grossolano che può lasciar passare un timer scritto
-//! in un modo che non conosce. Non può però accusare a torto, e il costo di
-//! aggiungere una parola al suo elenco è una riga.
+//! The check reads the **shape** of the code, not its behaviour: it is coarse and
+//! can let through a timer written in a form it does not know. It cannot accuse
+//! wrongly, and adding a word to its list costs one line.
 
 use std::path::{Path, PathBuf};
 
-/// I segni di un orologio dentro il codice.
+/// The signs of a clock inside the code.
 ///
-/// **`now()` NON C'È E NON CI DEVE STARE.** Leggere che ore sono per datare un
-/// fatto è il contrario di un timer: è ciò che rende un fatto ricostruibile.
-/// Quello che è vietato è **aspettare**, non **guardare l'ora**.
+/// **`now()` IS NOT HERE AND MUST NOT BE.** Reading the hour to date a fact is
+/// the opposite of a timer: it is what makes a fact reconstructible. What is
+/// forbidden is **waiting**, not **looking at the clock**.
 const SIGNS_OF_A_CLOCK: &[&str] = &[
     "thread::sleep",
     "sleep(",
@@ -123,8 +118,8 @@ fn the_tracking_waits_for_nothing_and_polls_nothing() {
     );
 }
 
-/// Chi misura va misurato: il rilevatore deve trovare un timer, e deve lasciar
-/// passare la lettura dell'ora che data i fatti.
+/// Whoever measures gets measured: the detector must find a timer, and must let
+/// through the reading of the hour that dates a fact.
 #[test]
 fn the_check_finds_a_timer_and_leaves_the_reading_of_the_hour_alone() {
     assert_eq!(

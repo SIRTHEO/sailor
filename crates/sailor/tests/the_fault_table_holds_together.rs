@@ -1,18 +1,14 @@
-//! La tabella dei guasti regge da sola: numeri senza buchi né doppioni, ogni
-//! voce completa, e i conteggi scritti in prosa uguali a quelli veri.
+//! The fault table holds together on its own: numbers with no holes and no
+//! duplicates, every entry complete, and the counts written in prose equal to
+//! the real ones.
 //!
-//! **PERCHÉ ESISTE, E PERCHÉ NON È PIGNOLERIA.** Il 31/08/2026 due sessioni
-//! hanno scritto nel file nello stesso minuto e sono nati **due guasti 27 e due
-//! guasti 28**: quattro righe, due numeri. Nessuno se ne è accorto, perché un
-//! documento non ha un compilatore. È il guasto che la nota `da-fare` aveva già
-//! previsto — «il file dei guasti è stato modificato durante una corsa che lo
-//! citava: l'analisi parlava di dieci guasti, il file ne aveva undici, e il
-//! verificatore ha respinto per incoerenza».
-//!
-//! E i conteggi in prosa erano sbagliati **in quattro punti su quattro**: un
-//! numero ricopiato a mano diverge, e questa tabella è la fonte da cui tutti e
-//! quattro dicevano di venire. Qui il numero si ricava contando, e la prosa
-//! deve dire lo stesso.
+//! **WHY IT EXISTS, AND WHY IT IS NOT FUSSINESS.** Two sessions wrote into the
+//! file in the same minute and **two fault 27s and two fault 28s** were born:
+//! four rows, two numbers. Nobody noticed, because a document has no compiler.
+//! And the prose counts were wrong **in four places out of four**: a number
+//! copied by hand diverges, and this table is the source all four claimed to
+//! come from. Here the number is obtained by counting, and the prose must say
+//! the same.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -32,20 +28,17 @@ struct Fault {
 }
 
 impl Fault {
-    /// Un guasto conta come aperto finché la cura che dichiara non è fatta.
+    /// A fault counts as open until the repair it declares is done.
     ///
-    /// **«CHIUSO IN PARTE» È APERTO, E IL CONTEGGIO DEVE DIRLO.** Uno stato di
-    /// mezzo serve a raccontare quale metà è fatta, non a togliere una riga dal
-    /// conto: chi legge «undici aperti» crede che ne restino undici da fare, e
-    /// invece ne restano dodici. La direzione dell'errore non è casuale — è
-    /// sempre quella che tranquillizza, e per questo la regola sta qui e non
-    /// nella testa di chi aggiorna la prosa.
-    ///
-    /// Il caso vero: il guasto 37 è stato marcato «chiuso in parte» il
-    /// 01/09/2026 con la bugia riparata e **la misura ancora da fare**, cioè la
-    /// metà che vale. Il campo `partly` esisteva già e non lo interrogava
-    /// nessuno: un campo calcolato e mai letto non è una difesa, è la forma di
-    /// una difesa.
+    /// **«PARTLY CLOSED» IS OPEN, AND THE COUNT MUST SAY SO.** A middle state
+    /// tells which half is done; it does not take a row out of the tally. A
+    /// reader of «eleven open» believes eleven remain, when twelve do, and the
+    /// direction of that error is never random — it is always the reassuring
+    /// one, which is why the rule lives here and not in the head of whoever
+    /// updates the prose. The real case: fault 37 was marked partly closed with
+    /// the lie repaired and **the measure still to make**, the half that counts.
+    /// The `partly` field already existed and nobody asked it: a field computed
+    /// and never read is the shape of a defence, not a defence.
     fn still_open(&self) -> bool {
         matches!(
             self.standing,
@@ -54,18 +47,15 @@ impl Fault {
     }
 }
 
-/// Le righe della tabella, lette dal documento.
+/// The rows of the table, read from the document.
 ///
-/// **QUESTA LETTURA È CIECA A UNA RIGA VUOTA DENTRO LA TABELLA**, ed è bene
-/// saperlo prima di fidarsi di ciò che questa prova dichiara. Salta ogni riga
-/// che non comincia con `|`, quindi un buco in mezzo alle righe non fa cadere
-/// niente: i guasti sopra e sotto restano numerati bene e la tabella continua a
-/// «tenere insieme». La fusione del 01/09/2026 ne ha tolta una che stava alla
-/// riga 64, e a trovarla è stato un occhio, non questa prova.
-///
-/// Chi volesse chiuderla davvero deve smettere di filtrare e cominciare a
-/// misurare il blocco: dalla prima riga che comincia con `|` all'ultima, ogni
-/// riga in mezzo deve essere una riga di tabella.
+/// **THIS READING IS BLIND TO A BLANK LINE INSIDE THE TABLE**, worth knowing
+/// before trusting what this test claims. It skips every line not starting with
+/// `|`, so a hole between the rows fells nothing: the faults above and below
+/// stay correctly numbered and the table goes on «holding together». A merge
+/// once removed one at line 64, and an eye found it, not this test. Closing that
+/// gap means to stop filtering and measure the block instead: from the first
+/// line starting with `|` to the last, every line between must be a table row.
 fn faults() -> Vec<Fault> {
     let path = repository_root().join("docs/faults-encountered.md");
     let text = std::fs::read_to_string(&path)
@@ -101,7 +91,7 @@ fn faults() -> Vec<Fault> {
     rows
 }
 
-/// Nessun numero ripetuto, nessun buco. È la prova che oggi sarebbe stata rossa.
+/// No repeated number, no hole: the test that would have caught the collision.
 #[test]
 fn every_fault_has_its_own_number_and_none_is_missing() {
     let faults = faults();
@@ -171,9 +161,9 @@ fn a_marker_translated_halfway_leaves_the_count_instead_of_lowering_it() {
     );
 }
 
-/// **UNA VOCE SENZA «COSA LO IMPEDIREBBE» NON È FINITA**, e lo dice il file
-/// stesso in testa. Un guasto senza il suo seguito è un diario, che è
-/// esattamente ciò che quel file dichiara di non essere.
+/// **AN ENTRY WITH NO «WHAT WOULD HAVE STOPPED IT» IS NOT FINISHED**, as the
+/// file says in its own header. A fault with no sequel is a diary, which is
+/// exactly what that file declares it is not.
 #[test]
 fn no_fault_is_left_without_the_check_that_would_have_stopped_it() {
     for fault in faults() {
@@ -205,7 +195,7 @@ fn no_fault_is_left_without_the_check_that_would_have_stopped_it() {
     }
 }
 
-/// I numeri fino a diciannove, che in italiano non seguono nessuna regola.
+/// The numbers up to nineteen, which follow no rule at all in Italian.
 const IRREGULAR: [&str; 20] = [
     "zero",
     "uno",
@@ -229,7 +219,7 @@ const IRREGULAR: [&str; 20] = [
     "diciannove",
 ];
 
-/// Le decine.
+/// The tens.
 const TENS: [&str; 10] = [
     "",
     "",
@@ -243,20 +233,17 @@ const TENS: [&str; 10] = [
     "novanta",
 ];
 
-/// Il numero scritto in lettere, come lo scrive la prosa sotto la tabella.
+/// The number written in letters, the way the prose under the table writes it.
 ///
-/// **PRIMA QUI C'ERA UN ELENCO DI QUARANTOTTO NUMERI SCRITTI A MANO**, e ogni
-/// guasto nuovo obbligava ad allungarlo: il 01/09/2026 è stato allungato tre
-/// volte in un pomeriggio, e ogni volta la prova falliva con «nessuna parola
-/// per N: allunga IN_WORDS». Un elenco che cresce con i dati non è una
-/// traduzione, è un debito con la rata mensile — e per giunta un elenco scritto
-/// a mano può contenere un refuso che nessuno vede, perché è la sola fonte
-/// contro cui si potrebbe controllarlo.
-///
-/// Le regole invece sono tre, e non cambiano: sotto il venti non c'è regola e
-/// si elencano; da lì in su decina più unità; **la decina perde la vocale
-/// finale davanti a «uno» e «otto»** (ventuno, ventotto) e **«tre» prende
-/// l'accento in coda** (ventitré). Fine.
+/// **THIS WAS ONCE A LIST OF FORTY-EIGHT HAND-WRITTEN NUMBERS**, and every new
+/// fault forced it longer — three times in one afternoon, failing each time with
+/// «no word for N: extend IN_WORDS». A list that grows with the data is not a
+/// translation but a debt on monthly instalments, and a hand-written list can
+/// hold a typo nobody sees, being the only source to check it against. The rules
+/// instead are three, and they do not change: below twenty there is no rule and
+/// the words are listed; above it, ten plus unit; **the ten loses its final
+/// vowel before «uno» and «otto»** (ventuno, ventotto) and **«tre» takes an
+/// accent in the tail** (ventitré). That is all.
 fn spelled(number: usize) -> String {
     if number < 20 {
         return IRREGULAR[number].to_string();
@@ -273,9 +260,9 @@ fn spelled(number: usize) -> String {
     let tens = TENS[ten];
     match unit {
         0 => tens.to_string(),
-        // La decina si tronca davanti alle due vocali che aprono.
+        // The ten is truncated before the two vowels that open.
         1 | 8 => format!("{}{}", &tens[..tens.len() - 1], IRREGULAR[unit]),
-        // «tre» in coda porta l'accento: ventitré, non ventitre.
+        // «tre» in the tail carries the accent: ventitré, never ventitre.
         3 => format!("{tens}tré"),
         _ => format!("{tens}{}", IRREGULAR[unit]),
     }
@@ -303,14 +290,12 @@ fn with_hundreds(number: usize) -> String {
     }
 }
 
-/// **CHI TRADUCE VA CONTROLLATO.** La versione vecchia era un elenco scritto a
-/// mano: sbagliata o giusta, era comunque la sola fonte, quindi un refuso non
-/// si poteva vedere. Una funzione si può sbagliare in modo diverso — sulle
-/// eccezioni — e sono quelle che questa prova elenca, non tutti i numeri.
-///
-/// I casi scelti sono i tre punti in cui la regola generale non basta: la
-/// troncatura davanti a «uno» e «otto», l'accento su «tré» in coda, e le decine
-/// tonde.
+/// **A TRANSLATOR MUST BE CHECKED.** The old version was a hand-written list:
+/// right or wrong, it was still the only source, so a typo could not be seen. A
+/// function goes wrong differently — on the exceptions — and those are what this
+/// test lists, not every number. The chosen cases are the three points where the
+/// general rule falls short: the truncation before «uno» and «otto», the accent
+/// on «tré» in the tail, and the round tens.
 #[test]
 fn the_numbers_are_spelled_the_way_italian_spells_them() {
     for (number, word) in [
@@ -343,11 +328,10 @@ fn the_numbers_are_spelled_the_way_italian_spells_them() {
     }
 }
 
-/// **I CONTEGGI IN PROSA DICONO IL VERO.**
-///
-/// Il file scrive «**Undici sono ancora aperti** su ventidue» sotto la tabella.
-/// Quei due numeri si contano, e finché li ricopia una persona divergono: erano
-/// sbagliati in quattro documenti su quattro il 31/08/2026.
+/// **THE COUNTS IN THE PROSE TELL THE TRUTH.** Under the table the file writes
+/// how many faults are still open, out of how many. Those two numbers can be
+/// counted, and while a person copies them by hand they diverge: they were wrong
+/// in four documents out of four.
 #[test]
 fn the_counts_written_in_prose_match_the_table_they_come_from() {
     let faults = faults();
@@ -361,9 +345,9 @@ fn the_counts_written_in_prose_match_the_table_they_come_from() {
         .map(|(_, after)| after.to_owned())
         .expect("la sezione che commenta la tabella");
 
-    // La maiuscola va sulla parola, non sull'asterisco che la precede: la frase
-    // comincia con `**`, e maiuscolare il primo carattere lasciava le due forme
-    // identiche — la prova restava rossa su una prosa già giusta.
+    // The capital goes on the word, not on the asterisk before it: the sentence
+    // opens with `**`, and capitalising the first character left both forms
+    // identical — the test stayed red over prose that was already right.
     let word = spelled(open);
     let capital = {
         let mut chars = word.chars();
