@@ -5,7 +5,8 @@ use crate::cost::now_secs;
 use crate::engine::ExternalEngineAction;
 use crate::equipment::current_equipment_for;
 use crate::recipe::{
-    command_line, mentions_any, says_it_cannot_work, PromptVia, SessionRecipe, ToolResolver,
+    command_line, command_line_naming_model, mentions_any, says_it_cannot_work, PromptVia,
+    SessionRecipe, ToolResolver,
 };
 use crate::session::session_lines;
 use crate::spec::{DataClass, EngineSpec};
@@ -82,6 +83,17 @@ impl ExternalEngineAction {
     /// Restituisce anche i motori che **non** si possono usare qui, col motivo:
     /// se nessuno resta, quel motivo è tutto ciò che chi legge avrà.
     pub(crate) fn candidates(&self, spec: &EngineSpec) -> Result<(Vec<Candidate>, Vec<Refused>), ActionError> {
+        // Chi si è scritto le opzioni ha già scritto lì dentro quale modello
+        // vuole: una seconda risposta alla stessa domanda vorrebbe una
+        // precedenza, ed è la stessa ragione per cui `bin` e `tool` non
+        // convivono.
+        if !spec.model.is_empty() && !spec.args.is_empty() {
+            return Err(ActionError::new(
+                "invalid_input",
+                "the step declares both `args` and `model`: the command line it wrote already \
+                 says which model to ask for",
+            ));
+        }
         match (spec.bin.as_deref(), spec.tool.as_ref()) {
             (Some(bin), None) => Ok((
                 vec![Candidate {
@@ -237,11 +249,39 @@ impl ExternalEngineAction {
                         });
                         continue;
                     }
+                    // Il modello chiesto per questo motore, e le opzioni con cui
+                    // il suo descrittore dice che glielo si nomina. Chi non le
+                    // dichiara non viene invocato col proprio predefinito:
+                    // risponderebbe un modello che nessuno ha scelto.
+                    let wanted = spec.model.get(id);
+                    let option = match wanted {
+                        Some(model) => match tools.model_option(id) {
+                            Some(option) => Some((option, model)),
+                            None => {
+                                refused.push(Refused {
+                                    id: id.clone(),
+                                    reason: format!(
+                                        "il passo gli chiede il modello «{model}», e il suo \
+                                         descrittore non dichiara come glielo si nomina \
+                                         (`capabilities.choose_model`)"
+                                    ),
+                                    unresolved: false,
+                                });
+                                continue;
+                            }
+                        },
+                        None => None,
+                    };
                     match tools.ask_recipe(id) {
                         Some(recipe) => usable.push(Candidate {
                             id: Some(id.clone()),
                             bin,
-                            args: command_line(&recipe),
+                            args: match &option {
+                                Some((option, model)) => {
+                                    command_line_naming_model(&recipe, option, model)
+                                }
+                                None => command_line(&recipe),
+                            },
                             prompt: recipe.prompt,
                             session: session_lines(&recipe, tools.session_recipe(id)),
                             unusable_when: recipe.unusable_when,
@@ -917,6 +957,142 @@ mod tests {
         };
 
         assert_eq!(output["stdout"], "scritte-nel-passo\n");
+    }
+
+    // ── quale modello si vuole ────────────────────────────────────────
+
+    /// Due motori uguali in tutto tranne in due cose: il primo dichiara come
+    /// gli si nomina un modello e il secondo no, e ognuno **firma la propria
+    /// riga** — senza quella firma i due si echeggiano identici, e una prova
+    /// sulla catena non saprebbe dire chi ha risposto. Le opzioni della
+    /// domanda sono scelte perché ce n'è una che **deve restare attaccata** al
+    /// testo: è lì che si vede se il nome del modello è finito nel posto giusto.
+    struct Models;
+
+    impl ToolResolver for Models {
+        fn resolve(&self, id: &str) -> Result<String, String> {
+            match id {
+                "sa-il-modello" | "non-sa-il-modello" => Ok("echo".to_owned()),
+                _ => Err(format!("«{id}» non è su questa macchina")),
+            }
+        }
+
+        fn ask_recipe(&self, id: &str) -> Option<AskRecipe> {
+            let signature = format!("--ha-risposto-{}", self.resolve(id).map(|_| id).ok()?);
+            Some(AskRecipe {
+                args: vec![signature, "--mode".to_owned(), "plan".to_owned()],
+                prompt: PromptVia::LastArg,
+                args_before_prompt: vec!["--print".to_owned()],
+                unusable_when: Vec::new(),
+                silent_without_prompt: false,
+                refuses_without_prompt: Vec::new(),
+                exhausted_when: Vec::new(),
+                cooldown_secs: None,
+                waits_for_a_person_when: Vec::new(),
+                usage: None,
+            })
+        }
+
+        fn model_option(&self, id: &str) -> Option<Vec<String>> {
+            (id == "sa-il-modello").then(|| vec!["--model".to_owned()])
+        }
+    }
+
+    /// Il passo nomina un modello per un motore che sa riceverlo: la riga
+    /// costruita lo porta, **dopo** le opzioni della ricetta e **prima** di
+    /// quella che deve restare attaccata alla domanda. Un nome infilato dopo
+    /// `--print` verrebbe letto come la domanda.
+    #[test]
+    fn a_named_model_lands_before_the_option_glued_to_the_question() {
+        let action = ExternalEngineAction::resolving_with(Models);
+        let input = json!({
+            "tool": "sa-il-modello",
+            "model": {"sa-il-modello": "il-modello-forte"},
+            "stdin": "la-domanda",
+            "timeout_secs": 10
+        });
+
+        let ActionOutcome::Went(output) = action
+            .execute(&input, &SharedState::new())
+            .expect("risponde")
+        else {
+            panic!("un motore che risponde è sempre Went")
+        };
+
+        assert_eq!(
+            output["stdout"], "--ha-risposto-sa-il-modello --mode plan --model il-modello-forte --print la-domanda\n",
+            "il nome del modello sta dopo le opzioni della ricetta e prima di `--print`"
+        );
+    }
+
+    /// Il motore che non sa ricevere un modello **non** viene invocato col
+    /// proprio predefinito: si mette da parte, e la catena prosegue. Il
+    /// secondo, che nessuna voce nomina, gira col suo predefinito — cioè senza
+    /// nessuna opzione di modello sulla riga.
+    #[test]
+    fn an_engine_that_cannot_be_told_a_model_is_set_aside_and_the_chain_goes_on() {
+        let action = ExternalEngineAction::resolving_with(Models);
+        let input = json!({
+            "tool": ["non-sa-il-modello", "sa-il-modello"],
+            "model": {"non-sa-il-modello": "il-modello-forte"},
+            "stdin": "la-domanda",
+            "timeout_secs": 10
+        });
+
+        let ActionOutcome::Went(output) = action
+            .execute(&input, &SharedState::new())
+            .expect("il secondo motore risponde")
+        else {
+            panic!("un motore che risponde è sempre Went")
+        };
+
+        assert_eq!(
+            output["stdout"], "--ha-risposto-sa-il-modello --mode plan --print la-domanda\n",
+            "il secondo non è nominato da nessuna voce: gira col suo predefinito"
+        );
+    }
+
+    /// **E DA SOLO LO DICE.** Senza nessun motore dietro non c'è niente da
+    /// salvare, ma resta il motivo: chi legge sa che quel modello non gli si
+    /// può chiedere, invece di leggere una risposta venuta da un modello che
+    /// non ha scelto e che niente nomina.
+    #[test]
+    fn alone_it_says_why_instead_of_answering_from_a_model_nobody_chose() {
+        let action = ExternalEngineAction::resolving_with(Models);
+        let input = json!({
+            "tool": ["non-sa-il-modello"],
+            "model": {"non-sa-il-modello": "il-modello-forte"},
+            "stdin": "la-domanda",
+            "timeout_secs": 10
+        });
+
+        let error = action
+            .execute(&input, &SharedState::new())
+            .expect_err("non gli si può nominare un modello");
+
+        assert_eq!(error.class, "no_usable_engine");
+        assert!(error.said.contains("choose_model"), "{}", error.said);
+        assert!(error.said.contains("il-modello-forte"), "{}", error.said);
+    }
+
+    /// Chi si è scritto le opzioni ha già scritto lì quale modello vuole: due
+    /// risposte alla stessa domanda non convivono, come `bin` e `tool`.
+    #[test]
+    fn a_step_cannot_write_its_own_options_and_name_a_model() {
+        let action = ExternalEngineAction::resolving_with(Models);
+        let input = json!({
+            "tool": "sa-il-modello",
+            "args": ["--model", "un-altro"],
+            "model": {"sa-il-modello": "il-modello-forte"},
+            "timeout_secs": 10
+        });
+
+        let error = action
+            .execute(&input, &SharedState::new())
+            .expect_err("due risposte alla stessa domanda");
+
+        assert_eq!(error.class, "invalid_input");
+        assert!(error.said.contains("model"), "{}", error.said);
     }
 
     #[test]

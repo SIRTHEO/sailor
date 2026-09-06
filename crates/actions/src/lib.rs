@@ -89,7 +89,8 @@ pub use process::{
     EngineInvocation, EngineResult, LiveSink, Pipe, RunOutcome, StepSinks,
 };
 pub use recipe::{
-    command_line, command_line_with, AskRecipe, PromptVia, SessionRecipe, ToolResolver,
+    command_line, command_line_naming_model, command_line_with, AskRecipe, PromptVia,
+    SessionRecipe, ToolResolver,
     UsageRecipe, SESSION_PLACEHOLDER,
 };
 pub use shell::ShellCheckAction;

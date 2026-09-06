@@ -71,6 +71,18 @@ pub trait ToolResolver: Send + Sync {
     fn login_recipe(&self, _id: &str) -> Option<LoginRecipe> {
         None
     }
+
+    /// Le opzioni dopo le quali si scrive **il nome del modello** che si vuole
+    /// da `id`, se il suo descrittore dichiara come glielo si dice.
+    ///
+    /// **`None` È UN RIFIUTO, NON UN PREDEFINITO.** Un passo che nomina un
+    /// modello per un motore che non lo sa ricevere non va invocato lo stesso:
+    /// risponderebbe il modello che nessuno ha scelto, e niente lo direbbe. È
+    /// il verso opposto a `session_recipe`, e la differenza è che lì il passo
+    /// non ha chiesto niente, qui sì.
+    fn model_option(&self, _id: &str) -> Option<Vec<String>> {
+        None
+    }
 }
 
 /// Il segnaposto che, dentro le opzioni di una ricetta di sessione, prende il
@@ -164,6 +176,23 @@ pub fn command_line_with(recipe: &AskRecipe, ask_args: &[String]) -> Vec<String>
     }
     args.extend(recipe.args_before_prompt.iter().cloned());
     args
+}
+
+/// La stessa riga, col nome del modello che il passo ha chiesto scritto sopra.
+///
+/// Le opzioni del modello si accodano a quelle della domanda e restano
+/// **prima** di quelle che devono stare attaccate al testo, per la ragione per
+/// cui `args_before_prompt` esiste: un nome infilato fra il flag che introduce
+/// la domanda e la domanda viene letto come la domanda.
+pub fn command_line_naming_model(
+    recipe: &AskRecipe,
+    option: &[String],
+    model: &str,
+) -> Vec<String> {
+    let mut ask_args = recipe.args.clone();
+    ask_args.extend(option.iter().cloned());
+    ask_args.push(model.to_owned());
+    command_line_with(recipe, &ask_args)
 }
 
 /// Come si interroga un motore in un colpo solo, e come quel motore dice di
