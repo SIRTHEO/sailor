@@ -130,6 +130,12 @@ fn no_error_with_a_sentence_of_its_own_derives_debug() {
             }
         }
     }
+    workspace::measured_against(
+        sources.len(),
+        "shipped sources read",
+        seen,
+        "error types with a sentence of their own",
+    );
 
     assert!(
         seen >= 8,
@@ -168,6 +174,7 @@ fn every_such_error_hands_its_debug_to_its_display() {
             }
         }
     }
+    workspace::measured(sources.len(), "shipped sources read");
 
     assert!(
         missing.is_empty(),
