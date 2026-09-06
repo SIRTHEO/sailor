@@ -190,6 +190,25 @@ fn nothing_that_breaks_a_row(cells: &[(&str, &str)]) -> Result<(), FaultError> {
     Ok(())
 }
 
+/// **«UNABLE TO OPEN DATABASE FILE» IS NOT A REASON**, and here there are two:
+/// a store in WAL mode needs a file beside it even to be read, and a store
+/// that is not there at all is a different fact.
+fn why_a_reader_was_refused(path: &Path, error: rusqlite::Error) -> FaultError {
+    if !path.exists() {
+        return FaultError::NoDirectory("there is no register here".to_owned());
+    }
+    let beside = path.with_extension("readable-check");
+    if std::fs::write(&beside, b"").is_err() {
+        return FaultError::NoDirectory(
+            "it is kept in a directory this reader may not write, and reading a store in WAL \
+             mode still asks for a file beside it"
+                .to_owned(),
+        );
+    }
+    let _ = std::fs::remove_file(&beside);
+    FaultError::Database(error)
+}
+
 pub struct Faults {
     connection: Connection,
     path: PathBuf,
@@ -207,6 +226,22 @@ impl Faults {
                         .to_owned(),
                 )
             })
+    }
+
+    /// The same store, opened **without asking to write it**: a register that
+    /// only gets read must be readable where nothing may be written.
+    pub fn open_for_reading(path: impl AsRef<Path>) -> Result<Self, FaultError> {
+        let path = path.as_ref().to_path_buf();
+        let connection =
+            Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .map_err(|error| why_a_reader_was_refused(&path, error))?;
+        let version: i64 = connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .map_err(|error| why_a_reader_was_refused(&path, error))?;
+        if version > FAULTS_SCHEMA_VERSION {
+            return Err(FaultError::UnsupportedSchema(version));
+        }
+        Ok(Faults { connection, path })
     }
 
     pub fn open(path: impl AsRef<Path>) -> Result<Self, FaultError> {

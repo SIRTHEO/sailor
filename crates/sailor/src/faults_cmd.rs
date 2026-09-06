@@ -102,7 +102,13 @@ fn dispatch(args: &[String]) -> Result<String, String> {
         Some(declared) => PathBuf::from(declared),
         None => Faults::default_path().map_err(|error| error.to_string())?,
     };
-    let store = Faults::open(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+    // Three of these verbs write and three only read, and the reading ones are
+    // what an agent runs from a sandbox that grants no writes.
+    let opened = match verb {
+        "list" | "render" | "check" => Faults::open_for_reading(&path),
+        _ => Faults::open(&path),
+    };
+    let store = opened.map_err(|error| format!("{}: {error}", path.display()))?;
 
     match verb {
         "list" => list(&store, &options),

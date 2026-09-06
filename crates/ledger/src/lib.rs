@@ -6,7 +6,7 @@
 //! because WAL gives no atomicity across attached databases.
 
 use flow::{AttemptRelation, Completion, Outcome, RecordStore, Spend, StepRecord, StepSpecies};
-use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
+use rusqlite::{params, Connection, OpenFlags, OptionalExtension, Transaction, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -865,6 +865,21 @@ struct TraceRecord {
     occurred_at: i64,
 }
 
+/// **«ATTEMPT TO WRITE A READONLY DATABASE» IS NOT A REASON FOR A READER**: a
+/// WAL store wants a file beside it even to be read.
+fn why_a_reader_was_refused(directory: &Path, error: rusqlite::Error) -> LedgerError {
+    let beside = directory.join(".readable-check");
+    if std::fs::write(&beside, b"").is_err() {
+        return LedgerError::InvalidRecord(format!(
+            "{}: this reader may not write the directory, and a WAL store wants a file \
+             beside it even to be read",
+            directory.display()
+        ));
+    }
+    let _ = std::fs::remove_file(&beside);
+    LedgerError::from(error)
+}
+
 #[derive(Clone)]
 pub struct Ledger {
     connection: Arc<Mutex<Connection>>,
@@ -913,6 +928,37 @@ impl Ledger {
             create_projection_indexes(&transaction)?;
             apply_pending_events(&transaction)?;
             transaction.commit()?;
+        }
+        Ok(Self {
+            connection: Arc::new(Mutex::new(connection)),
+            directory: Arc::new(directory.to_path_buf()),
+        })
+    }
+
+    /// The same store, opened **without asking to write it**: nothing created,
+    /// no pragma set, no migration run.
+    pub fn open_for_reading(directory: impl AsRef<Path>) -> Result<Self, LedgerError> {
+        let directory = directory.as_ref();
+        let state_path = directory.join(STATE_FILE);
+        let events_path = directory.join(EVENTS_FILE);
+        let opened = || -> Result<(Connection, i64), rusqlite::Error> {
+            let read_only = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI;
+            let connection = Connection::open_with_flags(&state_path, read_only)?;
+            connection.busy_timeout(BUSY_TIMEOUT)?;
+            connection.execute(
+                "ATTACH DATABASE ?1 AS events",
+                [format!("file:{}?mode=ro", events_path.to_string_lossy())],
+            )?;
+            let version = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+            Ok((connection, version))
+        };
+        let (connection, version) =
+            opened().map_err(|error| why_a_reader_was_refused(directory, error))?;
+        if version < PROJECTION_SCHEMA_VERSION {
+            return Err(LedgerError::InvalidRecord(format!(
+                "this store is at projection schema version {version} and this code expects \
+                 {PROJECTION_SCHEMA_VERSION}: it must be migrated by somebody who may write it"
+            )));
         }
         Ok(Self {
             connection: Arc::new(Mutex::new(connection)),

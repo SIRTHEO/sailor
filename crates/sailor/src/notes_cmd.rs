@@ -120,8 +120,13 @@ fn dispatch(args: &[String]) -> Result<Written, String> {
         Some(declared) => PathBuf::from(declared),
         None => ui::gather::default_ledger_dir(),
     };
-    let ledger =
-        Ledger::open(&directory).map_err(|error| format!("{}: {error}", directory.display()))?;
+    // Only two of these verbs write, and the other three are the ones an agent
+    // runs from a sandbox that grants no writes.
+    let opened = match verb {
+        "import" | "remove" => Ledger::open(&directory),
+        _ => Ledger::open_for_reading(&directory),
+    };
+    let ledger = opened.map_err(|error| format!("{}: {error}", directory.display()))?;
 
     match verb {
         "import" => import(&ledger, &loose),
