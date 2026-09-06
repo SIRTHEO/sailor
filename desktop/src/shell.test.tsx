@@ -5,7 +5,7 @@ import App from "./App";
 import { beatWords, buildWords, hears, liveWords, spendWords, whoWords, LiveChip } from "./Bar";
 import { BlankCanvas } from "./BlankCanvas";
 import { LedgerBrowser } from "./LedgerBrowser";
-import { MACHINE, inTheStrip, machineHolds, tabsThatExist } from "./places";
+import { MACHINE, TERMINALS_GROUND, inTheStrip, machineHolds, tabsThatExist } from "./places";
 
 /**
  * **FOUR PLACES, A BAR THAT SPEAKS FROM ANYWHERE, AND THE LEDGER AS A
@@ -68,8 +68,8 @@ describe("the column is the world", () => {
       (one) => one.textContent,
     );
     // Only what belongs to no ground below. The board hangs under the tree it
-    // draws; the ledger and what this machine holds have a ground of their own.
-    expect(above).toEqual(["Terminals", "Runs"]);
+    // draws; the work and what this machine holds have a ground of their own.
+    expect(above).toEqual(["Runs"]);
     expect(
       above,
       "the board is above the work: its flows belong to the tree you are in",
@@ -93,7 +93,10 @@ describe("the column is the world", () => {
       "this mac",
       "outside every workspace",
     ]);
-    expect(container.querySelector(".body[hidden]"), "the board is not in view at rest").toBeNull();
+    expect(
+      container.querySelector(".body[hidden]"),
+      "the board is the ground again: at rest the window is the work",
+    ).not.toBeNull();
   });
 
   /** With no tree open the board is still reachable, out here. */
@@ -112,9 +115,13 @@ describe("the column is the world", () => {
   test("THE BAR SAYS WHERE YOU ARE: the place, then the entry inside it", () => {
     const { container } = render(<App />);
     const crumbs = () => Array.from(container.querySelectorAll(".topbar__crumb")).map((one) => one.textContent);
+    // At rest the window is the work, and the entry inside it is the view.
+    expect(crumbs()).toEqual([TERMINALS_GROUND, "Live"]);
+
     // The board opens on a flow, so the entry inside the place is that flow:
     // «Board» alone was the old at-rest state, where the paper held every flow
     // at once and none of them was the one you were in.
+    fireEvent.click(screen.getByRole("button", { name: /^Board/ }));
     expect(crumbs()).toEqual(["Board", "prima-corsa"]);
 
     fireEvent.click(screen.getByRole("button", { name: /Runs/ }));
@@ -140,8 +147,10 @@ describe("the column is the world", () => {
       "the screen kept a column of its own, so the window offers one list twice",
     ).toHaveLength(0);
 
-    fireEvent.click(screen.getByRole("button", { name: /^Terminals/ }));
-    expect(crumbs()).toEqual(["Terminals", "Live"]);
+    // And back to the work, which is typed for rather than navigated to.
+    fireEvent.click(screen.getByRole("button", { name: /Search or run a command/ }));
+    fireEvent.click(screen.getByRole("option", { name: /^Live/ }));
+    expect(crumbs()).toEqual([TERMINALS_GROUND, "Live"]);
   });
 });
 
