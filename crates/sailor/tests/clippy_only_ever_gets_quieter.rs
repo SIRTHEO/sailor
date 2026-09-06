@@ -163,10 +163,16 @@ fn table_of(counts: &BTreeMap<String, usize>) -> String {
 fn no_crate_warns_more_than_today() {
     let root = root();
     let Some(version) = linter_version(&root) else {
-        println!("the linter is not installed here: nothing measured, nothing compared");
+        workspace::measured_nothing("the linter is not installed here, so nothing was compared");
         return;
     };
     let measured = warnings_per_crate(&root).unwrap_or_else(|why| panic!("{why}"));
+    workspace::measured_against(
+        measured.len(),
+        "crates linted over every target",
+        WARNINGS_TODAY.len(),
+        "seeded crates",
+    );
     let table = table_of(&measured);
     assert_eq!(
         version, SEEDS_ARE_FOR,

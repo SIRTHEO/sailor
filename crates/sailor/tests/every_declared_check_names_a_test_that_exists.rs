@@ -470,6 +470,7 @@ fn declared_in_the_docs(root: &Path) -> Vec<Declared> {
     let mut documents = Vec::new();
     documents_under(&root.join("docs"), &mut documents);
     documents.sort();
+    workspace::measured(documents.len(), "documents under docs/ read for the checks they declare");
     documents
         .iter()
         .filter_map(|path| {

@@ -24,6 +24,10 @@
 
 use std::path::{Path, PathBuf};
 
+/// The two ways of building the store's path by hand, which is the gesture
+/// looked for: the last piece of that path named while a path is composed.
+const BUILT_BY_HAND: &[&str] = &[".join(\"flussi\")", ".claude/state/flussi"];
+
 fn repository_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -85,6 +89,7 @@ fn nobody_outside_the_ledger_builds_the_ledger_path_by_hand() {
     );
 
     let mut guilty = Vec::new();
+    let mut read = 0;
     for path in &sources {
         if is_allowed(path) {
             continue;
@@ -92,6 +97,7 @@ fn nobody_outside_the_ledger_builds_the_ledger_path_by_hand() {
         let Ok(text) = std::fs::read_to_string(path) else {
             continue;
         };
+        read += 1;
         for (number, line) in text.lines().enumerate() {
             // **SI CERCA IL GESTO, NON LA PAROLA**, e il primo tentativo di
             // questa prova sbagliava proprio qui: cercare `flussi` da solo
@@ -105,7 +111,7 @@ fn nobody_outside_the_ledger_builds_the_ledger_path_by_hand() {
             if trimmed.starts_with("//") {
                 continue;
             }
-            if line.contains(".join(\"flussi\")") || line.contains(".claude/state/flussi") {
+            if BUILT_BY_HAND.iter().any(|gesture| line.contains(gesture)) {
                 guilty.push(format!(
                     "{}:{}: {}",
                     path.strip_prefix(&root).unwrap_or(path).display(),
@@ -115,6 +121,12 @@ fn nobody_outside_the_ledger_builds_the_ledger_path_by_hand() {
             }
         }
     }
+    workspace::measured_against(
+        read,
+        "sources read outside the ledger",
+        BUILT_BY_HAND.len(),
+        "ways of building the store's path by hand",
+    );
 
     assert!(
         guilty.is_empty(),

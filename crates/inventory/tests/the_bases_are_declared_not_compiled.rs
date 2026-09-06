@@ -9,6 +9,9 @@ use inventory::{default_roots_from, repos_under};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// What `declared_bases` must not read a base from: one person's home.
+const WORDS_THAT_DERIVE_A_BASE_FROM_A_PERSON: [&str; 2] = ["home", "HOME"];
+
 /// A throwaway directory, deleted and rebuilt every run.
 fn temp(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("bases-test-{name}-{}", std::process::id()));
@@ -125,11 +128,17 @@ fn no_ones_personal_folders_are_compiled_into_the_binary() {
         body.contains("SAILOR_WORK_ROOTS"),
         "the body of `declared_bases` was not found: this test is watching nothing"
     );
+    workspace::measured_against(
+        body.lines().count(),
+        "lines of the body of declared_bases read",
+        WORDS_THAT_DERIVE_A_BASE_FROM_A_PERSON.len(),
+        "words a base must not be derived from",
+    );
     // **IT WATCHES THE SHAPE, NOT A LIST OF NAMES.** A list is got around by
     // picking a fourth directory, and to exist it has to publish the very names
     // it keeps out. What must not be here is the home: `declared_bases` reads a
     // declaration, and derives nothing from `$HOME`.
-    for from_the_home in ["home", "HOME"] {
+    for from_the_home in WORDS_THAT_DERIVE_A_BASE_FROM_A_PERSON {
         assert!(
             !body.contains(from_the_home),
             "`declared_bases` derives a base from \"{from_the_home}\": one person's \

@@ -18,6 +18,11 @@ serde_json = { workspace = true }
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# Tests only: the receipt a judge hands to `sailor ratchet`. `workspace`
+# depends on nothing of this workspace, so nothing of it reaches the crate.
+[dev-dependencies]
+workspace = { path = "../workspace" }
+
 # The program that replaces `cargo tauri dev` in live mode.
 [[bin]]
 name = "sailor-live"

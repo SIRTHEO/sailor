@@ -94,6 +94,12 @@ fn only_the_home_reads_the_home_variable() {
             }
         }
     }
+    workspace::measured_against(
+        sources.len(),
+        "shipped sources read",
+        WHO_MAY_READ_IT.len(),
+        "readers the variable is allowed",
+    );
 
     assert!(
         caught.is_empty(),

@@ -70,7 +70,8 @@ fn faults() -> Vec<Fault> {
     let path = repository_root().join("docs/guasti-incontrati.md");
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("leggere {}: {error}", path.display()));
-    text.lines()
+    let rows: Vec<Fault> = text
+        .lines()
         .filter_map(|line| {
             let trimmed = line.trim();
             if !trimmed.starts_with('|') {
@@ -95,7 +96,9 @@ fn faults() -> Vec<Fault> {
                 cells,
             })
         })
-        .collect()
+        .collect();
+    workspace::measured(rows.len(), "rows of the fault table read");
+    rows
 }
 
 /// Nessun numero ripetuto, nessun buco. È la prova che oggi sarebbe stata rossa.
