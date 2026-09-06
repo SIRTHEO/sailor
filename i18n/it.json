@@ -584,6 +584,7 @@
   "run.failure.no_parent_run": "nessuna corsa aperta: un sotto-flusso esiste solo dentro una corsa",
   "run.failure.no_parent_step": "nessun passo aperto: non ci sarebbe a chi attribuire la corsa figlia",
   "run.failure.no_preflight": "nessuna verifica lega la risposta del server alla cartella di cui parla il passo",
+  "run.failure.no_run": "non c'è nessuna corsa da cui prendere il nome di questa voce, e una voce che non prende il nome da niente è una voce che nessuno ritrova",
   "run.failure.no_store": "nessuno sa dove sia il deposito",
   "run.failure.no_tool_resolver": "nessuno sa dove trovare quello strumento",
   "run.failure.no_usable_engine": "nessuno dei motori chiesti dal passo ha potuto lavorare",
