@@ -516,8 +516,8 @@ pub fn render(faults: &[Fault]) -> String {
     let mut out = String::new();
     for fault in faults {
         let [on, what, how, prevent, status, _] = fault.cells();
-        let (on, what) = (as_a_cell(&on), as_a_cell(&what));
-        let (how, prevent, status) = (as_a_cell(&how), as_a_cell(&prevent), as_a_cell(&status));
+        let (on, what) = (as_a_cell(on), as_a_cell(what));
+        let (how, prevent, status) = (as_a_cell(how), as_a_cell(prevent), as_a_cell(status));
         out.push_str(&format!(
             "| {} | {on} | {what} | {how} | {prevent} | {status} |\n",
             fault.number
