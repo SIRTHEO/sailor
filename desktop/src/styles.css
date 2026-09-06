@@ -3990,11 +3990,12 @@ tr[data-followable]:hover {
   min-width: 0;
 }
 
+/* IT IS ASKED FOR, AND THEN IT IS UNDER THE TERMINAL. Beside it, this band
+   took a column from every width and the whole terminal below 600 pixels. */
 .session-context {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  width: clamp(280px, 32vw, 460px);
   min-width: 0;
   min-height: 0;
   overflow: auto;
@@ -4683,6 +4684,7 @@ tr[data-followable]:hover {
 }
 
 .pane {
+  position: relative;
   display: flex;
   flex-direction: column;
   flex-grow: 1;
@@ -4691,6 +4693,67 @@ tr[data-followable]:hover {
   border-radius: var(--radius-lg);
   background: var(--paper);
   overflow: hidden;
+}
+
+/* THE CROSSING, NOT THE STATE. The border is lifted for a breath when the tree
+   under focus changes or a pane's progress crosses over, and it is a colour
+   that stops, never a movement that repeats. */
+.pane[data-stirred] {
+  border-color: var(--accent-fill);
+}
+
+/* ── the three facts, in the border ──────────────────────────────────────
+   None of the three is a column. A signal with a width takes it from the
+   terminal, and it was a band taking a column that made this window a
+   dashboard: the notch is out of the flow entirely, the other two sit in
+   rows that already wrap. */
+
+.pane__where {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.pane__tree {
+  font-size: var(--text-small);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.pane__notch {
+  position: absolute;
+  top: 0;
+  left: var(--space-1);
+  font-size: var(--text-small);
+  line-height: 1;
+  pointer-events: none;
+}
+
+.pane__notch[data-need="decision"] {
+  color: var(--warn);
+}
+
+.pane__notch[data-need="blocked"] {
+  color: var(--danger);
+}
+
+.pane__progress {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  line-height: 1;
+}
+
+.pane__progress[data-how="working"] {
+  color: var(--state-running);
+}
+
+.pane__progress[data-how="done"] {
+  color: var(--state-went);
+}
+
+.pane__progress[data-how="unsure"] {
+  color: var(--ink);
 }
 
 .pane__head,
