@@ -96,7 +96,9 @@ pub use recipe::{
     UsageRecipe, SESSION_PLACEHOLDER,
 };
 pub use shell::ShellCheckAction;
-pub use spec::{engines_named_in, private_data_asked_in, A_TREE_OF_ITS_OWN, BLIND, TREE};
+pub use spec::{
+    ceiling_declared_in, engines_named_in, private_data_asked_in, A_TREE_OF_ITS_OWN, BLIND, TREE,
+};
 
 pub(crate) use answer::{check_tolerance, tolerates};
 pub(crate) use process::sink_for_step;
