@@ -19,6 +19,14 @@ use std::path::{Path, PathBuf};
 /// The variable, and what it is allowed to mean.
 const VARIABLE: &str = "SAILOR_HOME";
 
+/// **A TEST INSIDE A SHIPPED FILE IS STILL A TEST.** This judge already leaves
+/// `tests/` alone, for the reason written below; the same tests written under
+/// `#[cfg(test)]` in a library file were read as shipped code, so a fixture
+/// naming the variable to prove it is dropped came out as a second reader.
+/// Everything from the first such line to the end of the file is skipped:
+/// in this tree a test module is what a source file ends with.
+const UNDER_TEST: &str = "#[cfg(test)]";
+
 /// Who may read it: the one place that defines the home, and the one that
 /// applies the same rule to a machine described rather than run.
 ///
@@ -88,8 +96,12 @@ fn only_the_home_reads_the_home_variable() {
         let Ok(text) = std::fs::read_to_string(path) else {
             continue;
         };
+        let mut in_a_test = false;
         for (number, line) in text.lines().enumerate() {
-            if code_part(line).contains(VARIABLE) {
+            if line.trim_start().starts_with(UNDER_TEST) {
+                in_a_test = true;
+            }
+            if !in_a_test && code_part(line).contains(VARIABLE) {
                 caught.push(format!("{shown}:{}  {}", number + 1, line.trim()));
             }
         }
