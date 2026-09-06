@@ -818,6 +818,19 @@ impl Descriptor {
         }
     }
 
+    /// The options a model's name is written after, when this tool declares a
+    /// form that carries one. A capability declared without a value has no
+    /// place to put the name: it answers `None`, exactly as an undeclared one
+    /// does, because neither can be told which model to answer with.
+    pub fn model_option(&self) -> Option<Vec<String>> {
+        self.capabilities
+            .get(CHOOSE_MODEL)?
+            .forms()
+            .iter()
+            .find(|form| form.takes_value && !form.args.is_empty())
+            .map(|form| form.args.clone())
+    }
+
     /// Where this descriptor says two different things about the same fact. The
     /// defect is never in one file: it is in never having compared the two
     /// blocks. **It lives in the library and not inside a test** because a test
@@ -944,11 +957,18 @@ impl Descriptor {
 
 /// The name of the capability that speaks of one-shot questions.
 ///
-/// **IT IS THE ONLY CAPABILITY NAME THE CODE UTTERS.** It answers the same
-/// question — "can this engine be interrogated without opening a conversation?"
-/// — that `ask` answers by composing a line, and two copies of one truth drift
-/// apart uncompared. The comparison needs the name; no other needs it or is here.
+/// It answers the same question — "can this engine be interrogated without
+/// opening a conversation?" — that `ask` answers by composing a line, and two
+/// copies of one truth drift apart uncompared. The comparison needs the name.
 pub const ASK_WITHOUT_INTERACTION: &str = "ask_without_interaction";
+
+/// The name of the capability that says how an engine is told **which model**
+/// to answer with.
+///
+/// The code utters it to read a form, never to decide anything about one
+/// engine: the options are the descriptor's, and an engine that declares no
+/// form carrying a value cannot be told a model at all.
+pub const CHOOSE_MODEL: &str = "choose_model";
 
 /// A descriptor that says two different things about the same fact.
 ///
@@ -1487,6 +1507,66 @@ mod the_new_field_is_optional {
             CapabilityState::NotLookedAt,
             "unnamed does not mean absent"
         );
+    }
+
+    /// **DECLARARE LA CAPACITÀ NON È DICHIARARE COME SI USA.** Un `true`
+    /// afferma che il motore un modello lo sa scegliere, e non lascia nessun
+    /// posto dove scriverne il nome; una forma senza valore nemmeno. In tutti e
+    /// due i casi la risposta è la stessa di chi non l'ha dichiarata affatto,
+    /// perché in tutti e tre un nome di modello non gli si può dire — e chi
+    /// costruisce la riga di comando deve leggere quello, non un sì.
+    #[test]
+    fn a_capability_without_a_place_for_the_name_cannot_carry_a_model() {
+        let catalog = loaded(
+            "how-a-model-is-named",
+            r#"[
+              { "id": "col-valore", "family": "ai_cli", "detect": { "command": "col-valore" },
+                "capabilities": { "choose_model": { "args": ["--model"], "takes_value": true } } },
+              { "id": "senza-valore", "family": "ai_cli", "detect": { "command": "senza-valore" },
+                "capabilities": { "choose_model": { "args": ["--model"] } } },
+              { "id": "solo-un-si", "family": "ai_cli", "detect": { "command": "solo-un-si" },
+                "capabilities": { "choose_model": true } },
+              { "id": "muto", "family": "ai_cli", "detect": { "command": "muto" } }
+            ]"#,
+        );
+        assert!(catalog.problems.is_empty(), "{:?}", catalog.problems);
+        let option = |id: &str| {
+            catalog
+                .descriptors
+                .iter()
+                .find(|loaded| loaded.descriptor.id == id)
+                .expect("il descrittore è nel catalogo")
+                .descriptor
+                .model_option()
+        };
+
+        assert_eq!(option("col-valore"), Some(vec!["--model".to_owned()]));
+        assert_eq!(option("senza-valore"), None, "nessun posto per il nome");
+        assert_eq!(option("solo-un-si"), None, "un sì non è un'istruzione");
+        assert_eq!(option("muto"), None);
+    }
+
+    /// I motori spediti che si sanno interrogare dichiarano anche **come gli
+    /// si nomina un modello**: senza, il flusso che esiste per portare una
+    /// domanda a un modello forte non saprebbe chiederlo a nessuno.
+    #[test]
+    fn the_shipped_engines_that_can_be_asked_say_how_a_model_is_named_to_them() {
+        let catalog = Catalog::load(&[Source::Builtin]);
+        assert!(catalog.problems.is_empty(), "{:?}", catalog.problems);
+        let mut asked = 0;
+        for loaded in &catalog.descriptors {
+            let descriptor = &loaded.descriptor;
+            if descriptor.ask.is_none() || descriptor.capability(CHOOSE_MODEL) == CapabilityState::NotLookedAt {
+                continue;
+            }
+            asked += 1;
+            assert!(
+                descriptor.model_option().is_some(),
+                "«{}» dichiara di saper scegliere un modello e non dice con quale opzione",
+                descriptor.id
+            );
+        }
+        assert!(asked >= 4, "misurati {asked} motori, ce n'erano quattro");
     }
 
     /// A capability with several ways is written as a list; one with a single

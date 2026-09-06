@@ -135,6 +135,16 @@ pub(crate) struct EngineSpec {
     /// otherwise expire unused goes first, and the why is said.
     #[serde(default)]
     pub(crate) prefer: Option<String>,
+    /// Quale modello si vuole da ogni motore della catena, per identificativo
+    /// di motore.
+    ///
+    /// **UNA MAPPA E NON UN NOME SOLO.** Il nome di un modello è specifico del
+    /// fornitore che lo conia: scritto come stringa varrebbe per il motore per
+    /// cui è stato scritto e sarebbe rumore per gli altri, cioè riporterebbe
+    /// dentro il passo il legame a un motore che la catena esiste per sciogliere.
+    /// Un motore della catena senza una voce gira col proprio predefinito.
+    #[serde(default)]
+    pub(crate) model: BTreeMap<String, String>,
     #[serde(default)]
     pub(crate) args: Vec<String>,
     #[serde(default)]
