@@ -21,16 +21,22 @@ fn scratch(label: &str) -> PathBuf {
     dir.join(faults::FAULTS_FILE)
 }
 
-/// The fault table as written. `None` where the tree carries no table: an
-/// empty string would pass every comparison below for having nothing in it.
+/// The fault table as written. **No documents at all is nothing to measure;
+/// documents without this one is the table lost, which is the defect.**
 fn table() -> Option<String> {
-    let file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let documents = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(|crates| crates.parent())
         .expect("the crate lives in <root>/crates/faults")
-        .join("docs/faults-encountered.md");
-    let Ok(text) = std::fs::read_to_string(&file) else {
-        workspace::measured_nothing("this tree carries no docs/faults-encountered.md to read");
+        .join("docs");
+    let Ok(text) = std::fs::read_to_string(documents.join("faults-encountered.md")) else {
+        assert!(
+            !documents.is_dir(),
+            "this tree carries documents and not the fault register: \
+             docs/faults-encountered.md was renamed, moved or lost, and every check \
+             below would have passed for having nothing to read"
+        );
+        workspace::measured_nothing("this tree carries no documents, so it carries no table");
         return None;
     };
     workspace::measured(text.lines().count(), "lines of the fault table read");
