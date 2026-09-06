@@ -4,10 +4,11 @@
  * and what belongs to THIS MACHINE is the same wherever you stand. Folded into
  * one noun called «Sailor», those seven cost two clicks and were named nowhere.
  */
+import type { MemoryTab } from "./memorytabs";
 import type { SailorTab } from "./sailortabs";
 import { SAILOR_TABS } from "./sailortabs";
 
-export type Section = "board" | "changes" | "sketch" | "terminals" | "ledger" | "memory" | "sailor";
+export type Section = "board" | "changes" | "sketch" | "terminals" | "memory" | "sailor";
 
 export interface Place {
   id: Section;
@@ -37,17 +38,10 @@ export const PLACES: Place[] = [
   },
   { id: "terminals", name: "Terminals", glyph: "▮", asks: "what is running", group: "work" },
   {
-    id: "ledger",
-    name: "Ledger",
-    glyph: "▤",
-    asks: "the tables, as they are",
-    group: "what happened",
-  },
-  {
     id: "memory",
     name: "Runs",
     glyph: "◷",
-    asks: "what happened, and what it cost",
+    asks: "what happened, what it cost, and the tables under it",
     group: "what happened",
   },
   { id: "sailor", name: "Sailor", glyph: "⚓", asks: "what it knows, what it can do", group: "itself" },
@@ -69,6 +63,8 @@ export interface MachineRow {
   asks: string;
   section: Section;
   tab?: SailorTab;
+  /** Set when the row lands on a view of the history rather than on a screen. */
+  memoryTab?: MemoryTab;
 }
 
 /**
@@ -82,7 +78,7 @@ export const MACHINE: MachineRow[] = [
   { id: "profiles", name: "Profiles", glyph: "\u25d1", asks: "which account each command line runs under", section: "sailor", tab: "profiles" },
   { id: "models", name: "Models", glyph: "\u25cd", asks: "the catalogue, and which is in use", section: "sailor", tab: "models" },
   { id: "equipment", name: "Equipment", glyph: "\u2692", asks: "tools, skills and rules on this machine", section: "sailor", tab: "equipment" },
-  { id: "ledger", name: "Ledger", glyph: "\u25a4", asks: "the tables, as they are", section: "ledger" },
+  { id: "ledger", name: "Ledger", glyph: "\u25a4", asks: "the tables, as they are", section: "memory", memoryTab: "ledger" },
   { id: "commands", name: "Commands", glyph: "\u2318", asks: "every verb sailor answers to", section: "sailor", tab: "commands" },
   { id: "keeps", name: "Stores", glyph: "\u25a3", asks: "every store, its path and its size", section: "sailor", tab: "keeps" },
   { id: "cando", name: "What it can do", glyph: "\u2726", asks: "the actions a flow may use", section: "sailor", tab: "cando" },
@@ -100,14 +96,23 @@ export function tabsThatExist(): SailorTab[] {
 }
 
 /**
+ * Whether the machine's ground stands in for a place instead of reaching into
+ * it. **A ROW THAT OPENS ONE VIEW OF A PLACE IS NOT THE PLACE**: the ledger is
+ * one view of the history among four, and reading the section as taken would
+ * cost the other three their only name.
+ */
+export function namedByTheMachine(id: Section): boolean {
+  const rows = MACHINE.filter((row) => row.section === id);
+  return rows.length > 0 && rows.every((row) => row.memoryTab === undefined);
+}
+
+/**
  * The places the strip above the work carries: the ones that belong to no
  * ground below it. The board hangs under the tree it draws, and a place the
  * machine's ground already holds is not offered twice.
  */
 export function inTheStrip(): Place[] {
-  return PLACES.filter(
-    (place) => !UNDER_A_TREE.includes(place.id) && !MACHINE.some((row) => row.section === place.id),
-  );
+  return PLACES.filter((place) => !UNDER_A_TREE.includes(place.id) && !namedByTheMachine(place.id));
 }
 
 /**
@@ -124,5 +129,5 @@ export const UNDER_A_TREE: Section[] = ["board", "changes", "sketch"];
  * «Ledger» is offered once and not twice.
  */
 export function onItsOwnName(): Place[] {
-  return PLACES.filter((place) => !MACHINE.some((row) => row.section === place.id));
+  return PLACES.filter((place) => !namedByTheMachine(place.id));
 }
