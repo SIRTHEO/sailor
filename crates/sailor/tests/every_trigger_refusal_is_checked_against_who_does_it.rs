@@ -169,7 +169,7 @@ fn shipped_code_outside_trigger(root: &Path) -> Vec<(PathBuf, String)> {
         }
     }
     walk(&root.join("desktop/src-tauri/src"), &mut files);
-    files
+    let read: Vec<(PathBuf, String)> = files
         .into_iter()
         .filter_map(|path| {
             let text = std::fs::read_to_string(&path).ok()?;
@@ -183,7 +183,15 @@ fn shipped_code_outside_trigger(root: &Path) -> Vec<(PathBuf, String)> {
                 .join("\n");
             Some((path, shipped))
         })
-        .collect()
+        .collect();
+    let signs: usize = CLAIMS.iter().map(|claim| claim.signs_somebody_does_it.len()).sum();
+    workspace::measured_against(
+        read.len(),
+        "shipped sources read outside the trigger crate",
+        signs,
+        "marks of somebody doing what a refusal denies",
+    );
+    read
 }
 
 fn walk(dir: &Path, found: &mut Vec<PathBuf>) {
