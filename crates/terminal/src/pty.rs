@@ -1,24 +1,23 @@
-//! Lo pseudo-terminale: la sola parte di questo crate che tocca il sistema
-//! operativo.
+//! The pseudo-terminal: the only part of this crate that touches the operating
+//! system.
 //!
-//! **PERCHÉ UNO PSEUDO-TERMINALE E NON UNA PIPE.** Una pipe basterebbe a leggere
-//! l'uscita di un comando, e infatti `actions` la usa. Non basta a un terminale:
-//! un programma che scopre di non parlare a un terminale cambia comportamento —
-//! niente colori, niente domande interattive, `git` non pagina, la shell non
-//! stampa il proprio invito. Un terminale che si comporta diversamente da un
-//! terminale non è il prodotto.
+//! **WHY A PSEUDO-TERMINAL AND NOT A PIPE.** A pipe would be enough to read a
+//! command's output, and `actions` indeed uses one. It is not enough for a
+//! terminal: a program that finds out it is not talking to a terminal changes
+//! behaviour — no colours, no interactive questions, `git` does not page, the
+//! shell does not print its own prompt. A terminal that behaves differently
+//! from a terminal is not the product.
 //!
-//! **I DUE CAPI SI CHIAMANO `leader` E `follower`.** È la coppia di nomi che
-//! POSIX e i sistemi operativi hanno adottato per quelli che le pagine di manuale
-//! vecchie chiamano master e slave. Il capo `leader` resta a noi: ci si scrive
-//! ciò che l'utente digita e ci si legge ciò che il terminale mostra. Il capo
-//! `follower` diventa i tre descrittori del processo figlio.
+//! **THE TWO ENDS ARE CALLED `leader` AND `follower`.** It is the pair of names
+//! POSIX and the operating systems have adopted for what the old manual pages
+//! call master and slave. The `leader` end stays with us: what the user types
+//! is written to it, and what the terminal shows is read from it. The
+//! `follower` end becomes the child process's three descriptors.
 //!
-//! **`posix_openpt` E NON `openpty`.** Fanno la stessa cosa, ma `openpty` su
-//! Linux sta in `libutil` e vuole una riga di collegamento in più, mentre le
-//! quattro chiamate POSIX (`posix_openpt`, `grantpt`, `unlockpt`, `ptsname`)
-//! stanno nella libreria di sistema ovunque. Meno da spiegare a chi compila
-//! altrove.
+//! **`posix_openpt` AND NOT `openpty`.** They do the same thing, but on Linux
+//! `openpty` lives in `libutil` and wants one more link line, while the four
+//! POSIX calls (`posix_openpt`, `grantpt`, `unlockpt`, `ptsname`) are in the
+//! system library everywhere. Less to explain to whoever compiles elsewhere.
 
 use crate::{locked, Workspace};
 use std::ffi::{CStr, CString, OsStr};
@@ -29,21 +28,20 @@ use std::os::unix::process::CommandExt;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 
-/// Ciò che può andare storto aprendo o guidando uno pseudo-terminale.
+/// What can go wrong opening or driving a pseudo-terminal.
 ///
-/// **OGNI VOCE DICE QUALE GESTO È FALLITO**, non solo che qualcosa è fallito:
-/// «non si è aperto» manda a cercare in quattro posti diversi, e i quattro
-/// hanno riparazioni diverse.
+/// **EVERY VARIANT SAYS WHICH GESTURE FAILED**, not just that something failed:
+/// "it did not open" sends you looking in four different places, and the four
+/// have different repairs.
 pub enum PtyError {
-    /// Il sistema operativo non ha dato un terminale nuovo.
+    /// The operating system did not give a new terminal.
     NotOpened(io::Error),
-    /// Il capo del figlio non si è potuto preparare o aprire.
+    /// The child's end could not be prepared or opened.
     FollowerNotReady(io::Error),
-    /// Il programma non è partito: binario assente, non eseguibile, cartella
-    /// sparita fra il controllo e l'avvio.
+    /// The program did not start: binary missing, not executable, directory
+    /// gone between the check and the launch.
     NotStarted(io::Error),
-    /// Scrittura, lettura o ridimensionamento su un terminale già chiuso o
-    /// rotto.
+    /// A write, a read or a resize on a terminal already closed or broken.
     Broken(io::Error),
     /// The terminal opened, but its letterbox or its count could not be put
     /// where whoever types from outside will look for them.
@@ -82,12 +80,12 @@ impl std::fmt::Display for PtyError {
 
 impl std::error::Error for PtyError {}
 
-/// Quanto è grande la finestra del terminale, in caratteri.
+/// How big the terminal window is, in characters.
 ///
-/// **NON HA UN VALORE PREDEFINITO NASCOSTO NEL SISTEMA.** Uno pseudo-terminale
-/// nasce a zero righe e zero colonne, e un programma che chiede quanto è largo
-/// lo schermo si sente rispondere zero: `less` non pagina, un editor si disegna
-/// su una riga sola. La misura si dichiara aprendo.
+/// **THERE IS NO DEFAULT HIDDEN IN THE SYSTEM.** A pseudo-terminal is born at
+/// zero rows and zero columns, and a program that asks how wide the screen is
+/// gets told zero: `less` does not page, an editor draws itself on a single
+/// row. The size is declared on opening.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Size {
     pub rows: u16,
@@ -95,8 +93,8 @@ pub struct Size {
 }
 
 impl Default for Size {
-    /// Le ventiquattro righe per ottanta colonne che ogni terminale assume
-    /// quando nessuno gliene ha dette altre.
+    /// The twenty-four rows by eighty columns every terminal assumes when
+    /// nobody has told it otherwise.
     fn default() -> Size {
         Size {
             rows: 24,
@@ -105,10 +103,10 @@ impl Default for Size {
     }
 }
 
-/// Uno pseudo-terminale aperto, col processo che ci gira dentro.
+/// An open pseudo-terminal, with the process running inside it.
 pub struct Pty {
-    /// Il capo che resta a noi. Sotto un lucchetto perché chi scrive e chi
-    /// ridimensiona possono essere due fili diversi.
+    /// The end that stays with us. Under a lock because whoever writes and
+    /// whoever resizes can be two different threads.
     leader: Mutex<File>,
     child: Mutex<Child>,
     /// The device the program inside is attached to, kept because it is the
@@ -116,21 +114,20 @@ pub struct Pty {
     device: String,
 }
 
-/// Il numero non trattabile che `ptsname` restituisce da un buffer statico
-/// condiviso: due terminali aperti insieme da due fili si porterebbero via il
-/// nome l'uno dell'altro.
+/// The intractable number `ptsname` returns from a shared static buffer: two
+/// terminals opened together by two threads would take each other's name away.
 ///
-/// **`ptsname_r` NON È PORTABILE**: esiste su Linux e non su macOS. Un lucchetto
-/// di trenta microsecondi attorno alla chiamata costa meno di due strade da
-/// mantenere.
+/// **`ptsname_r` IS NOT PORTABLE**: it exists on Linux and not on macOS. A lock
+/// of thirty microseconds around the call costs less than two paths to
+/// maintain.
 static PTSNAME_LOCK: Mutex<()> = Mutex::new(());
 
 impl Pty {
-    /// Apre uno pseudo-terminale e ci avvia `program` **dentro** `workspace`.
+    /// Opens a pseudo-terminal and runs `program` **inside** `workspace`.
     ///
-    /// La cartella non è un'opzione fra le altre: è il primo argomento perché
-    /// un terminale senza spazio di lavoro non è una cosa che questo crate sa
-    /// fabbricare.
+    /// The directory is not one option among others: it is the first argument
+    /// because a terminal without a workspace is not something this crate knows
+    /// how to make.
     pub fn open(
         workspace: &Workspace,
         program: &OsStr,
@@ -141,19 +138,18 @@ impl Pty {
         let leader = open_leader()?;
         let follower_name = follower_name(&leader)?;
         let follower = open_follower(&follower_name)?;
-        // **LA MISURA SI DÀ DOPO CHE IL CAPO DEL FIGLIO È APERTO, E LA PRIMA
-        // VERSIONE LO FACEVA PRIMA.** Su macOS un capo `leader` a cui nessuno
-        // sta ancora dall'altra parte non è un terminale, e il sistema risponde
-        // «ioctl inappropriata per questo dispositivo» (errno 25) — misurato il
-        // 31/08/2026. Prima di dirlo, il terminale nasceva a zero righe per
-        // zero colonne.
+        // **THE SIZE IS GIVEN AFTER THE CHILD'S END IS OPEN, NOT BEFORE.**
+        // Measured: on macOS a `leader` end with nobody on the other side yet
+        // is not a terminal, and the system answers "inappropriate ioctl for
+        // device" (errno 25). Until the size is said, the terminal is born at
+        // zero rows by zero columns.
         set_size(&leader, size).map_err(PtyError::Broken)?;
 
         let mut command = Command::new(program);
         command.args(args);
         command.current_dir(&workspace.root);
-        // Tre descrittori distinti sullo stesso terminale: se il figlio chiude
-        // il proprio standard input, non deve portarsi via anche la sua uscita.
+        // Three distinct descriptors on the same terminal: if the child closes
+        // its own standard input, it must not take its output away with it.
         command.stdin(Stdio::from(
             follower.try_clone().map_err(PtyError::FollowerNotReady)?,
         ));
@@ -167,10 +163,10 @@ impl Pty {
             command.env(name, value);
         }
 
-        // Il figlio deve diventare capo di una sessione nuova e prendersi questo
-        // terminale come terminale di controllo: senza, un Ctrl-C non arriva a
-        // lui, e i programmi che chiedono «chi è in primo piano?» si sentono
-        // rispondere che non c'è nessuno.
+        // The child must become the leader of a new session and take this
+        // terminal as its controlling terminal: without that, a Ctrl-C does not
+        // reach it, and programs that ask "who is in the foreground?" are told
+        // there is nobody.
         let leader_fd = leader.as_raw_fd();
         unsafe {
             command.pre_exec(move || {
@@ -180,17 +176,17 @@ impl Pty {
                 if libc::ioctl(0, libc::TIOCSCTTY as _, 0) < 0 {
                     return Err(io::Error::last_os_error());
                 }
-                // Il nostro capo non deve restare aperto nel figlio: finché
-                // esiste una copia, chi legge il terminale non vede mai la fine.
+                // Our end must not stay open in the child: as long as a copy
+                // exists, whoever reads the terminal never sees the end.
                 libc::close(leader_fd);
                 Ok(())
             });
         }
 
         let child = command.spawn().map_err(PtyError::NotStarted)?;
-        // Il capo del figlio si chiude qui, nel padre. Se restasse aperto,
-        // leggere il terminale non finirebbe mai: il sistema operativo aspetta
-        // che l'ultimo scrittore se ne vada.
+        // The child's end is closed here, in the parent. If it stayed open,
+        // reading the terminal would never end: the operating system waits for
+        // the last writer to go away.
         drop(follower);
 
         Ok(Pty {
@@ -215,42 +211,42 @@ impl Pty {
         self.device.strip_prefix("/dev/").unwrap_or(&self.device)
     }
 
-    /// Un secondo capo aperto sullo stesso terminale, per il filo che legge.
+    /// A second end opened on the same terminal, for the thread that reads.
     ///
-    /// Leggere e scrivere sullo stesso `File` sotto lo stesso lucchetto
-    /// bloccherebbe chi scrive per tutto il tempo in cui chi legge aspetta —
-    /// cioè quasi sempre, perché un terminale sta fermo quasi sempre.
+    /// Reading and writing on the same `File` under the same lock would block
+    /// whoever writes for the whole time whoever reads waits — that is, almost
+    /// always, because a terminal stands still almost always.
     pub fn reader(&self) -> Result<impl Read + Send, PtyError> {
         locked(&self.leader).try_clone().map_err(PtyError::Broken)
     }
 
-    /// Scrive sull'ingresso del terminale, come se qualcuno avesse digitato.
+    /// Writes to the terminal's input, as if somebody had typed.
     pub fn write(&self, bytes: &[u8]) -> Result<(), PtyError> {
         let mut leader = locked(&self.leader);
         leader.write_all(bytes).map_err(PtyError::Broken)?;
         leader.flush().map_err(PtyError::Broken)
     }
 
-    /// Dice al terminale quanto è grande adesso.
+    /// Tells the terminal how big it is now.
     pub fn resize(&self, size: Size) -> Result<(), PtyError> {
         set_size(&*locked(&self.leader), size).map_err(PtyError::Broken)
     }
 
-    /// Se il processo dentro il terminale è ancora vivo.
+    /// Whether the process inside the terminal is still alive.
     pub fn alive(&self) -> bool {
         matches!(locked(&self.child).try_wait(), Ok(None))
     }
 
-    /// Com'è finito il processo dentro, se è finito.
+    /// How the process inside ended, if it ended.
     ///
-    /// **NON ASPETTA, E LA DIFFERENZA È UN BLOCCO.** La chiama il filo che
-    /// drena, appena l'uscita finisce; un'attesa vera terrebbe il lucchetto del
-    /// figlio per tutto il tempo, e chi nel frattempo chiude il terminale
-    /// resterebbe fermo sulla porta di un lucchetto che non si apre mai.
+    /// **IT DOES NOT WAIT, AND THE DIFFERENCE IS A DEADLOCK.** The draining
+    /// thread calls it as soon as the output ends; a real wait would hold the
+    /// child's lock the whole time, and whoever closes the terminal meanwhile
+    /// would stand at the door of a lock that never opens.
     ///
-    /// Un `try_wait` fallito torna `None` come un processo ancora vivo: in tutti
-    /// e due i casi la risposta onesta è «non lo so», ed è quella che il
-    /// chiamante trasforma in [`crate::Ending::StillRunning`].
+    /// A failed `try_wait` returns `None` just like a still-living process: in
+    /// both cases the honest answer is "I do not know", and that is what the
+    /// caller turns into [`crate::Ending::StillRunning`].
     pub fn finished(&self) -> Option<crate::Ending> {
         match locked(&self.child).try_wait() {
             Ok(Some(status)) => Some(match status.code() {
@@ -261,20 +257,20 @@ impl Pty {
         }
     }
 
-    /// L'identificativo di processo di ciò che gira dentro.
+    /// The process identifier of what runs inside.
     pub fn process_id(&self) -> u32 {
         locked(&self.child).id()
     }
 
-    /// Chiude il terminale e aspetta che il processo sia davvero finito.
+    /// Closes the terminal and waits until the process is really finished.
     ///
-    /// **SI ASPETTA, E NON È PEDANTERIA.** Un `kill` senza `wait` lascia un
-    /// processo zombie per ogni terminale chiuso; su una sessione lunga
-    /// diventano centinaia, e il guasto si vede in un posto che non c'entra.
+    /// **IT WAITS, AND THAT IS NOT PEDANTRY.** A `kill` without a `wait` leaves
+    /// a zombie process for every closed terminal; over a long session they
+    /// become hundreds, and the fault shows up somewhere unrelated.
     pub fn close(&self) -> Result<(), PtyError> {
         let mut child = locked(&self.child);
-        // Un figlio già morto dà «nessun processo»: non è un guasto, è la
-        // condizione normale di chi chiude un terminale dopo aver scritto
+        // A child already dead gives "no such process": that is not a fault, it
+        // is the normal condition of whoever closes a terminal after typing
         // `exit`.
         let _ = child.kill();
         child.wait().map_err(PtyError::Broken)?;

@@ -10,20 +10,20 @@ import { BAND_DESC_LINES, BAND_HEAD_GAP, BAND_PAD_TOP, edgeLook } from "./layout
 import type { StepRun } from "./flow";
 
 /**
- * **L'INTESTAZIONE DI UNA CORSIA DEVE STARE NELLO SPAZIO CHE LE È RISERVATO.**
+ * **A LANE'S HEADER MUST FIT THE SPACE RESERVED FOR IT.**
  *
- * `BAND_PAD_TOP` è l'altezza che la disposizione lascia libera sopra il primo
- * nodo di una corsia; i corpi dell'intestazione stanno in `styles.css`. I due
- * numeri non si parlavano: quando i corpi sono cresciuti — il nome di un flusso
- * da 13px a 15px, la sua descrizione da 11px a 15px da lontano — `BAND_PAD_TOP`
- * è rimasto 54, e la descrizione è finita **4px dentro il primo nodo**.
+ * `BAND_PAD_TOP` is the height the layout leaves free above a lane's first
+ * node; the header's sizes live in `styles.css`. The two numbers were not
+ * talking to each other: when the sizes grew — a flow's name from 13px to 15px,
+ * its description from 11px to 15px from far — `BAND_PAD_TOP` stayed 54, and
+ * the description ended up **4px inside the first node**.
  *
- * Sulla **vista d'apertura**, per giunta: con due flussi la tela sceglie zoom
- * 0,5, che sta sotto `FAR_ZOOM`, quindi la modalità «da lontano» non è un caso
- * limite — è quello che si vede aprendo la finestra.
+ * On the **opening view**, no less: with two flows the canvas picks zoom 0.5,
+ * which is below `FAR_ZOOM`, so the «from far» mode is not an edge case — it is
+ * what you see when the window opens.
  *
- * Questa prova non ricopia i corpi: li legge dal foglio, sul componente vero,
- * in tutte e due le modalità.
+ * This test does not copy the sizes: it reads them from the sheet, on the real
+ * component, in both modes.
  */
 
 afterEach(cleanup);
@@ -68,27 +68,26 @@ function mountBand(): HTMLElement {
   return container.querySelector(".flow-band") as HTMLElement;
 }
 
-/** Un numero in px scritto nel foglio, o l'errore che dice quale manca. */
+/** A number in px written in the sheet, or the error naming the missing one. */
 function pixels(value: string | undefined, what: string): number {
   const number = Number.parseFloat(String(value));
   expect(`${what}=${String(value)}`).toMatch(/=\d/);
   return number;
 }
 
-/** L'altezza di una riga di testo: corpo per interlinea, tutt'e due dichiarati. */
+/** The height of a text line: size times leading, both of them declared. */
 function lineHeight(declarations: Map<string, string>, what: string): number {
   const size = pixels(declarations.get("font-size"), `${what} font-size`);
   const factor = Number.parseFloat(String(declarations.get("line-height")));
-  // Con `normal` l'altezza dipende dal carattere installato sulla macchina:
-  // nessuna prova può vederla, e il conto qui sotto diventerebbe una finzione.
+  // With `normal` the height depends on the face installed on the machine: no
+  // test can see it, and the arithmetic below would become a fiction.
   expect(`${what} line-height=${String(declarations.get("line-height"))}`).toMatch(/=\d/);
   return size * factor;
 }
 
 /**
- * Quanto è alta davvero l'intestazione di una corsia, in unità della tela:
- * padding in alto, la riga più alta dell'intestazione, lo stacco e le due
- * righe della descrizione.
+ * How tall a lane's header really is, in canvas units: the padding on top, the
+ * tallest line of the header, the gap and the two lines of the description.
  */
 function headerHeight(far: boolean): number {
   const band = mountBand();
@@ -120,14 +119,14 @@ describe("lo spazio riservato all'intestazione di una corsia", () => {
   });
 
   test("DA LONTANO ci sta — ed è la vista d'apertura, non un caso limite", () => {
-    // Il difetto stava tutto qui: da vicino l'intestazione ci stava quasi, da
-    // lontano no, e da lontano è come la finestra si apre.
+    // The fault sat entirely here: from near the header almost fitted, from far
+    // it did not, and from far is how the window opens.
     expect(BAND_PAD_TOP).toBeGreaterThanOrEqual(headerHeight(true) + BAND_HEAD_GAP);
   });
 
   test("da lontano l'intestazione è davvero più alta che da vicino", () => {
-    // Senza questa, le due prove sopra resterebbero verdi anche se le regole
-    // `[data-far]` sparissero: misurerebbero due volte la stessa scena.
+    // Without this one, the two tests above would stay green even if the
+    // `[data-far]` rules vanished: they would measure the same scene twice.
     expect(headerHeight(true)).toBeGreaterThan(headerHeight(false));
   });
 });

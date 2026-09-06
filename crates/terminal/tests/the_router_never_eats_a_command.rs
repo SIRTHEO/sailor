@@ -1,26 +1,26 @@
-//! Lo smistamento non si mangia un comando vero.
+//! The routing never eats a real command.
 //!
-//! **QUESTA È LA PROVA CHE CONTA.** Un terminale che ogni tanto non esegue
-//! quello che scrivi è peggio di uno che non smista affatto: diventa
-//! imprevedibile, e l'imprevedibilità si paga su tutte le righe che verranno
-//! dopo. Quindi le prove qui sotto non chiedono «lo smistamento funziona?» ma
-//! «lo smistamento riesce a **non** funzionare quando deve?».
+//! **THIS IS THE PROOF THAT COUNTS.** A terminal that now and then does not run
+//! what you type is worse than one that never routes at all: it becomes
+//! unpredictable, and unpredictability is paid for on every line that comes
+//! after. So the proofs below do not ask "does the routing work?" but "can the
+//! routing manage **not** to work when it must not?".
 //!
-//! **IL MONDO È DICHIARATO, NON EREDITATO.** `is_command` è un tratto proprio
-//! perché una prova possa dire quali binari esistono. Con la macchina vera,
-//! «la guardia ferma `git`» sarebbe verde su questa casa e rossa su una casa
-//! senza `git`, e la batteria racconterebbe della macchina invece che del
-//! codice. Una sola prova, in fondo, guarda la macchina vera: quella che
-//! controlla che le regole spedite si carichino.
+//! **THE WORLD IS DECLARED, NOT INHERITED.** `is_command` is a trait precisely
+//! so a proof can say which binaries exist. With the real machine, "the guard
+//! stops `git`" would be green on this house and red on a house without `git`,
+//! and the suite would tell of the machine instead of the code. One proof only,
+//! at the end, looks at the real machine: the one checking that the shipped
+//! rules load.
 //!
-//! **IL MUTANTE.** Togliendo la chiamata alla guardia da `Router::route`, le
-//! prove `a_real_command_is_never_routed_*` cadono tutte. È stato verificato
-//! prima di dichiarare finito.
+//! **THE MUTANT.** Take the call to the guard out of `Router::route` and the
+//! `a_real_command_is_never_routed_*` proofs all fall. Verified before
+//! declaring this finished.
 
 use std::sync::Arc;
 use terminal::{Catalog, CommandLookup, Passed, Routed, Router};
 
-/// Un mondo dichiarato: queste parole sono eseguibili, le altre no.
+/// A declared world: these words are executable, the others are not.
 struct World(Vec<&'static str>);
 
 impl CommandLookup for World {
@@ -29,8 +29,8 @@ impl CommandLookup for World {
     }
 }
 
-/// Un mondo in cui niente è eseguibile: serve a mostrare che la guardia non è
-/// l'unica difesa, e che senza di lei le altre non bastano.
+/// A world where nothing is executable: it shows the guard is not the only
+/// defence, and that without it the others are not enough.
 struct EmptyWorld;
 
 impl CommandLookup for EmptyWorld {
@@ -39,8 +39,8 @@ impl CommandLookup for EmptyWorld {
     }
 }
 
-/// Regole apposta aggressive: riconoscono qualunque riga contenga una parola
-/// comunissima. Se lo smistamento fosse fragile, cadrebbe qui.
+/// Deliberately aggressive rules: they match any line holding a very common
+/// word. Were the routing fragile, it would fall here.
 const GREEDY_RULES: &str = r#"[
   {"id": "marked", "flow": "un-flusso", "when": {"kind": "starts_with", "text": "? "},
    "explicit": true, "strip_match": true},
@@ -66,8 +66,8 @@ fn greedy_router() -> Router {
     )
 }
 
-/// **UN COMANDO VERO NON VIENE MAI SMISTATO**, nemmeno con una regola che lo
-/// riconosce per intero.
+/// **A REAL COMMAND IS NEVER ROUTED**, not even under a rule that matches it
+/// whole.
 #[test]
 fn a_real_command_is_never_routed_when_its_first_word_is_runnable() {
     let router = greedy_router();
@@ -87,9 +87,9 @@ fn a_real_command_is_never_routed_when_its_first_word_is_runnable() {
     }
 }
 
-/// Le parole che una shell esegue senza cercare nessun binario. In questo mondo
-/// dichiarato **niente** è eseguibile: se la guardia contasse solo sul percorso,
-/// `cd /tmp` finirebbe a un flusso.
+/// The words a shell runs without looking for any binary. In this declared
+/// world **nothing** is executable: were the guard to rely on the path alone,
+/// `cd /tmp` would end up at a flow.
 #[test]
 fn a_real_command_is_never_routed_when_it_is_a_shell_word() {
     let router = router_with(GREEDY_RULES, Arc::new(EmptyWorld));
@@ -101,8 +101,8 @@ fn a_real_command_is_never_routed_when_it_is_a_shell_word() {
     }
 }
 
-/// La sintassi di shell passa anche quando la prima parola non è un binario
-/// noto: una riga con una pipe dentro non è una frase.
+/// Shell syntax passes even when the first word is no known binary: a line
+/// with a pipe in it is not a sentence.
 #[test]
 fn a_real_command_is_never_routed_when_it_has_shell_syntax() {
     let router = router_with(GREEDY_RULES, Arc::new(EmptyWorld));
@@ -120,8 +120,8 @@ fn a_real_command_is_never_routed_when_it_has_shell_syntax() {
     }
 }
 
-/// Un percorso è un comando anche se il binario non è nel percorso di ricerca:
-/// `./ls` non si cerca, si esegue dov'è.
+/// A path is a command even when the binary is not on the search path: `./ls`
+/// is not looked for, it is run where it is.
 #[test]
 fn a_real_command_is_never_routed_when_it_names_a_file() {
     let router = router_with(GREEDY_RULES, Arc::new(EmptyWorld));
@@ -140,9 +140,9 @@ fn a_real_command_is_never_routed_when_it_names_a_file() {
     }
 }
 
-/// **NEL DUBBIO, PASSA.** Un percorso di ricerca che non si è potuto leggere
-/// tutto deve valere come «forse c'è»: il tratto lo dichiara, e questa prova lo
-/// misura su un mondo che dice sempre «non so» rispondendo `true`.
+/// **IN DOUBT, LET IT THROUGH.** A search path that could not be read whole
+/// must count as "it might be there": the trait declares it, and this proof
+/// measures it on a world always saying "I do not know" by answering `true`.
 #[test]
 fn a_doubt_about_the_machine_becomes_a_command_not_a_request() {
     struct AlwaysUnsure;
@@ -158,8 +158,8 @@ fn a_doubt_about_the_machine_becomes_a_command_not_a_request() {
     }
 }
 
-/// **UNA RICHIESTA VIENE SMISTATA**, ed è il caso per cui tutto questo esiste.
-/// Senza questa prova le altre si soddisfarebbero passando sempre.
+/// **A REQUEST IS ROUTED**, which is the case all this exists for. Without this
+/// proof the others would be satisfied by always letting everything through.
 #[test]
 fn a_request_that_is_not_a_command_goes_to_the_flow() {
     let router = greedy_router();
@@ -173,8 +173,8 @@ fn a_request_that_is_not_a_command_goes_to_the_flow() {
     }
 }
 
-/// Il marcatore esplicito scavalca la guardia: è l'unico modo per mandare a un
-/// flusso una frase che comincia con un binario vero.
+/// The explicit marker steps over the guard: it is the only way to send a flow
+/// a sentence beginning with a real binary.
 #[test]
 fn a_marked_line_goes_to_the_flow_even_if_it_looks_like_a_command() {
     let router = greedy_router();
@@ -190,9 +190,9 @@ fn a_marked_line_goes_to_the_flow_even_if_it_looks_like_a_command() {
     }
 }
 
-/// **IL DESCRITTORE NON PUÒ SPEGNERE LA GUARDIA.** Una regola esplicita il cui
-/// marcatore potrebbe iniziare un comando non si carica: è il confine che
-/// impedisce ai dati di prendersi il potere che il codice non gli dà.
+/// **THE DESCRIPTOR CANNOT SWITCH THE GUARD OFF.** An explicit rule whose
+/// marker could begin a command does not load: it is the boundary stopping data
+/// from taking power the code never gave it.
 #[test]
 fn an_explicit_rule_whose_marker_could_start_a_command_is_refused() {
     let mut catalog = Catalog::default();
@@ -210,8 +210,8 @@ fn an_explicit_rule_whose_marker_could_start_a_command_is_refused() {
     );
 }
 
-/// Una regola esplicita per parole non si carica: `explicit` è un permesso per i
-/// marcatori, e una regola per parole non è un marcatore.
+/// An explicit rule by words does not load: `explicit` is a leave for markers,
+/// and a rule by words is no marker.
 #[test]
 fn an_explicit_rule_that_is_not_a_marker_is_refused() {
     let mut catalog = Catalog::default();
@@ -224,8 +224,8 @@ fn an_explicit_rule_that_is_not_a_marker_is_refused() {
     assert_eq!(catalog.problems.len(), 1);
 }
 
-/// La seconda difesa delle regole per parole: sotto il numero di parole
-/// dichiarato non scattano.
+/// The second defence of rules by words: below the declared word count they do
+/// not fire.
 #[test]
 fn a_short_line_does_not_reach_a_rule_that_asks_for_a_long_one() {
     let router = router_with(
@@ -243,9 +243,9 @@ fn a_short_line_does_not_reach_a_rule_that_asks_for_a_long_one() {
     }
 }
 
-/// Le parole si confrontano intere: `statusbar` non contiene la parola
-/// `status`. Senza questo, una regola per parole diventerebbe una regola per
-/// pezzi di parola, e nessuno che la scrive se lo aspetta.
+/// Words are compared whole: `statusbar` does not hold the word `status`.
+/// Without this a rule by words would become a rule by pieces of word, and
+/// nobody writing one expects that.
 #[test]
 fn a_word_rule_matches_words_and_not_pieces_of_them() {
     let router = router_with(
@@ -259,8 +259,8 @@ fn a_word_rule_matches_words_and_not_pieces_of_them() {
     }
 }
 
-/// **UN TERMINALE SENZA REGOLE È UN TERMINALE NORMALE.** Il valore predefinito
-/// dello smistamento è non smistare: è ciò che rende sicuro spegnerlo.
+/// **A TERMINAL WITH NO RULES IS AN ORDINARY TERMINAL.** The routing's default
+/// is not to route: that is what makes switching it off safe.
 #[test]
 fn with_no_rules_everything_is_a_command() {
     let router = Router::without_routes(Arc::new(EmptyWorld));
@@ -276,8 +276,8 @@ fn with_no_rules_everything_is_a_command() {
     }
 }
 
-/// Una riga vuota non è una richiesta e non è un comando: passa, e il terminale
-/// ne fa quello che ne fa una shell — una riga vuota.
+/// An empty line is neither a request nor a command: it passes, and the
+/// terminal makes of it what a shell makes of it — an empty line.
 #[test]
 fn an_empty_line_is_not_a_request() {
     let router = greedy_router();
@@ -287,8 +287,8 @@ fn an_empty_line_is_not_a_request() {
     }
 }
 
-/// Le regole spedite col prodotto si caricano, e nominano un flusso che esiste
-/// in questo repo. È l'unica prova qui che guarda il mondo vero.
+/// The rules shipped with the product load, and name a flow that exists in this
+/// repository. It is the only proof here that looks at the real world.
 #[test]
 fn the_shipped_rules_all_load_and_name_a_flow_that_exists() {
     let catalog = Catalog::load(&[terminal::Source::Builtin]);
@@ -299,12 +299,11 @@ fn the_shipped_rules_all_load_and_name_a_flow_that_exists() {
     );
     assert!(!catalog.live().is_empty(), "l'elenco spedito è vuoto");
 
-    // **UNA REGOLA SPEDITA PUÒ NOMINARE SOLO UN FLUSSO SPEDITO.** Le due cose
-    // viaggiano insieme dentro il binario, quindi devono combaciare lì: fino
-    // all'01/09/2026 questa prova cercava il flusso in `flows/` del repo, dove
-    // stava perché era **nostro**. Era verde qui e falsa ovunque — la stessa
-    // forma del guasto 41, due elenchi che devono combaciare e nessuno che li
-    // confronti.
+    // **A SHIPPED RULE MAY NAME ONLY A SHIPPED FLOW.** The two travel together
+    // inside the binary, so they must match there: this proof used to look for
+    // the flow in the repository's `flows/`, where it sat because it was
+    // **ours**. Green here and false everywhere else — the same shape as fault
+    // 41, two lists that must match and nobody comparing them.
     for loaded in catalog.live() {
         assert!(
             flow::system::FLOWS
@@ -318,8 +317,8 @@ fn the_shipped_rules_all_load_and_name_a_flow_that_exists() {
     }
 }
 
-/// Lo stesso `id` scritto due volte: vince l'ultimo caricato, ed è così che un
-/// utente riscrive una regola spedita senza cancellarla.
+/// The same `id` written twice: the last loaded wins, and that is how a user
+/// rewrites a shipped rule without deleting it.
 #[test]
 fn the_last_rule_with_an_id_wins() {
     let mut catalog = Catalog::default();
@@ -336,8 +335,8 @@ fn the_last_rule_with_an_id_wins() {
     assert_eq!(catalog.live()[0].source, "mio");
 }
 
-/// Una riga sbagliata non cancella quelle buone: senza questa regola un elenco
-/// parziale sembrerebbe vuoto, che è peggio.
+/// One bad line does not erase the good ones: without this rule a partial list
+/// would look empty, which is worse.
 #[test]
 fn a_broken_rule_does_not_take_the_good_ones_with_it() {
     let mut catalog = Catalog::default();
@@ -351,8 +350,8 @@ fn a_broken_rule_does_not_take_the_good_ones_with_it() {
     assert_eq!(catalog.problems[0].about, "rotta");
 }
 
-/// Una regola spenta sparisce dall'elenco vivo: è così che si toglie una regola
-/// spedita senza toccare il binario.
+/// A rule switched off vanishes from the live list: that is how a shipped rule
+/// is taken away without touching the binary.
 #[test]
 fn a_disabled_rule_disappears() {
     let mut catalog = Catalog::default();

@@ -88,11 +88,11 @@ export function BlankCanvas({ state, failure, brokenCount, onCreate, places = nu
         <p>
           A flow is a chain of steps: each does one thing and says which others it depends on.
         </p>
-        {/* `role="list"` non è un di più: il foglio toglie i pallini con
-            `list-style: none`, e con quella riga alcuni lettori di schermo
-            smettono di annunciare «elenco di tre». I numeri qui li disegna il
-            foglio, quindi senza il ruolo l'ordine dei gesti si perderebbe
-            proprio per chi non lo vede. */}
+        {/* `role="list"` is not a spare: the sheet drops the bullets with
+            `list-style: none`, and with that line some screen readers stop
+            announcing «list of three». The numbers here are drawn by the sheet,
+            so without the role the order of the gestures would be lost exactly
+            for whoever cannot see it. */}
         <ol className="blank__gestures" role="list">
           <li>Create the flow: it is born empty, and stays here until you save it.</li>
           <li>Add steps from the bar that appears at the foot of the canvas.</li>

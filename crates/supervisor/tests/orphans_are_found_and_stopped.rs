@@ -1,13 +1,13 @@
-//! **Sailor sa cosa ha avviato — guasto 4.**
+//! **Sailor knows what it started — fault 4.**
 //!
-//! «Sailor avvia processi e non sa quali ha avviato, quindi non può né
-//! spegnerli né riprenderli. Visto: un processo di sviluppo orfano occupava una
-//! porta e impediva l'avvio — due volte, a due persone diverse, nella stessa
-//! notte.»
+//! "Sailor starts processes and does not know which it started, so it can
+//! neither stop nor resume them. Seen: an orphan development process held a
+//! port and blocked the start — twice, for two different people, in the same
+//! night."
 //!
-//! Le prove qui non simulano il registro: accendono processi veri, li scrivono
-//! nel deposito vero, e li ritrovano da un `Ledger` riaperto — che è la
-//! posizione di chi arriva il giorno dopo e non sa niente.
+//! The proofs here do not simulate the register: they light real processes,
+//! write them in the real ledger, and find them again from a reopened `Ledger`
+//! — the position of whoever arrives the next day knowing nothing.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -23,9 +23,9 @@ struct TestDirectory(PathBuf);
 
 impl TestDirectory {
     fn new(label: &str) -> Self {
-        // Un contatore oltre all'orologio: `cargo test` manda le prove sullo
-        // stesso processo e l'orologio di macOS non ha la risoluzione del
-        // nanosecondo — è il guasto 21, già pagato in `crates/profiles`.
+        // A counter as well as the clock: `cargo test` runs the proofs in one
+        // process and the macOS clock has no nanosecond resolution — fault 21,
+        // already paid for in `crates/profiles`.
         let sequence = NEXT.fetch_add(1, Ordering::Relaxed);
         let path = std::env::temp_dir().join(format!(
             "sailor-supervisor-{label}-{}-{sequence}",
@@ -42,12 +42,12 @@ impl Drop for TestDirectory {
     }
 }
 
-/// Spegnere un processo spegne anche chi lui ha acceso.
+/// Stopping a process stops what it lit too.
 ///
-/// `sailor-live` avvia `cargo` e il server della finestra, che di figli ne
-/// fanno: un nipote che sopravvive è la porta che resta occupata dopo uno
-/// `stop` riuscito. Chi giudica è il sistema — `pid_is_alive` — non l'altra
-/// implementazione: due copie che sbagliano uguale si darebbero ragione.
+/// `sailor-live` starts `cargo` and the window's server, and both have
+/// children: a surviving grandchild is the port still held after a successful
+/// `stop`. The judge is the system — `pid_is_alive` — not the other
+/// implementation: two copies wrong the same way would agree with each other.
 #[test]
 fn stopping_a_process_also_stops_the_one_it_started() {
     let dir = TestDirectory::new("nipote");
@@ -71,9 +71,9 @@ fn stopping_a_process_also_stops_the_one_it_started() {
 
     process.stop().expect("spegnere il padre");
 
-    // Un pid appena ucciso resta zombie finché qualcuno lo raccoglie, e uno
-    // zombie risponde ancora al segnale nullo: si concede una manciata di giri
-    // prima di accusare.
+    // A freshly killed pid stays a zombie until somebody reaps it, and a zombie
+    // still answers the null signal: a handful of turns are allowed before
+    // accusing.
     let mut still_here = true;
     for _ in 0..100 {
         if !ledger::pid_is_alive(grandchild) {
@@ -94,7 +94,7 @@ fn stopping_a_process_also_stops_the_one_it_started() {
     );
 }
 
-/// Aspetta che lo script abbia scritto il pid del nipote, e lo legge.
+/// Waits for the script to have written the grandchild's pid, and reads it.
 fn wait_for_pid(pidfile: &std::path::Path) -> u32 {
     for _ in 0..200 {
         if let Ok(text) = std::fs::read_to_string(pidfile) {
@@ -120,13 +120,13 @@ fn sleeper(process_id: &str, port: Option<u16>) -> Spec {
     }
 }
 
-/// **IL CASO DEL GUASTO 4, RIFATTO PER INTERO.**
+/// **FAULT 4'S CASE, REMADE WHOLE.**
 ///
-/// Si accende un processo con una porta, si butta via ogni traccia in memoria —
-/// il `Ledger` viene riaperto da zero, come farebbe la persona di domani — e si
-/// chiede chi tiene la porta. Prima di questa riparazione la risposta non
-/// esisteva: bisognava cercare il pid a mano, e due persone lo hanno fatto due
-/// volte nella stessa notte senza sapere l'una dell'altra.
+/// A process with a port is lit, every trace in memory is thrown away — the
+/// `Ledger` is reopened from scratch, as tomorrow's person would — and the
+/// question is who holds the port. Before this repair the answer did not exist:
+/// the pid had to be hunted by hand, and two people did it twice in the same
+/// night without knowing of each other.
 #[test]
 fn tomorrow_someone_can_ask_who_holds_the_port() {
     let directory = TestDirectory::new("orfano");
@@ -140,9 +140,9 @@ fn tomorrow_someone_can_ask_who_holds_the_port() {
     let pid = process.pid();
     drop(supervisor);
 
-    // Da qui in poi si è la persona del giorno dopo: il processo è ancora
-    // acceso, ma di chi l'ha avviato non resta niente in memoria — solo il
-    // disco. È la situazione esatta in cui il guasto 4 si è presentato.
+    // From here on this is the next day's person: the process is still running,
+    // but nothing of whoever started it remains in memory — only the disk. It
+    // is the exact situation fault 4 turned up in.
     let store = ledger::Ledger::open(&directory.0).expect("riaprire il deposito");
     let holder = store
         .process_holding_port(DEV_PORT)
@@ -164,8 +164,8 @@ fn tomorrow_someone_can_ask_who_holds_the_port() {
         "il deposito dice che c'è, e non c'è: pid {pid}"
     );
 
-    // E adesso si può spegnere, che era la seconda metà: «non può né spegnerli
-    // né riprenderli».
+    // And now it can be stopped, which was the second half: "it can neither
+    // stop nor resume them".
     process
         .stop()
         .expect("spegnere quello che il deposito ha trovato");
@@ -179,12 +179,12 @@ fn tomorrow_someone_can_ask_who_holds_the_port() {
     );
 }
 
-/// **UN ELENCO CHE NON SI RIPULISCE SMETTE DI ESSERE LETTO.**
+/// **A LIST THAT NEVER CLEANS ITSELF STOPS BEING READ.**
 ///
-/// Un processo ucciso da fuori non scrive la propria chiusura, quindi resta
-/// «acceso» per sempre. La passata di pulizia lo chiude — e non deve chiudere
-/// chi respira ancora, altrimenti dichiarerebbe libera una porta occupata e
-/// rifarebbe il guasto dalla parte opposta.
+/// A process killed from outside writes no ending of its own, so it stays
+/// "running" for ever. The sweep closes it — and must not close what still
+/// breathes, or it would declare a held port free and remake the fault from the
+/// opposite side.
 #[test]
 fn the_dead_are_closed_and_the_living_are_left_alone() {
     let directory = TestDirectory::new("fantasmi");
@@ -197,10 +197,10 @@ fn the_dead_are_closed_and_the_living_are_left_alone() {
         .start(sleeper("ancora-qui", None))
         .expect("accendere il vivo");
 
-    // Un processo che muore da solo e che **nessuno registra come finito**: è
-    // il fantasma. `exited` lo raccoglie — cioè lo toglie davvero dalla tabella
-    // dei processi — e `forget` impedisce al distruttore di scriverne la
-    // chiusura, che è ciò che succede quando a morire è chi lo teneva.
+    // A process that dies on its own and that **nobody records as ended**: the
+    // ghost. `exited` reaps it — really takes it out of the process table — and
+    // `forget` stops the destructor writing its ending, which is what happens
+    // when the one dying is whoever held it.
     let mut doomed = supervisor
         .start(Spec {
             command: "/bin/sh".to_owned(),
@@ -249,14 +249,14 @@ fn the_dead_are_closed_and_the_living_are_left_alone() {
     );
 }
 
-/// **DUE COPIE DELLA STESSA PORTA DIVERGONO.**
+/// **TWO COPIES OF THE SAME PORT DRIFT APART.**
 ///
-/// Il numero sta in `supervisor` e in `desktop/src-tauri/tauri.conf.json`. Se
-/// qualcuno cambia il `devUrl` e non questa costante, il registro dichiarerà la
-/// porta sbagliata e chi cerca l'orfano guarderà nel posto vuoto — un guasto 4
-/// che si ripresenta con un registro apparentemente in funzione. È il guasto 10
-/// («la stessa lista scritta in due punti»): finché le copie sono due, almeno
-/// una prova le confronta.
+/// The number lives in `supervisor` and in `desktop/src-tauri/tauri.conf.json`.
+/// If somebody changes `devUrl` and not this constant, the register will
+/// declare the wrong port and whoever hunts the orphan will look at an empty
+/// place — fault 4 back with a register apparently working. It is fault 10
+/// ("the same list written in two places"): while there are two copies, at
+/// least one proof compares them.
 #[test]
 fn the_dev_port_matches_the_tauri_config() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
