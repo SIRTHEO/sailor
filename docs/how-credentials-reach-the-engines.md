@@ -1,196 +1,197 @@
-# Come arrivano le credenziali ai motori
+# How credentials reach the engines
 
-Scritto il 01/09/2026 leggendo il codice, non a memoria. Ogni cosa disegnata qui
-è stata verificata nel sorgente o eseguendo; dove una cosa **non** c'è, il
-disegno lo dice invece di sottintenderlo.
+Written on 01/09/2026 by reading the code, not from memory. Everything drawn
+here was checked in the source or by running it; where a thing is **not** there,
+the drawing says so instead of leaving it implied.
 
-La domanda da cui nasce: *come si gestisce il parallelismo di più righe di
-comando con credenziali diverse?*
+The question it is born from: *how do you handle the parallelism of several
+command lines with different credentials?*
 
 ---
 
-## 1. Chi lancia chi
+## 1. Who launches whom
 
-Un flusso non parla con nessun fornitore. Fa partire **processi figli**, uno per
-chiamata, e ognuno parla per conto suo.
+A flow speaks to no provider. It starts **child processes**, one per call, and
+each of them speaks on its own behalf.
 
 ```mermaid
 flowchart TD
-    F["sailor: UN processo"]
-    F --> T1["filo del passo A"]
-    F --> T2["filo del passo B"]
-    F --> T3["filo del passo C"]
-    T1 --> P1["processo figlio: codex<br/>CODEX_HOME = casa X"]
-    T2 --> P2["processo figlio: claude<br/>CLAUDE_CONFIG_DIR = casa Y"]
-    T3 --> P3["processo figlio: gemini<br/>GEMINI_CLI_HOME = casa Z"]
-    P1 --> A1(["fornitore di codex"])
-    P2 --> A2(["fornitore di Claude"])
-    P3 --> A3(["fornitore di Gemini"])
+    F["sailor: ONE process"]
+    F --> T1["thread of step A"]
+    F --> T2["thread of step B"]
+    F --> T3["thread of step C"]
+    T1 --> P1["child process: codex<br/>CODEX_HOME = home X"]
+    T2 --> P2["child process: claude<br/>CLAUDE_CONFIG_DIR = home Y"]
+    T3 --> P3["child process: gemini<br/>GEMINI_CLI_HOME = home Z"]
+    P1 --> A1(["codex's provider"])
+    P2 --> A2(["Claude's provider"])
+    P3 --> A3(["Gemini's provider"])
 ```
 
-**I passi in parallelo sono fili dentro un solo processo** (`std::thread::scope`
-in `crates/flow/src/executor.rs`). Questo è il motivo per cui il punto seguente
-non è un dettaglio ma la cosa che tiene in piedi tutto il resto.
+**Parallel steps are threads inside one single process** (`std::thread::scope`
+in `crates/flow/src/executor.rs`). This is why the following point is not a
+detail but the thing holding all the rest up.
 
 ---
 
-## 2. La regola che rende sicuro il parallelismo
+## 2. The rule that makes parallelism safe
 
-Ci sono due modi di dare a un programma una casa di credenziali diversa. Sailor
-usa il secondo, e la differenza è tutta qui.
+There are two ways of giving a program a different home of credentials. Sailor
+uses the second, and the difference is all here.
 
 ```mermaid
 flowchart LR
-    subgraph SBAGLIATO["Come NON è fatto"]
+    subgraph WRONG["How it is NOT done"]
         direction TB
-        S1["cambia la variabile<br/>del processo padre"] --> S2["lancia il figlio"]
-        S2 --> S3["rimetti la variabile<br/>com'era"]
-        S3 -.->|"due fili qui dentro<br/>si rubano l'identità"| S1
+        S1["change the variable<br/>of the parent process"] --> S2["launch the child"]
+        S2 --> S3["put the variable back<br/>the way it was"]
+        S3 -.->|"two threads in here<br/>steal each other's identity"| S1
     end
-    subgraph GIUSTO["Come è fatto"]
+    subgraph RIGHT["How it is done"]
         direction TB
-        G1["componi una mappa<br/>per QUESTA chiamata"] --> G2["passala al figlio<br/>e a lui soltanto"]
-        G2 --> G3["il padre non è<br/>mai cambiato"]
+        G1["compose a map<br/>for THIS call"] --> G2["pass it to the child<br/>and to it alone"]
+        G2 --> G3["the parent was<br/>never changed"]
     end
 ```
 
-Verificato: nel codice di produzione dell'intero workspace **non esiste nessuna
-chiamata che cambi l'ambiente del processo** — le uniche stanno dentro le prove.
-L'ambiente arriva al figlio con `cmd.env(chiave, valore)`, cioè sovrapposto a
-quello ereditato, per quel figlio solo.
+Checked: in the production code of the whole workspace **there is no call that
+changes the process environment** — the only ones are inside the tests. The
+environment reaches the child with `cmd.env(key, value)`, that is, laid over the
+inherited one, for that child alone.
 
-**Conseguenza: righe di comando diverse, in parallelo, con credenziali diverse,
-funzionano.** Non per attenzione di chi scrive i passi: per costruzione.
+**Consequence: different command lines, in parallel, with different credentials,
+work.** Not through the care of whoever writes the steps: by construction.
 
 ---
 
-## 3. Come si compone l'ambiente di una chiamata
+## 3. How the environment of a call is composed
 
-Tre strati. Chi sta più in alto vince.
+Three layers. Whoever sits higher wins.
 
 ```mermaid
 flowchart TD
-    E1["1. l'ambiente di chi ha aperto il terminale<br/><i>ereditato</i>"]
-    E2["2. la casa del profilo attivo per QUELLA riga di comando<br/><i>profiles::build_environment</i>"]
-    E3["3. le variabili scritte dentro il passo<br/><i>spec.env</i>"]
-    E1 --> E2 --> E3 --> OUT["l'ambiente del processo figlio"]
+    E1["1. the environment of whoever opened the terminal<br/><i>inherited</i>"]
+    E2["2. the home of the profile active for THAT command line<br/><i>profiles::build_environment</i>"]
+    E3["3. the variables written inside the step<br/><i>spec.env</i>"]
+    E1 --> E2 --> E3 --> OUT["the environment of the child process"]
 ```
 
-Il verso è una decisione, non un caso: chi scrive una variabile **dentro un
-passo** sta dicendo qualcosa di preciso su *quella* chiamata, e non deve poter
-essere scavalcato da uno stato che vive altrove e che il passo non nomina.
+The direction is a decision, not an accident: whoever writes a variable **inside
+a step** is saying something precise about *that* call, and must not be
+overridable by a state that lives elsewhere and that the step does not name.
 
-Il legame fra una riga di comando e la sua variabile passa dall'**eseguibile**,
-non dal nome che gli dà il catalogo: a leggere `CLAUDE_CONFIG_DIR` è il binario
-`claude`, comunque lo chiami chi lo nomina. E il riconoscimento è per nome
-esatto, mai per prefisso: un `claude-wrapper` non riceve la casa di `claude`.
+The link between a command line and its variable goes through the
+**executable**, not through the name the catalogue gives it: what reads
+`CLAUDE_CONFIG_DIR` is the `claude` binary, whatever whoever names it calls it.
+And the recognition is by exact name, never by prefix: a `claude-wrapper` does
+not get `claude`'s home.
 
 ---
 
-## 4. Cosa è condiviso e cosa no — il punto della domanda
+## 4. What is shared and what is not — the point of the question
 
 ```mermaid
 flowchart TD
-    ST[("~/.claude/state/profili.json<br/><b>attivo: codex → «prove»</b>")]
-    ST --> C1["chiamata a codex<br/>del passo A"]
-    ST --> C2["chiamata a codex<br/>del passo B"]
-    ST --> C3["la persona che intanto<br/>lavora nel terminale"]
-    C1 --> R1["casa «prove»"]
-    C2 --> R2["casa «prove»"]
-    C3 --> R3["casa «prove»"]
-    P["un passo che scrive<br/>CODEX_HOME nel suo spec.env"] -->|"scavalca, ma<br/>scavalca il meccanismo"| R4["una casa qualunque"]
+    ST[("~/.claude/state/profili.json<br/><b>active: codex → «prove»</b>")]
+    ST --> C1["call to codex<br/>from step A"]
+    ST --> C2["call to codex<br/>from step B"]
+    ST --> C3["the person meanwhile<br/>working in the terminal"]
+    C1 --> R1["home «prove»"]
+    C2 --> R2["home «prove»"]
+    C3 --> R3["home «prove»"]
+    P["a step writing<br/>CODEX_HOME in its spec.env"] -->|"overrides, but<br/>overrides the mechanism"| R4["any home at all"]
 ```
 
-**L'identità si sceglie per riga di comando, non per corsa e non per passo.**
-`attivo: codex → prove` è **un solo interruttore** per tutto quanto:
+**The identity is chosen per command line, not per run and not per step.**
+`active: codex → prove` is **one single switch** for the whole lot:
 
-- due passi paralleli che vogliono entrambi codex prendono la **stessa**
-  identità;
-- lo stato viene **riletto a ogni chiamata** — di proposito, così un cambio ha
-  effetto subito — quindi se qualcuno cambia mentre una corsa gira, due chiamate
-  della *stessa corsa* finiscono su due identità. Adesso resta **scritto** quale
-  ha usato ognuna (il deposito registra il profilo risolto), quindi si vede dopo:
-  non è impedito;
-- una persona che lavora nel terminale condivide quell'interruttore col flusso.
+- two parallel steps that both want codex take the **same** identity;
+- the state is **read again at every call** — on purpose, so that a change takes
+  effect at once — so if somebody changes it while a run is going, two calls of
+  the *same run* end up on two identities. It now stays **written down** which
+  one each of them used (the store records the resolved profile), so it can be
+  seen afterwards: it is not prevented;
+- a person working in the terminal shares that switch with the flow.
 
-L'unico modo, oggi, di avere due identità diverse in parallelo sulla stessa riga
-di comando è scrivere la variabile a mano dentro il passo — cioè **scavalcare i
-profili invece di usarli**.
+The only way, today, of having two different identities in parallel on the same
+command line is to write the variable by hand inside the step — that is, to
+**override the profiles instead of using them**.
 
 ---
 
-## 5. Le due domande che si fanno prima di lanciare
+## 5. The two questions asked before launching
 
-Sono due, e vedono cose diverse. Confonderle è già costato un verde falso.
+There are two, and they see different things. Confusing them has already cost a
+false green.
 
 ```mermaid
 flowchart TD
-    subgraph VAGLIO["il vaglio a secco — «la riga è montata bene?»"]
+    subgraph SCREENING["the dry screening — «is the line assembled right?»"]
         direction TB
-        V1["monta la riga dal descrittore"] --> V2["la esegue TOGLIENDO la domanda"]
-        V2 --> V3["il motore si ferma su<br/>«non mi hai dato niente da fare»"]
-        V3 --> V4["verdetto sulla RIGA"]
+        V1["assemble the line from the descriptor"] --> V2["run it TAKING AWAY the question"]
+        V2 --> V3["the engine stops on<br/>«you gave me nothing to do»"]
+        V3 --> V4["verdict on the LINE"]
     end
-    subgraph ACCESSO["lo stato di accesso — «questa casa è autenticata?»"]
+    subgraph ACCESS["the access state — «is this home authenticated?»"]
         direction TB
-        L1["chiede al motore, nella casa nominata"] --> L2["codex login status<br/>claude auth status"]
-        L2 --> L3["verdetto sulla CASA"]
+        L1["ask the engine, in the named home"] --> L2["codex login status<br/>claude auth status"]
+        L2 --> L3["verdict on the HOME"]
     end
-    V3 -.->|"tutto ciò che il motore controlla<br/>DOPO la domanda resta invisibile:<br/>le credenziali stanno di là"| ACCESSO
+    V3 -.->|"everything the engine checks<br/>AFTER the question stays invisible:<br/>the credentials are over there"| ACCESS
 ```
 
-Il vaglio a secco toglie la domanda **apposta**: è così che prova una riga vera
-senza spendere niente. Ma per questo non può vedere niente di ciò che viene
-dopo. Misurato: con una casa vuota e con quella vera, `codex exec < /dev/null`
-dà la **stessa** risposta — e per un'ora `flow check` ha detto «riga sana» su una
-casa senza credenziali.
+The dry screening takes the question away **on purpose**: that is how it tries a
+real line without spending anything. But for that same reason it can see nothing
+of what comes after. Measured: with an empty home and with the real one,
+`codex exec < /dev/null` gives the **same** answer — and for an hour
+`flow check` said «line healthy» about a home with no credentials.
 
-La seconda domanda è nata il 01/09 per questo. Le parole del sì e del no
-**le dichiara il descrittore del motore**, non il codice, come già per le altre
-risposte che un motore può dare. Chi non le dichiara ottiene «nessuno ha
-guardato», mai «è autenticato»: `gemini` e `agy` sono in questo stato, con scritto
-dove si è guardato e cosa non si è trovato.
+The second question was born on 01/09 for this. The words of the yes and of the
+no **are declared by the engine's descriptor**, not by the code, as already
+happens for the other answers an engine can give. Whoever does not declare them
+gets «nobody looked», never «it is authenticated»: `gemini` and `agy` are in
+this state, with a note of where the looking happened and what was not found.
 
-Una trappola che il disegno non mostra e che il codice sì: **«Not logged in»
-contiene «logged in»**. Il no si legge prima del sì, e il sì si dichiara con più
-parole di una.
+A trap the drawing does not show and the code does: **«Not logged in» contains
+«logged in»**. The no is read before the yes, and the yes is declared with more
+than one word.
 
 ---
 
-## 6. Quanti ne partono insieme
+## 6. How many start together
 
 ```mermaid
 flowchart LR
-    W["larghezza del fronte"] --> M["quanto resta del tetto di spesa<br/>diviso la chiamata più cara vista"]
-    M --> N["da 1 al soffitto"]
-    I["quante chiamate stanno<br/>già andando su QUESTA identità"] -.->|"non lo conta nessuno"| W
+    W["width of the front"] --> M["how much is left of the spending ceiling<br/>divided by the dearest call seen"]
+    M --> N["from 1 to the ceiling"]
+    I["how many calls are<br/>already going on THIS identity"] -.->|"nobody counts it"| W
 ```
 
-La larghezza si stringe quando i soldi calano, fino a uno. **Non si stringe
-quando è l'identità a essere sotto sforzo**: cinque passi affiancati sullo stesso
-profilo sono cinque chiamate contro lo stesso limite orario, e quel conto non
-esiste.
+The width narrows when the money goes down, all the way to one. **It does not
+narrow when it is the identity that is under strain**: five steps side by side
+on the same profile are five calls against the same hourly limit, and that count
+does not exist.
 
 ---
 
-## 7. Cosa c'è e cosa manca
+## 7. What is there and what is missing
 
-| | stato |
+| | state |
 |---|---|
-| righe di comando diverse in parallelo, case diverse | **c'è**, per costruzione |
-| il padre non cambia mai identità | **c'è**, verificato su tutto il workspace |
-| il passo scavalca il profilo | **c'è** |
-| sapere, dopo, quale profilo ha usato una chiamata | **c'è** dal 01/09 |
-| sapere, **prima**, se una casa è autenticata | **c'è** dal 01/09, per i motori che lo dichiarano |
-| **«questa corsa usa il profilo X»** | **manca** |
-| **«questo passo usa il profilo X»** — nominando un profilo, non una variabile | **manca** |
-| contare le chiamate in volo per identità | **manca** |
-| leggere la quota **del profilo** invece che della persona | **manca** — `sailor remaining` legge la casa della persona |
+| different command lines in parallel, different homes | **there**, by construction |
+| the parent never changes identity | **there**, checked across the whole workspace |
+| the step overrides the profile | **there** |
+| knowing, afterwards, which profile a call used | **there** since 01/09 |
+| knowing, **beforehand**, whether a home is authenticated | **there** since 01/09, for the engines that declare it |
+| **«this run uses profile X»** | **missing** |
+| **«this step uses profile X»** — naming a profile, not a variable | **missing** |
+| counting the calls in flight per identity | **missing** |
+| reading the quota **of the profile** instead of the person's | **missing** — `sailor remaining` reads the person's home |
 
-Le prime due assenze sono la stessa cosa, ed è il **terzo livello**: la ricerca
-del 29/08/2026 (la nota `profili-e-consumo`) aveva già misurato che AWS, Google
-Cloud e Kubernetes hanno tutti e tre la stessa forma — un file permanente, una
-variabile d'ambiente, e **uno scavalco per singolo comando** — e che Sailor ha i
-primi due. Il terzo ha un effetto secondario che vale da solo: **una corsa torna
-a essere una misura**, invece della somma di qualunque cosa fosse attiva istante
-per istante.
+The first two absences are the same thing, and it is the **third level**: the
+research of 29/08/2026 (the note `profili-e-consumo`) had already measured that
+AWS, Google Cloud and Kubernetes all three have the same shape — a permanent
+file, an environment variable, and **a per-command override** — and that Sailor
+has the first two. The third has a side effect that is worth it on its own: **a
+run goes back to being a measurement**, instead of the sum of whatever happened
+to be active from instant to instant.
