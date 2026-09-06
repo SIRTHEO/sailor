@@ -25,7 +25,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type Page } from "playwright";
-import { PLACES, type Section } from "../src/places";
+import { MACHINE, PLACES, UNDER_A_TREE, type Section } from "../src/places";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -50,23 +50,59 @@ type Scene = {
   reach: (page: Page) => Promise<void>;
 };
 
+/** A product name is data, not a pattern: matched whole, escaped first. */
+function wholly(name: string): RegExp {
+  return new RegExp(`^\\s*${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`);
+}
+
+/**
+ * Opens what the palette offers, by the label it draws.
+ *
+ * The permanent strip of destinations is gone, so a locator that looks for one
+ * waits for an element no version of the page renders. What does not hang
+ * under a tree is reached by typing, and the capture asks for it that way.
+ */
+async function openByPalette(page: Page, label: string): Promise<void> {
+  const opener = page.locator(".topbar__palette");
+  await opener.waitFor({ state: "visible", timeout: 5000 });
+  await opener.click();
+  const entry = page
+    .locator(".palette__entry")
+    .filter({ has: page.locator(".palette__label", { hasText: wholly(label) }) })
+    .first();
+  await entry.waitFor({ state: "visible", timeout: 5000 });
+  await entry.click();
+  // An entry that lands nowhere would photograph the screen before it, and the
+  // capture would call that screen by the name of this one.
+  await page.locator(".topbar__crumb", { hasText: wholly(label) }).first().waitFor({
+    state: "visible",
+    timeout: 5000,
+  });
+}
+
 /**
  * Opens a place by the name the product gives it, not by a word written here:
  * copied once, the names went stale and the capture went blind in silence.
+ * Where a place hangs decides the gesture: under a tree it is a row of the
+ * column, and everywhere else only the palette names it.
  */
 async function openPlace(page: Page, id: Section): Promise<void> {
   const place = PLACES.find((one) => one.id === id);
   if (!place) throw new Error(`no place «${id}»: the product does not have it`);
+  if (!UNDER_A_TREE.includes(id)) {
+    await openByPalette(page, place.name);
+    return;
+  }
   const tab = page.getByRole("button", { name: new RegExp(`^\\s*${place.name}`, "i") }).first();
   await tab.waitFor({ state: "visible", timeout: 5000 });
   await tab.click();
 }
 
-/** A row of the machine's ground, by the name the column shows. */
-async function openMachineRow(page: Page, label: string): Promise<void> {
-  const row = page.locator(".world__global", { hasText: label }).first();
-  await row.waitFor({ state: "visible", timeout: 5000 });
-  await row.click();
+/** A row of the machine's ground, by its row and not by a label typed here. */
+async function openMachineRow(page: Page, id: string): Promise<void> {
+  const row = MACHINE.find((one) => one.id === id);
+  if (!row) throw new Error(`no machine row «${id}»: the product does not have it`);
+  await openByPalette(page, row.name);
 }
 
 /** The mark a refusal carries when the state is not in the product at all. */
@@ -193,8 +229,7 @@ const SCENES: Scene[] = [
     name: "installed",
     what: "what this machine has installed: a data-only view, where vertical rhythm shows more than elsewhere",
     reach: async (page) => {
-      // One click: the machine's places are rows of the one column now.
-      await openMachineRow(page, "Equipment");
+      await openMachineRow(page, "equipment");
     },
   },
   {
