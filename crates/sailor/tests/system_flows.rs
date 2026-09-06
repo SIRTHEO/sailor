@@ -98,17 +98,12 @@ fn output_of(records: &[flow::StepRecord], step: &str) -> Value {
 
 // ── il vocabolario ───────────────────────────────────────────────────────
 
-/// IL GUASTO CHE QUESTA PROVA ESISTE PER PRENDERE: un flusso spedito che nomina
-/// un'azione che il programma non registra. Chi lo installa vedrebbe il flusso
-/// nell'elenco, lo lancerebbe, e riceverebbe «azione mancante» su un file che
-/// non può correggere perché sta dentro il binario.
-///
-/// **IL REGISTRO VA COSTRUITO COME LO COSTRUISCE UNA CORSA**, cioè col
-/// deposito: i nodi che scrivono nel deposito lo possiedono, e senza di esso
-/// restano fuori. Un registro a casa vuota dichiarerebbe mancante un'azione che
-/// ogni corsa vera ha, e manderebbe a togliere da un flusso spedito un passo
-/// sano. Il deposito è una cartella di lavoro: questa prova non legge niente di
-/// questa macchina.
+/// THE FAULT THIS TEST EXISTS TO CATCH: a shipped flow naming an action the
+/// program does not register. Whoever installs it would see the flow listed,
+/// run it, and get "missing action" on a file inside the binary. **The
+/// registry is built as a run builds it**, with the store, or it would call
+/// missing an action every real run has. That store is a scratch directory:
+/// this test reads no state of this machine.
 #[test]
 fn every_action_named_by_a_shipped_flow_is_in_the_vocabulary() {
     let dir = std::env::temp_dir().join(format!("sailor-vocabolario-{}", std::process::id()));
@@ -152,21 +147,12 @@ fn no_shipped_flow_names_a_binary() {
     }
 }
 
-/// **UN MODELLO CHIESTO NEL FILE DEVE FINIRE SULLA RIGA DI COMANDO.**
-///
-/// I due file sono spediti insieme e non si parlano: il flusso nomina un
-/// modello, il descrittore dice con quale opzione lo si comunica, e fino a che
-/// nessuno li mette uno accanto all'altro un passo può nominare un modello a un
-/// motore che non lo sa ricevere senza che niente diventi rosso. È il guasto 1
-/// con un'altra faccia: un ordine, o un'assenza, che solo l'invocazione vera
-/// mostrerebbe.
-///
-/// Qui la riga si compone davvero — la ricetta è quella del descrittore
-/// spedito, non una copia scritta nella prova — e si guarda che il nome del
-/// modello ci sia e stia **prima** di ciò che deve restare attaccato alla
-/// domanda. La seconda metà morde solo per un motore che di quelle opzioni ne
-/// abbia: la regola in generale è misurata in `actions`, su motori di fantasia
-/// scelti apposta perché ne abbiano una.
+/// **A MODEL NAMED IN THE FILE MUST REACH THE COMMAND LINE.** Flow and
+/// descriptor ship together and never speak: until somebody puts them side by
+/// side, a step can name a model to an engine that cannot receive one and
+/// nothing goes red. The line is composed from the shipped recipe, not a copy
+/// written here. The ordering half bites only for an engine with options glued
+/// to the question; the general rule is measured in `actions`.
 #[test]
 fn a_model_a_shipped_flow_names_reaches_the_command_line_of_that_engine() {
     let catalog = toolbox::Catalog::load(&[toolbox::Source::Builtin]);
@@ -220,7 +206,7 @@ fn a_model_a_shipped_flow_names_reaches_the_command_line_of_that_engine() {
                          attaccato alla domanda — verrebbe letto come la domanda. Riga: {line:?}"
                     );
                 }
-                // La riga vera, per chi legge l'uscita della prova invece del file.
+                // The real line, for whoever reads this output instead of the file.
                 println!("«{id}» ← «{model}»: {line:?}");
                 asked += 1;
             }
