@@ -330,13 +330,14 @@ impl Gate {
 /// How far the change moved the archive, in the two directions a person needs
 /// told apart before trusting the verdict.
 #[derive(Debug, Default, PartialEq, Eq)]
-struct Overlay {
-    laid_over: usize,
-    taken_away: usize,
+pub struct Overlay {
+    pub laid_over: usize,
+    pub taken_away: usize,
 }
 
-/// A clean copy of HEAD with this tree's changes laid over it.
-fn clean_tree_with_changes(root: &Path, into: &Path) -> Result<Overlay, String> {
+/// A clean copy of HEAD with this tree's changes laid over it, tracked by a
+/// repository of its own.
+pub fn clean_tree_with_changes(root: &Path, into: &Path) -> Result<Overlay, String> {
     let _ = std::fs::remove_dir_all(into);
     std::fs::create_dir_all(into).map_err(|error| format!("{}: {error}", into.display()))?;
     let archive = Command::new("git")
@@ -389,7 +390,39 @@ fn clean_tree_with_changes(root: &Path, into: &Path) -> Result<Overlay, String> 
             }
         }
     }
+    tracked_by_a_repository_of_its_own(into)?;
     Ok(moved)
+}
+
+/// **A JUDGE THAT ASKS GIT MUST HAVE SOMETHING TO ASK.** `git archive` carries
+/// the files and not the `.git`, so a judge that reads what is tracked found
+/// nothing here and said so: the guard against this machine's paths reaching a
+/// public repository never looked at the tree the gate was about to pass. An
+/// index over the laid-over files is all those judges read, so the tree is
+/// given one — and the person's own git settings are shut out, because what the
+/// gate sees must not depend on whose machine it runs on.
+///
+/// `add --all` is safe exactly here and nowhere else: this is a copy under
+/// `target/`, remade at every run, never the shared checkout.
+fn tracked_by_a_repository_of_its_own(into: &Path) -> Result<(), String> {
+    let git = |args: &[&str]| -> Result<(), String> {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(into)
+            .args(args)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .output()
+            .map_err(|error| format!("git {}: {error}", args.join(" ")))?;
+        if out.status.success() {
+            return Ok(());
+        }
+        Err(format!("git {}: {}", args.join(" "), String::from_utf8_lossy(&out.stderr).trim()))
+    };
+    // An empty template: no sample hook of this machine is copied in, for the
+    // same reason the global configuration is shut out.
+    git(&["init", "--quiet", "--template="])?;
+    git(&["add", "--all"])
 }
 
 /// The tree the command is run in, when it is one: a checkout other than the
