@@ -7,7 +7,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import App from "./App";
-import { MACHINE, PLACES } from "./places";
+import { onItsOwnName, MACHINE, PLACES , type Section } from "./places";
 import { SAILOR_TABS } from "./sailortabs";
 import { MEMORY_TABS } from "./memorytabs";
 import { TERMINALS_TABS } from "./TerminalsSection";
@@ -81,21 +81,36 @@ describe("what ⌘K can reach", () => {
     }
   });
 
-  /** Listing is not reaching: a row that names a place must open it. */
-  test("AND WHAT IT LISTS IS WHERE IT LANDS, for the two that were missing", () => {
-    const { container } = render(<App />);
-    const crumbs = () =>
-      Array.from(container.querySelectorAll(".topbar__crumb")).map((one) => one.textContent);
+  /**
+   * Listing is not reaching, and **A ROW THAT OPENS ON NOTHING IS THE DEFECT
+   * THIS GUARD EXISTS FOR**: naming two places by hand could not see a third
+   * added later. Board and the work stay mounted behind the rest, and their
+   * own guards measure them.
+   */
+  test("AND EVERY ROW IT LISTS OPENS SOMETHING, not only the two that were missing", () => {
+    const drawn: Section[] = ["board", "terminals"];
+    for (const place of onItsOwnName().filter((one) => !drawn.includes(one.id))) {
+      cleanup();
+      const { container } = render(<App />);
+      offered();
+      const row = screen
+        .getAllByRole("option")
+        .find((one) => one.querySelector(".palette__label")?.textContent === place.name);
+      expect(row, `«${place.name}» is a place the palette does not offer`).toBeDefined();
+      fireEvent.click(row as HTMLElement);
 
-    offered();
-    fireEvent.click(screen.getByRole("option", { name: /^Changes/ }));
-    expect(crumbs()[0], "«Changes» is in the palette and does not open the changes").toBe("Changes");
-
-    offered();
-    fireEvent.click(screen.getByRole("option", { name: /^Whiteboard/ }));
-    expect(crumbs()[0], "«Whiteboard» is in the palette and does not open the whiteboard").toBe(
-      "Whiteboard",
-    );
+      const crumb = container.querySelector(".topbar__crumb")?.textContent;
+      expect(crumb, `«${place.name}» is offered and does not open`).toBe(place.name);
+      // Asked of the section this place opened, never of «a section»: the
+      // work and the board stay mounted behind it, and their bodies answered
+      // for a place that had drawn nothing at all.
+      const body = container.querySelector(`[data-place="${place.id}"] .section__body`);
+      expect(body, `«${place.name}» opens a place with no body`).not.toBeNull();
+      expect(
+        (body?.textContent ?? "").trim().length,
+        `«${place.name}» opens on an empty stage`,
+      ).toBeGreaterThan(0);
+    }
   });
 
   /** The absurd control: the palette does not answer for what nobody declared. */

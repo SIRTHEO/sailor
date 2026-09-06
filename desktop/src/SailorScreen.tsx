@@ -29,7 +29,9 @@ export function SailorScreen({
   onQuota?: () => void;
 }) {
   return (
-    <div className="section">
+    // A screen that is exactly one place says which, so a guard can ask
+    // whether THAT place drew anything and not whether any section did.
+    <div className="section" data-place="sailor">
       <div className="section__body">
         {tab === "keeps" && <KeepsScreen native={native} />}
         {tab === "cando" && <AbilitiesScreen native={native} />}

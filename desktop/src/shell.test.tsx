@@ -5,7 +5,7 @@ import App from "./App";
 import { beatWords, buildWords, hears, liveWords, spendWords, whoWords, LiveChip } from "./Bar";
 import { BlankCanvas } from "./BlankCanvas";
 import { LedgerBrowser } from "./LedgerBrowser";
-import { nameOfPlace, MACHINE, TERMINALS_GROUND, machineHolds, tabsThatExist } from "./places";
+import { MACHINE_GROUND, nameOfPlace, MACHINE, TERMINALS_GROUND, machineHolds, tabsThatExist } from "./places";
 
 /** Read, never spelled: a hard-coded name breaks on a rename. */
 const WHY = nameOfPlace("memory");
@@ -128,7 +128,7 @@ describe("the column is the world", () => {
     // ONE ENTRY, NOT TWO: a row of the machine's ground lands on the screen
     // itself, not on a list that asks again.
     typeInThePalette("Profiles");
-    expect(crumbs()).toEqual(["this mac", "Profiles"]);
+    expect(crumbs()).toEqual([MACHINE_GROUND, "Profiles"]);
     expect(
       container.querySelectorAll(`${shown}.subrail`),
       "the screen kept a column of its own, so the window offers one list twice",
