@@ -4,7 +4,7 @@
  * destination among seven the centre of the work was subordinate to navigation
  * and every rebuild chose it again. It is the ground, and it comes back.
  */
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import App from "./App";
 import { PLACES, TERMINALS_GROUND } from "./places";
@@ -31,13 +31,23 @@ function crumbsOf(root: Element): (string | null)[] {
   return Array.from(root.querySelectorAll(".topbar__crumb")).map((one) => one.textContent);
 }
 
+/** A SECTION IS A DYNAMIC IMPORT AWAY. It is fetched when the place asks for
+ *  it, so a query fired in the same tick as the gesture finds the gap the
+ *  fallback leaves and concludes the section is not there. */
+async function theSectionArrives(): Promise<void> {
+  await waitFor(() => {
+    expect(document.querySelector(".section:not([hidden])")).toBeTruthy();
+  });
+}
+
 /** The sections are typed for: the window carries no permanent menu of them. */
-function typeInThePalette(label: string): void {
+async function typeInThePalette(label: string): Promise<void> {
   fireEvent.click(screen.getByRole("button", { name: /Search or run a command/ }));
   const rows = Array.from(document.querySelectorAll<HTMLElement>(".palette__entry"));
   const row = rows.find((one) => one.querySelector(".palette__label")?.textContent === label);
   expect(row, `the palette does not offer «${label}»`).toBeDefined();
   fireEvent.click(row as HTMLElement);
+  await theSectionArrives();
 }
 
 describe("the terminals are the ground of the window", () => {
@@ -62,11 +72,11 @@ describe("the terminals are the ground of the window", () => {
    * panel that squeezes it; a section opens in the stage the work holds, and
    * only one of them is in view at a time.
    */
-  test("AND NOTHING SPLITS THE STAGE WITH IT", () => {
+  test("AND NOTHING SPLITS THE STAGE WITH IT", async () => {
     const { container } = render(<App />);
     expect(container.querySelectorAll(".section:not([hidden])")).toHaveLength(1);
 
-    typeInThePalette("Runs");
+    await typeInThePalette("Runs");
     expect(
       container.querySelectorAll(".section:not([hidden])"),
       "a second section took part of the stage the terminals hold",
@@ -78,9 +88,9 @@ describe("the terminals are the ground of the window", () => {
    * open is the same regression as a board that always won: what was left open
    * is what comes back, the ground included.
    */
-  test("THE ARRANGEMENT LEFT COMES BACK, section and view alike", () => {
+  test("THE ARRANGEMENT LEFT COMES BACK, section and view alike", async () => {
     render(<App />);
-    typeInThePalette("Runs");
+    await typeInThePalette("Runs");
     cleanup();
 
     // A NEW WINDOW, not a re-render: this is what a build leaves behind.
@@ -91,7 +101,7 @@ describe("the terminals are the ground of the window", () => {
     // And back the other way: the ground is remembered like any other place,
     // and typing reaches it from wherever the window reopened.
     render(<App />);
-    typeInThePalette("Live");
+    await typeInThePalette("Live");
     cleanup();
     expect(crumbsOf(render(<App />).container)[0]).toBe(TERMINALS_GROUND);
   });
