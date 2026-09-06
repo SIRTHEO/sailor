@@ -6,6 +6,8 @@
 //! the binary in service, and whether it can be replaced right now. The
 //! gestures — tree to HEAD, build, copy, restart — are the `release` command's.
 
+use std::path::Path;
+
 /// A resident service: some need a restart for the replacement to take effect.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Service {
@@ -219,6 +221,50 @@ pub fn ends_with(found: &OnPath) -> i32 {
 /// the build and the suite went, and nothing about them needs redoing.
 pub const SHADOWED: i32 = 4;
 
+/// The empty home the suite runs in, below the release's throwaway tree.
+pub const SUITE_HOME_BELOW_SCRATCH: &str = "home";
+
+/// The environment the suite is run with, built by inclusion: what says *where
+/// to write* stays, what says *what to read* is left out, and `HOME` is an
+/// empty directory under `scratch`. A test that passes here passed on the tree
+/// and not on the releaser's machine. See fault 5.
+pub fn suite_environment(
+    inherited: &[(String, String)],
+    scratch: &Path,
+    profile_variables: &[&str],
+    scratch_root_variable: &str,
+) -> Vec<(String, String)> {
+    let declared = |name: &str| {
+        inherited
+            .iter()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.clone())
+            .filter(|value| !value.is_empty())
+    };
+    let old_home = declared("HOME");
+    let mut kept = Vec::new();
+    for name in ["PATH", "TMPDIR", scratch_root_variable] {
+        if let Some(value) = declared(name) {
+            kept.push((name.to_owned(), value));
+        }
+    }
+    kept.push((
+        "HOME".to_owned(),
+        scratch.join(SUITE_HOME_BELOW_SCRATCH).display().to_string(),
+    ));
+    // Cargo's crate cache and rustup's toolchains sit under the old home unless
+    // a variable says otherwise; moved along with `HOME`, they would be looked
+    // for in the empty one and the suite would not even compile.
+    for (name, below_home) in [("CARGO_HOME", ".cargo"), ("RUSTUP_HOME", ".rustup")] {
+        let value = declared(name).or_else(|| old_home.as_ref().map(|home| format!("{home}/{below_home}")));
+        if let Some(value) = value {
+            kept.push((name.to_owned(), value));
+        }
+    }
+    kept.retain(|(name, _)| !profile_variables.contains(&name.as_str()));
+    kept
+}
+
 /// The target with this name, if it exists.
 pub fn target(name: &str) -> Option<&'static Target> {
     TARGETS.iter().find(|t| t.name == name)
@@ -351,6 +397,72 @@ pub fn process_exists(pid: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn declared<'a>(environment: &'a [(String, String)], name: &str) -> Option<&'a str> {
+        environment
+            .iter()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.as_str())
+    }
+
+    /// Declared values, never this machine: the suite's home is the throwaway
+    /// one, nothing of the releaser's configuration or profiles reaches it,
+    /// and the toolchain is still found where the old home kept it.
+    #[test]
+    fn the_suite_runs_in_an_empty_home_and_not_in_the_releasers() {
+        let inherited: Vec<(String, String)> = [
+            ("HOME", "/casa/di-chiunque"),
+            ("PATH", "/usr/bin"),
+            ("TMPDIR", "/short/tmp"),
+            ("SAILOR_LEDGER", "/casa/di-chiunque/x"),
+            ("SAILOR_HOME", "/casa/di-chiunque/.config/sailor"),
+            ("XDG_CONFIG_HOME", "/casa/di-chiunque/.config"),
+            ("CODEX_HOME", "/homes/codex"),
+            ("SAILOR_TEST_TMP", "/short"),
+        ]
+        .map(|(key, value)| (key.to_owned(), value.to_owned()))
+        .to_vec();
+        let scratch = Path::new("/scratch/release.abc");
+        let profiles = ["CODEX_HOME", "CLAUDE_CONFIG_DIR"];
+
+        let suite = suite_environment(&inherited, scratch, &profiles, "SAILOR_TEST_TMP");
+
+        let home = declared(&suite, "HOME").expect("the suite has a home");
+        assert!(home.starts_with("/scratch/release.abc/"), "{home}");
+        assert_ne!(home, "/casa/di-chiunque", "the suite is running in the releaser's home");
+        let sailor_keys: Vec<&str> = suite
+            .iter()
+            .map(|(key, _)| key.as_str())
+            .filter(|key| key.starts_with("SAILOR_"))
+            .collect();
+        assert_eq!(sailor_keys, ["SAILOR_TEST_TMP"], "a SAILOR_* reached the suite");
+        assert_eq!(declared(&suite, "SAILOR_TEST_TMP"), Some("/short"));
+        assert_eq!(declared(&suite, "CODEX_HOME"), None, "a profile reached the suite");
+        assert_eq!(declared(&suite, "XDG_CONFIG_HOME"), None);
+        assert_eq!(declared(&suite, "CARGO_HOME"), Some("/casa/di-chiunque/.cargo"));
+        assert_eq!(declared(&suite, "RUSTUP_HOME"), Some("/casa/di-chiunque/.rustup"));
+        assert_eq!(declared(&suite, "PATH"), Some("/usr/bin"));
+        assert_eq!(declared(&suite, "TMPDIR"), Some("/short/tmp"));
+    }
+
+    /// A declared toolchain home beats the one derived from the old home, and
+    /// the declared profile list wins even over a name the suite would keep.
+    #[test]
+    fn a_declared_cargo_home_is_kept_and_the_profile_list_has_the_last_word() {
+        let inherited: Vec<(String, String)> = [
+            ("HOME", "/casa/di-chiunque"),
+            ("CARGO_HOME", "/altrove/cargo"),
+            ("TMPDIR", "/short/tmp"),
+        ]
+        .map(|(key, value)| (key.to_owned(), value.to_owned()))
+        .to_vec();
+
+        let suite = suite_environment(&inherited, Path::new("/scratch"), &["TMPDIR"], "SAILOR_TEST_TMP");
+
+        assert_eq!(declared(&suite, "CARGO_HOME"), Some("/altrove/cargo"));
+        assert_eq!(declared(&suite, "RUSTUP_HOME"), Some("/casa/di-chiunque/.rustup"));
+        assert_eq!(declared(&suite, "TMPDIR"), None, "the profile list did not have the last word");
+    }
 
     /// The shape of the fault: the page built, the binary carries none of it.
     #[test]

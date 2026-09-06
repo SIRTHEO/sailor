@@ -402,6 +402,7 @@
   "cli.release.receipt_with_no_pid": "attenzione: ricevuta senza pid «{name}» (non blocca il rilascio)",
   "cli.release.replacing": "== sostituisco il binario in servizio ==",
   "cli.release.running_the_suite": "== eseguo tutta la suite di {manifest} su HEAD ==",
+  "cli.release.suite_home": "la suite gira con una casa vuota: {home}",
   "cli.release.service_is_working": "aspetto: il servizio sta lavorando a «{task}» con pid {pid}",
   "cli.release.service_restarted": "servizio riavviato: {domain}",
   "cli.release.service_still_on_the_old_one": "il binario è a posto, ma il servizio sta ancora eseguendo quello vecchio ({why}).\n   Per chiudere lo scarto esegui: launchctl kickstart -k {domain}",
