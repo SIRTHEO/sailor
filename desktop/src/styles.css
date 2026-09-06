@@ -3975,17 +3975,19 @@ tr[data-followable]:hover {
   gap: var(--space-3);
 }
 
+/* THE TERMINAL KEEPS THE MIDDLE. The row never scrolls sideways to fit what
+   stands beside it: both children scroll inside themselves, so the band takes
+   what it is given and the terminal takes the rest. */
 .session-work {
   display: flex;
   flex: 1;
   min-height: 240px;
   gap: var(--space-3);
-  overflow: auto;
 }
 
 .session-work > .terminals__panes {
   flex: 1;
-  min-width: 320px;
+  min-width: 0;
 }
 
 .session-context {
@@ -3993,7 +3995,7 @@ tr[data-followable]:hover {
   flex-direction: column;
   gap: var(--space-2);
   width: clamp(280px, 32vw, 460px);
-  flex-shrink: 0;
+  min-width: 0;
   min-height: 0;
   overflow: auto;
   padding: var(--space-3);
