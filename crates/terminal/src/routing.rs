@@ -137,8 +137,8 @@ impl Catalog {
                         if dir.exists() {
                             catalog.problems.push(Problem {
                                 source: dir.to_string_lossy().into_owned(),
-                                about: "la cartella".to_string(),
-                                reason: "non si è potuta leggere".to_string(),
+                                about: "the directory".to_string(),
+                                reason: "could not be read".to_string(),
                             });
                         }
                         continue;
@@ -164,8 +164,8 @@ impl Catalog {
             Ok(text) => self.absorb(&label, &text),
             Err(error) => self.problems.push(Problem {
                 source: label,
-                about: "il file".to_string(),
-                reason: format!("non si è potuto leggere: {error}"),
+                about: "the file".to_string(),
+                reason: format!("could not be read: {error}"),
             }),
         }
     }
@@ -178,8 +178,8 @@ impl Catalog {
             Err(error) => {
                 self.problems.push(Problem {
                     source: source.to_string(),
-                    about: "il file".to_string(),
-                    reason: format!("non è JSON valido: {error}"),
+                    about: "the file".to_string(),
+                    reason: format!("is not valid JSON: {error}"),
                 });
                 return;
             }
@@ -236,8 +236,8 @@ impl Catalog {
     fn malformed(&mut self, source: &str) {
         self.problems.push(Problem {
             source: source.to_string(),
-            about: "il file".to_string(),
-            reason: "non contiene né un array né un campo `routes`".to_string(),
+            about: "the file".to_string(),
+            reason: "holds neither an array nor a `routes` field".to_string(),
         });
     }
 
@@ -282,11 +282,11 @@ impl Catalog {
 /// The day somebody writes one is the one day it is easy to notice.
 fn coherent(route: &Route) -> Result<(), String> {
     if route.flow.trim().is_empty() {
-        return Err("una regola deve dire a quale flusso manda: `flow` è vuoto".to_string());
+        return Err("a rule has to say which flow it sends to: `flow` is empty".to_string());
     }
     if route.strip_match && !matches!(route.when, Match::StartsWith { .. }) {
         return Err(
-            "`strip_match` toglie un prefisso, quindi vale solo con `starts_with`: da una regola per parole non c'è niente di preciso da togliere"
+            "`strip_match` takes a prefix off, so it holds only with `starts_with`: from a rule made of words there is nothing precise to take off"
                 .to_string(),
         );
     }
@@ -295,14 +295,14 @@ fn coherent(route: &Route) -> Result<(), String> {
     }
     let Match::StartsWith { text } = &route.when else {
         return Err(
-            "una regola esplicita scavalca la guardia, e può farlo solo se è un marcatore: serve `starts_with`, non una regola per parole"
+            "an explicit rule steps over the guard, and it may only do so if it is a marker: `starts_with` is needed, not a rule made of words"
                 .to_string(),
         );
     };
     match text.chars().next() {
-        None => Err("una regola esplicita ha un marcatore vuoto, che sta all'inizio di ogni riga: smisterebbe tutto".to_string()),
+        None => Err("an explicit rule has an empty marker, which stands at the beginning of every line: it would route everything".to_string()),
         Some(first) if can_start_a_command(first) => Err(format!(
-            "il marcatore «{text}» comincia con «{first}», che può iniziare un comando: una regola esplicita scavalca la guardia, quindi il suo marcatore deve essere qualcosa che nessuna shell eseguirebbe"
+            "the marker «{text}» begins with «{first}», which can begin a command: an explicit rule steps over the guard, so its marker has to be something no shell would run"
         )),
         Some(_) => Ok(()),
     }
