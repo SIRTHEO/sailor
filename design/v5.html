@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Sailor — draft of the window</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  /* Greys with a plum undertone. NOT neutral, and NOT blue-green: the terminal
+     under them prints ANSI green and red, and a blue-green shell fights it. */
+  --s0:#19171D; --s1:#211E26; --s2:#2B2731; --border:#423A4B; --border-2:#302B37;
+  --t1:#F1EDF3; --t2:#C4BDCC; --t3:#A49BAB;
+  --accent:#AC9AF2;                    /* selection and focus. Nothing else. */
+  --running:#87B5ED;                   /* BLUE, because in a terminal green means «it worked» */
+  --ask:#E8C079; --done:#86C5AE; --fail:#F08F9B; --warn:#EBA374;
+  --mono:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --num:"Geist",Inter,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0e0d11;font-family:Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased;padding:26px 26px 40px}
+.cap{width:1440px;margin:0 auto 9px;color:#8c8394;font:500 12px/16px Inter;letter-spacing:.02em}
+.cap b{color:#e2dbe8;font-weight:600}
+.cap i{font-style:normal;color:var(--accent);font-weight:600}
+.plate{width:1440px;background:var(--s0);color:var(--t1);display:flex;border:1px solid var(--border);
+       border-radius:8px;overflow:hidden;margin:0 auto 30px;font-size:13px;line-height:20px}
+.num{font-family:var(--num);font-weight:500;font-variant-numeric:tabular-nums lining-nums}
+
+/* ── sidebar: 232px, rows 32px, padding 12 ── */
+.side{width:232px;flex:0 0 232px;background:var(--s1);border-right:1px solid var(--border);display:flex;flex-direction:column}
+.brand{height:44px;display:flex;align-items:center;gap:9px;padding:0 12px;border-bottom:1px solid var(--border-2)}
+.brand .mk{width:16px;height:16px;border:1.5px solid var(--accent);border-radius:3px;transform:rotate(45deg)}
+.brand span{font-weight:600}
+.nav{padding:12px 12px 0}
+.r{height:32px;display:flex;align-items:center;gap:10px;padding:0 8px;border-radius:6px;color:var(--t2);position:relative}
+.r .i{width:16px;height:16px;flex:0 0 16px;color:var(--t3);display:flex;align-items:center;justify-content:center}
+.r .c{margin-left:auto;width:24px;text-align:right;font-family:var(--num);font-weight:500;font-size:12px;color:var(--t3);font-variant-numeric:tabular-nums}
+.r .att{width:16px;flex:0 0 16px;display:flex;justify-content:center;color:var(--ask)}
+.r.on{background:var(--s2);color:var(--t1);font-weight:600}
+.r.on .i{color:var(--accent)}
+.lab{padding:20px 8px 6px;margin:0 12px;font:500 12px Inter;color:var(--t3)}
+.side .btm{margin-top:auto;padding:12px;border-top:1px solid var(--border-2)}
+.dot{width:7px;height:7px;border-radius:50%}
+
+/* ── stage ── */
+.stage{flex:1;display:flex;flex-direction:column;min-width:0}
+.top{height:44px;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid var(--border);background:var(--s1);flex:0 0 44px}
+.top h1{font:600 18px/24px Inter}
+.k{margin-left:auto;display:flex;align-items:center;gap:8px;height:28px;padding:0 10px;border:1px solid var(--border);
+   border-radius:6px;color:var(--t3);font-size:13px;width:230px;background:var(--s0)}
+kbd{font:500 12px var(--mono);border:1px solid var(--border);border-radius:4px;padding:0 4px;color:var(--t3);margin-left:auto}
+.b{height:28px;padding:0 12px;border-radius:6px;border:1px solid var(--border);background:var(--s2);color:var(--t1);
+   font:400 13px Inter;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.b.p{background:var(--accent);border-color:var(--accent);color:#221a3a;font-weight:600}
+.b.dg{color:var(--fail);border-color:#5a3038}
+
+/* ── the tab strip: 192×36, fixed columns, shape carries the state ── */
+.tabs{height:36px;flex:0 0 36px;display:flex;background:var(--s1);border-bottom:1px solid var(--border)}
+.tab{width:186px;flex:0 0 186px;display:flex;align-items:center;gap:4px;padding:0 12px;color:var(--t2);
+     font-size:13px;position:relative;border-right:1px solid var(--border-2)}
+.tab .pr{width:60px;flex:0 0 60px;font-weight:600;color:var(--t1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tab .sl{width:8px;flex:0 0 8px;color:var(--t3);text-align:center}
+.tab .ag{width:72px;flex:0 0 72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tab .st{width:16px;flex:0 0 16px;display:flex;align-items:center;justify-content:center}
+/* THE ONE FLOURISH: the chosen tab takes the terminal's ground and its bottom
+   edge is cut, so the tab and the work below it are one surface. */
+.tab.on{background:var(--s0);color:var(--t1);border-right-color:var(--border)}
+.tab.on::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;background:var(--s0)}
+.tab.on::before{content:"";position:absolute;left:12px;right:12px;top:0;height:2px;background:var(--accent)}
+.tab.on .ag{color:var(--t2)}
+.ov{width:56px;flex:0 0 56px;display:flex;align-items:center;gap:10px;padding:0 12px;color:var(--t3);font-size:12px;flex:0 0 auto}
+
+/* ── run header: 36px ── */
+.run{height:36px;flex:0 0 36px;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid var(--border);background:var(--s0)}
+.cr{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--t2)}
+.cr b{color:var(--t1);font-weight:600}
+.cr .s{color:var(--t3)}
+.stat{display:inline-flex;align-items:center;gap:6px;font-size:13px}
+.stat.a{color:var(--ask)} .stat.r{color:var(--running)} .stat.f{color:var(--fail)} .stat.d{color:var(--done)}
+.pips{display:flex;gap:3px}
+.pips i{width:16px;height:3px;border-radius:2px;background:var(--border);display:block}
+.pips i.d{background:var(--done)} .pips i.a{background:var(--ask)} .pips i.r{background:var(--running)}
+.run .rt{margin-left:auto;display:flex;gap:8px}
+
+/* ── terminal: the biggest thing here. 14/20, inset 12, radius 0 ── */
+.term{flex:1;padding:12px;font:400 14px/20px var(--mono);background:var(--s0);overflow:hidden;
+      display:flex;flex-direction:column;justify-content:flex-end}
+.term div{white-space:pre;color:#cdc5d4}
+.d3{color:var(--t3)} .gn{color:var(--done)} .am{color:var(--ask)} .rd{color:var(--fail)}
+.bl{color:var(--running)} .vi{color:var(--accent)} .wh{color:var(--t1)}
+.cur{display:inline-block;width:8px;height:15px;background:var(--t2);vertical-align:-3px}
+.askb{margin:8px 0 4px;border-left:2px solid var(--ask);background:#241f14;padding:10px 12px;border-radius:0 6px 6px 0;white-space:normal!important}
+.askb .q{color:#f2ddab;font:400 14px/20px var(--mono);max-width:880px;white-space:normal!important}
+.askb .o{margin-top:9px;display:flex;gap:8px}
+.o .b{font-family:Inter}
+.o .b.y{border-color:#6a5426;background:#332a15;color:#f2ddab;font-weight:500}
+
+/* ── footer: 28px ── */
+.ft{height:28px;flex:0 0 28px;display:flex;align-items:center;gap:16px;padding:0 12px;border-top:1px solid var(--border);
+    background:var(--s1);font:400 12px/16px Inter;color:var(--t3)}
+.ft b{color:var(--t2);font-family:var(--num);font-weight:500;font-variant-numeric:tabular-nums}
+.g{width:100px;height:4px;border-radius:2px;background:var(--border);display:inline-block;vertical-align:middle;overflow:hidden}
+.g i{display:block;height:100%;background:var(--running)}
+.g.w i{background:var(--warn)}
+.ft .rt{margin-left:auto;display:flex;gap:16px;align-items:center}
+
+/* ── a list: rows 44px, columns 120px and 120px, LABELS not badges ── */
+.filters{height:44px;flex:0 0 44px;display:flex;align-items:center;gap:6px;padding:0 12px;border-bottom:1px solid var(--border)}
+.ch{height:28px;padding:0 12px;border-radius:6px;border:1px solid var(--border);color:var(--t2);font-size:13px;display:flex;align-items:center;gap:6px}
+.ch.on{background:var(--s2);border-color:var(--accent);color:var(--t1);font-weight:500;box-shadow:inset 0 0 0 1px var(--accent)}
+.hd{height:28px;flex:0 0 28px;display:flex;align-items:center;padding:0 12px;font:500 12px Inter;color:var(--t3);border-bottom:1px solid var(--border-2)}
+.li{height:44px;flex:0 0 44px;display:flex;align-items:center;padding:0 12px;border-bottom:1px solid var(--border-2);color:var(--t2)}
+.li:hover{background:var(--s1)}
+.li .nm{flex:1;min-width:0;display:flex;align-items:center;gap:10px}
+.li .nm b{color:var(--t1);font-weight:500;font-size:14px}
+.li .nm span{color:var(--t3);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.co{width:120px;flex:0 0 120px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:12px}
+.co.n{width:70px;text-align:right;font-family:var(--num);font-weight:500;font-variant-numeric:tabular-nums}
+.li .go{width:80px;flex:0 0 80px;text-align:right;color:var(--t3)}
+.body{flex:1;overflow:hidden;display:flex;flex-direction:column}
+
+/* ── settings: two columns ── */
+.sub{width:200px;flex:0 0 200px;border-right:1px solid var(--border);padding:12px;background:var(--s0)}
+.pane{flex:1;padding:20px 24px;overflow:hidden;min-width:0}
+.pane h2{font:600 18px/24px Inter;margin-bottom:4px}
+.pane p.sd{color:var(--t3);font-size:13px;margin-bottom:20px}
+.card{border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:16px}
+.card .ch2{height:36px;display:flex;align-items:center;padding:0 14px;background:var(--s1);border-bottom:1px solid var(--border);font:500 13px Inter;color:var(--t2)}
+.card .li{border-bottom:1px solid var(--border-2)}
+.card .li:last-child{border-bottom:none}
+
+/* ── usage ── */
+.tiles{display:flex;gap:16px;margin-bottom:20px}
+.tile{flex:1;border:1px solid var(--border);border-radius:8px;padding:14px}
+.tile .k2{font:500 12px Inter;color:var(--t3);margin-bottom:6px}
+.tile .v{font:600 28px/32px var(--num);font-variant-numeric:tabular-nums;color:var(--t1)}
+.tile .sub2{font-size:12px;color:var(--t3);margin-top:6px}
+.bars{display:flex;align-items:flex-end;gap:5px;height:56px;margin-top:10px}
+.bars i{flex:1;background:var(--running);border-radius:2px 2px 0 0;display:block;opacity:.85}
+
+/* ── the editor ── */
+.canvas{flex:1;position:relative;background:
+   radial-gradient(circle at 1px 1px, #2d2834 1px, transparent 0) 0 0/22px 22px, var(--s0);overflow:hidden}
+.lane{position:absolute;left:0;right:0;height:76px;border-bottom:1px solid var(--border-2)}
+.lane .lname{position:absolute;left:12px;top:8px;font:500 12px Inter;color:var(--t3)}
+.node{position:absolute;top:24px;width:158px;background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:12px}
+.node .kk{font:500 12px Inter;color:var(--t3);display:flex;align-items:center;gap:6px;margin-bottom:3px}
+.node .nn{font:500 13px var(--mono);color:var(--t1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.node.sel{border-color:var(--accent);box-shadow:0 0 0 2px rgba(172,154,242,.22)}
+.wire{position:absolute;height:1px;background:var(--border);top:52px}
+.wire.done{background:var(--done)}
+svg.ic{width:16px;height:16px;stroke-width:1.75;fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
+svg.ic.s12{width:14px;height:14px}
+</style></head><body>
+
+<svg style="display:none">
+ <defs>
+  <g id="run"><circle cx="12" cy="12" r="9"/><path d="M10 8.5l5 3.5-5 3.5z"/></g>
+  <g id="ask"><path d="M12 3l9 9-9 9-9-9z"/><path d="M12 8v4.5M12 16h.01"/></g>
+  <g id="fail"><path d="M8.5 3h7L21 8.5v7L15.5 21h-7L3 15.5v-7z"/><path d="M9.5 9.5l5 5M14.5 9.5l-5 5"/></g>
+  <g id="done"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.2l2.5 2.5 4.5-5"/></g>
+  <g id="work"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/></g>
+  <g id="flows"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="12" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M8.5 6h4a3 3 0 013 3v.5M8.5 18h4a3 3 0 003-3v-.5"/></g>
+  <g id="usage"><path d="M3 20h18"/><path d="M6 20v-6M11 20V8M16 20v-9M21 20V5"/></g>
+  <g id="cog"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M22 12h-3M5 12H2M19 19l-2-2M7 7L5 5M19 5l-2 2M7 17l-2 2"/></g>
+  <g id="all"><rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="14" y="4" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></g>
+  <g id="plus"><path d="M12 5v14M5 12h14"/></g>
+ </defs>
+</svg>
+
+<!-- ══════════════════ 1. WORK ══════════════════ -->
+<div class="cap"><b>1 — Work.</b> Where the window opens. Six agents in <i>one strip</i>, the run that wants you already chosen, one terminal, and the money on screen without asking.</div>
+<div class="plate" style="height:820px">
+  <nav class="side">
+    <div class="brand"><i class="mk"></i><span>Sailor</span></div>
+    <div class="nav">
+      <div class="r on"><span class="i"><svg class="ic" viewBox="0 0 24 24"><use href="#work"/></svg></span>Work<span class="c">6</span></div>
+      <div class="r"><span class="i"><svg class="ic" viewBox="0 0 24 24"><use href="#flows"/></svg></span>Flows<span class="c">14</span></div>
+      <div class="r"><span class="i"><svg class="ic" viewBox="0 0 24 24"><use href="#usage"/></svg></span>Usage<span class="c">$4.12</span></div>
+    </div>
+    <div class="lab">Projects</div>
+    <div class="nav" style="padding-top:0">
+      <div class="r"><span class="i"><svg class="ic" viewBox="0 0 24 24"><use href="#all"/></svg></span>All projects<span class="c">6</span></div>
+      <div class="r"><span class="i"><i class="dot" style="background:var(--running)"></i></span>api<span class="c">2</span></div>
+      <div class="r" style="color:var(--t1)"><span class="i"><i class="dot" style="background:var(--ask)"></i></span>web
+        <span class="att"><svg class="ic s12" viewBox="0 0 24 24" style="color:var(--ask)"><use href="#ask"/></svg></span><span class="c">2</span></div>
+      <div class="r"><span class="i"><i class="dot" style="background:var(--done)"></i></span>docs<span class="c">1</span></div>
+      <div class="r"><span class="i"><i class="dot" style="background:var(--fail)"></i></span>cli
+        <span class="att"><svg class="ic s12" viewBox="0 0 24 24" style="color:var(--fail)"><use href="#fail"/></svg></span><span class="c">1</span></div>
+    </div>
+    <div class="btm">
+      <div class="r"><span class="i"><svg class="ic" viewBox="0 0 24 24"><use href="#cog"/></svg></span>Settings
+        <span class="att"><svg class="ic s12" viewBox="0 0 24 24" style="color:var(--ask)"><use href="#ask"/></svg></span><span class="c"></span></div>
+    </div>
+  </nav>
+  <div class="stage">
+    <header class="top">
+      <h1>Work</h1>
+      <div class="k">Search or run a command <kbd>⌘K</kbd></div>
+      <button class="b">Open a terminal</button>
+      <button class="b p">Run a flow</button>
+    </header>
+    <div class="tabs">
+      <div class="tab"><span class="pr">api</span><span class="sl">/</span><span class="ag">Claude</span><span class="st"><svg class="ic" viewBox="0 0 24 24" style="color:var(--running)"><use href="#run"/></svg></span></div>
+      <div class="tab on"><span class="pr">web</span><span class="sl">/</span><span class="ag">Codex</span><span class="st"><svg class="ic" viewBox="0 0 24 24" style="color:var(--ask)"><use href="#ask"/></svg></span></div>
+      <div class="tab"><span class="pr">api</span><span class="sl">/</span><span class="ag">Gemini</span><span class="st"><svg class="ic" viewBox="0 0 24 24" style="color:var(--running)"><use href="#run"/></svg></span></div>
+      <div class="tab"><span class="pr">docs</span><span class="sl">/</span><span class="ag">Claude</span><span class="st"><svg class="ic" viewBox="0 0 24 24" style="color:var(--done)"><use href="#done"/></svg></span></div>
+      <div class="tab"><span class="pr">cli</span><span class="sl">/</span><span class="ag">Codex</span><span class="st"><svg class="ic" viewBox="0 0 24 24" style="color:var(--fail)"><use href="#fail"/></svg></span></div>
+      <div class="tab"><span class="pr">web</span><span class="sl">/</span><span class="ag">Claude</span><span class="st"><svg class="ic" viewBox="0 0 24 24" style="color:var(--running)"><use href="#run"/></svg></span></div>
+      <div class="ov"><svg class="ic" viewBox="0 0 24 24"><use href="#plus"/></svg><span style="font-size:12px">3</span></div>
+    </div>
+    <div class="run">
+      <div class="cr"><b>web</b><span class="s">/</span><b>Codex</b><span class="s">·</span>review-the-branch</div>
+      <span class="stat a"><svg class="ic" viewBox="0 0 24 24"><use href="#ask"/></svg>Waiting for you · 2m 14s</span>
+      <span class="pips"><i class="d"></i><i class="d"></i><i class="a"></i><i></i><i></i><i></i><i></i></span>
+      <span class="d3" style="font-size:12px">step 3 of 7</span>
+      <div class="rt"><button class="b">Details</button><button class="b dg">Stop</button></div>
+    </div>
+    <div class="term">
+<div><span class="d3">  · · ·</span></div>
+<div><span class="gn">✓</span> <span class="wh">chain-brake</span><span class="d3">      no other agent holds this tree        0.2s</span></div>
+<div><span class="gn">✓</span> <span class="wh">pane-is-idle</span><span class="d3">     the terminal answered in 40ms         0.1s</span></div>
+<div> </div>
+<div><span class="d3">▸</span> <span class="wh">review-the-branch</span><span class="d3">  step 2 · agent · codex-cli · profile </span><span class="vi">work</span></div>
+<div><span class="d3">  read  </span><span class="bl">src/relay/handshake.ts</span><span class="d3">   428 lines</span></div>
+<div><span class="d3">  read  </span><span class="bl">src/relay/socket.ts</span><span class="d3">    1,204 lines</span></div>
+<div><span class="d3">  read  </span><span class="bl">tests/handshake.test.ts</span><span class="d3">   96 lines</span></div>
+<div> </div>
+<div><span class="gn">✓</span> <span class="wh">The retry loop has no ceiling.</span><span class="d3">  socket.ts:311 doubles the wait</span></div>
+<div><span class="d3">  and never caps it, so a peer that never answers holds the handle open</span></div>
+<div><span class="d3">  until the process dies. Three call sites reach it; none passes a deadline.</span></div>
+<div> </div>
+<div><span class="am">◆</span> <span class="wh">This changes behaviour two other trees depend on.</span></div>
+      <div class="askb">
+        <div class="q">Cap the wait at 30s and give <span class="wh">connect()</span> a deadline? The three call sites go on working; a caller that wants the old behaviour passes <span class="wh">Infinity</span>.</div>
+        <div class="o">
+          <button class="b y">Yes, do it <kbd style="margin:0 0 0 4px">↵</kbd></button>
+          <button class="b">Show me the patch</button>
+          <button class="b">No — and here is why</button>
+        </div>
+      </div>
+<div><span class="d3">  waiting </span><span class="cur"></span></div>
+    </div>
+    <div class="ft">
+      <span>this run <b>42,180</b> tokens</span>
+      <span><b>$0.38</b> of <b>$2.00</b> <span class="g"><i style="width:19%"></i></span></span>
+      <span>gpt-5.4-codex · profile work</span>
+      <div class="rt">
+        <span>today <b>$4.12</b></span>
+        <span>quota <b>62%</b> <span class="g w"><i style="width:62%"></i></span> resets 04:00</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ 2. FLOWS ══════════════════ -->
+<div class="cap"><b>2 — Flows.</b> One flat library, no nesting. Where a flow <i>lives</i> and whether it is <i>shared</i> are two independent facts, so they are two columns with words in them — never one badge that means both.</div>
+<div class="plate" style="height:560px">
+  <nav class="side">
+    <div class="brand"><i class="mk"></i><span>Sailor</span></div>
+    <div class="nav">
+      <div class="r"><span class="i"><svg class="ic" viewBox="0 0 24 24"><use href="#work"/></svg></span>Work<span class="c">6</span></div>
+      <div class="r on"><span class="i"><svg class="ic" viewBox="0 0 24 24"><use href="#flows"/></svg></span>Flows<span class="c">14</span></div>
+      <div class="r"><span class="i"><svg class="ic" viewBox="0 0 24 24"><use href="#usage"/></svg></span>Usage<span class="c">$4.12</span></div>
+    </div>
+    <div class="lab">Projects</div>
+    <div class="nav" style="padding-top:0">
+      <div class="r"><span class="i"><svg class="ic" viewBox="0 0 24 24"><use href="#all"/></svg></span>All projects<span class="c">6</span></div>
+      <div class="r"><span class="i"><i class="dot" style="background:var(--running)"></i></span>api<span class="c">2</span></div>
+      <div class="r"><span class="i"><i class="dot" style="background:var(--ask)"></i></span>web<span class="att"><svg class="ic s12" viewBox="0 0 24 24" style="color:var(--ask)"><use href="#ask"/></svg></span><span class="c">2</span></div>
+      <div class="r"><span class="i"><i class="dot" style="background:var(--done)"></i></span>docs<span class="c">1</span></div>
+      <div class="r"><span class="i"><i class="dot" style="background:var(--fail)"></i></span>cli<span class="c">1</span></div>
+    </div>
+    <div class="btm"><div class="r"><span class="i"><svg class="ic" viewBox="0 0 24 24"><use href="#cog"/></svg></span>Settings</div></div>
+  </nav>
+  <div class="stage">
+    <header class="top"><h1>Flows</h1>
+      <div class="k">Search or run a command <kbd>⌘K</kbd></div>
+      <button class="b">Add a repository</button><button class="b p">New flow</button>
+    </header>
+    <div class="filters">
+      <span class="ch on">All<span class="d3">14</span></span>
+      <span class="ch">Mine<span class="d3">5</span></span>
+      <span class="ch">This project<span class="d3">3</span></span>
+      <span class="ch">Shared<span class="d3">4</span></span>
+      <span class="ch">Shipped<span class="d3">2</span></span>
+      <div class="k" style="margin-left:auto;width:200px">Filter by name</div>
+    </div>
+    <div class="hd"><span style="flex:1">Flow</span><span class="co">Lives in</span><span class="co" style="width:160px;flex:0 0 160px">Sharing</span><span class="co n">Steps</span><span class="go" style="width:110px;padding-left:16px">Last run</span></div>
+    <div class="body">
+      <div class="li"><span class="nm"><b>review-the-branch</b><span>read the diff, argue with it, ask before writing</span></span>
+        <span class="co">Personal</span><span class="co" style="color:var(--accent);width:160px;flex:0 0 160px">Shared · crew/flows</span><span class="co n">7</span><span class="go" style="width:110px">2m ago</span></div>
+      <div class="li"><span class="nm"><b>ship-the-release</b><span>gate, tag, push, tell the room</span></span>
+        <span class="co">Project · api</span><span class="co" style="width:160px;flex:0 0 160px">Private</span><span class="co n">11</span><span class="go" style="width:110px">yesterday</span></div>
+      <div class="li"><span class="nm"><b>pass-the-baton</b><span>hand the work on before the quota runs out</span></span>
+        <span class="co">Personal</span><span class="co" style="color:var(--accent);width:160px;flex:0 0 160px">Shared · crew/flows</span><span class="co n">4</span><span class="go" style="width:110px">3h ago</span></div>
+      <div class="li"><span class="nm"><b>sweep-the-tree</b><span>find what was left running and stop it</span></span>
+        <span class="co">Shipped</span><span class="co" style="width:160px;flex:0 0 160px">Private</span><span class="co n">5</span><span class="go" style="width:110px">18h ago</span></div>
+      <div class="li"><span class="nm"><b>chase-the-fault</b><span>reproduce, then put the defect back and watch it go red</span></span>
+        <span class="co">Project · web</span><span class="co" style="color:var(--accent);width:160px;flex:0 0 160px">Shared · crew/flows</span><span class="co n">9</span><span class="go" style="width:110px">—</span></div>
+      <div class="li"><span class="nm"><b>ask-the-index</b><span>one question, the whole tree, no grep</span></span>
+        <span class="co">Shipped</span><span class="co" style="width:160px;flex:0 0 160px">Private</span><span class="co n">3</span><span class="go" style="width:110px">4d ago</span></div>
+      <div class="li"><span class="nm"><b>draft-a-flow</b><span>describe the job, get a graph to correct</span></span>
+        <span class="co">Personal</span><span class="co" style="width:160px;flex:0 0 160px">Private</span><span class="co n">6</span><span class="go" style="width:110px">—</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ 3. USAGE ══════════════════ -->
+<div class="cap"><b>3 — Usage.</b> The tokens. Two things that are <i>not</i> the same and today are told the same: what Sailor <i>recorded spending</i>, and what the account has <i>left</i>. Two columns, never one number.</div>
+<div class="plate" style="height:560px">
+  <nav class="side">
+    <div class="brand"><i class="mk"></i><span>Sailor</span></div>
+    <div class="nav">
+      <div class="r"><span class="i"><svg class="ic" viewBox="0 0 24 24"><use href="#work"/></svg></span>Work<span class="c">6</span></div>
+      <div class="r"><span class="i"><svg class="ic" viewBox="0 0 24 24"><use href="#flows"/></svg></span>Flows<span class="c">14</span></div>
+      <div class="r on"><span class="i"><svg class="ic" viewBox="0 0 24 24"><use href="#usage"/></svg></span>Usage<span class="c">$4.12</span></div>
+    </div>
+    <div class="lab">Projects</div>
+    <div class="nav" style="padding-top:0">
+      <div class="r"><span class="i"><svg class="ic" viewBox="0 0 24 24"><use href="#all"/></svg></span>All projects<span class="c">6</span></div>
+      <div class="r"><span class="i"><i class="dot" style="background:var(--running)"></i></span>api<span class="c">2</span></div>
+      <div class="r"><span class="i"><i class="dot" style="background:var(--ask)"></i></span>web<span class="c">2</span></div>
+      <div class="r"><span class="i"><i class="dot" style="background:var(--done)"></i></span>docs<span class="c">1</span></div>
+      <div class="r"><span class="i"><i class="dot" style="background:var(--fail)"></i></span>cli<span class="c">1</span></div>
+    </div>
+    <div class="btm"><div class="r"><span class="i"><svg class="ic" viewBox="0 0 24 24"><use href="#cog"/></svg></span>Settings</div></div>
+  </nav>
+  <div class="stage">
+    <header class="top"><h1>Usage</h1>
+      <div class="k">Search or run a command <kbd>⌘K</kbd></div>
+      <button class="b">Today</button><button class="b">Ledger</button>
+    </header>
+    <div class="pane">
+      <div class="tiles">
+        <div class="tile"><div class="k2">Spent today · recorded</div><div class="v">$4.12</div>
+          <div class="sub2">across 6 agents and 3 flows · 1.24M tokens</div></div>
+        <div class="tile"><div class="k2">Claude · profile <span style="color:var(--t2)">work</span></div>
+          <div class="v" style="color:var(--warn)">62%</div>
+          <div class="sub2">of the account's window · resets 04:00 · <span style="color:var(--warn)">near the cap</span></div></div>
+        <div class="tile"><div class="k2">Codex · profile <span style="color:var(--t2)">work</span></div><div class="v">18%</div>
+          <div class="sub2">of the account's window · resets 09:00</div></div>
+        <div class="tile"><div class="k2">Runs stopped by their cap</div><div class="v">2</div>
+          <div class="sub2">of 31 today · both on <span style="color:var(--t2)">web</span></div></div>
+      </div>
+      <div class="hd" style="border-bottom:1px solid var(--border)"><span style="flex:1">Run</span><span class="co">Engine</span><span class="co">Profile</span><span class="co n">Tokens</span><span class="co n">Cost</span><span class="co n">Cap</span></div>
+      <div class="li"><span class="nm"><b>review-the-branch</b><span>web · 2m ago · waiting</span></span>
+        <span class="co">codex-cli</span><span class="co">work</span><span class="co n">42,180</span><span class="co n">$0.38</span><span class="co n">$2.00</span></div>
+      <div class="li"><span class="nm"><b>ship-the-release</b><span>api · 41m ago · finished</span></span>
+        <span class="co">claude-code</span><span class="co">work</span><span class="co n">311,904</span><span class="co n">$1.12</span><span class="co n">$3.00</span></div>
+      <div class="li"><span class="nm"><b>chase-the-fault</b><span>web · 1h ago · <span style="color:var(--warn)">stopped by its cap</span></span></span>
+        <span class="co">claude-code</span><span class="co">work</span><span class="co n">528,300</span><span class="co n" style="color:var(--warn)">$2.00</span><span class="co n">$2.00</span></div>
+      <div class="li"><span class="nm"><b>ask-the-index</b><span>docs · 2h ago · finished</span></span>
+        <span class="co">gemini-cli</span><span class="co">reading</span><span class="co n">18,442</span><span class="co n">$0.02</span><span class="co n">$0.50</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ 4. SETTINGS ══════════════════ -->
+<div class="cap"><b>4 — Settings › Agents.</b> The nine screens that lived only behind ⌘K. <i>Engines, profiles and models are one subject</i>, not three peers in a list: an engine runs under a profile and calls a model.</div>
+<div class="plate" style="height:560px">
+  <nav class="side">
+    <div class="brand"><i class="mk"></i><span>Sailor</span></div>
+    <div class="nav">
+      <div class="r"><span class="i"><svg class="ic" viewBox="0 0 24 24"><use href="#work"/></svg></span>Work<span class="c">6</span></div>
+      <div class="r"><span class="i"><svg class="ic" viewBox="0 0 24 24"><use href="#flows"/></svg></span>Flows<span class="c">14</span></div>
+      <div class="r"><span class="i"><svg class="ic" viewBox="0 0 24 24"><use href="#usage"/></svg></span>Usage<span class="c">$4.12</span></div>
+    </div>
+    <div class="lab">Projects</div>
+    <div class="nav" style="padding-top:0">
+      <div class="r"><span class="i"><svg class="ic" viewBox="0 0 24 24"><use href="#all"/></svg></span>All projects<span class="c">6</span></div>
+      <div class="r"><span class="i"><i class="dot" style="background:var(--running)"></i></span>api<span class="c">2</span></div>
+      <div class="r"><span class="i"><i class="dot" style="background:var(--ask)"></i></span>web<span class="c">2</span></div>
+      <div class="r"><span class="i"><i class="dot" style="background:var(--done)"></i></span>docs<span class="c">1</span></div>
+      <div class="r"><span class="i"><i class="dot" style="background:var(--fail)"></i></span>cli<span class="c">1</span></div>
+    </div>
+    <div class="btm"><div class="r on"><span class="i"><svg class="ic" viewBox="0 0 24 24"><use href="#cog"/></svg></span>Settings
+      <span class="att"><svg class="ic s12" viewBox="0 0 24 24" style="color:var(--ask)"><use href="#ask"/></svg></span><span class="c"></span></div></div>
+  </nav>
+  <div class="stage">
+    <header class="top"><h1>Settings</h1><div class="k">Search or run a command <kbd>⌘K</kbd></div></header>
+    <div style="flex:1;display:flex;min-height:0">
+      <nav class="sub">
+        <div class="r on">Agents<span class="att"><svg class="ic s12" viewBox="0 0 24 24" style="color:var(--ask)"><use href="#ask"/></svg></span><span class="c"></span></div>
+        <div class="r">Tools, skills, rules</div>
+        <div class="r">Storage</div>
+        <div class="r">Appearance</div>
+        <div class="r">About</div>
+      </nav>
+      <div class="pane">
+        <h2>Agents</h2>
+        <p class="sd">An engine is a command line. It runs under a profile — an account already signed in — and it calls a model. Three facts about one thing.</p>
+        <div class="card">
+          <div class="ch2">Engines on this machine<span style="margin-left:auto;color:var(--t3);font-weight:400">3 of 4 signed in</span></div>
+          <div class="li"><span class="nm"><b>claude-code</b><span>2.1.4 · /usr/local/bin/claude</span></span>
+            <span class="co">profile <span style="color:var(--t1)">work</span></span><span class="co">opus-5</span>
+            <span class="co" style="color:var(--warn)">62% used</span><span class="go">Open</span></div>
+          <div class="li"><span class="nm"><b>codex-cli</b><span>0.153.4 · /usr/local/bin/codex</span></span>
+            <span class="co">profile <span style="color:var(--t1)">work</span></span><span class="co">gpt-5.4-codex</span>
+            <span class="co">18% used</span><span class="go">Open</span></div>
+          <div class="li"><span class="nm"><b>gemini-cli</b><span>3.0.1 · /usr/local/bin/gemini</span></span>
+            <span class="co">profile <span style="color:var(--t1)">reading</span></span><span class="co">gemini-3-pro</span>
+            <span class="co">4% used</span><span class="go">Open</span></div>
+          <div class="li"><span class="nm"><b>cursor-agent</b><span>found, never signed in</span></span>
+            <span class="co" style="color:var(--ask)"><svg class="ic s12" viewBox="0 0 24 24" style="vertical-align:-2px"><use href="#ask"/></svg> no profile</span>
+            <span class="co">—</span><span class="co">—</span><span class="go" style="color:var(--accent)">Sign in</span></div>
+        </div>
+        <div class="card">
+          <div class="ch2">Profiles<span style="margin-left:auto;color:var(--t3);font-weight:400">an account, already signed in. Sailor reads the token, never renews it</span></div>
+          <div class="li"><span class="nm"><b>work</b><span>~/.config/…/work · adopted 04/09</span></span>
+            <span class="co">2 engines</span><span class="co">$4.12 today</span><span class="co"></span><span class="go">Open</span></div>
+          <div class="li"><span class="nm"><b>reading</b><span>read-only · no writes, no gestures</span></span>
+            <span class="co">1 engine</span><span class="co">$0.02 today</span><span class="co"></span><span class="go">Open</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ 5. EDITOR ══════════════════ -->
+<div class="cap"><b>5 — A flow, open.</b> The graph is not a place you navigate to; it is <i>a flow you opened</i>. Lanes instead of one chain in a void, and no library's watermark in the product.</div>
+<div class="plate" style="height:520px">
+  <nav class="side">
+    <div class="brand"><i class="mk"></i><span>Sailor</span></div>
+    <div class="nav">
+      <div class="r"><span class="i"><svg class="ic" viewBox="0 0 24 24"><use href="#work"/></svg></span>Work<span class="c">6</span></div>
+      <div class="r on"><span class="i"><svg class="ic" viewBox="0 0 24 24"><use href="#flows"/></svg></span>Flows<span class="c">14</span></div>
+      <div class="r"><span class="i"><svg class="ic" viewBox="0 0 24 24"><use href="#usage"/></svg></span>Usage<span class="c">$4.12</span></div>
+    </div>
+    <div class="lab">Steps in this flow</div>
+    <div class="nav" style="padding-top:0">
+      <div class="r"><span class="i"><svg class="ic s12" viewBox="0 0 24 24" style="color:var(--done)"><use href="#done"/></svg></span>chain-brake</div>
+      <div class="r"><span class="i"><svg class="ic s12" viewBox="0 0 24 24" style="color:var(--done)"><use href="#done"/></svg></span>pane-is-idle</div>
+      <div class="r on"><span class="i"><svg class="ic s12" viewBox="0 0 24 24" style="color:var(--ask)"><use href="#ask"/></svg></span>read-the-diff</div>
+      <div class="r"><span class="i"><i class="dot" style="background:var(--border)"></i></span>write-the-note</div>
+      <div class="r"><span class="i"><i class="dot" style="background:var(--border)"></i></span>ask-the-owner</div>
+    </div>
+    <div class="btm"><div class="r"><span class="i"><svg class="ic" viewBox="0 0 24 24"><use href="#cog"/></svg></span>Settings</div></div>
+  </nav>
+  <div class="stage">
+    <header class="top">
+      <h1 style="font-size:14px;font-weight:500;color:var(--t2)">Flows <span class="d3">/</span> <span style="color:var(--t1);font-weight:600">review-the-branch</span></h1>
+      <span class="stat a" style="margin-left:14px"><svg class="ic" viewBox="0 0 24 24"><use href="#ask"/></svg>Waiting for you</span>
+      <div class="k">Search or run a command <kbd>⌘K</kbd></div>
+      <button class="b">Add a step</button><button class="b">Save</button><button class="b p">Run on api</button>
+    </header>
+    <div class="canvas">
+      <div class="lane" style="top:0"><span class="lname">before it starts</span>
+        <div class="wire done" style="left:170px;width:36px"></div>
+        <div class="node" style="left:130px">
+          <div class="kk"><svg class="ic s12" viewBox="0 0 24 24" style="color:var(--done)"><use href="#done"/></svg>Check · went</div>
+          <div class="nn">chain-brake</div></div>
+        <div class="node" style="left:326px">
+          <div class="kk"><svg class="ic s12" viewBox="0 0 24 24" style="color:var(--done)"><use href="#done"/></svg>Check · went</div>
+          <div class="nn">pane-is-idle</div></div>
+      </div>
+      <div class="lane" style="top:76px"><span class="lname">the work</span>
+        <div class="wire" style="left:366px;width:36px"></div>
+        <div class="wire" style="left:562px;width:36px"></div>
+        <div class="node sel" style="left:326px">
+          <div class="kk"><svg class="ic s12" viewBox="0 0 24 24" style="color:var(--ask)"><use href="#ask"/></svg>Agent · waiting</div>
+          <div class="nn">read-the-diff</div></div>
+        <div class="node" style="left:522px">
+          <div class="kk"><svg class="ic s12" viewBox="0 0 24 24" style="color:var(--t3)"><use href="#run"/></svg>Store</div>
+          <div class="nn">write-the-note</div></div>
+        <div class="node" style="left:718px">
+          <div class="kk"><svg class="ic s12" viewBox="0 0 24 24" style="color:var(--t3)"><use href="#ask"/></svg>A person</div>
+          <div class="nn">ask-the-owner</div></div>
+      </div>
+      <div class="lane" style="top:152px;border-bottom:none"><span class="lname">if it breaks</span>
+        <div class="node" style="left:326px;opacity:.62">
+          <div class="kk"><svg class="ic s12" viewBox="0 0 24 24" style="color:var(--t3)"><use href="#fail"/></svg>Gesture</div>
+          <div class="nn">put-it-back</div></div>
+      </div>
+    </div>
+    <div class="ft">
+      <span>7 steps · 2 went · 1 waiting · 4 not started</span>
+      <span>cap <b>$2.00</b> a run</span>
+      <span>data <b>private</b> — two engines refuse this flow</span>
+      <div class="rt"><span>last run 2m ago on <b style="font-family:Inter">web</b></span></div>
+    </div>
+  </div>
+</div>
+
+</body></html>
