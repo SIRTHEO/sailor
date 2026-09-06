@@ -124,9 +124,11 @@ pub fn reserve_of(ceiling: &Ceiling, prices: &PriceMicros) -> Reserve {
 }
 
 /// The ceiling a step declares, in each unit an engine may take one in.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
 pub struct Declared {
+    #[serde(default)]
     pub max_spend_micros: Option<i64>,
+    #[serde(default)]
     pub max_tokens: Option<TokenCounts>,
 }
 

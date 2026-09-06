@@ -83,18 +83,14 @@ pub fn engines_named_in(with: &Value) -> Vec<String> {
 
 /// The per-call ceiling a step's `with` declares, for whoever checks a flow.
 ///
-/// **THE SAME STRUCT THE RUN OBEYS, NOT A SECOND READER OF THE SAME FIELDS.** A
-/// `with` is partial by construction, so the one field with no default is
-/// filled before parsing: two readers of one declaration drift, and the drift
-/// here would be a run held to a ceiling the check never saw.
+/// **A `with` UNDER A CHECK HAS NOT BEEN RESOLVED YET.** Its prompt is still a
+/// reference, so the struct the run obeys does not parse, and reading the
+/// ceiling through it read nothing at all — every step with a composed prompt
+/// was told it declared no ceiling. The two ceiling fields are scalars and
+/// never references: they are read on their own, and `the_check_reads_the_same_
+/// ceiling_the_run_obeys` keeps this reader and that struct one declaration.
 pub fn ceiling_declared_in(with: &Value) -> crate::reserve::Declared {
-    let mut filled = with.clone();
-    if let Some(fields) = filled.as_object_mut() {
-        fields.entry("timeout_secs").or_insert(Value::from(0));
-    }
-    serde_json::from_value::<EngineSpec>(filled)
-        .map(|spec| ceiling_of(&spec))
-        .unwrap_or_default()
+    serde_json::from_value::<crate::reserve::Declared>(with.clone()).unwrap_or_default()
 }
 
 /// The ceiling this step declares, in every unit an engine may take one in.
@@ -287,5 +283,40 @@ mod tests {
         );
         assert!(engines_named_in(&json!({"tool": 3})).is_empty());
         assert!(engines_named_in(&json!({"bin": "sh"})).is_empty());
+    }
+
+    /// **A CHECK RUNS BEFORE ANYTHING IS RESOLVED**, so a prompt is still the
+    /// reference that will compose it. Every shipped step writes one, and each
+    /// was told it declared no ceiling — a step held to a ceiling the check
+    /// could not see is exactly what the ceiling exists to prevent.
+    #[test]
+    fn a_ceiling_is_read_from_a_with_whose_prompt_is_still_a_reference() {
+        let with = json!({
+            "tool": "uno",
+            "timeout_secs": 900,
+            "stdin": {"$join": ["do this: ", {"$from": "/trigger/text"}]},
+            "max_spend_micros": 6_000_000,
+        });
+        assert_eq!(
+            ceiling_declared_in(&with).max_spend_micros,
+            Some(6_000_000),
+            "the ceiling is a number beside the reference, not inside it"
+        );
+    }
+
+    /// The reader of a partial `with` and the struct the run obeys are one
+    /// declaration: where the whole spec parses, the two must agree, or a run
+    /// obeys a ceiling nobody checked.
+    #[test]
+    fn the_check_reads_the_same_ceiling_the_run_obeys() {
+        for with in [
+            json!({"tool": "uno", "timeout_secs": 1, "max_spend_micros": 500_000}),
+            json!({"tool": "uno", "timeout_secs": 1}),
+            json!({"tool": "uno", "timeout_secs": 1, "max_tokens": {"input": 10, "output": 20}}),
+        ] {
+            let spec: EngineSpec =
+                serde_json::from_value(with.clone()).expect("this `with` is whole");
+            assert_eq!(ceiling_declared_in(&with), ceiling_of(&spec));
+        }
     }
 }
