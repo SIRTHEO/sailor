@@ -23,6 +23,12 @@ fn nothing_the_executable_carries_knows_how_to_rebuild_it() {
     // The dependency is what would drag the live mode into the shipped binary:
     // a mention in a comment is prose, a line in `[dependencies]` is cargo.
     let manifest = manifest_of("sailor");
+    workspace::measured_against(
+        manifest.lines().count(),
+        "lines of the command line's manifest read",
+        1,
+        "crate the executable must not depend on",
+    );
     let depends = manifest
         .lines()
         .any(|line| line.trim_start().starts_with("supervisor"));
@@ -35,6 +41,12 @@ fn nothing_the_executable_carries_knows_how_to_rebuild_it() {
 
 #[test]
 fn no_release_target_ships_the_live_mode() {
+    workspace::measured_against(
+        release::TARGETS.len(),
+        "release targets read",
+        1,
+        "binary no target may ship",
+    );
     for target in release::TARGETS {
         assert_ne!(
             target.bin, "sailor-live",
