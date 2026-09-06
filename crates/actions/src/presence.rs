@@ -365,8 +365,8 @@ impl Action for WorkClaimAction {
                 return Err(ActionError::new(
                     "work_is_shared",
                     format!(
-                        "l'albero di lavoro è già annunciato da: {}. \
-                         L'annuncio resta scritto: chi riprende lo rinnova.",
+                        "this work tree is already claimed by: {}. \
+                         The claim stays written: whoever takes the work up renews it.",
                         holding.join(", ")
                     ),
                 ));
@@ -491,7 +491,7 @@ mod tests {
             "sailor-actions-presence-{}-{sequence}",
             std::process::id()
         ));
-        let ledger = Ledger::open(&path).expect("aprire il deposito");
+        let ledger = Ledger::open(&path).expect("open the ledger");
         (ledger, TestStore(path))
     }
 
@@ -501,11 +501,11 @@ mod tests {
         json!({
             "agent": agent,
             "pid": pid,
-            "repository": "/casa/progetto/.git",
+            "repository": "/home/project/.git",
             "workdir": workdir,
-            "branch": "sorgenti",
+            "branch": "main",
             "paths": paths,
-            "doing": "qualcosa",
+            "doing": "something",
             "at": at,
             "lease_seconds": 900,
         })
@@ -513,7 +513,7 @@ mod tests {
 
     fn went(outcome: ActionOutcome) -> Value {
         let ActionOutcome::Went(value) = outcome else {
-            panic!("un nodo che tocca un deposito locale non aspetta nessuno");
+            panic!("a node touching a local ledger waits for nobody");
         };
         value
     }
@@ -528,26 +528,26 @@ mod tests {
 
         action
             .execute(
-                &claim("prima", 101, "/casa/progetto", NOON, &[]),
+                &claim("first", 101, "/home/project", NOON, &[]),
                 &shared,
             )
-            .expect("il primo annuncio");
+            .expect("the first claim");
         let second = went(
             action
                 .execute(
-                    &claim("seconda", 102, "/casa/progetto", NOON + 10, &[]),
+                    &claim("second", 102, "/home/project", NOON + 10, &[]),
                     &shared,
                 )
-                .expect("il secondo annuncio"),
+                .expect("the second claim"),
         );
 
-        let collisions = second["collisions"].as_array().expect("le collisioni");
+        let collisions = second["collisions"].as_array().expect("the collisions");
         assert_eq!(
             collisions.len(),
             1,
-            "il secondo agente deve vedere il primo"
+            "the second agent has to see the first"
         );
-        assert_eq!(collisions[0]["agent"], json!("prima"));
+        assert_eq!(collisions[0]["agent"], json!("first"));
         assert_eq!(collisions[0]["kind"], json!("same_paths"));
     }
 
@@ -560,23 +560,23 @@ mod tests {
 
         action
             .execute(
-                &claim("morta", 101, "/casa/progetto", NOON, &[]),
+                &claim("the-one-that-dies", 101, "/home/project", NOON, &[]),
                 &shared,
             )
-            .expect("l'annuncio di chi poi muore");
+            .expect("the claim of the one that dies");
         let later = went(
             action
                 .execute(
-                    &claim("viva", 102, "/casa/progetto", NOON + 901, &[]),
+                    &claim("the-one-that-stays", 102, "/home/project", NOON + 901, &[]),
                     &shared,
                 )
-                .expect("l'annuncio di dopo"),
+                .expect("the later claim"),
         );
 
         assert_eq!(
-            later["collisions"].as_array().expect("le collisioni").len(),
+            later["collisions"].as_array().expect("the collisions").len(),
             0,
-            "un annuncio scaduto non trattiene nessuno"
+            "an expired claim holds nobody back"
         );
     }
 
@@ -590,15 +590,15 @@ mod tests {
         let terminal = |agent: &str, tty: &str| Claim {
             agent: agent.to_owned(),
             key: terminal_claim_key(tty),
-            repository: "/casa/progetto/.git".to_owned(),
-            workdir: Some("/casa/progetto".to_owned()),
+            repository: "/home/project/.git".to_owned(),
+            workdir: Some("/home/project".to_owned()),
             branch: Some("sorgenti".to_owned()),
             paths: Vec::new(),
             doing: None,
             pid: 101,
             at: NOON,
             lease_seconds: 900,
-            conversation: Some(format!("conversazione-di-{agent}")),
+            conversation: Some(format!("conversation-of-{agent}")),
             state: "working".to_owned(),
         };
         // THE THIRD IS THE SAME COMMAND LINE IN ANOTHER TERMINAL, which is the
@@ -606,30 +606,30 @@ mod tests {
         // holder collapses: two sessions would become one row, and the survey
         // would say one agent where two are typing.
         for (agent, tty) in [
-            ("unmotore (questa-macchina)", "ttys004"),
-            ("un-altro (prove)", "ttys009"),
-            ("unmotore (questa-macchina)", "ttys010"),
+            ("anengine (this-machine)", "ttys004"),
+            ("another-one (tests)", "ttys009"),
+            ("anengine (this-machine)", "ttys010"),
         ] {
             ledger
                 .put_record(&claim_record(&terminal(agent, tty)))
-                .expect("l'annuncio si scrive");
+                .expect("the claim is written");
         }
 
         let survey = WorkSurveyAction::new(Some(ledger));
         let answer = went(
             survey
                 .execute(&json!({"at": NOON + 60}), &SharedState::new())
-                .expect("il censimento"),
+                .expect("the survey"),
         );
 
-        let working = answer["working"].as_array().expect("chi lavora");
+        let working = answer["working"].as_array().expect("who is working");
         let names: Vec<&str> = working
             .iter()
             .filter_map(|entry| entry["agent"].as_str())
             .collect();
         assert_eq!(names.len(), 3, "{answer}");
-        assert!(names.contains(&"unmotore (questa-macchina)"), "{answer}");
-        assert!(names.contains(&"un-altro (prove)"), "{answer}");
+        assert!(names.contains(&"anengine (this-machine)"), "{answer}");
+        assert!(names.contains(&"another-one (tests)"), "{answer}");
         // AND EACH CARRIES ITS OWN CONVERSATION: without it the two rows say
         // that two agents are here and give no way to reach either.
         assert_ne!(
@@ -649,30 +649,30 @@ mod tests {
 
         action
             .execute(
-                &claim("prima", 101, "/casa/progetto", NOON, &[]),
+                &claim("first", 101, "/home/project", NOON, &[]),
                 &shared,
             )
-            .expect("prima");
+            .expect("first");
         action
             .execute(
-                &claim("seconda", 102, "/casa/progetto", NOON, &[]),
+                &claim("second", 102, "/home/project", NOON, &[]),
                 &shared,
             )
-            .expect("seconda");
+            .expect("second");
         action
             .execute(
-                &claim("prima", 101, "/casa/progetto", NOON + 60, &[]),
+                &claim("first", 101, "/home/project", NOON + 60, &[]),
                 &shared,
             )
-            .expect("il rinnovo della prima");
+            .expect("the first one renewing");
 
         let seen = went(
             survey
                 .execute(&json!({"at": NOON + 61}), &shared)
-                .expect("il censimento"),
+                .expect("the survey"),
         );
-        let working = seen["working"].as_array().expect("chi lavora");
-        assert_eq!(working.len(), 2, "il rinnovo di una non cancella l'altra");
+        let working = seen["working"].as_array().expect("who is working");
+        assert_eq!(working.len(), 2, "one renewing does not erase the other");
     }
 
     /// **THE CASE OF THE SEVEN.** Different trees of one repository see each
@@ -685,20 +685,20 @@ mod tests {
 
         action
             .execute(
-                &claim("prima", 101, "/casa/progetto", NOON, &[]),
+                &claim("first", 101, "/home/project", NOON, &[]),
                 &shared,
             )
-            .expect("prima");
+            .expect("first");
         let second = went(
             action
                 .execute(
-                    &claim("seconda", 102, "/casa/altro-albero", NOON, &[]),
+                    &claim("second", 102, "/home/another-tree", NOON, &[]),
                     &shared,
                 )
-                .expect("seconda"),
+                .expect("second"),
         );
 
-        let collisions = second["collisions"].as_array().expect("le collisioni");
+        let collisions = second["collisions"].as_array().expect("the collisions");
         assert_eq!(collisions.len(), 1);
         assert_eq!(collisions[0]["kind"], json!("same_repository"));
     }
@@ -713,17 +713,17 @@ mod tests {
 
         action
             .execute(
-                &claim("prima", 101, "/casa/progetto", NOON, &["crates/ledger"]),
+                &claim("first", 101, "/home/project", NOON, &["crates/ledger"]),
                 &shared,
             )
-            .expect("prima");
+            .expect("first");
         let second = went(
             action
                 .execute(
-                    &claim("seconda", 102, "/casa/progetto", NOON, &["crates/actions"]),
+                    &claim("second", 102, "/home/project", NOON, &["crates/actions"]),
                     &shared,
                 )
-                .expect("seconda"),
+                .expect("second"),
         );
         assert_eq!(second["collisions"][0]["kind"], json!("same_workdir"));
 
@@ -731,25 +731,25 @@ mod tests {
             action
                 .execute(
                     &claim(
-                        "terza",
+                        "third",
                         103,
-                        "/casa/progetto",
+                        "/home/project",
                         NOON,
                         &["crates/actions/src/lib.rs"],
                     ),
                     &shared,
                 )
-                .expect("terza"),
+                .expect("third"),
         );
         let kinds: Vec<&str> = third["collisions"]
             .as_array()
-            .expect("le collisioni")
+            .expect("the collisions")
             .iter()
-            .map(|c| c["kind"].as_str().expect("la specie"))
+            .map(|c| c["kind"].as_str().expect("the kind"))
             .collect();
         assert!(
             kinds.contains(&"same_paths"),
-            "un file dentro `crates/actions` tocca chi ha preso `crates/actions`: {kinds:?}"
+            "a file inside `crates/actions` touches whoever took `crates/actions`: {kinds:?}"
         );
     }
 
@@ -764,22 +764,22 @@ mod tests {
 
         action
             .execute(
-                &claim("prima", 101, "/casa/progetto", NOON, &["crates/actions"]),
+                &claim("first", 101, "/home/project", NOON, &["crates/actions"]),
                 &shared,
             )
-            .expect("prima");
+            .expect("first");
         let second = went(
             action
                 .execute(
-                    &claim("seconda", 102, "/casa/progetto", NOON, &["crates/act"]),
+                    &claim("second", 102, "/home/project", NOON, &["crates/act"]),
                     &shared,
                 )
-                .expect("seconda"),
+                .expect("second"),
         );
         assert_eq!(
             second["collisions"][0]["kind"],
             json!("same_workdir"),
-            "`crates/act` e `crates/actions` sono due cartelle diverse"
+            "`crates/act` and `crates/actions` are two different directories"
         );
     }
 
@@ -795,48 +795,48 @@ mod tests {
 
         action
             .execute(
-                &claim("prima", 101, "/casa/progetto", NOON, &[]),
+                &claim("first", 101, "/home/project", NOON, &[]),
                 &shared,
             )
-            .expect("prima");
+            .expect("first");
         release
             .execute(
-                &json!({"agent": "prima", "pid": 101, "at": NOON + 30}),
+                &json!({"agent": "first", "pid": 101, "at": NOON + 30}),
                 &shared,
             )
-            .expect("il rilascio");
+            .expect("the release");
 
         let second = went(
             action
                 .execute(
-                    &claim("seconda", 102, "/casa/progetto", NOON + 31, &[]),
+                    &claim("second", 102, "/home/project", NOON + 31, &[]),
                     &shared,
                 )
-                .expect("seconda"),
+                .expect("second"),
         );
         assert_eq!(
             second["collisions"]
                 .as_array()
-                .expect("le collisioni")
+                .expect("the collisions")
                 .len(),
             0,
-            "chi ha rilasciato non trattiene più"
+            "whoever released holds nothing any more"
         );
 
         let seen = went(
             survey
                 .execute(&json!({"at": NOON + 32}), &shared)
-                .expect("il censimento"),
+                .expect("the survey"),
         );
-        let gone = seen["gone"].as_array().expect("chi non c'è più");
+        let gone = seen["gone"].as_array().expect("who is gone");
         let released = gone
             .iter()
-            .find(|entry| entry["agent"] == json!("prima"))
-            .expect("la prima sta fra chi non c'è più");
+            .find(|entry| entry["agent"] == json!("first"))
+            .expect("the first one is among those gone");
         assert_eq!(
             released["why"],
             json!("released"),
-            "un rilascio dichiarato non si confonde con una scadenza"
+            "a declared release is never mistaken for an expiry"
         );
     }
 
@@ -849,20 +849,20 @@ mod tests {
 
         action
             .execute(
-                &claim("prima", 101, "/casa/progetto", NOON, &[]),
+                &claim("first", 101, "/home/project", NOON, &[]),
                 &shared,
             )
-            .expect("prima");
+            .expect("first");
 
-        let mut wanted = claim("seconda", 102, "/casa/progetto", NOON + 1, &[]);
+        let mut wanted = claim("second", 102, "/home/project", NOON + 1, &[]);
         wanted["refuse_when_shared"] = json!(true);
         let error = action
             .execute(&wanted, &shared)
-            .expect_err("il secondo si ferma perché l'ha chiesto");
+            .expect_err("the second stops because it asked to");
         assert_eq!(error.class, "work_is_shared");
         assert!(
-            error.said.contains("prima"),
-            "il rifiuto nomina chi c'era: {}",
+            error.said.contains("first"),
+            "the refusal names whoever was already there: {}",
             error.said
         );
     }
@@ -878,17 +878,17 @@ mod tests {
 
         action
             .execute(
-                &claim("prima", 101, "/casa/progetto", NOON, &[]),
+                &claim("first", 101, "/home/project", NOON, &[]),
                 &shared,
             )
-            .expect("prima");
+            .expect("first");
 
-        let mut wanted = claim("seconda", 102, "/casa/altro-albero", NOON + 1, &[]);
+        let mut wanted = claim("second", 102, "/home/another-tree", NOON + 1, &[]);
         wanted["refuse_when_shared"] = json!(true);
         let outcome = went(
             action
                 .execute(&wanted, &shared)
-                .expect("un altro albero non ferma nessuno"),
+                .expect("another tree stops nobody"),
         );
         assert_eq!(outcome["collisions"][0]["kind"], json!("same_repository"));
     }
@@ -903,28 +903,28 @@ mod tests {
 
         action
             .execute(
-                &claim("morta", 101, "/casa/progetto", NOON, &[]),
+                &claim("the-one-that-dies", 101, "/home/project", NOON, &[]),
                 &shared,
             )
-            .expect("chi poi muore");
+            .expect("the one that then dies");
         action
             .execute(
-                &claim("viva", 102, "/casa/progetto", NOON + 900, &[]),
+                &claim("the-one-that-stays", 102, "/home/project", NOON + 900, &[]),
                 &shared,
             )
-            .expect("chi resta");
+            .expect("the one that stays");
 
         let seen = went(
             survey
                 .execute(&json!({"at": NOON + 901}), &shared)
-                .expect("il censimento"),
+                .expect("the survey"),
         );
-        let working = seen["working"].as_array().expect("chi lavora");
+        let working = seen["working"].as_array().expect("who is working");
         assert_eq!(working.len(), 1);
-        assert_eq!(working[0]["agent"], json!("viva"));
-        let gone = seen["gone"].as_array().expect("chi non c'è più");
+        assert_eq!(working[0]["agent"], json!("the-one-that-stays"));
+        let gone = seen["gone"].as_array().expect("who is gone");
         assert_eq!(gone.len(), 1);
-        assert_eq!(gone[0]["agent"], json!("morta"));
+        assert_eq!(gone[0]["agent"], json!("the-one-that-dies"));
         assert_eq!(gone[0]["why"], json!("expired"));
     }
 

@@ -54,7 +54,7 @@ const CLAUDE_SAYS_NO: &str = r#"{
   "authMethod": "none",
   "apiProvider": "firstParty",
   "analyticsDisabled": false,
-  "projectsDirectory": "/una/casa/vuota/projects"
+  "projectsDirectory": "/an/empty/home/projects"
 }"#;
 
 const CLAUDE_SAYS_YES: &str = r#"{
@@ -62,7 +62,7 @@ const CLAUDE_SAYS_YES: &str = r#"{
   "authMethod": "claude.ai",
   "apiProvider": "firstParty",
   "analyticsDisabled": false,
-  "projectsDirectory": "/una/casa/vera/projects",
+  "projectsDirectory": "/a/real/home/projects",
   "subscriptionType": "max"
 }"#;
 
@@ -77,14 +77,14 @@ fn codex_says_it_in_prose_and_both_answers_are_recognised() {
             judge_login_status(&codex_recipe(), "", CODEX_SAYS_NO),
             LoginVerdict::LoggedOut { .. }
         ),
-        "una casa senza credenziali deve risultare non autenticata"
+        "a home with no credentials has to read as not authenticated"
     );
     assert!(
         matches!(
             judge_login_status(&codex_recipe(), "", CODEX_SAYS_YES),
             LoginVerdict::LoggedIn { .. }
         ),
-        "una casa autenticata deve risultare autenticata"
+        "an authenticated home has to read as authenticated"
     );
 }
 
@@ -115,14 +115,14 @@ fn claude_says_it_in_json_and_the_pointer_reaches_the_boolean() {
             judge_login_status(&claude_recipe(), CLAUDE_SAYS_NO, ""),
             LoginVerdict::LoggedOut { .. }
         ),
-        "`\"loggedIn\": false` è un no"
+        "`\"loggedIn\": false` is a no"
     );
     assert!(
         matches!(
             judge_login_status(&claude_recipe(), CLAUDE_SAYS_YES, ""),
             LoginVerdict::LoggedIn { .. }
         ),
-        "`\"loggedIn\": true` è un sì"
+        "`\"loggedIn\": true` is a yes"
     );
 }
 
@@ -146,7 +146,7 @@ fn the_negative_answer_wins_even_when_it_contains_the_positive_words() {
             judge_login_status(&sloppy, "", CODEX_SAYS_NO),
             LoginVerdict::LoggedOut { .. }
         ),
-        "il sì è stato riconosciuto dentro un no: è il difetto originale rimesso"
+        "the yes was recognised inside a no: the original defect put back"
     );
 }
 
@@ -191,9 +191,9 @@ fn an_answer_neither_form_recognises_is_not_authenticated() {
     match judge_login_status(&codex_recipe(), "", said) {
         LoginVerdict::Unrecognised { said: words } => assert!(
             words.contains("api.openai.com"),
-            "le parole del motore sono la diagnosi: {words}"
+            "the engine's words are the diagnosis: {words}"
         ),
-        other => panic!("una risposta che non si riconosce non è un verdetto: {other:?}"),
+        other => panic!("an answer nobody recognises is no verdict: {other:?}"),
     }
 }
 
@@ -215,35 +215,35 @@ fn what_gets_shown_is_the_answer_not_the_envelope_around_it() {
     let owner = r#"{
   "loggedIn": true,
   "authMethod": "claude.ai",
-  "email": "qualcuno@example.invalid",
+  "email": "somebody@example.invalid",
   "orgId": "5ae89c2b-0000-0000-0000-000000000000",
-  "orgName": "l'organizzazione di qualcuno",
+  "orgName": "somebody's organisation",
   "subscriptionType": "max"
 }"#;
     let LoginVerdict::LoggedIn { said } = judge_login_status(&claude_recipe(), owner, "") else {
-        panic!("l'involucro dice di sì");
+        panic!("the envelope says yes");
     };
     for private in [
-        "qualcuno@example.invalid",
+        "somebody@example.invalid",
         "5ae89c2b",
-        "l'organizzazione di qualcuno",
+        "somebody's organisation",
         "max",
     ] {
         assert!(
             !said.contains(private),
-            "«{private}» è finito in un testo che si stampa e si incolla: {said}"
+            "«{private}» ended up in a text that gets printed and pasted: {said}"
         );
     }
     assert_eq!(
         said, "true",
-        "la risposta è il valore che il puntatore isola"
+        "the answer is the value the pointer isolates"
     );
 
     // With no pointer there is nothing to isolate, and the engine's prose stays
     // the whole diagnosis: `codex`'s case, where the sentence names nobody.
     let LoginVerdict::LoggedOut { said } = judge_login_status(&codex_recipe(), "", CODEX_SAYS_NO)
     else {
-        panic!("la prosa dice di no");
+        panic!("the prose says no");
     };
     assert_eq!(said, CODEX_SAYS_NO);
 }
@@ -259,6 +259,6 @@ fn a_pointer_that_finds_nothing_never_says_authenticated() {
             judge_login_status(&claude_recipe(), said, ""),
             LoginVerdict::Unrecognised { .. }
         ),
-        "un cammino di chiavi su un'uscita in prosa non trova niente, e non è un sì"
+        "a path of keys over an output in prose finds nothing, and that is no yes"
     );
 }

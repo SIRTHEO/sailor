@@ -689,7 +689,7 @@ mod tests {
         assert!(matches!(outcome, RunOutcome::TimedOut));
         assert!(
             start.elapsed() < secs(10),
-            "il tetto deve troncare, non solo essere misurato: {:?}",
+            "the cap has to cut, not merely be measured: {:?}",
             start.elapsed()
         );
     }
@@ -709,14 +709,14 @@ mod tests {
         assert!(matches!(outcome, RunOutcome::TimedOut));
         assert!(
             start.elapsed() < secs(10),
-            "il nipote ha tenuto aperta la pipe fino alla fine: {:?}",
+            "the grandchild held the pipe open to the very end: {:?}",
             start.elapsed()
         );
     }
 
     #[test]
     fn a_missing_binary_reports_spawn_failed() {
-        let cmd = Command::new("/nessun/binario/qui-di-sicuro");
+        let cmd = Command::new("/no/binary/here-for-sure");
         assert!(matches!(
             run_with_timeout(cmd, secs(1)),
             RunOutcome::SpawnFailed(_)
@@ -726,11 +726,11 @@ mod tests {
     #[test]
     fn stdin_reaches_the_child_and_gets_echoed_back() {
         let cmd = Command::new("cat");
-        match run_with_timeout_and_stdin(cmd, b"un segreto pubblico\n", secs(5)) {
+        match run_with_timeout_and_stdin(cmd, b"a public secret\n", secs(5)) {
             RunOutcome::Finished { stdout, .. } => {
-                assert_eq!(String::from_utf8_lossy(&stdout), "un segreto pubblico\n");
+                assert_eq!(String::from_utf8_lossy(&stdout), "a public secret\n");
             }
-            _ => panic!("cat doveva rispondere"),
+            _ => panic!("cat had to answer"),
         }
     }
 
@@ -786,18 +786,18 @@ mod tests {
     #[test]
     fn the_first_chunk_arrives_while_the_child_is_still_alive() {
         let mut cmd = Command::new("sh");
-        cmd.arg("-c").arg("echo primo; sleep 4; echo secondo");
+        cmd.arg("-c").arg("echo first; sleep 4; echo second");
         let recorder = Recorder::new();
         let start = Instant::now();
         let outcome = run_with_timeout_watched(cmd, secs(30), Some(&recorder));
         let whole = start.elapsed();
         assert!(
             whole >= secs(4),
-            "il comando doveva davvero durare quattro secondi, altrimenti la \
-             misura non distingue niente: {whole:?}"
+            "the command really had to last four seconds, or the measure tells \
+             nothing apart: {whole:?}"
         );
         let seen = recorder.seen();
-        let (when, pipe, bytes) = seen.first().cloned().expect("qualcosa doveva arrivare");
+        let (when, pipe, bytes) = seen.first().cloned().expect("something had to arrive");
         // THE TIME BEFORE ALL THE REST: the instant is what this test measures,
         // and reading it last would hide the real reason for a red. It holds
         // against the empty-chunk assertion below too: put block delivery back
@@ -806,23 +806,23 @@ mod tests {
         // defect in place of the big one.
         assert!(
             when < secs(2),
-            "il primo pezzo è arrivato dopo {when:?}, cioè con la fine del \
-             comando e non mentre girava"
+            "the first chunk arrived after {when:?}, that is with the end of the \
+             command and not while it ran"
         );
         assert!(
             seen.iter().all(|(_, _, bytes)| !bytes.is_empty()),
-            "un pezzo vuoto non è qualcosa che il figlio ha detto: {seen:?}"
+            "an empty chunk is not something the child said: {seen:?}"
         );
         assert_eq!(pipe, Pipe::Stdout);
         assert!(
-            String::from_utf8_lossy(&bytes).contains("primo"),
-            "il primo pezzo doveva essere «primo»: {:?}",
+            String::from_utf8_lossy(&bytes).contains("first"),
+            "the first chunk had to be «first»: {:?}",
             String::from_utf8_lossy(&bytes)
         );
         match outcome {
             RunOutcome::Finished { stdout, .. } => {
                 let all = String::from_utf8_lossy(&stdout).into_owned();
-                assert!(all.contains("primo") && all.contains("secondo"), "{all}");
+                assert!(all.contains("first") && all.contains("second"), "{all}");
             }
             _ => panic!("doveva finire in tempo"),
         }
@@ -858,15 +858,15 @@ mod tests {
     fn the_delivered_chunks_add_up_to_the_accumulated_output() {
         let mut cmd = Command::new("sh");
         cmd.arg("-c")
-            .arg("i=0; while [ $i -lt 500 ]; do echo \"riga $i di uscita normale\"; i=$((i+1)); done; echo problema 1>&2");
+            .arg("i=0; while [ $i -lt 500 ]; do echo \"line $i of ordinary output\"; i=$((i+1)); done; echo trouble 1>&2");
         let recorder = Recorder::new();
         match run_with_timeout_watched(cmd, secs(30), Some(&recorder)) {
             RunOutcome::Finished { stdout, stderr, .. } => {
                 assert_eq!(recorder.joined(Pipe::Stdout), stdout);
                 assert_eq!(recorder.joined(Pipe::Stderr), stderr);
-                assert!(!stdout.is_empty(), "l'uscita non doveva essere vuota");
+                assert!(!stdout.is_empty(), "the output was not to be empty");
             }
-            _ => panic!("doveva finire in tempo"),
+            _ => panic!("it had to finish in time"),
         }
     }
 
@@ -880,21 +880,21 @@ mod tests {
         // and then the grandchild is waited for, not the cap. That is a
         // property of the shell, and not this test's job to judge: the cap is
         // measured here, so the killed process is made the only writer.
-        cmd.arg("-c").arg("echo vivo; exec sleep 60");
+        cmd.arg("-c").arg("echo alive; exec sleep 60");
         let recorder = Recorder::new();
         let start = Instant::now();
         let outcome = run_with_timeout_watched(cmd, secs(3), Some(&recorder));
         assert!(matches!(outcome, RunOutcome::TimedOut));
         assert!(
             start.elapsed() < secs(30),
-            "il tetto deve troncare: {:?}",
+            "the cap has to cut: {:?}",
             start.elapsed()
         );
         let out = String::from_utf8_lossy(&recorder.joined(Pipe::Stdout)).into_owned();
         assert_eq!(
-            out.matches("vivo").count(),
+            out.matches("alive").count(),
             1,
-            "«vivo» doveva arrivare una volta sola: {out:?}"
+            "«alive» had to arrive exactly once: {out:?}"
         );
     }
 
@@ -903,7 +903,7 @@ mod tests {
     /// byte for byte. Live delivery is not a branch that changes the outcome.
     #[test]
     fn without_a_watcher_the_outcome_is_byte_for_byte_the_same() {
-        let command = "echo prima; echo dopo; echo lamentela 1>&2";
+        let command = "echo before; echo after; echo complaint 1>&2";
         let mut watched_cmd = Command::new("sh");
         watched_cmd.arg("-c").arg(command);
         let recorder = Recorder::new();
@@ -929,12 +929,12 @@ mod tests {
                 assert_eq!(watched_err, plain_err);
                 assert_eq!(
                     String::from_utf8_lossy(&plain_out).trim(),
-                    "prima\ndopo",
-                    "l'uscita intera deve restare nell'esito"
+                    "before\nafter",
+                    "the whole output has to stay in the outcome"
                 );
-                assert_eq!(String::from_utf8_lossy(&plain_err).trim(), "lamentela");
+                assert_eq!(String::from_utf8_lossy(&plain_err).trim(), "complaint");
             }
-            _ => panic!("tutti e due dovevano finire in tempo"),
+            _ => panic!("both of them had to finish in time"),
         }
     }
 
@@ -986,7 +986,7 @@ mod tests {
         };
         match invoke_external_engine(&invocation) {
             EngineResult::ExitError { stderr, .. } => assert!(stderr.contains("boom"), "{stderr}"),
-            _ => panic!("un'uscita diversa da zero è un errore di uscita, non un successo"),
+            _ => panic!("an exit other than zero is an exit error, not a success"),
         }
     }
 
@@ -1181,11 +1181,11 @@ mod tests {
     #[test]
     fn a_check_runs_where_it_is_told() {
         let elsewhere =
-            std::env::temp_dir().join(format!("sailor-verifica-altrove-{}", std::process::id()));
-        std::fs::create_dir_all(&elsewhere).expect("cartella di prova");
-        std::fs::write(elsewhere.join("il-testimone"), "x").expect("testimone");
+            std::env::temp_dir().join(format!("sailor-check-elsewhere-{}", std::process::id()));
+        std::fs::create_dir_all(&elsewhere).expect("the scratch directory");
+        std::fs::write(elsewhere.join("the-witness"), "x").expect("the witness");
         let invocation = CheckInvocation {
-            command: "test -f il-testimone".to_string(),
+            command: "test -f the-witness".to_string(),
             env: BTreeMap::new(),
             timeout: secs(5),
             workdir: Some(elsewhere.display().to_string()),
@@ -1228,7 +1228,7 @@ mod tests {
         );
         assert!(
             matches!(outcome, RunOutcome::Finished { .. }),
-            "il figlio doveva finire da solo: il tetto di tempo non c'entra"
+            "the child had to finish on its own: the time cap has no part in it"
         );
         asked
     }
@@ -1241,11 +1241,11 @@ mod tests {
         let asked = pauses_asked_while_running("sleep 0.1");
         assert!(
             !asked.is_empty(),
-            "il ciclo deve aver aspettato almeno una volta, o non prova niente"
+            "the loop has to have waited at least once, or it proves nothing"
         );
         assert!(
             asked[0] <= Duration::from_millis(2),
-            "la prima pausa dev'essere dell'ordine del millisecondo, non di cinquanta: {:?}",
+            "the first pause has to be of the order of a millisecond, not of fifty: {:?}",
             asked[0]
         );
     }
@@ -1283,12 +1283,12 @@ mod tests {
                 Duration::from_millis(4),
                 Duration::from_millis(8),
             ],
-            "la crescita è un raddoppio: {seen:?}"
+            "the growth is a doubling: {seen:?}"
         );
         assert_eq!(
             seen.last().copied(),
             Some(MAX_POLL_PAUSE),
-            "sedici raddoppi devono aver saturato sul tetto: {seen:?}"
+            "sixteen doublings must have saturated at the cap: {seen:?}"
         );
     }
 
@@ -1296,27 +1296,27 @@ mod tests {
     fn the_poll_pause_grows_up_to_the_cap_and_stays_there() {
         assert!(
             MAX_POLL_PAUSE <= Duration::from_millis(50),
-            "il tetto non può superare i 50 ms che il ciclo già pagava"
+            "the cap cannot exceed the 50 ms the loop was already paying"
         );
         let asked = pauses_asked_while_running("sleep 0.6");
         let reached = asked
             .iter()
             .position(|&one| one == MAX_POLL_PAUSE)
             .unwrap_or_else(|| {
-                panic!("mezzo secondo deve bastare per arrivare al tetto: {asked:?}")
+                panic!("half a second has to be enough to reach the cap: {asked:?}")
             });
         let (climbing, at_cap) = asked.split_at(reached);
         assert!(
             !climbing.is_empty(),
-            "la prima pausa è già il tetto: qui non cresce niente, è l'attesa fissa di prima — {asked:?}"
+            "the first pause is already the cap: nothing climbs here, it is the old fixed wait — {asked:?}"
         );
         assert!(
             climbing.windows(2).all(|pair| pair[0] < pair[1]),
-            "finché non tocca il tetto ogni pausa dev'essere più lunga della precedente: {asked:?}"
+            "until it touches the cap, every pause has to be longer than the one before: {asked:?}"
         );
         assert!(
             at_cap.iter().all(|&one| one == MAX_POLL_PAUSE),
-            "arrivata al tetto la pausa non deve più muoversi: {asked:?}"
+            "once at the cap the pause must not move again: {asked:?}"
         );
     }
 }

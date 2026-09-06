@@ -123,9 +123,9 @@ impl ExternalEngineAction {
                     return Err(ActionError::new(
                         "no_tool_resolver",
                         format!(
-                            "il passo chiede lo strumento «{first}», ma questo motore è stato \
-                             registrato senza un modo per risolverlo: chi costruisce il registro \
-                             deve registrare `{EXTERNAL_ENGINE_ACTION}` con \
+                            "the step asks for the tool «{first}», but this engine was registered \
+                             with no way to resolve it: whoever builds the registry has to \
+                             register `{EXTERNAL_ENGINE_ACTION}` with \
                              `ExternalEngineAction::resolving_with(...)`"
                         ),
                     ));
@@ -140,8 +140,8 @@ impl ExternalEngineAction {
                 if ids.is_empty() {
                     return Err(ActionError::new(
                         "invalid_input",
-                        "il passo dichiara una catena di motori vuota: serve almeno un \
-                         identificativo, o `tool` va tolto del tutto",
+                        "the step declares an empty engine chain: it wants at least one \
+                         identifier, or `tool` has to go altogether",
                     ));
                 }
                 let step_said_args = !spec.args.is_empty();
@@ -268,9 +268,9 @@ impl ExternalEngineAction {
                                 refused.push(Refused {
                                     id: id.clone(),
                                     reason: format!(
-                                        "il passo gli chiede il modello «{model}», e il suo \
-                                         descrittore non dichiara come glielo si nomina \
-                                         (`capabilities.choose_model`)"
+                                        "the step asks it for the model «{model}», and its \
+                                         descriptor does not declare how that model is named to \
+                                         it (`capabilities.choose_model`)"
                                     ),
                                     unresolved: false,
                                 });
@@ -320,8 +320,9 @@ impl ExternalEngineAction {
                         }),
                         None => refused.push(Refused {
                             id: id.clone(),
-                            reason: "il passo non dice con quali opzioni interrogarlo e il suo \
-                                     descrittore non dichiara come gli si fa una domanda (`ask`)"
+                            reason: "the step does not say which options to question it with, and \
+                                     its descriptor does not declare how a question is put to it \
+                                     (`ask`)"
                                 .to_owned(),
                             unresolved: false,
                         }),
@@ -335,8 +336,8 @@ impl ExternalEngineAction {
             )),
             (None, None) => Err(ActionError::new(
                 "invalid_input",
-                "il passo non dice chi eseguire: serve `tool` (l'identificativo di uno strumento, \
-                 o una catena di identificativi) oppure `bin` (un comando così com'è)",
+                "the step does not say what to run: it wants `tool` (a tool's identifier, or a \
+                 chain of identifiers) or else `bin` (a command as it stands)",
             )),
         }
     }
@@ -472,10 +473,10 @@ mod tests {
 
     impl ToolResolver for FixedTools {
         fn resolve(&self, id: &str) -> Result<String, String> {
-            if id == "il-motore" {
+            if id == "the-engine" {
                 Ok(self.0.to_owned())
             } else {
-                Err(format!("«{id}» non è dichiarato da nessun descrittore"))
+                Err(format!("«{id}» is declared by no descriptor"))
             }
         }
     }
@@ -484,16 +485,16 @@ mod tests {
     #[test]
     fn a_tool_id_becomes_the_executable_the_resolver_names() {
         let action = ExternalEngineAction::resolving_with(FixedTools("echo"));
-        let input = json!({"tool": "il-motore", "args": ["risolto"], "timeout_secs": 5});
+        let input = json!({"tool": "the-engine", "args": ["resolved"], "timeout_secs": 5});
 
         let ActionOutcome::Went(output) = action
             .execute(&input, &SharedState::new())
-            .expect("lo strumento si risolve")
+            .expect("the tool resolves")
         else {
-            panic!("un motore che risponde è sempre Went")
+            panic!("an engine that answers is always Went")
         };
 
-        assert_eq!(output["stdout"], "risolto\n");
+        assert_eq!(output["stdout"], "resolved\n");
     }
 
     /// A tool that is not here: the step stops **before** spending anything,
@@ -501,14 +502,14 @@ mod tests {
     #[test]
     fn a_tool_that_is_not_here_stops_the_step_with_the_resolvers_reason() {
         let action = ExternalEngineAction::resolving_with(FixedTools("echo"));
-        let input = json!({"tool": "un-altro", "timeout_secs": 5});
+        let input = json!({"tool": "another-one", "timeout_secs": 5});
 
         let error = action
             .execute(&input, &SharedState::new())
-            .expect_err("lo strumento non c'è");
+            .expect_err("the tool is not here");
 
         assert_eq!(error.class, "tool_unavailable");
-        assert!(error.said.contains("un-altro"), "{}", error.said);
+        assert!(error.said.contains("another-one"), "{}", error.said);
     }
 
     /// An engine registered without a resolver guesses no binary from the
@@ -520,7 +521,7 @@ mod tests {
 
         let error = action
             .execute(&input, &SharedState::new())
-            .expect_err("nessuno sa risolvere gli strumenti");
+            .expect_err("nobody knows how to resolve tools");
 
         assert_eq!(error.class, "no_tool_resolver");
         assert!(error.said.contains("resolving_with"), "{}", error.said);
@@ -536,17 +537,17 @@ mod tests {
         fn resolve(&self, id: &str) -> Result<String, String> {
             match id {
                 // Prints a spent engine's message and exits 1.
-                "esaurito" => Ok("false-dopo-aver-parlato".to_owned()),
-                "vivo" => Ok("echo".to_owned()),
-                "rotto" => Ok("false".to_owned()),
-                "senza-ricetta" => Ok("echo".to_owned()),
-                _ => Err(format!("«{id}» non è su questa macchina")),
+                "spent" => Ok("false-after-speaking".to_owned()),
+                "alive" => Ok("echo".to_owned()),
+                "broken" => Ok("false".to_owned()),
+                "no-recipe" => Ok("echo".to_owned()),
+                _ => Err(format!("«{id}» is not on this machine")),
             }
         }
 
         fn ask_recipe(&self, id: &str) -> Option<AskRecipe> {
             match id {
-                "esaurito" => Some(AskRecipe {
+                "spent" => Some(AskRecipe {
                     args: Vec::new(),
                     prompt: PromptVia::Stdin,
                     args_before_prompt: Vec::new(),
@@ -558,8 +559,8 @@ mod tests {
                     waits_for_a_person_when: Vec::new(),
                     usage: None,
                 }),
-                "vivo" => Some(AskRecipe {
-                    args: vec!["ha-risposto-il-secondo".to_owned()],
+                "alive" => Some(AskRecipe {
+                    args: vec!["the-second-answered".to_owned()],
                     prompt: PromptVia::LastArg,
                     args_before_prompt: Vec::new(),
                     unusable_when: vec!["weekly limit".to_owned()],
@@ -570,7 +571,7 @@ mod tests {
                     waits_for_a_person_when: Vec::new(),
                     usage: None,
                 }),
-                "rotto" => Some(AskRecipe {
+                "broken" => Some(AskRecipe {
                     args: Vec::new(),
                     prompt: PromptVia::Stdin,
                     args_before_prompt: Vec::new(),
@@ -591,17 +592,17 @@ mod tests {
 
     /// A make-believe executable that says it is spent and exits in error.
     fn engine_that_says_it_is_out(dir: &std::path::Path) -> String {
-        let path = dir.join("false-dopo-aver-parlato");
+        let path = dir.join("false-after-speaking");
         std::fs::write(
             &path,
             "#!/bin/sh\necho \"You've hit your weekly limit · resets 7am\"\nexit 1\n",
         )
-        .expect("scrivere il finto motore");
+        .expect("write the fake engine");
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
-                .expect("renderlo eseguibile");
+                .expect("make it executable");
         }
         path.to_string_lossy().into_owned()
     }
@@ -611,7 +612,7 @@ mod tests {
     impl ToolResolver for ChainIn {
         fn resolve(&self, id: &str) -> Result<String, String> {
             match id {
-                "esaurito" => Ok(self.0.clone()),
+                "spent" => Ok(self.0.clone()),
                 other => Chain.resolve(other),
             }
         }
@@ -621,8 +622,8 @@ mod tests {
     }
 
     fn scratch(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("sailor-catena-{name}"));
-        std::fs::create_dir_all(&dir).expect("cartella di lavoro");
+        let dir = std::env::temp_dir().join(format!("sailor-chain-{name}"));
+        std::fs::create_dir_all(&dir).expect("the scratch directory");
         dir
     }
 
@@ -630,20 +631,20 @@ mod tests {
     /// spent; the work does not die, it goes to the second, and that answers.
     #[test]
     fn an_engine_that_says_it_is_out_hands_the_work_to_the_next_one() {
-        let dir = scratch("passa-al-secondo");
+        let dir = scratch("hands-on-to-the-second");
         let action =
             ExternalEngineAction::resolving_with(ChainIn(engine_that_says_it_is_out(&dir)));
-        let input = json!({"tool": ["esaurito", "vivo"], "timeout_secs": 10});
+        let input = json!({"tool": ["spent", "alive"], "timeout_secs": 10});
 
         let ActionOutcome::Went(output) = action
             .execute(&input, &SharedState::new())
-            .expect("il secondo motore risponde")
+            .expect("the second engine answers")
         else {
-            panic!("un motore che risponde è sempre Went")
+            panic!("an engine that answers is always Went")
         };
 
         assert_eq!(output["status"], "ok");
-        assert_eq!(output["stdout"], "ha-risposto-il-secondo\n");
+        assert_eq!(output["stdout"], "the-second-answered\n");
     }
 
     /// A make-believe executable that says it is spent **and exits zero**.
@@ -653,17 +654,17 @@ mod tests {
     /// failing, none of them ever looked at the successful branch, and a defect
     /// living there alone could never turn red.
     fn engine_that_says_it_is_out_and_exits_zero(dir: &std::path::Path) -> String {
-        let path = dir.join("zero-dopo-aver-parlato");
+        let path = dir.join("zero-after-speaking");
         std::fs::write(
             &path,
             "#!/bin/sh\necho \"You've hit your weekly limit · resets 7am\"\nexit 0\n",
         )
-        .expect("scrivere il finto motore");
+        .expect("write the fake engine");
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
-                .expect("renderlo eseguibile");
+                .expect("make it executable");
         }
         path.to_string_lossy().into_owned()
     }
@@ -688,23 +689,23 @@ mod tests {
     /// difference, and the fallback must fire in both cases.
     #[test]
     fn an_engine_that_says_it_is_out_while_exiting_zero_still_hands_the_work_over() {
-        let dir = scratch("esaurito-a-uscita-zero");
+        let dir = scratch("spent-at-exit-zero");
         let action = ExternalEngineAction::resolving_with(ChainIn(
             engine_that_says_it_is_out_and_exits_zero(&dir),
         ));
-        let input = json!({"tool": ["esaurito", "vivo"], "timeout_secs": 10});
+        let input = json!({"tool": ["spent", "alive"], "timeout_secs": 10});
 
         let ActionOutcome::Went(output) = action
             .execute(&input, &SharedState::new())
-            .expect("il secondo motore risponde")
+            .expect("the second engine answers")
         else {
-            panic!("un motore che risponde è sempre Went")
+            panic!("an engine that answers is always Went")
         };
 
         assert_eq!(
-            output["stdout"], "ha-risposto-il-secondo\n",
-            "il primo motore ha detto di non poter lavorare ed è uscito zero: il \
-             lavoro doveva passare al secondo, non fermarsi sulla sua non-risposta"
+            output["stdout"], "the-second-answered\n",
+            "the first engine said it could not work and exited zero: the work had \
+             to go to the second, not stop on that absence of an answer"
         );
     }
 
@@ -716,24 +717,24 @@ mod tests {
     /// the second half of the defect, and the worse one.
     #[test]
     fn alone_an_engine_that_says_it_is_out_while_exiting_zero_does_not_pass_for_answered() {
-        let dir = scratch("esaurito-a-uscita-zero-da-solo");
+        let dir = scratch("spent-at-exit-zero-alone");
         let action = ExternalEngineAction::resolving_with(ChainIn(
             engine_that_says_it_is_out_and_exits_zero(&dir),
         ));
-        let input = json!({"tool": ["esaurito"], "timeout_secs": 10});
+        let input = json!({"tool": ["spent"], "timeout_secs": 10});
 
         let error = action
             .execute(&input, &SharedState::new())
-            .expect_err("un motore che dice di non poter lavorare non ha risposto");
+            .expect_err("an engine saying it cannot work has not answered");
 
         assert_eq!(
             error.class, "engine_exhausted",
-            "esaurito non è rotto, e a uscita zero non è nemmeno «riuscito»: {}",
+            "spent is not broken, and at exit zero it is not «went» either: {}",
             error.said
         );
         assert!(
             error.said.contains("weekly limit"),
-            "il motivo deve portare le parole con cui il motore l'ha detto: {}",
+            "the reason has to carry the words the engine said it in: {}",
             error.said
         );
     }
@@ -741,18 +742,18 @@ mod tests {
     /// A make-believe engine that answers **in the declared shape** and then
     /// exits in error saying the words of its own refusal.
     fn engine_that_answers_in_shape_then_exits_in_error(dir: &std::path::Path) -> String {
-        let path = dir.join("risponde-e-poi-esce-male");
+        let path = dir.join("answers-then-exits-badly");
         std::fs::write(
             &path,
-            "#!/bin/sh\necho '{\"answer\":\"fatto\"}'\n\
+            "#!/bin/sh\necho '{\"answer\":\"done\"}'\n\
              echo \"You've hit your weekly limit · resets 7am\" >&2\nexit 1\n",
         )
-        .expect("scrivere il finto motore");
+        .expect("write the fake engine");
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
-                .expect("renderlo eseguibile");
+                .expect("make it executable");
         }
         path.to_string_lossy().into_owned()
     }
@@ -765,12 +766,12 @@ mod tests {
     /// away an answer already paid for. Fault 95, in the other branch.
     #[test]
     fn an_answer_in_shape_with_a_bad_exit_code_stops_the_step_instead_of_being_thrown_away() {
-        let dir = scratch("risposta-conforme-uscita-anomala");
+        let dir = scratch("answer-in-shape-odd-exit");
         let action = ExternalEngineAction::resolving_with(ChainIn(
             engine_that_answers_in_shape_then_exits_in_error(&dir),
         ));
         let input = json!({
-            "tool": ["esaurito", "vivo"],
+            "tool": ["spent", "alive"],
             "answer_shape": {
                 "type": "object",
                 "properties": {"answer": {"type": "string"}},
@@ -791,12 +792,12 @@ mod tests {
             error.said
         );
         assert!(
-            error.said.contains("fatto"),
+            error.said.contains("done"),
             "the answer it collected must not be thrown away: {}",
             error.said
         );
         assert!(
-            !error.said.contains("ha-risposto-il-secondo"),
+            !error.said.contains("the-second-answered"),
             "the second engine had no business starting over an answer already given: {}",
             error.said
         );
@@ -827,13 +828,13 @@ mod tests {
         impl ToolResolver for NoMarks {
             fn resolve(&self, id: &str) -> Result<String, String> {
                 match id {
-                    "esaurito" => Ok(self.0.clone()),
+                    "spent" => Ok(self.0.clone()),
                     other => Chain.resolve(other),
                 }
             }
             fn ask_recipe(&self, id: &str) -> Option<AskRecipe> {
                 let recipe = Chain.ask_recipe(id)?;
-                if id == "esaurito" {
+                if id == "spent" {
                     return Some(AskRecipe {
                         unusable_when: Vec::new(),
                         ..recipe
@@ -843,22 +844,22 @@ mod tests {
             }
         }
 
-        let dir = scratch("catena-senza-parole");
+        let dir = scratch("a-chain-with-no-words");
         let action =
             ExternalEngineAction::resolving_with(NoMarks(engine_that_says_it_is_out(&dir)));
-        let input = json!({"tool": ["esaurito", "vivo"], "timeout_secs": 10});
+        let input = json!({"tool": ["spent", "alive"], "timeout_secs": 10});
 
         let error = action
             .execute(&input, &SharedState::new())
-            .expect_err("il passo muore sul primo motore");
+            .expect_err("the step dies on the first engine");
 
         assert_eq!(
             error.class, "engine_exit_error",
-            "un esaurimento non dichiarato passa per un fallimento qualunque"
+            "an undeclared exhaustion passes for an ordinary failure"
         );
         assert!(
-            !error.said.contains("ha-risposto-il-secondo"),
-            "il secondo motore non doveva nemmeno partire: {}",
+            !error.said.contains("the-second-answered"),
+            "the second engine had no business starting at all: {}",
             error.said
         );
     }
@@ -871,17 +872,17 @@ mod tests {
     /// with an empty output, «any output» and «those words» behave alike. A
     /// real failure speaks, and that is the case this test must hold.
     fn engine_that_fails_loudly(dir: &std::path::Path) -> String {
-        let path = dir.join("fallisce-parlando");
+        let path = dir.join("fails-out-loud");
         std::fs::write(
             &path,
-            "#!/bin/sh\necho 'errore: il mandato non ha senso' >&2\nexit 1\n",
+            "#!/bin/sh\necho 'error: the brief makes no sense' >&2\nexit 1\n",
         )
-        .expect("scrivere il finto motore");
+        .expect("write the fake engine");
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
-                .expect("renderlo eseguibile");
+                .expect("make it executable");
         }
         path.to_string_lossy().into_owned()
     }
@@ -891,7 +892,7 @@ mod tests {
     impl ToolResolver for LoudFailure {
         fn resolve(&self, id: &str) -> Result<String, String> {
             match id {
-                "rotto" => Ok(self.0.clone()),
+                "broken" => Ok(self.0.clone()),
                 other => Chain.resolve(other),
             }
         }
@@ -906,18 +907,18 @@ mod tests {
     /// face of a good one.
     #[test]
     fn an_ordinary_failure_does_not_walk_down_the_chain() {
-        let dir = scratch("fallimento-qualunque");
+        let dir = scratch("an-ordinary-failure");
         let action =
             ExternalEngineAction::resolving_with(LoudFailure(engine_that_fails_loudly(&dir)));
-        let input = json!({"tool": ["rotto", "vivo"], "timeout_secs": 10});
+        let input = json!({"tool": ["broken", "alive"], "timeout_secs": 10});
 
         let error = action
             .execute(&input, &SharedState::new())
-            .expect_err("il primo è fallito senza dire di non poter lavorare");
+            .expect_err("the first failed without saying it could not work");
 
         assert_eq!(error.class, "engine_exit_error");
         assert!(
-            error.said.contains("il mandato non ha senso"),
+            error.said.contains("the brief makes no sense"),
             "{}",
             error.said
         );
@@ -934,13 +935,13 @@ mod tests {
         impl ToolResolver for EmptyMark {
             fn resolve(&self, id: &str) -> Result<String, String> {
                 match id {
-                    "rotto" => Ok(self.0.clone()),
+                    "broken" => Ok(self.0.clone()),
                     other => Chain.resolve(other),
                 }
             }
             fn ask_recipe(&self, id: &str) -> Option<AskRecipe> {
                 match id {
-                    "rotto" => Some(AskRecipe {
+                    "broken" => Some(AskRecipe {
                         args: Vec::new(),
                         prompt: PromptVia::Stdin,
                         args_before_prompt: Vec::new(),
@@ -957,14 +958,14 @@ mod tests {
             }
         }
 
-        let dir = scratch("frammento-vuoto");
+        let dir = scratch("an-empty-fragment");
         let action =
             ExternalEngineAction::resolving_with(EmptyMark(engine_that_fails_loudly(&dir)));
-        let input = json!({"tool": ["rotto", "vivo"], "timeout_secs": 10});
+        let input = json!({"tool": ["broken", "alive"], "timeout_secs": 10});
 
         let error = action
             .execute(&input, &SharedState::new())
-            .expect_err("un frammento vuoto non è una dichiarazione di esaurimento");
+            .expect_err("an empty fragment is no declaration of exhaustion");
 
         assert_eq!(error.class, "engine_exit_error");
     }
@@ -974,18 +975,18 @@ mod tests {
     /// last link.
     #[test]
     fn a_chain_that_is_entirely_out_names_every_engine() {
-        let dir = scratch("tutti-esauriti");
+        let dir = scratch("all-of-them-spent");
         let action =
             ExternalEngineAction::resolving_with(ChainIn(engine_that_says_it_is_out(&dir)));
-        let input = json!({"tool": ["esaurito", "non-installato"], "timeout_secs": 10});
+        let input = json!({"tool": ["spent", "not-installed"], "timeout_secs": 10});
 
         let error = action
             .execute(&input, &SharedState::new())
-            .expect_err("nessuno dei due può lavorare");
+            .expect_err("neither of the two can work");
 
         assert_eq!(error.class, "no_usable_engine");
-        assert!(error.said.contains("esaurito"), "{}", error.said);
-        assert!(error.said.contains("non-installato"), "{}", error.said);
+        assert!(error.said.contains("spent"), "{}", error.said);
+        assert!(error.said.contains("not-installed"), "{}", error.said);
     }
 
     /// The descriptor decides where the question's text goes. Without it a flow
@@ -994,18 +995,18 @@ mod tests {
     #[test]
     fn the_descriptor_decides_where_the_question_goes() {
         let action = ExternalEngineAction::resolving_with(Chain);
-        let input = json!({"tool": "vivo", "stdin": "la-domanda", "timeout_secs": 10});
+        let input = json!({"tool": "alive", "stdin": "the-question", "timeout_secs": 10});
 
         let ActionOutcome::Went(output) = action
             .execute(&input, &SharedState::new())
-            .expect("risponde")
+            .expect("it answers")
         else {
-            panic!("un motore che risponde è sempre Went")
+            panic!("an engine that answers is always Went")
         };
 
         // `echo` prints its own arguments: had the question gone to the input
         // rather than to the end of the arguments, it would not be here.
-        assert_eq!(output["stdout"], "ha-risposto-il-secondo la-domanda\n");
+        assert_eq!(output["stdout"], "the-second-answered the-question\n");
     }
 
     /// An engine that is here but declares no way of asking it is not guessed
@@ -1013,11 +1014,11 @@ mod tests {
     #[test]
     fn an_engine_without_a_recipe_is_set_aside_with_the_reason() {
         let action = ExternalEngineAction::resolving_with(Chain);
-        let input = json!({"tool": ["senza-ricetta"], "timeout_secs": 10});
+        let input = json!({"tool": ["no-recipe"], "timeout_secs": 10});
 
         let error = action
             .execute(&input, &SharedState::new())
-            .expect_err("non si sa come interrogarlo");
+            .expect_err("nobody knows how to question it");
 
         assert_eq!(error.class, "no_usable_engine");
         assert!(error.said.contains("ask"), "{}", error.said);
@@ -1028,16 +1029,16 @@ mod tests {
     #[test]
     fn options_written_in_the_step_win_over_the_recipe() {
         let action = ExternalEngineAction::resolving_with(Chain);
-        let input = json!({"tool": "vivo", "args": ["scritte-nel-passo"], "timeout_secs": 10});
+        let input = json!({"tool": "alive", "args": ["written-in-the-step"], "timeout_secs": 10});
 
         let ActionOutcome::Went(output) = action
             .execute(&input, &SharedState::new())
-            .expect("risponde")
+            .expect("it answers")
         else {
-            panic!("un motore che risponde è sempre Went")
+            panic!("an engine that answers is always Went")
         };
 
-        assert_eq!(output["stdout"], "scritte-nel-passo\n");
+        assert_eq!(output["stdout"], "written-in-the-step\n");
     }
 
     // ── which model is wanted ─────────────────────────────────────────
@@ -1052,13 +1053,13 @@ mod tests {
     impl ToolResolver for Models {
         fn resolve(&self, id: &str) -> Result<String, String> {
             match id {
-                "sa-il-modello" | "non-sa-il-modello" => Ok("echo".to_owned()),
-                _ => Err(format!("«{id}» non è su questa macchina")),
+                "knows-the-model" | "does-not-know-the-model" => Ok("echo".to_owned()),
+                _ => Err(format!("«{id}» is not on this machine")),
             }
         }
 
         fn ask_recipe(&self, id: &str) -> Option<AskRecipe> {
-            let signature = format!("--ha-risposto-{}", self.resolve(id).map(|_| id).ok()?);
+            let signature = format!("--answered-{}", self.resolve(id).map(|_| id).ok()?);
             Some(AskRecipe {
                 args: vec![signature, "--mode".to_owned(), "plan".to_owned()],
                 prompt: PromptVia::LastArg,
@@ -1074,7 +1075,7 @@ mod tests {
         }
 
         fn model_option(&self, id: &str) -> Option<Vec<String>> {
-            (id == "sa-il-modello").then(|| vec!["--model".to_owned()])
+            (id == "knows-the-model").then(|| vec!["--model".to_owned()])
         }
     }
 
@@ -1085,23 +1086,23 @@ mod tests {
     fn a_named_model_lands_before_the_option_glued_to_the_question() {
         let action = ExternalEngineAction::resolving_with(Models);
         let input = json!({
-            "tool": "sa-il-modello",
-            "model": {"sa-il-modello": "il-modello-forte"},
-            "stdin": "la-domanda",
+            "tool": "knows-the-model",
+            "model": {"knows-the-model": "the-strong-model"},
+            "stdin": "the-question",
             "timeout_secs": 10
         });
 
         let ActionOutcome::Went(output) = action
             .execute(&input, &SharedState::new())
-            .expect("risponde")
+            .expect("it answers")
         else {
-            panic!("un motore che risponde è sempre Went")
+            panic!("an engine that answers is always Went")
         };
 
         assert_eq!(
             output["stdout"],
-            "--ha-risposto-sa-il-modello --mode plan --model il-modello-forte --print la-domanda\n",
-            "il nome del modello sta dopo le opzioni della ricetta e prima di `--print`"
+            "--answered-knows-the-model --mode plan --model the-strong-model --print the-question\n",
+            "the model's name sits after the recipe's options and ahead of `--print`"
         );
     }
 
@@ -1112,22 +1113,22 @@ mod tests {
     fn an_engine_that_cannot_be_told_a_model_is_set_aside_and_the_chain_goes_on() {
         let action = ExternalEngineAction::resolving_with(Models);
         let input = json!({
-            "tool": ["non-sa-il-modello", "sa-il-modello"],
-            "model": {"non-sa-il-modello": "il-modello-forte"},
-            "stdin": "la-domanda",
+            "tool": ["does-not-know-the-model", "knows-the-model"],
+            "model": {"does-not-know-the-model": "the-strong-model"},
+            "stdin": "the-question",
             "timeout_secs": 10
         });
 
         let ActionOutcome::Went(output) = action
             .execute(&input, &SharedState::new())
-            .expect("il secondo motore risponde")
+            .expect("the second engine answers")
         else {
-            panic!("un motore che risponde è sempre Went")
+            panic!("an engine that answers is always Went")
         };
 
         assert_eq!(
-            output["stdout"], "--ha-risposto-sa-il-modello --mode plan --print la-domanda\n",
-            "il secondo non è nominato da nessuna voce: gira col suo predefinito"
+            output["stdout"], "--answered-knows-the-model --mode plan --print the-question\n",
+            "no entry names the second one: it runs on its own default"
         );
     }
 
@@ -1138,19 +1139,19 @@ mod tests {
     fn alone_it_says_why_instead_of_answering_from_a_model_nobody_chose() {
         let action = ExternalEngineAction::resolving_with(Models);
         let input = json!({
-            "tool": ["non-sa-il-modello"],
-            "model": {"non-sa-il-modello": "il-modello-forte"},
-            "stdin": "la-domanda",
+            "tool": ["does-not-know-the-model"],
+            "model": {"does-not-know-the-model": "the-strong-model"},
+            "stdin": "the-question",
             "timeout_secs": 10
         });
 
         let error = action
             .execute(&input, &SharedState::new())
-            .expect_err("non gli si può nominare un modello");
+            .expect_err("no model can be named to it");
 
         assert_eq!(error.class, "no_usable_engine");
         assert!(error.said.contains("choose_model"), "{}", error.said);
-        assert!(error.said.contains("il-modello-forte"), "{}", error.said);
+        assert!(error.said.contains("the-strong-model"), "{}", error.said);
     }
 
     /// Whoever wrote the options wrote which model in them: two answers to one
@@ -1159,15 +1160,15 @@ mod tests {
     fn a_step_cannot_write_its_own_options_and_name_a_model() {
         let action = ExternalEngineAction::resolving_with(Models);
         let input = json!({
-            "tool": "sa-il-modello",
-            "args": ["--model", "un-altro"],
-            "model": {"sa-il-modello": "il-modello-forte"},
+            "tool": "knows-the-model",
+            "args": ["--model", "another-one"],
+            "model": {"knows-the-model": "the-strong-model"},
             "timeout_secs": 10
         });
 
         let error = action
             .execute(&input, &SharedState::new())
-            .expect_err("due risposte alla stessa domanda");
+            .expect_err("two answers to one question");
 
         assert_eq!(error.class, "invalid_input");
         assert!(error.said.contains("model"), "{}", error.said);
@@ -1176,11 +1177,11 @@ mod tests {
     #[test]
     fn a_step_cannot_declare_both_a_binary_and_a_tool() {
         let action = ExternalEngineAction::resolving_with(FixedTools("echo"));
-        let input = json!({"bin": "sh", "tool": "il-motore", "timeout_secs": 5});
+        let input = json!({"bin": "sh", "tool": "the-engine", "timeout_secs": 5});
 
         let error = action
             .execute(&input, &SharedState::new())
-            .expect_err("due risposte alla stessa domanda");
+            .expect_err("two answers to one question");
 
         assert_eq!(error.class, "invalid_input");
     }

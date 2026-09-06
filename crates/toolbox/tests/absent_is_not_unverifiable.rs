@@ -232,8 +232,8 @@ fn a_path_probe_tells_missing_from_blocked() {
     let descriptors = sandbox.write(
         "tools.json",
         &format!(
-            r#"[{{"id": "assente", "family": "tool", "detect": {{"path": "{}/non-c-e.json"}}}},
-                {{"id": "coperto", "family": "tool", "detect": {{"path": "{}/coperto.json"}}}}]"#,
+            r#"[{{"id": "absent", "family": "tool", "detect": {{"path": "{}/not-there.json"}}}},
+                {{"id": "covered", "family": "tool", "detect": {{"path": "{}/covered.json"}}}}]"#,
             sandbox.root.to_string_lossy(),
             closed.to_string_lossy()
         ),
@@ -243,12 +243,12 @@ fn a_path_probe_tells_missing_from_blocked() {
     let absent = report
         .findings
         .iter()
-        .find(|f| f.name == "assente")
+        .find(|f| f.name == "absent")
         .unwrap();
     let covered = report
         .findings
         .iter()
-        .find(|f| f.name == "coperto")
+        .find(|f| f.name == "covered")
         .unwrap();
     assert!(
         matches!(absent.presence, Presence::Absent(_)),
@@ -411,19 +411,19 @@ fn with_version_probes_off_nothing_is_executed() {
 fn a_malformed_descriptor_does_not_take_the_others_down() {
     let sandbox = Sandbox::new("malformed");
     let bin_dir = sandbox.dir("bin");
-    fake_binary(&bin_dir, "buono", "echo 'buono 1.0'");
+    fake_binary(&bin_dir, "good", "echo 'good 1.0'");
     let descriptors = sandbox.write(
         "tools.json",
         r#"[
-            {"id": "senza-famiglia"},
-            {"id": "senza-verifica", "family": "tool"},
-            {"id": "campo-inventato", "family": "tool", "detect": {"command": "x"}, "boh": 1},
-            {"id": "buono", "family": "tool", "detect": {"command": "buono"},
+            {"id": "no-family"},
+            {"id": "no-check", "family": "tool"},
+            {"id": "invented-field", "family": "tool", "detect": {"command": "x"}, "huh": 1},
+            {"id": "good", "family": "tool", "detect": {"command": "good"},
              "version": {"args": ["--version"]}}
         ]"#,
     );
     let catalog = catalog_from(&descriptors);
-    // **TWO LOST AND ONE KEPT, AND IT USED TO BE THREE LOST.** `campo-inventato`
+    // **TWO LOST AND ONE KEPT, AND IT USED TO BE THREE LOST.** `invented-field`
     // was in that list: a field this version does not know took it down along
     // with the genuinely broken ones, and the tool vanished with it. The two
     // lines that say neither who they are nor how they are checked stay lost,
@@ -437,16 +437,16 @@ fn a_malformed_descriptor_does_not_take_the_others_down() {
     // The problem says WHO IT IS ABOUT: "a descriptor is wrong" cannot be fixed,
     // one naming the offending entry can.
     let about: Vec<&str> = catalog.problems.iter().map(|p| p.about.as_str()).collect();
-    assert!(about.contains(&"senza-famiglia"), "{about:?}");
-    assert!(about.contains(&"senza-verifica"), "{about:?}");
+    assert!(about.contains(&"no-family"), "{about:?}");
+    assert!(about.contains(&"no-check"), "{about:?}");
     assert!(
-        !about.contains(&"campo-inventato"),
+        !about.contains(&"invented-field"),
         "an unknown field is not a lost entry: {about:?}"
     );
     let noted: Vec<&str> = catalog.notes.iter().map(|p| p.about.as_str()).collect();
     assert_eq!(
         noted,
-        vec!["campo-inventato"],
+        vec!["invented-field"],
         "but it is not passed over in silence either"
     );
 
@@ -458,11 +458,11 @@ fn a_malformed_descriptor_does_not_take_the_others_down() {
     let good = report
         .findings
         .iter()
-        .find(|f| f.name == "buono")
+        .find(|f| f.name == "good")
         .expect("the good one is there");
     assert_eq!(
         good.version,
-        VersionReading::Declared("buono 1.0".to_string())
+        VersionReading::Declared("good 1.0".to_string())
     );
     // The problems travel with the report: the reader must know the list is
     // partial, or will believe what is missing does not exist.
@@ -474,11 +474,11 @@ fn a_malformed_descriptor_does_not_take_the_others_down() {
 fn a_broken_file_does_not_take_the_other_files_down() {
     let sandbox = Sandbox::new("brokenfile");
     let bin_dir = sandbox.dir("bin");
-    fake_binary(&bin_dir, "buono", "echo ok");
+    fake_binary(&bin_dir, "good", "echo ok");
     let broken = sandbox.write("rotto.json", "{ this is not json");
     let sound = sandbox.write(
         "sano.json",
-        r#"[{"id": "buono", "family": "tool", "detect": {"command": "buono"}}]"#,
+        r#"[{"id": "good", "family": "tool", "detect": {"command": "good"}}]"#,
     );
     let catalog = Catalog::load(&[Source::File(broken), Source::File(sound)]);
     assert_eq!(catalog.problems.len(), 1, "{:?}", catalog.problems);
@@ -597,13 +597,13 @@ fn servers_declared_in_a_config_file_are_discovered_one_by_one() {
 #[test]
 fn an_unreadable_config_is_undetermined_while_an_empty_one_is_absent() {
     let sandbox = Sandbox::new("enumblocked");
-    sandbox.write("vuoto.json", r#"{"mcpServers": {}}"#);
+    sandbox.write("empty.json", r#"{"mcpServers": {}}"#);
     let broken = sandbox.write("rotto.json", "{ not json");
     let descriptors = sandbox.write(
         "tools.json",
         &format!(
-            r#"[{{"id": "vuoto", "family": "mcp_server",
-                  "enumerate": {{"json_keys": {{"files": ["~/vuoto.json"],
+            r#"[{{"id": "empty", "family": "mcp_server",
+                  "enumerate": {{"json_keys": {{"files": ["~/empty.json"],
                                                 "pointer": ["mcpServers"]}}}}}},
                 {{"id": "rotto", "family": "mcp_server",
                   "enumerate": {{"json_keys": {{"files": ["{}"],
@@ -625,9 +625,9 @@ fn an_unreadable_config_is_undetermined_while_an_empty_one_is_absent() {
             .clone()
     };
     assert!(
-        matches!(by("vuoto"), Presence::Absent(_)),
+        matches!(by("empty"), Presence::Absent(_)),
         "{:?}",
-        by("vuoto")
+        by("empty")
     );
     assert!(
         matches!(by("rotto"), Presence::Undetermined(_)),
@@ -711,8 +711,8 @@ fn the_flow_action_answers_with_the_findings() {
     let sandbox = Sandbox::new("action");
     let descriptors = sandbox.write(
         "tools.json",
-        r#"[{"id": "mai-installato-davvero", "family": "prova",
-             "detect": {"command": "mai-installato-davvero"}}]"#,
+        r#"[{"id": "never-really-installed", "family": "tool",
+             "detect": {"command": "never-really-installed"}}]"#,
     );
     let input = serde_json::json!({
         "descriptor_paths": [descriptors.to_string_lossy()],
@@ -733,7 +733,7 @@ fn the_flow_action_answers_with_the_findings() {
     assert_eq!(output["present"], 0);
     assert_eq!(
         output["findings"][0]["descriptor_id"],
-        "mai-installato-davvero"
+        "never-really-installed"
     );
     assert_eq!(output["findings"][0]["presence"]["state"], "absent");
 }
@@ -868,7 +868,7 @@ fn an_enumerate_without_anywhere_to_look_is_a_problem() {
     let sandbox = Sandbox::new("empty-enumerate");
     let descriptors = sandbox.write(
         "elenco.json",
-        r#"[{ "id": "vuoto", "family": "tool", "label": "nothing", "enumerate": {} }]"#,
+        r#"[{ "id": "empty", "family": "tool", "label": "nothing", "enumerate": {} }]"#,
     );
 
     let catalog = catalog_from(&descriptors);
