@@ -338,13 +338,19 @@ fn route(args: &[String]) -> Route<'_> {
 /// The message for an unknown name, with the list of valid ones inside: the
 /// part a test can read without capturing `stderr`.
 fn unknown_command_message(name: &str) -> String {
-    format!(
-        "sailor: comando sconosciuto '{name}'; comandi disponibili: {}",
-        COMMANDS
-            .iter()
-            .map(|command| command.name)
-            .collect::<Vec<_>>()
-            .join(", ")
+    catalogue::say(
+        "cli.unknown_command",
+        &[
+            ("name", name),
+            (
+                "commands",
+                &COMMANDS
+                    .iter()
+                    .map(|command| command.name)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            ),
+        ],
     )
 }
 
@@ -438,14 +444,14 @@ mod tests {
         for command in COMMANDS {
             assert!(
                 !command.usage.is_empty(),
-                "il comando '{}' non dice come si scrive",
+                "the command '{}' does not say how it is written",
                 command.name
             );
             for line in command.usage {
                 assert!(
                     line.form.starts_with(&format!("sailor {} ", command.name))
                         || line.form == format!("sailor {}", command.name),
-                    "la riga d'uso di '{}' parla di un altro comando: {}",
+                    "the usage line of '{}' speaks of another command: {}",
                     command.name,
                     line.form
                 );
@@ -459,12 +465,12 @@ mod tests {
     #[test]
     fn every_form_that_says_something_says_it_from_the_catalogue() {
         for (language, _) in catalogue::LANGUAGES {
-            let entries = catalogue::entries(language).expect("un catalogo che si legge");
+            let entries = catalogue::entries(language).expect("a catalogue that parses");
             for command in COMMANDS {
                 for form in command.usage {
                     assert!(
                         form.says_key.is_empty() || entries.contains_key(form.says_key),
-                        "«{}» non è nel catalogo {language}, e la forma «{}» la mostrerebbe così com'è",
+                        "«{}» is not in the {language} catalogue, and the form «{}» would show it just as it is",
                         form.says_key,
                         form.form
                     );
@@ -490,12 +496,12 @@ mod tests {
         let lines = forms_as_lines(with_prose);
         assert!(
             lines[0].starts_with("sailor x aa   "),
-            "la prima forma non è seguita dalla sua frase: {}",
+            "the first form is not followed by its sentence: {}",
             lines[0]
         );
         assert_eq!(
             lines[1], "sailor x b",
-            "una forma senza frase non si impagina"
+            "a form with no sentence carries no padding"
         );
 
         let bare = &[Form {
@@ -505,7 +511,7 @@ mod tests {
         assert_eq!(
             form_width(bare),
             0,
-            "un elenco senza frasi non vuole colonna"
+            "a list with no sentences wants no column"
         );
     }
 
@@ -521,12 +527,12 @@ mod tests {
         for command in COMMANDS {
             assert!(
                 help.contains(command.name),
-                "l'aiuto non nomina '{}'",
+                "the help does not name '{}'",
                 command.name
             );
             assert!(
                 help.contains(&catalogue::say(command.description_key, &[])),
-                "l'aiuto nomina '{}' senza dire cosa fa",
+                "the help names '{}' without saying what it does",
                 command.name
             );
         }
@@ -601,7 +607,7 @@ mod tests {
             assert_eq!(
                 route(&args(&["sailor", command.name])).reached(),
                 Some(command.name),
-                "il nome {} non si ritrova nella tabella",
+                "the name {} is not found again in the table",
                 command.name
             );
         }
@@ -627,11 +633,11 @@ mod tests {
     #[test]
     fn an_unknown_name_names_every_valid_command() {
         let message = unknown_command_message("sweep");
-        assert!(message.contains("sconosciuto 'sweep'"), "{message}");
+        assert!(message.contains("unknown command 'sweep'"), "{message}");
         for command in COMMANDS {
             assert!(
                 message.contains(command.name),
-                "{message} non nomina {}",
+                "{message} does not name {}",
                 command.name
             );
         }
@@ -654,7 +660,7 @@ mod tests {
             );
             assert!(
                 !description.contains('\n'),
-                "{}: la descrizione va su una riga sola",
+                "{}: the description goes on a single line",
                 command.name
             );
         }

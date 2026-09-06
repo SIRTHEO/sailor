@@ -338,8 +338,8 @@ mod tests {
         std::fs::create_dir_all(&fixed_home).unwrap();
         std::fs::create_dir_all(&wanted).unwrap();
         std::fs::create_dir_all(&other).unwrap();
-        std::fs::write(wanted.join("credentials.json"), "quelle giuste").unwrap();
-        std::fs::write(other.join("credentials.json"), "quelle di un altro").unwrap();
+        std::fs::write(wanted.join("credentials.json"), "the right ones").unwrap();
+        std::fs::write(other.join("credentials.json"), "somebody else's").unwrap();
 
         let expected = symlink_swap(&fixed_home, "credentials.json", &wanted);
 

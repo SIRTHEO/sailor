@@ -612,7 +612,7 @@ mod tests {
                 {"id":"a-meta","input_per_million":5.0}
             ]}"#,
         )
-        .expect("il listino di prova si legge")
+        .expect("the scratch price list reads")
     }
 
     /// A flow naming no model of its own: what every report looked like before
@@ -756,7 +756,7 @@ mod tests {
                 "inputs": {{}}
             }}"#
         );
-        serde_json::from_str(&json).expect("caricare il flusso")
+        serde_json::from_str(&json).expect("it loads")
     }
 
     /// **A MODEL THE FLOW NAMES AND THE LIST CANNOT PRICE IS SAID FIRST.** It
@@ -884,13 +884,13 @@ mod tests {
         );
         assert!(
             !all_priced.contains("the spend cap"),
-            "senza modelli scoperti il tetto non ha niente da dichiarare: {all_priced}"
+            "with no uncovered models the cap has nothing to declare: {all_priced}"
         );
 
         let no_cap = what_is_priced(&a_small_price_list(), &naming_nothing(), Some(&unpriced), None);
         assert!(
             !no_cap.contains("the spend cap"),
-            "un flusso senza tetto non ha un tetto da avvisare: {no_cap}"
+            "a flow with no cap has no cap to warn about: {no_cap}"
         );
     }
 
@@ -971,7 +971,7 @@ mod tests {
         );
         assert!(
             !said.contains("prezzato ("),
-            "un modello prezzato non si segnala: {said}"
+            "a priced model is not reported: {said}"
         );
         assert!(said.contains("lower than the real one"), "{said}");
     }
@@ -1072,7 +1072,7 @@ mod tests {
                     ("how_many", "1")
                 ]
             )),
-            "il caso in cui l'identità è stata cambiata apposta è quello che deve vedersi: {said}"
+            "the case where the identity was changed on purpose is the one that must show: {said}"
         );
     }
 
@@ -1175,9 +1175,9 @@ mod tests {
     #[test]
     fn a_runs_total_is_what_its_calls_cost() {
         let directory = TestDirectory::new();
-        let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+        let ledger = Ledger::open(&directory.0).expect("the ledger opens");
         let flow: FlowFile = serde_json::from_str(&flow_json("shell_check", "[]", "{}"))
-            .expect("caricare il flusso");
+            .expect("it loads");
         for (call_id, cost) in [("prima", 96_310), ("seconda", 3_690)] {
             ledger
                 .record_model_call(&spent_call(call_id, "corsa-costosa", cost))
@@ -1194,19 +1194,19 @@ mod tests {
             None,
             None,
         )
-        .expect("registrare la corsa");
+        .expect("recording the run");
 
-        let dump = ledger.projection_dump().expect("leggere la proiezione");
+        let dump = ledger.projection_dump().expect("reading the projection");
         let run = dump["runs"]
             .as_array()
-            .expect("l'elenco delle corse c'è")
+            .expect("the list of runs is there")
             .iter()
             .find(|row| row[0] == "corsa-costosa")
-            .expect("la corsa registrata si ritrova");
+            .expect("the recorded run is found again");
         assert_eq!(
             run[6],
             serde_json::json!(100_000),
-            "il totale è la somma delle due chiamate, non uno zero scritto a mano"
+            "the total is the sum of the two calls, not a zero written by hand"
         );
     }
 
@@ -1323,7 +1323,7 @@ mod tests {
                 {"id":"m","input_per_million":5.0,"output_per_million":25.0}
             ]}"#,
         )
-        .expect("il listino di prova si legge");
+        .expect("the scratch price list reads");
         let view = ui::dashboard::summarize_run(&a_run(), &[], calls, 100);
         spending_report(&view, &prices)
     }
@@ -1369,11 +1369,11 @@ mod tests {
 
         assert!(
             !report.contains(&bare_total(1_667_400)),
-            "la cifra secca non deve comparire: si legge come il totale vero.\n{report}"
+            "the bare figure must not appear: it reads as the real total.\n{report}"
         );
         assert!(
             report.contains(&floored_total(1_667_400, 4, 3)),
-            "il numero va letto come un pavimento, con quanto manca accanto alla cifra.\n{report}"
+            "the number must read as a floor, with what is missing beside the figure.\n{report}"
         );
     }
 
@@ -1389,11 +1389,11 @@ mod tests {
 
         assert!(
             report.contains(&bare_total(1_667_400)),
-            "tutto misurato: la somma è la somma.\n{report}"
+            "everything measured: the sum is the sum.\n{report}"
         );
         assert!(
             !report.contains("at least"),
-            "niente pavimenti dove non manca niente.\n{report}"
+            "no floors where nothing is missing.\n{report}"
         );
         assert!(
             !report.contains(&catalogue::say("cli.flow.unmeasured_heading", &[])),
@@ -1484,9 +1484,9 @@ mod tests {
     #[test]
     fn on_a_scratch_ledger_the_report_floors_the_total_and_names_the_handed_step() {
         let directory = TestDirectory::new();
-        let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+        let ledger = Ledger::open(&directory.0).expect("the ledger opens");
         let flow: FlowFile = serde_json::from_str(&flow_json("shell_check", "[]", "{}"))
-            .expect("caricare il flusso");
+            .expect("it loads");
         let mut measured = a_measured_call("ask", 1_667_400);
         measured.run_id = "corsa-consegnata".to_owned();
         let mut handed = a_handed_call("build", 33);
@@ -1506,9 +1506,9 @@ mod tests {
             None,
             None,
         )
-        .expect("registrare la corsa");
+        .expect("recording the run");
 
-        let report = cost_of_in(&directory.0, "prova").expect("il rapporto si scrive");
+        let report = cost_of_in(&directory.0, "prova").expect("the report is written");
 
         assert!(report.contains(&floored_total(1_667_400, 2, 1)), "{report}");
         assert!(!report.contains(&bare_total(1_667_400)), "{report}");
@@ -1527,11 +1527,11 @@ mod tests {
 
         assert!(
             report.contains(&catalogue::say("ui.cost.unknown", &[("calls", "1")])),
-            "senza nemmeno una misura non c'è un pavimento da dichiarare.\n{report}"
+            "with not one measure there is no floor to declare.\n{report}"
         );
         assert!(
             !report.contains(&bare_total(0)),
-            "e soprattutto non c'è uno zero.\n{report}"
+            "and above all there is no zero.\n{report}"
         );
     }
 }

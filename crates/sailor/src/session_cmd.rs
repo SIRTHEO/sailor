@@ -1514,9 +1514,9 @@ fn record_event(request: &Request<'_>) -> Result<Report, String> {
     // The announcement is renewed here and nowhere else: a lease that only the
     // opening renewed would expire on a terminal that has been working all day.
     let _ = announce(request, &arrival, "working");
-    Ok(Report::spoken(format!(
-        "{} su {}",
-        happened.name, happened.tty
+    Ok(Report::spoken(catalogue::say(
+        "cli.session.event_on_terminal",
+        &[("event", &happened.name), ("tty", &happened.tty)],
     )))
 }
 
@@ -1632,13 +1632,21 @@ fn report_census(request: &Request<'_>) -> Result<Report, String> {
             for terminal in terminals {
                 let _ = writeln!(
                     text,
-                    "{} ({}), {} processi",
-                    terminal.tty,
-                    terminal
-                        .ancestor
-                        .as_deref()
-                        .unwrap_or("an unknown ancestor"),
-                    terminal.inhabitants.len()
+                    "{}",
+                    catalogue::say(
+                        "cli.session.census_terminal",
+                        &[
+                            ("tty", &terminal.tty),
+                            (
+                                "ancestor",
+                                terminal
+                                    .ancestor
+                                    .as_deref()
+                                    .unwrap_or("an unknown ancestor")
+                            ),
+                            ("processes", &terminal.inhabitants.len().to_string()),
+                        ],
+                    )
                 );
                 for inhabitant in &terminal.inhabitants {
                     let _ = writeln!(
@@ -1817,7 +1825,7 @@ mod tests {
         census: &Census,
         options: &BTreeMap<String, String>,
     ) -> Result<Report, String> {
-        let payload = Payload::parse(raw).expect("il payload della prova è JSON");
+        let payload = Payload::parse(raw).expect("the scratch payload is JSON");
         act(&Request {
             verb,
             options,
@@ -1844,7 +1852,7 @@ mod tests {
         // the failure is of the same kind as the real ones — permissions, a full
         // disk, a file from a newer version — without fabricating any.
         let impossible = scratch.directory.join("non-e-un-file");
-        std::fs::create_dir_all(&impossible).expect("la cartella di prova");
+        std::fs::create_dir_all(&impossible).expect("the scratch directory");
         let settings = scratch.directory.join("settings-di-prova.json");
 
         for form in crate::verbs_of(USAGE)
@@ -1862,13 +1870,13 @@ mod tests {
             ];
             let report = dispatch(&words).unwrap_or_else(|error| {
                 panic!(
-                    "«session {form}» non legge il deposito, eppure è morto perché non \
-                     si apriva: {error}"
+                    "«session {form}» does not read the store, and yet it died \
+                     because the store would not open: {error}"
                 )
             });
             assert!(
                 !report.message.is_empty(),
-                "«session {form}» ha risposto senza dire niente"
+                "«session {form}» answered without saying anything"
             );
         }
     }
@@ -1911,26 +1919,26 @@ mod tests {
               }
             }"#,
         )
-        .expect("il descrittore si legge");
+        .expect("the descriptor reads");
 
-        grafted_into(&tool, &settings).expect("l'innesto riesce");
+        grafted_into(&tool, &settings).expect("the graft succeeds");
 
-        let written = std::fs::read_to_string(&settings).expect("rileggere");
-        let after: serde_json::Value = serde_json::from_str(&written).expect("JSON valido");
-        let hooks = after["hooks"].as_object().expect("i ganci sono un oggetto");
+        let written = std::fs::read_to_string(&settings).expect("reading it back");
+        let after: serde_json::Value = serde_json::from_str(&written).expect("valid JSON");
+        let hooks = after["hooks"].as_object().expect("the hooks are an object");
 
         assert_eq!(
             hooks.len(),
             1,
-            "innestato più di ciò che questa riga sa dire: {written}"
+            "more was grafted than this command line knows how to say: {written}"
         );
         assert!(hooks.contains_key("SoloQuesto"), "{written}");
         for nearby in ["SessionStart", "Stop", "UserPromptSubmit", "PreCompact"] {
             assert!(
                 !hooks.contains_key(nearby),
-                "«{nearby}» è entrato senza che nessun descrittore lo nominasse: \
-                 un evento vicino messo al posto di uno assente non si vede, e \
-                 il benvenuto finirebbe dove nessuno l'ha chiesto"
+                "«{nearby}» went in with no descriptor naming it: a nearby event \
+                 put in place of an absent one is invisible, and the welcome \
+                 would end up where nobody asked for it"
             );
         }
     }
@@ -1950,15 +1958,15 @@ mod tests {
               }
             }"#,
         )
-        .expect("il descrittore si legge");
+        .expect("the descriptor reads");
 
         let missing = moments_without_an_event(&says_one);
 
         assert_eq!(
             missing,
             vec!["session_start", "asked", "compacting"],
-            "i momenti senza evento sono quelli che il rapporto deve nominare, \
-             e sono esattamente quelli che il descrittore non dichiara"
+            "the moments with no event are the ones the report must name, and \
+             they are exactly the ones the descriptor does not declare"
         );
 
         let says_all: toolbox::descriptor::Descriptor = serde_json::from_str(
@@ -1971,12 +1979,12 @@ mod tests {
               }
             }"#,
         )
-        .expect("il descrittore si legge");
+        .expect("the descriptor reads");
 
         assert!(
             moments_without_an_event(&says_all).is_empty(),
-            "una riga che li dichiara tutti e quattro non deve avere niente da \
-             dichiarare mancante, o l'avviso diventa rumore e smette di essere letto"
+            "a command line declaring all four must have nothing to declare \
+             missing, or the warning becomes noise and stops being read"
         );
     }
 
@@ -1999,30 +2007,30 @@ mod tests {
     fn installing_leaves_the_hooks_that_were_already_there() {
         let scratch = Scratch::new("innesto");
         let settings = scratch.directory.join("settings.json");
-        std::fs::write(&settings, settings_of_someone_else()).expect("scrivere");
+        std::fs::write(&settings, settings_of_someone_else()).expect("writing it");
 
-        installed(&settings, &as_one_line_names_them(), "unmotore").expect("l'innesto riesce");
+        installed(&settings, &as_one_line_names_them(), "unmotore").expect("the graft succeeds");
 
         let after: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&settings).expect("rileggere"))
-                .expect("resta JSON valido");
+            serde_json::from_str(&std::fs::read_to_string(&settings).expect("reading it back"))
+                .expect("it stays valid JSON");
 
-        assert_eq!(after["model"], "opusplan", "l'innesto non tocca il resto");
+        assert_eq!(after["model"], "opusplan", "the graft does not touch the rest");
         let stops = after["hooks"]["Stop"]
             .as_array()
-            .expect("Stop è un vettore");
+            .expect("Stop is an array");
         assert_eq!(
             stops.len(),
             2,
-            "il gancio di prima è ancora lì, e il nostro è in più"
+            "the hook that was there before is still there, and ours is on top"
         );
         assert!(
             serde_json::to_string(&after).unwrap().contains("gancio.sh"),
-            "il gancio di chi c'era prima non è stato cancellato"
+            "the hook of whoever was there before was not deleted"
         );
         assert!(
             after["hooks"]["SessionStart"].is_array(),
-            "l'evento che porta il benvenuto dev'esserci"
+            "the event that carries the welcome has to be there"
         );
     }
 
@@ -2032,14 +2040,14 @@ mod tests {
     fn installing_twice_does_not_double_anything() {
         let scratch = Scratch::new("innesto-doppio");
         let settings = scratch.directory.join("settings.json");
-        std::fs::write(&settings, settings_of_someone_else()).expect("scrivere");
+        std::fs::write(&settings, settings_of_someone_else()).expect("writing it");
 
-        installed(&settings, &as_one_line_names_them(), "unmotore").expect("primo innesto");
-        let once = std::fs::read_to_string(&settings).expect("rileggere");
-        installed(&settings, &as_one_line_names_them(), "unmotore").expect("secondo innesto");
-        let twice = std::fs::read_to_string(&settings).expect("rileggere");
+        installed(&settings, &as_one_line_names_them(), "unmotore").expect("the first graft");
+        let once = std::fs::read_to_string(&settings).expect("reading it back");
+        installed(&settings, &as_one_line_names_them(), "unmotore").expect("the second graft");
+        let twice = std::fs::read_to_string(&settings).expect("reading it back");
 
-        assert_eq!(once, twice, "il secondo innesto non deve cambiare niente");
+        assert_eq!(once, twice, "the second graft must change nothing");
     }
 
     fn named_line() -> BTreeMap<String, String> {
@@ -2049,7 +2057,7 @@ mod tests {
     fn claims_in(deposit: &ledger::Ledger) -> Vec<serde_json::Value> {
         deposit
             .records_in(actions::presence::CLAIMS_COLLECTION)
-            .expect("leggere gli annunci")
+            .expect("reading the announcements")
             .into_iter()
             .map(|record| record.value)
             .collect()
@@ -2062,7 +2070,7 @@ mod tests {
     fn opening_a_terminal_announces_it_to_the_others() {
         let scratch = Scratch::new("annuncio");
         let store = scratch.store();
-        let deposit = ledger::Ledger::open(scratch.directory.join("deposito")).expect("il deposito");
+        let deposit = ledger::Ledger::open(scratch.directory.join("deposito")).expect("the ledger");
 
         asking(
             "open",
@@ -2080,7 +2088,7 @@ mod tests {
         assert_eq!(claims[0]["state"], serde_json::json!("working"));
         assert!(
             claims[0]["agent"].as_str().unwrap_or_default().contains("unmotore"),
-            "l'annuncio non dice quale riga di comando: {claims:?}"
+            "the announcement does not say which command line: {claims:?}"
         );
         // The shared words, so that exporting this later costs nobody a
         // translation: the conversation is the one the payload named.
@@ -2097,22 +2105,22 @@ mod tests {
     fn a_second_event_renews_the_announcement_instead_of_adding_one() {
         let scratch = Scratch::new("annuncio-rinnovato");
         let store = scratch.store();
-        let deposit = ledger::Ledger::open(scratch.directory.join("deposito")).expect("il deposito");
+        let deposit = ledger::Ledger::open(scratch.directory.join("deposito")).expect("the ledger");
         let payload = r#"{"session_id":"una-conversazione","cwd":"/un-albero"}"#;
 
         for verb in ["open", "event", "event"] {
             asking(verb, payload, &store, Some(&deposit), &one_terminal(), &named_line())
-                .expect("il momento passa");
+                .expect("the moment goes through");
         }
 
         let keys: Vec<String> = deposit
             .records_in(actions::presence::CLAIMS_COLLECTION)
-            .expect("leggere gli annunci")
+            .expect("reading the announcements")
             .into_iter()
             .map(|record| record.key)
             .collect();
 
-        assert_eq!(keys.len(), 1, "un annuncio per evento: {keys:?}");
+        assert_eq!(keys.len(), 1, "one announcement per event: {keys:?}");
         // AND THE KEY IS THE TERMINAL, nothing else. Three moments in one test
         // share this process, so counting alone would stay green with the
         // writer's pid in the key and go red only on the machine, at the third
@@ -2127,17 +2135,17 @@ mod tests {
     fn closing_a_terminal_releases_what_it_announced() {
         let scratch = Scratch::new("annuncio-rilasciato");
         let store = scratch.store();
-        let deposit = ledger::Ledger::open(scratch.directory.join("deposito")).expect("il deposito");
+        let deposit = ledger::Ledger::open(scratch.directory.join("deposito")).expect("the ledger");
         let payload = r#"{"session_id":"una-conversazione","cwd":"/un-albero"}"#;
         asking("open", payload, &store, Some(&deposit), &one_terminal(), &named_line())
-            .expect("l'apertura riesce");
+            .expect("the opening succeeds");
 
         asking("close", payload, &store, Some(&deposit), &one_terminal(), &named_line())
             .expect("la chiusura riesce");
 
         let claims = claims_in(&deposit);
         assert_eq!(claims.len(), 1, "{claims:?}");
-        assert!(!claims[0]["released_at"].is_null(), "resta annunciato: {claims:?}");
+        assert!(!claims[0]["released_at"].is_null(), "it stays announced: {claims:?}");
     }
 
     /// **A TERMINAL THAT ASKED NOT TO BE FOLLOWED IS NOT LEFT ANNOUNCED.** The
@@ -2147,17 +2155,17 @@ mod tests {
     fn detaching_a_terminal_takes_it_out_of_the_crew_too() {
         let scratch = Scratch::new("annuncio-staccato");
         let store = scratch.store();
-        let deposit = ledger::Ledger::open(scratch.directory.join("deposito")).expect("il deposito");
+        let deposit = ledger::Ledger::open(scratch.directory.join("deposito")).expect("the ledger");
         let payload = r#"{"session_id":"una-conversazione","cwd":"/un-albero"}"#;
         asking("open", payload, &store, Some(&deposit), &one_terminal(), &named_line())
-            .expect("l'apertura riesce");
+            .expect("the opening succeeds");
 
         asking("detach", payload, &store, Some(&deposit), &one_terminal(), &named_line())
-            .expect("lo stacco riesce");
+            .expect("the detach succeeds");
 
         let claims = claims_in(&deposit);
         assert_eq!(claims.len(), 1, "{claims:?}");
-        assert!(!claims[0]["released_at"].is_null(), "resta annunciato: {claims:?}");
+        assert!(!claims[0]["released_at"].is_null(), "it stays announced: {claims:?}");
     }
 
     /// **THE SAME TERMINAL UNDER A NEW NAME IS THE SAME ROW.** The graft learns
@@ -2169,19 +2177,19 @@ mod tests {
     fn a_terminal_whose_command_line_gets_a_name_is_still_one_announcement() {
         let scratch = Scratch::new("annuncio-rinominato");
         let store = scratch.store();
-        let deposit = ledger::Ledger::open(scratch.directory.join("deposito")).expect("il deposito");
+        let deposit = ledger::Ledger::open(scratch.directory.join("deposito")).expect("the ledger");
         let payload = r#"{"session_id":"una-conversazione","cwd":"/un-albero"}"#;
 
         asking("open", payload, &store, Some(&deposit), &one_terminal(), &no_options())
-            .expect("prima senza nome");
+            .expect("first with no name");
         asking("event", payload, &store, Some(&deposit), &one_terminal(), &named_line())
-            .expect("poi col nome");
+            .expect("then with the name");
 
         let claims = claims_in(&deposit);
         assert_eq!(claims.len(), 1, "{claims:?}");
         assert!(
             claims[0]["agent"].as_str().unwrap_or_default().contains("unmotore"),
-            "l'annuncio è rimasto al nome vecchio: {claims:?}"
+            "the announcement stayed on the old name: {claims:?}"
         );
     }
 
@@ -2192,7 +2200,7 @@ mod tests {
     fn a_graft_of_ours_that_is_out_of_date_is_replaced() {
         let scratch = Scratch::new("innesto-vecchio");
         let settings = scratch.directory.join("settings.json");
-        let binary = std::env::current_exe().expect("dove sono").display().to_string();
+        let binary = std::env::current_exe().expect("where I am").display().to_string();
         let (event, verb) = as_one_line_names_them()[0];
         std::fs::write(
             &settings,
@@ -2204,22 +2212,22 @@ mod tests {
                     }]}]
                 }
             }))
-            .expect("scrivere"),
+            .expect("writing it"),
         )
-        .expect("scrivere");
+        .expect("writing it");
 
-        installed(&settings, &as_one_line_names_them(), "unmotore").expect("l'innesto riesce");
-        let written = std::fs::read_to_string(&settings).expect("rileggere");
-        let root: serde_json::Value = serde_json::from_str(&written).expect("è JSON");
-        let list = root["hooks"][event].as_array().expect("l'elenco dell'evento");
+        installed(&settings, &as_one_line_names_them(), "unmotore").expect("the graft succeeds");
+        let written = std::fs::read_to_string(&settings).expect("reading it back");
+        let root: serde_json::Value = serde_json::from_str(&written).expect("it is JSON");
+        let list = root["hooks"][event].as_array().expect("the event's list");
 
-        assert_eq!(list.len(), 1, "l'innesto vecchio è rimasto accanto al nuovo: {written}");
+        assert_eq!(list.len(), 1, "the old graft stayed beside the new one: {written}");
         // THE ONE ENTRY OF THIS EVENT: a search over the whole file would find
         // the other moments' fresh lines and call the stale one repaired.
-        let only = serde_json::to_string(&list[0]).expect("una riga sola");
+        let only = serde_json::to_string(&list[0]).expect("a single row");
         assert!(
             only.contains("--cli unmotore"),
-            "l'innesto vecchio è stato saltato invece che rifatto: {only}"
+            "the old graft was skipped instead of remade: {only}"
         );
     }
 
@@ -2229,15 +2237,15 @@ mod tests {
     fn a_settings_file_that_does_not_parse_is_left_alone() {
         let scratch = Scratch::new("innesto-rotto");
         let settings = scratch.directory.join("settings.json");
-        std::fs::write(&settings, "{ questo non è JSON").expect("scrivere");
+        std::fs::write(&settings, "{ this is not JSON").expect("writing it");
 
         let refused = installed(&settings, &as_one_line_names_them(), "unmotore")
-            .expect_err("un file illeggibile ferma l'innesto");
+            .expect_err("an unreadable file stops the graft");
         assert!(refused.contains("settings.json"), "{refused}");
         assert_eq!(
-            std::fs::read_to_string(&settings).expect("rileggere"),
-            "{ questo non è JSON",
-            "il file resta esattamente com'era"
+            std::fs::read_to_string(&settings).expect("reading it back"),
+            "{ this is not JSON",
+            "the file stays exactly as it was"
         );
     }
 
@@ -2522,10 +2530,10 @@ mod tests {
         let scratch = Scratch::new("innesto-neutro");
         let settings = scratch.directory.join("settings.json");
         installed(&settings, &as_one_line_names_them(), "unmotore")
-            .expect("l'innesto riesce anche su un file che non c'era");
+            .expect("the graft succeeds even on a file that was not there");
 
-        let binary = std::env::current_exe().expect("dove sono").display().to_string();
-        let written = std::fs::read_to_string(&settings).expect("rileggere");
+        let binary = std::env::current_exe().expect("where I am").display().to_string();
+        let written = std::fs::read_to_string(&settings).expect("reading it back");
         let ours = written.replace(&binary, "<the binary>");
         assert!(
             ours != written,
@@ -2749,8 +2757,8 @@ mod tests {
     #[test]
     fn the_welcome_hands_over_the_rules_the_tree_really_has() {
         let scratch = Scratch::new("regole-dell-albero");
-        std::fs::write(scratch.directory.join("AGENTS.md"), "come si lavora qui\n")
-            .expect("le regole si scrivono");
+        std::fs::write(scratch.directory.join("AGENTS.md"), "how the work is done here\n")
+            .expect("the rules are written");
 
         let said = welcome_of(&Arrival {
             anchor: sessions::Anchor {
@@ -2763,13 +2771,13 @@ mod tests {
             at: 1_000,
         });
 
-        assert!(said.contains("AGENTS.md"), "il benvenuto non nomina le regole: {said}");
+        assert!(said.contains("AGENTS.md"), "the welcome does not name the rules: {said}");
         // A NAME AND NOT THE FILE: what it says is the file's business, and a
         // tree's instructions in the context of every session are paid at every
         // single start.
         assert!(
-            !said.contains("come si lavora qui"),
-            "il benvenuto porta dentro il testo intero: {said}"
+            !said.contains("how the work is done here"),
+            "the welcome carries the whole text inside: {said}"
         );
     }
 
@@ -2813,10 +2821,10 @@ mod tests {
 
         let said = welcome(&arriving_in(&scratch), None, &open, &Ok(()));
 
-        assert!(said.contains("un-flusso-1788423534"), "non nomina la corsa: {said}");
+        assert!(said.contains("un-flusso-1788423534"), "it does not name the run: {said}");
         assert!(
             said.contains("sailor flow resume un-flusso-1788423534"),
-            "non dice come si prende in mano: {said}"
+            "it does not say how to take it up: {said}"
         );
     }
 
@@ -2838,7 +2846,7 @@ mod tests {
             page: None,
             page_unseen: None,
         })
-        .expect("una corsa in attesa si dice");
+        .expect("a run that is waiting gets said");
         let again = what_is_still_open(&StillOpen {
             waiting: Vec::new(),
             ask_again: vec![same()],
@@ -2846,9 +2854,9 @@ mod tests {
             page: None,
             page_unseen: None,
         })
-        .expect("una corsa da rilanciare si dice");
+        .expect("a run to start again gets said");
 
-        assert_ne!(waiting, again, "le due liste dicono la stessa frase");
+        assert_ne!(waiting, again, "the two lists say the same sentence");
 
         // AND BOTH TOGETHER ARE TWO LINES, not one list of two: a greeting that
         // merged them would send whoever reads it to take a step nobody handed
@@ -2860,7 +2868,7 @@ mod tests {
             page: None,
             page_unseen: None,
         })
-        .expect("le due liste insieme si dicono");
+        .expect("the two lists together get said");
         assert_eq!(both.lines().count(), 2, "{both}");
         assert_eq!(both, format!("{waiting_line}\n{again_line}",
             waiting_line = waiting.replace("una-corsa-1", "in-attesa-1"),
@@ -2893,10 +2901,10 @@ mod tests {
         let arrival = arriving_in(&scratch);
 
         let quiet = welcome(&arrival, None, &Ok(None), &Ok(()));
-        let blind = welcome(&arrival, None, &Err("il file è di un altro".to_owned()), &Ok(()));
+        let blind = welcome(&arrival, None, &Err("the file belongs to somebody else".to_owned()), &Ok(()));
 
-        assert_ne!(quiet, blind, "un deposito illeggibile saluta come uno vuoto");
-        assert!(blind.contains("il file è di un altro"), "senza il motivo: {blind}");
+        assert_ne!(quiet, blind, "an unreadable ledger greets like an empty one");
+        assert!(blind.contains("the file belongs to somebody else"), "without the reason: {blind}");
     }
 
     /// The reading itself, against a real ledger: the two words the store keeps
@@ -2905,7 +2913,7 @@ mod tests {
     #[test]
     fn the_two_lists_come_from_the_ledger_under_its_own_two_words() {
         let scratch = Scratch::new("deposito-vero");
-        let deposit = ledger::Ledger::open(&scratch.directory).expect("aprire il deposito");
+        let deposit = ledger::Ledger::open(&scratch.directory).expect("the ledger opens");
         for (run_id, flow, status) in [
             ("in-attesa-1", "un-flusso", "waiting"),
             ("non-ancora-1", "un-altro", "not_yet"),
@@ -2926,7 +2934,7 @@ mod tests {
                     worktree: None,
                     stop_reason: None,
                 })
-                .expect("registrare la corsa");
+                .expect("recording the run");
         }
 
         let nobody = Started {
@@ -2935,7 +2943,7 @@ mod tests {
             worktree: PathBuf::new(),
             home: None,
         };
-        let found = still_open_in(&deposit, None, &nobody).expect("leggere le due liste");
+        let found = still_open_in(&deposit, None, &nobody).expect("reading the two lists");
 
         assert_eq!(
             found.waiting.iter().map(|run| run.run_id.as_str()).collect::<Vec<_>>(),
@@ -2964,8 +2972,8 @@ mod tests {
             at: 1_000,
         });
 
-        assert!(!said.contains("AGENTS.md"), "promette un file che non c'è: {said}");
-        assert!(said.contains("ttys004"), "e il benvenuto sparisce del tutto: {said}");
+        assert!(!said.contains("AGENTS.md"), "it promises a file that is not there: {said}");
+        assert!(said.contains("ttys004"), "and the welcome disappears altogether: {said}");
     }
 
     /// **THE WELCOME PROMISES ONLY WORDS THAT EXIST.** It says «to detach it:
@@ -2993,7 +3001,7 @@ mod tests {
             tty: "",
             at: 1_000,
         };
-        act(&request).expect("l'innesto riesce");
+        act(&request).expect("the graft succeeds");
 
         let saluto = welcome_of(&Arrival {
             anchor: sessions::Anchor {
@@ -3016,13 +3024,13 @@ mod tests {
                 .join(format!("{}.md", word.trim_start_matches('/')));
             assert!(
                 file.exists(),
-                "il benvenuto promette «{word}» e l'innesto non lo scrive: {}",
+                "the welcome promises «{word}» and the graft does not write it: {}",
                 file.display()
             );
         }
         assert!(
             saluto.contains("/sailor-off"),
-            "il saluto deve promettere lo stacco, o lo stacco non lo sa nessuno"
+            "the greeting must promise the detach, or nobody knows the detach is there"
         );
     }
 
@@ -3214,23 +3222,23 @@ mod tests {
         .expect("l'apertura riesce");
 
         let spoken: serde_json::Value =
-            serde_json::from_str(&report.message).expect("un gancio SessionStart risponde in JSON");
+            serde_json::from_str(&report.message).expect("a SessionStart hook answers in JSON");
         let context = spoken["hookSpecificOutput"]["additionalContext"]
             .as_str()
-            .expect("il saluto viaggia in hookSpecificOutput.additionalContext");
+            .expect("the greeting travels in hookSpecificOutput.additionalContext");
 
         assert!(context.contains("Sailor"), "{context}");
         assert!(
             context.contains("/sailor-off"),
-            "il saluto deve dire come staccarsi, o lo stacco esiste e non lo sa nessuno: {context}"
+            "the greeting must say how to detach, or the detach exists and nobody knows it: {context}"
         );
         assert!(
             context.contains("ttys004"),
-            "il saluto nomina il terminale di cui parla: {context}"
+            "the greeting names the terminal it speaks of: {context}"
         );
         assert_eq!(
             spoken["hookSpecificOutput"]["hookEventName"], "SessionStart",
-            "l'involucro dichiara di quale evento è la risposta"
+            "the wrapper declares which event the answer is for"
         );
     }
 
@@ -3243,7 +3251,7 @@ mod tests {
         let store = scratch.store();
         let census = one_terminal();
 
-        ask("detach", "{}", &store, &census, &no_options()).expect("lo stacco riesce");
+        ask("detach", "{}", &store, &census, &no_options()).expect("the detach succeeds");
         let report = ask(
             "open",
             &a_session_start("s-2"),
@@ -3251,19 +3259,19 @@ mod tests {
             &census,
             &no_options(),
         )
-        .expect("l'apertura su un terminale staccato non è un errore");
+        .expect("opening on a detached terminal is not an error");
 
         assert_eq!(
             report.message, "",
-            "un terminale staccato non riceve saluti"
+            "a detached terminal receives no greeting"
         );
         assert!(
             store
                 .events_on("ttys004")
-                .expect("leggere gli eventi")
+                .expect("reading the events")
                 .iter()
                 .all(|event| event.name != "SessionStart"),
-            "un terminale staccato non lascia eventi: staccato vale per i fatti, non solo per il testo"
+            "a detached terminal leaves no events: detached holds for the facts, not only for the text"
         );
     }
 
@@ -3289,7 +3297,7 @@ mod tests {
             tty: "",
             at: 1_000,
         })
-        .expect("il censimento risponde");
+        .expect("the census answers");
 
         assert_eq!(report.code, REFUSED);
         assert!(
@@ -3312,18 +3320,18 @@ mod tests {
             &one_terminal(),
             &no_options(),
         )
-        .expect("registrare");
+        .expect("recording it");
         assert_eq!(report.code, 0);
 
-        let row = store.terminal("ttys004").expect("leggere").expect("c'è");
+        let row = store.terminal("ttys004").expect("reading it").expect("it is there");
         assert_eq!(row.worktree, "/work/sailor");
         assert_eq!(row.ancestor.as_deref(), Some("Whatever"));
         assert_eq!(row.session_id.as_deref(), Some("abc"));
-        let events = store.events_on("ttys004").expect("gli eventi");
-        assert_eq!(events[0].name, "SessionStart", "il nome viene dal payload");
+        let events = store.events_on("ttys004").expect("the events");
+        assert_eq!(events[0].name, "SessionStart", "the name comes from the payload");
         assert!(
             events[0].payload.is_some(),
-            "il payload si conserva com'è arrivato"
+            "the payload is kept as it arrived"
         );
     }
 
@@ -3333,15 +3341,15 @@ mod tests {
     fn a_payload_with_nothing_in_it_still_registers_the_terminal() {
         let scratch = Scratch::new("empty-payload");
         let store = scratch.store();
-        ask("open", "{}", &store, &one_terminal(), &no_options()).expect("registrare");
-        let row = store.terminal("ttys004").expect("leggere").expect("c'è");
+        ask("open", "{}", &store, &one_terminal(), &no_options()).expect("recording it");
+        let row = store.terminal("ttys004").expect("reading it").expect("it is there");
         assert_eq!(row.session_id, None);
         assert!(
             !row.worktree.is_empty(),
-            "l'albero cade sulla cartella corrente"
+            "the tree falls back to the current directory"
         );
         assert_eq!(
-            store.events_on("ttys004").expect("gli eventi")[0].name,
+            store.events_on("ttys004").expect("the events")[0].name,
             "open"
         );
     }
@@ -3359,12 +3367,12 @@ mod tests {
             &refused(),
             &no_options(),
         )
-        .expect("un censimento negato non deve far fallire la registrazione");
+        .expect("a refused census must not fail the registration");
         assert_eq!(report.code, 0);
-        let row = store.terminal("ttys004").expect("leggere").expect("c'è");
+        let row = store.terminal("ttys004").expect("reading it").expect("it is there");
         assert_eq!(
             row.ancestor, None,
-            "un capostipite che non si è potuto leggere resta ignoto, non inventato"
+            "an ancestor that could not be read stays unknown, not invented"
         );
     }
 
@@ -3374,16 +3382,16 @@ mod tests {
     fn the_census_says_it_does_not_know_and_says_it_with_its_own_code() {
         let scratch = Scratch::new("refused-census");
         let store = scratch.store();
-        let report = ask("census", "", &store, &refused(), &no_options()).expect("censire");
+        let report = ask("census", "", &store, &refused(), &no_options()).expect("taking the census");
         assert_eq!(report.code, REFUSED);
         assert!(
             report.message.contains("I DO NOT KNOW"),
-            "un diniego va detto, non trasformato in un elenco vuoto: {}",
+            "a refusal must be said, not turned into an empty list: {}",
             report.message
         );
 
         let empty = Census::NoTerminal;
-        let other = ask("census", "", &store, &empty, &no_options()).expect("censire");
+        let other = ask("census", "", &store, &empty, &no_options()).expect("taking the census");
         assert_eq!(other.code, 0);
         assert!(other.message.contains("no process"), "{}", other.message);
     }
@@ -3394,7 +3402,7 @@ mod tests {
     fn detaching_through_the_command_holds_across_a_new_session() {
         let scratch = Scratch::new("detach");
         let store = scratch.store();
-        ask("detach", "", &store, &one_terminal(), &no_options()).expect("staccare");
+        ask("detach", "", &store, &one_terminal(), &no_options()).expect("detaching");
         ask(
             "open",
             r#"{"session_id":"nuova","cwd":"/here"}"#,
@@ -3402,13 +3410,13 @@ mod tests {
             &one_terminal(),
             &no_options(),
         )
-        .expect("aprire dopo");
+        .expect("opening afterwards");
         assert!(store
             .terminal("ttys004")
             .expect("leggere")
             .expect("c'è")
             .is_detached());
-        ask("attach", "", &store, &one_terminal(), &no_options()).expect("riattaccare");
+        ask("attach", "", &store, &one_terminal(), &no_options()).expect("attaching again");
         assert!(!store
             .terminal("ttys004")
             .expect("leggere")
@@ -3427,9 +3435,9 @@ mod tests {
             &one_terminal(),
             &no_options(),
         )
-        .expect("aprire");
-        ask("detach", "", &store, &one_terminal(), &no_options()).expect("staccare");
-        let report = ask("list", "", &store, &one_terminal(), &no_options()).expect("elencare");
+        .expect("opening it");
+        ask("detach", "", &store, &one_terminal(), &no_options()).expect("detaching");
+        let report = ask("list", "", &store, &one_terminal(), &no_options()).expect("listing");
         assert!(report.message.contains("ttys004"), "{}", report.message);
         // Through the catalogue, or the day the list is read in another
         // language this test calls a translation a defect.
@@ -3456,15 +3464,15 @@ mod tests {
                 path.display().to_string(),
             ];
             dispatch(&words)
-                .unwrap_or_else(|error| panic!("«session {form}» ha preteso un tty: {error}"));
+                .unwrap_or_else(|error| panic!("«session {form}» demanded a tty: {error}"));
         }
     }
 
     #[test]
     fn an_unknown_form_names_the_ones_that_exist() {
-        let message = dispatch(&["sweep".to_owned()]).expect_err("una forma ignota è un errore");
+        let message = dispatch(&["sweep".to_owned()]).expect_err("an unknown form is an error");
         for form in crate::verbs_of(USAGE) {
-            assert!(message.contains(form), "{message} non nomina «{form}»");
+            assert!(message.contains(form), "{message} does not name «{form}»");
         }
     }
 
@@ -3476,7 +3484,7 @@ mod tests {
         assert!(options_of(&pair).is_err());
         let bare: Vec<String> = ["--json".to_owned()].into();
         assert_eq!(
-            options_of(&bare).expect("--json non vuole valori")["json"],
+            options_of(&bare).expect("--json takes no value")["json"],
             "true"
         );
     }
