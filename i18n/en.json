@@ -562,6 +562,7 @@
   "run.failure.child_run_not_recorded": "the child run could not be recorded in the store",
   "run.failure.clock_before_epoch": "the machine's clock reads a time before 1970 — the subflow never opened",
   "run.failure.clock_broke": "the machine's clock would not say the time",
+  "run.failure.empty_answer": "the engine said nothing: an empty answer is not a broken shape, and it is not a success either",
   "run.failure.empty_signal": "the signal arrived with nothing in it",
   "run.failure.engine_exhausted": "the engine ran out of its quota — it did not break",
   "run.failure.engine_exit_error": "the engine exited with an error",
