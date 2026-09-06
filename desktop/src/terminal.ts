@@ -554,6 +554,59 @@ export function livenessWord(liveness: Liveness, speaking = false): string {
   }
 }
 
+// ── the three facts that stay on screen ──────────────────────────────────
+
+/** What this agent needs from the person: nothing, a decision, or a way past. */
+export type Attention =
+  | { need: "none" }
+  | { need: "decision" }
+  | { need: "blocked"; why: string };
+
+/** The facts an alarm may be made of. `recovered` is here to be ignored. */
+export interface Asking {
+  /** A step handed to a person waits in this terminal. */
+  handed?: boolean;
+  /** What was refused and stops the work until somebody answers it. */
+  blocked?: string | null;
+  /** A refusal the window carried on past on its own. */
+  recovered?: string | null;
+}
+
+/** **A REFUSAL THE WINDOW GOT PAST ON ITS OWN IS NOT AN ALARM.** */
+export function attentionOf(asking: Asking): Attention {
+  const blocked = asking.blocked ?? null;
+  if (blocked !== null && blocked !== "") return { need: "blocked", why: blocked };
+  return asking.handed === true ? { need: "decision" } : { need: "none" };
+}
+
+/** How long a terminal's last byte still attests that it is getting on with it. */
+export const ATTESTED_MS = 60_000;
+
+/** Getting on with it, finished, or nobody can say. */
+export type Progress =
+  | { how: "working" }
+  | { how: "done" }
+  | { how: "unsure"; because: "no_channel" | "nothing_since" };
+
+/**
+ * **BEING ALIVE IS NOT PROGRESS, AND SILENCE IS NOT CONCLUSION.** Thinking and
+ * wedged are told apart by nobody here, and `unsure` says so.
+ */
+export function progressOf(liveness: Liveness, spokeAt: number | null, now: number): Progress {
+  if (liveness.state === "closed") return { how: "done" };
+  if (liveness.state === "unknown") return { how: "unsure", because: "no_channel" };
+  if (spokeAt !== null && now - spokeAt <= ATTESTED_MS) return { how: "working" };
+  return { how: "unsure", because: "nothing_since" };
+}
+
+/**
+ * **THE FOCUSED ONE FIRST, AND NOTHING ELSE MOVES.** Output and state are not
+ * arguments, so no arrival can reorder what somebody is looking at.
+ */
+export function paneOrder<T extends { id: string }>(opened: readonly T[], focused: string | null): T[] {
+  return [...opened].sort((a, b) => Number(b.id === focused) - Number(a.id === focused));
+}
+
 // ── the output, as it comes ──────────────────────────────────────────────
 
 /** A piece of output, with the offset of its first byte. */
@@ -579,6 +632,8 @@ export class OutputBus {
      the answer costs a map write per piece. What leaves is a set that changes a
      few times a second — the bytes themselves never reach React. */
   private readonly spokeAt = new Map<string, number>();
+  /* The one above is pruned every breath; progress asks a longer question. */
+  private readonly lastAt = new Map<string, number>();
   private readonly watchers = new Set<(speaking: ReadonlySet<string>) => void>();
   private speakers = new Set<string>();
   private looking: ReturnType<typeof setInterval> | null = null;
@@ -602,6 +657,7 @@ export class OutputBus {
     // SPEECH IS SPEECH WITH OR WITHOUT A PANE: the bytes below may be lost,
     // but that a terminal is talking is true either way.
     this.spokeAt.set(id, this.now());
+    this.lastAt.set(id, this.now());
     if (!this.speakers.has(id)) this.look();
     this.keepLooking();
 
@@ -614,6 +670,11 @@ export class OutputBus {
   /** The terminals that have said something within the last breath. */
   speaking(): ReadonlySet<string> {
     return this.speakers;
+  }
+
+  /** When each terminal last said anything, for as long as this window lives. */
+  spokenAt(id: string): number | null {
+    return this.lastAt.get(id) ?? null;
   }
 
   /** Told whenever that set changes; returns how to stop being told. */
