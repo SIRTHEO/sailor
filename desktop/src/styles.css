@@ -3990,8 +3990,8 @@ tr[data-followable]:hover {
   min-width: 0;
 }
 
-/* IT IS ASKED FOR, AND THEN IT IS UNDER THE TERMINAL. Beside it, this band
-   took a column from every width and the whole terminal below 600 pixels. */
+/* ASKED FOR, AND THEN UNDER THE TERMINAL: beside it, this band took a column
+   from every width and the whole terminal below 600 pixels. */
 .session-context {
   display: flex;
   flex-direction: column;
@@ -4695,18 +4695,14 @@ tr[data-followable]:hover {
   overflow: hidden;
 }
 
-/* THE CROSSING, NOT THE STATE. The border is lifted for a breath when the tree
-   under focus changes or a pane's progress crosses over, and it is a colour
-   that stops, never a movement that repeats. */
+/* THE CROSSING, NOT THE STATE: a colour that stops, never a movement. */
 .pane[data-stirred] {
   border-color: var(--accent-fill);
 }
 
 /* ── the three facts, in the border ──────────────────────────────────────
-   None of the three is a column. A signal with a width takes it from the
-   terminal, and it was a band taking a column that made this window a
-   dashboard: the notch is out of the flow entirely, the other two sit in
-   rows that already wrap. */
+   None of the three is a column: the notch is out of the flow entirely, the
+   other two sit in rows that already wrap. */
 
 .pane__where {
   display: flex;
