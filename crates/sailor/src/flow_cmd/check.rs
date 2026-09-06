@@ -53,94 +53,9 @@ pub(super) fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) 
     // The inventory is this machine's, so it is read here for the same reason
     // as the price list: a test feeds `check_report` a scratch one instead.
     extensions_of_this_machine_into(&mut report, &flow);
-    // **UN RINVIO DENTRO UN CAMPO CHE VIENE ESEGUITO SI FERMA QUI.** Prima
-    // dell'esecuzione, perché dopo il rinvio è già diventato testo di shell e
-    // non si distingue più da ciò che il flusso aveva scritto.
-    let montati: Vec<String> = outside_text_in_command(&flow)
-        .iter()
-        .map(|found| format!("{} in «{}»", found.step, found.field))
-        .collect();
-    if !montati.is_empty() {
+    if let Some(refusal) = refusals_of(&flow, &registry).into_iter().next() {
         println!("{report}");
-        return Err(catalogue::say(
-            "cli.flow.value_mounted_into_an_executed_field",
-            &[("flow", &flow.id), ("fields", &montati.join(", "))],
-        ));
-    }
-
-    // **UN PERCORSO DI POSIZIONE ASSOLUTO È UN ERRORE, NON UN AVVISO.** Il
-    // flusso gira in un posto solo: altrove non fallisce, lavora nel posto
-    // sbagliato — ed è il modo in cui il guasto 25 è passato inosservato.
-    let stuck: Vec<String> = hardcoded_paths(&flow)
-        .iter()
-        .filter(|path| path.fatal)
-        .map(|path| format!("{} in «{}» ({})", path.step, path.field, path.value))
-        .collect();
-    if !stuck.is_empty() {
-        println!("{report}");
-        return Err(catalogue::say(
-            "cli.flow.absolute_path_in_a_place_field",
-            &[("flow", &flow.id), ("fields", &stuck.join("; "))],
-        ));
-    }
-    // **BEFORE THE RUN, BECAUSE ONE OF THE TWO SHAPES IS SILENT.** In `when`
-    // a pointer that cannot match makes the step skip, and a skipped step
-    // closes green; in a value it breaks at the first run.
-    let dead: Vec<String> = pointers_that_cannot_match(&flow)
-        .iter()
-        .map(|found| {
-            if found.field.is_empty() {
-                format!("{} in «when» ({})", found.step, found.pointer)
-            } else {
-                format!("{} in «{}» ({})", found.step, found.field, found.pointer)
-            }
-        })
-        .collect();
-    if !dead.is_empty() {
-        println!("{report}");
-        return Err(catalogue::say(
-            "cli.flow.pointer_that_cannot_match",
-            &[("flow", &flow.id), ("fields", &dead.join("; "))],
-        ));
-    }
-    // An error, not a warning: the step does not fail, it commits another
-    // session's staged work under a message about something else.
-    let sweeping: Vec<String> = undelimited_commits(&flow)
-        .iter()
-        .map(|commit| format!("{} in «{}»", commit.step, commit.field))
-        .collect();
-    if !sweeping.is_empty() {
-        println!("{report}");
-        return Err(catalogue::say(
-            "cli.flow.commit_without_paths",
-            &[("flow", &flow.id), ("steps", &sweeping.join(", "))],
-        ));
-    }
-    let seeing = blind_steps_asking_for_a_session(&flow);
-    if !seeing.is_empty() {
-        println!("{report}");
-        return Err(catalogue::say(
-            "cli.flow.blind_and_asking_for_a_session",
-            &[("flow", &flow.id), ("steps", &seeing.join(", "))],
-        ));
-    }
-    // An error, not a warning: a run that closes on this step closes without
-    // asking anybody, and the whole saving depends on what said yes.
-    let deciding = deciders_that_are_not_checks(&flow, &registry);
-    if !deciding.is_empty() {
-        println!("{report}");
-        return Err(catalogue::say(
-            "cli.flow.decides_done_without_a_check",
-            &[("flow", &flow.id), ("steps", &deciding.join(", "))],
-        ));
-    }
-    let unasked = handed_without_choices(&flow);
-    if !unasked.is_empty() {
-        println!("{report}");
-        return Err(catalogue::say(
-            "cli.flow.handed_without_choices",
-            &[("flow", &flow.id), ("steps", &unasked.join(", "))],
-        ));
+        return Err(refusal);
     }
     if unknown.is_empty() {
         return Ok(report);
@@ -153,6 +68,94 @@ pub(super) fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) 
         "cli.flow.tools_no_descriptor_declares",
         &[("flow", &flow.id), ("tools", &unknown.join(", "))],
     ))
+}
+
+/// Every reason this flow is refused, in the order a reader meets them.
+///
+/// **THE LIST IS ONE, AND WHOEVER WRITES A FLOW ASKS IT TOO.** A flow saved by
+/// `sailor flow edit` and refused by the next check is the fault that command
+/// closes. Not here: the tools no descriptor declares, which take a detector.
+pub(super) fn refusals_of(flow: &FlowFile, registry: &ActionRegistry) -> Vec<String> {
+    let mut refused = Vec::new();
+    // A reference inside an executed field stops before the run: afterwards it
+    // is shell text and no longer tells itself apart from what the flow wrote.
+    let mounted: Vec<String> = outside_text_in_command(flow)
+        .iter()
+        .map(|found| format!("{} in «{}»", found.step, found.field))
+        .collect();
+    if !mounted.is_empty() {
+        refused.push(catalogue::say(
+            "cli.flow.value_mounted_into_an_executed_field",
+            &[("flow", &flow.id), ("fields", &mounted.join(", "))],
+        ));
+    }
+    // An error, not a warning: elsewhere the flow does not fail, it works in
+    // the wrong place. See fault 25.
+    let stuck: Vec<String> = hardcoded_paths(flow)
+        .iter()
+        .filter(|path| path.fatal)
+        .map(|path| format!("{} in «{}» ({})", path.step, path.field, path.value))
+        .collect();
+    if !stuck.is_empty() {
+        refused.push(catalogue::say(
+            "cli.flow.absolute_path_in_a_place_field",
+            &[("flow", &flow.id), ("fields", &stuck.join("; "))],
+        ));
+    }
+    // One of the two shapes is silent: in `when` a pointer that cannot match
+    // makes the step skip, and a skipped step closes green.
+    let dead: Vec<String> = pointers_that_cannot_match(flow)
+        .iter()
+        .map(|found| {
+            if found.field.is_empty() {
+                format!("{} in «when» ({})", found.step, found.pointer)
+            } else {
+                format!("{} in «{}» ({})", found.step, found.field, found.pointer)
+            }
+        })
+        .collect();
+    if !dead.is_empty() {
+        refused.push(catalogue::say(
+            "cli.flow.pointer_that_cannot_match",
+            &[("flow", &flow.id), ("fields", &dead.join("; "))],
+        ));
+    }
+    // An error, not a warning: the step does not fail, it commits another
+    // session's staged work under a message about something else.
+    let sweeping: Vec<String> = undelimited_commits(flow)
+        .iter()
+        .map(|commit| format!("{} in «{}»", commit.step, commit.field))
+        .collect();
+    if !sweeping.is_empty() {
+        refused.push(catalogue::say(
+            "cli.flow.commit_without_paths",
+            &[("flow", &flow.id), ("steps", &sweeping.join(", "))],
+        ));
+    }
+    let seeing = blind_steps_asking_for_a_session(flow);
+    if !seeing.is_empty() {
+        refused.push(catalogue::say(
+            "cli.flow.blind_and_asking_for_a_session",
+            &[("flow", &flow.id), ("steps", &seeing.join(", "))],
+        ));
+    }
+    // An error, not a warning: a run that closes on this step closes without
+    // asking anybody, and the whole saving depends on what said yes.
+    let deciding = deciders_that_are_not_checks(flow, registry);
+    if !deciding.is_empty() {
+        refused.push(catalogue::say(
+            "cli.flow.decides_done_without_a_check",
+            &[("flow", &flow.id), ("steps", &deciding.join(", "))],
+        ));
+    }
+    let unasked = handed_without_choices(flow);
+    if !unasked.is_empty() {
+        refused.push(catalogue::say(
+            "cli.flow.handed_without_choices",
+            &[("flow", &flow.id), ("steps", &unasked.join(", "))],
+        ));
+    }
+    refused
 }
 
 /// Il rapporto, e i nomi di strumento che nessun descrittore dichiara.
