@@ -288,7 +288,7 @@ fn said_cap(cap: Option<i64>) -> String {
 /// namesake at home, created by whoever wants it. And the file is named after
 /// the `id`, or a twin appears: the register indexes by file name and writing
 /// goes by `id`.
-fn a_flow_i_may_rewrite<'a>(
+pub(super) fn a_flow_i_may_rewrite<'a>(
     sources: &'a [FlowSource],
     name: &str,
 ) -> Result<(FlowFile, &'a FlowSource), String> {
