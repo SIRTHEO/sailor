@@ -36,7 +36,7 @@ const COMMENT_LINES_NOT_IN_ENGLISH: usize = 7_035;
 /// Downwards only; a crate under 100 is where the sweep stops.
 const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
     ("actions", 298),
-    ("catalogue", 268),
+    ("catalogue", 262),
     ("desktop", 260),
     ("faults", 190),
     ("flow", 202),
@@ -54,7 +54,7 @@ const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
     ("toolbox", 291),
     ("trigger", 237),
     ("ui", 186),
-    ("workspace", 159),
+    ("workspace", 158),
 ];
 
 /// How far a seed may drift above what the tree actually holds. **Zero.**
@@ -383,6 +383,12 @@ fn permille_per_crate() -> BTreeMap<String, usize> {
 #[test]
 fn no_crate_lets_its_comments_outtalk_its_code_more_than_today() {
     let measured = permille_per_crate();
+    workspace::measured_against(
+        sources().len(),
+        "sources read line by line",
+        measured.len(),
+        "crates the ratio is seeded for",
+    );
     let table: Vec<String> = measured.iter().map(|(name, permille)| format!("    (\"{name}\", {permille}),")).collect();
     let seeded: BTreeMap<&str, usize> = COMMENT_PERMILLE_TODAY.iter().copied().collect();
     // Every crate's complaint at once: said one at a time, a night of four

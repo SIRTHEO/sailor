@@ -355,6 +355,18 @@ pub fn measured_nothing(because: &str) {
     println!("\n{MEASURED_NOTHING} {because}");
 }
 
+/// A judge's receipt, read back by `sailor ratchet`: hence a shared constant.
+pub const MEASURED: &str = "measured:";
+pub const AGAINST: &str = " against ";
+
+pub fn measured(walked: usize, what: &str) {
+    println!("\n{MEASURED} {walked} {what}");
+}
+
+pub fn measured_against(walked: usize, what: &str, held: usize, oracle: &str) {
+    println!("\n{MEASURED} {walked} {what}{AGAINST}{held} {oracle}");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

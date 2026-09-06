@@ -6,10 +6,10 @@
 use std::path::{Path, PathBuf};
 
 /// Every `.rs` directly under a package's `tests/`, the window's shell included.
-const TEST_BINARIES_TODAY: usize = 126;
+const TEST_BINARIES_TODAY: usize = 127;
 
 /// Every `#[test]` in the tree, the window's shell included.
-const TEST_FUNCTIONS_TODAY: usize = 1692;
+const TEST_FUNCTIONS_TODAY: usize = 1704;
 
 /// Every `.flow.json` in `flows/` and among the shipped ones.
 const FLOW_FILES_TODAY: usize = 10;
@@ -127,6 +127,20 @@ fn measure(root: &Path) -> Battery {
     }
 }
 
+/// This tree's battery, and the receipt for it. Only here: the scratch trees
+/// below are measured the same way and hand in nothing, because a receipt for
+/// seven invented files is a perimeter nobody walked.
+fn the_battery_here() -> Battery {
+    let battery = measure(&root());
+    workspace::measured_against(
+        battery.binaries,
+        "test binaries opened",
+        battery.functions,
+        "test functions counted in them",
+    );
+    battery
+}
+
 /// Each count beside its seed and the name of the constant to rewrite.
 fn all_three(battery: &Battery) -> [(&'static str, &'static str, usize, usize); 3] {
     [
@@ -158,7 +172,7 @@ fn does_not_fall(what: &str, seed_name: &str, seed: usize, measured: usize, batt
 
 #[test]
 fn no_test_binary_vanishes_without_a_word() {
-    let battery = measure(&root());
+    let battery = the_battery_here();
     does_not_fall(
         "test binaries",
         "TEST_BINARIES_TODAY",
@@ -170,7 +184,7 @@ fn no_test_binary_vanishes_without_a_word() {
 
 #[test]
 fn no_test_function_vanishes_without_a_word() {
-    let battery = measure(&root());
+    let battery = the_battery_here();
     does_not_fall(
         "test functions",
         "TEST_FUNCTIONS_TODAY",
@@ -182,7 +196,7 @@ fn no_test_function_vanishes_without_a_word() {
 
 #[test]
 fn no_flow_file_vanishes_without_a_word() {
-    let battery = measure(&root());
+    let battery = the_battery_here();
     does_not_fall(
         "flow files",
         "FLOW_FILES_TODAY",
@@ -197,7 +211,7 @@ fn no_flow_file_vanishes_without_a_word() {
 /// to it unseen, so the seed follows the tree up as strictly as it holds it.
 #[test]
 fn a_seed_that_no_longer_describes_the_tree_is_a_seed_nobody_re_measured() {
-    let battery = measure(&root());
+    let battery = the_battery_here();
     for (what, seed_name, seed, measured) in all_three(&battery) {
         assert!(
             seed + HOW_STALE_A_SEED_MAY_BE >= measured,
@@ -262,7 +276,7 @@ fn the_counters_can_still_see_what_they_count() {
     );
     assert_eq!(battery.flows, 2, "one of this project's own and one shipped, no markdown");
 
-    let real = measure(&root());
+    let real = the_battery_here();
     println!(
         "today: {} test binaries, {} test functions, {} flow files",
         real.binaries, real.functions, real.flows
