@@ -75,7 +75,7 @@ pub(super) fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) 
 /// **THE LIST IS ONE, AND WHOEVER WRITES A FLOW ASKS IT TOO.** A flow saved by
 /// `sailor flow edit` and refused by the next check is the fault that command
 /// closes. Not here: the tools no descriptor declares, which take a detector.
-pub(super) fn refusals_of(flow: &FlowFile, registry: &ActionRegistry) -> Vec<String> {
+pub fn refusals_of(flow: &FlowFile, registry: &ActionRegistry) -> Vec<String> {
     let mut refused = Vec::new();
     // A reference inside an executed field stops before the run: afterwards it
     // is shell text and no longer tells itself apart from what the flow wrote.

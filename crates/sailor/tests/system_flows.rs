@@ -15,11 +15,13 @@
 
 use flow::system;
 use flow::{
-    ActionRegistry, Clock, Decision, Execution, ExecutionRequest, Executor, FlowError, FlowFile,
-    InMemoryRecordStore, InProcessExecutor, Outcome, RecordStore, SharedState,
+    Action, ActionError, ActionOutcome, ActionRegistry, Clock, Decision, Execution,
+    ExecutionRequest, Executor, FlowError, FlowFile, InMemoryRecordStore, InProcessExecutor,
+    Outcome, RecordStore, SharedState, StepSpecies,
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 
 /// The registry the product builds, not one rebuilt here: rebuilt, it held
 /// neither `history_ask` nor the fault nodes, so a shipped flow naming one
@@ -241,6 +243,127 @@ fn no_shipped_flow_carries_a_path_from_one_machine() {
             );
         }
     }
+}
+
+/// **WHAT A PERSON CAN ASK, THE GATE ASKS BY ITSELF.** The fault it exists to
+/// catch: a shipped flow whose references cannot reach the input its steps get.
+/// One shipped with three of them, passed the whole gate, went through the
+/// merge, and was found by the first person who ran it. It asks `flow check`'s
+/// own refusals and keeps no second copy of the rule; a refusal names flow,
+/// step, field and pointer, so a red here says what to fix.
+#[test]
+fn every_shipped_flow_passes_the_check_a_person_would_run_on_it() {
+    let registry = product_registry();
+    for (name, entry) in system::builtin_registry() {
+        let flow = entry.expect("il flusso spedito si carica");
+        let refused = sailor::flow_cmd::check::refusals_of(&flow, &registry);
+        assert!(
+            refused.is_empty(),
+            "il flusso spedito «{name}» non passa il proprio controllo:\n{}",
+            refused.join("\n")
+        );
+    }
+}
+
+/// An action that answers what it was told to, and keeps what it was asked.
+/// It stands in for the engine and the trigger so no paid call is ever made
+/// and no descriptor of this machine is read; every other node is the real one.
+struct Scripted {
+    said: Value,
+    seen: Arc<Mutex<Vec<Value>>>,
+}
+
+impl Action for Scripted {
+    fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
+        self.seen.lock().expect("nessuno rompe qui").push(input.clone());
+        Ok(ActionOutcome::Went(self.said.clone()))
+    }
+
+    fn species(&self) -> StepSpecies {
+        StepSpecies::Repeatable
+    }
+}
+
+/// **THE CONSULTATION RUNS, AND LANDS IN THE STORE.** Engine and trigger are
+/// scripted — no paid call, no descriptor of this machine — and the rest is
+/// real: the check runs, the store node writes into a scratch store. Only a
+/// run could say this flow did not run: it loaded and named actions that exist.
+#[test]
+fn the_consultation_runs_and_the_store_gets_the_entry_it_demands() {
+    let dir = std::env::temp_dir().join(format!("sailor-consulto-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("cartella di lavoro");
+    let deposit = ledger::Ledger::open(&dir).expect("deposito di lavoro");
+
+    let brief = format!("il materiale della consulenza, {}", "x".repeat(500));
+    let answer = serde_json::json!({
+        "diagnosis": "la forma sotto gli incidenti",
+        "moves": ["la prima mossa"],
+        "not_covered": "cosa passerebbe lo stesso",
+        "would_change_my_mind": "la misura che ribalta"
+    });
+    let asked = Arc::new(Mutex::new(Vec::new()));
+    let mut registry = registry::registry_in(registry::House::empty(), Some(deposit.clone()), None);
+    registry.register(
+        "trigger",
+        Scripted {
+            said: serde_json::json!({"text": brief}),
+            seen: Arc::new(Mutex::new(Vec::new())),
+        },
+    );
+    registry.register(
+        "external_engine",
+        Scripted {
+            said: serde_json::json!({"status": "ok", "answer": answer}),
+            seen: Arc::clone(&asked),
+        },
+    );
+
+    let flow = shipped("consult-a-strong-model");
+    let store = InMemoryRecordStore::default();
+    let run_id = format!("consulto-{}", std::process::id());
+    let request = ExecutionRequest {
+        run_id: run_id.clone(),
+        root_inputs: flow.inputs.clone().into_iter().collect(),
+        gates: Vec::new(),
+        shared: SharedState::new(),
+        spend_cap_micros: None,
+        stops: flow::RunStops::default(),
+    };
+    let execution = InProcessExecutor
+        .execute(&flow.graph, request, &store, &registry, &Tick::new(0))
+        .expect("l'esecuzione non deve rompersi");
+    let records = store.records(&run_id).expect("le tracce della corsa");
+
+    assert_eq!(
+        execution.decisions.last(),
+        Some(&Decision::Complete),
+        "la corsa deve chiudersi: {:?}",
+        execution.decisions
+    );
+    // THE MATERIAL REACHES THE ENGINE, and this half is the real fault: the
+    // step read «/text» from a dependency that does not produce it, so the
+    // question would have gone out empty — and been paid for all the same.
+    let stdin = asked.lock().expect("nessuno rompe qui")[0]["stdin"]
+        .as_str()
+        .expect("la domanda è testo")
+        .to_owned();
+    assert!(stdin.contains(&brief), "il materiale non è nella domanda");
+    assert!(
+        stdin.contains("would_change_my_mind"),
+        "la forma della risposta non è nella domanda:\n{stdin}"
+    );
+    // The deterministic check really read the material instead of being
+    // skipped: it is what keeps an empty consultation away from the engine.
+    assert_eq!(output_of(&records, "brief")["answer"]["bytes"], brief.len());
+
+    let kept = deposit
+        .read_record("consultations", &run_id)
+        .expect("il deposito si legge")
+        .expect("la consulenza sta nel deposito, sotto la corsa che l'ha pagata");
+    assert_eq!(kept.value, answer, "si tiene la risposta, non lo stato");
+    assert_eq!(kept.written_by, "consult-a-strong-model");
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 // ── il primo flusso: cosa c'è qui, e cosa manca ──────────────────────────
