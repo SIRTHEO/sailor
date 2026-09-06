@@ -16,15 +16,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAsk } from "./ask";
 import { ChangesScreen } from "./ChangesScreen";
 import { SessionContext } from "./SessionContext";
-import { BORN_COLS, BORN_ROWS, TerminalPane } from "./TerminalPane";
+import { BORN_COLS, BORN_ROWS, TerminalPane, useStir } from "./TerminalPane";
+import { t } from "./i18n";
 import {
+  ATTESTED_MS,
   closeTerminal,
   listTerminals,
   livenessOf,
   livenessWord,
   openTerminal,
   OutputBus,
+  paneOrder,
   pressKeys,
+  progressOf,
   resizeTerminal,
   splitCommandLine,
   submitLine,
@@ -181,6 +185,8 @@ export function Terminals({
   const [orphans, setOrphans] = useState(0);
   /** Whether what changed in the visible terminal's workspace is on screen. */
   const [reading, setReading] = useState(false);
+  /** Whether the run, the refusals, the cost and the quota are on screen. */
+  const [asking, setAsking] = useState(false);
   const [places, setPlaces] = useState<Place[]>([]);
   /** The command lines this machine knows, as what a terminal can be born on. */
   const [lines, setLines] = useState<CommandLine[]>([]);
@@ -194,6 +200,15 @@ export function Terminals({
      so what crosses over is only this set, a few times a second at most. */
   const [speaking, setSpeaking] = useState<ReadonlySet<string>>(new Set());
   useEffect(() => bus.watchSpeaking((now) => setSpeaking(now)), [bus]);
+
+  /* WHAT MAKES SILENCE VISIBLE: without a clock, an agent that stopped an hour
+     ago stays drawn getting on with it. The tick moves no pixel by itself. */
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!native) return;
+    const tick = setInterval(() => setNow(Date.now()), ATTESTED_MS / 4);
+    return () => clearInterval(tick);
+  }, [native]);
   // `again` changes identity on every render; the listener attaches once.
   const refresh = useRef(again);
   refresh.current = again;
@@ -323,6 +338,13 @@ export function Terminals({
     return () => window.removeEventListener("keydown", listen);
   }, [native, shown, open, known, root]);
 
+  const visible = known.some((entry) => entry.id === here)
+    ? here
+    : (known.find((entry) => entry.alive)?.id ?? known[0]?.id ?? null);
+  const watched = known.find((entry) => entry.id === visible) ?? null;
+  /** A change of tree under focus: the one change a border is lifted for. */
+  const stirred = useStir(watched?.workspaceRoot ?? null);
+
   if (asked.state === "mute") {
     return (
       <div className="terminals" hidden={!shown}>
@@ -340,8 +362,6 @@ export function Terminals({
   }
 
   const opened = asked.value;
-  const visible = opened.some((entry) => entry.id === here) ? here : (opened.find((entry) => entry.alive)?.id ?? opened[0]?.id ?? null);
-  const watched = opened.find((entry) => entry.id === visible) ?? null;
   const needsStart = !opened.some((entry) => entry.alive && !closed.has(entry.id));
 
   return (
@@ -510,9 +530,7 @@ export function Terminals({
               one in focus is drawn large and first, the others beside it. */}
           <div className="session-work">
           <div className="terminals__panes" data-count={opened.length}>
-            {[...opened]
-              .sort((a, b) => Number(b.id === visible) - Number(a.id === visible))
-              .map((entry) => {
+            {paneOrder(opened, visible).map((entry) => {
               const liveness = livenessOf(entry, closed, channel.on);
               return (
                 <TerminalPane
@@ -521,6 +539,9 @@ export function Terminals({
                   summary={entry}
                   ceiling={ceiling}
                   liveness={liveness}
+                  progress={progressOf(liveness, bus.spokenAt(entry.id), now)}
+                  handed={bench !== null && bench.terminalId === entry.id}
+                  stirred={stirred && entry.id === visible}
                   speaking={speaking.has(entry.id)}
                   bus={bus}
                   visible
@@ -544,7 +565,6 @@ export function Terminals({
               );
             })}
           </div>
-          {watched && <SessionContext key={watched.id} native={native && shown} terminal={watched} lines={lines} />}
           </div>
 
           {visible !== null && watched !== null && (
@@ -553,6 +573,10 @@ export function Terminals({
                   of the workspace this terminal was opened in, as git says it. */}
               <button type="button" onClick={() => setReading((on) => !on)}>
                 {reading ? "hide what changed" : `what changed in ${watched.workspaceName}`}
+              </button>
+              {/* ASKED FOR, NOT STOOD BESIDE: the band took a column at every width. */}
+              <button type="button" onClick={() => setAsking((on) => !on)}>
+                {t(asking ? "window.session.hide" : "window.session.show")}
               </button>
               <button
                 type="button"
@@ -565,6 +589,10 @@ export function Terminals({
                 Close this terminal
               </button>
             </div>
+          )}
+
+          {asking && watched !== null && (
+            <SessionContext key={watched.id} native={native && shown} terminal={watched} lines={lines} />
           )}
 
           {reading && watched !== null && (
