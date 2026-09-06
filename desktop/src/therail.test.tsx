@@ -119,7 +119,7 @@ describe("a flow's row and its state", () => {
         flowGroups={[
           {
             origin: "this project",
-            flows: [{ name: "un-flusso", note: "7 steps", color: "#4ea7fc", dirty: false, live }],
+            flows: [{ name: "a-flow", note: "7 steps", color: "#4ea7fc", dirty: false, live }],
             broken: [],
           },
         ]}

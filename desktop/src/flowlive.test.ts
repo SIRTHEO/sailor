@@ -12,7 +12,7 @@ function event(seq: number, kind: string, stepId: string | null, at: number, pay
 }
 
 function run(over: Partial<RunSnapshot> = {}): RunSnapshot {
-  return { run_id: "r", flow: "un-flusso", started_at: 100, status: "running", events: [], ...over };
+  return { run_id: "r", flow: "a-flow", started_at: 100, status: "running", events: [], ...over };
 }
 
 describe("what is happening to a flow", () => {

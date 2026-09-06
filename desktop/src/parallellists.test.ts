@@ -49,13 +49,13 @@ describe("one species, one drawing", () => {
     for (const d of drawn) byType.set(d.keyType, [...(byType.get(d.keyType) ?? []), d]);
     const twice = [...byType.entries()].filter(([, list]) => list.length > 1);
     expect(
-      twice.map(([type, list]) => `${type}: ${list.map((d) => `${d.file}.${d.name}`).join(" e ")}`),
-      "due mappe di disegni sullo stesso tipo chiuso: nasceranno diverse, e nessun diff lo mostrerà",
+      twice.map(([type, list]) => `${type}: ${list.map((d) => `${d.file}.${d.name}`).join(" and ")}`),
+      "two maps of drawings over the same closed type: they will drift apart, and no diff will show it",
     ).toEqual([]);
   });
 
   /**
-   * **CHI MISURA VA MISURATO.** If the pattern stopped matching, the list would
+   * **WHOEVER MEASURES GETS MEASURED.** If the pattern stopped matching, the list would
    * be empty and the check above would pass by having looked at nothing — the
    * failure a ratchet cannot feel, because finding less is what it allows.
    */
