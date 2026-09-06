@@ -5,12 +5,12 @@ use crate::cost::now_secs;
 use crate::engine::ExternalEngineAction;
 use crate::equipment::current_equipment_for;
 use crate::recipe::{
-    command_line, command_line_naming_model, mentions_any, says_it_cannot_work, PromptVia,
+    command_line_naming_model_and_ceiling, mentions_any, says_it_cannot_work, PromptVia,
     SessionRecipe, ToolResolver,
 };
 use crate::session::session_lines;
-use crate::spec::{DataClass, EngineSpec};
-use crate::{budget, cooldown, Declared, EXTERNAL_ENGINE_ACTION};
+use crate::spec::{ceiling_of, DataClass, EngineSpec};
+use crate::{budget, cooldown, reserve, Declared, EXTERNAL_ENGINE_ACTION};
 use flow::ActionError;
 use std::path::PathBuf;
 
@@ -110,6 +110,10 @@ impl ExternalEngineAction {
                     can_be_asked: false,
                     why: None,
                     session: SessionRecipe::default(),
+                    ceiling: None,
+                    no_ceiling_because: "the step names a command and not a tool, so no \
+                                         descriptor says how a ceiling is written on it"
+                        .to_owned(),
                 }],
                 Vec::new(),
             )),
@@ -244,6 +248,13 @@ impl ExternalEngineAction {
                             // proprio questo.
                             declared_usage: None,
                             session: SessionRecipe::default(),
+                            // Nor a ceiling, for the same reason: a person who
+                            // wrote their own line did not ask for an option on
+                            // it, and this one binds what they may be charged.
+                            ceiling: None,
+                            no_ceiling_because: "the step writes its own command line, and \
+                                                 Sailor adds no option to one"
+                                .to_owned(),
                         });
                         continue;
                     }
@@ -269,16 +280,33 @@ impl ExternalEngineAction {
                         },
                         None => None,
                     };
+                    // The ceiling this call is held to, and the reserve it
+                    // makes. Both come from the descriptor and the step: an
+                    // engine that takes none leaves the run a stop threshold.
+                    let held_to = tools.spend_ceiling_option(id);
+                    let ceiling = held_to
+                        .as_ref()
+                        .and_then(|option| reserve::ceiling_for(option, &ceiling_of(spec)));
+                    let written = ceiling.as_ref().and_then(reserve::Ceiling::as_written);
                     match tools.ask_recipe(id) {
                         Some(recipe) => usable.push(Candidate {
                             id: Some(id.clone()),
                             bin,
-                            args: match &option {
-                                Some((option, model)) => {
-                                    command_line_naming_model(&recipe, option, model)
-                                }
-                                None => command_line(&recipe),
-                            },
+                            args: command_line_naming_model_and_ceiling(
+                                &recipe,
+                                option
+                                    .as_ref()
+                                    .map(|(option, model)| (option.as_slice(), model.as_str())),
+                                held_to
+                                    .as_ref()
+                                    .zip(written.as_deref())
+                                    .map(|(option, value)| (option.args.as_slice(), value)),
+                            ),
+                            ceiling,
+                            no_ceiling_because: reserve::why_no_ceiling(
+                                held_to.as_ref(),
+                                &ceiling_of(spec),
+                            ),
                             prompt: recipe.prompt,
                             session: session_lines(&recipe, tools.session_recipe(id)),
                             unusable_when: recipe.unusable_when,
@@ -370,6 +398,13 @@ pub(crate) struct Candidate {
     pub(crate) can_be_asked: bool,
     /// Why this engine was moved to the front, when the fuel said so.
     pub(crate) why: Option<String>,
+    /// The ceiling written on this line, when one could be. `None` is what
+    /// makes a run's cap a stop threshold rather than a cap.
+    pub(crate) ceiling: Option<reserve::Ceiling>,
+    /// Why there is no ceiling, for whoever reads a suspended run. It is
+    /// written even when there **is** one: composing it costs nothing, and a
+    /// reason built only on the unhappy path is a reason nobody ever tested.
+    pub(crate) no_ceiling_because: String,
     /// Le righe di comando alternative con cui questo motore apre, riprende o
     /// ramifica una sessione — già montate col resto della ricetta, e ancora
     /// col segnaposto al posto dell'identificativo.

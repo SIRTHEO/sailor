@@ -81,6 +81,30 @@ pub fn engines_named_in(with: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// The per-call ceiling a step's `with` declares, for whoever checks a flow.
+///
+/// **THE SAME STRUCT THE RUN OBEYS, NOT A SECOND READER OF THE SAME FIELDS.** A
+/// `with` is partial by construction, so the one field with no default is
+/// filled before parsing: two readers of one declaration drift, and the drift
+/// here would be a run held to a ceiling the check never saw.
+pub fn ceiling_declared_in(with: &Value) -> crate::reserve::Declared {
+    let mut filled = with.clone();
+    if let Some(fields) = filled.as_object_mut() {
+        fields.entry("timeout_secs").or_insert(Value::from(0));
+    }
+    serde_json::from_value::<EngineSpec>(filled)
+        .map(|spec| ceiling_of(&spec))
+        .unwrap_or_default()
+}
+
+/// The ceiling this step declares, in every unit an engine may take one in.
+pub(crate) fn ceiling_of(spec: &EngineSpec) -> crate::reserve::Declared {
+    crate::reserve::Declared {
+        max_spend_micros: spec.max_spend_micros,
+        max_tokens: spec.max_tokens,
+    }
+}
+
 /// Whether a step's `with` declares its text private. Absent is public, and
 /// any other word is not private either: the run refuses it when it parses the
 /// step, and a check must not call a malformed flow private on its own.
@@ -206,6 +230,16 @@ pub(crate) struct EngineSpec {
     /// stesso albero quattro volte.
     #[serde(default)]
     pub(crate) session: Option<SessionUse>,
+    /// The most this step's call may spend, in micro-units, for an engine that
+    /// can be told a ceiling in currency. It is what a guaranteed cap is made
+    /// of: without it the run's cap can only stop the call *after* this one.
+    #[serde(default)]
+    pub(crate) max_spend_micros: Option<i64>,
+    /// The same ceiling for an engine that takes one in tokens. Two fields and
+    /// not one converted: converting them here would need a tariff, and a
+    /// ceiling derived from a tariff that may be missing is not a ceiling.
+    #[serde(default)]
+    pub(crate) max_tokens: Option<models::pricing::TokenCounts>,
     pub(crate) timeout_secs: u64,
     /// Tutto ciò che questa azione non riconosce.
     ///
