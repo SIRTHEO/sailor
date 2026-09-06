@@ -24,7 +24,7 @@
 use actions::{LiveSink, Pipe, StepSinks};
 use flow::{
     ActionRegistry, Completion, Execution, Executor, FlowError, FlowFile, InProcessExecutor,
-    Ran, RecordStore, Refusal, StepRecord, SystemClock,
+    Ran, RecordStore, Refusal, StepRecord, SystemClock, Why,
 };
 use ledger::Ledger;
 use serde::Serialize;
@@ -941,6 +941,8 @@ pub struct StepPassage {
     /// The program and the arguments the step started, after resolution: what
     /// a person would have to type to reach the same outcome by hand.
     pub ran: Option<Ran>,
+    /// The outcome says a step was skipped; only this says on what.
+    pub why: Option<Why>,
     /// Where the run started from: the origin, written by the system.
     pub started_by: String,
     /// What went into **this** node, that time.
@@ -1053,6 +1055,7 @@ fn passage_of(record: &StepRecord, started_by: &str, signal: &RunSignal) -> Step
         failure_class: record.failure_class.clone(),
         refusal: record.refusal.clone(),
         ran: record.ran.clone(),
+        why: record.why.clone(),
         started_by: started_by.to_owned(),
         input: record.input.clone(),
         mandate: signal.text.clone(),
@@ -1543,6 +1546,45 @@ mod tests {
 
         record.ran = None;
         assert_eq!(passage_of(&record, "window", &RunSignal::default()).ran, None);
+    }
+
+    /// The two facts JSON spells alike must reach the window apart: nothing at
+    /// that pointer is a wire never joined, a null at it a step before that
+    /// answered badly, and one shown for the other repairs the wrong thing.
+    #[test]
+    fn a_passage_carries_the_reason_its_record_gave() {
+        let judged = |input: Value| {
+            let mut record =
+                StepRecord::started("r1", "verdict", 1, 0, Vec::new(), json!({}), Vec::new(), 1);
+            record.why = Some(Why::Condition(
+                flow::Condition::PointerHasValue {
+                    pointer: "/mandate".to_owned(),
+                }
+                .judge(&input),
+            ));
+            serde_json::to_value(passage_of(&record, "window", &RunSignal::default()))
+                .expect("the passage is what the window is handed")
+        };
+
+        let nothing = judged(json!({"something_else": "here"}));
+        assert_eq!(nothing["why"]["because"], "condition");
+        assert_eq!(nothing["why"]["held"], false);
+        assert_eq!(nothing["why"]["looked_at"], "/mandate");
+        assert_eq!(nothing["why"]["wanted"], "carries something");
+        assert_eq!(nothing["why"]["found_was_there"], false);
+
+        let empty = judged(json!({"mandate": ""}));
+        assert_eq!(empty["why"]["found"], "");
+        assert_eq!(empty["why"]["found_was_there"], true);
+
+        assert_ne!(
+            judged(json!({"mandate": null}))["why"], nothing["why"],
+            "a null at that pointer reached the window as nothing at it",
+        );
+
+        let record =
+            StepRecord::started("r1", "verdict", 1, 0, Vec::new(), json!({}), Vec::new(), 1);
+        assert_eq!(passage_of(&record, "window", &RunSignal::default()).why, None);
     }
 
     fn engine_step(id: &str, deps: Vec<&str>, with: Value) -> Value {
