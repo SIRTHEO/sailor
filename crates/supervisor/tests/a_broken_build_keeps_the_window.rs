@@ -1,7 +1,7 @@
 //! **La finestra sopravvive a una compilazione fallita — guasto 11.**
 //!
 //! COSA DICEVA IL GUASTO, E PERCHÉ NON ERA ESATTO. La voce 11 di
-//! `docs/guasti-incontrati.md` diceva: «in modalità viva un errore di
+//! `docs/faults-encountered.md` diceva: «in modalità viva un errore di
 //! compilazione in un crate qualunque **uccide la finestra**». Leggendo
 //! `tauri-cli` 2.11.4 il meccanismo è un altro, e la differenza cambia la
 //! riparazione. In `src/interface/rust.rs`, dentro `run_dev_watcher`, il giro è:

@@ -28,8 +28,8 @@ fn now() -> i64 {
 const RULE_CANDIDATES: [&str; 4] = [
     "AGENTS.md",
     "CLAUDE.md",
-    "docs/decisioni.md",
-    "docs/guasti-incontrati.md",
+    "docs/decisions.md",
+    "docs/faults-encountered.md",
 ];
 
 pub fn run(args: &[String]) -> i32 {
@@ -213,12 +213,12 @@ mod tests {
         let root = scratch("init");
         fs::write(root.join("AGENTS.md"), "regole").expect("un documento");
         fs::create_dir_all(root.join("docs")).expect("docs");
-        fs::write(root.join("docs/decisioni.md"), "decisioni").expect("un altro");
+        fs::write(root.join("docs/decisions.md"), "decisioni").expect("un altro");
 
         init(&root, None).expect("scrive");
 
         let declared = flow::workspace::declaration_at(&root).expect("si rilegge");
-        assert_eq!(declared.rules, vec!["AGENTS.md", "docs/decisioni.md"]);
+        assert_eq!(declared.rules, vec!["AGENTS.md", "docs/decisions.md"]);
         assert!(
             declared.checks.is_empty(),
             "indovinare una verifica è deciderla al posto di chi lavora qui"
