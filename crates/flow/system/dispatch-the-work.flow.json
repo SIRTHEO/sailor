@@ -550,7 +550,7 @@
   },
   "inputs": {
     "trigger": {
-      "text": "Trova i residui di configurazione rimasti sparsi per la macchina dopo la pulizia che ha appena tolto ganci, regole, competenze e documenti dalla cartella di configurazione di Claude Code, «~/.claude» nella casa dell'utente.\n\nUn residuo è un riferimento vivo a qualcosa che non c'è più: un gancio dichiarato in un file di impostazioni il cui comando non esiste; una competenza o un documento nominato da un altro documento e non più invocabile; un percorso citato che non risolve; una voce di configurazione che punta a un file cancellato. Vale anche il contrario: un file rimasto lì che nessuno nomina più.\n\nPer ogni residuo si vuole una riga sola: percorso del file, numero di riga, cosa cita, e perché quel riferimento è morto. Non si vuole nessuna riparazione: solo l'elenco.\n",
+      "text": "Find the dead references in the tree you are standing in: a reference is dead when what it names is not there any more.\n\nFour shapes count. A configuration entry naming a file that does not exist. A document naming another document, a script or a command that cannot be reached from here. A path written into code or into a manifest that resolves to nothing. And the reverse: a file nobody names any more.\n\nOne line for each: the file, the line number, what it cites, and why that citation is dead. Read only — repair nothing, and write nothing. If a reference cannot be checked from here, say so under it rather than calling it alive or dead.\n\nThis is the mandate the flow ships with, so that it runs anywhere on a first try. Replace it with your own: `sailor flow run dispatch-the-work \"<your mandate>\"`.\n",
       "who": "",
       "where": ""
     }
