@@ -1,101 +1,18 @@
-// The bar of the program: where the person is, what is in focus, and the two
-// gestures that act on it.
+// The bar of the program: where the person is, and the facts that hold from
+// every place. **NOTHING WHOSE SUBJECT IS THE STAGE LIVES HERE**: six controls
+// of one section out of six sat in the strip that never leaves the screen,
+// against a spec that allows the bar three facts and nothing else.
 
 import type { ReactNode } from "react";
-import type { RunSnapshot } from "./engine";
-import { stepStatesOfRun } from "./runstate";
-
-/** Where the flows on screen came from. */
-export type Source = "loading" | "sample" | "engine" | "failed";
-
-export interface BarStatus {
-  live: boolean;
-  word: string;
-}
-
-/**
- * How far a run has got, folded from its own facts: the snapshot carries no
- * counters and the ledger undercounts mid-run, so the denominator comes from
- * the flow on screen and the numerator from the events.
- */
-export function runProgress(run: RunSnapshot): { done: number; running: number } {
-  let done = 0;
-  let running = 0;
-  for (const step of stepStatesOfRun(run.events).values()) {
-    if (step.state === "running") running += 1;
-    else if (step.state !== "waiting") done += 1;
-  }
-  return { done, running };
-}
-
-/**
- * What the right-hand side of the bar may say about a run. The verdict of a
- * check is not here: `sailor flow check` has no door into this window, and
- * borrowing a verdict nobody gave is worse than showing none.
- */
-export function statusOfRun(run: RunSnapshot | undefined, steps: number): BarStatus {
-  if (run === undefined) return { live: false, word: "no run of this flow yet" };
-  const { done, running } = runProgress(run);
-  if (run.status === "running") {
-    const at = Math.min(steps, done + (running > 0 ? 1 : 0));
-    return { live: true, word: `a run in progress · step ${at} of ${steps}` };
-  }
-  return { live: false, word: `last run ${run.status} · ${done} of ${steps} steps closed` };
-}
-
-/**
- * Everything the bar says about the flow in focus, as one value. Passed apart,
- * each field carries its own chance of being drawn where no flow is — see
- * fault 120.
- */
-export interface BarFlow {
-  steps: number;
-  dirty: boolean;
-  busy: boolean;
-  starting: boolean;
-  status: BarStatus;
-}
 
 interface TopBarProps {
   /** Where the person is: the section, and the entry inside it. */
   crumbs: string[];
   /** What runs, what it costs, who as: drawn from every place. */
   chips?: ReactNode;
-  flow: BarFlow | null;
-  source: Source;
-  sourceWord: string;
-  onWatch?: () => void;
-  onSave: () => void;
-  onRun: () => void;
 }
 
-/**
- * The bar of the program: the mark, the flow in focus, the three views of it,
- * and the two gestures that act on it.
- *
- * NO VERSION SITS NEXT TO THE NAME. The mockup draws a `v7` chip there; a flow
- * has no version — not in `flow::FlowFile`, not in the `.flow.json` on disk,
- * not in this window — and the Rust type refuses unknown fields, so one cannot
- * be added without changing the engine. The chip counts steps instead, which is
- * a number the flow really carries.
- */
-export function TopBar({
-  crumbs,
-  chips,
-  flow,
-  source,
-  sourceWord,
-  onWatch,
-  onSave,
-  onRun,
-}: TopBarProps) {
-  const statusBody = flow && (
-    <>
-      <span className="topbar__live" data-idle={flow.status.live ? undefined : true} />
-      <span className="topbar__status-word">{flow.status.word}</span>
-    </>
-  );
-
+export function TopBar({ crumbs, chips }: TopBarProps) {
   return (
     <header className="topbar">
       <span className="topbar__brand">
@@ -126,62 +43,9 @@ export function TopBar({
         ))}
       </nav>
 
-      {/* NOTHING IS SAID ABOUT A FLOW WHERE THERE IS NONE. «No flow in focus —
-          pick one in the rail» named a column six places have not got, and asked
-          for a gesture the board now makes on its own. */}
-      {flow !== null && (
-        <span className="topbar__flow">
-          <span className="topbar__steps">{flow.steps} steps</span>
-          {flow.dirty && (
-            <span className="topbar__dirty">
-              <span className="topbar__dot" />
-              unsaved changes
-            </span>
-          )}
-        </span>
-      )}
-
       <span className="topbar__spacer" />
 
-      {/* Whoever is looking must know whether these flows come from the disk or
-          from a sample, without asking and without opening the code. */}
-      <span className="topbar__source" data-source={source}>
-        {sourceWord}
-      </span>
-
-      {flow !== null &&
-        (onWatch ? (
-          <button type="button" className="topbar__status" onClick={onWatch}>
-            {statusBody}
-          </button>
-        ) : (
-          <span className="topbar__status">{statusBody}</span>
-        ))}
-
       {chips}
-
-      <button
-        type="button"
-        className="topbar__save"
-        onClick={onSave}
-        disabled={flow === null || !flow.dirty || flow.busy}
-      >
-        {flow?.busy ? "Saving…" : "Save"}
-      </button>
-      {/* THE ACCENT MEANS «THE ACTION», and this is the action. Not a green:
-          green is a step that went well, and prohibition 4 keeps the state
-          colours for states. */}
-      <button
-        type="button"
-        className="topbar__run is-primary"
-        onClick={onRun}
-        disabled={flow === null || flow.starting}
-      >
-        <span className="topbar__glyph" aria-hidden="true">
-          ▶
-        </span>
-        {flow?.starting ? "Starting…" : "Run"}
-      </button>
     </header>
   );
 }

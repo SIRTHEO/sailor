@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 /**
- * **AN ACTION THE CANVAS CANNOT DRAW IS NOT AN ORDINARY ONE.** `kindOf` falls
- * back to `check`, so an unknown one would sit among the checks looking like
- * any of them, and a flow using it would draw as something it is not.
+ * **THE PAGE THAT SAYS WHAT A THING MAY DO MUST CLAIM ONLY WHAT IT WAS TOLD.**
+ * It grouped names under a family this window computes from the name, with
+ * `check` as the fallback, and the engine's policies were readable nowhere.
  */
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
-import { AbilitiesScreen } from "./AbilitiesScreen";
+import { AbilitiesScreen, type Registered } from "./AbilitiesScreen";
 import { KNOWN_ACTIONS } from "./flow";
 
 afterEach(() => {
@@ -14,51 +14,85 @@ afterEach(() => {
   delete (window as unknown as { __TAURI__?: unknown }).__TAURI__;
 });
 
-function answering(actions: string[]): void {
+function answering(actions: Registered[]): void {
   (window as unknown as { __TAURI__: unknown }).__TAURI__ = {
     core: { invoke: () => Promise.resolve(actions) },
   };
 }
 
+/** An action taking every default, as the engine reports it. */
+function silent(name: string): Registered {
+  return { name, redo: "hand_to_human", closes_a_run: false };
+}
+
+function rowOf(container: HTMLElement, name: string): string {
+  const row = [...container.querySelectorAll("tbody tr")].find(
+    (one) => one.querySelector("code")?.textContent === name,
+  );
+  return row?.textContent ?? "";
+}
+
 describe("what Sailor can do", () => {
-  test("AN ACTION WITH NO NODE IS NAMED, not filed among the checks", async () => {
-    answering([...KNOWN_ACTIONS, "a_brand_new_action"]);
+  test("EVERY ROW CARRIES THE ENGINE'S POLICY, and the policy is the engine's to vary", async () => {
+    answering([
+      silent(KNOWN_ACTIONS[0]),
+      { name: KNOWN_ACTIONS[1], redo: "repeatable", closes_a_run: true },
+      { name: KNOWN_ACTIONS[2], redo: "compensable", closes_a_run: false },
+    ]);
     const { container } = render(<AbilitiesScreen native />);
 
-    await waitFor(() => expect(screen.getByText("a_brand_new_action")).toBeTruthy());
-    expect(container.textContent).toContain("have no node on the canvas yet");
-    expect(container.textContent).toContain("no node for this one");
+    await waitFor(() => expect(rowOf(container, KNOWN_ACTIONS[0])).not.toBe(""));
+    // An action that answered nothing reads as the engine's cautious default.
+    expect(rowOf(container, KNOWN_ACTIONS[0])).toContain("hand it to a person");
+    expect(rowOf(container, KNOWN_ACTIONS[1])).toContain("run it again");
+    expect(rowOf(container, KNOWN_ACTIONS[2])).toContain("undo, then run it again");
+    // The control: one word printed for all three would pass every line above.
+    expect(rowOf(container, KNOWN_ACTIONS[1])).not.toContain("hand it to a person");
   });
 
-  test("WITH EVERY ACTION KNOWN, NOTHING IS FLAGGED", async () => {
-    // The control: without this, the check above would pass on a screen that
-    // flags everything, which says nothing.
-    answering([...KNOWN_ACTIONS]);
+  test("A WORD THIS VERSION HAS NO NAME FOR TRAVELS WHOLE, never as a default", async () => {
+    answering([{ name: KNOWN_ACTIONS[0], redo: "some_new_policy", closes_a_run: false }]);
     const { container } = render(<AbilitiesScreen native />);
 
-    await waitFor(() => expect(container.textContent).toContain("What Sailor can do"));
-    expect(container.textContent).not.toContain("no node for this one");
+    await waitFor(() => expect(rowOf(container, KNOWN_ACTIONS[0])).not.toBe(""));
+    expect(rowOf(container, KNOWN_ACTIONS[0])).toContain("some_new_policy");
+    expect(rowOf(container, KNOWN_ACTIONS[0])).not.toContain("hand it to a person");
   });
 
-  test("THE FAMILIES ARE THE CANVAS'S OWN, and each says what it is for", async () => {
-    answering([...KNOWN_ACTIONS]);
+  test("AN ACTION WITH NO NODE IS NAMED, and named as a drawing and not a power", async () => {
+    answering([silent("a_brand_new_action"), silent(KNOWN_ACTIONS[0])]);
     const { container } = render(<AbilitiesScreen native />);
 
-    await waitFor(() => expect(container.textContent).toContain("What Sailor can do"));
-    const blocks = container.querySelectorAll(".panel__block");
-    expect(blocks.length, "the actions were not grouped at all").toBeGreaterThan(2);
-    // A family heading with no line saying what it is for is a word, not an
-    // answer — the whole reason the list is grouped.
-    for (const block of blocks) {
-      expect(block.querySelector(".rail__note")?.textContent?.trim() ?? "").not.toBe("");
-    }
+    await waitFor(() => expect(rowOf(container, "a_brand_new_action")).not.toBe(""));
+    expect(rowOf(container, "a_brand_new_action")).toContain("no node of its own");
+    // The control: a page that flagged every row would pass the line above.
+    expect(rowOf(container, KNOWN_ACTIONS[0])).not.toContain("no node of its own");
+  });
+
+  /** On a page about what an action may do, an unseen absence reads as «none». */
+  test("WHAT NOBODY DECLARES IS SAID, not left as a blank to be read as «none»", async () => {
+    answering([silent(KNOWN_ACTIONS[0])]);
+    const { container } = render(<AbilitiesScreen native />);
+
+    await waitFor(() => expect(rowOf(container, KNOWN_ACTIONS[0])).not.toBe(""));
+    const found = container.querySelector(".now__why");
+    expect(found, "the page says nothing about what nobody declares").not.toBeNull();
+    const said = found as HTMLElement;
+    const named = [...said.querySelectorAll("code")].map((one) => one.textContent);
+    expect(named).toEqual(["sense", "act", "remember", "gate", "docs/the-four-surfaces.md"]);
+    expect(said.textContent).toContain("fault 67");
+    expect(said.textContent, "the page leaves money to be read as a fact about an action").toContain(
+      "not a fact about an action",
+    );
+    // And no row pretends to carry one: an inferred surface is fault 30 here.
+    expect(rowOf(container, KNOWN_ACTIONS[0])).not.toContain("sense");
   });
 
   test("THE LIST IS THE ENGINE'S, so an empty answer is shown as empty", async () => {
     answering([]);
     const { container } = render(<AbilitiesScreen native />);
     await waitFor(() => expect(container.textContent).toContain("What Sailor can do"));
-    expect(container.querySelectorAll(".panel__block").length).toBe(0);
+    expect(container.querySelectorAll("tbody tr").length).toBe(0);
   });
 
   test("OUTSIDE THE SHELL IT SAYS SO", () => {

@@ -238,3 +238,70 @@ fn the_window_shell_asks_the_engine_for_its_action_list() {
          qualunque riga scelta lì è una lista in più da tenere allineata.\n{body}"
     );
 }
+
+/// **AND THE POLICY TRAVELS THE SAME ROAD AS THE NAMES.** The window now draws,
+/// per action, how the engine treats redoing it and whether it may close a run.
+/// Written as a map beside the registry those two are fault 10 again, in the
+/// same file that has already been its fifth copy; asked of the action itself
+/// they cannot drift. The mutant that fells it: a `match name` in
+/// `engine_actions` instead of `action.species()`.
+#[test]
+fn the_shell_asks_each_action_for_its_own_policy() {
+    let path = repository_root().join("desktop/src-tauri/src/flows.rs");
+    let source = std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("leggere {}: {error}", path.display()));
+
+    let from = source
+        .find("pub(crate) fn engine_actions(")
+        .expect("the shell exposes `engine_actions`");
+    let body = &source[from..];
+    let end = body.find("\n}").expect("the function closes");
+    let body = &body[..end];
+
+    for asked in ["action.species()", "action.is_a_check()"] {
+        assert!(
+            body.contains(asked),
+            "`engine_actions` never asks the action «{asked}»: a policy written \
+             by hand beside the registry is fault 10.\n{body}"
+        );
+    }
+}
+
+/// **AND THE ANSWER REALLY VARIES.** A policy the window draws from a call that
+/// always returns the same thing is a column of one word: the page would read
+/// as measured while measuring nothing. Asked of the registry that runs, and
+/// asked for both of the two answers a person acts on.
+#[test]
+fn the_engine_does_not_give_every_action_the_same_policy() {
+    let dir = scratch_dir("policies");
+    let ledger = ledger::Ledger::open(&dir).expect("a scratch store opens");
+    let registry = registry::registry_in(registry::House::under(&dir), Some(ledger), None);
+
+    let mut species = BTreeSet::new();
+    let mut checks = 0usize;
+    for name in registry.names() {
+        let action = registry.get(name).expect("a registered name has its action");
+        species.insert(format!("{:?}", action.species()));
+        if action.is_a_check() {
+            checks += 1;
+        }
+    }
+
+    workspace::measured_against(
+        species.len(),
+        "distinct redo policies the engine declares",
+        registry.names().len(),
+        "actions the engine registers",
+    );
+    assert!(
+        species.len() > 1,
+        "the engine gives every action the same redo policy ({species:?}): \
+         the column the window draws would say one word"
+    );
+    assert!(
+        checks > 0 && checks < registry.names().len(),
+        "«may close a run» is {checks} out of {}: a constant column \
+         tells nothing apart",
+        registry.names().len()
+    );
+}
