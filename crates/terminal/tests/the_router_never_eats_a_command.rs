@@ -204,7 +204,7 @@ fn an_explicit_rule_whose_marker_could_start_a_command_is_refused() {
     assert!(catalog.live().is_empty(), "{:?}", catalog.live());
     assert_eq!(catalog.problems.len(), 1);
     assert!(
-        catalog.problems[0].reason.contains("guardia"),
+        catalog.problems[0].reason.contains("guard"),
         "{}",
         catalog.problems[0].reason
     );
