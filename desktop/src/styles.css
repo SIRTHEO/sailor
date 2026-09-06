@@ -1865,6 +1865,19 @@ tr[data-followable]:hover {
   line-height: 1.45;
 }
 
+/* A standing fact about a row, worn on the row. It is a word and not a tint,
+   because a mark that only colours cannot say WHICH kind of work it is for. */
+.now__badge {
+  display: inline-block;
+  margin-left: var(--space-2);
+  font-size: var(--text-micro);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-2);
+  white-space: nowrap;
+}
+
 /* Where a row comes from, and the button that follows it there. */
 .now__from {
   white-space: nowrap;
