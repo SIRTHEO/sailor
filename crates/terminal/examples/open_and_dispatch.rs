@@ -23,12 +23,12 @@ fn main() {
     let workspace = match Workspace::open(&root) {
         Ok(workspace) => workspace,
         Err(error) => {
-            eprintln!("«{root}» non è uno spazio di lavoro: {error}");
+            eprintln!("«{root}» is not a workspace: {error}");
             std::process::exit(64);
         }
     };
     println!(
-        "spazio di lavoro: {} ({})",
+        "workspace: {} ({})",
         workspace.name,
         workspace.root.display()
     );
@@ -39,7 +39,7 @@ fn main() {
             // The quotes in the middle tell the line echoed back by the
             // terminal apart from the one the shell really produced.
             "echo ci\"a\"o".to_string(),
-            "? trova i residui di configurazione".to_string(),
+            "? find the leftovers of the configuration".to_string(),
         ]
     } else {
         lines
@@ -52,12 +52,12 @@ fn main() {
     }) {
         Ok(terminal) => terminal,
         Err(error) => {
-            eprintln!("il terminale non si è aperto: {error}");
+            eprintln!("the terminal did not open: {error}");
             std::process::exit(70);
         }
     };
     println!(
-        "terminale «{}» aperto, processo {}\n",
+        "terminal «{}» open, process {}\n",
         terminal.id(),
         terminal.process_id()
     );
@@ -66,7 +66,7 @@ fn main() {
         let before = seen.text().len();
         match terminal.submit(line) {
             Ok(Routed::Command { why, .. }) => {
-                println!("«{line}» → TERMINALE (perché: {why:?})");
+                println!("«{line}» → TERMINAL (why: {why:?})");
                 // Time enough to run the command: here one watches, one does
                 // not measure, and a fixed wait is enough for a demonstration.
                 std::thread::sleep(Duration::from_millis(800));
@@ -76,22 +76,22 @@ fn main() {
                 }
             }
             Ok(Routed::Flow { route, flow, text }) => {
-                println!("«{line}» → FLUSSO «{flow}» (regola «{route}»)");
-                println!("    consegna: {text}");
+                println!("«{line}» → FLOW «{flow}» (rule «{route}»)");
+                println!("    delivered: {text}");
                 println!(
-                    "    da qui in poi tocca a chi compone il programma: questo testo\n\
-                     \x20   diventa il `text` dell'innesco manuale, e la corsa parte da lì."
+                    "    from here on it is up to whoever composes the program: this text\n\
+                     \x20   becomes the `text` of the manual trigger, and the run starts there."
                 );
             }
-            Err(error) => println!("«{line}» → il terminale non risponde: {error}"),
+            Err(error) => println!("«{line}» → the terminal does not answer: {error}"),
         }
         println!();
     }
 
-    println!("terminali aperti:");
+    println!("open terminals:");
     for row in terminals.list() {
         println!(
-            "  {} in {} (vivo: {}, processo {})",
+            "  {} in {} (alive: {}, process {})",
             row.id, row.workspace_root, row.alive, row.process_id
         );
     }

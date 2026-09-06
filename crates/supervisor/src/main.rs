@@ -29,8 +29,8 @@ fn main() {
     let supervisor = Supervisor::over(open_ledger());
     if supervisor.ledger().is_none() {
         eprintln!(
-            "avviso: nessun deposito. I processi accesi non verranno registrati, \
-             e un orfano di stanotte domani non avrà un padrone."
+            "warning: no ledger. The processes lit will not be recorded, \
+             and an orphan from tonight will have nobody to own it tomorrow."
         );
     }
 
@@ -66,7 +66,7 @@ fn open_ledger() -> Option<ledger::Ledger> {
         Ok(store) => Some(store),
         Err(error) => {
             eprintln!(
-                "il deposito in {} non si apre: {error}",
+                "the ledger in {} does not open: {error}",
                 directory.display()
             );
             None
@@ -77,29 +77,29 @@ fn open_ledger() -> Option<ledger::Ledger> {
 /// What was left running, and who still breathes.
 fn list_left_running(store: Option<&ledger::Ledger>) {
     let Some(store) = store else {
-        eprintln!("senza deposito non c'è niente da elencare");
+        eprintln!("with no ledger there is nothing to list");
         return;
     };
     let left = match left_running(store) {
         Ok(left) => left,
         Err(error) => {
-            eprintln!("leggere il deposito: {error}");
+            eprintln!("reading the ledger: {error}");
             return;
         }
     };
     if left.is_empty() {
-        println!("nessun processo lasciato acceso.");
+        println!("no process left running.");
         return;
     }
     for item in left {
-        let breath = if item.still_alive { "vivo" } else { "morto" };
+        let breath = if item.still_alive { "alive" } else { "dead" };
         let port = item
             .record
             .port
-            .map(|port| format!(", porta {port}"))
+            .map(|port| format!(", port {port}"))
             .unwrap_or_default();
         println!(
-            "{}  pid {} [{breath}]{port}  — {} {}  (acceso da {}, {})",
+            "{}  pid {} [{breath}]{port}  — {} {}  (lit by {}, {})",
             item.record.process_id,
             item.record.pid,
             item.record.command,
@@ -114,21 +114,21 @@ fn list_left_running(store: Option<&ledger::Ledger>) {
 /// fault 4**: whoever found the port taken had to hunt the pid by hand.
 fn stop_left_running(store: Option<&ledger::Ledger>) {
     let Some(store) = store else {
-        eprintln!("senza deposito non c'è niente da spegnere");
+        eprintln!("with no ledger there is nothing to stop");
         return;
     };
     // Ghosts go first: closing in the ledger what is already dead avoids
     // announcing the stop of something that is not there.
     match close_the_ones_that_stopped_breathing(store, now()) {
         Ok(0) => {}
-        Ok(closed) => println!("{closed} voci chiuse: erano processi già morti."),
-        Err(error) => eprintln!("chiudere i morti: {error}"),
+        Ok(closed) => println!("{closed} entries closed: they were processes already dead."),
+        Err(error) => eprintln!("closing the dead: {error}"),
     }
 
     let left = match left_running(store) {
         Ok(left) => left,
         Err(error) => {
-            eprintln!("leggere il deposito: {error}");
+            eprintln!("reading the ledger: {error}");
             return;
         }
     };
@@ -143,13 +143,13 @@ fn stop_left_running(store: Option<&ledger::Ledger>) {
                 ended_at: now(),
             });
             println!(
-                "spento {} (pid {})",
+                "stopped {} (pid {})",
                 item.record.process_id, item.record.pid
             );
         } else {
             eprintln!(
-                "non si è riusciti a spegnere {} (pid {}): resta scritto come acceso, \
-                 che è meglio di dichiararlo morto senza esserne sicuri",
+                "{} (pid {}) could not be stopped: it stays written down as running, \
+                 which is better than declaring it dead without being sure",
                 item.record.process_id, item.record.pid
             );
         }
@@ -175,7 +175,7 @@ fn run_live(root: &Path, supervisor: &Supervisor, at_once: bool) {
     let binary = desktop.join("src-tauri/target/debug/sailor-desktop");
     if !manifest.exists() {
         eprintln!(
-            "non c'è nessuna finestra in {}: serve --root sulla radice del repository",
+            "there is no window in {}: --root wants the root of the repository",
             manifest.display()
         );
         std::process::exit(2);
@@ -197,10 +197,10 @@ fn run_live(root: &Path, supervisor: &Supervisor, at_once: bool) {
     if let Some(store) = store {
         match close_the_ones_that_stopped_breathing(store, now()) {
             Ok(closed) if closed > 0 => {
-                println!("{closed} voci di processi morti chiuse nel deposito.")
+                println!("{closed} entries of dead processes closed in the ledger.")
             }
             Ok(_) => {}
-            Err(error) => eprintln!("chiudere i morti: {error}"),
+            Err(error) => eprintln!("closing the dead: {error}"),
         }
         // **THIS IS FAULT 4, CAUGHT BEFORE IT HURTS.** The start used to fail
         // with a port-taken error and nobody knew whose the port was. Now the
@@ -208,8 +208,8 @@ fn run_live(root: &Path, supervisor: &Supervisor, at_once: bool) {
         if let Ok(Some(holder)) = store.process_holding_port(DEV_PORT) {
             if ledger::pid_is_alive(holder.pid) {
                 eprintln!(
-                    "la porta {DEV_PORT} è tenuta da {} (pid {}), acceso da {} in {}.\n\
-                     Spegnilo con `sailor-live --stop`, oppure usalo com'è.",
+                    "port {DEV_PORT} is held by {} (pid {}), lit by {} in {}.\n\
+                     Stop it with `sailor-live --stop`, or use it as it stands.",
                     holder.process_id, holder.pid, holder.started_by, holder.working_directory
                 );
                 std::process::exit(3);
@@ -223,10 +223,10 @@ fn run_live(root: &Path, supervisor: &Supervisor, at_once: bool) {
     // from this one. A bind, not a process list: fault 12.
     if let Some(taken) = supervisor::who_holds(DEV_PORT) {
         eprintln!(
-            "la porta {DEV_PORT} è occupata ({taken}) e non risulta a Sailor.\n\
-             Il servitore della pagina ne prenderebbe un'altra in silenzio, e la\n\
-             finestra continuerebbe a leggere da questa.\n\
-             `lsof -nP -iTCP:{DEV_PORT} -sTCP:LISTEN` dice di chi è."
+            "port {DEV_PORT} is taken ({taken}) and Sailor has no record of it.\n\
+             The page's server would quietly take another one, and the\n\
+             window would go on reading from this one.\n\
+             `lsof -nP -iTCP:{DEV_PORT} -sTCP:LISTEN` says whose it is."
         );
         std::process::exit(3);
     }
@@ -248,13 +248,13 @@ fn run_live(root: &Path, supervisor: &Supervisor, at_once: bool) {
     let _vite = match vite {
         Ok(process) => {
             println!(
-                "pagina in sviluppo: pid {} sulla porta {DEV_PORT}",
+                "development page: pid {} on port {DEV_PORT}",
                 process.pid()
             );
             Some(process)
         }
         Err(error) => {
-            eprintln!("il servitore della pagina non parte: {error}");
+            eprintln!("the page's server does not start: {error}");
             std::process::exit(4);
         }
     };
@@ -269,7 +269,7 @@ fn run_live(root: &Path, supervisor: &Supervisor, at_once: bool) {
     match cargo_build(&manifest, Some(1)) {
         supervisor::BuildOutcome::Succeeded => match start_window(&binary, &desktop, supervisor) {
             Ok(process) => {
-                println!("finestra accesa: pid {}", process.pid());
+                println!("window lit: pid {}", process.pid());
                 running_since = Some(now());
                 window = Some(process);
                 publish(
@@ -280,21 +280,21 @@ fn run_live(root: &Path, supervisor: &Supervisor, at_once: bool) {
                 );
             }
             Err(error) => {
-                eprintln!("la finestra non parte: {error}");
+                eprintln!("the window does not start: {error}");
                 publish(&status_path, LiveState::BuildFailed, error, None);
             }
         },
         supervisor::BuildOutcome::Failed { message } => {
             eprintln!("{message}");
             eprintln!(
-                "la prima costruzione è fallita: non c'è ancora nessuna finestra da tenere \
-                 accesa. Correggi e salva: si riprova da solo."
+                "the first build failed: there is no window to keep alive yet. \
+                 Fix it and save: it tries again on its own."
             );
             publish(&status_path, LiveState::BuildFailed, message, None);
         }
     }
 
-    println!("in ascolto. Ctrl-C per chiudere.");
+    println!("listening. Ctrl-C to close.");
     // A build that nobody has taken yet, and the ask that is still standing.
     let mut waiting = false;
     let mut asked = at_once;
@@ -306,7 +306,7 @@ fn run_live(root: &Path, supervisor: &Supervisor, at_once: bool) {
         if let Some(process) = window.as_mut() {
             if let Some(code) = process.exited() {
                 process.record_end(code);
-                println!("la finestra è stata chiusa da chi la guardava.");
+                println!("the window was closed by whoever was watching it.");
                 return;
             }
         }
@@ -317,7 +317,7 @@ fn run_live(root: &Path, supervisor: &Supervisor, at_once: bool) {
             Turn::Wait => {}
             Turn::Build => {
                 seen = changed;
-                println!("qualcosa è cambiato: ricostruisco senza toccare la finestra.");
+                println!("something changed: rebuilding without touching the window.");
                 publish(&status_path, LiveState::Building, String::new(), running_since);
                 match cargo_build(&manifest, Some(1)) {
                     supervisor::BuildOutcome::Succeeded => {
@@ -325,12 +325,12 @@ fn run_live(root: &Path, supervisor: &Supervisor, at_once: bool) {
                         // ON SCREEN IS STILL THE ONE BEFORE THIS, and it stays
                         // there: what was being worked in is not taken away by
                         // the act of proving the code compiles.
-                        println!("costruita. Aspetta: la finestra la prende quando gliela chiedi.");
+                        println!("built. It waits: the window takes it when you ask.");
                         publish(&status_path, LiveState::Ready, String::new(), running_since);
                     }
                     supervisor::BuildOutcome::Failed { message } => {
                         eprintln!("{message}");
-                        eprintln!("costruzione fallita: la finestra resta all'ultima versione buona.");
+                        eprintln!("build failed: the window stays on the last good version.");
                         publish(&status_path, LiveState::BuildFailed, message, running_since);
                     }
                 }
@@ -347,11 +347,11 @@ fn run_live(root: &Path, supervisor: &Supervisor, at_once: bool) {
                 match outcome {
                     Rebuild::Replaced => {
                         running_since = Some(now());
-                        println!("finestra sostituita.");
+                        println!("window replaced.");
                         publish(&status_path, LiveState::Running, String::new(), running_since);
                     }
                     Rebuild::KeptRunning { message } | Rebuild::StartFailed { message } => {
-                        eprintln!("costruita, ma non riparte: {message}");
+                        eprintln!("built, but it does not start again: {message}");
                         publish(&status_path, LiveState::BuildFailed, message, None);
                         running_since = None;
                     }
@@ -400,7 +400,7 @@ fn start_window(
 /// Who lit it: the person plus this supervisor's pid. **The name alone is not
 /// enough** — two supervisors of the same person are fault 4 exactly.
 fn started_by() -> String {
-    let who = std::env::var("USER").unwrap_or_else(|_| "ignoto".to_owned());
+    let who = std::env::var("USER").unwrap_or_else(|_| "unknown".to_owned());
     format!("sailor-live/{who}/{}", std::process::id())
 }
 
@@ -413,6 +413,6 @@ fn publish(path: &Path, state: LiveState, message: String, running_since: Option
         supervisor_pid: std::process::id(),
     };
     if let Err(error) = status.write(path) {
-        eprintln!("lo stato non si scrive ({}): {error}", path.display());
+        eprintln!("the status will not write ({}): {error}", path.display());
     }
 }

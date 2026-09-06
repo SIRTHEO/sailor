@@ -108,7 +108,7 @@ pub fn rebuild_then_swap<R: Running>(
                     // No way back: keeping something that will not stop would
                     // leave two programs on the same port.
                     return Rebuild::StartFailed {
-                        message: format!("il programma acceso non si è fermato: {error}"),
+                        message: format!("the running program did not stop: {error}"),
                     };
                 }
             }
@@ -185,10 +185,10 @@ impl SwapRequest {
     pub fn ask(path: &Path) -> Result<(), String> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
-                .map_err(|error| format!("creare {}: {error}", parent.display()))?;
+                .map_err(|error| format!("creating {}: {error}", parent.display()))?;
         }
         std::fs::write(path, now().to_string())
-            .map_err(|error| format!("scrivere {}: {error}", path.display()))
+            .map_err(|error| format!("writing {}: {error}", path.display()))
     }
 
     /// Whether somebody asked, taking the request away as it answers. An ask
@@ -241,15 +241,15 @@ impl LiveStatus {
     pub fn write(&self, path: &Path) -> Result<(), String> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
-                .map_err(|error| format!("creare {}: {error}", parent.display()))?;
+                .map_err(|error| format!("creating {}: {error}", parent.display()))?;
         }
         let text = serde_json::to_string_pretty(self)
-            .map_err(|error| format!("comporre lo stato: {error}"))?;
+            .map_err(|error| format!("composing the status: {error}"))?;
         let temporary = path.with_extension("json.partial");
         std::fs::write(&temporary, text)
-            .map_err(|error| format!("scrivere {}: {error}", temporary.display()))?;
+            .map_err(|error| format!("writing {}: {error}", temporary.display()))?;
         std::fs::rename(&temporary, path)
-            .map_err(|error| format!("spostare su {}: {error}", path.display()))?;
+            .map_err(|error| format!("moving onto {}: {error}", path.display()))?;
         Ok(())
     }
 
