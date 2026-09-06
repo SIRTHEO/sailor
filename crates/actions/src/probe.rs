@@ -203,12 +203,26 @@ impl DryProbe for RealDryProbe {
 /// qui non darebbe un errore: darebbe un motore che *aspetta*, e la prova a
 /// secco diventerebbe un modo per appendere il controllo.
 pub fn probe_dry_run(probe: &dyn DryProbe, bin: &str, recipe: &AskRecipe) -> ProbeVerdict {
-    let args = command_line(recipe);
+    probe_dry_run_with(probe, bin, recipe, &command_line(recipe))
+}
+
+/// The same trial, on a line the caller already assembled.
+///
+/// **WHY THE LINE COMES FROM OUTSIDE.** Since a step may name the model it
+/// wants, the line no longer comes from the descriptor alone: assembling it
+/// again here would try one without the model and call sound a line the run
+/// will not use. Those are the two doors of fault 1.
+pub fn probe_dry_run_with(
+    probe: &dyn DryProbe,
+    bin: &str,
+    recipe: &AskRecipe,
+    args: &[String],
+) -> ProbeVerdict {
     let stdin = match recipe.prompt {
         PromptVia::Stdin => Some(Vec::new()),
         PromptVia::LastArg => None,
     };
-    match probe.run(bin, &args, stdin) {
+    match probe.run(bin, args, stdin) {
         DryRun::Answered { stdout, stderr } => judge_dry_run(recipe, &stdout, &stderr),
         DryRun::NoAnswer { why } => ProbeVerdict::TimedOut { why },
     }

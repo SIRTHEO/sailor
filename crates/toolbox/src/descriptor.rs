@@ -818,6 +818,15 @@ impl Descriptor {
         }
     }
 
+    /// The options a model's name is written after. A form without a value has
+    /// nowhere to put the name, so it answers `None` as an undeclared
+    /// capability does: neither can be told which model to answer with.
+    pub fn model_option(&self) -> Option<Vec<String>> {
+        let forms = self.capabilities.get(CHOOSE_MODEL)?.forms();
+        let carries = |form: &&CapabilityForm| form.takes_value && !form.args.is_empty();
+        forms.iter().find(carries).map(|form| form.args.clone())
+    }
+
     /// Where this descriptor says two different things about the same fact. The
     /// defect is never in one file: it is in never having compared the two
     /// blocks. **It lives in the library and not inside a test** because a test
@@ -944,11 +953,14 @@ impl Descriptor {
 
 /// The name of the capability that speaks of one-shot questions.
 ///
-/// **IT IS THE ONLY CAPABILITY NAME THE CODE UTTERS.** It answers the same
-/// question — "can this engine be interrogated without opening a conversation?"
-/// — that `ask` answers by composing a line, and two copies of one truth drift
-/// apart uncompared. The comparison needs the name; no other needs it or is here.
+/// It answers the same question — "can this engine be interrogated without
+/// opening a conversation?" — that `ask` answers by composing a line, and two
+/// copies of one truth drift apart uncompared. The comparison needs the name.
 pub const ASK_WITHOUT_INTERACTION: &str = "ask_without_interaction";
+
+/// The name of the capability saying how an engine is told which model to
+/// answer with. The code reads a form; the options are the descriptor's.
+pub const CHOOSE_MODEL: &str = "choose_model";
 
 /// A descriptor that says two different things about the same fact.
 ///
