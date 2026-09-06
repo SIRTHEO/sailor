@@ -29,8 +29,7 @@ export function SailorScreen({
   onQuota?: () => void;
 }) {
   return (
-    // A screen that is exactly one place says which, so a guard can ask
-    // whether THAT place drew anything and not whether any section did.
+    // Exactly one place, so it says which: a guard asks whether THAT place drew.
     <div className="section" data-place="sailor">
       <div className="section__body">
         {tab === "keeps" && <KeepsScreen native={native} />}

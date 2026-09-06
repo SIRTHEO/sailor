@@ -175,6 +175,14 @@ export interface ToolMarkProps {
 }
 
 /**
+ * THE TYPE FLOOR DECIDES HOW MANY LETTERS FIT, not the other way round. Sized
+ * as a fraction of its box the monogram came out at 7px on a node: initials
+ * that small are recognised by shape and never read. So they sit at the floor,
+ * and where two would not fit the mark says one — 1.3 is two capitals wide.
+ */
+const MONOGRAM_FLOOR = 12;
+
+/**
  * A tool's mark: its drawing if I know it, the monogram if I do not.
  *
  * It knows no tool by name — it asks the map, and the map can be empty without
@@ -182,7 +190,9 @@ export interface ToolMarkProps {
  */
 export function ToolMark({ id, size = 18, off = false, title }: ToolMarkProps) {
   const shape = MARKS[id];
-  const tint = off ? "#94a3b8" : (shape?.tint ?? fallbackTint(id));
+  const tint = off ? "var(--text-3)" : (shape?.tint ?? fallbackTint(id));
+  const letters = monogram(id);
+  const shown = size >= MONOGRAM_FLOOR * 1.3 ? letters : letters.slice(0, 1);
 
   return (
     <span
@@ -213,8 +223,8 @@ export function ToolMark({ id, size = 18, off = false, title }: ToolMarkProps) {
         // The fallback does not imitate a logo I do not have: it says the
         // initials on a pill, and reads as a fallback instead of looking like a
         // wrong official mark.
-        <span className="tool-mark__monogram" style={{ fontSize: Math.round(size * 0.44) }}>
-          {monogram(id)}
+        <span className="tool-mark__monogram" style={{ fontSize: MONOGRAM_FLOOR }}>
+          {shown}
         </span>
       )}
     </span>

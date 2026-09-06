@@ -64,12 +64,22 @@ function pretendShell(answers: Record<string, unknown | ((args?: Record<string, 
 
 /** Picks the row ⌘K draws with exactly this label: the accessible name of an
  *  option carries the hint too, and «Runs» is a place and a view inside it. */
-function typeInThePalette(label: string): void {
+/* A SECTION IS A DYNAMIC IMPORT AWAY. It is fetched when the place asks for
+   it, so a query fired in the same tick as the gesture finds the gap the
+   fallback leaves and concludes the section is not there. */
+async function theSectionArrives(): Promise<void> {
+  await waitFor(() => {
+    expect(document.querySelector(".section:not([hidden])")).toBeTruthy();
+  });
+}
+
+async function typeInThePalette(label: string): Promise<void> {
   fireEvent.click(screen.getByRole("button", { name: /Search or run a command/ }));
   const rows = Array.from(document.querySelectorAll<HTMLElement>(".palette__entry"));
   const row = rows.find((one) => one.querySelector(".palette__label")?.textContent === label);
   expect(row, `the palette does not offer «${label}»`).toBeDefined();
   fireEvent.click(row as HTMLElement);
+  await theSectionArrives();
 }
 
 describe("the column is the world", () => {
@@ -100,7 +110,7 @@ describe("the column is the world", () => {
     ).toBeTruthy();
   });
 
-  test("THE BAR SAYS WHERE YOU ARE: the place, then the entry inside it", () => {
+  test("THE BAR SAYS WHERE YOU ARE: the place, then the entry inside it", async () => {
     const { container } = render(<App />);
     const crumbs = () => Array.from(container.querySelectorAll(".topbar__crumb")).map((one) => one.textContent);
     // At rest the window is the work, and the entry inside it is the view.
@@ -112,7 +122,7 @@ describe("the column is the world", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Board/ }));
     expect(crumbs()).toEqual(["Board", "prima-corsa"]);
 
-    typeInThePalette(WHY);
+    await typeInThePalette(WHY);
     expect(crumbs()).toEqual([WHY, "Runs"]);
     // The terminals stay mounted, hidden, with a column of their own: only
     // the section in view counts.
@@ -122,12 +132,12 @@ describe("the column is the world", () => {
 
     // The ledger is one view of what happened: consulted beside the runs it
     // came from, and reached from the machine's own row without a run first.
-    typeInThePalette("Ledger");
+    await typeInThePalette("Ledger");
     expect(crumbs()).toEqual([WHY, "Ledger"]);
 
     // ONE ENTRY, NOT TWO: a row of the machine's ground lands on the screen
     // itself, not on a list that asks again.
-    typeInThePalette("Profiles");
+    await typeInThePalette("Profiles");
     expect(crumbs()).toEqual([MACHINE_GROUND, "Profiles"]);
     expect(
       container.querySelectorAll(`${shown}.subrail`),
@@ -135,7 +145,7 @@ describe("the column is the world", () => {
     ).toHaveLength(0);
 
     // And back to the work, which is typed for rather than navigated to.
-    typeInThePalette("Live");
+    await typeInThePalette("Live");
     expect(crumbs()).toEqual([TERMINALS_GROUND, "Live"]);
   });
 });
@@ -451,9 +461,9 @@ describe("a window replaced by a build", () => {
   beforeEach(() => window.localStorage.clear());
   afterEach(() => window.localStorage.clear());
 
-  test("OPENS WHERE IT WAS LEFT, place and all", () => {
+  test("OPENS WHERE IT WAS LEFT, place and all", async () => {
     const first = render(<App />);
-    typeInThePalette(WHY);
+    await typeInThePalette(WHY);
     expect(
       first.container.querySelector(".body[hidden]"),
       "the board is still in view, so this proves nothing",
