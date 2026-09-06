@@ -614,14 +614,6 @@ button.is-primary {
   overflow-y: auto;
 }
 
-.world__above {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--line);
-}
-
 /* ONE ROW, THREE DEPTHS. Every line of this column is the same object: same
    height, same hit area, same hover — a place, a tree, a board, a flow, a
    terminal. What tells them apart is how far in they start and, at the third
