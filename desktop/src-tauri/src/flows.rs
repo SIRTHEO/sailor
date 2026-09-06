@@ -305,7 +305,7 @@ mod tests {
     /// leggerebbe lo stato della macchina di chi la esegue (guasto 5).
     #[test]
     fn the_window_knows_every_action_the_engine_can_run() {
-        let engine = registry::default_registry(None, None);
+        let engine = registry::registry_in(registry::House::empty(), None, None);
         let window = action_registry_without_deposit();
         let known: BTreeSet<&str> = window.names().into_iter().collect();
         let missing: Vec<&str> = engine
@@ -348,7 +348,7 @@ mod tests {
         // e la finestra ha ragione a saperle disegnare comunque.
         let dir = scratch_dir("vocabolario");
         let ledger = ledger::Ledger::open(&dir).expect("un deposito di prova");
-        let engine = registry::default_registry(Some(ledger), None);
+        let engine = registry::registry_in(registry::House::under(&dir), Some(ledger), None);
         let known: BTreeSet<&str> = engine.names().into_iter().collect();
         let invented: Vec<&String> = named
             .iter()
