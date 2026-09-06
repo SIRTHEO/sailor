@@ -321,28 +321,18 @@ pub(super) struct DeadPointer {
     pub(super) pointer: String,
 }
 
-/// **A POINTER THAT CANNOT MATCH IS A STEP THAT NEVER RUNS.** With several
-/// dependencies, or one declared skippable, the input is an object keyed by
-/// dependency name with `with` laid over: a first segment that is neither is
-/// dead before the run starts.
+/// **A POINTER THAT CANNOT MATCH IS A STEP THAT NEVER RUNS**, and the graph
+/// says so before anything is spent: a step receives what its dependencies
+/// declare they hand on, with `with` laid over. A pointer past that shape
+/// breaks the step at resolution, or — in `when` — makes it skip, and a
+/// skipped step closes green. The shape comes from `declared_input_of`, silent
+/// where nothing is declared: there this says nothing rather than invent.
 pub(super) fn pointers_that_cannot_match(flow: &FlowFile) -> Vec<DeadPointer> {
     let mut found = Vec::new();
     for step in flow.graph.steps() {
-        // Only where the shape is certain. One dependency that cannot be
-        // skipped hands its own output over, and what is in it is the other
-        // step's business — judging that here would invent.
-        let named_by_dependency = match step.deps.as_slice() {
-            [] => false,
-            [only] => flow.graph.dependency_is_skippable(&step.id, only),
-            _ => true,
-        };
-        if !named_by_dependency {
+        let Some(reachable) = flow.graph.declared_input_of(step) else {
             continue;
-        }
-        let mut reachable: Vec<String> = step.deps.clone();
-        if let Some(Value::Object(with)) = step.with.as_ref() {
-            reachable.extend(with.keys().cloned());
-        }
+        };
         if let Some(condition) = step.when.as_ref() {
             if let Some(pointer) = pointer_of(condition) {
                 collect_dead(&step.id, "when", pointer, &reachable, &mut found);
@@ -367,7 +357,7 @@ fn collect_dead_references(
     step: &str,
     field: &str,
     value: &Value,
-    reachable: &[String],
+    reachable: &flow::ValueSchema,
     found: &mut Vec<DeadPointer>,
 ) {
     match value {
@@ -403,14 +393,10 @@ fn collect_dead(
     step: &str,
     field: &str,
     pointer: &str,
-    reachable: &[String],
+    reachable: &flow::ValueSchema,
     found: &mut Vec<DeadPointer>,
 ) {
-    // An empty pointer is the whole input, and reaches it by definition.
-    let Some(first) = pointer.trim_start_matches('/').split('/').next() else {
-        return;
-    };
-    if first.is_empty() || reachable.iter().any(|name| name == first) {
+    if reachable.accepts_pointer(pointer) {
         return;
     }
     found.push(DeadPointer {
@@ -1032,11 +1018,45 @@ mod tests {
         }
     }
 
-    /// THE CONTROL: one dependency that cannot be skipped hands its own output
-    /// over, and what is inside it is the other step's business. Judging there
-    /// would call every honest pointer dead.
+    /// **THE ONE DEPENDENCY IS JUDGED TOO, BY WHAT IT DECLARES IT HANDS ON.**
+    /// Skipped whole, it is where a shipped flow hid three dead pointers
+    /// through a merge and out of the door. Its `output_schema` is the
+    /// business that step declared; past it is a promise nobody made.
     #[test]
-    fn a_single_dependency_that_cannot_be_skipped_is_not_judged() {
+    fn what_the_one_dependency_declares_is_what_its_reader_may_reach() {
+        let flow: FlowFile = serde_json::from_value(serde_json::json!({
+            "id": "prova", "description": "d",
+            "graph": {"steps": [
+                {"id": "innesco", "deps": [], "action": "trigger", "max_attempts": 1,
+                 "when": null, "with": {"source": "manual"},
+                 "input_schema": {"type": "any"},
+                 "output_schema": {"type": "object", "allow_extra": true,
+                                   "properties": {"text": {"type": "string"}},
+                                   "required": ["text"]}},
+                {"id": "dopo", "deps": ["innesco"], "action": "shell_check", "max_attempts": 1,
+                 "when": null,
+                 "with": {"command": {"$from": "/text"}, "env": {"C": {"$from": "/run_id"}}},
+                 "input_schema": {"type": "any"}, "output_schema": {"type": "any"}}
+            ]},
+            "inputs": {}
+        }))
+        .expect("il flusso si legge");
+
+        let dead = pointers_that_cannot_match(&flow);
+
+        let named: Vec<(&str, &str)> = dead
+            .iter()
+            .map(|found| (found.step.as_str(), found.pointer.as_str()))
+            .collect();
+        // The declared one is left alone, the undeclared one is named: with
+        // only the second assertion a check that named everything would pass.
+        assert_eq!(named, vec![("dopo", "/run_id")], "{dead:?}");
+    }
+
+    /// THE CONTROL: a dependency that declares no shape at all cannot be
+    /// judged, and every pointer into it stays honest until a run says so.
+    #[test]
+    fn a_single_dependency_that_declares_nothing_is_not_judged() {
         let flow: FlowFile = serde_json::from_value(serde_json::json!({
             "id": "prova", "description": "d",
             "graph": {"steps": [
