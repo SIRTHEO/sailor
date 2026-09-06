@@ -106,11 +106,11 @@ fn rewrite(
 }
 
 /// The actions the engine can run, asked of the one list that assembles them.
-fn registry() -> flow::ActionRegistry {
+pub(super) fn registry() -> flow::ActionRegistry {
     registry::default_registry(open_default_ledger(), None)
 }
 
-fn refuse_unknown_actions(graph: &Graph) -> Result<(), String> {
+pub(super) fn refuse_unknown_actions(graph: &Graph) -> Result<(), String> {
     let missing = missing_actions(graph, &registry());
     if missing.is_empty() {
         return Ok(());
