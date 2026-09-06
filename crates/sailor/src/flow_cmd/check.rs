@@ -1295,20 +1295,20 @@ mod tests {
         assert!(registry.get("shell_check").is_some());
     }
 
-    /// **CHI INTERROGA LO STORICO C'È ANCHE SENZA DEPOSITO.**
+    /// **CHI LEGGE E CHI SCRIVE CI SONO ANCHE SENZA DEPOSITO.**
     ///
-    /// Il mutante che la fa cadere è spostare `register_history` dentro il ramo
-    /// `if let Some(ledger)` insieme ai nodi di `store` — l'errore più facile da
-    /// fare in quel punto, perché le due registrazioni si somigliano. `flow
-    /// check` direbbe «azione mancante» di un'azione che esiste, e lo direbbe
-    /// esattamente sulla macchina appena installata.
+    /// Il mutante che la fa cadere è spostare una delle due registrazioni dentro
+    /// il ramo `if let Some(ledger)`: `flow check` direbbe «azione mancante» di
+    /// un'azione che esiste, e lo direbbe esattamente sulla macchina appena
+    /// installata. Che chi scrive poi rifiuti di girare senza deposito è un'altra
+    /// prova, in `registry`: qui si misura solo che il nome sia noto.
     #[test]
     fn the_history_question_is_registered_even_without_a_deposit() {
         let registry = registry_in(House::empty(), None, None);
         assert!(registry.get("history_ask").is_some());
         assert!(
-            registry.get("store_write").is_none(),
-            "chi scrive resta fuori: senza deposito non ha dove scrivere"
+            registry.get("store_write").is_some(),
+            "chi scrive è nominabile: senza deposito rifiuta, ma non è un'azione mancante"
         );
     }
 
