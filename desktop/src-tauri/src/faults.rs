@@ -98,15 +98,15 @@ mod tests {
         // THE CONTROL: the words it does know still read as themselves, or the
         // check above would hold on a function that answers one thing always.
         let closed = ::faults::Fault {
-            status: "**chiuso**".to_owned(),
+            status: "**closed**".to_owned(),
             ..unknown.clone()
         };
         let open = ::faults::Fault {
-            status: "**aperto**".to_owned(),
+            status: "**open**".to_owned(),
             ..unknown.clone()
         };
         let half = ::faults::Fault {
-            status: "**chiuso in parte**".to_owned(),
+            status: "**closed in part**".to_owned(),
             ..unknown.clone()
         };
         assert_eq!(
@@ -117,5 +117,13 @@ mod tests {
             ],
             ["closed", "open", "partly closed"],
         );
+        // The register was translated and this reader was not, so it answered
+        // «unrecognised» to every fault the store held. The wording it used to
+        // know is the sharpest control there is: still refused, never closed.
+        let was_known = ::faults::Fault {
+            status: "**chiuso**".to_owned(),
+            ..unknown.clone()
+        };
+        assert_eq!(super::standing(&was_known), "unrecognised");
     }
 }
