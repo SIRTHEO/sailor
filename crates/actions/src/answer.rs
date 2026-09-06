@@ -71,6 +71,17 @@ pub(crate) fn shape_was_asked_for(written: &str, spec: &EngineSpec) -> Result<()
     ))
 }
 
+/// The same question with the reason under it, never the refused answer. The
+/// excerpt is cut here afresh: a refusal read from an input has not been
+/// through the constructor that cuts it. See fault 103.
+pub(crate) fn asked_again(asked: &str, told: &Refusal) -> String {
+    let told = Refusal::new(&told.check, &told.path, told.rule, &told.seen);
+    format!(
+        "{asked}\n\n{}",
+        catalogue::say("engine.after_refusal", &[("why", &told.explain())])
+    )
+}
+
 /// Quanto di ciò che ha detto un comando entra nel messaggio di un passo rotto.
 const SAID_TAIL: usize = 1200;
 
