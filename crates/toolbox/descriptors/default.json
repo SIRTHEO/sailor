@@ -149,8 +149,15 @@
     "  \"fork_session\": false",
     "A form has `args` (the options, or the subcommand), `takes_value` (the last",
     "one wants a value straight after), `values` (the closed set, where one",
-    "exists) and `note` (the constraint the table cannot carry: «only with",
-    "--print»).",
+    "exists), `unit` (what the value is measured in, where it is a number to be",
+    "converted: `usd`, `tokens`) and `note` (the constraint the table cannot",
+    "carry: «only with --print»).",
+    "",
+    "`unit` IS WHAT MAKES A SPEND CAP A CAP. A `native_spend_cap` form without it",
+    "declares a ceiling nobody can convert, so Sailor imposes none and says the",
+    "flow's cap is a stop threshold. Declaring the wrong unit would be worse than",
+    "declaring none: the ceiling on the line and the reserve held for it would",
+    "mean two different things, and the cap would read as a guarantee.",
     "",
     "WRITING `false` IS NOT THE SAME AS STAYING SILENT, and that is why this block",
     "has this shape. `false` says «somebody looked and it is not there»; a missing",
@@ -263,7 +270,8 @@
         "native_spend_cap": {
           "args": ["--max-budget-usd"],
           "takes_value": true,
-          "note": "works only together with --print"
+          "unit": "usd",
+          "note": "works only together with --print, which is the line Sailor composes; the value is written in whole dollars, hence the unit"
         },
         "choose_model": { "args": ["--model"], "takes_value": true },
         "fallback_model": {

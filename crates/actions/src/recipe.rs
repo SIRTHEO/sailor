@@ -81,6 +81,15 @@ pub trait ToolResolver: Send + Sync {
     fn model_option(&self, _id: &str) -> Option<Vec<String>> {
         None
     }
+
+    /// How `id` is told the most one call may spend, when its descriptor says.
+    ///
+    /// **`None` MEANS NO CEILING CAN BE IMPOSED ON IT**, and that is what turns
+    /// a cap over this engine into a stop threshold. It is not a reason to
+    /// refuse the engine: it is a reason to stop calling the cap a guarantee.
+    fn spend_ceiling_option(&self, _id: &str) -> Option<crate::reserve::CeilingOption> {
+        None
+    }
 }
 
 /// Il segnaposto che, dentro le opzioni di una ricetta di sessione, prende il
@@ -186,9 +195,24 @@ pub fn command_line_naming_model(
     option: &[String],
     model: &str,
 ) -> Vec<String> {
+    command_line_naming_model_and_ceiling(recipe, Some((option, model)), None)
+}
+
+/// The same line, with the ceiling this call is held to written on it too.
+///
+/// The ceiling sits where the model's name sits, and for the same reason. It is
+/// the one option Sailor adds that a person's money depends on: a run that
+/// reserves a maximum and does not impose it holds a figure meaning nothing.
+pub fn command_line_naming_model_and_ceiling(
+    recipe: &AskRecipe,
+    model: Option<(&[String], &str)>,
+    ceiling: Option<(&[String], &str)>,
+) -> Vec<String> {
     let mut ask_args = recipe.args.clone();
-    ask_args.extend(option.iter().cloned());
-    ask_args.push(model.to_owned());
+    for (option, value) in [model, ceiling].into_iter().flatten() {
+        ask_args.extend(option.iter().cloned());
+        ask_args.push(value.to_owned());
+    }
     command_line_with(recipe, &ask_args)
 }
 
