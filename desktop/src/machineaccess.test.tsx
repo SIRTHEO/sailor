@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 /**
- * **«SAILOR» IS NOT A DESTINATION.** A section named after the program answered
- * «what it knows, what it can do» — nine screens folded into one noun that says
- * nothing about any of them. What this machine holds is reached by name, as an
- * explicit machine access, and the window still reopens on the screen you left.
+ * **«SAILOR» IS NOT A DESTINATION.** A section named after the program folded
+ * nine screens into one noun saying nothing about any of them. What the machine
+ * holds is reached by name, and the window reopens on the screen you left.
  */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";

@@ -7,33 +7,21 @@ import { KIND_LABEL, KindIcon } from "./StepNode";
 import { DEFAULT_ACTION_FOR_KIND, type StepKind } from "./flow";
 
 /**
- * **THE TOOLBOX SITS INSIDE THE CANVAS, NOT IN THE RAIL BESIDE IT**, so that
- * composing a flow does not cross the boundary between what you watch and what
- * you command on every step. It is a React Flow `Panel` because the canvas is
- * infinite pan/zoom and a bar drawn IN it would scroll away on the first drag —
- * `Panel` draws outside `.react-flow__viewport`, the element carrying the
- * `transform`, and to the eye the two are identical until you drag.
- *
- * **`bottom-left`, not `bottom-center`.** The bottom band already has two
- * tenants, the zoom controls (41px from the edge) and the minimap (215px); a
- * centred bar can only be twice the narrower side wide, which below a 1418px
- * window drops under what the tools occupy and covers the minimap. Anchored to
- * the side it starts after the controls and ends before the minimap, along the
- * corridor `styles.css` declares (`--controls-reserve`, `--minimap-reserve`).
- * `Toolbar.test.tsx` redoes that sum without measuring a pixel.
+ * **THE TOOLBOX SITS INSIDE THE CANVAS, NOT IN THE RAIL BESIDE IT.** It is a
+ * React Flow `Panel`, which draws outside the element carrying the pan/zoom
+ * `transform`: a bar drawn in the viewport scrolls away on the first drag.
+ * `bottom-left` and not `bottom-center`, because the bottom band already holds
+ * the zoom controls and the minimap; anchored to the side the bar runs the
+ * corridor `styles.css` declares, and `Toolbar.test.tsx` redoes that sum.
  */
 
 /**
  * The families, grouped by **who does the work** — the only distinction that
  * changes what happens when the step runs: `engine`, `human` and `subflow` hand
- * the work outside, `check`, `gesture` and `deposit` Sailor runs itself. Seven
- * buttons in a row are a wall; seven in three groups read. The names are not
- * drawn but live in `aria-label`, because three caption rows would cost a third
- * of the bar's height to label groups of one and of three, which the hairline
- * and the marks already say and a screen reader hears anyway. The list itself
- * is read from `DEFAULT_ACTION_FOR_KIND`, never written here — a tool with no
- * action makes a node that will not save — and a test keeps the two glued BOTH
- * WAYS, since a hand-written list would break the link in silence.
+ * it outside, `check`, `gesture` and `deposit` Sailor runs itself. The names
+ * live in `aria-label`, not drawn: caption rows would cost a third of the bar
+ * to say what the marks say. The list is read from `DEFAULT_ACTION_FOR_KIND`,
+ * and a test keeps the two glued both ways.
  */
 interface ToolGroup {
   /** What the group has in common, for whoever reads with a screen reader. */

@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 /**
- * **ONE PLACE TO CONSULT WHAT HAPPENED.** The tables were a section beside the
- * runs, so the same question — what did this machine do, and what did it cost —
- * had two doors and neither said the other existed. They are one now, and the
- * tables are a view of the data inside it, reached without opening a run.
+ * **ONE PLACE TO CONSULT WHAT HAPPENED.** The tables sat beside the runs, so
+ * one question — what did this machine do, and what did it cost — had two doors
+ * and neither named the other. The tables are a view, opened without a run.
  */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";

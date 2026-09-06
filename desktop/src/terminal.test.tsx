@@ -44,10 +44,9 @@ import {
 
 /**
  * **WHAT THE REACT HALF OF THE TERMINAL CAN GET WRONG IN SILENCE.** An accent
- * lost in a long output, a key sent to routing instead of to the program, a
- * dead terminal drawn alive, a pane that comes back blank: none makes a noise.
- * The judge is the contract — the shell is faked from its document by hand,
- * while the components are the real ones, emulator included.
+ * lost in long output, a key sent to routing, a dead terminal drawn alive, a
+ * blank pane: none makes a noise. The shell is faked from its document by
+ * hand, and the components are the real ones, emulator included.
  */
 
 afterEach(cleanup);
