@@ -9,7 +9,7 @@ use crate::recipe::{
     SessionRecipe, ToolResolver,
 };
 use crate::session::session_lines;
-use crate::spec::{DataClass, EngineSpec};
+use crate::spec::{ceiling_of, DataClass, EngineSpec};
 use crate::{budget, cooldown, reserve, Declared, EXTERNAL_ENGINE_ACTION};
 use flow::ActionError;
 use std::path::PathBuf;
@@ -286,7 +286,7 @@ impl ExternalEngineAction {
                     let held_to = tools.spend_ceiling_option(id);
                     let ceiling = held_to
                         .as_ref()
-                        .and_then(|option| reserve::ceiling_for(option, &declared_ceiling(spec)));
+                        .and_then(|option| reserve::ceiling_for(option, &ceiling_of(spec)));
                     let written = ceiling.as_ref().and_then(reserve::Ceiling::as_written);
                     match tools.ask_recipe(id) {
                         Some(recipe) => usable.push(Candidate {
@@ -305,7 +305,7 @@ impl ExternalEngineAction {
                             ceiling,
                             no_ceiling_because: reserve::why_no_ceiling(
                                 held_to.as_ref(),
-                                &declared_ceiling(spec),
+                                &ceiling_of(spec),
                             ),
                             prompt: recipe.prompt,
                             session: session_lines(&recipe, tools.session_recipe(id)),
@@ -341,14 +341,6 @@ impl ExternalEngineAction {
                  o una catena di identificativi) oppure `bin` (un comando così com'è)",
             )),
         }
-    }
-}
-
-/// The ceiling this step declares, in every unit an engine may take one in.
-pub(crate) fn declared_ceiling(spec: &EngineSpec) -> reserve::Declared {
-    reserve::Declared {
-        max_spend_micros: spec.max_spend_micros,
-        max_tokens: spec.max_tokens,
     }
 }
 

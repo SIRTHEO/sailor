@@ -43,6 +43,8 @@
   "cli.flow.value_mounted_into_an_executed_field": "flow {flow} mounts a value it did not write into an executed field: {fields}. The command is shell text and gets executed: what arrives from outside — from an engine or from another command — goes into «env», where it stays a piece of data, and the command reads it between quotes.",
   "cli.flow.calls_without_cost": "{count} calls declared no cost, and enter none of the figures above",
   "cli.flow.cap_none_spends_freely": "\ncap: none — this flow may spend whatever the run needs",
+  "cli.flow.cap_is_guaranteed": "\nwhat kind of cap: a guaranteed cap — every call this flow makes is held to a ceiling its engine imposes and this machine can price, so the run is admitted call by call and cannot overshoot",
+  "cli.flow.cap_is_a_stop_threshold": "\nwhat kind of cap: a stop threshold, not a guaranteed cap — it can hold back the next call, never the overshoot of one already under way. Because: {because}",
   "cli.flow.cap_unchanged": "flow {flow} ({origin}): the cap was already {cap}, nothing was touched",
   "cli.flow.cap_written": "flow {flow} ({origin}): cap {before} → {after}; written in {directory}",
   "cli.flow.edited": "flow {flow} ({origin}): {said}; written in {directory}",
