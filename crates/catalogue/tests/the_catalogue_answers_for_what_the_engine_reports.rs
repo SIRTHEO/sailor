@@ -139,6 +139,13 @@ fn every_source_file_git_tracks_is_one_the_scan_opened() {
     );
 
     let opened: Vec<PathBuf> = every_source();
+    let tracked = std::str::from_utf8(&listed.stdout).unwrap_or_default().lines().count();
+    workspace::measured_against(
+        opened.len(),
+        "sources opened under crates",
+        tracked,
+        "sources git tracks there",
+    );
     let missed: Vec<&str> = std::str::from_utf8(&listed.stdout)
         .expect("git prints paths as utf-8")
         .lines()
