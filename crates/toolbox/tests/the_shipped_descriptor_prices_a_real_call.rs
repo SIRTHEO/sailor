@@ -38,6 +38,47 @@ const REAL_OUTPUT: &str = r#"{
   "type": "result"
 }"#;
 
+/// A second real output, from a call that spawned four helpers of its own. The
+/// engine counts each model apart, `usage` holds the first of them, and the
+/// second carries two thirds of the bill — with no duration on its cache
+/// writes, which is why no price list can work that share out. See fault 121.
+const A_CALL_ACROSS_TWO_MODELS: &str = r#"{
+  "stop_reason": "end_turn",
+  "num_turns": 36,
+  "total_cost_usd": 20.00991825,
+  "usage": {
+    "input_tokens": 1028,
+    "cache_creation_input_tokens": 155602,
+    "cache_read_input_tokens": 2912773,
+    "output_tokens": 43363,
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 155602,
+      "ephemeral_5m_input_tokens": 0
+    }
+  },
+  "modelUsage": {
+    "claude-fable-5-1": {
+      "inputTokens": 1028,
+      "outputTokens": 43363,
+      "cacheReadInputTokens": 2912773,
+      "cacheCreationInputTokens": 155602,
+      "costUSD": 6.0186632499999995,
+      "canonicalModel": "claude-fable-5-1"
+    },
+    "claude-opus-5[1m]": {
+      "inputTokens": 288,
+      "outputTokens": 127239,
+      "cacheReadInputTokens": 12226140,
+      "cacheCreationInputTokens": 469577,
+      "costUSD": 13.991254999999994,
+      "canonicalModel": "claude-opus-5"
+    }
+  },
+  "subagent_stats": { "spawned": 4 },
+  "result": "ok",
+  "type": "result"
+}"#;
+
 /// Only the descriptors shipped with the product: what anyone installing it
 /// gets, with nothing of this machine around it.
 fn shipped_only() -> Tools {
@@ -111,6 +152,60 @@ fn the_shipped_claude_descriptor_reads_a_real_call_and_prices_it() {
     assert_eq!(
         cost, declared,
         "the price-list count and the engine's must coincide"
+    );
+}
+
+/// The same chain on the call that showed fault 121: the counts read are one
+/// model's, and the answer counts two.
+#[test]
+fn a_call_that_crossed_two_models_says_its_counts_do_not_cover_it() {
+    let recipe = shipped_only()
+        .ask_recipe("claude-code")
+        .expect("claude-code declares how a question is put to it");
+    let usage = recipe.usage.expect("and also declares how its usage is read");
+
+    let reading = models::usage::read_declared(A_CALL_ACROSS_TWO_MODELS, &usage.declared);
+
+    assert_eq!(reading.model.as_deref(), Some("claude-fable-5-1"));
+    assert_eq!(reading.models_named, Some(2));
+    assert!(
+        !reading.counts_the_whole_call(),
+        "a block that counts one model out of two does not count the call"
+    );
+
+    let prices = models::pricing::shipped();
+    let read_share = models::pricing::cost_micros(
+        models::pricing::TokenCounts {
+            input: reading.input_tokens,
+            output: reading.output_tokens,
+            cached: reading.cached_tokens,
+            cache_write: reading.cache_write_tokens,
+            cache_write_long: reading.cache_write_long_tokens,
+        },
+        prices.find("claude-fable-5-1").expect("a shipped entry").micros(),
+    );
+    assert_eq!(read_share, Some(6_018_663), "right, and a third of the call");
+
+    let declared = (reading.declared_cost.unwrap() * 1_000_000.0).round() as i64;
+    assert_eq!(declared, 20_009_918);
+
+    // The rest is the second model's, at its own rates. The engine states no
+    // duration for its cache writes, so this share is arithmetic done here and
+    // never a figure a row may claim.
+    let unread_share = models::pricing::cost_micros(
+        models::pricing::TokenCounts {
+            input: Some(288),
+            output: Some(127_239),
+            cached: Some(12_226_140),
+            cache_write: None,
+            cache_write_long: Some(469_577),
+        },
+        prices.find("claude-opus-5[1m]").expect("a shipped entry").micros(),
+    );
+    assert_eq!(
+        read_share.unwrap() + unread_share.unwrap(),
+        declared,
+        "the two shares together are what the engine charged, to the micro"
     );
 }
 
