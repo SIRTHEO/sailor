@@ -21,6 +21,7 @@ import {
   BORN_COLS,
   BORN_ROWS,
   asTyped,
+  attentionOf,
   fieldGesture,
   keyBytes,
   keyStroke,
@@ -31,14 +32,61 @@ import {
   type KeyMode,
   type Liveness,
   type OutputBus,
+  type Progress,
   type Submitted,
   type TerminalSummary,
 } from "./terminal";
+import { t } from "./i18n";
 import type { CommandLine } from "./profiles";
 
 // The birth size lives beside the other decisions, in `terminal.ts`; it is
 // re-exported here because this is where every pane already looks for it.
 export { BORN_COLS, BORN_ROWS };
+
+/**
+ * **THE SHAPE CARRIES THE MEANING AND THE COLOUR ONLY REPEATS IT.** A notch
+ * that is amber and nothing else is invisible to a third of the people who
+ * would need it most, and unreadable in a screenshot printed in grey.
+ */
+export const DECISION_MARK = "◤";
+export const BLOCKED_MARK = "◼";
+
+/** A segment for attested work, a tick for the end, an empty lozenge for neither. */
+export const PROGRESS_MARK: Record<Progress["how"], string> = {
+  working: "▬",
+  done: "✓",
+  unsure: "◇",
+};
+
+/** How long a crossing keeps the border lifted. Long enough to catch, then gone. */
+export const STIR_MS = 1200;
+
+/**
+ * True for one breath after `value` crosses over, and **never for arriving**:
+ * `null` is «nothing known yet», and the first real value after it is the
+ * window starting, not something that happened. A highlight for that is the
+ * window announcing itself — the movement this pane is forbidden.
+ */
+export function useStir(value: string | null, ms = STIR_MS): boolean {
+  const [stirred, setStirred] = useState(false);
+  const before = useRef(value);
+  useEffect(() => {
+    const was = before.current;
+    before.current = value;
+    if (was === null || value === null || was === value) return;
+    setStirred(true);
+    const over = setTimeout(() => setStirred(false), ms);
+    return () => clearTimeout(over);
+  }, [value, ms]);
+  return stirred;
+}
+
+/** What the mark under the pane says, in words. */
+export function progressWord(progress: Progress): string {
+  return progress.how === "unsure"
+    ? t(`window.pane.unsure.${progress.because}`)
+    : t(`window.pane.${progress.how}`);
+}
 
 interface PaneProps {
   summary: TerminalSummary;
@@ -47,6 +95,12 @@ interface PaneProps {
   /** The ceiling the relay hands on at, or `null` when no loaded flow declares one. */
   ceiling: number | null;
   liveness: Liveness;
+  /** Getting on with it, finished, or nobody can say: the mark under the pane. */
+  progress: Progress;
+  /** True while a step handed to a person waits in this terminal. */
+  handed?: boolean;
+  /** True for the breath after the tree under focus changed. */
+  stirred?: boolean;
   /** Whether bytes are arriving from it right now. */
   speaking?: boolean;
   /** Where the process's bytes arrive: the pane subscribes for its own `id`. */
@@ -69,6 +123,9 @@ export function TerminalPane({
   known,
   ceiling,
   liveness,
+  progress,
+  handed = false,
+  stirred = false,
   speaking = false,
   bus,
   visible,
@@ -235,17 +292,38 @@ export function TerminalPane({
   }, [visible]);
 
   const dead = liveness.state === "closed";
+  const attention = attentionOf({ handed, blocked: refused, recovered: missing });
+  // Only the crossing draws the eye: a state that has not moved stays still.
+  const moved = useStir(progress.how);
 
   return (
-    <section className="pane" hidden={!visible} data-focus={focused || undefined}>
+    <section
+      className="pane"
+      hidden={!visible}
+      data-focus={focused || undefined}
+      data-stirred={stirred || moved || undefined}
+    >
       <header className="pane__head" onClick={onFocus}>
-        {/* THE TTY FIRST: it is what this session *is* to everything else on
-            the machine — the letterbox, the count, the tracking store. */}
-        <span className="pane__device">{summary.device}</span>
-        <span className="pane__who" title="the program started inside, and the profile it runs under">
-          {whoLabel(summary, known)}
+        {attention.need !== "none" && (
+          <span
+            className="pane__notch"
+            data-need={attention.need}
+            role="img"
+            title={attention.need === "blocked" ? attention.why : t("window.pane.decision")}
+            aria-label={t(`window.pane.${attention.need}`)}
+          >
+            {attention.need === "decision" ? DECISION_MARK : BLOCKED_MARK}
+          </span>
+        )}
+        {/* WHERE THIS AGENT IS STANDING, ALWAYS IN THE SAME PLACE: a position
+            that moves is one the corner of the eye cannot learn. */}
+        <span className="pane__where">
+          <span className="pane__tree">{summary.workspaceName}</span>
+          <span className="pane__who" title="the program started inside, and the profile it runs under">
+            {whoLabel(summary, known)}
+          </span>
         </span>
-        <span className="label">{summary.workspaceName}</span>
+        <span className="pane__device">{summary.device}</span>
         <span className="pane__root">{summary.workspaceRoot}</span>
         {/* The word sits beside the colour: prohibition 5. */}
         {liveness.state === "alive" && speaking && <span className="speaks" aria-hidden="true" />}
@@ -349,6 +427,16 @@ export function TerminalPane({
       </form>
 
       <footer className="pane__foot">
+        {/* ALWAYS THE SAME SPOT: three marks, one place, no fourth reading. */}
+        <span
+          className="pane__progress"
+          data-how={progress.how}
+          role="img"
+          title={progressWord(progress)}
+          aria-label={progressWord(progress)}
+        >
+          {PROGRESS_MARK[progress.how]}
+        </span>
         {mode === "compose" ? (
           <span className="pane__draft" data-empty={shown === "" || undefined}>
             {shown === "" ? "type a line; Enter sends it to routing" : shown}
