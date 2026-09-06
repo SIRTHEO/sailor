@@ -445,14 +445,23 @@ pub fn parse(markdown: &str) -> Vec<Fault> {
             let number: i64 = cells[0].trim().parse().ok()?;
             Some(Fault {
                 number,
-                happened_on: cells[1].trim().to_owned(),
-                what_happened: cells[2].trim().to_owned(),
-                how_it_showed: cells[3].trim().to_owned(),
-                what_would_prevent: cells[4].trim().to_owned(),
-                status: cells[5].trim().to_owned(),
+                happened_on: as_prose(cells[1]),
+                what_happened: as_prose(cells[2]),
+                how_it_showed: as_prose(cells[3]),
+                what_would_prevent: as_prose(cells[4]),
+                status: as_prose(cells[5]),
             })
         })
         .collect()
+}
+
+/// Escaping a `|` is the writing's business: fault 125 rendered in eight columns.
+fn as_a_cell(text: &str) -> String {
+    text.replace('|', "\\|")
+}
+
+fn as_prose(cell: &str) -> String {
+    cell.trim().replace("\\|", "|")
 }
 
 /// Writes the rows back the way the table wrote them, for whoever reads that way.
@@ -507,6 +516,8 @@ pub fn render(faults: &[Fault]) -> String {
     let mut out = String::new();
     for fault in faults {
         let [on, what, how, prevent, status, _] = fault.cells();
+        let (on, what) = (as_a_cell(&on), as_a_cell(&what));
+        let (how, prevent, status) = (as_a_cell(&how), as_a_cell(&prevent), as_a_cell(&status));
         out.push_str(&format!(
             "| {} | {on} | {what} | {how} | {prevent} | {status} |\n",
             fault.number
