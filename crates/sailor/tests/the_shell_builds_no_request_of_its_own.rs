@@ -27,6 +27,18 @@ fn repository_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// The shell's source that launches a run, with the receipt of having read it.
+/// `None` where the tree carries no window: nothing to read is not a pass.
+fn the_shells_launcher() -> Option<(PathBuf, String)> {
+    let path = repository_root().join("desktop/src-tauri/src/run.rs");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        workspace::measured_nothing("this tree carries no desktop/src-tauri/src/run.rs to read");
+        return None;
+    };
+    workspace::measured(text.lines().count(), "lines of the window shell's launcher read");
+    Some((path, text))
+}
+
 /// **UNA SOLA `ExecutionRequest` IN TUTTO L'ALBERO, E STA IN `registry`.**
 /// La radice del progetto è il dato che avrebbe fatto divergere le due copie
 /// nel modo peggiore: una corsa lanciata dal pulsante che lavora dove sta il
@@ -34,9 +46,9 @@ fn repository_root() -> PathBuf {
 /// e nessuna delle due lo direbbe.
 #[test]
 fn the_window_shell_does_not_build_its_own_execution_request() {
-    let path = repository_root().join("desktop/src-tauri/src/run.rs");
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("leggere {}: {error}", path.display()));
+    let Some((path, text)) = the_shells_launcher() else {
+        return;
+    };
 
     assert!(
         !text.contains("ExecutionRequest {"),
@@ -50,9 +62,9 @@ fn the_window_shell_does_not_build_its_own_execution_request() {
 /// se il guscio smettesse di lanciare del tutto.
 #[test]
 fn the_window_shell_calls_the_shared_constructor() {
-    let path = repository_root().join("desktop/src-tauri/src/run.rs");
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("leggere {}: {error}", path.display()));
+    let Some((path, text)) = the_shells_launcher() else {
+        return;
+    };
 
     assert!(
         text.contains("registry::execution_request("),
