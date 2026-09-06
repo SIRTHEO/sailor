@@ -598,6 +598,26 @@ mod the_shipped_price_list {
         );
     }
 
+    /// **A NAME AN ENGINE WRITES IS NOT THE NAME THE LIST CARRIES.** See fault
+    /// 104. An entry and not an alias of the version beside it: the two read
+    /// the cache at different rates, and a wrong price is worse than none.
+    #[test]
+    fn the_shipped_list_prices_the_name_the_engine_writes_and_the_providers_one() {
+        let prices = shipped();
+        for name in ["claude-fable-5-1", "anthropic/claude-fable-5.1"] {
+            assert_eq!(prices.knows(name), Known::Priced, "{name}");
+        }
+        assert_ne!(
+            prices
+                .find("claude-fable-5-1")
+                .and_then(|entry| entry.cached_per_million),
+            prices
+                .find("claude-fable-5")
+                .and_then(|entry| entry.cached_per_million),
+            "two tariffs under one entry would be one of them charged wrong"
+        );
+    }
+
     /// Every shipped entry has the two prices a sum needs. A half-filled entry
     /// in the home list is a choice of whoever writes it; in the shipped list
     /// it would be an unknown cost nobody decided on, found out only by

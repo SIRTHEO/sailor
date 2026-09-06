@@ -97,7 +97,8 @@ pub use recipe::{
 };
 pub use shell::ShellCheckAction;
 pub use spec::{
-    ceiling_declared_in, engines_named_in, private_data_asked_in, A_TREE_OF_ITS_OWN, BLIND, TREE,
+    ceiling_declared_in, engines_named_in, models_named_in, private_data_asked_in,
+    A_TREE_OF_ITS_OWN, BLIND, TREE,
 };
 
 pub(crate) use answer::{check_tolerance, tolerates};
