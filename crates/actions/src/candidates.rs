@@ -75,13 +75,13 @@ impl ExternalEngineAction {
             .unwrap_or_else(models::strengths::Strengths::shipped)
     }
 
-    /// Chi eseguire, in ordine di preferenza. `bin` e `tool` non convivono: due
-    /// risposte alla stessa domanda vorrebbero una precedenza, e una precedenza
-    /// fra «il nome che ho scritto» e «quello che c'è sulla macchina» sarebbe una
-    /// regola che nessuno ricorda al momento giusto.
+    /// Who to run, in order of preference. `bin` and `tool` do not live
+    /// together: two answers to one question would want a precedence, and a
+    /// precedence between «the name I wrote» and «what is on the machine» is a
+    /// rule nobody remembers at the right moment.
     ///
-    /// Restituisce anche i motori che **non** si possono usare qui, col motivo:
-    /// se nessuno resta, quel motivo è tutto ciò che chi legge avrà.
+    /// It also returns the engines that **cannot** be used here, with the
+    /// reason: if none is left, that reason is all the reader will have.
     pub(crate) fn candidates(&self, spec: &EngineSpec) -> Result<(Vec<Candidate>, Vec<Refused>), ActionError> {
         // Whoever wrote the options wrote which model in them: a second answer
         // to one question would want a precedence, as `bin` and `tool` would.
@@ -104,9 +104,9 @@ impl ExternalEngineAction {
                     cooldown_secs: None,
                     waits_for_a_person_when: Vec::new(),
                     declared_usage: None,
-                    // Un comando scritto a mano non ha un descrittore: non c'è
-                    // niente che dichiari che sia un motore, e infatti la riga
-                    // non si scrive già per via dell'`id` assente.
+                    // A hand-written command has no descriptor: nothing
+                    // declares it an engine, and the line is already withheld
+                    // by the absent `id`.
                     can_be_asked: false,
                     why: None,
                     session: SessionRecipe::default(),
@@ -208,9 +208,9 @@ impl ExternalEngineAction {
                         });
                         continue;
                     }
-                    // Le opzioni scritte nel passo vincono sulla ricetta: chi le
-                    // ha scritte sta dicendo qualcosa di preciso su *questa*
-                    // chiamata, e sovrascriverle sarebbe decidere al posto suo.
+                    // Options written in the step win over the recipe: whoever
+                    // wrote them is saying something precise about *this* call,
+                    // and overriding them would decide in their place.
                     if step_said_args {
                         let declared = tools.ask_recipe(id);
                         usable.push(Candidate {
@@ -218,10 +218,10 @@ impl ExternalEngineAction {
                             bin,
                             args: spec.args.clone(),
                             prompt: PromptVia::Stdin,
-                            // Il descrittore dice se questo strumento è un
-                            // motore, anche quando le opzioni non vengono da
-                            // lui: `git` e `cargo` non dichiarano `ask`, e le
-                            // loro esecuzioni non sono chiamate a un modello.
+                            // The descriptor says whether this tool is an
+                            // engine, even when the options come from
+                            // elsewhere: `git` and `cargo` declare no `ask`,
+                            // and their runs are not model calls.
                             can_be_asked: declared.is_some(),
                             why: preferred.as_ref().filter(|p| p.engine == *id).map(|p| p.why.clone()),
                             exhausted_when: declared
@@ -236,16 +236,15 @@ impl ExternalEngineAction {
                             unusable_when: declared
                                 .map(|recipe| recipe.unusable_when)
                                 .unwrap_or_default(),
-                            // **NIENTE CONSUMO QUANDO LE OPZIONI LE SCRIVE IL
-                            // PASSO**, ed è la stessa regola di due righe più
-                            // su applicata al dato nuovo: le opzioni del
-                            // consumo si accodano a quelle della ricetta, e qui
-                            // la ricetta non detta niente. Accodarle lo stesso
-                            // vorrebbe dire allungare alle spalle di chi ha
-                            // scritto quella riga di comando una domanda che
-                            // non ha fatto. Il consumo resta sconosciuto — la
-                            // riga nel deposito si scrive comunque, e dice
-                            // proprio questo.
+                            // **NO USAGE WHEN THE STEP WRITES THE OPTIONS**,
+                            // the same rule as two lines above applied to the
+                            // new datum: usage options append to the recipe's,
+                            // and here the recipe dictates nothing. Appending
+                            // them anyway would extend, behind the back of
+                            // whoever wrote that command line, a question they
+                            // never asked. Usage stays unknown — the ledger
+                            // line is written all the same, and says exactly
+                            // that.
                             declared_usage: None,
                             session: SessionRecipe::default(),
                             // Nor a ceiling, for the same reason: a person who
@@ -314,9 +313,8 @@ impl ExternalEngineAction {
                             cooldown_secs: recipe.cooldown_secs,
                             waits_for_a_person_when: recipe.waits_for_a_person_when,
                             declared_usage: recipe.usage.map(|usage| usage.declared),
-                            // Siamo dentro il ramo che ha trovato una ricetta
-                            // `ask`: questo strumento è per definizione un
-                            // motore.
+                            // We are inside the branch that found an `ask`
+                            // recipe: this tool is an engine by definition.
                             can_be_asked: true,
                             why: preferred.as_ref().filter(|p| p.engine == *id).map(|p| p.why.clone()),
                         }),
@@ -344,14 +342,14 @@ impl ExternalEngineAction {
     }
 }
 
-/// Un motore chiesto dal passo che qui non si può nemmeno provare.
+/// An engine the step asked for that cannot even be tried here.
 pub(crate) struct Refused {
     pub(crate) id: String,
     pub(crate) reason: String,
-    /// Vero quando il risolutore non ha saputo dire quale eseguibile sia — la
-    /// distinzione conta: un passo che chiede **un** motore solo e non lo trova
-    /// deve dare `tool_unavailable` col motivo del risolutore, come ha sempre
-    /// fatto. La catena non deve peggiorare il caso più comune.
+    /// True when the resolver could not say which executable it is — the
+    /// distinction matters: a step asking for **one** engine and not finding
+    /// it must give `tool_unavailable` with the resolver's reason, as it always
+    /// has. The chain must not make the commonest case worse.
     pub(crate) unresolved: bool,
 }
 
@@ -361,11 +359,11 @@ impl Refused {
     }
 }
 
-/// Un motore che si può provare: già risolto in un eseguibile, con le opzioni
-/// con cui interrogarlo e le parole con cui dichiara di non poter lavorare.
+/// An engine that can be tried: already resolved to an executable, with the
+/// options to ask it with and the words it declares it cannot work with.
 pub(crate) struct Candidate {
-    /// L'identificativo, se è stato chiesto per identificativo. `None` quando il
-    /// passo ha scritto un comando così com'è.
+    /// The identifier, when it was asked for by identifier. `None` when the
+    /// step wrote a command as it is.
     pub(crate) id: Option<String>,
     pub(crate) bin: String,
     pub(crate) args: Vec<String>,
@@ -378,23 +376,22 @@ pub(crate) struct Candidate {
     /// The words after which this engine only waits for a person and is
     /// stopped; the descriptor's, or empty.
     pub(crate) waits_for_a_person_when: Vec<String>,
-    /// Dove leggere il consumo nell'uscita di questo motore. `None` quando il
-    /// descrittore non lo dichiara, o quando le opzioni le ha scritte il passo.
+    /// Where to read the usage in this engine's output. `None` when the
+    /// descriptor declares none, or when the step wrote the options.
     pub(crate) declared_usage: Option<Declared>,
-    /// **QUESTO STRUMENTO È UN MOTORE**, cioè il suo descrittore dichiara come
-    /// gli si fa una domanda (`ask`).
+    /// **THIS TOOL IS AN ENGINE**: its descriptor declares how a question is
+    /// put to it (`ask`).
     ///
-    /// Serve a decidere se la sua invocazione va in `model_calls`. `git` e
-    /// `cargo` stanno nel catalogo e si eseguono da un passo come tutti gli
-    /// altri, ma non si interrogano: non consumano quota di nessun
-    /// abbonamento, e contarli fra le chiamate ai modelli falsa ogni totale che
-    /// le somma. **Il criterio è del descrittore e non di un elenco di nomi
-    /// scritto qui**: un elenco a mano invecchia al primo strumento nuovo, e
-    /// nessun controllo lo direbbe.
+    /// It decides whether the invocation goes into `model_calls`. `git` and
+    /// `cargo` sit in the catalogue and run from a step like anything else, but
+    /// are never asked: they spend no subscription's quota, and counting them
+    /// among model calls falsifies every total that sums them. **The criterion
+    /// belongs to the descriptor, not to a list of names written here**: a hand
+    /// list ages on the first new tool, with no check to say so.
     ///
-    /// Resta vero anche quando le opzioni le scrive il passo: un motore
-    /// interrogato a modo proprio è sempre un motore, e la sua riga si scrive —
-    /// col consumo sconosciuto, che è l'informazione giusta.
+    /// It stays true when the step writes the options: an engine asked in its
+    /// own way is still an engine, and its line is written — with the usage
+    /// unknown, which is the right information.
     pub(crate) can_be_asked: bool,
     /// Why this engine was moved to the front, when the fuel said so.
     pub(crate) why: Option<String>,
@@ -405,14 +402,14 @@ pub(crate) struct Candidate {
     /// written even when there **is** one: composing it costs nothing, and a
     /// reason built only on the unhappy path is a reason nobody ever tested.
     pub(crate) no_ceiling_because: String,
-    /// Le righe di comando alternative con cui questo motore apre, riprende o
-    /// ramifica una sessione — già montate col resto della ricetta, e ancora
-    /// col segnaposto al posto dell'identificativo.
+    /// The alternative command lines this engine opens, resumes or forks a
+    /// session with — already assembled with the rest of the recipe, and still
+    /// carrying the placeholder in place of the identifier.
     ///
-    /// Tutta vuota per chi non lo sa fare, e per chi si è scritto le opzioni
-    /// nel passo: chi scrive la propria riga di comando la sta decidendo lui, e
-    /// infilarci dentro un'opzione che non ha chiesto sarebbe decidere al posto
-    /// suo — la stessa regola che vale già per le opzioni del consumo.
+    /// Wholly empty for an engine that cannot do it, and for a step that wrote
+    /// its own options: whoever writes their own command line is deciding it,
+    /// and slipping in an option they did not ask for would decide in their
+    /// place — the rule that already holds for the usage options.
     pub(crate) session: SessionRecipe,
 }
 
@@ -469,7 +466,7 @@ mod tests {
     use flow::{Action, ActionOutcome, SharedState};
     use serde_json::json;
 
-    // ── chiedere uno strumento per identificativo ─────────────────────
+    // ── asking for a tool by identifier ───────────────────────────────
 
     struct FixedTools(&'static str);
 
@@ -483,7 +480,7 @@ mod tests {
         }
     }
 
-    /// Il passo nomina uno strumento; chi eseguirlo lo decide la macchina.
+    /// The step names a tool; which executable it is, the machine decides.
     #[test]
     fn a_tool_id_becomes_the_executable_the_resolver_names() {
         let action = ExternalEngineAction::resolving_with(FixedTools("echo"));
@@ -499,8 +496,8 @@ mod tests {
         assert_eq!(output["stdout"], "risolto\n");
     }
 
-    /// Lo strumento che qui non c'è: il passo si ferma **prima** di spendere
-    /// qualunque cosa, e porta con sé il motivo di chi ha guardato la macchina.
+    /// A tool that is not here: the step stops **before** spending anything,
+    /// and carries the reason from whoever looked at the machine.
     #[test]
     fn a_tool_that_is_not_here_stops_the_step_with_the_resolvers_reason() {
         let action = ExternalEngineAction::resolving_with(FixedTools("echo"));
@@ -514,8 +511,8 @@ mod tests {
         assert!(error.said.contains("un-altro"), "{}", error.said);
     }
 
-    /// Un motore registrato senza risolutore non indovina un binario dal nome
-    /// dello strumento: dice come si ripara il registro.
+    /// An engine registered without a resolver guesses no binary from the
+    /// tool's name: it says how to repair the registry.
     #[test]
     fn without_a_resolver_a_tool_step_says_how_to_repair_the_registry() {
         let action = ExternalEngineAction::new();
@@ -529,16 +526,16 @@ mod tests {
         assert!(error.said.contains("resolving_with"), "{}", error.said);
     }
 
-    // ── la catena di motori ───────────────────────────────────────────
+    // ── the engine chain ──────────────────────────────────────────────
 
-    /// Una macchina finta con tre motori: uno che dichiara di essere esaurito,
-    /// uno che risponde, uno che non è installato.
+    /// A make-believe machine with three engines: one declaring itself spent,
+    /// one that answers, one that is not installed.
     struct Chain;
 
     impl ToolResolver for Chain {
         fn resolve(&self, id: &str) -> Result<String, String> {
             match id {
-                // Stampa il messaggio di un motore esaurito ed esce 1.
+                // Prints a spent engine's message and exits 1.
                 "esaurito" => Ok("false-dopo-aver-parlato".to_owned()),
                 "vivo" => Ok("echo".to_owned()),
                 "rotto" => Ok("false".to_owned()),
@@ -585,14 +582,14 @@ mod tests {
                     waits_for_a_person_when: Vec::new(),
                     usage: None,
                 }),
-                // Risolvibile ma senza ricetta: un passo che non scrive le
-                // opzioni non sa come interrogarlo.
+                // Resolvable but with no recipe: a step that writes no options
+                // has no way to ask it.
                 _ => None,
             }
         }
     }
 
-    /// Un eseguibile finto che dice di essere esaurito ed esce in errore.
+    /// A make-believe executable that says it is spent and exits in error.
     fn engine_that_says_it_is_out(dir: &std::path::Path) -> String {
         let path = dir.join("false-dopo-aver-parlato");
         std::fs::write(
@@ -629,8 +626,8 @@ mod tests {
         dir
     }
 
-    /// **Il caso del 29/08/2026.** Il primo motore dichiara di essere esaurito;
-    /// il lavoro non muore, passa al secondo, e il secondo risponde.
+    /// **The case the chain exists for.** The first engine declares itself
+    /// spent; the work does not die, it goes to the second, and that answers.
     #[test]
     fn an_engine_that_says_it_is_out_hands_the_work_to_the_next_one() {
         let dir = scratch("passa-al-secondo");
@@ -649,13 +646,12 @@ mod tests {
         assert_eq!(output["stdout"], "ha-risposto-il-secondo\n");
     }
 
-    /// Un eseguibile finto che dice di essere esaurito **ed esce zero**.
+    /// A make-believe executable that says it is spent **and exits zero**.
     ///
-    /// **PERCHÉ SERVE UN SECONDO FINTO MOTORE.** Il gemello qui sopra esce 1, e
-    /// tutte le prove ermetiche su questa catena facevano così: il motore
-    /// esaurito usciva **sempre** in errore, quindi nessuna di esse guardava mai
-    /// il ramo riuscito. Un difetto che vive solo di là non poteva diventare
-    /// rosso.
+    /// **WHY A SECOND MAKE-BELIEVE ENGINE.** The twin above exits 1, as every
+    /// hermetic test on this chain had it do: with the spent engine **always**
+    /// failing, none of them ever looked at the successful branch, and a defect
+    /// living there alone could never turn red.
     fn engine_that_says_it_is_out_and_exits_zero(dir: &std::path::Path) -> String {
         let path = dir.join("zero-dopo-aver-parlato");
         std::fs::write(
@@ -672,31 +668,24 @@ mod tests {
         path.to_string_lossy().into_owned()
     }
 
-    /// **DIRLO E USCIRE ZERO.**
+    /// **SAYING IT AND EXITING ZERO.**
     ///
-    /// **IL GUASTO NON HA ANCORA UN NUMERO, E NON GLIENE DO UNO.** Sta nella
-    /// nota `da-fare` in attesa della fusione: due rami stanno numerando
-    /// righe nuove nello stesso momento, e il numero che questo lavoro si
-    /// aspettava di prendere è già stato preso mentre era in corso. Un numero
-    /// sbagliato in un commento manda a leggere il guasto di qualcun altro.
+    /// An engine that declares in its own words that it cannot work, and
+    /// **exits zero**. Ask `says_it_cannot_work` inside the `ExitError` branch
+    /// alone and the successful branch takes the answer on trust: no fallback
+    /// fires, the ledger line is born with `error_type: None`, so the step
+    /// reads as a success and the engine behind it never starts.
     ///
-    /// Un motore che dichiara con le proprie parole di non poter lavorare, e
-    /// **esce zero**. Fino al 01/09/2026 `says_it_cannot_work` veniva
-    /// interrogato solo dentro il ramo `ExitError`: nel ramo riuscito la
-    /// risposta era presa per buona, il ripiego non scattava, e la riga del
-    /// deposito nasceva con `error_type: None` — cioè il passo risultava
-    /// riuscito, e il motore dopo di lui non partiva mai.
+    /// **NOT HYPOTHETICAL ON THIS MACHINE.** It is the shape of fault 39:
+    /// `CODEX_HOME=<empty folder> codex exec < /dev/null` answers «No prompt
+    /// provided via stdin» and exits **zero**. The dry probe already had the
+    /// distinction — `judge_dry_run` is applied to `Ok` *and* to `ExitError` —
+    /// so the static check and the real run said different things about the
+    /// same engine.
     ///
-    /// **NON È IPOTETICO SU QUESTA MACCHINA.** È la forma del guasto 39:
-    /// `CODEX_HOME=<cartella vuota> codex exec < /dev/null` risponde «No prompt
-    /// provided via stdin» ed esce **zero**. E la sonda a secco la distinzione
-    /// ce l'aveva già — `judge_dry_run` è applicata a `Ok` *e* a `ExitError` —
-    /// quindi il controllo statico e la corsa vera dicevano cose diverse sullo
-    /// stesso motore.
-    ///
-    /// La coppia con `an_engine_that_says_it_is_out_hands_the_work_to_the_next_one`
-    /// è tutta la dimostrazione: le stesse parole, l'unica differenza è il
-    /// codice d'uscita, e il ripiego deve scattare in tutti e due i casi.
+    /// Paired with `an_engine_that_says_it_is_out_hands_the_work_to_the_next_one`
+    /// it is the whole demonstration: the same words, the exit code the one
+    /// difference, and the fallback must fire in both cases.
     #[test]
     fn an_engine_that_says_it_is_out_while_exiting_zero_still_hands_the_work_over() {
         let dir = scratch("esaurito-a-uscita-zero");
@@ -719,12 +708,12 @@ mod tests {
         );
     }
 
-    /// **E DA SOLO LO DICE, INVECE DI FINGERE DI AVER RISPOSTO.**
+    /// **AND ALONE IT SAYS SO, INSTEAD OF PRETENDING TO HAVE ANSWERED.**
     ///
-    /// Senza nessun ripiego dietro non c'è niente da salvare, ma resta la
-    /// diagnosi: chi legge «esaurito» sa che deve aspettare o cambiare profilo,
-    /// chi legge un passo **verde** va a cercare la risposta che non c'è. Era la
-    /// seconda metà del difetto, e la peggiore: il passo si chiudeva riuscito.
+    /// With no fallback behind it there is nothing to save, but the diagnosis
+    /// remains: whoever reads «spent» knows to wait or change profile, whoever
+    /// reads a **green** step goes hunting for an answer that is not there —
+    /// the second half of the defect, and the worse one.
     #[test]
     fn alone_an_engine_that_says_it_is_out_while_exiting_zero_does_not_pass_for_answered() {
         let dir = scratch("esaurito-a-uscita-zero-da-solo");
@@ -813,29 +802,27 @@ mod tests {
         );
     }
 
-    /// **IL GUASTO 31, RESO UN FATTO INVECE DI UNA LETTURA.**
+    /// **FAULT 31, MADE A FACT INSTEAD OF A READING.**
     ///
-    /// Lo stesso motore esaurito di qui sopra, con la sola differenza che
-    /// conta: il suo descrittore **non dichiara nessuna parola** di
-    /// `unusable_when`. `says_it_cannot_work` su un elenco vuoto è `false`,
-    /// quindi il suo esaurirsi passa per un fallimento qualunque, il passo
-    /// muore lì, e il motore successivo **non parte mai**. È il descrittore di
-    /// `agy` così com'è spedito il 31/08/2026, ed è la ragione per cui nella
-    /// catena `claude-code → agy → codex` un `agy` esaurito uccide il passo e
-    /// `codex` non viene nemmeno provato.
+    /// The spent engine from above, with the difference that counts: its
+    /// descriptor **declares no word** of `unusable_when`. `says_it_cannot_work`
+    /// over an empty list is `false`, so running out passes for an ordinary
+    /// failure, the step dies there, and the next engine **never starts**. That
+    /// is `agy`'s descriptor as shipped, and the reason a spent `agy` in the
+    /// chain `claude-code → agy → codex` kills the step with `codex` untried.
     ///
-    /// **PERCHÉ NON BASTA LA GEMELLA SUI FRAMMENTI VUOTI.** Quella prova un
-    /// descrittore scritto male; questa prova un descrittore che **tace**, che
-    /// è il caso vero e quello che nessuno legge come un difetto: un campo
-    /// assente sembra una scelta, un campo pieno di stringhe vuote sembra un
-    /// errore. Il comportamento è lo stesso, e la differenza è che al primo
-    /// nessuno guarda.
+    /// **WHY THE TWIN ON EMPTY FRAGMENTS IS NOT ENOUGH.** That one tests a
+    /// badly written descriptor; this one tests a descriptor that **says
+    /// nothing**, the real case and the one nobody reads as a defect: an absent
+    /// field looks like a choice, a field full of empty strings looks like a
+    /// mistake. The behaviour is the same; the difference is nobody looks at
+    /// the first.
     ///
-    /// La coppia con la prova qui sopra è tutta la dimostrazione: elenco
-    /// popolato, il secondo parte; elenco vuoto, il secondo non parte.
+    /// Paired with the test above it is the whole demonstration: list
+    /// populated, the second starts; list empty, it does not.
     #[test]
     fn an_engine_that_declares_no_exhaustion_words_kills_the_chain() {
-        /// Come `ChainIn`, ma al primo motore si toglie ciò che `agy` non ha.
+        /// Like `ChainIn`, but the first engine loses what `agy` lacks.
         struct NoMarks(String);
         impl ToolResolver for NoMarks {
             fn resolve(&self, id: &str) -> Result<String, String> {
@@ -876,15 +863,13 @@ mod tests {
         );
     }
 
-    /// Un eseguibile finto che fallisce **parlando**, ma non con le parole con
-    /// cui quel motore dichiarerebbe di essere esaurito.
+    /// A make-believe executable that fails **out loud**, but not with the
+    /// words that engine would declare itself spent with.
     ///
-    /// **PERCHÉ NON BASTA UN COMANDO CHE FALLISCE MUTO.** La prima versione
-    /// della prova qui sotto usava `false`, che esce 1 senza dire niente, e un
-    /// mutante che faceva scattare il ripiego su *qualunque* uscita le è
-    /// passato sotto: con l'uscita vuota, «qualunque uscita» e «quelle parole»
-    /// si comportano uguale. Un fallimento vero parla, ed è quello il caso che
-    /// questa prova deve tenere.
+    /// **WHY A MUTE FAILURE IS NOT ENOUGH.** Against `false`, which exits 1
+    /// without a word, a mutant firing the fallback on *any* output survives:
+    /// with an empty output, «any output» and «those words» behave alike. A
+    /// real failure speaks, and that is the case this test must hold.
     fn engine_that_fails_loudly(dir: &std::path::Path) -> String {
         let path = dir.join("fallisce-parlando");
         std::fs::write(
@@ -915,10 +900,10 @@ mod tests {
         }
     }
 
-    /// **La metà che conta di più.** Un fallimento qualunque NON scende la
-    /// catena: un mandato scritto male deve fermarsi lì, non trovare più in
-    /// basso un motore che risponde comunque — quella sarebbe una risposta
-    /// sbagliata con la faccia di una buona.
+    /// **The half that counts most.** An ordinary failure does NOT walk down
+    /// the chain: a badly written brief must stop there, not find further down
+    /// an engine that answers anyway — that would be a wrong answer wearing the
+    /// face of a good one.
     #[test]
     fn an_ordinary_failure_does_not_walk_down_the_chain() {
         let dir = scratch("fallimento-qualunque");
@@ -938,12 +923,11 @@ mod tests {
         );
     }
 
-    /// Un descrittore scritto a mano con un frammento **vuoto** fra le parole
-    /// di `unusable_when`: quel frammento è contenuto in qualunque testo, e
-    /// senza una guardia farebbe scendere la catena a **ogni** fallimento —
-    /// cioè esattamente il guasto che la catena esiste per non introdurre. Chi
-    /// ha scritto quel descrittore non se ne accorgerebbe: funzionerebbe, e
-    /// darebbe risposte sbagliate.
+    /// A hand-written descriptor with an **empty** fragment among the words of
+    /// `unusable_when`: that fragment is contained in any text, and without a
+    /// guard would walk the chain down on **every** failure — exactly the fault
+    /// the chain exists not to introduce. Whoever wrote that descriptor would
+    /// never notice: it would work, and give wrong answers.
     #[test]
     fn an_empty_mark_in_a_descriptor_does_not_make_everything_a_fallback() {
         struct EmptyMark(String);
@@ -985,9 +969,9 @@ mod tests {
         assert_eq!(error.class, "engine_exit_error");
     }
 
-    /// Quando ogni motore della catena dichiara di non poter lavorare, il passo
-    /// è rosso con il motivo di **ognuno**: chi legge deve vedere l'intera
-    /// catena, non solo l'ultimo anello.
+    /// When every engine in the chain declares it cannot work, the step is red
+    /// with **each** reason: the reader must see the whole chain, not just the
+    /// last link.
     #[test]
     fn a_chain_that_is_entirely_out_names_every_engine() {
         let dir = scratch("tutti-esauriti");
@@ -1004,9 +988,9 @@ mod tests {
         assert!(error.said.contains("non-installato"), "{}", error.said);
     }
 
-    /// Il descrittore decide dove va il testo della domanda. Senza questo, un
-    /// flusso dovrebbe conoscere le opzioni di ogni motore — ed è la ragione per
-    /// cui i flussi erano legati a uno solo.
+    /// The descriptor decides where the question's text goes. Without it a flow
+    /// would have to know every engine's options — which is what binds a flow
+    /// to a single one.
     #[test]
     fn the_descriptor_decides_where_the_question_goes() {
         let action = ExternalEngineAction::resolving_with(Chain);
@@ -1019,13 +1003,13 @@ mod tests {
             panic!("un motore che risponde è sempre Went")
         };
 
-        // `echo` stampa i propri argomenti: se la domanda fosse finita
-        // sull'ingresso invece che in coda agli argomenti, qui non ci sarebbe.
+        // `echo` prints its own arguments: had the question gone to the input
+        // rather than to the end of the arguments, it would not be here.
         assert_eq!(output["stdout"], "ha-risposto-il-secondo la-domanda\n");
     }
 
-    /// Un motore che c'è ma non dichiara come lo si interroga non viene
-    /// indovinato: si mette da parte col motivo, e si prova il prossimo.
+    /// An engine that is here but declares no way of asking it is not guessed
+    /// at: it is set aside with the reason, and the next is tried.
     #[test]
     fn an_engine_without_a_recipe_is_set_aside_with_the_reason() {
         let action = ExternalEngineAction::resolving_with(Chain);
@@ -1039,8 +1023,8 @@ mod tests {
         assert!(error.said.contains("ask"), "{}", error.said);
     }
 
-    /// Le opzioni scritte nel passo vincono sulla ricetta: chi le ha scritte sta
-    /// dicendo qualcosa di preciso su questa chiamata.
+    /// Options written in the step win over the recipe: whoever wrote them is
+    /// saying something precise about this call.
     #[test]
     fn options_written_in_the_step_win_over_the_recipe() {
         let action = ExternalEngineAction::resolving_with(Chain);

@@ -1,23 +1,20 @@
-//! I due nodi con cui un flusso ricorda qualcosa fra una corsa e l'altra.
+//! The two nodes a flow remembers something with, from one run to the next.
 //!
-//! **PERCHÉ ESISTONO.** Il motore sa eseguire un grafo, ma fino al 28/08/2026
-//! non sapeva *ricordare* niente che non fosse una corsa, un passo o una
-//! chiamata a un modello. Ogni fatto che una lavorazione doveva tenere — su che
-//! lavoro si è, quando è girata l'ultima volta, cosa aveva già visto — finiva
-//! in una struttura Rust scritta apposta. È il modo in cui `notte` è diventata
-//! 2.562 righe per un flusso di quattro passi, ed è il motivo per cui è
-//! condannata.
+//! **WHY THEY EXIST.** The engine runs a graph, but it could not *remember*
+//! anything that was not a run, a step or a call to a model. Every fact a job
+//! had to keep — which work it is on, when it last ran, what it had already
+//! seen — ended up in a Rust struct written for the purpose. That is how
+//! `notte` grew to 2,562 lines for a four-step flow, and why it is condemned.
 //!
-//! Qui il fatto sta in una **collezione** che nomina chi scrive il flusso, e i
-//! due nodi sono gli unici che la toccano. Il motore non sa cosa significhi
-//! quel nome, e non deve saperlo: sa tenerlo.
+//! Here the fact lives in a **collection** named by whoever writes the flow,
+//! and these nodes are the only ones that touch it. The engine does not know
+//! what that name means, and does not need to: it knows how to keep it.
 //!
-//! **Il deposito arriva alla registrazione, non all'esecuzione.** Un'azione
-//! riceve solo il proprio ingresso e lo stato condiviso — è il contratto che
-//! tiene `flow` agnostico rispetto a qualunque servizio — quindi chi registra
-//! questi due nodi gli consegna il deposito su cui lavorare. Un flusso non può
-//! scegliere un deposito diverso da quello di chi lo esegue: lo spazio dei nomi
-//! è suo, il file no.
+//! **The store arrives at registration, not at execution.** An action receives
+//! only its own input and the shared state — the contract that keeps `flow`
+//! agnostic of any service — so whoever registers these nodes hands them the
+//! store to work on. A flow cannot pick a store other than its runner's: the
+//! namespace is the flow's, the file is not.
 
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies};
 use ledger::{Ledger, StoreRecord};
@@ -25,11 +22,11 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Il nome sotto cui `StoreWriteAction` si registra.
+/// The name `StoreWriteAction` registers under.
 pub const STORE_WRITE_ACTION: &str = "store_write";
-/// Il nome sotto cui `StoreReadAction` si registra.
+/// The name `StoreReadAction` registers under.
 pub const STORE_READ_ACTION: &str = "store_read";
-/// Il nome sotto cui `StoreListAction` si registra.
+/// The name `StoreListAction` registers under.
 pub const STORE_LIST_ACTION: &str = "store_list";
 
 /// Registers the three store nodes, **store or no store**: `flow check` must be
@@ -61,12 +58,12 @@ struct WriteSpec {
     #[serde(default)]
     key: Option<String>,
     value: Value,
-    /// Chi lo sta scrivendo. Il flusso lo dichiara perché chi rilegge la voce
-    /// sappia da dove viene: una voce senza autore si può leggere, ma non si
-    /// può contestare.
+    /// Who is writing it. The flow declares it so whoever reads the entry back
+    /// knows where it came from: an entry with no author can be read, but not
+    /// contested.
     written_by: String,
-    /// L'istante, se il flusso lo detta. Serve alle prove, che altrimenti
-    /// dipenderebbero dall'orologio, e a chi ridichiara un fatto già datato.
+    /// The instant, when the flow dictates it. The tests need it — they would
+    /// otherwise hang on the clock — and so does anyone restating a dated fact.
     #[serde(default)]
     written_at: Option<i64>,
 }
@@ -104,13 +101,12 @@ fn now() -> i64 {
         .unwrap_or_default()
 }
 
-/// Scrive una voce nella collezione che il flusso ha nominato.
+/// Writes an entry into the collection the flow named.
 ///
-/// **Ripetibile per costruzione**: la voce è identificata da collezione e
-/// chiave, quindi riscrivere lo stesso valore lascia il deposito com'era. È la
-/// ragione per cui questo nodo può essere rilanciato senza consegnare niente a
-/// una persona — a differenza di un nodo che manda una riga a un terminale, che
-/// il mondo non sa disfare.
+/// **Repeatable by construction**: an entry is identified by collection and
+/// key, so writing the same value again leaves the store as it was. That is
+/// why this node can be relaunched without handing anything to a person —
+/// unlike a node that sends a line to a terminal, which the world cannot undo.
 pub struct StoreWriteAction {
     ledger: Option<Ledger>,
 }
@@ -123,11 +119,11 @@ impl StoreWriteAction {
 
 impl Action for StoreWriteAction {
     fn execute(&self, input: &Value, shared: &SharedState) -> Result<ActionOutcome, ActionError> {
-        // L'ingresso arriva già coi rinvii risolti: li scioglie `step_input`,
-        // dove l'ingresso si compone, per ogni azione e una volta sola. È così
-        // che ciò che un passo ha prodotto arriva al deposito senza uscire dal
-        // grafo — e senza, questo nodo accetterebbe solo valori scritti a mano
-        // nel flusso, cioè non potrebbe fare il testimone fra due passi.
+        // The input arrives with its references already resolved: `step_input`
+        // resolves them where the input is composed, for every action and once
+        // over. That is how what a step produced reaches the store without
+        // leaving the graph — and without it, this node would take values
+        // hand-written in the flow, and could not witness between two steps.
         let spec: WriteSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         let key = match spec.key {
@@ -142,8 +138,8 @@ impl Action for StoreWriteAction {
             written_by: spec.written_by,
             written_at: spec.written_at.unwrap_or_else(now),
         };
-        // Un indirizzo vuoto è un errore di chi ha scritto il flusso, non un
-        // dato del mondo: si dice subito con le parole del deposito.
+        // An empty address is a mistake by whoever wrote the flow, not a fact
+        // of the world: it is said at once, in the store's own words.
         ledger
             .put_record(&record)
             .map_err(|error| ActionError::new("store_refused", error.to_string()))?;
@@ -159,12 +155,12 @@ impl Action for StoreWriteAction {
     }
 }
 
-/// Legge una voce, e dice **se c'era**.
+/// Reads an entry, and says **whether it was there**.
 ///
-/// Una voce che nessuno ha ancora scritto non è un fallimento del passo: è la
-/// risposta. Chi la riceve ha un ramo per il caso «non lo so» — che è
-/// esattamente il caso in cui una lavorazione gira per la prima volta, e il
-/// caso in cui, prima di questo nodo, qualcuno si sarebbe messo a indovinare.
+/// An entry nobody has written yet is not a failure of the step: it is the
+/// answer. Whoever receives it has a branch for «I do not know» — exactly the
+/// case of a job running for the first time, and the case where, before this
+/// node existed, somebody would have started guessing.
 pub struct StoreReadAction {
     ledger: Option<Ledger>,
 }
@@ -201,28 +197,26 @@ impl Action for StoreReadAction {
 #[derive(Debug, Deserialize)]
 struct ListSpec {
     collection: String,
-    /// Solo le voci la cui chiave viene **dopo** questa, in ordine di testo.
+    /// Only the entries whose key sorts **after** this one, as text.
     ///
-    /// È il «da qui in poi» di chi ha già letto: senza, ogni giro rilegge tutta
-    /// la collezione e il costo cresce con la storia — cioè si ricostruisce nel
-    /// deposito lo stesso problema che si voleva togliere dalla finestra.
+    /// It is the «from here on» of a reader who has read: without it every turn
+    /// rereads the whole collection and the cost grows with the history —
+    /// rebuilding in the store the problem the window was meant to shed.
     #[serde(default)]
     after: Option<String>,
 }
 
-/// Elenca le voci di una collezione, dalla più vecchia alla più recente.
+/// Lists a collection's entries, oldest first.
 ///
-/// **A COSA SERVE, VISTO CHE `store_read` C'È GIÀ.** Leggere per chiave
-/// presuppone di sapere già quale chiave: va bene per un fatto solo — su che
-/// lavoro si è — e non serve a niente per una collezione che cresce, dove la
-/// domanda è «cosa c'è di nuovo». Sono due domande diverse, e finché esisteva
-/// solo la prima nessun flusso poteva tenere un elenco.
+/// **WHAT IT IS FOR, GIVEN `store_read`.** Reading by key presupposes knowing
+/// the key: fine for a single fact — which work one is on — and useless for a
+/// growing collection, where the question is «what is new». Two different
+/// questions, and while just the first existed no flow could keep a list.
 ///
-/// **L'ORDINE È QUELLO DELLE CHIAVI, ED È IL PATTO CON CHI SCRIVE.** Il
-/// deposito ordina per testo, non per data: una collezione che vuole leggersi
-/// in ordine di tempo deve avere chiavi ordinabili come testo — un istante ISO
-/// 8601, o un numero con gli zeri davanti. Una chiave scelta male dà un elenco
-/// in ordine casuale senza che niente segnali l'errore.
+/// **THE ORDER IS THE KEYS', AND IT IS THE PACT WITH WHOEVER WRITES.** The
+/// store sorts by text, not by date: a collection meant to read in time order
+/// needs keys sortable as text — an ISO 8601 instant, or a zero-padded number.
+/// A badly chosen key gives a list in random order, and nothing flags it.
 pub struct StoreListAction {
     ledger: Option<Ledger>,
 }
@@ -255,10 +249,10 @@ impl Action for StoreListAction {
             .collect();
         Ok(ActionOutcome::Went(json!({
             "count": entries.len(),
-            // L'ultima chiave, perché il giro dopo sappia da dove ripartire
-            // senza che il flusso debba frugare nell'elenco per estrarla.
-            // Assente quando non c'è niente di nuovo: chi riprende tiene la
-            // propria e non la sovrascrive col vuoto.
+            // The last key, so the next turn knows where to pick up without
+            // the flow having to dig it out of the list. Absent when there is
+            // nothing new: a reader resuming keeps its own place instead of
+            // overwriting it with emptiness.
             "last_key": entries.last().and_then(|e| e.get("key").cloned()),
             "entries": entries,
         })))
@@ -294,12 +288,11 @@ mod tests {
         (ledger, TestStore(path))
     }
 
-    /// Il giro intero, dal nodo che scrive al nodo che legge.
+    /// The whole turn, from the node that writes to the node that reads.
     ///
-    /// Non è una prova di due funzioni: è la prova che un flusso può ricordare
-    /// **senza che il motore sappia cosa** — la collezione qui si chiama
-    /// `mandate`, e quella parola non compare in nessun punto del codice che
-    /// esegue questi due nodi.
+    /// Not a test of two functions: a test that a flow can remember **without
+    /// the engine knowing what** — the collection here is called `mandate`,
+    /// and that word appears nowhere in the code that runs these two nodes.
     #[test]
     fn a_flow_can_remember_something_the_engine_knows_nothing_about() {
         let (ledger, _guard) = store();
@@ -334,22 +327,18 @@ mod tests {
         assert_eq!(value["written_by"], json!("flusso-mandato-corrente"));
     }
 
-    // **IL SINTOMO DEL GUASTO 28 SI PROVA DOVE ACCADE, E NON PIÙ QUI.** La
-    // prova che stava in questo punto chiamava `execute` con `{"$from":
-    // "/repo"}` dentro, e reggeva perché queste tre azioni scioglievano i
-    // rinvii ciascuna per conto proprio: dodici azioni su sedici avevano quella
-    // riga, quattro no, e nessun controllo diceva quali. Riscritta qui,
-    // dovrebbe sciogliere il rinvio a mano prima di chiamare — cioè provare la
-    // prova. La regola vive in `flow::step_input` e si interroga in
-    // `crates/flow/tests/a_reference_reaches_every_action.rs` per ogni azione, e
-    // in `crates/registry/tests/the_store_can_witness_between_two_steps.rs` sul
-    // deposito vero, che è dove il guasto è stato pagato.
+    // **THE SYMPTOM OF FAULT 28 IS TESTED WHERE IT HAPPENS, NOT HERE.** A test
+    // written here would resolve the reference by hand before calling — testing
+    // the test. The rule lives in `flow::step_input`, is asked of every action
+    // in `crates/flow/tests/a_reference_reaches_every_action.rs`, and of the
+    // real store in `crates/registry/tests/the_store_can_witness_between_two_steps.rs`,
+    // which is where the fault was paid.
 
-    /// Una voce mai scritta risponde `found: false`, e il passo **riesce**.
+    /// An entry never written answers `found: false`, and the step **passes**.
     ///
-    /// Il mutante che la fa cadere è trasformare l'assenza in un
-    /// `ActionError`: il flusso non avrebbe più un ramo per il primo giro, e
-    /// una lavorazione nuova nascerebbe rossa.
+    /// The mutant that fells it turns the absence into an `ActionError`: the
+    /// flow would lose its branch for the first turn, and a new job would be
+    /// born red.
     #[test]
     fn a_missing_record_is_an_answer_not_a_failure() {
         let (ledger, _guard) = store();
@@ -373,13 +362,12 @@ mod tests {
         );
     }
 
-    /// Una collezione si legge in ordine, e «da qui in poi» salta il già letto.
+    /// A collection reads in order, and «from here on» skips what was read.
     ///
-    /// Le due asserzioni provano cose diverse e servono tutte e due: la prima
-    /// che l'ordine è quello delle chiavi — se il deposito le restituisse come
-    /// capita, un elenco di posta sarebbe inutilizzabile — la seconda che
-    /// `after` taglia davvero, cioè che un flusso che ha già letto non ripaga
-    /// quello che ha letto.
+    /// The two assertions prove different things and both are needed: the first
+    /// that the order is the keys' — returned any old way, a list of mail would
+    /// be useless — the second that `after` really cuts, so a flow that has
+    /// read does not pay twice for what it read.
     #[test]
     fn a_collection_reads_in_key_order_and_after_skips_what_was_read() {
         let (ledger, _guard) = store();
@@ -387,8 +375,8 @@ mod tests {
         let write = StoreWriteAction::new(Some(ledger.clone()));
         let list = StoreListAction::new(Some(ledger));
 
-        // Scritte fuori ordine apposta: se l'ordine venisse dalla scrittura
-        // invece che dalla chiave, l'elenco uscirebbe 03, 01, 02.
+        // Written out of order on purpose: were the order the writing's rather
+        // than the key's, the list would come out 03, 01, 02.
         for key in ["2026-08-28T03", "2026-08-28T01", "2026-08-28T02"] {
             write
                 .execute(
@@ -436,11 +424,11 @@ mod tests {
         assert_eq!(fresh["entries"][0]["key"], json!("2026-08-28T03"));
     }
 
-    /// Una collezione vuota, e una collezione già letta fino in fondo.
+    /// An empty collection, and one already read to the end.
     ///
-    /// `last_key` deve essere **assente**, non una stringa vuota: chi riprende
-    /// tiene la propria posizione, e un `last_key` vuoto scritto sopra quella
-    /// buona farebbe rileggere tutto al giro successivo.
+    /// `last_key` must be **absent**, not an empty string: a reader resuming
+    /// keeps its own place, and an empty `last_key` written over a good one
+    /// would make the next turn reread everything.
     #[test]
     fn nothing_new_leaves_the_readers_place_alone() {
         let (ledger, _guard) = store();
@@ -457,10 +445,10 @@ mod tests {
         assert_eq!(empty["last_key"], json!(null));
     }
 
-    /// Un indirizzo vuoto è un errore di chi ha scritto il flusso.
+    /// An empty address is a mistake by whoever wrote the flow.
     ///
-    /// Il deposito lo rifiuta, e il nodo riporta il rifiuto invece di
-    /// depositare una voce che nessuno ritroverà.
+    /// The store refuses it, and the node reports the refusal instead of
+    /// depositing an entry nobody will ever find again.
     #[test]
     fn an_empty_address_is_refused_with_the_stores_own_words() {
         let (ledger, _guard) = store();

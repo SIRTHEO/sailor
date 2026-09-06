@@ -58,36 +58,34 @@ use ledger::{Ledger, StepDurations};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
-/// Il nome sotto cui `HistoryAskAction` si registra.
+/// The name `HistoryAskAction` registers under.
 pub const HISTORY_ASK_ACTION: &str = "history_ask";
 
-/// Quante corse si guardano quando il flusso non lo dice.
+/// How many runs are looked at when the flow does not say.
 const DEFAULT_WINDOW: u32 = 50;
-/// Il tetto della finestra. Limita insieme il costo della lettura e quanto
-/// storico una domanda sola può attraversare.
+/// The window's ceiling. It caps both the cost of the read and how much
+/// history a single question can cross.
 const MAX_WINDOW: u32 = 500;
-/// Quanti passi rotti possono portare il proprio testo grezzo.
+/// How many broken steps may carry their own raw text.
 pub const SAID_MAX_STEPS: usize = 5;
-/// Quanto testo grezzo esce da ciascuno.
+/// How much raw text comes out of each.
 pub const SAID_MAX_BYTES: usize = 512;
 
-/// Registra il nodo che interroga lo storico.
+/// Registers the node that questions the history.
 ///
-/// **IL DEPOSITO È FACOLTATIVO, E IL NODO C'È COMUNQUE.** I nodi di `store`
-/// scrivono, e senza deposito non hanno niente da fare: restano fuori dal
-/// registro. Questo legge, e «su questa macchina non c'è nessuna corsa» è la
-/// risposta giusta, non un'azione mancante. Registrarlo sotto la stessa
-/// condizione farebbe dire a `sailor flow check` che l'azione non esiste
-/// esattamente sulla macchina appena installata, dove serve che risponda.
+/// **THE STORE IS OPTIONAL, THE NODE IS THERE ANYWAY.** `store` nodes only
+/// write, so without one they leave the registry. This one reads, and «no run
+/// here» is an answer, not a missing action: registered the same way, `sailor
+/// flow check` would deny it exists on a fresh machine, where it must answer.
 pub fn register_history(registry: &mut flow::ActionRegistry, ledger: Option<Ledger>) {
     registry.register(HISTORY_ASK_ACTION, HistoryAskAction::new(ledger));
 }
 
-/// Le quattro domande, e nient'altro.
+/// The four questions, and nothing else.
 #[derive(Debug, Deserialize)]
 #[serde(tag = "ask", rename_all = "snake_case")]
 enum Ask {
-    /// Quante volte questo passo è fallito, e con quale classe di guasto.
+    /// How many times this step failed, and with which failure class.
     StepFailures {
         step_id: String,
         #[serde(default)]
@@ -95,14 +93,14 @@ enum Ask {
         #[serde(default)]
         within_last_runs: Option<u32>,
     },
-    /// Quali guasti sono i più frequenti.
+    /// Which failures are the most frequent.
     FailureClasses {
         #[serde(default)]
         flow: Option<String>,
         #[serde(default)]
         within_last_runs: Option<u32>,
     },
-    /// Com'è andata l'ultima corsa chiusa di questo flusso, passo per passo.
+    /// How this flow's last finished run went, step by step.
     LastRun {
         flow: String,
         #[serde(default)]
@@ -123,7 +121,7 @@ enum Ask {
         #[serde(default)]
         within_last_runs: Option<u32>,
     },
-    /// Quanto ci mette di solito questo passo.
+    /// How long this step usually takes.
     StepDuration {
         step_id: String,
         #[serde(default)]
@@ -133,13 +131,12 @@ enum Ask {
     },
 }
 
-/// I campi ammessi da ciascuna domanda, `None` se la domanda non esiste.
+/// The fields each question admits, `None` if the question does not exist.
 ///
-/// **SI RIFIUTANO A MANO PERCHÉ SERDE NON PUÒ FARLO QUI**: `deny_unknown_fields`
-/// non si applica dentro un enum a tag interno. Senza questo controllo un flusso
-/// che scrive `step-id` invece di `step_id` riceverebbe la risposta su *tutti*
-/// i passi e la scambierebbe per la propria — un numero plausibile e sbagliato,
-/// cioè il modo peggiore di sbagliare.
+/// **REFUSED BY HAND BECAUSE SERDE CANNOT DO IT HERE**: `deny_unknown_fields`
+/// does not apply inside an internally tagged enum. Without this check, a flow
+/// writing `step-id` for `step_id` would get the answer about *every* step and
+/// take it for its own — a plausible wrong number, the worst way to be wrong.
 fn allowed_fields(ask: &str) -> Option<&'static [&'static str]> {
     match ask {
         "step_failures" => Some(&["ask", "step_id", "flow", "within_last_runs"]),
@@ -191,9 +188,9 @@ fn parse_ask(input: &Value) -> Result<Ask, ActionError> {
         .collect();
     let ask: Ask = serde_json::from_value(Value::Object(pruned))
         .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
-    // La finestra si controlla qui, con il resto della domanda, e non al
-    // momento di leggere: un limite assurdo è un errore di chi ha scritto il
-    // flusso, e su una macchina senza deposito passerebbe inosservato.
+    // The window is checked here, with the rest of the question, and not at
+    // read time: an absurd limit is a mistake by whoever wrote the flow, and on
+    // a machine with no store it would pass unnoticed.
     window(declared_window(&ask))?;
     Ok(ask)
 }
@@ -218,9 +215,9 @@ fn declared_window(ask: &Ask) -> Option<u32> {
     }
 }
 
-/// La finestra chiesta, in corse. Fuori dai limiti è un errore invece di un
-/// taglio silenzioso: una finestra ridotta di nascosto restituirebbe una
-/// risposta su cinquanta corse a chi crede di averne guardate cinquemila.
+/// The window asked for, in runs. Out of bounds is an error rather than a
+/// silent cut: a window quietly shrunk would answer about fifty runs to
+/// somebody who believes they looked at five thousand.
 fn window(declared: Option<u32>) -> Result<usize, ActionError> {
     let value = declared.unwrap_or(DEFAULT_WINDOW);
     if value == 0 || value > MAX_WINDOW {
@@ -232,12 +229,12 @@ fn window(declared: Option<u32>) -> Result<usize, ActionError> {
     Ok(value as usize)
 }
 
-/// Lo stato del deposito su questa macchina.
+/// The state of the store on this machine.
 const DEPOSIT_ABSENT: &str = "absent";
 const DEPOSIT_EMPTY: &str = "empty";
 const DEPOSIT_PRESENT: &str = "present";
 
-/// La busta. `answer` entra solo se c'è davvero una risposta da dare.
+/// The envelope. `answer` goes in only when there is an answer to give.
 fn envelope(ask: &str, deposit: &str, runs_considered: i64, answer: Option<Value>) -> Value {
     let mut object = Map::new();
     object.insert("ask".to_owned(), json!(ask));
@@ -249,7 +246,7 @@ fn envelope(ask: &str, deposit: &str, runs_considered: i64, answer: Option<Value
     Value::Object(object)
 }
 
-/// Il nome della domanda, per l'eco nella busta.
+/// The question's name, for the echo in the envelope.
 fn ask_name(ask: &Ask) -> &'static str {
     match ask {
         Ask::StepFailures { .. } => "step_failures",
@@ -261,9 +258,9 @@ fn ask_name(ask: &Ask) -> &'static str {
     }
 }
 
-/// Il campione a un percentile, per **rango**: nessuna interpolazione, quindi
-/// ogni numero restituito è una durata davvero misurata e non una media che
-/// non è mai successa a nessuno.
+/// The sample at a percentile, by **rank**: no interpolation, so every number
+/// returned is a duration that was really measured and not an average that
+/// never happened to anybody.
 fn percentile(sorted: &[i64], percent: usize) -> Option<i64> {
     if sorted.is_empty() {
         return None;
@@ -272,27 +269,26 @@ fn percentile(sorted: &[i64], percent: usize) -> Option<i64> {
     sorted.get(rank - 1).or_else(|| sorted.last()).copied()
 }
 
-/// Il riassunto delle durate, come lo legge un flusso.
+/// The summary of durations, as a flow reads it.
 ///
-/// **NESSUNA SOGLIA DI «TROPPO LENTO» SI DECIDE QUI.** Mediana e ultima escono
-/// affiancate perché sia il flusso a confrontarle: scolpire in Rust quanto è
-/// «molto di più» sarebbe una decisione di dominio dentro il motore, lo stesso
-/// difetto per cui `notte` è condannata. `samples` esce in chiaro per la stessa
-/// ragione: su tre campioni un novantesimo percentile è aritmetica, non una
-/// misura, e chi legge deve poterlo vedere.
+/// **NO «TOO SLOW» THRESHOLD IS DECIDED HERE.** Median and last come out side
+/// by side so the flow compares them: carving «much more» into Rust would be a
+/// domain decision inside the engine, the flaw `notte` is condemned for. And
+/// `samples` comes out in plain sight because on three samples a ninetieth
+/// percentile is arithmetic, not a measure, and the reader must see that.
 ///
-/// **L'UNITÀ È IL SECONDO INTERO, ED È UN LIMITE VERO.** L'orologio del motore
-/// conta secondi, quindi un passo veloce misura zero. Sta scritto nella
-/// risposta (`unit`) invece che qui soltanto: chi confronta due zeri deve
-/// sapere che non sta confrontando niente.
+/// **THE UNIT IS THE WHOLE SECOND, AND A REAL LIMIT.** The engine's clock
+/// counts seconds, so a fast step measures zero. The answer says so (`unit`)
+/// and not here alone: whoever compares two zeros must know they compare
+/// nothing.
 fn duration_summary(durations: &StepDurations) -> Value {
     let sorted = &durations.seconds_sorted;
     let mut object = Map::new();
     object.insert("unit".to_owned(), json!("seconds"));
     object.insert("samples".to_owned(), json!(sorted.len()));
     object.insert("failed_samples".to_owned(), json!(durations.failed_samples));
-    // Le misure escono solo se qualcosa è stato misurato: un minimo a zero su
-    // zero campioni sarebbe un numero inventato con l'aspetto di un dato.
+    // The measures come out only if something was measured: a minimum of zero
+    // on zero samples would be an invented number wearing the look of a fact.
     if let (Some(min), Some(max)) = (sorted.first(), sorted.last()) {
         object.insert("min".to_owned(), json!(min));
         object.insert("max".to_owned(), json!(max));
@@ -311,8 +307,8 @@ fn classes_to_json(classes: &[ledger::FailureClassCount]) -> Value {
             .iter()
             .map(|count| {
                 json!({
-                    // `null` è una rottura che il motore non ha classificato, e
-                    // non una classe che si chiama così: qui manca il dato.
+                    // `null` is a break the engine did not classify, and not a
+                    // class by that name: the fact is missing here.
                     "failure_class": count.failure_class,
                     "failures": count.failures,
                     "runs_affected": count.runs_affected,
@@ -322,10 +318,10 @@ fn classes_to_json(classes: &[ledger::FailureClassCount]) -> Value {
     )
 }
 
-/// Interroga lo storico delle corse.
+/// Questions the history of the runs.
 pub struct HistoryAskAction {
-    /// `None` quando su questa macchina il deposito non c'è o non si apre. Il
-    /// nodo resta registrato e lo dichiara: vedi `register_history`.
+    /// `None` when the store is missing on this machine, or does not open. The
+    /// node stays registered and says so: see `register_history`.
     ledger: Option<Ledger>,
 }
 
@@ -419,9 +415,9 @@ impl HistoryAskAction {
             Ask::LastRun { flow, include_said } => {
                 let found = ledger.last_finished_run(flow).map_err(unreadable)?;
                 let Some(run) = found else {
-                    // Un flusso che non ha ancora chiuso nessuna corsa non è un
-                    // guasto: è il primo giro, e chi chiede ha un ramo per
-                    // questo esattamente come per una voce mai scritta.
+                    // A flow that has closed no run yet is not a fault: it is
+                    // the first turn, and the asker has a branch for it just
+                    // as for an entry never written.
                     return Ok((0, json!({"found": false, "flow": flow})));
                 };
                 let steps: Vec<Value> = run
@@ -536,9 +532,9 @@ impl Action for HistoryAskAction {
     }
 
     fn execute(&self, input: &Value, shared: &SharedState) -> Result<ActionOutcome, ActionError> {
-        // La domanda si valida **prima** di guardare il deposito: un campo
-        // sbagliato è sbagliato su qualunque macchina, e scoprirlo solo dove il
-        // deposito esiste renderebbe il difetto invisibile a chi prova altrove.
+        // The question is validated **before** the store is looked at: a wrong
+        // field is wrong on any machine, and catching it where the store exists
+        // would hide the flaw from whoever tries elsewhere.
         let ask = parse_ask(input)?;
         let name = ask_name(&ask);
         let Some(ledger) = self.ledger.as_ref() else {
@@ -559,7 +555,7 @@ impl Action for HistoryAskAction {
     }
 
     fn species(&self) -> StepSpecies {
-        // Legge e basta: rilanciarlo non tocca niente del mondo.
+        // It reads and nothing more: relaunching it touches nothing of the world.
         StepSpecies::Repeatable
     }
 }
@@ -591,8 +587,8 @@ mod tests {
         (ledger, TestStore(path))
     }
 
-    /// Il testo che non deve mai uscire: entra come ingresso e come uscita di
-    /// ogni passo di prova, così una fuga si vede a occhio nella risposta.
+    /// The text that must never come out: it goes in as the input and as the
+    /// output of every test step, so a leak shows at a glance in the answer.
     const SECRET: &str = "PROMPT-SEGRETO-CHE-NON-DEVE-USCIRE";
 
     fn a_run(ledger: &Ledger, run_id: &str, flow: &str, started_at: i64, ended_at: Option<i64>) {
@@ -776,12 +772,12 @@ mod tests {
             .expect("registrare l'intenzione");
     }
 
-    /// Senza deposito la domanda riceve comunque una risposta, e la risposta
-    /// dice che deposito non ce n'è.
+    /// With no store the question still gets an answer, and the answer says
+    /// there is no store.
     ///
-    /// Il mutante che la fa cadere è far fallire il passo quando il deposito
-    /// manca: ogni flusso che chiede com'è andata nascerebbe rosso su una
-    /// macchina appena installata, cioè proprio dove il ramo «non lo so» serve.
+    /// The mutant that fells it breaks the step when the store is missing:
+    /// every flow asking how it went would be born red on a freshly installed
+    /// machine, exactly where the «I do not know» branch is needed.
     #[test]
     fn without_a_deposit_the_question_still_gets_an_answer() {
         let action = HistoryAskAction::new(None);
@@ -797,13 +793,12 @@ mod tests {
         );
     }
 
-    /// «Nessuna corsa registrata» e «zero guasti» sono due cose diverse, e si
-    /// distinguono dalla **presenza** della chiave `answer`.
+    /// «No run recorded» and «zero failures» are two different things, told
+    /// apart by the **presence** of the `answer` key.
     ///
-    /// Il mutante che la fa cadere è restituire `answer: null` sul deposito
-    /// vuoto: `Condition::PointerExists` si appoggia a `Value::pointer`, che su
-    /// un `null` risponde `Some`, quindi il flusso prenderebbe il ramo «ho una
-    /// risposta» proprio dove non ce n'è nessuna.
+    /// The mutant that fells it returns `answer: null` on an empty store:
+    /// `Condition::PointerExists` leans on `Value::pointer`, which says `Some`
+    /// on a `null`, so the flow takes the «I have an answer» branch over none.
     #[test]
     fn an_empty_deposit_is_not_the_same_as_zero_failures() {
         let (ledger, _guard) = store("vuoto");
@@ -868,7 +863,7 @@ mod tests {
         assert_eq!(answer["ask"], json!("last_run"), "and the question stays the one asked");
     }
 
-    /// Una domanda che nessuno ha previsto si rifiuta dicendo quali esistono.
+    /// A question nobody foresaw is refused by naming the ones that exist.
     #[test]
     fn an_unknown_question_names_the_ones_that_exist() {
         let action = HistoryAskAction::new(None);
@@ -882,12 +877,12 @@ mod tests {
         assert!(error.said.contains("last_run"), "{}", error.said);
     }
 
-    /// **NIENTE DI CIÒ CHE È PASSATO NEL FLUSSO ESCE SENZA CHE SIA CHIESTO.**
+    /// **NOTHING THAT PASSED THROUGH THE FLOW COMES OUT UNASKED.**
     ///
-    /// La prova guarda il testo intero della risposta, non i campi che si
-    /// ricorda di controllare: cade il giorno in cui qualcuno aggiunge `output`
-    /// «per comodità», e cade anche se il segreto arriva dentro un campo che
-    /// oggi non esiste.
+    /// The test looks at the whole text of the answer, not at the fields it
+    /// remembers to check: it falls the day somebody adds `output` «for
+    /// convenience», and it falls too if the secret arrives inside a field
+    /// that does not exist today.
     #[test]
     fn a_last_run_answer_never_carries_what_passed_through_the_flow() {
         let (ledger, _guard) = store("senza-detto");
@@ -921,12 +916,12 @@ mod tests {
         assert!(!text.contains("\"output\""), "{text}");
     }
 
-    /// Chiesto esplicitamente, il testo grezzo esce — dai soli passi rotti,
-    /// della sola corsa nominata, e troncato.
+    /// Asked for explicitly, the raw text comes out — from the broken steps
+    /// only, of the named run only, and truncated.
     ///
-    /// Il mutante che la fa cadere è far uscire `said` sempre: la prova qui
-    /// sopra diventerebbe rossa, e questa resterebbe verde. Servono tutte e
-    /// due, e una sola delle due non prova la politica.
+    /// The mutant that fells it lets `said` out always: the test above would go
+    /// red and this one would stay green. Both are needed, and either one alone
+    /// does not prove the policy.
     #[test]
     fn said_comes_out_only_when_asked_and_only_from_broken_steps() {
         let (ledger, _guard) = store("con-detto");
@@ -956,16 +951,16 @@ mod tests {
         assert_eq!(said[0]["step_id"], json!("rotto"));
         assert!(said[0]["said"].as_str().expect("testo").contains("rotto"));
         assert_eq!(said[0]["said_truncated"], json!(false));
-        // Il passo riuscito ha un `said` nel deposito e non esce: il varco è
-        // per la diagnosi di un guasto, non per leggere le corse riuscite.
+        // The step that passed has a `said` in the store and it does not come
+        // out: the gap is for diagnosing a fault, not for reading good runs.
         assert!(!value.to_string().contains("detto da riuscito"), "{value}");
     }
 
-    /// La domanda sulle durate misura le riuscite e conta i guasti a parte, e
-    /// dice su quanti campioni sta parlando.
+    /// The duration question measures what passed, counts the failures apart,
+    /// and says how many samples it is speaking of.
     ///
-    /// Cade se il riassunto smette di dichiarare `samples`: un novantesimo
-    /// percentile su due misure sembrerebbe una legge.
+    /// It falls if the summary stops declaring `samples`: a ninetieth
+    /// percentile over two measures would look like a law.
     #[test]
     fn a_duration_answer_says_how_few_samples_it_stands_on() {
         let (ledger, _guard) = store("durate");
@@ -989,7 +984,7 @@ mod tests {
         );
     }
 
-    /// Su zero campioni non esce nessuna misura inventata.
+    /// On zero samples no invented measure comes out.
     #[test]
     fn no_samples_means_no_numbers_pretending_to_be_measures() {
         let summary = duration_summary(&StepDurations::default());
@@ -1003,8 +998,8 @@ mod tests {
         assert_eq!(summary.get("last"), None);
     }
 
-    /// La mediana e il novantesimo percentile sono campioni veri, presi per
-    /// rango: nessun numero che non sia mai stato misurato.
+    /// The median and the ninetieth percentile are real samples, taken by
+    /// rank: no number that was never measured.
     #[test]
     fn percentiles_are_measured_samples_not_averages() {
         let sorted = vec![10, 20, 30, 40];
@@ -1014,8 +1009,8 @@ mod tests {
         assert_eq!(percentile(&[], 50), None);
     }
 
-    /// Una finestra fuori dai limiti si rifiuta invece di essere ridotta di
-    /// nascosto: chi crede di aver guardato cinquemila corse deve saperlo.
+    /// A window out of bounds is refused instead of quietly shrunk: whoever
+    /// believes they looked at five thousand runs must be told.
     #[test]
     fn a_window_beyond_the_ceiling_is_refused_instead_of_silently_shrunk() {
         let action = HistoryAskAction::new(None);
@@ -1032,8 +1027,8 @@ mod tests {
         assert!(error.said.contains("500"), "{}", error.said);
     }
 
-    /// Un flusso che non ha ancora chiuso nessuna corsa riceve `found: false`,
-    /// e il passo riesce: è il primo giro, non un guasto.
+    /// A flow that has closed no run yet gets `found: false`, and the step
+    /// passes: it is the first turn, not a fault.
     #[test]
     fn a_flow_with_no_finished_run_is_told_so_without_breaking() {
         let (ledger, _guard) = store("primo-giro");
