@@ -13,6 +13,8 @@
 // "no longer known" state exists at all.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAsk } from "./ask";
 import { ChangesScreen } from "./ChangesScreen";
 import { SessionContext } from "./SessionContext";
@@ -412,24 +414,24 @@ export function Terminals({
               on it offers those, and this screen names none of them. */}
           {lines.length > 0 && (
             <span className="terminals__engines">
-              <button
+              <Button
                 type="button"
-                className="terminals__engine"
-                data-chosen={program.trim() === "" || undefined}
+                size="xs"
+                variant={program.trim() === "" ? "secondary" : "outline"}
                 onClick={() => setProgram("")}
               >
                 your shell
-              </button>
+              </Button>
               {lines.map((line) => (
-                <button
+                <Button
                   key={line.id}
                   type="button"
-                  className="terminals__engine"
-                  data-chosen={program.trim() === line.executable || undefined}
+                  size="xs"
+                  variant={program.trim() === line.executable ? "secondary" : "outline"}
                   onClick={() => setProgram(line.executable)}
                 >
                   {line.display_name}
-                </button>
+                </Button>
               ))}
             </span>
           )}
@@ -442,17 +444,13 @@ export function Terminals({
         </label>
         </>
         )}
-        <button type="submit" className="is-primary" disabled={opening || root === ""}>
+        <Button type="submit" disabled={opening || root === ""}>
           {opening ? "opening…" : opened.length === 0 ? "Open a terminal" : "New terminal"}
-        </button>
+        </Button>
         {opened.length > 0 && (
-          <button
-            type="button"
-            className="terminals__elsewhere"
-            onClick={() => setDetailed((was) => !was)}
-          >
+          <Button type="button" variant="link" size="sm" onClick={() => setDetailed((was) => !was)}>
             {detailed ? "never mind" : "somewhere else…"}
-          </button>
+          </Button>
         )}
       </form>
 
@@ -484,17 +482,21 @@ export function Terminals({
         <p className="terminals__empty">No terminal is open. That is not the same as being unable to ask.</p>
       ) : (
         <>
-          <nav className="terminals__tabs">
+          {/* A REAL TABLIST, NOT A ROW OF BUTTONS. `role="tab"`, `aria-selected`
+              and the arrow keys come from Radix; the strip had none of the
+              three. `forceMount` is what lets every pane stay on screen while
+              one tab is selected — the selection moves focus, it does not hide
+              the others. */}
+          <Tabs value={visible ?? ""} onValueChange={setHere}>
+          <TabsList variant="line">
             {opened.map((entry) => {
               const liveness = livenessOf(entry, closed, channel.on);
               return (
-                <button
+                <TabsTrigger
                   key={entry.id}
-                  type="button"
+                  value={entry.id}
                   className="terminals__tab"
-                  data-here={entry.id === visible || undefined}
-                  data-state={liveness.state}
-                  onClick={() => setHere(entry.id)}
+                  data-liveness={liveness.state}
                 >
                   {/* WHAT IS RUNNING IN THERE, WHICH IS HOW A PERSON KNOWS
                       THE TAB. Declared at opening, never read out of the
@@ -514,10 +516,10 @@ export function Terminals({
                   <span className="terminals__word">
                     {livenessWord(liveness, speaking.has(entry.id))}
                   </span>
-                </button>
+                </TabsTrigger>
               );
             })}
-          </nav>
+          </TabsList>
 
           {/* WHAT IS BEING JUDGED, ABOVE THE PLACE IT IS JUDGED IN: the
               verdict is given here, not from the row you walked away from. */}
@@ -533,9 +535,14 @@ export function Terminals({
             {paneOrder(opened, visible).map((entry) => {
               const liveness = livenessOf(entry, closed, channel.on);
               return (
+                <TabsContent
+                  key={entry.id}
+                  value={entry.id}
+                  forceMount
+                  className="terminals__panel"
+                >
                 <TerminalPane
                   known={lines}
-                  key={entry.id}
                   summary={entry}
                   ceiling={ceiling}
                   liveness={liveness}
@@ -562,24 +569,28 @@ export function Terminals({
                     );
                   }}
                 />
+                </TabsContent>
               );
             })}
           </div>
           </div>
+          </Tabs>
 
           {visible !== null && watched !== null && (
             <div className="terminals__foot">
               {/* WHAT THE AGENT CHANGED, READ WITHOUT LEAVING: the working tree
                   of the workspace this terminal was opened in, as git says it. */}
-              <button type="button" onClick={() => setReading((on) => !on)}>
+              <Button type="button" variant="outline" size="sm" onClick={() => setReading((on) => !on)}>
                 {reading ? "hide what changed" : `what changed in ${watched.workspaceName}`}
-              </button>
+              </Button>
               {/* ASKED FOR, NOT STOOD BESIDE: the band took a column at every width. */}
-              <button type="button" onClick={() => setAsking((on) => !on)}>
+              <Button type="button" variant="outline" size="sm" onClick={() => setAsking((on) => !on)}>
                 {t(asking ? "window.session.hide" : "window.session.show")}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="destructive"
+                size="sm"
                 onClick={() => {
                   void closeTerminal(visible)
                     .then(() => again())
@@ -587,7 +598,7 @@ export function Terminals({
                 }}
               >
                 Close this terminal
-              </button>
+              </Button>
             </div>
           )}
 

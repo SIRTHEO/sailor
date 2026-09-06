@@ -4,7 +4,7 @@
  * the strip, and `changes` and `sketch` hang under the tree: no list typing
  * could read held them. What is expected here is read from the declarations.
  */
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import App from "./App";
 import { onItsOwnName, MACHINE, PLACES , type Section } from "./places";
@@ -87,7 +87,7 @@ describe("what ⌘K can reach", () => {
    * added later. Board and the work stay mounted behind the rest, and their
    * own guards measure them.
    */
-  test("AND EVERY ROW IT LISTS OPENS SOMETHING, not only the two that were missing", () => {
+  test("AND EVERY ROW IT LISTS OPENS SOMETHING, not only the two that were missing", async () => {
     const drawn: Section[] = ["board", "terminals"];
     for (const place of onItsOwnName().filter((one) => !drawn.includes(one.id))) {
       cleanup();
@@ -101,9 +101,14 @@ describe("what ⌘K can reach", () => {
 
       const crumb = container.querySelector(".topbar__crumb")?.textContent;
       expect(crumb, `«${place.name}» is offered and does not open`).toBe(place.name);
-      // Asked of the section this place opened, never of «a section»: the
-      // work and the board stay mounted behind it, and their bodies answered
-      // for a place that had drawn nothing at all.
+      await waitFor(() =>
+        expect(
+          container.querySelector(`[data-place="${place.id}"] .section__body`)?.textContent ?? "",
+          `«${place.name}» never arrives`,
+        ).not.toBe(""),
+      );
+      // Asked of the section this place opened, never of «a section»: the work
+      // stays mounted behind it and answered for a place that drew nothing.
       const body = container.querySelector(`[data-place="${place.id}"] .section__body`);
       expect(body, `«${place.name}» opens a place with no body`).not.toBeNull();
       expect(
