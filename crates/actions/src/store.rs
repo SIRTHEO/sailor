@@ -54,10 +54,10 @@ fn deposit<'a>(ledger: &'a Option<Ledger>, without: &str) -> Result<&'a Ledger, 
 #[derive(Debug, Deserialize)]
 struct WriteSpec {
     collection: String,
-    /// L'indirizzo della voce. **Assente vuol dire «questa corsa»**: la chiave
-    /// diventa l'identificativo della corsa, che il flusso non può nominare
-    /// perché non sta nel suo ingresso e nasce dopo di lui. Un valore fisso
-    /// scritto qui riscriverebbe a ogni corsa la voce di quella prima.
+    /// Where the entry goes. **Absent means "this run"**: the key becomes the
+    /// run's own id, which the flow cannot name — it reaches no step's input
+    /// and is born after the file. A fixed key written here would overwrite
+    /// the previous run's entry on every turn.
     #[serde(default)]
     key: Option<String>,
     value: Value,
@@ -77,12 +77,12 @@ struct ReadSpec {
     key: String,
 }
 
-/// L'identificativo della corsa, per la voce che non ne dichiara uno proprio.
+/// The run's id, for an entry that declares no key of its own.
 ///
-/// Sta nello stato condiviso e non nell'ingresso del passo perché offrirlo a
-/// ogni passo è il guasto del 01/09/2026: `what-this-machine-has` moriva su
-/// `unknown field 'workdir'` dentro qualunque progetto. Chi ne ha bisogno lo
-/// legge qui, come già fa il nodo che consegna a una persona.
+/// Read from shared state and not from the step's input: offering it to every
+/// step is the shape that already killed a shipped flow on `unknown field`,
+/// because a closed action spec refuses what the executor adds. Whoever needs
+/// it reads it here, as the node that hands work to a person already does.
 fn key_of_this_run(shared: &SharedState) -> Result<String, ActionError> {
     shared
         .get(flow::CURRENT_RUN)
@@ -481,11 +481,10 @@ mod tests {
         assert_eq!(error.class, "store_refused");
     }
 
-    /// **DUE CORSE, DUE VOCI.** Un flusso che tiene ciò che ha pagato non può
-    /// nominare la propria corsa — non sta nel suo ingresso — e una chiave
-    /// fissa scritta nel file riscriverebbe ogni volta la voce precedente.
-    /// Perciò le corse qui sono due: con una sola, una chiave costante
-    /// passerebbe.
+    /// **TWO RUNS, TWO ENTRIES.** A flow keeping what it paid for cannot name
+    /// its own run, and a fixed key written in the file would overwrite the
+    /// entry before it. Two runs and not one: with one, a constant key would
+    /// pass this.
     #[test]
     fn an_entry_with_no_key_of_its_own_is_kept_under_the_run() {
         let (ledger, _guard) = store();
@@ -517,11 +516,15 @@ mod tests {
         else {
             panic!("nessuna attesa");
         };
-        assert_eq!(all["count"], json!(2), "la seconda corsa non ha coperto la prima");
+        assert_eq!(
+            all["count"],
+            json!(2),
+            "the second run wrote over the first"
+        );
     }
 
-    /// Senza corsa e senza chiave il nodo rifiuta: inventarne una qui vorrebbe
-    /// dire scegliere quale voce del deposito riscrivere.
+    /// With no run and no key the node refuses: making one up here would be
+    /// choosing which entry of the store to overwrite.
     #[test]
     fn an_entry_with_no_key_and_no_run_is_refused() {
         let (ledger, _guard) = store();
@@ -530,7 +533,7 @@ mod tests {
                 &json!({"collection": "consultations", "value": 1, "written_by": "prova"}),
                 &SharedState::new(),
             )
-            .expect_err("senza corsa non si inventa una chiave");
+            .expect_err("with no run there is no key to invent");
         assert_eq!(error.class, "no_run");
     }
 
