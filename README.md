@@ -1,5 +1,9 @@
 # Sailor
 
+[![the battery](https://github.com/SIRTHEO/sailor/actions/workflows/the-battery.yml/badge.svg)](https://github.com/SIRTHEO/sailor/actions/workflows/the-battery.yml)
+[![licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue.svg)](LICENSE)
+[![rust 1.89+](https://img.shields.io/badge/rust-1.89%2B-orange.svg)](https://www.rust-lang.org)
+
 Sailor makes the command-line agents you already have — Claude Code, Codex,
 Gemini CLI, anything else — work together inside **flows** you can read,
 measure and stop.

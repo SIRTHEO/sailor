@@ -227,10 +227,10 @@ ha consegnato un commit non fondibile, dichiarando semi che non erano di questo
 albero. Il confronto costa un secondo:
 
 ```sh
-git log --oneline -1 && git log --oneline -1 sorgenti
+git log --oneline -1 && git log --oneline -1 main
 ```
 
-Se non coincidono, `git reset --hard sorgenti` prima di leggere qualunque file.
+Se non coincidono, `git reset --hard main` prima di leggere qualunque file.
 Una copia tagliata da un riferimento che nessuno ha scelto non è isolamento: è
 un altro progetto con lo stesso nome.
 
@@ -266,16 +266,17 @@ tronco stava **196 commit avanti al remoto** e nessuno aveva spinto. Nomi come
 `work/fusione-sera-guasti` e `innesto-toml-codex-ricucito`: raccontano una sera,
 non un lavoro.
 
-- **Il tronco è `sorgenti`**, e si spinge su `origin/sorgenti` **a ogni
-  rilascio**, non «quando ci si ricorda»: un rilascio che mette in servizio un
-  binario che il remoto non ha mai visto è un rilascio che esiste su una
-  macchina sola. `origin/main` è la storia **precedente alla riscrittura** e
-  non si tocca finché Theo non decide cosa farne.
+- **Il tronco è `main`**, ed è l'unico ramo: si spinge su `origin/main` **a
+  ogni rilascio**, non «quando ci si ricorda», perché un rilascio che mette in
+  servizio un binario che il remoto non ha mai visto è un rilascio che esiste
+  su una macchina sola. La storia precedente alla riscrittura del 06/09/2026 è
+  il tag `archive/before-the-rewrite`: un tag non si scambia per un posto dove
+  il lavoro continua.
 - **Un ramo si chiama `work/<cosa-fa>`, in inglese, come i commit**:
   `work/terminal-claims`, non `work/annunci-terminali`; `work/toml-graft`, non
   `work/innesto-toml`. Il nome dice il lavoro, non il giorno né il gesto
   (`fusione`, `ricucito`, `sera` non sono lavori).
-- **Nasce da `sorgenti`, torna in `sorgenti`, e muore.** Fuso il ramo, si prova
+- **Nasce da `main`, torna in `main`, e muore.** Fuso il ramo, si prova
   per contenuto che è superato (sotto) e si cancella nello stesso gesto; la
   copia di lavoro si toglie con `git worktree remove`. Un ramo che sopravvive
   alla propria fusione è ingombro che qualcuno dovrà rimisurare.
@@ -295,9 +296,8 @@ non un lavoro.
   di 179 commit per un giorno perché l'accesso attivo non era il proprietario,
   e ogni rilascio lo diceva onestamente mentre niente si muoveva.
 
-**La forma del nome ha un giudice, e il giudice è puro.** Sono quattro forme e
-nient'altro: `sorgenti`, il tronco; `main`, la storia precedente alla
-riscrittura, esente e nominata come tale; `work/<cosa-fa>` con minuscole, cifre
+**La forma del nome ha un giudice, e il giudice è puro.** Sono tre forme e
+nient'altro: `main`, il tronco; `work/<cosa-fa>` con minuscole, cifre
 e trattini nel topic; `worktree-agent-<id>`, che è scritto dal meccanismo e non
 lo sceglie nessuno. La prova è `cargo test -p sailor --test
 a_branch_is_named_for_the_work_it_carries`, e chi vuole il verdetto su questo

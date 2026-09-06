@@ -72,7 +72,7 @@ belong here too.
 ## What this project is
 
 Under construction, and used every day by the people writing it. There are no
-released versions to support yet: fixes land on the trunk, `sorgenti`, and
+released versions to support yet: fixes land on the trunk, `main`, and
 whoever runs Sailor from source should track it. Known defects, security ones
 included, are written down in `docs/faults-encountered.md` — a report that turns
 out to be one already there will be pointed at its number.

@@ -141,11 +141,13 @@ seen to fail is not a test.
 
 ## Branches
 
-- **`sorgenti` is the trunk**, and the only branch that releases. `main` exists
-  and is not it: it is the history from before the rewrite.
+- **`main` is the trunk**, and the only branch that releases. There is no
+  second one: the history from before the 06/09/2026 rewrite is kept as the tag
+  `archive/before-the-rewrite`, and a tag cannot be mistaken for somewhere work
+  continues.
 - **Work goes on `work/<short-topic>`**, in English, named for the work and not
   for the day or the gesture — `work/terminal-claims`, not `work/evening-merge`.
-- **A branch is born from `sorgenti`, returns to `sorgenti`, and dies.** Do not
+- **A branch is born from `main`, returns to `main`, and dies.** Do not
   open a branch whose only job is to merge; merge where the work already
   integrates.
 - **Whoever opens a worktree closes it.** `git worktree remove <directory>`

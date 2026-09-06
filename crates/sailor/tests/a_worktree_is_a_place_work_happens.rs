@@ -12,7 +12,7 @@ use workspace::{name_for, parse_worktrees, tree_path, OpenTree, OpenTrees};
 const PORCELAIN: &str = "\
 worktree /somewhere/project
 HEAD 495a93344af1912bfb72d85f9caf4ee70f11cdd8
-branch refs/heads/sorgenti
+branch refs/heads/main
 
 worktree /somewhere/project-worktrees/accompagnatore
 HEAD 0897a7ceaf694a5a1e630bc03551eae47bbd17d9
@@ -27,7 +27,7 @@ detached
 fn every_tree_is_read_with_its_branch() {
     let trees = parse_worktrees(PORCELAIN);
     assert_eq!(trees.len(), 3);
-    assert_eq!(trees[0].branch.as_deref(), Some("sorgenti"));
+    assert_eq!(trees[0].branch.as_deref(), Some("main"));
     assert_eq!(trees[1].branch.as_deref(), Some("work/accompagnatore"));
     assert_eq!(trees[1].name(), "accompagnatore");
 }
@@ -101,7 +101,7 @@ fn nothing_at_all_reads_as_nothing_at_all() {
 #[test]
 fn a_tree_kept_from_a_step_is_listed_with_its_run_and_counted() {
     let trees = parse_worktrees(
-        "worktree /somewhere/project\nHEAD abc\nbranch refs/heads/sorgenti\n\n\
+        "worktree /somewhere/project\nHEAD abc\nbranch refs/heads/main\n\n\
          worktree /somewhere/project-worktrees/corsa-1/implementa\nHEAD def\ndetached\n",
     );
 
