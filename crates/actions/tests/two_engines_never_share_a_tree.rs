@@ -131,6 +131,12 @@ fn stood_in(outcome: &ActionOutcome) -> String {
     what_it_printed(outcome).lines().next().unwrap_or_default().to_owned()
 }
 
+/// A store of this test's own, in the scratch: cutting a tree without one is
+/// refused, and the register of what was cut has to be somewhere.
+fn a_store_in(dir: &Path) -> ledger::Ledger {
+    ledger::Ledger::open(dir.join("store")).expect("a store to write the trees into")
+}
+
 fn shared_for(root: &Path, run: &str, step: &str) -> SharedState {
     let mut shared = SharedState::new();
     shared.insert(flow::WORKSPACE_ROOT.to_owned(), json!(root.to_string_lossy()));
@@ -145,7 +151,8 @@ fn each_step_asking_for_a_tree_of_its_own_gets_one_and_nobody_shares() {
     let repo = a_repository_in(dir.path());
     let bin = an_engine_that_prints_where_it_stands(dir.path());
     let reads = an_engine_that_reads_the_project(dir.path());
-    let action = actions::ExternalEngineAction::new();
+    let store = a_store_in(dir.path());
+    let action = actions::ExternalEngineAction::new().recording_to(Some(store.clone()));
     let asks_for_a_tree = json!({"bin": reads, "tree": "own", "timeout_secs": 30});
 
     // The control: a step that asks for nothing stands where the run stands.
@@ -186,6 +193,9 @@ fn each_step_asking_for_a_tree_of_its_own_gets_one_and_nobody_shares() {
     for stood in [&first, &second] {
         assert!(!Path::new(stood).exists(), "the tree is still on disk: {stood}");
     }
+    // And the register agrees with the disk: a tree that went is off the page.
+    let open = workspace::OpenTrees::trees_left_open(&store).expect("the store reads back");
+    assert!(open.is_empty(), "the store still holds trees nobody has: {open:?}");
 }
 
 fn what_git_has_cut(repo: &Path) -> String {
@@ -207,13 +217,23 @@ fn a_step_that_leaves_work_keeps_its_tree_and_the_person_is_told() {
     let repo = a_repository_in(dir.path());
     let bin = an_engine_that_leaves_work_behind(dir.path());
     let overheard = Overheard::default();
+    let store = a_store_in(dir.path());
     let action = actions::ExternalEngineAction::new()
-        .watched_by(Some(Arc::new(overheard.clone()) as Arc<dyn actions::StepSinks>));
+        .watched_by(Some(Arc::new(overheard.clone()) as Arc<dyn actions::StepSinks>))
+        .recording_to(Some(store.clone()));
     let asks_for_a_tree = json!({"bin": bin, "tree": "own", "timeout_secs": 30});
 
     let shared = shared_for(&repo, "corsa-3", "lascia");
     let kept = stood_in(&action.execute(&asks_for_a_tree, &shared).expect("the step had to go"));
 
+    // A kept tree stays on the page: that is who a person asks for it later.
+    let open = workspace::OpenTrees::trees_left_open(&store).expect("the store reads back");
+    assert_eq!(open.len(), 1, "{open:?}");
+    // Ends with, not equals: the engine printed `pwd`, which resolves the
+    // symlinks the scratch directory of this machine is reached through.
+    assert!(kept.ends_with(&open[0].path), "{} / {}", open[0].path, kept);
+    assert_eq!(open[0].run, "corsa-3");
+    assert_eq!(open[0].step, "lascia");
     assert!(Path::new(&kept).join("left-behind").exists(), "the work was lost: {kept}");
     assert!(what_git_has_cut(&repo).contains(&kept), "git no longer holds the tree");
     let words = overheard.words();
@@ -231,7 +251,7 @@ fn a_step_that_wants_a_tree_and_names_a_workdir_is_refused() {
     let dir = TempDir::new();
     let repo = a_repository_in(dir.path());
     let bin = an_engine_that_prints_where_it_stands(dir.path());
-    let action = actions::ExternalEngineAction::new();
+    let action = actions::ExternalEngineAction::new().recording_to(Some(a_store_in(dir.path())));
 
     let shared = shared_for(&repo, "corsa-2", "confuso");
     let refused = action
@@ -254,4 +274,26 @@ fn a_step_that_wants_a_tree_and_names_a_workdir_is_refused() {
         .execute(&json!({"bin": bin, "tree": "own", "timeout_secs": 30}), &nowhere)
         .expect_err("no run, no step, no project");
     assert_eq!(nameless.class, "invalid_input", "{nameless:?}");
+}
+
+/// **FAULT 97.** No store, no tree: a tree cut with nowhere to write it down is
+/// disk that outlives every process that could have named it.
+#[test]
+fn a_step_with_nowhere_to_write_the_tree_down_is_refused_a_tree() {
+    let dir = TempDir::new();
+    let repo = a_repository_in(dir.path());
+    let bin = an_engine_that_prints_where_it_stands(dir.path());
+    let action = actions::ExternalEngineAction::new();
+
+    let shared = shared_for(&repo, "corsa-4", "senza-deposito");
+    let refused = action
+        .execute(&json!({"bin": bin, "tree": "own", "timeout_secs": 30}), &shared)
+        .expect_err("a tree nobody would write down");
+
+    assert_eq!(refused.class, "tree_not_cut", "{refused:?}");
+    assert!(
+        !what_git_has_cut(&repo).contains("corsa-4"),
+        "a tree was cut anyway:\n{}",
+        what_git_has_cut(&repo)
+    );
 }
