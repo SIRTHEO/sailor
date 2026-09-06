@@ -545,6 +545,7 @@
   "cli.worktree.swept": "{closed} chiusi, {kept} tenuti perché qualcuno li guardi",
   "cli.worktree.that_is_the_main_tree": "quello è il repository stesso, non un albero aperto da lui",
   "cli.worktree.that_is_where_you_are": "quello è l'albero in cui sta girando questo comando",
+  "engine.after_refusal": "La tua ultima risposta a questa stessa domanda è stata rifiutata — {why}. Rispondi di nuovo, nella forma chiesta qui sopra, e manda solo quella.",
   "engine.tree_kept_over_a_commit": "L'albero {tree} resta: sta sul commit {commit}, e nessun ramo di questo repository ha quel commit.",
   "engine.tree_kept_over_work": "L'albero {tree} resta, perché git non ha voluto toglierlo: {said}",
   "flow.for_each.child_died": "il filo che eseguiva l'elemento {index} è morto prima di poter dire com'è finito",
