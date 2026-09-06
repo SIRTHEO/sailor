@@ -1,15 +1,14 @@
 [package]
 name = "sailor"
 version = "0.1.0"
+description = "The command line of Sailor: flows, engines, profiles, quota and the ledger, from one binary."
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
 
-# `release` è diventato solo libreria (bersagli, timbro, prontezza del
-# servizio): questo crate assorbe i gesti — I/O e processi — che prima stavano
-# nel suo `main.rs`, così un rilascio si invoca da `sailor release`, non da un
-# per sapere se il pid di una ricevuta è ancora vivo. `profiles`, `models` e
-# `ui` sono arrivati il 27/08/2026 con lo stesso schema: la libreria decide,
-# `sailor` fa i gesti.
+# The library crates decide; this one makes the gestures, I/O and processes.
 [dependencies]
 # The sentences this command line says, in the two languages, so the shipped
 # product speaks English and whoever wants Italian sets one variable. Not a
@@ -26,19 +25,17 @@ faults = { path = "../faults" }
 flow = { path = "../flow" }
 ledger = { path = "../ledger" }
 inventory = { path = "../inventory" }
-# Il rilevamento di cosa c'è sulla macchina — CLI, server MCP, strumenti — che un
-# passo di flusso può chiedere con l'azione `detect_tools`, e che qui risolve gli
-# strumenti nominati dai passi. `trigger` porta il nodo di ingresso: da dove
-# arriva il segnale che fa partire un flusso.
+# What this machine has (command lines, MCP servers, tools), which a step asks
+# for with `detect_tools` and which resolves the tools steps name. `trigger`
+# brings the entry node: where the signal that starts a flow comes from.
 toolbox = { path = "../toolbox" }
 trigger = { path = "../trigger" }
-# Quali azioni sa eseguire Sailor: una lista sola, condivisa con la finestra.
-# Averla in due copie ha fatto girare lo stesso flusso in due modi diversi.
+# Which actions Sailor can run: one list, shared with the window. Two copies
+# of it once ran the same flow in two different ways.
 registry = { path = "../registry" }
-# Il tracciamento dei terminali: `sailor session` è solo i gesti — leggere
-# standard input, chiedere il proprio tty, stampare — mentre l'ancora, il
-# deposito delle sessioni e il censimento stanno lì, dove si provano senza
-# passare dalla riga di comando.
+# Terminal tracking: `sailor session` is only the gestures (read standard
+# input, ask for its own tty, print), while the anchor, the session store and
+# the census live there, where they are tested without the command line.
 sessions = { path = "../sessions" }
 # The pseudo-terminal engine. `sailor terminal` owns the descriptor a session
 # runs on, which is the only way to type into one without knowing which
