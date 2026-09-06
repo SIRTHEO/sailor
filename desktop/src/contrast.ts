@@ -22,13 +22,13 @@ export interface Rgb {
   r: number;
   g: number;
   b: number;
-  /** 0 = del tutto trasparente, 1 = pieno. */
+  /** 0 = wholly transparent, 1 = full. */
   a: number;
 }
 
 const TRANSPARENT: Rgb = { r: 0, g: 0, b: 0, a: 0 };
 
-/** Il fondo ultimo sotto la pagina: quello che il browser dipinge da sé. */
+/** The last ground under the page: the one the browser paints by itself. */
 export const CANVAS_WHITE: Rgb = { r: 255, g: 255, b: 255, a: 1 };
 
 function channel(text: string, scale: number): number {
@@ -38,9 +38,9 @@ function channel(text: string, scale: number): number {
 }
 
 /**
- * Le forme che questo foglio usa davvero: `transparent`, esadecimale a 3, 4, 6
- * o 8 cifre, e `rgb()`/`rgba()` con le virgole o con gli spazi e la barra.
- * Tutto il resto torna `null` — meglio non sapere che indovinare.
+ * The forms this sheet really uses: `transparent`, hex at 3, 4, 6 or 8 digits,
+ * and `rgb()`/`rgba()` with commas or with spaces and the slash. Everything
+ * else comes back `null` — better not to know than to guess.
  */
 export function parseColor(text: string): Rgb | null {
   const value = text.trim();
@@ -80,7 +80,7 @@ export function parseColor(text: string): Rgb | null {
   return null;
 }
 
-/** Sovrappone `front` a `back`, che si assume opaco. */
+/** Lays `front` over `back`, which is assumed opaque. */
 export function composite(front: Rgb, back: Rgb): Rgb {
   const a = Math.min(1, Math.max(0, front.a));
   return {
@@ -101,14 +101,14 @@ function luminance(color: Rgb): number {
   );
 }
 
-/** Il rapporto di contrasto WCAG fra due colori opachi. */
+/** The WCAG contrast ratio between two opaque colours. */
 export function contrastRatio(first: Rgb, second: Rgb): number {
   const a = luminance(first);
   const b = luminance(second);
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 }
 
-// ── il foglio di stile, letto come regole ──────────────────────────────
+// ── the stylesheet, read as rules ──────────────────────────────────────
 
 export interface CssRule {
   selector: string;
@@ -120,9 +120,9 @@ export interface CssRule {
 export interface Stylesheet {
   rules: CssRule[];
   /**
-   * Quante dichiarazioni di colore stanno dentro una regola-@ saltata. Deve
-   * restare zero: se qualcuno ci mette un colore, questo motore non lo vede e
-   * il controllo diventerebbe cieco in silenzio.
+   * How many colour declarations sit inside a skipped at-rule. It must stay
+   * zero: if somebody puts a colour there, this engine does not see it and the
+   * check would go blind in silence.
    */
   colorsInsideAtRules: number;
   /**
@@ -174,15 +174,15 @@ export function inOtherScheme(sheet: Stylesheet): Stylesheet {
   };
 }
 
-/** Toglie i commenti senza toccare il resto. */
+/** Strips the comments without touching the rest. */
 function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "");
 }
 
-/** Uno stato che questo motore non sa disegnare: la regola si salta. */
+/** A state this engine cannot draw: the rule is skipped. */
 const STATEFUL = /::|:hover|:focus|:active|:disabled|:checked|:target|:visited|:enabled/i;
 
-/** Vero se questa dichiarazione porta un colore, comunque si chiami. */
+/** True if this declaration carries a colour, whatever it is named. */
 function carriesColor(property: string, value: string): boolean {
   if (parseColor(value.trim()) !== null) return true;
   return /(^|-)(color|background|fill|stroke)$/.test(property);
@@ -195,7 +195,7 @@ function specificityOf(selector: string): number {
   return ids * 10000 + classes * 100 + types;
 }
 
-/** Spezza su un separatore solo fuori da parentesi, virgolette e parentesi quadre. */
+/** Splits on a separator only outside parentheses, quotes and brackets. */
 function splitTop(text: string, separator: string): string[] {
   const pieces: string[] = [];
   let depth = 0;
@@ -312,9 +312,9 @@ export function parseStylesheet(source: string): Stylesheet {
   return { rules, colorsInsideAtRules, otherRoot };
 }
 
-// ── la cascata, l'eredità e `var()` ────────────────────────────────────
+// ── the cascade, inheritance and `var()` ───────────────────────────────
 
-/** Risolve `var(--nome, ripiego)` fino in fondo, coi ripieghi annidati. */
+/** Resolves `var(--nome, ripiego)` all the way down, nested fallbacks and all. */
 export function resolveVars(value: string, vars: Map<string, string>, depth = 0): string {
   if (depth > 12 || !value.includes("var(")) return value;
   const start = value.indexOf("var(");
@@ -338,22 +338,22 @@ export function resolveVars(value: string, vars: Map<string, string>, depth = 0)
 export interface ElementStyle {
   vars: Map<string, string>;
   /**
-   * Le dichiarazioni che vincono su questo elemento, coi `var()` già sciolti.
-   * Non è solo colore: è da qui che `layout.test.tsx` legge i corpi e le
-   * interlinee dell'intestazione di una corsia, invece di ricopiarli.
+   * The declarations that win on this element, with `var()` already resolved.
+   * Not colour alone: it is from here that `layout.test.tsx` reads the sizes and
+   * line heights of a lane's heading, instead of copying them out.
    */
   declarations: Map<string, string>;
   color: Rgb;
-  /** Il fondo effettivo sotto il testo di questo elemento, già opaco. */
+  /** The effective ground under this element's text, already opaque. */
   backdrop: Rgb;
-  /** L'opacità accumulata dalla radice fin qui. */
+  /** The opacity accumulated from the root down to here. */
   opacity: number;
   hidden: boolean;
 }
 
 /**
- * Le proprietà che contano qui. `color` si eredita, gli altri no — ed è
- * l'unica eredità che serve, perché lo sfondo si ricostruisce risalendo.
+ * The properties that count here. `color` is inherited, the others are not — the
+ * only inheritance needed, because the ground is rebuilt by climbing back up.
  */
 function declarationsFor(element: Element, sheet: Stylesheet): Map<string, string> {
   const matched: Array<{ rule: CssRule; property: string; value: string }> = [];
@@ -376,8 +376,8 @@ function declarationsFor(element: Element, sheet: Stylesheet): Map<string, strin
 
   const declarations = new Map<string, string>();
   for (const { property, value } of matched) declarations.set(property, value);
-  // Lo stile in linea vince su tutto: è così che arrivano il colore di una
-  // corsia e la tinta del segno di uno strumento.
+  // Inline style wins over everything: this is how a lane's colour and the
+  // tint of a tool's mark arrive.
   const inline = element.getAttribute("style");
   if (inline !== null) {
     for (const [property, value] of parseDeclarations(inline)) declarations.set(property, value);
@@ -394,10 +394,10 @@ function backgroundOf(declarations: Map<string, string>, vars: Map<string, strin
 }
 
 /**
- * Cammina il DOM disegnato e calcola, per ogni elemento, i colori che il
- * browser gli darebbe. Il fondo si compone scendendo: ogni elemento posa il
- * proprio sfondo — con la sua alfa moltiplicata per l'opacità accumulata —
- * sopra quello di chi lo contiene.
+ * Walks the drawn DOM and works out, for each element, the colours the browser
+ * would give it. The ground composes on the way down: each element lays its own
+ * background — its alpha multiplied by the accumulated opacity — over the ground
+ * of whatever contains it.
  */
 export function styleTree(root: Element, sheet: Stylesheet): Map<Element, ElementStyle> {
   const styles = new Map<Element, ElementStyle>();
@@ -452,9 +452,9 @@ export function styleTree(root: Element, sheet: Stylesheet): Map<Element, Elemen
 }
 
 export interface ContrastPair {
-  /** Le classi dell'elemento: è il nome con cui chi ripara lo cerca nel foglio. */
+  /** The element's classes: the name a repairer looks it up by in the sheet. */
   where: string;
-  /** Il testo che ci sta dentro, tagliato: serve a ritrovarlo sullo schermo. */
+  /** The text inside it, cut short: it serves to find it again on screen. */
   text: string;
   ratio: number;
   foreground: Rgb;
@@ -462,7 +462,7 @@ export interface ContrastPair {
   opacity: number;
 }
 
-/** Il testo scritto direttamente dentro un elemento, senza quello dei figli. */
+/** The text written directly inside an element, without the children's. */
 function ownText(element: Element): string {
   let text = "";
   for (const node of Array.from(element.childNodes)) {
@@ -472,9 +472,9 @@ function ownText(element: Element): string {
 }
 
 /**
- * Ogni accoppiata testo/sfondo del DOM passato, col suo rapporto. Chi chiama
- * decide la soglia: il divieto 6 la mette a 4,5:1 senza eccezioni per il corpo
- * grande, perché su questa tela non c'è testo che si possa perdere.
+ * Every text/ground pair of the DOM handed in, with its ratio. The caller sets
+ * the threshold: prohibition 6 puts it at 4,5:1 with no exception for large
+ * type, because on this canvas there is no text that may be allowed to get lost.
  */
 export function contrastPairs(root: Element, sheet: Stylesheet): ContrastPair[] {
   const styles = styleTree(root, sheet);
@@ -501,10 +501,10 @@ export function contrastPairs(root: Element, sheet: Stylesheet): ContrastPair[] 
   return pairs;
 }
 
-/** La soglia del divieto 6, in un posto solo. */
+/** The threshold of prohibition 6, in one place only. */
 export const MINIMUM_RATIO = 4.5;
 
-/** Le accoppiate che il divieto 6 non ammette, pronte da stampare. */
+/** The pairs prohibition 6 does not allow, ready to print. */
 export function belowThreshold(pairs: ContrastPair[], minimum = MINIMUM_RATIO): string[] {
   return pairs
     .filter((pair) => pair.ratio < minimum)

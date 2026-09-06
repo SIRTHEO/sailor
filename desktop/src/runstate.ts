@@ -3,24 +3,23 @@ import type { StepRun, StepState } from "./flow";
 import { nodeId } from "./layout";
 
 /**
- * Da fatti a stato per nodo.
+ * From facts to per-node state.
  *
- * **PERCHÉ ESISTE.** Fino al commit che porta questo file la tela diceva «in
- * attesa» su ogni nodo di ogni flusso vero, anche mentre il motore lavorava:
- * il disegno riceveva una mappa vuota, e `executions` — i fatti veri, che
- * arrivano già per evento — non era dipendenza di niente. È la violazione più
- * netta possibile del vincolo permanente «un'interfaccia che nasconde cosa
- * succede è il contrario del prodotto»: non nascondeva, raccontava il falso.
+ * **WHY IT EXISTS.** The canvas said «waiting» on every node of every real flow,
+ * even while the engine worked: the drawing got an empty map, and `executions` —
+ * the real facts, which already arrive by event — was a dependency of nothing. The
+ * sharpest possible breach of the permanent constraint «an interface that hides
+ * what is happening is the opposite of the product»: it did not hide, it lied.
  *
- * **STA FUORI DA REACT** per la stessa ragione di `linesFromEvents`: è la sola
- * parte con una risposta giusta e una sbagliata, e una prova può darle degli
- * eventi e guardare cosa produce senza montare niente.
+ * **IT SITS OUTSIDE REACT** for the same reason as `linesFromEvents`: it is the
+ * only part with a right answer and a wrong one, and a test can hand it events
+ * and watch what it produces without mounting anything.
  */
 
-/// Gli esiti che il deposito scrive, tradotti negli stati che un nodo sa
-/// disegnare. Ciò che non è qui dentro resta `undefined` e il nodo torna a
-/// «in attesa»: uno stato indovinato su un esito che non conosciamo sarebbe
-/// esattamente la bugia che questo file esiste per togliere.
+/// The outcomes the store writes, translated into the states a node knows how
+/// to draw. What is not in here stays `undefined` and the node falls back to
+/// «waiting»: a state guessed on an outcome we do not know would be exactly the
+/// lie this file exists to remove.
 const STATE_OF_OUTCOME: Record<string, StepState> = {
   Went: "went",
   Broke: "broke",
@@ -34,12 +33,11 @@ const STATE_OF_OUTCOME: Record<string, StepState> = {
 };
 
 /**
- * Lo stato di ogni passo di **una** corsa, letto dai suoi eventi.
+ * The state of every step of **one** run, read from its events.
  *
- * Un passo che è partito e non ha ancora chiuso sta correndo; uno che ha chiuso
- * porta l'esito della chiusura. Gli eventi si leggono in ordine di `seq`, non
- * di arrivo: un tentativo che ritorna tardi non deve riscrivere lo stato di
- * quello che l'ha superato.
+ * A step that started and has not closed yet is running; one that closed carries
+ * the outcome of the close. Events are read in `seq` order, not arrival order: an
+ * attempt returning late must not rewrite the state of the one that overtook it.
  */
 export function stepStatesOfRun(events: RunEvent[]): Map<string, StepRun> {
   const states = new Map<string, StepRun>();
@@ -72,11 +70,10 @@ export function stepStatesOfRun(events: RunEvent[]): Map<string, StepRun> {
 
     if (event.kind === "step_closed") {
       const outcome = typeof payload?.outcome === "string" ? payload.outcome : "";
-      // LA SPECIE VINCE SULL'ESITO quando dice che il passo aspetta una
-      // persona: `hand_to_human` è un rotto che nessuno ritenterà, e il tipo
-      // `StepState` li tiene distinti apposta — mostrarlo come un guasto
-      // qualunque manderebbe chi guarda a cercare un difetto invece di
-      // rispondere.
+      // THE SPECIES BEATS THE OUTCOME when it says the step is waiting on a
+      // person: `hand_to_human` is a break nobody will retry, and the type
+      // `StepState` keeps the two apart on purpose — showing it as any other
+      // fault would send the watcher hunting a defect instead of answering.
       const species = typeof payload?.species === "string" ? payload.species : "";
       const previous = states.get(stepId);
       const began = startedAt.get(stepId);
@@ -101,17 +98,16 @@ export function stepStatesOfRun(events: RunEvent[]): Map<string, StepRun> {
 }
 
 /**
- * Lo stato di ogni nodo della tela, da tutte le corse conosciute.
+ * The state of every node on the canvas, from all the runs known.
  *
- * **LA CHIAVE È IL NOME QUALIFICATO `flusso::passo`, non l'identificativo nudo.**
- * Sulla tela unificata i flussi stanno insieme, e fra quelli veri su questa
- * macchina tre identificativi sono già ripetuti — `trigger`, `verifica`,
- * `verdetto`. Con la chiave nuda lo stato di un flusso colorerebbe il nodo
- * omonimo di un altro, che è peggio del grigio di prima: un errore che si
- * legge come una misura.
+ * **THE KEY IS THE QUALIFIED NAME `flusso::passo`, not the bare id.** On the one
+ * canvas the flows sit together, and among the real ones on this machine three
+ * ids are already repeated — `trigger`, `verifica`, `verdetto`. With the bare key
+ * one flow's state would colour another's node of the same name, worse than the
+ * grey it replaced: an error that reads as a measurement.
  *
- * Quando due corse dello stesso flusso sono note vince la più recente: è quella
- * che chi guarda ha appena lanciato.
+ * When two runs of the same flow are known the most recent wins: it is the one
+ * the watcher has just launched.
  */
 export function stepStatesOfCanvas(runs: Iterable<RunSnapshot>): Map<string, StepRun> {
   const newest = new Map<string, RunSnapshot>();

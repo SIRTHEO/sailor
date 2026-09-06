@@ -3,15 +3,15 @@ import type { RunEvent } from "./engine";
 import { linesFromEvents, panesFromEvents, stopRequested } from "./RunConsole";
 
 /**
- * **COSA È ENTRATO IN UN PASSO ARRIVA FINO ALLA VISTA.**
+ * **WHAT WENT INTO A STEP REACHES THE VIEW.**
  *
- * `step_started` portava `input` da sempre, e la console lo leggeva soltanto
- * per indovinare che azione fosse, poi lo buttava. Chi guardava una corsa
- * vedeva cosa ogni passo aveva **detto** e mai cosa gli era stato **dato**:
- * metà del vincolo «chiarezza per chi guarda», e la metà che spiega l'altra.
+ * `step_started` has always carried `input`, and the console read it only to
+ * guess which action it was, then threw it away. Whoever watched a run saw what
+ * every step had **said** and never what it had been **given**: half of the
+ * «clarity for whoever looks» constraint, and the half that explains the other.
  *
- * Questa prova sta sul calcolo e non sul disegno perché è lì che il dato si
- * perdeva; il riquadro che lo mostra è tre righe di JSX sopra questo.
+ * This test sits on the computation and not on the drawing because that is
+ * where the datum was lost; the box that shows it is three lines of JSX above.
  */
 
 function started(seq: number, stepId: string, input: unknown): RunEvent {
@@ -32,8 +32,8 @@ describe("i riquadri di una corsa", () => {
   });
 
   test("un passo senza input non porta un oggetto vuoto, che sembrerebbe un input", () => {
-    // `null` è «non è entrato niente di registrato»; `{}` sarebbe «è entrato un
-    // record vuoto», e sono due fatti diversi per chi legge una corsa.
+    // `null` is «nothing recorded went in»; `{}` would be «an empty record went
+    // in», and those are two different facts to whoever reads a run.
     const panes = panesFromEvents([started(1, "verifica", undefined), closed(2, "verifica", "Went")]);
     expect(panes[0]?.input).toBe(null);
   });

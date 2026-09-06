@@ -19,25 +19,24 @@ import { StepRan } from "./StepRan";
  * `crates/flow/src/executor.rs`, four steps per wave.
  */
 
-/** Come si guarda una corsa. */
+/** How a run is looked at. */
 export type ConsoleMode = "inline" | "split";
 
-/** Una riga della vista, con la sua provenienza. */
+/** One line of the view, with where it came from. */
 export interface ConsoleLine {
   key: string;
   at: number;
   stepId: string | null;
-  /** Da dove viene: il guscio, l'uscita del passo, i suoi errori, il suo detto. */
+  /** Where it comes from: the shell, the step's output, its errors, its saying. */
   stream: "system" | "stdout" | "stderr" | "said";
   text: string;
 }
 
 /**
- * Il tetto di righe tenute in vista. Un agente che parla per mezz'ora può
- * consegnare decine di migliaia di righe in un colpo solo: disegnarle tutte
- * blocca la finestra proprio mentre chi guarda vuole leggere il finale.
- * Si tagliano le **più vecchie**, e il taglio si dichiara invece di far
- * sparire testo in silenzio.
+ * The cap on the lines kept in view. An agent that talks for half an hour can
+ * deliver tens of thousands of lines in one go: drawing them all freezes the
+ * window exactly while the reader wants to read the ending. The **oldest** are
+ * cut, and the cut is declared instead of making text vanish in silence.
  */
 const MAX_LINES = 4000;
 
@@ -60,11 +59,11 @@ function pushText(
 }
 
 /**
- * Da fatti a righe.
+ * From facts to lines.
  *
- * Sta fuori dal componente perché è la sola parte con una risposta giusta e
- * una sbagliata: una prova può darle degli eventi e guardare cosa produce,
- * senza montare React.
+ * It lives outside the component because it is the only part with a right and a
+ * wrong answer: a test can hand it events and watch what it produces, without
+ * mounting React.
  */
 export function linesFromEvents(events: RunEvent[]): ConsoleLine[] {
   const lines: ConsoleLine[] = [];
@@ -94,19 +93,19 @@ export function linesFromEvents(events: RunEvent[]): ConsoleLine[] {
             failure ? ` — ${whyFailed(failure)}` : ""
           }`,
         });
-        // L'uscita di un motore esterno vive dentro `output`; una verifica di
-        // shell non conserva testo, e per quella non c'è niente da mostrare
-        // oltre all'esito — cosa che il riquadro dichiara.
+        // An external engine's output lives inside `output`; a shell check
+        // keeps no text, and for that one there is nothing to show beyond the
+        // outcome — which the pane declares.
         const output = payload?.output as Record<string, unknown> | null | undefined;
         if (output && typeof output === "object") {
           pushText(lines, event.seq, event.at, event.step_id, "stdout", output.stdout);
           pushText(lines, event.seq, event.at, event.step_id, "stderr", output.stderr);
-          // UN PASSO CHE DICHIARA LA FORMA DELLA RISPOSTA NON DÀ PIÙ `stdout`:
-          // la sua uscita è `{status, answer}`, con dentro solo i campi che la
-          // forma dichiara. Leggere il solo `stdout` lascerebbe vuoto proprio il
-          // riquadro dei passi che rispondono in forma — cioè quelli su cui si
-          // conta di più. Un innesco arriva qui come un oggetto anche lui
-          // (`{text, who, where, source, kind}`), e si legge nello stesso modo.
+          // **A STEP THAT DECLARES THE SHAPE OF ITS ANSWER GIVES NO MORE
+          // `stdout`**: its output is `{status, answer}`, holding inside it only
+          // the fields the shape declares. Reading `stdout` alone would leave
+          // empty the pane of the steps that answer in shape — the very ones
+          // most counted on. A trigger arrives here as an object too
+          // (`{text, who, where, source, kind}`), and is read the same way.
           if (output.answer !== undefined && output.answer !== null) {
             pushText(
               lines,
@@ -120,10 +119,10 @@ export function linesFromEvents(events: RunEvent[]): ConsoleLine[] {
             );
           }
         }
-        // UN PASSO ROTTO NON HA `output`: il testo utile sta tutto in `said`, e
-        // il motivo in `failure_class`. È il caso in cui chi guarda ha più
-        // bisogno di leggere, e prima di questa riga era l'unico in cui la
-        // vista non mostrava niente.
+        // **A BROKEN STEP HAS NO `output`**: the useful text is all in `said`,
+        // and the reason in `failure_class`. It is the case where the reader
+        // most needs to read, and before this line it was the only one where
+        // the view showed nothing.
         pushText(lines, event.seq, event.at, event.step_id, "said", payload?.said);
         break;
       }
@@ -180,7 +179,7 @@ export function linesFromEvents(events: RunEvent[]): ConsoleLine[] {
   return kept;
 }
 
-/** Lo stato di un passo per la vista affiancata. */
+/** A step's state, for the side-by-side view. */
 interface StepPane {
   stepId: string;
   startedAt: number;
@@ -192,17 +191,17 @@ interface StepPane {
   /** The program and the arguments the step started, when it started one. */
   ran: Ran | null;
   lines: ConsoleLine[];
-  /** Vero se il passo ha prodotto del testo suo, oltre alle righe di sistema. */
+  /** True if the step produced text of its own, beyond the system lines. */
   spoke: boolean;
-  /** L'azione del passo, per dire se conserva testo o solo un esito. */
+  /** The step's action, to say whether it keeps text or an outcome alone. */
   action: string | null;
   /**
-   * Cosa è entrato nel passo.
+   * What entered the step.
    *
-   * Arrivava già dentro `step_started` e veniva letto **solo** per indovinare
-   * l'azione, poi buttato. Chi guardava una corsa vedeva cosa ogni passo aveva
-   * detto e mai cosa gli era stato dato: metà del vincolo «chiarezza per chi
-   * guarda» mancava, ed era la metà che spiega l'altra.
+   * It already arrived inside `step_started` and was read **only** to guess the
+   * action, then thrown away. Whoever watched a run saw what each step had said
+   * and never what it had been given: half of the «clarity for the reader»
+   * constraint was missing, and it was the half that explains the other.
    */
   input: unknown;
   /** What came out, kept whole: the lines made from it are not the thing. */
@@ -227,7 +226,7 @@ export function panesFromEvents(events: RunEvent[]): StepPane[] {
         ran: null,
         lines: [],
         spoke: false,
-        // Il record del passo porta l'input, da cui si legge cosa esegue.
+        // The step record carries the input, from which what it runs is read.
         action: readAction(payload),
         input: payload?.input ?? null,
         output: null,
@@ -278,17 +277,17 @@ export function readRan(value: unknown): Ran | null {
 }
 
 /**
- * Cosa esegue un passo, letto dal suo record. Un `command` è una verifica di
- * shell — che non conserva testo — un `bin` è un motore esterno, che lo
- * conserva. Serve a dire a chi guarda perché un riquadro resta senza righe.
+ * What a step runs, read from its record. A `command` is a shell check — which
+ * keeps no text — a `bin` is an external engine, which keeps it. It is there to
+ * tell the reader why a pane stays without lines.
  */
 function readAction(payload: Record<string, unknown> | null): string | null {
   const input = payload?.input;
   if (!input || typeof input !== "object") return null;
   const record = input as Record<string, unknown>;
-  // `source` è il campo che solo un innesco dichiara; `tool` ha preso il posto
-  // di `bin` quando gli strumenti sono diventati identificativi invece di
-  // percorsi di binari, e `bin` resta letto per i flussi scritti prima.
+  // `source` is the field that a trigger alone declares; `tool` took `bin`'s
+  // place when tools became identifiers instead of binary paths, and `bin` is
+  // still read for the flows written before that.
   if (typeof record.source === "string") return "trigger";
   if (typeof record.tool === "string" || typeof record.bin === "string") return "external_engine";
   if (typeof record.command === "string") return "shell_check";
@@ -329,18 +328,18 @@ interface RunConsoleProps {
   run: RunSnapshot;
   runs: RunSnapshot[];
   mode: ConsoleMode;
-  /** Il secondo di adesso, per far salire i contatori dei passi aperti. */
+  /** The second it is now, so the counters of the open steps climb. */
   now: number;
   /**
-   * Perché la vista non è in ascolto, quando non lo è. Una vista che si
-   * aggiorna interrogando invece che in ascolto resta vera, ma con un ritardo:
-   * chi guarda deve saperlo, perché è la differenza fra «non è ancora successo»
-   * e «non l'ho ancora chiesto».
+   * Why the view is not listening, when it is not. A view that refreshes by
+   * asking instead of listening stays true, but with a delay: the reader must
+   * know, because it is the difference between «it has not happened yet» and
+   * «I have not asked yet».
    */
   listenFailure: string | null;
   /**
-   * Quanto è costata questa corsa, quando il deposito lo sa. `null` mentre non
-   * lo sa ancora — e in quel caso non si mostra niente, invece di mostrare zero.
+   * What this run cost, when the ledger knows. `null` while it does not know
+   * yet — and in that case nothing is shown, instead of showing zero.
    */
   usage: RunUsage | null;
   onMode: (mode: ConsoleMode) => void;
@@ -366,17 +365,16 @@ function tokens(count: number): string {
 }
 
 /**
- * La riga della spesa.
+ * The line of the spend.
  *
- * **LA CACHE SCRITTA STA IN CHIARO, SEPARATA DA QUELLA LETTA.** Sono l'opposto
- * l'una dell'altra: leggere costa una frazione dell'ingresso, scrivere costa
- * più dell'ingresso. Su una chiamata misurata il 30/08/2026 la sola scrittura
- * era il 96% della spesa, con due token d'ingresso: metterle nella stessa
- * casella nasconderebbe l'unica voce che conta davvero.
+ * **WRITTEN CACHE IS SHOWN PLAINLY, APART FROM READ CACHE.** They are opposites:
+ * reading costs a fraction of the input, writing costs more than the input. On
+ * one measured call the write alone was 96% of the spend, with two input
+ * tokens: putting them in the same box would hide the one item that counts.
  *
- * **E UN TOTALE PARZIALE LO DICE.** Se qualche chiamata non ha dichiarato i
- * propri conteggi, o non aveva un prezzo, la cifra qui sotto è più bassa del
- * vero: tacerlo sarebbe presentare una somma che nasconde ciò che le manca.
+ * **AND A PARTIAL TOTAL SAYS SO.** If some call did not declare its own counts,
+ * or had no price, the figure below is lower than the truth: keeping quiet
+ * would be presenting a sum that hides what it lacks.
  */
 export function costReading(usage: Pick<RunUsage, "tokens" | "total_cost_micros">): string {
   const { calls, calls_without_cost } = usage.tokens;
@@ -438,9 +436,9 @@ export function RunConsole({
   const panes = useMemo(() => panesFromEvents(run.events), [run.events]);
   const tail = useRef<HTMLDivElement | null>(null);
 
-  // La coda resta in vista mentre la corsa avanza. Non si scorre se chi guarda
-  // si è spostato a leggere più in su: strappargli la vista di sotto è il modo
-  // di rendere illeggibile proprio la riga che stava cercando.
+  // The tail stays in view as the run advances. It does not scroll if the
+  // reader has moved up to read: yanking the view from under them is the way to
+  // make unreadable the very line they were looking for.
   useEffect(() => {
     const box = tail.current;
     if (!box) return;
@@ -526,8 +524,8 @@ export function RunConsole({
           {lines.map((line) => (
             <div className="console__line" key={line.key} data-stream={line.stream}>
               <span className="console__time">{clock(line.at, run.started_at)}</span>
-              {/* Chi ha prodotto la riga: nella vista in linea è l'unica cosa
-                  che distingue due passi mescolati. */}
+              {/* Who produced the line: in the inline view it is the one thing
+                  that tells two mixed steps apart. */}
               <span className="console__who">{line.stepId ?? "run"}</span>
               <span className="console__text">{line.text}</span>
             </div>
@@ -557,10 +555,10 @@ export function RunConsole({
                 </span>
               </header>
               <div className="pane__body">
-                {/* COSA È ENTRATO, prima di cosa è uscito: è l'ordine in cui si
-                    capisce un passo, e finora c'era solo la seconda metà.
-                    Chiuso di suo — un input lungo seppellirebbe il testo del
-                    passo, che resta la cosa che si guarda per prima. */}
+                {/* WHAT CAME IN, before what came out: it is the order in which
+                    a step is understood, and until now there was the second
+                    half alone. Closed by default — a long input would bury the
+                    step's text, which stays the first thing looked at. */}
                 {pane.input !== null && pane.input !== undefined && (
                   <details className="pane__input">
                     <summary className="pane__input-head">what came in</summary>
@@ -571,10 +569,10 @@ export function RunConsole({
                     said: the template is in the flow, the resolved line is the
                     only place a person can see which program really ran. */}
                 {pane.ran && <StepRan ran={pane.ran} />}
-                {/* «Righe» non è «testo del passo»: le righe di sistema —
-                    partito, ha chiuso — ci sono sempre, e contarle come testo
-                    farebbe sparire la nota proprio nei riquadri che ne hanno
-                    bisogno, cioè quelli dove il passo non ha detto niente. */}
+                {/* «Lines» is not «the step's text»: the system lines —
+                    started, closed — are always there, and counting them as
+                    text would make the note vanish in the very panes that need
+                    it, the ones where the step said nothing. */}
                 {/* A running step that has said nothing has said nothing yet:
                     its text arrives as the engine writes it, not at the end. */}
                 {!pane.spoke && pane.endedAt === null && (
@@ -600,13 +598,9 @@ export function RunConsole({
         </div>
       )}
 
-      {/* QUI C'ERA UN AVVISO, E NON C'È PIÙ PERCHÉ È DIVENTATO FALSO. Diceva
-          che due riquadri affiancati mostravano due lavori di cui uno solo
-          avanzava davvero, perché il motore percorreva i passi in fila. Dal
-          30/08/2026 il fronte parte insieme (misurato: due passi da sei secondi
-          in 6,07), quindi due riquadri che avanzano insieme adesso dicono la
-          verità. Un avviso che resta dopo che il difetto è andato via insegna a
-          non leggere gli avvisi. */}
+      {/* No warning that two panes advance at once: the front really does start
+          together — two six-second steps measured at 6.07 — so two panes moving
+          together tell the truth. */}
     </section>
   );
 }

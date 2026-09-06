@@ -1,17 +1,16 @@
-// Il ponte fra la tela e il motore: da qui, e solo da qui, la finestra chiede
-// dati veri.
+// The bridge between the canvas and the engine: from here, and only from here,
+// the window asks for real data.
 //
-// PERCHÉ NON `@tauri-apps/api`. Sarebbe la via normale, ed è quella da
-// riprendere appena si può: il 28/08/2026 `npm install` non è passato perché la
-// cache di npm (`~/.npm`) appartiene a un altro utente e vuole un `sudo chown`
-// che una sessione non può dare. Il guscio espone allora `window.__TAURI__`
-// (`withGlobalTauri` in `tauri.conf.json`), che è la stessa chiamata senza il
-// pacchetto e senza i tipi — dichiarati qui sotto a mano.
+// **WHY NOT `@tauri-apps/api`.** The normal way, to be taken back as soon as it
+// can be: `npm install` did not pass because the npm cache (`~/.npm`) belongs
+// to another user and wants a `sudo chown` a session cannot give. So the shell
+// exposes `window.__TAURI__` (`withGlobalTauri` in `tauri.conf.json`): the same
+// call without the package and without the types, declared by hand below.
 //
-// FUORI DALLA FINESTRA NON C'È MOTORE, e non è un guasto: `npm run dev` da solo
-// serve la tela in un browser, dove `window.__TAURI__` non esiste. Lì si vedono
-// i dati di esempio, e chi guarda deve poterlo capire dalla finestra invece che
-// dal codice.
+// **OUTSIDE THE WINDOW THERE IS NO ENGINE**, and it is not a fault: `npm run
+// dev` alone serves the canvas in a browser, where `window.__TAURI__` does not
+// exist. There the example data shows, and the reader must tell so from the
+// window rather than from the code.
 
 import type { FlowEntry, FlowFile, Origin, RunUsage } from "./flow";
 import { parseTools, publishTools, type Tool } from "./tools";
@@ -28,16 +27,16 @@ export function invoker(): Invoke | null {
   return tauri?.core?.invoke ?? null;
 }
 
-/** Vero quando la tela gira dentro il guscio nativo, falso in un browser. */
+/** True when the canvas runs inside the native shell, false in a browser. */
 export function insideTheWindow(): boolean {
   return invoker() !== null;
 }
 
 /**
- * I flussi dichiarati, letti dal disco dal motore.
+ * The declared flows, read from disk by the engine.
  *
- * Un errore non si inghiotte: chi chiama decide se mostrare l'esempio o il
- * guasto, ma deve sapere quale dei due sta guardando.
+ * An error is not swallowed: the caller decides whether to show the example or
+ * the fault, but must know which of the two it is looking at.
  */
 export async function loadFlows(): Promise<FlowEntry[]> {
   const invoke = invoker();
@@ -46,10 +45,9 @@ export async function loadFlows(): Promise<FlowEntry[]> {
 }
 
 /**
- * Scrive un flusso sul disco, tramite il motore. `save_flow` nasce insieme a
- * questo pannello, in un altro cantiere sullo stesso guscio: finché quel lato
- * non risponde, questa chiamata fallisce con un errore leggibile invece di
- * restare muta.
+ * Writes a flow to disk, through the engine. `save_flow` is born alongside this
+ * panel, in another worksite on the same shell: until that side answers, this
+ * call fails with a readable error instead of staying mute.
  */
 export async function saveFlow(flow: FlowFile): Promise<Origin> {
   const invoke = invoker();
@@ -62,47 +60,47 @@ export async function saveFlow(flow: FlowFile): Promise<Origin> {
 }
 
 /**
- * Gli strumenti che il motore trova su questa macchina: le righe di comando
- * con un'IA dietro, i server MCP, i binari che un passo può invocare.
+ * The tools the engine finds on this machine: the command lines with an AI
+ * behind them, the MCP servers, the binaries a step can invoke.
  *
- * QUALE STRUMENTO ESISTA NON LO SA LA FINESTRA, e non deve saperlo: lo scopre
- * il motore e lo dichiara qui. `discover_tools` nasce in un altro cantiere
- * mentre questo pannello si scrive — finché quel comando non risponde questa
- * chiamata fallisce, e il pannello lo dice invece di restare bianco.
+ * **WHICH TOOL EXISTS IS NOT THE WINDOW'S TO KNOW**, and must not be: the
+ * engine discovers it and declares it here. `discover_tools` is born in another
+ * worksite while this panel is written — until that command answers, this call
+ * fails, and the panel says so instead of staying blank.
  *
- * La risposta si legge con `parseTools`, che scarta una voce senza
- * identificativo invece di fidarsi della forma ricevuta.
+ * The answer is read with `parseTools`, which discards an entry without an
+ * identifier rather than trusting the shape it received.
  */
 export async function discoverTools(): Promise<Tool[]> {
   const invoke = invoker();
   if (!invoke) throw new Error("outside the native shell: no engine to ask for the tools");
   const tools = parseTools(await invoke<unknown>("discover_tools"));
-  // L'esito si deposita nel registro condiviso perché un nodo sulla tela possa
-  // mostrare il segno e lo stato del proprio strumento senza che la scoperta
-  // gli venga passata di mano in mano: sono dati della macchina, non del passo,
-  // e farli scendere lungo la catena vorrebbe dire riscrivere chi la costruisce.
-  // La scoperta resta una sola — questa.
+  // The outcome lands in the shared registry so a node on the canvas can show
+  // its own tool's mark and state without the discovery being handed to it from
+  // hand to hand: it is machine data, not step data, and letting it descend the
+  // chain would mean rewriting whoever builds that chain. There stays one single
+  // discovery — this one.
   publishTools(tools);
   return tools;
 }
 
-/** Cancella un flusso dal disco, tramite il motore. Stessa premessa di `saveFlow`. */
+/** Deletes a flow from disk, through the engine. Same premise as `saveFlow`. */
 export async function deleteFlow(name: string): Promise<void> {
   const invoke = invoker();
   if (!invoke) throw new Error("outside the native shell: no engine to delete from");
   await invoke<void>("delete_flow", { name });
 }
 
-// ── far partire un flusso, e guardarlo correre ───────────────────────────
+// ── starting a flow, and watching it run ─────────────────────────────────
 
 /**
- * Un fatto di una corsa, numerato.
+ * One fact of a run, numbered.
  *
- * IL NUMERO SERVE A NON RACCONTARE DUE VOLTE LA STESSA COSA. Chi apre la vista
- * chiede prima quello che è già successo e poi si mette in ascolto: fra le due
- * chiamate la corsa continua, e un fatto può arrivare per tutte e due le
- * strade. `seq` cresce di uno per corsa, e chi ascolta scarta quello che ha già
- * visto invece di fidarsi dell'ordine di arrivo.
+ * **THE NUMBER IS THERE SO NOTHING IS TOLD TWICE.** Whoever opens the view asks
+ * first for what already happened and then listens: between the two calls the
+ * run goes on, and a fact can arrive by both roads. `seq` grows by one per run,
+ * and a listener drops what it has already seen instead of trusting the order
+ * of arrival.
  */
 export interface RunEvent {
   run_id: string;
@@ -128,9 +126,9 @@ export interface StartedRun {
 }
 
 /**
- * Dove finisce il testo di chi preme il pulsante — o perché non c'è posto.
- * Lo decide il guscio, non la finestra: una seconda regola scritta qui
- * divergerebbe dalla prima senza che nessuno se ne accorga.
+ * Where the text of whoever presses the button ends up — or why there is no
+ * room for it. The shell decides, not the window: a second rule written here
+ * would drift from the first without anyone noticing.
  */
 export type MandateTarget =
   | { kind: "field"; step: string; field: string }
@@ -143,7 +141,7 @@ export interface FlowTrigger {
   scheduled: boolean;
 }
 
-/** Come si innesca un flusso: da dove parte, e se accetta una consegna. */
+/** How a flow is triggered: where it starts, and whether it takes a mandate. */
 export async function flowTrigger(name: string): Promise<FlowTrigger> {
   const invoke = invoker();
   if (!invoke) throw new Error("outside the native shell: no engine to trigger");
@@ -151,9 +149,9 @@ export async function flowTrigger(name: string): Promise<FlowTrigger> {
 }
 
 /**
- * Fa partire un flusso. Torna appena la corsa è avviata, non quando finisce:
- * un flusso che chiama un agente può durare mezz'ora, e il pulsante non deve
- * restare premuto per tutto quel tempo.
+ * Starts a flow. It returns as soon as the run is started, not when it ends: a
+ * flow that calls an agent can last half an hour, and the button must not stay
+ * pressed all that time.
  */
 export async function startRun(name: string, mandate: string | null): Promise<StartedRun> {
   const invoke = invoker();
@@ -278,11 +276,11 @@ export async function runSnapshot(runId: string): Promise<RunSnapshot> {
 }
 
 /**
- * Le corse che il guscio conosce.
+ * The runs the shell knows.
  *
- * SERVE A CHI RICARICA LA PAGINA mentre un flusso gira: la corsa vive nel
- * guscio e continua, ma la tela ripartirebbe senza saperlo. Senza questo elenco
- * un lavoro in corso diventerebbe invisibile pur essendo vivo.
+ * **IT IS FOR WHOEVER RELOADS THE PAGE** while a flow runs: the run lives in
+ * the shell and goes on, but the canvas would start again unaware of it.
+ * Without this list, work in progress would turn invisible while still alive.
  */
 export async function knownRuns(): Promise<RunSnapshot[]> {
   const invoke = invoker();
@@ -291,20 +289,20 @@ export async function knownRuns(): Promise<RunSnapshot[]> {
 }
 
 /**
- * Una corsa aperta, chiunque l'abbia avviata. Ricalca `OpenRun` di
- * `desktop/src-tauri/src/run.rs`: chi cambia l'uno cambia l'altro.
+ * An open run, whoever started it. Mirrors `OpenRun` in
+ * `desktop/src-tauri/src/run.rs`: whoever changes one changes the other.
  */
 export interface OpenRun {
   run_id: string;
   entity: string;
-  /** «working» lavora, «waiting» è ferma e riparte solo se fai qualcosa. */
+  /** «working» is at work; «waiting» is stopped and resumes only if you act. */
   state: "working" | "waiting";
   open_steps: number;
-  /** **Quali** passi sono aperti, e da quanto. Vuoto per chi aspetta. */
+  /** **Which** steps are open, and for how long. Empty for a waiting run. */
   open_now: Array<{ step_id: string; attempt: number; open_for_secs: number }>;
-  /** Da quando dura questo stato, in secondi dall'epoca. */
+  /** Since when this state has lasted, in seconds from the epoch. */
   since: number;
-  /** Vero se questa finestra è quella che l'ha avviata. */
+  /** True if this window is the one that started it. */
   started_here: boolean;
   /** Steps with an outcome already, counted once each. */
   steps_done: number;
@@ -313,14 +311,13 @@ export interface OpenRun {
 }
 
 /**
- * Tutte le corse aperte sulla macchina, non solo quelle di questa finestra.
+ * Every open run on the machine, not only this window's.
  *
- * **NON È `knownRuns` CON PIÙ RIGHE.** Quella legge la memoria del guscio e
- * conosce solo ciò che questa finestra ha avviato; questa interroga il
- * deposito, e vede anche una corsa partita dal terminale, da un'altra finestra
- * o da una pianificazione notturna. È la differenza fra una schermata che dice
- * «cosa sta succedendo» e una che dice «cosa ho fatto io» credendo siano la
- * stessa cosa.
+ * **THIS IS NOT `knownRuns` WITH MORE ROWS.** That one reads the shell's memory
+ * and knows only what this window started; this one asks the ledger, and also
+ * sees a run started from the terminal, from another window, or from a nightly
+ * schedule. It is the difference between a screen that says «what is happening»
+ * and one that says «what I did» while believing they are the same thing.
  */
 export async function openRuns(): Promise<OpenRun[]> {
   const invoke = invoker();
@@ -328,9 +325,9 @@ export async function openRuns(): Promise<OpenRun[]> {
   return invoke<OpenRun[]>("open_runs");
 }
 
-// ── quello che la plancia sapeva dire, e adesso lo dice la finestra ──────
+// ── what the board could say, and the window now says ────────────────────
 
-/** Un riepilogo di giornata. Ricalca `DaySummary` di `board.rs`. */
+/** A day's summary. Mirrors `DaySummary` in `board.rs`. */
 export interface DaySummary {
   ledger_present: boolean;
   runs: number;
@@ -342,20 +339,20 @@ export interface DaySummary {
   cached_tokens: number;
   cache_write_tokens: number;
   cost_micros: number;
-  /** Chiamate al modello che non hanno riportato token. */
+  /** Model calls that reported no tokens. */
   unmeasured: number;
-  /** Chiamate al modello che non hanno riportato un prezzo. */
+  /** Model calls that reported no price. */
   unpriced: number;
   tokens_by_model: Record<string, number>;
 }
 
 /**
- * Il riepilogo delle corse cominciate dopo un certo istante.
+ * The summary of the runs begun after a given instant.
  *
- * **L'ISTANTE LO CALCOLA QUESTA FUNZIONE**, perché «oggi» è un giorno di
- * calendario locale e il fuso lo sa il sistema che disegna, non il motore. La
- * somma invece la fa il motore, una volta sola: due somme in due linguaggi
- * darebbero due cifre e nessuno saprebbe quale credere.
+ * **THIS FUNCTION COMPUTES THE INSTANT**, because «today» is a local calendar
+ * day and the timezone is known to the system that draws, not to the engine.
+ * The sum is the engine's instead, made once: two sums in two languages would
+ * give two figures and nobody would know which to believe.
  */
 export async function todaySummary(): Promise<DaySummary> {
   const invoke = invoker();
@@ -365,7 +362,7 @@ export async function todaySummary(): Promise<DaySummary> {
   return invoke<DaySummary>("day_summary", { since: Math.floor(midnight.getTime() / 1000) });
 }
 
-/** Una corsa nella storia. Ricalca `ExecutionView` di `crates/ui/src/dashboard.rs`. */
+/** A run in the history. Mirrors `ExecutionView` in `crates/ui/src/dashboard.rs`. */
 export interface Execution {
   run_id: string;
   kind: string;
@@ -393,20 +390,19 @@ export interface Execution {
     calls_without_tokens: number;
     calls_without_cost: number;
   };
-  /** Token visti per modello, gia' sommati dal motore. */
+  /** Tokens seen per model, already summed by the engine. */
   tokens_by_model: Record<string, { input_tokens: number; output_tokens: number; cached_tokens: number; cache_write_tokens: number; cost_micros: number; calls: number }>;
   calls: ModelCall[];
 }
 
 /**
- * Una chiamata al modello dentro una corsa.
+ * A model call inside a run.
  *
- * **`declared_cost_micros` NON E' UN DOPPIONE DI `cost_micros`.** Uno e' il
- * prezzo che Sailor calcola dai token, l'altro e' quello che il motore dice di
- * aver speso. Tenerli affiancati e' l'unico modo di accorgersi che uno dei due
- * ha torto — ed e' esattamente il difetto che nella ricognizione del 31/08/2026
- * e' rimasto invisibile a Langfuse, LangSmith e Phoenix, tutti e tre con numeri
- * sbagliati mostrati con autorita'.
+ * **`declared_cost_micros` IS NOT A DUPLICATE OF `cost_micros`.** One is the
+ * price Sailor computes from the tokens, the other is what the engine says it
+ * spent. Keeping them side by side is the only way to notice that one of the
+ * two is wrong — exactly the defect the survey found invisible to Langfuse,
+ * LangSmith and Phoenix, all three showing wrong numbers with authority.
  */
 export interface ModelCall {
   call_id: string;
@@ -422,52 +418,52 @@ export interface ModelCall {
   total_tokens: number | null;
   turns: number | null;
   cost_micros: number | null;
-  /** Quanto il motore dice di aver speso, quando lo dice. */
+  /** What the engine says it spent, when it says so. */
   declared_cost_micros: number | null;
   error_type: string | null;
   started_at: number;
   ended_at: number | null;
 }
 
-/** Tutte le corse che il deposito ricorda, dalla più recente. */
+/** Every run the ledger remembers, newest first. */
 export async function executionHistory(): Promise<Execution[]> {
   const invoke = invoker();
   if (!invoke) throw new Error("outside the native shell: no history to read");
   return invoke<Execution[]>("execution_history");
 }
 
-/** Una cosa installata su questa macchina. Ricalca `Entry` di `crates/inventory`. */
+/** A thing installed on this machine. Mirrors `Entry` in `crates/inventory`. */
 export interface InstalledEntry {
   kind: "skill" | "agent" | "command" | "rule" | "hook";
   name: string;
   description: string;
-  /** Da dove viene: `casa`, `plugin <nome>`, `repo <nome>`. */
+  /** Where it comes from: `home`, `plugin <name>`, `repo <name>`. */
   origin: string;
   path: string;
   reach: { state: "active" } | { state: "inactive"; reason: string } | { state: "unknown"; reason: string };
-  /** Il modello la può invocare da sé, o solo la persona che digita. */
+  /** The model can invoke it by itself, or only the person who types. */
   by_model: boolean;
 }
 
 export interface Installed {
   entries: InstalledEntry[];
-  /** Dove ha guardato davvero: un elenco che non lo dice non si può smentire. */
+  /** Where it really looked: a list that does not say cannot be contradicted. */
   roots: string[];
   stale_plugin_copies: number;
 }
 
-/** Competenze, agenti, comandi, regole, ganci: cosa c'è su questa macchina. */
+/** Skills, agents, commands, rules, hooks: what is on this machine. */
 export async function machineInventory(): Promise<Installed> {
   const invoke = invoker();
   if (!invoke) throw new Error("outside the native shell: the engine takes the census");
   return invoke<Installed>("machine_inventory");
 }
 
-/** Un comando della riga di comando, come lo dichiara il binario. */
+/** A command of the command line, as the binary declares it. */
 export interface CommandDoc {
-  /** Il nome che si digita: `flow`, `step`, `release`. */
+  /** The name that is typed: `flow`, `step`, `release`. */
   name: string;
-  /** La riga che dice a cosa serve — la stessa di `sailor --help`. */
+  /** The line that says what it is for — the same as `sailor --help`. */
   description: string;
   /** The forms, each already split into what is typed and what it says. */
   usage: FormDoc[];
@@ -485,14 +481,14 @@ export interface FormDoc {
 }
 
 /**
- * I comandi che questo Sailor sa eseguire.
+ * The commands this Sailor can run.
  *
- * **NON C'È NESSUN ELENCO DI COMANDI IN TYPESCRIPT, ED È IL PUNTO.** Scriverli
- * qui sarebbe stata mezz'ora di lavoro e una pagina che diverge dal binario
- * alla prima opzione aggiunta: il guasto 10, che in questo repo si è già
- * ripresentato cinque volte — l'ultima lo stesso giorno, sul vocabolario delle
- * azioni. `crates/sailor` è lib+bin apposta, e `manual` traduce soltanto la
- * forma.
+ * **THERE IS NO LIST OF COMMANDS IN TYPESCRIPT, AND THAT IS THE POINT.**
+ * Writing them here would have been half an hour of work and a page that drifts
+ * from the binary at the first option added: fault 10, which in this repo has
+ * already come back five times — the last the same day, on the vocabulary of
+ * the actions. `crates/sailor` is lib+bin on purpose, and `manual` translates
+ * the shape alone.
  */
 export async function manual(): Promise<CommandDoc[]> {
   const invoke = invoker();
@@ -507,14 +503,13 @@ interface EventGlobal {
 }
 
 /**
- * Si mette in ascolto di quello che succede nelle corse.
+ * Listens to what happens in the runs.
  *
- * **UN ASCOLTO CHE NON SI ATTACCA DEVE DIRLO.** Tornare `null` in silenzio è
- * quello che questa funzione faceva prima, e il 28/08/2026 è costato una vista
- * che mostrava «in corso da 00:30» su una corsa già finita da un pezzo: il
- * canale non c'era, nessuno lo sapeva, e la finestra continuava a disegnare
- * l'ultimo stato che aveva ricevuto. Chi chiama deve poter dire a chi guarda
- * che quello che vede non si aggiorna da solo.
+ * **A LISTENER THAT DOES NOT ATTACH MUST SAY SO.** Returning `null` in silence
+ * is what this function used to do, and it cost a view showing «running for
+ * 00:30» on a run long since finished: the channel was not there, nobody knew,
+ * and the window kept drawing the last state it had received. The caller must
+ * be able to tell the reader that what they see does not refresh by itself.
  */
 export async function listenToRuns(
   handler: (event: RunEvent) => void,
@@ -561,7 +556,7 @@ export async function listenToSailorEvents(
   }
 }
 
-// ── cosa è entrato in un nodo, nel tempo ─────────────────────────────────
+// ── what entered a node, over time ───────────────────────────────────────
 
 /**
  * Which declared check refused a value, where in it, by which rule, and an
@@ -587,12 +582,12 @@ export interface Ran {
 }
 
 /**
- * Una volta in cui un passo è stato attraversato.
+ * One time a step was crossed.
  *
- * Viene dal deposito, non dalla memoria di questa finestra: le corse che questa
- * finestra ha avviato sono una manciata, quelle che il nodo ha visto passare
- * possono essere centinaia — avviate dalla riga di comando, da una
- * pianificazione, o da una finestra chiusa mesi fa.
+ * It comes from the ledger, not from this window's memory: the runs this window
+ * started are a handful, the ones the node has seen pass can be hundreds —
+ * started from the command line, from a schedule, or from a window closed
+ * months ago.
  */
 export interface StepPassage {
   run_id: string;
@@ -604,21 +599,21 @@ export interface StepPassage {
   refusal: Refusal | null;
   /** The program and the arguments the step started, after resolution. */
   ran: Ran | null;
-  /** Da dove è partita la corsa: la provenienza, scritta dal sistema. */
+  /** Where the run started from: the provenance, written by the system. */
   started_by: string;
-  /** Che cosa è entrato in questo nodo, quella volta. */
+  /** What entered this node, that time. */
   input: unknown;
-  /** La consegna con cui è partita la corsa, se ne portava una. */
+  /** The mandate the run started with, if it carried one. */
   mandate: string | null;
-  /** Chi ha mandato il segnale, per come la sorgente lo sapeva. */
+  /** Who sent the signal, as the source knew it. */
   signal_who: string | null;
-  /** Da dove è arrivato: la finestra, un pannello, una sessione. */
+  /** Where it came from: the window, a panel, a session. */
   signal_where: string | null;
   said: string | null;
   output: unknown;
 }
 
-/** Tutto quello che è passato per un nodo, dal più recente. */
+/** Everything that passed through a node, newest first. */
 export async function stepHistory(flow: string, step: string, limit?: number): Promise<StepPassage[]> {
   const invoke = invoker();
   if (!invoke) throw new Error("outside the native shell: no ledger to ask");
@@ -626,14 +621,14 @@ export async function stepHistory(flow: string, step: string, limit?: number): P
 }
 
 /**
- * Quanto ha consumato una corsa: token, cache e denaro.
+ * What a run consumed: tokens, cache and money.
  *
- * I CONTI NON SI RIFANNO QUI. Li fa il motore (`ui::dashboard`), che è lo stesso
- * codice che serve la pagina di `sailor ui`: due somme scritte in due linguaggi
- * darebbero due cifre, e nessuno saprebbe quale credere.
+ * **THE SUMS ARE NOT REDONE HERE.** The engine makes them (`ui::dashboard`),
+ * the same code that serves the `sailor ui` page: two sums written in two
+ * languages would give two figures, and nobody would know which to believe.
  *
- * `null` non è un errore: è una corsa che il deposito non ha ancora proiettato,
- * o un deposito che non esiste perché non è mai stato eseguito niente.
+ * `null` is not an error: it is a run the ledger has not projected yet, or a
+ * ledger that does not exist because nothing was ever run.
  */
 export async function runUsage(runId: string): Promise<RunUsage | null> {
   const invoke = invoker();

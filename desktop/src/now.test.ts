@@ -3,13 +3,13 @@ import { groupRuns, howLong } from "./Now";
 import type { OpenRun } from "./engine";
 
 /**
- * **LE DUE COSE CHE LA PRIMA SCHERMATA PUÒ SBAGLIARE IN SILENZIO.**
+ * **THE TWO THINGS THE FIRST SCREEN CAN GET WRONG IN SILENCE.**
  *
- * Una durata scritta male e un raggruppamento che perde una riga non fanno
- * rumore: la schermata si disegna lo stesso, e chi guarda crede a quello che
- * legge. Sono esattamente i due difetti che la ricognizione del 31/08/2026 ha
- * trovato pubblici e confermati negli altri prodotti — un badge che conta 1
- * mentre la lista ne mostra dieci, una latenza di 9,3 secondi scritta «9.3K».
+ * A duration written badly and a grouping that loses a row make no noise: the
+ * screen draws all the same, and whoever looks believes what they read. They
+ * are exactly the two faults the survey found public and confirmed in the other
+ * products — a badge counting 1 while the list shows ten, a latency of 9.3
+ * seconds written «9.3K».
  */
 
 function run(over: Partial<OpenRun>): OpenRun {
@@ -29,8 +29,8 @@ function run(over: Partial<OpenRun>): OpenRun {
 
 describe("howLong", () => {
   test("arrotonda per difetto, non per eccesso", () => {
-    // Due ore e cinquanta: «3 h» farebbe intervenire su una cosa che non è
-    // ancora quello che sembra.
+    // Two hours fifty: «3 h» would make someone step in on a thing that is not
+    // yet what it looks like.
     expect(howLong(2 * 3600 + 50 * 60)).toBe("2 h 50 min");
     expect(howLong(119)).toBe("1 min");
   });
@@ -42,15 +42,15 @@ describe("howLong", () => {
   });
 
   test("oltre il giorno non si scrive in ore", () => {
-    // 50 h scritte «50 h» si leggono come due giorni solo contando: chi guarda
-    // deve vedere che una corsa è aperta da ieri senza fare aritmetica.
+    // 50 h written «50 h» reads as two days only by counting: whoever looks
+    // must see that a run has been open since yesterday without arithmetic.
     expect(howLong(50 * 3600)).toBe("2 d 2 h");
   });
 
   test("un tempo negativo non diventa un numero enorme", () => {
-    // Gli orologi non sono d'accordo fra loro: il deposito scrive un istante,
-    // la finestra ne legge un altro, e la differenza può uscire negativa. Un
-    // «-3 s» è brutto, ma «18446744073709 s» è una schermata rotta.
+    // The clocks do not agree with each other: the ledger writes one instant,
+    // the window reads another, and the difference can come out negative. A
+    // «-3 s» is ugly, but «18446744073709 s» is a broken screen.
     expect(howLong(-3)).toBe("—");
   });
 });
@@ -69,8 +69,8 @@ describe("groupRuns", () => {
   });
 
   test("l'ordine che arriva dal motore non si tocca", () => {
-    // Il motore ordina dalla più vecchia. Riordinare qui vorrebbe dire avere
-    // due regole d'ordine in due linguaggi, e nessuno saprebbe quale vince.
+    // The engine orders from the oldest. Reordering here would mean two
+    // ordering rules in two languages, and nobody would know which one wins.
     const runs = [
       run({ run_id: "vecchia", state: "waiting", since: 100 }),
       run({ run_id: "nuova", state: "waiting", since: 900 }),

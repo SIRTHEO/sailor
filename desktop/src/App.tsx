@@ -142,7 +142,7 @@ const NATIVE = insideTheWindow();
 type Place = Section;
 
 /* Only the graph. "Code" was a data file dressed as source and "Runs" is
-   already the «Adesso» and «Cronologia» places. What the two unmounted screens
+   already the «Now» and «History» places. What the two unmounted screens
    had measured about the engine is in `docs/faults-encountered.md`. */
 
 /**
@@ -1583,30 +1583,28 @@ export default function App() {
             <Background id="fine" gap={12} variant={BackgroundVariant.Lines} color="var(--grid-fine)" />
             <Background id="coarse" gap={96} variant={BackgroundVariant.Lines} color="var(--grid-coarse)" />
 
-            {/* I COMANDI COMANDANO QUALCOSA, o non ci sono. Quattro bottoni che
-                ingrandiscono e inquadrano il nulla sono lo stesso «riquadro che
-                si vede e non dice niente» per cui qui sotto sparisce la
-                minimappa: il criterio è uno, e vale per tutti e due.
+            {/* CONTROLS MUST CONTROL SOMETHING, or they are not there. Four
+                buttons that zoom and frame nothing are the same «box you can see
+                that says nothing» for which the minimap below disappears: one
+                criterion, and it holds for both.
 
-                La carta a quadretti resta: è la tela, non un comando, ed è
-                quello che fa leggere lo spazio sotto il riquadro come una
-                superficie da riempire. Resta anche la firma di React Flow, che
-                è una nota di licenza — `hideAttribution` è un'opzione a
-                pagamento, e toglierla è una cosa che si compra, non una scelta
-                di schermata. */}
+                The graph paper stays: it is the canvas, not a control, and it is
+                what makes the space under the box read as a surface to fill. The
+                React Flow signature stays too, being a licence note —
+                `hideAttribution` is a paid option, and removing it is something
+                you buy, not a screen decision. */}
             {flows.size > 0 && <Controls />}
 
-            {/* LA MINIMAPPA DICE DOVE GUARDARE, non «c'è della roba». Era un
-                blocco grigio uniforme: adesso ogni passo ci sta con la tinta
-                del proprio stato, così un guasto in fondo a un flusso fuori
-                schermo si vede senza scorrere.
+            {/* THE MINIMAP SAYS WHERE TO LOOK, not «there is stuff here». It was
+                a uniform grey block: now every step sits in it with the tint of
+                its own state, so a fault at the foot of an off-screen flow shows
+                without scrolling.
 
-                CON ZERO FLUSSI NON C'È, per la stessa ragione della cassetta:
-                una mappa di niente è un riquadro che si vede e non dice
-                niente, e sullo schermo che insegna il primo gesto ogni cosa
-                muta è una distrazione. È anche la mitigazione del limite
-                dichiarato in `unhappystates.test.tsx` — dove non c'è niente da
-                mitigare, non serve. */}
+                WITH ZERO FLOWS IT IS NOT THERE, for the same reason as the
+                toolbox: a map of nothing is a box you can see that says nothing,
+                and on the screen that teaches the first gesture anything mute is
+                a distraction. It is also the mitigation of the limit declared in
+                `unhappystates.test.tsx` — with nothing to mitigate, it is not needed. */}
             {flows.size > 0 && (
               <MiniMap
                 pannable
@@ -1631,9 +1629,9 @@ export default function App() {
             <Toolbar flowName={focusName} onAdd={(kind) => addStep(focusName, kind)} />
           )}
 
-          {/* Una tela senza flussi non resta muta: dice cos'è un flusso e offre
-              il gesto per farne uno. Il messaggio sparisce da solo appena ce n'è
-              uno, e non intercetta il puntatore sulla tela sotto. */}
+          {/* A canvas with no flows does not stay mute: it says what a flow is and
+              offers the gesture to make one. The message goes by itself as soon as
+              there is one, and does not intercept the pointer on the canvas below. */}
           {flows.size === 0 && (
             <BlankCanvas
               state={source === "failed" ? "failed" : source === "loading" ? "loading" : "empty"}
@@ -1689,10 +1687,10 @@ export default function App() {
                   }
                   onDelete={() => deleteStep(selectedData.flowName, selectedData.step.id)}
                 />
-                {/* Cosa è passato di qui, nel tempo. Sta sotto i parametri e non
-                    in un pannello a parte: chi clicca un nodo chiede tutte e due
-                    le cose — com'è fatto, e cosa ci è entrato. Fuori dal guscio
-                    non c'è deposito, e il pannello lo dice da sé. */}
+                {/* What came through here, over time. It sits under the parameters
+                    and not in a panel of its own: whoever clicks a node asks both
+                    things — how it is made, and what went into it. Outside the
+                    shell there is no store, and the panel says so itself. */}
                 {NATIVE && (
                   <StepHistory
                     key={`${selectedData.flowName}::${selectedData.step.id}`}
@@ -1706,9 +1704,9 @@ export default function App() {
         )}
       </div>
 
-      {/* LA VISTA SI CHIUDE, LA CORSA NO. Chiudere questo pannello non ferma
-          niente: il flusso gira nel guscio, e riaprendo si ritrova tutto quello
-          che ha detto mentre nessuno guardava. */}
+      {/* THE VIEW CLOSES, THE RUN DOES NOT. Closing this panel stops nothing:
+          the flow runs in the shell, and reopening finds again everything it
+          said while nobody was watching. */}
       {watched && (
         <RunConsole
           run={watched}
