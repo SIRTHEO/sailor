@@ -41,6 +41,12 @@ fn measure(root: &Path) -> Measured {
             sends.insert(name, sent);
         }
     }
+    workspace::measured_against(
+        sends.len(),
+        "flows read for what they send",
+        seeds.flows.len(),
+        "seeds the token file declares",
+    );
     Measured {
         sends,
         seeds: seeds.flows,
