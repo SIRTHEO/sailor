@@ -402,12 +402,40 @@ pub fn profile_home_path(
 /// The environment to overlay to launch `cli` with its home at `profile_home`.
 /// Empty when the mechanism uses no variable: there the swap is a filesystem
 /// operation, see [`symlink_swap`].
-pub fn build_environment(cli: &KnownCli, profile_home: &Path) -> BTreeMap<String, String> {
+///
+/// **NAMING THE USUAL HOME IS NOT THE SAME AS SAYING NOTHING**, and this is
+/// measured, not reasoned: `claude` reads its credentials from the machine's
+/// keyring when the variable is unset and from a file inside the directory
+/// when it is set — so the same path, written down, moved the engine from an
+/// authenticated home to an expired copy of it. A profile that adopts the
+/// place the engine already keeps its home therefore overlays nothing.
+pub fn build_environment(
+    cli: &KnownCli,
+    profile_home: &Path,
+    key_of: &dyn Fn(&str) -> Option<String>,
+) -> BTreeMap<String, String> {
     let mut env = BTreeMap::new();
+    if home_is_where_the_engine_keeps_it(cli, profile_home, key_of) {
+        return env;
+    }
     if let HomeMechanism::EnvVar(name) = &cli.home {
         env.insert(name.clone(), profile_home.to_string_lossy().into_owned());
     }
     env
+}
+
+/// Whether `profile_home` is the very place `cli` keeps its home unaided.
+/// False where the machine will not say where the person lives: not knowing is
+/// not «it is elsewhere», and the overlay stays as it was.
+pub fn home_is_where_the_engine_keeps_it(
+    cli: &KnownCli,
+    profile_home: &Path,
+    key_of: &dyn Fn(&str) -> Option<String>,
+) -> bool {
+    let Some(here) = key_of("HOME") else {
+        return false;
+    };
+    existing_home(cli, Path::new(&here)).is_some_and(|usual| usual == profile_home)
 }
 
 /// The environment a terminal opens with so that every command line inside it
@@ -445,7 +473,7 @@ pub fn active_environment_with(
         else {
             continue;
         };
-        environment.extend(build_environment(cli, &profile.home_dir));
+        environment.extend(build_environment(cli, &profile.home_dir, key_of));
         match endpoint_environment(cli, profile, key_of) {
             Ok(endpoint) => environment.extend(endpoint),
             Err(why) => refused.push(why),
@@ -538,12 +566,52 @@ mod tests {
     #[test]
     fn build_environment_sets_the_env_var_for_the_env_mechanism() {
         let cli = known_clis().iter().find(|c| c.id == "codex").unwrap();
-        let env = build_environment(cli, Path::new("/home/profiles/codex/work"));
+        let env = build_environment(cli, Path::new("/home/profiles/codex/work"), &|_| None);
         assert_eq!(
             env.get("CODEX_HOME").map(String::as_str),
             Some("/home/profiles/codex/work")
         );
         assert_eq!(env.len(), 1);
+    }
+
+    /// **THE FAULT THIS TEST HOLDS SHUT.** A profile that adopts the home the
+    /// engine already keeps — the only honest way to give it credentials,
+    /// since a token is never copied — was handed the variable anyway, with
+    /// that same path inside it. Writing it is not a null gesture: `claude`
+    /// reads its credentials from the keyring when it is unset and from a file
+    /// inside the directory when it is set. The authenticated engine became an
+    /// expired one, and the flow started all the same.
+    #[test]
+    fn a_profile_that_adopts_the_usual_home_overlays_nothing() {
+        let cli = known_clis().iter().find(|c| c.id == "codex").unwrap();
+        let here = |name: &str| (name == "HOME").then(|| "/casa/di-chiunque".to_owned());
+        let usual = existing_home(cli, Path::new("/casa/di-chiunque")).unwrap();
+
+        assert!(build_environment(cli, &usual, &here).is_empty());
+        assert!(home_is_where_the_engine_keeps_it(cli, &usual, &here));
+
+        let elsewhere = Path::new("/casa/di-chiunque/profiles/codex/work");
+        assert_eq!(
+            build_environment(cli, elsewhere, &here)
+                .get("CODEX_HOME")
+                .map(String::as_str),
+            Some("/casa/di-chiunque/profiles/codex/work")
+        );
+    }
+
+    /// Not knowing where the launcher lives is not «lives elsewhere»: without
+    /// `HOME` the variable is written as before, the direction that moves the
+    /// home rather than the one that leaves it in place on a guess.
+    #[test]
+    fn without_a_home_the_overlay_stays_as_it_was() {
+        let cli = known_clis().iter().find(|c| c.id == "codex").unwrap();
+        let usual = existing_home(cli, Path::new("/casa/di-chiunque")).unwrap();
+        assert_eq!(
+            build_environment(cli, &usual, &|_| None)
+                .get("CODEX_HOME")
+                .map(String::as_str),
+            Some("/casa/di-chiunque/.codex")
+        );
     }
 
     #[test]
@@ -562,7 +630,7 @@ mod tests {
             endpoint: None,
             reads_instructions_from: Vec::new(),
         };
-        let env = build_environment(&cli, Path::new("/home/profiles/acme/work"));
+        let env = build_environment(&cli, Path::new("/home/profiles/acme/work"), &|_| None);
         assert!(env.is_empty());
     }
 

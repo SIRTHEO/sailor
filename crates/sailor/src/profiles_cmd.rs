@@ -206,8 +206,12 @@ fn access_of(
     // cui `LoginProbe` prende l'ambiente come argomento invece di andarselo a
     // leggere: chiedere sempre al profilo attivo darebbe la stessa risposta a
     // tutte le righe dell'elenco, e sarebbe la risposta di uno solo.
-    let env = profiles::build_environment(cli, home);
-    if env.is_empty() {
+    // **A HOME THAT DOES NOT MOVE IS NOT A HOME ALREADY IN PLACE**: the first
+    // has no variable to write, the second has one that must not be written.
+    // Only the first is a verdict; the second is asked like every other, with
+    // the environment the engine would have on its own.
+    let env = profiles::build_environment(cli, home, &|name| std::env::var(name).ok());
+    if !matches!(cli.home, HomeMechanism::EnvVar(_)) {
         return (
             Access::HomeDoesNotMove,
             catalogue::say(
@@ -446,7 +450,7 @@ mod tests {
     fn build_environment_uses_the_profile_home_recorded_in_the_store() {
         let cli = find_cli("codex").unwrap();
         let home = PathBuf::from("/home/profiles/codex/lavoro");
-        let env = build_environment(cli, &home);
+        let env = build_environment(cli, &home, &|_| None);
         assert_eq!(
             env.get("CODEX_HOME"),
             Some(&"/home/profiles/codex/lavoro".to_owned())
