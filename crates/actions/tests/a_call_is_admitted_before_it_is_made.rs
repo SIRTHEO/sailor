@@ -336,3 +336,41 @@ fn a_model_the_price_list_cannot_price_stops_the_run_and_the_store_says_why() {
         assert!(said.contains(figure), "«{figure}» is missing from: {said}");
     }
 }
+
+/// **THE FRONT'S WIDTH COUNTS ONLY WHAT CAN SPEND, AND WHICH THOSE ARE IS READ
+/// OFF THE DESCRIPTORS.** A step naming a tool nobody can ask a question of —
+/// `cargo`, `npm` — buys nothing, so it takes no room from a paid call beside
+/// it. Unknown counts as paying: that narrows the front and never widens it.
+#[test]
+fn a_step_naming_a_tool_that_answers_no_question_spends_nothing() {
+    let action = ExternalEngineAction::resolving_with(OnlyOneCanBeAsked);
+
+    assert!(
+        !action.may_spend(Some(&json!({"tool": "cargo", "args": ["test"]}))),
+        "cargo declares no way to be asked, so it buys nothing"
+    );
+    assert!(
+        action.may_spend(Some(&json!({"tool": ["cargo", "motore-di-prova"]}))),
+        "a chain that could land on the engine counts as paying"
+    );
+    assert!(
+        action.may_spend(None),
+        "a step with no «with» at all is counted, not guessed free"
+    );
+    assert!(
+        action.may_spend(Some(&json!({"bin": "sh"}))),
+        "a «with» naming no tool at all is counted too"
+    );
+}
+
+/// One engine that answers questions, everything else a command line.
+struct OnlyOneCanBeAsked;
+
+impl ToolResolver for OnlyOneCanBeAsked {
+    fn resolve(&self, id: &str) -> Result<String, String> {
+        Ok(id.to_owned())
+    }
+    fn ask_recipe(&self, id: &str) -> Option<AskRecipe> {
+        (id == "motore-di-prova").then(declaring_recipe)
+    }
+}
