@@ -200,6 +200,39 @@ fn changed_gates_on_same_input_are_queryable_as_a_resume_condition() {
     assert_eq!(ledger.steps("run-gates").expect("read back")[1], resumed);
 }
 
+/// Every relation an attempt can have with the one before it survives the
+/// column it is written in. The pair that writes the word and the pair that
+/// reads it are two functions: a name spelled one way and read another loses
+/// the row on the way back, and nothing else would say so.
+#[test]
+fn every_attempt_relation_comes_back_as_it_went_in() {
+    let directory = TestDirectory::new("attempt-relations");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    let relations = [
+        flow::AttemptRelation::SameInput,
+        flow::AttemptRelation::SameInputGatesChanged,
+        flow::AttemptRelation::SameInputPlusRefusal,
+        flow::AttemptRelation::DifferentInput,
+    ];
+    for (index, relation) in relations.iter().enumerate() {
+        let mut attempt = started_attempt("run-relations", index as u32 + 1, index as u64 + 1);
+        attempt.attempt_relation = Some(*relation);
+        ledger
+            .append_step_started(&attempt)
+            .expect("write the attempt");
+    }
+
+    let written = ledger.steps("run-relations").expect("read back");
+
+    assert_eq!(
+        written
+            .iter()
+            .map(|record| record.attempt_relation)
+            .collect::<Vec<_>>(),
+        relations.map(Some).to_vec()
+    );
+}
+
 #[test]
 fn stopped_and_skipped_outcomes_round_trip_through_the_operational_column() {
     let directory = TestDirectory::new("outcomes");

@@ -11,6 +11,11 @@ pub const MAX_SAID_BYTES: usize = 16 * 1024;
 /// and a bound that keeps a row from growing with it.
 pub const MAX_SEEN_BYTES: usize = 160;
 
+/// The check under which the shape a step declares for its answer refuses one.
+/// Named beside the refusal because two crates ask for it: the engine writes
+/// it, the executor reads it.
+pub const ANSWER_SHAPE_CHECK: &str = "answer_shape";
+
 /// Which declared check refused a value, where in it, by which rule, and an
 /// excerpt of what it saw. Written next to the failure class so that a person
 /// reads the rule and a count can be taken per check without parsing prose.
@@ -257,6 +262,10 @@ pub enum StepSpecies {
 pub enum AttemptRelation {
     SameInput,
     SameInputGatesChanged,
+    /// The same question with the reason the last answer was refused beside
+    /// it. The input differs, so a reader of the digests alone would count as
+    /// new work an attempt that is the old one told what was wrong.
+    SameInputPlusRefusal,
     DifferentInput,
 }
 
