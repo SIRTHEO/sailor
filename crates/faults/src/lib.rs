@@ -93,19 +93,28 @@ pub enum Standing {
     Unrecognised,
 }
 
+impl Standing {
+    /// Closed in part counts as open: a middle state says which half is done,
+    /// it does not take the row out of the count. Asked in one place, because a
+    /// second hand-written reading of a column drifts from the first.
+    pub fn still_open(self) -> bool {
+        matches!(self, Standing::Open | Standing::PartlyClosed)
+    }
+}
+
 /// The words the register writes in that column, in the language the register
 /// is written in. Data and not a match, so translating them is one edit and a
 /// half-translated row comes out `Unrecognised` instead of vanishing.
-const OPEN: &str = "**aperto**";
-const PARTLY_CLOSED: &str = "**chiuso in parte**";
-const CLOSED: &str = "**chiuso**";
+const OPEN: &str = "**open**";
+const PARTLY_CLOSED: &str = "**closed in part**";
+const CLOSED: &str = "**closed**";
 
 /// The reading, given the prose alone: the store asks it of a status before it
 /// belongs to a fault, and the count asks it of one that already does.
 ///
-/// `PARTLY_CLOSED` is tried first because it begins with the word `CLOSED`
-/// begins with: asking in the other order would read every half-closed row as
-/// closed, and take seven faults out of the tally in one edit.
+/// The closing stars are what keep `CLOSED` from being a prefix of
+/// `PARTLY_CLOSED`. Drop them from either marker and the half-closed reading
+/// must come first, or every half-closed row reads as closed and leaves the tally.
 pub fn standing_of(status: &str) -> Standing {
     let said = status.trim();
     if said.starts_with(PARTLY_CLOSED) {
@@ -120,18 +129,16 @@ pub fn standing_of(status: &str) -> Standing {
 }
 
 impl Fault {
-    /// Read from the start of the prose: the nuance after it says which half of
-    /// the cure is done, and must not change where the row is counted.
+    /// Read from the start of the prose: the nuance after it must not move the
+    /// row.
     pub fn standing(&self) -> Standing {
         standing_of(&self.status)
     }
 
-    /// Open until the cure the fault declares is done. Half-closed counts as
-    /// open: a middle state says which half is done, it does not take the row
-    /// out of the count. An unrecognised status is **not** quietly closed —
-    /// it is refused at the door, so it can never reach this question.
+    /// An unrecognised status is **not** quietly closed: it is refused at the
+    /// door, so it can never reach this question.
     pub fn still_open(&self) -> bool {
-        matches!(self.standing(), Standing::Open | Standing::PartlyClosed)
+        self.standing().still_open()
     }
 
     fn cells(&self) -> [&str; 6] {
@@ -284,11 +291,11 @@ impl Faults {
     /// each other.
     pub fn record(&self, draft: &Draft) -> Result<Fault, FaultError> {
         nothing_that_breaks_a_row(&[
-            ("data", &draft.happened_on),
-            ("cosa è successo", &draft.what_happened),
-            ("come si è visto", &draft.how_it_showed),
-            ("cosa lo impedirebbe", &draft.what_would_prevent),
-            ("stato", &draft.status),
+            ("date", &draft.happened_on),
+            ("what happened", &draft.what_happened),
+            ("how it showed", &draft.how_it_showed),
+            ("what would have prevented it", &draft.what_would_prevent),
+            ("status", &draft.status),
         ])?;
         a_status_the_count_can_read(&draft.status)?;
         self.connection.execute(
@@ -315,11 +322,11 @@ impl Faults {
     /// reference other files make to them.
     pub fn restore(&self, fault: &Fault) -> Result<(), FaultError> {
         nothing_that_breaks_a_row(&[
-            ("data", &fault.happened_on),
-            ("cosa è successo", &fault.what_happened),
-            ("come si è visto", &fault.how_it_showed),
-            ("cosa lo impedirebbe", &fault.what_would_prevent),
-            ("stato", &fault.status),
+            ("date", &fault.happened_on),
+            ("what happened", &fault.what_happened),
+            ("how it showed", &fault.how_it_showed),
+            ("what would have prevented it", &fault.what_would_prevent),
+            ("status", &fault.status),
         ])?;
         a_status_the_count_can_read(&fault.status)?;
         self.connection.execute(
@@ -373,7 +380,7 @@ impl Faults {
     /// already too narrow: a fault that bites a third time is worse than one
     /// that bit once, and there is nowhere to write that.
     pub fn set_status(&self, number: i64, status: &str) -> Result<Fault, FaultError> {
-        nothing_that_breaks_a_row(&[("stato", status)])?;
+        nothing_that_breaks_a_row(&[("status", status)])?;
         a_status_the_count_can_read(status)?;
         let touched = self.connection.execute(
             "UPDATE faults SET status = ?2 WHERE number = ?1",

@@ -37,7 +37,7 @@ fn a_word_in_any_column_of_one_fault_finds_that_fault_and_no_other() {
             "the quokka got in",
             "seen as zwieback in the log",
             "a marzipan check at the door",
-            "**aperto** capybara pending",
+            "**open** capybara pending",
         ))
         .expect("recording");
     store
@@ -45,7 +45,7 @@ fn a_word_in_any_column_of_one_fault_finds_that_fault_and_no_other() {
             "a different fault",
             "seen by a person",
             "a test",
-            "**chiuso** since the same day",
+            "**closed** since the same day",
         ))
         .expect("recording the other");
     let documents = store.documents_to_search().expect("the documents");

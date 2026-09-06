@@ -137,7 +137,7 @@ fn an_open_fault(scratch: &Scratch) -> faults::Fault {
             how_it_showed: "a run whose cost came out zero on a paid engine".to_owned(),
             what_would_prevent: "a test that a missing price list refuses instead of pricing at zero"
                 .to_owned(),
-            status: "**aperto**".to_owned(),
+            status: "**open**".to_owned(),
         })
         .expect("the fault is recorded")
 }
