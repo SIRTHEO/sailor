@@ -5,10 +5,9 @@
  * is. A thing can also sit outside every workspace, a place of its own.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MACHINE, MACHINE_GROUND, PLACES, UNDER_A_TREE, inTheStrip, type Section } from "./places";
+import { PLACES, UNDER_A_TREE, type Section } from "./places";
 import { grouped, treeName } from "./workspacetrees";
 import { projects, workHere, type Project } from "./workspaces";
-import type { SailorTab } from "./sailortabs";
 import type { TerminalSummary } from "./terminal";
 import { HandMark } from "./StepNode";
 import type { FlowLive } from "./flowlive";
@@ -127,9 +126,7 @@ export function reopenIn(seen: Project[]): Project | null {
 export function World({
   native,
   here,
-  hereTab,
   onGo,
-  onOpen,
   counts,
   terminals,
   onMoved,
@@ -141,11 +138,7 @@ export function World({
 }: {
   native: boolean;
   here: Section;
-  /** Which tab of the machine ground is open, when one of them is. */
-  hereTab: SailorTab;
   onGo: (section: Section) => void;
-  /** Opens a place and, where the place has tabs, the tab itself. */
-  onOpen: (section: Section, tab?: SailorTab) => void;
   counts: Partial<Record<Section, number>>;
   terminals: TerminalSummary[];
   /** Called once the window has moved into another tree. */
@@ -264,28 +257,9 @@ export function World({
 
   return (
     <nav className="world" aria-label="the world">
-      {/* What holds wherever you are AND belongs to no ground below. Terminals
-          stays here though every live one is a leaf under its tree: with none
-          open there would be no way to open the first. The board hangs under
-          the tree it draws; the machine's places have their own ground. */}
-      <div className="world__above">
-        {inTheStrip().map((place) => (
-          <button
-            type="button"
-            key={place.id}
-            className="world__global"
-            data-here={here === place.id || undefined}
-            onClick={() => onGo(place.id)}
-            title={place.asks}
-          >
-            <span className="world__glyph" aria-hidden="true">
-              {place.glyph}
-            </span>
-            <span className="world__label">{place.name}</span>
-          </button>
-        ))}
-      </div>
-
+      {/* NO PERMANENT LIST OF WHERE YOU COULD BE. A strip of destinations is
+          navigation holding space the work needs; what is left here is the
+          tree you stand in and what hangs under it, which is context. */}
       <div className="world__head">workspaces</div>
 
       {why !== null && <div className="world__mute">{why}</div>}
@@ -383,29 +357,6 @@ export function World({
           in a column of «this project» they read as one more checkout's. */}
       {shared.length > 0 && <div className="world__head">flows everywhere</div>}
       {shared.map(flowsOf)}
-
-      {/* THE GROUND THAT DOES NOT MOVE WHEN YOU CHANGE PROJECT. The engines
-          installed, the accounts they run under, the models, what this machine
-          keeps: the same wherever you stand, and for that reason together and
-          last — not folded into a project's column, and not behind one noun. */}
-      <div className="world__head">{MACHINE_GROUND}</div>
-      {MACHINE.map((row) => (
-        <button
-          type="button"
-          key={row.id}
-          className="world__global"
-          data-here={
-            (here === row.section && (row.tab === undefined || hereTab === row.tab)) || undefined
-          }
-          onClick={() => onOpen(row.section, row.tab)}
-          title={row.asks}
-        >
-          <span className="world__glyph" aria-hidden="true">
-            {row.glyph}
-          </span>
-          <span className="world__label">{row.name}</span>
-        </button>
-      ))}
 
       {/* Outside is a place: a terminal no project claims is where a good
           deal of the work happens. The board lives here when no tree is
