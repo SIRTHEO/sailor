@@ -9,10 +9,16 @@ use std::path::{Path, PathBuf};
 const TEST_BINARIES_TODAY: usize = 133;
 
 /// Every `#[test]` in the tree, the window's shell included.
-const TEST_FUNCTIONS_TODAY: usize = 1824;
+const TEST_FUNCTIONS_TODAY: usize = 1825;
 
 /// Every `.flow.json` in `flows/` and among the shipped ones.
 const FLOW_FILES_TODAY: usize = 11;
+
+/// Every `test(` in the window's own battery. **THE WINDOW CARRIES NO
+/// `#[test]`**, so counting that mark alone left 489 tests under no ratchet at
+/// all — fault 122, which is fault 52 in the half of the tree nobody taught the
+/// counter to see.
+const WINDOW_TESTS_TODAY: usize = 489;
 
 /// How far a seed may sit from the tree, either way. **Zero.** A seed is a
 /// number in a file, and a file merges: a merge keeping the older side would
@@ -22,6 +28,13 @@ const HOW_STALE_A_SEED_MAY_BE: usize = 0;
 
 /// Where `#[test]` functions are looked for: the crates, and the window's shell.
 const WHERE_TESTS_ARE_WRITTEN: &[&str] = &["crates", "desktop/src-tauri"];
+
+/// Where the window writes its own tests, in the language it is written in.
+const WHERE_THE_WINDOW_IS_TESTED: &[&str] = &["desktop/src"];
+
+/// How the window opens a test. At the start of its line, so a mention inside
+/// a string or a comment is not one.
+const WINDOW_TEST_MARK: &str = "test(";
 
 /// Where flow files live: this project's own, and the ones shipped in the binary.
 const WHERE_FLOWS_LIVE: &[&str] = &["flows", "crates/flow/system"];
@@ -103,6 +116,38 @@ fn test_functions(root: &Path) -> usize {
         .sum()
 }
 
+fn window_sources(directory: &Path, found: &mut Vec<PathBuf>) {
+    for path in entries_of(directory) {
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        if path.is_dir() {
+            if !matches!(name.as_str(), "node_modules" | "dist" | ".git") {
+                window_sources(&path, found);
+            }
+        } else if name.ends_with(".test.ts") || name.ends_with(".test.tsx") {
+            found.push(path);
+        }
+    }
+}
+
+fn window_tests(root: &Path) -> usize {
+    let mut sources = Vec::new();
+    for place in WHERE_THE_WINDOW_IS_TESTED {
+        window_sources(&root.join(place), &mut sources);
+    }
+    sources
+        .iter()
+        .filter_map(|path| std::fs::read_to_string(path).ok())
+        .map(|text| {
+            text.lines()
+                .filter(|line| line.trim_start().starts_with(WINDOW_TEST_MARK))
+                .count()
+        })
+        .sum()
+}
+
 fn flow_files(root: &Path) -> Vec<PathBuf> {
     let mut found: Vec<PathBuf> = WHERE_FLOWS_LIVE
         .iter()
@@ -117,6 +162,7 @@ struct Battery {
     binaries: usize,
     functions: usize,
     flows: usize,
+    window: usize,
 }
 
 fn measure(root: &Path) -> Battery {
@@ -124,6 +170,7 @@ fn measure(root: &Path) -> Battery {
         binaries: test_binaries(root).len(),
         functions: test_functions(root),
         flows: flow_files(root).len(),
+        window: window_tests(root),
     }
 }
 
@@ -142,19 +189,20 @@ fn the_battery_here() -> Battery {
 }
 
 /// Each count beside its seed and the name of the constant to rewrite.
-fn all_three(battery: &Battery) -> [(&'static str, &'static str, usize, usize); 3] {
+fn all_four(battery: &Battery) -> [(&'static str, &'static str, usize, usize); 4] {
     [
         ("test binaries", "TEST_BINARIES_TODAY", TEST_BINARIES_TODAY, battery.binaries),
         ("test functions", "TEST_FUNCTIONS_TODAY", TEST_FUNCTIONS_TODAY, battery.functions),
         ("flow files", "FLOW_FILES_TODAY", FLOW_FILES_TODAY, battery.flows),
+        ("window tests", "WINDOW_TESTS_TODAY", WINDOW_TESTS_TODAY, battery.window),
     ]
 }
 
 fn measured_right_now(battery: &Battery) -> String {
     format!(
-        "\nMeasured right now, all three: {} test binaries, {} test functions, \
-         {} flow files. When you re-measure one, rewrite them all.",
-        battery.binaries, battery.functions, battery.flows
+        "\nMeasured right now, all four: {} test binaries, {} test functions, \
+         {} flow files, {} window tests. When you re-measure one, rewrite them all.",
+        battery.binaries, battery.functions, battery.flows, battery.window
     )
 }
 
@@ -194,6 +242,19 @@ fn no_test_function_vanishes_without_a_word() {
     );
 }
 
+/// The window's battery is the only thing measuring what a person looks at.
+#[test]
+fn no_window_test_vanishes_without_a_word() {
+    let battery = the_battery_here();
+    does_not_fall(
+        "window tests",
+        "WINDOW_TESTS_TODAY",
+        WINDOW_TESTS_TODAY,
+        battery.window,
+        &battery,
+    );
+}
+
 #[test]
 fn no_flow_file_vanishes_without_a_word() {
     let battery = the_battery_here();
@@ -212,7 +273,7 @@ fn no_flow_file_vanishes_without_a_word() {
 #[test]
 fn a_seed_that_no_longer_describes_the_tree_is_a_seed_nobody_re_measured() {
     let battery = the_battery_here();
-    for (what, seed_name, seed, measured) in all_three(&battery) {
+    for (what, seed_name, seed, measured) in all_four(&battery) {
         assert!(
             seed + HOW_STALE_A_SEED_MAY_BE >= measured,
             "the seed «{what}» says {seed}, the tree holds {measured}: {} more than declared. \
@@ -239,6 +300,7 @@ fn the_counters_can_still_see_what_they_count() {
         package.join("target"),
         shell.join("tests"),
         shell.join("src"),
+        scratch.join("desktop").join("src").join("node_modules"),
         scratch.join("flows"),
         shipped.clone(),
     ] {
@@ -259,6 +321,11 @@ fn the_counters_can_still_see_what_they_count() {
     write(scratch.join("flows").join("notes.md"), "");
     write(shipped.join("shipped.flow.json"), "{}");
     write(shipped.join("shipped.md"), "");
+    let window = scratch.join("desktop").join("src");
+    write(window.join("a.test.tsx"), "test(\"one\", () => {});\n  test(\"two\", () => {});\n");
+    write(window.join("b.test.ts"), "// test( in a comment is not one\nconst M = \"test(\";\ntest(\"three\", () => {});\n");
+    write(window.join("c.tsx"), "test(\"not a test file\", () => {});\n");
+    write(window.join("node_modules").join("d.test.ts"), "test(\"vendored\", () => {});\n");
 
     let battery = measure(&scratch);
     let binaries = test_binaries(&scratch);
@@ -275,14 +342,19 @@ fn the_counters_can_still_see_what_they_count() {
         "the marks opening a line, in any file but the built ones, and never in a comment or a string"
     );
     assert_eq!(battery.flows, 2, "one of this project's own and one shipped, no markdown");
+    assert_eq!(
+        battery.window,
+        3,
+        "the mark opening a line, only in a test file, never vendored, never in a comment or a string"
+    );
 
     let real = the_battery_here();
     println!(
-        "today: {} test binaries, {} test functions, {} flow files",
-        real.binaries, real.functions, real.flows
+        "today: {} test binaries, {} test functions, {} flow files, {} window tests",
+        real.binaries, real.functions, real.flows, real.window
     );
     assert!(
-        real.binaries > 0 && real.functions > 0 && real.flows > 0,
+        real.binaries > 0 && real.functions > 0 && real.flows > 0 && real.window > 0,
         "zero somewhere: the counter is not looking"
     );
 }
