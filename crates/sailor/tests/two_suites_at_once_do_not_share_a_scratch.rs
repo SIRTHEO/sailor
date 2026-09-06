@@ -66,6 +66,7 @@ fn carries_the_run(body: &str) -> bool {
 #[test]
 fn no_test_digs_a_directory_another_run_would_delete() {
     let mut guilty = Vec::new();
+    let mut read = 0usize;
     let myself = Path::new(file!()).file_name().unwrap_or_default().to_owned();
     for source in test_sources() {
         if source.file_name() == Some(myself.as_os_str()) {
@@ -74,6 +75,7 @@ fn no_test_digs_a_directory_another_run_would_delete() {
         let Ok(text) = std::fs::read_to_string(&source) else {
             continue;
         };
+        read += 1;
         for body in functions(&text) {
             if body.contains("temp_dir()") && digs(&body) && !carries_the_run(&body) {
                 let named = body
@@ -86,6 +88,7 @@ fn no_test_digs_a_directory_another_run_would_delete() {
             }
         }
     }
+    workspace::measured(read, "test sources under crates/ read");
     assert!(
         guilty.is_empty(),
         "these dig a throwaway directory two runs at once would share:\n    {}",
