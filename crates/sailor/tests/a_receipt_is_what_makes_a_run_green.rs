@@ -90,3 +90,61 @@ fn declaring_an_empty_oracle_and_handing_in_nothing_are_counted_apart() {
     assert_eq!(gate.unmeasured(), 1);
     assert_eq!(gate.green(), 0);
 }
+
+/// A repository of its own, holding one source and one commit.
+fn a_repository(label: &str) -> std::path::PathBuf {
+    let root = std::env::temp_dir().join(format!("sailor-gate-{label}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("crates")).expect("a scratch");
+    std::fs::write(root.join("crates").join("one.rs"), "// held at HEAD\n").expect("a source");
+    for args in [
+        vec!["init", "--quiet"],
+        vec!["add", "--all"],
+        vec!["-c", "user.name=a", "-c", "user.email=a@b", "commit", "--quiet", "-m", "held"],
+    ] {
+        let done = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&root)
+            .args(&args)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .status()
+            .expect("git runs");
+        assert!(done.success(), "git {args:?}");
+    }
+    root
+}
+
+/// **THE GATE MUST HAND ITS JUDGES A TREE THEY CAN ASK.** `git archive` carries
+/// the files and not the `.git`, so every judge that reads what is tracked
+/// found nothing and said so — the guard against this machine's paths reaching
+/// a public repository never looked at the tree the gate was about to pass.
+/// Put the `git init` back and this test goes red on the first assertion.
+#[test]
+fn the_tree_laid_over_is_the_top_of_a_repository_that_tracks_it() {
+    let root = a_repository("laid-over");
+    std::fs::write(root.join("crates").join("two.rs"), "// only in the working tree\n")
+        .expect("a change");
+    let into = root.join("target").join("ratchet-tree");
+
+    let moved = sailor::ratchet_cmd::clean_tree_with_changes(&root, &into).expect("the tree");
+    assert_eq!(moved.laid_over, 1, "the untracked change was not laid over");
+    assert!(
+        workspace::is_the_top_of_its_repository(&into),
+        "the laid-over tree answers with the repository above it, so every judge \
+         that asks git measures nothing"
+    );
+
+    let tracked = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&into)
+        .args(["ls-files"])
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .output()
+        .expect("git runs");
+    let listed = String::from_utf8_lossy(&tracked.stdout);
+    assert!(listed.contains("crates/one.rs"), "what HEAD held is not tracked here: {listed}");
+    assert!(listed.contains("crates/two.rs"), "what was laid over is not tracked here: {listed}");
+    let _ = std::fs::remove_dir_all(&root);
+}
