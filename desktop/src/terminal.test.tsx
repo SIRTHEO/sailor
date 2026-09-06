@@ -4,7 +4,7 @@ import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { Terminal as Emulator } from "@xterm/xterm";
 import stylesheetSource from "./styles.css?raw";
 import App from "./App";
-import { belowThreshold, contrastPairs, parseStylesheet, type Stylesheet } from "./contrast";
+import { belowThreshold, contrastPairs, inOtherScheme, parseStylesheet, type Stylesheet } from "./contrast";
 import { ANOTHER_PATH, placesOf, shortestTails, Terminals, WORKSPACE_HINT } from "./Terminals";
 import {
   BLOCKED_MARK,
@@ -1242,12 +1242,19 @@ describe("the terminals inside the window", () => {
 
 // ── the three facts that stay on screen ──────────────────────────────────
 
-/**
- * **THE TWO BEHAVIOURS THAT EARNED THE VERDICT PASSED 454 GREEN TESTS.** These
- * are the ones that would have caught them: a signal takes no width from the
- * terminal, nothing moves when nothing happened, the order of the panes does
- * not follow who is talking, and an absent signal is not a conclusion.
- */
+/* **THE TWO BEHAVIOURS THAT EARNED THE VERDICT PASSED 454 GREEN TESTS.** These
+   are the ones that would have caught them: a signal takes no width from the
+   terminal, nothing moves when nothing happened, the order of the panes does
+   not follow who is talking, and an absent signal is not a conclusion. */
+
+/** The same DOM under both schemes: a mark legible at night can be a smudge by day. */
+function measureBoth(atLeast: number): string[] {
+  const night = contrastPairs(document.documentElement, sheet);
+  expect(night.length).toBeGreaterThanOrEqual(atLeast);
+  const day = contrastPairs(document.documentElement, inOtherScheme(sheet));
+  expect(day.length).toBe(night.length);
+  return [...belowThreshold(night), ...belowThreshold(day).map((pair) => `day: ${pair}`)];
+}
 
 describe("se questo agente aspetta proprio me", () => {
   test("un passo consegnato a una persona è una decisione; un errore che ferma è un blocco", () => {
@@ -1372,7 +1379,7 @@ describe("i tre segnali nei bordi dei pannelli", () => {
       // that is what lets a pane be recognised out of the corner of the eye.
       expect(places.map((place) => place.whereAt)).toEqual([0, 0]);
       expect(places.map((place) => place.progressAt)).toEqual([0, 0]);
-      expect(measure(20)).toEqual([]);
+      expect(measureBoth(20)).toEqual([]);
     } finally {
       shell.stop();
     }
@@ -1393,7 +1400,7 @@ describe("i tre segnali nei bordi dei pannelli", () => {
       expect(marked[0].querySelector(".pane__device")?.textContent).toBe("ttys009");
       expect(marked[0].querySelector(".pane__notch")?.getAttribute("data-need")).toBe("decision");
       expect(marked[0].querySelector(".pane__notch")?.textContent).toBe(DECISION_MARK);
-      expect(measure(20)).toEqual([]);
+      expect(measureBoth(20)).toEqual([]);
     } finally {
       shell.stop();
     }
@@ -1418,7 +1425,7 @@ describe("i tre segnali nei bordi dei pannelli", () => {
       const notch = panes()[0].querySelector(".pane__notch");
       expect(notch?.getAttribute("data-need")).toBe("blocked");
       expect(notch?.textContent).toBe(BLOCKED_MARK);
-      expect(measure(20)).toEqual([]);
+      expect(measureBoth(20)).toEqual([]);
     } finally {
       shell.stop();
     }
