@@ -348,10 +348,19 @@ fn measure(root: &Path) -> Vec<Door> {
         rust_sources(&root.join(place), &mut sources);
     }
     let declared = declared_test_files(&sources);
-    let mut found: Vec<Door> = sources
+    let read: Vec<(&PathBuf, String)> = sources
         .iter()
         .filter_map(|path| std::fs::read_to_string(path).ok().map(|text| (path, text)))
-        .flat_map(|(path, text)| doors_in(root, path, &text, &declared))
+        .collect();
+    workspace::measured_against(
+        read.len(),
+        "sources read for doors to this machine",
+        ONE_LINE_PER_DOOR.len(),
+        "shapes of a door",
+    );
+    let mut found: Vec<Door> = read
+        .iter()
+        .flat_map(|(path, text)| doors_in(root, path, text, &declared))
         .collect();
     found.sort();
     found
