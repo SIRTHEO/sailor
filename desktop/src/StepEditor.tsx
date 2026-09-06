@@ -468,6 +468,8 @@ function whenSummary(when: Condition | null): string {
       return `${when.pointer} = ${short(when.value)}`;
     case "pointer_exists":
       return `${when.pointer} exists`;
+    case "pointer_has_value":
+      return `${when.pointer} carries something`;
   }
 }
 
