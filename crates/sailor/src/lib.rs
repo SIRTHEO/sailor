@@ -1,29 +1,28 @@
-//! Il binario unico di sailor, il cui sottocomando si sceglie dal primo
-//! argomento — stessa forma di `claude-hooks`, per lo stesso motivo: un
-//! sottocomando per binario è un avvio di processo in più a ogni chiamata, e
-//! qui l'elenco è chiuso. Niente `clap`.
+//! Sailor's one binary, whose subcommand is chosen from the first argument —
+//! the same shape as `claude-hooks`, for the same reason: one subcommand per
+//! binary is an extra process start on every call, and here the list is closed.
+//! No `clap`.
 //!
-//! **PERCHÉ QUESTO È UNA LIBRERIA E NON SOLO UN BINARIO.** Dal 01/09/2026 la
-//! finestra mostra i comandi di Sailor, e c'erano due modi per farlo: ricopiarli
-//! in TypeScript, oppure leggerli da qui. Il primo è il guasto 10 — la stessa
-//! verità in due posti — che in questo repo si è già ripresentato cinque volte,
-//! l'ultima il giorno stesso, sul vocabolario delle azioni. Quindi
-//! `crates/sailor` espone `COMMANDS`, `desktop/src-tauri` lo importa come già
-//! importa `crates/registry`, e `main.rs` resta il guscio che chiama
-//! `dispatch`. Nessuno ricopia niente, e una pagina d'aiuto che diverge dal
-//! binario non è più esprimibile.
+//! **WHY THIS IS A LIBRARY AND NOT ONLY A BINARY.** The window shows Sailor's
+//! commands, and there were two ways to do it: copy them into TypeScript, or
+//! read them from here. The first is fault 10 — the same truth in two places —
+//! which has come back five times in this repo, the last on the vocabulary of
+//! actions. So `crates/sailor` exposes `COMMANDS`, `desktop/src-tauri` imports
+//! it as it already imports `crates/registry`, and `main.rs` stays the shell
+//! calling `dispatch`. Nobody copies anything, and a help page diverging from
+//! the binary is no longer expressible.
 //!
-//! PERCHÉ QUESTO CRATE ESISTE. Il 27/08/2026 il workspace produceva cinque
-//! eseguibili e tre non li invocava nessuno (`sweep`, e `release` come
-//! binario a sé): nessun documento aveva mai deciso più di un binario di
-//! sistema, e il piano `docs/plans/2026-08-22-sailor-il-sistema.md` parla
-//! sempre di `sailor <verbo>`. Qui comincia quel binario.
+//! WHY THIS CRATE EXISTS. The workspace produced five executables and three
+//! were invoked by nobody (`sweep`, and `release` as a binary of its own): no
+//! document had ever decided on more than one system binary, and the plan for
+//! Sailor as a system speaks throughout of `sailor <verb>`. That binary starts
+//! here.
 //!
-//! **L'ELENCO DEI COMANDI NON È RICOPIATO QUI.** Stava in questo commento, e
-//! il 01/09/2026 nominava ancora `sailor ui`, rimosso dodici commit prima:
-//! un elenco in prosa accanto all'elenco vero invecchia da solo, e nessuno
-//! legge un commento per aggiornarlo. Sta in `COMMANDS`, lo stampa
-//! `print_usage`, e la finestra lo mostra leggendolo da lì.
+//! **THE LIST OF COMMANDS IS NOT COPIED HERE.** It used to be in this comment,
+//! where it still named `sailor ui` twelve commits after its removal: a prose
+//! list beside the real list ages on its own, and nobody reads a comment to
+//! update it. It lives in `COMMANDS`, `print_usage` prints it, and the window
+//! shows it by reading it from there.
 
 pub mod faults_cmd;
 pub mod flow_cmd;
@@ -51,28 +50,19 @@ pub mod version_cmd;
 pub mod workspace_cmd;
 pub mod worktree_cmd;
 
-/// Un sottocomando: il nome sulla riga di comando, una riga di spiegazione, e
-/// **la funzione che lo esegue**.
+/// A subcommand: the name on the command line, a line of explanation, and
+/// **the function that runs it**.
 ///
-/// **IL CORPO STA NELLA TABELLA, E PRIMA NO.** Fino al 31/08/2026 questa era una
-/// coppia `(nome, descrizione)` e il dispatch era un `match` con un braccio per
-/// nome, chiuso da `unreachable!("comando registrato senza un braccio")`.
-/// Aggiungere un nome senza il suo braccio **compilava**, passava le prove, e
-/// andava in panico solo quando qualcuno digitava quel comando: un difetto che
-/// nessun controllo vedeva e che si scopriva in mano a chi lo usa. Con la
-/// funzione dentro la tabella la divergenza non è più possibile — una voce senza
-/// corpo non compila — e l'`unreachable!` è sparito insieme al buco.
-/// **IL CAMPO `usage` OBBLIGA, ED È PER QUESTO CHE È UN CAMPO.** Fino al
-/// 01/09/2026 la riga d'uso di ogni comando stava dentro il suo modulo, stampata
-/// da una funzione privata, e non esisteva nessun modo per un programma di
-/// chiederla: `sailor flow --help` finiva in `Err(usage())` e la finestra non
-/// aveva niente da leggere. Un campo nuovo qui costringe **tutte** le voci a
-/// riempirlo o il crate non compila — la stessa garanzia con cui il 31/08 il
-/// corpo è entrato nella tabella e ha ucciso l'`unreachable!`.
+/// **THE BODY LIVES IN THE TABLE.** It was a `(name, description)` pair with a
+/// `match` arm per name closed by an `unreachable!`: a name without its arm
+/// **compiled**, passed the tests, and panicked only when somebody typed it.
+/// **AND `usage` IS A FIELD BECAUSE A FIELD COMPELS**: printed by a private
+/// function per module, no program could ask for it — `sailor flow --help` gave
+/// `Err(usage())`. A new field forces every entry, or the crate does not build.
 ///
-/// Le righe sono un elenco e non una stringa sola perché chi le mostra decide
-/// come impaginarle: il terminale le stampa una per riga, la finestra le
-/// dispone in una tabella. Il testo è lo stesso; l'impaginazione no.
+/// The lines are a list and not one string because whoever shows them decides
+/// the layout: the terminal prints one per line, the window lays them out in a
+/// table. The text is the same; the layout is not.
 #[derive(Debug)]
 pub struct Command {
     pub name: &'static str,
@@ -274,10 +264,10 @@ pub const COMMANDS: &[Command] = &[
     },
 ];
 
-/// L'aiuto come testo, perché una prova possa leggere ciò che legge chi digita
-/// `sailor --help`. Stamparlo e basta lo renderebbe verificabile solo
-/// catturando lo standard output, e una prova che non guarda le stesse parole
-/// dell'utente sta provando un'altra cosa.
+/// The help as text, so a test can read what whoever types `sailor --help`
+/// reads. Merely printing it would make it checkable only by capturing standard
+/// output, and a test that does not look at the user's own words is testing
+/// something else.
 pub fn help_text() -> String {
     let mut text = catalogue::say("cli.help.heading", &[]);
     text.push('\n');
@@ -295,9 +285,9 @@ fn print_usage() {
     print!("{}", help_text());
 }
 
-/// Dove va un argv, senza toccare processi né disco: la domanda «il dispatch
-/// raggiunge il comando giusto?» si prova su questo, non su `main`, che
-/// chiamerebbe `std::process::exit` e chiuderebbe la batteria con lui.
+/// Where an argv goes, touching neither processes nor disk: the question «does
+/// the dispatch reach the right command?» is tested on this, not on `main`,
+/// which would call `std::process::exit` and close the suite with it.
 #[derive(Debug)]
 enum Route<'a> {
     Help,
@@ -305,11 +295,11 @@ enum Route<'a> {
     Unknown(&'a str),
 }
 
-/// **UN COMANDO SI CONFRONTA PER NOME, NON PER INDIRIZZO.** Il confronto
-/// derivato guarderebbe anche il puntatore a funzione, e due puntatori alla
-/// stessa funzione non sono garantiti uguali: `rustc` lo avverte, e un'uguaglianza
-/// che a volte è falsa fra cose identiche renderebbe le prove del dispatch
-/// intermittenti. Ciò che identifica un comando è il nome che si digita.
+/// **A COMMAND IS COMPARED BY NAME, NOT BY ADDRESS.** A derived comparison
+/// would look at the function pointer too, and two pointers to the same
+/// function are not guaranteed equal: `rustc` warns of it, and an equality
+/// sometimes false between identical things would make the dispatch tests
+/// flaky. What identifies a command is the name that gets typed.
 impl PartialEq for Route<'_> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -324,8 +314,8 @@ impl PartialEq for Route<'_> {
 impl Eq for Route<'_> {}
 
 impl Route<'_> {
-    /// Il nome del comando raggiunto, per chi prova il dispatch senza dover
-    /// costruire un `Command` intero.
+    /// The name of the command reached, for testing the dispatch without
+    /// building a whole `Command`.
     #[cfg(test)]
     fn reached(&self) -> Option<&'static str> {
         match self {
@@ -345,8 +335,8 @@ fn route(args: &[String]) -> Route<'_> {
     }
 }
 
-/// Il messaggio di un nome sconosciuto, con l'elenco di quelli validi dentro:
-/// è la parte che un test può leggere senza catturare `stderr`.
+/// The message for an unknown name, with the list of valid ones inside: the
+/// part a test can read without capturing `stderr`.
 fn unknown_command_message(name: &str) -> String {
     format!(
         "sailor: comando sconosciuto '{name}'; comandi disponibili: {}",
@@ -358,19 +348,19 @@ fn unknown_command_message(name: &str) -> String {
     )
 }
 
-/// Il codice d'uscita per un argv, senza uscire: `main` ci mette attorno
-/// `std::process::exit` e nient'altro.
+/// The exit code for an argv, without exiting: `main` wraps
+/// `std::process::exit` around it and nothing else.
 ///
-/// **STA QUI E NON IN `main` PERCHÉ UNA PROVA POSSA CHIAMARLO.** `main`
-/// chiuderebbe la batteria con sé; questa funzione torna il numero e basta.
+/// **IT IS HERE AND NOT IN `main` SO A TEST CAN CALL IT.** `main` would close
+/// the suite with itself; this function returns the number and stops.
 pub fn dispatch(args: &[String]) -> i32 {
     match route(args) {
         Route::Help => {
             print_usage();
             0
         }
-        // Un braccio solo per tutti: il corpo arriva dalla tabella, quindi non
-        // esiste più un nome che il dispatch non raggiunge.
+        // One arm for all: the body arrives from the table, so a name the
+        // dispatch does not reach no longer exists.
         Route::Known(command) => (command.run)(&args[2..]),
         Route::Unknown(other) => {
             eprintln!("{}", unknown_command_message(other));
@@ -436,13 +426,13 @@ mod tests {
         }
     }
 
-    /// **OGNI COMANDO DICE COME SI SCRIVE, E LA PRIMA PAROLA È IL SUO NOME.**
+    /// **EVERY COMMAND SAYS HOW IT IS WRITTEN, AND THE FIRST WORD IS ITS NAME.**
     ///
-    /// Il campo `usage` è nuovo del 01/09/2026 e la sua garanzia è di
-    /// compilazione — una voce senza non compila. Questa prova aggiunge ciò che
-    /// il compilatore non può vedere: che le righe non siano vuote, e che
-    /// parlino del comando a cui sono attaccate. Un copia-incolla fra due voci
-    /// vicine è l'errore che ci si aspetta qui, ed è muto senza questa riga.
+    /// The `usage` field's guarantee is a compile-time one — an entry lacking
+    /// it does not compile. This test adds what the compiler cannot see: that
+    /// the lines are not empty, and that they speak of the command they hang
+    /// on. A copy-paste between two neighbouring entries is the expected error
+    /// here, and it is mute without this line.
     #[test]
     fn every_command_says_how_it_is_written_and_names_itself() {
         for command in COMMANDS {
@@ -519,13 +509,12 @@ mod tests {
         );
     }
 
-    /// L'aiuto **letto** nomina ogni comando e ne dice il perché.
+    /// The help **as read** names every command and says why it is there.
     ///
-    /// Perché `help_text` esista invece di stampare direttamente: un
-    /// `println!` non si può leggere da una prova senza catturare lo standard
-    /// output, e una prova che non legge ciò che l'utente legge sta provando
-    /// un'altra cosa. Qui si controlla il testo vero, quello che esce da
-    /// `sailor --help`.
+    /// Why `help_text` exists instead of printing straight out: a `println!`
+    /// cannot be read by a test without capturing standard output, and a test
+    /// that does not read what the user reads is testing something else. What
+    /// is checked here is the real text, the one `sailor --help` emits.
     #[test]
     fn the_help_text_names_every_command_and_says_what_it_does() {
         let help = help_text();
@@ -557,8 +546,8 @@ mod tests {
     #[test]
     fn release_reaches_the_release_command() {
         assert_eq!(
-            // Nominava `notte` fino al 01/09/2026: l'instradamento non guarda il
-            // bersaglio, quindi la riga restava verde su un binario cancellato.
+            // Routing does not look at the target, so this line stayed green
+            // on a binary that had been deleted.
             route(&args(&["sailor", "release", "sailor", "--dry-run"])).reached(),
             Some("release")
         );
@@ -582,9 +571,9 @@ mod tests {
             route(&args(&["sailor", "models", "list"])).reached(),
             Some("models")
         );
-        // `ui` NON C'E' PIU', e la riga che lo provava e' diventata questa:
-        // dal 31/08/2026 l'unica interfaccia e' la finestra, e un comando che
-        // apriva una seconda pagina su una porta da ricordare non esiste.
+        // `ui` IS GONE, and the line that tested it became this one: the only
+        // interface is the window, and a command opening a second page on a
+        // port to be remembered does not exist.
         assert!(route(&args(&["sailor", "ui"])).reached().is_none());
         assert_eq!(
             route(&args(&["sailor", "flow", "list"])).reached(),
@@ -600,13 +589,12 @@ mod tests {
         );
     }
 
-    /// **OGNI NOME DICHIARATO PORTA A UN CORPO.** Prima del 31/08/2026 questa
-    /// non si poteva scrivere: il corpo stava in un `match` che una prova non
-    /// può interrogare, e un nome senza braccio andava in panico solo a
-    /// esecuzione. Adesso il corpo è nella tabella, quindi la domanda si può
-    /// fare — e la risposta la garantisce già il compilatore, che rifiuta una
-    /// voce senza `run`. Questa prova resta come dichiarazione: chi tornasse a
-    /// un dispatch a bracci separati la vede diventare bugiarda e sa perché.
+    /// **EVERY DECLARED NAME LEADS TO A BODY.** This could not be written while
+    /// the body sat in a `match` no test can interrogate, and a name without an
+    /// arm panicked only at run time. With the body in the table the question
+    /// can be asked — and the compiler already guarantees the answer, refusing
+    /// an entry with no `run`. The test stays as a declaration: whoever went
+    /// back to separate arms sees it turn false, and knows why.
     #[test]
     fn every_declared_name_reaches_its_own_body() {
         for command in COMMANDS {
@@ -619,8 +607,8 @@ mod tests {
         }
     }
 
-    /// Il passo consegnato ha il suo comando: senza, un mandato offerto non lo
-    /// può prendere in carico nessuno.
+    /// The handed step has its own command: without it, nobody can take on an
+    /// offered mandate.
     #[test]
     fn step_reaches_the_step_command() {
         assert_eq!(
@@ -634,8 +622,8 @@ mod tests {
         assert_eq!(route(&args(&["sailor", "sweep"])), Route::Unknown("sweep"));
     }
 
-    /// La prova che il mandato chiede esplicitamente: un nome ignoto porta con
-    /// sé l'elenco di quelli validi, non solo il rifiuto.
+    /// The test the mandate asks for explicitly: an unknown name carries the
+    /// list of valid ones with it, not the refusal alone.
     #[test]
     fn an_unknown_name_names_every_valid_command() {
         let message = unknown_command_message("sweep");
@@ -649,9 +637,9 @@ mod tests {
         }
     }
 
-    /// L'elenco stampato da `--help`/nessun argomento porta una riga per ogni
-    /// comando, non un sottoinsieme: è l'unica interfaccia che avrà chi lo usa
-    /// da terminale, quindi un nome dimenticato qui è invisibile a chi lo cerca.
+    /// The list printed by `--help`/no arguments carries a line per command,
+    /// not a subset: it is the only interface a terminal user gets, so a name
+    /// forgotten here is invisible to whoever looks for it.
     #[test]
     fn every_command_has_exactly_one_line_of_help() {
         for command in COMMANDS {

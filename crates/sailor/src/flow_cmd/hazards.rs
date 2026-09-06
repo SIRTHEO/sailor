@@ -8,85 +8,78 @@ use serde_json::Value;
 
 use super::check::engines_of;
 
-/// I campi che dicono **dove** un passo lavora o **quale** binario esegue.
+/// The fields that say **where** a step works or **which** binary it runs.
 ///
-/// Un percorso assoluto qui non è un dettaglio del testo: è la posizione in cui
-/// il passo lavorerà davvero, ed è il guasto 25 parola per parola — sette passi
-/// con la casa di chi scriveva scritta in chiaro, e un flusso che lanciato da un
-/// clone commetteva nel repository principale senza dirlo.
+/// An absolute path here is no detail of the text: it is the place the step
+/// will really work in, and it is fault 25 word for word — seven steps with the
+/// writer's own home spelled out, and a flow that, launched from a clone,
+/// committed into the main repository without saying so.
 pub(super) const POSITION_FIELDS: [&str; 2] = ["workdir", "bin"];
 
-/// I prefissi che fanno di un pezzo di testo un percorso assoluto.
+/// The prefixes that make a piece of text an absolute path.
 ///
-/// **È UN ELENCO DICHIARATO, NON UN ANALIZZATORE, E IL PREZZO È DICHIARATO.**
-/// È la stessa scelta già pagata da `identifiers_are_in_english`: un elenco non
-/// ha falsi positivi e lascia passare ciò che non conosce, mentre un
-/// analizzatore di percorsi dentro il testo libero di un prompt chiamerebbe
-/// percorso ogni `/` — a cominciare dai puntatori JSON — e verrebbe spento
-/// entro un giorno. Chi incontra un percorso che questo elenco non vede lo
-/// aggiunge qui.
+/// **A DECLARED LIST, NOT A PARSER, AND THE PRICE IS DECLARED.** It is the
+/// choice `identifiers_are_in_english` already paid for: a list has no false
+/// positives and lets through what it does not know, while a path parser over
+/// the free text of a prompt would call every `/` a path — starting with JSON
+/// pointers — and get switched off within a day. Whoever meets a path this list
+/// misses adds it here.
 const ABSOLUTE_PREFIXES: [&str; 4] = ["/Users/", "/home/", "/private/", "~/"];
 
-/// Un percorso assoluto trovato scritto a mano dentro un flusso.
+/// An absolute path found written by hand inside a flow.
 pub(super) struct HardcodedPath {
     pub(super) step: String,
     pub(super) field: String,
     pub(super) value: String,
-    /// Vero quando sta in un campo di posizione: il flusso **non gira** altrove,
-    /// quindi è un errore. Falso quando sta dentro un testo: lì il flusso gira
-    /// lo stesso e il percorso è un'istruzione a chi legge, quindi è un avviso.
+    /// True in a position field: the flow **does not run** elsewhere, so it is
+    /// an error. False inside a text: there the flow runs all the same and the
+    /// path is an instruction to the reader, so it is a warning.
     pub(super) fatal: bool,
 }
 
-/// I percorsi assoluti scritti a mano in un flusso.
+/// The absolute paths written by hand in a flow.
 ///
-/// **DUE ESITI, PERCHÉ SONO DUE GUASTI DIVERSI.** Un `workdir` assoluto decide
-/// dove il passo lavora: il flusso si può eseguire in un posto solo, e altrove
-/// fa danno invece di fallire. Un percorso dentro il testo di un prompt non
-/// impedisce al flusso di girare — è un'istruzione che diventa sbagliata
-/// altrove, e chi la riscrive sta riscrivendo un'istruzione, non un campo.
-/// Perciò il primo è un errore e il secondo un avviso: chiamarli allo stesso
-/// modo vorrebbe dire o bloccare flussi sani, o lasciar passare il guasto 25.
+/// **TWO OUTCOMES, BECAUSE THEY ARE TWO DIFFERENT FAULTS.** An absolute
+/// `workdir` decides where the step works: the flow runs in one place only, and
+/// elsewhere does harm instead of failing — fault 25. A path in prompt text
+/// does not: it is an instruction that becomes wrong elsewhere, and rewriting
+/// it rewrites an instruction, not a field. So one is an error, one a warning.
 ///
-/// **I PUNTATORI NON SONO PERCORSI.** `{"$from": "/answer/verdict"}` comincia
-/// per `/` e non è un percorso: è un puntatore JSON, e compare in quattro
-/// flussi su cinque. Il valore di `$from` e quello di `$json` si saltano. Il
-/// testo letterale dentro un `$join` invece si guarda: l'elenco di prefissi non
-/// può scambiare `/answer/verdict` per un percorso, quindi saltarlo non
-/// comprerebbe niente e perderebbe i prompt composti a pezzi — che è dove i due
-/// percorsi di `sviluppa-sailor` stanno davvero.
-/// Un rinvio montato dentro un campo che viene **eseguito**.
+/// **POINTERS ARE NOT PATHS.** `{"$from": "/answer/verdict"}` starts with `/`
+/// and appears in four flows out of five, so `$from` and `$json` values are
+/// skipped. Literal text inside a `$join` is looked at: the prefix list cannot
+/// mistake a pointer for a path, and skipping it would lose the prompts made in
+/// pieces — where the two paths of `sviluppa-sailor` really are.
+/// A reference mounted inside a field that is **executed**.
 #[derive(Debug)]
 pub(super) struct OutsideTextInCommand {
     pub(super) step: String,
     pub(super) field: String,
 }
 
-/// I campi il cui contenuto non viene letto: viene eseguito. Oggi ne esiste
-/// uno solo — `command` di `shell_check` — ed è un elenco perché il giorno che
-/// ne nasce un secondo, la regola deve valere anche per quello senza che
-/// nessuno se ne ricordi.
+/// The fields whose content is not read: it is run. Today there is exactly one
+/// — `shell_check`'s `command` — and it is a list so that the day a second one
+/// is born the rule holds for it too, with nobody having to remember.
 const EXECUTED_FIELDS: &[&str] = &["command"];
 
-/// **CIÒ CHE VIENE DA FUORI VA IN `env`, MAI IN `command`.** La regola era
-/// scritta sopra `ShellCheckAction` e non la applicava nessun codice: un
-/// augurio, non una regola.
+/// **WHAT COMES FROM OUTSIDE GOES IN `env`, NEVER IN `command`.** The rule was
+/// written above `ShellCheckAction` and no code applied it: a wish, not a rule.
 ///
-/// Il comando è testo di shell e viene eseguito. Un titolo di richiesta di
-/// modifica — che su un remoto condiviso lo scrive chiunque — montato dentro
-/// `command` è un comando scritto da chi ha aperto la richiesta. Dentro una
-/// variabile d'ambiente resta un dato, e il comando la legge fra virgolette.
+/// The command is shell text and it is run. A pull request title — which on a
+/// shared remote anyone writes — mounted inside `command` is a command written
+/// by whoever opened the request. Inside an environment variable it stays data,
+/// and the command reads it between quotes.
 ///
-/// **VALE PER I COMANDI QUANTO PER I MOTORI, E QUESTO È IL PUNTO.** Finché
-/// l'unico testo che entrava veniva da un modello, chi scriveva flussi stava
-/// attento. L'uscita di un `git` sembra innocua proprio perché non viene da un
-/// modello, ed è esattamente per questo che va trattata uguale.
+/// **IT HOLDS FOR COMMANDS AS MUCH AS FOR ENGINES, AND THAT IS THE POINT.**
+/// While the only text coming in came from a model, flow writers were careful.
+/// The output of a `git` looks harmless precisely because no model wrote it,
+/// which is exactly why it must be treated the same.
 ///
-/// **UN `$join` DI SOLE LETTERE NON È UNA SEGNALAZIONE.** Comporre un comando
-/// da pezzi scritti a mano è sano; ciò che si guarda è se dentro quel campo
-/// compare un rinvio — `$from` o `$json` — cioè un valore che questo flusso non
-/// ha scritto. Segnalare qualunque composizione renderebbe rosso ogni flusso
-/// sano, e un controllo così viene spento entro un giorno.
+/// **A `$join` OF PLAIN LETTERS IS NOT A FINDING.** Composing a command from
+/// hand-written pieces is healthy; what is looked for is a reference in that
+/// field — `$from` or `$json` — a value this flow did not write. Flagging any
+/// composition would redden every healthy flow, and such a check gets switched
+/// off within a day.
 pub(super) fn outside_text_in_command(flow: &FlowFile) -> Vec<OutsideTextInCommand> {
     let mut found = Vec::new();
     for step in flow.graph.steps() {
@@ -110,8 +103,8 @@ pub(super) fn outside_text_in_command(flow: &FlowFile) -> Vec<OutsideTextInComma
     found
 }
 
-/// Vero se da qualche parte qui dentro c'è un valore che il flusso non ha
-/// scritto: un rinvio all'uscita di un altro passo.
+/// True if somewhere in here sits a value the flow did not write: a reference
+/// to another step's output.
 fn holds_a_reference(value: &Value) -> bool {
     match value {
         Value::Object(fields) => fields
@@ -129,8 +122,8 @@ pub(super) fn hardcoded_paths(flow: &FlowFile) -> Vec<HardcodedPath> {
             walk_for_paths(&step.id, "", with, &mut found);
         }
     }
-    // L'ingresso dichiarato è scritto a mano quanto il `with`, ed è dove sta il
-    // testo dell'innesco.
+    // The declared input is as hand-written as the `with`, and it is where the
+    // trigger text sits.
     for (name, declared) in &flow.inputs {
         walk_for_paths(name, "", declared, &mut found);
     }
@@ -141,8 +134,8 @@ fn walk_for_paths(step: &str, field: &str, value: &Value, found: &mut Vec<Hardco
     match value {
         Value::Object(fields) => {
             for (key, inner) in fields {
-                // Il valore di un puntatore non è un percorso, e guardarci
-                // dentro riempirebbe il rapporto di falsi positivi.
+                // A pointer's value is not a path, and looking inside it would
+                // fill the report with false positives.
                 if reference::carries_a_pointer(key) {
                     continue;
                 }
@@ -635,9 +628,9 @@ mod tests {
         );
     }
 
-    // ── il guasto 25: i percorsi assoluti scritti dentro un flusso ────
+    // ── fault 25: the absolute paths written inside a flow ────────────
 
-    /// Un flusso con un solo passo, il cui `with` è quello che le si passa.
+    /// A flow of one step, whose `with` is the one handed in.
     fn flow_with(with: &str) -> FlowFile {
         let json = format!(
             r#"{{
@@ -655,9 +648,9 @@ mod tests {
         serde_json::from_str(&json).expect("caricare il flusso")
     }
 
-    /// IL CASO DEL GUASTO 25. Un `workdir` assoluto decide dove il passo
-    /// lavora: il flusso si può eseguire in un posto solo, e altrove non
-    /// fallisce — fa danno nel posto sbagliato.
+    /// THE CASE OF FAULT 25. An absolute `workdir` decides where the step
+    /// works: the flow runs in one place only, and elsewhere it does not fail
+    /// — it does harm in the wrong place.
     #[test]
     fn an_absolute_workdir_is_an_error() {
         let flow = flow_with(r#"{"workdir": "/work/sailor"}"#);
@@ -670,8 +663,8 @@ mod tests {
         assert_eq!(found[0].field, "workdir");
     }
 
-    /// Un `workdir` relativo è esattamente ciò che si vuole ottenere: si
-    /// risolve sulla radice di chi lancia, e non ha niente da segnalare.
+    /// A relative `workdir` is exactly what is wanted: it resolves on the root
+    /// of whoever launches, and has nothing to report.
     #[test]
     fn a_relative_workdir_is_clean() {
         let flow = flow_with(r#"{"workdir": "crates/flow"}"#);
@@ -722,10 +715,9 @@ mod tests {
         );
     }
 
-    /// **UN PUNTATORE NON È UN PERCORSO.** `{"$from": "/answer/verdict"}`
-    /// comincia per `/` e compare in quattro flussi su cinque: se il controllo
-    /// lo chiamasse percorso nascerebbe pieno di falsi positivi e verrebbe
-    /// spento entro un giorno.
+    /// **A POINTER IS NOT A PATH.** `{"$from": "/answer/verdict"}` starts with
+    /// `/` and appears in four flows out of five: a check calling it a path
+    /// would be born full of false positives and switched off within a day.
     #[test]
     fn a_json_pointer_is_not_a_path() {
         let flow = flow_with(
@@ -735,8 +727,8 @@ mod tests {
         assert!(hardcoded_paths(&flow).is_empty());
     }
 
-    /// Un passo `shell_check`, che `flow_with` non sa costruire perché monta
-    /// sempre un motore.
+    /// A `shell_check` step, which `flow_with` cannot build: it always mounts
+    /// an engine.
     fn shell_flow_with(with: &str) -> FlowFile {
         let json = format!(
             r#"{{
@@ -754,21 +746,17 @@ mod tests {
         serde_json::from_str(&json).expect("caricare il flusso")
     }
 
-    /// **CIÒ CHE VIENE DA FUORI VA IN `env`, MAI IN `command`.** La regola è
-    /// scritta da sempre sopra `ShellCheckAction`, e cercata in tutto
-    /// `crates/` non la applica nessun codice e non la copre nessuna prova: è
-    /// un augurio, non una regola.
+    /// **WHAT COMES FROM OUTSIDE GOES IN `env`, NEVER IN `command`.** The rule
+    /// stood above `ShellCheckAction` as a wish no code applied and no test
+    /// covered. The command is shell text and it is run: a pull request title,
+    /// which anyone on a shared remote writes, mounted into `command` is a
+    /// command written by whoever opened the request; in an environment
+    /// variable it stays data, read between quotes.
     ///
-    /// Il comando è testo di shell e viene eseguito. Un titolo di richiesta di
-    /// modifica — che su un remoto condiviso lo scrive chiunque — montato
-    /// dentro `command` è un comando scritto da chi ha aperto la richiesta.
-    /// Dentro una variabile d'ambiente resta un dato, e il comando la legge
-    /// fra virgolette.
-    ///
-    /// LA MISURA CHE POTEVA VENIRE DIVERSA: la seconda metà. Un controllo che
-    /// segnalasse qualunque rinvio, ovunque, sarebbe rosso su ogni flusso sano
-    /// e verrebbe spento in un giorno — come sarebbe successo a
-    /// `hardcoded_paths` se avesse scambiato un puntatore per un percorso.
+    /// THE MEASURE THAT COULD HAVE COME OUT OTHERWISE: the second half. A check
+    /// flagging any reference anywhere would be red on every healthy flow and
+    /// switched off in a day — as `hardcoded_paths` would have been had it
+    /// taken a pointer for a path.
     #[test]
     fn outside_text_belongs_in_env_never_in_command() {
         let montato = shell_flow_with(
@@ -781,8 +769,8 @@ mod tests {
         assert_eq!(found[0].step, "unico");
         assert_eq!(found[0].field, "command");
 
-        // La forma giusta dello stesso lavoro: il valore passa come dato, e il
-        // comando lo legge fra virgolette.
+        // The right shape of the same work: the value passes as data, and the
+        // command reads it between quotes.
         let passato = shell_flow_with(
             r#"{"command": "gh pr view --json title \"$TITOLO\"", "env": {"TITOLO": {"$from": "/answer/titolo"}}, "timeout_secs": 5}"#,
         );
@@ -793,10 +781,9 @@ mod tests {
         );
     }
 
-    /// Un percorso dentro il testo di un prompt non impedisce al flusso di
-    /// girare: è un'istruzione che diventa sbagliata altrove. Avviso, non
-    /// errore — e riscriverlo è riscrivere un'istruzione, quindi lo fa una
-    /// persona.
+    /// A path inside prompt text does not stop the flow from running: it is an
+    /// instruction that becomes wrong elsewhere. A warning, not an error — and
+    /// rewriting it is rewriting an instruction, so a person does it.
     #[test]
     fn an_absolute_path_inside_a_prompt_is_a_warning() {
         let flow =
