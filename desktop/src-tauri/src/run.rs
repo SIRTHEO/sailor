@@ -1841,7 +1841,7 @@ mod tests {
     /// scrivono.
     #[test]
     fn every_action_of_a_shipped_flow_is_known_to_the_window() {
-        let known = registry::default_registry(None, None);
+        let known = registry::registry_in(registry::House::empty(), None, None);
         for name in ["what-this-machine-has", "migrate-to-sailor"] {
             let flow = load_flow(name).expect("i flussi di sistema si caricano");
             for step in flow.graph.steps() {

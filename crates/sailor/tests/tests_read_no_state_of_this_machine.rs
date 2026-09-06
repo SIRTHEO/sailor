@@ -61,10 +61,10 @@ const ONE_LINE_PER_DOOR: &[&str] = &[
 
 /// Doors still open in test code today. Downwards only. Three are the gate
 /// that checks nothing of this machine is published, which has to read the
-/// machine to know what to look for; two are the window's wiring test, which
-/// asks both places for the ledger after declaring where it is; three are the
-/// window's shell, whose tests still build the registry of this machine.
-const DOORS_TODAY: usize = 8;
+/// machine to know what to look for; two are the window's wiring test in
+/// `crates/ui/src/gather.rs`, which declares where the ledger is and then asks
+/// both roads for it: handing it a path would compare a value with itself.
+const DOORS_TODAY: usize = 5;
 
 /// How far the seed may sit above the tree. Zero: a seed nobody re-measured
 /// lets the next door open in silence.
