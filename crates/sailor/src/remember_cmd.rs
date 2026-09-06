@@ -114,7 +114,7 @@ mod tests {
         let memory = Memory {
             kind: "project".to_owned(),
             label: "the trunk".to_owned(),
-            value: "sorgenti".to_owned(),
+            value: "main".to_owned(),
             provenance: "test".to_owned(),
             modified: 10,
             valid_from: 10,
@@ -128,7 +128,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
 
         assert_eq!(kept.label, "the trunk");
-        assert_eq!(page, format!("## {}\n- **the trunk** (project): sorgenti", actions::memory::EVERYWHERE));
+        assert_eq!(page, format!("## {}\n- **the trunk** (project): main", actions::memory::EVERYWHERE));
     }
 
     fn words(list: &[&str]) -> Vec<String> {
@@ -156,14 +156,14 @@ mod tests {
         assert!(init.success());
         let real = checkout.canonicalize().expect("real").display().to_string();
 
-        let own = memory_typed(&words(&["project", "the trunk", "sorgenti,", "pushed"]), &deep, 10).expect("a memory");
-        let global = memory_typed(&words(&["project", "--global", "the trunk", "sorgenti"]), &deep, 10).expect("a memory");
-        let nowhere = memory_typed(&words(&["project", "the trunk", "sorgenti"]), &outside, 10).expect("a memory");
+        let own = memory_typed(&words(&["project", "the trunk", "main,", "pushed"]), &deep, 10).expect("a memory");
+        let global = memory_typed(&words(&["project", "--global", "the trunk", "main"]), &deep, 10).expect("a memory");
+        let nowhere = memory_typed(&words(&["project", "the trunk", "main"]), &outside, 10).expect("a memory");
         let short = memory_typed(&words(&["project", "the trunk"]), &deep, 10);
         let _ = std::fs::remove_dir_all(&dir);
 
         assert_eq!(own.tree, Some(real));
-        assert_eq!(own.value, "sorgenti, pushed");
+        assert_eq!(own.value, "main, pushed");
         assert_eq!(own.modified, 10);
         assert_eq!(global.tree, None);
         assert_eq!(global.label, "the trunk", "the flag was read as a word");
@@ -177,7 +177,7 @@ mod tests {
         let in_a_tree = Memory {
             kind: "project".to_owned(),
             label: "the trunk".to_owned(),
-            value: "sorgenti".to_owned(),
+            value: "main".to_owned(),
             provenance: "test".to_owned(),
             modified: 10,
             valid_from: 10,

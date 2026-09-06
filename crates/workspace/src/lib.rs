@@ -1,8 +1,7 @@
 //! The trees a repository is checked out into.
 //!
-//! One copy, read by the command line and by the window alike. Two copies of
-//! this would answer differently about which branch a tree is on, and the one
-//! that acts on the answer is `remove`.
+//! One copy, read by the command line and by the window alike: two would
+//! answer differently about which branch a tree is on, and `remove` acts on it.
 
 pub mod branches;
 
@@ -34,9 +33,9 @@ impl Worktree {
 
 /// Reads `git worktree list --porcelain`.
 ///
-/// The porcelain form and not the human one: the human one aligns columns with
-/// spaces, so a path with a space in it cannot be told from the column after
-/// it, and a name a person chose is exactly where a space turns up.
+/// The porcelain form and not the human one, which aligns columns with spaces:
+/// a path with a space in it cannot then be told from the column after it, and
+/// a name a person chose is where a space turns up.
 pub fn parse_worktrees(porcelain: &str) -> Vec<Worktree> {
     let mut trees = Vec::new();
     let mut current: Option<Worktree> = None;
@@ -396,9 +395,9 @@ pub fn parse_status(porcelain: &str) -> Vec<ChangedFile> {
 
 /// What changed in `root` since its last commit, as git says it.
 ///
-/// Against `HEAD` so that staged and unstaged changes both show: an agent
-/// that ran `git add` has still changed the tree. A repository with no commit
-/// yet has no `HEAD`, and then the plain diff is what git can answer.
+/// Against `HEAD` so staged and unstaged changes both show: an agent that ran
+/// `git add` has still changed the tree. With no commit yet there is no `HEAD`,
+/// and the plain diff is what git can answer.
 pub fn changes(root: &Path) -> Result<Changes, String> {
     let status = git(root, &["status", "--porcelain", "-z", "--untracked-files=all"])?;
     let diff = match git(root, &["diff", "HEAD"]) {
