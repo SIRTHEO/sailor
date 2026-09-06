@@ -1,30 +1,17 @@
 [package]
 name = "actions"
 version = "0.1.0"
+description = "What a step can do, and how an external engine is invoked."
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
 
-# Azioni riusabili da qualunque flow::Graph: nessuna dipendenza verso un
-# servizio in particolare — solo verso il motore che le esegue, e dal 28/08/2026
-# verso il deposito, perche' i due nodi di `store` danno a un flusso lo spazio
-# dove ricordare invece di farsi una struttura Rust per ogni fatto.
-# Resta vero cio' che conta: nessuna coda, nessun percorso, nessun servizio.
-#
-# `models` dal 29/08/2026, e la direzione conta: `models` non dipende da niente
-# di qui (solo `serde_json` e `regex`), quindi non c'e' ciclo — mentre il verso
-# opposto verso `toolbox` lo sarebbe, perche' `toolbox` implementa un tratto di
-# questo crate. Serve perche' leggere il consumo dichiarato da un motore e
-# calcolare un costo da un listino sono gia' scritti li': riscriverli qui
-# vorrebbe dire tenere due copie della stessa regola sui prezzi, e due copie di
-# una regola divergono.
-#
-# `profiles` dal 01/09/2026, ed e' il guasto 18. Fino a quel giorno la
-# sovrapposizione d'ambiente che porta un motore nella casa di Sailor
-# (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME`) era chiamata da un
-# posto solo: `sailor run`. Un motore lanciato da un passo di flusso ereditava
-# quindi l'ambiente di chi aveva aperto il terminale, cioe' leggeva la casa del
-# vicino — e due corse dello stesso flusso non erano la stessa misura. Stessa
-# direzione di `models`: `profiles` dipende solo da serde, quindi non c'e' ciclo.
+# Actions any `flow::Graph` can run: no queue, no path, no service, only the
+# engine that runs them and the crates below. Every arrow here points down:
+# `models` and `profiles` depend on nothing of this crate, so there is no
+# cycle, while the reverse arrow to `toolbox` would be one.
 [dependencies]
 # A tree kept because it holds work is a line a person reads, so it is read
 # from the catalogue like every other. No cycle: `catalogue` depends on serde.
@@ -32,32 +19,30 @@ catalogue = { path = "../catalogue" }
 flow = { path = "../flow" }
 faults = { path = "../faults" }
 ledger = { path = "../ledger" }
+# Reading the usage an engine declares and pricing it from a list are written
+# there once; a second copy of a price rule diverges from the first.
 models = { path = "../models" }
+# The environment overlay that points an engine at Sailor's home: an engine a
+# step starts must read the same home as `sailor run`, or two runs of one
+# flow are not the same measurement. See fault 18.
 profiles = { path = "../profiles" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-# `sessions` dal 03/09/2026: chi guarda l'equipaggio deve poter leggere i
-# terminali che Sailor segue, non solo gli annunci che gli agenti scrivono. Non
-# c'e' ciclo: `sessions` dipende solo da `ledger`.
+# Whoever watches the crew reads the terminals Sailor tracks, not only the
+# claims agents write. No cycle: `sessions` depends only on `ledger`.
 sessions = { path = "../sessions" }
 # Cutting a step its own tree is git's job, and the one place that talks to
 # git worktrees already lives here. No cycle: this crate depends on serde.
 workspace = { path = "../workspace" }
 
-# Serve a uccidere un gruppo di processi, non un processo: `libc::kill` con un
-# pid negativo. È già la dipendenza di `ledger`, `sessions` e `terminal`.
+# To kill a process group rather than one process: `libc::kill` with a
+# negative pid. Already a dependency of `ledger`, `sessions` and `terminal`.
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
-# CHI LEGGE LA PROIEZIONE È UNO SOLO, E SOLO NELLE PROVE.
-#
-# Le prove di questo crate rileggevano `model_calls` con una copia privata di
-# `ui::parse::parse_model_call_row`, scritta qui perché «la dipendenza inversa
-# sarebbe un ciclo». Non lo era — `ui` non dipende da `actions` — e comunque
-# cargo ammette i cicli di sole prove, come `flow` fa già con `ledger`. Quella
-# copia leggeva il dump **per posizione**, come l'originale: due copie che
-# sbagliassero insieme sarebbero rimaste verdi tutte e due e si sarebbero
-# confermate a vicenda. Adesso a leggere è uno solo, e a tenerlo onesto c'è
-# `ledger::MODEL_CALL_DUMP_COLUMNS`, che non è nessuno dei due.
+# One reader of the `model_calls` projection, and only in tests. A private
+# copy of `ui::parse::parse_model_call_row` lived here once; two readers that
+# err together stay green together. `ledger::MODEL_CALL_DUMP_COLUMNS` keeps
+# the one reader honest, and cargo allows a test-only cycle.
 [dev-dependencies]
 ui = { path = "../ui" }

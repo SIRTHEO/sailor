@@ -1,26 +1,27 @@
 [package]
 name = "toolbox"
 version = "0.1.0"
+description = "The descriptors: how to talk to a tool Sailor does not know by name."
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
 
 # Answers "what can I use here?": which command lines, which MCP servers and
-# which other tools exist on this machine. The list of what to look for is data
-# — the descriptors — and not code: no particular tool name appears in here.
-#
-# `actions` for the timeout primitive (`run_with_timeout`): asking a binary its
-# version means running it, and a binary that does not return must not stop a
-# detection. `inventory` for `discovery::glob`, which already matches `*`
-# patterns without pulling in another crate. `flow` for the `Action` trait, so a
-# flow step can ask for the detection. `ledger` for `sailor_home()` and nothing
-# else: only one place knows where Sailor's home is, and rewriting the rule here
-# would have `tool_needs` look in a different directory from the one the window
-# searches for flows. It adds nothing to the build — it already came in through
-# `actions`.
+# which other tools exist on this machine. The list of what to look for is
+# data, the descriptors, and not code: no particular tool name appears here.
 [dependencies]
+# For `run_with_timeout`: asking a binary its version means running it, and a
+# binary that does not return must not stop a detection.
 actions = { path = "../actions" }
+# For the `Action` trait, so a flow step can ask for the detection.
 flow = { path = "../flow" }
+# For `sailor_home()` and nothing else: one place knows where Sailor's home
+# is, or `tool_needs` would look in a different directory from the one the
+# window searches for flows.
 ledger = { path = "../ledger" }
+# For `discovery::glob`, which already matches `*` patterns.
 inventory = { path = "../inventory" }
 # The quota channel a descriptor declares is read by `models::remaining`; the
 # dispatch from the declaration to the reader lives here, once.
