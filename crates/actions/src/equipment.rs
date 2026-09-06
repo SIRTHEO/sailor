@@ -80,7 +80,7 @@ pub fn equipment_with_keys(
             .find(|profile| profile.cli_id == cli.id && &profile.name == active)
     });
     let mut from_the_profile = resolved
-        .map(|profile| profiles::build_environment(cli, &profile.home_dir))
+        .map(|profile| profiles::build_environment(cli, &profile.home_dir, key_of))
         .unwrap_or_default();
     // The endpoint, when the profile declares one: the same overlay, and a
     // refusal instead of a launch when it cannot be pointed there.
