@@ -39,6 +39,11 @@ pub struct FlowFile {
     /// on [`crate::Spend`]: the cap is a guarantee over costs engines declare.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spend_cap_micros: Option<i64>,
+    /// Which kind of cap the flow requires. Absent is
+    /// [`CapKind::StopThreshold`], the only kind almost every shipped step can
+    /// offer; asking for `guaranteed` where it cannot be had does not start.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spend_cap_kind: Option<CapKind>,
     /// How long one run of this flow may last, in seconds, counted from the
     /// first start: a resume inherits the same deadline instead of granting
     /// itself a fresh one. Absent is written absent, and a run of a flow
@@ -66,6 +71,24 @@ pub struct FlowFile {
 
 fn not_declared(declared: &bool) -> bool {
     !*declared
+}
+
+/// What a declared cap is, and which of the two a flow file requires. A cap is
+/// **guaranteed** only where every call it covers is bounded before it starts —
+/// a ceiling the engine imposes, and a tariff to price it with — and otherwise
+/// its honest name is a **stop threshold**. Decided from facts, never a word.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CapKind {
+    Guaranteed,
+    StopThreshold,
+}
+
+impl FlowFile {
+    /// The kind of cap this flow requires, declared or defaulted.
+    pub fn required_cap_kind(&self) -> CapKind {
+        self.spend_cap_kind.unwrap_or(CapKind::StopThreshold)
+    }
 }
 
 /// A whole number the flow declared, or a refusal that names the field.

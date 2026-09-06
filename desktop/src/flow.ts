@@ -69,6 +69,13 @@ export interface FlowFile {
    * does not declare them leaves rows out of the tally.
    */
   spend_cap_micros?: number | null;
+  /**
+   * Which kind of cap the flow requires: `guaranteed`, or `stop_threshold`.
+   * Absent means `stop_threshold`, the only kind almost every step can offer.
+   * A flow asking for `guaranteed` on a machine that cannot give it does not
+   * start at all.
+   */
+  spend_cap_kind?: "guaranteed" | "stop_threshold" | null;
 }
 
 /**

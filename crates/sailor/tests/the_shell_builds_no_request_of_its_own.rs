@@ -55,6 +55,35 @@ fn the_window_shell_does_not_build_its_own_execution_request() {
     );
 }
 
+/// The question about money is asked by both launchers, or by neither.
+///
+/// A flow requiring a guaranteed cap must not start where the guarantee cannot
+/// be given, and «must not start» has two doors: the command and the button.
+/// One door that does not ask is not half a control — it is the whole of it
+/// gone, because whoever launches picks the door.
+const THE_QUESTION_BEFORE_A_RUN: &str = "why_a_run_here_would_not_start(";
+
+#[test]
+fn both_launchers_ask_whether_the_run_may_start_at_all() {
+    let command_line = repository_root().join("crates/sailor/src/flow_cmd/run_and_resume.rs");
+    let text = std::fs::read_to_string(&command_line).expect("il lanciatore della riga di comando");
+    assert!(
+        text.contains(THE_QUESTION_BEFORE_A_RUN),
+        "{} deve chiedere se la corsa può partire prima di aprirla",
+        command_line.display()
+    );
+
+    let Some((path, shell)) = the_shells_launcher() else {
+        return;
+    };
+    assert!(
+        shell.contains(THE_QUESTION_BEFORE_A_RUN),
+        "{} deve fare la stessa domanda: un tetto garantito che questa macchina \
+         non sa dare ferma la corsa dal pulsante come dal terminale",
+        path.display()
+    );
+}
+
 /// E la chiama davvero: senza questa riga la prova sopra resterebbe verde anche
 /// se il guscio smettesse di lanciare del tutto.
 #[test]

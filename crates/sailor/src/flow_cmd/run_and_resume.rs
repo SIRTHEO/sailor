@@ -405,6 +405,12 @@ pub(super) fn run_flow(sources: &[FlowSource], name: &str, mandate: Option<&str>
     if let Some(text) = mandate {
         put_mandate(&mut flow, text)?;
     }
+    // Before the store, before the run's header, before anything is spent: a
+    // flow that requires a guaranteed cap this machine cannot give it stops
+    // here rather than finding out from the bill.
+    if let Some(why) = super::check::why_a_run_here_would_not_start(&flow) {
+        return Err(why);
+    }
     // IL DEPOSITO PRIMA DEL REGISTRO, e non è un dettaglio d'ordine: i nodi
     // `store_write`/`store_read` lo possiedono, quindi un registro costruito
     // prima non li avrebbe e dichiarerebbe mancanti due azioni che esistono.
