@@ -267,8 +267,8 @@ impl<'a> Request<'a> {
 ///
 /// **A LIST OF WHO NEEDS IT, NOT OF THE EXCEPTIONS**, and the difference shows
 /// on the form added tomorrow: a list of exceptions lets it through in silence,
-/// this one does not. Until 01/09/2026 `dispatch` opened `sessions.db` before
-/// knowing which form had been asked for, so `census` — which never touches the
+/// this one does not. `dispatch` once opened `sessions.db` before knowing
+/// which form had been asked for, so `census` — which never touches the
 /// ledger — died with the file's error **in place of its own answer**, and its
 /// answer is precisely "I do not know".
 ///
@@ -1873,8 +1873,8 @@ mod tests {
         }
     }
 
-    /// I ganci di un altro prodotto, già installati, come stanno davvero in
-    /// `~/.claude/settings.json` su questa macchina.
+    /// Another product's hooks, already installed, exactly as they sit in
+    /// `~/.claude/settings.json` on this machine.
     fn settings_of_someone_else() -> &'static str {
         r#"{
           "model": "opusplan",
@@ -3234,9 +3234,9 @@ mod tests {
         );
     }
 
-    /// **STACCATO VUOL DIRE STACCATO.** Nessun saluto, e nessuna riga scritta:
-    /// if opening recorded anyway, «leave this window alone» would hold for the
-    /// text and not for the facts.
+    /// **DETACHED MEANS DETACHED.** No greeting, and no line written: if opening
+    /// recorded anyway, «leave this window alone» would hold for the text and
+    /// not for the facts.
     #[test]
     fn a_detached_terminal_is_greeted_by_silence() {
         let scratch = Scratch::new("staccato");

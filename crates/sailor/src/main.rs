@@ -1,16 +1,9 @@
-//! Il guscio del binario, e nient'altro.
+//! The binary's shell, and nothing else.
 //!
-//! **TUTTO IL RESTO STA IN `lib.rs` DAL 01/09/2026.** La tabella dei comandi,
-//! l'instradamento e le prove del dispatch erano qui, dentro un crate che
-//! produce solo un eseguibile: nessun altro programma poteva leggerli. Quando
-//! la finestra ha dovuto mostrare i comandi di Sailor, le strade erano due —
-//! ricopiarli in TypeScript, o esporli. Ricopiarli è il guasto 10, che in
-//! questo repo si è già ripresentato cinque volte, l'ultima lo stesso giorno
-//! sul vocabolario delle azioni. Quindi qui resta solo la chiamata a
-//! `std::process::exit`, che è l'unica cosa che una prova non può eseguire.
-//!
-//! Il perché del crate, l'elenco dei comandi e le prove dell'instradamento
-//! stanno in `lib.rs`, che è dove sono andati: qui non si ricopiano.
+//! **EVERYTHING ELSE LIVES IN `lib.rs`.** The command table, the routing and
+//! its tests sat in a crate that only builds an executable, so no other program
+//! could read them; recopying them into the window is fault 10, already seen
+//! five times in this repo. Only `std::process::exit` stays: a test cannot run it.
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

@@ -1,27 +1,16 @@
-//! `sailor step`: prendere in carico e chiudere un passo che un flusso ha
-//! consegnato all'agente già vivo.
+//! `sailor step`: taking on and closing a step a flow handed to an agent that is
+//! already alive.
 //!
-//! **DUE COMANDI E NON UNO, PERCHÉ FANNO DUE COSE DIVERSE.** `open` dichiara che
-//! qualcuno prende il lavoro; `close` dichiara com'è andato. In mezzo c'è il
-//! lavoro vero, che Sailor non esegue e non deve eseguire: è tutto il punto
-//! della consegna.
+//! **TWO COMMANDS AND NOT ONE, BECAUSE THEY DO TWO DIFFERENT THINGS.** `open`
+//! declares someone takes the work; `close` declares how it went. In between is
+//! the real work, which Sailor does not run and must not: that is the handoff.
 //!
-//! ─────────────────────────────────────────────────────────────────────────
-//! **LA PRIMA DEBOLEZZA, DICHIARATA INVECE CHE NASCOSTA: `--as <chi>` È UN NOME
-//! CHE SE LO SCEGLIE CHI LO SCRIVE.**
-//!
-//! Il rifiuto qui sotto applica «chi crea non giudica»: chi ha chiuso una
-//! dipendenza non può aprire il passo che la giudica. Ma applicare quella regola
-//! a un nome scelto liberamente da chi si vuole escludere è **una serratura con
-//! la chiave in tasca all'escluso**: basta scrivere `--as qualcun-altro` e il
-//! rifiuto non scatta.
-//!
-//! Non è una svista da chiudere qui: Sailor non ha nessun identificativo di
-//! sessione da leggere — non sa chi sta digitando, e nessun campo del deposito
-//! glielo può dire. Finché non ce l'ha, questo controllo vale contro la
-//! distrazione, non contro chi vuole aggirarlo. Chi ci costruisce sopra una
-//! garanzia si sta fidando di una cosa che non regge.
-//! ─────────────────────────────────────────────────────────────────────────
+//! **THE FIRST WEAKNESS, DECLARED RATHER THAN HIDDEN: `--as <who>` IS A NAME
+//! CHOSEN BY WHOEVER WRITES IT.** The refusal below applies «the author does not
+//! judge», but on a freely chosen name it is **a lock with the key in the
+//! excluded party's pocket**: `--as someone-else` and it never fires. Sailor has
+//! no session id to read, and no store field can say who is typing; until it has
+//! one, this holds against distraction, not against anyone set on evading it.
 
 use crate::Form;
 use actions::handoff::{holder_key, HOLDER_COLLECTION};
@@ -52,7 +41,7 @@ fn dispatch(args: &[String]) -> Result<String, String> {
     }
 }
 
-/// Le forme di `sailor step`, una per riga. Vedi `flow_cmd::USAGE`.
+/// The forms of `sailor step`, one per line. See `flow_cmd::USAGE`.
 pub const USAGE: &[Form] = &[
     Form {
         form: "sailor step open --run <run> --step <step> --as <who>",
@@ -72,12 +61,11 @@ fn usage() -> String {
     )
 }
 
-/// Le opzioni scritte sulla riga, in coppie `--nome valore`.
+/// The options written on the line, in `--name value` pairs.
 ///
-/// **UN'OPZIONE SENZA VALORE È UN ERRORE, NON UN VUOTO.** `--step --as chi`
-/// prenderebbe `--as` come identificativo del passo e cercherebbe un passo che
-/// non esiste, con un messaggio che manda a guardare il flusso invece della riga
-/// di comando.
+/// **AN OPTION WITH NO VALUE IS AN ERROR, NOT AN EMPTY.** `--step --as who`
+/// would take `--as` as the step id and hunt for a step that does not exist,
+/// with a message sending the reader to the flow instead of the command line.
 fn flags(args: &[String]) -> Result<BTreeMap<String, String>, String> {
     let mut found = BTreeMap::new();
     let mut rest = args.iter();
@@ -116,28 +104,24 @@ fn required<'a>(found: &'a BTreeMap<String, String>, name: &str) -> Result<&'a s
     })
 }
 
-// ── prendere in carico ───────────────────────────────────────────────────
+// ── taking it on ─────────────────────────────────────────────────────────
 
-/// Apre un tentativo nuovo su un passo consegnato, a nome di chi lo prende.
-///
-/// **L'INGRESSO SI COPIA TALE E QUALE, E NON È PIGRIZIA.** L'impronta
-/// `input_digest` si calcola dall'ingresso: copiarlo identico fa combaciare le
-/// due impronte, e allora `flow::attempt_relation` dichiara `SameInput` — cioè
-/// «questo è lo stesso lavoro di prima, ripreso», che è la verità. Ricostruire
-/// l'ingresso, o metterci dentro chi lo prende, darebbe `DifferentInput`: chi
-/// rilegge la corsa vedrebbe due lavori diversi dove ce n'è uno solo, e il
-/// mandato — che vive lì dentro — cambierebbe impronta senza essere cambiato.
+/// Opens a fresh attempt on a handed step, in the name of whoever takes it.
+/// **THE INPUT IS COPIED AS IS, AND THAT IS NOT LAZINESS.** `input_digest` comes
+/// from the input: an identical copy makes the digests match, so
+/// `flow::attempt_relation` says `SameInput` — the same work resumed, and true.
+/// Rebuilding it, or writing the taker in, would say `DifferentInput`: two jobs
+/// where there is one, and the mandate re-fingerprinted without being changed.
 fn open_step(found: &BTreeMap<String, String>) -> Result<String, String> {
     let ledger = open_ledger()?;
     open_step_in(&ledger, found)
 }
 
-/// Il corpo di `open`, col deposito dichiarato invece che dedotto da `HOME`.
+/// The body of `open`, with the store declared rather than derived from `HOME`.
 ///
-/// **SEPARATO PERCHÉ ALTRIMENTI NON SI PROVA.** `ledger::default_directory`
-/// legge una variabile d'ambiente, che è globale al processo: una prova che la
-/// scrivesse rovinerebbe le altre a caso, e chi vede il rosso guarderebbe il
-/// modulo sbagliato.
+/// **SEPARATE, OR IT CANNOT BE TESTED.** `ledger::default_directory` reads an
+/// environment variable, global to the process: a test that wrote it would spoil
+/// the others at random, and whoever saw the red would look at the wrong module.
 pub fn open_step_in(ledger: &Ledger, found: &BTreeMap<String, String>) -> Result<String, String> {
     let run_id = required(found, "run")?;
     let step_id = required(found, "step")?;
@@ -156,9 +140,9 @@ pub fn open_step_in(ledger: &Ledger, found: &BTreeMap<String, String>) -> Result
         )
     })?;
 
-    // **SI APRE SOLO CIÒ CHE È IN ATTESA.** Un passo andato, rotto o ancora
-    // aperto non è stato consegnato a nessuno: aprirlo di nuovo vorrebbe dire
-    // rifare un lavoro che il motore sta già facendo, o disfare un esito.
+    // **ONLY WHAT IS WAITING IS OPENED.** A step gone, broken or still open was
+    // handed to nobody: opening it again would redo work the engine is doing, or
+    // undo an outcome.
     match latest.outcome {
         Some(Outcome::Waiting) => {}
         None => {
@@ -189,17 +173,15 @@ pub fn open_step_in(ledger: &Ledger, found: &BTreeMap<String, String>) -> Result
         now,
     );
     started.attempt_relation = flow::attempt_relation(&records, &started);
-    // **NESSUN PID, E IL VUOTO È UN'AFFERMAZIONE.** Questo campo dice «il
-    // processo che tiene il passo», e qui nessun processo lo tiene: a tenerlo è
-    // un agente in un terminale, che non è figlio di niente e che il kernel non
-    // sa distinguere da chiunque altro. Scriverci il pid di *questo* comando
-    // sarebbe una bugia comoda: il comando esce subito, e alla ripresa quel pid
-    // risulterebbe morto — cioè la consegna verrebbe chiusa sotto i piedi di chi
-    // ci sta lavorando. Chi tiene un passo consegnato è una scadenza scritta nel
-    // record, non un processo.
+    // **NO PID, AND THE EMPTY IS AN ASSERTION.** This field names «the process
+    // holding the step», and here no process holds it: an agent in a terminal
+    // does, child of nothing and indistinguishable to the kernel. The pid of
+    // *this* command would be a convenient lie — it exits at once, so a resume
+    // would read that pid as dead and close the handoff under the agent at work.
+    // What holds a handed step is a deadline in the record, not a process.
     started.held_by_pid = None;
-    // La specie resta quella congelata alla consegna: un'azione riscritta nel
-    // frattempo non deve cambiare il giudizio su un passo già offerto.
+    // The species stays as frozen at the handoff: an action rewritten in the
+    // meantime must not change the verdict on a step already offered.
     started.species = latest.species;
     ledger.append_step_started(&started).map_err(|error| {
         catalogue::say(
@@ -208,10 +190,10 @@ pub fn open_step_in(ledger: &Ledger, found: &BTreeMap<String, String>) -> Result
         )
     })?;
 
-    // **IL MANDATO SI LEGGE DALL'INGRESSO, MAI DA `said`.** In `said` c'è la
-    // riga corta, tagliata a 16 KB; il lavoro per esteso sta nell'ingresso, che
-    // il deposito conserva intero. Leggerlo dalla parte sbagliata darebbe a chi
-    // prende il lavoro un mandato troncato a metà frase, senza dirglielo.
+    // **THE MANDATE IS READ FROM THE INPUT, NEVER FROM `said`.** `said` holds
+    // the short line, cut at 16 KB; the work in full is in the input, which the
+    // store keeps whole. Reading the wrong side would hand the taker a mandate
+    // truncated mid-sentence, and never say so.
     let mandate = started
         .input
         .get("mandate")
@@ -229,23 +211,15 @@ pub fn open_step_in(ledger: &Ledger, found: &BTreeMap<String, String>) -> Result
     ))
 }
 
-/// **CHI CREA NON GIUDICA, APPLICATO ALLE DIPENDENZE.**
-///
-/// Chi ha chiuso un passo da cui questo dipende ne è l'autore: lasciargli anche
-/// il passo che ne giudica il lavoro è farsi la propria revisione. Il vincolo
-/// permanente non dice «di solito».
-///
-/// **SI CHIEDE DUE VOLTE, ALL'APERTURA E ALLA CHIUSURA, E NON È UNA RIPETIZIONE
-/// INUTILE.** Solo all'apertura resterebbe una porta aperta larga come la prima:
-/// aprire con un nome qualunque e **chiudere** con quello dell'autore. Il gesto
-/// che conta è la chiusura — è lì che si scrive un verdetto — quindi è lì che il
-/// rifiuto deve valere. All'apertura vale perché fermare presto costa meno che
-/// fermare dopo il lavoro.
-///
-/// **LA NEGAZIONE È IL PREDEFINITO.** Un elenco di permessi dimenticato lascia
-/// passare tutto; una negazione dimenticata al massimo ferma un lavoro, e lo si
-/// vede subito. Il permesso lo dichiara il flusso, passo per passo, con
-/// `same_holder_ok`.
+/// **THE AUTHOR DOES NOT JUDGE, APPLIED TO DEPENDENCIES.** Whoever closed a step
+/// this one depends on is its author; leaving them the step that judges that work
+/// is self-review, and the permanent constraint does not say «usually».
+/// **ASKED TWICE, AT OPEN AND AT CLOSE**: at open alone the door would stay as
+/// wide — open under any name, **close** under the author's — and the close is
+/// where a verdict is written; at open it stops early, which costs less.
+/// **DENIAL IS THE DEFAULT**: a forgotten allow-list passes everything, while a
+/// forgotten denial at worst stops a job and shows at once. The flow declares
+/// the permission, step by step, with `same_holder_ok`.
 fn refuse_the_author_as_judge(
     ledger: &Ledger,
     run_id: &str,
@@ -284,20 +258,18 @@ fn refuse_the_author_as_judge(
     Ok(())
 }
 
-// ── chiudere ─────────────────────────────────────────────────────────────
+// ── closing ──────────────────────────────────────────────────────────────
 
-/// Chiude il passo aperto, validando l'uscita contro lo schema del passo.
-///
-/// **LA VALIDAZIONE STA QUI PERCHÉ `RecordStore::close` NON LA FA.** Il motore
-/// valida in `run_one`, prima di chiudere; questo comando scavalca il motore, e
-/// senza il controllo un'uscita malformata entrerebbe nel deposito come buona.
-/// Il danno non si vedrebbe adesso: si vedrebbe tre passi dopo, quando il passo
-/// che dipende da questo riceve un ingresso che il suo schema rifiuta — e la
-/// colpa cadrebbe su di lui.
+/// Closes the open step, validating the output against the step's schema.
+/// **THE VALIDATION IS HERE BECAUSE `RecordStore::close` DOES NOT DO IT.** The
+/// engine validates in `run_one`, before closing; this command goes around the
+/// engine, and with no check a malformed output would enter the store as good.
+/// The damage would show three steps later, when the step depending on this one
+/// gets an input its schema refuses — and the blame would fall on it.
 fn close_step(found: &BTreeMap<String, String>) -> Result<String, String> {
-    // Gli esiti si controllano **prima** di aprire il deposito: un refuso sulla
-    // riga di comando non deve costare un file aperto, e il messaggio che ne
-    // esce parla della riga, non della macchina.
+    // Outcomes are checked **before** the store is opened: a typo on the command
+    // line must not cost an open file, and the message it yields speaks of the
+    // line, not of the machine.
     let _ = declared_outcome(found)?;
     let ledger = open_ledger()?;
     let run_id = required(found, "run")?;
@@ -305,12 +277,12 @@ fn close_step(found: &BTreeMap<String, String>) -> Result<String, String> {
     close_step_in(&ledger, &flow, found)
 }
 
-/// L'esito che chi chiude dichiara.
+/// The outcome whoever closes declares.
 ///
-/// **SOLO DUE, E NON È UNA SEMPLIFICAZIONE.** `Waiting`, `Skipped` e `Stopped`
-/// li scrive il motore per descrivere cose che sono successe a lui: un passo
-/// consegnato che «salta» o «aspetta» sarebbe una frase senza referente, e
-/// lascerebbe la corsa in uno stato che nessuna ripresa sa sbloccare.
+/// **TWO ONLY, AND IT IS NO SIMPLIFICATION.** `Waiting`, `Skipped` and `Stopped`
+/// are the engine's words for things that happened to it: a handed step that
+/// «skips» or «waits» would be a sentence with no referent, leaving the run in a
+/// state no resume knows how to unblock.
 fn declared_outcome(found: &BTreeMap<String, String>) -> Result<Outcome, String> {
     match required(found, "outcome")? {
         "went" => Ok(Outcome::Went),
@@ -322,7 +294,7 @@ fn declared_outcome(found: &BTreeMap<String, String>) -> Result<Outcome, String>
     }
 }
 
-/// Il corpo di `close`, col deposito e il flusso dichiarati invece che dedotti.
+/// The body of `close`, with the store and the flow declared, not derived.
 pub fn close_step_in(
     ledger: &Ledger,
     flow: &FlowFile,
@@ -339,8 +311,8 @@ pub fn close_step_in(
             &[("run_id", run_id), ("error", &error.to_string())],
         )
     })?;
-    // Il record aperto lo trova da sé: chi chiude non deve sapere a che
-    // tentativo è arrivato, e chiederglielo sarebbe un numero da sbagliare.
+    // It finds the open record itself: whoever closes need not know which
+    // attempt it reached, and asking would be a number to get wrong.
     let open = records
         .iter()
         .filter(|record| record.step_id == step_id && record.outcome.is_none())
@@ -352,12 +324,12 @@ pub fn close_step_in(
             )
         })?;
 
-    // **SI CHIUDE SOLO CIÒ CHE `sailor step open` HA APERTO.** Un record con un
-    // pid l'ha aperto l'esecutore in processo, e quel processo sta girando
-    // adesso: chiuderlo da qui gli toglie il passo di sotto, e la sua chiusura
-    // fallirà con «già chiuso» — un guasto della corsa per un gesto fatto in un
-    // altro terminale. Un passo consegnato non porta pid, quindi la regola
-    // separa esattamente i due casi senza doverli indovinare.
+    // **ONLY WHAT `sailor step open` OPENED IS CLOSED.** A record with a pid was
+    // opened by the in-process executor, and that process is running right now:
+    // closing it from here pulls the step out from under it, and its own close
+    // will fail with «already closed» — a run broken by a gesture made in another
+    // terminal. A handed step carries no pid, so the rule separates the two cases
+    // exactly, with nothing to guess.
     if open.held_by_pid.is_some() {
         return Err(catalogue::say(
             "cli.step.held_by_the_engine",
@@ -369,8 +341,8 @@ pub fn close_step_in(
         ));
     }
 
-    // Il rifiuto vale soprattutto qui: la chiusura è il gesto che scrive un
-    // verdetto, e un verdetto sul proprio lavoro non vale.
+    // The refusal matters most here: the close is the gesture that writes a
+    // verdict, and a verdict on one's own work is worth nothing.
     refuse_the_author_as_judge(ledger, run_id, step_id, holder, open)?;
 
     let step = flow.graph.step(step_id).ok_or_else(|| {
@@ -422,7 +394,7 @@ pub fn close_step_in(
                 Some(value)
             }
         },
-        // Un passo rotto non ha uscita da validare: non ne ha prodotta nessuna.
+        // A broken step has no output to validate: it produced none.
         _ => None,
     };
 
@@ -457,8 +429,8 @@ pub fn close_step_in(
             )
         })?;
 
-    // Chi ha chiuso resta scritto: lo rilegge `open` sul passo che dipende da
-    // questo, per rifiutare un giudice che è anche autore.
+    // Who closed it stays written: `open` rereads it on the step depending on
+    // this one, to refuse a judge who is also the author.
     ledger
         .put_record(&StoreRecord {
             collection: HOLDER_COLLECTION.to_owned(),
@@ -507,9 +479,9 @@ pub fn close_step_in(
         );
     }
 
-    // **COSA È PRONTO ADESSO, E LA RIGA PER RIPRENDERE.** Chi chiude un passo a
-    // mano non ha davanti il grafo: senza questo dovrebbe aprirlo per sapere se
-    // ha sbloccato qualcosa, cioè uscire da Sailor per interrogare Sailor.
+    // **WHAT IS READY NOW, AND THE LINE TO RESUME.** Whoever closes a step by
+    // hand has no graph in front of them: without this they would open it to
+    // learn whether they unblocked anything — leaving Sailor to interrogate it.
     let decision = InProcessExecutor
         .decision(&flow.graph, run_id, ledger, &flow::SystemClock)
         .map_err(|error| {
@@ -526,7 +498,7 @@ pub fn close_step_in(
     Ok(report)
 }
 
-/// Cosa si può fare adesso, detto a chi ha appena chiuso.
+/// What can be done now, told to whoever has just closed.
 ///
 /// The clock comes from outside: a postponed step is told as how long is left,
 /// and a function reading the clock itself could not be interrogated.
@@ -568,24 +540,18 @@ fn what_comes_next(decision: &Decision, run_id: &str, now: i64) -> String {
     }
 }
 
-/// Scrive una riga di consumo **autodichiarata**, e marcata come tale.
+/// Writes a **self-declared** consumption row, marked as such.
 ///
-/// ─────────────────────────────────────────────────────────────────────────
-/// **LA SECONDA DEBOLEZZA: SU UN FLUSSO CON CONSEGNE IL TETTO DI SPESA SMETTE DI
-/// ESSERE UNA GARANZIA.**
-///
-/// Il tetto (`FlowFile::spend_cap_micros`) si misura sulle righe di
-/// `model_calls`, e fino a oggi quelle righe le scriveva il motore leggendo ciò
-/// che il fornitore dichiara. Questa la scrive **chi ha fatto il lavoro**, su un
-/// numero che si è contato da solo. Non è verificabile da nessuna parte.
-///
-/// Per questo `cost_micros` resta `None` e non un numero inventato: così la riga
-/// entra in `Spend::calls_without_cost`, `Spend::is_complete()` diventa falso, e
-/// ogni posto che mostra il tetto dice già oggi «la spesa vera è più alta». Un
-/// costo stimato qui sarebbe peggio del vuoto: renderebbe *completa* una somma
-/// che non lo è, e il tetto scatterebbe su una cifra inventata senza che nessuno
-/// possa più accorgersene.
-/// ─────────────────────────────────────────────────────────────────────────
+/// **THE SECOND WEAKNESS: ON A FLOW WITH HANDOFFS THE SPEND CAP STOPS BEING A
+/// GUARANTEE.** The cap (`FlowFile::spend_cap_micros`) is measured on the
+/// `model_calls` rows, which the engine wrote from what the provider declares;
+/// this one is written by **whoever did the work**, on a number they counted
+/// themselves, and is verifiable nowhere. So `cost_micros` stays `None` and is
+/// no invented figure: the row lands in `Spend::calls_without_cost`,
+/// `Spend::is_complete()` turns false, and every place showing the cap already
+/// says the real spend is higher. An estimate would be worse than the empty — it
+/// would make *complete* a sum that is not, and the cap would fire on an invented
+/// figure with nobody able to notice.
 fn write_self_declared_turns(
     ledger: &Ledger,
     run_id: &str,
@@ -599,18 +565,18 @@ fn write_self_declared_turns(
             call_id: format!("{run_id}:{step_id}:{now}:handed"),
             run_id: run_id.to_owned(),
             step_id: Some(step_id.to_owned()),
-            // Nessuna sessione: questo passo non apre nessun processo — il
-            // lavoro va a un agente che è già vivo nel terminale, e la sua
-            // conversazione non è di Sailor e non si può riprendere da qui.
+            // No session: this step opens no process — the work goes to an
+            // agent already alive in the terminal, whose conversation is not
+            // Sailor's and cannot be resumed from here.
             session_id: None,
             // And nothing was asked of one either: this step never reached for
             // a session, so there is no fallback to confess.
             session_mode: None,
             work_kind: None,
             fell_back_from: Vec::new(),
-            // Il perché della riga sta nel `purpose`: chi somma le chiamate di
-            // una corsa deve poter separare ciò che il motore ha misurato da ciò
-            // che qualcuno ha dichiarato di sé.
+            // The row's reason lives in `purpose`: whoever sums a run's calls
+            // must be able to separate what the engine measured from what
+            // someone declared about themselves.
             purpose: "handed_to_agent:self_declared".to_owned(),
             cli: holder.to_owned(),
             requested_model: String::new(),
@@ -622,7 +588,7 @@ fn write_self_declared_turns(
             cache_write_long_tokens: None,
             total_tokens: None,
             turns: Some(turns),
-            // Vedi il commento sopra: il vuoto è la parte onesta di questa riga.
+            // See the comment above: the empty is the honest part of this row.
             cost_micros: None,
             declared_cost_micros: None,
             price_currency: None,
@@ -631,12 +597,11 @@ fn write_self_declared_turns(
             cached_price_micros_per_million: None,
             cache_write_price_micros_per_million: None,
             cache_write_long_price_micros_per_million: None,
-            // **DICHIARATA DA UN AGENTE, E NON «NESSUNA».** Qui Sailor non ha
-            // avviato niente: a lavorare è stato l'agente già vivo nel
-            // terminale, e con quale identità l'abbia fatto Sailor non lo sa e
-            // non può saperlo. Lasciare il vuoto confonderebbe questo fatto con
-            // «nessun profilo in forza», che è un'altra cosa: lì la casa è
-            // quella del processo, e si può andare a guardarla.
+            // **DECLARED BY AN AGENT, AND NOT «NONE».** Sailor started nothing
+            // here: the agent already alive in the terminal did the work, and
+            // under which identity Sailor does not and cannot know. An empty
+            // would confuse that with «no profile in force», a different thing:
+            // there the house is the process's, and can be gone and looked at.
             engine_identity: EngineIdentity::DeclaredByAnAgent,
             retry_chain: Vec::new(),
             error_type: None,
@@ -651,12 +616,12 @@ fn write_self_declared_turns(
         })
 }
 
-// ── gli attrezzi comuni ──────────────────────────────────────────────────
+// ── the common tools ─────────────────────────────────────────────────────
 
-/// I passi che pretendono l'uscita tipata di questo.
+/// The steps that demand this one's typed output.
 ///
-/// Una dipendenza dichiarata saltabile non conta: quel passo sa già andare
-/// avanti senza, ed è il motivo per cui la si dichiara.
+/// A dependency declared skippable does not count: that step knows how to go on
+/// without it, which is the reason it is declared so.
 fn dependents_of(flow: &FlowFile, step_id: &str) -> Vec<String> {
     flow.graph
         .steps()
@@ -669,7 +634,7 @@ fn dependents_of(flow: &FlowFile, step_id: &str) -> Vec<String> {
         .collect()
 }
 
-/// L'ultimo tentativo su un passo, comunque sia andato.
+/// The last attempt on a step, however it went.
 fn last_attempt<'a>(records: &'a [StepRecord], step_id: &str) -> Option<&'a StepRecord> {
     records
         .iter()
@@ -677,13 +642,12 @@ fn last_attempt<'a>(records: &'a [StepRecord], step_id: &str) -> Option<&'a Step
         .max_by_key(|record| (record.attempt, record.epoch))
 }
 
-/// Il flusso su cui gira una corsa, ritrovato dal deposito.
+/// The flow a run runs on, found again from the store.
 ///
-/// **IL GRAFO NON SI CHIEDE A CHI DIGITA.** Un `--flow` sulla riga di comando
-/// lascerebbe passare il nome sbagliato, e allora l'uscita di un passo verrebbe
-/// validata contro lo schema di un altro — cioè il controllo direbbe di sì
-/// guardando la cosa sbagliata. La corsa sa da sola da dove viene: sta scritto
-/// in `runs.entity`.
+/// **THE GRAPH IS NOT ASKED OF WHOEVER TYPES.** A `--flow` on the command line
+/// would let the wrong name through, and a step's output would be validated
+/// against another step's schema — the check saying yes while looking at the
+/// wrong thing. The run knows where it came from: it is in `runs.entity`.
 pub fn flow_of_run(ledger: &Ledger, run_id: &str) -> Result<FlowFile, String> {
     let header = ledger
         .run_header(run_id)
@@ -754,8 +718,8 @@ mod tests {
 
     static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 
-    /// Una cartella che si cancella da sé: il deposito è un file, e un file
-    /// lasciato indietro fa passare la prova dopo per la ragione sbagliata.
+    /// A directory that deletes itself: the store is a file, and a file left
+    /// behind makes the next test pass for the wrong reason.
     struct TestDirectory(PathBuf);
 
     impl TestDirectory {
@@ -776,8 +740,8 @@ mod tests {
         }
     }
 
-    /// Un flusso di due passi: uno produce, l'altro giudica. È la forma minima
-    /// in cui «chi crea non giudica» ha un significato.
+    /// A flow of two steps: one produces, the other judges. The minimal shape in
+    /// which «the author does not judge» means anything.
     fn a_flow() -> FlowFile {
         serde_json::from_str(
             r#"{
@@ -824,7 +788,7 @@ mod tests {
         })
     }
 
-    /// Un deposito con una corsa dentro e un passo già consegnato.
+    /// A store with a run in it and a step already handed over.
     fn a_handed_run(directory: &TestDirectory, step_id: &str, deps: Vec<String>) -> Ledger {
         let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
         ledger
@@ -847,8 +811,8 @@ mod tests {
         ledger
     }
 
-    /// Scrive il passo come lo scriverebbe il motore: aperto e poi chiuso con
-    /// esito «in attesa», che è ciò che `handed_to_agent` produce.
+    /// Writes the step as the engine would: opened, then closed with the
+    /// «waiting» outcome, which is what `handed_to_agent` produces.
     fn hand_over(ledger: &Ledger, step_id: &str, deps: Vec<String>) {
         let mut record = StepRecord::started(
             "run-1",
@@ -893,13 +857,12 @@ mod tests {
             .collect()
     }
 
-    /// **L'APERTURA PORTA LO STESSO INGRESSO.**
+    /// **THE OPEN CARRIES THE VERY SAME INPUT.**
     ///
-    /// L'impronta si calcola dall'ingresso: copiarlo identico fa dire a
-    /// `attempt_relation` che è lo stesso lavoro ripreso, non un lavoro nuovo.
-    /// Con un ingresso ricostruito la corsa mostrerebbe due lavori dove ce n'è
-    /// uno, e il mandato — che vive lì dentro — cambierebbe impronta senza
-    /// essere cambiato.
+    /// The digest comes from the input: an identical copy makes
+    /// `attempt_relation` say the same work resumed, not a new job. A rebuilt
+    /// input would show two jobs where there is one, and re-fingerprint the
+    /// mandate living inside it without changing it.
     #[test]
     fn opening_a_handed_step_carries_the_very_same_input() {
         let directory = TestDirectory::new("stesso-ingresso");
@@ -943,11 +906,11 @@ mod tests {
         );
     }
 
-    /// **UN'USCITA CHE IL PASSO NON DICHIARA SI RESPINGE.**
+    /// **AN OUTPUT THE STEP DOES NOT DECLARE IS REFUSED.**
     ///
-    /// `RecordStore::close` non valida niente. Senza questo controllo un'uscita
-    /// malformata entrerebbe nel deposito come buona e ucciderebbe la corsa tre
-    /// passi dopo, dove la colpa cadrebbe su un passo innocente.
+    /// `RecordStore::close` validates nothing. Without this check a malformed
+    /// output would enter the store as good and kill the run three steps later,
+    /// where the blame would fall on an innocent step.
     #[test]
     fn an_output_the_step_does_not_declare_is_refused() {
         let directory = TestDirectory::new("uscita-non-dichiarata");
@@ -988,7 +951,7 @@ mod tests {
         );
     }
 
-    /// L'uscita che il passo dichiara passa, e il passo si chiude.
+    /// The output the step declares passes, and the step closes.
     #[test]
     fn the_declared_output_closes_the_step() {
         let directory = TestDirectory::new("uscita-dichiarata");
@@ -1033,20 +996,19 @@ mod tests {
         );
     }
 
-    /// **CHI HA SCRITTO UNA DIPENDENZA NON PUÒ CHIUDERE IL PASSO CHE LA
-    /// GIUDICA.**
+    /// **WHOEVER WROTE A DEPENDENCY CANNOT CLOSE THE STEP THAT JUDGES IT.**
     ///
-    /// Il vincolo permanente «chi crea non giudica», applicato al gesto in cui
-    /// il giudizio si scrive davvero. Il rifiuto all'apertura da solo non
-    /// basterebbe: si aprirebbe con un nome qualunque e si chiuderebbe con
-    /// quello dell'autore.
+    /// The permanent constraint «the author does not judge», applied to the
+    /// gesture where the judgement is really written. The refusal at open would
+    /// not be enough on its own: one would open under any name and close under
+    /// the author's.
     #[test]
     fn whoever_wrote_a_dependency_cannot_close_the_step_that_judges_it() {
         let directory = TestDirectory::new("autore-giudice");
         let ledger = a_handed_run(&directory, "implementa", vec![]);
         hand_over(&ledger, "verdetto", vec!["implementa".to_owned()]);
 
-        // «autore» fa il lavoro e lo chiude.
+        // «autore» does the work and closes it.
         open_step_in(
             &ledger,
             &options(&[("run", "run-1"), ("step", "implementa"), ("as", "autore")]),
@@ -1067,7 +1029,7 @@ mod tests {
         )
         .expect("l'autore chiude il proprio lavoro");
 
-        // E adesso prova a giudicarsi. Aprire già non si può.
+        // And now it tries to judge itself. Opening is already impossible.
         let refused = open_step_in(
             &ledger,
             &options(&[("run", "run-1"), ("step", "verdetto"), ("as", "autore")]),
@@ -1075,8 +1037,8 @@ mod tests {
         .expect_err("l'autore non apre il passo che lo giudica");
         assert!(refused.contains("does not judge"), "{refused}");
 
-        // E nemmeno chiudere, entrando da un nome qualunque: è il gesto che
-        // conta, ed è quello che la porta lasciata aperta permetterebbe.
+        // Nor closing, entering under any name: the close is the gesture that
+        // counts, and the one a door left open would allow.
         open_step_in(
             &ledger,
             &options(&[("run", "run-1"), ("step", "verdetto"), ("as", "un-terzo")]),
@@ -1099,8 +1061,8 @@ mod tests {
         assert!(refused.contains("does not judge"), "{refused}");
     }
 
-    /// Il permesso esiste e si dichiara nel passo: una negazione senza scampo
-    /// fermerebbe i flussi in cui la stessa mano è la scelta giusta.
+    /// The permission exists and is declared in the step: a denial with no way
+    /// out would stop the flows where the same hand is the right choice.
     #[test]
     fn the_flow_can_declare_that_the_same_hand_is_allowed() {
         let directory = TestDirectory::new("stessa-mano");
@@ -1203,8 +1165,8 @@ mod tests {
         assert!(error.contains("--output-file"), "{error}");
     }
 
-    /// Un passo che non ha nessuno a valle si chiude senza uscita: pretenderla
-    /// sarebbe una formalità che ferma un lavoro finito.
+    /// A step with nobody downstream closes with no output: demanding one would
+    /// be a formality stopping finished work.
     #[test]
     fn a_last_step_closes_without_an_output() {
         let directory = TestDirectory::new("ultimo-passo");
@@ -1227,17 +1189,17 @@ mod tests {
         .expect("nessuno dipende da «verdetto»: si chiude senza uscita");
     }
 
-    /// **UN PASSO CHE STA GIRANDO DAVVERO NON SI CHIUDE A MANO.**
+    /// **A STEP THAT IS REALLY RUNNING IS NOT CLOSED BY HAND.**
     ///
-    /// Un record con un pid l'ha aperto l'esecutore, e quel processo sta
-    /// lavorando: chiuderlo da un altro terminale gli toglie il passo di sotto,
-    /// e la sua chiusura fallisce con «già chiuso» — cioè un gesto fatto altrove
-    /// rompe una corsa sana.
+    /// A record with a pid was opened by the executor, and that process is at
+    /// work: closing it from another terminal pulls the step out from under it,
+    /// and its close fails with «already closed» — a gesture made elsewhere
+    /// breaking a healthy run.
     #[test]
     fn a_step_a_live_executor_holds_cannot_be_closed_by_hand() {
         let directory = TestDirectory::new("tenuto-dal-motore");
         let ledger = a_handed_run(&directory, "implementa", vec![]);
-        // Come lo aprirebbe il motore: col proprio pid scritto dentro.
+        // As the engine would open it: with its own pid written in.
         let mut record = StepRecord::started(
             "run-1",
             "implementa",
@@ -1273,8 +1235,7 @@ mod tests {
         );
     }
 
-    /// Un passo che non è in attesa non si prende in carico: non è stato
-    /// consegnato a nessuno.
+    /// A step that is not waiting cannot be taken on: it was handed to nobody.
     #[test]
     fn a_step_that_was_not_handed_over_cannot_be_taken() {
         let directory = TestDirectory::new("non-consegnato");
@@ -1321,8 +1282,8 @@ mod tests {
         assert!(error.contains("--run"), "{error}");
     }
 
-    /// Un esito che una persona non può dichiarare si rifiuta prima di toccare
-    /// il deposito: `Waiting` e `Skipped` li scrive il motore, non una mano.
+    /// An outcome a person cannot declare is refused before the store is
+    /// touched: `Waiting` and `Skipped` are the engine's, not a hand's.
     #[test]
     fn only_went_and_broke_can_be_declared_by_hand() {
         let found: BTreeMap<String, String> = [

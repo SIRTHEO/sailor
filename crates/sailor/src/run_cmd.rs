@@ -1,10 +1,9 @@
-//! `sailor run <cli> [argomenti...]`: lo swap rapido. Trova il profilo
-//! attivo di `cli` e **sostituisce** questo processo con il suo eseguibile —
-//! mai un figlio, perché segnali, codice d'uscita e terminale interattivo
-//! devono comportarsi come se l'avessi invocata a mano. Senza un profilo
-//! attivo, o con un meccanismo di casa ancora ignoto, si rifiuta: lanciare
-//! con l'identità sbagliata è il guasto peggiore che questo comando possa
-//! fare.
+//! `sailor run <cli> [arguments...]`: the quick swap. It finds the active
+//! profile of `cli` and **replaces** this process with its executable — never a
+//! child, since signals, exit code and interactive terminal must behave as if
+//! the command line had been invoked by hand. With no active profile, or a home
+//! mechanism still unknown, it refuses: launching under the wrong identity is
+//! the worst fault this command could commit.
 
 use profiles::{
     build_environment, find_cli, store_io, symlink_swap, HomeMechanism, ProfileStore, SymlinkSwap,
@@ -14,19 +13,19 @@ use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Command;
 
-/// Cosa lanciare per `cli_id`, secondo lo stato dato: pura — non tocca
-/// processi — così la prova che conta (lo scambio raggiunge l'ambiente
-/// giusto) non deve rimpiazzare se stessa per verificarlo.
+/// What to launch for `cli_id`, according to the given state: pure — it touches
+/// no process — so the test that matters (the swap reaches the right
+/// environment) need not replace itself to check it.
 #[derive(Debug)]
 struct Launch {
     executable: String,
     env: BTreeMap<String, String>,
     args: Vec<String>,
-    /// Per le righe di comando che non spostano la casa con una variabile ma
-    /// scambiano un collegamento sulle credenziali, il collegamento che deve
-    /// risultare in piedi perché il lancio abbia l'identità giusta. `None` per
-    /// tutte le altre. Chi lancia lo verifica **prima** di sostituire il
-    /// processo; qui resta un dato, così questa funzione non tocca il disco.
+    /// For command lines that do not move the home with a variable but swap a
+    /// link over the credentials, the link that must be standing for the launch
+    /// to carry the right identity. `None` for all the others. The launcher
+    /// checks it **before** replacing the process; here it stays data, so this
+    /// function touches no disk.
     expected_link: Option<SymlinkSwap>,
 }
 
@@ -72,11 +71,11 @@ fn resolve_with(
             )
         })?;
 
-    // Il meccanismo a collegamento non passa da nessuna variabile: l'identità
-    // del lancio dipende **solo** da dove punta un collegamento sul disco. Se
-    // lo stato dice «attivo X» ma il collegamento punta ancora a Y, la riga di
-    // comando parte con le credenziali di Y e nessuno se ne accorge. Qui si
-    // calcola il collegamento atteso; chi lancia lo confronta con quello vero.
+    // The link mechanism goes through no variable: the launch's identity depends
+    // **only** on where a link on disk points. If the state says «X is active»
+    // but the link still points at Y, the command line starts with Y's
+    // credentials and nobody notices. Here the expected link is computed; the
+    // launcher compares it against the real one.
     let expected_link = match &cli.home {
         HomeMechanism::CredentialSymlink { relative_path } => {
             Some(symlink_swap(fixed_home, relative_path, &profile.home_dir))
@@ -105,11 +104,10 @@ fn key_of_the_environment(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|key| !key.is_empty())
 }
 
-/// Il collegamento sul disco punta davvero al profilo attivo? Si rifiuta invece
-/// di ripararlo: `sailor run` non deve avere effetti collaterali sul disco, e un
-/// rifiuto esplicito è più sicuro di una riparazione silenziosa — chi legge il
-/// messaggio sa che stato e disco si erano separati, e lo scambio ha già il suo
-/// comando.
+/// Does the link on disk really point at the active profile? It refuses rather
+/// than repairing: `sailor run` must have no side effects on disk, and an
+/// explicit refusal is safer than a silent repair — whoever reads the message
+/// knows state and disk had drifted apart, and the swap has a command of its own.
 fn link_points_at_the_active_profile(expected: &SymlinkSwap) -> Result<(), String> {
     match std::fs::read_link(&expected.link_path) {
         Ok(actual) if actual == expected.target_path => Ok(()),
@@ -137,7 +135,7 @@ fn home_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
-/// La forma di `sailor run`. Vedi `flow_cmd::USAGE`.
+/// The shape of `sailor run`. See `flow_cmd::USAGE`.
 pub const USAGE: &[crate::Form] = &[crate::Form {
     form: "sailor run <cli> [arguments...]",
     says_key: "",
@@ -166,15 +164,15 @@ pub fn run(args: &[String]) -> i32 {
             return 1;
         }
     };
-    // Prima di `exec`, mai dopo: dopo non si torna.
+    // Before `exec`, never after: past it there is no coming back.
     if let Some(expected) = &launch.expected_link {
         if let Err(message) = link_points_at_the_active_profile(expected) {
             eprintln!("sailor run: {message}");
             return 1;
         }
     }
-    // `exec` sostituisce l'immagine di questo processo: se riesce, il codice
-    // sotto non gira più. Torna solo per dire che il lancio è fallito.
+    // `exec` replaces this process's image: on success the code below never
+    // runs. It returns only to say the launch failed.
     let error = Command::new(&launch.executable)
         .args(&launch.args)
         .envs(&launch.env)
@@ -215,11 +213,11 @@ mod tests {
         store
     }
 
-    /// La prova che conta: lo scambio deve raggiungere l'ambiente che
-    /// verrebbe passato al processo, non restare scritto solo nello stato.
-    /// Se qui vedesse lo stesso valore prima e dopo, lo swap non
-    /// funzionerebbe: per questo il primo e il secondo profilo hanno case
-    /// diverse e la prova le confronta entrambe.
+    /// The test that matters: the swap must reach the environment that would be
+    /// handed to the process, not stay written in the state alone. If the same
+    /// value showed up here before and after, the swap would not work: that is
+    /// why the first and second profiles have different homes and the test
+    /// compares both.
     #[test]
     fn switching_the_active_profile_changes_what_the_launch_would_see() {
         let mut store = two_profile_store();
@@ -322,17 +320,15 @@ mod tests {
         assert_eq!(run(&[]), 2);
     }
 
-    /// Il difetto trovato il 27/08/2026 da un revisore indipendente, che non
-    /// aveva scritto questo codice: per una riga di comando che scambia un
-    /// collegamento invece di leggere una variabile, l'ambiente costruito è
-    /// **vuoto** — l'identità del lancio dipende solo da dove punta un file sul
-    /// disco. Nessuna riga di comando in tabella lo usa oggi, quindi non era
-    /// sfruttabile; la prima che lo userà sarebbe partita con le credenziali di
-    /// un altro profilo, in silenzio.
-    ///
-    /// Le tre situazioni contano tutte e tre, e la prova sa fallire in tutte:
-    /// il collegamento giusto passa, quello che punta altrove è rifiutato, e
-    /// quello assente pure — «non lo so leggere» non è «va bene».
+    /// A defect found by an independent reviewer who had not written this code:
+    /// for a command line that swaps a link instead of reading a variable, the
+    /// built environment is **empty** — the launch's identity depends only on
+    /// where a file on disk points. No command line in the table uses that
+    /// today, so it was not exploitable; the first one to use it would have
+    /// started under another profile's credentials, silently. All three
+    /// situations count and the test can fail on each: the right link passes,
+    /// one pointing elsewhere is refused, and an absent one too — «I cannot
+    /// read it» is not «it is fine».
     #[test]
     fn a_link_pointing_at_another_profile_stops_the_launch() {
         let dir = std::env::temp_dir().join(format!("sailor-run-link-{}", std::process::id()));
@@ -347,17 +343,17 @@ mod tests {
 
         let expected = symlink_swap(&fixed_home, "credentials.json", &wanted);
 
-        // Nessun collegamento: si rifiuta invece di lanciare alla cieca.
+        // No link at all: it refuses rather than launching blind.
         let error = link_points_at_the_active_profile(&expected).unwrap_err();
         assert!(error.contains("cannot read the link"), "{error}");
 
-        // Collegamento verso un altro profilo: si rifiuta, e dice quale.
+        // A link to another profile: it refuses, and names which.
         std::os::unix::fs::symlink(other.join("credentials.json"), &expected.link_path).unwrap();
         let error = link_points_at_the_active_profile(&expected).unwrap_err();
         assert!(error.contains("have come apart"), "{error}");
         assert!(error.contains("altro"), "{error}");
 
-        // Collegamento verso il profilo attivo: passa.
+        // A link to the active profile: it passes.
         std::fs::remove_file(&expected.link_path).unwrap();
         std::os::unix::fs::symlink(&expected.target_path, &expected.link_path).unwrap();
         assert!(link_points_at_the_active_profile(&expected).is_ok());
