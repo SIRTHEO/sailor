@@ -116,3 +116,13 @@ export function inTheStrip(): Place[] {
  * about a tree you cannot see from it is a row that lies.
  */
 export const UNDER_A_TREE: Section[] = ["board", "changes", "sketch"];
+
+/**
+ * Every place ⌘K offers under its own name. **A PLACE OUTSIDE THE STRIP IS
+ * STILL A PLACE**: built from the strip, the list left out the three that hang
+ * under a tree. The two the machine's ground names better are left to it, so
+ * «Ledger» is offered once and not twice.
+ */
+export function onItsOwnName(): Place[] {
+  return PLACES.filter((place) => !MACHINE.some((row) => row.section === place.id));
+}
