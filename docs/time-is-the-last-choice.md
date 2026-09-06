@@ -1,148 +1,148 @@
-# Il tempo è l'ultima scelta: i quattro livelli, applicati al ciclo di vita di un ramo
+# Time is the last choice: the four levels, applied to the life cycle of a branch
 
-**01/09/2026.** Nato da una richiesta di Theo — *«se necessario facciamo i nodi
-di tempo, timer, cron che partano precisi ogni tot»* — e dalla risposta che la
-ricerca ha trovato al posto mia, in un repo che non è questo.
+**01/09/2026.** Born from a request of Theo's — *«if we need to, let us do the
+time nodes, timers, cron that fire on the dot every so often»* — and from the
+answer research found in my place, in a repository that is not this one.
 
-I **fatti misurati** stanno separati dalle **decisioni**, che restano a Theo.
-Dove un numero compare senza la parola «misurato» è una lettura del codice, non
-una prova eseguita.
+The **measured facts** are kept apart from the **decisions**, which are Theo's.
+Where a number appears without the word «measured», it is a reading of the code,
+not a test that was run.
 
-## La regola esiste già, e non l'abbiamo scritta noi
+## The rule already exists, and we did not write it
 
-Una regola scritta mesi fa in un repo privato — che quindi non si cita qui —
-parte da questo: un cron di pulizia è quasi sempre il sintomo di un ciclo di
-vita dei dati mal modellato.
+A rule written months ago in a private repository — which is therefore not cited
+here — starts from this: a cleanup cron is almost always the symptom of a badly
+modelled data life cycle.
 
-È la stessa cosa che Theo ha detto il 31/08 con un'immagine: *se mi ammalo
-perché sto a −10 in maglietta, non compro i farmaci — compro i vestiti*. La
-regola la traduce in un **ordine di preferenza**, e il cron è il quarto:
+It is the same thing Theo said on 31/08 with an image: *if I fall ill because I
+stand at −10 in a t-shirt, I do not buy the medicine — I buy the clothes*. The
+rule turns it into an **order of preference**, and cron is the fourth:
 
-1. **L'orfano non deve poter esistere** — vincolo o cancellazione coordinata nel
-   gesto stesso che chiude la cosa.
-2. **Un evento dice quando agire** — chi fa la cosa emette il segnale.
-3. **Scade alla lettura** — nessuno spazza: chi guarda trova il vecchio già
-   dichiarato vecchio.
-4. **Cron** — solo se intrinsecamente periodico e senza alternativa, oppure come
-   **rete di sicurezza** di un percorso a eventi che può perdere il segnale.
+1. **The orphan must not be able to exist** — a constraint, or a coordinated
+   deletion in the very gesture that closes the thing.
+2. **An event says when to act** — whoever does the thing emits the signal.
+3. **It expires on read** — nobody sweeps: whoever looks finds the old thing
+   already declared old.
+4. **Cron** — only if intrinsically periodic and with no alternative, or as a
+   **safety net** for an event-driven path that can lose the signal.
 
-Con due righe che valgono più del resto: *«un cron aggiunto deve avere un
-commento che spiega perché i passi 1-3 non si applicano»*, e **«il cron non è
-mai il motore — chi accoda deve svegliare»**. Una coda drenata solo dal tick ha
-per latenza l'intervallo del tick, sempre.
+With two lines that count for more than the rest: *«a cron that gets added must
+have a comment explaining why steps 1-3 do not apply»*, and **«cron is never the
+engine — whoever enqueues has to wake»**. A queue drained only by the tick has
+the tick's interval for latency, always.
 
-## Il costo di non avere i primi tre livelli, misurato
+## The cost of not having the first three levels, measured
 
-Il 31/08/2026, in un repo di lavoro che non è questo, c'erano **31 rami
-orfani**. Per decidere che farne sono
-serviti **ventuno agenti e circa mezz'ora**: un esaminatore per gruppo e un
-giudice avversariale per ogni verdetto. Non era zelo — la domanda «questo lavoro
-è già arrivato altrove?» si risponde solo confrontando il contenuto file per
-file, perché le richieste si uniscono a schiacciamento e quindi il ramo non
-risulta **mai** antenato del tronco: `git cherry` e `--contains` rispondono
-sempre «non unito», anche quando il lavoro è dentro da settimane.
+On 31/08/2026, in a working repository that is not this one, there were **31
+orphan branches**. Deciding what to do with them took **twenty-one agents and
+about half an hour**: one examiner per group and an adversarial judge for every
+verdict. It was not zeal — the question «has this work already arrived
+somewhere else?» is answered only by comparing the content file by file,
+because the requests are merged by squashing and so the branch turns out
+**never** to be an ancestor of the trunk: `git cherry` and `--contains` always
+answer «not merged», even when the work has been in for weeks.
 
-Esito: 23 da chiudere, 4 da portare avanti, 4 da decidere. **Un solo verdetto su
-31 è stato ribaltato dal giudice** — il che dice che l'analisi funziona, e
-insieme che è costata ventuno agenti per confermare quello che chi creò quei
-rami sapeva già il primo giorno.
+Outcome: 23 to close, 4 to carry on, 4 to decide. **One single verdict out of 31
+was overturned by the judge** — which says the analysis works, and at the same
+time that it cost twenty-one agents to confirm what whoever created those
+branches already knew on the first day.
 
-## I quattro livelli applicati a un ramo
+## The four levels applied to a branch
 
-### Livello 1 — il ramo non può restare orfano
+### Level 1 — the branch cannot be left an orphan
 
-Chi unisce la richiesta chiude il ramo nello stesso gesto. Non c'è niente da
-sorvegliare perché non nasce niente da sorvegliare. Su GitHub questo è una
-casella nelle impostazioni del repository, non un flusso: **il posto più
-economico dove il problema si risolve non è dentro Sailor.** Vale scriverlo qui
-perché un sistema che vuole governare un ciclo di vita deve saper dire anche
-«questo pezzo non tocca a me».
+Whoever merges the request closes the branch in the same gesture. There is
+nothing to watch because nothing to watch is ever born. On GitHub this is a
+checkbox in the repository settings, not a flow: **the cheapest place where the
+problem gets solved is not inside Sailor.** It is worth writing here, because a
+system that means to govern a life cycle has to be able to say «this piece is
+not mine» too.
 
-### Livello 2 — la fusione è un evento
+### Level 2 — the merge is an event
 
-Chi unisce lo dice, e il ciclo avanza subito. Un flusso che reagisce a un fatto
-esterno pretende un potere che oggi Sailor **non ha**: un innesco che si accende
-su qualcosa che accade altrove.
+Whoever merges says so, and the cycle moves on at once. A flow that reacts to an
+external fact demands a power Sailor **does not have** today: a trigger that
+lights up on something happening elsewhere.
 
-### Livello 3 — scade alla lettura
+### Level 3 — it expires on read
 
-Quando qualcuno apre l'elenco dei rami, quelli oltre la loro condizione di fine
-si dichiarano scaduti lì, senza che nessuno abbia spazzato. È il livello con il
-miglior rapporto fra valore e costo, e **pretende una sola cosa**: la
-dichiarazione di ciclo di vita depositata alla nascita del ramo — cosa lo
-chiude, cosa si perde se sparisce. Il flusso che la deposita è già scritto:
+When somebody opens the list of branches, the ones past their termination
+condition declare themselves expired right there, without anybody having swept.
+It is the level with the best ratio of value to cost, and it **demands one thing
+only**: the life-cycle declaration deposited at the branch's birth — what closes
+it, what is lost if it disappears. The flow that deposits it is already written:
 `~/.config/sailor/flows/<progetto>/un-ramo-dichiara-come-finisce.flow.json`.
 
-### Livello 4 — il timer, come rete
+### Level 4 — the timer, as a net
 
-Passa ogni tanto e raccoglie ciò che i primi tre hanno perso. **Se i primi tre
-esistono, la precisione del tick conta poco**: in un bot di produzione la rete
-gira ogni cinque minuti e non è il motore di niente.
+It comes round every so often and picks up what the first three lost. **If the
+first three exist, the precision of the tick matters little**: in a production
+bot the net runs every five minutes and is the engine of nothing.
 
-## Cosa Sailor ha, e cosa gli manca — misurato il 01/09/2026
+## What Sailor has, and what it lacks — measured on 01/09/2026
 
-| serve per | Sailor oggi |
+| needed for | Sailor today |
 |---|---|
-| depositare la dichiarazione | **c'è**: `store_write` / `store_read` / `store_list` |
-| chiedere un giudizio a un motore | **c'è**: `external_engine` |
-| eseguire un comando | **c'è a metà**: `shell_check` (vedi sotto) |
-| accendersi su un fatto esterno | **manca** |
-| accendersi a tempo | **manca** |
+| depositing the declaration | **there**: `store_write` / `store_read` / `store_list` |
+| asking an engine for a judgement | **there**: `external_engine` |
+| running a command | **half there**: `shell_check` (see below) |
+| lighting up on an external fact | **missing** |
+| lighting up on time | **missing** |
 
-**`shell_check` sa dire *se*, non *cosa*.** L'uscita del passo è
-`{"status": ...}` e basta (`crates/actions/src/lib.rs`, ramo `Ok(ActionOutcome::Went(json!({ "status": status })))`).
-L'uscita del comando non arriva al flusso. Quindi «il ramo esiste ancora?» si
-può chiedere; «quale richiesta lo riguarda, ed è unita?» no. È il quinto dei
-poteri che il censimento di `dev-stack` aveva già isolato — *restituire un
-valore invece di un esito*.
+**`shell_check` can say *whether*, not *what*.** The output of the step is
+`{"status": ...}` and no more (`crates/actions/src/lib.rs`, branch `Ok(ActionOutcome::Went(json!({ "status": status })))`).
+The command's output does not reach the flow. So «does the branch still exist?»
+can be asked; «which request concerns it, and is it merged?» cannot. It is the
+fifth of the powers the `dev-stack` survey had already isolated — *returning a
+value instead of an outcome*.
 
-**Le forme di innesco sono due, e sono codice.** `trigger::Kind` ha due varianti
-sole, `manual` e `terminal`; l'elenco dei descrittori è dato — si aggiunge un
-JSON in `~/.config/sailor/triggers.d/` — ma una **forma** nuova è una variante
-in più nell'enum. E `terminal` oggi è dichiarato e non ascolta, con una frase
-che questo documento fa propria:
+**The shapes of trigger are two, and they are code.** `trigger::Kind` has two
+variants only, `manual` and `terminal`; the list of descriptors is data — a JSON
+goes into `~/.config/sailor/triggers.d/` — but a new **shape** is one more
+variant in the enum. And `terminal` today is declared and does not listen, with
+a sentence this document makes its own:
 
-> «Un ascolto simulato sarebbe peggio di un ascolto assente, perché un flusso
-> verde direbbe che qualcuno ha parlato.»
+> «A simulated listening would be worse than an absent one, because a green flow
+> would say somebody had spoken.»
 
-## Se e quando si scrive il nodo del tempo, cinque cose vanno decise prima
+## If and when the time node gets written, five things have to be decided first
 
-Non sono dettagli di implementazione: cambiano cosa il nodo *è*.
+They are not implementation details: they change what the node *is*.
 
-1. **Chi tiene il tempo.** Sailor acceso che conta (non scatta a finestra
-   chiusa); il sistema operativo che lo sveglia (preciso, ma Sailor installa
-   qualcosa fuori da sé); oppure Sailor che all'avvio guarda cosa si è perso
-   («ogni tot» diventa «quando riapro»).
-2. **Il portatile che dorme.** «Ogni 30 minuti» su una macchina spenta dodici
-   ore: al risveglio scatta ventiquattro volte o una? Entrambe sono giuste, per
-   lavori diversi — quindi **lo dichiara l'innesco**, non lo decide il motore.
-3. **Intervallo e appuntamento sono due cose.** «Ogni tot» conta dall'ultima
-   corsa e slitta; «alle 9» non slitta e pretende un fuso orario.
-4. **Chi dice che non è scattato.** È il guasto 12 in un altro vestito: un
-   innesco che non parte deve **dirlo**. Se tace, «nessuna corsa» si legge come
-   «tutto a posto», che è la bugia peggiore. Nella lingua delle quattro
-   superfici: un innesco è un `sense`, e un `sense` deve distinguere «zero» da
-   «non ho potuto vedere».
-5. **Due tick che si sovrappongono.** Nel bot è stato pagato: il motore di
-   eventi non serializza i tick di suo, e ogni rete periodica porta un limite di
-   concorrenza a uno, scritto a mano. Un nodo del tempo che non lo prevede
-   fabbrica corse doppie.
+1. **Who keeps the time.** Sailor running and counting (it does not fire with
+   the window closed); the operating system waking it (precise, but Sailor
+   installs something outside itself); or Sailor looking at start-up at what was
+   missed («every so often» becomes «when I reopen»).
+2. **The laptop that sleeps.** «Every 30 minutes» on a machine switched off for
+   twelve hours: on waking does it fire twenty-four times or once? Both are
+   right, for different jobs — so **the trigger declares it**, the engine does
+   not decide it.
+3. **An interval and an appointment are two things.** «Every so often» counts
+   from the last run and drifts; «at 9» does not drift and demands a time zone.
+4. **Who says it did not fire.** It is fault 12 in other clothes: a trigger that
+   does not start has to **say so**. If it keeps quiet, «no runs» reads as
+   «everything is fine», which is the worst lie of all. In the language of the
+   four surfaces: a trigger is a `sense`, and a `sense` has to tell «zero» apart
+   from «I could not see».
+5. **Two ticks that overlap.** In the bot it was paid for: the event engine does
+   not serialise the ticks by itself, and every periodic net carries a
+   concurrency limit of one, written by hand. A time node that does not provide
+   for it manufactures double runs.
 
-## Cosa resta a Theo
+## What is left to Theo
 
-- **Se il livello 1 si accende su GitHub** — è una casella, e toglie da sola la
-  gran parte del problema. Nessun flusso lo fa meglio.
-- **Quale potere costruire per primo**: leggere un valore (`shell_check` che
-  restituisce), oppure accendersi da soli (l'innesco). Il primo sblocca il
-  livello 3, il secondo i livelli 2 e 4. **Il livello 3 costa meno e rende
-  prima.**
-- **Le cinque domande qui sopra**, se e quando il nodo del tempo si scrive.
+- **Whether level 1 gets switched on in GitHub** — it is a checkbox, and on its
+  own it takes away most of the problem. No flow does it better.
+- **Which power to build first**: reading a value (a `shell_check` that
+  returns), or lighting up by ourselves (the trigger). The first unblocks level
+  3, the second levels 2 and 4. **Level 3 costs less and pays off sooner.**
+- **The five questions above**, if and when the time node gets written.
 
-## Il controllo che rende rossa questa pagina
+## The check that makes this page red
 
-Come ogni regola scritta qui: *chi scrive una regola scrive anche ciò che la
-rende rossa*. Per questa il controllo è una prova che scorre i descrittori di
-innesco e **fallisce se un innesco di forma periodica non dichiara** cosa fa
-quando una corsa è stata persa e qual è il suo limite di concorrenza. Nasce
-verde oggi, perché inneschi periodici non ne esiste nessuno — ed è il modo in
-cui questa pagina resta viva invece di descrivere ciò che avremmo dovuto fare.
+Like every rule written here: *whoever writes a rule also writes what makes it
+red*. For this one the check is a test that walks the trigger descriptors and
+**fails if a trigger of periodic shape does not declare** what it does when a
+run has been missed and what its concurrency limit is. It is born green today,
+because no periodic trigger exists — and that is the way this page stays alive
+instead of describing what we ought to have done.
