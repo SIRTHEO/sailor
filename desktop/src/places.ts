@@ -44,7 +44,21 @@ export const PLACES: Place[] = [
     asks: "what happened, what it cost, and the tables under it",
     group: "what happened",
   },
-  { id: "sailor", name: "Sailor", glyph: "⚓", asks: "what it knows, what it can do", group: "itself" },
+];
+
+/**
+ * Every section the window can stand in, offered or not. **A PLACE LIST IS FOR
+ * CHOOSING; THIS IS FOR COMING BACK**: what the machine's screens live in is
+ * named by no row of `PLACES`, and reading the two as one list would send
+ * whoever left the window on Profiles back to the board.
+ */
+export const SECTIONS: Section[] = [
+  "board",
+  "changes",
+  "sketch",
+  "terminals",
+  "memory",
+  "sailor",
 ];
 
 
