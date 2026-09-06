@@ -68,10 +68,12 @@ fn no_line_of_code_carries_a_name_the_descriptor_should_own() {
          no name at all"
     );
     let mut caught = Vec::new();
+    let mut read = 0usize;
     for path in sources() {
         let Ok(text) = std::fs::read_to_string(&path) else {
             continue;
         };
+        read += 1;
         for (at, line) in text.lines().enumerate() {
             if is_prose(line) {
                 continue;
@@ -83,6 +85,12 @@ fn no_line_of_code_carries_a_name_the_descriptor_should_own() {
             }
         }
     }
+    workspace::measured_against(
+        read,
+        "sources of the inventory crate read",
+        forbidden.len(),
+        "names the descriptors declare",
+    );
     assert!(
         caught.is_empty(),
         "these lines decide with a product's name instead of asking the \
