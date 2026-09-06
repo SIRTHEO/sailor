@@ -21,7 +21,7 @@
 //!
 //! **E NON GUARDA I FLUSSI, PER DECISIONE.** Gli `id` dei flussi e dei passi —
 //! `sviluppa-sailor`, `verdetto` — e i nomi dei file `.flow.json` restano in
-//! italiano: decisione di Theo del 31/08/2026, scritta in `docs/decisioni.md`.
+//! italiano: decisione di Theo del 31/08/2026, scritta in `docs/decisions.md`.
 //! Sono dati che il **deposito conserva**: rinominare un passo farebbe apparire
 //! le corse già registrate come passi sconosciuti, e cambiare il nome di un
 //! flusso spedito farebbe smettere di vincere — in silenzio — il flusso che un

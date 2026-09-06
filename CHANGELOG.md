@@ -8,9 +8,9 @@ with its real author and date, not copied here by hand:
 
 - **the commits**, in Conventional Commits form, whose bodies carry the why:
   `git log --first-parent sorgenti`;
-- **the fault register**, `docs/guasti-incontrati.md`, one entry per defect
+- **the fault register**, `docs/faults-encountered.md`, one entry per defect
   with how it surfaced and what would have stopped it;
-- **the decisions that do not reopen**, `docs/decisioni.md`.
+- **the decisions that do not reopen**, `docs/decisions.md`.
 
 The first entry below is written when the first version is tagged, and from
 then on this file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).

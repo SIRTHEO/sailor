@@ -3,7 +3,7 @@ import type { Step } from "./flow";
 // The React half of the terminal contract: the seven commands, the two events,
 // and the decisions that can be proved without the bridge.
 //
-// THE SOURCE IS `docs/2026-09-01-il-contratto-del-terminale.md`, not this
+// THE SOURCE IS `docs/the-terminal-contract.md`, not this
 // file. The Rust bridge is written against the same document: if the two
 // halves diverge, the document changes, and whoever notices says so instead
 // of quietly adapting their own half.
