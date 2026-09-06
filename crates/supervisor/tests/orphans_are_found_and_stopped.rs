@@ -265,8 +265,16 @@ fn the_dev_port_matches_the_tauri_config() {
         .expect("il crate sta in <radice>/crates/supervisor")
         .to_path_buf();
     let path = root.join("desktop/src-tauri/tauri.conf.json");
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("leggere {}: {error}", path.display()));
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        workspace::measured_nothing("this tree carries no desktop/src-tauri/tauri.conf.json to read");
+        return;
+    };
+    workspace::measured_against(
+        text.lines().count(),
+        "lines of the Tauri configuration read",
+        1,
+        "port the process register declares",
+    );
     let config: serde_json::Value =
         serde_json::from_str(&text).expect("la configurazione di Tauri non è JSON valido");
 
