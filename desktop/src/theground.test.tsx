@@ -8,7 +8,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import App from "./App";
-import { PLACES, TERMINALS_GROUND, inTheStrip } from "./places";
+import { PLACES, TERMINALS_GROUND } from "./places";
 import { TERMINALS_TABS } from "./TerminalsSection";
 
 afterEach(() => {
@@ -32,6 +32,15 @@ function crumbsOf(root: Element): (string | null)[] {
   return Array.from(root.querySelectorAll(".topbar__crumb")).map((one) => one.textContent);
 }
 
+/** The sections are typed for: the window carries no permanent menu of them. */
+function typeInThePalette(label: string): void {
+  fireEvent.click(screen.getByRole("button", { name: /Search or run a command/ }));
+  const rows = Array.from(document.querySelectorAll<HTMLElement>(".palette__entry"));
+  const row = rows.find((one) => one.querySelector(".palette__label")?.textContent === label);
+  expect(row, `the palette does not offer «${label}»`).toBeDefined();
+  fireEvent.click(row as HTMLElement);
+}
+
 describe("the terminals are the ground of the window", () => {
   test("AT REST THE WORK IS ON SCREEN, and it is no longer a place to choose", () => {
     const { container } = render(<App />);
@@ -46,7 +55,7 @@ describe("the terminals are the ground of the window", () => {
     // A destination is something a list offers. This one is not offered: it is
     // where you already are.
     expect(PLACES.map((one) => one.id)).not.toContain("terminals");
-    expect(inTheStrip().map((one) => one.name)).not.toContain("Terminals");
+    expect(PLACES.map((one) => one.name)).not.toContain("Terminals");
   });
 
   /**
@@ -58,7 +67,7 @@ describe("the terminals are the ground of the window", () => {
     const { container } = render(<App />);
     expect(container.querySelectorAll(".section:not([hidden])")).toHaveLength(1);
 
-    fireEvent.click(screen.getByRole("button", { name: /^Runs/ }));
+    typeInThePalette("Runs");
     expect(
       container.querySelectorAll(".section:not([hidden])"),
       "a second section took part of the stage the terminals hold",
@@ -72,7 +81,7 @@ describe("the terminals are the ground of the window", () => {
    */
   test("THE ARRANGEMENT LEFT COMES BACK, section and view alike", () => {
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /^Runs/ }));
+    typeInThePalette("Runs");
     cleanup();
 
     // A NEW WINDOW, not a re-render: this is what a build leaves behind.
@@ -83,8 +92,7 @@ describe("the terminals are the ground of the window", () => {
     // And back the other way: the ground is remembered like any other place,
     // and typing reaches it from wherever the window reopened.
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /Search or run a command/ }));
-    fireEvent.click(screen.getByRole("option", { name: /^Live/ }));
+    typeInThePalette("Live");
     cleanup();
     expect(crumbsOf(render(<App />).container)[0]).toBe(TERMINALS_GROUND);
   });

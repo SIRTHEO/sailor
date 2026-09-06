@@ -5,7 +5,7 @@ import App from "./App";
 import { beatWords, buildWords, hears, liveWords, spendWords, whoWords, LiveChip } from "./Bar";
 import { BlankCanvas } from "./BlankCanvas";
 import { LedgerBrowser } from "./LedgerBrowser";
-import { MACHINE, TERMINALS_GROUND, inTheStrip, machineHolds, tabsThatExist } from "./places";
+import { MACHINE, TERMINALS_GROUND, machineHolds, tabsThatExist } from "./places";
 
 /**
  * **FOUR PLACES, A BAR THAT SPEAKS FROM ANYWHERE, AND THE LEDGER AS A
@@ -59,40 +59,25 @@ function pretendShell(answers: Record<string, unknown | ((args?: Record<string, 
   };
 }
 
+/** Picks the row ⌘K draws with exactly this label: the accessible name of an
+ *  option carries the hint too, and «Runs» is a place and a view inside it. */
+function typeInThePalette(label: string): void {
+  fireEvent.click(screen.getByRole("button", { name: /Search or run a command/ }));
+  const rows = Array.from(document.querySelectorAll<HTMLElement>(".palette__entry"));
+  const row = rows.find((one) => one.querySelector(".palette__label")?.textContent === label);
+  expect(row, `the palette does not offer «${label}»`).toBeDefined();
+  fireEvent.click(row as HTMLElement);
+}
+
 describe("the column is the world", () => {
   /** A list of places says what the program has, not where the work is. */
-  test("WHAT HOLDS EVERYWHERE IS A STRIP ABOVE THE WORK, and the board is not in it", () => {
+  test("THE COLUMN IS THE TREE YOU STAND IN, and nothing above the work", () => {
     const { container } = render(<App />);
-
-    const above = Array.from(container.querySelectorAll(".world__above .world__label")).map(
-      (one) => one.textContent,
-    );
-    // Only what belongs to no ground below. The board hangs under the tree it
-    // draws; the work and what this machine holds have a ground of their own.
-    expect(above).toEqual(["Runs"]);
-    expect(
-      above,
-      "the board is above the work: its flows belong to the tree you are in",
-    ).not.toContain("Board");
-
-    // A glyph each, and what a place answers is the row's title: five
-    // sentences stacked are a wall of text, not a navigation.
-    for (const place of inTheStrip()) {
-      expect(
-        container.querySelector(`.world__global[title="${place.asks}"]`),
-        `«${place.name}» does not say what it answers`,
-      ).toBeTruthy();
-    }
 
     const heads = Array.from(container.querySelectorAll(".world__head")).map(
       (one) => one.textContent,
     );
-    expect(heads).toEqual([
-      "workspaces",
-      "flows everywhere",
-      "this mac",
-      "outside every workspace",
-    ]);
+    expect(heads).toEqual(["workspaces", "flows everywhere", "outside every workspace"]);
     expect(
       container.querySelector(".body[hidden]"),
       "the board is the ground again: at rest the window is the work",
@@ -124,7 +109,7 @@ describe("the column is the world", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Board/ }));
     expect(crumbs()).toEqual(["Board", "prima-corsa"]);
 
-    fireEvent.click(screen.getByRole("button", { name: /Runs/ }));
+    typeInThePalette("Runs");
     expect(crumbs()).toEqual(["Runs", "Runs"]);
     // The terminals stay mounted, hidden, with a column of their own: only
     // the section in view counts.
@@ -133,14 +118,13 @@ describe("the column is the world", () => {
     expect(entries).toEqual(["Runs", "Spend and quota", "Faults", "Ledger"]);
 
     // The ledger is one view of what happened: consulted beside the runs it
-    // came from, and reached from the machine's ground without a run first.
-    const ledger = MACHINE.find((one) => one.id === "ledger");
-    fireEvent.click(container.querySelector(`.world__global[title="${ledger?.asks ?? ""}"]`) as HTMLElement);
+    // came from, and reached from the machine's own row without a run first.
+    typeInThePalette("Ledger");
     expect(crumbs()).toEqual(["Runs", "Ledger"]);
 
-    // ONE CLICK, NOT TWO: the machine's places are rows of the column, and
-    // landing on one lands on the screen itself, not on a list that asks again.
-    fireEvent.click(screen.getByRole("button", { name: /^Profiles/ }));
+    // ONE ENTRY, NOT TWO: a row of the machine's ground lands on the screen
+    // itself, not on a list that asks again.
+    typeInThePalette("Profiles");
     expect(crumbs()).toEqual(["this mac", "Profiles"]);
     expect(
       container.querySelectorAll(`${shown}.subrail`),
@@ -148,8 +132,7 @@ describe("the column is the world", () => {
     ).toHaveLength(0);
 
     // And back to the work, which is typed for rather than navigated to.
-    fireEvent.click(screen.getByRole("button", { name: /Search or run a command/ }));
-    fireEvent.click(screen.getByRole("option", { name: /^Live/ }));
+    typeInThePalette("Live");
     expect(crumbs()).toEqual([TERMINALS_GROUND, "Live"]);
   });
 });
@@ -442,13 +425,14 @@ describe("the machine's ground and the screens it holds", () => {
     expect(tabsThatExist().length).toBeGreaterThan(4);
   });
 
-  test("and every row of that ground says what it answers", () => {
-    const { container } = render(<App />);
+  test("and every row of that ground says what it answers, where it is offered", () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /Search or run a command/ }));
+    const hints = Array.from(document.querySelectorAll(".palette__hint")).map(
+      (one) => one.textContent,
+    );
     for (const row of MACHINE) {
-      expect(
-        container.querySelector(`.world__global[title="${row.asks}"]`),
-        `«${row.name}» does not say what it answers`,
-      ).toBeTruthy();
+      expect(hints, `«${row.name}» does not say what it answers`).toContain(row.asks);
     }
   });
 });
@@ -466,7 +450,7 @@ describe("a window replaced by a build", () => {
 
   test("OPENS WHERE IT WAS LEFT, place and all", () => {
     const first = render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /Runs/ }));
+    typeInThePalette("Runs");
     expect(
       first.container.querySelector(".body[hidden]"),
       "the board is still in view, so this proves nothing",

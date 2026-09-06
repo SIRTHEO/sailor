@@ -31,6 +31,15 @@ beforeAll(() => {
 /** The section on screen: the terminals stay mounted behind it, hidden. */
 const SHOWN = ".section:not([hidden]) ";
 
+/** The sections are typed for: the window carries no permanent menu of them. */
+function typeInThePalette(label: string): void {
+  fireEvent.click(screen.getByRole("button", { name: /Search or run a command/ }));
+  const rows = Array.from(document.querySelectorAll<HTMLElement>(".palette__entry"));
+  const row = rows.find((one) => one.querySelector(".palette__label")?.textContent === label);
+  expect(row, `the palette does not offer «${label}»`).toBeDefined();
+  fireEvent.click(row as HTMLElement);
+}
+
 /** A row of the section's own column, by the name it shows. */
 function inTheColumn(root: Element, name: string): HTMLElement {
   const rows = Array.from(root.querySelectorAll<HTMLElement>(`${SHOWN}.subrail__item`));
@@ -42,7 +51,7 @@ function inTheColumn(root: Element, name: string): HTMLElement {
 describe("the history is one place", () => {
   test("THE TABLES ARE A VIEW INSIDE THE RUNS, not a section beside them", () => {
     const { container } = render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /^Runs/ }));
+    typeInThePalette("Runs");
 
     const inside = Array.from(container.querySelectorAll(`${SHOWN}.subrail__name`)).map(
       (one) => one.textContent,
@@ -56,7 +65,7 @@ describe("the history is one place", () => {
 
   test("AND THEY OPEN WITHOUT PASSING THROUGH A SINGLE RUN", () => {
     const { container } = render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /^Runs/ }));
+    typeInThePalette("Runs");
     // Straight from the history's own column, with no run picked first.
     fireEvent.click(inTheColumn(container, "Ledger"));
 
@@ -73,9 +82,9 @@ describe("the history is one place", () => {
     expect(row?.memoryTab).toBe("ledger");
 
     const { container } = render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /^Runs/ }));
+    typeInThePalette("Runs");
     fireEvent.click(inTheColumn(container, "Faults"));
-    fireEvent.click(container.querySelector(`.world__global[title="${row?.asks ?? ""}"]`) as HTMLElement);
+    typeInThePalette(row?.name ?? "");
 
     expect(container.querySelector(`${SHOWN}.browser`), "the machine's row did not open the tables").not.toBeNull();
   });
