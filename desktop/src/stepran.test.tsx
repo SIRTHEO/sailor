@@ -99,6 +99,7 @@ function passageWith(ran: Ran | null): StepPassage {
     failure_class: null,
     refusal: null,
     ran,
+    why: null,
     started_by: "window",
     input: {},
     mandate: null,

@@ -125,6 +125,7 @@ function passageWith(refusal: Refusal | null): StepPassage {
     failure_class: "answer_off_shape",
     refusal,
     ran: null,
+    why: null,
     started_by: "window",
     input: {},
     mandate: null,
