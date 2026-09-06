@@ -308,7 +308,18 @@ impl Graph {
         step: &Step,
         by_id: &BTreeMap<&str, &Step>,
     ) -> Option<ValueSchema> {
-        let produced = match step.deps.as_slice() {
+        match (self.dependency_schema(step, by_id), step.with.as_ref()) {
+            (Some(produced), Some(with)) => Some(schema_with_overlay(produced, with)),
+            (produced, _) => produced,
+        }
+    }
+
+    fn dependency_schema(
+        &self,
+        step: &Step,
+        by_id: &BTreeMap<&str, &Step>,
+    ) -> Option<ValueSchema> {
+        match step.deps.as_slice() {
             [] => None,
             [only] if !self.dependency_is_skippable(&step.id, only) => by_id
                 .get(only.as_str())
@@ -328,11 +339,26 @@ impl Graph {
                     .filter(|id| !self.dependency_is_skippable(&step.id, id))
                     .cloned(),
             )),
-        };
-        match (produced, step.with.as_ref()) {
-            (Some(produced), Some(with)) => Some(schema_with_overlay(produced, with)),
-            (produced, _) => produced,
         }
+    }
+
+    /// The shape of the input this step will receive: its dependencies'
+    /// declared output with its own `with` laid over. `None` where nothing is
+    /// declared to judge — no dependency, or an untyped one.
+    pub fn declared_input_of(&self, step: &Step) -> Option<ValueSchema> {
+        let by_id: BTreeMap<&str, &Step> = self
+            .steps
+            .iter()
+            .map(|step| (step.id.as_str(), step))
+            .collect();
+        let produced = self.dependency_schema(step, &by_id)?;
+        if !matches!(produced, ValueSchema::Object { .. }) {
+            return None;
+        }
+        Some(match step.with.as_ref() {
+            Some(with) => schema_with_overlay(produced, with),
+            None => produced,
+        })
     }
 }
 
