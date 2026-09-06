@@ -2,6 +2,7 @@
 //! whether the line it assembles is sound, and whether its home is logged in.
 
 use flow::Graph;
+use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::check::{engines_of, EngineWorld};
@@ -139,6 +140,9 @@ pub(super) fn login_states_into(
 struct WantedEngine {
     step: String,
     tool: String,
+    /// The model **this step** wants of it, if it names one: the line to try
+    /// is that one, not the one without.
+    model: Option<String>,
 }
 
 /// I motori di cui `flow check` deve provare la riga, passo per passo e
@@ -166,9 +170,15 @@ fn engines_wanted(graph: &Graph) -> Vec<WantedEngine> {
             continue;
         }
         for tool in engines_of(with) {
+            let model = with
+                .get("model")
+                .and_then(|named| named.get(&tool))
+                .and_then(Value::as_str)
+                .map(str::to_owned);
             wanted.push(WantedEngine {
                 step: step.id.clone(),
                 tool,
+                model,
             });
         }
     }
@@ -219,11 +229,12 @@ pub(super) fn engine_lines_into(
 ) {
     use actions::{ProbeVerdict, ToolResolver};
 
-    // Un motore si prova UNA VOLTA SOLA anche quando lo nominano sei passi: la
-    // riga che si monta viene dal descrittore, non dal passo, quindi sei prove
-    // avvierebbero sei processi per sapere sei volte la stessa cosa. Il
-    // rapporto resta passo per passo, che è ciò che chi legge deve correggere.
-    let mut judged: BTreeMap<String, EngineOutcome> = BTreeMap::new();
+    // AN ENGINE IS TRIED ONCE even when six steps name it: six trials would
+    // start six processes to learn one thing six times, and the report stays
+    // step by step anyway. THE KEY CARRIES THE MODEL TOO: two steps asking one
+    // engine for two models assemble two lines, and probing one would call
+    // sound a line nobody looked at.
+    let mut judged: BTreeMap<(String, Option<String>), EngineOutcome> = BTreeMap::new();
 
     let mut sound = Vec::new();
     let mut broken = Vec::new();
@@ -237,28 +248,41 @@ pub(super) fn engine_lines_into(
         if !tools.declares(&wanted.tool) {
             continue;
         }
-        if !judged.contains_key(&wanted.tool) {
+        let asked = (wanted.tool.clone(), wanted.model.clone());
+        if !judged.contains_key(&asked) {
             let outcome = match tools.resolve(&wanted.tool) {
                 Err(reason) => EngineOutcome::NotHere(reason),
-                Ok(bin) => match tools.ask_recipe(&wanted.tool) {
-                    None => EngineOutcome::NotAssemblable,
-                    Some(recipe) => {
+                Ok(bin) => match (tools.ask_recipe(&wanted.tool), &wanted.model) {
+                    (None, _) => EngineOutcome::NotAssemblable,
+                    // A model named to an engine that cannot receive one: the
+                    // run would refuse it, so there is no line to try, and
+                    // saying so before spending is this check's whole trade.
+                    (Some(_), Some(_)) if tools.model_option(&wanted.tool).is_none() => {
+                        EngineOutcome::NotAssemblable
+                    }
+                    (Some(recipe), model) => {
+                        let args = match (model, tools.model_option(&wanted.tool)) {
+                            (Some(model), Some(option)) => {
+                                actions::command_line_naming_model(&recipe, &option, model)
+                            }
+                            _ => actions::command_line(&recipe),
+                        };
                         let line = std::iter::once(bin.clone())
-                            .chain(actions::command_line(&recipe))
+                            .chain(args.iter().cloned())
                             .collect::<Vec<_>>()
                             .join(" ");
                         EngineOutcome::Tried {
-                            verdict: actions::probe_dry_run(probe, &bin, &recipe),
+                            verdict: actions::probe_dry_run_with(probe, &bin, &recipe, &args),
                             line,
                         }
                     }
                 },
             };
-            judged.insert(wanted.tool.clone(), outcome);
+            judged.insert(asked.clone(), outcome);
         }
 
         let who = format!("{} → {}", wanted.step, wanted.tool);
-        match judged.get(&wanted.tool).expect("appena inserito") {
+        match judged.get(&asked).expect("appena inserito") {
             EngineOutcome::NotHere(reason) => untried.push(catalogue::say(
                 "cli.flow.engine_not_invocable_here",
                 &[("who", &who), ("reason", reason)],
@@ -652,7 +676,114 @@ mod tests {
         serde_json::from_str(&json).expect("caricare il flusso")
     }
 
+    /// Like `flow_with_chain`, with the step naming which model it wants of
+    /// each engine.
+    fn flow_asking_model(chain: &str, model: &str) -> FlowFile {
+        let json = format!(
+            r#"{{
+                "id": "prova",
+                "description": "flusso di prova",
+                "graph": {{
+                    "steps": [{{
+                        "id": "chiedi",
+                        "deps": [],
+                        "action": "external_engine",
+                        "max_attempts": 1,
+                        "when": null,
+                        "with": {{"tool": {chain}, "model": {model}, "stdin": "ciao", "timeout_secs": 10}},
+                        "input_schema": {{"type": "any"}},
+                        "output_schema": {{"type": "any"}}
+                    }}],
+                    "skippable_dependencies": []
+                }},
+                "inputs": {{}}
+            }}"#
+        );
+        serde_json::from_str(&json).expect("caricare il flusso")
+    }
+
+    /// A probe that remembers **the line it was given**. The line written in
+    /// the report and the line tried are two things, and a test reading only
+    /// the first would pass a check that shows one and tries another.
+    #[derive(Default)]
+    struct RecordingProbe(std::sync::Mutex<Vec<Vec<String>>>);
+
+    impl actions::DryProbe for RecordingProbe {
+        fn run(&self, _bin: &str, args: &[String], _stdin: Option<Vec<u8>>) -> actions::DryRun {
+            self.0.lock().expect("la sonda").push(args.to_vec());
+            actions::DryRun::Answered {
+                stdout: String::new(),
+                stderr: "input must be provided".to_owned(),
+            }
+        }
+    }
+
+    impl actions::LoginProbe for RecordingProbe {
+        fn ask(
+            &self,
+            _bin: &str,
+            _args: &[String],
+            _env: &BTreeMap<String, String>,
+        ) -> actions::DryRun {
+            actions::DryRun::NoAnswer {
+                why: "questa sonda non risponde alla domanda sulle credenziali".to_owned(),
+            }
+        }
+    }
+
+    /// **THE LINE TRIED IS THE ONE THAT WOULD RUN.** Assembled from the
+    /// descriptor alone it would carry no model and still be called sound:
+    /// the two doors of fault 1, held together here.
+    #[test]
+    fn the_line_tried_without_spending_carries_the_model_the_step_asked_for() {
+        let flow = flow_asking_model(r#""motore""#, r#"{"motore": "il-modello-forte"}"#);
+        let tools = tools_with_engines(&[("motore", REFUSES_AND_TAKES_A_MODEL)]);
+        let probe = RecordingProbe::default();
+
+        let (report, _) = check_report(
+            &flow,
+            &registry_in(House::empty(), None, None),
+            Some(&tools),
+            Some(&EngineWorld::without_profiles(&probe)),
+        );
+
+        let tried = probe.0.lock().expect("la sonda").clone();
+        assert_eq!(
+            tried,
+            vec![vec![
+                "-p".to_owned(),
+                "--model".to_owned(),
+                "il-modello-forte".to_owned()
+            ]],
+            "il rapporto dice: {report}"
+        );
+    }
+
+    /// **AND ONE ASKED OF AN ENGINE THAT CANNOT HEAR IT IS NOT TRIED.** The run
+    /// would refuse it: assembling the line without the model and calling it
+    /// sound would send a person to spend on a chain that will stop.
+    #[test]
+    fn an_engine_that_cannot_be_told_a_model_has_no_line_to_try() {
+        let flow = flow_asking_model(r#""motore""#, r#"{"motore": "il-modello-forte"}"#);
+        let tools = tools_with_engines(&[("motore", REFUSES)]);
+        let probe = RecordingProbe::default();
+
+        let (report, _) = check_report(
+            &flow,
+            &registry_in(House::empty(), None, None),
+            Some(&tools),
+            Some(&EngineWorld::without_profiles(&probe)),
+        );
+
+        assert!(
+            probe.0.lock().expect("la sonda").is_empty(),
+            "non c'era nessuna riga da provare: {report}"
+        );
+        assert!(!report.contains("sound command lines"), "{report}");
+    }
+
     const REFUSES: &str = r#","ask":{"args":["-p"],"prompt":"stdin","refuses_without_prompt":["input must be provided"]}"#;
+    const REFUSES_AND_TAKES_A_MODEL: &str = r#","ask":{"args":["-p"],"prompt":"stdin","refuses_without_prompt":["input must be provided"]},"capabilities":{"choose_model":{"args":["--model"],"takes_value":true}}"#;
     const SAYS_NOTHING: &str = r#","ask":{"args":["-p"],"prompt":"stdin"}"#;
     const NO_ASK: &str = "";
 

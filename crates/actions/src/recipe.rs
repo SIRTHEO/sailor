@@ -71,6 +71,16 @@ pub trait ToolResolver: Send + Sync {
     fn login_recipe(&self, _id: &str) -> Option<LoginRecipe> {
         None
     }
+
+    /// The options a model's name is written after, when `id`'s descriptor
+    /// says how it is told one.
+    ///
+    /// **`None` IS A REFUSAL, NOT A DEFAULT**, the other way round from
+    /// `session_recipe`: there the step asked for nothing, here it asked, and
+    /// answering from a model nobody chose would say so to nobody.
+    fn model_option(&self, _id: &str) -> Option<Vec<String>> {
+        None
+    }
 }
 
 /// Il segnaposto che, dentro le opzioni di una ricetta di sessione, prende il
@@ -164,6 +174,22 @@ pub fn command_line_with(recipe: &AskRecipe, ask_args: &[String]) -> Vec<String>
     }
     args.extend(recipe.args_before_prompt.iter().cloned());
     args
+}
+
+/// The same line, with the model the step asked for written on it.
+///
+/// The model's options follow the question's and stay **before** the ones glued
+/// to the text, for the reason `args_before_prompt` exists: a name slipped
+/// between the flag introducing the question and the question is read as it.
+pub fn command_line_naming_model(
+    recipe: &AskRecipe,
+    option: &[String],
+    model: &str,
+) -> Vec<String> {
+    let mut ask_args = recipe.args.clone();
+    ask_args.extend(option.iter().cloned());
+    ask_args.push(model.to_owned());
+    command_line_with(recipe, &ask_args)
 }
 
 /// Come si interroga un motore in un colpo solo, e come quel motore dice di
