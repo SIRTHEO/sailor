@@ -8,7 +8,10 @@
 use actions::reserve::{CeilingOption, UNIT_CURRENCY};
 use actions::{AskRecipe, Declared, ExternalEngineAction, Pointer, PromptVia, Shape, ToolResolver};
 use actions::{Reports, UsageRecipe};
-use flow::{Action, SharedState};
+use flow::{
+    Action, ActionRegistry, ExecutionRequest, Executor, Graph, InProcessExecutor, RecordStore,
+    RunStops, SharedState, Step, SystemClock, ValueSchema,
+};
 use ledger::Ledger;
 use serde_json::json;
 use std::fs;
@@ -39,6 +42,11 @@ const A_SMALL_CALL: &str = r#"cat > /dev/null
 printf '%s\n' "$@" > "$(dirname "$0")/argv"
 printf '{"result":"fatto","model":"modello-di-prova","usage":{"input_tokens":100000,"output_tokens":0}}'"#;
 
+/// The same call, from a model the price list below does not carry. Its tokens
+/// are counted and its cost is not: the row it leaves has no cost at all.
+const A_CALL_NOBODY_CAN_PRICE: &str = r#"cat > /dev/null
+printf '{"result":"fatto","model":"modello-fuori-listino","usage":{"input_tokens":100000,"output_tokens":0}}'"#;
+
 const PRICE_LIST: &str = r#"{
   "currency": "USD",
   "models": [
@@ -46,9 +54,9 @@ const PRICE_LIST: &str = r#"{
   ]
 }"#;
 
-fn fake_engine(dir: &Path, name: &str) -> String {
+fn fake_engine(dir: &Path, name: &str, script: &str) -> String {
     let path = dir.join(name);
-    fs::write(&path, format!("#!/bin/sh\n{A_SMALL_CALL}\n")).expect("the fake engine is written");
+    fs::write(&path, format!("#!/bin/sh\n{script}\n")).expect("the fake engine is written");
     fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("and made executable");
     path.to_string_lossy().into_owned()
 }
@@ -147,7 +155,7 @@ fn calls_in(dir: &Path) -> usize {
 
 fn a_run(dir: &Path, holds_to_a_ceiling: bool, ledger: &str) -> ExternalEngineAction {
     ExternalEngineAction::resolving_with(OneEngine {
-        bin: fake_engine(dir, "motore"),
+        bin: fake_engine(dir, "motore", A_SMALL_CALL),
         holds_to_a_ceiling,
     })
     .recording_to(Some(Ledger::open(dir.join(ledger)).expect("a scratch ledger")))
@@ -235,4 +243,97 @@ fn a_call_nobody_can_reserve_says_so_instead_of_showing_a_number() {
             refused.said
         );
     });
+}
+
+fn a_step(id: &str, deps: &[&str], with: Option<serde_json::Value>) -> Step {
+    Step {
+        id: id.to_owned(),
+        deps: deps.iter().map(|dep| (*dep).to_owned()).collect(),
+        input_schema: ValueSchema::Any,
+        output_schema: ValueSchema::Any,
+        with,
+        when: None,
+        action: actions::EXTERNAL_ENGINE_ACTION.to_owned(),
+        max_attempts: 1,
+        ask_again_after_secs: None,
+        retry_after_secs: None,
+        phase: None,
+        stops_when: None,
+        decides_done: false,
+    }
+}
+
+/// **THE RUN THAT OVERSHOT ITS CAP, IN MINIATURE.** Two calls of one engine
+/// under a cap of 6.00, and the model that answers is deliberately absent from
+/// the price list: its row lands with no cost, the run's spend reads `AtLeast`,
+/// and the older rule — «stop when the remainder is gone» — could never see a
+/// remainder fall. The second call must not be made, and the store must say
+/// why with the figures. *Mutant run*: put `_ => remaining > 0` back as the
+/// last arm of `reserve::admits` and both calls go through.
+#[test]
+fn a_model_the_price_list_cannot_price_stops_the_run_and_the_store_says_why() {
+    let dir = Scratch::new("fuori-listino");
+    let prices = dir.0.join("pricing.json");
+    fs::write(&prices, PRICE_LIST).expect("the fake price list is written");
+    let ledger = Ledger::open(dir.0.join("deposito")).expect("a scratch ledger");
+    let action = ExternalEngineAction::resolving_with(OneEngine {
+        bin: fake_engine(&dir.0, "motore", A_CALL_NOBODY_CAN_PRICE),
+        holds_to_a_ceiling: true,
+    })
+    .recording_to(Some(ledger.clone()))
+    .budgeted_by(None);
+    let mut registry = ActionRegistry::default();
+    registry.register(actions::EXTERNAL_ENGINE_ACTION, action);
+    let asked = json!({
+        "tool": "motore-di-prova",
+        "stdin": "ciao",
+        "timeout_secs": 10,
+        "max_spend_micros": 600_000
+    });
+    let graph = Graph::new(vec![
+        a_step("uno", &[], None),
+        a_step("due", &["uno"], Some(asked.clone())),
+    ])
+    .expect("a sane graph");
+
+    with_the_price_list(&prices, || {
+        InProcessExecutor
+            .execute(
+                &graph,
+                ExecutionRequest {
+                    run_id: "la-corsa".to_owned(),
+                    root_inputs: [("uno".to_owned(), asked.clone())].into_iter().collect(),
+                    gates: Vec::new(),
+                    shared: SharedState::new(),
+                    spend_cap_micros: Some(6_000_000),
+                    stops: RunStops::default(),
+                },
+                &ledger,
+                &registry,
+                &SystemClock,
+            )
+            .expect("the run answers");
+    });
+
+    assert_eq!(
+        calls_in(&dir.0.join("deposito")),
+        1,
+        "the second call was never made"
+    );
+    let spent = ledger
+        .spent_in_run("la-corsa")
+        .expect("the store says what the run spent");
+    assert_eq!((spent.calls, spent.calls_without_cost), (1, 1));
+
+    let records = RecordStore::records(&ledger, "la-corsa").expect("the run's records are read");
+    let stopped = records
+        .iter()
+        .find(|record| record.step_id == "due")
+        .expect("the second step was opened and closed");
+    assert_eq!(stopped.outcome, Some(flow::Outcome::Broke));
+    assert_eq!(stopped.failure_class.as_deref(), Some("spend_cap_admission"));
+    let said = stopped.said.clone().unwrap_or_default();
+    for figure in ["0.00", "6.00", "1 of the 1", "0.60"] {
+        assert!(said.contains(figure), "«{figure}» is missing from: {said}");
+    }
 }
