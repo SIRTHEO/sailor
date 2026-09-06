@@ -19,7 +19,7 @@
 use flow::{Action, ActionOutcome, SharedState};
 use serde_json::json;
 use std::fs;
-use toolbox::DetectToolsAction;
+use toolbox::{DetectToolsAction, Machine};
 
 fn a_folder(name: &str) -> std::path::PathBuf {
     let root = std::env::temp_dir().join(format!("toolbox-workdir-{name}-{}", std::process::id()));
@@ -58,7 +58,7 @@ fn il_workdir_non_fa_cadere_il_rilevamento() {
     let root = a_folder("cade");
     let file = descriptor(&root, "prova.json");
 
-    let outcome = DetectToolsAction
+    let outcome = DetectToolsAction::on(Machine::bare(root.clone()))
         .execute(
             &json!({
                 "descriptor_paths": [file.display().to_string()],
@@ -82,7 +82,7 @@ fn un_descrittore_relativo_si_conta_dal_workdir() {
     fs::create_dir_all(root.join("tools.d")).expect("sottocartella");
     descriptor(&root.join("tools.d"), "prova.json");
 
-    let outcome = DetectToolsAction
+    let outcome = DetectToolsAction::on(Machine::bare(root.clone()))
         .execute(
             &json!({
                 "descriptor_paths": ["tools.d/prova.json"],

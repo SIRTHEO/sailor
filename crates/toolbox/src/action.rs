@@ -15,9 +15,9 @@ use std::path::PathBuf;
 /// an output that is data — the same three shapes the other actions have.
 pub const DETECT_TOOLS_ACTION: &str = "detect_tools";
 
-/// Registers the action under its stable name.
-pub fn register_default(registry: &mut flow::ActionRegistry) {
-    registry.register(DETECT_TOOLS_ACTION, DetectToolsAction);
+/// Registers the action under its stable name, on the machine it will detect on.
+pub fn register_default(registry: &mut flow::ActionRegistry, machine: Machine) {
+    registry.register(DETECT_TOOLS_ACTION, DetectToolsAction::on(machine));
 }
 
 /// L'ingresso del passo.
@@ -96,13 +96,23 @@ fn rooted(machine: &Machine, workdir: Option<&str>, raw: &str) -> PathBuf {
     }
 }
 
-/// Answers "what can I use here?" from the descriptors and from the machine.
-///
+/// Answers "what can I use here?" from the descriptors and from the machine
+/// it was given: it never looks the machine up on its own, so a registry built
+/// over a bare house reads nothing of the runner.
 /// WHAT IS NOT AN ERROR OF THE ACTION: a missing tool, a binary that does not
-/// answer, a badly written descriptor — all facts about the world, and they go
-/// into the output. It fails only when its own input, written by whoever wrote
-/// the step, cannot be read.
-pub struct DetectToolsAction;
+/// answer, a badly written descriptor are facts about the world and go into
+/// the output. It fails only when its own input cannot be read.
+pub struct DetectToolsAction {
+    machine: Machine,
+}
+
+impl DetectToolsAction {
+    /// The action over this world. Only `version_probes` is decided later, by
+    /// the step that runs.
+    pub fn on(machine: Machine) -> Self {
+        Self { machine }
+    }
+}
 
 impl Action for DetectToolsAction {
     fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
@@ -118,7 +128,7 @@ impl Action for DetectToolsAction {
             serde_json::from_value(input.clone())
                 .map_err(|error| ActionError::new("invalid_input", error.to_string()))?
         };
-        let mut machine = Machine::current();
+        let mut machine = self.machine.clone();
         machine.version_probes = spec.version_probes;
         let mut sources: Vec<Source> = if spec.include_defaults {
             default_sources(&machine)
@@ -163,5 +173,66 @@ impl Action for DetectToolsAction {
     /// and had broken it just as much with no interruption in the middle.
     fn species(&self) -> StepSpecies {
         StepSpecies::Repeatable
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+
+    /// The mutant this catches: `Machine::current()` back inside `execute`.
+    /// Then `looked_in` is the runner's `PATH`, never exactly one scratch
+    /// directory, and the proof turns red whatever the runner has installed.
+    #[test]
+    fn the_action_looks_only_where_the_machine_it_was_given_says() {
+        let scratch = std::env::temp_dir().join(format!("sailor-detect-on-{}", std::process::id()));
+        let bin = scratch.join("bin");
+        fs::create_dir_all(&bin).expect("the scratch bin directory is created");
+        let catalog = Catalog::load(&[Source::Builtin]);
+        let (id, command) = catalog
+            .live()
+            .into_iter()
+            .filter(|loaded| loaded.descriptor.enumerate.is_none())
+            .find_map(|loaded| {
+                let probes = loaded.descriptor.detect.as_ref()?;
+                let command = probes.as_slice().iter().find_map(|p| p.command.clone())?;
+                Some((loaded.descriptor.id.clone(), command))
+            })
+            .expect("a shipped descriptor looks for an executable by name");
+        let script = bin.join(&command);
+        fs::write(&script, "#!/bin/sh\nexit 0\n").expect("the fake executable is written");
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755))
+            .expect("the fake executable is made runnable");
+        let mut machine = Machine::bare(scratch.clone());
+        machine.path_dirs = vec![bin.clone()];
+
+        let outcome = DetectToolsAction::on(machine)
+            .execute(
+                &json!({"include_defaults": true, "version_probes": false}),
+                &SharedState::new(),
+            )
+            .expect("a detection does not fail over how the world is");
+        let ActionOutcome::Went(output) = outcome else {
+            panic!("a detection that ran is always Went");
+        };
+        fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+
+        assert_eq!(
+            output["looked_in"],
+            json!([bin.to_string_lossy()]),
+            "the action searched somewhere the machine it was given never named"
+        );
+        let found = output["findings"]
+            .as_array()
+            .expect("findings are a list")
+            .iter()
+            .find(|f| f["descriptor_id"] == id)
+            .unwrap_or_else(|| panic!("the descriptor `{id}` is in the findings"));
+        assert_eq!(
+            found["presence"]["state"], "present",
+            "`{command}` sits in the only directory on the path: {found}"
+        );
     }
 }
