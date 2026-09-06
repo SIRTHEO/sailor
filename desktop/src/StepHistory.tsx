@@ -30,7 +30,7 @@ function lasted(from: number, to: number | null): string {
   return `${Math.floor(delta / 60)}m ${delta % 60}s`;
 }
 
-/** Un testo lungo si mostra a spicchi: aprire il pannello non è chiedere tutto. */
+/** A long text is shown in slices: opening the panel is not asking for all of it. */
 function shorten(text: string, max = 220): string {
   const flat = text.replace(/\s+/g, " ").trim();
   return flat.length <= max ? flat : `${flat.slice(0, max)}…`;
@@ -74,9 +74,9 @@ export function StepHistory({ flowName, stepId }: StepHistoryProps) {
       {ask.state === "mute" && <div className="history__note">{ask.why}</div>}
 
       {ask.state === "ready" && ask.passages.length === 0 && (
-        // Un elenco vuoto ha due cause diverse, e confonderle manda a cercare
-        // un guasto: qui è sempre la prima, perché un errore di lettura arriva
-        // come `mute`.
+        // An empty list has two different causes, and confusing them sends you
+        // hunting a fault: here it is always the first, because a read error
+        // arrives as `mute`.
         <div className="history__note">this step has never been passed through</div>
       )}
 
@@ -99,13 +99,12 @@ export function StepHistory({ flowName, stepId }: StepHistoryProps) {
                 </span>
               </button>
 
-              {/* Da dove è partita, e chi l'ha mandata. Sono due fatti
-                  diversi: il primo è come il programma è stato invocato — dalla
-                  finestra, dalla riga di comando, da una pianificazione — il
-                  secondo è quello che il segnale stesso portava scritto. Un
-                  campo che il segnale non sapeva non si mostra vuoto: si
-                  omette, perché un'etichetta senza valore accanto fa credere
-                  che il dato ci sia. */}
+              {/* Where it started from, and who sent it. Two different facts:
+                  the first is how the program was invoked — from the window,
+                  from the command line, from a schedule — the second is what
+                  the signal itself carried written. A field the signal did not
+                  know is not shown empty: it is omitted, because a label with
+                  no value beside it makes you believe the datum is there. */}
               <div className="passage__origin">
                 {passage.started_by}
                 {passage.signal_where && ` · from ${passage.signal_where}`}

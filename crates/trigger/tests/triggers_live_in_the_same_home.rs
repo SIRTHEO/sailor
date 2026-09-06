@@ -1,10 +1,10 @@
-//! Gli inneschi stanno nella stessa casa degli strumenti.
+//! Triggers live in the same home as the tools.
 //!
-//! **Perché questa prova esiste.** Fino al 30/08/2026 `trigger::default_sources`
-//! era una copia a mano di `toolbox::default_sources`, e come lei cadeva su
-//! `~/.sailor` ignorando `XDG_CONFIG_HOME`. Le due copie sbagliavano insieme, il
-//! che le faceva sembrare giuste: erano d'accordo fra loro e in disaccordo col
-//! deposito. La prova gemella su `ledger` sta in
+//! **Why this proof exists.** `trigger::default_sources` was once a hand copy
+//! of `toolbox::default_sources`, and like it fell back on `~/.sailor`,
+//! ignoring `XDG_CONFIG_HOME`. The two copies were wrong together, which made
+//! them look right: they agreed with each other and disagreed with the store.
+//! The twin proof on `ledger` is in
 //! `crates/toolbox/tests/one_home_for_everything.rs`.
 
 use std::collections::BTreeMap;
@@ -34,8 +34,8 @@ fn user_dir(sources: &[Source]) -> PathBuf {
         .expect("una cartella dell'utente fra le sorgenti degli inneschi")
 }
 
-/// I due crate hanno ciascuno il proprio tipo `Source`: nominarli entrambi qui è
-/// il prezzo per confrontare le due strade davvero, invece di fidarsi.
+/// Each crate has its own `Source` type: naming both here is the price of
+/// comparing the two paths for real instead of trusting them.
 fn tool_user_dir(sources: &[toolbox::descriptor::Source]) -> PathBuf {
     sources
         .iter()
@@ -46,12 +46,11 @@ fn tool_user_dir(sources: &[toolbox::descriptor::Source]) -> PathBuf {
         .expect("una cartella dell'utente fra le sorgenti degli strumenti")
 }
 
-/// **Il percorso atteso è scritto per esteso, di proposito.** La prima versione
-/// di questa prova confrontava soltanto la strada degli inneschi con quella
-/// degli strumenti, ed è rimasta verde quando ho rimesso il difetto apposta:
-/// due copie che sbagliano insieme sono d'accordo fra loro. Una prova che
-/// confronta due cose che possono sbagliare nello stesso modo non prova niente;
-/// serve un'ancora fuori da tutte e due.
+/// **The expected path is written out in full, on purpose.** A version of this
+/// proof that compared only the triggers' path against the tools' stayed green
+/// when the defect was put back deliberately: two copies wrong together agree
+/// with each other. A proof comparing two things that can be wrong the same way
+/// proves nothing; it needs an anchor outside both.
 #[test]
 fn triggers_and_tools_share_one_home() {
     for (env, expected_home) in [

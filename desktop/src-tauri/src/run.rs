@@ -17,10 +17,10 @@
 //! here: `actions` reads stdout with `read_to_end` on a thread, and that buffer
 //! is readable only at the join. Where it would change: `drain_and_wait`.
 
-// `Decision` non compare più: la traduzione da decisione a stato è passata in
-// `registry` insieme alla sua gemella della riga di comando, e l'importazione
-// era rimasta. Nessuno l'aveva vista perché questo guscio sta fuori dal
-// workspace, quindi i suoi avvisi non li stampa `cargo test --workspace`.
+// `Decision` is gone: the decision-to-status translation moved into `registry`
+// alongside its command-line twin, and the import stayed behind. Nobody saw it
+// because this shell sits outside the workspace, so `cargo test --workspace`
+// does not print its warnings.
 use actions::{LiveSink, Pipe, StepSinks};
 use flow::{
     ActionRegistry, Completion, Execution, Executor, FlowError, FlowFile, InProcessExecutor,
@@ -36,18 +36,18 @@ use tauri::{AppHandle, Emitter, State};
 
 use ui::gather::default_ledger_dir;
 
-/// Il canale su cui la finestra riceve quello che succede in una corsa.
+/// The channel on which the window receives what happens in a run.
 pub const RUN_EVENT: &str = "sailor://run";
 
-// ── quello che la finestra riceve ───────────────────────────────────────
+// ── what the window receives ────────────────────────────────────────────
 
-/// Un fatto della corsa, numerato.
+/// One fact of the run, numbered.
 ///
-/// **IL NUMERO NON È DECORAZIONE.** Chi apre la vista chiede prima l'elenco di
-/// quello che è già successo, poi si mette in ascolto: fra le due cose la corsa
-/// continua, e un evento può arrivare due volte o cadere nel mezzo. Con `seq`
-/// monotono per corsa chi ascolta scarta quello che ha già — senza, la vista
-/// mostrerebbe due volte lo stesso passo e non avrebbe modo di accorgersene.
+/// **THE NUMBER IS NOT DECORATION.** Whoever opens the view asks first for what
+/// already happened, then listens: between the two the run goes on, and an event
+/// can arrive twice or fall in the gap. With `seq` monotonic per run a listener
+/// drops what it already has — without it the view would show the same step
+/// twice and have no way of noticing.
 #[derive(Debug, Clone, Serialize)]
 pub struct RunEvent {
     pub run_id: String,
@@ -59,18 +59,18 @@ pub struct RunEvent {
     pub payload: Value,
 }
 
-/// Lo stato di una corsa come lo vede chi si affaccia adesso.
+/// The state of a run as whoever looks in now sees it.
 #[derive(Debug, Clone, Serialize)]
 pub struct RunSnapshot {
     pub run_id: String,
     pub flow: String,
     pub started_at: i64,
-    /// `running` finché il thread lavora, poi lo stato finale del motore.
+    /// `running` while the thread works, then the engine's final status.
     pub status: String,
     pub events: Vec<RunEvent>,
 }
 
-/// Quello che il pulsante riceve indietro quando la corsa parte.
+/// What the button receives back when the run starts.
 #[derive(Debug, Clone, Serialize)]
 pub struct StartedRun {
     pub run_id: String,
@@ -78,38 +78,38 @@ pub struct StartedRun {
     pub started_at: i64,
 }
 
-/// Dove finisce il testo di chi preme il pulsante — o perché non c'è posto.
+/// Where the text of whoever presses the button ends up — or why there is no
+/// place for it.
 ///
-/// Si risponde **prima** di eseguire, perché una consegna che non ha dove
-/// andare va detta mentre la si scrive, non dopo che il flusso è partito
-/// ignorandola.
+/// The answer comes **before** executing: a mandate with nowhere to go has to
+/// be said while it is being written, not after the flow started ignoring it.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum MandateTarget {
-    /// Il testo entra in quel campo degli ingressi di quel passo.
+    /// The text goes into that field of that step's inputs.
     Field { step: String, field: String },
-    /// Nessun posto dove metterlo, col motivo in chiaro.
+    /// Nowhere to put it, with the reason in plain words.
     None { why: String },
 }
 
-/// Il nome dell'azione di innesco, e il campo in cui porta la consegna.
+/// The name of the trigger action, and the field it carries the mandate in.
 ///
-/// **LETTI DAL FLUSSO CHE IL MOTORE SCRIVE, NON DECISI QUI.** Il contratto è
-/// nato il 28/08/2026 in `flows/dispatch-the-work.flow.json`: un passo senza
-/// dipendenze con `"action": "trigger"`, `"with": {"source": "manual"}`, e la
-/// consegna in `inputs.<passo>.text`. Se quei nomi cambiano di là, cambiano
-/// qui — e la finestra dirà «non c'è posto» invece di scrivere in un campo che
-/// nessuno legge, che è il modo giusto di sbagliare.
+/// **READ FROM THE FLOW THE ENGINE WRITES, NOT DECIDED HERE.** The contract
+/// lives in `flows/dispatch-the-work.flow.json`: a step with no dependencies,
+/// `"action": "trigger"`, `"with": {"source": "manual"}`, and the mandate in
+/// `inputs.<step>.text`. If those names change there they change here — and the
+/// window says «no place for it» instead of writing into a field nobody reads,
+/// which is the right way to be wrong.
 const TRIGGER_ACTION: &str = "trigger";
 const TRIGGER_FIELD: &str = "text";
 const MANUAL_SOURCE: &str = "manual";
 
-/// Il campo di testo dell'azione di un passo, quando ne ha uno.
+/// The text field of a step's action, when it has one.
 ///
-/// Un motore esterno riceve la consegna sullo stdin del programma che invoca;
-/// un nodo di innesco la porta nel proprio testo. Una verifica di shell riceve
-/// un comando e non una consegna: infilarci dentro del testo scritto da una
-/// persona sarebbe un'iniezione di shell, non una funzione.
+/// An external engine takes the mandate on the stdin of the program it calls;
+/// a trigger node carries it in its own text. A shell check takes a command,
+/// not a mandate: slipping text written by a person into it would be a shell
+/// injection, not a feature.
 fn text_field_of(action: &str) -> Option<&'static str> {
     match action {
         TRIGGER_ACTION => Some(TRIGGER_FIELD),
@@ -118,21 +118,21 @@ fn text_field_of(action: &str) -> Option<&'static str> {
     }
 }
 
-/// Come si innesca un flusso: da dove parte, e se accetta una consegna.
+/// How a flow is triggered: where it starts, and whether it takes a mandate.
 #[derive(Debug, Clone, Serialize)]
 pub struct FlowTrigger {
     pub flow: String,
-    /// I passi senza dipendenze: da lì comincia il grafo.
+    /// The steps with no dependencies: the graph starts there.
     pub roots: Vec<String>,
     pub mandate: MandateTarget,
-    /// Vero se il flusso ha una pianificazione propria: allora il pulsante non
-    /// è l'unico modo in cui parte, e chi guarda deve saperlo.
+    /// True if the flow has a schedule of its own: then the button is not the
+    /// only way it starts, and whoever watches has to know.
     pub scheduled: bool,
 }
 
-// ── il registro delle corse vive nel guscio ─────────────────────────────
+// ── the registry of runs lives in the shell ─────────────────────────────
 
-/// Una corsa in vita, con tutto quello che ha detto finora.
+/// A live run, with everything it has said so far.
 struct RunState {
     flow: String,
     started_at: i64,
@@ -143,20 +143,20 @@ struct RunState {
     halt: bool,
 }
 
-/// **LE CORSE NON APPARTENGONO ALLA PAGINA.** Vivono qui, nel guscio, per la
-/// ragione che le rende utili: chi chiude il pannello della vista, cambia
-/// flusso a fuoco o ricarica la pagina non deve fermare un lavoro che sta
-/// girando, né perdere quello che è già stato detto. Il thread continua, gli
-/// eventi si accumulano in questa mappa, e chi si riaffaccia li ritrova tutti.
+/// **RUNS DO NOT BELONG TO THE PAGE.** They live here, in the shell, for the
+/// reason that makes them useful: closing the view panel, focusing another
+/// flow or reloading the page must not stop work that is running, nor lose
+/// what has already been said. The thread goes on, the events pile up in this
+/// map, and whoever looks in again finds them all.
 #[derive(Default)]
 pub struct Runs(Mutex<HashMap<String, RunState>>);
 
 impl Runs {
-    /// Aggiunge un fatto alla corsa e lo manda alla finestra, in quest'ordine.
+    /// Adds a fact to the run and sends it to the window, in that order.
     ///
-    /// Prima si scrive nel registro, poi si annuncia: al contrario, chi
-    /// ricevesse l'annuncio e chiedesse subito l'elenco potrebbe non trovarci
-    /// dentro il fatto appena annunciato.
+    /// The registry is written first, then the announcement goes out: the
+    /// other way round, whoever received the announcement and asked for the
+    /// list at once might not find the fact just announced in it.
     fn publish(
         &self,
         app: &AppHandle,
@@ -182,8 +182,8 @@ impl Runs {
             state.events.push(event.clone());
             event
         };
-        // Fuori dal lucchetto: `emit` attraversa il ponte verso la finestra, e
-        // tenerlo preso mentre lo fa bloccherebbe il thread della corsa.
+        // Outside the lock: `emit` crosses the bridge to the window, and
+        // holding it while that happens would block the run's thread.
         let _ = app.emit(RUN_EVENT, &event);
         crate::events::emit(app, "run", &event);
     }
@@ -283,20 +283,19 @@ impl StepSinks for LiveText {
     }
 }
 
-// ── il deposito, guardato mentre scrive ─────────────────────────────────
+// ── the ledger, watched while it writes ─────────────────────────────────
 
-/// Il deposito vero, con un testimone accanto.
+/// The real ledger, with a witness beside it.
 ///
-/// **PERCHÉ UN DECORATORE E NON UN CONTROLLO A INTERVALLI.** La strada
-/// alternativa era interrogare il deposito ogni tot: funzionerebbe — SQLite in
-/// WAL regge le letture concorrenti — ma introdurrebbe un ritardo scelto a caso
-/// e mostrerebbe un passo «partito» fino a mezzo secondo dopo che è partito.
-/// `RecordStore` ha tre metodi: avvolgerlo costa venti righe e l'evento parte
-/// nello stesso istante in cui il fatto diventa durevole.
+/// **WHY A DECORATOR AND NOT A POLL.** The other road was to ask the ledger
+/// every so often: it would work — SQLite in WAL takes concurrent reads — but it
+/// would add a delay picked at random and show a step «started» up to half a
+/// second after it started. `RecordStore` has three methods: wrapping it costs
+/// twenty lines and the event goes out the instant the fact becomes durable.
 ///
-/// **Il deposito prima, l'annuncio dopo.** Se la scrittura fallisce non si
-/// annuncia niente: una finestra che mostra un passo che il deposito non ha mai
-/// registrato racconta una corsa che non esiste.
+/// **The ledger first, the announcement after.** If the write fails nothing is
+/// announced: a window showing a step the ledger never recorded tells of a run
+/// that does not exist.
 struct WatchedStore {
     inner: Ledger,
     app: AppHandle,
@@ -343,9 +342,9 @@ impl RecordStore for WatchedStore {
         self.inner.records(run_id)
     }
 
-    /// La spesa la sa il deposito sotto, e questo decoratore non la commenta:
-    /// **un guscio che rispondesse zero renderebbe il tetto muto solo nella
-    /// finestra**, cioè proprio dove qualcuno sta guardando una corsa partire.
+    /// The ledger underneath knows the spend, and this decorator does not
+    /// comment on it: **a shell answering zero would make the cap mute only in
+    /// the window**, which is exactly where someone is watching a run start.
     fn spent(&self, run_id: &str) -> Result<flow::Spend, FlowError> {
         self.inner.spent(run_id)
     }
@@ -472,16 +471,16 @@ pub(crate) fn stop_run(
     Ok(())
 }
 
-// ── i comandi che la finestra chiama ────────────────────────────────────
+// ── the commands the window calls ───────────────────────────────────────
 
-/// Come si innesca questo flusso, e se accetta una consegna scritta a mano.
+/// How this flow is triggered, and whether it takes a hand-written mandate.
 #[tauri::command]
 pub(crate) fn flow_trigger(name: String) -> Result<FlowTrigger, String> {
     let flow = load_flow(&name)?;
     Ok(trigger_of(&flow))
 }
 
-/// Fa partire un flusso. Torna appena la corsa è avviata, non quando finisce.
+/// Starts a flow. Returns as soon as the run is under way, not when it ends.
 #[tauri::command]
 pub(crate) fn start_run(
     app: AppHandle,
@@ -510,9 +509,9 @@ pub(crate) fn start(
         return Err(why);
     }
 
-    // IL DEPOSITO PRIMA DEL REGISTRO: `store_write` e `store_read` lo
-    // possiedono, e un registro costruito prima dichiarerebbe mancanti due
-    // azioni che esistono. È la stessa nota di `flow_cmd::run_flow`.
+    // THE LEDGER BEFORE THE REGISTRY: `store_write` and `store_read` own it,
+    // and a registry built first would declare two actions that exist to be
+    // missing. It is the same note as `flow_cmd::run_flow`.
     let ledger_dir = default_ledger_dir();
     let ledger = Ledger::open(&ledger_dir).map_err(|error| {
         format!(
@@ -561,15 +560,15 @@ pub(crate) fn start(
         ));
     }
 
-    // La consegna entra qui, in memoria, e non tocca il file sul disco: il
-    // documento del flusso descrive il lavoro, non l'ultima volta che qualcuno
-    // ha premuto il pulsante.
+    // The mandate goes in here, in memory, and does not touch the file on
+    // disk: the flow document describes the work, not the last time somebody
+    // pressed the button.
     let inputs = inputs_with_mandate(&flow, mandate)?;
 
-    // DA DOVE È PARTITA LA CHIAMATA, scritto dal sistema nel momento in cui
-    // parte. Non è un racconto di un agente: è il guscio che dichiara la
-    // propria provenienza prima che qualunque passo giri, e resta nel deposito
-    // append-only anche se la corsa si schianta al primo passo.
+    // WHERE THE CALL CAME FROM, written by the system at the moment it starts.
+    // It is not an agent's account: it is the shell declaring its own origin
+    // before any step runs, and it stays in the append-only ledger even if the
+    // run crashes on the first step.
     record_run(
         &ledger, &flow, &run_id, "running", started_at, None, None, &origin, None,
     )?;
@@ -597,10 +596,10 @@ pub(crate) fn start(
         started_at,
     };
 
-    // **CHI LANCIA DICE DOVE HA DECISO DI LAVORARE, PRIMA DI PARTIRE**, e vale
-    // per il pulsante quanto per il terminale: senza questa riga il piano ha un
-    // modo silenzioso di sbagliare, che è lo stesso del guasto 25. Si risolve
-    // qui e non dentro il filo, così la riga esce prima che la corsa cominci.
+    // **WHOEVER LAUNCHES SAYS WHERE IT DECIDED TO WORK, BEFORE STARTING**, for
+    // the button as much as for the terminal: without this line the plan has a
+    // silent way of being wrong, the same as fault 25. Resolved here and not
+    // inside the thread, so the line comes out before the run begins.
     let root = std::env::current_dir()
         .ok()
         .and_then(|working| flow::workspace::find_root(&working));
@@ -613,10 +612,10 @@ pub(crate) fn start(
         ),
     }
 
-    // IL LAVORO NON STA SUL FILO DELLA FINESTRA. `execute` è bloccante e non
-    // riporta niente finché non ha finito: lasciarlo sul thread che serve i
-    // comandi congelerebbe l'interfaccia per tutta la durata della corsa —
-    // mezz'ora, sui flussi che chiamano un agente.
+    // THE WORK DOES NOT SIT ON THE WINDOW'S THREAD. `execute` blocks and
+    // reports nothing until it is done: leaving it on the thread that serves
+    // the commands would freeze the interface for the whole run — half an
+    // hour, on flows that call an agent.
     std::thread::spawn(move || {
         let mut store = WatchedStore {
             inner: ledger.clone(),
@@ -624,15 +623,13 @@ pub(crate) fn start(
             runs: handle.clone(),
             run_id: run_id.clone(),
         };
-        // **LA RICHIESTA LA COSTRUISCE `registry`, NON QUESTO FILE.** Era
-        // scritta anche qui, ed è il guasto 10 in posizione: le due copie si
-        // sono già disallineate tre volte. Con la radice del progetto in mezzo
-        // la prossima divergenza sarebbe stata una corsa dalla finestra che
-        // lavora dove sta il processo mentre la stessa corsa dal terminale
-        // lavora nella radice giusta — e nessuna delle due lo direbbe.
-        //
-        // L'ingresso resta quello che il pulsante ha in mano: la finestra può
-        // lanciare lo stesso flusso con un mandato diverso.
+        // **`registry` BUILDS THE REQUEST, NOT THIS FILE.** It was written here
+        // too, and that is fault 10 in place: the two copies have drifted apart
+        // three times already. With the project root in the middle the next
+        // divergence would have been a run from the window working where the
+        // process is while the same run from the terminal works in the right
+        // root — and neither would say so. The input stays what the button
+        // holds: the window can launch the same flow with a different mandate.
         let mut request =
             registry::execution_request(Some(&ledger), &flow, &run_id, root.as_deref(), started_at);
         request.root_inputs = inputs;
@@ -646,9 +643,9 @@ pub(crate) fn start(
 
         let ended_at = now_secs();
         let (status, error) = match &result {
-            // Una corsa fermata dal tetto porta i numeri con sé: quanto era il
-            // tetto, quanto risultava speso, e quali passi non sono partiti.
-            // Senza, nella finestra resterebbe una parola sola e nessun motivo.
+            // A run stopped by the cap carries the numbers with it: what the
+            // cap was, what came out as spent, and which steps never started.
+            // Without them the window would hold one word and no reason.
             Ok(execution) => (
                 execution_status(execution).to_owned(),
                 registry::stopped_by_cap(execution)
@@ -681,7 +678,7 @@ pub(crate) fn start(
     Ok(started)
 }
 
-/// Tutto quello che una corsa ha detto finora, per chi si affaccia adesso.
+/// Everything a run has said so far, for whoever looks in now.
 #[tauri::command]
 pub(crate) fn run_snapshot(
     runs: State<'_, Arc<Runs>>,
@@ -700,58 +697,56 @@ pub(crate) fn run_snapshot(
     })
 }
 
-/// In che modo una corsa è aperta.
+/// In what way a run is open.
 ///
-/// **DUE MODI, NON UNO, E IL DEPOSITO LI TIENE IN DUE POSTI DIVERSI.** Una
-/// corsa al lavoro ha un passo **senza esito**; una corsa consegnata a una
-/// persona ha il passo **chiuso** con esito `Waiting`, perché chi deve
-/// eseguirlo non è un processo di cui si aspetta la morte. Chiedere una sola
-/// delle due domande fa sparire l'altra metà — è il guasto che
-/// `waiting_runs` documenta al 31/08/2026: una consegna che nessuno raccoglieva
-/// spariva, e l'unico modo di ritrovarla era ricordarsene.
+/// **TWO WAYS, NOT ONE, AND THE LEDGER KEEPS THEM IN TWO PLACES.** A run at
+/// work has a step **with no outcome**; a run handed to a person has the step
+/// **closed** with outcome `Waiting`, because whoever must run it is not a
+/// process whose death is awaited. Asking only one of the two questions makes
+/// the other half vanish — the fault `waiting_runs` documents: a mandate
+/// nobody picked up disappeared, and the only way to find it was to remember.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum OpenState {
-    /// Qualcuno o qualcosa ci sta lavorando adesso.
+    /// Somebody or something is working on it right now.
     Working,
-    /// È ferma, e riparte solo se una persona fa qualcosa.
+    /// It is stopped, and starts again only if a person does something.
     Waiting,
 }
 
-/// Un passo che è aperto adesso, e da quanto.
+/// A step that is open right now, and for how long.
 ///
-/// **«TRE PASSI APERTI» NON È UNA RISPOSTA.** La domanda vera è *quale*, e da
-/// quanto: un passo aperto da sei minuti sta lavorando, lo stesso passo aperto
-/// da tre ore è appeso. Nella ricognizione del 31/08/2026 il modello è la
-/// sezione «Pending Activities» di Temporal — tipo dell'attività, tentativo
-/// corrente, tentativi rimasti, battito — costruita apposta perché la
-/// cronologia degli eventi da sola non basta: `ActivityTaskStarted` non compare
-/// finché l'attività non è finita o non ha esaurito i tentativi. Nessuno degli
-/// strumenti per agenti confrontati ha un equivalente.
+/// **«THREE OPEN STEPS» IS NOT AN ANSWER.** The real question is *which*, and
+/// for how long: a step open for six minutes is working, the same step open
+/// for three hours is hung. The model is Temporal's «Pending Activities»
+/// section — activity type, current attempt, attempts left, heartbeat — built
+/// because the event history alone is not enough: `ActivityTaskStarted` does
+/// not appear until the activity has finished or run out of attempts. None of
+/// the agent tools compared has an equivalent.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct OpenStep {
     pub step_id: String,
-    /// Quale tentativo: `2` su un passo aperto vuol dire che il primo è caduto.
+    /// Which attempt: `2` on an open step means the first one fell.
     pub attempt: u32,
     pub open_for_secs: i64,
 }
 
-/// Una corsa aperta, chiunque l'abbia avviata.
+/// An open run, whoever started it.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct OpenRun {
     pub run_id: String,
-    /// Su cosa lavorava: il flusso, o la cosa che la corsa nomina.
+    /// What it worked on: the flow, or the thing the run names.
     pub entity: String,
-    /// Al lavoro, o ferma ad aspettare una persona.
+    /// At work, or stopped waiting for a person.
     pub state: OpenState,
-    /// Quanti passi hanno ancora l'esito aperto. Zero per chi aspetta.
+    /// How many steps still have an open outcome. Zero for those waiting.
     pub open_steps: usize,
-    /// **Quali** passi, e da quanto. Vuoto per chi aspetta.
+    /// **Which** steps, and for how long. Empty for those waiting.
     pub open_now: Vec<OpenStep>,
-    /// Da quando dura questo stato: l'apertura del passo più vecchio per chi
-    /// lavora, l'inizio dell'attesa per chi aspetta.
+    /// Since when this state has lasted: the opening of the oldest step for
+    /// those at work, the start of the wait for those waiting.
     pub since: i64,
-    /// Vero se questa finestra è quella che l'ha avviata.
+    /// True if this window is the one that started it.
     pub started_here: bool,
     /// Steps with an outcome already, counted once each.
     pub steps_done: usize,
@@ -782,27 +777,26 @@ fn progress_of(ledger: &Ledger, run_id: &str) -> (usize, Option<usize>) {
     (done, total)
 }
 
-/// **Tutte** le corse che hanno almeno un passo aperto, non solo le nostre.
+/// **All** the runs with at least one open step, not only ours.
 ///
-/// **PERCHÉ NON BASTAVA `known_runs`.** Quella legge una mappa in memoria di
-/// questo processo: una corsa lanciata dal terminale, da un'altra finestra o da
-/// un demone non compare, e la prima schermata di Sailor — che deve dire «cosa
-/// sta succedendo adesso» — direbbe il falso a chiunque lavori in più di un
-/// posto. È il vincolo permanente «chiarezza per chi guarda»: un'interfaccia
-/// che mostra solo il proprio angolo è peggio di una che non mostra niente,
-/// perché sembra completa.
+/// **WHY `known_runs` WAS NOT ENOUGH.** It reads a map in this process's memory:
+/// a run launched from the terminal, from another window or from a daemon does
+/// not appear, and Sailor's first screen — which must say «what is happening
+/// now» — would lie to anyone working in more than one place. It is the standing
+/// constraint «clarity for whoever watches»: an interface showing only its own
+/// corner is worse than one showing nothing, because it looks complete.
 ///
-/// **IL DEPOSITO È L'ORACOLO, E LA MEMORIA È SOLO UN'ETICHETTA.** L'elenco
-/// viene da due domande al deposito — `unfinished_runs` per chi lavora,
-/// `waiting_runs` per chi aspetta una persona; ciò che questo processo sa in
-/// più serve solo a dire *quali* sono sue, perché una corsa avviata qui si può
-/// seguire dal vivo e una avviata altrove no. Se il deposito non c'è, l'elenco
-/// è vuoto: non è un errore, è una macchina su cui non è ancora girato niente.
+/// **THE LEDGER IS THE ORACLE, AND MEMORY IS ONLY A LABEL.** The list comes from
+/// two questions to the ledger — `unfinished_runs` for those at work,
+/// `waiting_runs` for those waiting on a person; what this process knows on top
+/// only says *which* are its own, because a run started here can be followed
+/// live and one started elsewhere cannot. With no ledger the list is empty: not
+/// an error, a machine nothing has run on yet.
 ///
-/// **CHI ASPETTA VINCE SU CHI LAVORA** quando una corsa comparisse in tutte e
-/// due le risposte. Non è una preferenza estetica: dei due stati uno solo
-/// chiede qualcosa a chi guarda, e mostrarlo come «al lavoro» lo farebbe
-/// aspettare in eterno un processo che non tornerà.
+/// **WHOEVER WAITS WINS OVER WHOEVER WORKS** when a run would appear in both
+/// answers. Not an aesthetic preference: of the two states only one asks
+/// something of the watcher, and showing it as «at work» would leave them
+/// waiting forever on a process that will not return.
 #[tauri::command]
 pub(crate) fn open_runs(runs: State<'_, Arc<Runs>>) -> Result<Vec<OpenRun>, String> {
     let ledger_dir = default_ledger_dir();
@@ -843,11 +837,11 @@ pub(crate) fn open_runs(runs: State<'_, Arc<Runs>>) -> Result<Vec<OpenRun>, Stri
         .into_iter()
         .filter(|run| !held.contains(&run.run_id))
     {
-        // UNA DOMANDA IN PIÙ PER CORSA APERTA, e sono poche per costruzione:
-        // qui ci finisce solo ciò che è in volo adesso, non la storia. Se un
-        // giorno fossero tante, il posto dove si ripara è il deposito con una
-        // sola interrogazione che porti anche i passi — non qui, saltando il
-        // dettaglio, perché è il dettaglio la risposta.
+        // ONE MORE QUESTION PER OPEN RUN, and they are few by construction:
+        // only what is in flight now lands here, not the history. If one day
+        // they were many, the place to repair is the ledger, with a single
+        // query that brings the steps too — not here, by dropping the detail,
+        // because the detail is the answer.
         let open_now = ledger
             .steps(&run.run_id)
             .map(|steps| {
@@ -861,9 +855,9 @@ pub(crate) fn open_runs(runs: State<'_, Arc<Runs>>) -> Result<Vec<OpenRun>, Stri
                     })
                     .collect()
             })
-            // Un passo che non si riesce a leggere non fa sparire la corsa:
-            // il conteggio resta, il dettaglio manca, e la riga si vede lo
-            // stesso. Perdere la riga sarebbe il danno grosso.
+            // A step that cannot be read does not make the run vanish: the
+            // count stays, the detail is missing, and the row shows all the
+            // same. Losing the row would be the big damage.
             .unwrap_or_default();
         let (steps_done, steps_total) = progress_of(&ledger, &run.run_id);
         all.push(OpenRun {
@@ -879,19 +873,19 @@ pub(crate) fn open_runs(runs: State<'_, Arc<Runs>>) -> Result<Vec<OpenRun>, Stri
         });
     }
 
-    // La più vecchia in cima: chi guarda cerca prima ciò che è fermo da più
-    // tempo, non ciò che è appena partito. Qui l'ordine è solo sul tempo —
-    // raggruppare per stato è una scelta di chi disegna, e questo comando serve
-    // anche a chi non disegna niente.
+    // The oldest on top: a watcher looks first for what has been stuck the
+    // longest, not for what has just started. The order here is on time alone
+    // — grouping by state is a choice for whoever draws, and this command
+    // serves those who draw nothing too.
     all.sort_by_key(|run| run.since);
     Ok(all)
 }
 
-/// Le corse che questa finestra ha avviato, la più recente per ultima.
+/// The runs this window started, the most recent last.
 ///
-/// Serve a chi ricarica la pagina mentre un flusso gira: senza questo elenco la
-/// vista ripartirebbe vuota e la corsa continuerebbe senza nessuno che la
-/// guarda.
+/// It serves whoever reloads the page while a flow runs: without this list the
+/// view would start again empty and the run would go on with nobody watching
+/// it.
 #[tauri::command]
 pub(crate) fn known_runs(runs: State<'_, Arc<Runs>>) -> Vec<RunSnapshot> {
     let known = runs.lock_map();
@@ -924,16 +918,15 @@ impl Runs {
     }
 }
 
-// ── cosa è entrato in un nodo, nel tempo ────────────────────────────────
+// ── what went into a node, over time ────────────────────────────────────
 
-/// Una volta in cui un passo è stato attraversato.
+/// One time a step was crossed.
 ///
-/// **VIENE TUTTO DAL DEPOSITO, NIENTE DALLA MEMORIA DELLA FINESTRA.** Le corse
-/// che questa finestra ha avviato sono una manciata; quelle che quel nodo ha
-/// visto passare possono essere centinaia, avviate da riga di comando, da una
-/// pianificazione o da una finestra chiusa mesi fa. Leggere dalla propria
-/// memoria darebbe una storia che comincia all'apertura del programma — cioè
-/// una storia che sembra completa e non lo è.
+/// **IT ALL COMES FROM THE LEDGER, NOTHING FROM THE WINDOW'S MEMORY.** The runs
+/// this window started are a handful; the ones that node saw go by can be
+/// hundreds, started from the command line, from a schedule or from a window
+/// closed months ago. Reading from its own memory would give a history that
+/// begins when the program opened — a history that looks complete and is not.
 #[derive(Debug, Clone, Serialize)]
 pub struct StepPassage {
     pub run_id: String,
@@ -948,38 +941,38 @@ pub struct StepPassage {
     /// The program and the arguments the step started, after resolution: what
     /// a person would have to type to reach the same outcome by hand.
     pub ran: Option<Ran>,
-    /// Da dove è partita la corsa: la provenienza, scritta dal sistema.
+    /// Where the run started from: the origin, written by the system.
     pub started_by: String,
-    /// Che cosa è entrato in **questo** nodo, quella volta.
+    /// What went into **this** node, that time.
     pub input: Value,
-    /// La consegna con cui è partita la corsa, se ne portava una.
+    /// The mandate the run started with, if it carried one.
     pub mandate: Option<String>,
-    /// Chi ha mandato il segnale, per come la sorgente lo sapeva. Vuoto quando
-    /// non lo sapeva: è un fatto, non un campo da riempire.
+    /// Who sent the signal, as the source knew it. Empty when it did not know:
+    /// that is a fact, not a field to be filled.
     pub signal_who: Option<String>,
-    /// Da dove è arrivato il segnale: la finestra, un pannello, una sessione.
+    /// Where the signal came from: the window, a panel, a session.
     pub signal_where: Option<String>,
     pub said: Option<String>,
     pub output: Option<Value>,
 }
 
-/// Tutto quello che è passato per un nodo, dal più recente.
+/// Everything that went through a node, most recent first.
 ///
-/// Quanto è costata una corsa: token, cache e denaro, dal deposito.
+/// What a run cost: tokens, cache and money, from the ledger.
 ///
-/// **NON RIFÀ NESSUN CONTO.** I totali li calcola `ui::dashboard`, che è già
-/// puro e già provato, ed è lo stesso codice che serve la pagina di `sailor ui`.
-/// Due viste della stessa spesa che si sommano da sole darebbero due cifre, e la
-/// domanda «quale delle due è giusta» non avrebbe risposta.
+/// **IT REDOES NO ARITHMETIC.** `ui::dashboard` computes the totals: already
+/// pure, already tested, the same code that serves the `sailor ui` page. Two
+/// views of the same spend adding up on their own would give two figures, and
+/// «which of the two is right» would have no answer.
 ///
-/// **UN TOTALE PARZIALE SI DICHIARA.** `TokenTotals::is_partial` dice se qualche
-/// chiamata non ha detto i propri conteggi o non ha un prezzo: chi mostra questi
-/// numeri deve mostrare anche quello, o sta presentando una somma che nasconde
-/// ciò che non sa. Sul deposito assente si torna `None`, non un errore: un
-/// programma che non ha ancora eseguito niente non è guasto.
+/// **A PARTIAL TOTAL DECLARES ITSELF.** `TokenTotals::is_partial` says whether
+/// a call did not report its counts or has no price: whoever shows these
+/// numbers must show that too, or presents a sum that hides what it does not
+/// know. With no ledger it returns `None`, not an error: a program that has
+/// executed nothing yet is not broken.
 ///
-/// **SI LEGGE A RICHIESTA, A CORSA FINITA O QUANDO QUALCUNO GUARDA.** Aprire il
-/// deposito e scorrere le corse non è lavoro da fare a ogni battito.
+/// **READ ON DEMAND, WHEN A RUN ENDS OR WHEN SOMEBODY LOOKS.** Opening the
+/// ledger and walking the runs is not work for every heartbeat.
 #[tauri::command]
 pub(crate) fn run_usage(run_id: String) -> Result<Option<ui::dashboard::ExecutionView>, String> {
     let ledger_dir = default_ledger_dir();
@@ -989,8 +982,8 @@ pub(crate) fn run_usage(run_id: String) -> Result<Option<ui::dashboard::Executio
         return Ok(None);
     };
     let Some(run) = data.runs.iter().find(|run| run.run_id == run_id) else {
-        // Una corsa appena avviata può non essere ancora nella proiezione: non è
-        // un errore, è «non ancora», e la finestra riprova al battito dopo.
+        // A run just started may not be in the projection yet: that is not an
+        // error, it is «not yet», and the window tries again on the next beat.
         return Ok(None);
     };
     let steps = data.steps_by_run.get(&run_id).cloned().unwrap_or_default();
@@ -1003,10 +996,9 @@ pub(crate) fn run_usage(run_id: String) -> Result<Option<ui::dashboard::Executio
     )))
 }
 
-/// **SI LEGGE A RICHIESTA, NON DI CONTINUO.** Ricostruire questa storia
-/// significa aprire il deposito e scorrere le corse: è il genere di lavoro che
-/// si fa quando qualcuno clicca un nodo, non a ogni battito di una corsa che
-/// sta girando.
+/// **READ ON DEMAND, NOT CONTINUOUSLY.** Rebuilding this history means opening
+/// the ledger and walking the runs: the kind of work done when somebody clicks
+/// a node, not on every beat of a run that is going.
 #[tauri::command]
 pub(crate) fn step_history(
     flow: String,
@@ -1017,9 +1009,9 @@ pub(crate) fn step_history(
     let Some(data) = ui::gather::gather(&ledger_dir)
         .map_err(|error| format!("cannot read the ledger: {error}"))?
     else {
-        // Nessun deposito non è un guasto: è un programma che non ha ancora
-        // eseguito niente, e dirlo come errore manderebbe a cercare un guasto
-        // che non c'è.
+        // No ledger is not a fault: it is a program that has executed nothing
+        // yet, and saying so as an error would send someone hunting a fault
+        // that is not there.
         return Ok(Vec::new());
     };
 
@@ -1040,7 +1032,7 @@ pub(crate) fn step_history(
         }
     }
 
-    // Dal più recente: chi apre questo elenco cerca quasi sempre l'ultima volta.
+    // Most recent first: whoever opens this list almost always wants the last.
     passages.sort_by(|a, b| {
         b.started_at
             .cmp(&a.started_at)
@@ -1071,17 +1063,16 @@ fn passage_of(record: &StepRecord, started_by: &str, signal: &RunSignal) -> Step
     }
 }
 
-/// Che cosa portava il segnale con cui è partita una corsa.
+/// What the signal a run started with carried.
 ///
-/// Il deposito registra l'ingresso di ogni passo nel momento in cui si apre,
-/// quindi **il segnale è già scritto dal sistema** e non dipende dal fatto che
-/// un modello abbia deciso di raccontarlo. Qui non si registra niente di nuovo:
-/// si legge quello che c'era.
+/// The ledger records each step's input the moment it opens, so **the signal is
+/// already written by the system** and does not depend on a model deciding to
+/// tell it. Nothing new is recorded here: what was there is read back.
 ///
-/// `who` e `where` sono i campi che un nodo di innesco porta con sé. Un campo
-/// vuoto resta `None` e non una stringa vuota: la finestra deve poter tacere su
-/// quello che il segnale non sapeva, invece di mostrare un'etichetta senza
-/// valore accanto.
+/// `who` and `where` are the fields a trigger node carries. An empty field
+/// stays `None` and not an empty string: the window must be able to keep quiet
+/// about what the signal did not know, instead of showing a label with no value
+/// beside it.
 #[derive(Debug, Default, Clone)]
 struct RunSignal {
     text: Option<String>,
@@ -1105,17 +1096,17 @@ fn signal_of_run(steps: &[StepRecord]) -> RunSignal {
     }
 
     RunSignal {
-        // I due campi in cui una consegna può essere entrata, nello stesso
-        // ordine in cui `text_field_of` li sceglie.
+        // The two fields a mandate can have gone into, in the same order
+        // `text_field_of` picks them.
         text: text_at(input, TRIGGER_FIELD).or_else(|| text_at(input, "stdin")),
         who: text_at(input, "who"),
         where_from: text_at(input, "where"),
     }
 }
 
-// ── le regole, tenute fuori dai comandi per poterle provare ─────────────
+// ── the rules, kept out of the commands to test them ────────────────────
 
-/// I passi da cui il grafo comincia: quelli che non aspettano nessuno.
+/// The steps the graph begins from: the ones that wait on nobody.
 fn roots_of(flow: &FlowFile) -> Vec<String> {
     flow.graph
         .steps()
@@ -1125,13 +1116,12 @@ fn roots_of(flow: &FlowFile) -> Vec<String> {
         .collect()
 }
 
-/// Dove va a finire il testo di chi preme il pulsante.
+/// Where the text of whoever presses the button ends up.
 ///
-/// **SI NEGA INVECE DI INDOVINARE.** Un mandato messo nel posto sbagliato non
-/// dà errore: il flusso parte e lavora sulla consegna di ieri, e chi ha
-/// premuto crede di aver dato la sua. I casi in cui non c'è un posto certo
-/// tornano il motivo, che la finestra mostra accanto al campo prima ancora che
-/// qualcuno ci scriva dentro.
+/// **IT REFUSES INSTEAD OF GUESSING.** A mandate put in the wrong place gives
+/// no error: the flow starts and works on yesterday's mandate, and whoever
+/// pressed believes they gave their own. The cases with no certain place return
+/// the reason, which the window shows beside the field before anyone types.
 fn mandate_target(flow: &FlowFile) -> MandateTarget {
     let roots = roots_of(flow);
     let [root] = roots.as_slice() else {
@@ -1163,9 +1153,9 @@ fn mandate_target(flow: &FlowFile) -> MandateTarget {
         };
     };
 
-    // Un innesco dichiara da dove arriva il segnale. Se non è il gesto di una
-    // persona, un pulsante che promette di darglielo prometterebbe una cosa
-    // che quel passo non aspetta da qui.
+    // A trigger declares where the signal comes from. If it is not a person's
+    // gesture, a button promising to hand it one would promise something that
+    // step is not waiting for from here.
     if step.action == TRIGGER_ACTION {
         if let Some(Value::Object(fixed)) = &step.with {
             match fixed.get("source") {
@@ -1182,9 +1172,9 @@ fn mandate_target(flow: &FlowFile) -> MandateTarget {
         }
     }
 
-    // `with` vince sulle chiavi ricevute in ingresso: se dichiara già quel
-    // campo, la consegna verrebbe scritta e poi scavalcata senza un errore. È
-    // il modo peggiore di perdere un testo, e si nega prima.
+    // `with` wins over the keys received as input: if it already declares that
+    // field, the mandate would be written and then overridden with no error.
+    // That is the worst way to lose a text, so it is refused up front.
     if let Some(Value::Object(fixed)) = &step.with {
         if fixed.contains_key(field) {
             return MandateTarget::None {
@@ -1211,11 +1201,11 @@ fn trigger_of(flow: &FlowFile) -> FlowTrigger {
     }
 }
 
-/// Gli ingressi della corsa, con la consegna dentro se ce n'è una.
+/// The run's inputs, with the mandate inside if there is one.
 ///
-/// Una consegna che non ha dove andare **ferma la partenza**: eseguire
-/// ignorandola darebbe una corsa che sembra aver ricevuto il testo e ha
-/// lavorato su altro.
+/// A mandate with nowhere to go **stops the start**: executing while ignoring
+/// it would give a run that looks like it received the text and worked on
+/// something else.
 fn inputs_with_mandate(
     flow: &FlowFile,
     mandate: Option<&str>,
@@ -1232,14 +1222,14 @@ fn inputs_with_mandate(
                 Value::Object(map) => {
                     let is_trigger = field == TRIGGER_FIELD;
                     map.insert(field, Value::String(text.to_owned()));
-                    // CHI E DA DOVE, per come questa sorgente lo sa. Un innesco
-                    // registra `who` e `where` insieme al testo, e riempirli qui
-                    // è ciò che rende il segnale rintracciabile a distanza di
-                    // mesi: senza, resta scritto *cosa* è arrivato e non da chi.
+                    // WHO AND FROM WHERE, as this source knows it. A trigger
+                    // records `who` and `where` beside the text, and filling
+                    // them here makes the signal traceable months later:
+                    // without it, *what* arrived is written and not from whom.
                     //
-                    // Solo per un nodo di innesco: un motore esterno non ha
-                    // quei campi, e scriverglieli dentro sarebbe inventare un
-                    // parametro che la sua azione non legge.
+                    // Only for a trigger node: an external engine has no such
+                    // fields, and writing them in would invent a parameter
+                    // its action does not read.
                     if is_trigger {
                         map.entry("who".to_owned()).or_insert(Value::String(who()));
                         map.entry("where".to_owned())
@@ -1260,30 +1250,23 @@ fn inputs_with_mandate(
     }
 }
 
-/// Com'è finita la corsa. **Non è più una copia**: era scritta anche qui, con
-/// sopra un commento che diceva di essere la stessa di `flow_cmd`. Lo era, per
-/// buona volontà; adesso lo è per costruzione. Il booleano serve solo al codice
-/// d'uscita di un processo, e qui non c'è nessun processo che esce.
+/// How the run ended. **No longer a copy**: it was written here too, the same
+/// as `flow_cmd` by good will; now it is the same by construction. The boolean
+/// serves only a process's exit code, and no process exits here.
 fn execution_status(execution: &Execution) -> &'static str {
     registry::execution_status(execution).0
 }
 
-/// Le azioni che il motore sa eseguire: **la stessa lista del terminale**.
+/// The actions the engine can run: **the same list as the terminal's**.
 ///
-/// **QUESTA LISTA SI DISALLINEAVA, E L'AVEVA GIÀ FATTO TRE VOLTE.** Qui c'era
-/// una copia a mano di quella del comando `sailor flow run`, tenute allineate
-/// dalla buona volontà. Il 28/08/2026 nacque il crate `trigger`, registrato di
-/// là e non di qua: il pulsante rispondeva «azione sconosciuta: trigger» su un
-/// flusso che dal terminale partiva. Il 30/08/2026 alle 09:05 è successo di
-/// nuovo con la misura del consumo, e stavolta in silenzio — la finestra
-/// costruiva un motore **senza risolutore di strumenti** (ogni passo che nomina
-/// `claude-code` invece di un percorso cadeva con `no_tool_resolver`) e
-/// **senza deposito** (nessuna riga di costo per le corse lanciate da qui).
-///
-/// Ora la lista è una sola e sta in `crates/registry`. Il commento che stava
-/// qui diceva «chi registra un'azione nuova la registra in tutti e due i
-/// posti»: era l'istruzione giusta per un difetto che andava tolto, non
-/// rispettato.
+/// **THIS LIST USED TO DRIFT, AND HAD DONE SO THREE TIMES.** A hand copy of the
+/// `sailor flow run` list lived here, kept in step by good will. The `trigger`
+/// crate was registered there and not here: the button answered «unknown
+/// action: trigger» on a flow the terminal ran. It happened again with the
+/// usage measure, in silence — the window built a registry **with no tool
+/// resolver** (every step naming `claude-code` instead of a path fell with
+/// `no_tool_resolver`) and **with no ledger** (no cost row for runs launched
+/// here). Now the list is one and lives in `crates/registry`.
 fn default_registry(
     ledger: &Ledger,
     watcher: Option<Arc<dyn actions::StepSinks>>,
@@ -1291,29 +1274,29 @@ fn default_registry(
     registry::default_registry(Some(ledger.clone()), watcher)
 }
 
-/// Da dove arriva il segnale che questo guscio manda. È la finestra, sempre:
-/// non è un dato da indovinare, è quello che questo programma è.
+/// Where the signal this shell sends comes from. It is the window, always: not
+/// a value to guess, it is what this program is.
 const WHERE: &str = "the Sailor window";
 
-/// Chi ha premuto, **per come questa sorgente lo sa**, che è poco: la finestra
-/// non ha un'identità di persona — non c'è login, non c'è account — e l'unica
-/// cosa vera a disposizione è l'utente con cui il programma gira.
+/// Who pressed, **as this source knows it**, which is little: the window has no
+/// person's identity — no login, no account — and the only true thing to hand is
+/// the user the program runs as.
 ///
-/// **SI TORNA VUOTO PIUTTOSTO CHE INVENTARE.** `Signal` dichiara che un segnale
-/// che non sa chi l'ha mandato lo dice con una stringa vuota; scrivere lì un
-/// nome plausibile ma non verificato sarebbe peggio che ammettere di non
-/// saperlo, perché nessuno andrebbe più a controllare.
+/// **IT RETURNS EMPTY RATHER THAN INVENT.** `Signal` declares that a signal that
+/// does not know who sent it says so with an empty string; a plausible but
+/// unverified name written there would be worse than admitting it is unknown,
+/// because nobody would go and check any more.
 pub(crate) fn who() -> String {
     std::env::var("USER").unwrap_or_default()
 }
 
-/// Da dove è partita una corsa, in una riga che si legge senza decodificarla.
+/// Where a run started from, in a line that reads without being decoded.
 ///
-/// **PORTA LA PROVENIENZA, NON IL CONTENUTO.** Dice che qualcuno ha premuto in
-/// questa finestra e se ha allegato una consegna; il testo della consegna non
-/// entra qui. Il testo è già registrato dove deve stare — negli ingressi del
-/// passo che lo riceve — e ricopiarlo anche nell'etichetta della corsa
-/// significherebbe scriverlo due volte in posti con regole diverse.
+/// **IT CARRIES THE ORIGIN, NOT THE CONTENT.** It says somebody pressed in this
+/// window and whether they attached a mandate; the mandate's text does not come
+/// in here. The text is already recorded where it belongs — in the inputs of
+/// the step that receives it — and copying it into the run's label too would
+/// mean writing it twice in places with different rules.
 fn origin_label(mandate: Option<&str>) -> String {
     let carried = mandate.is_some_and(|text| !text.trim().is_empty());
     if carried {
@@ -1323,14 +1306,13 @@ fn origin_label(mandate: Option<&str>) -> String {
     }
 }
 
-/// Registra l'intestazione della corsa.
+/// Records the run's header.
 ///
-/// **QUESTA COPIA NON ESISTE PIÙ, ED È IL PUNTO.** Qui c'erano le stesse venti
-/// righe di `flow_cmd`, con sotto un commento che dichiarava la duplicazione e
-/// diceva perché non si poteva chiudere. Si poteva: dal 30/08/2026 c'è un crate
-/// che le due strade condividono. Il 31/08 tutte e due scrivevano il totale a
-/// zero a mano, e riparare solo una avrebbe dato due cifre diverse per la stessa
-/// corsa a seconda del pulsante premuto.
+/// **THIS COPY NO LONGER EXISTS, AND THAT IS THE POINT.** The same twenty lines
+/// of `flow_cmd` lived here. There is now a crate the two roads share: both
+/// used to write the zero total by hand, and repairing only one would have
+/// given two different figures for the same run depending on which button was
+/// pressed.
 #[allow(clippy::too_many_arguments)]
 fn record_run(
     ledger: &Ledger,
@@ -1358,24 +1340,21 @@ fn record_run(
     )
 }
 
-/// Il flusso che si chiama così, cercato **dove la tela lo ha trovato**.
+/// The flow with that name, looked up **where the canvas found it**.
 ///
-/// **IL DIFETTO CHE QUESTA FUNZIONE AVEVA, E COSA SI VEDEVA DA FUORI.** Fino al
-/// 30/08/2026 qui il nome diventava un percorso dentro `default_flows_dir()` —
-/// `~/.config/sailor/flows`, una cartella sola — mentre l'elenco che la finestra
-/// disegna viene da tre sorgenti: quelli spediti dentro il binario, quelli di
-/// casa e quelli del progetto. Su questa macchina i sette flussi esistenti
-/// stanno nelle altre due, e quella cartella non esiste nemmeno. Risultato:
-/// `flow_trigger` falliva su ognuno, ogni innesco restava `mute`, e **il
-/// pulsante ▶ Esegui era grigio su tutti i nodi**. Da fuori era indistinguibile
-/// da un pulsante non collegato a niente — che è come è stato descritto per due
-/// giorni, mentre il collegamento c'era ed era intero.
+/// **THE DEFECT THIS FUNCTION HAD.** The name used to become a path inside
+/// `default_flows_dir()` — `~/.config/sailor/flows`, one directory — while the
+/// list the window draws comes from three sources: shipped inside the binary,
+/// home, and the project. On this machine the seven existing flows are in the
+/// other two, and that directory does not even exist. Result: `flow_trigger`
+/// failed on every one, every trigger stayed `mute`, and **the ▶ Run button was
+/// grey on every node**.
 ///
-/// **E IL NOME NON DIVENTA PIÙ UN PERCORSO.** Cercandolo in un elenco già
-/// costruito, un nome che quell'elenco non contiene non apre niente: non c'è
-/// nessun posto da cui scappare, e il controllo che serviva prima — `safe_name`
-/// — se ne va con la ragione che lo teneva in vita. È la stessa scelta già
-/// motivata in `flow_cmd::known_flows`, e ora le due strade la condividono.
+/// **AND THE NAME NO LONGER BECOMES A PATH.** Looked up in a list already
+/// built, a name that list does not hold opens nothing: there is nowhere to
+/// escape from, and the check that was needed before — `safe_name` — goes with
+/// the reason that kept it alive. It is the same choice already argued in
+/// `flow_cmd::known_flows`, and the two roads now share it.
 fn load_flow(name: &str) -> Result<FlowFile, String> {
     let known = ui::gather::load_all_flows(&ui::gather::flow_sources());
     match known.iter().find(|(known, _, _)| known == name) {
@@ -1693,12 +1672,12 @@ mod tests {
         );
     }
 
-    /// LA MISURA CHE POTEVA VENIRE DIVERSA: il passo dichiara già `stdin` nei
-    /// parametri fissi, che vincono sugli ingressi. Senza il controllo in
-    /// `mandate_target` la consegna verrebbe scritta negli ingressi, scavalcata
-    /// da `with` all'esecuzione, e persa senza un errore: chi ha premuto
-    /// crederebbe di aver dato il proprio testo. Tolto quel controllo, questa
-    /// prova diventa rossa.
+    /// THE MEASURE THAT COULD HAVE COME OUT DIFFERENTLY: the step already
+    /// declares `stdin` in its fixed parameters, which win over the inputs.
+    /// Without the check in `mandate_target` the mandate would be written to
+    /// the inputs, overridden by `with` at execution, and lost with no error:
+    /// whoever pressed would believe they had given their own text. Remove that
+    /// check and this test goes red.
     #[test]
     fn a_root_that_fixes_its_own_stdin_refuses_the_mandate_instead_of_losing_it() {
         let flow = flow_with(
@@ -1718,8 +1697,8 @@ mod tests {
         assert!(error.contains("scavalcata"), "{error}");
     }
 
-    /// Una verifica di shell riceve un comando, non un testo scritto da una
-    /// persona: infilarcelo dentro sarebbe un'iniezione di shell.
+    /// A shell check takes a command, not text written by a person: slipping
+    /// it in there would be a shell injection.
     #[test]
     fn a_shell_root_has_no_place_for_a_mandate() {
         let flow = flow_with(
@@ -1750,8 +1729,8 @@ mod tests {
         }
     }
 
-    /// Nessuna consegna scritta: il flusso parte con i propri ingressi tali e
-    /// quali, anche quando non avrebbe dove metterne una.
+    /// No mandate written: the flow starts with its own inputs exactly as they
+    /// are, even when it would have nowhere to put one.
     #[test]
     fn no_mandate_leaves_the_declared_inputs_untouched() {
         let flow = flow_with(
@@ -1763,8 +1742,8 @@ mod tests {
         );
         let inputs = inputs_with_mandate(&flow, None).expect("nessuna consegna, nessun problema");
         assert_eq!(inputs["solo"]["command"], json!("true"));
-        // Uno spazio bianco non è una consegna: sarebbe un rifiuto per un testo
-        // che nessuno ha davvero scritto.
+        // Whitespace is not a mandate: it would be a refusal over a text
+        // nobody actually wrote.
         let blank = inputs_with_mandate(&flow, Some("   ")).expect("il bianco non è una consegna");
         assert_eq!(blank["solo"]["command"], json!("true"));
     }
@@ -1782,14 +1761,14 @@ mod tests {
         })
     }
 
-    /// IL CONTRATTO VERO, letto da `flows/dispatch-the-work.flow.json` il
-    /// 28/08/2026: un passo `trigger` di sorgente manuale porta la consegna nel
-    /// proprio `text`, non in uno `stdin`.
+    /// THE REAL CONTRACT, read from `flows/dispatch-the-work.flow.json`: a
+    /// `trigger` step of manual source carries the mandate in its own `text`,
+    /// not in a `stdin`.
     ///
-    /// LA MISURA CHE POTEVA VENIRE DIVERSA: se `text_field_of` non conoscesse
-    /// l'azione `trigger`, la consegna finirebbe rifiutata su un flusso che la
-    /// aspetta — e il pulsante direbbe «non c'è posto» davanti a un nodo nato
-    /// apposta per riceverla.
+    /// THE MEASURE THAT COULD HAVE COME OUT DIFFERENTLY: if `text_field_of` did
+    /// not know the `trigger` action, the mandate would be refused on a flow
+    /// that expects it — and the button would say «no place for it» in front of
+    /// a node built to receive it.
     #[test]
     fn a_manual_trigger_root_takes_the_mandate_in_its_own_text() {
         let flow = flow_with(
@@ -1819,9 +1798,9 @@ mod tests {
         );
     }
 
-    /// Un innesco che aspetta un segnale che non è il gesto di una persona non
-    /// riceve una consegna scritta a mano: il pulsante prometterebbe una cosa
-    /// che quel passo non aspetta da lì.
+    /// A trigger waiting for a signal that is not a person's gesture takes no
+    /// hand-written mandate: the button would promise something that step is
+    /// not waiting for from there.
     #[test]
     fn a_trigger_waiting_for_another_kind_of_signal_refuses_the_mandate() {
         let flow = flow_with(
@@ -1834,17 +1813,17 @@ mod tests {
         }
     }
 
-    /// **OGNI AZIONE DEI FLUSSI SPEDITI DEV'ESSERE NEL REGISTRO DELLA FINESTRA.**
+    /// **EVERY ACTION OF A SHIPPED FLOW MUST BE IN THE WINDOW'S REGISTRY.**
     ///
-    /// È lo stesso controllo che `start_run` fa prima di eseguire (e che
-    /// risponde «il flusso nomina azioni che il motore non conosce»), qui fatto
-    /// sui flussi che stanno dentro il binario. Prima del 30/08/2026 il guscio
-    /// costruiva una lista sua, più corta di quella del terminale: mancavano
-    /// `tool_needs` e il risolutore degli strumenti, quindi un flusso spedito
-    /// col prodotto veniva rifiutato dalla finestra e accettato dal terminale.
+    /// It is the same check `start_run` makes before executing (the one that
+    /// answers «the flow names actions the engine does not know»), here on the
+    /// flows inside the binary. The shell used to build a list of its own,
+    /// shorter than the terminal's: `tool_needs` and the tool resolver were
+    /// missing, so a flow shipped with the product was refused by the window
+    /// and accepted by the terminal.
     ///
-    /// Il deposito qui non serve: le azioni che mancavano non sono quelle che
-    /// scrivono.
+    /// The ledger is not needed here: the missing actions are not the ones
+    /// that write.
     #[test]
     fn every_action_of_a_shipped_flow_is_known_to_the_window() {
         let known = registry::registry_in(registry::House::empty(), None, None);
@@ -1861,17 +1840,16 @@ mod tests {
         }
     }
 
-    /// **LA PROVA DELLA RIPARAZIONE, E NON LEGGE LA MACCHINA DI NESSUNO.**
+    /// **THE PROOF OF THE REPAIR, AND IT READS NOBODY'S MACHINE.**
     ///
-    /// I flussi di sistema stanno **dentro il binario**: ci sono su qualunque
-    /// macchina, anche su una appena installata, anche dove `~/.config/sailor`
-    /// non esiste. Prima del 30/08/2026 questa `load_flow` non ne trovava
-    /// nemmeno uno — cercava in una cartella sola, e non era quella — quindi
-    /// `flow_trigger` falliva, l'innesco restava muto e il pulsante ▶ Esegui era
-    /// grigio su ogni nodo della tela.
+    /// The system flows live **inside the binary**: they are on any machine,
+    /// even a freshly installed one, even where `~/.config/sailor` does not
+    /// exist. This `load_flow` used to find none of them — it looked in one
+    /// directory, and not that one — so `flow_trigger` failed, the trigger
+    /// stayed mute and the ▶ Run button was grey on every node of the canvas.
     ///
-    /// Rimettendo `default_flows_dir()` al posto dell'elenco, questa prova
-    /// diventa rossa (provato).
+    /// Put `default_flows_dir()` back in place of the list and this test goes
+    /// red (measured).
     #[test]
     fn a_flow_shipped_inside_the_binary_is_loadable_from_the_window() {
         let flow = load_flow("what-this-machine-has")
@@ -1882,13 +1860,13 @@ mod tests {
         );
     }
 
-    /// **LA STESSA GARANZIA DI PRIMA, OTTENUTA IN UN ALTRO MODO.** Qui c'era una
-    /// prova su `safe_name`, il controllo che impediva a un nome di uscire dalla
-    /// cartella quando il nome diventava un percorso. Adesso il nome si cerca in
-    /// un elenco: non apre niente per costruzione, e `safe_name` non esiste più.
-    /// La prova resta, perché la cosa da garantire è la stessa — un nome storto
-    /// non deve leggere niente — ed è il comportamento che si prova, non la
-    /// funzione che lo otteneva.
+    /// **THE SAME GUARANTEE AS BEFORE, REACHED ANOTHER WAY.** There was a test
+    /// on `safe_name` here, the check that stopped a name from climbing out of
+    /// the directory when the name became a path. Now the name is looked up in
+    /// a list: it opens nothing by construction, and `safe_name` is gone. The
+    /// test stays, because what must be guaranteed is the same — a crooked name
+    /// must read nothing — and it is the behaviour that is tested, not the
+    /// function that achieved it.
     #[test]
     fn a_flow_name_that_climbs_out_of_the_directory_opens_nothing() {
         for malformed in ["../evaso", "sotto/cartella", "", "/etc/passwd"] {

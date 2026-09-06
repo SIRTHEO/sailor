@@ -1,28 +1,28 @@
-//! Cosa c'è su questa macchina, come lo chiede la finestra.
+//! What is on this machine, as the window asks for it.
 //!
-//! IL RILEVAMENTO NON VIVE QUI. Sta in `toolbox`, dove l'elenco di cosa cercare
-//! è un dato e non codice: questo modulo lo invoca e ne traduce l'esito nella
-//! forma che la tela si aspetta. Se un giorno la finestra volesse sapere
-//! qualcosa in più, la risposta è aggiungere un descrittore, non un ramo qui.
+//! DETECTION DOES NOT LIVE HERE. It lives in `toolbox`, where the list of what
+//! to look for is data and not code: this module calls it and translates the
+//! outcome into the shape the canvas expects. Should the window ever want to
+//! know something more, the answer is another descriptor, not a branch here.
 //!
-//! PERCHÉ UNA TRADUZIONE E NON L'ESITO GREZZO. Il rilevatore distingue tre
-//! stati — c'è, non c'è, non ho potuto guardare — e li porta col motivo. Alla
-//! tela serve sapere se può usarlo (`available`), ma il motivo non si butta: chi
-//! vede uno strumento assente deve poter leggere perché, altrimenti l'unica cosa
-//! che può fare è non fidarsi dell'elenco.
+//! WHY A TRANSLATION AND NOT THE RAW OUTCOME. The detector tells three states
+//! apart — there, absent, could not look — and carries them with the reason.
+//! The canvas needs to know whether it can use the tool (`available`), but the
+//! reason is not thrown away: whoever sees a missing tool must be able to read
+//! why, or the sole thing left to do is distrust the list.
 
 use serde::Serialize;
 use toolbox::{Presence, VersionReading};
 
-/// Uno strumento come lo riceve la tela. I nomi dei campi sono il contratto
-/// scritto in `desktop/src/tools.ts`: chi cambia l'uno cambia l'altro.
+/// A tool as the canvas receives it. The field names are the contract written
+/// in `desktop/src/tools.ts`: whoever changes either changes both.
 #[derive(Serialize)]
 pub(crate) struct Tool {
     id: String,
     name: String,
-    /// `ai_cli` | `mcp` | `tool`, o qualunque famiglia un descrittore dichiari:
-    /// la tela tratta il tipo come aperto, e una famiglia nuova si mostra col
-    /// suo nome invece di far sparire lo strumento.
+    /// `ai_cli` | `mcp` | `tool`, or whatever family a descriptor declares: the
+    /// canvas treats the kind as open, and a new family shows under its own
+    /// name rather than making the tool vanish.
     kind: String,
     path: Option<String>,
     version: Option<String>,
@@ -34,11 +34,11 @@ pub(crate) struct Tool {
     /// install a second copy of what they already have. `toolbox` keeps them
     /// apart and the bridge used to throw the difference away.
     presence: &'static str,
-    /// Perché è così: presente da dove, assente perché, o non verificabile
-    /// perché. Senza questo un elenco non si può correggere.
+    /// Why it stands so: present from where, absent for what reason, or beyond
+    /// checking for what reason. Lacking this, a list cannot be corrected.
     reason: String,
-    /// Da quale descrittore è stato riconosciuto — l'indirizzo per chiedere
-    /// conto di una riga sbagliata.
+    /// Which descriptor recognised it — the address at which to hold a wrong
+    /// row to account.
     descriptor: String,
 }
 
@@ -66,11 +66,11 @@ pub(crate) struct Sweep {
     problems: Vec<BadLine>,
 }
 
-/// Gli strumenti che questa macchina offre.
+/// The tools this machine offers.
 ///
-/// **Si rileva a ogni richiesta**, non una volta all'avvio: chi installa una CLI
-/// mentre la finestra è aperta deve poterla usare senza riavviare, e il costo è
-/// qualche processo interrogato sulla propria versione.
+/// **Detected on every request**, not once at startup: whoever installs a CLI
+/// while the window is open must be able to use it without restarting, and the
+/// cost is a few processes asked for their own version.
 #[tauri::command]
 pub(crate) fn discover_tools() -> Vec<Tool> {
     sweep().tools
@@ -111,10 +111,10 @@ fn sweep() -> Sweep {
                 },
                 kind: found.family,
                 path: found.executable,
-                // Una versione non ottenuta resta assente, non diventa una stringa
-                // che sembra un numero. «Non l'ho chiesta» e «l'ho chiesta e non ha
-                // risposto» sono due cose diverse dal punto di vista di chi indaga,
-                // ma per la tela sono la stessa: non c'è una versione da mostrare.
+                // A version never obtained stays absent, it does not become a
+                // string that looks like a number. "Never asked" and "asked and
+                // got no answer" differ to an investigator, but to the canvas
+                // they are the same: there is no version to show.
                 version: match found.version {
                     VersionReading::Declared(text) => Some(text),
                     VersionReading::NotAsked(_) | VersionReading::Unavailable(_) => None,

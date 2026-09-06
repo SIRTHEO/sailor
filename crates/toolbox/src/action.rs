@@ -20,21 +20,21 @@ pub fn register_default(registry: &mut flow::ActionRegistry, machine: Machine) {
     registry.register(DETECT_TOOLS_ACTION, DetectToolsAction::on(machine));
 }
 
-/// L'ingresso del passo.
+/// The step's input.
 ///
-/// **LO SCHEMA RESTA CHIUSO**, e un campo in più costa una riga qui: `familia`
-/// al posto di `family` deve restare un errore detto a chi ha scritto il passo,
-/// non un filtro che sparisce in silenzio. La prova
-/// `the_flow_action_rejects_an_input_it_cannot_read` tiene ferma quella metà.
+/// **THE SCHEMA STAYS CLOSED**, and one field more costs one line here:
+/// `familia` in place of `family` must stay an error told to whoever wrote the
+/// step, not a filter that vanishes in silence. The proof
+/// `the_flow_action_rejects_an_input_it_cannot_read` holds that half still.
 ///
-/// **PERÒ CHI COMPONE L'INGRESSO NON È SOLO CHI SCRIVE IL FLUSSO**: l'esecutore
-/// aggiunge il `workdir` a ogni passo il cui schema dichiarato lo accetterebbe,
-/// e `{"type": "any"}` accetta tutto. Guasto misurato il 01/09/2026 sul flusso
-/// spedito `what-this-machine-has`, che dichiara proprio quello: dentro
-/// una cartella con `sailor.json` moriva sempre — `unknown field 'workdir'`,
-/// `failure_class: invalid_input` — e fuori da un progetto girava, perché senza
-/// radice non c'è niente da offrire. Un campo non dichiarato qui non è «un
-/// campo che nessuno usa»: può essere l'esecutore stesso.
+/// **BUT THE INPUT IS NOT COMPOSED BY THE FLOW'S AUTHOR ALONE**: the executor
+/// adds `workdir` to every step whose declared schema would accept it, and
+/// `{"type": "any"}` accepts anything. Measured on the shipped flow
+/// `what-this-machine-has`, which declares exactly that: inside a directory
+/// holding a `sailor.json` it always died — `unknown field 'workdir'`,
+/// `failure_class: invalid_input` — and outside a project it ran, because with
+/// no root there is nothing to offer. A field not declared here is not "a
+/// field nobody uses": it can be the executor itself.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct DetectSpec {
@@ -62,14 +62,14 @@ struct DetectSpec {
     /// asked" instead of becoming false.
     #[serde(default = "yes")]
     version_probes: bool,
-    /// La cartella da cui contare i `descriptor_paths` scritti relativi.
+    /// The directory relative `descriptor_paths` are counted from.
     ///
-    /// **NON LA SCRIVE CHI FA IL FLUSSO: LA METTE L'ESECUTORE**, ed è la radice
-    /// del progetto. Dichiararla qui la rende un dato invece che un campo
-    /// tollerato e buttato via: un descrittore scritto `.sailor/tools.d/x.json`
-    /// si legge dalla radice del progetto e non da dove sta il processo, che è
-    /// il guasto 25. Assente — flusso lanciato fuori da un progetto — un
-    /// percorso relativo resta relativo, com'era prima.
+    /// **NOT WRITTEN BY THE FLOW'S AUTHOR: PUT THERE BY THE EXECUTOR**, and it
+    /// is the project root. Declaring it here makes it data instead of a field
+    /// tolerated and thrown away: a descriptor written `.sailor/tools.d/x.json`
+    /// is read from the project root and not from where the process sits, which
+    /// is fault 25. Absent — a flow launched outside a project — a relative
+    /// path stays relative, as it was.
     #[serde(default)]
     workdir: Option<String>,
 }

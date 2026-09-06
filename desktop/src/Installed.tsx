@@ -1,25 +1,24 @@
-// Cosa è installato su questa macchina.
+// What is installed on this machine.
 //
-// **È LA DOMANDA CHE HAI FATTO: «che mostri tutto all'utente finale, mcp,
-// skill, flussi, regole, workspace, profili».** Competenze, agenti, comandi,
-// regole e ganci esistono da mesi sul disco e nessuna finestra li nominava: si
-// vedevano solo su `127.0.0.1:47831`, che vuol dire ricordarsi una porta.
+// **THE REQUIREMENT: «show the end user everything — mcp, skills, flows, rules,
+// workspace, profiles».** Skills, agents, commands, rules and hooks have been on the
+// disk for months and no window named them: they showed only on `127.0.0.1:47831`,
+// which means remembering a port.
 //
-// TRE STATI DI RAGGIUNGIBILITÀ, NON DUE. Il censimento distingue «attiva»,
-// «spenta col motivo» e «non lo so col motivo», e la terza voce non è un
-// ripiego: una competenza dentro un plugin spento è dimostrabilmente
-// irraggiungibile, una regola in un repo dipende da chi apre la sessione e da
-// dove, e dire «attiva» sarebbe una bugia comoda.
+// THREE STATES OF REACHABILITY, NOT TWO. The census tells «active», «switched off,
+// with the reason» and «not known, with the reason» apart, and the third is no
+// fallback: a skill inside a switched-off plugin is demonstrably unreachable, a rule
+// in a repo depends on who opens the session and from where, so «active» would lie.
 //
-// DOVE HA GUARDATO, SEMPRE IN CHIARO. Un elenco che non dice dove ha cercato
-// non si può smentire — e chi non trova una cosa che sa di avere non ha modo
-// di capire se manca lei o la cartella.
+// WHERE IT LOOKED, ALWAYS IN THE CLEAR. A list that does not say where it searched
+// cannot be contradicted — and whoever misses a thing they know they have cannot
+// tell whether it or the folder is missing.
 
 import { useMemo, useState } from "react";
 import { useAsk } from "./ask";
 import { machineInventory, type Installed as Census, type InstalledEntry } from "./engine";
 
-/** Il censimento cammina sul disco: si chiede una volta, non a battito. */
+/** The census walks the disk: it is asked once, not on a beat. */
 const ONCE = null;
 
 const FAMILY_WORD: Record<InstalledEntry["kind"], string> = {
@@ -32,7 +31,7 @@ const FAMILY_WORD: Record<InstalledEntry["kind"], string> = {
 
 const FAMILIES = ["skill", "agent", "command", "rule", "hook"] as const;
 
-/** Quante ce ne sono per famiglia, comprese quelle a zero. */
+/** How many there are per family, the ones at zero included. */
 export function countByFamily(entries: InstalledEntry[]): Record<InstalledEntry["kind"], number> {
   const counts = { skill: 0, agent: 0, command: 0, rule: 0, hook: 0 };
   for (const entry of entries) counts[entry.kind] += 1;
@@ -98,8 +97,8 @@ export function Installed({ native }: { native: boolean }) {
       </div>
 
       {asked.value.stale_plugin_copies > 0 && (
-        // Non sono voci del censimento — nessuno le carica — ma sono spazio, e
-        // finché nessuno le conta nessuno le toglie.
+        // Not census entries — nobody loads them — but they are space, and
+        // while nobody counts them nobody takes them away.
         <p className="now__note">
           {asked.value.stale_plugin_copies} plugin copies sit in the cache without being the installed one.
         </p>
@@ -124,8 +123,8 @@ export function Installed({ native }: { native: boolean }) {
               </td>
               <td className="now__when">{FAMILY_WORD[entry.kind]}</td>
               <td className="now__when">{entry.origin}</td>
-              {/* IL MOTIVO STA ACCANTO ALLO STATO. «Spenta» senza il perché
-                  non si può correggere: è tutto il valore della terza voce. */}
+              {/* THE REASON SITS BESIDE THE STATE. «Switched off» without the
+                  why cannot be fixed: that is the third state's whole value. */}
               <td className="now__state" data-reach={entry.reach.state}>
                 {entry.reach.state === "active" ? "active" : entry.reach.state === "inactive" ? "switched off" : "not known"}
                 {entry.reach.state !== "active" && <span className="now__why">{entry.reach.reason}</span>}
@@ -136,8 +135,8 @@ export function Installed({ native }: { native: boolean }) {
         </tbody>
       </table>
 
-      {/* Dove ha guardato. In fondo perché è la risposta a una domanda che
-          nasce solo quando manca qualcosa — ma deve esserci. */}
+      {/* Where it looked. At the foot because it answers a question that arises
+          only when something is missing — but it has to be there. */}
       <details className="roots">
         <summary className="roots__head">Where it looked</summary>
         <ul className="roots__list">
@@ -150,5 +149,5 @@ export function Installed({ native }: { native: boolean }) {
   );
 }
 
-/** Un elenco vuoto stabile: un `[]` nuovo a ogni render rifarebbe i conti. */
+/** A stable empty list: a fresh `[]` on every render would redo the counts. */
 const EMPTY: InstalledEntry[] = [];

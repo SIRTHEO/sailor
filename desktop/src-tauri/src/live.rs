@@ -1,18 +1,18 @@
-//! **La finestra dice che la ricostruzione è fallita, invece di sparire.**
+//! **The window says the rebuild failed, instead of vanishing.**
 //!
-//! Metà del guasto 11 è che la finestra sopravviva; l'altra metà è che lo
-//! **dichiari**. Una finestra che resta aperta mostrando codice vecchio senza
-//! dirlo è peggio di una che sparisce: chi guarda crede che la sua modifica non
-//! abbia avuto effetto e va a cercare il difetto dove non c'è. È il vincolo
-//! permanente «un'interfaccia che nasconde cosa succede è il contrario del
-//! prodotto», e il guasto 30 l'ha già pagato una volta.
+//! Half of fault 11 is that the window survives; the other half is that it
+//! **declares** it. A window that stays open showing old code without saying so
+//! is worse than one that vanishes: the watcher believes their change had no
+//! effect and hunts the defect where it is not. It is the permanent constraint
+//! "an interface that hides what happens is the opposite of the product", and
+//! fault 30 has already paid for it once.
 //!
-//! **PERCHÉ IL TITOLO, E NON SOLO UN EVENTO.** L'evento `live-status` c'è, e la
-//! tela può disegnarci sopra quello che vuole. Ma il programma che deve dare la
-//! notizia è quello **già acceso** — cioè costruito prima che il guasto
-//! esistesse — e la sua pagina è quella vecchia: se la notizia vivesse solo
-//! nella pagina, la prima volta che serve non arriverebbe. Il titolo della
-//! finestra lo scrive il guscio nativo, quindi arriva comunque.
+//! **WHY THE TITLE, AND NOT AN EVENT ALONE.** The `live-status` event exists,
+//! and the canvas can draw whatever it likes on top. But the program that must
+//! break the news is the one **already running** — built before the fault
+//! existed — and its page is the old one: were the news to live in the page
+//! alone, it would fail to arrive the very first time it was needed. The window
+//! title is written by the native shell, so it arrives anyway.
 
 use std::time::Duration;
 
@@ -20,17 +20,17 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use supervisor::{LiveState, LiveStatus, SwapRequest};
 
-/// Ogni quanto si guarda il file di stato.
+/// How often the status file is looked at.
 ///
-/// Mezzo secondo: sotto la soglia in cui si nota, e sopra quella in cui un
-/// sondaggio costa. Il file è una decina di righe.
+/// Half a second: under the threshold where it is noticed, over the threshold
+/// where a poll costs. The file is about ten lines.
 const LOOK_EVERY: Duration = Duration::from_millis(500);
 
-/// Il titolo di riposo. Sta scritto anche in `tauri.conf.json`, ed è l'unico
-/// posto da cui questo modulo lo può rimettere a posto.
+/// The resting title. It is written in `tauri.conf.json` as well, and this is
+/// the only place from which this module can put it back.
 const CALM_TITLE: &str = "Sailor";
 
-/// Quello che la finestra restituisce a chi chiede com'è messa la modalità viva.
+/// What the window hands back to whoever asks how live mode stands.
 #[tauri::command]
 pub fn live_status() -> Option<LiveStatus> {
     said_by_somebody_still_there(LiveStatus::read(&status_path()))
@@ -69,12 +69,12 @@ pub fn take_new_build() -> Result<(), String> {
     SwapRequest::ask(&swap_path())
 }
 
-/// Accende il filo che guarda il file di stato e riferisce.
+/// Starts the thread that watches the status file and reports.
 ///
-/// **NON FA MORIRE NIENTE, MAI.** Ogni errore qui — il file assente, illeggibile,
-/// a metà — si legge come «non so», e la finestra continua. Un guardiano della
-/// modalità viva che facesse cadere la finestra rifarebbe il guasto 11 dalla
-/// parte da cui nessuno lo cercherebbe.
+/// **IT KILLS NOTHING, EVER.** Every error here — the file absent, unreadable,
+/// half written — reads as "I do not know", and the window carries on. A live
+/// mode watchman that brought the window down would redo fault 11 from the side
+/// nobody would look at.
 pub fn watch(app: &AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
@@ -104,8 +104,8 @@ fn calm(app: &AppHandle) {
 }
 
 fn announce(app: &AppHandle, status: &LiveStatus) {
-    // La tela ci disegna sopra quello che vuole; il titolo è il minimo che
-    // arriva anche senza di lei.
+    // The canvas draws whatever it likes on top; the title is the minimum that
+    // arrives even without it.
     let _ = app.emit("live-status", status);
     crate::events::emit(app, "build", status);
 
@@ -114,9 +114,9 @@ fn announce(app: &AppHandle, status: &LiveStatus) {
     };
     let title = match status.state {
         LiveState::BuildFailed => {
-            // **IL NUMERO DI SECONDI NON CI STA NEL TITOLO, E VA BENE.** Qui
-            // serve che chi guarda sappia che *quello che vede è vecchio*; da
-            // quanto lo dice l'evento, dove c'è spazio.
+            // **THE SECOND COUNT DOES NOT FIT THE TITLE, AND THAT IS FINE.**
+            // What matters here is that the watcher knows *what they see is
+            // old*; how long for is said by the event, where there is room.
             "Sailor — rebuild FAILED: you are looking at the last good version".to_owned()
         }
         LiveState::Building => "Sailor — rebuilding…".to_owned(),

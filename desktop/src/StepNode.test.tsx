@@ -21,17 +21,16 @@ import { parseStylesheet, styleTree, type Stylesheet } from "./contrast";
 import type { StepUsage } from "./stepusage";
 
 /**
- * **IL NODO MOSTRA LO STATO VERO, NON QUELLO DELL'ESEMPIO.**
+ * **THE NODE SHOWS THE REAL STATE, NOT THE SAMPLE'S.**
  *
- * Questa prova esiste perché il difetto che ha chiuso stava proprio qui e nessun
- * tipo lo vedeva: la tela compilava, i nodi si disegnavano, e dicevano «in
- * attesa» su ogni passo di ogni flusso vero anche mentre il motore lavorava.
- * Le prove su `stepStatesOfCanvas` provano il calcolo; questa prova il
- * **collegamento**, che è il punto dove si era rotto.
+ * The fault that closed sat right here and no type saw it: the canvas compiled,
+ * the nodes drew, and they said «waiting» on every step of every real flow even
+ * while the engine was working. The tests on `stepStatesOfCanvas` prove the
+ * computation; this one proves the **wiring**, which is where it broke.
  */
 
-// Ogni prova monta il proprio nodo: senza questo restano tutti attaccati e
-// «trovato piu di un elemento» nasconde il vero esito.
+// Every test mounts its own node: without this they all stay attached and
+// «found more than one element» hides the real outcome.
 afterEach(cleanup);
 
 const STEP: Step = {
@@ -57,8 +56,8 @@ function mountNode(
     color: "#000",
     ...data,
   };
-  // Le proprietà che React Flow passa a un nodo sono molte e nessuna di quelle
-  // che mancano conta qui: si dichiara il taglio invece di riempirle di finti.
+  // React Flow passes a node many props and none of the missing ones matters
+  // here: the cut is declared instead of filling them with fakes.
   const props = {
     id: "n",
     type: "step",
@@ -121,9 +120,9 @@ describe("il nodo e lo stato della corsa", () => {
   });
 
   test("LA CORSA VERA VINCE SUI DATI D'ESEMPIO PORTATI DAL NODO", () => {
-    // È il difetto, nella sua forma esatta: il nodo portava nei propri `data`
-    // uno stato che sui flussi veri era sempre assente, e nessuno gli passava
-    // quello vero. Qui i due ci sono entrambi e vince il vero.
+    // The fault, in its exact shape: the node carried in its own `data` a state
+    // that on real flows was always absent, and nobody passed it the real one.
+    // Here both are present, and the real one wins.
     mountNode(
       { run: runIn("waiting") },
       new Map([["sviluppa-sailor::implementa", runIn("broke")]]),
@@ -132,47 +131,46 @@ describe("il nodo e lo stato della corsa", () => {
   });
 
   test("lo stato di un passo omonimo di un ALTRO flusso non arriva qui", () => {
-    // Fra i flussi veri di questa macchina `verifica`, `trigger` e `verdetto`
-    // sono ripetuti: con una chiave non qualificata il nodo si colorerebbe con
-    // la corsa di un flusso che non è il suo.
+    // Among this machine's real flows `verifica`, `trigger` and `verdetto`
+    // repeat: with an unqualified key the node would colour itself with the run
+    // of a flow that is not its own.
     mountNode({}, new Map([["un-altro-flusso::implementa", runIn("went")]]));
     expect(screen.getByText(SAYS("idle"))).toBeDefined();
   });
 });
 
 /**
- * **UN NODO DICE SEMPRE CON COSA GIRA, E QUANTO È COSTATO.**
+ * **A NODE ALWAYS SAYS WHAT IT RUNS ON, AND WHAT IT COST.**
  *
- * È il vincolo «chiarezza per chi guarda» sulla tela: le direzioni di prodotto
- * dicevano che i nodi non mostrano il modello né cosa è entrato dentro di loro.
- * Il modello dichiarato c'era; mancavano l'assenza di motore — indistinguibile
- * da «non l'ho guardato» — e tutto ciò che la corsa aveva misurato.
+ * It is the «clarity for whoever looks» constraint, on the canvas: the product
+ * directions said the nodes show neither the model nor what went into them. The
+ * declared model was there; missing were the absence of an engine —
+ * indistinguishable from «I did not look» — and all the run had measured.
  */
 describe("il nodo e il motore che lo esegue", () => {
   test("UN PASSO SENZA MOTORE LO DICE, invece di lasciare un vuoto", () => {
-    // Prima il riquadro non compariva affatto: un passo che gira qui sulla
-    // macchina e un passo di cui nessuno ha guardato il motore si disegnavano
-    // identici.
+    // Before, the box did not appear at all: a step that runs here on the
+    // machine and a step whose engine nobody looked at drew identically.
     mountNode({}, new Map());
     expect(screen.getByText("engine not declared")).toBeDefined();
-    // E dice cosa lo esegue al posto suo.
+    // And it says what executes it in its stead.
     expect(screen.getByText("external_engine")).toBeDefined();
   });
 
   test("E NON SI CONTRADDICE CON LA RIGA SOTTO", () => {
-    // «nessun motore» sopra `external_engine` — cioè sopra «motore esterno» —
-    // è una contraddizione per chi guarda, e per giunta non è quello che il
-    // dato dice: manca il campo, non il motore.
+    // «no engine» above `external_engine` — that is, above «external engine» —
+    // is a contradiction for whoever looks, and it is not even what the data
+    // says: the field is missing, not the engine.
     mountNode({}, new Map());
     expect(screen.queryByText("nessun motore")).toBeNull();
   });
 
   test("UNA CATENA DI MOTORI SI LEGGE: il primo, e i ricambi come tali", () => {
-    // **IL DIFETTO, NELLA SUA FORMA ESATTA.** `tool` è un `ToolChoice` —
-    // `One(String)` oppure `Chain(Vec<String>)` — e la finestra lo leggeva solo
-    // come stringa: su una catena rispondeva «niente», e il nodo disegnava
-    // «nessun motore» sopra un passo che ne nominava tre. Sui dieci flussi di
-    // `flows/` erano 20 passi su 25.
+    // **THE FAULT, IN ITS EXACT SHAPE.** `tool` is a `ToolChoice` —
+    // `One(String)` or `Chain(Vec<String>)` — and the window read it only as a
+    // string: on a chain it answered «nothing», and the node drew «no engine»
+    // above a step that named three. On the ten flows in `flows/` that was 20
+    // steps out of 25.
     mountNode(
       { step: { ...STEP, with: { tool: ["claude-code", "agy", "codex"] } } as Step },
       new Map(),
@@ -183,15 +181,14 @@ describe("il nodo e il motore che lo esegue", () => {
   });
 
   test("L'IDENTIFICATIVO NON SI TRAVESTE DA NOME: stesso carattere della catena", () => {
-    // `tool?.name ?? id`: finché la scoperta non ha risposto, nello slot del
-    // nome c'è l'identificativo — un dato, non un nome. In prosa, `claude-code`
-    // usciva in un carattere sulla prima riga del riquadro e in monospazio
-    // sulla seconda: la stessa parola, due grafie, dentro la stessa cornice.
+    // `tool?.name ?? id`: until discovery has answered, the name slot holds the
+    // identifier — a datum, not a name. In prose, `claude-code` came out in one
+    // face on the box's first line and in monospace on the second: the same
+    // word, two hands, inside the same frame.
     //
-    // La prova guarda il segno che porta la regola, non il carattere risolto:
-    // in jsdom nessuna famiglia è davvero installata, e chiedere a
-    // `getComputedStyle` quale font è in uso risponderebbe sulla macchina, non
-    // sulla regola.
+    // The test looks at the mark that carries the rule, not the resolved face:
+    // in jsdom no family is really installed, and asking `getComputedStyle`
+    // which font is in use would answer about the machine, not about the rule.
     const node = mountNode(
       { step: { ...STEP, with: { tool: ["claude-code", "agy", "codex"] } } as Step },
       new Map(),
@@ -236,8 +233,8 @@ describe("il nodo e il motore che lo esegue", () => {
   });
 
   test("UN COSTO CHE NESSUNO HA DICHIARATO SI DICE, e non diventa zero", () => {
-    // Codex dichiara il totale dei token e non i due lati: un `$0.0000` qui
-    // sarebbe una misura inventata sulla faccia del nodo.
+    // Codex declares the token total and not the two sides: a `$0.0000` here
+    // would be a measurement invented on the face of the node.
     mountNode(
       {},
       new Map(),
@@ -267,7 +264,7 @@ describe("a row gives up a line, never a fact", () => {
     sheet = parseStylesheet(stylesheetSource);
   });
 
-  /** Le dichiarazioni che il browser darebbe a un pezzo del nodo. */
+  /** The declarations the browser would give a piece of the node. */
   function declarationsOf(selector: string): Map<string, string> {
     const node = mountNode({}, new Map());
     const element = node.matches(selector) ? node : node.querySelector(selector);
@@ -278,19 +275,19 @@ describe("a row gives up a line, never a fact", () => {
   }
 
   test("IL GENERE HA UN FONDO, ed è dichiarato in `ch`", () => {
-    // In px il fondo sarebbe giusto solo sulla macchina dove è stato misurato:
-    // `--font-display` è una famiglia locale, e dove non c'è cambia il ripiego
-    // e cambiano le larghezze. `ch` è la larghezza di un carattere del
-    // carattere che sta girando davvero.
+    // In px the floor would be right only on the machine where it was measured:
+    // `--font-display` is a local family, and where it is absent the fallback
+    // changes and the widths change with it. `ch` is one character's width in
+    // the face that is really running.
     const floor = declarationsOf(".step-node__kind").get("min-width");
     expect(`min-width del genere: ${String(floor)}`).toMatch(/: \d+(\.\d+)?ch$/);
     expect(Number.parseFloat(String(floor))).toBeGreaterThan(0);
   });
 
   test("THE FOOT WRAPS, because its four pieces ask for more than it has", () => {
-    // Measured in Chrome on 2026-09-01, with the real faces, on a node forced
-    // into its widest foot: «aspetta una persona», a pid, a third attempt and a
-    // duration. Redo them by widening one node's foot in the inspector.
+    // Measured in Chrome with the real faces, on a node forced into its widest
+    // foot: the longest outcome word, a pid, a third attempt and a duration.
+    // Redo them by widening one node's foot in the inspector.
     const STATE = 133; // «aspetta una persona», the longest outcome word
     const PID = 65; // «pid 41822»
     const ATTEMPT = 59; // «3ª di 3»

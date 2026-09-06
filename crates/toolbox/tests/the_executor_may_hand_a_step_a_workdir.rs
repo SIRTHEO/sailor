@@ -1,20 +1,20 @@
-//! Il passo di rilevamento non muore su un campo che non ha chiesto.
+//! The detection step does not die on a field it never asked for.
 //!
-//! GUASTO MISURATO IL 01/09/2026, e non su un flusso scritto male: su
-//! `what-this-machine-has`, spedito col prodotto. Dentro una cartella
-//! con `sailor.json` falliva sempre —
+//! MEASURED FAULT, and not on a badly written flow: on
+//! `what-this-machine-has`, shipped with the product. Inside a directory
+//! holding a `sailor.json` it always failed —
 //!
 //!   unknown field `workdir`, expected one of `descriptor_paths`,
 //!   `include_defaults`, `builtin_catalogs`, `family`, `version_probes`
 //!
-//! — e fuori da un progetto girava. La differenza non è nel flusso: è che
-//! l'esecutore offre la radice del progetto a ogni passo il cui schema
-//! dichiarato la accetterebbe, e `{"type": "any"}` accetta tutto. Con
-//! `deny_unknown_fields` l'azione rifiutava chi la invoca.
+//! — and outside a project it ran. The difference is not in the flow: it is
+//! that the executor offers the project root to every step whose declared
+//! schema would accept it, and `{"type": "any"}` accepts anything. With
+//! `deny_unknown_fields` the action refused its own caller.
 //!
-//! Le due prove qui sotto tengono ferme le due metà: il campo non fa più
-//! cadere il passo, **e** non viene buttato via — un descrittore scritto
-//! relativo si conta dalla radice, non da dove sta il processo.
+//! The two proofs below hold both halves: the field no longer brings the step
+//! down, **and** it is not thrown away — a descriptor written relative counts
+//! from the root, not from where the process sits.
 
 use flow::{Action, ActionOutcome, SharedState};
 use serde_json::json;
@@ -73,9 +73,9 @@ fn il_workdir_non_fa_cadere_il_rilevamento() {
     assert_eq!(output(outcome)["total"], 1, "il descrittore è stato letto");
 }
 
-/// **E IL CAMPO NON È UN POZZO.** Un percorso relativo si conta dalla radice
-/// dichiarata. Senza questa prova, «accettalo e buttalo via» passerebbe uguale,
-/// e un descrittore relativo si cercherebbe dove sta il processo — guasto 25.
+/// **AND THE FIELD IS NOT A SINK.** A relative path counts from the declared
+/// root. Without this proof "accept it and throw it away" would pass just the
+/// same, and a relative descriptor be sought where the process sits — fault 25.
 #[test]
 fn un_descrittore_relativo_si_conta_dal_workdir() {
     let root = a_folder("relativo");

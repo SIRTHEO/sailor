@@ -1,18 +1,17 @@
-//! Il guscio nativo della finestra di Sailor.
+//! The native shell of the Sailor window.
 //!
-//! PERCHÉ UN GUSCIO E NON UN INDIRIZZO. Fino a stasera la tela dei flussi
-//! esisteva solo come pagina servita da Vite, e `sailor ui` serviva una seconda
-//! pagina in sola lettura su `127.0.0.1:47831`. Tutte e due chiedono a chi
-//! guarda di aprire un browser e ricordarsi una porta. La decisione del
-//! 27/08/2026 dice l'opposto — «un programma vero, in una finestra nativa» — e
-//! finché il guscio non esiste quella riga descrive un'intenzione, non un
-//! prodotto.
+//! WHY A SHELL AND NOT AN ADDRESS. The flows canvas existed as a page served by
+//! Vite, and `sailor ui` served a second, read-only page on `127.0.0.1:47831`.
+//! Both ask the watcher to open a browser and remember a port. The decision
+//! says the opposite — "a real program, in a native window" — and while the
+//! shell does not exist that line describes an intention, not a product.
 //!
-//! QUI DENTRO NON C'È LOGICA, ED È VOLUTO. Il guscio apre la finestra e le
-//! passa quello che il motore già sa: i conti sui flussi stanno nel motore, il
-//! disegno sta nella tela. Ogni riga di giudizio che finisse qui sarebbe una
-//! quarta verità accanto a `crates/flow`, `crates/ui` e `desktop/src/flow.ts`,
-//! che oggi coincidono per disciplina e non per costruzione.
+//! THERE IS NO LOGIC IN HERE, AND THAT IS DELIBERATE. The shell opens the
+//! window and hands it what the engine already knows: the reckoning about the
+//! flows lives in the engine, the drawing lives in the canvas. Any line of
+//! judgement landing here would be a fourth truth beside `crates/flow`,
+//! `crates/ui` and `desktop/src/flow.ts`, which today agree by discipline and
+//! not by construction.
 
 use serde::Serialize;
 use ui::gather::{flow_sources, load_all_flows};
@@ -38,20 +37,20 @@ mod tools;
 mod workspaces;
 mod worktree;
 
-/// Un flusso come lo riceve la tela. Ricalca `FlowEntry` di
-/// `desktop/src/flow.ts`, tag compreso: chi cambia l'uno cambia l'altro.
+/// A flow as the canvas receives it. It mirrors `FlowEntry` of
+/// `desktop/src/flow.ts`, tag included: whoever changes either changes both.
 ///
-/// UN FLUSSO ROTTO NON SPARISCE, arriva col suo motivo. È la stessa scelta che
-/// `load_flow_registry` documenta: un elenco che si accorcia in silenzio fa
-/// credere che il flusso non esista, e nessuno va a cercare un file che
-/// secondo la finestra non c'è.
+/// A BROKEN FLOW DOES NOT VANISH, it arrives with its reason. It is the choice
+/// `load_flow_registry` documents: a list that shortens in silence makes people
+/// believe the flow does not exist, and nobody goes hunting for a file that, as
+/// far as the window says, is not there.
 #[derive(Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
 enum FlowEntry {
     Loaded {
         flow: flow::FlowFile,
-        /// Da quale sorgente viene: «tuoi», «del progetto», «dichiarati». Chi
-        /// vede due flussi con lo stesso nome deve poter capire quale gira.
+        /// Which source it comes from: "yours", "the project's", "declared".
+        /// Seeing two flows of one name, you must be able to tell which runs.
         origin: String,
     },
     Broken {
@@ -66,14 +65,14 @@ struct BrokenFlow {
     reason: String,
 }
 
-/// I flussi dichiarati, letti dal disco a ogni richiesta.
+/// The declared flows, read from disk on every request.
 ///
-/// **Si rilegge, non si tiene in memoria.** `sailor ui` carica il registro una
-/// volta sola all'avvio, e da lì in poi un flusso aggiunto o corretto non
-/// compare finché qualcuno non riavvia il servitore — un difetto che in una
-/// finestra sempre aperta si nota subito e in un servitore no. Sono quattordici
-/// file di poche decine di righe: rileggerli costa meno che spiegare a chi
-/// guarda perché non vede quello che ha appena scritto.
+/// **Reread, never held in memory.** `sailor ui` loads the registry once at
+/// startup, and from then on a flow added or corrected fails to show up until
+/// somebody restarts the server — a defect that in an always-open window is
+/// noticed at once and in a server is not. It is fourteen files of a few dozen
+/// lines each: rereading them costs less than explaining to the watcher why
+/// what was just written is missing.
 #[tauri::command]
 fn flows(app: tauri::AppHandle) -> Vec<FlowEntry> {
     // READING IS THE EVENT: whoever looks at the flows has the due ones
@@ -94,13 +93,12 @@ fn flows(app: tauri::AppHandle) -> Vec<FlowEntry> {
         .collect()
 }
 
-/// Dove la finestra ha guardato, e cosa ha trovato in ciascun posto.
+/// Where the window looked, and what it found in each place.
 ///
-/// **SERVE QUANDO NON TROVA NIENTE**, ed è il motivo per cui esiste: il
-/// 29/08/2026 la finestra diceva «nessun flusso» mentre quattro flussi
-/// esistevano a una cartella di distanza, e da dentro non c'era modo di sapere
-/// dove stesse cercando. Una lista vuota senza il posto in cui si è guardato è
-/// indistinguibile da un guasto.
+/// **IT EARNS ITS KEEP WHEN NOTHING IS FOUND**, and that is why it exists: the
+/// window used to say "no flow" while four flows existed one folder away, and
+/// from inside there was no way to tell where it was searching. An empty list
+/// lacking the place that was searched is indistinguishable from a fault.
 #[tauri::command]
 fn flow_places() -> Vec<Place> {
     flow_sources()
@@ -154,18 +152,17 @@ struct Place {
 
 fn main() {
     tauri::Builder::default()
-        // LE CORSE VIVONO NEL GUSCIO, NON NELLA PAGINA. Chi chiude il pannello
-        // della vista o ricarica la tela non deve fermare un flusso che sta
-        // girando: il registro sta qui, e chi si riaffaccia ritrova tutto
-        // quello che è stato detto mentre non guardava.
+        // THE RUNS LIVE IN THE SHELL, NOT IN THE PAGE. Closing the view panel
+        // or reloading the canvas must not stop a flow that is running: the
+        // registry lives here, and whoever looks back in finds everything said
+        // while they were away.
         .manage(std::sync::Arc::new(run::Runs::default()))
         .manage(std::sync::Arc::new(beat::Beat::default()))
-        // LA MODALITÀ VIVA SI DICHIARA — guasto 11. Il supervisore
-        // (`sailor-live`) tiene accesa questa finestra anche quando la
-        // ricostruzione fallisce; senza questa riga la terrebbe accesa **in
-        // silenzio**, cioè mostrerebbe codice vecchio facendolo passare per
-        // nuovo. Fuori dalla modalità viva il file di stato non esiste e questo
-        // filo non dice mai niente.
+        // LIVE MODE DECLARES ITSELF — fault 11. The supervisor (`sailor-live`)
+        // keeps this window lit even when the rebuild fails; lacking this line
+        // it would keep it lit **in silence**, showing old code and passing it
+        // off as new. Outside live mode the status file does not exist and this
+        // thread never says a thing.
         .setup(|app| {
             live::watch(&app.handle().clone());
             // THE DEADLINE: due flows start from in here, on a clock of their

@@ -1,29 +1,29 @@
-//! Il motore dei terminali di Sailor.
+//! Sailor's terminal engine.
 //!
-//! **UN TERMINALE NASCE DENTRO UNO SPAZIO DI LAVORO.** Non è un terminale
-//! generico a cui poi si dice dove andare: la cartella è parte di cosa il
-//! terminale *è*, e si dichiara aprendolo. Questa non è una comodità — è la
-//! condizione perché lo smistamento sappia di quale progetto si sta parlando.
-//! Un terminale che scopre la propria cartella dopo essere nato è un terminale
-//! che, per un istante, appartiene a un posto sbagliato; e quell'istante è
-//! esattamente quello in cui l'utente scrive la prima riga.
+//! **A TERMINAL IS BORN INSIDE A WORKSPACE.** It is not a generic terminal that
+//! is later told where to go: the directory is part of what the terminal *is*,
+//! and it is declared by opening it. This is not a convenience — it is the
+//! condition for routing to know which project is being talked about. A
+//! terminal that discovers its own directory after being born is a terminal
+//! that, for an instant, belongs to the wrong place; and that instant is
+//! exactly the one in which the user types the first line.
 //!
-//! **CHE COSA FA E CHE COSA NON FA.** Apre uno pseudo-terminale vero, gli
-//! scrive sull'ingresso, ne consegna l'uscita **mentre esce**, lo ridimensiona,
-//! lo chiude, e dice quali terminali sono aperti e in quale spazio. Non disegna
-//! niente, non interpreta le sequenze ANSI e non decide cosa un flusso debba
-//! fare: consegna byte grezzi e una decisione, e chi lo usa fa il resto.
+//! **WHAT IT DOES AND WHAT IT DOES NOT DO.** It opens a real pseudo-terminal,
+//! writes to its input, delivers its output **as it comes out**, resizes it,
+//! closes it, and says which terminals are open and in which workspace. It
+//! draws nothing, interprets no ANSI sequence and does not decide what a flow
+//! must do: it delivers raw bytes and a decision, and the caller does the rest.
 //!
-//! **LO SMISTAMENTO STA IN [`routing`], E LE SUE REGOLE SONO DATI.** Ciò che
-//! l'utente scrive viene guardato prima di essere eseguito: se ha la forma di
-//! una richiesta che riguarda un flusso va al flusso, altrimenti passa al
-//! terminale. Quali forme, e verso quale flusso, lo dicono i descrittori — non
-//! un `match` in questo crate. Il valore predefinito è sempre il terminale: lo
-//! smistamento è un'aggiunta, e nel dubbio non scatta.
+//! **ROUTING LIVES IN [`routing`], AND ITS RULES ARE DATA.** What the user
+//! types is looked at before being executed: if it has the shape of a request
+//! about a flow it goes to the flow, otherwise it passes to the terminal. Which
+//! shapes, and towards which flow, is said by the descriptors — not by a
+//! `match` in this crate. The default is always the terminal: routing is an
+//! addition, and in doubt it does not fire.
 //!
-//! **NIENTE TAURI QUI DENTRO.** Il motore si prova da riga di comando —
-//! `cargo test -p terminal` — e la finestra ci si attacca sopra. Un motore
-//! dentro la finestra sarebbe un motore che nessuno può provare senza aprirla.
+//! **NO TAURI IN HERE.** The engine is tested from the command line —
+//! `cargo test -p terminal` — and the window attaches on top of it. An engine
+//! inside the window would be an engine nobody can test without opening it.
 
 pub mod bridge;
 pub mod host;
@@ -53,20 +53,19 @@ pub(crate) fn locked<T>(lock: &Mutex<T>) -> MutexGuard<'_, T> {
     lock.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// Lo spazio di lavoro a cui un terminale appartiene: una repo, la cartella di
-/// un progetto.
+/// The workspace a terminal belongs to: a repo, a project's directory.
 ///
-/// **È UNA CARTELLA CHE ESISTE, VERIFICATA ALL'APERTURA.** Un percorso che non
-/// c'è diventerebbe un `spawn` fallito con un messaggio del sistema operativo
-/// su un binario che invece esiste — il guasto si sposterebbe di un gradino, e
-/// chi legge cercherebbe la shell invece della cartella.
+/// **IT IS A DIRECTORY THAT EXISTS, CHECKED ON OPENING.** A path that is not
+/// there would become a failed `spawn` carrying an operating-system message
+/// about a binary that does exist — the fault would move one step, and whoever
+/// read it would go looking for the shell instead of the directory.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Workspace {
-    /// La radice, resa assoluta e senza collegamenti simbolici: due terminali
-    /// aperti su `~/x` e su `/Users/tizio/x` stanno nello stesso posto, e
-    /// l'elenco deve dirlo.
+    /// The root, made absolute and free of symbolic links: two terminals opened
+    /// on `~/x` and on `/Users/tizio/x` are in the same place, and the list has
+    /// to say so.
     pub root: PathBuf,
-    /// Come lo si chiama parlando: l'ultimo segmento della radice.
+    /// What it is called out loud: the last segment of the root.
     pub name: String,
 }
 
@@ -86,70 +85,71 @@ impl Workspace {
         let name = root
             .file_name()
             .map(|part| part.to_string_lossy().into_owned())
-            // La radice del disco non ha un ultimo segmento, e resta se stessa.
+            // The disk root has no last segment, and stays itself.
             .unwrap_or_else(|| root.to_string_lossy().into_owned());
         Ok(Workspace { root, name })
     }
 }
 
-/// Chi riceve l'uscita di un terminale **mentre** esce, invece che quando il
-/// processo è morto.
+/// Whoever receives a terminal's output **while** it comes out, instead of when
+/// the process has died.
 ///
-/// **SI CONSEGNANO BYTE GREZZI, E LA SCELTA NON È NUOVA.** È la stessa di
-/// `actions::LiveSink`, e per le stesse ragioni scritte lì: una lettura si ferma
-/// dove capita, anche a metà di una sequenza UTF-8 multibyte, e decodificare qui
-/// sostituirebbe l'accento spezzato al bordo con un carattere di sostituzione —
-/// un guasto invisibile e permanente — oppure obbligherebbe a trattenere i byte
-/// incompleti fino al pezzo dopo, cioè a rimettere il ritardo che il meccanismo
-/// esiste per togliere. La decodifica è di chi guarda, che è l'unico a sapere
-/// cosa vuole farne. In un terminale la ragione pesa di più che altrove: qui i
-/// byte non sono solo testo, sono anche sequenze di controllo, e un emulatore
-/// che le riceva mutilate ridisegna male lo schermo.
+/// **RAW BYTES ARE DELIVERED, AND THE CHOICE IS NOT NEW.** It is the same one
+/// as `actions::LiveSink`, for the same reasons written there: a read stops
+/// wherever it happens to, even halfway through a multibyte UTF-8 sequence, and
+/// decoding here would replace the accent broken at the edge with a replacement
+/// character — an invisible and permanent fault — or would force holding the
+/// incomplete bytes back until the next chunk, that is, putting back the delay
+/// the mechanism exists to remove. Decoding belongs to whoever watches, the
+/// only one who knows what to do with it. In a terminal the reason weighs more
+/// than elsewhere: here bytes are not text alone, they are also control
+/// sequences, and an emulator that receives them mutilated redraws the screen
+/// badly.
 ///
-/// **PERCHÉ NON È LO STESSO TRATTO E NON SI RIUSA `actions`.** `LiveSink::chunk`
-/// prende un [`actions::Pipe`] perché un figlio ordinario ha due uscite
-/// separate; uno pseudo-terminale ne ha **una**, che è ciò che il terminale
-/// mostra — stdout e stderr arrivano già mescolati dal sistema operativo, e
-/// passare `Pipe::Stdout` sarebbe dichiarare una distinzione che qui non esiste.
-/// L'altra ragione è la direzione delle dipendenze: `actions` porta con sé il
-/// motore dei flussi e il deposito, e il motore dei terminali non deve
-/// dipendere da loro per aprire una shell.
+/// **WHY IT IS NOT THE SAME TRAIT AND `actions` IS NOT REUSED.**
+/// `LiveSink::chunk` takes an [`actions::Pipe`] because an ordinary child has
+/// two separate outputs; a pseudo-terminal has **one**, which is what the
+/// terminal shows — stdout and stderr arrive already mixed by the operating
+/// system, and passing `Pipe::Stdout` would declare a distinction that does not
+/// exist here. The other reason is the direction of the dependencies: `actions`
+/// brings the flow engine and the store with it, and the terminal engine must
+/// not depend on them to open a shell.
 ///
-/// `chunk` non deve bloccare a lungo né panicare: lo chiama il filo che drena il
-/// terminale, e un filo fermo è un processo bloccato in scrittura. E non riceve
-/// mai un pezzo vuoto: «zero byte» è la fine del terminale, non qualcosa che è
-/// stato detto.
+/// `chunk` must not block for long nor panic: the thread that drains the
+/// terminal calls it, and a stalled thread is a process blocked on writing. And
+/// it never receives an empty chunk: "zero bytes" is the end of the terminal,
+/// not something that was said.
 ///
-/// **LA FINE SI DICE, E NON SI DEDUCE DAL SILENZIO.** Un terminale che smette
-/// di parlare è indistinguibile da un terminale fermo: chi guarda continuerebbe
-/// a mostrarlo vivo per sempre, che è la forma in cui il guasto 12 si
-/// ripresenta ogni volta. [`Output::ended`] arriva una volta sola, dopo
-/// l'ultimo pezzo, e porta **come** è finito.
+/// **THE END IS SAID, NOT INFERRED FROM SILENCE.** A terminal that stops
+/// talking is indistinguishable from an idle terminal: whoever watches would go
+/// on showing it alive forever, which is the shape fault 12 comes back in every
+/// time. [`Output::ended`] arrives once only, after the last chunk, and carries
+/// **how** it ended.
 pub trait Output: Send + Sync {
     fn chunk(&self, bytes: &[u8]);
 
-    /// **HA UN CORPO PREDEFINITO PERCHÉ IL DESTINATARIO PIÙ SEMPLICE È UNA
-    /// CLOSURE**, che riceve byte e non ha dove mettere una fine. Chi la
-    /// implementa dichiara di volerla sapere; chi la lascia stare non è
-    /// costretto a scrivere un tipo per ignorarla.
+    /// **IT HAS A DEFAULT BODY BECAUSE THE SIMPLEST RECIPIENT IS A CLOSURE**,
+    /// which receives bytes and has nowhere to put an end. Whoever implements
+    /// it declares they want to know; whoever leaves it alone is not forced to
+    /// write a type just to ignore it.
     fn ended(&self, _ending: Ending) {}
 }
 
-/// Com'è finito ciò che girava dentro un terminale.
+/// How what was running inside a terminal ended.
 ///
-/// **«ANCORA VIVO» È UN CASO A SÉ, E NON SI FA DIVENTARE ZERO.** L'uscita di
-/// uno pseudo-terminale può finire prima del processo — basta che il figlio
-/// chiuda i propri descrittori e continui — e chiamare quel caso «uscito con
-/// zero» sarebbe inventare un esito riuscito per qualcosa che nessuno ha visto
-/// finire. È la stessa distinzione fra zero e cieco che il resto di Sailor
-/// difende ovunque compaia un numero.
+/// **"STILL ALIVE" IS A CASE OF ITS OWN, AND IS NOT TURNED INTO ZERO.** A
+/// pseudo-terminal's output can end before the process does — the child need
+/// only close its own descriptors and carry on — and calling that case "exited
+/// with zero" would be inventing a successful outcome for something nobody saw
+/// end. It is the same distinction between zero and blind that the rest of
+/// Sailor defends wherever a number appears.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ending {
-    /// Uscito da solo, col proprio codice.
+    /// Exited on its own, with its own code.
     Exited(i32),
-    /// Finito senza un codice: l'ha portato via un segnale.
+    /// Ended without a code: a signal took it away.
     Killed,
-    /// L'uscita è finita, il processo no — o non si è potuto chiedere.
+    /// The output ended, the process did not — or it could not be asked.
     StillRunning,
 }
 
@@ -166,7 +166,7 @@ impl std::fmt::Display for Ending {
     }
 }
 
-/// Una closure basta: un destinatario semplice non deve costare un tipo.
+/// A closure is enough: a simple recipient must not cost a type.
 impl<F> Output for F
 where
     F: Fn(&[u8]) + Send + Sync,
@@ -176,11 +176,11 @@ where
     }
 }
 
-/// Un destinatario che accumula tutto, per chi vuole guardare dopo.
+/// A recipient that accumulates everything, for whoever wants to look later.
 ///
-/// Sta nella libreria e non nelle prove perché serve a tutte e due, e due copie
-/// di un accumulatore divergono sul dettaglio che conta: se `text()` decodifichi
-/// o no in modo tollerante.
+/// It lives in the library and not in the tests because both need it, and two
+/// copies of an accumulator diverge on the detail that matters: whether
+/// `text()` decodes leniently or not.
 #[derive(Debug, Default)]
 pub struct Buffer {
     bytes: Mutex<Vec<u8>>,
@@ -196,14 +196,14 @@ impl Buffer {
         locked(&self.bytes).clone()
     }
 
-    /// Com'è finito il terminale, se è finito. `None` vuol dire «non ancora»,
-    /// non «bene».
+    /// How the terminal ended, if it ended. `None` means "not yet", it does not
+    /// mean "well".
     pub fn ending(&self) -> Option<Ending> {
         *locked(&self.ending)
     }
 
-    /// Attende la fine, fino a `limit`. Stessa ragione di [`Buffer::wait_for`]:
-    /// un `sleep` fisso è o capriccioso o lento.
+    /// Waits for the end, up to `limit`. Same reason as [`Buffer::wait_for`]:
+    /// a fixed `sleep` is either flaky or slow.
     pub fn wait_for_end(&self, limit: std::time::Duration) -> Option<Ending> {
         let until = std::time::Instant::now() + limit;
         loop {
@@ -217,17 +217,17 @@ impl Buffer {
         }
     }
 
-    /// Il testo accumulato, con i byte non decodificabili sostituiti: qui la
-    /// perdita è accettabile perché si guarda, non si ritrasmette.
+    /// The accumulated text, with undecodable bytes replaced: the loss is
+    /// acceptable here because it is looked at, not retransmitted.
     pub fn text(&self) -> String {
         String::from_utf8_lossy(&self.bytes()).into_owned()
     }
 
-    /// Attende che `needle` compaia, fino a `limit`. Torna `true` se è comparso.
+    /// Waits for `needle` to appear, up to `limit`. Returns `true` if it did.
     ///
-    /// **UNA PROVA SU UN PROCESSO VERO ASPETTA, NON DORME UNA VOLTA SOLA.** Un
-    /// `sleep` fisso è o troppo corto — e la prova diventa capricciosa — o
-    /// troppo lungo, e la batteria rallenta a ogni caso.
+    /// **A TEST ON A REAL PROCESS WAITS, IT DOES NOT SLEEP ONCE.** A fixed
+    /// `sleep` is either too short — and the test turns flaky — or too long,
+    /// and the suite slows down on every case.
     pub fn wait_for(&self, needle: &str, limit: std::time::Duration) -> bool {
         let until = std::time::Instant::now() + limit;
         loop {

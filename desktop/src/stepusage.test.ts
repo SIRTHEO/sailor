@@ -3,13 +3,13 @@ import type { CallView, RunUsage } from "./flow";
 import { stepUsageOfRun, usageIsPartial } from "./stepusage";
 
 /**
- * **LA SPESA SI ATTRIBUISCE AL PASSO CHE L'HA FATTA.**
+ * **THE SPEND IS ATTRIBUTED TO THE STEP THAT MADE IT.**
  *
- * Le chiamate arrivavano dal deposito e finivano in un unico totale: nessuno
- * poteva sapere quale passo aveva speso né su quale modello. Queste prove
- * fissano le tre cose che sbagliando si direbbe il falso guardando un nodo: la
- * chiave qualificata col flusso, il costo assente che non diventa zero, e il
- * modello vero che è quello che il motore ha risposto.
+ * The calls arrived from the ledger and ended in a single total: nobody could
+ * know which step had spent, nor on which model. These tests pin the three
+ * things that, got wrong, would say the false thing on the face of a node: the
+ * key qualified with the flow, the absent cost that does not become zero, and
+ * the real model, which is the one the engine answered with.
  */
 
 function call(over: Partial<CallView>): CallView {
@@ -43,8 +43,8 @@ describe("la spesa per passo", () => {
   });
 
   test("la chiave porta il flusso, così la spesa non finisce sul nodo di un altro", () => {
-    // `verifica` e `verdetto` esistono in più flussi veri di questa macchina:
-    // con una chiave nuda il nodo mostrerebbe la spesa di un flusso non suo.
+    // `verifica` and `verdetto` exist in several real flows of this machine:
+    // with a bare key the node would show the spend of a flow not its own.
     const perStep = stepUsageOfRun(usageWith([call({})]), "sviluppa-sailor");
     expect(perStep.get("sviluppa-sailor::implementa")?.calls).toBe(1);
     expect(perStep.get("implementa")).toBeUndefined();
@@ -59,8 +59,8 @@ describe("la spesa per passo", () => {
   });
 
   test("UN COSTO ASSENTE RESTA ASSENTE, non diventa zero", () => {
-    // Codex dichiara il totale dei token e non i due lati, quindi la sua riga
-    // resta senza costo: mostrare `$0.0000` sarebbe una misura inventata.
+    // Codex declares the token total and not the two sides, so its row stays
+    // without a cost: showing `$0.0000` would be an invented measurement.
     const perStep = stepUsageOfRun(usageWith([call({ cost_micros: null })]), "f");
     const found = perStep.get("f::implementa");
     expect(found?.costMicros).toBe(null);

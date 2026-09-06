@@ -1,35 +1,34 @@
-//! Lo smistamento: ciò che l'utente scrive viene guardato **prima** di essere
-//! eseguito, e va al flusso o al terminale.
+//! Routing: what the user types is looked at **before** it runs, and goes to a
+//! flow or to the terminal.
 //!
-//! **IL VALORE PREDEFINITO È IL TERMINALE, SEMPRE.** Lo smistamento è
-//! un'aggiunta a un terminale che funziona, non un livello che il terminale
-//! attraversa. Ogni via di uscita di [`Router::route`] che non sia una regola
-//! che ha scattato porta a [`Routed::Command`]: nessuna regola, regola
-//! sbagliata, nessun descrittore, elenco vuoto — passa. Un terminale che ogni
-//! tanto non esegue quello che scrivi è peggio di uno che non smista affatto,
-//! perché diventa imprevedibile, e l'imprevedibilità di un terminale si paga su
-//! ogni riga che si scriverà dopo, non solo su quella.
+//! **THE DEFAULT IS THE TERMINAL, ALWAYS.** Routing is an addition to a
+//! working terminal, not a layer the terminal passes through. Every way out
+//! of [`Router::route`] which is not a fired rule leads to [`Routed::Command`]:
+//! no rule, wrong rule, no descriptor, empty list — it passes. A terminal
+//! which now and then does not run what you type is worse than one which does
+//! not route at all, because it turns unpredictable, and a terminal's
+//! unpredictability is paid on every line written after, not just on that one.
 //!
-//! **COME SI DECIDE È UN DATO, NON UN RAMO DI CODICE.** In questo file non
-//! compare il nome di nessun flusso e nessuna parola da cercare: le regole sono
-//! descrittori — spediti col binario, riscrivibili in `~/.config/sailor/routes.d/`
-//! — e cambiarle non ricompila niente. È il vincolo permanente «programmiamo a
-//! codice solo ciò che tocca il mondo»: qui il codice è la guardia, che misura
-//! la macchina; il resto è elenco.
+//! **HOW IT DECIDES IS DATA, NOT A BRANCH OF CODE.** No flow name and no word
+//! to look for appears in this file: the rules are descriptors — shipped with
+//! the binary, rewritable in `~/.config/sailor/routes.d/` — and changing them
+//! recompiles nothing. It is the standing constraint «we write as code only
+//! what touches the world»: here the code is the guard, which measures the
+//! machine; the rest is a list.
 //!
-//! **LA GUARDIA È CODICE E NON SI PUÒ SPEGNERE DA UN DESCRITTORE.** Sta qui, e
-//! il verso in cui pende è dichiarato: i dati possono solo chiedere di
-//! smistare, la guardia può solo far passare. Una regola scritta male manca uno
-//! smistamento; non si mangia un `git status`. L'unica eccezione è una regola
-//! `explicit`, che l'utente ha marcato lui con un prefisso che nessuna shell
-//! eseguirebbe — e il caricamento rifiuta le regole esplicite il cui prefisso
-//! potrebbe iniziare un comando, così l'eccezione non si allarga da sola.
+//! **THE GUARD IS CODE AND NO DESCRIPTOR CAN SWITCH IT OFF.** It lives here,
+//! and the way it leans is declared: data can only ask to route, the guard can
+//! only let through. A badly written rule misses a routing; it does not eat a
+//! `git status`. The one exception is an `explicit` rule, which the user marked
+//! themselves with a prefix no shell would run — and loading refuses explicit
+//! rules whose prefix could start a command, so the exception does not widen by
+//! itself.
 //!
-//! **PERCHÉ `toolbox::probe::look_up` E NON UN `which` SCRITTO QUI.** Perché sa
-//! rispondere «non so»: se anche una sola cartella del percorso non si è potuta
-//! leggere, la risposta non è «non c'è». È esattamente la forma che serve alla
-//! regola «nel dubbio, passa» — un dubbio sulla macchina diventa un comando
-//! eseguito, mai una richiesta dirottata.
+//! **WHY `toolbox::probe::look_up` AND NOT A `which` WRITTEN HERE.** Because it
+//! can answer «I don't know»: if even a single directory of the path could not
+//! be read, the answer is not «it isn't there». That is exactly the shape the
+//! rule «when in doubt, pass» needs — a doubt about the machine turns into a
+//! command run, never a request hijacked.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -38,8 +37,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use toolbox::{Look, Machine};
 
-/// Le regole spedite col prodotto, incorporate nel binario: non c'è nessun
-/// percorso di installazione da indovinare, e restano dati.
+/// The rules shipped with the product, embedded in the binary: there is no
+/// install path to guess, and they stay data.
 pub const BUILTIN: &str = include_str!("../descriptors/default.json");
 
 /// The provenance written into `Loaded` and `Problem`, so it is a value and not
@@ -47,58 +46,56 @@ pub const BUILTIN: &str = include_str!("../descriptors/default.json");
 /// comparing sources across the three must not have to know they differ.
 pub const BUILTIN_SOURCE: &str = "built-in";
 
-/// Da dove si prendono le regole. Stesse tre forme dei descrittori degli
-/// strumenti e degli inneschi, e di proposito: chi ha imparato dove si aggiunge
-/// una riga non deve impararlo una seconda volta.
+/// Where the rules are taken from. The same three shapes as the tool and
+/// trigger descriptors, and on purpose: whoever has learnt where a row gets
+/// added must not learn it a second time.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Source {
     Builtin,
     File(PathBuf),
-    /// Ogni `*.json` dentro una cartella, in ordine di nome.
+    /// Every `*.json` inside a directory, in name order.
     Dir(PathBuf),
 }
 
-/// Quale forma di riga una regola riconosce.
+/// Which shape of line a rule recognises.
 ///
-/// **DUE, E NESSUNA È UN'ESPRESSIONE REGOLARE.** Una regola di smistamento la
-/// scrive chi usa Sailor, in un file JSON, senza provarla: un'espressione
-/// regolare sbagliata è muta, cattura più di quanto crede, e il modo in cui si
-/// accorge di aver sbagliato è un comando che non è stato eseguito. Queste due
-/// forme si leggono a voce e non hanno angoli.
+/// **TWO, AND NEITHER IS A REGULAR EXPRESSION.** A routing rule is written by
+/// whoever uses Sailor, in a JSON file, untested: a wrong regular expression is
+/// mute, catches more than its author believes, and the way they find out is a
+/// command which did not run. These two shapes read aloud and have no corners.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Match {
-    /// La riga comincia con questo testo. Il confronto ignora le maiuscole.
+    /// The line begins with this text. The comparison ignores case.
     StartsWith { text: String },
-    /// Tutte queste parole compaiono nella riga, come parole intere.
+    /// All of these words appear in the line, as whole words.
     ContainsAll { words: Vec<String> },
 }
 
-/// Una riga dell'elenco delle regole di smistamento.
+/// One row of the routing rule list.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Route {
     pub id: String,
-    /// L'identificativo del flusso a cui mandare la richiesta. Resta in
-    /// italiano quando il flusso si chiama così: è un dato, e i dati non si
-    /// rinominano per stile.
+    /// The id of the flow to send the request to. It stays in Italian when
+    /// the flow is named that way: it is data, and data is not renamed for
+    /// style.
     pub flow: String,
     #[serde(default)]
     pub label: String,
     pub when: Match,
-    /// L'utente ha marcato lui questa riga come richiesta: la guardia non si
-    /// applica. Ammesso solo su un marcatore che non può iniziare un comando.
+    /// The user marked this row a request themselves: the guard does not
+    /// apply. Allowed on a marker which cannot start a command, and no other.
     #[serde(default)]
     pub explicit: bool,
-    /// Toglie il testo riconosciuto da ciò che si consegna al flusso.
+    /// Takes the recognised text out of what gets handed to the flow.
     #[serde(default)]
     pub strip_match: bool,
-    /// Sotto questo numero di parole la regola non scatta. La seconda difesa,
-    /// per le regole per parole: una richiesta in lingua è lunga, una riga di
-    /// comando è corta.
+    /// Below this word count the rule does not fire. The second defence, for
+    /// word rules: a request in language is long, a command line is short.
     #[serde(default)]
     pub minimum_words: usize,
-    /// Per chi legge l'elenco. Non entra in nessuna decisione.
+    /// For whoever reads the list. It enters no decision.
     #[serde(default)]
     pub note: String,
     #[serde(default)]
@@ -111,7 +108,7 @@ pub struct Loaded {
     pub source: String,
 }
 
-/// Qualcosa che non si è potuto caricare, col perché e col dove.
+/// Something which failed to load, with the why and the where.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Problem {
     pub source: String,
@@ -134,9 +131,9 @@ impl Catalog {
                 Source::File(path) => catalog.absorb_file(path),
                 Source::Dir(dir) => {
                     let Ok(entries) = fs::read_dir(dir) else {
-                        // Una cartella che non c'è è il caso normale di chi non
-                        // ha mai scritto una regola sua; una che c'è e non si
-                        // legge è un guasto, e si distinguono guardando il disco.
+                        // A missing directory is the normal case of somebody
+                        // who never wrote a rule of their own; one there and
+                        // unreadable is a fault, and the disk tells them apart.
                         if dir.exists() {
                             catalog.problems.push(Problem {
                                 source: dir.to_string_lossy().into_owned(),
@@ -173,8 +170,8 @@ impl Catalog {
         }
     }
 
-    /// Il testo si legge due volte di proposito: elemento per elemento, così
-    /// una virgola sbagliata in fondo non cancella le regole buone sopra.
+    /// The text is read twice on purpose: item by item, so a stray comma at
+    /// the end does not wipe out the good rules above it.
     pub fn absorb(&mut self, source: &str, text: &str) {
         let value: Value = match serde_json::from_str(text) {
             Ok(value) => value,
@@ -255,9 +252,9 @@ impl Catalog {
         }
     }
 
-    /// Quelle accese, in ordine stabile per `id`: due letture di seguito devono
-    /// dare la stessa sequenza, o due terminali smisterebbero diversamente la
-    /// stessa riga quando due regole la riconoscono entrambe.
+    /// The live ones, in stable `id` order: two reads in a row must give the
+    /// same sequence, or two terminals would route the same line differently
+    /// when two rules both recognise it.
     pub fn live(&self) -> Vec<&Loaded> {
         let mut out: Vec<&Loaded> = self
             .routes
@@ -276,14 +273,13 @@ impl Catalog {
     }
 }
 
-/// Una regola esplicita che non è un marcatore non si carica.
+/// An explicit rule which is not a marker does not load.
 ///
-/// **È QUI CHE L'ECCEZIONE ALLA GUARDIA SI TIENE PICCOLA.** `explicit` esiste
-/// perché l'utente possa dire «questa è una richiesta» su una frase che
-/// assomiglia a un comando. Se si potesse marcare `explicit` una regola che
-/// comincia per `git`, il descrittore avrebbe il potere di mangiarsi un comando
-/// — cioè esattamente il potere che questo crate non gli dà. Il giorno in cui
-/// qualcuno la scrive è l'unico giorno in cui è facile accorgersene.
+/// **THIS IS WHERE THE EXCEPTION TO THE GUARD IS KEPT SMALL.** `explicit` lets
+/// the user say «this is a request» about a phrase which looks like a command.
+/// Were a rule beginning with `git` markable `explicit`, the descriptor would
+/// hold the power to eat a command — exactly the power this crate denies it.
+/// The day somebody writes one is the one day it is easy to notice.
 fn coherent(route: &Route) -> Result<(), String> {
     if route.flow.trim().is_empty() {
         return Err("una regola deve dire a quale flusso manda: `flow` è vuoto".to_string());
@@ -312,28 +308,27 @@ fn coherent(route: &Route) -> Result<(), String> {
     }
 }
 
-/// I caratteri con cui una riga di comando può cominciare: una lettera, una
-/// cifra, e i pochi segni con cui si nomina un file o una variabile.
+/// The characters a command line can begin with: a letter, a digit, and the
+/// few signs which name a file or a variable.
 fn can_start_a_command(first: char) -> bool {
     first.is_alphanumeric()
         || matches!(first, '.' | '/' | '~' | '_' | '-' | '$' | '\\' | '\'' | '"')
 }
 
-/// Chi sa dire se una parola è un comando **su questa macchina**.
+/// Whoever can say whether a word is a command **on this machine**.
 ///
-/// È un tratto e non una funzione perché è la parte che tocca il mondo, e una
-/// prova deve poter dichiarare un mondo suo: senza, «la guardia ferma `git`»
-/// sarebbe vero solo dove `git` è installato, e la batteria racconterebbe della
-/// macchina invece che del codice.
+/// A trait and not a function because it is the part which touches the world,
+/// and a test must be able to declare a world of its own: without that, «the
+/// guard stops `git`» would hold true just where `git` is installed, and the
+/// battery would tell of the machine rather than of the code.
 pub trait CommandLookup: Send + Sync {
-    /// **`true` VUOL DIRE ANCHE «NON SO».** Chi implementa questo tratto deve
-    /// rispondere `true` quando non è riuscito a guardare ovunque: un dubbio
-    /// sulla macchina deve diventare un comando eseguito, mai una richiesta
-    /// dirottata.
+    /// **`true` ALSO MEANS «I DON'T KNOW».** An implementor of this trait must
+    /// answer `true` when it failed to look everywhere: a doubt about the
+    /// machine must turn into a command run, never a request hijacked.
     fn is_command(&self, word: &str) -> bool;
 }
 
-/// La macchina vera: le cartelle del percorso, come le guarda la shell.
+/// The real machine: the directories of the path, as the shell looks at them.
 pub struct PathLookup {
     machine: Machine,
 }
@@ -354,21 +349,20 @@ impl CommandLookup for PathLookup {
     fn is_command(&self, word: &str) -> bool {
         match toolbox::probe::look_up(word, &self.machine) {
             Look::Found(_) => true,
-            // «Non ho potuto guardare ovunque» pesa come «c'è»: è la regola
-            // «nel dubbio, passa», scritta dove si decide.
+            // «I could not look everywhere» weighs as «it is there»: the rule
+            // «when in doubt, pass», written where the decision is made.
             Look::Blocked(_) => true,
             Look::Missing => false,
         }
     }
 }
 
-/// Le parole che una shell esegue senza cercare nessun binario.
+/// The words a shell runs without looking for any binary.
 ///
-/// **STANNO IN CODICE E NON NEI DESCRITTORI, ED È VOLUTO.** Non sono una scelta
-/// di configurazione: sono un fatto sulla shell, della stessa specie del
-/// percorso di ricerca. Metterle fra i dati darebbe a un descrittore il potere
-/// di *indebolire* la guardia cancellando `cd` dall'elenco — e la proprietà per
-/// cui questo file è sicuro è che i dati possano solo chiedere di smistare.
+/// **THEY ARE CODE AND NOT DESCRIPTORS, DELIBERATELY.** Not a configuration
+/// choice: a fact about the shell, of the same kind as the search path. In
+/// data a descriptor could *weaken* the guard by deleting `cd` from the list —
+/// and this file is safe because data can only ask to route.
 const SHELL_BUILTINS: &[&str] = &[
     ".", ":", "[", "alias", "bg", "bind", "break", "builtin", "case", "cd", "command", "continue",
     "declare", "dirs", "disown", "do", "done", "echo", "elif", "else", "esac", "eval", "exec",
@@ -379,56 +373,56 @@ const SHELL_BUILTINS: &[&str] = &[
     "while",
 ];
 
-/// I segni che rendono una riga sintassi di shell, e mai una frase.
+/// The signs which make a line shell syntax, and never a sentence.
 ///
-/// Vale la stessa asimmetria di tutto il resto: la loro presenza fa **passare**
-/// una riga, quindi un segno di troppo in questo elenco costa uno smistamento
-/// mancato, non un comando mangiato.
+/// The same asymmetry as everywhere else holds: their presence makes a line
+/// **pass**, so one sign too many in this list costs a missed routing, not an
+/// eaten command.
 const SHELL_SIGNS: &[&str] = &["|", "&&", "||", ">>", "<<", ">", "<", ";", "$(", "`", "&"];
 
-/// Perché una riga è passata al terminale invece di andare a un flusso.
+/// Why a line went to the terminal rather than to a flow.
 ///
-/// **OGNI PASSAGGIO DICE IL PROPRIO MOTIVO**, e non è cosmesi: uno smistamento
-/// che non scatta è muto per definizione — la riga viene eseguita, e sembra
-/// tutto normale. Senza il motivo, chi scrive una regola che non funziona non ha
-/// niente da guardare.
+/// **EVERY PASS STATES ITS OWN REASON**, and that is no cosmetics: a routing
+/// which does not fire is mute by definition — the line runs, and it all looks
+/// normal. Without the reason, whoever wrote a rule which does not work has
+/// nothing to look at.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Passed {
-    /// Non c'era niente da smistare.
+    /// There was nothing to route.
     Empty,
-    /// La prima parola è un comando su questa macchina — o non si è potuto
-    /// escludere che lo fosse.
+    /// The first word is a command on this machine — or it could not be ruled
+    /// out that it was one.
     RunnableFirstWord(String),
-    /// Una parola della shell: `cd`, `export`, `exit`.
+    /// A word of the shell: `cd`, `export`, `exit`.
     ShellWord(String),
-    /// Un segno che solo una shell interpreta.
+    /// A sign which none but a shell reads.
     ShellSign(String),
-    /// La prima parola nomina un file: `./x`, `/usr/bin/x`, `~/x`.
+    /// The first word names a file: `./x`, `/usr/bin/x`, `~/x`.
     PathLike(String),
-    /// Un'assegnazione di variabile: `FOO=1 comando`.
+    /// A variable assignment: `FOO=1 command`.
     Assignment(String),
-    /// La guardia l'avrebbe lasciata smistare, ma nessuna regola l'ha
-    /// riconosciuta.
+    /// The guard would have let it route, but no rule recognised it.
     NoRuleMatched,
 }
 
-/// Dove va una riga scritta in un terminale.
+/// Where a line typed in a terminal goes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Routed {
-    /// Passa: il terminale la esegue com'è.
+    /// It passes: the terminal runs it as it stands.
     Command { line: String, why: Passed },
-    /// Va al flusso, con la richiesta da consegnargli.
+    /// It goes to the flow, with the request to hand over.
     Flow {
-        /// L'`id` della regola che ha riconosciuto la riga: chi guarda deve
-        /// poter risalire alla riga di JSON che ha deciso, non solo al flusso.
+        /// The `id` of the rule which recognised the line: a reader must be
+        /// able to trace back to the JSON row which decided, not to the flow
+        /// alone.
         route: String,
         flow: String,
-        /// Il testo da consegnare al flusso.
+        /// The text to hand to the flow.
         text: String,
     },
 }
 
-/// Le regole caricate, più la macchina su cui si misura la guardia.
+/// The loaded rules, plus the machine the guard is measured on.
 pub struct Router {
     routes: Vec<Route>,
     lookup: Arc<dyn CommandLookup>,
@@ -446,14 +440,14 @@ impl Router {
         }
     }
 
-    /// Le regole spedite col prodotto, su questa macchina.
+    /// The rules shipped with the product, on this machine.
     pub fn current() -> Router {
         let machine = Machine::current();
         let catalog = Catalog::load(&default_sources(&machine));
         Router::new(&catalog, Arc::new(PathLookup::on(machine)))
     }
 
-    /// Un terminale senza nessuna regola: smista niente, esegue tutto.
+    /// A terminal with no rules at all: routes nothing, runs everything.
     pub fn without_routes(lookup: Arc<dyn CommandLookup>) -> Router {
         Router {
             routes: Vec::new(),
@@ -465,17 +459,17 @@ impl Router {
         &self.routes
     }
 
-    /// **DOVE VA QUESTA RIGA.** Tre passaggi, in quest'ordine, e l'ordine è la
-    /// difesa:
+    /// **WHERE THIS LINE GOES.** Three passes, in this order, and the order is
+    /// the defence:
     ///
-    /// 1. i marcatori espliciti — l'utente ha già detto lui che non è un
-    ///    comando, e il caricamento ha già garantito che nessuna shell
-    ///    eseguirebbe una riga che comincia così;
-    /// 2. la guardia: se la riga ha una qualunque forma di comando, passa, e
-    ///    nessuna regola la vede;
-    /// 3. le regole rimaste.
+    /// 1. the explicit markers — the user has said themselves it is no
+    ///    command, and loading has guaranteed no shell would run a line
+    ///    beginning that way;
+    /// 2. the guard: if the line has any shape of a command, it passes, and no
+    ///    rule sees it;
+    /// 3. the remaining rules.
     ///
-    /// Fuori da questi tre, si passa.
+    /// Outside these three, it passes.
     pub fn route(&self, line: &str) -> Routed {
         let text = line.trim();
         if text.is_empty() {
@@ -519,7 +513,7 @@ impl Router {
     }
 }
 
-/// Se `route` riconosce `text`, il testo da consegnare al flusso.
+/// If `route` recognises `text`, the text to hand to the flow.
 fn recognised(route: &Route, text: &str) -> Option<String> {
     if text.split_whitespace().count() < route.minimum_words {
         return None;
@@ -531,16 +525,16 @@ fn recognised(route: &Route, text: &str) -> Option<String> {
                 return None;
             }
             let request = if route.strip_match {
-                // `get` e non un taglio diretto: il confronto è avvenuto sulla
-                // versione minuscola, che per certe lettere non ha la stessa
-                // lunghezza in byte dell'originale. Un taglio a metà carattere
-                // sarebbe un panico dentro un terminale.
+                // `get` and not a direct slice: the comparison happened on the
+                // lowercased version, which for certain letters is not the
+                // same byte length as the original. A cut mid-character would
+                // be a panic inside a terminal.
                 text.get(marker.len()..)?.trim().to_string()
             } else {
                 text.to_string()
             };
-            // Un marcatore senza niente dietro non è una richiesta: mandarlo a
-            // un flusso vorrebbe dire pagare una corsa per una riga vuota.
+            // A marker with nothing behind it is no request: sending it to a
+            // flow would mean paying for a run on an empty line.
             if request.is_empty() {
                 None
             } else {
@@ -549,7 +543,7 @@ fn recognised(route: &Route, text: &str) -> Option<String> {
         }
         Match::ContainsAll { words } => {
             if words.is_empty() {
-                // Una regola che non chiede niente riconoscerebbe ogni riga.
+                // A rule which asks for nothing would recognise every line.
                 return None;
             }
             let present: Vec<String> = text
@@ -569,14 +563,13 @@ fn recognised(route: &Route, text: &str) -> Option<String> {
     }
 }
 
-/// La guardia. `Some(motivo)` vuol dire «questa è una riga di comando: passa».
+/// The guard. `Some(reason)` means «this is a command line: pass it».
 ///
-/// **PENDE TUTTA DA UNA PARTE.** Ogni controllo qui dentro può solo aggiungere
-/// un motivo per passare. Un controllo che sbaglia costa uno smistamento
-/// mancato — che l'utente vede subito, perché la sua richiesta finisce nella
-/// shell e la shell si lamenta — mentre l'errore opposto costa un comando non
-/// eseguito, che l'utente scopre dopo, e che gli toglie la fiducia nel
-/// terminale.
+/// **IT LEANS ENTIRELY ONE WAY.** Every check in here can add a reason to pass,
+/// and nothing else. A wrong check costs a missed routing — which the user sees
+/// at once, because the request lands in the shell and the shell complains —
+/// while the opposite mistake costs a command which did not run, which the user
+/// finds out later, and which takes away their trust in the terminal.
 fn looks_like_a_command(text: &str, lookup: &dyn CommandLookup) -> Option<Passed> {
     for sign in SHELL_SIGNS {
         if text.contains(sign) {
@@ -592,8 +585,8 @@ fn looks_like_a_command(text: &str, lookup: &dyn CommandLookup) -> Option<Passed
     {
         return Some(Passed::PathLike(first.to_string()));
     }
-    // `FOO=1 comando`: l'uguale prima di ogni spazio è un'assegnazione, e nessuna
-    // frase in lingua ne contiene una nella prima parola.
+    // `FOO=1 command`: an equals ahead of any space is an assignment, and no
+    // sentence in language carries one in its first word.
     if let Some(at) = first.find('=') {
         if at > 0 {
             return Some(Passed::Assignment(first.to_string()));
@@ -608,11 +601,11 @@ fn looks_like_a_command(text: &str, lookup: &dyn CommandLookup) -> Option<Passed
     None
 }
 
-/// Le sorgenti da cui si prendono le regole su una macchina.
+/// The sources the rules are taken from on a machine.
 ///
-/// Nell'ordine in cui vincono: prima quelle spedite, poi quelle dell'utente. Con
-/// `SAILOR_ROUTE_DESCRIPTORS` (percorsi separati da `:`, file o cartelle) si
-/// aggiunge dove si vuole senza toccare la casa.
+/// In the order they win: the shipped ones first, the user's after. With
+/// `SAILOR_ROUTE_DESCRIPTORS` (paths separated by `:`, files or directories)
+/// one adds wherever they like without touching the home.
 pub fn default_sources(machine: &Machine) -> Vec<Source> {
     let mut out = vec![Source::Builtin];
     out.push(Source::Dir(

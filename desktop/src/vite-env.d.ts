@@ -1,11 +1,10 @@
 /// <reference types="vite/client" />
 
 /**
- * Il foglio di stile letto come testo.
- *
- * I controlli dei divieti devono leggere `styles.css` così com'è scritto. La
- * via ovvia — `node:fs` — vorrebbe `@types/node`, cioè una dipendenza in più su
- * un progetto che ne tiene nove in tutto; questa passa dal bundler che c'è già.
+ * The stylesheet read as text. The bans' checks must read `styles.css` exactly
+ * as written, and the obvious way — `node:fs` — would want `@types/node`, one
+ * more dependency on a project that keeps nine in all. This one goes through
+ * the bundler that is already there.
  */
 declare module "*.css?raw" {
   const source: string;

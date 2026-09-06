@@ -17,13 +17,13 @@ import { useAsk, useClock } from "./ask";
 import { openRuns, todaySummary, type DaySummary, type OpenRun } from "./engine";
 import { Handed } from "./Handed";
 
-/** Ogni quanto si richiede l'elenco al deposito. */
+/** How often the list is asked of the ledger again. */
 const REFRESH_MS = 4000;
 
-/** Il riepilogo di oggi cambia più lentamente: somma corse intere. */
+/** Today's summary changes more slowly: it sums whole runs. */
 const SUMMARY_MS = 30000;
 
-/** Un numero con i separatori delle migliaia, come lo legge una persona. */
+/** A number with thousand separators, as a person reads it. */
 function count(value: number): string {
   return value.toLocaleString("en-GB");
 }
@@ -34,16 +34,16 @@ function money(micros: number): string {
 }
 
 /**
- * Il riepilogo di oggi.
+ * Today's summary.
  *
- * **DICE ANCHE QUELLO CHE NON HA POTUTO MISURARE.** È la riga che negli altri
- * prodotti manca, e la ricognizione del 31/08/2026 ha trovato perché conta:
- * Langfuse mostrava 4.509 token dove erano 2.265, LangSmith gonfia di 75-200
- * volte con le immagini e non conta la cache dei prompt, e uno di Arize dice di
- * Phoenix che «il costo è calcolato correttamente nel database, ma è difficile
- * capirlo dalla UI». Un numero mostrato con autorità e sbagliato è peggio di un
- * numero assente. Qui, se qualche chiamata non ha portato token o prezzo, la
- * cifra si legge accanto al numero di chiamate che non la compongono.
+ * **IT ALSO SAYS WHAT IT COULD NOT MEASURE.** It is the line missing from the
+ * other products, and the survey found why it counts: Langfuse showed 4,509
+ * tokens where there were 2,265, LangSmith inflates by 75-200 times with images
+ * and does not count the prompt cache, and someone at Arize says of Phoenix
+ * that «the cost is computed correctly in the database, but hard to work out
+ * from the UI». A number shown with authority and wrong is worse than an absent
+ * number. Here, if some call carried no tokens or price, the figure reads
+ * beside the number of calls that do not make it up.
  */
 function Today({ summary }: { summary: DaySummary }) {
   if (!summary.ledger_present) {
@@ -93,12 +93,12 @@ function Today({ summary }: { summary: DaySummary }) {
 }
 
 /**
- * Da quanto dura, detto come lo direbbe una persona.
+ * How long it has lasted, said as a person would say it.
  *
- * **SI ARROTONDA PER DIFETTO, SEMPRE.** «2 h» su una corsa ferma da due ore e
- * cinquanta minuti è meno grave di «3 h» su una ferma da due e dieci: chi
- * legge decide se intervenire, e un numero gonfiato lo fa intervenire su una
- * cosa che non è ancora un problema.
+ * **IT ROUNDS DOWN, ALWAYS.** «2 h» on a run stopped for two hours and fifty
+ * minutes is less grave than «3 h» on one stopped for two and ten: the reader
+ * decides whether to step in, and an inflated number makes them step in on
+ * something that is not a problem yet.
  */
 export function howLong(seconds: number): string {
   if (seconds < 0) return "—";
@@ -112,12 +112,12 @@ export function howLong(seconds: number): string {
 }
 
 /**
- * Le corse divise nei due gruppi, ciascuno dalla più vecchia.
+ * The runs split into the two groups, each oldest first.
  *
- * L'ordine dentro un gruppo arriva già dal motore; qui si separa soltanto, e
- * la separazione è il punto: una corsa che aspetta una persona e una che sta
- * lavorando non si mettono in coda insieme, perché solo una delle due chiede
- * qualcosa a chi guarda.
+ * The order inside a group already comes from the engine; here they are merely
+ * separated, and the separation is the point: a run waiting on a person and one
+ * at work do not queue together, because one of the two asks something of the
+ * reader and the other does not.
  */
 export function groupRuns(runs: OpenRun[]): { waiting: OpenRun[]; working: OpenRun[] } {
   return {
@@ -127,9 +127,9 @@ export function groupRuns(runs: OpenRun[]): { waiting: OpenRun[]; working: OpenR
 }
 
 interface NowProps {
-  /** Vero dentro il guscio nativo: fuori non c'è deposito da interrogare. */
+  /** True inside the native shell: outside there is no ledger to ask. */
   native: boolean;
-  /** Aprire la corsa sulla tela, per guardarci dentro. */
+  /** Open the run on the canvas, to look inside it. */
   onOpen: (runId: string) => void;
 }
 
@@ -140,9 +140,9 @@ export function Now({ native, onOpen }: NowProps) {
   const now = useClock();
 
   if (asked.state === "mute") {
-    // UN DEPOSITO MUTO SI DICE. Una schermata vuota e un deposito irraggiungibile
-    // si assomigliano troppo, e la seconda è quella in cui si continua a lavorare
-    // credendo che non stia girando niente.
+    // **A MUTE LEDGER IS SAID SO.** An empty screen and an unreachable ledger
+    // look far too alike, and the second is the one where work goes on in the
+    // belief that nothing is running.
     return (
       <div className="now">
         <p className="now__mute">Cannot ask what is running: {asked.why}</p>
@@ -183,12 +183,12 @@ export function Now({ native, onOpen }: NowProps) {
 }
 
 /**
- * Un gruppo di corse, disegnato senza chiedere niente a nessuno.
+ * A group of runs, drawn without asking anyone anything.
  *
- * **È SEPARATO DA `Now` PERCHÉ SIA MISURABILE.** `Now` interroga il deposito, e
- * fuori dal guscio nativo non ha nessuno a cui chiedere: una prova che
- * disegnasse `Now` misurerebbe la frase «non riesco a chiedere» e crederebbe di
- * aver guardato la schermata. Il controllo del contrasto disegna questo.
+ * **IT IS SEPARATE FROM `Now` SO IT CAN BE MEASURED.** `Now` asks the ledger,
+ * and outside the native shell it has nobody to ask: a test that drew `Now`
+ * would measure the sentence «I cannot ask» and believe it had looked at the
+ * screen. The contrast check draws this.
  */
 interface GroupProps {
   title: string;
@@ -224,16 +224,16 @@ export function RunGroup({ title, note, runs, now, onOpen }: GroupProps) {
                 {run.entity === "" ? <span className="now__unnamed">unnamed</span> : run.entity}
                 <span className="now__id">{run.run_id}</span>
               </td>
-              {/* La parola porta lo stato quanto la tinta: divieto 5. */}
+              {/* The word carries the state as much as the tint: prohibition 5. */}
               <td className="now__state" data-state={run.state}>
                 {run.state === "waiting" ? "waits for you" : "working"}
               </td>
               <td className="now__num">{howLong(now - run.since)}</td>
-              {/* QUALE PASSO, NON QUANTI. «3 passi aperti» non dice niente:
-                  un passo aperto da sei minuti lavora, lo stesso da tre ore e'
-                  appeso. Il tentativo si scrive solo se non e' il primo —
-                  «2ª volta» su un passo aperto vuol dire che il primo giro e'
-                  caduto, ed e' l'informazione che una riga verde nasconde. */}
+              {/* WHICH STEP, NOT HOW MANY. «3 steps open» says nothing: a step
+                  open for six minutes is working, the same one open for three
+                  hours is hung. The attempt is written when it is not the first
+                  — «2nd time» on an open step means the first round fell, and
+                  that is the information a green row hides. */}
               <td className="now__steps">
                 {run.state === "waiting" ? (
                   "—"
@@ -249,13 +249,12 @@ export function RunGroup({ title, note, runs, now, onOpen }: GroupProps) {
                   ))
                 )}
               </td>
-              {/* SI APRE SOLO CIÒ CHE SI PUÒ DAVVERO APRIRE. Il testo dal vivo
-                  di una corsa vive nella memoria del guscio che l'ha avviata:
-                  una corsa partita dal terminale si vede qui — ed è tutto il
-                  punto di questa schermata — ma non si può ancora seguire. Un
-                  pulsante che non apre niente è peggio di nessun pulsante:
-                  chi lo preme conclude che la finestra è rotta. Qui la riga
-                  dice perché, invece di fingere. */}
+              {/* ONLY WHAT CAN REALLY BE OPENED IS OPENED. A run's live text
+                  lives in the memory of the shell that started it: a run begun
+                  from the terminal shows here — the whole point of this screen
+                  — but cannot be followed yet. A button that opens nothing is
+                  worse than no button: whoever presses it concludes the window
+                  is broken. Here the row says why, instead of pretending. */}
               <td className="now__from">
                 {run.started_here ? (
                   <button type="button" className="now__open" onClick={() => onOpen(run.run_id)}>
