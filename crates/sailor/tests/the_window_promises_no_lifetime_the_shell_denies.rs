@@ -48,6 +48,17 @@ fn whoever_promises_a_terminal_outlives_the_window_names_who_holds_it() {
         ("desktop/src/terminal.ts", prose(&read("desktop/src/terminal.ts"))),
         ("desktop/src/Terminals.tsx", prose(&read("desktop/src/Terminals.tsx"))),
     ];
+    let words = shell.split_whitespace().count()
+        + pages
+            .iter()
+            .map(|(_, text)| text.split_whitespace().count())
+            .sum::<usize>();
+    workspace::measured_against(
+        words,
+        "words of comment read across the shell and its two pages",
+        A_SURVIVAL_CLAIM.len(),
+        "words that claim a terminal survives the window",
+    );
 
     let claiming: Vec<&str> = pages
         .iter()
