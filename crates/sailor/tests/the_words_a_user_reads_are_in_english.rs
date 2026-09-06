@@ -142,19 +142,27 @@ fn count_in(root: &Path) -> Found {
     Found { count, worst }
 }
 
+/// **THE SEED IS A KNOB, NOT A LITERAL**, and clippy cannot know that: at zero
+/// it reads `count <= 0` as a comparison against the minimum of a `usize` and
+/// refuses to compile. Widening both sides keeps the two assertions written as
+/// every sibling ratchet writes them, so raising the seed one day changes a
+/// number and nothing else.
 #[test]
 fn the_sentences_the_product_says_only_ever_get_more_english() {
+    let declared = SENTENCES_NOT_IN_ENGLISH as i64;
+    let stale = HOW_STALE_A_SEED_MAY_BE as i64;
     let found = count_in(&root());
+    let measured = found.count as i64;
     workspace::measured(found.count, "sentences the product says not in English");
     assert!(
-        found.count <= SENTENCES_NOT_IN_ENGLISH,
+        measured <= declared,
         "sentences not in English: {} (declared {SENTENCES_NOT_IN_ENGLISH}). \
          Write the new one in English; if you are translating, lower the number.\n{}",
         found.count,
         found.worst.join("\n")
     );
     assert!(
-        SENTENCES_NOT_IN_ENGLISH <= found.count + HOW_STALE_A_SEED_MAY_BE,
+        declared <= measured + stale,
         "the seed says {SENTENCES_NOT_IN_ENGLISH}, the tree holds {}: write the measured number",
         found.count
     );
