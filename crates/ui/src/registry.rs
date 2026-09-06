@@ -105,6 +105,7 @@ mod tests {
             schedule: None,
             // No cap: these tests spend nothing.
             spend_cap_micros: None,
+            spend_cap_kind: None,
             wall_secs: None,
             max_turns: None,
             self_care: false,

@@ -297,6 +297,7 @@ fn a_broken_flow_keeps_its_place_in_the_registry_with_its_reason() {
             inputs: std::collections::BTreeMap::new(),
             schedule: None,
             spend_cap_micros: None,
+            spend_cap_kind: None,
             wall_secs: None,
             max_turns: None,
             self_care: false,

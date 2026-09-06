@@ -263,13 +263,12 @@ fn a_step(id: &str, deps: &[&str], with: Option<serde_json::Value>) -> Step {
     }
 }
 
-/// **THE RUN THAT OVERSHOT ITS CAP, IN MINIATURE.** Two calls of one engine
-/// under a cap of 6.00, and the model that answers is deliberately absent from
-/// the price list: its row lands with no cost, the run's spend reads `AtLeast`,
-/// and the older rule — «stop when the remainder is gone» — could never see a
-/// remainder fall. The second call must not be made, and the store must say
-/// why with the figures. *Mutant run*: put `_ => remaining > 0` back as the
-/// last arm of `reserve::admits` and both calls go through.
+/// **THE RUN THAT OVERSHOT ITS CAP, IN MINIATURE.** Two calls under a cap of
+/// 6.00, and the answering model is deliberately absent from the price list:
+/// its row lands with no cost, the spend reads `AtLeast`, and no remainder can
+/// ever be seen to fall. The second call must not be made, and the store must
+/// say why. *Mutant run*: put `_ => remaining > 0` back as the last arm of
+/// `reserve::admits` and both calls go through.
 #[test]
 fn a_model_the_price_list_cannot_price_stops_the_run_and_the_store_says_why() {
     let dir = Scratch::new("fuori-listino");
