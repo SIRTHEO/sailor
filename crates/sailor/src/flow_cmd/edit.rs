@@ -309,13 +309,28 @@ fn said_chain(chain: &str) -> String {
 /// `as_bool`, so `"true"` written as text is not merely wrong, it is *ignored*:
 /// the step is saved looking blind and runs seeing.
 fn set_field(document: &mut Value, step: &str, key: &str, value: &str) -> Result<String, String> {
-    let with = with_of(document, step)?;
-    let before = with.get(key).cloned();
-    if value == NONE {
-        with.remove(key);
-    } else {
-        with.insert(key.to_owned(), as_written(value));
+    if let Some(verb) = WRITTEN_BY_ANOTHER_VERB
+        .iter()
+        .find(|(field, _)| *field == key)
+        .map(|(_, verb)| *verb)
+    {
+        return Err(catalogue::say(
+            "cli.flow.field_of_the_step",
+            &[("field", key), ("verb", verb)],
+        ));
     }
+    let fields = if OF_THE_STEP.contains(&key) {
+        step_of(document, step)?
+    } else {
+        with_of(document, step)?
+    };
+    let before = fields.get(key).cloned();
+    if value == NONE {
+        fields.remove(key);
+    } else {
+        fields.insert(key.to_owned(), as_written(value));
+    }
+    let with = fields;
     Ok(catalogue::say(
         "cli.flow.field_written",
         &[
@@ -325,6 +340,32 @@ fn set_field(document: &mut Value, step: &str, key: &str, value: &str) -> Result
             ("after", &said_value(with.get(key))),
         ],
     ))
+}
+
+/// The fields the step owns, which no action reads out of `with`.
+///
+/// **WRITTEN INTO `with` THEY ARE READ BY NOBODY.** `max_attempts` lives on the
+/// step; written beside the prompt the command said it had written it, the run
+/// went on retrying once, and the reason a refusal is handed back never reached
+/// an engine.
+const OF_THE_STEP: &[&str] = &["max_attempts"];
+
+/// The step's own fields that a verb of their own already writes, with that
+/// verb. Writing them here would be a second spelling of the same edit.
+const WRITTEN_BY_ANOTHER_VERB: &[(&str, &str)] = &[
+    ("deps", "connect"),
+    ("action", "add-step"),
+    ("id", "add-step"),
+];
+
+/// The step itself, for the few fields that are not its action's.
+fn step_of<'a>(document: &'a mut Value, step: &str) -> Result<&'a mut Map<String, Value>, String> {
+    let Some(at) = position_of(steps_of(document)?, step) else {
+        return Err(no_such_step(document, step));
+    };
+    steps_of(document)?[at]
+        .as_object_mut()
+        .ok_or_else(|| catalogue::say("cli.flow.step_without_deps", &[("step", step)]))
 }
 
 /// A typed value from a word: the two truths and a whole number keep their
@@ -640,6 +681,28 @@ mod tests {
         let document: Value = serde_json::from_str(&saved(&home.0)).expect("it loads");
         assert_eq!(document["schedule"]["recurrence"]["seconds"], 3600);
         assert_eq!(document["schedule"]["weight"], "light");
+    }
+
+    /// **A FIELD THE STEP OWNS IS WRITTEN ON THE STEP.** `max_attempts` lives
+    /// there and no action reads it out of `with`: written beside the prompt
+    /// the command said it had written it, and a step refused by its own shape
+    /// went on being tried once. And a field another verb writes is refused
+    /// naming that verb, instead of leaving a second spelling of one edit.
+    #[test]
+    fn a_field_the_step_owns_is_not_written_beside_the_prompt() {
+        let (home, sources) = a_home_with_the_flow();
+        edit(&sources, &["field", "conta", "max_attempts", "2"]).expect("the step is written");
+        let document: Value = serde_json::from_str(&saved(&home.0)).expect("it loads");
+        let step = &document["graph"]["steps"][1];
+        assert_eq!(step["max_attempts"], 2, "on the step: {step}");
+        assert!(
+            step["with"].get("max_attempts").is_none(),
+            "and not beside the prompt, where nobody reads it: {step}"
+        );
+
+        let refused = edit(&sources, &["field", "conta", "deps", "[\"misura\"]"])
+            .expect_err("another verb writes this one");
+        assert!(refused.contains("connect"), "{refused}");
     }
 
     /// **A FIELD THAT IS A LIST OR A MAP IS WRITTEN AS ONE.** Written as the
