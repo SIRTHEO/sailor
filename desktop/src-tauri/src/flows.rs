@@ -69,21 +69,45 @@ fn delete_flow_in(flows_dir: &Path, name: &str) -> Result<(), String> {
     flow::system::delete_in(flows_dir, name)
 }
 
-/// Every action the engine can run, by name.
+/// One registered action, with how the engine treats it.
 ///
-/// **THE LIST IS ASKED, NEVER WRITTEN.** A test already refuses a name the
-/// engine does not register, but that is a check: a reader had no way to see
-/// the real list, and «what can this do» is not a question a vocabulary
-/// answers.
+/// **THESE ARE POLICIES, NOT CLAIMS.** Both come from a trait method with a
+/// conservative default and cannot tell an author's answer from silence, so
+/// what travels is how the engine behaves. The surface and the other powers of
+/// `docs/the-four-surfaces.md` are absent because no action declares one.
+#[derive(serde::Serialize)]
+pub(crate) struct Registered {
+    name: String,
+    /// `repeatable`, `compensable` or `hand_to_human`: what redoing it costs.
+    redo: &'static str,
+    /// Whether the engine lets this action's output close a run.
+    closes_a_run: bool,
+}
+
+/// Every action the engine can run, with the policy it runs under.
+///
+/// **THE LIST IS ASKED, NEVER WRITTEN**, and so is every field of it: a map of
+/// policies kept beside the registry is the shape of fault 10, and this file
+/// has already been its fifth copy once.
 #[tauri::command]
-pub(crate) fn engine_actions() -> Vec<String> {
-    let mut names: Vec<String> = action_registry()
-        .names()
-        .into_iter()
-        .map(str::to_owned)
-        .collect();
-    names.sort();
+pub(crate) fn engine_actions() -> Vec<Registered> {
+    let registry = action_registry();
+    let mut names = registry.names();
+    names.sort_unstable();
     names
+        .into_iter()
+        .filter_map(|name| {
+            registry.get(name).map(|action| Registered {
+                name: name.to_owned(),
+                redo: match action.species() {
+                    flow::StepSpecies::Repeatable => "repeatable",
+                    flow::StepSpecies::Compensable => "compensable",
+                    flow::StepSpecies::HandToHuman => "hand_to_human",
+                },
+                closes_a_run: action.is_a_check(),
+            })
+        })
+        .collect()
 }
 
 /// The actions the engine knows, so that saving refuses a flow a real run would
