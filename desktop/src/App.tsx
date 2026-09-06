@@ -37,6 +37,7 @@ import { liveOf, newestPerFlow } from "./flowlive";
 import { amongThese, rememberWhere, whereYouWere } from "./whereyouwere";
 import { ChangesScreen } from "./ChangesScreen";
 import { Sketch } from "./Sketch";
+import { WaitingScreen } from "./WaitingScreen";
 import type { Project } from "./workspaces";
 import {
   DropdownMenu,
@@ -1436,11 +1437,24 @@ export default function App() {
           onOpenRun={(runId) => setWatching(runId)}
         />
       )}
+      {/* THE FIRST QUESTION, AND THE ONE THE OWNER ASKED FOR BY NAME: what
+          wants a decision from me, then what happened while I was away. */}
+      {place === "waiting" && (
+        <div className="section" data-place="waiting">
+          <div className="section__body">
+            <WaitingScreen
+              native={NATIVE}
+              now={Math.floor(Date.now() / 1000)}
+              onRun={(runId) => setWatching(runId)}
+            />
+          </div>
+        </div>
+      )}
       {/* WHAT IS NOT SAVED YET IS THE TREE'S, so it hangs under the tree and
           not under a terminal — three clicks in, which is where the two most
           urgent things this product knows had ended up. */}
       {place === "changes" && (
-        <div className="section">
+        <div className="section" data-place="changes">
           <div className="section__body">
             {standingIn === null ? (
               <p className="world__mute">
@@ -1459,7 +1473,7 @@ export default function App() {
       {/* THE WHITEBOARD IS WHERE A FLOW IS ASKED FOR, NOT DRAWN: blocks and
           words go to `draft-a-flow`, and the board shows what came back. */}
       {place === "sketch" && (
-        <div className="section">
+        <div className="section" data-place="sketch">
           <div className="section__body">
             <Sketch
               native={NATIVE}

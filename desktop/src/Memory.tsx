@@ -29,7 +29,9 @@ export function Memory({
   root: string | null;
 }) {
   return (
-    <div className="section">
+    // A screen that is exactly one place says which, so a guard can ask
+    // whether THAT place drew anything and not whether any section did.
+    <div className="section" data-place="memory">
       <SubRail here={tab} onGo={onTab} tabs={MEMORY_TABS} />
       <div className="section__body">
         {tab === "runs" && (

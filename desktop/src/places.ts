@@ -9,6 +9,7 @@ import type { SailorTab } from "./sailortabs";
 import { SAILOR_TABS } from "./sailortabs";
 
 export type Section =
+  | "waiting"
   | "board"
   | "changes"
   | "sketch"
@@ -26,16 +27,30 @@ export interface Place {
   group: "work" | "what happened" | "itself";
 }
 
+/** **ONE NAME, NOT TWO.** The bar wrote «this mac» over a row the list called
+ * «The machine»: a place and the ground it stands on are one thing. */
+export const MACHINE_GROUND = t("window.ground.machine");
+
+/** **THE WINDOW IS THE ARRANGEMENT OF THE TERMINALS**, and this is the name
+ * the bar, the palette and the list all give it. */
+export const TERMINALS_GROUND = t("window.ground.terminals");
+
 /**
  * **WHAT THE WINDOW IS FOR**: to understand why a thing was done as it was, on
  * which engine, at what cost. `board`, `changes` and `sketch` are absent on
  * purpose — they answer about one tree, and hang under it.
  */
-
 export const PLACES: Place[] = [
   {
+    id: "waiting",
+    name: "Waiting for you",
+    glyph: "\u25e8",
+    asks: "what wants a decision from you, and what happened while you were away",
+    group: "work",
+  },
+  {
     id: "terminals",
-    name: "The work",
+    name: TERMINALS_GROUND,
     glyph: "\u25ae",
     asks: "the command lines open now, and what they are costing",
     group: "work",
@@ -49,7 +64,7 @@ export const PLACES: Place[] = [
   },
   {
     id: "sailor",
-    name: "The machine",
+    name: MACHINE_GROUND,
     glyph: "\u2693",
     asks: "what is set up here, the same wherever you stand",
     group: "itself",
@@ -63,6 +78,7 @@ export const PLACES: Place[] = [
  * whoever left the window on Profiles back to the board.
  */
 export const SECTIONS: Section[] = [
+  "waiting",
   "board",
   "changes",
   "sketch",
@@ -76,16 +92,7 @@ export const SECTIONS: Section[] = [
    plus, where the place has tabs, which tab — so one click lands on the thing
    itself and not on a column that asks again. */
 
-/** What the column writes over that ground, and what the bar says you are in. */
-export const MACHINE_GROUND = t("window.ground.machine");
 
-/**
- * **THE WINDOW IS THE ARRANGEMENT OF THE TERMINALS.** Not a destination among
- * seven, where reaching the centre of the work was a choice to make again at
- * every rebuild: it is what holds the stage until a section is asked for, and
- * this is the name the bar and the palette give that ground.
- */
-export const TERMINALS_GROUND = t("window.ground.terminals");
 
 /** A place of that ground, and the tab inside it when the place has tabs. */
 export interface MachineRow {
