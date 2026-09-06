@@ -45,8 +45,13 @@ pub(super) fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) 
     // puro — flusso, registro, rilevatore, sonda, tutti passati da fuori — e i
     // modelli che un flusso ha usato li sa solo il deposito. Tenerlo fuori
     // lascia `check_report` provabile senza aprirne uno.
+    let prices = actions::current_price_list();
+    // **WHAT KIND OF CAP IT IS, DECIDED HERE AND NOT BELIEVED.** It needs both
+    // the machine's descriptors and its price list, so it sits beside the price
+    // list and outside the pure report, for the same reason.
+    what_the_cap_is_into(&mut report, &flow, &tools, &prices);
     report.push_str(&what_is_priced(
-        &actions::current_price_list(),
+        &prices,
         models_seen_by(&flow.id).as_ref(),
         flow.spend_cap_micros,
     ));
@@ -383,6 +388,98 @@ struct WantedCapability {
 /// finire su chiunque della catena, e un controllo che guardasse solo il primo
 /// tacerebbe proprio sul motore su cui la corsa finisce quando il primo muore.
 /// È la stessa ragione per cui `tools_wanted` conta i motori dentro una catena.
+/// Every step of this flow, as far as its cap is concerned.
+///
+/// **A HANDED STEP DECIDES ON ITS OWN**, whatever the others say: it can start
+/// calls outside the control before the call, so no arithmetic over the rest
+/// covers the run. Every other step that asks an engine must be reservable —
+/// the weakest engine of a chain decides, because any of them may answer.
+pub(super) fn cap_facts(
+    flow: &FlowFile,
+    tools: &dyn actions::ToolResolver,
+    prices: &models::pricing::PriceList,
+) -> Vec<actions::reserve::StepFact> {
+    use actions::reserve::{ceiling_for, reserve_of, why_no_ceiling, Reserve, StepFact};
+    let mut facts = Vec::new();
+    for step in flow.graph.steps() {
+        if step.action == actions::handoff::HANDED_TO_AGENT_ACTION {
+            facts.push(StepFact {
+                step: step.id.clone(),
+                handed_to_agent: true,
+                reserve: None,
+            });
+            continue;
+        }
+        if step.action != actions::EXTERNAL_ENGINE_ACTION {
+            continue;
+        }
+        let Some(with) = step.with.as_ref() else {
+            continue;
+        };
+        let declared = actions::ceiling_declared_in(with);
+        let mut weakest: Option<Reserve> = None;
+        for id in engines_of(with) {
+            let option = tools.spend_ceiling_option(&id);
+            let made = match option.as_ref().and_then(|held| ceiling_for(held, &declared)) {
+                None => Reserve::Unknown(format!(
+                    "of «{id}», {}",
+                    why_no_ceiling(option.as_ref(), &declared)
+                )),
+                Some(ceiling) => reserve_of(&ceiling, &prices_for(with, &id, prices)),
+            };
+            let worse = match (&weakest, &made) {
+                (None, _) | (Some(Reserve::Known(_)), Reserve::Unknown(_)) => true,
+                (Some(Reserve::Known(held)), Reserve::Known(now)) => now > held,
+                _ => false,
+            };
+            if worse {
+                weakest = Some(made);
+            }
+        }
+        facts.push(StepFact {
+            step: step.id.clone(),
+            handed_to_agent: false,
+            reserve: weakest,
+        });
+    }
+    facts
+}
+
+/// The tariffs of the model this step asks of that engine. A step naming none
+/// leaves them empty, and then no ceiling in tokens prices out.
+fn prices_for(
+    with: &Value,
+    id: &str,
+    prices: &models::pricing::PriceList,
+) -> models::pricing::PriceMicros {
+    with.get("model")
+        .and_then(|named| named.get(id))
+        .and_then(Value::as_str)
+        .and_then(|name| prices.find(name))
+        .map(models::pricing::Price::micros)
+        .unwrap_or_default()
+}
+
+/// Writes what kind of cap this flow declares, and every reason it is not one.
+fn what_the_cap_is_into(
+    report: &mut String,
+    flow: &FlowFile,
+    tools: &dyn actions::ToolResolver,
+    prices: &models::pricing::PriceList,
+) {
+    if flow.spend_cap_micros.is_none() {
+        return;
+    }
+    let verdict = actions::reserve::verdict_on(&cap_facts(flow, tools, prices));
+    report.push_str(&match verdict.kind {
+        actions::reserve::CapKind::Guaranteed => catalogue::say("cli.flow.cap_is_guaranteed", &[]),
+        actions::reserve::CapKind::StopThreshold => catalogue::say(
+            "cli.flow.cap_is_a_stop_threshold",
+            &[("because", &verdict.because.join("; "))],
+        ),
+    });
+}
+
 fn capabilities_wanted(graph: &Graph) -> Vec<WantedCapability> {
     let mut wanted = Vec::new();
     for step in graph.steps() {
@@ -1169,6 +1266,132 @@ mod tests {
 
         assert!(unknown.is_empty());
         assert!(!report.contains("strument"), "{report}");
+    }
+
+    // ── what kind of cap: guaranteed, or a stop threshold ───────────────
+
+    /// An engine that can be told the most one call may spend, and one that
+    /// cannot: the two facts the verdict is made of.
+    struct SomeHoldToACeiling;
+
+    impl actions::ToolResolver for SomeHoldToACeiling {
+        fn resolve(&self, id: &str) -> Result<String, String> {
+            Ok(format!("/finto/{id}"))
+        }
+        fn spend_ceiling_option(&self, id: &str) -> Option<actions::reserve::CeilingOption> {
+            (id == "motore-con-tetto").then(|| actions::reserve::CeilingOption {
+                args: vec!["--max-budget-usd".to_owned()],
+                unit: actions::reserve::UNIT_CURRENCY.to_owned(),
+            })
+        }
+    }
+
+    fn a_flow_of(steps: &str) -> FlowFile {
+        let json = format!(
+            r#"{{
+                "id": "prova", "description": "flusso di prova",
+                "graph": {{ "steps": [{steps}], "skippable_dependencies": [] }},
+                "inputs": {{}}
+            }}"#
+        );
+        let mut flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
+        flow.spend_cap_micros = Some(5_000_000);
+        flow
+    }
+
+    fn a_step(id: &str, action: &str, with: &str) -> String {
+        format!(
+            r#"{{"id": "{id}", "deps": [], "action": "{action}", "max_attempts": 1,
+                 "when": null, "with": {with},
+                 "input_schema": {{"type": "any"}}, "output_schema": {{"type": "any"}}}}"#
+        )
+    }
+
+    /// **A HANDED STEP TAKES THE GUARANTEE AWAY FROM THE WHOLE RUN.** The two
+    /// flows differ by one step, and that step asks no engine of its own: what
+    /// changes is only that it can start calls outside this control.
+    ///
+    /// *Mutant run*: in `cap_facts`, treat `handed_to_agent` as any other
+    /// action. Both reports then say «guaranteed» and this goes red.
+    #[test]
+    fn a_flow_with_a_handed_step_is_not_a_guaranteed_cap() {
+        let bounded = a_step(
+            "chiedi",
+            "external_engine",
+            r#"{"tool": "motore-con-tetto", "stdin": "ciao", "timeout_secs": 10, "max_spend_micros": 600000}"#,
+        );
+        let handed = a_step("delega", "handed_to_agent", r#"{"mandate": "fai"}"#);
+        let prices = models::pricing::PriceList::default();
+
+        let mut alone = String::new();
+        what_the_cap_is_into(
+            &mut alone,
+            &a_flow_of(&bounded),
+            &SomeHoldToACeiling,
+            &prices,
+        );
+        assert!(alone.contains("guaranteed cap"), "{alone}");
+        assert!(!alone.contains("stop threshold"), "{alone}");
+
+        let mut with_handed = String::new();
+        what_the_cap_is_into(
+            &mut with_handed,
+            &a_flow_of(&format!("{bounded}, {handed}")),
+            &SomeHoldToACeiling,
+            &prices,
+        );
+        assert!(with_handed.contains("stop threshold"), "{with_handed}");
+        assert!(with_handed.contains("«delega»"), "{with_handed}");
+    }
+
+    /// **AN ENGINE THAT TAKES NO CEILING IS THE OTHER HALF.** Same flow, same
+    /// declared maximum, only the engine changes: one can be told the ceiling
+    /// and one cannot, and the second leaves the cap a stop threshold naming
+    /// the capability that is missing.
+    #[test]
+    fn an_engine_that_takes_no_ceiling_leaves_the_cap_a_stop_threshold() {
+        let prices = models::pricing::PriceList::default();
+        let of = |tool: &str| {
+            let mut said = String::new();
+            what_the_cap_is_into(
+                &mut said,
+                &a_flow_of(&a_step(
+                    "chiedi",
+                    "external_engine",
+                    &format!(
+                        r#"{{"tool": "{tool}", "stdin": "ciao", "timeout_secs": 10, "max_spend_micros": 600000}}"#
+                    ),
+                )),
+                &SomeHoldToACeiling,
+                &prices,
+            );
+            said
+        };
+
+        assert!(of("motore-con-tetto").contains("guaranteed cap"));
+        let without = of("motore-senza-tetto");
+        assert!(without.contains("stop threshold"), "{without}");
+        assert!(without.contains("native_spend_cap"), "{without}");
+    }
+
+    /// **A CAP THE FLOW DOES NOT DECLARE GETS NO VERDICT**: there is nothing
+    /// to be guaranteed or not, and a line here would invent a subject.
+    #[test]
+    fn a_flow_with_no_cap_is_told_nothing_about_its_kind() {
+        let mut flow = a_flow_of(&a_step(
+            "chiedi",
+            "external_engine",
+            r#"{"tool": "motore-senza-tetto", "stdin": "ciao", "timeout_secs": 10}"#,
+        ));
+        flow.spend_cap_micros = None;
+        let mut said = String::new();
+        what_the_cap_is_into(
+            &mut said,
+            &flow,
+            &SomeHoldToACeiling,
+            &models::pricing::PriceList::default(),
+        );
+        assert!(said.is_empty(), "{said}");
     }
 
     // ── il tetto di spesa: `flow check` e `flow cap` ────────────────────
