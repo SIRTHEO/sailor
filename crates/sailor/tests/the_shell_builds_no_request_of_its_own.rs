@@ -73,9 +73,7 @@ fn both_launchers_ask_whether_the_run_may_start_at_all() {
         command_line.display()
     );
 
-    let Some((path, shell)) = the_shells_launcher() else {
-        return;
-    };
+    let (path, shell) = the_shells_launcher();
     assert!(
         shell.contains(THE_QUESTION_BEFORE_A_RUN),
         "{} deve fare la stessa domanda: un tetto garantito che questa macchina \
