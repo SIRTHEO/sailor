@@ -80,7 +80,52 @@ pub struct Judgement {
     /// What was asked of it, in words a person reads.
     pub wanted: String,
     /// What was there. `None` is nothing at that pointer, which is not empty.
+    #[serde(flatten, with = "found_on_wire")]
     pub found: Option<Value>,
+}
+
+/// What was found, on the wire: the value, and beside it whether one was found.
+/// JSON spells a pointer that leads nowhere and one that leads to a null alike,
+/// and telling those apart is the whole reason the field exists — see fault 33.
+/// A reason written before the second key lacks it and reads `false`.
+mod found_on_wire {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use serde_json::Value;
+
+    #[derive(Serialize)]
+    struct Written<'a> {
+        found: &'a Option<Value>,
+        found_was_there: bool,
+    }
+
+    #[derive(Deserialize)]
+    struct Read {
+        #[serde(default)]
+        found: Option<Value>,
+        #[serde(default)]
+        found_was_there: bool,
+    }
+
+    pub fn serialize<S: Serializer>(
+        found: &Option<Value>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        Written {
+            found,
+            found_was_there: found.is_some(),
+        }
+        .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<Value>, D::Error> {
+        let read = Read::deserialize(deserializer)?;
+        Ok(match read.found {
+            None if read.found_was_there => Some(Value::Null),
+            other => other,
+        })
+    }
 }
 
 /// **A REASON IS NOT A COPY OF THE DATA**: kept whole it doubles every input in
