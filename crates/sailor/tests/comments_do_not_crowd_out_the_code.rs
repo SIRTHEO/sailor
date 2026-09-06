@@ -20,39 +20,38 @@ const MAX_BLOCK: usize = 6;
 
 /// How many blocks run over today. **It can only go down**: lowering it is the
 /// repair, raising it has to be argued and shows in the diff.
-const LONG_BLOCKS_TODAY: usize = 490;
+const LONG_BLOCKS_TODAY: usize = 416;
 
-/// How many comments cite a date. Same rule: downwards only.
-const DATED_COMMENTS_TODAY: usize = 179;
-
-/// How many comment lines are still not in English.
+/// How many comment lines are still not in English. **THE ONLY HONEST RAISE**
+/// is a merge bringing in non-English comments written elsewhere: there you
+/// re-measure, raise to the measured number, and say so in the commit. Raising
+/// it because it went red is disarming it.
 ///
-/// **THE ONLY HONEST RAISE** is a merge bringing in non-English comments
-/// written elsewhere: there you re-measure, raise to the measured number, and
-/// say so in the commit. Raising it because it went red is disarming it.
-const COMMENT_LINES_NOT_IN_ENGLISH: usize = 6_947;
+/// The one left is a fixture inside a raw string, which the line rule counts
+/// as a comment of the file that holds it.
+const COMMENT_LINES_NOT_IN_ENGLISH: usize = 1;
 
 /// Comment lines per thousand code lines, per crate, as measured today.
 /// Downwards only; a crate under 100 is where the sweep stops.
 const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
-    ("actions", 290),
+    ("actions", 275),
     ("catalogue", 262),
-    ("desktop", 255),
+    ("desktop", 252),
     ("faults", 188),
     ("flow", 202),
     ("inventory", 274),
     ("ledger", 148),
     ("models", 274),
     ("profiles", 172),
-    ("registry", 320),
+    ("registry", 316),
     ("relay", 154),
     ("release", 426),
-    ("sailor", 203),
+    ("sailor", 187),
     ("sessions", 252),
-    ("supervisor", 273),
-    ("terminal", 287),
+    ("supervisor", 271),
+    ("terminal", 282),
     ("toolbox", 284),
-    ("trigger", 237),
+    ("trigger", 236),
     ("ui", 186),
     ("workspace", 153),
 ];
@@ -427,13 +426,14 @@ fn no_new_comment_block_runs_past_the_cap() {
     );
 }
 
+/// The seed reached zero, so the constant is gone and the test asks outright.
 #[test]
-fn no_new_comment_tells_a_date() {
+fn no_comment_tells_a_date() {
     let counts = count();
-    assert!(
-        counts.dated <= DATED_COMMENTS_TODAY,
-        "comments citing a date: {} (declared {DATED_COMMENTS_TODAY}). \
-         Git keeps the date, with the real author{}",
+    assert_eq!(
+        counts.dated,
+        0,
+        "comments citing a date: {}. Git keeps the date, with the real author{}",
         counts.dated,
         all_three(&counts)
     );
@@ -466,7 +466,6 @@ fn a_seed_that_no_longer_describes_the_tree_is_a_seed_nobody_re_measured() {
     let counts = count();
     for (what, declared, measured) in [
         ("long blocks", LONG_BLOCKS_TODAY, counts.long_blocks),
-        ("dated comments", DATED_COMMENTS_TODAY, counts.dated),
         (
             "comment lines not in English",
             COMMENT_LINES_NOT_IN_ENGLISH,
@@ -586,7 +585,10 @@ fn the_check_can_still_see_what_it_counts() {
         counts.long_blocks > 0,
         "zero long blocks: the counter is not looking"
     );
-    assert!(counts.dated > 0, "zero dates: the counter is not looking");
+    // The tree holds none any more, so the counter proves itself on a line it
+    // is handed: asking the tree would make the check pass by being empty.
+    assert!(cites_a_date("// written on 06/09/2026, which git already knows"));
+    assert!(!cites_a_date("// version 1.89 of the compiler, not a date"));
     assert!(is_not_english("// perché questo non basta"));
     assert!(
         !is_not_english("// the cap must truncate, not merely be measured"),
