@@ -31,7 +31,7 @@ import {
 import { stepUsageOfRun, type StepUsage } from "./stepusage";
 import { stepStatesOfCanvas } from "./runstate";
 import { BlankCanvas, type PlacesAsk } from "./BlankCanvas";
-import { MACHINE, MACHINE_GROUND, PLACES, inTheStrip, type Section } from "./places";
+import { MACHINE, MACHINE_GROUND, PLACES, onItsOwnName, type Section } from "./places";
 import { World, OF_THIS_TREE, type FlowGroup } from "./World";
 import { liveOf, newestPerFlow } from "./flowlive";
 import { amongThese, rememberWhere, whereYouWere } from "./whereyouwere";
@@ -1260,6 +1260,9 @@ export default function App() {
       const row = MACHINE.find((one) => one.tab === sailorTab);
       return [MACHINE_GROUND, row?.name ?? sailorTab];
     }
+    // A place with no tab inside it is its own name, and nothing else: falling
+    // through to the terminals' tab said «Changes › Live», about no terminal.
+    if (place !== "terminals") return [section];
     return [section, TERMINALS_TABS.find((one) => one.id === terminalsTab)?.name ?? terminalsTab];
   }, [place, focusName, memoryTab, sailorTab, terminalsTab, ledgerTable]);
 
@@ -1283,18 +1286,12 @@ export default function App() {
   const paletteEntries = useMemo<Entry[]>(() => {
     // The same words the column uses. It said «Sailor › Profiles» while the
     // column said «Profiles», so searching for what you can see found nothing.
-    const go: Entry[] = inTheStrip().map((one) => ({
+    const go: Entry[] = onItsOwnName().map((one) => ({
       group: "Go to",
       label: one.name,
       hint: one.asks,
       run: () => setPlace(one.id),
     }));
-    go.push({
-      group: "Go to",
-      label: "Board",
-      hint: PLACES[0].asks,
-      run: () => setPlace("board"),
-    });
     for (const one of MACHINE) {
       go.push({
         group: "Go to",
