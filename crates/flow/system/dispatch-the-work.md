@@ -1,161 +1,164 @@
-# `dispatch-the-work` — il flusso che divide un incarico fra tre motori
+# `dispatch-the-work` — the flow that splits one mandate between three engines
 
-Un **innesco** riceve la consegna e la mette a disposizione del grafo. Un nodo
-la divide in due incarichi che si reggono da soli. Due motori li eseguono
-**senza vedersi**. Un terzo modello legge gli incarichi e le due
-risposte e dà un giudizio. Un ultimo nodo trasforma quel giudizio in un esito:
-passa, o il flusso è rosso.
+A **trigger** receives the mandate and makes it available to the graph. One node
+splits it into two assignments that stand on their own. Two engines carry them
+out **without seeing each other**. A third model reads the assignments and the
+two answers and gives a judgement. A last node turns that judgement into an
+outcome: it passes, or the flow is red.
 
-## I sei nodi
+## The six nodes
 
-| nodo | strumento chiesto | dipende da | cosa fa |
+| node | tool asked for | depends on | what it does |
 |---|---|---|---|
-| `trigger` | — | — | attende un segnale e ne mette a disposizione il testo, chi l'ha mandato e da dove |
-| `dispatch` | `claude-code` | `trigger` | divide la consegna in due incarichi: `first_engine`, `second_engine` |
-| `engine_a` | `codex` | `dispatch` | esegue il primo incarico, sola lettura |
-| `engine_b` | `agy` | `dispatch` | esegue il secondo incarico, sola lettura |
-| `verify` | `claude-code` | i tre sopra | legge tutto e scrive `verdict` e `why` |
-| `verdict` | — (`shell_check`) | `verify` | accetta **solo** l'approvazione: qui il flusso diventa rosso o verde |
+| `trigger` | — | — | waits for a signal and makes available its text, who sent it and from where |
+| `dispatch` | `claude-code` | `trigger` | splits the mandate into two assignments: `first_engine`, `second_engine` |
+| `engine_a` | `codex` | `dispatch` | carries out the first assignment, read-only |
+| `engine_b` | `agy` | `dispatch` | carries out the second assignment, read-only |
+| `verify` | `claude-code` | the three above | reads everything and writes `verdict` and `why` |
+| `verdict` | — (`shell_check`) | `verify` | accepts **only** the approval: this is where the flow turns red or green |
 
-`engine_a` e `engine_b` non si vedono: ognuno riceve soltanto
-il proprio incarico, e non ha mai visto la consegna intera né la risposta
-dell'altro.
+`engine_a` and `engine_b` do not see each other: each one receives only
+its own assignment, and has never seen the whole mandate nor the other's
+answer.
 
-## Le quattro regole che questo file rispetta
+## The four rules this file keeps
 
-**1. Nel flusso sta *come* si smista, non *cosa*.** Nessun passo porta un
-incarico scritto dentro. Il lavoro entra tutto dall'innesco: per darne un altro
-si cambia il testo in `inputs.trigger.text` — o si preme il pulsante nella
-finestra, che scrive lo stesso campo — e il grafo non si tocca.
+**1. In the flow lives *how* the work is dispatched, not *what*.** No step
+carries an assignment written inside it. The work all enters through the
+trigger: to give it another one you change the text in `inputs.trigger.text` —
+or you press the button in the window, which writes the same field — and the
+graph is not touched.
 
-**2. Nessun passo nomina un binario.** Ogni passo che esegue un motore dichiara
-`"tool": "<identificativo>"`, lo stesso che il rilevatore degli strumenti
-(`crates/toolbox`) restituisce, e chi esegue lo risolve sulla macchina di chi
-lancia. Su una macchina dove quello strumento non c'è, il passo si ferma
-**prima di spendere qualunque cosa** e dice quale mancava e dove ha cercato.
-Prima del 28/08/2026 c'era scritto `"bin": "claude"`, e quel flusso girava solo
-dove quel nome era nel percorso di chi eseguiva.
+**2. No step names a binary.** Every step that runs an engine declares
+`"tool": "<identifier>"`, the same one the tool detector
+(`crates/toolbox`) returns, and whoever runs it resolves it on the machine of
+whoever launches. On a machine where that tool is not there, the step stops
+**before spending anything** and says which one was missing and where it looked.
+Before 28/08/2026 it said `"bin": "claude"`, and that flow ran only
+where that name was on the path of whoever ran it.
 
-**3. Nessun passo è speciale.** Il verificatore non è un nodo di un tipo suo: è
-un passo come gli altri, che riceve un lavoro da verificare. Chi lo esegue si
-cambia con una riga (`tool`), e il ruolo è scritto nel prompt.
+**3. No step is special.** The verifier is not a node of a kind of its own: it
+is a step like the others, which receives a piece of work to verify. Whoever
+runs it is changed with one line (`tool`), and the role is written in the
+prompt.
 
-**4. Ogni passo dichiara la forma della propria risposta.** In `answer_shape`.
-Quella forma finisce nel prompt del motore — con un rinvio `{"$json":
-"/answer_shape"}`, scritta una volta sola, così le due copie non possono
-divergere — e viene fatta rispettare sulla risposta. Al passo dopo passa
-**solo** ciò che la forma dichiara: i preamboli, i ragionamenti e i saluti non
-attraversano la catena e non si pagano a ogni chiamata a valle.
+**4. Every step declares the shape of its own answer.** In `answer_shape`.
+That shape ends up in the engine's prompt — with a reference `{"$json":
+"/answer_shape"}`, written once only, so the two copies cannot diverge — and it
+is enforced on the answer. To the next step passes **only** what the shape
+declares: preambles, reasoning and greetings do not cross the chain and are not
+paid for at every call downstream.
 
-## Quando questo flusso diventa rosso
+## When this flow turns red
 
-Un passo si rompe, e chi dipende da lui non parte, se il motore:
+A step breaks, and whoever depends on it does not start, if the engine:
 
-- esce con un codice diverso da zero (`engine_exit_error`);
-- non risponde entro il tetto di tempo (`engine_timed_out`);
-- non parte (`engine_spawn_failed`);
-- non c'è su questa macchina (`tool_unavailable`);
-- risponde qualcosa che non è JSON (`answer_not_json`) o che non rispetta la
-  forma dichiarata (`answer_off_shape`).
+- exits with a code other than zero (`engine_exit_error`);
+- does not answer within the time ceiling (`engine_timed_out`);
+- does not start (`engine_spawn_failed`);
+- is not there on this machine (`tool_unavailable`);
+- answers something that is not JSON (`answer_not_json`) or that does not keep
+  the declared shape (`answer_off_shape`).
 
-E in fondo, se il verificatore respinge, il nodo `verdict` chiude in rosso.
+And at the end, if the verifier rejects, the `verdict` node closes red.
 
-Un passo può dichiarare che un esito è accettabile — `"accept": ["exit_error"]`
-— per chi esegue un controllo apposta per vederlo fallire. Nessun passo di
-questo flusso lo fa, e se lo facesse dovrebbe dirlo anche nel proprio schema
-d'uscita, dove si vede leggendo il grafo.
+A step may declare that an outcome is acceptable — `"accept": ["exit_error"]`
+— for whoever runs a check made on purpose to see it fail. No step of this
+flow does so, and if it did it would have to say so in its own output schema
+too, where it shows by reading the graph.
 
-## Come si lancia
+## How it is launched
 
-Dalla radice dei sorgenti di Sailor, qualunque sia sulla tua macchina:
+From the root of Sailor's sources, wherever that is on your machine:
 
 ```bash
 cargo run -p sailor -- flow run dispatch-the-work
 ```
 
-La cartella conta: il comando cerca i flussi in `flows/` sotto quella corrente.
-Per guardarlo senza eseguirlo: `cargo run -p sailor -- flow check dispatch-the-work`.
+The folder counts: the command looks for flows in `flows/` under the current
+one. To look at it without running it: `cargo run -p sailor -- flow check dispatch-the-work`.
 
-## Una cosa che questo flusso sembrava dire e non è vera
+## Something this flow seemed to say that is not true
 
-Fino al 28/08/2026 questo documento e la descrizione del flusso dicevano che i
-due motori girano «insieme». **Non è così, ed è misurato**: l'esecutore percorre
-il fronte dei passi pronti **in ordine, uno dopo l'altro**. Due passi da sei
-secondi ne impiegano dodici, non sei.
+Until 28/08/2026 this document and the flow's description said that the two
+engines run «insieme». **That is not so, and it is measured**: the executor
+walks the front of the ready steps **in order, one after the other**. Two
+six-second steps take twelve, not six.
 
-Il codice non lo nasconde — `crates/flow/src/executor.rs` lo dichiara nel punto
-esatto: «questo esecutore lo percorre in ordine: l'esecutore di processi potrà
-avviarlo in parallelo». Erano il flusso e questo documento a dire un'altra cosa.
+The code does not hide it — `crates/flow/src/executor.rs` declares it in the
+exact place: «questo esecutore lo percorre in ordine: l'esecutore di processi
+potrà avviarlo in parallelo». It was the flow and this document that said
+something else.
 
-Resta vero che i due motori **non si vedono**: nessuno dei due riceve la
-risposta dell'altro, e questo è ciò che rende il verdetto di `verify` un
-giudizio su due lavori indipendenti. È «insieme» che descriveva un parallelismo
-che non c'è, e il costo è il tempo: due motori di intelligenza artificiale in
-fila fanno aspettare la somma, non il massimo.
+It remains true that the two engines **do not see each other**: neither of them
+receives the other's answer, and this is what makes `verify`'s verdict a
+judgement on two independent pieces of work. It is «insieme» that described a
+parallelism that is not there, and the cost is time: two artificial
+intelligence engines in single file make you wait for the sum, not the maximum.
 
-## La prima corsa vera, 28/08/2026 — e cosa ha insegnato
+## The first real run, 28/08/2026 — and what it taught
 
-Esito: **rosso**, e per la ragione giusta. La catena ha girato tutta, quindi il
-motore, lo smistamento e il passaggio dei valori fra i passi **funzionavano**.
-A cadere era il contenuto: i due motori erano usciti in errore con l'uscita
-vuota, e il verificatore aveva scritto che non c'era niente da verificare.
+Outcome: **red**, and for the right reason. The chain ran all the way through,
+so the engine, the dispatching and the passing of values between the steps
+**worked**. What fell was the content: the two engines had exited in error with
+empty output, and the verifier had written that there was nothing to verify.
 
-Ma il difetto vero era un altro, e valeva più dei due errori d'uso: **i due
-passi falliti erano stati registrati come andati a buon fine**, con
-`status: exit_error` dentro il risultato. Il flusso era diventato rosso solo
-perché *l'ultimo* nodo guardava anche lo stato dei motori — una rete che
-qualcuno poteva togliere senza accorgersene.
+But the real fault was another one, and it was worth more than the two misuses:
+**the two failed steps had been recorded as having gone well**, with
+`status: exit_error` inside the result. The flow had turned red only
+because *the last* node also looked at the state of the engines — a net
+somebody could have taken away without noticing.
 
-Adesso non è più così, e il nodo finale non guarda più gli stati altrui: non
-può nemmeno vederli, perché un passo rotto non arriva a lui.
+Now it is no longer so, and the final node no longer looks at anybody else's
+states: it cannot even see them, because a broken step never reaches it.
 
-### Cosa è stato misurato dopo, riga di comando per riga di comando
+### What was measured afterwards, command line by command line
 
-- **`agy`**: il prompt va in un **argomento**, non sull'ingresso, e `--mode` va
-  **prima** di `--print`. `agy --mode plan --print '<prompt>'` risponde ed esce
-  0 (provato il 28/08/2026). La forma vecchia era `--print --mode plan`, dove
-  `--print` prendeva `--mode` come proprio prompt.
-- **`codex exec`**: legge il prompt da stdin quando non è un argomento
-  (`codex exec --help`, misurato). Il fallimento della prima corsa non è ancora
-  spiegato: da riprovare a mano prima della prossima corsa.
-- **`claude`**: invariato, `-p --model <nome>` con il prompt sull'ingresso.
+- **`agy`**: the prompt goes in an **argument**, not on the input, and `--mode`
+  goes **before** `--print`. `agy --mode plan --print '<prompt>'` answers and
+  exits 0 (tried on 28/08/2026). The old form was `--print --mode plan`, where
+  `--print` took `--mode` as its own prompt.
+- **`codex exec`**: it reads the prompt from stdin when it is not an argument
+  (`codex exec --help`, measured). The failure of the first run is still not
+  explained: to be tried again by hand before the next run.
+- **`claude`**: unchanged, `-p --model <name>` with the prompt on the input.
 
-## L'innesco: cosa è vero e cosa no
+## The trigger: what is true and what is not
 
-Il nodo `trigger` è il vero ingresso del flusso, e le sorgenti di segnale sono
-un **elenco di descrittori** (`crates/trigger/descriptors/default.json`), non
-codice: si aggiungono scrivendo una riga di JSON in `~/.config/sailor/triggers.d/`.
+The `trigger` node is the flow's real entrance, and the signal sources are
+a **list of descriptors** (`crates/trigger/descriptors/default.json`), not
+code: they are added by writing a line of JSON in `~/.config/sailor/triggers.d/`.
 
-- **`manual`** — vero e funzionante. Qualcuno preme e parte, portando un testo.
-  È la sorgente che il pulsante di lancio della finestra userà.
-- **`sailor-terminal`**, **`orca-terminal`** — dichiarati e **non ascoltati**.
-  Un passo che li usa si rompe con un messaggio che dice cosa manca. Non c'è
-  nessun ascolto simulato: un segnale finto farebbe partire i motori a valle, e
-  costa chiamate vere.
+- **`manual`** — true and working. Somebody presses and it starts, carrying a
+  text. It is the source the window's launch button will use.
+- **`sailor-terminal`**, **`orca-terminal`** — declared and **not listened to**.
+  A step that uses them breaks with a message that says what is missing. There
+  is no simulated listening: a fake signal would start the engines downstream,
+  and that costs real calls.
 
-Perché l'ascolto di un terminale non è realizzabile onestamente oggi:
+Why listening to a terminal cannot be done honestly today:
 
-1. **Nessun processo di Sailor resta in piedi.** `sailor flow run` esegue il
-   grafo una volta e finisce: non c'è nessuno che aspetti un segnale e faccia
-   partire una corsa quando arriva. Questo manca **prima** di qualunque lettore.
-2. **Il terminale di Sailor non esiste ancora**: nessuno scrive il file che il
-   descrittore dichiara. Il percorso lì scritto è la forma che avrà, non una
-   misura.
-3. **Il registro dei pannelli di Orca non è una sorgente onesta** (misurato il
-   28/08/2026): `terminal-history/*/output.log` è un formato binario a frame con
-   dentro byte di terminale ANSI — ridisegni di schermo, non messaggi — svuotato
-   sul posto oltre i 5 MB e scritto a lotti ogni ~5 secondi. Un lettore in coda
-   perde contenuto senza accorgersene, e ricostruire il testo vorrebbe dire
-   riscrivere un emulatore di terminale. L'unica via supportata è
-   `orca terminal read --json --cursor N`, che restituisce testo: è la forma
-   dichiarata nel descrittore, e serve un lettore che conservi il cursore fra
-   una corsa e l'altra.
+1. **No Sailor process stays up.** `sailor flow run` runs the graph once and
+   finishes: there is nobody waiting for a signal and starting a run when one
+   arrives. This is missing **before** any reader.
+2. **Sailor's terminal does not exist yet**: nobody writes the file the
+   descriptor declares. The path written there is the shape it will have, not a
+   measurement.
+3. **Orca's panel register is not an honest source** (measured on 28/08/2026):
+   `terminal-history/*/output.log` is a binary frame format with ANSI terminal
+   bytes inside — screen redraws, not messages — emptied in place beyond 5 MB
+   and written in batches every ~5 seconds. A reader queuing behind it loses
+   content without noticing, and rebuilding the text would mean rewriting a
+   terminal emulator. The only supported way is
+   `orca terminal read --json --cursor N`, which returns text: it is the shape
+   declared in the descriptor, and it needs a reader that keeps the cursor from
+   one run to the next.
 
-## Il perimetro, dichiarato e non applicato
+## The perimeter, declared and not enforced
 
-I due motori sono invocati in sola lettura — `--sandbox read-only` per il primo,
-`--mode plan` per il secondo, nessuna opzione che allarghi i permessi ai due
-passi che usano Claude. È una dichiarazione negli argomenti, **non un limite che
-qualcuno faccia rispettare**: il campo che dovrebbe dire dove un flusso può
-scrivere esiste, ma nessuno lo legge. Voce aperta:
+The two engines are invoked read-only — `--sandbox read-only` for the first,
+`--mode plan` for the second, no option that widens the permissions of the two
+steps that use Claude. It is a declaration in the arguments, **not a limit
+anybody enforces**: the field that ought to say where a flow may write exists,
+but nobody reads it. Open entry:
 `2026-08-28-il-perimetro-di-un-flusso-non-limita-niente.md`.
