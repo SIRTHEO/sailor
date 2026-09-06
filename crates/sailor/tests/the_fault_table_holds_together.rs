@@ -17,7 +17,7 @@ fn repository_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(|crates| crates.parent())
-        .expect("il crate sta in <radice>/crates/sailor")
+        .expect("the crate lives in <root>/crates/sailor")
         .to_path_buf()
 }
 
@@ -30,21 +30,23 @@ struct Fault {
 impl Fault {
     /// A fault counts as open until the repair it declares is done.
     ///
-    /// **«PARTLY CLOSED» IS OPEN, AND THE COUNT MUST SAY SO.** A middle state
+    /// **«CLOSED IN PART» IS OPEN, AND THE COUNT MUST SAY SO.** A middle state
     /// tells which half is done; it does not take a row out of the tally. A
     /// reader of «eleven open» believes eleven remain, when twelve do, and the
     /// direction of that error is never random — it is always the reassuring
     /// one, which is why the rule lives here and not in the head of whoever
-    /// updates the prose. The real case: fault 37 was marked partly closed with
-    /// the lie repaired and **the measure still to make**, the half that counts.
-    /// The `partly` field already existed and nobody asked it: a field computed
-    /// and never read is the shape of a defence, not a defence.
+    /// updates the prose. The reading itself lives in the crate: a second copy
+    /// of it here would drift from the one the store counts with.
     fn still_open(&self) -> bool {
-        matches!(
-            self.standing,
-            faults::Standing::Open | faults::Standing::PartlyClosed
-        )
+        self.standing.still_open()
     }
+}
+
+/// The register as the repository carries it.
+fn register() -> String {
+    let path = repository_root().join("docs/faults-encountered.md");
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("reading {}: {error}", path.display()))
 }
 
 /// The rows of the table, read from the document.
@@ -52,16 +54,11 @@ impl Fault {
 /// **THIS READING IS BLIND TO A BLANK LINE INSIDE THE TABLE**, worth knowing
 /// before trusting what this test claims. It skips every line not starting with
 /// `|`, so a hole between the rows fells nothing: the faults above and below
-/// stay correctly numbered and the table goes on «holding together». A merge
-/// once removed one at line 64, and an eye found it, not this test. Closing that
-/// gap means to stop filtering and measure the block instead: from the first
-/// line starting with `|` to the last, every line between must be a table row.
-fn faults() -> Vec<Fault> {
-    let path = repository_root().join("docs/faults-encountered.md");
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("leggere {}: {error}", path.display()));
-    let rows: Vec<Fault> = text
-        .lines()
+/// stay correctly numbered and the table goes on «holding together». Closing
+/// that gap means to stop filtering and measure the block instead: from the
+/// first line starting with `|` to the last, every line between must be a row.
+fn faults_in(text: &str) -> Vec<Fault> {
+    text.lines()
         .filter_map(|line| {
             let trimmed = line.trim();
             if !trimmed.starts_with('|') {
@@ -86,20 +83,34 @@ fn faults() -> Vec<Fault> {
                 cells,
             })
         })
-        .collect();
+        .collect()
+}
+
+fn faults() -> Vec<Fault> {
+    let rows = faults_in(&register());
     workspace::measured(rows.len(), "rows of the fault table read");
     rows
 }
+
+/// Three rows in the shape the register writes them, one per standing.
+///
+/// **A JUDGE OF THE READING MUST NOT DEPEND ON THE DAY'S REGISTER.** Against
+/// the real file the reading is measured on whatever rows happen to be there,
+/// and the day no row is closed in part the check measures nothing while
+/// staying green.
+const A_TABLE_OF_THREE: &str = "\
+| # | date | what happened | how it showed | what would have prevented it | status |
+|---|---|---|---|---|---|
+| 1 | 01/09 | a step called a failure a success | reading the ledger by hand | a non-zero exit breaks the step | **open** |
+| 2 | 02/09 | a drawing painted in the colour behind it | a picture of the screen | the screen as an oracle | **closed** on 03/09 |
+| 3 | 03/09 | a count that reassured instead of measuring | counting the rows by hand | this table | **closed in part** on 04/09, the measure still to make |
+";
 
 /// No repeated number, no hole: the test that would have caught the collision.
 #[test]
 fn every_fault_has_its_own_number_and_none_is_missing() {
     let faults = faults();
-    assert!(
-        faults.len() >= 25,
-        "la tabella si è svuotata: {}",
-        faults.len()
-    );
+    assert!(faults.len() >= 25, "the table emptied: {}", faults.len());
 
     let mut seen: BTreeMap<usize, usize> = BTreeMap::new();
     for fault in &faults {
@@ -113,8 +124,8 @@ fn every_fault_has_its_own_number_and_none_is_missing() {
         .collect();
     assert!(
         twice.is_empty(),
-        "due guasti diversi con lo stesso numero: {twice:?}. Succede quando due \
-         sessioni scrivono nel file nello stesso minuto, e nessuno se ne accorge"
+        "two different faults carry the same number: {twice:?}. It happens when \
+         two sessions write into the file in the same minute, and nobody notices"
     );
 
     let missing: Vec<usize> = (1..=faults.len())
@@ -122,8 +133,8 @@ fn every_fault_has_its_own_number_and_none_is_missing() {
         .collect();
     assert!(
         missing.is_empty(),
-        "numeri saltati: {missing:?}. Un buco vuol dire che una riga è stata \
-         tolta senza rinumerare, e i rinvii da altri documenti puntano al vuoto"
+        "numbers skipped: {missing:?}. A hole means a row was taken out without \
+         renumbering, and the references other documents make point at nothing"
     );
 }
 
@@ -140,11 +151,32 @@ fn every_row_says_where_it_stands_in_words_the_count_can_read() {
 
     assert!(
         unread.is_empty(),
-        "lo stato di {:?} non comincia con nessuno dei marcatori che il conto \
-         sa leggere, quindi quei guasti sono già usciti dal conto degli aperti \
-         senza che niente lo dicesse. È il difetto che il deposito rifiuta alla \
-         porta; qui si sorveglia il documento, che porta non ne ha",
-        unread
+        "the status of {unread:?} begins with none of the markers the count can \
+         read, so those faults have already left the open tally with nothing \
+         saying so. It is the defect the store refuses at the door; here the \
+         document is watched, which has no door"
+    );
+}
+
+/// **«CLOSED IN PART» IS OPEN.** Reading it as closed takes the half-repaired
+/// faults out of the tally in one edit, and the error goes the reassuring way.
+#[test]
+fn a_row_closed_in_part_is_counted_open_and_never_closed() {
+    let rows = faults_in(A_TABLE_OF_THREE);
+    assert_eq!(rows.len(), 3, "the three rows of the fixture must be read");
+
+    let open: Vec<usize> = rows
+        .iter()
+        .filter(|fault| fault.still_open())
+        .map(|fault| fault.number)
+        .collect();
+
+    assert_eq!(
+        open,
+        vec![1, 3],
+        "row 3 is closed in part, which says which half is done and does not \
+         take the row out of the count: reading it as closed lowers the tally \
+         in the one direction nobody checks"
     );
 }
 
@@ -152,16 +184,30 @@ fn every_row_says_where_it_stands_in_words_the_count_can_read() {
 /// time would drop the open tally with every row translated.
 #[test]
 fn a_marker_translated_halfway_leaves_the_count_instead_of_lowering_it() {
+    let table = A_TABLE_OF_THREE.replace("**closed in part**", "**chiuso in parte**");
+    let rows = faults_in(&table);
+
+    let unread: Vec<usize> = rows
+        .iter()
+        .filter(|fault| fault.standing == faults::Standing::Unrecognised)
+        .map(|fault| fault.number)
+        .collect();
+
     assert_eq!(
-        faults::standing_of("**open** — measured and not yet built"),
+        unread,
+        vec![3],
+        "a marker the reading was never taught must come out unrecognised, not \
+         closed: the direction of that error is the reassuring one, and the row \
+         would leave the tally with nothing failing"
+    );
+    assert_eq!(
+        faults::standing_of("**aperto** and the rest of the sentence"),
         faults::Standing::Unrecognised,
-        "un marcatore tradotto senza insegnare la lettura dev'essere non \
-         riconosciuto, non chiuso: la direzione dell'errore sarebbe quella che \
-         tranquillizza, e sette righe uscirebbero dal conto in una modifica"
+        "the same holds for a marker left behind by the translation"
     );
 }
 
-/// **AN ENTRY WITH NO «WHAT WOULD HAVE STOPPED IT» IS NOT FINISHED**, as the
+/// **AN ENTRY WITH NO «WHAT WOULD HAVE PREVENTED IT» IS NOT FINISHED**, as the
 /// file says in its own header. A fault with no sequel is a diary, which is
 /// exactly what that file declares it is not.
 #[test]
@@ -170,17 +216,17 @@ fn no_fault_is_left_without_the_check_that_would_have_stopped_it() {
         assert_eq!(
             fault.cells.len(),
             6,
-            "il guasto {} non ha sei colonne: {:?}",
+            "fault {} has not six columns: {:?}",
             fault.number,
             fault.cells
         );
         for (column, name) in [
-            "numero",
-            "data",
-            "cosa è successo",
-            "come si è visto",
-            "cosa lo impedirebbe",
-            "stato",
+            "number",
+            "date",
+            "what happened",
+            "how it showed",
+            "what would have prevented it",
+            "status",
         ]
         .iter()
         .enumerate()
@@ -188,70 +234,58 @@ fn no_fault_is_left_without_the_check_that_would_have_stopped_it() {
         {
             assert!(
                 !fault.cells[column].is_empty(),
-                "il guasto {} ha «{name}» vuoto",
+                "fault {} has «{name}» empty",
                 fault.number
             );
         }
     }
 }
 
-/// The numbers up to nineteen, which follow no rule at all in Italian.
+/// The numbers up to nineteen, which follow no rule at all in English.
 const IRREGULAR: [&str; 20] = [
     "zero",
-    "uno",
-    "due",
-    "tre",
-    "quattro",
-    "cinque",
-    "sei",
-    "sette",
-    "otto",
-    "nove",
-    "dieci",
-    "undici",
-    "dodici",
-    "tredici",
-    "quattordici",
-    "quindici",
-    "sedici",
-    "diciassette",
-    "diciotto",
-    "diciannove",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "eleven",
+    "twelve",
+    "thirteen",
+    "fourteen",
+    "fifteen",
+    "sixteen",
+    "seventeen",
+    "eighteen",
+    "nineteen",
 ];
 
 /// The tens.
 const TENS: [&str; 10] = [
-    "",
-    "",
-    "venti",
-    "trenta",
-    "quaranta",
-    "cinquanta",
-    "sessanta",
-    "settanta",
-    "ottanta",
-    "novanta",
+    "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety",
 ];
 
 /// The number written in letters, the way the prose under the table writes it.
 ///
-/// **THIS WAS ONCE A LIST OF FORTY-EIGHT HAND-WRITTEN NUMBERS**, and every new
-/// fault forced it longer — three times in one afternoon, failing each time with
-/// «no word for N: extend IN_WORDS». A list that grows with the data is not a
-/// translation but a debt on monthly instalments, and a hand-written list can
-/// hold a typo nobody sees, being the only source to check it against. The rules
-/// instead are three, and they do not change: below twenty there is no rule and
-/// the words are listed; above it, ten plus unit; **the ten loses its final
-/// vowel before «uno» and «otto»** (ventuno, ventotto) and **«tre» takes an
-/// accent in the tail** (ventitré). That is all.
+/// **THIS WAS ONCE A LIST OF HAND-WRITTEN NUMBERS**, and every new fault forced
+/// it longer. A list that grows with the data is a debt on instalments, and it
+/// is its own only source, so a typo in it cannot be seen. The rules instead
+/// are three and do not change: below twenty there is no rule and the words are
+/// listed; above it, ten and unit joined by a hyphen; a hundred and the rest
+/// joined by «and».
 fn spelled(number: usize) -> String {
     if number < 20 {
         return IRREGULAR[number].to_string();
     }
     assert!(
         number < 1000,
-        "la prosa non ha mai scritto un numero a quattro cifre in lettere: se serve, \
-         la regola delle migliaia va aggiunta qui invece che aggirata"
+        "the prose has never written a four-digit number in letters: if it must, \
+         the rule for thousands belongs here rather than around it"
     );
     if number >= 100 {
         return with_hundreds(number);
@@ -260,71 +294,59 @@ fn spelled(number: usize) -> String {
     let tens = TENS[ten];
     match unit {
         0 => tens.to_string(),
-        // The ten is truncated before the two vowels that open.
-        1 | 8 => format!("{}{}", &tens[..tens.len() - 1], IRREGULAR[unit]),
-        // «tre» in the tail carries the accent: ventitré, never ventitre.
-        3 => format!("{tens}tré"),
-        _ => format!("{tens}{}", IRREGULAR[unit]),
+        _ => format!("{tens}-{}", IRREGULAR[unit]),
     }
 }
 
-/// The hundreds: «cento» keeps its vowel before «uno» — centouno — but before
-/// «otto» the two o merge into one, centotto. Past it the rule is the same.
+/// The hundreds: a bare hundred takes the article, and what follows it takes
+/// «and» — a hundred and twenty-three, never a hundred twenty-three.
 fn with_hundreds(number: usize) -> String {
     let (hundred, rest) = (number / 100, number % 100);
     let prefix = match hundred {
-        1 => "cento".to_string(),
-        _ => format!("{}cento", IRREGULAR[hundred]),
+        1 => "a hundred".to_string(),
+        _ => format!("{} hundred", IRREGULAR[hundred]),
     };
     if rest == 0 {
         return prefix;
     }
-    // «tre» takes its accent after a hundred as it does after a ten.
-    let tail = match rest {
-        3 => "tré".to_string(),
-        _ => spelled(rest),
-    };
-    match tail.starts_with('o') {
-        true => format!("{}{tail}", &prefix[..prefix.len() - 1]),
-        false => format!("{prefix}{tail}"),
-    }
+    format!("{prefix} and {}", spelled(rest))
 }
 
 /// **A TRANSLATOR MUST BE CHECKED.** The old version was a hand-written list:
 /// right or wrong, it was still the only source, so a typo could not be seen. A
-/// function goes wrong differently — on the exceptions — and those are what this
-/// test lists, not every number. The chosen cases are the three points where the
-/// general rule falls short: the truncation before «uno» and «otto», the accent
-/// on «tré» in the tail, and the round tens.
+/// function goes wrong differently — on the joins and on the spellings that are
+/// not built from the digit's own word — and those are what this test lists,
+/// not every number.
 #[test]
-fn the_numbers_are_spelled_the_way_italian_spells_them() {
+fn the_numbers_are_spelled_the_way_english_spells_them() {
     for (number, word) in [
         (0, "zero"),
-        (3, "tre"),
-        (16, "sedici"),
-        (19, "diciannove"),
-        (20, "venti"),
-        (21, "ventuno"),
-        (23, "ventitré"),
-        (28, "ventotto"),
-        (30, "trenta"),
-        (33, "trentatré"),
-        (38, "trentotto"),
-        (41, "quarantuno"),
-        (100, "cento"),
-        (101, "centouno"),
-        (103, "centotré"),
-        (108, "centotto"),
-        (121, "centoventuno"),
-        (180, "centottanta"),
-        (200, "duecento"),
-        (308, "trecentotto"),
-        (47, "quarantasette"),
-        (68, "sessantotto"),
-        (91, "novantuno"),
-        (93, "novantatré"),
+        (3, "three"),
+        (13, "thirteen"),
+        (15, "fifteen"),
+        (19, "nineteen"),
+        (20, "twenty"),
+        (21, "twenty-one"),
+        (23, "twenty-three"),
+        (28, "twenty-eight"),
+        (30, "thirty"),
+        (40, "forty"),
+        (41, "forty-one"),
+        (47, "forty-seven"),
+        (50, "fifty"),
+        (68, "sixty-eight"),
+        (80, "eighty"),
+        (91, "ninety-one"),
+        (100, "a hundred"),
+        (101, "a hundred and one"),
+        (103, "a hundred and three"),
+        (121, "a hundred and twenty-one"),
+        (123, "a hundred and twenty-three"),
+        (180, "a hundred and eighty"),
+        (200, "two hundred"),
+        (308, "three hundred and eight"),
     ] {
-        assert_eq!(spelled(number), word, "{number} si scrive «{word}»");
+        assert_eq!(spelled(number), word, "{number} is written «{word}»");
     }
 }
 
@@ -338,12 +360,10 @@ fn the_counts_written_in_prose_match_the_table_they_come_from() {
     let open = faults.iter().filter(|fault| fault.still_open()).count();
     let total = faults.len();
 
-    let path = repository_root().join("docs/faults-encountered.md");
-    let text = std::fs::read_to_string(&path).expect("leggere il file dei guasti");
-    let prose = text
-        .split_once("## Cosa dice questa tabella")
-        .map(|(_, after)| after.to_owned())
-        .expect("la sezione che commenta la tabella");
+    // The whole document is searched rather than the section under the table:
+    // a heading is prose somebody may re-word, and a re-worded heading must not
+    // turn a true count into a red line.
+    let prose = register();
 
     // The capital goes on the word, not on the asterisk before it: the sentence
     // opens with `**`, and capitalising the first character left both forms
@@ -351,14 +371,15 @@ fn the_counts_written_in_prose_match_the_table_they_come_from() {
     let word = spelled(open);
     let capital = {
         let mut chars = word.chars();
-        let first = chars.next().expect("la parola non è vuota");
+        let first = chars.next().expect("the word is not empty");
         format!("{}{}", first.to_uppercase(), chars.as_str())
     };
-    let sentence = format!("**{word} sono ancora aperti** su {}", spelled(total));
-    let capitalized = format!("**{capital} sono ancora aperti** su {}", spelled(total));
+    let sentence = format!("**{word} are still open** out of {}", spelled(total));
+    let capitalized = format!("**{capital} are still open** out of {}", spelled(total));
     assert!(
         prose.contains(&sentence) || prose.contains(&capitalized),
-        "la prosa non dice il conto vero. Contati dalla tabella: {open} aperti su \
-         {total}, cioè «{capitalized}». Cambia la frase, non la tabella"
+        "the prose does not say the true count. Counted from the table: {open} \
+         open out of {total}, that is «{capitalized}». Change the sentence, not \
+         the table"
     );
 }

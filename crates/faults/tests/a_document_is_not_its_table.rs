@@ -13,7 +13,7 @@ fn a_fault(number: i64, what: &str) -> Fault {
         what_happened: what.to_owned(),
         how_it_showed: "reading it".to_owned(),
         what_would_prevent: "a check".to_owned(),
-        status: "**aperto**".to_owned(),
+        status: "**open**".to_owned(),
     }
 }
 
