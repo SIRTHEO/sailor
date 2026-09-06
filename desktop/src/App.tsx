@@ -31,16 +31,7 @@ import {
 import { stepUsageOfRun, type StepUsage } from "./stepusage";
 import { stepStatesOfCanvas } from "./runstate";
 import { BlankCanvas, type PlacesAsk } from "./BlankCanvas";
-import {
-  MACHINE,
-  MACHINE_GROUND,
-  PLACES,
-  SECTIONS,
-  TERMINALS_GROUND,
-  onItsOwnName,
-  type MachineRow,
-  type Section,
-} from "./places";
+import { MACHINE, MACHINE_GROUND, PLACES, SECTIONS, TERMINALS_GROUND, onItsOwnName, type MachineRow, type Section } from "./places";
 import { World, OF_THIS_TREE, type FlowGroup } from "./World";
 import { liveOf, newestPerFlow } from "./flowlive";
 import { amongThese, rememberWhere, whereYouWere } from "./whereyouwere";
