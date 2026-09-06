@@ -286,3 +286,68 @@ describe("the name of a step reads the same at every zoom", () => {
     expect(near.get("-webkit-line-clamp")).toBe("3");
   });
 });
+
+/**
+ * **A SIGNAL LIVES IN A BORDER, NOT IN A PANEL.** The band declared
+ * `width: clamp(280px, …)` and pushed the terminal out below 600 pixels, past
+ * 454 green tests: prohibition 11 wants three conditions it did not have. The
+ * question here is narrower — no signal declares a width at all.
+ */
+describe("i tre segnali non tolgono spazio al terminale", () => {
+  const SIGNALS = [".pane__where", ".pane__tree", ".pane__notch", ".pane__progress"];
+  const WIDTHS = ["width", "min-width", "flex-basis"];
+
+  /** The rules that speak of one of the three signals, or of their highlight. */
+  function ofSignals(alsoStirred = false): Array<{ selector: string; declarations: Array<[string, string]> }> {
+    return outsideRoot.filter((rule) => {
+      const selector = rule.selector.trim();
+      if (alsoStirred && selector.includes("[data-stirred]")) return true;
+      return SIGNALS.some((signal) => selector.startsWith(signal));
+    });
+  }
+
+  test("la prova guarda dei segnali che esistono davvero", () => {
+    // Rename a class and the tests below go green for having looked at
+    // nothing: that is how a check dies in silence.
+    const seen = SIGNALS.filter((signal) =>
+      sheet.rules.some((rule) => rule.selector.trim().startsWith(signal)),
+    );
+    expect(seen).toEqual(SIGNALS);
+    expect(ofSignals(true).length).toBeGreaterThan(SIGNALS.length);
+  });
+
+  /** `min-width: 0` is no floor: it is the valve that lets a thing shrink. */
+  const NO_FLOOR = new Set(["0", "0px", "auto", "none"]);
+
+  test("NESSUN SEGNALE DICHIARA UNA LARGHEZZA, in nessuna unità", () => {
+    const guilty = ofSignals().flatMap((rule) =>
+      rule.declarations
+        .filter(([property, value]) => WIDTHS.includes(property) && !NO_FLOOR.has(value.trim()))
+        .map(([property, value]) => `${rule.selector.trim()} { ${property}: ${value.trim()} }`),
+    );
+    expect(guilty, "un segnale con una larghezza è una colonna, e la toglie al terminale").toEqual([]);
+  });
+
+  test("LA TACCA È FUORI DAL FLUSSO: sta sul bordo, non in fila nell'intestazione", () => {
+    const notch = new Map(
+      sheet.rules
+        .filter((rule) => rule.selector.trim() === ".pane__notch")
+        .flatMap((rule) => rule.declarations),
+    );
+    expect(notch.get("position")?.trim()).toBe("absolute");
+  });
+
+  /**
+   * **NOTHING MOVES WHEN NOTHING HAPPENED.** A mark that pulses makes a silent
+   * agent look alive, and a crossing is a colour that stops, not a motion.
+   */
+  test("NESSUN SEGNALE E NESSUN RISALTO DICHIARA UN'ANIMAZIONE", () => {
+    const moving = ["animation", "animation-name", "transition", "transform"];
+    const guilty = ofSignals(true).flatMap((rule) =>
+      rule.declarations
+        .filter(([property]) => moving.includes(property))
+        .map(([property, value]) => `${rule.selector.trim()} { ${property}: ${value.trim()} }`),
+    );
+    expect(guilty, "un segnale che si muove da solo").toEqual([]);
+  });
+});
