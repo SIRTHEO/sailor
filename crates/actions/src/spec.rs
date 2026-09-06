@@ -1,6 +1,6 @@
 //! The typed input of an engine step, as the flow wrote it.
 
-use flow::ValueSchema;
+use flow::{Refusal, ValueSchema};
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -197,6 +197,11 @@ pub(crate) struct EngineSpec {
     #[allow(dead_code)]
     #[serde(default)]
     pub(crate) needs_extensions: Vec<String>,
+    /// Why the previous attempt's answer was refused, written by the executor
+    /// when it retries the step. In a `with` it would tell the engine of a
+    /// refusal that never happened.
+    #[serde(default)]
+    pub(crate) after_refusal: Option<Refusal>,
     /// Se questo passo apre una sessione, ne riprende una, o ne ramifica una.
     ///
     /// Assente — il valore predefinito — vuol dire che il passo apre un
