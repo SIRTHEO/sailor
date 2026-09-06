@@ -288,23 +288,16 @@ describe("the name of a step reads the same at every zoom", () => {
 });
 
 /**
- * **UN SEGNALE STA IN UN BORDO, NON IN UN PANNELLO.**
- *
- * La fascia scritta la notte del 05/09 dichiarava `width: clamp(280px, …)` e
- * stava accanto al terminale: sotto i 600 pixel il terminale usciva dalla
- * finestra, e 454 prove verdi non se ne accorgevano. Il divieto 11 non la
- * prendeva perché guarda solo `width: Npx` con `flex-shrink: 0` e uno
- * scorrimento proprio — tre condizioni che quella regola non aveva.
- *
- * Qui la domanda è più stretta: **nessuno dei tre segnali dichiara una
- * larghezza**. Rimetti `min-width: 200px` su `.pane__notch` e questa diventa
- * rossa.
+ * **A SIGNAL LIVES IN A BORDER, NOT IN A PANEL.** The band declared
+ * `width: clamp(280px, …)` and pushed the terminal out below 600 pixels, past
+ * 454 green tests: prohibition 11 wants three conditions it did not have. The
+ * question here is narrower — no signal declares a width at all.
  */
 describe("i tre segnali non tolgono spazio al terminale", () => {
   const SIGNALS = [".pane__where", ".pane__tree", ".pane__notch", ".pane__progress"];
   const WIDTHS = ["width", "min-width", "flex-basis"];
 
-  /** Le regole del foglio che parlano di uno dei tre segnali o del loro risalto. */
+  /** The rules that speak of one of the three signals, or of their highlight. */
   function ofSignals(alsoStirred = false): Array<{ selector: string; declarations: Array<[string, string]> }> {
     return outsideRoot.filter((rule) => {
       const selector = rule.selector.trim();
@@ -314,8 +307,8 @@ describe("i tre segnali non tolgono spazio al terminale", () => {
   }
 
   test("la prova guarda dei segnali che esistono davvero", () => {
-    // Rinomina una classe e le prove sotto diventerebbero verdi per non aver
-    // guardato niente: è così che un controllo muore in silenzio.
+    // Rename a class and the tests below go green for having looked at
+    // nothing: that is how a check dies in silence.
     const seen = SIGNALS.filter((signal) =>
       sheet.rules.some((rule) => rule.selector.trim().startsWith(signal)),
     );
@@ -323,7 +316,7 @@ describe("i tre segnali non tolgono spazio al terminale", () => {
     expect(ofSignals(true).length).toBeGreaterThan(SIGNALS.length);
   });
 
-  /** `min-width: 0` non è un pavimento: è la valvola che lascia stringere. */
+  /** `min-width: 0` is no floor: it is the valve that lets a thing shrink. */
   const NO_FLOOR = new Set(["0", "0px", "auto", "none"]);
 
   test("NESSUN SEGNALE DICHIARA UNA LARGHEZZA, in nessuna unità", () => {
@@ -345,9 +338,8 @@ describe("i tre segnali non tolgono spazio al terminale", () => {
   });
 
   /**
-   * **NIENTE SI MUOVE QUANDO NON È SUCCESSO NIENTE.** Un segno che pulsa fa
-   * sembrare vivo un agente muto: è la bugia che il consulto vieta per nome.
-   * Il risalto di un passaggio è un colore che si spegne, non un moto.
+   * **NOTHING MOVES WHEN NOTHING HAPPENED.** A mark that pulses makes a silent
+   * agent look alive, and a crossing is a colour that stops, not a motion.
    */
   test("NESSUN SEGNALE E NESSUN RISALTO DICHIARA UN'ANIMAZIONE", () => {
     const moving = ["animation", "animation-name", "transition", "transform"];

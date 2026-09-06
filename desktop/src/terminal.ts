@@ -572,11 +572,7 @@ export interface Asking {
   recovered?: string | null;
 }
 
-/**
- * **A REFUSAL THE WINDOW GOT PAST ON ITS OWN IS NOT AN ALARM.** An alarm that
- * fires for something already handled teaches the eye to skip the corner where
- * the real one appears, and then nothing is on screen at all.
- */
+/** **A REFUSAL THE WINDOW GOT PAST ON ITS OWN IS NOT AN ALARM.** */
 export function attentionOf(asking: Asking): Attention {
   const blocked = asking.blocked ?? null;
   if (blocked !== null && blocked !== "") return { need: "blocked", why: blocked };
@@ -593,9 +589,8 @@ export type Progress =
   | { how: "unsure"; because: "no_channel" | "nothing_since" };
 
 /**
- * **BEING ALIVE IS NOT PROGRESS, AND SILENCE IS NOT CONCLUSION.** A process
- * that has printed nothing for a minute may be thinking or may be wedged, and
- * the two are told apart by nobody here: that is what `unsure` says out loud.
+ * **BEING ALIVE IS NOT PROGRESS, AND SILENCE IS NOT CONCLUSION.** Thinking and
+ * wedged are told apart by nobody here, and `unsure` says so.
  */
 export function progressOf(liveness: Liveness, spokeAt: number | null, now: number): Progress {
   if (liveness.state === "closed") return { how: "done" };
@@ -605,9 +600,8 @@ export function progressOf(liveness: Liveness, spokeAt: number | null, now: numb
 }
 
 /**
- * The panes in the order they are drawn: **the focused one first, and nothing
- * else moves.** Output and state are not arguments, so no arrival can reorder
- * what somebody is looking at.
+ * **THE FOCUSED ONE FIRST, AND NOTHING ELSE MOVES.** Output and state are not
+ * arguments, so no arrival can reorder what somebody is looking at.
  */
 export function paneOrder<T extends { id: string }>(opened: readonly T[], focused: string | null): T[] {
   return [...opened].sort((a, b) => Number(b.id === focused) - Number(a.id === focused));

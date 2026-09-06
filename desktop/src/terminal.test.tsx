@@ -1243,13 +1243,10 @@ describe("the terminals inside the window", () => {
 // ── the three facts that stay on screen ──────────────────────────────────
 
 /**
- * **I TRE FATTI, UNO PER AGENTE, NEI BORDI DEI TERMINALI GIÀ PRESENTI.**
- *
- * Il consulto del 06/09 dice che i due comportamenti su cui si regge il
- * verdetto «cruscotto» erano passati fra 454 prove verdi. Queste sono le
- * prove che li avrebbero presi: il segnale non toglie spazio al terminale,
- * niente si muove quando non è successo niente, l'ordine dei pannelli non
- * dipende da chi parla, e l'assenza di un segnale non è una conclusione.
+ * **THE TWO BEHAVIOURS THAT EARNED THE VERDICT PASSED 454 GREEN TESTS.** These
+ * are the ones that would have caught them: a signal takes no width from the
+ * terminal, nothing moves when nothing happened, the order of the panes does
+ * not follow who is talking, and an absent signal is not a conclusion.
  */
 
 describe("se questo agente aspetta proprio me", () => {
@@ -1260,14 +1257,13 @@ describe("se questo agente aspetta proprio me", () => {
       need: "blocked",
       why: "the engine refused the line",
     });
-    // Fermo batte in attesa: chi non può proseguire non sta decidendo.
+    // Blocked outranks waiting: whoever cannot go on is not deciding.
     expect(attentionOf({ handed: true, blocked: "no such folder" }).need).toBe("blocked");
   });
 
   /**
-   * **IL MUTANTE:** far entrare `recovered` nel conto. Un allarme che scatta
-   * per qualcosa di già rimediato insegna all'occhio a saltare l'angolo dove
-   * comparirà quello vero.
+   * **THE MUTANT:** let `recovered` into the count. An alarm for something
+   * already handled teaches the eye to skip the corner the real one uses.
    */
   test("UN RIFIUTO CHE IL SISTEMA HA RECUPERATO DA SOLO NON PRODUCE ALLARME", () => {
     expect(attentionOf({ recovered: "the backlog could not be read; the live output still flows" })).toEqual({
@@ -1289,30 +1285,27 @@ describe("se procede, ha finito, oppure non sappiamo più cosa faccia", () => {
   });
 
   /**
-   * **IL MUTANTE:** trattare l'assenza di segnale come conclusione, cioè
-   * rispondere `done` quando `spokeAt` è nullo. Un agente che non stampa da
-   * un'ora è indistinguibile, da qui, da uno che sta pensando: dirlo è
-   * l'unica cosa vera che questa finestra può dire.
+   * **THE MUTANT:** answer `done` when `spokeAt` is null, treating an absent
+   * signal as a conclusion. Saying so is the one true thing available here.
    */
   test("STATO SCONOSCIUTO NON È STATO FERMO: senza un segnale attendibile esce l'incertezza", () => {
     expect(progressOf(alive, null, 5000)).toEqual({ how: "unsure", because: "nothing_since" });
     expect(progressOf(alive, 1000, 1000 + ATTESTED_MS + 1)).toEqual({ how: "unsure", because: "nothing_since" });
-    // Essere vivo non è avanzare: nessuno dei due casi sopra è una spunta.
+    // Being alive is not progress: neither case above is a tick.
     expect(PROGRESS_MARK.unsure).not.toBe(PROGRESS_MARK.done);
   });
 });
 
 describe("l'ordine dei terminali", () => {
   /**
-   * **IL MUTANTE:** riordinare per stato. La firma è la prova: chi decide
-   * l'ordine non riceve né l'uscita né lo stato, quindi non può leggerli.
+   * **THE MUTANT:** sort by state. The signature is the proof: whoever decides
+   * the order is handed neither the output nor the state.
    */
   test("NON CAMBIA ALL'ARRIVO DI USCITA O AL CAMBIO DI STATO", () => {
     const list = [{ id: "a" }, { id: "b" }, { id: "c" }];
     expect(paneOrder(list, null).map((one) => one.id)).toEqual(["a", "b", "c"]);
     expect(paneOrder(list, "c").map((one) => one.id)).toEqual(["c", "a", "b"]);
-    // Chiamata due volte con gli stessi argomenti risponde lo stesso: l'unica
-    // cosa che muove un pannello è la scelta di guardarlo.
+    // The only thing that moves a pane is choosing to look at it.
     expect(paneOrder(list, "c").map((one) => one.id)).toEqual(paneOrder(list, "c").map((one) => one.id));
   });
 });
@@ -1324,11 +1317,9 @@ describe("il risalto di un passaggio", () => {
   const stirred = () => screen.getByTestId("probe").getAttribute("data-stirred");
 
   /**
-   * **IL MUTANTE:** togliere la guardia `was === null`. La seconda riga è il
-   * difetto che questa prova ha preso mentre la scrivevo: la finestra apre
-   * senza sapere ancora in quale albero sta, e il primo albero che arriva
-   * faceva partire un risalto **all'avvio**. L'aggiornamento ordinario è
-   * misurato sui pannelli veri, più sotto.
+   * **THE MUTANT:** drop the `was === null` guard. Line two is the defect this
+   * test caught while it was being written: the window opens not knowing which
+   * tree it is in, and the first tree to arrive lit a highlight on startup.
    */
   test("ARRIVARE NON È UN PASSAGGIO, E IL RISALTO SI SPEGNE", () => {
     vi.useFakeTimers();
@@ -1345,7 +1336,7 @@ describe("il risalto di un passaggio", () => {
       rerender(<Probe value="/work/other" />);
       expect(stirred(), "il passaggio non ha richiamato l'occhio").toBe("true");
 
-      // E si ferma: richiama l'occhio una volta, poi il segnale resta fermo.
+      // And it stops: it calls the eye once, then the signal stands still.
       act(() => vi.advanceTimersByTime(STIR_MS + 10));
       expect(stirred(), "il risalto non si è spento: è diventato un lampeggio").toBeNull();
     } finally {
@@ -1377,8 +1368,8 @@ describe("i tre segnali nei bordi dei pannelli", () => {
         };
       });
       expect(places.map((place) => place.tree)).toEqual(["sailor", "packages"]);
-      // Nessun colore sostituisce l'identità, e la posizione è la stessa in
-      // tutti e due i pannelli: è ciò che permette di riconoscerli di sbieco.
+      // No colour replaces the identity, and the place is the same in both:
+      // that is what lets a pane be recognised out of the corner of the eye.
       expect(places.map((place) => place.whereAt)).toEqual([0, 0]);
       expect(places.map((place) => place.progressAt)).toEqual([0, 0]);
       expect(measure(20)).toEqual([]);
@@ -1409,8 +1400,8 @@ describe("i tre segnali nei bordi dei pannelli", () => {
   });
 
   test("una riga che il motore rifiuta è un quadrato, non una tacca", async () => {
-    // Nessun `terminal_submit` nel guscio finto: la riga non passa, e il
-    // lavoro resta fermo finché qualcuno non fa qualcosa.
+    // No `terminal_submit` in the fake shell: the line does not go through,
+    // and the work stands still until somebody does something.
     const shell = pretendShell({ terminal_list: TWO });
     try {
       render(
@@ -1448,8 +1439,8 @@ describe("i tre segnali nei bordi dei pannelli", () => {
       ]);
       expect(panes().some((pane) => pane.hasAttribute("data-stirred"))).toBe(false);
 
-      // UN AGGIORNAMENTO ORDINARIO NON PRODUCE RISALTO: ridisegnare non è un
-      // avvenimento, e i pannelli vengono ridisegnati tutto il giorno.
+      // AN ORDINARY UPDATE RAISES NOTHING: being redrawn is not an event, and
+      // a pane is redrawn all day long.
       await act(async () => {
         fireEvent.click(screen.getByRole("button", { name: /ttys004/ }));
       });
@@ -1465,7 +1456,7 @@ describe("i tre segnali nei bordi dei pannelli", () => {
       expect(ended.querySelector(".pane__device")?.textContent).toBe("ttys004");
       expect(ended.querySelector(".pane__progress")?.textContent).toBe(PROGRESS_MARK.done);
       expect(ended.getAttribute("data-stirred"), "il passaggio non ha richiamato l'occhio").toBe("true");
-      // E solo il passaggio: l'altro pannello non ha attraversato niente.
+      // And only the crossing: the other pane crossed nothing.
       expect(panes()[1].hasAttribute("data-stirred")).toBe(false);
     } finally {
       shell.stop();
@@ -1499,10 +1490,9 @@ describe("i tre segnali nei bordi dei pannelli", () => {
   });
 
   /**
-   * **LA FASCIA CEDE IL POSTO.** Accanto al terminale prendeva una colonna a
-   * ogni larghezza, e sotto i 600 pixel il terminale usciva dalla finestra.
-   * Il dettaglio resta raggiungibile: si chiede, e arriva sotto.
-   * **IL MUTANTE:** rimettila dentro `.session-work` e questa diventa rossa.
+   * **THE BAND GIVES UP ITS PLACE.** Beside the terminal it took a column at
+   * every width. It is asked for now, and it arrives underneath.
+   * **THE MUTANT:** put it back inside `.session-work`.
    */
   test("IL TERMINALE NON CEDE SPAZIO A UN SEGNALE: la fascia non è più sempre a schermo", async () => {
     const shell = pretendShell({ terminal_list: TWO });
