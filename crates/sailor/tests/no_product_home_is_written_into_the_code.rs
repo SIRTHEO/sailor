@@ -105,6 +105,12 @@ fn no_product_home_is_a_constant_in_the_code() {
             }
         }
     }
+    workspace::measured_against(
+        sources.len(),
+        "shipped sources read",
+        PRODUCT_HOMES.len(),
+        "product homes a path must not name",
+    );
 
     assert!(
         caught.is_empty(),
