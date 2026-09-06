@@ -3367,3 +3367,69 @@ fn a_repeat_no_engine_priced_is_held_apart_from_the_money() {
     assert_eq!(tally.served_without_a_cost, 1, "{tally:?}");
     assert_eq!(tally.served_micros, 0, "{tally:?}");
 }
+
+#[test]
+fn the_highest_projection_migration_is_the_schema_version() {
+    let highest = PROJECTION_MIGRATIONS
+        .iter()
+        .map(|(version, _)| *version)
+        .max()
+        .expect("at least one migration");
+    assert_eq!(
+        highest, PROJECTION_SCHEMA_VERSION,
+        "the migration list stops at {highest} but PROJECTION_SCHEMA_VERSION says \
+         {PROJECTION_SCHEMA_VERSION}: raise the two together"
+    );
+}
+
+#[test]
+fn no_projection_version_is_declared_twice() {
+    let mut seen = std::collections::HashSet::new();
+    for (version, _) in PROJECTION_MIGRATIONS {
+        assert!(
+            seen.insert(*version),
+            "version {version} is declared by two migration blocks: two branches both took the next number"
+        );
+    }
+}
+
+#[test]
+fn projection_migrations_are_contiguous_from_two_to_the_schema_version() {
+    let mut expected = 2;
+    for (version, _) in PROJECTION_MIGRATIONS {
+        assert_eq!(
+            *version, expected,
+            "after version {} comes {version}, not {expected}",
+            expected - 1
+        );
+        expected += 1;
+    }
+    assert_eq!(
+        expected - 1,
+        PROJECTION_SCHEMA_VERSION,
+        "the migration list ends at {} and PROJECTION_SCHEMA_VERSION is {PROJECTION_SCHEMA_VERSION}",
+        expected - 1
+    );
+}
+
+#[test]
+fn every_column_a_migration_adds_exists_in_a_fresh_store_under_its_version() {
+    let dir = TestDirectory::new("migration-columns");
+    let ledger = Ledger::open(&dir.0).expect("open a fresh ledger");
+    let connection = ledger.lock().expect("the connection");
+    let mut claimed = std::collections::HashMap::new();
+    for (version, change) in PROJECTION_MIGRATIONS {
+        let ProjectionChange::AddColumns { table, columns } = change else {
+            continue;
+        };
+        for (column, _) in *columns {
+            assert!(
+                column_exists(&connection, table, column).expect("read the table shape"),
+                "version {version} adds {table}.{column}, but a fresh store has no such column"
+            );
+            if let Some(earlier) = claimed.insert((*table, *column), *version) {
+                panic!("{table}.{column} is added by version {earlier} and again by version {version}");
+            }
+        }
+    }
+}
