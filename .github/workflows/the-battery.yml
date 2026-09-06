@@ -1,46 +1,17 @@
-# The battery runs on a machine that is not the one the code was written on.
+# The battery runs on a machine that is not the one the code was written on:
+# a battery that runs in one place cannot tell "the code is right" from "the
+# machine is the right one" (fault 43).
 #
-# **WHY THIS EXISTS, AND IT IS NOT "BECAUSE EVERYONE HAS ONE".** Until
-# 2026-09-01 this project's green existed only on the laptop of whoever was
-# working. Fault 43 is exactly that: the inventory answered "zero repos" **on
-# any other machine**, and nobody could see it here because those directories
-# happened to exist. A battery that runs in one place cannot tell "the code is
-# right" from "the machine is the right one".
+# No cache between runs. A cache that carries artefacts over makes a green
+# possible that depends on what was there before, the family of defect this
+# file exists to catch. When the slowness hurts, a cache goes in declaring
+# what it carries over.
 #
-# **NO CACHE BETWEEN RUNS, FOR NOW.** A cache that carries artefacts over from
-# an earlier run makes a green possible that depends on what was there before —
-# the same family of defect this file exists to catch. When the slowness starts
-# to hurt, a cache goes in **declaring** what it carries over.
-#
-# **THE FIRST DRAFT OF THIS FILE NEVER LET THE BATTERY START, AND THAT IS THE
-# FAULT THE PRESENT SHAPE COMES FROM.** It put `cargo fmt --check` and
-# `cargo clippy -- -D warnings` **before** `cargo test`, the way half the world
-# writes it. Measured on this code: rustfmt wants to change **415 places
-# across 90 files**; clippy's suspicions are counted by a judge of the suite
-# (`clippy_only_ever_gets_quieter`) and stand at **0**. Neither is a defect —
-# they are the gap between rustfmt's habits and a hand-broken style —
-# but both fall in ten seconds, and falling first they **kept the battery from
-# running in all three runs there had been**. The result was a light that was
-# always red and said nothing about the thing that matters: whether the code
-# passes its tests on a clean machine. A check that cries wolf every time gets
-# switched off after three times, and then it protects nothing at all — the
-# same reason the `pubblica` flow looks for the **shape** of a secret rather
-# than a list of prefixes.
-#
-# Hence the split: **a job that stops you** (the tests) and **a job that
-# counts** (the style). The two style numbers land in the run summary every
-# time, so they are in front of your eyes and it shows when they grow. They
-# stop nobody until a decision is taken: if one day Sailor adopts rustfmt, that
-# job becomes a real gate; if it decides not to, the measurement is removed
-# rather than left there making noise.
-#
-# **THE PROSE HERE IS ENGLISH AND THE REST OF THE PROJECT'S IS NOT**, which is
-# deliberate and was decided by Theo on 2026-09-01: what a stranger reads —
-# the CI, the README, the messages a user of the tool sees — is in English;
-# comments inside the code and everything under `docs/` stay in Italian. The
-# occasion was this very file: it went out with three job keys in Italian, and
-# `identifiers_are_in_english` never noticed **because it only reads Rust
-# sources**. It reads workflow job keys now.
+# Two kinds of job: one that stops you (the tests, and the lints that name a
+# defect) and one that counts (the style). Put first, formatting and clippy
+# kept the battery from ever running, and a light that is always red says
+# nothing. The style numbers land in the run summary so it shows when they
+# grow; they stop nobody until a decision is taken.
 
 name: the battery
 
