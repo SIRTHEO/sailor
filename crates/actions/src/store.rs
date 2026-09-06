@@ -32,11 +32,23 @@ pub const STORE_READ_ACTION: &str = "store_read";
 /// Il nome sotto cui `StoreListAction` si registra.
 pub const STORE_LIST_ACTION: &str = "store_list";
 
-/// Registra i tre nodi del deposito sul deposito dato.
-pub fn register_store(registry: &mut flow::ActionRegistry, ledger: Ledger) {
+/// Registers the three store nodes, **store or no store**: `flow check` must be
+/// able to say the step names a real action without opening anything, and
+/// without a store the run refuses instead of pretending.
+pub fn register_store(registry: &mut flow::ActionRegistry, ledger: Option<Ledger>) {
     registry.register(STORE_WRITE_ACTION, StoreWriteAction::new(ledger.clone()));
     registry.register(STORE_READ_ACTION, StoreReadAction::new(ledger.clone()));
     registry.register(STORE_LIST_ACTION, StoreListAction::new(ledger));
+}
+
+/// The store, or the refusal saying what cannot be done without one.
+fn deposit<'a>(ledger: &'a Option<Ledger>, without: &str) -> Result<&'a Ledger, ActionError> {
+    ledger.as_ref().ok_or_else(|| {
+        ActionError::new(
+            "no_store",
+            format!("I cannot tell where the store lives, so {without}"),
+        )
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -75,11 +87,11 @@ fn now() -> i64 {
 /// una persona — a differenza di un nodo che manda una riga a un terminale, che
 /// il mondo non sa disfare.
 pub struct StoreWriteAction {
-    ledger: Ledger,
+    ledger: Option<Ledger>,
 }
 
 impl StoreWriteAction {
-    pub fn new(ledger: Ledger) -> Self {
+    pub fn new(ledger: Option<Ledger>) -> Self {
         Self { ledger }
     }
 }
@@ -93,6 +105,7 @@ impl Action for StoreWriteAction {
         // nel flusso, cioè non potrebbe fare il testimone fra due passi.
         let spec: WriteSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
+        let ledger = deposit(&self.ledger, "there is nowhere to put this entry")?;
         let record = StoreRecord {
             collection: spec.collection,
             key: spec.key,
@@ -102,7 +115,7 @@ impl Action for StoreWriteAction {
         };
         // Un indirizzo vuoto è un errore di chi ha scritto il flusso, non un
         // dato del mondo: si dice subito con le parole del deposito.
-        self.ledger
+        ledger
             .put_record(&record)
             .map_err(|error| ActionError::new("store_refused", error.to_string()))?;
         Ok(ActionOutcome::Went(json!({
@@ -124,11 +137,11 @@ impl Action for StoreWriteAction {
 /// esattamente il caso in cui una lavorazione gira per la prima volta, e il
 /// caso in cui, prima di questo nodo, qualcuno si sarebbe messo a indovinare.
 pub struct StoreReadAction {
-    ledger: Ledger,
+    ledger: Option<Ledger>,
 }
 
 impl StoreReadAction {
-    pub fn new(ledger: Ledger) -> Self {
+    pub fn new(ledger: Option<Ledger>) -> Self {
         Self { ledger }
     }
 }
@@ -137,8 +150,7 @@ impl Action for StoreReadAction {
     fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         let spec: ReadSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
-        let found = self
-            .ledger
+        let found = deposit(&self.ledger, "«not written yet» would be a guess")?
             .read_record(&spec.collection, &spec.key)
             .map_err(|error| ActionError::new("store_unreadable", error.to_string()))?;
         Ok(ActionOutcome::Went(match found {
@@ -183,11 +195,11 @@ struct ListSpec {
 /// 8601, o un numero con gli zeri davanti. Una chiave scelta male dà un elenco
 /// in ordine casuale senza che niente segnali l'errore.
 pub struct StoreListAction {
-    ledger: Ledger,
+    ledger: Option<Ledger>,
 }
 
 impl StoreListAction {
-    pub fn new(ledger: Ledger) -> Self {
+    pub fn new(ledger: Option<Ledger>) -> Self {
         Self { ledger }
     }
 }
@@ -196,8 +208,7 @@ impl Action for StoreListAction {
     fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         let spec: ListSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
-        let records = self
-            .ledger
+        let records = deposit(&self.ledger, "an empty list would say «nothing is there»")?
             .records_in(&spec.collection)
             .map_err(|error| ActionError::new("store_unreadable", error.to_string()))?;
         let after = spec.after.unwrap_or_default();
@@ -264,8 +275,8 @@ mod tests {
     fn a_flow_can_remember_something_the_engine_knows_nothing_about() {
         let (ledger, _guard) = store();
         let shared = SharedState::new();
-        let write = StoreWriteAction::new(ledger.clone());
-        let read = StoreReadAction::new(ledger);
+        let write = StoreWriteAction::new(Some(ledger.clone()));
+        let read = StoreReadAction::new(Some(ledger));
 
         write
             .execute(
@@ -314,7 +325,7 @@ mod tests {
     fn a_missing_record_is_an_answer_not_a_failure() {
         let (ledger, _guard) = store();
         let shared = SharedState::new();
-        let read = StoreReadAction::new(ledger);
+        let read = StoreReadAction::new(Some(ledger));
 
         let outcome = read
             .execute(
@@ -344,8 +355,8 @@ mod tests {
     fn a_collection_reads_in_key_order_and_after_skips_what_was_read() {
         let (ledger, _guard) = store();
         let shared = SharedState::new();
-        let write = StoreWriteAction::new(ledger.clone());
-        let list = StoreListAction::new(ledger);
+        let write = StoreWriteAction::new(Some(ledger.clone()));
+        let list = StoreListAction::new(Some(ledger));
 
         // Scritte fuori ordine apposta: se l'ordine venisse dalla scrittura
         // invece che dalla chiave, l'elenco uscirebbe 03, 01, 02.
@@ -405,7 +416,7 @@ mod tests {
     fn nothing_new_leaves_the_readers_place_alone() {
         let (ledger, _guard) = store();
         let shared = SharedState::new();
-        let list = StoreListAction::new(ledger);
+        let list = StoreListAction::new(Some(ledger));
 
         let ActionOutcome::Went(empty) = list
             .execute(&json!({"collection": "posta/nessuno"}), &shared)
@@ -425,7 +436,7 @@ mod tests {
     fn an_empty_address_is_refused_with_the_stores_own_words() {
         let (ledger, _guard) = store();
         let shared = SharedState::new();
-        let write = StoreWriteAction::new(ledger);
+        let write = StoreWriteAction::new(Some(ledger));
 
         let error = write
             .execute(
@@ -439,5 +450,36 @@ mod tests {
             )
             .expect_err("una collezione vuota non si scrive");
         assert_eq!(error.class, "store_refused");
+    }
+
+    /// Without a store the three nodes refuse, and say what they cannot do.
+    ///
+    /// Silence would be worse: a write into nothing reports success, and a read
+    /// with no store answers "not there" to a question nobody could ask.
+    #[test]
+    fn without_a_store_each_node_refuses_and_says_what_it_cannot_do() {
+        let shared = SharedState::new();
+        let asked = [
+            json!({"collection": "c", "key": "k", "value": 1, "written_by": "prova"}),
+            json!({"collection": "c", "key": "k"}),
+            json!({"collection": "c"}),
+        ];
+        let nodes: [Box<dyn Action>; 3] = [
+            Box::new(StoreWriteAction::new(None)),
+            Box::new(StoreReadAction::new(None)),
+            Box::new(StoreListAction::new(None)),
+        ];
+
+        for (node, input) in nodes.iter().zip(asked.iter()) {
+            let refused = node
+                .execute(input, &shared)
+                .expect_err("senza deposito non si fa finta");
+            assert_eq!(refused.class, "no_store");
+            assert!(
+                refused.said.contains("where the store lives"),
+                "il rifiuto dice perché, non solo che non può: {}",
+                refused.said
+            );
+        }
     }
 }
