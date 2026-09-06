@@ -1,29 +1,25 @@
 [package]
 name = "sessions"
 version = "0.1.0"
+description = "The terminals Sailor tracks: who announced themselves, where, and what runs now."
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
 
-# Terminal tracking: who announced themselves, on which tty, in which worktree,
-# and what is on the machine right now.
-#
-# **ITS OWN CRATE, AND ITS OWN SQLite FILE.** Terminal sessions are not flow
-# runs: another key, another lifecycle, another reason to change. Keeping them
-# in `state.db` would mean raising `PROJECTION_SCHEMA_VERSION` — a number two
-# parallel work-streams would each raise to their own next value, and the
-# divergence would give no error at all: the store of whoever arrives second
-# would declare itself an unsupported version on a machine where nothing had
-# changed. Here the version is ours and interferes with nobody.
-#
-# `ledger` is here for one function, `default_directory()`: where this machine's
-# store lives. Copying that path out is fault 19 — the home in two places, with
-# neither of the two declaring itself the wrong one.
-#
-# `libc` is here for `ttyname`: a question about this process's own descriptor
-# rather than about the machine, so it never goes through `ps` and cannot be
-# denied silently.
+# Its own crate, and its own SQLite file. Terminal sessions are not flow
+# runs: another key, another lifecycle, another reason to change. Keeping
+# them in `state.db` would mean raising `PROJECTION_SCHEMA_VERSION`, a number
+# two parallel work-streams would each raise to their own next, and the store
+# of whoever arrives second would declare itself unsupported on a machine
+# where nothing had changed. Here the version is ours.
 [dependencies]
+# For one function, `default_directory()`: where this machine's store lives.
+# Copying that path out is fault 19.
 ledger = { path = "../ledger" }
+# For `ttyname`: a question about this process's own descriptor rather than
+# about the machine, so it never goes through `ps` and cannot be denied silently.
 libc = "0.2"
 rusqlite = { version = "0.37", features = ["bundled"] }
 serde = { workspace = true }
