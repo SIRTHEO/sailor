@@ -28,15 +28,14 @@ fn repository_root() -> PathBuf {
 }
 
 /// The shell's source that launches a run, with the receipt of having read it.
-/// `None` where the tree carries no window: nothing to read is not a pass.
-fn the_shells_launcher() -> Option<(PathBuf, String)> {
+/// Its absence is the defect, not a state of the tree: this judge reads it.
+fn the_shells_launcher() -> (PathBuf, String) {
     let path = repository_root().join("desktop/src-tauri/src/run.rs");
-    let Ok(text) = std::fs::read_to_string(&path) else {
-        workspace::measured_nothing("this tree carries no desktop/src-tauri/src/run.rs to read");
-        return None;
-    };
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|error| {
+        panic!("desktop/src-tauri/src/run.rs is gone, so the launcher cannot be read: {error}")
+    });
     workspace::measured(text.lines().count(), "lines of the window shell's launcher read");
-    Some((path, text))
+    (path, text)
 }
 
 /// **UNA SOLA `ExecutionRequest` IN TUTTO L'ALBERO, E STA IN `registry`.**
@@ -46,9 +45,7 @@ fn the_shells_launcher() -> Option<(PathBuf, String)> {
 /// e nessuna delle due lo direbbe.
 #[test]
 fn the_window_shell_does_not_build_its_own_execution_request() {
-    let Some((path, text)) = the_shells_launcher() else {
-        return;
-    };
+    let (path, text) = the_shells_launcher();
 
     assert!(
         !text.contains("ExecutionRequest {"),
@@ -62,9 +59,7 @@ fn the_window_shell_does_not_build_its_own_execution_request() {
 /// se il guscio smettesse di lanciare del tutto.
 #[test]
 fn the_window_shell_calls_the_shared_constructor() {
-    let Some((path, text)) = the_shells_launcher() else {
-        return;
-    };
+    let (path, text) = the_shells_launcher();
 
     assert!(
         text.contains("registry::execution_request("),
