@@ -114,9 +114,9 @@ pub(super) fn outside_text_in_command(flow: &FlowFile) -> Vec<OutsideTextInComma
 /// scritto: un rinvio all'uscita di un altro passo.
 fn holds_a_reference(value: &Value) -> bool {
     match value {
-        Value::Object(fields) => fields.iter().any(|(key, inner)| {
-            key == reference::FROM_KEY || key == reference::JSON_KEY || holds_a_reference(inner)
-        }),
+        Value::Object(fields) => fields
+            .iter()
+            .any(|(key, inner)| reference::carries_a_pointer(key) || holds_a_reference(inner)),
         Value::Array(items) => items.iter().any(holds_a_reference),
         _ => false,
     }
@@ -143,7 +143,7 @@ fn walk_for_paths(step: &str, field: &str, value: &Value, found: &mut Vec<Hardco
             for (key, inner) in fields {
                 // Il valore di un puntatore non è un percorso, e guardarci
                 // dentro riempirebbe il rapporto di falsi positivi.
-                if key == reference::FROM_KEY || key == reference::JSON_KEY {
+                if reference::carries_a_pointer(key) {
                     continue;
                 }
                 let trail = if field.is_empty() {
@@ -372,9 +372,14 @@ fn collect_dead_references(
 ) {
     match value {
         Value::Object(fields) => {
-            if let Some(Value::String(pointer)) = fields.get(reference::FROM_KEY) {
-                collect_dead(step, field, pointer, reachable, found);
-                return;
+            // **THE KEYS COME FROM THE RESOLVER.** This asked for `$from`
+            // alone while the resolver also read `$json`, so a dead `$json`
+            // pointer broke the run and no check saw it: fault 10.
+            for (key, _) in reference::POINTER_KEYS {
+                if let Some(Value::String(pointer)) = fields.get(key) {
+                    collect_dead(step, field, pointer, reachable, found);
+                    return;
+                }
             }
             for (key, inner) in fields {
                 let trail = if field.is_empty() {
@@ -487,8 +492,7 @@ fn executed_text(value: &Value, into: &mut String) {
         Value::String(text) => into.push_str(text),
         Value::Array(items) => items.iter().for_each(|item| executed_text(item, into)),
         Value::Object(fields) => {
-            if fields.contains_key(reference::FROM_KEY) || fields.contains_key(reference::JSON_KEY)
-            {
+            if fields.keys().any(|key| reference::carries_a_pointer(key)) {
                 into.push_str(MOUNTED_ARG);
             } else {
                 fields.values().for_each(|inner| executed_text(inner, into));
@@ -993,6 +997,39 @@ mod tests {
         // pointers name a dependency is untouched, and so is the one whose
         // pointer names a key its own `with` lays over.
         assert_eq!(named, vec![("morto", "/status"), ("morto", "/text")], "{dead:?}");
+    }
+
+    /// **EVERY KEY THE RESOLVER READS A POINTER FROM, NOT THE FIRST ONE.** Both
+    /// walk `POINTER_KEYS`, so a key added there and unhandled here goes red.
+    #[test]
+    fn a_dead_pointer_is_named_under_every_key_that_carries_one() {
+        for (key, _) in reference::POINTER_KEYS {
+            let flow: FlowFile = serde_json::from_value(serde_json::json!({
+                "id": "prova", "description": "d",
+                "graph": {"steps": [
+                    {"id": "uno", "deps": [], "action": "trigger", "max_attempts": 1,
+                     "when": null, "with": {"source": "manual"},
+                     "input_schema": {"type": "any"}, "output_schema": {"type": "any"}},
+                    {"id": "due", "deps": [], "action": "trigger", "max_attempts": 1,
+                     "when": null, "with": {"source": "manual"},
+                     "input_schema": {"type": "any"}, "output_schema": {"type": "any"}},
+                    {"id": "morto", "deps": ["uno", "due"], "action": "shell_check",
+                     "max_attempts": 1, "when": null,
+                     "with": {"command": {key: "/text"}},
+                     "input_schema": {"type": "any"}, "output_schema": {"type": "any"}}
+                ]},
+                "inputs": {}
+            }))
+            .expect("il flusso si legge");
+
+            let dead = pointers_that_cannot_match(&flow);
+
+            let named: Vec<(&str, &str)> = dead
+                .iter()
+                .map(|found| (found.step.as_str(), found.pointer.as_str()))
+                .collect();
+            assert_eq!(named, vec![("morto", "/text")], "under {key}: {dead:?}");
+        }
     }
 
     /// THE CONTROL: one dependency that cannot be skipped hands its own output
