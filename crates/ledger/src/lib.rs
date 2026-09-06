@@ -19,6 +19,7 @@ use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
 
 pub mod identity;
+pub mod open_trees;
 pub mod search;
 pub mod reports;
 pub mod self_care;
