@@ -294,8 +294,16 @@ mod tests {
 
     #[test]
     fn publishing_refuses_a_directory_with_a_secret_and_commits_a_clean_one() {
-        let dir = std::env::temp_dir().join(format!("sailor-publish-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        // A scratch named after the process alone comes back on the next run
+        // with the same number, and a leftover from before decides the verdict.
+        let dir = std::env::temp_dir().join(format!(
+            "sailor-publish-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|since| since.as_nanos())
+                .unwrap_or_default()
+        ));
         std::fs::create_dir_all(&dir).expect("scratch");
         std::fs::write(
             dir.join("leaky.flow.json"),
