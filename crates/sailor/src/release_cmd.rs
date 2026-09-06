@@ -5,6 +5,7 @@
 //! which targets exist, how a stamp is read, when a service is busy — are in
 //! the `release` library, where they can be tested without changing the world.
 
+use profiles::{known_clis, HomeMechanism};
 use release::{read_stamp, readiness, target, target_names, Service, Target};
 use std::env;
 use std::ffi::{OsStr, OsString};
@@ -242,10 +243,34 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     } else {
         release::manifests_to_judge(selected)
     };
+    let suite_home = temporary.path.join(release::SUITE_HOME_BELOW_SCRATCH);
+    fs::create_dir_all(&suite_home)
+        .map_err(|error| format!("cannot create {}: {error}", suite_home.display()))?;
+    let inherited: Vec<(String, String)> = env::vars().collect();
+    let profile_variables: Vec<&str> = known_clis()
+        .iter()
+        .filter_map(|cli| match &cli.home {
+            HomeMechanism::EnvVar(name) => Some(name.as_str()),
+            _ => None,
+        })
+        .collect();
+    let suite_environment = release::suite_environment(
+        &inherited,
+        &temporary.path,
+        &profile_variables,
+        terminal::scratch::ROOT_VARIABLE,
+    );
     for (number, manifest_rel) in judges.iter().enumerate() {
         println!(
             "{}",
             catalogue::say("cli.release.running_the_suite", &[("manifest", manifest_rel)])
+        );
+        println!(
+            "{}",
+            catalogue::say(
+                "cli.release.suite_home",
+                &[("home", &suite_home.display().to_string())],
+            )
         );
         let suite_path = temporary.path.join(format!("suite-{number}.txt"));
         let suite_file = File::create(&suite_path)
@@ -258,6 +283,8 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         })?;
         let suite_status = Command::new("cargo")
             .current_dir(&cloned_rust)
+            .env_clear()
+            .envs(suite_environment.iter().map(|(name, value)| (name, value)))
             .env("CARGO_TARGET_DIR", &build_target)
             // `--no-fail-fast` OR CARGO STOPS AT THE FIRST RED BINARY, and the
             // ones after it do not fail: they never start. A release that reads
