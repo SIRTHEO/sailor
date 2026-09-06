@@ -1,30 +1,26 @@
-//! Il deposito fa il testimone fra due passi: **col registro vero, il deposito
-//! vero e l'esecutore vero**, senza nessun finto in mezzo.
+//! The store bears witness between two steps: **with the real registry, the
+//! real store and the real executor**, no fake in between.
 //!
-//! **PERCHÉ ESISTE — IL SINTOMO DEL GUASTO 28, RESO UN FATTO A COSTO ZERO.** Il
-//! 31/08/2026 un passo che scriveva nel deposito una chiave presa dal passo
-//! prima moriva con «invalid type: map, expected a string»: `store_write` non
-//! scioglieva i rinvii, quindi riceveva `{"$from": "/stdout"}` come oggetto.
-//! Il deposito accettava solo valori scritti a mano dentro il flusso, cioè non
-//! poteva fare il testimone che `docs/decisions.md` gli attribuisce. A rivelarlo
-//! era stata una corsa da **8,95 $** morta sull'ultimo passo; le due fixture che
-//! l'hanno inchiodato — `flows/prova-deposito.flow.json` e la gemella con la
-//! chiave letterale — non esistono più nell'albero, e la loro misura si era
-//! persa con loro.
+//! **WHY IT EXISTS — THE SYMPTOM OF FAULT 28, MADE A FACT AT ZERO COST.** A
+//! step writing into the store a key taken from the step before died with
+//! "invalid type: map, expected a string": `store_write` did not resolve
+//! references, so it received `{"$from": "/stdout"}` as an object. The store
+//! accepted only values written by hand inside the flow, so it could not be
+//! the witness `docs/decisions.md` credits it with.
 //!
-//! **PERCHÉ QUI E NON IN `crates/actions`.** La prova che stava là chiamava
-//! `execute` a mano: adesso che i rinvii li scioglie `flow::step_input`, una
-//! prova così dovrebbe scioglierli lei prima di chiamare — cioè provare se
-//! stessa. Qui invece passano tutti e tre i pezzi che quel giorno erano in
-//! gioco: il registro che monta le azioni (`default_registry`), l'esecutore che
-//! compone l'ingresso, e SQLite che riceve la chiave.
+//! **WHY HERE AND NOT IN `crates/actions`.** The proof that lived there called
+//! `execute` by hand: now that `flow::step_input` resolves the references, such
+//! a proof would have to resolve them itself before calling — that is, prove
+//! itself. Here instead all three pieces that were in play pass through: the
+//! registry that assembles the actions (`default_registry`), the executor that
+//! composes the input, and SQLite receiving the key.
 //!
-//! **NON SI SPENDE NIENTE E NON SI CHIAMA NESSUN MODELLO**: il primo passo è
-//! `sh -c printf`, cioè un motore che risponde senza fornitori.
+//! **NOTHING IS SPENT AND NO MODEL IS CALLED**: the first step is
+//! `sh -c printf`, an engine that answers with no providers.
 //!
-//! **IL MUTANTE**: togliere `resolve_references` da `step_input` — il difetto
-//! originale. La corsa non arriva in fondo e il passo che deposita si rompe con
-//! `invalid_input`, le stesse parole del 31/08.
+//! **THE MUTANT**: take `resolve_references` out of `step_input` — the original
+//! defect. The run does not reach the end and the depositing step breaks with
+//! `invalid_input`, the same words as the fault.
 
 use flow::{
     ExecutionRequest, Executor, Graph, InProcessExecutor, Outcome, RecordStore, SharedState, Step,
@@ -36,11 +32,11 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// Una cartella usa-e-getta per ogni prova.
+/// A throwaway directory for each proof.
 ///
-/// **IL CONTATORE NEL NOME NON È ORNAMENTO**: è il guasto 21. `cargo test`
-/// manda le prove sullo stesso processo e l'orologio di macOS non ha la
-/// risoluzione del nanosecondo.
+/// **THE COUNTER IN THE NAME IS NOT ORNAMENT**: it is fault 21. `cargo test`
+/// runs the proofs in one process and the macOS clock has no nanosecond
+/// resolution.
 struct TestDirectory(PathBuf);
 
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
@@ -82,12 +78,12 @@ fn step(id: &str, deps: &[&str], action: &str, with: Value) -> Step {
     }
 }
 
-/// **LA CHIAVE VIENE DAL PASSO PRIMA, E IL DEPOSITO LA RICEVE COME TESTO.**
+/// **THE KEY COMES FROM THE STEP BEFORE, AND THE STORE RECEIVES IT AS TEXT.**
 ///
-/// Tre passi: un motore risponde, il deposito scrive sotto la chiave che quel
-/// motore ha detto, e un terzo passo rilegge la voce nominando la chiave a mano.
-/// Se il rinvio non fosse sciolto, il secondo passo si romperebbe e il terzo non
-/// troverebbe niente — che è esattamente com'è andata il 31/08.
+/// Three steps: an engine answers, the store writes under the key that engine
+/// named, and a third step reads the entry back naming the key by hand. Were
+/// the reference not resolved, the second step would break and the third find
+/// nothing — which is exactly how the fault went.
 #[test]
 fn a_key_decided_by_the_step_before_reaches_the_real_store() {
     let dir = TestDirectory::new("chiave-dal-passo-prima");

@@ -417,8 +417,8 @@ describe("a single step is not «1 passi»", () => {
     const read = (selector: string) =>
       Array.from(container.querySelectorAll(selector)).map((node) => (node.textContent ?? "").trim());
 
-    // `prima-corsa` is the sample flow with a single step: without it this test
-    // would be green for never having met the case.
+    // The sample flow with a single step: without it this test would be green
+    // for never having met the case.
     const notes = read(".rail__note");
     expect(notes, "no sample flow has a single step").toContain(stepCountLabel(1));
     expect(notes).not.toContain("1 steps");

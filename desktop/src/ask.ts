@@ -1,29 +1,28 @@
-// Chiedere una cosa al motore, e dire onestamente com'è andata.
+// Asking the engine something, and saying honestly how it went.
 //
-// **TRE ESITI, NON DUE.** «Ho la risposta» e «non ce l'ho» non bastano: fra i
-// due c'è «non ho potuto chiedere», ed è quello che va detto per esteso. Una
-// schermata vuota perché non è girato niente e una schermata vuota perché il
-// motore non risponde si assomigliano troppo, e la seconda è quella in cui si
-// continua a lavorare credendo che non stia succedendo nulla.
+// **THREE OUTCOMES, NOT TWO.** «I have the answer» and «I do not» are not enough:
+// between them sits «I could not ask», and that is the one to spell out. An empty
+// screen because nothing ran and one because the engine is not answering look far
+// too alike, and the second is the one where you keep working believing nothing is
+// happening.
 //
-// PERCHÉ UN GANCIO E NON TRE COPIE. «Adesso», la storia e l'inventario fanno
-// tutti e tre la stessa cosa: chiedono al guscio, ripetono ogni tanto, e devono
-// saper dire perché non hanno risposta. Scritto tre volte, il terzo lo scrive
-// senza il ramo del silenzio — che è il ramo che conta.
+// WHY ONE HOOK AND NOT THREE COPIES. «Now», the history and the inventory all do
+// the same thing: ask the shell, repeat now and then, and must be able to say why
+// they have no answer. Written three times, the third omits the silence branch.
 
 import { useCallback, useEffect, useState } from "react";
 
-/** Com'è andata la domanda, dal punto di vista di chi guarda. */
+/** How the question went, from the point of view of whoever is watching. */
 export type Asked<T> =
   | { state: "asking" }
   | { state: "answered"; value: T }
   | { state: "mute"; why: string };
 
 /**
- * Chiede al motore, e ripete finché la schermata è aperta.
+ * Asks the engine, and repeats while the screen is open.
  *
- * `every` in millisecondi, oppure `null` per chiedere una volta sola: un
- * censimento del disco non va rifatto ogni quattro secondi, una corsa viva sì.
+ * `every` in milliseconds, or `null` to ask just once: a census of the disk is
+ * not to be redone every four seconds, a live run is.
  */
 export function useAsk<T>(
   native: boolean,
@@ -40,9 +39,9 @@ export function useAsk<T>(
     question()
       .then((value) => setAsked({ state: "answered", value }))
       .catch((error: unknown) => setAsked({ state: "mute", why: String(error) }));
-    // `question` sta fuori dalle dipendenze di proposito: chi chiama la scrive
-    // in linea, quindi cambia a ogni render, e metterla qui rifarebbe la
-    // domanda a ogni disegno invece che a ogni battito.
+    // `question` is out of the dependencies on purpose: callers write it inline,
+    // so it changes on every render, and putting it here would redo the question
+    // on every draw instead of on every beat.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [native]);
 
@@ -58,11 +57,11 @@ export function useAsk<T>(
 }
 
 /**
- * Un orologio che batte, per far invecchiare le durate a schermo.
+ * A clock that beats, to age the durations on screen.
  *
- * **SENZA, «ferma da 2 min» RESTA SCRITTO PER UN'ORA.** La riga sembrerebbe
- * viva e sarebbe congelata: è lo stesso difetto per cui il 28/08/2026 una vista
- * mostrava «in corso da 00:30» su una corsa finita da un pezzo.
+ * **WITHOUT IT, «still for 2 min» STAYS WRITTEN FOR AN HOUR.** The line would
+ * look alive and be frozen: the same fault by which a view showed «running for
+ * 00:30» on a run long since finished.
  */
 export function useClock(): number {
   const [now, setNow] = useState(() => Date.now() / 1000);

@@ -124,7 +124,7 @@ pub fn rebuild_then_swap<R: Running>(
     }
 }
 
-/// In che stato è la modalità viva, per chi la guarda da dentro la finestra.
+/// What state live mode is in, for whoever watches it from inside the window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LiveState {

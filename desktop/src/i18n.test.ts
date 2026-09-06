@@ -46,8 +46,8 @@ describe("the two catalogues are one catalogue", () => {
 
   /**
    * The catalogue holds whole sentences, so this is the shape that keeps
-   * genders and plurals out: an entry that is a fragment invites assembling
-   * «il flusso è» + «avviato», and Italian then asks avviato or avviata.
+   * genders and plurals out: an entry that is a fragment invites gluing two
+   * halves together, and Italian then asks avviato or avviata.
    */
   test("an entry is a whole sentence, not a fragment to assemble", () => {
     const fragments = Object.entries(en)

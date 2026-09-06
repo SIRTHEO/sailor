@@ -1,26 +1,19 @@
-//! Quello che la plancia sapeva dire e la finestra no.
+//! What the dashboard could say and the window could not.
 //!
-//! **PERCHÉ ESISTE QUESTO MODULO.** `sailor ui` serve da mesi una pagina su
-//! `127.0.0.1:47831` con cinque sezioni. La finestra ne copre due — i flussi, e
-//! da stasera «cosa sta succedendo adesso». Le altre tre — il riepilogo di
-//! oggi, la storia delle esecuzioni, cosa è installato — esistono solo di là.
-//! Finché è così, togliere la plancia non è semplificare: è sottrarre.
+//! **WHY THIS MODULE EXISTS.** `sailor ui` has served a page on
+//! `127.0.0.1:47831` with five sections for months. The window covers two — the
+//! flows, and "what is happening right now". The other three — today's summary,
+//! the history of the executions, what is installed — exist only there. While
+//! that holds, removing the dashboard is subtracting, not simplifying.
 //!
-//! È LA LEZIONE PIÙ CARA DELLA RICOGNIZIONE DEL 31/08/2026. Airflow 3 ha tolto
-//! Gantt, Calendar, Duration e Landing Times riscrivendo l'interfaccia, e ha
-//! dovuto rimetterle otto mesi dopo perché la gente non aggiornava — con
-//! l'ammissione del manutentore: «ci è finito il tempo per reimplementare la
-//! vista calendario». Jira ha tolto voci di barra e ha lasciato il ripristino
-//! disponibile per tre settimane. In tre casi su tre è il gruppo di prodotto ad
-//! ammettere il difetto per iscritto, mesi dopo. La regola che ne segue è
-//! meccanica: prima di sostituire una vista si elenca che cosa permetteva di
-//! fare, e si verifica voce per voce che la nuova lo permetta ancora.
+//! The rule is mechanical: before replacing a view, list what it let you do,
+//! and check item by item that the new one still lets you.
 //!
-//! **I CONTI NON SI RIFANNO QUI**, e nemmeno nella tela. `build_executions` è
-//! la stessa funzione che serve la plancia: due somme scritte in due posti
-//! darebbero due cifre e nessuno saprebbe quale credere. Vale anche per
-//! l'inventario — `default_roots` sta nel crate proprio perché la riga di
-//! comando e la pagina dicano lo stesso numero sulla stessa macchina.
+//! **THE SUMS ARE NOT REDONE HERE**, nor in the canvas. `build_executions` is
+//! the same function that serves the dashboard: two sums written in two places
+//! would give two figures and nobody would know which to believe. It holds for
+//! the inventory too — `default_roots` lives in the crate precisely so that the
+//! command line and the page say the same number on the same machine.
 
 use inventory::{collect_survey, default_roots, Inventory};
 use serde::Serialize;
@@ -28,20 +21,15 @@ use std::collections::BTreeMap;
 use ui::dashboard::{build_executions, ExecutionView};
 use ui::gather::{default_ledger_dir, gather};
 
-/// Il riepilogo di una giornata.
+/// The summary of one day.
 ///
-/// **PORTA ANCHE CIÒ CHE NON HA POTUTO MISURARE**, ed è la parte che di solito
-/// manca. Nella ricognizione del 31/08/2026, Langfuse mostrava 4.509 token dove
-/// erano 2.265 (trattava il totale come completamento, «known issue»
-/// confermato), LangSmith gonfiava di 75-200 volte con le immagini e non sa
-/// contare la cache dei prompt, Phoenix ha il costo giusto nel database e
-/// sbagliato a schermo — parole di uno del gruppo. Un numero mostrato con
-/// autorità e sbagliato è peggio di un numero assente. `unmeasured` e
-/// `unpriced` dicono quante chiamate non hanno portato token o prezzo, così
-/// una cifra bassa si legge per quello che è: bassa, o incompleta.
+/// **IT CARRIES WHAT IT COULD NOT MEASURE TOO**, and that is the part usually
+/// missing. A figure shown with authority and wrong is worse than an absent
+/// one. `unmeasured` and `unpriced` say how many calls brought no tokens and no
+/// price, so a low figure reads for what it is: low, or incomplete.
 #[derive(Debug, Clone, Default, Serialize)]
 pub(crate) struct DaySummary {
-    /// Vero se il deposito esiste. Falso non è zero: è «non lo so».
+    /// True if the ledger exists. False is not zero: it is "I do not know".
     pub ledger_present: bool,
     pub runs: usize,
     pub went: usize,
@@ -52,23 +40,23 @@ pub(crate) struct DaySummary {
     pub cached_tokens: u64,
     pub cache_write_tokens: u64,
     pub cost_micros: i64,
-    /// Chiamate al modello che non hanno riportato token.
+    /// Model calls that reported no tokens.
     pub unmeasured: usize,
-    /// Chiamate al modello che non hanno riportato un prezzo.
+    /// Model calls that reported no price.
     pub unpriced: usize,
-    /// Token visti, per modello.
+    /// Tokens seen, by model.
     pub tokens_by_model: BTreeMap<String, u64>,
 }
 
-/// La storia delle esecuzioni, dalla più recente.
+/// The history of the executions, most recent first.
 ///
-/// **NON È «ADESSO» CON PIÙ RIGHE.** «Adesso» chiede al deposito ciò che è
-/// aperto e non conosce il passato; questa porta tutto, chiuso compreso, ed è
-/// la vista in cui si cerca un difetto che si ripete — la stessa corsa caduta
-/// tre volte di fila si vede solo qui.
+/// **IT IS NOT "RIGHT NOW" WITH MORE ROWS.** "Right now" asks the ledger what
+/// is open and knows nothing of the past; this one carries everything, closed
+/// included, and it is the view where a repeating fault is hunted — the same
+/// run fallen three times running shows up here and nowhere else.
 ///
-/// Un deposito che non esiste dà un elenco vuoto, non un errore: è una macchina
-/// su cui non è ancora girato niente.
+/// A missing ledger gives an empty list, not an error: it is a machine on which
+/// nothing has run yet.
 #[tauri::command]
 pub(crate) fn execution_history() -> Result<Vec<ExecutionView>, String> {
     let ledger_dir = default_ledger_dir();
@@ -81,18 +69,18 @@ pub(crate) fn execution_history() -> Result<Vec<ExecutionView>, String> {
         return Ok(Vec::new());
     };
     let mut executions = build_executions(&data.runs, &data.steps_by_run, &data.calls_by_run, now);
-    // La più recente in cima: qui si guarda indietro, e si parte da ieri.
+    // Most recent on top: this view looks back, and it starts at yesterday.
     executions.reverse();
     Ok(executions)
 }
 
-/// Il riepilogo delle corse cominciate da un certo istante in poi.
+/// The summary of the runs started from a given instant onward.
 ///
-/// **L'ISTANTE LO PORTA CHI CHIAMA, E NON È PIGRIZIA.** «Oggi» è un giorno di
-/// calendario locale, e il fuso orario lo sa la finestra — che gira dentro un
-/// sistema che glielo dice — mentre qui servirebbe una libreria intera per
-/// riscoprirlo. Quello che non si delega è la somma: sta qui, una volta sola,
-/// perché è la cifra che una persona guarda per decidere.
+/// **THE CALLER CARRIES THE INSTANT, AND THAT IS NOT LAZINESS.** "Today" is a
+/// local calendar day, and the window knows the time zone because its system
+/// tells it, while here a whole library would be needed to rediscover it. What
+/// stays undelegated is the sum: it lives here, once, because it is the figure
+/// a person looks at to decide.
 #[tauri::command]
 pub(crate) fn day_summary(since: i64) -> Result<DaySummary, String> {
     let ledger_dir = default_ledger_dir();
@@ -102,9 +90,9 @@ pub(crate) fn day_summary(since: i64) -> Result<DaySummary, String> {
     let data = gather(&ledger_dir)
         .map_err(|error| format!("cannot read the ledger: {error}"))?;
     let Some(data) = data else {
-        // Deposito assente: `ledger_present` resta falso, e ogni conteggio è
-        // zero. Chi legge deve poter distinguere «non è girato niente» da
-        // «non ho potuto guardare», e quel campo è tutta la differenza.
+        // Ledger absent: `ledger_present` stays false, and every count is
+        // zero. A reader must be able to tell "nothing has run" from "I could
+        // not look", and that field is the whole difference.
         return Ok(DaySummary::default());
     };
     let executions = build_executions(&data.runs, &data.steps_by_run, &data.calls_by_run, now);
@@ -116,10 +104,10 @@ pub(crate) fn day_summary(since: i64) -> Result<DaySummary, String> {
         summary.runs += 1;
         let open = !execution.steps_open.is_empty()
             || matches!(execution.status.as_str(), "running" | "open");
-        // ROTTA È PIÙ FORTE DI APERTA. Una corsa con un passo caduto e un altro
-        // ancora in volo è un guasto che sta ancora bruciando, non un lavoro in
-        // corso: contarla fra gli aperti la toglierebbe dall'occhio di chi
-        // guarda i guasti.
+        // BROKEN OUTRANKS OPEN. A run with one step fallen and another still
+        // in flight is a fault still burning, not work in progress: counting
+        // it among the open ones would take it out of the eye of whoever
+        // watches the faults.
         let broke = execution.error.is_some()
             || execution.steps_broke > 0
             || matches!(execution.status.as_str(), "failed" | "broke" | "error");
@@ -147,12 +135,12 @@ pub(crate) fn day_summary(since: i64) -> Result<DaySummary, String> {
     Ok(summary)
 }
 
-/// Cosa è installato su questa macchina: competenze, agenti, comandi, regole,
-/// ganci.
+/// What is installed on this machine: skills, agents, commands, rules, hooks.
 ///
-/// **PORTA ANCHE DOVE HA GUARDATO.** `Inventory` non espone solo le voci ma le
-/// radici davvero attraversate, ed è deliberato: un elenco che non dice dove ha
-/// cercato non si può smentire. La finestra le mostra, come la plancia.
+/// **IT CARRIES WHERE IT LOOKED TOO.** `Inventory` exposes the entries and also
+/// the roots actually walked, and that is deliberate: a list silent about where
+/// it searched cannot be contradicted. The window shows them, as the dashboard
+/// does.
 #[tauri::command]
 pub(crate) fn machine_inventory() -> Inventory {
     collect_survey(&default_roots(ledger::sailor_home().as_deref()))

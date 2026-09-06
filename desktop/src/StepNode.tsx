@@ -287,8 +287,8 @@ export function formatElapsed(seconds: number): string {
 /**
  * **ONE LIST, NOT TWO.** The inspector kept its own copy of these words, and
  * the two had drifted: a step was «agente» on the board and «engine» in the
- * panel, «a una persona» here and «person» there. Same nine keys, two files,
- * nothing that could tell either of them it was wrong.
+ * panel, a whole phrase here and a bare «person» there. Same nine keys, two
+ * files, nothing that could tell either of them it was wrong.
  */
 export const KIND_LABEL = group("window.step.kind.") as Record<StepKind, string>;
 
@@ -344,19 +344,19 @@ function StepTool({
     <div className="step-node__tool" data-off={off || undefined}>
       <ToolMark id={id} size={16} off={off} />
       <div className="step-node__tool-text">
-        {/* NOME IN PROSA, IDENTIFICATIVO IN MONOSPAZIO — e questo slot mostra
-            l'uno o l'altro. Finché la scoperta non ha risposto qui ci finisce
-            `id`, che è un dato: senza distinguerli, `claude-code` compariva in
-            due caratteri diversi sulle due righe dello stesso riquadro — in
-            prosa sopra, in monospazio nella catena sotto. La regola non cambia,
-            cambia il fatto che si legge prima di applicarla. */}
+        {/* NAME IN PROSE, IDENTIFIER IN MONOSPACE — and this slot shows one or
+            the other. Until discovery has answered, `id` lands here, and an id
+            is data: without telling the two apart, `claude-code` appeared in
+            two different faces on the two lines of the same box — prose above,
+            monospace in the chain below. The rule does not change; what changes
+            is the fact read before applying it. */}
         <span className="step-node__tool-name" data-raw={tool === undefined || undefined} title={id}>
           {tool?.name ?? id}
         </span>
         {model !== "" && <span className="step-node__tool-model">{model}</span>}
-        {/* UNA CATENA SI DICE, e prima non si diceva affatto: il nodo mostrava
-            «nessun motore» proprio dove il passo ne nominava tre. Chi guarda
-            deve sapere che se il primo non c'è ne parte un altro. */}
+        {/* A CHAIN IS SAID, and it was not said at all before: the node showed
+            «nessun motore» exactly where the step named three. Whoever looks
+            must know that if the first is missing another starts. */}
         {fallbacks.length > 0 && (
           <span
             className="step-node__tool-chain"
@@ -373,8 +373,8 @@ function StepTool({
             ha girato su {surprising.join(", ")}
           </span>
         )}
-        {/* Il motivo si legge sulla tela, non solo passandoci sopra: chi guarda
-            un nodo spento non deve andare a cercare dove sta scritto perché. */}
+        {/* The reason reads on the canvas, not only on hover: whoever looks at
+            a node switched off must not go hunting for where the why is. */}
         {off && why !== "" && (
           <span className="step-node__tool-why" title={why}>
             {why}
@@ -528,9 +528,9 @@ export function StepNode({ data, selected }: NodeProps) {
 
       {!far && (
         <div className="step-node__body">
-          {/* DA VICINO IL NODO DICE SEMPRE CON COSA GIRA — anche quando la
-              risposta è «con niente». Da lontano no: a quello zoom non si
-              leggerebbe. */}
+          {/* UP CLOSE THE NODE ALWAYS SAYS WHAT IT RUNS ON — even when the
+              answer is «with nothing». From far away it does not: at that zoom
+              it would be unreadable. */}
           {engines.length > 0 ? (
             <StepTool
               id={engines[0]}
@@ -552,8 +552,8 @@ export function StepNode({ data, selected }: NodeProps) {
           not a row apart: they are one answer. The foot is drawn at every zoom
           — from far, a node that says only what it is says half of it. */}
       <div className="step-node__foot">
-        {/* Chi tiene il passo è un fatto, e sta bene in fondo: non chiede
-            niente a nessuno. */}
+        {/* Who holds the step is a fact, and it sits well at the foot: it asks
+            nothing of anybody. */}
         {!far && isAgent && state === "running" && (
           <span className="step-node__pid">pid {run?.held_by_pid ?? "?"}</span>
         )}
@@ -562,8 +562,8 @@ export function StepNode({ data, selected }: NodeProps) {
             {run.attempt}ª di {step.max_attempts}
           </span>
         )}
-        {/* Le altre che aspettano non prendono ciascuna un'evidenza: si
-            contano qui, sull'unico nodo isolato. */}
+        {/* The others waiting do not each get their own mark: they are counted
+            here, on the one isolated node. */}
         {!far && isolated && call.waiting > 1 && (
           <span className="step-node__elsewhere">{call.waiting - 1} more waiting</span>
         )}
@@ -637,18 +637,18 @@ export function FlowBandNode({ data }: NodeProps) {
   return (
     <div className="flow-band" data-far={far || undefined} style={{ borderColor: color }}>
       <div className="flow-band__head">
-        {/* IL COLORE DELLA CORSIA È UN SEGNO, NON UN COLORE DI TESTO.
-            Scriverci sopra il nome del flusso è ciò che si faceva prima, e la
-            tavolozza delle corsie non era mai stata misurata: su quattordici
-            tinte solo tre reggono 4,5:1 sul fondo della banda, e cinque stanno
-            sotto 3:1. `prima-corsa` veniva 2,77:1. Il nome adesso è inchiostro
-            e si legge sempre; la tinta identifica la corsia da qui. */}
+        {/* THE LANE'S COLOUR IS A MARK, NOT A TEXT COLOUR. Writing the flow's
+            name in it is what was done before, and the lane palette had never
+            been measured: of fourteen hues only three hold 4.5:1 against the
+            band's ground, and five sit under 3:1 — the first sample flow came
+            out at 2.77:1. The name is ink now and always reads; the hue
+            identifies the lane from here. */}
         <span className="flow-band__mark" style={{ background: color }} aria-hidden="true" />
         <span className="flow-band__name">{name}</span>
         <span className="flow-band__count">{stepCountLabel(stepCount)}</span>
       </div>
-      {/* Troncata a due righe dallo stile, ma non persa: per intero si legge
-          passandoci sopra. */}
+      {/* Cut to two lines by the stylesheet, but not lost: the whole of it
+          reads on hover. */}
       <div className="flow-band__desc" title={description}>
         {description}
       </div>

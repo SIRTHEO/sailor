@@ -21,29 +21,29 @@ import { KindIcon } from "./StepNode";
  * enough to measure itself: invisible nodes, a full minimap.
  */
 
-/** Come sta l'interrogazione al guscio su come si innesca un flusso. */
+/** How the query to the shell about what triggers a flow stands. */
 export type TriggerState =
   | { state: "asking" }
   | { state: "ready"; trigger: FlowTrigger }
   | { state: "mute"; why: string };
 
 export interface RunControls {
-  /** Vero dentro il guscio: fuori non c'è motore, e il pulsante lo dice. */
+  /** True inside the shell: outside there is no engine, and the button says so. */
   native: boolean;
   triggerOf: (flowName: string) => TriggerState;
-  /** La corsa più recente di quel flusso, se questa finestra ne conosce una. */
+  /** The most recent run of that flow, if this window knows of one. */
   runOf: (flowName: string) => RunSnapshot | undefined;
   /**
-   * La consegna in scrittura. Vive fuori dal nodo perché il nodo si rimonta
-   * ogni volta che la tela si ridisegna, e un testo lungo scritto a mano non
-   * deve sparire perché qualcuno ha rinominato un passo altrove.
+   * The mandate being written. It lives outside the node because the node
+   * remounts every time the canvas redraws, and a long hand-written text must
+   * not vanish because somebody renamed a step elsewhere.
    */
   mandateOf: (flowName: string) => string;
   onMandate: (flowName: string, text: string) => void;
   onRun: (flowName: string) => void;
   starting: (flowName: string) => boolean;
   errorOf: (flowName: string) => string | undefined;
-  /** Apre la vista d'esecuzione su quel flusso. */
+  /** Opens the run view on that flow. */
   onWatch: (flowName: string) => void;
 }
 
@@ -66,7 +66,7 @@ export interface TriggerNodeData extends Record<string, unknown> {
   color: string;
 }
 
-/** L'identificativo del nodo di innesco di un flusso, distinto dai passi. */
+/** The id of a flow's trigger node, kept distinct from the steps. */
 export function triggerNodeId(flowName: string): string {
   return `trigger::${flowName}`;
 }
@@ -77,8 +77,8 @@ const RUNNING_LABEL: Record<string, string> = {
   failed: "failed",
   waiting: "waiting",
   stopped: "stopped",
-  // Non è «fallito»: la corsa ha rispettato un limite che qualcuno le ha
-  // messo. Chi le vede uguali smette di guardare tutte e due.
+  // Not «failed»: the run respected a limit somebody set on it. Whoever reads
+  // the two as the same thing stops looking at both.
   cap_reached: "stopped by the spend cap",
   incomplete: "incomplete",
 };
@@ -106,8 +106,8 @@ export function TriggerNode({ data }: NodeProps) {
 
       <div className="trigger-node__flow">{flowName}</div>
 
-      {/* La pianificazione non è un dettaglio da nascondere: se il flusso parte
-          anche da solo, chi preme deve sapere che non è l'unico a farlo. */}
+      {/* The schedule is not a detail to hide: if the flow also starts on its
+          own, whoever presses must know they are not the only one starting it. */}
       {trigger.state === "ready" && trigger.trigger.scheduled && (
         <div className="trigger-node__note">this flow also has a schedule of its own</div>
       )}
@@ -117,9 +117,9 @@ export function TriggerNode({ data }: NodeProps) {
       {trigger.state === "mute" && <div className="trigger-node__why">{trigger.why}</div>}
 
       {trigger.state === "ready" && canWriteMandate && (
-        // `nodrag` e `nowheel`: senza, trascinare per selezionare il testo
-        // sposterebbe il nodo, e la rotellina zoomerebbe la tela invece di
-        // scorrere il testo.
+        // `nodrag` and `nowheel`: without them, dragging to select the text
+        // would move the node, and the wheel would zoom the canvas instead of
+        // scrolling the text.
         <textarea
           className="trigger-node__mandate nodrag nowheel"
           placeholder={
@@ -135,8 +135,8 @@ export function TriggerNode({ data }: NodeProps) {
       )}
 
       {trigger.state === "ready" && mandate?.kind === "none" && (
-        // Perché non si può scrivere una consegna si dice **prima** di premere.
-        // Dopo sarebbe la scoperta che il flusso è partito su un testo altrui.
+        // Why no mandate can be written is said **before** the press. After, it
+        // would be the discovery that the flow started on somebody else's text.
         <div className="trigger-node__why">{mandate.why}</div>
       )}
 

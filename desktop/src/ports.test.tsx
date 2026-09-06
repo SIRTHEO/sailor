@@ -183,10 +183,10 @@ describe("where a node gets its own ports from", () => {
   test("A SINGLE DEPENDENCY, BUT SKIPPABLE: the input is keyed, not that dependency's output", () => {
     // **THE ONE SUBTLE RULE THIS WINDOW COPIES FROM THE ENGINE.** `step_input`
     // in `crates/flow/src/executor.rs` writes
-    // `[only] if !graph.dependency_is_skippable(...)`: with a single **non**
-    // skippable dependency the input *is* its output. If that lone dependency is
-    // skippable the guard fails, we fall into the `many` branch, and the input
-    // becomes an object with **one key per dependency**.
+    // `[only] if !graph.dependency_is_skippable(...)`: with a single dependency
+    // that is **not** skippable the input *is* its output. If that lone
+    // dependency is skippable the guard fails, we fall into the `many` branch,
+    // and the input becomes an object with **one key per dependency**.
 
     // One dependency is the only case where that condition decides anything:
     // with two, the branch is already the right one for another reason.
@@ -355,10 +355,10 @@ describe("A WIRED PORT AND AN UNWIRED ONE DIFFER WITHOUT COLOR", () => {
     expect(wired, "no wired port to measure").not.toBeNull();
     expect(empty, "no unwired port to measure").not.toBeNull();
 
-    // 3:1 is the threshold for non-text marks: below it, in black and white, the
-    // two become the same blob. Here the filled one is ink and the empty one is
-    // the node's paper, so the margin is wide — and it is the margin that has to
-    // survive, not the number.
+    // 3:1 is the threshold for marks that are not text: below it, in black and
+    // white, the two become the same blob. Here the filled one is ink and the
+    // empty one is the node's paper, so the margin is wide — and it is the
+    // margin that has to survive, not the number.
     const ratio = contrastRatio(
       backdropOf(wired as Element),
       backdropOf(empty as Element),

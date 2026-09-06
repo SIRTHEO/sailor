@@ -1,16 +1,15 @@
-//! `sailor-live` — la modalità viva che non fa sparire la finestra.
+//! `sailor-live` — the live mode that does not make the window vanish.
 //!
-//! **PRENDE IL POSTO DI `cargo tauri dev`**, e per una ragione sola: quel
-//! comando ferma il programma acceso **prima** di ricompilare
-//! (`tauri-cli 2.11.4`, `src/interface/rust.rs`, `run_dev_watcher`), quindi ogni
-//! file toccato spegne la finestra e una compilazione fallita è solo il motivo
-//! per cui non ne ritorna una. Qui l'ordine è rovesciato — si costruisce, e la
-//! finestra si sostituisce **solo se** la costruzione è riuscita — e quando
-//! fallisce lo si dice, invece di lasciare uno schermo vuoto.
+//! **IT TAKES THE PLACE OF `cargo tauri dev`**, for one reason: that command
+//! stops the running program **before** recompiling (`tauri-cli 2.11.4`,
+//! `src/interface/rust.rs`, `run_dev_watcher`), so every file touched puts the
+//! window out and a failed build is merely the reason none comes back. Here the
+//! order is reversed — build, and swap the window **only if** the build
+//! succeeded — and when it fails it is said, instead of leaving a blank screen.
 //!
-//! E ogni processo che accende passa dal deposito, che è la riparazione del
-//! guasto 4: chi arriva domani e trova la porta occupata ha un posto dove
-//! chiedere di chi è.
+//! And every process it lights goes through the ledger, which is the repair of
+//! fault 4: whoever arrives tomorrow and finds the port taken has somewhere to
+//! ask whose it is.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -118,8 +117,8 @@ fn stop_left_running(store: Option<&ledger::Ledger>) {
         eprintln!("senza deposito non c'è niente da spegnere");
         return;
     };
-    // Prima si tolgono i fantasmi: chiudere nel deposito chi è già morto evita
-    // di annunciare che si sta spegnendo qualcosa che non c'è.
+    // Ghosts go first: closing in the ledger what is already dead avoids
+    // announcing the stop of something that is not there.
     match close_the_ones_that_stopped_breathing(store, now()) {
         Ok(0) => {}
         Ok(closed) => println!("{closed} voci chiuse: erano processi già morti."),
@@ -134,8 +133,8 @@ fn stop_left_running(store: Option<&ledger::Ledger>) {
         }
     };
     for item in left.into_iter().filter(|item| item.still_alive) {
-        // SAFETY: `kill` legge e scrive interi. Il pid viene dal deposito, cioè
-        // da qualcosa che Sailor ha acceso: non si spegne roba di altri.
+        // SAFETY: `kill` reads and writes integers. The pid comes from the
+        // ledger, so from something Sailor lit: nobody else's is stopped.
         let sent = unsafe { libc_kill(item.record.pid) };
         if sent {
             let _ = store.record_process_ended(&ledger::ProcessEndRecord {
@@ -203,9 +202,9 @@ fn run_live(root: &Path, supervisor: &Supervisor, at_once: bool) {
             Ok(_) => {}
             Err(error) => eprintln!("chiudere i morti: {error}"),
         }
-        // **QUESTO È IL CASO DEL GUASTO 4, PRESO PRIMA CHE FACCIA MALE.** La
-        // volta scorsa l'avvio falliva con un errore di porta occupata e nessuno
-        // sapeva di chi fosse. Adesso lo sa il deposito, e lo dice qui.
+        // **THIS IS FAULT 4, CAUGHT BEFORE IT HURTS.** The start used to fail
+        // with a port-taken error and nobody knew whose the port was. Now the
+        // ledger knows, and says so here.
         if let Ok(Some(holder)) = store.process_holding_port(DEV_PORT) {
             if ledger::pid_is_alive(holder.pid) {
                 eprintln!(
@@ -232,8 +231,8 @@ fn run_live(root: &Path, supervisor: &Supervisor, at_once: bool) {
         std::process::exit(3);
     }
 
-    // Il servitore di sviluppo della pagina. È il processo che nel guasto 4
-    // teneva la porta.
+    // The page's development server. It is the process that in fault 4 was
+    // holding the port.
     let vite = supervisor.start(Spec {
         process_id: format!("live-frontend-{DEV_PORT}"),
         command: "npm".to_owned(),
@@ -302,8 +301,8 @@ fn run_live(root: &Path, supervisor: &Supervisor, at_once: bool) {
     loop {
         std::thread::sleep(Duration::from_millis(500));
 
-        // Se la finestra è stata chiusa a mano, la si scrive chiusa e si smette:
-        // tenerla nel deposito come accesa fabbricherebbe un fantasma.
+        // If the window was closed by hand, it is written closed and dropped:
+        // keeping it in the ledger as running would manufacture a ghost.
         if let Some(process) = window.as_mut() {
             if let Some(code) = process.exited() {
                 process.record_end(code);
@@ -362,15 +361,15 @@ fn run_live(root: &Path, supervisor: &Supervisor, at_once: bool) {
     }
 }
 
-/// Dove si guarda per sapere che qualcosa è cambiato.
+/// Where one looks to know something changed.
 ///
-/// **`crates/` c'è di proposito, e non c'era in `cargo tauri dev`.**
-/// `get_in_workspace_dependency_paths` di `tauri-cli` segue solo le dipendenze
-/// per percorso che sono **membri dello stesso workspace**, e
-/// `desktop/src-tauri/Cargo.toml` dichiara un `[workspace]` vuoto apposta per
-/// stare fuori da quello alla radice. Risultato: con `cargo tauri dev` una
-/// modifica a `crates/ledger` non fa ricostruire niente, e la finestra continua
-/// a mostrare il motore vecchio senza dirlo.
+/// **`crates/` IS THERE ON PURPOSE, AND WAS NOT IN `cargo tauri dev`.**
+/// `tauri-cli`'s `get_in_workspace_dependency_paths` follows only path
+/// dependencies that are **members of the same workspace**, and
+/// `desktop/src-tauri/Cargo.toml` declares an empty `[workspace]` precisely to
+/// stay out of the root one. Result: under `cargo tauri dev` a change to
+/// `crates/ledger` rebuilds nothing, and the window goes on showing the old
+/// engine without saying so.
 fn watched_roots(root: &Path) -> Vec<PathBuf> {
     vec![
         root.join("crates"),

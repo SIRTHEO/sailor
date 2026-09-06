@@ -184,7 +184,7 @@ describe("the run history", () => {
               started_at: 1000, ended_at: 1100,
             },
             {
-              // The call that said nothing: «non detto», not zero.
+              // The call that said nothing: absent, not zero.
               call_id: "c2", step_id: "prove", purpose: "prove", cli: "codex",
               requested_model: "", actual_model: "", input_tokens: null, output_tokens: null,
               cached_tokens: null, cache_write_tokens: null, total_tokens: null, turns: null,
@@ -360,7 +360,7 @@ describe("a ledger that is not there", () => {
         </div>,
       );
       return screen.findByText(/not the same as/).then(() => {
-        // And no number: a zero written next to «non lo so» still reads as zero.
+        // And no number: a zero written beside a missing answer still reads as zero.
         expect(screen.queryByText("0")).toBeNull();
         stop();
       });

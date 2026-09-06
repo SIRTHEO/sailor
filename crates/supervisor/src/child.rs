@@ -12,17 +12,17 @@ use ledger::{Ledger, ProcessEndRecord, ProcessRecord};
 
 use crate::{now, BuildOutcome, Running, StartToken};
 
-/// Cosa accendere.
+/// What to light.
 #[derive(Debug, Clone)]
 pub struct Spec {
-    /// Il nome stabile con cui lo si ritrova dopo un riavvio. Non è il pid.
+    /// The stable name it is found again by after a restart. Not the pid.
     pub process_id: String,
     pub command: String,
     pub args: Vec<String>,
     pub working_directory: PathBuf,
-    /// La porta che occuperà, se ne occupa una. Va dichiarata **prima**
-    /// dell'avvio: è ciò che permette a chi arriva dopo di chiedere «chi tiene
-    /// la 5183» invece di scoprirlo quando il proprio avvio fallisce.
+    /// The port it will hold, if it holds one. It is declared **before** the
+    /// start: that is what lets whoever comes later ask "who holds 5183"
+    /// instead of finding out when their own start fails.
     pub port: Option<u16>,
     pub purpose: String,
     pub started_by: String,
@@ -32,7 +32,7 @@ pub struct Spec {
     pub environment: Vec<(String, String)>,
 }
 
-/// Un processo acceso da Sailor, che sa di esserlo.
+/// A process lit by Sailor, that knows it is one.
 pub struct Process {
     spec: Spec,
     child: std::process::Child,
@@ -41,12 +41,12 @@ pub struct Process {
 }
 
 impl Process {
-    /// Nasce in un **gruppo di processi suo**, perché spegnerlo spenga anche
-    /// chi ha acceso lui.
+    /// Born in a **process group of its own**, so killing it kills what it lit.
     ///
-    /// `sailor-live` avvia `cargo` e il server della finestra, che di figli ne
-    /// fanno: senza il gruppo, `kill` arriva al capostipite e il nipote resta
-    /// vivo con la porta in mano. Il gemello sta in `actions::run_with_timeout`.
+    /// `sailor-live` starts `cargo` and the window's server, and both have
+    /// children: without the group, `kill` reaches the ancestor and the
+    /// grandchild survives holding the port. The twin is in
+    /// `actions::run_with_timeout`.
     fn in_its_own_group(command: &mut Command) {
         #[cfg(unix)]
         {
@@ -57,9 +57,9 @@ impl Process {
         let _ = command;
     }
 
-    /// Manda il segnale al **gruppo**, che porta il numero del capogruppo: il
-    /// segno meno lo dice a `kill`. Limite noto: un nipote che si stacca da
-    /// solo con `setsid` esce dal gruppo e sopravvive.
+    /// Signals the **group**, which carries the group leader's number: the
+    /// minus sign says so to `kill`. Known limit: a grandchild that detaches
+    /// itself with `setsid` leaves the group and survives.
     fn signal_the_whole_group(pid: u32) {
         #[cfg(unix)]
         unsafe {
@@ -129,8 +129,8 @@ impl Process {
         &self.spec.process_id
     }
 
-    /// È uscito da solo? Non è una domanda al sistema operativo per nome: si
-    /// interroga **questo** figlio, che è nostro.
+    /// Did it leave on its own? Not a question to the operating system by name:
+    /// it interrogates **this** child, which is ours.
     pub fn exited(&mut self) -> Option<Option<i32>> {
         match self.child.try_wait() {
             Ok(Some(status)) => Some(status.code()),
@@ -138,8 +138,8 @@ impl Process {
         }
     }
 
-    /// Scrive nel deposito che è finito. Chiamarla due volte non fa danno: la
-    /// seconda scrive la stessa chiusura.
+    /// Writes into the ledger that it ended. Calling it twice does no harm: the
+    /// second writes the same closing.
     pub fn record_end(&mut self, exit_code: Option<i32>) {
         if let Some(store) = self.store.as_ref() {
             let _ = store.record_process_ended(&ProcessEndRecord {
@@ -158,8 +158,8 @@ impl Running for Process {
         let outcome = self.child.kill();
         let code = self.child.wait().ok().and_then(|status| status.code());
         self.record_end(code);
-        // Un figlio già uscito da solo fa fallire `kill`: non è un guasto, è la
-        // condizione che si voleva ottenere.
+        // A child that already left on its own makes `kill` fail: not a fault,
+        // it is the very condition wanted.
         match outcome {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == std::io::ErrorKind::InvalidInput => Ok(()),
@@ -168,10 +168,10 @@ impl Running for Process {
     }
 }
 
-/// **CHI NON LO SPEGNE ESPLICITAMENTE LO SPEGNE COMUNQUE.** Senza questo, ogni
-/// strada di errore che abbandona un `Process` — un `?`, un panico — lascia
-/// acceso un processo che il deposito continua a dare per vivo. È il guasto 4
-/// che rinasce da una porta che nessuno guarda.
+/// **WHOEVER DOES NOT STOP IT EXPLICITLY STOPS IT ANYWAY.** Without this, every
+/// error road that abandons a `Process` — a `?`, a panic — leaves running a
+/// process the ledger goes on calling alive. It is fault 4 reborn through a
+/// door nobody watches.
 impl Drop for Process {
     fn drop(&mut self) {
         if !self.stopped {
@@ -180,12 +180,12 @@ impl Drop for Process {
     }
 }
 
-/// Costruisce, e riporta cosa ha detto il compilatore.
+/// Builds, and reports what the compiler said.
 ///
-/// **L'USCITA D'ERRORE SI TIENE INTERA.** `cargo` scrive le diagnosi su stderr;
-/// buttarle e riportare solo «fallita» costringerebbe chi guarda a tornare nel
-/// terminale, cioè a fare a mano il lavoro che questa modalità dovrebbe
-/// togliere.
+/// **THE ERROR OUTPUT IS KEPT WHOLE.** `cargo` writes its diagnostics on
+/// stderr; throwing them away and reporting only "failed" would send whoever
+/// looks back into the terminal — doing by hand the work this mode exists to
+/// take away.
 pub fn cargo_build(manifest: &Path, jobs: Option<u32>) -> BuildOutcome {
     let mut command = Command::new("cargo");
     command
@@ -207,14 +207,12 @@ pub fn cargo_build(manifest: &Path, jobs: Option<u32>) -> BuildOutcome {
     }
 }
 
-/// L'istante dell'ultima modifica sotto queste radici, in secondi.
+/// The instant of the newest change under these roots, in seconds.
 ///
-/// **UN SONDAGGIO E NON UN OSSERVATORE, E IL PERCHÉ È DICHIARATO.** Un
-/// osservatore vero (`notify`) vorrebbe una dipendenza nuova, e le dipendenze
-/// di questo albero sono tenute al minimo per scelta scritta in `Cargo.toml`.
-/// La differenza che si paga è un ritardo di mezzo secondo su una ricostruzione
-/// che ne dura decine: non si sente. La differenza che si guadagna è che questa
-/// funzione si può leggere tutta.
+/// **A POLL AND NOT A WATCHER, AND THE WHY IS DECLARED.** A real watcher
+/// (`notify`) wants a new dependency, and this tree keeps dependencies to a
+/// minimum by a choice written in `Cargo.toml`. The cost is half a second on a
+/// rebuild lasting tens — unnoticeable; the gain is a function read whole.
 pub fn newest_change(roots: &[PathBuf]) -> u64 {
     fn walk(directory: &Path, newest: &mut u64) {
         let Ok(entries) = std::fs::read_dir(directory) else {
@@ -224,8 +222,8 @@ pub fn newest_change(roots: &[PathBuf]) -> u64 {
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().into_owned();
             if path.is_dir() {
-                // `target` cambia a ogni costruzione: guardarlo vorrebbe dire
-                // che ogni ricostruzione ne chiede un'altra, per sempre.
+                // `target` changes on every build: watching it would mean every
+                // rebuild asks for another, for ever.
                 if matches!(name.as_str(), "target" | "node_modules" | ".git" | "dist") {
                     continue;
                 }

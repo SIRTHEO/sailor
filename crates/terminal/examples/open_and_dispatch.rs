@@ -1,17 +1,17 @@
-//! Il motore dei terminali, guidato a mano e senza la finestra.
+//! The terminal engine, driven by hand and without the window.
 //!
 //! ```text
-//! cargo run -p terminal --example open_and_dispatch -- <cartella> [riga...]
+//! cargo run -p terminal --example open_and_dispatch -- <directory> [line...]
 //! ```
 //!
-//! Senza argomenti apre un terminale nella cartella corrente, ci scrive
-//! `echo ciao`, legge la risposta, e poi mostra cosa succede a una richiesta che
-//! riguarda un flusso: non viene eseguita, viene smistata. Con degli argomenti
-//! sottopone le righe che gli si danno, una per volta, e dice dove sono andate.
+//! With no arguments it opens a terminal in the current directory, writes
+//! `echo ciao` into it, reads the answer, and then shows what happens to a
+//! request about a flow: it is not executed, it is routed. With arguments it
+//! submits the lines it is given, one at a time, and says where they went.
 //!
-//! **ESISTE PERCHÉ IL MOTORE NON È DENTRO LA FINESTRA.** È la dimostrazione che
-//! un terminale di Sailor si apre, si guida e si guarda senza aprire niente —
-//! e il punto in cui chi costruirà l'interfaccia può leggere l'ordine dei gesti.
+//! **IT EXISTS BECAUSE THE ENGINE IS NOT INSIDE THE WINDOW.** It is the proof
+//! that a Sailor terminal can be opened, driven and watched without opening
+//! anything — and where whoever builds the interface reads the gesture order.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -36,8 +36,8 @@ fn main() {
     let lines: Vec<String> = args.collect();
     let lines = if lines.is_empty() {
         vec![
-            // Le virgolette in mezzo distinguono la riga rimandata indietro dal
-            // terminale da quella che la shell ha davvero prodotto.
+            // The quotes in the middle tell the line echoed back by the
+            // terminal apart from the one the shell really produced.
             "echo ci\"a\"o".to_string(),
             "? trova i residui di configurazione".to_string(),
         ]
@@ -67,8 +67,8 @@ fn main() {
         match terminal.submit(line) {
             Ok(Routed::Command { why, .. }) => {
                 println!("«{line}» → TERMINALE (perché: {why:?})");
-                // Il tempo di far girare il comando: qui si guarda, non si
-                // misura, e un attesa fissa basta per una dimostrazione.
+                // Time enough to run the command: here one watches, one does
+                // not measure, and a fixed wait is enough for a demonstration.
                 std::thread::sleep(Duration::from_millis(800));
                 let text = seen.text();
                 for row in text[before.min(text.len())..].lines() {
