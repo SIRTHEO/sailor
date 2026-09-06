@@ -74,6 +74,7 @@ vi.mock("./sample", async (importOriginal) => {
 });
 
 import App from "./App";
+import { nameOfPlace } from "./places";
 import { BlankCanvas } from "./BlankCanvas";
 import {
   belowThreshold,
@@ -87,6 +88,9 @@ import { stepCountLabel } from "./flow";
 import { SAMPLE } from "./sample";
 
 import stylesheetSource from "./styles.css?raw";
+
+/** Read, never spelled: a hard-coded name breaks on a rename. */
+const WHY = nameOfPlace("memory");
 
 /* ── the box observer, driven by the test ───────────────────────────────────
    In the other files `ResizeObserver` is an empty shell: enough for React Flow
@@ -328,7 +332,7 @@ function goToFlows(): void {
 function leaveTheBoard(): void {
   fireEvent.click(screen.getByRole("button", { name: /Search or run a command/ }));
   const rows = Array.from(document.querySelectorAll<HTMLElement>(".palette__entry"));
-  const row = rows.find((one) => one.querySelector(".palette__label")?.textContent === "Runs");
+  const row = rows.find((one) => one.querySelector(".palette__label")?.textContent === WHY);
   fireEvent.click(row as HTMLElement);
 }
 

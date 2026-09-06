@@ -7,7 +7,10 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import App from "./App";
-import { MACHINE, MACHINE_GROUND, PLACES, UNDER_A_TREE } from "./places";
+import { nameOfPlace, MACHINE, MACHINE_GROUND, PLACES, UNDER_A_TREE , UNDER_THE_TREE } from "./places";
+
+/** Read, never spelled: a hard-coded name breaks on a rename. */
+const WHY = nameOfPlace("memory");
 
 afterEach(() => {
   cleanup();
@@ -56,8 +59,8 @@ describe("the permanent menu is out of the ordinary view", () => {
       fireEvent.click(row as HTMLElement);
     };
 
-    type("Runs");
-    expect(crumbs(), "the history is not reachable any more").toEqual(["Runs", "Runs"]);
+    type(WHY);
+    expect(crumbs(), "the history is not reachable any more").toEqual([WHY, "Runs"]);
 
     type("Profiles");
     expect(crumbs(), "what this machine holds is not reachable any more").toEqual([
@@ -72,9 +75,16 @@ describe("the permanent menu is out of the ordinary view", () => {
     const heads = Array.from(container.querySelectorAll(".world__head")).map((one) => one.textContent);
     expect(heads).toEqual(["workspaces", "flows everywhere", "outside every workspace"]);
 
-    // Board, Changes and Whiteboard answer about a tree, and hang under one.
+    // A fixed row would mean one tree while you stand in another.
     for (const id of UNDER_A_TREE) {
-      expect(PLACES.map((one) => one.id), `«${id}» is not a place any more`).toContain(id);
+      expect(
+        UNDER_THE_TREE.map((one) => one.id),
+        `«${id}» hangs under no tree any more`,
+      ).toContain(id);
+      expect(
+        PLACES.map((one) => one.id),
+        `«${id}» is offered twice: once under the tree and once in the list`,
+      ).not.toContain(id);
     }
     expect(screen.getByRole("button", { name: /^Board/ }), "no way to the board out here").toBeTruthy();
   });

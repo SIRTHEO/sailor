@@ -1,14 +1,17 @@
 // @vitest-environment jsdom
 /**
- * **THE WINDOW IS THE TERMINALS; THE SECTIONS OPEN INSIDE THAT WORK.** As one
- * destination among seven the centre of the work was subordinate to navigation
- * and every rebuild chose it again. It is the ground, and it comes back.
+ * **THE WINDOW IS THE TERMINALS; THE SECTIONS OPEN INSIDE THAT WORK.** Spelled
+ * once as «the work is in no list», which measured the mechanism: it is
+ * subordinate when reaching it costs navigation, not when it has a name.
  */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import App from "./App";
-import { PLACES, TERMINALS_GROUND } from "./places";
+import { nameOfPlace, PLACES, TERMINALS_GROUND } from "./places";
 import { TERMINALS_TABS } from "./TerminalsSection";
+
+/** Read, never spelled: a hard-coded name breaks on a rename. */
+const WHY = nameOfPlace("memory");
 
 afterEach(() => {
   cleanup();
@@ -51,9 +54,13 @@ describe("the terminals are the ground of the window", () => {
     expect(container.querySelector(".body[hidden]"), "the board is the ground again").not.toBeNull();
     expect(crumbsOf(container)).toEqual([TERMINALS_GROUND, "Live"]);
 
-    // A destination is something a list offers. This one is not offered: it is
-    // where you already are.
-    expect(PLACES.map((one) => one.id)).not.toContain("terminals");
+    // Named, so a person who walked away can come back — and first among the
+    // places, so no rebuild can push the work below what merely describes it.
+    expect(PLACES.map((one) => one.id)).toContain("terminals");
+    expect(
+      PLACES.findIndex((one) => one.id === "terminals"),
+      "the work sits below something that only describes it",
+    ).toBeLessThan(PLACES.findIndex((one) => one.id === "sailor"));
     expect(PLACES.map((one) => one.name)).not.toContain("Terminals");
   });
 
@@ -66,7 +73,7 @@ describe("the terminals are the ground of the window", () => {
     const { container } = render(<App />);
     expect(container.querySelectorAll(".section:not([hidden])")).toHaveLength(1);
 
-    typeInThePalette("Runs");
+    typeInThePalette(WHY);
     expect(
       container.querySelectorAll(".section:not([hidden])"),
       "a second section took part of the stage the terminals hold",
@@ -80,12 +87,12 @@ describe("the terminals are the ground of the window", () => {
    */
   test("THE ARRANGEMENT LEFT COMES BACK, section and view alike", () => {
     render(<App />);
-    typeInThePalette("Runs");
+    typeInThePalette(WHY);
     cleanup();
 
     // A NEW WINDOW, not a re-render: this is what a build leaves behind.
     const onRuns = render(<App />);
-    expect(crumbsOf(onRuns.container)[0], "the ground decided where the day begins").toBe("Runs");
+    expect(crumbsOf(onRuns.container)[0], "the ground decided where the day begins").toBe(WHY);
     cleanup();
 
     // And back the other way: the ground is remembered like any other place,

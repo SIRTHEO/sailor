@@ -1,15 +1,20 @@
 /**
- * The places of the window. **THREE GROUNDS, NOT ONE LIST**: what belongs to
- * the tree you stand in hangs under it, what belongs to no tree sits outside,
- * and what belongs to THIS MACHINE is the same wherever you stand. Folded into
- * one noun called «Sailor», those seven cost two clicks and were named nowhere.
+ * The places are **QUESTIONS, NOT SCREENS**: what I am doing, why it was done
+ * that way, what is set up here. Named as screens, a person had to know the
+ * product to find anything. Both grounds now carry a name.
  */
 import { t } from "./i18n";
 import type { MemoryTab } from "./memorytabs";
 import type { SailorTab } from "./sailortabs";
 import { SAILOR_TABS } from "./sailortabs";
 
-export type Section = "board" | "changes" | "sketch" | "terminals" | "memory" | "sailor";
+export type Section =
+  | "board"
+  | "changes"
+  | "sketch"
+  | "terminals"
+  | "memory"
+  | "sailor";
 
 export interface Place {
   id: Section;
@@ -21,28 +26,33 @@ export interface Place {
   group: "work" | "what happened" | "itself";
 }
 
+/**
+ * **WHAT THE WINDOW IS FOR**: to understand why a thing was done as it was, on
+ * which engine, at what cost. `board`, `changes` and `sketch` are absent on
+ * purpose — they answer about one tree, and hang under it.
+ */
+
 export const PLACES: Place[] = [
-  { id: "board", name: "Board", glyph: "◈", asks: "what am I doing", group: "work" },
   {
-    id: "changes",
-    name: "Changes",
-    glyph: "⇄",
-    asks: "what is not saved yet, in this tree",
-    group: "work",
-  },
-  {
-    id: "sketch",
-    name: "Whiteboard",
-    glyph: "✎",
-    asks: "draw the flow you want, in blocks and words",
+    id: "terminals",
+    name: "The work",
+    glyph: "\u25ae",
+    asks: "the command lines open now, and what they are costing",
     group: "work",
   },
   {
     id: "memory",
-    name: "Runs",
-    glyph: "◷",
-    asks: "what happened, what it cost, and the tables under it",
+    name: "Why",
+    glyph: "\u25f7",
+    asks: "why each thing was done as it was, what it cost, and the store under it",
     group: "what happened",
+  },
+  {
+    id: "sailor",
+    name: "The machine",
+    glyph: "\u2693",
+    asks: "what is set up here, the same wherever you stand",
+    group: "itself",
   },
 ];
 
@@ -118,10 +128,10 @@ export function tabsThatExist(): SailorTab[] {
 }
 
 /**
- * Whether the machine's ground stands in for a place instead of reaching into
- * it. **A ROW THAT OPENS ONE VIEW OF A PLACE IS NOT THE PLACE**: the ledger is
- * one view of the history among four, and reading the section as taken would
- * cost the other three their only name.
+ * Whether a row of the machine reaches into a place that carries its own name
+ * elsewhere. **A ROW THAT OPENS ONE VIEW OF A PLACE IS NOT THE PLACE**: the
+ * ledger is one view of the history among four, and reading the section as
+ * taken would cost the other three their only name.
  */
 export function namedByTheMachine(id: Section): boolean {
   const rows = MACHINE.filter((row) => row.section === id);
@@ -136,12 +146,34 @@ export function namedByTheMachine(id: Section): boolean {
  */
 export const UNDER_A_TREE: Section[] = ["board", "changes", "sketch"];
 
-/**
- * Every place ⌘K offers under its own name. **A PLACE OUTSIDE THE STRIP IS
- * STILL A PLACE**: built from the strip, the list left out the three that hang
- * under a tree. The two the machine's ground names better are left to it, so
- * «Ledger» is offered once and not twice.
- */
+/** **A PLACE OUTSIDE THE LIST IS STILL A PLACE**: built from the fixed list
+ * alone, the palette left out the three used while working in a tree. */
 export function onItsOwnName(): Place[] {
-  return PLACES.filter((place) => !namedByTheMachine(place.id));
+  return [...PLACES, ...UNDER_THE_TREE];
+}
+
+/** Out of `PLACES` because their answer changes with the tree: a fixed row
+ * would lie about which one it means. */
+export const UNDER_THE_TREE: Place[] = [
+  { id: "board", name: "Board", glyph: "\u25c8", asks: "the flow, as a graph", group: "work" },
+  {
+    id: "changes",
+    name: "Changes",
+    glyph: "\u21c4",
+    asks: "what is not saved yet, in this tree",
+    group: "work",
+  },
+  {
+    id: "sketch",
+    name: "Whiteboard",
+    glyph: "\u270e",
+    asks: "draw the flow you want, in blocks and words",
+    group: "work",
+  },
+];
+
+/** **ONE LOOKUP, NOT TWO**: the fixed list alone left Board printing its own
+ * id in the bar. */
+export function nameOfPlace(id: Section): string {
+  return [...PLACES, ...UNDER_THE_TREE].find((place) => place.id === id)?.name ?? id;
 }

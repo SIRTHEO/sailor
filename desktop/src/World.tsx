@@ -5,7 +5,7 @@
  * is. A thing can also sit outside every workspace, a place of its own.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { PLACES, UNDER_A_TREE, type Section } from "./places";
+import { UNDER_THE_TREE, type Section } from "./places";
 import { grouped, treeName } from "./workspacetrees";
 import { projects, workHere, type Project } from "./workspaces";
 import type { TerminalSummary } from "./terminal";
@@ -302,7 +302,7 @@ export function World({
                   </button>
                   {tree.current && (
                     <>
-                      {PLACES.filter((place) => UNDER_A_TREE.includes(place.id)).map((place) => (
+                      {UNDER_THE_TREE.map((place) => (
                         <button
                           type="button"
                           key={place.id}

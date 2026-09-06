@@ -5,7 +5,10 @@ import App from "./App";
 import { beatWords, buildWords, hears, liveWords, spendWords, whoWords, LiveChip } from "./Bar";
 import { BlankCanvas } from "./BlankCanvas";
 import { LedgerBrowser } from "./LedgerBrowser";
-import { MACHINE, TERMINALS_GROUND, machineHolds, tabsThatExist } from "./places";
+import { nameOfPlace, MACHINE, TERMINALS_GROUND, machineHolds, tabsThatExist } from "./places";
+
+/** Read, never spelled: a hard-coded name breaks on a rename. */
+const WHY = nameOfPlace("memory");
 
 /**
  * **FOUR PLACES, A BAR THAT SPEAKS FROM ANYWHERE, AND THE LEDGER AS A
@@ -109,8 +112,8 @@ describe("the column is the world", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Board/ }));
     expect(crumbs()).toEqual(["Board", "prima-corsa"]);
 
-    typeInThePalette("Runs");
-    expect(crumbs()).toEqual(["Runs", "Runs"]);
+    typeInThePalette(WHY);
+    expect(crumbs()).toEqual([WHY, "Runs"]);
     // The terminals stay mounted, hidden, with a column of their own: only
     // the section in view counts.
     const shown = ".section:not([hidden]) ";
@@ -120,7 +123,7 @@ describe("the column is the world", () => {
     // The ledger is one view of what happened: consulted beside the runs it
     // came from, and reached from the machine's own row without a run first.
     typeInThePalette("Ledger");
-    expect(crumbs()).toEqual(["Runs", "Ledger"]);
+    expect(crumbs()).toEqual([WHY, "Ledger"]);
 
     // ONE ENTRY, NOT TWO: a row of the machine's ground lands on the screen
     // itself, not on a list that asks again.
@@ -450,7 +453,7 @@ describe("a window replaced by a build", () => {
 
   test("OPENS WHERE IT WAS LEFT, place and all", () => {
     const first = render(<App />);
-    typeInThePalette("Runs");
+    typeInThePalette(WHY);
     expect(
       first.container.querySelector(".body[hidden]"),
       "the board is still in view, so this proves nothing",
@@ -462,7 +465,7 @@ describe("a window replaced by a build", () => {
     const crumbs = Array.from(again.container.querySelectorAll(".topbar__crumb")).map(
       (one) => one.textContent,
     );
-    expect(crumbs[0], "it opened on the board again").toBe("Runs");
+    expect(crumbs[0], "it opened on the board again").toBe(WHY);
   });
 
   test("AND ON THE FLOW THAT WAS OPEN, not on the first of the list", () => {
