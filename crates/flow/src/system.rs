@@ -348,16 +348,30 @@ pub fn load_all(sources: &[FlowSource]) -> Vec<(String, &'static str, Result<Flo
 /// name is and of how to replace a file without showing it half-written. It
 /// takes a built `FlowFile`, not JSON, so a bad graph fails in `Graph::validate`.
 pub fn save_in(flows_dir: &Path, flow: &FlowFile) -> Result<(), String> {
+    let document = serde_json::to_value(flow)
+        .map_err(|error| format!("cannot compose the flow as JSON: {error}"))?;
+    save_document_in(flows_dir, &document)
+}
+
+/// The flow a document declares, or the one refusal every caller shows.
+pub fn flow_of_document(document: &serde_json::Value) -> Result<FlowFile, String> {
+    serde_json::from_value(document.clone())
+        .map_err(|error| format!("the flow fails the engine's validation: {error}"))
+}
+
+/// Writes a flow **keeping the key order its author gave it**, where
+/// [`save_in`] rebuilds it. One door, so a refused graph enters by neither.
+pub fn save_document_in(flows_dir: &Path, document: &serde_json::Value) -> Result<(), String> {
+    let flow = flow_of_document(document)?;
     let id = safe_flow_id(&flow.id)?;
     fs::create_dir_all(flows_dir)
         .map_err(|error| format!("cannot prepare the flows directory: {error}"))?;
     let file_name = format!("{id}.flow.json");
     reject_a_name_that_collides_only_by_case(flows_dir, &file_name)?;
     let target = flows_dir.join(&file_name);
-    let mut text = serde_json::to_string_pretty(flow)
+    let mut text = serde_json::to_string_pretty(document)
         .map_err(|error| format!("cannot compose the flow as JSON: {error}"))?;
-    // A text file ends with a newline: without one, `git diff` says so on every
-    // rewritten flow, and the next hand-added line lands stuck to the last.
+    // Without the newline `git diff` says so on every rewritten flow.
     text.push('\n');
     write_atomically(&target, text.as_bytes())
 }
