@@ -376,6 +376,12 @@ pub struct CapabilityForm {
     /// credentials". It is text for the reader, and enters no decision.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub note: String,
+    /// What the value is measured in, where the capability takes a number that
+    /// must be converted — `usd`, `tokens`. Empty means nobody declared it, and
+    /// then no conversion is attempted: a value in a unit nobody wrote down
+    /// would be a figure with the face of a measurement.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub unit: String,
     /// The fields not understood, for the same reason as `Descriptor::extra`.
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
@@ -827,6 +833,27 @@ impl Descriptor {
         forms.iter().find(carries).map(|form| form.args.clone())
     }
 
+    /// How this engine is told the most one call may spend, when it can be
+    /// told at all: the options, and the unit the number is written in.
+    ///
+    /// **BOTH OR NEITHER.** A form with no unit is a number nobody can convert,
+    /// and imposing it would put a ceiling on the line while Sailor reserved a
+    /// figure meaning something else. `None` is then the honest answer, and it
+    /// is what makes a cap over this engine a stop threshold and not a cap.
+    pub fn spend_ceiling_option(&self) -> Option<actions::reserve::CeilingOption> {
+        let forms = self.capabilities.get(NATIVE_SPEND_CAP)?.forms();
+        let usable = |form: &&CapabilityForm| {
+            form.takes_value && !form.args.is_empty() && !form.unit.is_empty()
+        };
+        forms
+            .iter()
+            .find(usable)
+            .map(|form| actions::reserve::CeilingOption {
+                args: form.args.clone(),
+                unit: form.unit.clone(),
+            })
+    }
+
     /// Where this descriptor says two different things about the same fact. The
     /// defect is never in one file: it is in never having compared the two
     /// blocks. **It lives in the library and not inside a test** because a test
@@ -961,6 +988,11 @@ pub const ASK_WITHOUT_INTERACTION: &str = "ask_without_interaction";
 /// The name of the capability saying how an engine is told which model to
 /// answer with. The code reads a form; the options are the descriptor's.
 pub const CHOOSE_MODEL: &str = "choose_model";
+
+/// The name of the capability saying how an engine is told the most one call
+/// may spend. It is the one fact that separates a guaranteed cap from a stop
+/// threshold, and it is the descriptor's, never a word in Rust.
+pub const NATIVE_SPEND_CAP: &str = actions::reserve::NATIVE_SPEND_CAP;
 
 /// A descriptor that says two different things about the same fact.
 ///
