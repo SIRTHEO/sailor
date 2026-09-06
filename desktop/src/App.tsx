@@ -31,7 +31,7 @@ import {
 import { stepUsageOfRun, type StepUsage } from "./stepusage";
 import { stepStatesOfCanvas } from "./runstate";
 import { BlankCanvas, type PlacesAsk } from "./BlankCanvas";
-import { MACHINE, MACHINE_GROUND, PLACES, SECTIONS, TERMINALS_GROUND, onItsOwnName, type MachineRow, type Section } from "./places";
+import { MACHINE, MACHINE_GROUND, SECTIONS, TERMINALS_GROUND, nameOfPlace, onItsOwnName, type MachineRow, type Section } from "./places";
 import { World, OF_THIS_TREE, type FlowGroup } from "./World";
 import { liveOf, newestPerFlow } from "./flowlive";
 import { amongThese, rememberWhere, whereYouWere } from "./whereyouwere";
@@ -1248,7 +1248,7 @@ export default function App() {
   // that changes content without saying where it is makes the person read it
   // off the shape of the page.
   const crumbs = useMemo<string[]>(() => {
-    const section = PLACES.find((one) => one.id === place)?.name ?? place;
+    const section = nameOfPlace(place);
     if (place === "board") return focusName === null ? [section] : [section, focusName];
     if (place === "memory") {
       const tab = MEMORY_TABS.find((one) => one.id === memoryTab)?.name ?? memoryTab;
@@ -1298,7 +1298,7 @@ export default function App() {
       hint: one.asks,
       run: () => setPlace(one.id),
     }));
-    const history = PLACES.find((one) => one.id === "memory")?.name ?? "Runs";
+    const history = nameOfPlace("memory");
     for (const one of MEMORY_TABS) {
       go.push({ group: "Go to", label: `${history} › ${one.name}`, hint: one.about, run: () => { setPlace("memory"); setMemoryTab(one.id); } });
     }

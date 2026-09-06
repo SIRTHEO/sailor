@@ -7,8 +7,11 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import App from "./App";
-import { MACHINE, PLACES } from "./places";
+import { nameOfPlace, MACHINE, PLACES } from "./places";
 import { MEMORY_TABS } from "./memorytabs";
+
+/** Read, never spelled: a hard-coded name breaks on a rename. */
+const WHY = nameOfPlace("memory");
 
 afterEach(() => {
   cleanup();
@@ -50,7 +53,7 @@ function inTheColumn(root: Element, name: string): HTMLElement {
 describe("the history is one place", () => {
   test("THE TABLES ARE A VIEW INSIDE THE RUNS, not a section beside them", () => {
     const { container } = render(<App />);
-    typeInThePalette("Runs");
+    typeInThePalette(WHY);
 
     const inside = Array.from(container.querySelectorAll(`${SHOWN}.subrail__name`)).map(
       (one) => one.textContent,
@@ -64,13 +67,13 @@ describe("the history is one place", () => {
 
   test("AND THEY OPEN WITHOUT PASSING THROUGH A SINGLE RUN", () => {
     const { container } = render(<App />);
-    typeInThePalette("Runs");
+    typeInThePalette(WHY);
     // Straight from the history's own column, with no run picked first.
     fireEvent.click(inTheColumn(container, "Ledger"));
 
     expect(container.querySelector(`${SHOWN}.browser`), "the tables did not open").not.toBeNull();
     const crumbs = Array.from(container.querySelectorAll(".topbar__crumb")).map((one) => one.textContent);
-    expect(crumbs, "the bar does not say the tables are part of the history").toEqual(["Runs", "Ledger"]);
+    expect(crumbs, "the bar does not say the tables are part of the history").toEqual([WHY, "Ledger"]);
   });
 
   test("AND THE MACHINE'S OWN ROW LANDS IN THAT SAME PLACE", () => {
@@ -81,7 +84,7 @@ describe("the history is one place", () => {
     expect(row?.memoryTab).toBe("ledger");
 
     const { container } = render(<App />);
-    typeInThePalette("Runs");
+    typeInThePalette(WHY);
     fireEvent.click(inTheColumn(container, "Faults"));
     typeInThePalette(row?.name ?? "");
 
