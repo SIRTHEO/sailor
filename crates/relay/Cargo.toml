@@ -1,16 +1,18 @@
 [package]
 name = "relay"
 version = "0.1.0"
+description = "Handing a live agent the baton: the nodes a relay is made of."
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
 
 # The nodes a relay is made of, and no sequence: the order lives in a flow file.
-#
-# A CRATE OF ITS OWN, AND NOT PART OF `actions`, BECAUSE OF A CYCLE. These nodes
-# reach a live session, so they need `terminal`; and `terminal` needs `toolbox`,
-# which needs `actions`. Putting them in `actions` makes the workspace refuse to
-# build. The cycle is a fact about the dependency graph, not a preference, and
-# a crate here is what it leaves room for.
+# A crate of its own, and not part of `actions`, because of a cycle: these
+# nodes reach a live session, so they need `terminal`; `terminal` needs
+# `toolbox`, which needs `actions`. The cycle is a fact about the dependency
+# graph, not a preference, and a crate here is what it leaves room for.
 [dependencies]
 flow = { path = "../flow" }
 ledger = { path = "../ledger" }

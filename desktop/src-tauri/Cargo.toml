@@ -1,9 +1,12 @@
 [package]
 name = "sailor-desktop"
 version = "0.1.0"
-description = "La finestra di Sailor: la tela dei flussi, in un programma vero."
+description = "The window of Sailor: the flows, their steps and the agents in them, as a real program."
 edition = "2021"
 rust-version = "1.89"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/SIRTHEO/sailor"
+publish = false
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -13,92 +16,84 @@ tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# La finestra chiede i flussi al motore invece di rileggerli per conto suo:
-# `load_flow_registry` sa già distinguere un flusso valido da uno rotto e
-# porta il motivo del rifiuto. Una seconda lettura qui sarebbe la quarta
-# copia della stessa conoscenza — dopo `crates/flow`, `crates/ui` e
-# `desktop/src/flow.ts` — e la prima a divergere in silenzio.
+# The window asks the engine for the flows instead of re-reading them itself:
+# `load_flow_registry` already tells a valid flow from a broken one and
+# carries the reason. A second reading here would be one more copy of the
+# same knowledge, and the first to diverge in silence.
 ui = { path = "../../crates/ui" }
 flow = { path = "../../crates/flow" }
 
-# Per rifiutare, al salvataggio, un flusso con un'azione che il motore non sa
-# eseguire — la stessa verifica di `sailor flow check`
-# (`crates/sailor/src/flow_cmd.rs`), qui richiamata via `register_default` /
-# `register_store`, non riscritta.
+# To refuse, on save, a flow with an action the engine cannot run: the same
+# check as `sailor flow check`, called through `register_default` and
+# `register_store`, not rewritten.
 actions = { path = "../../crates/actions" }
 ledger = { path = "../../crates/ledger" }
-# I terminali che Sailor segue: da qui si sa in quali alberi ha lavorato, che è
-# come un progetto entra nell'elenco senza che nessuno abbia battuto `init`.
+# The terminals Sailor tracks: from here it knows which trees it has worked
+# in, which is how a project enters the list without anybody typing `init`.
 sessions = { path = "../../crates/sessions" }
 
-# Quali azioni sa eseguire il motore: la stessa lista che usa il terminale.
-# Averla in copia qui ha fatto girare lo stesso flusso in due modi diversi a
-# seconda di chi lo lanciava — l'ultima volta il 30/08/2026, in silenzio.
+# Which actions the engine can run: the same list the command line uses. A
+# copy here once ran the same flow in two ways depending on who launched it.
 registry = { path = "../../crates/registry" }
 
-# Gli alberi di lavoro: la stessa conoscenza che legge `sailor worktree`, non
-# una seconda lettura di `git worktree list` scritta qui.
+# The worktrees: the same knowledge `sailor worktree` reads, not a second
+# reading of `git worktree list` written here.
 workspace = { path = "../../crates/workspace" }
 
-# I comandi della riga di comando, per mostrarli nella finestra senza
-# ricopiarli. `crates/sailor` è diventato lib+bin il 01/09/2026 proprio per
-# questo: l'alternativa era una pagina d'aiuto in TypeScript che diverge dal
-# binario alla prima opzione aggiunta — il guasto 10, alla sesta occorrenza.
+# The commands of the command line, shown in the window without a copy. The
+# alternative was a help page in TypeScript that diverges from the binary at
+# the first option added; see fault 10.
 sailor = { path = "../../crates/sailor" }
 
-# Le frasi, in una lingua o nell'altra. La tabella dei comandi porta la chiave
-# e non la riga: senza il catalogo la finestra mostrerebbe la chiave.
+# The sentences, in one language or the other. The table of commands carries
+# the key and not the line: without the catalogue the window would show the key.
 catalogue = { path = "../../crates/catalogue" }
 
-# Per dire, dentro la finestra, che la ricostruzione è fallita — guasto 11. È
-# lo stesso crate che tiene acceso questo programma da fuori: il formato dello
-# stato è dichiarato una volta sola, o supervisore e finestra si scriverebbero
-# due JSON che divergono al primo campo aggiunto.
+# To say, inside the window, that the rebuild failed; see fault 11. The same
+# crate keeps this program alive from outside: the state's format is declared
+# once, or supervisor and window would write two JSONs that diverge at the
+# first field added.
 supervisor = { path = "../../crates/supervisor" }
 
-# Per far partire un flusso che comincia con un nodo di innesco: l'azione
-# `trigger` vive in un crate a sé, e un registro che non la contiene rifiuta il
-# flusso con «azione sconosciuta» al momento del lancio.
+# To start a flow that begins with a trigger node: the `trigger` action lives
+# in a crate of its own, and a registry without it refuses the flow with
+# «unknown action» at launch.
 trigger = { path = "../../crates/trigger" }
 
-# Per rispondere alla finestra quando chiede «cosa posso usare qui»: CLI di
-# intelligenza artificiale, server MCP, strumenti. L'elenco di cosa cercare è un
-# dato del crate, non codice, e chi installa qualcosa di nuovo lo dichiara in un
-# file invece di aspettare una versione nuova del programma.
+# To answer the window when it asks «what can I use here»: AI command lines,
+# MCP servers, tools. What to look for is data of the crate, not code, and
+# whoever installs something new declares it in a file instead of waiting for
+# a new version of the program.
 toolbox = { path = "../../crates/toolbox" }
 profiles = { path = "../../crates/profiles" }
 models = { path = "../../crates/models" }
 faults = { path = "../../crates/faults" }
 
-# Il motore dei terminali. La finestra non ne contiene nemmeno una riga: apre,
-# scrive, ridimensiona e chiude passando di qui, e riceve l'uscita mentre esce.
-# È il crate che si prova con `cargo test -p terminal`, cioè senza aprire
-# niente — ed è il motivo per cui vive fuori da questa cartella.
+# The terminal engine. The window holds not one line of it: it opens, writes,
+# resizes and closes through here, and receives the output as it comes. It is
+# the crate tested with `cargo test -p terminal`, without opening anything,
+# which is why it lives outside this directory.
 terminal = { path = "../../crates/terminal" }
 
-# Per portare alla finestra i byte che escono da uno pseudo-terminale. Non è una
-# dipendenza nuova per questo albero: `base64 0.22.1` è già in `Cargo.lock`,
-# tirata da Tauri, quindi dichiararla qui non scarica e non compila niente in
-# più. L'alternativa era scriversi un codificatore in casa: cinquanta righe di
-# uno standard, con l'unico guadagno di non nominarlo.
+# To bring the window the bytes leaving a pseudo-terminal. Not a new
+# dependency for this tree: `base64` is already in the lock file, pulled by
+# Tauri, so declaring it here downloads and builds nothing more.
 base64 = "0.22"
 
-# Per dire, dentro la finestra, cosa è installato su questa macchina:
-# competenze, agenti, comandi, regole, ganci. Le radici da guardare stanno nel
-# crate e non nei chiamanti, perché la riga di comando e la finestra dicano lo
-# stesso numero sulla stessa macchina.
+# To say, inside the window, what is installed on this machine: skills,
+# agents, commands, rules, hooks. The roots to look at live in the crate and
+# not in the callers, so the command line and the window say the same number
+# on the same machine.
 inventory = { path = "../../crates/inventory" }
 
-# FUORI DAL WORKSPACE, DI PROPOSITO. Un `[workspace]` vuoto stacca questo crate
-# da quello alla radice, e non è pigrizia: `sailor release` esegue
-# `cargo test --release --workspace` per **qualunque** bersaglio, quindi da
-# membro questa finestra si tirerebbe dietro WebKit e qualche centinaio di crate
-# a ogni rilascio di `hooks` o di `notte` — su una macchina dove il governo della
-# memoria ferma già le compilazioni ordinarie. La finestra ha il suo ciclo di
-# vita: si compila quando la si vuole vedere.
+# Outside the workspace, on purpose. An empty `[workspace]` detaches this crate
+# from the root one: `sailor release` runs `cargo test --release --workspace`
+# for every target, so as a member this window would pull WebKit and a few
+# hundred crates into every release, on a machine where memory governance
+# already stops ordinary builds. The window is built when one wants to see it.
 [workspace]
 
-# Gli stessi interruttori della radice: un binario che deve aprirsi subito.
+# The same switches as the root: a binary that must open at once.
 [profile.release]
 opt-level = 3
 lto = true

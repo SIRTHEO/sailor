@@ -1,21 +1,24 @@
 [package]
 name = "supervisor"
 version = "0.1.0"
+description = "Keeps the window alive while the machine beneath it is rebuilt."
 edition.workspace = true
 rust-version.workspace = true
-description = "Tiene accesa la finestra mentre si aggiusta la macchina di sotto."
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
 
 [dependencies]
 ledger = { path = "../ledger" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
-# Per uccidere un gruppo di processi invece di un processo solo: un figlio che
-# ha acceso qualcuno lo lasciava vivo, ed è la porta che resta occupata.
+# To kill a process group rather than one process: a child that started
+# something left it alive, and that is the port that stays busy.
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
-# Il programma che sostituisce `cargo tauri dev` in modalità viva.
+# The program that replaces `cargo tauri dev` in live mode.
 [[bin]]
 name = "sailor-live"
 path = "src/main.rs"

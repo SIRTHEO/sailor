@@ -58,8 +58,12 @@ and opens terminals that know which engine runs in them.
 
 ```sh
 cargo build --workspace
-cargo test --workspace --no-fail-fast   # 1,613 tests across 120 binaries
+cargo test --workspace --no-fail-fast
 ```
+
+How many tests and binaries that is, the tree states itself: the seeds in
+`crates/sailor/tests/the_battery_does_not_shrink_in_silence.rs` must match the
+count exactly, so a test that vanishes turns the ratchet red.
 
 Rust 1.89 or newer. No service and no database to start: the store is a SQLite
 file created on first use.

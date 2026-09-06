@@ -1,8 +1,12 @@
 [package]
 name = "workspace"
 version = "0.1.0"
+description = "The tree being worked in: its root, what it declares, and its worktrees."
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
 
 [dependencies]
 serde = { workspace = true }

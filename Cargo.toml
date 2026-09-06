@@ -27,19 +27,24 @@ members = [
     "crates/workspace",
 ]
 
+# Every member inherits these. `publish = false` is a statement, not a guard:
+# these crates are installed from the tree with `cargo install --path`, and
+# none of them is on a registry.
 [workspace.package]
 edition = "2021"
 rust-version = "1.89"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/SIRTHEO/sailor"
+publish = false
 
-# Dipendenze tenute al minimo di proposito: ogni crate in più è tempo di
-# compilazione e superficie da aggiornare, e questi binari devono partire in
-# pochi millisecondi — è l'unica ragione per cui esistono.
+# Dependencies are held to a minimum on purpose: every extra crate is build
+# time and a surface to keep updated, and these binaries must start in a few
+# milliseconds, which is the only reason they exist.
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
-# `float_roundtrip` non è un dettaglio di gusto: senza, il parsing di un
-# `1787052662.1803281` torna indietro come `1787052662.180328` — mezzo ULP, ma
-# basta a far divergere ogni confronto col Python su un istante letto e
-# riscritto, e i file di stato passano da tutti e due.
+# `float_roundtrip` is not taste: without it `1787052662.1803281` parses back
+# as `1787052662.180328`, half an ULP, and every comparison with an instant
+# read and rewritten diverges. The state files all go through this.
 serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
 regex = "1"
 
