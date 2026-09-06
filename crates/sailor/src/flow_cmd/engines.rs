@@ -65,9 +65,14 @@ pub(super) fn login_states_into(
             .map(|(name, value)| format!("{name}={value}"))
             .collect::<Vec<_>>()
             .join(" ");
-        let who = format!(
-            "{} (profilo «{cli_id}/{profile_name}», {home})",
-            wanted.tool
+        let who = catalogue::say(
+            "cli.flow.engine_from_profile",
+            &[
+                ("who", &wanted.tool),
+                ("cli", cli_id),
+                ("profile", profile_name),
+                ("home", &home),
+            ],
         );
 
         let Some(recipe) = tools.login_recipe(&wanted.tool) else {
@@ -90,9 +95,10 @@ pub(super) fn login_states_into(
                 "cli.flow.engine_login_unrecognised",
                 &[("who", &who), ("said", &said)],
             )),
-            LoginVerdict::NoAnswer { why } => {
-                unknown.push(format!("{who}: nessuna risposta — {why}"))
-            }
+            LoginVerdict::NoAnswer { why } => unknown.push(catalogue::say(
+                "cli.flow.engine_no_answer",
+                &[("who", &who), ("why", &why)],
+            )),
         }
     }
 
@@ -242,7 +248,7 @@ pub(super) fn engine_lines_into(
         }
 
         let who = format!("{} → {}", wanted.step, wanted.tool);
-        match judged.get(&asked).expect("appena inserito") {
+        match judged.get(&asked).expect("just inserted") {
             EngineOutcome::NotHere(reason) => untried.push(catalogue::say(
                 "cli.flow.engine_not_invocable_here",
                 &[("who", &who), ("reason", reason)],
@@ -340,7 +346,7 @@ mod tests {
              echo 'No prompt provided via stdin.' >&2\n\
              exit 1\n",
         )
-        .expect("scrivere il finto motore");
+        .expect("writing the fake engine");
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -355,7 +361,7 @@ mod tests {
         static SERIAL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let serial = SERIAL.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let dir = std::env::temp_dir().join(format!("prova-case-{}-{serial}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("la cartella di prova");
+        std::fs::create_dir_all(&dir).expect("the scratch directory");
         a_fake_codex_that_answers_about_its_home(&dir);
 
         let login = if declares_login {
@@ -432,7 +438,7 @@ mod tests {
         let real = actions::RealDryProbe;
 
         let empty = dir.join("casa-vuota");
-        std::fs::create_dir_all(&empty).expect("la casa senza credenziali");
+        std::fs::create_dir_all(&empty).expect("the home without credentials");
         let store = a_store_pointing_at(&empty);
         let (report, unknown) = check_report(
             &flow,
@@ -445,29 +451,29 @@ mod tests {
         );
         assert!(
             report.contains("HOMES WITHOUT CREDENTIALS"),
-            "una casa senza credenziali si applica in silenzio: {report}"
+            "a home without credentials is applied in silence: {report}"
         );
         assert!(
             report.contains(&empty.display().to_string()) && report.contains("codex/prove"),
-            "chi legge deve sapere QUALE profilo e QUALE casa, o non sa cosa cambiare: {report}"
+            "the reader must know WHICH profile and WHICH home, or they do not know what to change: {report}"
         );
         assert!(
             report.contains("Not logged in"),
-            "le parole del motore sono la diagnosi: {report}"
+            "the engine's own words are the diagnosis: {report}"
         );
         assert!(
             report.contains("sound command lines"),
-            "il vaglio a secco continua a dire la sua, e continua a dire il vero: {report}"
+            "the dry probe keeps having its say, and keeps saying the truth: {report}"
         );
         assert!(
             unknown.is_empty(),
-            "un profilo senza credenziali NON fa fallire il controllo: punire chi non \
-             c'entra è la cura sbagliata"
+            "a profile without credentials does NOT fail the check: punishing whoever \
+             has nothing to do with it is the wrong cure"
         );
 
         let full = dir.join("casa-piena");
-        std::fs::create_dir_all(&full).expect("la casa autenticata");
-        std::fs::write(full.join("auth.json"), "{}").expect("le credenziali");
+        std::fs::create_dir_all(&full).expect("the authenticated home");
+        std::fs::write(full.join("auth.json"), "{}").expect("the credentials");
         let store = a_store_pointing_at(&full);
         let (report, _) = check_report(
             &flow,
@@ -480,11 +486,11 @@ mod tests {
         );
         assert!(
             report.contains("authenticated homes"),
-            "una casa piena deve risultare piena: {report}"
+            "a full home must come out full: {report}"
         );
         assert!(
             !report.contains("HOMES WITHOUT CREDENTIALS"),
-            "e non deve comparire fra quelle vuote: {report}"
+            "and must not appear among the empty ones: {report}"
         );
     }
 
@@ -503,7 +509,7 @@ mod tests {
         let flow = flow_with_chain(r#""codex""#);
         let real = actions::RealDryProbe;
         let empty = dir.join("casa-vuota");
-        std::fs::create_dir_all(&empty).expect("la casa senza credenziali");
+        std::fs::create_dir_all(&empty).expect("the home without credentials");
         let store = a_store_pointing_at(&empty);
 
         let (report, _) = check_report(
@@ -519,16 +525,16 @@ mod tests {
         assert!(
             report.contains("homes whose authentication nobody could read")
                 && report.contains("nobody looked"),
-            "un'assenza deve dirsi: {report}"
+            "an absence must be said: {report}"
         );
         assert!(
             !report.contains("authenticated homes"),
-            "«nessuno ha guardato» non è «è autenticato»: {report}"
+            "«nobody looked» is not «it is authenticated»: {report}"
         );
         assert!(
             !report.contains("HOMES WITHOUT CREDENTIALS"),
-            "e non è nemmeno «non è autenticato»: inventare un no dove non si è \
-             guardato manderebbe a riparare una casa sana: {report}"
+            "and it is not «it is not authenticated» either: inventing a no where \
+             nobody looked would send someone to repair a sound home: {report}"
         );
     }
 
@@ -544,11 +550,11 @@ mod tests {
         let serial = SERIAL.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let dir =
             std::env::temp_dir().join(format!("prova-motori-{}-{serial}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("la cartella di prova");
+        std::fs::create_dir_all(&dir).expect("the scratch directory");
         let mut declared = Vec::new();
         for (id, ask) in entries {
             let path = dir.join(id);
-            std::fs::write(&path, "").expect("il finto eseguibile");
+            std::fs::write(&path, "").expect("the fake executable");
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
@@ -605,7 +611,7 @@ mod tests {
             _env: &BTreeMap<String, String>,
         ) -> actions::DryRun {
             actions::DryRun::NoAnswer {
-                why: "questa sonda non risponde alla domanda sulle credenziali".to_owned(),
+                why: "this probe does not answer the question about credentials".to_owned(),
             }
         }
     }
@@ -631,7 +637,7 @@ mod tests {
                 "inputs": {{}}
             }}"#
         );
-        serde_json::from_str(&json).expect("caricare il flusso")
+        serde_json::from_str(&json).expect("it loads")
     }
 
     /// Like `flow_with_chain`, with the step naming which model it wants of
@@ -657,7 +663,7 @@ mod tests {
                 "inputs": {{}}
             }}"#
         );
-        serde_json::from_str(&json).expect("caricare il flusso")
+        serde_json::from_str(&json).expect("it loads")
     }
 
     /// A probe that remembers **the line it was given**. The line written in
@@ -668,7 +674,7 @@ mod tests {
 
     impl actions::DryProbe for RecordingProbe {
         fn run(&self, _bin: &str, args: &[String], _stdin: Option<Vec<u8>>) -> actions::DryRun {
-            self.0.lock().expect("la sonda").push(args.to_vec());
+            self.0.lock().expect("the probe").push(args.to_vec());
             actions::DryRun::Answered {
                 stdout: String::new(),
                 stderr: "input must be provided".to_owned(),
@@ -684,7 +690,7 @@ mod tests {
             _env: &BTreeMap<String, String>,
         ) -> actions::DryRun {
             actions::DryRun::NoAnswer {
-                why: "questa sonda non risponde alla domanda sulle credenziali".to_owned(),
+                why: "this probe does not answer the question about credentials".to_owned(),
             }
         }
     }
@@ -705,7 +711,7 @@ mod tests {
             Some(&EngineWorld::without_profiles(&probe)),
         );
 
-        let tried = probe.0.lock().expect("la sonda").clone();
+        let tried = probe.0.lock().expect("the probe").clone();
         assert_eq!(
             tried,
             vec![vec![
@@ -713,7 +719,7 @@ mod tests {
                 "--model".to_owned(),
                 "il-modello-forte".to_owned()
             ]],
-            "il rapporto dice: {report}"
+            "the report says: {report}"
         );
     }
 
@@ -734,8 +740,8 @@ mod tests {
         );
 
         assert!(
-            probe.0.lock().expect("la sonda").is_empty(),
-            "non c'era nessuna riga da provare: {report}"
+            probe.0.lock().expect("the probe").is_empty(),
+            "there was no line to try: {report}"
         );
         assert!(!report.contains("sound command lines"), "{report}");
     }
@@ -787,11 +793,11 @@ mod tests {
         assert!(report.contains("BROKEN command lines"), "{report}");
         assert!(
             report.contains("--print took \"--output-format\" as its prompt"),
-            "senza le parole del motore la riga rossa non dice cosa correggere: {report}"
+            "without the engine's own words the red line does not say what to correct: {report}"
         );
         assert!(
             report.contains("assembled line «") && report.contains("-p»"),
-            "e senza la riga montata non si sa nemmeno cosa è stato provato: {report}"
+            "and without the assembled line nobody even knows what was tried: {report}"
         );
     }
 
@@ -819,13 +825,13 @@ mod tests {
 
         assert!(
             report.contains("chiedi → secondo"),
-            "il secondo della catena non è stato guardato: {report}"
+            "the second of the chain was not looked at: {report}"
         );
         assert!(
             report.contains("took --output-format as its prompt"),
             "{report}"
         );
-        assert!(report.contains("chiedi → terzo"), "né il terzo: {report}");
+        assert!(report.contains("chiedi → terzo"), "nor the third: {report}");
     }
 
     /// **«NOT TRIED» AND «NOT ASSEMBLABLE» ARE TWO DIFFERENT FACTS.** An engine
@@ -838,7 +844,7 @@ mod tests {
     fn a_missing_ask_block_is_not_confused_with_a_line_nobody_looked_at() {
         let flow = flow_with_chain(r#"["senza-ask", "senza-rifiuto"]"#);
         let tools = tools_with_engines(&[("senza-ask", NO_ASK), ("senza-rifiuto", SAYS_NOTHING)]);
-        let probe = ScriptedProbe(vec![("senza-rifiuto", "un errore qualunque")]);
+        let probe = ScriptedProbe(vec![("senza-rifiuto", "some error or other")]);
 
         let (report, _) = check_report(
             &flow,
@@ -850,16 +856,16 @@ mod tests {
         let untried = report
             .lines()
             .find(|line| line.starts_with("command lines not tried"))
-            .unwrap_or_else(|| panic!("manca la riga «non provate»: {report}"));
+            .unwrap_or_else(|| panic!("the «not tried» line is missing: {report}"));
         let unassemblable = report
             .lines()
             .find(|line| line.starts_with("command lines that cannot be assembled"))
-            .unwrap_or_else(|| panic!("manca la riga «non montabili»: {report}"));
+            .unwrap_or_else(|| panic!("the «cannot be assembled» line is missing: {report}"));
 
         assert!(untried.contains("senza-rifiuto"), "{untried}");
         assert!(
             !untried.contains("senza-ask"),
-            "un motore senza `ask` non è una riga non provata: {untried}"
+            "an engine with no `ask` is not a line left untried: {untried}"
         );
         assert!(unassemblable.contains("senza-ask"), "{unassemblable}");
         assert!(!unassemblable.contains("senza-rifiuto"), "{unassemblable}");
@@ -890,7 +896,7 @@ mod tests {
         );
         assert!(
             !report.contains("BROKEN command lines"),
-            "la riga è sana, è la quota che è finita: {report}"
+            "the line is sound, it is the quota that ran out: {report}"
         );
     }
 
@@ -932,7 +938,7 @@ mod tests {
             },
             "inputs": {}
         }"#;
-        let flow: FlowFile = serde_json::from_str(json).expect("caricare il flusso");
+        let flow: FlowFile = serde_json::from_str(json).expect("it loads");
         let tools = tools_with_engines(&[("cargo", NO_ASK)]);
         let probe = ScriptedProbe(vec![]);
 

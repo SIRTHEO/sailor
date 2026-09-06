@@ -210,21 +210,21 @@ mod tests {
     #[test]
     fn init_writes_the_marker_with_the_rules_it_finds_and_no_checks() {
         let root = scratch("init");
-        fs::write(root.join("AGENTS.md"), "regole").expect("un documento");
+        fs::write(root.join("AGENTS.md"), "rules").expect("one document");
         fs::create_dir_all(root.join("docs")).expect("docs");
-        fs::write(root.join("docs/decisions.md"), "decisioni").expect("un altro");
+        fs::write(root.join("docs/decisions.md"), "decisions").expect("another one");
 
-        init(&root, None).expect("scrive");
+        init(&root, None).expect("it writes");
 
-        let declared = flow::workspace::declaration_at(&root).expect("si rilegge");
+        let declared = flow::workspace::declaration_at(&root).expect("it reads back");
         assert_eq!(declared.rules, vec!["AGENTS.md", "docs/decisions.md"]);
         assert!(
             declared.checks.is_empty(),
-            "indovinare una verifica è deciderla al posto di chi lavora qui"
+            "guessing a check is deciding it for whoever works here"
         );
         assert!(
             flow::workspace::find_root(&root).is_some(),
-            "ora è una radice"
+            "it is a root now"
         );
 
         let _ = fs::remove_dir_all(&root);
@@ -237,9 +237,9 @@ mod tests {
     fn a_rule_that_is_not_there_is_not_declared() {
         let root = scratch("senza-regole");
 
-        init(&root, None).expect("scrive lo stesso");
+        init(&root, None).expect("it writes all the same");
 
-        let declared = flow::workspace::declaration_at(&root).expect("si rilegge");
+        let declared = flow::workspace::declaration_at(&root).expect("it reads back");
         assert!(declared.rules.is_empty());
 
         let _ = fs::remove_dir_all(&root);
@@ -270,7 +270,7 @@ mod tests {
     fn declaring_a_project_writes_it_into_the_house_it_was_given() {
         let root = scratch("registrato");
         let house = scratch("casa");
-        init(&root, Some(&house)).expect("dichiara");
+        init(&root, Some(&house)).expect("it declares");
 
         let known = flow::workspace::known_in(&house).expect("the register reads");
         assert_eq!(known.len(), 1, "the declaration never reached the list");
@@ -285,12 +285,12 @@ mod tests {
     fn with_no_house_the_marker_is_written_and_nothing_else_is() {
         let root = scratch("senza-casa");
         let elsewhere = scratch("casa-che-resta-vuota");
-        init(&root, None).expect("dichiara lo stesso");
+        init(&root, None).expect("it declares all the same");
 
         assert!(root.join(MARKER).is_file(), "the marker was not written");
         assert!(
             flow::workspace::known_in(&elsewhere)
-                .expect("si legge")
+                .expect("it reads")
                 .is_empty(),
             "a house nobody named was written into"
         );

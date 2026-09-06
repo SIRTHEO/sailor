@@ -197,7 +197,7 @@ mod tests {
     #[test]
     fn the_report_says_whose_quota_it_is_before_saying_how_much() {
         let said = report(&[a_window("seven_day", 0.32, None)]);
-        let first = said.lines().next().expect("almeno una riga");
+        let first = said.lines().next().expect("at least one line");
         assert!(
             first.contains("PERSON") && first.contains("not a run"),
             "the warning goes at the top, not the bottom: {said}"

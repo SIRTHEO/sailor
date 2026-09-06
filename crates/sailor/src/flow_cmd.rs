@@ -312,7 +312,14 @@ fn list_flows(sources: &[FlowSource]) -> Result<String, String> {
                 );
             }
             Err(error) => {
-                let _ = writeln!(report, "{name}\t{origin}\tnon caricabile: {error}");
+                let _ = writeln!(
+                    report,
+                    "{}",
+                    catalogue::say(
+                        "cli.flow.list_row_does_not_load",
+                        &[("name", &name), ("origin", origin), ("error", &error)],
+                    )
+                );
             }
         }
     }
@@ -343,22 +350,31 @@ fn missing_actions(graph: &Graph, registry: &ActionRegistry) -> BTreeSet<String>
 }
 
 fn default_ledger_dir() -> Result<PathBuf, String> {
-    ledger::default_directory()
-        .ok_or_else(|| "HOME non è definita: non so dove aprire il deposito".to_owned())
+    ledger::default_directory().ok_or_else(|| catalogue::say("cli.flow.no_home_no_ledger", &[]))
 }
 
 fn now_secs() -> Result<i64, String> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs() as i64)
-        .map_err(|error| format!("l'orologio di sistema precede Unix epoch: {error}"))
+        .map_err(|error| {
+            catalogue::say(
+                "cli.clock_before_the_epoch",
+                &[("error", &error.to_string())],
+            )
+        })
 }
 
 fn new_run_id(flow_id: &str) -> Result<String, String> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| format!("{flow_id}-{}", duration.as_nanos()))
-        .map_err(|error| format!("l'orologio di sistema precede Unix epoch: {error}"))
+        .map_err(|error| {
+            catalogue::say(
+                "cli.clock_before_the_epoch",
+                &[("error", &error.to_string())],
+            )
+        })
 }
 
 #[cfg(test)]
@@ -378,11 +394,11 @@ mod tests {
             origin: "di prova",
             dir: directory.0.clone(),
         }])
-        .expect("elencare i flussi");
+        .expect("listing the flows");
 
         assert!(report.contains("prova\t1 steps\tdi prova"), "{report}");
         assert!(
-            report.contains("rotto\tdi prova\tnon caricabile:"),
+            report.contains("rotto\tdi prova\tdoes not load:"),
             "{report}"
         );
         assert!(report.contains("rotto.flow.json"), "{report}");
@@ -403,7 +419,7 @@ mod tests {
         }"#;
 
         let error =
-            serde_json::from_str::<FlowFile>(json).expect_err("il ciclo deve essere rifiutato");
+            serde_json::from_str::<FlowFile>(json).expect_err("the cycle must be refused");
 
         assert!(error.to_string().contains("backward dependency"), "{error}");
     }
@@ -423,34 +439,34 @@ mod tests {
     #[test]
     fn every_arm_of_the_dispatcher_is_written_in_the_usage_line() {
         let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/flow_cmd.rs");
-        let text = fs::read_to_string(&source).expect("questo file si rilegge");
+        let text = fs::read_to_string(&source).expect("this file reads back");
         let body = text
             .split_once("fn dispatch(")
             .and_then(|(_, after)| after.split_once("\nfn "))
             .map(|(body, _)| body)
-            .expect("il corpo di dispatch");
+            .expect("the body of dispatch");
 
         let mut arms: BTreeSet<String> = BTreeSet::new();
         for piece in body.split("command == \"").skip(1) {
             let word = piece
                 .split_once('"')
                 .map(|(word, _)| word.to_owned())
-                .expect("una parola fra virgolette");
+                .expect("a word between quotes");
             arms.insert(word);
         }
         assert!(
             arms.len() >= 8,
-            "i bracci trovati sono troppo pochi, il modo di leggerli si è rotto: {arms:?}"
+            "too few arms were found, the way of reading them has broken: {arms:?}"
         );
-        assert!(arms.contains("schedule"), "il braccio nuovo c'è: {arms:?}");
+        assert!(arms.contains("schedule"), "the new arm is there: {arms:?}");
 
         let usage = usage();
         let missing: Vec<&String> = arms.iter().filter(|arm| !usage.contains(*arm)).collect();
         assert!(
             missing.is_empty(),
-            "questi gesti esistono e non sono scritti da nessuna parte: {missing:?}\n{usage}\n\
-             Un gesto che nessuno sa di poter chiedere è un gesto che non c'è, e chi \
-             non lo trova esce da Sailor per farlo a mano"
+            "these gestures exist and are written down nowhere: {missing:?}\n{usage}\n\
+             A gesture nobody knows they can ask for is a gesture that is not there, \
+             and whoever cannot find it leaves Sailor to do it by hand"
         );
     }
 
@@ -468,7 +484,7 @@ mod tests {
     fn every_flow_on_disk_loads_and_names_only_registered_actions() {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../flows");
         let Ok(entries) = std::fs::read_dir(&dir) else {
-            println!("nessuna cartella dei flussi: niente da verificare");
+            println!("no flows directory: there is nothing to check");
             return;
         };
         let mut checked = 0;
@@ -477,18 +493,18 @@ mod tests {
             if !path.to_string_lossy().ends_with(".flow.json") {
                 continue;
             }
-            let text = std::fs::read_to_string(&path).expect("leggere il flusso");
+            let text = std::fs::read_to_string(&path).expect("reading the flow");
             let flow: FlowFile = serde_json::from_str(&text)
-                .unwrap_or_else(|e| panic!("{} non si carica: {e}", path.display()));
+                .unwrap_or_else(|e| panic!("{} does not load: {e}", path.display()));
             let unknown = missing_actions(&flow.graph, &registry_in(House::empty(), None, None));
             assert!(
                 unknown.is_empty(),
-                "{} nomina azioni che il motore non conosce: {unknown:?}",
+                "{} names actions the engine does not know: {unknown:?}",
                 path.display()
             );
             checked += 1;
         }
-        println!("flussi verificati: {checked}");
+        println!("flows checked: {checked}");
     }
 
     /// The decided file shape, on a fixture of ours: this test must fail if the
@@ -497,7 +513,7 @@ mod tests {
     fn the_decided_file_shape_still_loads() {
         let inputs = r#"{"solo":{"command":"true","env":{},"timeout_secs":1}}"#;
         let json = flow_json("shell_check", "[]", inputs);
-        let flow: FlowFile = serde_json::from_str(&json).expect("caricare la forma decisa");
+        let flow: FlowFile = serde_json::from_str(&json).expect("the decided shape loads");
         assert_eq!(flow.graph.steps().len(), 1);
         assert!(missing_actions(&flow.graph, &registry_in(House::empty(), None, None)).is_empty());
     }
@@ -525,13 +541,13 @@ mod tests {
             "buono.flow.json",
         ] {
             let refused = one_flow(&sources, name).expect_err(&format!(
-                "«{name}» non è un flusso di questa macchina e non deve aprirsi"
+                "«{name}» is not a flow of this machine and must not open"
             ));
             assert!(refused.contains("no flow is called"), "«{name}»: {refused}");
         }
         assert!(
             one_flow(&sources, "buono").is_ok(),
-            "il flusso vero si apre"
+            "the real flow does open"
         );
     }
 
