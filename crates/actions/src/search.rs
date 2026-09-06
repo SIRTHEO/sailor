@@ -43,7 +43,7 @@ pub fn search_the_ledger_and_the_faults(
         .documents_to_search(RECENT_RUNS, RECENT_STEPS, RECENT_EVENTS)
         .map_err(|error| error.to_string())?;
     if let Some(path) = faults_store.filter(|path| path.exists()) {
-        let register = Faults::open(path).map_err(|error| error.to_string())?;
+        let register = Faults::open_for_reading(path).map_err(|error| error.to_string())?;
         documents.extend(register.documents_to_search().map_err(|error| error.to_string())?);
     }
     ledger::search::rank_texts(&documents, query).map_err(|error| error.to_string())

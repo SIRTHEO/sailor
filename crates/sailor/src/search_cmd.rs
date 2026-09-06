@@ -44,7 +44,7 @@ fn report(sources: &[FlowSource], ledger_dir: &std::path::Path, query: &str) -> 
             hit["excerpt"].as_str().unwrap_or_default().replace('\n', " ")
         ));
     }
-    match Ledger::open(ledger_dir) {
+    match Ledger::open_for_reading(ledger_dir) {
         Ok(ledger) => {
             let faults_store = ledger_dir.join(faults::FAULTS_FILE);
             let hits = actions::search::search_the_ledger_and_the_faults(&ledger, Some(&faults_store), query)?;

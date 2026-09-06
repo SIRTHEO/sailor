@@ -89,7 +89,9 @@ fn page_options(options: &[String]) -> Result<PageAsked, String> {
 }
 
 fn write_or_print(asked: &PageAsked) -> i32 {
-    let ledger = match ledger::Ledger::open(ui::gather::default_ledger_dir()) {
+    // The page is read out of the store and written beside it: nothing here
+    // records anything, so nothing here asks for the right to.
+    let ledger = match ledger::Ledger::open_for_reading(ui::gather::default_ledger_dir()) {
         Ok(ledger) => ledger,
         Err(error) => {
             eprintln!("sailor memory: {error}");
