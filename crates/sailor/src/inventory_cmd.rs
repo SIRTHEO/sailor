@@ -1,10 +1,10 @@
-//! `sailor inventory`: che cosa è installato su questa macchina, da dove viene,
-//! e se è raggiungibile.
+//! `sailor inventory`: what is installed on this machine, where it comes from,
+//! and whether it can be reached.
 //!
-//! Il giudizio sta nella libreria `inventory`; qui c'è solo l'interpretazione
-//! degli argomenti e la stampa. Due uscite: leggibile da una persona, e `--json`
-//! per la pagina — la stessa fonte, così l'elenco che si legge da terminale e
-//! quello che si vede nella finestra non possono divergere.
+//! The judgement lives in the `inventory` library; only argument parsing and
+//! printing live here. Two outputs: readable by a person, and `--json` for the
+//! page — one source, so the list read from a terminal and the one seen in the
+//! window cannot diverge.
 
 use crate::Form;
 use inventory::{collect_survey, default_roots, Entry, Inventory, Kind, Reach};
@@ -56,9 +56,9 @@ pub fn run(args: &[String]) -> i32 {
         i += 1;
     }
 
-    // LA CASA LA CHIEDE A CHI LA POSSIEDE. Le basi di lavoro sono dichiarate —
-    // `SAILOR_WORK_ROOTS`, o il file `work-roots` — e la casa dove sta quel file
-    // la sa `ledger::sailor_home()`, che è l'unico posto dove quella regola vive.
+    // THE HOUSE IS ASKED OF WHOEVER OWNS IT. The work roots are declared —
+    // `SAILOR_WORK_ROOTS`, or the `work-roots` file — and the house that file
+    // sits in is known to `ledger::sailor_home()`, the one place that rule lives.
     let survey = default_roots(ledger::sailor_home().as_deref());
     if !survey.bases_declared {
         eprintln!("{}", catalogue::say("cli.inventory.no_bases_declared", &[]));
@@ -126,8 +126,8 @@ pub fn run(args: &[String]) -> i32 {
     }
 }
 
-/// Le forme di `sailor inventory`, una per riga. Vedi `flow_cmd::USAGE` per il
-/// motivo per cui è una costante pubblica invece di righe dentro la stampa.
+/// The shapes of `sailor inventory`, one per line. See `flow_cmd::USAGE` for
+/// why this is a public constant instead of lines inside the printing.
 pub const USAGE: &[Form] = &[
     Form {
         form: "sailor inventory [--kind skill|agent|command|rule|hook] [--unreachable] [--json]",
@@ -150,13 +150,12 @@ fn print_usage() {
     }
 }
 
-/// Deposita la scansione, così la prossima potrà dire che cosa è cambiato.
+/// Deposits the scan, so the next one can say what changed.
 ///
-/// PERCHÉ UN COMANDO CHE CONTA NON BASTA. Un elenco ricalcolato ogni volta sa
-/// dire che cosa c'è; non sa dire che cosa **non c'è più**, e quella è la
-/// domanda da cui dipende ogni cancellazione. Senza, «sparito ieri» e «non è
-/// mai esistito» si leggono uguali — e chi cancella leggendo un elenco così
-/// cancella alla cieca.
+/// WHY A COMMAND THAT ONLY COUNTS IS NOT ENOUGH. A list recomputed every time
+/// can say what is there; it cannot say what is **no longer** there, and every
+/// deletion hangs on that question. Without it, «gone yesterday» and «never
+/// existed» read alike — and whoever deletes off such a list deletes blind.
 fn deposit(found: &Inventory) -> Result<String, String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -199,29 +198,23 @@ fn deposit(found: &Inventory) -> Result<String, String> {
     ))
 }
 
-/// **DOVE STA IL DEPOSITO LO SA UN POSTO SOLO**, e non è questo.
+/// **ONE PLACE KNOWS WHERE THE LEDGER LIVES**, and it is not this one.
 ///
-/// Fino al 01/09/2026 questa funzione ricomponeva `HOME/.claude/state/flussi` da
-/// sé. Non era una copia inerte: era una copia **diversa**, perché
-/// `ledger::default_directory()` guarda anche `SAILOR_LEDGER` e riconosce la
-/// casa di un'installazione precedente. Con quella variabile impostata — come fa
-/// chiunque provi qualcosa senza toccare il deposito vero — `sailor inventory`
-/// scriveva il censimento in un deposito mentre ogni altro comando lo leggeva da
-/// un altro: nessun errore, due depositi, e quello che si guardava risultava
-/// vuoto. È la forma in cui il guasto 12 continua a ripresentarsi, un elenco
-/// vuoto che ha l'aria di una risposta.
-///
-/// La sorveglianza è in `only_the_ledger_knows_where_the_ledger_lives`, che
-/// guarda i sorgenti invece di confrontare due funzioni: due copie che sbagliano
-/// insieme si confermano a vicenda, quindi l'ancora deve stare fuori da tutte e
-/// due.
+/// Recomposing `HOME/.claude/state/flussi` here is no inert copy but a
+/// **different** one: `ledger::default_directory()` also reads `SAILOR_LEDGER`
+/// and recognises an earlier install's house, so with that variable set the
+/// census went to one ledger while every other command read another — no error,
+/// two ledgers, and the one being looked at empty. That is fault 12 recurring.
+/// The guard `only_the_ledger_knows_where_the_ledger_lives` reads the sources
+/// rather than comparing two functions, since two copies wrong together confirm
+/// each other and the anchor must sit outside both.
 fn open_ledger() -> Result<Ledger, String> {
     let directory =
         ledger::default_directory().ok_or_else(|| catalogue::say("cli.no_home", &[]))?;
     Ledger::open(&directory).map_err(|error| error.to_string())
 }
 
-/// Che cosa è comparso e che cosa è sparito, secondo il deposito.
+/// What appeared and what vanished, according to the ledger.
 fn print_changes() -> Result<(), String> {
     let ledger = open_ledger()?;
     let gone = ledger.inventory_gone().map_err(|e| e.to_string())?;
@@ -284,9 +277,9 @@ fn print_human(found: &Inventory, only: Option<Kind>, unreachable_only: bool) {
     for root in &found.roots {
         println!("  {root}");
     }
-    // DOVE NON SI È POTUTO GUARDARE STA ACCANTO A DOVE SI È GUARDATO, non in
-    // fondo: chi legge un conteggio deve avere sott'occhio quanto di macchina è
-    // rimasto fuori, o legge un numero credendolo il totale.
+    // WHERE NOBODY COULD LOOK SITS BESIDE WHERE THEY DID, not at the bottom:
+    // whoever reads a count must have in view how much of the machine stayed
+    // out, or reads a number believing it is the total.
     if !found.unseen.is_empty() {
         println!("{}", catalogue::say("cli.inventory.not_looked_at", &[]));
         for missing in &found.unseen {

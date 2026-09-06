@@ -1,9 +1,8 @@
-//! `sailor profiles`: profili multipli per riga di comando, con o senza il
-//! suo supporto nativo — quattro comandi (`list`/`create`/`switch`/`current`).
-//! I gesti sul disco e sui collegamenti simbolici stanno nella libreria
-//! `profiles` (modulo `store_io`); qui solo l'interpretazione degli
-//! argomenti e la stampa. Prima del 27/08/2026 questo era il `main.rs` di un
-//! binario a sé (`profiles`).
+//! `sailor profiles`: several profiles per command line, with or without its
+//! native support — four commands (`list`/`create`/`switch`/`current`). The
+//! gestures on disk and on symlinks live in the `profiles` library (module
+//! `store_io`); only argument parsing and printing live here. This used to be
+//! the `main.rs` of a binary of its own (`profiles`).
 
 use crate::Form;
 use actions::{LoginProbe, LoginVerdict, ToolResolver};
@@ -32,7 +31,7 @@ fn dispatch(args: &[String]) -> Result<(), String> {
     }
 }
 
-/// Le forme di `sailor profiles`, una per riga. Vedi `flow_cmd::USAGE`.
+/// The shapes of `sailor profiles`, one per line. See `flow_cmd::USAGE`.
 pub const USAGE: &[Form] = &[
     Form {
         form: "sailor profiles list [cli]",
@@ -68,17 +67,17 @@ fn usage() -> String {
     )
 }
 
-/// **UN ELENCO DI PROFILI CHE NON DICE SE SONO USABILI È UN ELENCO CHE
-/// TRANQUILLIZZA.** Questo è il posto dove una persona guarda quando si chiede
-/// «quale profilo uso», e fino al 01/09/2026 rispondeva col solo nome: i due
-/// profili `codex` di questa macchina puntavano tutti e due a cartelle **senza
-/// credenziali**, e da qui si vedevano identici a due case piene.
+/// **A PROFILE LIST THAT DOES NOT SAY WHETHER THEY ARE USABLE IS A LIST THAT
+/// REASSURES.** This is where a person looks when asking «which profile do I
+/// use», and answering with the name alone hid a real case: this machine's two
+/// `codex` profiles both pointed at folders **with no credentials**, and from
+/// here they looked identical to two full homes.
 ///
-/// **LO STATO LO DICE IL MOTORE, NON IL DISCO**: si esegue la domanda che il suo
-/// descrittore dichiara (`login_status`), dentro la casa di *quel* profilo — non
-/// di quello attivo, che è l'unico modo per rispondere sui profili che non sono
-/// in forza. Costa zero: `codex login status` e `claude auth status` leggono un
-/// file locale, senza chiamare nessun modello.
+/// **THE ENGINE STATES THE STATUS, NOT THE DISK**: the question its descriptor
+/// declares (`login_status`) is run inside *that* profile's home — not the
+/// active one's, which is the only way to answer about profiles out of force.
+/// It costs nothing: `codex login status` and `claude auth status` read a local
+/// file, calling no model.
 fn cmd_list(args: &[String]) -> Result<(), String> {
     for row in overview(args.first().map(String::as_str))? {
         let marker = if row.active { "*" } else { " " };
@@ -178,7 +177,7 @@ fn views_of(
 /// What the engine says about **this** profile's home: the verdict to act on,
 /// and the words to show.
 ///
-/// **ANY OUTCOME THAT IS NOT A YES IS WRITTEN AS A NON-YES**, and the verdict
+/// **ANY OUTCOME THAT IS NOT A YES IS WRITTEN AS SUCH**, and the verdict
 /// comes from the branch, never read back out of the sentence: «nobody looked»
 /// and «not authenticated» are different facts, and neither is «you can use it».
 fn access_of(
@@ -202,10 +201,10 @@ fn access_of(
             catalogue::say("cli.profiles.access.no_recipe", &[("tool", &tool)]),
         );
     };
-    // **LA CASA DI QUESTO PROFILO, NON QUELLA IN FORZA.** È tutta la ragione per
-    // cui `LoginProbe` prende l'ambiente come argomento invece di andarselo a
-    // leggere: chiedere sempre al profilo attivo darebbe la stessa risposta a
-    // tutte le righe dell'elenco, e sarebbe la risposta di uno solo.
+    // **THIS PROFILE'S HOME, NOT THE ONE IN FORCE.** That is the whole reason
+    // `LoginProbe` takes the environment as an argument instead of reading it
+    // itself: always asking the active profile would give every row of the list
+    // the same answer, and it would be one profile's answer.
     // **A HOME THAT DOES NOT MOVE IS NOT A HOME ALREADY IN PLACE**: only the
     // first is a verdict, the second is asked like every other.
     let env = profiles::build_environment(cli, home, &|name| std::env::var(name).ok());
@@ -251,9 +250,9 @@ fn access_of(
     }
 }
 
-/// Le parole del motore su una riga sola: un elenco si legge a colpo d'occhio, e
-/// una risposta su tre righe lo spezza. Si stringono gli spazi, non si taglia
-/// niente — la diagnosi è quella frase.
+/// The engine's words on a single line: a list is read at a glance, and a
+/// three-line answer breaks it. Whitespace is squeezed, nothing is cut — the
+/// diagnosis is that sentence.
 fn one_line(said: &str) -> String {
     said.split_whitespace().collect::<Vec<_>>().join(" ")
 }
@@ -415,9 +414,9 @@ pub fn switch(cli_id: &str, name: &String) -> Result<(), String> {
     if let HomeMechanism::CredentialSymlink { relative_path } = &cli.home {
         store_io::apply_symlink_swap(&store_io::home_dir()?, relative_path, &profile.home_dir)?;
     }
-    // Per il meccanismo a variabile d'ambiente non c'è nulla da spostare sul
-    // filesystem: registrare l'attivo qui basta, `build_environment` legge
-    // `profile.home_dir` al momento del lancio — vedi `sailor run`.
+    // For the environment-variable mechanism there is nothing to move on the
+    // filesystem: recording the active one here is enough, `build_environment`
+    // reads `profile.home_dir` at launch time — see `sailor run`.
     store.active.insert(cli.id.clone(), name.clone());
     store_io::save_store(&store)
 }
@@ -441,9 +440,9 @@ mod tests {
     use profiles::build_environment;
     use std::path::PathBuf;
 
-    /// Lo stesso fatto che prova `profiles::store_io`, visto dal lato di
-    /// `sailor`: l'ambiente da sovrapporre usa la casa registrata per il
-    /// profilo, non un valore fisso.
+    /// The same fact `profiles::store_io` tests, seen from `sailor`'s side: the
+    /// environment to overlay uses the home recorded for the profile, not a
+    /// fixed value.
     #[test]
     fn build_environment_uses_the_profile_home_recorded_in_the_store() {
         let cli = find_cli("codex").unwrap();
@@ -460,9 +459,9 @@ mod tests {
         assert!(dispatch(&[]).is_err());
     }
 
-    /// Un finto `codex` che risponde sulla propria casa come quello vero: su
-    /// stderr, e guardando se in casa c'è `auth.json`. Si chiama `codex` perché
-    /// il legame fra la tabella dei profili e il descrittore è **l'eseguibile**.
+    /// A fake `codex` answering about its own home like the real one: on
+    /// stderr, by looking for `auth.json` there. Named `codex` because the link
+    /// between the profile table and the descriptor is **the executable**.
     fn a_machine_with_a_fake_codex(declares_login: bool) -> (PathBuf, toolbox::Tools) {
         static SERIAL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let serial = SERIAL.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -513,19 +512,18 @@ mod tests {
         (dir, tools)
     }
 
-    /// **L'ELENCO DEI PROFILI DICE SE SONO USABILI, E LO CHIEDE AL MOTORE.**
+    /// **THE PROFILE LIST SAYS WHETHER THEY ARE USABLE, AND ASKS THE ENGINE.**
+    /// This machine's two `codex` profiles both pointed at folders with no
+    /// credentials and looked identical to two full homes: the place a person
+    /// looks in order to choose answered with the name alone.
     ///
-    /// I due profili `codex` di questa macchina puntavano tutti e due a cartelle
-    /// senza credenziali, e da qui si vedevano identici a due case piene: il
-    /// posto dove una persona guarda per scegliere rispondeva col solo nome.
+    /// **TWO ARMS, BECAUSE ONE COULD NEVER COME OUT DIFFERENT.** A check that
+    /// always shouted would pass the first; one that always kept quiet would
+    /// pass the second. And the probe is the real one: a fake would prove we can
+    /// write an answer, not that anybody goes and asks for it.
     ///
-    /// **DUE BRACCI, PERCHÉ UNO SOLO NON POTREBBE VENIRE DIVERSO.** Un controllo
-    /// che gridasse sempre passerebbe il primo; uno che tacesse sempre passerebbe
-    /// il secondo. E la sonda è quella vera: una finta proverebbe che sappiamo
-    /// scrivere una risposta, non che qualcuno la va a chiedere.
-    ///
-    /// *Mutante eseguito*: far rispondere «autenticato» anche al `LoggedOut` in
-    /// `access_of` — il primo braccio diventa rosso.
+    /// *Mutant run*: make `access_of` answer «authenticated» for `LoggedOut`
+    /// too — the first arm goes red.
     #[test]
     fn the_list_asks_the_engine_whether_each_home_has_credentials() {
         let (dir, tools) = a_machine_with_a_fake_codex(true);
@@ -614,10 +612,10 @@ mod tests {
         );
     }
 
-    /// **NESSUNO HA GUARDATO NON È «AUTENTICATO», E NEMMENO «NON
-    /// AUTENTICATO».** Un motore il cui descrittore non dice come si chiede
-    /// lascia la domanda senza risposta, e la riga dell'elenco deve dirlo: chi
-    /// legge deve sapere se rimediare cambiando profilo o misurando il motore.
+    /// **NOBODY LOOKED IS NOT «AUTHENTICATED», AND NOT «NOT AUTHENTICATED»
+    /// EITHER.** An engine whose descriptor does not say how to ask leaves the
+    /// question unanswered, and the row must say so: a reader has to know
+    /// whether the remedy is switching profile or measuring the engine.
     #[test]
     fn a_home_nobody_can_ask_about_is_neither_authenticated_nor_broken() {
         let (dir, tools) = a_machine_with_a_fake_codex(false);
@@ -627,11 +625,11 @@ mod tests {
         std::fs::create_dir_all(&empty).expect("la casa senza credenziali");
 
         let said = access_of(&tools, &probe, cli, &empty).1;
-        // **IL VERDETTO È LA TESTA DELLA RIGA, E SI GUARDA LÌ.** La spiegazione
-        // che segue nomina per forza la parola «autenticato» — sta dicendo che
-        // nessuno ha chiesto se lo è — quindi cercarla dentro tutta la riga
-        // sarebbe un controllo che non può che essere rosso, cioè non un
-        // controllo.
+        // **THE VERDICT IS THE HEAD OF THE ROW, AND IS READ THERE.** The
+        // explanation after it necessarily names the word «authenticated» — it
+        // is saying nobody asked whether it is — so hunting for that across the
+        // whole row would be a check that can only come out red, which is no
+        // check at all.
         assert!(
             said.starts_with("not known"),
             "an absence is declared, and declared first: {said}"
