@@ -430,6 +430,7 @@ impl Candidate {
 mod tests {
     use super::*;
     use crate::recipe::AskRecipe;
+    use crate::tests::with_references_resolved;
     use flow::{Action, ActionOutcome, SharedState};
     use serde_json::json;
 
@@ -709,6 +710,70 @@ mod tests {
         assert!(
             error.said.contains("weekly limit"),
             "il motivo deve portare le parole con cui il motore l'ha detto: {}",
+            error.said
+        );
+    }
+
+    /// A make-believe engine that answers **in the declared shape** and then
+    /// exits in error saying the words of its own refusal.
+    fn engine_that_answers_in_shape_then_exits_in_error(dir: &std::path::Path) -> String {
+        let path = dir.join("risponde-e-poi-esce-male");
+        std::fs::write(
+            &path,
+            "#!/bin/sh\necho '{\"answer\":\"fatto\"}'\n\
+             echo \"You've hit your weekly limit · resets 7am\" >&2\nexit 1\n",
+        )
+        .expect("scrivere il finto motore");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+                .expect("renderlo eseguibile");
+        }
+        path.to_string_lossy().into_owned()
+    }
+
+    /// **THE SHAPE IS READ BEFORE THE WORDS, AND THE EXIT CODE HAS A VETO.**
+    /// The engine answers in shape and then exits in error saying the words
+    /// its descriptor declares. Two questions, two answers: the step did not
+    /// succeed, and the engine is not one to set aside either — reading those
+    /// words inside an answer that is there would hand the work on and throw
+    /// away an answer already paid for. Fault 95, in the other branch.
+    #[test]
+    fn an_answer_in_shape_with_a_bad_exit_code_stops_the_step_instead_of_being_thrown_away() {
+        let dir = scratch("risposta-conforme-uscita-anomala");
+        let action = ExternalEngineAction::resolving_with(ChainIn(
+            engine_that_answers_in_shape_then_exits_in_error(&dir),
+        ));
+        let input = json!({
+            "tool": ["esaurito", "vivo"],
+            "answer_shape": {
+                "type": "object",
+                "properties": {"answer": {"type": "string"}},
+                "required": ["answer"],
+                "allow_extra": false
+            },
+            "stdin": {"$json": "/answer_shape"},
+            "timeout_secs": 10
+        });
+
+        let error = action
+            .execute(&with_references_resolved(input), &SharedState::new())
+            .expect_err("an exit code out of the ordinary does not close as a success");
+
+        assert_eq!(
+            error.class, "engine_exit_error",
+            "it answered: the failure is the process's, not a spent quota: {}",
+            error.said
+        );
+        assert!(
+            error.said.contains("fatto"),
+            "the answer it collected must not be thrown away: {}",
+            error.said
+        );
+        assert!(
+            !error.said.contains("ha-risposto-il-secondo"),
+            "the second engine had no business starting over an answer already given: {}",
             error.said
         );
     }

@@ -562,6 +562,7 @@
   "run.failure.child_run_not_recorded": "la corsa figlia non si è potuta registrare nel deposito",
   "run.failure.clock_before_epoch": "l'orologio della macchina segna una data prima del 1970 — il sotto-flusso non è partito",
   "run.failure.clock_broke": "l'orologio della macchina non ha saputo dire l'ora",
+  "run.failure.empty_answer": "il motore non ha detto niente: una risposta vuota non è una forma sbagliata, e non è nemmeno un successo",
   "run.failure.empty_signal": "il segnale è arrivato senza consegna",
   "run.failure.engine_exhausted": "il motore ha finito la propria quota — non si è rotto",
   "run.failure.engine_exit_error": "il motore è uscito con un errore",
