@@ -354,6 +354,70 @@ fn the_front_narrows_as_the_money_runs_out() {
     );
 }
 
+/// **THE WIDTH COUNTS ONLY WHAT CAN OVERSPEND.** Measured on a real run: the
+/// three test steps beside the paid ones queued behind a limit they could not
+/// reach. The run spent no less for it; it lasted longer.
+#[test]
+fn a_step_that_spends_nothing_takes_no_room_from_a_paid_one() {
+    let store = Arc::new(StoreThatCounts::new());
+    store.charge(100);
+    let together = Arc::new(Mutex::new(Vec::new()));
+    let live = Arc::new(AtomicUsize::new(0));
+    let mut actions = flow::ActionRegistry::default();
+    actions.register(
+        "free",
+        SpendsNothing(CountsCompany {
+            live: Arc::clone(&live),
+            most: Arc::clone(&together),
+        }),
+    );
+    let graph = Graph::new(
+        (1..=3)
+            .map(|n| step(&format!("s{n}"), "free", vec![]))
+            .collect(),
+    )
+    .expect("valid graph");
+
+    InProcessExecutor
+        .execute(
+            &graph,
+            ExecutionRequest {
+                run_id: "run".to_owned(),
+                root_inputs: Default::default(),
+                gates: vec![],
+                shared: SharedState::new(),
+                // Spent 100 of 150: fifty remain against a dearest of 100, so
+                // the width for a paid step is one.
+                spend_cap_micros: Some(150),
+                stops: flow::RunStops::default(),
+            },
+            store.as_ref(),
+            &actions,
+            &Ticking(AtomicI64::new(0)),
+        )
+        .expect("the execution is not a fault");
+
+    let seen = together.lock().unwrap_or_else(|held| held.into_inner());
+    assert_eq!(
+        seen.iter().copied().max().unwrap_or(0),
+        3,
+        "the three that cannot spend started together: {seen:?}"
+    );
+}
+
+/// A step that buys nothing, and says so.
+struct SpendsNothing(CountsCompany);
+
+impl Action for SpendsNothing {
+    fn execute(&self, input: &Value, shared: &SharedState) -> Result<ActionOutcome, ActionError> {
+        self.0.execute(input, shared)
+    }
+
+    fn may_spend(&self, _declared: Option<&Value>) -> bool {
+        false
+    }
+}
+
 /// An action that reports how many were alive alongside it when it entered.
 struct CountsCompany {
     live: Arc<AtomicUsize>,
