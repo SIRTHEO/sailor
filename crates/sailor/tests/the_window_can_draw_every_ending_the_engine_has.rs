@@ -74,6 +74,12 @@ fn every_ending_the_engine_declares_has_a_word_in_the_window() {
         "one of the two lists could not be read, so nothing was compared: \
          engine {declared:?}, window {drawn:?}"
     );
+    workspace::measured_against(
+        declared.len(),
+        "endings the engine declares",
+        drawn.len(),
+        "words the window has for an ending",
+    );
 
     let missing: Vec<&String> = declared.iter().filter(|one| !drawn.contains(one)).collect();
     assert!(

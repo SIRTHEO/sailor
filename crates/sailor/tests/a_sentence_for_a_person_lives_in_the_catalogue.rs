@@ -296,6 +296,7 @@ fn count_them(root: &Path) -> (usize, BTreeMap<String, usize>, Vec<String>) {
             ));
         }
     }
+    workspace::measured(sources.len(), "sources read for sentences written into the code");
     (total, per_file, examples)
 }
 
