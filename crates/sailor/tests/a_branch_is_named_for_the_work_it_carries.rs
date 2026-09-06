@@ -9,7 +9,6 @@ use workspace::branches::{against_the_convention, follows_the_convention};
 
 /// The table of names that follow the convention, each for its own reason.
 const FOLLOW: &[&str] = &[
-    "sorgenti",
     "main",
     "work/terminal-claims",
     "work/toml-graft",
@@ -35,7 +34,8 @@ const BREAK: &[&str] = &[
     "work/nested/topic",
     "worktree-agent-",
     "prova/fusione",
-    "sorgenti-2",
+    "main-2",
+    "sorgenti",
     "",
 ];
 
@@ -55,16 +55,12 @@ fn every_name_that_breaks_the_convention_is_reported() {
     assert_eq!(reported, named(BREAK), "some breaking name went unreported");
 }
 
+/// **THE TRUNK IS THE NAME A READER ARRIVES LOOKING FOR**, and there is one:
+/// the older history it used to share the repository with is a tag now.
 #[test]
 fn the_trunk_is_exempt_and_it_is_the_one_that_releases() {
     assert!(follows_the_convention(workspace::branches::TRUNK));
-    assert_eq!(workspace::branches::TRUNK, "sorgenti");
-}
-
-#[test]
-fn the_history_kept_under_its_own_name_is_exempt() {
-    assert!(follows_the_convention(workspace::branches::KEPT_HISTORY));
-    assert_eq!(workspace::branches::KEPT_HISTORY, "main");
+    assert_eq!(workspace::branches::TRUNK, "main");
 }
 
 #[test]
@@ -86,7 +82,7 @@ fn the_command_line_carries_the_naming_check_as_a_verb() {
 /// A mixed list answers about each name, in the order it was given.
 #[test]
 fn the_names_come_back_in_the_order_they_were_given() {
-    let mixed = named(&["work/one", "innesto-toml-codex", "sorgenti", "work/Two"]);
+    let mixed = named(&["work/one", "innesto-toml-codex", "main", "work/Two"]);
     assert_eq!(
         against_the_convention(&mixed),
         named(&["innesto-toml-codex", "work/Two"])

@@ -1,8 +1,7 @@
 //! What a branch of this repository is called.
 
-pub const TRUNK: &str = "sorgenti";
-
-pub const KEPT_HISTORY: &str = "main";
+/// **ONE TRUNK, AND IT IS THE ONE A READER EXPECTS.** An archived history is a tag.
+pub const TRUNK: &str = "main";
 
 const WORK: &str = "work/";
 
@@ -20,7 +19,7 @@ pub fn against_the_convention(names: &[String]) -> Vec<String> {
 }
 
 pub fn follows_the_convention(name: &str) -> bool {
-    if name == TRUNK || name == KEPT_HISTORY {
+    if name == TRUNK {
         return true;
     }
     if let Some(id) = name.strip_prefix(AGENT_TREE) {
