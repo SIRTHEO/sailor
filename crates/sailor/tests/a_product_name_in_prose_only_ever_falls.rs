@@ -60,16 +60,19 @@ fn walk(directory: &Path, found: &mut Vec<PathBuf>) {
 /// Every mention, with the file it sits in, so a red run says where to look.
 fn mentions() -> Vec<(PathBuf, usize)> {
     let mut counted = Vec::new();
+    let mut read = 0;
     for file in prose_files() {
         let Ok(text) = std::fs::read_to_string(&file) else {
             continue;
         };
+        read += 1;
         let lowered = text.to_lowercase();
         let here: usize = PRODUCTS.iter().map(|name| lowered.matches(name).count()).sum();
         if here > 0 {
             counted.push((file, here));
         }
     }
+    workspace::measured_against(read, "prose files read", PRODUCTS.len(), "product names");
     counted
 }
 
