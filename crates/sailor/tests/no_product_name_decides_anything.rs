@@ -250,6 +250,12 @@ fn no_product_name_appears_in_a_condition_of_the_tracking() {
             broken.push(format!("{}: {problem}", path.display()));
         }
     }
+    workspace::measured_against(
+        sources.len(),
+        "tracking sources read",
+        PRODUCT_NAMES.len() + COMPARED_WITH_A_WRITTEN_VALUE.len(),
+        "names and shapes a condition must not carry",
+    );
 
     assert!(
         broken.is_empty(),
