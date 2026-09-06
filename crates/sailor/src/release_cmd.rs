@@ -1406,7 +1406,7 @@ mod tests {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .and_then(|crates| crates.parent())
-            .expect("il crate sta in <radice>/crates/sailor")
+            .expect("the crate sits in <root>/crates/sailor")
             .to_path_buf();
         assert!(root.join("crates").join("sailor").is_dir(), "{root:?}");
         assert!(!root.join("rust").exists(), "{root:?}");
@@ -1440,12 +1440,12 @@ mod tests {
             let installed = home.join(candidate.safe_rel);
             assert!(
                 installed.starts_with(&home),
-                "{}: il binario finirebbe fuori dalla casa: {installed:?}",
+                "{}: the binary would end up outside the home: {installed:?}",
                 candidate.name
             );
             assert!(
                 !installed.starts_with(&sources),
-                "{}: il binario finirebbe accanto ai sorgenti, dove nessuno lo esegue: {installed:?}",
+                "{}: the binary would end up beside the sources, where nobody runs it: {installed:?}",
                 candidate.name
             );
         }

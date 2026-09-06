@@ -375,7 +375,14 @@ fn said_schedule(schedule: Option<&flow::Schedule>) -> String {
     } else {
         schedule.perimeter.join(", ")
     };
-    format!("{when}; peso {weight}; perimetro: {perimeter}")
+    catalogue::say(
+        "cli.flow.schedule_line",
+        &[
+            ("when", &when),
+            ("weight", weight),
+            ("perimeter", &perimeter),
+        ],
+    )
 }
 
 /// From a word to the recurrence it names, or to why it names none.
@@ -627,10 +634,10 @@ mod tests {
     fn runs_that_spent_nothing_are_not_samples() {
         let seen = observed_from(&[vec![Some(0)], vec![], vec![None, None], vec![Some(900)]]);
 
-        assert_eq!(seen.runs, 4, "le corse ci sono tutte");
-        assert_eq!(seen.costed_runs, 1, "ma una sola ha speso");
+        assert_eq!(seen.runs, 4, "every run is there");
+        assert_eq!(seen.costed_runs, 1, "but only one of them spent");
         assert_eq!(seen.worst_run_micros, 900);
-        assert_eq!(seen.calls_without_cost, 2, "e due chiamate restano fuori");
+        assert_eq!(seen.calls_without_cost, 2, "and two calls stay out");
     }
 
     /// **A SYSTEM FLOW IS NOT REWRITTEN, AND NO NEW ONE APPEARS.**
@@ -645,12 +652,12 @@ mod tests {
         let sources = flow::system::sources(&home.0, None, None);
         let shipped = flow::system::FLOWS[0].0;
 
-        let error = set_cap(&sources, shipped, "1000000").expect_err("un flusso di sistema");
+        let error = set_cap(&sources, shipped, "1000000").expect_err("a system flow");
 
         assert!(error.contains("ships inside the binary"), "{error}");
         assert!(
             entries_of(&home.0).is_empty(),
-            "non deve essere comparso nessun file in casa: {:?}",
+            "no file must have appeared at home: {:?}",
             entries_of(&home.0)
         );
     }
@@ -663,17 +670,17 @@ mod tests {
         home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
         let sources = flow::system::sources(&home.0, None, None);
 
-        let said = set_cap(&sources, "prova", "750000").expect("il tetto si scrive");
+        let said = set_cap(&sources, "prova", "750000").expect("the cap is written");
 
         assert!(said.contains("750000 micro"), "{said}");
         let after = written_flow(&home.0, "prova");
         assert_eq!(after.spend_cap_micros, Some(750_000));
-        assert_eq!(after.description, "flusso di prova", "il resto è intatto");
+        assert_eq!(after.description, "flusso di prova", "the rest is untouched");
         assert_eq!(after.graph.steps().len(), 1);
         assert_eq!(
             entries_of(&home.0).len(),
             1,
-            "e non è comparso nessun gemello: {:?}",
+            "and no twin appeared: {:?}",
             entries_of(&home.0)
         );
     }
@@ -693,10 +700,10 @@ mod tests {
         );
         let sources = flow::system::sources(&home.0, None, None);
 
-        let error = set_cap(&sources, "altro-nome", "500").expect_err("nome e id divergono");
+        let error = set_cap(&sources, "altro-nome", "500").expect_err("name and id diverge");
 
         assert!(error.contains("a second flow"), "{error}");
-        assert_eq!(entries_of(&home.0).len(), 1, "nessun gemello sul disco");
+        assert_eq!(entries_of(&home.0).len(), 1, "no twin on disk");
     }
 
     /// A value that is neither a number nor «none» is refused by saying what a
@@ -708,10 +715,10 @@ mod tests {
         home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
         let sources = flow::system::sources(&home.0, None, None);
 
-        let error = set_cap(&sources, "prova", "1,50").expect_err("non è un numero di micro");
+        let error = set_cap(&sources, "prova", "1,50").expect_err("it is not a number of micros");
         assert!(error.contains("micro"), "{error}");
 
-        let negative = set_cap(&sources, "prova", "-1").expect_err("un tetto negativo");
+        let negative = set_cap(&sources, "prova", "-1").expect_err("a negative cap");
         assert!(negative.contains("a negative cap"), "{negative}");
     }
 
@@ -723,9 +730,9 @@ mod tests {
         let home = TestDirectory::new();
         home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
         let sources = flow::system::sources(&home.0, None, None);
-        set_cap(&sources, "prova", "500").expect("prima si mette");
+        set_cap(&sources, "prova", "500").expect("first it is set");
 
-        set_cap(&sources, "prova", NO_CAP).expect("poi si toglie");
+        set_cap(&sources, "prova", NO_CAP).expect("then it is taken off");
 
         assert_eq!(written_flow(&home.0, "prova").spend_cap_micros, None);
     }
@@ -741,22 +748,22 @@ mod tests {
         home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
         let sources = flow::system::sources(&home.0, None, None);
 
-        set_cap(&sources, "prova", "500").expect("prima si mette");
-        set_cap(&sources, "prova", "nessuno").expect("la parola di ieri toglie il tetto");
+        set_cap(&sources, "prova", "500").expect("first it is set");
+        set_cap(&sources, "prova", "nessuno").expect("yesterday's word takes the cap off");
         assert_eq!(written_flow(&home.0, "prova").spend_cap_micros, None);
 
-        set_schedule(&sources, "prova", "3600s", Some("leggero")).expect("e sceglie un peso");
+        set_schedule(&sources, "prova", "3600s", Some("leggero")).expect("and it picks a weight");
         assert_eq!(
-            weight_from("leggero").expect("è ancora un peso"),
-            weight_from(LIGHT).expect("come la parola di oggi"),
-            "«leggero» e «{LIGHT}» devono dire la stessa cosa"
+            weight_from("leggero").expect("it is still a weight"),
+            weight_from(LIGHT).expect("like today's word"),
+            "«leggero» and «{LIGHT}» must say the same thing"
         );
         assert_eq!(
-            weight_from("pesante").expect("è ancora un peso"),
-            weight_from(HEAVY).expect("come la parola di oggi")
+            weight_from("pesante").expect("it is still a weight"),
+            weight_from(HEAVY).expect("like today's word")
         );
 
-        set_schedule(&sources, "prova", "nessuno", None).expect("e toglie l'innesco");
+        set_schedule(&sources, "prova", "nessuno", None).expect("and it takes the trigger off");
         assert!(written_flow(&home.0, "prova").schedule.is_none());
     }
 
@@ -768,13 +775,13 @@ mod tests {
         for (retired, _) in RETIRED_WORDS {
             assert!(
                 !shown.contains(retired),
-                "«{retired}» è ritirata e l'aiuto la insegna ancora:\n{shown}"
+                "«{retired}» is retired and the help still teaches it:\n{shown}"
             );
         }
         for current in [NO_CAP, LIGHT, HEAVY] {
             assert!(
                 shown.contains(current),
-                "«{current}» è la parola di oggi e l'aiuto non la nomina:\n{shown}"
+                "«{current}» is today's word and the help does not name it:\n{shown}"
             );
         }
     }
@@ -800,11 +807,11 @@ mod tests {
         assert_eq!(
             written_flow(&home.0, "prova").schedule,
             None,
-            "si parte da un flusso senza innesco"
+            "it starts from a flow with no trigger"
         );
 
         let said =
-            set_schedule(&sources, "prova", "3600s", Some(LIGHT)).expect("l'innesco si scrive");
+            set_schedule(&sources, "prova", "3600s", Some(LIGHT)).expect("the trigger is written");
 
         assert!(said.contains("every 3600s"), "{said}");
         let after = written_flow(&home.0, "prova");
@@ -816,12 +823,12 @@ mod tests {
                 perimeter: vec![],
             })
         );
-        assert_eq!(after.description, "flusso di prova", "il resto è intatto");
+        assert_eq!(after.description, "flusso di prova", "the rest is untouched");
         assert_eq!(after.graph.steps().len(), 1);
         assert_eq!(
             entries_of(&home.0).len(),
             1,
-            "nessun gemello sul disco: {:?}",
+            "no twin on disk: {:?}",
             entries_of(&home.0)
         );
     }
@@ -862,13 +869,13 @@ mod tests {
         let sources = flow::system::sources(&home.0, None, None);
 
         let error =
-            set_schedule(&sources, "prova", "3600s", None).expect_err("nessun peso da tenere");
+            set_schedule(&sources, "prova", "3600s", None).expect_err("there is no weight to keep");
 
         assert!(error.contains(LIGHT) && error.contains(HEAVY), "{error}");
         assert_eq!(
             written_flow(&home.0, "prova").schedule,
             None,
-            "un rifiuto non scrive niente"
+            "a refusal writes nothing"
         );
     }
 
@@ -887,13 +894,13 @@ mod tests {
             weight: flow::Weight::Heavy,
             perimeter: vec!["~/progetti/sailor".to_owned()],
         });
-        flow::system::save_in(&home.0, &with_perimeter).expect("il flusso di partenza");
+        flow::system::save_in(&home.0, &with_perimeter).expect("the flow to start from");
 
-        set_schedule(&sources, "prova", "05:15", None).expect("solo l'ora cambia");
+        set_schedule(&sources, "prova", "05:15", None).expect("only the hour changes");
 
         let after = written_flow(&home.0, "prova")
             .schedule
-            .expect("l'innesco c'è");
+            .expect("the trigger is there");
         assert_eq!(
             after.recurrence,
             flow::Recurrence::DailyAt {
@@ -901,11 +908,11 @@ mod tests {
                 minute: 15
             }
         );
-        assert_eq!(after.weight, flow::Weight::Heavy, "il peso resta quello");
+        assert_eq!(after.weight, flow::Weight::Heavy, "the weight stays what it was");
         assert_eq!(
             after.perimeter,
             vec!["~/progetti/sailor".to_owned()],
-            "il perimetro non si perde cambiando l'orario"
+            "the perimeter is not lost by changing the hour"
         );
     }
 
@@ -917,9 +924,9 @@ mod tests {
         let home = TestDirectory::new();
         home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
         let sources = flow::system::sources(&home.0, None, None);
-        set_schedule(&sources, "prova", "3600s", Some(LIGHT)).expect("prima si mette");
+        set_schedule(&sources, "prova", "3600s", Some(LIGHT)).expect("first it is set");
 
-        set_schedule(&sources, "prova", NO_SCHEDULE, None).expect("poi si toglie");
+        set_schedule(&sources, "prova", NO_SCHEDULE, None).expect("then it is taken off");
 
         assert_eq!(written_flow(&home.0, "prova").schedule, None);
         // And absence is written absent, not `null`: whoever rereads their own
@@ -942,13 +949,13 @@ mod tests {
                 set_schedule(&sources, "prova", wrong, Some(LIGHT)).unwrap_or_else(|error| error);
             assert!(
                 error.contains(NO_SCHEDULE) || error.contains("hours run from"),
-                "«{wrong}» è stato accettato o rifiutato senza dire come si scrive: {error}"
+                "«{wrong}» was accepted, or refused without saying how it is written: {error}"
             );
         }
         assert_eq!(
             written_flow(&home.0, "prova").schedule,
             None,
-            "nessuna delle forme sbagliate ha scritto qualcosa"
+            "none of the wrong shapes wrote anything"
         );
     }
 
@@ -962,12 +969,12 @@ mod tests {
         let shipped = flow::system::FLOWS[0].0;
 
         let error = set_schedule(&sources, shipped, "3600s", Some(LIGHT))
-            .expect_err("un flusso di sistema");
+            .expect_err("a system flow");
 
         assert!(error.contains("ships inside the binary"), "{error}");
         assert!(
             entries_of(&home.0).is_empty(),
-            "non deve essere comparso nessun file in casa: {:?}",
+            "no file must have appeared at home: {:?}",
             entries_of(&home.0)
         );
     }
@@ -991,11 +998,11 @@ mod tests {
         let sources = flow::system::sources(&home.0, None, None);
 
         let refused = set_schedule(&sources, "nome-diverso", "3600s", Some(LIGHT))
-            .expect_err("il nome del file non è l'id");
+            .expect_err("the file name is not the id");
         assert!(refused.contains("a second flow"), "{refused}");
 
         let refused_cap = set_cap(&sources, "nome-diverso", "500000")
-            .expect_err("lo stesso rifiuto vale per il tetto");
+            .expect_err("the same refusal holds for the cap");
         assert!(refused_cap.contains("a second flow"), "{refused_cap}");
 
         // **AND THE PART THAT COUNTS: THE BYSTANDER FLOW WAS NOT TOUCHED.** A
@@ -1003,14 +1010,14 @@ mod tests {
         let bystander = written_flow(&home.0, "prova");
         assert_eq!(
             bystander.schedule, None,
-            "l'innesco di «prova» non si tocca"
+            "the trigger of «prova» is not touched"
         );
-        assert_eq!(bystander.spend_cap_micros, None, "e nemmeno il suo tetto");
+        assert_eq!(bystander.spend_cap_micros, None, "nor its cap");
         assert_eq!(written_flow(&home.0, "nome-diverso").schedule, None);
         assert_eq!(
             entries_of(&home.0).len(),
             2,
-            "e non è comparso nessun terzo file: {:?}",
+            "and no third file appeared: {:?}",
             entries_of(&home.0)
         );
     }
@@ -1026,10 +1033,10 @@ mod tests {
         let sources = flow::system::sources(&home.0, None, None);
 
         let refused = set_schedule(&sources, "prova", "3600s", Some(LIGHT))
-            .expect_err("il file letto non è quello che si scriverebbe");
+            .expect_err("the file read is not the one that would be written");
 
         assert!(refused.contains("a second flow"), "{refused}");
-        assert_eq!(entries_of(&home.0).len(), 1, "nessun gemello sul disco");
+        assert_eq!(entries_of(&home.0).len(), 1, "no twin on disk");
     }
 
     /// Reading the trigger is a gesture of its own: whoever does not know what
@@ -1040,12 +1047,12 @@ mod tests {
         home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
         let sources = flow::system::sources(&home.0, None, None);
 
-        let before = schedule_of(&sources, "prova").expect("si legge");
+        let before = schedule_of(&sources, "prova").expect("it reads");
         assert!(before.contains(NO_SCHEDULE), "{before}");
 
-        set_schedule(&sources, "prova", "300s", Some(HEAVY)).expect("si mette");
+        set_schedule(&sources, "prova", "300s", Some(HEAVY)).expect("it is set");
 
-        let after = schedule_of(&sources, "prova").expect("si rilegge");
+        let after = schedule_of(&sources, "prova").expect("it reads back");
         assert!(after.contains("every 300s"), "{after}");
         assert!(after.contains(HEAVY), "{after}");
         assert!(
@@ -1056,8 +1063,8 @@ mod tests {
 
     fn written_flow(dir: &std::path::Path, name: &str) -> FlowFile {
         let text = fs::read_to_string(dir.join(format!("{name}.flow.json")))
-            .expect("il flusso scritto si rilegge");
-        serde_json::from_str(&text).expect("e si deserializza")
+            .expect("the written flow reads back");
+        serde_json::from_str(&text).expect("and it deserializes")
     }
 
     fn entries_of(dir: &std::path::Path) -> Vec<String> {

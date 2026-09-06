@@ -645,7 +645,7 @@ mod tests {
                 "inputs": {{}}
             }}"#
         );
-        serde_json::from_str(&json).expect("caricare il flusso")
+        serde_json::from_str(&json).expect("it loads")
     }
 
     /// THE CASE OF FAULT 25. An absolute `workdir` decides where the step
@@ -657,8 +657,8 @@ mod tests {
 
         let found = hardcoded_paths(&flow);
 
-        assert_eq!(found.len(), 1, "uno solo: {:?}", found.len());
-        assert!(found[0].fatal, "un campo di posizione è un errore");
+        assert_eq!(found.len(), 1, "one only: {:?}", found.len());
+        assert!(found[0].fatal, "a place field is an error");
         assert_eq!(found[0].step, "unico");
         assert_eq!(found[0].field, "workdir");
     }
@@ -686,7 +686,7 @@ mod tests {
                 "inputs": {{}}
             }}"#
         );
-        serde_json::from_str(&json).expect("caricare il flusso")
+        serde_json::from_str(&json).expect("it loads")
     }
 
     fn one_of_each() -> ActionRegistry {
@@ -743,7 +743,7 @@ mod tests {
                 "inputs": {{}}
             }}"#
         );
-        serde_json::from_str(&json).expect("caricare il flusso")
+        serde_json::from_str(&json).expect("it loads")
     }
 
     /// **WHAT COMES FROM OUTSIDE GOES IN `env`, NEVER IN `command`.** The rule
@@ -765,7 +765,7 @@ mod tests {
 
         let found = outside_text_in_command(&montato);
 
-        assert_eq!(found.len(), 1, "uno solo: {found:?}");
+        assert_eq!(found.len(), 1, "one only: {found:?}");
         assert_eq!(found[0].step, "unico");
         assert_eq!(found[0].field, "command");
 
@@ -777,7 +777,7 @@ mod tests {
 
         assert!(
             outside_text_in_command(&passato).is_empty(),
-            "un rinvio in «env» è la forma corretta, non una segnalazione"
+            "a reference in «env» is the right shape, not something to report"
         );
     }
 
@@ -787,12 +787,12 @@ mod tests {
     #[test]
     fn an_absolute_path_inside_a_prompt_is_a_warning() {
         let flow =
-            flow_with(r#"{"stdin": {"$join": ["Lavora solo dentro /home/someone/sailor.\n"]}}"#);
+            flow_with(r#"{"stdin": {"$join": ["Work only inside /home/someone/sailor.\n"]}}"#);
 
         let found = hardcoded_paths(&flow);
 
         assert_eq!(found.len(), 1);
-        assert!(!found[0].fatal, "dentro un testo è un avviso");
+        assert!(!found[0].fatal, "inside a text it is a warning");
         assert_eq!(found[0].field, "stdin.$join");
     }
 
@@ -837,7 +837,7 @@ mod tests {
 
         let found = undelimited_commits(&flow);
 
-        assert_eq!(found.len(), 1, "uno solo: {found:?}");
+        assert_eq!(found.len(), 1, "one only: {found:?}");
         assert_eq!(found[0].step, "unico");
         assert_eq!(found[0].field, "command");
     }
@@ -960,7 +960,7 @@ mod tests {
             ]},
             "inputs": {}
         }))
-        .expect("il flusso si legge");
+        .expect("the flow reads");
 
         let dead = pointers_that_cannot_match(&flow);
         let named: Vec<(&str, &str)> = dead
@@ -994,7 +994,7 @@ mod tests {
                 ]},
                 "inputs": {}
             }))
-            .expect("il flusso si legge");
+            .expect("the flow reads");
 
             let dead = pointers_that_cannot_match(&flow);
 
@@ -1028,7 +1028,7 @@ mod tests {
             ]},
             "inputs": {}
         }))
-        .expect("il flusso si legge");
+        .expect("the flow reads");
 
         let dead = pointers_that_cannot_match(&flow);
 
@@ -1058,7 +1058,7 @@ mod tests {
             ]},
             "inputs": {}
         }))
-        .expect("il flusso si legge");
+        .expect("the flow reads");
         assert!(pointers_that_cannot_match(&flow).is_empty());
     }
 }
