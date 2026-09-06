@@ -136,7 +136,7 @@ describe("the first screen: what is happening right now", () => {
     ];
     render(
       <div className="app">
-        <RunGroup title="Aspettano te" note="ferme finché non fai qualcosa" runs={runs} now={9000} onOpen={() => {}} />
+        <RunGroup title="Waiting for you" note="still until you do something" runs={runs} now={9000} onOpen={() => {}} />
       </div>,
     );
     expect(screen.getByText("waits for you")).toBeTruthy();
@@ -171,7 +171,7 @@ describe("the run history", () => {
         {
           run_id: "r1", kind: "flow", entity: "sviluppa-sailor", status: "failed",
           started_at: 1000, ended_at: 1100, duration_secs: 100, total_cost_micros: 412000,
-          error: "il passo «prove» è caduto: 1 failed", steps_total: 5, steps_went: 3,
+          error: "the step «tests» fell over: 1 failed", steps_total: 5, steps_went: 3,
           steps_broke: 1, steps_retried: 2, steps_open: [],
           tokens: { input_tokens: 1, output_tokens: 1, cached_tokens: 0, cache_write_tokens: 0, cost_micros: 412000, calls: 1, calls_without_tokens: 0, calls_without_cost: 0 },
           tokens_by_model: {},
@@ -239,9 +239,9 @@ describe("what is installed", () => {
     const stop = pretendShell({
       machine_inventory: {
         entries: [
-          { kind: "skill", name: "handoff", description: "La staffetta fra sessioni.", origin: "casa", path: "/a", reach: { state: "active" }, by_model: true },
-          { kind: "agent", name: "verificatore", description: "Chi crea non giudica.", origin: "repo sailor", path: "/b", reach: { state: "inactive", reason: "il plugin che la contiene è spento" }, by_model: true },
-          { kind: "rule", name: "R05", description: "I permessi.", origin: "un altro repo", path: "/c", reach: { state: "unknown", reason: "dipende da dove si apre la sessione" }, by_model: false },
+          { kind: "skill", name: "handoff", description: "The relay between sessions.", origin: "home", path: "/a", reach: { state: "active" }, by_model: true },
+          { kind: "agent", name: "verifier", description: "Whoever creates does not judge.", origin: "repo sailor", path: "/b", reach: { state: "inactive", reason: "the plugin that holds it is switched off" }, by_model: true },
+          { kind: "rule", name: "R05", description: "The permissions.", origin: "another repo", path: "/c", reach: { state: "unknown", reason: "it depends where the session is opened" }, by_model: false },
         ],
         roots: ["/work", "/work/sailor"],
         stale_plugin_copies: 2,
@@ -258,7 +258,7 @@ describe("what is installed", () => {
       expect(screen.getByText("not known")).toBeTruthy();
       // The reason is the whole value of the third entry: without it, «spenta»
       // stays a word nobody can act on.
-      expect(screen.getByText("il plugin che la contiene è spento")).toBeTruthy();
+      expect(screen.getByText("the plugin that holds it is switched off")).toBeTruthy();
       expect(measure(30)).toEqual([]);
     } finally {
       stop();
@@ -270,21 +270,21 @@ describe("the commands, as the binary declares them", () => {
   test("literal text and the blank to fill differ without fading", async () => {
     // **A PAGE NO SCENE VISITS IS NOT VERIFIED.** Prohibition 6 holds on every
     // word anybody reads, and here the strongest temptation is the forbidden
-    // one — telling `<nome>` apart from literal text by fading it, which is
+    // one — telling `<name>` apart from literal text by fading it, which is
     // prohibition 7.
     const stop = pretendShell({
       manual: [
         {
           name: "flow",
-          description: "elenca, controlla, esegue o riprende i flussi dichiarati in flows/",
+          description: "lists, checks, runs or resumes the flows declared in flows/",
           usage: [
             { form: "sailor flow list", says: "" },
-            { form: "sailor flow run <nome> [mandato]", says: "esegue un flusso" },
+            { form: "sailor flow run <name> [mandate]", says: "runs a flow" },
           ],
         },
         {
           name: "version",
-          description: "la versione di questo binario",
+          description: "the version of this binary",
           usage: [{ form: "sailor version", says: "" }],
         },
       ],
@@ -300,8 +300,8 @@ describe("the commands, as the binary declares them", () => {
       // usage lines would never be painted, and the measurement would be made on
       // what nobody sees.
       fireEvent.click(screen.getByText("sailor flow"));
-      expect(screen.getByText("<nome>")).toBeTruthy();
-      expect(screen.getByText("[mandato]")).toBeTruthy();
+      expect(screen.getByText("<name>")).toBeTruthy();
+      expect(screen.getByText("[mandate]")).toBeTruthy();
       expect(measure(20)).toEqual([]);
     } finally {
       stop();
@@ -341,7 +341,7 @@ describe("today's summary", () => {
 });
 
 describe("a ledger that is not there", () => {
-  test("«NON LO SO» NEVER BECOMES «ZERO»", () => {
+  test("«I DO NOT KNOW» NEVER BECOMES «ZERO»", () => {
     // Zero runs is a quiet machine. A ledger that does not exist is a machine we
     // know nothing about, and whoever reads must be able to tell the two apart
     // before concluding that nothing happened today.
@@ -450,7 +450,7 @@ describe("the six states of a step, and the lanes", () => {
     );
     const band: FlowBandData = {
       name: "prima-corsa",
-      description: "Il flusso più piccolo che esista: un controllo solo.",
+      description: "The smallest flow there is: one check alone.",
       stepCount: 1,
       color: "#2563eb",
       dimmed: false,

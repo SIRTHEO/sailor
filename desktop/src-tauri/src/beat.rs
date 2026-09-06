@@ -379,7 +379,7 @@ mod tests {
         assert_eq!(news(Some(&before), &refused).len(), 1);
 
         // And a flow nobody judged before is news whatever it says.
-        let arrived = reported(vec![decided("un-altro", held("not due"))]);
+        let arrived = reported(vec![decided("another", held("not due"))]);
         assert_eq!(news(Some(&before), &arrived).len(), 1);
     }
 

@@ -16,8 +16,8 @@ describe("the two catalogues are one catalogue", () => {
     const orphans = Object.keys(it).filter((key) => !(key in en));
     expect(
       orphans,
-      `${String(orphans.length)} chiavi vivono solo in it.json: nessuno le leggerà mai, ` +
-        "perché la finestra chiede le chiavi che l'inglese dichiara",
+      `${String(orphans.length)} keys live only in it.json: nobody will ever read them, ` +
+        "because the window asks for the keys English declares",
     ).toEqual([]);
   });
 
@@ -53,7 +53,7 @@ describe("the two catalogues are one catalogue", () => {
     const fragments = Object.entries(en)
       .filter(([, text]) => text.trim().endsWith(" is") || text.trim().endsWith(" was"))
       .map(([key]) => key);
-    expect(fragments, "voci che finiscono con un verbo in attesa di un pezzo").toEqual([]);
+    expect(fragments, "entries ending on a verb waiting for a piece").toEqual([]);
   });
 });
 
