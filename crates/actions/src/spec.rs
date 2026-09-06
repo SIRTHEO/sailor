@@ -83,12 +83,10 @@ pub fn engines_named_in(with: &Value) -> Vec<String> {
 
 /// The per-call ceiling a step's `with` declares, for whoever checks a flow.
 ///
-/// **A `with` UNDER A CHECK HAS NOT BEEN RESOLVED YET.** Its prompt is still a
-/// reference, so the struct the run obeys does not parse, and reading the
-/// ceiling through it read nothing at all — every step with a composed prompt
-/// was told it declared no ceiling. The two ceiling fields are scalars and
-/// never references: they are read on their own, and `the_check_reads_the_same_
-/// ceiling_the_run_obeys` keeps this reader and that struct one declaration.
+/// **A `with` UNDER A CHECK IS NOT RESOLVED YET**: its prompt is still the
+/// reference that will compose it, so the struct the run obeys does not parse
+/// and reading a ceiling through it read nothing. The two ceiling fields are
+/// scalars, so they are read alone, and a test holds the two readers as one.
 pub fn ceiling_declared_in(with: &Value) -> crate::reserve::Declared {
     serde_json::from_value::<crate::reserve::Declared>(with.clone()).unwrap_or_default()
 }
