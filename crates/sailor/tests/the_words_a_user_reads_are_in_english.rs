@@ -92,12 +92,16 @@ fn walk(dir: &Path, found: &mut Vec<PathBuf>) {
 ///
 /// **THE WHOLE OF `crates` WOULD COUNT FIXTURES**, which are data: an invented
 /// flow id is not language. Only what the product says of itself is measured —
-/// the command line, the shared view, and the window's shell.
+/// the command line, the shared view, the window's shell, and the three crates
+/// that answer a person while a terminal is open.
 const WHERE_THE_PRODUCT_SPEAKS: &[&str] = &[
     "crates/sailor/src",
     "crates/ui/src",
     "crates/actions/src",
     "crates/toolbox/src",
+    "crates/terminal/src",
+    "crates/supervisor/src",
+    "crates/relay/src",
     "desktop/src-tauri/src",
 ];
 
