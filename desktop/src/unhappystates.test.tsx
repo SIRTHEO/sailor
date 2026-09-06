@@ -584,6 +584,18 @@ describe("the bar does not send you to a column this place has not got", () => {
     );
     expect(container.querySelector(".topbar__flow"), "the bar speaks of a flow off the board").toBeNull();
   });
+
+  test("AND THE RUN OF THAT FLOW GOES QUIET WITH IT, not one without the other", () => {
+    const { container } = render(<App />);
+    goToFlows();
+    const word = () => container.querySelector(".topbar__status-word")?.textContent ?? null;
+
+    // The control: on the board the bar really does say how the flow last ran.
+    expect(word(), "the bar says nothing about the run of the open flow").not.toBeNull();
+
+    leaveTheBoard();
+    expect(word(), "the bar reports a run of a flow this place does not draw").toBeNull();
+  });
 });
 
 
