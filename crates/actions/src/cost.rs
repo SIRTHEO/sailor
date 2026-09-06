@@ -752,6 +752,59 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         );
     }
 
+    /// **THE TWIN, AND THE HALF THAT WAS UNGUARDED.** Same recipe, same
+    /// declared shape, same words: only the engine's output changes, and it
+    /// does not fit the shape. Then the words are all we have, and they mean a
+    /// refusal — the step closes `exhausted` and the engine goes aside.
+    ///
+    /// Without this, `in_shape` could be «a shape was declared» instead of
+    /// «the answer fits it» and the whole crate stays green: a step declaring
+    /// a shape would never be refused again, whatever the engine printed.
+    #[test]
+    fn an_answer_off_the_declared_shape_is_still_read_as_a_refusal() {
+        let dir = scratch("fuori-forma-e-rifiuto");
+        let bin = fake_engine(
+            &dir,
+            "motore-a-secco-in-forma-libera",
+            "cat > /dev/null\necho \"You've hit your weekly limit · resets 7am\"",
+        );
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let mut recipe = declaring_recipe();
+        recipe.unusable_when = vec!["weekly limit".to_owned()];
+        recipe.exhausted_when = vec!["weekly limit".to_owned()];
+        recipe.cooldown_secs = Some(1800);
+        let aside = dir.join("cooldowns.json");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            recipe: Some(recipe),
+        })
+        .recording_to(Some(ledger))
+        .cooling_down_in(Some(aside.clone()));
+        let input = json!({
+            "tool": "motore-di-prova",
+            "stdin": "guarda l'albero, e rispondi in questa forma: {\"type\":\"object\",\"properties\":{\"found\":{\"type\":\"string\"}},\"required\":[\"found\"],\"allow_extra\":false}",
+            "timeout_secs": 10,
+            "answer_shape": {
+                "type": "object",
+                "properties": {"found": {"type": "string"}},
+                "required": ["found"],
+                "allow_extra": false
+            }
+        });
+
+        let error = with_price_list(None, || {
+            action.execute(&input, &shared("corsa-fuori-forma", "passo-1"))
+        })
+        .expect_err("an output that fits no shape and says it cannot work is a refusal");
+
+        assert_eq!(error.class, "engine_exhausted", "{}", error.said);
+        let calls = calls_in(&dir.join("deposito"));
+        assert_eq!(calls[0].error_type.as_deref(), Some("quota_exhausted"));
+        let set = cooldown::set_aside_until(&aside, "motore-di-prova", now_secs())
+            .expect("an engine that refused is set aside");
+        assert!(set.said.contains("weekly limit"), "{set:?}");
+    }
+
     /// A spent quota is its own class, and the engine is set aside for the
     /// time its descriptor declares: the second step in the same window does
     /// not knock on it. Without `exhausted_when` the same output stays the
