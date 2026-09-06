@@ -328,8 +328,17 @@ fn set_field(document: &mut Value, step: &str, key: &str, value: &str) -> Result
 }
 
 /// A typed value from a word: the two truths and a whole number keep their
-/// shape, everything else is text.
+/// shape, a list or a map is read as one, everything else is text.
+///
+/// **A FIELD A WORD CANNOT SAY WAS WRITTEN AS THE WORD ITSELF**, and the step
+/// then ignored it in silence — `args`, `model` and `max_tokens` are all one or
+/// the other. Only `[` and `{` are read this way, so no bare word changes.
 fn as_written(value: &str) -> Value {
+    if value.starts_with('[') || value.starts_with('{') {
+        if let Ok(parsed) = serde_json::from_str::<Value>(value) {
+            return parsed;
+        }
+    }
     match value {
         "true" => Value::Bool(true),
         "false" => Value::Bool(false),
@@ -631,5 +640,23 @@ mod tests {
         let document: Value = serde_json::from_str(&saved(&home.0)).expect("it loads");
         assert_eq!(document["schedule"]["recurrence"]["seconds"], 3600);
         assert_eq!(document["schedule"]["weight"], "light");
+    }
+
+    /// **A FIELD THAT IS A LIST OR A MAP IS WRITTEN AS ONE.** Written as the
+    /// word itself it looked accepted and the step ignored it: `model` is a map
+    /// from engine to model, and a string there is a model nobody asks for.
+    #[test]
+    fn a_field_that_is_not_a_word_is_written_as_what_it_is() {
+        let (home, sources) = a_home_with_the_flow();
+        edit(&sources, &["field", "conta", "args", r#"["test", "--quiet"]"#])
+            .expect("the list is written");
+        edit(&sources, &["field", "conta", "model", r#"{"un-motore": "un-modello"}"#])
+            .expect("the map is written");
+        edit(&sources, &["field", "conta", "tool", "npm"]).expect("the word is written");
+        let document: Value = serde_json::from_str(&saved(&home.0)).expect("it loads");
+        let with = &document["graph"]["steps"][1]["with"];
+        assert_eq!(with["args"], serde_json::json!(["test", "--quiet"]));
+        assert_eq!(with["model"], serde_json::json!({"un-motore": "un-modello"}));
+        assert_eq!(with["tool"], "npm", "and a word is still a word");
     }
 }
