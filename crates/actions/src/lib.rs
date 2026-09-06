@@ -45,6 +45,7 @@ pub mod draft;
 pub mod memory;
 pub mod notes;
 pub mod presence;
+pub mod reserve;
 pub mod search;
 pub mod store;
 pub mod terminals;
