@@ -1,60 +1,58 @@
-//! Il nodo con cui un passo interroga un server MCP, e la verifica che viene
-//! prima.
+//! The node with which a step questions an MCP server, and the check that
+//! comes first.
 //!
-//! **PERCHÉ ESISTE.** La nota `da-fare` lo chiamava «l'anello mancante»: Sailor
-//! *riconosce* i server MCP — il rilevatore ha la famiglia `mcp_server` — ma
-//! nessuna delle nove azioni registrate sapeva parlarci. Un flusso che voleva
-//! chiedere a SocratiCode «cosa toccherebbe questo cambiamento» doveva uscire
-//! dal grafo e diventare uno script, cioè esattamente ciò che questa casa non
-//! fa.
+//! **WHY IT EXISTS.** The `da-fare` note called it «the missing link»: Sailor
+//! *recognises* MCP servers — the detector has the `mcp_server` family — but
+//! none of the nine registered actions could talk to one. A flow that wanted
+//! to ask SocratiCode «what would this change touch» had to leave the graph
+//! and become a script, which is exactly what this house does not do.
 //!
-//! **COSA STA NEL CODICE E COSA NO.** Qui dentro c'è solo ciò che tocca il
-//! mondo: aprire un processo, dirgli le parole della stretta di mano, leggere le
-//! righe che risponde. Quale server, quale strumento, quali argomenti e quali
-//! verifiche preliminari sono **dati del passo** — non c'è una sola costante che
-//! nomini SocratiCode, e le prove di questo file girano contro un server finto
-//! costruito in una cartella temporanea.
+//! **WHAT IS IN THE CODE AND WHAT IS NOT.** Only what touches the world:
+//! opening a process, saying the words of the handshake, reading the lines it
+//! answers. Which server, which tool, which arguments and which preliminary
+//! checks are **step data** — not one constant names SocratiCode, and this
+//! file's tests run against a fake server built in a temporary directory.
 //!
-//! **LA STRETTA DI MANO NON È UN'OFFERTA, ED È LA DISTINZIONE PRINCIPALE.**
-//! Misurato il 31/08/2026: `claude mcp list` dichiarava `socraticode: ✔
-//! Connected` mentre la sessione che lo interrogava non aveva affatto quello
-//! strumento. Un nodo che si fida di quel segnale lavora su un indice
-//! inesistente senza accorgersene. Qui il server viene aperto da Sailor e gli si
-//! chiede `tools/list`: «risponde» e «offre lo strumento che mi serve» restano
-//! due fatti separati, con due parole separate — `unreachable` e
-//! `tool_not_offered` — e il messaggio del secondo dice perché non sono la
-//! stessa cosa.
+//! **THE HANDSHAKE IS NOT AN OFFER, AND THAT IS THE MAIN DISTINCTION.**
+//! Measured: `claude mcp list` declared `socraticode: ✔ Connected` while the
+//! session questioning it did not have that tool at all. A node that trusts
+//! that signal works on an index that is not there without noticing. Here
+//! Sailor opens the server itself and asks it `tools/list`: «it answers» and
+//! «it offers the tool I need» stay two separate facts, with two separate
+//! words — `unreachable` and `tool_not_offered` — and the message of the
+//! second says why they are not the same thing.
 //!
-//! **LO STANDARD INPUT RESTA APERTO FINCHÉ LA RISPOSTA NON ARRIVA.** Non è un
-//! dettaglio di stile: misurato lo stesso giorno contro `npx -y socraticode`,
-//! scrivendo tutte le richieste e chiudendo subito lo standard input — cioè
-//! quello che fa `run_with_timeout_and_stdin`, la primitiva che c'era già —
-//! torna **solo** la risposta a `initialize`, e le `tools/call` restano senza
-//! risposta e senza errore. Il server muore sull'EOF prima di aver finito. È il
-//! motivo per cui questo file ha un proprio dialogo invece di riusare quella
-//! primitiva: là lo standard input si chiude per contratto.
+//! **STANDARD INPUT STAYS OPEN UNTIL THE ANSWER ARRIVES.** Not a matter of
+//! style: measured against `npx -y socraticode`, writing every request and
+//! closing standard input straight away — what `run_with_timeout_and_stdin`,
+//! the primitive already there, does — brings back **only** the answer to
+//! `initialize`, and the `tools/call` requests stay without answer and
+//! without error. The server dies on EOF before it has finished. That is why
+//! this file has a dialogue of its own instead of reusing that primitive:
+//! there standard input closes by contract.
 //!
-//! **QUATTRO ESITI, NON UNO.** «Il server non c'è», «il server c'è ma non offre
-//! questo strumento», «una verifica preliminare dice di no», «una verifica
-//! preliminare non ha potuto guardare» sono quattro fatti diversi, e il quinto è
-//! «lo strumento ha risposto che non lo sa». Confonderli è il difetto che questa
-//! casa chiama *«non c'è» non è sempre una misura*: dove non si è potuto
-//! guardare la risposta è «non ho potuto guardare», col motivo.
+//! **FOUR OUTCOMES, NOT ONE.** «The server is not there», «the server is
+//! there but does not offer this tool», «a preliminary check says no», «a
+//! preliminary check could not look» are four different facts, and the fifth
+//! is «the tool answered that it does not know». Confusing them is the fault
+//! this house calls *«it is not there» is not always a measurement*: where
+//! looking was not possible the answer is «I could not look», with the reason.
 //!
-//! **E `could_not_look` batte `check_failed`.** Se una verifica è cieca e
-//! un'altra è negativa, l'esito complessivo è la cecità. Dire `check_failed`
-//! significherebbe affermare «ho guardato tutto e una cosa era sbagliata», e
-//! quella frase non si può pronunciare quando una delle guardate non è
-//! avvenuta: un ignoto può nascondere qualunque cosa, anche di peggio.
+//! **AND `could_not_look` OUTRANKS `check_failed`.** If one check is blind
+//! and another is negative, the overall outcome is the blindness. Saying
+//! `check_failed` would assert «I looked at everything and one thing was
+//! wrong», and that sentence cannot be spoken when one of the looks never
+//! happened: an unknown can hide anything, including worse.
 //!
-//! **LA VERIFICA NON SI PUÒ SALTARE, E LO IMPONE IL CODICE.** Un passo dichiara
-//! `project_root` — la cartella di cui pretende di parlare — e almeno una delle
-//! verifiche deve legare la risposta del server a quella cartella, cioè avere
-//! `project_root` dentro il proprio `proves`. Chi non ce l'ha non parte:
-//! `no_preflight`. Un progetto indicizzato non è tutti i progetti, e un indice
-//! giusto per un'altra cartella risponde con sicurezza su codice che qui non
-//! esiste. Chi interroga un server che di cartelle non sa niente lo dichiara per
-//! iscritto con `checks_waived_because`, e quella frase resta nell'uscita.
+//! **THE CHECK CANNOT BE SKIPPED, AND THE CODE ENFORCES IT.** A step declares
+//! `project_root` — the directory it claims to speak about — and at least one
+//! check must tie the server's answer to that directory, that is, have
+//! `project_root` inside its own `proves`. One that does not have it does not
+//! start: `no_preflight`. An indexed project is not every project, and an
+//! index that is right for another directory answers confidently about code
+//! that does not exist here. Whoever questions a server that knows nothing of
+//! directories declares it in writing with `checks_waived_because`, and that
+//! sentence stays in the output.
 
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies};
 use serde::Deserialize;
@@ -65,33 +63,33 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
-/// Il nome sotto cui si registra la sola verifica preliminare.
+/// The name under which the preliminary check alone registers.
 pub const MCP_READY_ACTION: &str = "mcp_ready";
-/// Il nome sotto cui si registra l'interrogazione vera.
+/// The name under which the real questioning registers.
 pub const MCP_ASK_ACTION: &str = "mcp_ask";
 
-/// Registra i due nodi che parlano con un server MCP.
+/// Registers the two nodes that talk to an MCP server.
 pub fn register_mcp(registry: &mut flow::ActionRegistry) {
     registry.register(MCP_READY_ACTION, McpReadyAction);
     registry.register(MCP_ASK_ACTION, McpAskAction);
 }
 
-/// La regola che viaggia con ogni risposta, invece di dipendere da chi scrive
-/// il prompt.
+/// The rule that travels with every answer, instead of depending on whoever
+/// writes the prompt.
 ///
-/// **PERCHÉ STA NELL'USCITA E NON IN UN DOCUMENTO.** Sta anche in
-/// nella nota `2026-08-28-sailor-si-sviluppa-su-se-stesso`, sezione 6, che dice
-/// testualmente che questa regola va nel prompt del passo che usa SocratiCode.
-/// Un documento però lo legge chi c'era: chi userà questo nodo fra sei mesi
-/// scriverà il proprio prompt senza averlo mai aperto. Uscendo da qui, la regola
-/// entra nel prompt del passo successivo con un rinvio — `{"$from": "/caveat"}`
-/// — e non dipende più dalla memoria di nessuno.
+/// **WHY IT IS IN THE OUTPUT AND NOT IN A DOCUMENT.** The note
+/// `2026-08-28-sailor-si-sviluppa-su-se-stesso`, section 6, says in so many
+/// words that this rule belongs in the prompt of the step that uses
+/// SocratiCode. But a document is read by whoever was there: whoever uses this
+/// node in six months writes their own prompt without ever opening it. Coming
+/// out of here, the rule enters the next step's prompt through a reference —
+/// `{"$from": "/caveat"}` — and depends on nobody's memory.
 pub const CAVEAT: &str = "This answer comes from an external index: it is for finding your bearings, not for deciding. A blast radius — who depends on what, what breaks if you touch this — is decided by the tool that compiles, never by the index's dependency graph. Measured: asked about the impact of «crates/flow/src/graph.rs», the index answered «no callers, nothing depends on this», while that file has 493 lines, eight «Cargo.toml» declare the crate and 22 files use it. It was a false orphan, on the file at the centre of the flow format.";
 
-/// Gli esiti che un passo può dichiarare di tollerare con `accept`.
+/// The outcomes a step may declare it tolerates with `accept`.
 ///
-/// `ready` e `ok` non ci sono: non sono fallimenti, e nominarli in `accept`
-/// sarebbe un refuso da far vedere subito invece che una tolleranza.
+/// `ready` and `ok` are absent: they are not failures, and naming them in
+/// `accept` would be a typo to show at once rather than a tolerance.
 const READY_FAILURES: &[&str] = &[
     "unreachable",
     "tool_not_offered",
@@ -107,11 +105,11 @@ const ASK_FAILURES: &[&str] = &[
     "tool_failed",
 ];
 
-// ── ciò che il passo dichiara ────────────────────────────────────────────
+// ── what the step declares ───────────────────────────────────────────────
 
-/// Come si avvia il server. È un comando, perché un server MCP che parla su
-/// standard input e standard output è un processo figlio: chi lo dichiara scrive
-/// le stesse tre cose che stanno in un `.mcp.json`.
+/// How the server is started. It is a command, because an MCP server that
+/// talks over standard input and standard output is a child process: whoever
+/// declares it writes the same three things that live in a `.mcp.json`.
 #[derive(Debug, Clone, Deserialize)]
 struct ServerSpec {
     command: String,
@@ -119,40 +117,40 @@ struct ServerSpec {
     args: Vec<String>,
     #[serde(default)]
     env: BTreeMap<String, String>,
-    /// Da quale cartella avviarlo. Un server che indicizza codice guarda spesso
-    /// la cartella corrente, e lasciarla a quella di chi esegue il flusso vuol
-    /// dire non sapere di quale progetto sta parlando.
+    /// Which directory to start it from. A server that indexes code often
+    /// looks at the current directory, and leaving it as that of whoever runs
+    /// the flow means not knowing which project it is talking about.
     #[serde(default)]
     cwd: Option<String>,
 }
 
-/// Una verifica preliminare: una domanda al server, e cosa deve rispondere.
+/// A preliminary check: a question to the server, and what it must answer.
 ///
-/// **`blind_if` SI GUARDA PRIMA DI DICHIARARE UN NO, E NON È UN DETTAGLIO.**
-/// Misurato il 31/08/2026 contro SocratiCode: con l'archivio vettoriale spento,
-/// `codebase_list_projects` risponde `{"content":[{"type":"text","text":"Could
-/// not connect to Qdrant."}]}` — un risultato **riuscito**, senza `isError`.
-/// Quel testo non contiene il percorso del progetto, quindi senza `blind_if` un
-/// indice che non si è potuto leggere diventerebbe «il progetto non è
-/// indicizzato»: un'affermazione sul mondo che nessuno ha verificato.
+/// **`blind_if` IS LOOKED AT BEFORE DECLARING A NO, AND IT IS NO DETAIL.**
+/// Measured against SocratiCode: with the vector store down,
+/// `codebase_list_projects` answers `{"content":[{"type":"text","text":"Could
+/// not connect to Qdrant."}]}` — a **successful** result, with no `isError`.
+/// That text does not contain the project's path, so without `blind_if` an
+/// index that could not be read would become «the project is not indexed»: a
+/// claim about the world that nobody verified.
 ///
-/// L'ordine dei tre casi è: la prova positiva, poi la cecità, poi il no. Il
-/// primo viene prima perché una risposta che contiene ciò che si cercava l'ha
-/// mostrato davvero, qualunque altra cosa dica; il no viene ultimo perché è
-/// l'unico che afferma qualcosa sul mondo, e si pronuncia solo quando gli altri
-/// due sono esclusi.
+/// The order of the three cases is: the positive proof, then the blindness,
+/// then the no. The first comes first because an answer containing what was
+/// sought really did show it, whatever else it says; the no comes last because
+/// it is the only one asserting something about the world, and it is spoken
+/// once the other two are ruled out.
 #[derive(Debug, Clone, Deserialize)]
 struct PreflightCheck {
-    /// Come si chiama il fatto che si sta verificando, per chi legge l'uscita.
+    /// What the fact under check is called, for whoever reads the output.
     name: String,
     server_tool: String,
     #[serde(default = "empty_object")]
     arguments: Value,
-    /// Il testo che la risposta deve contenere perché il fatto sia provato.
+    /// The text the answer must contain for the fact to be proved.
     proves: String,
-    /// I testi che, se compaiono, dicono che il server **non ha potuto
-    /// guardare**. Vuoto è ammesso, e allora resta solo l'errore dichiarato del
-    /// server a distinguere la cecità dal no.
+    /// The texts that, if they appear, say the server **could not look**.
+    /// Empty is allowed, and then only the server's declared error separates
+    /// blindness from a no.
     #[serde(default)]
     blind_if: Vec<String>,
 }
@@ -160,20 +158,19 @@ struct PreflightCheck {
 #[derive(Debug, Deserialize)]
 struct ReadySpec {
     server: ServerSpec,
-    /// Lo strumento che il passo userà davvero. Si chiede qui perché «il server
-    /// risponde» non è «il server offre questo».
+    /// The tool the step will actually use. It is asked here because «the
+    /// server answers» is not «the server offers this».
     ///
-    /// **NON SI CHIAMA `tool`, E NON È UNA SCELTA DI GUSTO.** `sailor flow
-    /// check` legge il campo `tool` di **ogni** passo, qualunque sia l'azione, e
-    /// lo tratta come l'identificativo di uno strumento da risolvere sulla
-    /// macchina — `flow_cmd::tools_wanted` lo dice per iscritto: «è il nome del
-    /// campo a dire che quello è un identificativo di strumento». Uno strumento
-    /// MCP non è uno strumento di Sailor: chiamandolo `tool`, ogni flusso che
-    /// usa questi nodi verrebbe **rifiutato** dal controllo statico con
-    /// «strumenti che nessun descrittore dichiara», e la riparazione sarebbe
-    /// nell'altro crate.
+    /// **IT IS NOT CALLED `tool`, AND THAT IS NOT A MATTER OF TASTE.** `sailor
+    /// flow check` reads the `tool` field of **every** step, whatever the
+    /// action, and treats it as the identifier of a tool to resolve on the
+    /// machine — `flow_cmd::tools_wanted` says so in writing: «it is the name
+    /// of the field that says this is a tool identifier». An MCP tool is not a
+    /// Sailor tool: calling it `tool` would get every flow using these nodes
+    /// **rejected** by the static check with «tools no descriptor declares»,
+    /// and the repair would be in the other crate.
     server_tool: String,
-    /// La cartella di cui il passo pretende di parlare.
+    /// The directory the step claims to speak about.
     project_root: String,
     #[serde(default)]
     checks: Vec<PreflightCheck>,
@@ -189,7 +186,7 @@ struct ReadySpec {
 #[derive(Debug, Deserialize)]
 struct AskSpec {
     server: ServerSpec,
-    /// Vedi `ReadySpec::server_tool` per il motivo per cui non si chiama `tool`.
+    /// See `ReadySpec::server_tool` for why it is not called `tool`.
     server_tool: String,
     #[serde(default = "empty_object")]
     arguments: Value,
@@ -209,25 +206,25 @@ fn empty_object() -> Value {
     json!({})
 }
 
-/// Nessuna verifica lega la risposta alla cartella dichiarata: il passo non
-/// parte.
+/// No check ties the answer to the declared directory: the step does not
+/// start.
 ///
-/// **PERCHÉ È UN ERRORE DI CHI SCRIVE IL FLUSSO E NON UN ESITO.** Un esito si
-/// può tollerare con `accept`, e la tolleranza qui vorrebbe dire «interroga
-/// pure un indice che non sai di chi sia». Un progetto indicizzato non è tutti i
-/// progetti: senza questo legame la risposta è plausibile e riguarda un'altra
-/// cartella, e niente lo segnala.
+/// **WHY IT IS AN ERROR OF WHOEVER WRITES THE FLOW AND NOT AN OUTCOME.** An
+/// outcome can be tolerated with `accept`, and tolerance here would mean «go
+/// ahead and question an index you do not know the owner of». An indexed
+/// project is not every project: without this tie the answer is plausible and
+/// is about another directory, and nothing flags it.
 fn require_preflight(
     checks: &[PreflightCheck],
     waived_because: &str,
     project_root: &str,
 ) -> Result<(), ActionError> {
-    // **UNA PROVA VUOTA NON PROVA NIENTE, E PASSEREBBE SEMPRE.** Ogni testo
-    // contiene la stringa vuota: un `proves` vuoto renderebbe la verifica verde
-    // qualunque cosa il server risponda, compreso «non riesco a raggiungere
-    // l'archivio». È il difetto che questa casa chiama «un controllo che non
-    // controlla niente», e qui si presenterebbe da solo, senza che nessuno lo
-    // scriva apposta: basta un `{"$from": …}` che punta a un campo vuoto.
+    // **AN EMPTY PROOF PROVES NOTHING, AND WOULD ALWAYS PASS.** Every text
+    // contains the empty string: an empty `proves` would leave the check green
+    // whatever the server answers, «I cannot reach the store» included. It is
+    // the fault this house calls «a check that checks nothing», and here it
+    // would turn up on its own, with nobody writing it on purpose: one
+    // `{"$from": …}` pointing at an empty field is enough.
     for check in checks {
         if check.proves.is_empty() {
             return Err(ActionError::new(
@@ -242,8 +239,8 @@ fn require_preflight(
     if !waived_because.trim().is_empty() {
         return Ok(());
     }
-    // Stessa ragione, un gradino più su: con un `project_root` vuoto il legame
-    // fra la risposta e la cartella sarebbe soddisfatto da qualunque verifica.
+    // Same reason, one rung up: with an empty `project_root` the tie between
+    // the answer and the directory would be met by any check at all.
     if project_root.is_empty() {
         return Err(ActionError::new(
             "no_preflight",
@@ -264,28 +261,28 @@ fn require_preflight(
     ))
 }
 
-// ── il dialogo col server ────────────────────────────────────────────────
+// ── the dialogue with the server ─────────────────────────────────────────
 
 const INITIALIZE_ID: u64 = 1;
 const LIST_ID: u64 = 2;
-/// Da qui in su gli identificativi delle verifiche, una per numero.
+/// From here up, the check identifiers, one per number.
 const FIRST_CHECK_ID: u64 = 10;
-/// L'identificativo della chiamata vera, tenuto lontano dagli altri perché si
-/// riconosca a occhio in un registro.
+/// The identifier of the real call, kept far from the others so it stands out
+/// at a glance in a ledger.
 const ERRAND_ID: u64 = 100;
 
-/// Quanto stderr del server si tiene per il messaggio d'errore. Un server che
-/// vomita un log intero non deve riempire il deposito.
+/// How much of the server's stderr is kept for the error message. A server
+/// that spews a whole log must not fill the ledger.
 const KEPT_STDERR: usize = 2000;
 
-/// Una conversazione aperta con un server MCP.
+/// A conversation open with an MCP server.
 ///
-/// Vive quanto il passo: si apre, si fanno le domande in due tempi — prima le
-/// verifiche, poi la chiamata vera solo se le verifiche passano — e si chiude.
-/// Il figlio muore in `Drop` anche uscendo per una strada d'errore.
+/// It lives as long as the step: it opens, the questions are asked in two
+/// rounds — first the checks, then the real call if the checks pass — and it
+/// closes. The child dies in `Drop` even when leaving by an error path.
 struct Session {
     child: std::process::Child,
-    /// Tenuto in vita apposta: chiuderlo fa uscire il server prima che risponda.
+    /// Kept alive on purpose: closing it makes the server exit before answering.
     stdin: Option<std::process::ChildStdin>,
     lines: mpsc::Receiver<String>,
     errors: Option<std::thread::JoinHandle<String>>,
@@ -308,9 +305,9 @@ impl Session {
             .stderr(Stdio::piped());
         in_its_own_group(&mut command);
         let mut child = command.spawn().map_err(|error| {
-            // Il motivo del sistema operativo, com'è già la regola per
-            // `SpawnFailed`: «non si è avviato» da solo manda a cercare un
-            // binario assente quando il file c'era e non era eseguibile.
+            // The operating system's reason, as is already the rule for
+            // `SpawnFailed`: «it did not start» on its own sends you hunting a
+            // missing binary when the file was there and not executable.
             format!("«{}» did not start: {error}", server.command)
         })?;
         let stdin = child.stdin.take();
@@ -356,10 +353,10 @@ impl Session {
         stdin.flush().map_err(|error| error.to_string())
     }
 
-    /// Aspetta le risposte agli identificativi chiesti, fino alla scadenza.
+    /// Waits for the answers to the identifiers asked for, until the deadline.
     ///
-    /// Torna quello che è arrivato: chi chiama distingue «assente» da
-    /// «negativa», e le due cose non si possono confondere qui dentro.
+    /// It returns what arrived: the caller tells «absent» from «negative», and
+    /// the two cannot be confused in here.
     fn listen_for(&self, wanted: &[u64]) -> BTreeMap<u64, Value> {
         let mut answers: BTreeMap<u64, Value> = BTreeMap::new();
         while answers.len() < wanted.len() {
@@ -370,8 +367,8 @@ impl Session {
             match self.lines.recv_timeout(left) {
                 Ok(line) => {
                     let Ok(value) = serde_json::from_str::<Value>(&line) else {
-                        // Un server può scrivere righe che non sono JSON-RPC.
-                        // Non sono un guasto: non sono una risposta.
+                        // A server may write lines that are not JSON-RPC.
+                        // They are not a fault: they are not an answer.
                         continue;
                     };
                     if let Some(id) = value.get("id").and_then(Value::as_u64) {
@@ -380,16 +377,16 @@ impl Session {
                         }
                     }
                 }
-                // Scaduto, o il server ha chiuso la propria uscita: in tutti e
-                // due i casi non arriverà altro.
+                // Timed out, or the server closed its own output: either way
+                // nothing more will arrive.
                 Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => break,
             }
         }
         answers
     }
 
-    /// Chiude e restituisce ciò che il server ha scritto su stderr, che è
-    /// l'unico posto dove un server rotto spiega perché.
+    /// Closes and returns what the server wrote on stderr, the one place where
+    /// a broken server explains why.
     fn close(mut self) -> String {
         self.stdin = None;
         signal_the_whole_group(self.child.id());
@@ -465,14 +462,14 @@ fn call_request(id: u64, tool: &str, arguments: &Value) -> Value {
     })
 }
 
-// ── leggere una risposta ─────────────────────────────────────────────────
+// ── reading an answer ────────────────────────────────────────────────────
 
-/// Cosa è tornato da una domanda.
+/// What came back from a question.
 ///
-/// `Unanswered` non è `Said` con dentro un errore: la prima è «non ho una
-/// risposta», la seconda è «il server ha risposto qualcosa». Tenerle in due
-/// varianti è ciò che impedisce a una domanda caduta nel vuoto di diventare una
-/// risposta negativa.
+/// `Unanswered` is not `Said` with an error inside: the first is «I have no
+/// answer», the second is «the server answered something». Keeping them in two
+/// variants is what stops a question fallen into the void from becoming a
+/// negative answer.
 enum Answer {
     Said { text: String, refused: bool },
     Unanswered(String),
@@ -510,7 +507,7 @@ fn read_answer(response: Option<&Value>) -> Answer {
     Answer::Said { text, refused }
 }
 
-/// Gli strumenti che il server dichiara di offrire.
+/// The tools the server declares it offers.
 fn offered_tools(response: Option<&Value>) -> Option<Vec<String>> {
     let tools = response?.get("result")?.get("tools")?.as_array()?;
     Some(
@@ -522,7 +519,7 @@ fn offered_tools(response: Option<&Value>) -> Option<Vec<String>> {
     )
 }
 
-/// Il verdetto su una verifica preliminare: passata, negativa, o cieca.
+/// The verdict on a preliminary check: passed, negative, or blind.
 fn judge(check: &PreflightCheck, answer: &Answer) -> (&'static str, String) {
     match answer {
         Answer::Unanswered(why) => ("could_not_look", why.clone()),
@@ -566,21 +563,21 @@ fn judge(check: &PreflightCheck, answer: &Answer) -> (&'static str, String) {
     }
 }
 
-/// L'esito della verifica preliminare, prima che si chiami lo strumento vero.
+/// The outcome of the preliminary check, before the real tool is called.
 struct Preflight {
     status: &'static str,
     said: String,
     checks: Vec<Value>,
-    /// Gli strumenti offerti, elencati solo quando servono a chi ripara: cioè
-    /// quando quello chiesto non c'è. Un elenco di venticinque nomi in ogni
-    /// uscita riuscita è rumore che nessuno legge.
+    /// The tools offered, listed when they help whoever repairs: that is, when
+    /// the one asked for is absent. A list of twenty-five names in every
+    /// successful output is noise nobody reads.
     offered: Option<Vec<String>>,
     offered_count: Option<usize>,
 }
 
-/// Apre il dialogo, fa la stretta di mano, chiede l'elenco degli strumenti e
-/// esegue le verifiche dichiarate. **Non chiama lo strumento vero**: quella
-/// chiamata è del chiamante, e parte solo se qui esce `ready`.
+/// Opens the dialogue, does the handshake, asks for the tool list and runs the
+/// declared checks. **It does not call the real tool**: that call belongs to
+/// the caller, and starts only if `ready` comes out of here.
 fn preflight(session: &mut Session, tool: &str, checks: &[PreflightCheck]) -> Preflight {
     let mut requests = vec![
         initialize_request(),
@@ -622,8 +619,8 @@ fn preflight(session: &mut Session, tool: &str, checks: &[PreflightCheck]) -> Pr
     }
     let Some(offered) = offered_tools(answers.get(&LIST_ID)) else {
         return Preflight {
-            // Il server c'è e risponde, ma non ha saputo dire cosa offre: non
-            // si può affermare né che offra lo strumento né che non lo offra.
+            // The server is there and answers, but could not say what it
+            // offers: neither that it has the tool nor that it lacks it.
             status: "could_not_look",
             said: "the server answers the handshake and did not list its own tools: there is no telling whether it offers the one needed".to_owned(),
             checks: Vec::new(),
@@ -663,7 +660,7 @@ fn preflight(session: &mut Session, tool: &str, checks: &[PreflightCheck]) -> Pr
             "said": said,
         }));
     }
-    // La cecità viene prima del no: vedi il commento in testa al file.
+    // Blindness comes before the no: see the comment at the head of the file.
     let (status, said) = if blind > 0 {
         (
             "could_not_look",
@@ -695,14 +692,14 @@ fn preflight(session: &mut Session, tool: &str, checks: &[PreflightCheck]) -> Pr
     }
 }
 
-// ── i due nodi ───────────────────────────────────────────────────────────
+// ── the two nodes ────────────────────────────────────────────────────────
 
-/// «Posso fidarmi di questo server, adesso, per questa cartella?»
+/// «Can I trust this server, right now, for this directory?»
 ///
-/// Sta separato da `mcp_ask` perché un flusso possa **ramificare prima di
-/// pagare**: la chiamata vera a un motore o a un indice costa, e scoprire a metà
-/// che l'indice era vecchio vuol dire aver già speso. Non è una scorciatoia per
-/// saltare la verifica: `mcp_ask` la rifà comunque, nella propria conversazione.
+/// It is kept apart from `mcp_ask` so a flow can **branch before paying**: the
+/// real call to an engine or an index costs, and finding out halfway that the
+/// index was stale means having spent. It is no shortcut past the check:
+/// `mcp_ask` does it again anyway, in its own conversation.
 pub struct McpReadyAction;
 
 impl Action for McpReadyAction {
@@ -714,9 +711,9 @@ impl Action for McpReadyAction {
     }
 
     fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
-        // I rinvii sono già sciolti da `step_input`: è così che la cartella
-        // decisa da un passo precedente arriva qui, e che `proves` può essere
-        // quel percorso invece di una costante scritta a mano.
+        // References are already resolved by `step_input`: that is how the
+        // directory decided by an earlier step gets here, and how `proves` can
+        // be that path instead of a constant written by hand.
         let spec: ReadySpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         crate::check_tolerance(&spec.accept, READY_FAILURES)?;
@@ -745,17 +742,17 @@ impl Action for McpReadyAction {
         finish(outcome.status, "ready", &spec.accept, &outcome.said, output)
     }
 
-    /// Chiedere non cambia niente: la stretta di mano, l'elenco degli strumenti
-    /// e le verifiche sono domande. È lo stesso contratto che `detect_tools`
-    /// dichiara per il comando di versione di un descrittore — chi ci mette
-    /// dentro un gesto ha già rotto il contratto, e lo aveva rotto anche senza
-    /// nessuna interruzione di mezzo.
+    /// Asking changes nothing: the handshake, the tool list and the checks are
+    /// questions. It is the same contract `detect_tools` declares for a
+    /// descriptor's version command — whoever puts a gesture in there has
+    /// already broken the contract, and had broken it with no interruption in
+    /// the middle either.
     fn species(&self) -> StepSpecies {
         StepSpecies::Repeatable
     }
 }
 
-/// Interroga un server MCP, dopo aver verificato che ci si possa fidare.
+/// Questions an MCP server, after checking that it can be trusted.
 pub struct McpAskAction;
 
 impl Action for McpAskAction {
@@ -809,9 +806,9 @@ impl Action for McpAskAction {
             return finish(checked.status, "ok", &spec.accept, &said, output);
         }
 
-        // La chiamata vera parte **solo adesso**, sulla stessa conversazione:
-        // fra la verifica e la domanda non c'è nessun passo in cui il flusso
-        // possa saltare la prima.
+        // The real call starts **only now**, on the same conversation: between
+        // the check and the question there is no step at which the flow could
+        // skip the first.
         if let Err(why) = session.say(&call_request(ERRAND_ID, &spec.server_tool, &spec.arguments))
         {
             let output = json!({
@@ -861,16 +858,15 @@ impl Action for McpAskAction {
         finish(status, "ok", &spec.accept, &said, output)
     }
 
-    /// Uno strumento MCP può indicizzare, cancellare, riscrivere: il registro
-    /// non sa quale sia stato chiesto, e nessun valore predefinito può escludere
-    /// al posto di chi scrive il flusso che rifarlo duplichi un effetto già
-    /// avvenuto.
+    /// An MCP tool can index, delete, rewrite: the registry does not know which
+    /// was asked for, and no default can rule out, in place of whoever writes
+    /// the flow, that doing it again duplicates an effect already had.
     fn species(&self) -> StepSpecies {
         StepSpecies::HandToHuman
     }
 }
 
-/// Apre la conversazione solo per verificarla, e la chiude.
+/// Opens the conversation only to check it, and closes it.
 fn look(server: &ServerSpec, tool: &str, checks: &[PreflightCheck], limit: Duration) -> Preflight {
     let mut session = match Session::open(server, limit) {
         Ok(session) => session,
@@ -890,9 +886,9 @@ fn look(server: &ServerSpec, tool: &str, checks: &[PreflightCheck], limit: Durat
     outcome
 }
 
-/// Aggiunge al messaggio ciò che il server ha scritto su stderr, quando c'è.
-/// Un server che muore all'avvio spiega perché **solo** lì, e senza questa riga
-/// il passo direbbe «non ha risposto» a chi ha già la risposta sotto il naso.
+/// Adds to the message what the server wrote on stderr, when there is any. A
+/// server that dies at startup explains why **only** there, and without this
+/// line the step would say «it did not answer» to who has it under their nose.
 fn with_stderr(said: &str, stderr: &str) -> String {
     if stderr.trim().is_empty() {
         said.to_owned()
@@ -901,8 +897,8 @@ fn with_stderr(said: &str, stderr: &str) -> String {
     }
 }
 
-/// Rosso salvo dichiarazione contraria: la tolleranza si scrive con `accept`,
-/// non si regala.
+/// Red unless declared otherwise: tolerance is written with `accept`, it is
+/// not given away.
 fn finish(
     status: &str,
     good: &str,
@@ -926,7 +922,7 @@ mod tests {
 
     static NEXT: AtomicUsize = AtomicUsize::new(0);
 
-    /// Una cartella tutta nostra, che si porta via quello che ci abbiamo messo.
+    /// A directory all our own, that takes away whatever we put in it.
     struct Sandbox {
         root: PathBuf,
     }
@@ -950,22 +946,22 @@ mod tests {
         }
     }
 
-    /// Un server MCP finto, che risponde quello che la prova gli fa dire.
+    /// A fake MCP server, answering whatever the test makes it say.
     ///
-    /// **PERCHÉ FINTO E NON QUELLO VERO.** Una prova che interroga SocratiCode
-    /// passa su questa macchina e cade da chiunque altro, e soprattutto non
-    /// potrebbe venire diversa: proverebbe la mia installazione, non il nodo.
-    /// Qui ogni caso — il server che non c'è, quello che risponde e non offre,
-    /// l'indice cieco, l'indice di un'altra cartella — si costruisce.
+    /// **WHY FAKE AND NOT THE REAL ONE.** A test questioning SocratiCode passes
+    /// on this machine and falls over on anybody else's, and above all it could
+    /// not come out otherwise: it would prove my installation, not the node.
+    /// Here every case — the server that is not there, the one that answers and
+    /// does not offer, the blind index, the index of another directory — is
+    /// built.
     ///
-    /// Rispetta la forma vera: legge una riga alla volta, ignora le notifiche,
-    /// e rimanda indietro l'`id` che ha ricevuto.
+    /// It respects the real shape: it reads one line at a time, ignores
+    /// notifications, and sends back the `id` it received.
     ///
-    /// **NESSUN APOSTROFO NEI TESTI APPARECCHIATI.** Il corpo dello script sta
-    /// dentro virgolette singole di shell, e un apostrofo le chiude: il server
-    /// finto muore all'avvio con un errore di sintassi e il nodo lo riporta
-    /// onestamente come `unreachable`. Visto succedere il 31/08/2026 con la
-    /// parola «l'archivio» dentro una risposta finta.
+    /// **NO APOSTROPHES IN THE PREPARED TEXTS.** The script's body sits inside
+    /// shell single quotes, and an apostrophe closes them: the fake server dies
+    /// at startup with a syntax error and the node reports it honestly as
+    /// `unreachable`. Seen with the word «l'archivio» inside a fake answer.
     fn fake_server(sandbox: &Sandbox, name: &str, cases: &[(&str, &str)]) -> ServerSpec {
         let mut body = String::from(
             "#!/bin/sh\nwhile IFS= read -r line; do\n  case \"$line\" in *'\"method\":\"notifications/'*) continue;; esac\n  id=$(printf '%s' \"$line\" | sed -n 's/.*\"id\":\\([0-9][0-9]*\\).*/\\1/p')\n  case \"$line\" in\n",
@@ -986,7 +982,7 @@ mod tests {
         }
     }
 
-    /// La stretta di mano e l'elenco degli strumenti, uguali in quasi ogni caso.
+    /// The handshake and the tool list, the same in nearly every case.
     fn handshake(tools: &str) -> Vec<(&'static str, String)> {
         vec![
             (
@@ -1058,18 +1054,17 @@ mod tests {
         }
     }
 
-    /// **UN INDICE CHE NON SI È POTUTO LEGGERE NON È UN INDICE CHE DICE DI NO.**
+    /// **AN INDEX THAT COULD NOT BE READ IS NOT AN INDEX THAT SAYS NO.**
     ///
-    /// È il caso misurato il 31/08/2026 contro SocratiCode con l'archivio
-    /// vettoriale spento: `codebase_list_projects` risponde con un risultato
-    /// **riuscito** il cui testo è «Could not connect to Qdrant». Quel testo non
-    /// contiene il percorso del progetto, quindi una verifica che guardi
-    /// `proves` per prima lo chiama `check_failed` — cioè afferma che il
-    /// progetto non è indicizzato, che è un'affermazione sul mondo che nessuno
-    /// ha verificato.
+    /// It is the case measured against SocratiCode with the vector store down:
+    /// `codebase_list_projects` answers with a **successful** result whose text
+    /// is «Could not connect to Qdrant». That text does not contain the
+    /// project's path, so a check looking at `proves` first calls it
+    /// `check_failed` — that is, asserts the project is not indexed, which is a
+    /// claim about the world that nobody verified.
     ///
-    /// Il mutante che la fa cadere è togliere il ramo `blind_if` da `judge`:
-    /// visto rosso il 31/08/2026 con `status: "check_failed"` al posto di
+    /// The mutant that makes it fall is removing the `blind_if` branch from
+    /// `judge`: seen red with `status: "check_failed"` in place of
     /// `could_not_look`.
     #[test]
     fn an_index_that_could_not_be_read_is_not_an_index_that_says_no() {
@@ -1096,15 +1091,15 @@ mod tests {
         assert_eq!(value["checks"][0]["state"], "could_not_look");
     }
 
-    /// **UN SERVER CHE RISPONDE NON È UN SERVER CHE OFFRE.**
+    /// **A SERVER THAT ANSWERS IS NOT A SERVER THAT OFFERS.**
     ///
-    /// Misurato il 31/08/2026: `claude mcp list` dichiarava `socraticode: ✔
-    /// Connected` mentre la sessione che lo interrogava non aveva quello
-    /// strumento. Qui il server finto fa la stretta di mano e offre altro.
+    /// Measured: `claude mcp list` declared `socraticode: ✔ Connected` while
+    /// the session questioning it did not have that tool. Here the fake server
+    /// does the handshake and offers something else.
     ///
-    /// Il mutante che la fa cadere è togliere il controllo su `tools/list` e
-    /// fidarsi della stretta di mano: l'esito diventerebbe `ready`, e la
-    /// chiamata partirebbe su uno strumento che non c'è.
+    /// The mutant that makes it fall is removing the check on `tools/list` and
+    /// trusting the handshake: the outcome would become `ready`, and the call
+    /// would start on a tool that is not there.
     #[test]
     fn answering_the_handshake_is_not_offering_the_tool() {
         let sandbox = Sandbox::new("not-offered");
@@ -1125,8 +1120,8 @@ mod tests {
         );
     }
 
-    /// Un server che non si avvia è `unreachable`, e lo dice col motivo del
-    /// sistema operativo invece che con «non ha risposto».
+    /// A server that never starts is `unreachable`, and says so with the
+    /// operating system's reason instead of «it did not answer».
     #[test]
     fn a_server_that_never_starts_is_unreachable() {
         let sandbox = Sandbox::new("absent");
@@ -1149,12 +1144,12 @@ mod tests {
         assert_eq!(error.class, "unreachable");
     }
 
-    /// **L'INDICE DI UN ALTRO PROGETTO È UNA MISURA, E DICE DI NO.**
+    /// **THE INDEX OF ANOTHER PROJECT IS A MEASUREMENT, AND IT SAYS NO.**
     ///
-    /// Il server risponde, offre lo strumento, e l'elenco dei progetti non
-    /// contiene questa cartella: qui si è potuto guardare, quindi la parola è
-    /// `check_failed` e non `could_not_look`. È l'altra metà della prima prova:
-    /// senza questa, un `judge` che dicesse sempre «cieco» passerebbe.
+    /// The server answers, offers the tool, and the project list does not
+    /// contain this directory: here looking was possible, so the word is
+    /// `check_failed` and not `could_not_look`. It is the other half of the
+    /// first test: without it, a `judge` always saying «blind» would pass.
     #[test]
     fn an_index_of_another_project_is_a_measure_and_says_no() {
         let sandbox = Sandbox::new("other-project");
@@ -1181,13 +1176,13 @@ mod tests {
         );
     }
 
-    /// **LA CECITÀ BATTE IL NO.** Due verifiche, una cieca e una negativa:
-    /// l'esito è `could_not_look`. Dire `check_failed` vorrebbe dire «ho
-    /// guardato tutto e una cosa era sbagliata», e quella frase non si può
-    /// pronunciare quando una delle guardate non è avvenuta.
+    /// **BLINDNESS OUTRANKS A NO.** Two checks, one blind and one negative:
+    /// the outcome is `could_not_look`. Saying `check_failed` would mean «I
+    /// looked at everything and one thing was wrong», and that sentence cannot
+    /// be spoken when one of the looks never happened.
     ///
-    /// Il mutante che la fa cadere è invertire i due rami in fondo a
-    /// `preflight`.
+    /// The mutant that makes it fall is swapping the two branches at the foot
+    /// of `preflight`.
     #[test]
     fn blindness_outranks_a_no() {
         let sandbox = Sandbox::new("blind-and-no");
@@ -1226,12 +1221,12 @@ mod tests {
         assert_eq!(value["checks"][1]["state"], "failed");
     }
 
-    /// Il giro intero: verifiche passate, chiamata fatta, risposta consegnata —
-    /// **con la regola attaccata**.
+    /// The whole round: checks passed, call made, answer delivered — **with the
+    /// rule attached**.
     ///
-    /// Il mutante che fa cadere l'ultima asserzione è togliere `caveat`
-    /// dall'uscita: chi userà questo nodo fra sei mesi non avrà letto il
-    /// documento che quella regola l'ha misurata.
+    /// The mutant that makes the last assertion fall is removing `caveat` from
+    /// the output: whoever uses this node in six months will not have read the
+    /// document that measured that rule.
     #[test]
     fn a_passed_preflight_lets_the_question_through_with_the_rule_attached() {
         let sandbox = Sandbox::new("ready");
@@ -1262,13 +1257,13 @@ mod tests {
         );
     }
 
-    /// **UN PASSO NON PUÒ INTERROGARE UN INDICE SENZA DIRE DI CHI È.**
+    /// **A STEP CANNOT QUESTION AN INDEX WITHOUT SAYING WHOSE IT IS.**
     ///
-    /// Nessuna verifica nomina `project_root`: il passo non parte, e l'errore è
-    /// di chi ha scritto il flusso — non un esito del mondo, perché tollerarlo
-    /// vorrebbe dire «interroga pure un indice che non sai di chi sia».
-    ///
-    /// Il mutante che la fa cadere è togliere la chiamata a `require_preflight`.
+    /// No check names `project_root`: the step does not start, and the error is
+    /// of whoever wrote the flow — not an outcome of the world, since
+    /// tolerating it would mean «go ahead and question an index you do not know
+    /// the owner of». The mutant that makes it fall is dropping the call to
+    /// `require_preflight`.
     #[test]
     fn a_step_cannot_question_an_index_without_saying_whose_it_is() {
         let sandbox = Sandbox::new("no-preflight");
@@ -1281,8 +1276,8 @@ mod tests {
             .expect_err("senza verifica preliminare il passo non parte");
         assert_eq!(error.class, "no_preflight");
 
-        // E con una rinuncia scritta, invece, parte: la tolleranza è una
-        // decisione dichiarata, non un valore predefinito.
+        // With a written waiver, though, it does start: tolerance is a
+        // declared decision, not a default.
         let mut waived = ask_input(&spec, vec![], vec!["check_failed", "could_not_look"]);
         waived["checks_waived_because"] =
             json!("questo server non sa niente di cartelle: risponde sull'ora del sistema");
@@ -1291,16 +1286,16 @@ mod tests {
             .expect("con la rinuncia scritta il passo parte");
     }
 
-    /// **UN RINVIO ARRIVA AL SERVER RISOLTO.**
+    /// **A REFERENCE REACHES THE SERVER RESOLVED.**
     ///
-    /// La cartella e gli argomenti vengono dal passo prima. A scioglierli è
-    /// `flow::step_input` — un posto solo per tutte le azioni, dal 01/09/2026 —
-    /// e qui la prova lo rifà con la stessa funzione perché chiama `execute`
-    /// senza passare dall'esecutore. Ciò che questa prova afferma è che l'azione
-    /// **usa** ciò che riceve: il `project_root` risolto arriva davvero al
-    /// server. Che ad arrivare sciolto sia l'ingresso di *ogni* azione lo prova
-    /// `crates/flow/tests/a_reference_reaches_every_action.rs`, e questa non lo
-    /// ripete.
+    /// The directory and the arguments come from the previous step. Resolving
+    /// them is `flow::step_input`'s job — one place for every action — and here
+    /// the test redoes it with the same function because it calls `execute`
+    /// without going through the executor. What this test asserts is that the
+    /// action **uses** what it receives: the resolved `project_root` really does
+    /// reach the server. That the input of *every* action arrives resolved is
+    /// proved by `crates/flow/tests/a_reference_reaches_every_action.rs`, and
+    /// this one does not repeat it.
     #[test]
     fn a_reference_reaches_the_server_resolved() {
         let sandbox = Sandbox::new("reference");
@@ -1334,15 +1329,15 @@ mod tests {
         assert_eq!(value["project_root"], ROOT);
     }
 
-    /// `mcp_ready` risponde senza chiamare lo strumento vero, perché un flusso
-    /// possa ramificare **prima di pagare**.
+    /// `mcp_ready` answers without calling the real tool, so a flow can branch
+    /// **before paying**.
     #[test]
     fn the_readiness_node_answers_without_paying_for_the_real_call() {
         let sandbox = Sandbox::new("ready-node");
         let mut pairs = handshake("[{\"name\":\"impact\"},{\"name\":\"list_projects\"}]");
         pairs.push(("\"name\":\"list_projects\"", text_reply(ROOT)));
-        // «impact» non ha nessuna risposta apparecchiata: se il nodo lo
-        // chiamasse, resterebbe appeso fino alla scadenza.
+        // «impact» has no prepared answer: were the node to call it, it would
+        // hang until the deadline.
         let spec = server(&sandbox, "ready-node", pairs);
 
         let input = json!({
@@ -1370,17 +1365,17 @@ mod tests {
         );
     }
 
-    /// **UNA PROVA VUOTA PASSEREBBE SEMPRE, E NESSUNO LA SCRIVE APPOSTA.**
+    /// **AN EMPTY PROOF WOULD ALWAYS PASS, AND NOBODY WRITES ONE ON PURPOSE.**
     ///
-    /// Ogni testo contiene la stringa vuota: con un `proves` vuoto la verifica
-    /// resta verde anche quando il server risponde che non è riuscito a
-    /// guardare. Non è un caso di scuola — il modo normale di arrivarci è un
-    /// `{"$from": …}` che punta a un campo vuoto, e allora la verifica smette di
-    /// verificare **in silenzio**.
+    /// Every text contains the empty string: with an empty `proves` the check
+    /// stays green even when the server answers that it could not look. This is
+    /// no textbook case — the normal way to get there is a `{"$from": …}`
+    /// pointing at an empty field, and then the check stops checking **in
+    /// silence**.
     ///
-    /// Il mutante che la fa cadere è togliere il controllo su `proves` da
-    /// `require_preflight`: l'esito diventa `ok`, cioè un passo che ha
-    /// interrogato un indice cieco credendo di averlo verificato.
+    /// The mutant that makes it fall is removing the check on `proves` from
+    /// `require_preflight`: the outcome becomes `ok`, that is, a step that
+    /// questioned a blind index believing it had verified it.
     #[test]
     fn an_empty_proof_proves_nothing_and_is_refused() {
         let sandbox = Sandbox::new("empty-proof");
@@ -1402,8 +1397,8 @@ mod tests {
             .expect_err("una verifica che non dice cosa prova non parte");
         assert_eq!(error.class, "invalid_input");
 
-        // E la stessa trappola un gradino più su: senza cartella dichiarata, il
-        // legame che `require_preflight` impone lo soddisferebbe chiunque.
+        // The same trap one rung up: with no declared directory, the tie
+        // `require_preflight` imposes would be met by anything at all.
         let mut rootless = ask_input(&spec, vec![root_check()], vec![]);
         rootless["project_root"] = json!("");
         let error = McpAskAction
@@ -1412,8 +1407,8 @@ mod tests {
         assert_eq!(error.class, "no_preflight");
     }
 
-    /// Un `accept` che nomina un esito impossibile è un refuso di chi ha
-    /// scritto il flusso, e si vede subito invece che alla prima corsa.
+    /// An `accept` naming an impossible outcome is a typo of whoever wrote the
+    /// flow, and shows at once instead of on the first run.
     #[test]
     fn an_accept_that_names_an_impossible_outcome_is_refused() {
         let sandbox = Sandbox::new("bad-accept");

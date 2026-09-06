@@ -1,30 +1,30 @@
-//! **IL GUASTO 35, PROVATO DOVE VIVEVA.**
+//! **FAULT 35, PROVED WHERE IT LIVED.**
 //!
-//! `load_pricing` leggeva `~/.config/sailor/pricing.json` e nient'altro. Su una
-//! macchina appena installata quel file non c'è: ogni `cost_micros` restava
-//! `None`, la spesa registrata di ogni corsa restava zero, e un flusso con
-//! `spend_cap_micros` girava fino in fondo senza che il tetto scattasse mai —
-//! senza nessun errore e senza nessun avviso. Un freno che non frena.
+//! Reading `~/.config/sailor/pricing.json` and nothing else, on a freshly
+//! installed machine there is no such file: every `cost_micros` stayed `None`,
+//! every run's recorded spend stayed zero, and a flow with `spend_cap_micros`
+//! ran to the end without the cap ever tripping — no error, no warning. A brake
+//! that does not brake.
 //!
-//! Qui la scena è quella: **niente in casa**, e il costo si deve sapere lo
-//! stesso. I conteggi non sono inventati — sono quelli che
-//! `claude -p --output-format json` ha dichiarato davvero su questa macchina il
-//! 30/08/2026. Che il descrittore spedito li sappia *leggere* da quell'uscita lo
-//! prova `toolbox/tests/the_shipped_descriptor_prices_a_real_call.rs`, che dal
-//! 01/09/2026 fa il conto sul listino spedito invece che su uno scritto a mano:
-//! là la catena è intera, qui c'è il solo anello che questo guasto riguarda.
+//! The scene here is that one: **nothing at home**, and the cost must be known
+//! all the same. The counts are not invented — they are what
+//! `claude -p --output-format json` really declared on this machine. That the
+//! shipped descriptor can *read* them out of that output is proved by
+//! `toolbox/tests/the_shipped_descriptor_prices_a_real_call.rs`, which prices
+//! against the shipped list rather than a hand-written one: the chain is whole
+//! there, and here is the one link this fault is about.
 //!
-//! **PERCHÉ NON SI PROVA PUNTANDO `SAILOR_PRICING` DA QUALCHE PARTE.** Una
-//! variabile d'ambiente è di **processo**: `cargo test` manda le prove di uno
-//! stesso binario su più fili dello stesso processo, e una prova che la scrive
-//! deciderebbe il listino di tutte le altre mentre girano. Per questo la regola
-//! sta in `price_list_from`, che prende il testo di casa come argomento.
+//! **WHY IT IS NOT PROVED BY POINTING `SAILOR_PRICING` SOMEWHERE.** An
+//! environment variable belongs to the **process**: `cargo test` runs one
+//! binary's tests on several threads of the same process, so a test writing it
+//! would decide the price list of all the others while they run. Hence the rule
+//! lives in `price_list_from`, which takes the home text as an argument.
 
 use models::pricing::{cost_micros, Known, Price, TokenCounts};
 
-/// I conteggi veri di quella chiamata: 2 token d'ingresso, 4 d'uscita, 9.922
-/// letti dalla cache e 12.347 scritti in una cache a lunga durata. Il motore
-/// dichiarò 0,128541 dollari.
+/// The real counts of that call: 2 input tokens, 4 output, 9,922 read from the
+/// cache and 12,347 written to a long-lived one. The engine declared
+/// 0.128541 dollars.
 const MEASURED: TokenCounts = TokenCounts {
     input: Some(2),
     output: Some(4),
@@ -33,16 +33,16 @@ const MEASURED: TokenCounts = TokenCounts {
     cache_write_long: Some(12_347),
 };
 
-/// Il nome con cui quel motore si è dichiarato. Non è l'`id` di listino: è un
-/// alias, e se il listino spedito lo perdesse il costo tornerebbe sconosciuto
-/// senza che nessun prezzo sia cambiato.
+/// The name that engine declared itself under. Not the price list's `id`: an
+/// alias, and were the shipped list to lose it the cost would go back to
+/// unknown with no price having changed.
 const AS_THE_ENGINE_NAMED_IT: &str = "claude-opus-5[1m]";
 
-/// **LA PROVA CHE CHIUDE IL GUASTO 35.** Nessun file in casa, e il costo di una
-/// chiamata vera si sa lo stesso — alla micro-unità.
+/// **THE PROOF THAT CLOSES FAULT 35.** No file at home, and a real call's cost
+/// is known all the same — to the micro-unit.
 ///
-/// Rimetti `price_list_from` a restituire il solo listino di casa e questa
-/// diventa rossa: è il difetto originale, non una sua imitazione.
+/// Put `price_list_from` back to returning the home list alone and this turns
+/// red: it is the original defect, not an imitation of it.
 #[test]
 fn with_nothing_in_the_users_home_a_real_call_still_gets_a_cost() {
     let prices = actions::price_list_from(None);
@@ -57,9 +57,9 @@ fn with_nothing_in_the_users_home_a_real_call_still_gets_a_cost() {
     assert_eq!(prices.currency, "USD");
 }
 
-/// Il file di casa continua a vincere: è il punto della cura, non un effetto
-/// collaterale. Chi corregge un prezzo lo fa con un editor di testo, e vale
-/// dalla chiamata dopo senza ricompilare niente.
+/// The home file still wins: that is the point of the cure, not a side effect.
+/// A price is corrected with a text editor, and holds from the next call with
+/// nothing recompiled.
 #[test]
 fn what_the_user_writes_at_home_still_beats_what_is_shipped() {
     let home = r#"{"currency":"USD","models":[
@@ -76,23 +76,22 @@ fn what_the_user_writes_at_home_still_beats_what_is_shipped() {
         Some(1.0),
         "ha vinto quella spedita"
     );
-    // E ciò che il file di casa non nomina arriva ancora da quello spedito.
+    // And what the home file does not name still comes from the shipped one.
     assert_eq!(prices.knows("claude-haiku-4-5"), Known::Priced);
 }
 
-/// **UN FILE DI CASA SCRITTO MALE NON DEVE SPEGNERE IL LISTINO.** È il guasto 35
-/// nella sua forma più silenziosa: un errore di battitura in un file JSON che
-/// spegne un tetto di spesa senza dire niente a nessuno.
+/// **A MALFORMED HOME FILE MUST NOT SWITCH THE PRICE LIST OFF.** It is fault 35
+/// in its quietest form: a typo in a JSON file that switches off a spending cap
+/// without telling anybody.
 #[test]
 fn a_broken_file_at_home_falls_back_to_what_is_shipped() {
     let prices = actions::price_list_from(Some("questo non è JSON"));
     assert_eq!(prices.knows("claude-opus-5"), Known::Priced);
 }
 
-/// Chi non ha un prezzo per un modello deve saperlo. I modelli di OpenAI e di
-/// Google non stanno nel listino spedito **di proposito** — nessuno ne ha
-/// verificato i prezzi — e restano dichiaratamente sconosciuti invece di
-/// diventare zero.
+/// Having no price for a model has to be knowable. OpenAI's and Google's models
+/// are out of the shipped list **on purpose** — nobody has verified their
+/// prices — and stay declaredly unknown instead of becoming zero.
 #[test]
 fn a_model_nobody_priced_is_reported_as_absent_not_as_free() {
     let prices = actions::price_list_from(None);

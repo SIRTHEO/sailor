@@ -1,16 +1,17 @@
-//! **IL GUASTO 18, PROVATO DOVE VIVEVA.**
+//! **FAULT 18, PROVED WHERE IT LIVED.**
 //!
-//! La sovrapposizione d'ambiente che porta un motore nella casa di Sailor —
-//! `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME` — esisteva dal 27/08 e
-//! la chiamava **un posto solo**: `sailor run`, cioè lo scambio rapido da
-//! terminale. Un motore lanciato da un **passo di flusso** non ci passava mai:
-//! ereditava l'ambiente di chi aveva aperto il terminale, e leggeva la casa del
-//! vicino. Due corse dello stesso flusso, lanciate da due terminali diversi, non
-//! erano la stessa misura — e niente lo diceva.
+//! The environment overlay that takes an engine into Sailor's home —
+//! `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME` — was called from **one
+//! place**: `sailor run`, the quick exchange from a terminal. An engine launched
+//! by a **flow step** never went through it: it inherited the environment of
+//! whoever opened the terminal and read the neighbour's home. Two runs of one
+//! flow, launched from two terminals, were not the same measure — and nothing
+//! said so.
 //!
-//! **È LA STESSA MALATTIA DEL GUASTO 35**, e le due prove si leggono insieme:
-//! Sailor aveva il dato in casa propria e non lo usava. Il listino c'era e non
-//! viaggiava col prodotto; la dotazione c'era e non arrivava ai motori.
+//! **THE SAME DISEASE AS FAULT 35**, and the two proofs read together: Sailor
+//! held the fact in its own home and did not use it. The price list was there
+//! and did not travel with the product; the equipment was there and never
+//! reached the engines.
 
 use actions::{equipment_for, equipment_with_keys};
 use ledger::EngineIdentity;
@@ -18,8 +19,8 @@ use profiles::{Profile, ProfileEndpoint, ProfileStore};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-/// Uno stato con un profilo attivo per `codex` e uno spento per `claude`: il
-/// secondo serve a provare che non basta *esistere*, bisogna essere attivo.
+/// State with one active profile for `codex` and a dormant one for `claude`:
+/// the second proves that *existing* is not enough, a profile has to be active.
 fn a_store_with_one_active_profile() -> ProfileStore {
     let mut store = ProfileStore::default();
     store.profiles.push(Profile {
@@ -122,11 +123,11 @@ fn a_profile_with_a_native_endpoint_points_the_engine_there_and_says_so() {
     assert!(!foreign.env.contains_key("OPENAI_BASE_URL"), "nothing points a refused launch");
 }
 
-/// **LA PROVA CHE CHIUDE IL GUASTO 18.** Un passo che invoca `codex` deve
-/// partire con la casa del profilo attivo, non con quella del terminale.
+/// **THE PROOF THAT CLOSES FAULT 18.** A step invoking `codex` must start with
+/// the active profile's home, not the terminal's.
 ///
-/// Rimetti `equipment_for` a restituire il solo `step_env` e questa diventa
-/// rossa: è il difetto originale, non una sua imitazione.
+/// Put `equipment_for` back to returning `step_env` alone and this turns red: it
+/// is the original defect, not an imitation of it.
 #[test]
 fn a_flow_step_launches_the_engine_inside_the_profiles_home() {
     let equipment = equipment_for(
@@ -142,17 +143,15 @@ fn a_flow_step_launches_the_engine_inside_the_profiles_home() {
     );
 }
 
-/// **CHI SCRIVE UNA VARIABILE NEL PASSO VINCE, E IL VERSO È LA DECISIONE.**
+/// **A VARIABLE WRITTEN IN THE STEP WINS, AND THE ORDER IS THE DECISION.**
 ///
-/// Una variabile scritta dentro un passo dice qualcosa di preciso su *quella*
-/// chiamata — un profilo diverso per un passo solo, una casa usa-e-getta per una
-/// prova — e non deve poter essere scavalcata da uno stato che vive altrove e
-/// che quel passo non nomina. Il verso opposto renderebbe inerte, in silenzio,
-/// una riga scritta apposta nel flusso.
+/// A variable written inside a step says something precise about *that* call — a
+/// different profile for one step, a throwaway home for a test — and must not be
+/// overridden by state living elsewhere that the step does not name. The other
+/// order would silently make a line written on purpose in the flow inert.
 ///
-/// *Mutante eseguito*: invertire l'ordine della sovrapposizione, cioè far
-/// vincere il profilo. Questa prova diventa rossa e quella qui sopra resta
-/// verde — che è precisamente perché servono tutte e due.
+/// *Mutant run*: reverse the overlay order, letting the profile win. This test
+/// turns red and the one above stays green — precisely why both are needed.
 #[test]
 fn what_the_step_declares_beats_the_profile_never_the_other_way_round() {
     let equipment = equipment_for(
@@ -167,8 +166,8 @@ fn what_the_step_declares_beats_the_profile_never_the_other_way_round() {
     );
 }
 
-/// Le variabili che il passo dichiara e che col profilo non c'entrano arrivano
-/// intatte: la dotazione si **aggiunge**, non sostituisce ciò che c'era.
+/// The variables a step declares that have nothing to do with the profile
+/// arrive untouched: the equipment **adds**, it does not replace.
 #[test]
 fn the_rest_of_what_the_step_declares_arrives_untouched() {
     let equipment = equipment_for(
@@ -187,10 +186,10 @@ fn the_rest_of_what_the_step_declares_arrives_untouched() {
     );
 }
 
-/// **UN PROFILO CHE ESISTE MA NON È ATTIVO NON CAMBIA NIENTE.** `claude` ha un
-/// profilo in tabella e nessuno l'ha acceso: sovrapporgli una casa vorrebbe dire
-/// spostare l'identità di una riga di comando che nessuno ha chiesto di
-/// spostare, e lo si scoprirebbe da un login perso.
+/// **A PROFILE THAT EXISTS BUT IS NOT ACTIVE CHANGES NOTHING.** `claude` has a
+/// profile in the table and nobody switched it on: overlaying a home would move
+/// the identity of a command line nobody asked to move, and it would be
+/// discovered through a lost login.
 #[test]
 fn a_profile_that_exists_but_is_not_active_moves_nothing() {
     let equipment = equipment_for(
@@ -200,8 +199,8 @@ fn a_profile_that_exists_but_is_not_active_moves_nothing() {
     );
 
     assert!(equipment.env.is_empty(), "{:?}", equipment.env);
-    // **E NON È UN VUOTO: È «EREDITATA».** Il processo parte con la casa di chi
-    // ha aperto il terminale, che è un'identità vera e nominabile.
+    // **AND IT IS NOT A BLANK: IT IS «INHERITED».** The process starts in the
+    // home of whoever opened the terminal, a real and nameable identity.
     assert_eq!(
         equipment.identity,
         EngineIdentity::InheritedFromTheTerminal {
@@ -210,8 +209,8 @@ fn a_profile_that_exists_but_is_not_active_moves_nothing() {
     );
 }
 
-/// Un comando che non è una riga di comando conosciuta — un `sh` scritto a mano
-/// in un passo — non ha nessuna casa da spostare, e non deve riceverne una.
+/// A command that is not a known command line — an `sh` hand-written in a step
+/// — has no home to move, and must not be handed one.
 #[test]
 fn a_plain_command_gets_no_home_of_anyones() {
     let equipment = equipment_for(
@@ -224,13 +223,13 @@ fn a_plain_command_gets_no_home_of_anyones() {
     assert_eq!(equipment.identity, EngineIdentity::NotAKnownEngine);
 }
 
-/// **IL PROFILO RISOLTO SI SCRIVE, O DUE CORSE NON SONO LA STESSA MISURA.**
+/// **THE RESOLVED PROFILE IS WRITTEN DOWN, OR TWO RUNS ARE NOT ONE MEASURE.**
 ///
-/// Chi legge una riga del deposito e non sa sotto quale identità quella chiamata
-/// è girata non può confrontarla con nessun'altra: la stessa catena di passi,
-/// sotto due profili, dà due consumi diversi per una ragione che la riga non
-/// porta. **E il percorso della casa ci sta dentro**: è il fondo su cui una
-/// diagnostica si appoggia, mentre un nome si riusa e si sposta.
+/// Reading a ledger row without knowing which identity that call ran under, you
+/// can compare it with nothing: the same chain of steps under two profiles gives
+/// two different consumptions for a reason the row does not carry. **And the
+/// home's path belongs in it**: that is the ground a diagnosis stands on, while
+/// a name gets reused and moved.
 #[test]
 fn the_resolved_profile_is_written_down_not_left_to_be_guessed() {
     let equipment = equipment_for(
@@ -250,16 +249,16 @@ fn the_resolved_profile_is_written_down_not_left_to_be_guessed() {
     );
 }
 
-/// **IL PASSO CHE SCAVALCA LO DICE, E QUESTA È LA CURA DEL DIFETTO.**
+/// **A STEP THAT OVERRIDES SAYS SO, AND THAT IS THE CURE.**
 ///
-/// Fino al 01/09/2026 la riga nel deposito diceva `codex/lavoro` anche qui: il
-/// motore partiva nella casa scritta nel passo e il registro nominava il profilo
-/// attivo. **Il registro diceva un'identità e il processo ne aveva usata
-/// un'altra**, proprio nel caso in cui qualcuno l'aveva cambiata apposta — cioè
-/// quello che una diagnostica o un controllo di sicurezza esiste per vedere.
+/// The ledger row used to say `codex/lavoro` here too: the engine started in the
+/// home written in the step while the record named the active profile. **The
+/// record said one identity and the process had used another**, exactly where
+/// somebody had changed it on purpose — the case a diagnosis or a security check
+/// exists to see.
 ///
-/// *Mutante eseguito*: togliere da `identity_of` il ramo che guarda `step_env`
-/// per primo. Questa diventa rossa e le altre restano verdi.
+/// *Mutant run*: remove from `identity_of` the branch that looks at `step_env`
+/// first. This turns red and the others stay green.
 #[test]
 fn a_step_that_writes_the_home_variable_is_recorded_as_the_one_who_chose() {
     let equipment = equipment_for(
@@ -278,11 +277,10 @@ fn a_step_that_writes_the_home_variable_is_recorded_as_the_one_who_chose() {
     );
 }
 
-/// **UN PROFILO DICHIARATO NON È UN PROFILO IN FORZA.** `antigravity` non ha una
-/// variabile che sposti la casa: lì l'identità dipende da dove punta un file sul
-/// disco, e questa funzione il disco non lo tocca. Prima usciva la stessa
-/// stringa vuota di «nessun profilo», e i due casi si confondevano; adesso la
-/// riga dice anche **perché**.
+/// **A DECLARED PROFILE IS NOT A PROFILE IN FORCE.** `antigravity` has no
+/// variable that moves the home: there the identity hangs on where a file on
+/// disk points, and this function never touches disk. The same empty string as
+/// «no profile» would blur the two cases; the row says **why** as well.
 #[test]
 fn a_cli_whose_home_no_variable_moves_says_so_with_its_reason() {
     let mut store = ProfileStore::default();
@@ -314,16 +312,16 @@ fn a_cli_whose_home_no_variable_moves_says_so_with_its_reason() {
     assert!(!why.is_empty(), "manca la ragione, che è metà del dato");
 }
 
-/// **UNO STATO CHE NOMINA UN PROFILO SPARITO NON INVENTA UNA CASA.**
+/// **STATE NAMING A VANISHED PROFILE INVENTS NO HOME.**
 ///
-/// `sailor run` in questo caso si rifiuta di partire, e ha ragione: lì l'intera
-/// invocazione è quel profilo. Qui il passo ha comunque un motore da chiamare, e
-/// fermarlo per uno stato invecchiato punirebbe chi non c'entra — ma inventare
-/// una cartella dal nome del profilo sarebbe peggio: si partirebbe con una casa
-/// vuota, cioè senza credenziali, con l'aria di aver applicato un profilo. Non
-/// si sovrappone niente — e il deposito lo **dice**, invece di tacerlo: fra i
-/// cinque casi che finivano tutti nella stessa stringa vuota, questo è il solo
-/// che chiede di intervenire, perché c'è uno stato da riparare.
+/// `sailor run` refuses to start in this case, and rightly: there the whole
+/// invocation *is* that profile. Here the step still has an engine to call, and
+/// stopping it over stale state would punish a bystander — but inventing a
+/// directory from the profile's name would be worse: it would start in an empty
+/// home, with no credentials, wearing the air of an applied profile. Nothing is
+/// overlaid, and the ledger **says so** rather than keeping quiet: of the five
+/// cases that all ended in one empty string, this is the one asking somebody to
+/// act, because there is state to repair.
 #[test]
 fn a_stale_active_name_that_matches_no_profile_moves_nothing() {
     let mut store = a_store_with_one_active_profile();
