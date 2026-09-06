@@ -63,6 +63,11 @@ pub enum Condition {
     Equals { value: Value },
     PointerEquals { pointer: String, value: Value },
     PointerExists { pointer: String },
+    /// **AN EMPTY STRING IS AN ANSWER GIVEN, NOT A VALUE.** A step that has
+    /// nothing to hand on fills the field it can and leaves the rest empty, so
+    /// `PointerExists` is true there and the step after starts on nothing and
+    /// pays an engine to say so.
+    PointerHasValue { pointer: String },
 }
 
 impl Condition {
@@ -71,7 +76,24 @@ impl Condition {
             Condition::Equals { value } => input == value,
             Condition::PointerEquals { pointer, value } => input.pointer(pointer) == Some(value),
             Condition::PointerExists { pointer } => input.pointer(pointer).is_some(),
+            Condition::PointerHasValue { pointer } => {
+                input.pointer(pointer).is_some_and(carries_something)
+            }
         }
+    }
+}
+
+/// What this tree means by a value that carries something, declared once: the
+/// promise a step stops on and the condition a wire is taken on ask the same
+/// question, and two answers to it would drift.
+pub fn carries_something(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(yes) => *yes,
+        Value::Number(number) => number.as_f64() != Some(0.0),
+        Value::String(text) => !text.is_empty(),
+        Value::Array(items) => !items.is_empty(),
+        Value::Object(fields) => !fields.is_empty(),
     }
 }
 

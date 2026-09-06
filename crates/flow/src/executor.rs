@@ -1286,19 +1286,8 @@ fn promise_is_kept(graph: &Graph, records: &[StepRecord]) -> bool {
             .iter()
             .filter(|record| record.step_id == step.id && record.outcome == Some(Outcome::Went))
             .filter_map(|record| record.output.as_ref())
-            .any(|output| output.pointer(pointer).is_some_and(is_truthy))
+            .any(|output| output.pointer(pointer).is_some_and(crate::graph::carries_something))
     })
-}
-
-fn is_truthy(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::Bool(yes) => *yes,
-        Value::Number(number) => number.as_f64() != Some(0.0),
-        Value::String(text) => !text.is_empty(),
-        Value::Array(items) => !items.is_empty(),
-        Value::Object(fields) => !fields.is_empty(),
-    }
 }
 
 /// A step already opened in the store, waiting to be executed.
@@ -2958,6 +2947,45 @@ mod tests {
                 Decision::Complete,
             ]
         );
+    }
+
+    /// **A HONEST REFUSAL BY THE STEP BEFORE MUST NOT COST A CALL.** A step
+    /// that has nothing to hand on leaves its field empty, and `pointer_exists`
+    /// was true there: the step after started on nothing and paid an engine
+    /// 0.39 dollars to be told so.
+    #[test]
+    fn a_pointer_that_leads_to_an_empty_answer_does_not_start_the_step() {
+        let count = Arc::new(AtomicUsize::new(0));
+        let mut conditional = step("conditional", &[], "action", 1);
+        conditional.when = Some(Condition::PointerHasValue {
+            pointer: "/mandate".to_owned(),
+        });
+        let graph = Graph::new(vec![conditional]).expect("valid graph");
+        let mut actions = ActionRegistry::default();
+        actions.register("action", FailOnce(Arc::clone(&count)));
+        let request = ExecutionRequest {
+            run_id: "run".to_owned(),
+            root_inputs: [(
+                "conditional".to_owned(),
+                json!({"mandate": "", "nothing_left": "there is no diagnosis to choose from yet"}),
+            )]
+            .into_iter()
+            .collect(),
+            gates: vec![],
+            shared: SharedState::new(),
+            spend_cap_micros: None,
+            stops: RunStops::default(),
+        };
+        let store = InMemoryRecordStore::default();
+        InProcessExecutor
+            .execute(&graph, request, &store, &actions, &Tick::new(0))
+            .expect("the condition is evaluated");
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            0,
+            "the action ran on an empty mandate"
+        );
+        assert_eq!(store.all()[0].outcome, Some(Outcome::Skipped));
     }
 
     /// A stopped clock that remembers which threads asked it. Stopped, so that

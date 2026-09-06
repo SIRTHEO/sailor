@@ -20,7 +20,8 @@ export type ValueSchema =
 export type Condition =
   | { kind: "equals"; value: unknown }
   | { kind: "pointer_equals"; pointer: string; value: unknown }
-  | { kind: "pointer_exists"; pointer: string };
+  | { kind: "pointer_exists"; pointer: string }
+  | { kind: "pointer_has_value"; pointer: string };
 
 export interface DependencyEdge {
   step: string;
