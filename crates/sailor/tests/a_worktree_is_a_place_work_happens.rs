@@ -4,9 +4,10 @@
 //! back, because that is where a tree can be misread into the wrong branch or
 //! the wrong name — and a wrong name is what `remove` acts on.
 
-use sailor::worktree_cmd::render;
-use std::path::Path;
-use workspace::{name_for, parse_worktrees, tree_path};
+use sailor::worktree_cmd::{render, render_open, sweep};
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use workspace::{name_for, parse_worktrees, tree_path, OpenTree, OpenTrees};
 
 const PORCELAIN: &str = "\
 worktree /somewhere/project
@@ -116,4 +117,99 @@ fn a_tree_kept_from_a_step_is_listed_with_its_run_and_counted() {
         !shown.lines().next().expect("the repository's own line").contains("corsa-1"),
         "a tree a person cut was read as a step's:\n{shown}"
     );
+}
+
+fn an_entry(path: &str, opened_at: i64, pid: u32) -> OpenTree {
+    OpenTree {
+        path: path.to_owned(),
+        repo: "/somewhere/project".to_owned(),
+        run: "corsa-7".to_owned(),
+        step: "implementa".to_owned(),
+        opened_by_pid: pid,
+        opened_at,
+    }
+}
+
+/// The register answers three things a listing of git's cannot: which run
+/// asked, how long ago, and whether the process that asked is still there.
+#[test]
+fn the_open_trees_say_who_asked_and_whether_that_one_is_still_running() {
+    let held = [
+        an_entry("/somewhere/project-worktrees/corsa-7/implementa", 1_000, 11),
+        an_entry("/somewhere/project-worktrees/corsa-7/verifica", 4_600, 22),
+    ];
+
+    let shown = render_open(&held, 11_800, |pid| pid == 22);
+    let first = shown.lines().next().expect("the first tree");
+    let second = shown.lines().nth(1).expect("the second tree");
+
+    assert!(first.contains("corsa-7") && first.contains("implementa"), "{first}");
+    assert!(first.contains("3h") && second.contains("2h"), "{shown}");
+    assert!(first.contains("gone"), "a dead opener passed for a live one: {first}");
+    assert!(second.contains("still running"), "{second}");
+    assert_eq!(render_open(&[], 0, |_| true), "Sailor has no tree open: nothing it cut is still standing.");
+}
+
+/// **THE ONE THAT MATTERS, THROUGH THE GESTURE A PERSON TYPES.** The sweep
+/// takes down what the trunk already holds and leaves standing, by name, the
+/// tree carrying work nobody else has.
+#[test]
+fn the_sweep_takes_down_the_merged_trees_and_names_the_ones_holding_work() {
+    let scratch = a_scratch("sweeping");
+    let repo = a_repository_in(&scratch);
+    let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
+    let merged = workspace::create(&repo, "work/gia-dentro", None).expect("a merged tree");
+    let ahead = workspace::create(&repo, "work/ancora-fuori", None).expect("a tree of its own");
+    let dirty = workspace::create(&repo, "work/mai-committato", None).expect("a third tree");
+    std::fs::write(ahead.join("answer"), "a night of work\n").expect("work");
+    run_git(&ahead, &["add", "answer"]);
+    run_git(&ahead, &["commit", "-q", "-m", "not in the trunk"]);
+    std::fs::write(dirty.join("half"), "half a thought\n").expect("work");
+
+    let said = sweep(&repo, &store as &dyn OpenTrees).expect("the sweep runs");
+    let merged_is_gone = !merged.exists();
+    let work_is_there = ahead.join("answer").exists() && dirty.join("half").exists();
+    let _ = std::fs::remove_dir_all(&scratch);
+
+    assert!(merged_is_gone, "a merged tree was kept:\n{said}");
+    assert!(work_is_there, "the sweep lost work:\n{said}");
+    assert!(said.contains("work/ancora-fuori"), "the kept tree was not named:\n{said}");
+    assert!(said.contains("mai-committato"), "the dirty tree was not named:\n{said}");
+    assert!(said.contains("1 taken down, 2 kept"), "{said}");
+}
+
+fn a_scratch(label: &str) -> PathBuf {
+    let path = std::env::temp_dir().join(format!("sailor-worktree-cmd-{label}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&path);
+    std::fs::create_dir_all(&path).expect("a scratch");
+    path
+}
+
+/// Only the repository's own settings: nothing of the account running this.
+fn run_git(at: &Path, args: &[&str]) {
+    let done = Command::new("git")
+        .arg("-C")
+        .arg(at)
+        .args(args)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .output()
+        .expect("git runs");
+    assert!(done.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&done.stderr));
+}
+
+/// A repository whose trunk is named the way this project names its trunk:
+/// the sweep asks git whether the trunk holds a tree, and no other branch is
+/// the trunk.
+fn a_repository_in(scratch: &Path) -> PathBuf {
+    let repo = scratch.join("project");
+    std::fs::create_dir_all(&repo).expect("the repository");
+    run_git(&repo, &["init", "-q"]);
+    run_git(&repo, &["config", "user.email", "prove@example"]);
+    run_git(&repo, &["config", "user.name", "prove"]);
+    std::fs::write(repo.join("README"), "a tree to cut from\n").expect("a file");
+    run_git(&repo, &["add", "README"]);
+    run_git(&repo, &["commit", "-q", "-m", "the first"]);
+    run_git(&repo, &["branch", "-M", workspace::branches::TRUNK]);
+    repo
 }

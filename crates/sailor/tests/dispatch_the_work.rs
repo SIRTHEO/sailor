@@ -69,13 +69,18 @@ impl ToolResolver for NoToolIsHere {
     }
 }
 
-fn registry_with(resolver: impl ToolResolver + 'static) -> ActionRegistry {
+/// The store is where a tree Sailor cuts is written down, and a step asking for
+/// a tree of its own without one is refused: no register, no tree.
+fn registry_with(
+    resolver: impl ToolResolver + 'static,
+    store: Option<ledger::Ledger>,
+) -> ActionRegistry {
     let mut registry = ActionRegistry::default();
     actions::register_default(&mut registry);
     trigger::register_default(&mut registry);
     registry.register(
         actions::EXTERNAL_ENGINE_ACTION,
-        actions::ExternalEngineAction::resolving_with(resolver),
+        actions::ExternalEngineAction::resolving_with(resolver).recording_to(store),
     );
     registry
 }
@@ -101,7 +106,7 @@ impl Clock for Tick {
 /// The two engine steps ask for a tree of their own, and a run that cannot say
 /// which project it is in refuses rather than putting them both in the
 /// directory the tests happen to start in.
-struct Project(std::path::PathBuf);
+struct Project(std::path::PathBuf, ledger::Ledger);
 
 impl Project {
     fn new() -> Self {
@@ -141,7 +146,12 @@ impl Project {
                 .expect("git runs");
             assert!(done.status.success(), "git {args:?}");
         }
-        Project(root)
+        let store = root
+            .parent()
+            .map(|above| above.join("store"))
+            .expect("the project sits under a scratch");
+        let store = ledger::Ledger::open(store).expect("a store to write the trees into");
+        Project(root, store)
     }
 }
 
@@ -156,9 +166,10 @@ impl Drop for Project {
 fn run_with(
     graph: &Graph,
     inputs: &[(&str, Value)],
-    registry: &ActionRegistry,
+    resolver: impl ToolResolver + 'static,
 ) -> (Execution, InMemoryRecordStore) {
     let project = Project::new();
+    let registry = &registry_with(resolver, Some(project.1.clone()));
     let store = InMemoryRecordStore::default();
     let mut shared = SharedState::new();
     shared.insert(
@@ -244,7 +255,7 @@ fn the_only_step_without_dependencies_is_the_trigger() {
 #[test]
 fn every_action_the_flow_names_is_registered() {
     let flow = flow_file();
-    let registry = registry_with(EveryToolIsShell);
+    let registry = registry_with(EveryToolIsShell, None);
 
     let missing: Vec<&str> = flow
         .graph
@@ -481,7 +492,7 @@ fn a_dispatch_without_a_why_per_choice_fails_the_shape() {
         let (execution, _) = run_with(
             &graph,
             &[("trigger", trigger_input())],
-            &registry_with(EveryToolIsShell),
+            EveryToolIsShell,
         );
 
         assert_eq!(
@@ -516,7 +527,7 @@ fn the_whole_chain_runs_from_the_signal_to_the_verdict() {
         let (execution, _) = run_with(
             &graph,
             &[("trigger", trigger_input())],
-            &registry_with(EveryToolIsShell),
+            EveryToolIsShell,
         );
         last_decision(&execution)
     };
@@ -545,7 +556,7 @@ fn only_what_the_shape_declares_travels_down_the_chain() {
     let (_, store) = run_with(
         &graph,
         &[("trigger", trigger_input())],
-        &registry_with(EveryToolIsShell),
+        EveryToolIsShell,
     );
 
     let output = |step: &str| {
@@ -595,7 +606,7 @@ fn an_engine_that_fails_stops_the_chain_instead_of_colouring_it_green() {
     let (execution, store) = run_with(
         &graph,
         &[("trigger", trigger_input())],
-        &registry_with(EveryToolIsShell),
+        EveryToolIsShell,
     );
 
     assert_eq!(
@@ -638,7 +649,7 @@ fn a_machine_without_the_tool_stops_the_flow_saying_which_one() {
     let (execution, store) = run_with(
         &graph,
         &[("trigger", trigger_input())],
-        &registry_with(NoToolIsHere),
+        NoToolIsHere,
     );
 
     assert_eq!(
@@ -698,7 +709,7 @@ fn the_verdict_gate_closes_green_only_on_an_approved_verdict() {
         let (execution, _) = run_with(
             &graph,
             &[("verdict", input)],
-            &registry_with(EveryToolIsShell),
+            EveryToolIsShell,
         );
         last_decision(&execution)
     };
@@ -765,7 +776,7 @@ fn a_skipped_step_leaves_the_run_green_and_its_children_unrun() {
     let (execution, _) = run_with(
         &graph,
         &[("first", json!({"command": "true", "timeout_secs": 5}))],
-        &registry_with(EveryToolIsShell),
+        EveryToolIsShell,
     );
 
     assert_eq!(
@@ -812,11 +823,12 @@ fn the_declared_reference_puts_the_dispatch_answer_on_the_engines_input() {
     // l'incarico sciolto finisce davvero nel prompt di questo motore.
     let input = flow::reference::resolve_references(&input).expect("i rinvii si sciolgono");
 
-    let registry = registry_with(EveryToolIsShell);
-    let action = registry.get(&engine.action).expect("azione registrata");
     // The step asks for a tree of its own, so this call needs a project to cut
-    // it from: calling the action outside a run is what the executor never does.
+    // it from and a store to write it down in: calling the action outside a run
+    // is what the executor never does.
     let project = Project::new();
+    let registry = registry_with(EveryToolIsShell, Some(project.1.clone()));
+    let action = registry.get(&engine.action).expect("azione registrata");
     let mut shared = SharedState::new();
     shared.insert(flow::WORKSPACE_ROOT.to_owned(), json!(project.0.to_string_lossy()));
     shared.insert(flow::CURRENT_RUN.to_owned(), json!("prova"));
