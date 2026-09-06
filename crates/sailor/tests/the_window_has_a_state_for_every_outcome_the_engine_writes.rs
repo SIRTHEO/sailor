@@ -77,6 +77,12 @@ fn every_outcome_the_engine_writes_has_a_state_the_window_draws() {
         "one of the two lists could not be read, so nothing was compared: \
          engine {declared:?}, window {mapped:?}"
     );
+    workspace::measured_against(
+        declared.len(),
+        "endings the engine declares",
+        mapped.len(),
+        "states the window draws an ending in",
+    );
 
     let unmapped: Vec<&String> = declared.iter().filter(|one| !mapped.contains(one)).collect();
     assert!(
