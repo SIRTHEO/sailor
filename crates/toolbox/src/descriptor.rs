@@ -1556,7 +1556,9 @@ mod the_new_field_is_optional {
         let mut asked = 0;
         for loaded in &catalog.descriptors {
             let descriptor = &loaded.descriptor;
-            if descriptor.ask.is_none() || descriptor.capability(CHOOSE_MODEL) == CapabilityState::NotLookedAt {
+            if descriptor.ask.is_none()
+                || descriptor.capability(CHOOSE_MODEL) == CapabilityState::NotLookedAt
+            {
                 continue;
             }
             asked += 1;
