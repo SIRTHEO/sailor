@@ -2,8 +2,8 @@
 //! answers becomes the step's output or breaks it.
 
 use crate::answer::{
-    check_tolerance, how_it_exited, shape_was_asked_for, shaped_answer, tolerates, what_it_said,
-    ENGINE_FAILURES,
+    asked_again, check_tolerance, how_it_exited, shape_was_asked_for, shaped_answer, tolerates,
+    what_it_said, ENGINE_FAILURES,
 };
 use crate::candidates::{strengths_path, Candidate, Refused};
 use crate::cost::{
@@ -878,6 +878,11 @@ impl Action for ExternalEngineAction {
             }
             spec.workdir = Some(cut.at.to_string_lossy().into_owned());
         }
+        // The reason goes where the question is: a step that writes its
+        // question in the arguments instead goes without.
+        if let Some(told) = spec.after_refusal.take() {
+            spec.stdin = spec.stdin.map(|asked| asked_again(&asked, &told));
+        }
         if let Some(written) = &written_shape {
             shape_was_asked_for(written, &spec)?;
         }
@@ -1333,6 +1338,60 @@ mod tests {
 
         assert_eq!(error.class, "answer_not_json");
         assert!(error.said.contains("ci penso io"), "{}", error.said);
+    }
+
+    /// The engine here is `cat`: it answers exactly what reached its input.
+    fn what_the_engine_read(refused: Value, asked: &str) -> String {
+        let mut input = json!({
+            "bin": "sh",
+            "args": ["-c", "cat"],
+            "stdin": asked,
+            "timeout_secs": 5
+        });
+        input[flow::AFTER_REFUSAL] = refused;
+        let ActionOutcome::Went(output) = ExternalEngineAction::new()
+            .execute(&input, &SharedState::new())
+            .expect("an engine that repeats what it reads always answers")
+        else {
+            panic!("an engine that answers is always Went")
+        };
+        output["stdout"]
+            .as_str()
+            .expect("the output carries what it said")
+            .to_owned()
+    }
+
+    fn a_broken_answer(seen: &str) -> Value {
+        json!({"check": "answer_shape", "path": "", "rule": "not_json", "seen": seen})
+    }
+
+    const THE_QUESTION: &str = "answer in this shape";
+
+    /// **THE SAME QUESTION PLUS THE REASON**, which is the whole difference
+    /// between a retry and a lottery. Fault 103.
+    #[test]
+    fn a_retried_step_asks_the_same_question_with_the_reason_under_it() {
+        let read = what_the_engine_read(a_broken_answer("{\"a\": \"b\""), THE_QUESTION);
+
+        assert!(read.starts_with(THE_QUESTION), "{read}");
+        assert!(read.contains("answer_shape"), "the check that refused: {read}");
+        assert!(read.contains("{\"a\": \"b\""), "where it broke: {read}");
+    }
+
+    /// **AND THE REASON IS NOT THE ANSWER.** Fault 103's was 21,193 bytes:
+    /// sending it back doubles the price of the attempt meant to save the run.
+    #[test]
+    fn what_reaches_the_engine_is_the_reason_and_not_the_refused_answer() {
+        let refused = "x".repeat(21_193);
+
+        let read = what_the_engine_read(a_broken_answer(&refused), THE_QUESTION);
+
+        assert!(
+            read.len() < THE_QUESTION.len() + 400,
+            "{} bytes reached the engine, against the {} of the refused answer",
+            read.len(),
+            refused.len()
+        );
     }
 
     /// **AN EMPTY ANSWER IS NEVER A SUCCESS**, however the engine exited. A

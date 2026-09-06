@@ -71,6 +71,17 @@ pub(crate) fn shape_was_asked_for(written: &str, spec: &EngineSpec) -> Result<()
     ))
 }
 
+/// The same question with the reason under it, never the refused answer. The
+/// excerpt is cut here afresh: a refusal read from an input has not been
+/// through the constructor that cuts it. See fault 103.
+pub(crate) fn asked_again(asked: &str, told: &Refusal) -> String {
+    let told = Refusal::new(&told.check, &told.path, told.rule, &told.seen);
+    format!(
+        "{asked}\n\n{}",
+        catalogue::say("engine.after_refusal", &[("why", &told.explain())])
+    )
+}
+
 /// Quanto di ciò che ha detto un comando entra nel messaggio di un passo rotto.
 const SAID_TAIL: usize = 1200;
 
@@ -172,8 +183,39 @@ fn pruned(shape: &ValueSchema, value: Value) -> Value {
     }
 }
 
-/// The name under which the declared shape of an answer refuses one.
-pub(crate) const ANSWER_SHAPE_CHECK: &str = "answer_shape";
+/// The name under which the declared shape of an answer refuses one. One name
+/// for two crates: the executor asks for it to know which refusal is worth a
+/// second attempt.
+pub(crate) use flow::ANSWER_SHAPE_CHECK;
+
+/// How much of the text before the break the excerpt opens with, so the reader
+/// sees what led to it and not only what follows.
+const BEFORE_THE_BREAK: usize = 40;
+
+/// The excerpt a broken answer is refused with: the text **around where it
+/// broke**, which the bound then cuts. The head of a 21 KB answer says nothing
+/// about a quote left open at character 1038 — fault 103.
+fn around_the_break(body: &str, error: &serde_json::Error) -> String {
+    let Some(at) = byte_at(body, error.line(), error.column()) else {
+        return body.to_owned();
+    };
+    let mut start = at.saturating_sub(BEFORE_THE_BREAK);
+    while !body.is_char_boundary(start) {
+        start -= 1;
+    }
+    body[start..].to_owned()
+}
+
+fn byte_at(text: &str, line: usize, column: usize) -> Option<usize> {
+    let mut offset = 0;
+    for (index, row) in text.split_inclusive('\n').enumerate() {
+        if index + 1 == line {
+            return Some(offset + column.min(row.len()));
+        }
+        offset += row.len();
+    }
+    None
+}
 
 /// Legge la risposta di un motore secondo la forma che il passo ha dichiarato.
 pub(crate) fn shaped_answer(shape: &ValueSchema, said: &str) -> Result<Value, ActionError> {
@@ -190,7 +232,7 @@ pub(crate) fn shaped_answer(shape: &ValueSchema, said: &str) -> Result<Value, Ac
             ANSWER_SHAPE_CHECK,
             "",
             RefusalRule::NotJson,
-            body,
+            &around_the_break(body, &error),
         ))
     })?;
     shape.validate(&value).map_err(|error| {
@@ -222,5 +264,23 @@ mod tests {
         .expect("a shape");
         let whole = json!({"id": "una-bozza", "graph": {"steps": []}});
         assert_eq!(pruned(&shape, whole.clone()), whole);
+    }
+
+    /// **THE EXCERPT SHOWS WHERE IT BROKE, NOT WHERE IT BEGAN.** In fault 103
+    /// the answer opened as valid JSON for a thousand characters and died on a
+    /// quote the model had not escaped; its first 160 bytes name no defect.
+    #[test]
+    fn a_broken_answer_is_refused_with_the_text_around_the_break() {
+        let shape = ValueSchema::Any;
+        let said = format!(
+            "{{\"understanding\": \"{}the rule is failure_class == \"engine_exhausted\"\"}}",
+            "a".repeat(1_000)
+        );
+
+        let error = shaped_answer(&shape, &said).expect_err("the quotes are not escaped");
+
+        let seen = &error.refusal.expect("a refusal is recorded").seen;
+        assert!(seen.contains("engine_exhausted"), "{seen}");
+        assert!(!seen.starts_with("{\"understanding\""), "{seen}");
     }
 }
