@@ -176,7 +176,7 @@ pub(crate) fn record_the_call(
     let prices = entry
         .map(models::pricing::Price::micros)
         .unwrap_or_default();
-    let cost_micros = models::pricing::cost_micros(
+    let priced = models::pricing::cost_micros(
         models::pricing::TokenCounts {
             input: reading.input_tokens,
             output: reading.output_tokens,
@@ -186,6 +186,11 @@ pub(crate) fn record_the_call(
         },
         prices,
     );
+    // **A COUNT OF ONE MODEL IS NOT THE COST OF A CALL THAT CROSSED SEVERAL.**
+    // The engine states each model's tokens apart, this row prices the one the
+    // engine put first, and the rest go to a price of their own that no line of
+    // this row can carry. Unknown, never a third of the truth: see fault 121.
+    let cost_micros = reading.counts_the_whole_call().then_some(priced).flatten();
     let sequence = CALLS_SO_FAR.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let written = ModelCallRecord {
         call_id: format!(
@@ -366,6 +371,56 @@ mod what_it_cost {
         }
     }
 
+    /// An engine that counts each model apart and names it as the KEY of that
+    /// count.
+    fn counting_each_model_apart() -> AskRecipe {
+        AskRecipe {
+            usage: Some(UsageRecipe {
+                args: Vec::new(),
+                declared: Declared {
+                    read: Shape::Json,
+                    from: models::usage::Heard::Stdout,
+                    reports: crate::Reports::PerCall,
+                    input_tokens: path(&["usage", "input_tokens"]),
+                    output_tokens: path(&["usage", "output_tokens"]),
+                    cached_tokens: path(&["usage", "cache_read_input_tokens"]),
+                    cache_write_tokens: path(&[
+                        "usage",
+                        "cache_creation",
+                        "ephemeral_5m_input_tokens",
+                    ]),
+                    cache_write_long_tokens: path(&[
+                        "usage",
+                        "cache_creation",
+                        "ephemeral_1h_input_tokens",
+                    ]),
+                    total_tokens: None,
+                    turns: path(&["num_turns"]),
+                    cost: path(&["total_cost_usd"]),
+                    model: Some(Pointer::FirstKey(vec!["modelUsage".to_owned()])),
+                    answer: path(&["result"]),
+                },
+            }),
+            ..declaring_recipe()
+        }
+    }
+
+    /// The real output of a call that opened four helpers on a second model:
+    /// `usage` carries the first, `modelUsage` names both.
+    const ANSWERS_FOR_TWO_MODELS: &str = r#"cat > /dev/null
+printf '%s' '{"result":"la risposta vera","num_turns":36,"total_cost_usd":20.00991825,"usage":{"input_tokens":1028,"cache_creation_input_tokens":155602,"cache_read_input_tokens":2912773,"output_tokens":43363,"cache_creation":{"ephemeral_1h_input_tokens":155602,"ephemeral_5m_input_tokens":0}},"modelUsage":{"claude-fable-5-1":{"inputTokens":1028,"costUSD":6.0186632499999995},"claude-opus-5[1m]":{"inputTokens":288,"costUSD":13.991254999999994}}}'"#;
+
+    const TWO_MODEL_PRICE_LIST: &str = r#"{
+      "currency": "USD",
+      "dated": "2026-09-06",
+      "models": [
+        { "id": "claude-fable-5-1",
+          "input_per_million": 10.0, "output_per_million": 50.0,
+          "cached_per_million": 0.25,
+          "cache_write_per_million": 12.5, "cache_write_long_per_million": 20.0 }
+      ]
+    }"#;
+
     /// Un motore che risponde con l'involucro **solo** se gli si è chiesto
     /// `--output-format json`, e in chiaro altrimenti: è il comportamento vero
     /// di una riga di comando, e senza di lui la prova sull'uscita invariata
@@ -492,6 +547,40 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
 
         // E l'uscita del passo è il testo, non l'involucro.
         assert_eq!(output["stdout"], "la risposta vera");
+    }
+
+    /// The row of a call that crossed two models: the engine's own figure, and
+    /// **no** figure from the price list. See fault 121.
+    #[test]
+    fn a_call_across_two_models_leaves_the_price_list_figure_unknown() {
+        let dir = scratch("due-modelli");
+        let price_list = dir.join("pricing.json");
+        std::fs::write(&price_list, TWO_MODEL_PRICE_LIST).expect("scrivere il listino");
+        let bin = fake_engine(&dir, "motore", ANSWERS_FOR_TWO_MODELS);
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            recipe: Some(counting_each_model_apart()),
+        })
+        .recording_to(Some(ledger));
+        let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
+
+        let outcome = with_price_list(Some(&price_list), || {
+            action.execute(&input, &shared("corsa-121", "struttura"))
+        })
+        .expect("il motore risponde");
+        assert!(matches!(outcome, ActionOutcome::Went(_)));
+
+        let calls = calls_in(&dir.join("deposito"));
+        let call = &calls[0];
+        assert_eq!(call.actual_model, "claude-fable-5-1");
+        assert_eq!(call.cache_write_long_tokens, Some(155_602));
+        assert_eq!(
+            call.cost_micros, None,
+            "unknown, not the 6_018_663 of one model out of two"
+        );
+        assert_eq!(call.declared_cost_micros, Some(20_009_918));
+        assert_eq!(call.price_currency, None, "no count, no currency");
     }
 
     /// **IL CRITERIO 3, DALLA PARTE IN CUI SI ROMPE.** Se la cache fosse contata
