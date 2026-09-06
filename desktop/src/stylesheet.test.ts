@@ -98,6 +98,23 @@ describe("prohibition 8 — the sizes stay in the scale", () => {
     expect(under, `a rule painting text under ${FLOOR}px`).toEqual([]);
   });
 
+  /** THIS SHEET IS UNLAYERED AND TAILWIND'S UTILITIES ARE NOT, so unlayered
+   *  wins whatever the specificity: a rule on bare `button` repaints a shadcn
+   *  button and the component becomes a dependency paid for and inert. */
+  test("THE BARE `button` RULE STEPS ASIDE FOR A COMPONENT THAT PAINTS ITSELF", () => {
+    const onEveryButton = sheet.rules
+      .map((rule) => rule.selector.trim())
+      .filter((selector) =>
+        selector
+          .split(",")
+          .some((part) => /^button(:[a-z-]+(\([^)]*\))?)*$/.test(part.trim())),
+      );
+    expect(onEveryButton.length, "nothing paints bare buttons: this guards nothing")
+      .toBeGreaterThan(0);
+    const unguarded = onEveryButton.filter((selector) => !selector.includes("[data-slot]"));
+    expect(unguarded, "a rule that repaints a component styling itself").toEqual([]);
+  });
+
   /** The three weights, and nothing between or beyond them. */
   test("three weights, and only those", () => {
     const allowed = new Set(["400", "500", "600", "normal", "inherit"]);
