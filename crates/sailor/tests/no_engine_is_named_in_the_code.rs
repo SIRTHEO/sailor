@@ -202,6 +202,7 @@ fn measure_with(count_in: fn(&str) -> usize) -> (usize, Vec<(usize, PathBuf)>) {
     rust_files(&root.join("crates"), &mut files);
     rust_files(&root.join("desktop/src-tauri/src"), &mut files);
     rust_files(&root.join("desktop/src"), &mut files);
+    workspace::measured_against(files.len(), "sources read", ATOMS.len(), "engine names");
     let mut per_file = Vec::new();
     let mut total = 0;
     for file in files {
