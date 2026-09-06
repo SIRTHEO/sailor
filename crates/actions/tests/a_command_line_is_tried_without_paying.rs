@@ -1,20 +1,18 @@
-//! La prova a secco di una riga di comando: si monta, si esegue **senza dare
-//! la domanda**, e si giudica da ciò che il motore dice.
+//! The dry probe of a command line: it is assembled, run **without handing over
+//! the question**, and judged by what the engine says.
 //!
-//! **PERCHÉ ESISTE.** Il guasto 1 e il guasto 27 sono lo stesso difetto a due
-//! anni di distanza l'uno dall'altro nella stessa settimana: una riga composta
-//! da pezzi giusti separatamente, sbagliata insieme, e mai eseguita prima di
-//! finire in un flusso che si paga. La cura scritta accanto al guasto 1 —
-//! «eseguire davvero ogni riga di comando prima che finisca in un flusso» — era
-//! rimasta scoperta perché eseguirla sembrava voler dire spendere. Non vuol
-//! dire: senza la domanda non si chiama nessun fornitore, e il parsing degli
-//! argomenti è lo stesso.
+//! **WHY IT EXISTS.** Fault 1 and fault 27 are one defect twice in the same
+//! week: a line assembled from pieces each right apart, wrong together, and
+//! never run before landing in a flow that costs money. The cure written beside
+//! fault 1 — «really run every command line before it lands in a flow» — stayed
+//! unimplemented because running it looked like spending. It is not: with no
+//! question no provider is called, and the argument parsing is the same.
 //!
-//! **PERCHÉ I MOTORI QUI SONO FINTI.** Una prova che avvia `claude`, `codex` e
-//! `agy` veri dipende da cosa è installato su chi la esegue e da come sta messa
-//! la quota quel giorno: non potrebbe venire diversa per la ragione che
-//! dichiara. Qui i quattro casi si costruiscono, e i testi che i finti stampano
-//! sono quelli veri, misurati il 31/08/2026 su questa macchina.
+//! **WHY THE ENGINES HERE ARE FAKE.** A test starting the real `claude`, `codex`
+//! and `agy` depends on what the runner has installed and on how its quota
+//! stands that day: it could not come out differently for the reason it claims.
+//! Here the four cases are built, and the texts the fakes print are the real
+//! ones, measured on this machine.
 
 use actions::{
     judge_dry_run, probe_dry_run, AskRecipe, DryProbe, DryRun, ProbeVerdict, PromptVia,
@@ -48,8 +46,8 @@ impl Drop for Sandbox {
     }
 }
 
-/// Un eseguibile finto che stampa quello che gli diciamo di stampare, con il
-/// codice d'uscita che gli diciamo di avere.
+/// A fake executable printing what we tell it to print, with the exit code we
+/// tell it to have.
 fn fake_binary(dir: &Path, name: &str, script: &str) -> PathBuf {
     let path = dir.join(name);
     fs::write(&path, format!("#!/bin/sh\n{script}\n")).expect("scrittura dell'eseguibile finto");
@@ -57,8 +55,8 @@ fn fake_binary(dir: &Path, name: &str, script: &str) -> PathBuf {
     path
 }
 
-/// La ricetta di `agy` così com'è spedita, che è quella su cui il guasto 27 è
-/// vissuto: la domanda va in coda, e `--print` deve restarle attaccato.
+/// `agy`'s recipe as shipped, the one fault 27 was lived on: the question goes
+/// last, and `--print` must stay attached to it.
 fn agy_recipe(refuses: &[&str]) -> AskRecipe {
     AskRecipe {
         args: vec!["--mode".to_owned(), "plan".to_owned()],
@@ -74,10 +72,10 @@ fn agy_recipe(refuses: &[&str]) -> AskRecipe {
     }
 }
 
-// ── i quattro finti motori, quattro verdetti ────────────────────────────
+// ── the four fake engines, four verdicts ────────────────────────────────
 
-/// **IL CASO SANO.** Il motore dice «mancava solo la domanda»: la riga è
-/// montata bene, e nessuno ha pagato niente per saperlo.
+/// **THE SOUND CASE.** The engine says «the question was all that was missing»:
+/// the line is well assembled, and nobody paid a thing to learn it.
 #[test]
 fn an_engine_that_only_misses_the_prompt_is_declared_sound() {
     let sandbox = Sandbox::new("sana");
@@ -94,9 +92,9 @@ fn an_engine_that_only_misses_the_prompt_is_declared_sound() {
     assert_eq!(verdict, ProbeVerdict::Sound, "{verdict:?}");
 }
 
-/// **IL CASO DEL GUASTO 27.** Lo stesso motore, lo stesso codice d'uscita, e
-/// una riga che si lamenta di tutt'altro: il testo è la diagnosi, e arriva a
-/// chi legge parola per parola.
+/// **FAULT 27'S CASE.** The same engine, the same exit code, and a line
+/// complaining about something else entirely: the text is the diagnosis, and it
+/// reaches the reader word for word.
 #[test]
 fn an_engine_that_complains_about_something_else_is_declared_broken_with_its_own_words() {
     let sandbox = Sandbox::new("rotta");
@@ -112,10 +110,10 @@ fn an_engine_that_complains_about_something_else_is_declared_broken_with_its_own
     );
     match verdict {
         ProbeVerdict::Broken { said } => {
-            // LE PAROLE DEL MOTORE SONO IL PRODOTTO. Sul guasto 27 la frase
-            // diceva quale bandiera aveva mangiato quale argomento: nessuna
-            // classificazione nostra avrebbe potuto dire altrettanto, e un
-            // «rotta» senza di esse manda a indovinare.
+            // THE ENGINE'S WORDS ARE THE PRODUCT. On fault 27 the sentence said
+            // which flag had eaten which argument: no classification of ours
+            // could have said as much, and a «broken» without them sends the
+            // reader off guessing.
             assert!(said.contains("--print took"), "{said}");
             assert!(said.contains("--output-format"), "{said}");
         }
@@ -123,9 +121,9 @@ fn an_engine_that_complains_about_something_else_is_declared_broken_with_its_own
     }
 }
 
-/// **UN MOTORE ESAURITO NON È UN MOTORE ROTTO**, e i due si somigliano solo se
-/// li si legge nell'ordine sbagliato: la riga di `claude` è sana, è la quota
-/// che è finita.
+/// **AN EXHAUSTED ENGINE IS NOT A BROKEN ENGINE**, and the two resemble each
+/// other in the wrong reading order alone: `claude`'s line is sound, it is the
+/// quota that ran out.
 #[test]
 fn an_exhausted_engine_is_not_called_broken() {
     let sandbox = Sandbox::new("esaurita");
@@ -153,11 +151,10 @@ fn an_exhausted_engine_is_not_called_broken() {
     }
 }
 
-/// **CHI TACE NON È SANO.** Un descrittore senza `refuses_without_prompt` non
-/// dice che la riga va bene: dice che nessuno l'ha guardata. Chiamarlo sano
-/// sarebbe il modo più silenzioso di smettere di controllare — la stessa
-/// differenza che il blocco `capabilities` tiene fra «non ce l'ha» e «nessuno
-/// ha guardato».
+/// **SILENCE IS NOT SOUNDNESS.** A descriptor with no `refuses_without_prompt`
+/// does not say the line is fine: it says nobody looked at it. Calling that
+/// sound would be the quietest way of giving up checking — the same distinction
+/// the `capabilities` block keeps between «it lacks it» and «nobody looked».
 #[test]
 fn an_engine_whose_descriptor_says_nothing_is_not_declared_sound() {
     let sandbox = Sandbox::new("taciuta");
@@ -174,11 +171,11 @@ fn an_engine_whose_descriptor_says_nothing_is_not_declared_sound() {
     );
 }
 
-// ── la riga che parte davvero ───────────────────────────────────────────
+// ── the line that really starts ─────────────────────────────────────────
 
 type Seen = (String, Vec<String>, Option<Vec<u8>>);
 
-/// Chi guarda cosa è stato eseguito, senza eseguire niente.
+/// Watches what was run, without running anything.
 #[derive(Default)]
 struct RecordingProbe {
     seen: Mutex<Vec<Seen>>,
@@ -197,9 +194,9 @@ impl DryProbe for RecordingProbe {
     }
 }
 
-/// **LA RIGA PROVATA È LA RIGA VERA, MENO LA DOMANDA.** Se la sonda montasse
-/// una riga sua, proverebbe qualcosa che nessuna corsa eseguirà mai — cioè
-/// darebbe un verde su un oggetto diverso da quello che si paga.
+/// **THE LINE TRIED IS THE REAL LINE, LESS THE QUESTION.** Were the probe to
+/// assemble a line of its own, it would try something no run will ever execute —
+/// a green on an object other than the one being paid for.
 #[test]
 fn the_line_that_is_tried_is_the_real_one_without_the_prompt() {
     let probe = RecordingProbe::default();
@@ -209,19 +206,18 @@ fn the_line_that_is_tried_is_the_real_one_without_the_prompt() {
     let (bin, args, stdin) = &seen[0];
     assert_eq!(bin, "agy");
     assert_eq!(args, &["--mode", "plan", "--print"]);
-    // A chi vuole la domanda in coda non si dà nessun ingresso: dargli un
-    // ingresso vuoto sarebbe innocuo, ma dargliene uno aperto lo farebbe
-    // aspettare — e la prova a secco diventerebbe un modo per appendere il
-    // controllo, su una macchina dove `timeout` non esiste.
+    // An engine wanting the question last gets no stdin at all: an empty one
+    // would be harmless, but an open one would make it wait — and the dry probe
+    // would become a way of hanging the check, on a machine with no `timeout`.
     assert!(
         stdin.is_none(),
         "la domanda andava in coda, non sull'ingresso"
     );
 }
 
-/// E a chi la vuole sull'ingresso si dà un ingresso **vuoto e chiuso**, che è
-/// ciò che fa `< /dev/null` — l'unica forma in cui `claude` e `codex`
-/// rispondono invece di aspettare.
+/// And an engine wanting it on stdin gets an **empty, closed** stdin, which is
+/// what `< /dev/null` does — the one shape in which `claude` and `codex` answer
+/// rather than wait.
 #[test]
 fn an_engine_that_reads_the_prompt_from_stdin_gets_an_empty_closed_one() {
     let probe = RecordingProbe::default();
@@ -243,9 +239,9 @@ fn an_engine_that_reads_the_prompt_from_stdin_gets_an_empty_closed_one() {
     assert_eq!(seen[0].2, Some(Vec::new()));
 }
 
-/// Un motore che non risponde entro il tetto non è né sano né rotto: non si sa,
-/// e il motivo viaggia col verdetto perché un processo che non parte e uno che
-/// non risponde si riparano in modi diversi.
+/// An engine that does not answer within the cap is neither sound nor broken:
+/// it is unknown, and the reason travels with the verdict, because a process
+/// that fails to start and one that fails to answer are repaired differently.
 #[test]
 fn an_engine_that_never_answers_is_neither_sound_nor_broken() {
     let verdict = probe_dry_run(
@@ -259,15 +255,15 @@ fn an_engine_that_never_answers_is_neither_sound_nor_broken() {
     }
 }
 
-// ── l'ordine di lettura, che è la parte che si sbaglia ──────────────────
+// ── the reading order, which is the part people get wrong ───────────────
 
-/// **`unusable_when` SI LEGGE PRIMA.** Un motore esaurito si lamenta della
-/// quota, non della riga; letto nell'ordine opposto verrebbe dichiarato rotto,
-/// e chi legge andrebbe a correggere un descrittore sano mentre bastava
-/// aspettare.
+/// **`unusable_when` IS READ FIRST.** An exhausted engine complains about its
+/// quota, not about the line; read the other way round it would be declared
+/// broken, and the reader would go and correct a healthy descriptor when waiting
+/// was enough.
 ///
-/// Qui l'uscita contiene **tutte e due** le cose: è il solo caso in cui
-/// l'ordine si può osservare, e quindi il solo che rende rossa un'inversione.
+/// The output here holds **both** things: the one case in which the order can be
+/// observed, and so the one that turns red on an inversion.
 #[test]
 fn the_exhausted_reading_comes_first_when_the_output_says_both() {
     let recipe = AskRecipe {
@@ -295,8 +291,7 @@ fn the_exhausted_reading_comes_first_when_the_output_says_both() {
     }
 }
 
-/// Il confronto ignora maiuscole e minuscole, perché nessun fornitore promette
-/// di non cambiarle.
+/// The comparison ignores case, because no provider promises not to change it.
 #[test]
 fn the_words_are_matched_whatever_case_the_engine_shouts_them_in() {
     let verdict = judge_dry_run(
@@ -307,20 +302,20 @@ fn the_words_are_matched_whatever_case_the_engine_shouts_them_in() {
     assert_eq!(verdict, ProbeVerdict::Sound);
 }
 
-/// Un frammento vuoto non rende sano niente: combacerebbe con qualunque
-/// uscita, e un descrittore scritto male trasformerebbe ogni riga rotta in una
-/// riga sana — che è il difetto peggiore possibile per questo controllo.
+/// An empty fragment makes nothing sound: it would match any output, and a
+/// badly written descriptor would turn every broken line into a sound one —
+/// the worst defect this check could possibly have.
 #[test]
 fn an_empty_fragment_declares_nothing() {
     let verdict = judge_dry_run(&agy_recipe(&["", "   "]), "", "un errore qualunque");
     assert_eq!(verdict, ProbeVerdict::NotDeclared);
 }
 
-/// **IL VERDETTO NON GUARDA IL CODICE D'USCITA, E NON PUÒ.** `judge_dry_run`
-/// non lo riceve nemmeno: i due `agy` misurati il 31/08/2026 escono tutti e due
-/// **2** — il rifiuto sano e la riga malformata del guasto 27 — quindi una
-/// sonda che giudicasse dall'esito li vedrebbe identici. Qui i due testi veri
-/// stanno affiancati, ed è l'unica prova che li mette a confronto.
+/// **THE VERDICT DOES NOT LOOK AT THE EXIT CODE, AND CANNOT.** `judge_dry_run`
+/// never even receives it: both measured `agy` cases exit **2** — the healthy
+/// refusal and fault 27's malformed line — so a probe judging by outcome would
+/// see them as identical. The two real texts sit side by side here, and this is
+/// the one test that compares them.
 #[test]
 fn two_failures_with_the_same_exit_code_get_two_different_verdicts() {
     let recipe = agy_recipe(&["flag needs an argument: -print"]);
@@ -339,10 +334,10 @@ fn two_failures_with_the_same_exit_code_get_two_different_verdicts() {
     assert_ne!(sound, broken);
 }
 
-/// Un motore che esce **zero** senza domanda non è sano per questo: `agy
-/// --mode nonsense-value --not-a-real-flag --help` esce 0 il 31/08/2026 su
-/// questa macchina, e stampa la guida. È la ragione per cui `--help` non serve
-/// a provare una riga, e per cui questo verdetto guarda solo il testo.
+/// An engine exiting **zero** with no question is not sound for it: `agy
+/// --mode nonsense-value --not-a-real-flag --help` exits 0 on this machine and
+/// prints the help. That is why `--help` cannot try a line, and why this verdict
+/// looks at the text and nothing else.
 #[test]
 fn an_engine_that_exits_zero_with_a_help_screen_is_not_sound() {
     let sandbox = Sandbox::new("guida");

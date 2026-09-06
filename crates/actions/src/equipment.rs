@@ -5,45 +5,43 @@ use ledger::EngineIdentity;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-// ── la dotazione con cui un motore parte ─────────────────────────────────
+// ── the equipment an engine starts with ──────────────────────────────────
 
-/// Con che cosa una chiamata a un motore esterno parte davvero.
+/// What a call to an external engine really starts with.
 ///
-/// **PERCHÉ I DUE CAMPI STANNO INSIEME.** L'ambiente decide *quale casa* quel
-/// motore leggerà; il nome del profilo è ciò che finisce nel deposito. Separarli
-/// vorrebbe dire risolvere due volte lo stesso profilo e poter sbagliare in un
-/// posto solo — cioè scrivere nel deposito una dotazione diversa da quella con
-/// cui la chiamata è girata, che è peggio di non scriverla.
+/// **WHY THE TWO FIELDS TRAVEL TOGETHER.** The environment decides *which home*
+/// that engine will read; the profile name is what lands in the ledger. Apart,
+/// the same profile would be resolved twice and could go wrong in one place
+/// only — writing a ledger row for equipment other than the one the call ran
+/// with, which is worse than writing none.
 pub struct Equipment {
-    /// Da sovrapporre all'ambiente ereditato prima di lanciare.
+    /// To overlay on the inherited environment before launching.
     pub env: BTreeMap<String, String>,
-    /// Con quale identità il processo parte: **quale casa** e **come è stata
-    /// scelta**. Risponde sempre — non esiste il caso «vuoto».
+    /// The identity the process starts under: **which home** and **how it was
+    /// chosen**. It always answers — there is no «empty» case.
     pub identity: EngineIdentity,
     /// Why this engine must not start under this profile: an endpoint the
     /// command line cannot be pointed at, or a key the machine lacks.
     pub refused: Option<String>,
 }
 
-/// La dotazione per invocare `bin`, secondo lo stato dei profili dato.
+/// The equipment for invoking `bin`, against the given profile state.
 ///
-/// **IL GUASTO 18, ED È LA STESSA MALATTIA DEL 35.** Tutte e due sono «Sailor ha
-/// un dato in casa propria e non lo usa». Il listino c'era e non viaggiava col
-/// prodotto; la dotazione c'era — `~/.config/sailor/` ha `equipment/`, `flows/`,
-/// un listino, una firma — e non arrivava ai motori, perché la sovrapposizione
-/// d'ambiente la chiamava solo `sailor run`. Un motore lanciato da un passo di
-/// flusso ereditava l'ambiente di chi aveva aperto il terminale: leggeva la casa
-/// del vicino, e due corse dello stesso flusso non erano la stessa misura.
+/// **FAULT 18, AND THE SAME DISEASE AS 35.** Both are «Sailor holds a fact in
+/// its own home and does not use it». The equipment was there — `equipment/`,
+/// `flows/`, a price list, a signature — and never reached the engines, because
+/// only `sailor run` called the environment overlay. An engine launched by a
+/// flow step inherited the environment of whoever opened the terminal: it read
+/// the neighbour's home, and two runs of one flow were not the same measure.
 ///
-/// **L'AMBIENTE DEL PROFILO STA SOTTO QUELLO DEL PASSO, E IL VERSO È LA
-/// DECISIONE.** Chi scrive una variabile dentro un passo sta dicendo qualcosa di
-/// preciso su *quella* chiamata — un profilo diverso per un solo passo, una casa
-/// usa-e-getta per una prova — e non deve poter essere scavalcato da uno stato
-/// che vive altrove e che quel passo non nomina. Il verso opposto renderebbe la
-/// riga scritta nel flusso inerte, in silenzio.
+/// **THE PROFILE'S ENVIRONMENT SITS UNDER THE STEP'S, AND THE ORDER IS THE
+/// DECISION.** Writing a variable inside a step says something precise about
+/// *that* call — a different profile for one step, a throwaway home for a test —
+/// and must not be overridden by state living elsewhere that the step does not
+/// name. The other order would silently make the line written in the flow inert.
 ///
-/// **PURO: LO STATO ENTRA, LA DOTAZIONE ESCE.** Chi legge il file dei profili sta
-/// in [`current_equipment_for`], per la stessa ragione di `price_list_from`.
+/// **PURE: STATE IN, EQUIPMENT OUT.** Reading the profiles file happens in
+/// [`current_equipment_for`], for the same reason as `price_list_from`.
 pub fn equipment_for(
     store: &profiles::ProfileStore,
     bin: &str,
@@ -61,8 +59,8 @@ pub fn equipment_with_keys(
     key_of: &dyn Fn(&str) -> Option<String>,
 ) -> Equipment {
     let Some(cli) = profiles::cli_for_executable(bin) else {
-        // Un comando qualunque — `sh`, uno script — non ha nessuna casa da
-        // spostare, e dargliene una non vorrebbe dire niente.
+        // An arbitrary command — `sh`, a script — has no home to move, and
+        // handing it one would mean nothing.
         return Equipment {
             env: step_env.clone(),
             identity: EngineIdentity::NotAKnownEngine,
@@ -74,9 +72,9 @@ pub fn equipment_with_keys(
         store
             .profiles
             .iter()
-            // **UNO STATO CHE NOMINA UN PROFILO SPARITO NON INVENTA UNA
-            // CARTELLA.** Comporre il percorso dal nome darebbe una casa vuota,
-            // cioè senza credenziali, con l'aria di aver applicato un profilo.
+            // **STATE NAMING A VANISHED PROFILE INVENTS NO DIRECTORY.**
+            // Composing the path from the name would give an empty home — one
+            // with no credentials — wearing the air of an applied profile.
             .find(|profile| profile.cli_id == cli.id && &profile.name == active)
     });
     let mut from_the_profile = resolved
@@ -92,7 +90,7 @@ pub fn equipment_with_keys(
         Some(Err(why)) => Some(why),
         None => None,
     };
-    // Il profilo prima, il passo sopra: chi scrive una variabile nel passo vince.
+    // Profile first, step on top: a variable written in the step wins.
     let mut env = from_the_profile;
     env.extend(
         step_env
@@ -106,16 +104,14 @@ pub fn equipment_with_keys(
     }
 }
 
-/// Con quale identità questa invocazione parte davvero.
+/// The identity this invocation really starts under.
 ///
-/// **IL PASSO SI GUARDA PER PRIMO, ED È LA CURA DEL DIFETTO.** Fino al
-/// 01/09/2026 questa decisione era un booleano — «un profilo è stato applicato»
-/// — che restava vero anche quando il passo aveva scritto da sé la variabile di
-/// casa. Il motore partiva nella casa del passo e la riga nel deposito nominava
-/// il profilo attivo: **il registro diceva un'identità e il processo ne aveva
-/// usata un'altra**, proprio nel caso in cui qualcuno l'aveva cambiata apposta.
-/// L'ordine qui sotto è quello della sovrapposizione vera, non quello dello
-/// stato: si registra ciò che accade.
+/// **THE STEP IS LOOKED AT FIRST, AND THAT IS THE CURE.** As a boolean — «a
+/// profile was applied» — this decision stayed true even when the step had
+/// written the home variable itself: the engine started in the step's home
+/// while the ledger row named the active profile, so **the ledger said one
+/// identity and the process used another**, exactly where somebody had changed
+/// it on purpose. The order below is the real overlay's, not the state's.
 fn identity_of(
     cli: &profiles::KnownCli,
     named: Option<&str>,
@@ -139,11 +135,10 @@ fn identity_of(
                 home_dir: profile.home_dir.clone(),
                 endpoint: profile.endpoint.as_ref().map(|endpoint| endpoint.url.clone()),
             },
-            // **UN PROFILO DICHIARATO NON È UN PROFILO IN FORZA.** Dove la casa
-            // si sposta scambiando un collegamento simbolico, o dove non si sa
-            // come si sposti, questa funzione non ha messo niente
-            // nell'ambiente: l'identità dipende da dove punta un file sul disco,
-            // e questo codice il disco non lo tocca.
+            // **A DECLARED PROFILE IS NOT A PROFILE IN FORCE.** Where the home
+            // moves by swapping a symlink, or where how it moves is unknown,
+            // this function put nothing in the environment: the identity hangs
+            // on where a file on disk points, and this code never touches disk.
             _ => EngineIdentity::NotMovedByAnEnvVar {
                 cli_id,
                 profile_name: profile.name.clone(),
@@ -154,10 +149,9 @@ fn identity_of(
             cli_id,
             profile_name: active.to_owned(),
         },
-        // **«EREDITATA» NON È «NIENTE».** Il processo parte con la casa di chi ha
-        // aperto il terminale, che è un'identità vera e nominabile: dirlo è più
-        // utile che lasciare un vuoto in cui questo caso si confonde con gli
-        // altri quattro.
+        // **«INHERITED» IS NOT «NOTHING».** The process starts in the home of
+        // whoever opened the terminal, a real and nameable identity: saying so
+        // beats a blank in which this case blurs into the other four.
         (None, None) => EngineIdentity::InheritedFromTheTerminal { cli_id },
     }
 }
@@ -178,24 +172,24 @@ fn why_it_stays_where_it_is(cli: &profiles::KnownCli) -> String {
                 note => format!("{why}; its entry says: {note}"),
             }
         }
-        // Un meccanismo a variabile qui non ci arriva: chi chiama lo ha già
-        // trattato sopra. Se un giorno ci arrivasse, la frase dice il vero.
+        // A variable mechanism never reaches here: the caller handled it above.
+        // Were it ever to, the sentence still tells the truth.
         profiles::HomeMechanism::EnvVar(_) => {
             "the mechanism goes through a variable, and it was not overlaid".to_owned()
         }
     }
 }
 
-/// La dotazione di **questa** macchina per invocare `bin`.
+/// **This** machine's equipment for invoking `bin`.
 ///
-/// **RILETTA A OGNI CHIAMATA**, per la stessa ragione del listino: un profilo
-/// cambiato a metà di una corsa lunga vale dalla chiamata dopo, invece che dal
-/// prossimo riavvio, e leggere un file piccolo accanto all'avvio di un processo
-/// esterno non costa niente.
+/// **RE-READ ON EVERY CALL**, for the price list's reason: a profile changed
+/// halfway through a long run applies from the next call rather than the next
+/// restart, and reading a small file beside the launch of an external process
+/// costs nothing.
 ///
-/// Uno stato dei profili illeggibile non ferma la chiamata: si parte senza
-/// sovrapporre niente, che è come si è sempre partiti. Fermare un passo perché
-/// non si è potuto leggere un file di preferenze punirebbe chi non c'entra.
+/// Unreadable profile state does not stop the call: it starts with nothing
+/// overlaid, which is how it always started. Stopping a step because a
+/// preferences file could not be read would punish a bystander.
 pub(crate) fn current_equipment_for(bin: &str, step_env: &BTreeMap<String, String>) -> Equipment {
     let store = profiles::store_io::load_store().unwrap_or_default();
     equipment_for(&store, bin, step_env)

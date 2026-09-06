@@ -1,27 +1,25 @@
-//! Chi sa se una casa è autenticata è **il motore**, e il descrittore dichiara
-//! con quali parole lo dice.
+//! What knows whether a home is authenticated is **the engine**, and the
+//! descriptor declares in which words it says so.
 //!
-//! **PERCHÉ SI PROVA SU USCITE SCRITTE A MANO, E MAI CHIAMANDO IL COMANDO.** Una
-//! prova che lanciasse `codex login status` direbbe come sta messa la macchina di
-//! chi la esegue, non se il riconoscimento funziona: verde su un portatile
-//! autenticato, rossa sullo stesso codice su una macchina appena installata.
-//! Cioè **non potrebbe venire diversa per la ragione che dichiara**. Qui le
-//! uscite sono quelle vere, misurate il 01/09/2026 su questa macchina e copiate
-//! una volta sola; il giudizio è una funzione pura, e le prove sono le stesse
-//! ovunque.
+//! **WHY IT IS PROVED ON HAND-WRITTEN OUTPUTS, NEVER BY CALLING THE COMMAND.** A
+//! test launching `codex login status` would report the state of the machine
+//! running it, not whether the recognition works: green on an authenticated
+//! laptop, red on the same code on a freshly installed machine. That is, **it
+//! could not come out differently for the reason it claims**. The outputs here
+//! are the real ones, measured on this machine and copied once; the judgement is
+//! a pure function, and the tests are the same everywhere.
 //!
-//! **IL CODICE D'USCITA NON ENTRA, ED È DELIBERATO.** Su questa macchina i due
-//! motori misurati *distinguono* con l'esito — `codex login status` esce 1 non
-//! autenticato e 0 autenticato, e `claude auth status` fa lo stesso — ma è un
-//! fatto di quei due, non una regola: `judge_login_status` non riceve l'esito,
-//! così nessun motore futuro può farsi dichiarare autenticato da uno zero che
-//! vuol dire tutt'altro. È la stessa scelta di `judge_dry_run`, e lì l'esito
-//! mentiva davvero.
+//! **THE EXIT CODE STAYS OUT, DELIBERATELY.** On this machine both measured
+//! engines *do* distinguish by outcome — `codex login status` exits 1 logged out
+//! and 0 logged in, and `claude auth status` does the same — but that is a fact
+//! about those two, not a rule: `judge_login_status` never receives the outcome,
+//! so no future engine can have itself declared authenticated by a zero meaning
+//! something else. Same choice as `judge_dry_run`, where the outcome really lied.
 
 use actions::{judge_login_status, LoginRecipe, LoginVerdict};
 use models::usage::Pointer;
 
-/// Come `codex` dichiara la propria casa, misurato il 01/09/2026.
+/// How `codex` declares its own home, as measured.
 fn codex_recipe() -> LoginRecipe {
     LoginRecipe {
         args: vec!["login".to_owned(), "status".to_owned()],
@@ -31,7 +29,7 @@ fn codex_recipe() -> LoginRecipe {
     }
 }
 
-/// Come `claude` la dichiara: un campo booleano dentro un involucro JSON.
+/// How `claude` declares it: a boolean field inside a JSON envelope.
 fn claude_recipe() -> LoginRecipe {
     LoginRecipe {
         args: vec!["auth".to_owned(), "status".to_owned()],
@@ -41,16 +39,16 @@ fn claude_recipe() -> LoginRecipe {
     }
 }
 
-/// L'uscita vera di `CODEX_HOME=<cartella senza auth.json> codex login status`:
-/// niente su stdout, la risposta su **stderr**. Uscita 1.
+/// The real output of `CODEX_HOME=<directory with no auth.json> codex login
+/// status`: nothing on stdout, the answer on **stderr**. Exit 1.
 const CODEX_SAYS_NO: &str = "Not logged in";
 
-/// L'uscita vera di `codex login status` nella casa autenticata. Uscita 0.
+/// The real output of `codex login status` in the authenticated home. Exit 0.
 const CODEX_SAYS_YES: &str = "Logged in using ChatGPT";
 
-/// L'uscita vera di `CLAUDE_CONFIG_DIR=<cartella vuota> claude auth status`.
-/// I campi che identificano il proprietario non stanno in una prova: le due
-/// chiavi che portano la risposta sono quelle vere, alla lettera.
+/// The real output of `CLAUDE_CONFIG_DIR=<empty directory> claude auth status`.
+/// The fields identifying the owner have no place in a test: the two keys
+/// carrying the answer are the real ones, to the letter.
 const CLAUDE_SAYS_NO: &str = r#"{
   "loggedIn": false,
   "authMethod": "none",
@@ -68,11 +66,10 @@ const CLAUDE_SAYS_YES: &str = r#"{
   "subscriptionType": "max"
 }"#;
 
-/// **LA RISPOSTA STA SU STDERR, E GUARDARE UNA PIPA SOLA LA PERDEREBBE.**
-/// `codex login status` non scrive niente su stdout: un giudizio che leggesse
-/// solo di là non troverebbe mai nessuna delle due forme e direbbe sempre
-/// «nessuno ha guardato», cioè fallirebbe in silenzio proprio come il difetto
-/// che questo blocco chiude.
+/// **THE ANSWER IS ON STDERR, AND WATCHING ONE PIPE WOULD LOSE IT.**
+/// `codex login status` writes nothing on stdout: a judgement reading only there
+/// would never find either form and would always say «nobody looked» — failing
+/// in silence exactly like the defect this block closes.
 #[test]
 fn codex_says_it_in_prose_and_both_answers_are_recognised() {
     assert!(
@@ -91,10 +88,10 @@ fn codex_says_it_in_prose_and_both_answers_are_recognised() {
     );
 }
 
-/// Sotto perimetro `codex` premette una riga sua — «WARNING: proceeding, even
-/// though we could not create PATH aliases» — che non c'entra con le
-/// credenziali. Il riconoscimento cerca **le parole dichiarate** dentro tutto
-/// ciò che il motore ha detto, quindi il rumore davanti non lo sposta.
+/// Inside a sandbox `codex` prefixes a line of its own — «WARNING: proceeding,
+/// even though we could not create PATH aliases» — with nothing to do with
+/// credentials. Recognition looks for **the declared words** anywhere in what
+/// the engine said, so noise in front does not move it.
 #[test]
 fn a_warning_line_before_the_answer_does_not_change_the_verdict() {
     let noisy = format!(
@@ -107,11 +104,10 @@ fn a_warning_line_before_the_answer_does_not_change_the_verdict() {
     ));
 }
 
-/// **IL PUNTATORE È QUELLO DI `usage`, NON UN SECONDO MECCANISMO.** `claude` non
-/// risponde in prosa: mette la risposta in un campo booleano di un involucro
-/// JSON. Il descrittore dice dove sta con lo stesso cammino di chiavi con cui
-/// dichiara dove stanno i token, e le parole cercate sono i due valori che quel
-/// campo può prendere.
+/// **THE POINTER IS `usage`'s, NOT A SECOND MECHANISM.** `claude` does not
+/// answer in prose: it puts the answer in a boolean field of a JSON envelope.
+/// The descriptor says where with the same key path it declares the tokens
+/// with, and the words sought are the two values that field can take.
 #[test]
 fn claude_says_it_in_json_and_the_pointer_reaches_the_boolean() {
     assert!(
@@ -130,17 +126,17 @@ fn claude_says_it_in_json_and_the_pointer_reaches_the_boolean() {
     );
 }
 
-/// **IL NO SI LEGGE PRIMA DEL SÌ, E QUI STA IL DIFETTO ORIGINALE.** «Not logged
-/// in» *contiene* «logged in»: chi cercasse prima le parole del sì troverebbe
-/// una casa vuota autenticata, che è esattamente il silenzio che questo lavoro
-/// chiude. Le due difese sono due — le parole dichiarate sono quelle misurate e
-/// più lunghe, e l'ordine di lettura è vincolato — perché la prima dipende da chi
-/// scrive un descrittore e la seconda no.
+/// **THE NO IS READ BEFORE THE YES, AND THE ORIGINAL DEFECT IS HERE.** «Not
+/// logged in» *contains* «logged in»: looking for the yes words first would find
+/// an empty home authenticated, exactly the silence this work closes. The
+/// defences are two — the declared words are the measured, longer ones, and the
+/// reading order is fixed — because the first depends on whoever writes a
+/// descriptor and the second does not.
 #[test]
 fn the_negative_answer_wins_even_when_it_contains_the_positive_words() {
     let sloppy = LoginRecipe {
         args: vec!["login".to_owned(), "status".to_owned()],
-        // Le parole corte che un descrittore distratto scriverebbe.
+        // The short words a careless descriptor would write.
         logged_in_when: vec!["logged in".to_owned()],
         logged_out_when: vec!["not logged in".to_owned()],
         answer: None,
@@ -154,10 +150,10 @@ fn the_negative_answer_wins_even_when_it_contains_the_positive_words() {
     );
 }
 
-/// **VUOTO VUOL DIRE «NESSUNO HA GUARDATO», MAI «È AUTENTICATO».** È la frase
-/// già scritta per `refuses_without_prompt`, e vale qui identica: un motore il
-/// cui descrittore non dichiara come si chiede non è un motore autenticato — è
-/// un motore che nessuno ha interrogato.
+/// **EMPTY MEANS «NOBODY LOOKED», NEVER «IT IS AUTHENTICATED».** It is the line
+/// already written for `refuses_without_prompt`, and it holds here word for
+/// word: an engine whose descriptor declares no way of asking is not an
+/// authenticated engine — it is an engine nobody questioned.
 #[test]
 fn a_descriptor_that_declares_nothing_never_says_authenticated() {
     let silent = LoginRecipe {
@@ -171,9 +167,9 @@ fn a_descriptor_that_declares_nothing_never_says_authenticated() {
         LoginVerdict::NotDeclared
     ));
 
-    // Anche mezza dichiarazione non basta: chi dice come si riconosce il sì e
-    // tace sul no non può distinguere niente, e il verso in cui sbaglierebbe è
-    // quello che tranquillizza.
+    // Half a declaration is not enough either: saying how the yes is recognised
+    // and staying silent on the no distinguishes nothing, and the direction it
+    // would err in is the reassuring one.
     let half = LoginRecipe {
         args: vec!["login".to_owned(), "status".to_owned()],
         answer: None,
@@ -186,9 +182,9 @@ fn a_descriptor_that_declares_nothing_never_says_authenticated() {
     ));
 }
 
-/// Una risposta che non somiglia a nessuna delle due forme dichiarate non è un
-/// sì. Il motore ha risposto qualcosa — un aggiornamento, un errore di rete —
-/// e chi legge deve vedere le sue parole, non un verdetto inventato.
+/// An answer resembling neither declared form is not a yes. The engine said
+/// something — an update, a network error — and the reader must see its words,
+/// not an invented verdict.
 #[test]
 fn an_answer_neither_form_recognises_is_not_authenticated() {
     let said = "error: could not reach api.openai.com";
@@ -201,20 +197,19 @@ fn an_answer_neither_form_recognises_is_not_authenticated() {
     }
 }
 
-/// **CIÒ CHE SI MOSTRA È IL SOGGETTO, NON L'INVOLUCRO INTERO, E NON È UN
-/// DETTAGLIO DI STILE.**
+/// **WHAT IS SHOWN IS THE ANSWER, NOT THE WHOLE ENVELOPE, AND THAT IS NO
+/// MATTER OF STYLE.**
 ///
-/// La risposta vera di `claude auth status` porta con sé **l'indirizzo di posta
-/// del proprietario, l'identificativo della sua organizzazione, il nome di
-/// quell'organizzazione e il tipo di abbonamento**. Quel testo finisce nella
-/// riga di `sailor profiles list` e nel rapporto di `sailor flow check`, cioè in
-/// due uscite che si incollano in una consegna, si mandano a un collega, si
-/// versano in un registro. Una diagnosi non deve portarsi dietro chi la usa.
+/// The real answer of `claude auth status` carries **the owner's email address,
+/// their organisation's identifier, that organisation's name and the
+/// subscription type**. That text lands in a `sailor profiles list` row and in a
+/// `sailor flow check` report — two outputs pasted into a handover, sent to a
+/// colleague, poured into a log. A diagnosis must not carry whoever uses it.
 ///
-/// Dove un puntatore c'è, il valore che ha isolato **è** la risposta — «false»
-/// non è meno preciso dell'involucro che lo conteneva, è più preciso — quindi si
-/// mostra quello. Dove non c'è, il soggetto è già tutto ciò che il motore ha
-/// detto, e `codex` risponde una riga di prosa che non nomina nessuno.
+/// Where a pointer exists, the value it isolated **is** the answer — «false» is
+/// not less precise than the envelope holding it, it is more precise — so that
+/// is shown. Where none exists, the subject is already everything the engine
+/// said, and `codex` answers a line of prose naming nobody.
 #[test]
 fn what_gets_shown_is_the_answer_not_the_envelope_around_it() {
     let owner = r#"{
@@ -244,9 +239,8 @@ fn what_gets_shown_is_the_answer_not_the_envelope_around_it() {
         "la risposta è il valore che il puntatore isola"
     );
 
-    // Senza puntatore non c'è niente da isolare, e la prosa del motore resta la
-    // diagnosi per intero: è il caso di `codex`, e lì la frase non nomina
-    // nessuno.
+    // With no pointer there is nothing to isolate, and the engine's prose stays
+    // the whole diagnosis: `codex`'s case, where the sentence names nobody.
     let LoginVerdict::LoggedOut { said } = judge_login_status(&codex_recipe(), "", CODEX_SAYS_NO)
     else {
         panic!("la prosa dice di no");
@@ -254,9 +248,9 @@ fn what_gets_shown_is_the_answer_not_the_envelope_around_it() {
     assert_eq!(said, CODEX_SAYS_NO);
 }
 
-/// Un puntatore che non trova niente — l'involucro non è JSON, o la chiave non
-/// c'è — lascia la risposta sconosciuta. È il modo giusto di sbagliare: un
-/// descrittore impreciso peggiora la diagnosi, e non inventa un sì.
+/// A pointer that finds nothing — the envelope is not JSON, or the key is
+/// missing — leaves the answer unknown. That is the right way to err: an
+/// imprecise descriptor worsens the diagnosis, it does not invent a yes.
 #[test]
 fn a_pointer_that_finds_nothing_never_says_authenticated() {
     let said = "Logged in using ChatGPT";
