@@ -1,5 +1,13 @@
 {
   "window.session.attention": "Lavoro che richiede attenzione",
+  "window.session.show": "Mostra la corsa, i rifiuti, il costo e la quota",
+  "window.session.hide": "Nascondi la corsa, i rifiuti, il costo e la quota",
+  "window.pane.decision": "Questo agente aspetta una tua decisione.",
+  "window.pane.blocked": "Questo agente è fermo per qualcosa che solo tu puoi sbloccare.",
+  "window.pane.working": "Da questo terminale è uscito qualcosa nell’ultimo minuto.",
+  "window.pane.done": "Il processo di questo terminale è finito.",
+  "window.pane.unsure.no_channel": "Senza il canale degli eventi nessuno può dire cosa stia facendo questo agente.",
+  "window.pane.unsure.nothing_since": "Questo terminale è aperto e da un po’ non stampa niente: essere vivo non è avanzare.",
   "window.session.run_in": "Segui una corsa in {folder}",
   "window.session.no_run": "Nessuna corsa registrata in questa cartella",
   "window.session.no_selected_run": "Scegli una corsa registrata in questa cartella per leggerne i fatti.",
