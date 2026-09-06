@@ -159,6 +159,7 @@ fn the_fault_is_read_then_handed_to_the_engine_only_when_one_is_open() {
             ("trigger", "trigger"),
             ("next", "fault_next"),
             ("repair", "external_engine"),
+            ("learn", "remember"),
         ]
     );
     let repair = flow.graph.step("repair").expect("the engine step");
@@ -256,4 +257,77 @@ fn an_open_fault_becomes_the_engine_s_whole_mandate() {
     assert!(stdin.contains(&format!("number: {}", fault.number)), "{stdin}");
     let answer = repair.output.as_ref().expect("the engine answered");
     assert_eq!(answer["answer"]["fixed"], json!(true), "{answer}");
+}
+
+// ── what the round leaves for the round after ───────────────────────
+
+/// The engine's answer with a rule drawn from the repair, which is the field
+/// the last step is gated on.
+fn answering_with_a_rule() -> String {
+    json!({
+        "reproduced": true,
+        "fixed": true,
+        "test": "a_missing_price_list_refuses_instead_of_pricing_at_zero, in the pricing crate",
+        "changed": "the reader of the price list refuses an empty file",
+        "left_open": "",
+        "learnt": "a reader that cannot read answers «I do not know», never a zero"
+    })
+    .to_string()
+}
+
+fn graph_answering_with(said: String) -> Graph {
+    let mut steps: Vec<Step> = shipped().graph.steps().to_vec();
+    for step in &mut steps {
+        if step.id == "repair" {
+            let with = step.with.as_mut().expect("the engine step carries its values");
+            with["args"] = json!(["-c", "cat > /dev/null; printf '%s' \"$1\"", "engine", said]);
+        }
+    }
+    Graph::new(steps).expect("the graph stays valid")
+}
+
+/// **A ROUND LEAVES A RULE, NOT ITS OWN SUMMARY.** The rule is written in the
+/// same call that repaired — no closing turn is paid for it — and what is kept
+/// carries the evidence with it: the test that proves it and what changed.
+#[test]
+fn a_rule_drawn_from_the_repair_is_kept_with_the_evidence_that_earned_it() {
+    let scratch = Scratch::new();
+    let fault = an_open_fault(&scratch);
+    let (_, store) = run(&scratch, &graph_answering_with(answering_with_a_rule()));
+
+    let records = store.all();
+    let learn = records
+        .iter()
+        .find(|record| record.step_id == "learn")
+        .expect("the rule was kept");
+    assert_eq!(learn.outcome, Some(Outcome::Went), "{:?}", learn.failure_class);
+    let value = learn.input["value"].as_str().expect("what is kept is text");
+    assert!(value.contains("never a zero"), "the rule itself: {value}");
+    assert!(
+        value.contains("a_missing_price_list_refuses_instead_of_pricing_at_zero"),
+        "and the test that proves it: {value}"
+    );
+    assert_eq!(
+        learn.input["label"],
+        json!(format!("what fault {} taught", fault.number)),
+        "the rule is filed under the fault it came from"
+    );
+}
+
+/// **AND A ROUND THAT LEARNT NOTHING WRITES NOTHING.** Inventing a rule to
+/// have one is how a memory fills with sentences nobody can apply, and the
+/// engine is told to leave the field out rather than fill it.
+#[test]
+fn a_repair_that_drew_no_rule_keeps_nothing() {
+    let scratch = Scratch::new();
+    let _fault = an_open_fault(&scratch);
+    let (_, store) = run(&scratch, &graph_answering());
+
+    let records = store.all();
+    let learn = records.iter().find(|record| record.step_id == "learn");
+    assert!(
+        learn.is_none_or(|record| record.outcome == Some(Outcome::Skipped)),
+        "no rule offered, nothing kept — and skipped, not broken: {:?}",
+        learn.map(|record| (&record.outcome, &record.failure_class))
+    );
 }

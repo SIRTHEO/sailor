@@ -15,51 +15,93 @@
         "input_schema": {
           "type": "object",
           "properties": {
-            "source": { "type": "string" },
-            "text": { "type": "string" },
-            "who": { "type": "string" }
+            "source": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "who": {
+              "type": "string"
+            }
           },
-          "required": ["source", "text"],
+          "required": [
+            "source",
+            "text"
+          ],
           "allow_extra": false
         },
         "output_schema": {
           "type": "object",
           "properties": {
-            "text": { "type": "string" },
-            "who": { "type": "string" }
+            "text": {
+              "type": "string"
+            },
+            "who": {
+              "type": "string"
+            }
           },
-          "required": ["text"],
+          "required": [
+            "text"
+          ],
           "allow_extra": true
         }
       },
       {
         "id": "next",
-        "deps": ["trigger"],
+        "deps": [
+          "trigger"
+        ],
         "action": "fault_next",
         "max_attempts": 1,
         "when": null,
         "with": {},
-        "input_schema": { "type": "any" },
+        "input_schema": {
+          "type": "any"
+        },
         "output_schema": {
           "type": "object",
           "properties": {
-            "open": { "type": "boolean" },
-            "register": { "type": "string" },
-            "remaining": { "type": "number" },
-            "number": { "type": "number" },
-            "happened_on": { "type": "string" },
-            "what_happened": { "type": "string" },
-            "how_it_showed": { "type": "string" },
-            "what_would_prevent": { "type": "string" },
-            "status": { "type": "string" }
+            "open": {
+              "type": "boolean"
+            },
+            "register": {
+              "type": "string"
+            },
+            "remaining": {
+              "type": "number"
+            },
+            "number": {
+              "type": "number"
+            },
+            "happened_on": {
+              "type": "string"
+            },
+            "what_happened": {
+              "type": "string"
+            },
+            "how_it_showed": {
+              "type": "string"
+            },
+            "what_would_prevent": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
           },
-          "required": ["open", "register"],
+          "required": [
+            "open",
+            "register"
+          ],
           "allow_extra": true
         }
       },
       {
         "id": "repair",
-        "deps": ["next"],
+        "deps": [
+          "next"
+        ],
         "action": "external_engine",
         "max_attempts": 1,
         "when": {
@@ -68,39 +110,78 @@
           "value": true
         },
         "with": {
-          "tool": ["claude-code", "codex", "agy"],
+          "tool": [
+            "claude-code",
+            "codex",
+            "agy"
+          ],
           "kind": "implementation",
           "data": "private",
           "answer_shape": {
             "type": "object",
             "properties": {
-              "reproduced": { "type": "boolean" },
-              "fixed": { "type": "boolean" },
-              "test": { "type": "string" },
-              "changed": { "type": "string" },
-              "left_open": { "type": "string" }
+              "reproduced": {
+                "type": "boolean"
+              },
+              "fixed": {
+                "type": "boolean"
+              },
+              "test": {
+                "type": "string"
+              },
+              "changed": {
+                "type": "string"
+              },
+              "left_open": {
+                "type": "string"
+              },
+              "learnt": {
+                "type": "string"
+              }
             },
-            "required": ["reproduced", "fixed", "test", "changed", "left_open"],
+            "required": [
+              "reproduced",
+              "fixed",
+              "test",
+              "changed",
+              "left_open"
+            ],
             "allow_extra": false
           },
           "stdin": {
             "$join": [
               "You take the next open fault of this project and close it in the code. The fault below is the oldest still open in the register, and it is your whole mandate: do not pick another, do not widen it. Read AGENTS.md at the root of the tree before touching anything — it says how this tree is written and how work is proven — and stay inside its rules.\n\n=== THE FAULT ===\nnumber: ",
-              { "$json": "/number" },
+              {
+                "$json": "/number"
+              },
               "\nwritten on: ",
-              { "$from": "/happened_on" },
+              {
+                "$from": "/happened_on"
+              },
               "\nwhat happened: ",
-              { "$from": "/what_happened" },
+              {
+                "$from": "/what_happened"
+              },
               "\nhow it showed: ",
-              { "$from": "/how_it_showed" },
+              {
+                "$from": "/how_it_showed"
+              },
               "\nwhat would prevent it: ",
-              { "$from": "/what_would_prevent" },
+              {
+                "$from": "/what_would_prevent"
+              },
               "\nwhere it stands: ",
-              { "$from": "/status" },
+              {
+                "$from": "/status"
+              },
               "\nstill open in the register, this one included: ",
-              { "$json": "/remaining" },
-              "\n\n=== WHAT TO DO ===\nFirst reproduce it: «what would prevent it» names the check, and the test is that check written down. Run it and see it red on the tree as it is. A test that is green before the change proves nothing and is not a reproduction. Then change the code — the smallest honest change — until that test is green, and run the tests of every crate you touched. Comments in English, at most six lines a block, no dates; no product or vendor name in code, comments or flow files; every sentence a person reads goes through the catalogue in i18n/, in both languages. Do not touch the register and do not rewrite the fault: a person closes it after reading your work.\n\n=== HOW YOUR ANSWER MUST LOOK ===\nSay only what you measured. «reproduced» is true only if you saw the test red before the change. «fixed» is true only if the same test is green after it and nothing else went red. «test» names the test and its file. «changed» says in a few lines what you changed and why. «left_open» says what stays open — a test you could not write, a check you could not run, a doubt about the cure — and is empty only when nothing does. A fix declared done without the evidence is worse than a fault left open.\nAnswer with one JSON object and nothing else: no preamble, no greeting, no reasoning outside the fields. It must match exactly this shape, where «properties» are the fields, «required» the mandatory ones and «allow_extra: false» means no others are accepted:\n",
-              { "$json": "/answer_shape" }
+              {
+                "$json": "/remaining"
+              },
+              "\n\n=== WHAT TO DO ===\nFirst reproduce it: «what would prevent it» names the check, and the test is that check written down. Run it and see it red on the tree as it is. A test that is green before the change proves nothing and is not a reproduction. Then change the code — the smallest honest change — until that test is green, and run the tests of every crate you touched. Comments in English, at most six lines a block, no dates; no product or vendor name in code, comments or flow files; every sentence a person reads goes through the catalogue in i18n/, in both languages. Do not touch the register and do not rewrite the fault: a person closes it after reading your work.\n\n=== HOW YOUR ANSWER MUST LOOK ===\nSay only what you measured. «reproduced» is true only if you saw the test red before the change. «fixed» is true only if the same test is green after it and nothing else went red. «test» names the test and its file. «changed» says in a few lines what you changed and why. «left_open» says what stays open — a test you could not write, a check you could not run, a doubt about the cure — and is empty only when nothing does. A fix declared done without the evidence is worse than a fault left open.\n«learnt» is the one field you leave out unless you have earned it: write it only if the test went red and then green AND the rule you drew from it holds beyond this fault — one sentence a person can apply somewhere else, naming the condition that makes it apply. A rule with no evidence is worse than no rule, and this one is kept and read to whoever takes the next fault. If you have none, do not write the field at all.\nAnswer with one JSON object and nothing else: no preamble, no greeting, no reasoning outside the fields. It must match exactly this shape, where «properties» are the fields, «required» the mandatory ones and «allow_extra: false» means no others are accepted:\n",
+              {
+                "$json": "/answer_shape"
+              }
             ]
           },
           "timeout_secs": 1800
@@ -108,31 +189,122 @@
         "input_schema": {
           "type": "object",
           "properties": {
-            "tool": { "type": "array", "items": { "type": "string" } },
-            "timeout_secs": { "type": "number" }
+            "tool": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
           },
-          "required": ["tool", "timeout_secs"],
+          "required": [
+            "tool",
+            "timeout_secs"
+          ],
           "allow_extra": true
         },
         "output_schema": {
           "type": "object",
           "properties": {
-            "status": { "type": "one_of", "values": ["ok"] },
+            "status": {
+              "type": "one_of",
+              "values": [
+                "ok"
+              ]
+            },
             "answer": {
               "type": "object",
               "properties": {
-                "reproduced": { "type": "boolean" },
-                "fixed": { "type": "boolean" },
-                "test": { "type": "string" },
-                "changed": { "type": "string" },
-                "left_open": { "type": "string" }
+                "reproduced": {
+                  "type": "boolean"
+                },
+                "fixed": {
+                  "type": "boolean"
+                },
+                "test": {
+                  "type": "string"
+                },
+                "changed": {
+                  "type": "string"
+                },
+                "left_open": {
+                  "type": "string"
+                },
+                "learnt": {
+                  "type": "string"
+                }
               },
-              "required": ["reproduced", "fixed", "test", "changed", "left_open"],
+              "required": [
+                "reproduced",
+                "fixed",
+                "test",
+                "changed",
+                "left_open"
+              ],
               "allow_extra": false
             }
           },
-          "required": ["status", "answer"],
+          "required": [
+            "status",
+            "answer"
+          ],
           "allow_extra": true
+        }
+      },
+      {
+        "id": "learn",
+        "deps": [
+          "next",
+          "repair"
+        ],
+        "when": {
+          "kind": "pointer_exists",
+          "pointer": "/repair/answer/learnt"
+        },
+        "action": "remember",
+        "max_attempts": 1,
+        "input_schema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "any"
+        },
+        "with": {
+          "type": "project",
+          "label": {
+            "$join": [
+              "what fault ",
+              {
+                "$json": "/next/number"
+              },
+              " taught"
+            ]
+          },
+          "value": {
+            "$join": [
+              {
+                "$from": "/repair/answer/learnt"
+              },
+              "\n\nProved by: ",
+              {
+                "$from": "/repair/answer/test"
+              },
+              "\nWhat was changed: ",
+              {
+                "$from": "/repair/answer/changed"
+              },
+              "\nWhat stays open: ",
+              {
+                "$from": "/repair/answer/left_open"
+              }
+            ]
+          },
+          "provenance": "take-the-next-fault"
         }
       }
     ],
