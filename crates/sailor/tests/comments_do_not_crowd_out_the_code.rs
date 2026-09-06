@@ -20,7 +20,7 @@ const MAX_BLOCK: usize = 6;
 
 /// How many blocks run over today. **It can only go down**: lowering it is the
 /// repair, raising it has to be argued and shows in the diff.
-const LONG_BLOCKS_TODAY: usize = 491;
+const LONG_BLOCKS_TODAY: usize = 490;
 
 /// How many comments cite a date. Same rule: downwards only.
 const DATED_COMMENTS_TODAY: usize = 179;
@@ -43,7 +43,7 @@ const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
     ("inventory", 274),
     ("ledger", 157),
     ("models", 274),
-    ("profiles", 173),
+    ("profiles", 172),
     ("registry", 320),
     ("relay", 154),
     ("release", 426),
