@@ -1519,17 +1519,16 @@ impl Ledger {
     /// **underestimates**, and a cap trusting it lets a doubled run through.
     pub fn spent_in_run(&self, run_id: &str) -> Result<Spend, LedgerError> {
         let connection = self.lock()?;
-        // A run with no calls at all answers every field zero, and that is the
-        // right answer: it has spent nothing **and** there is nothing unknown.
-        //
-        // `MAX` over a column where every row is `NULL` answers `NULL`, and
-        // `Option<i64>` carries that through to whoever decides: "the dearest
-        // is unknown" is not "the dearest is zero".
+        // A run with no calls answers every field zero, which is right, and
+        // `MAX` over all-`NULL` answers `NULL`: "the dearest is unknown" is not
+        // "the dearest is zero". **THE ENGINE'S OWN FIGURE WINS OVER THE ONE WE
+        // WORK OUT**: it cannot be wrong about what it charged, the list can.
         let (micros, calls, calls_without_cost, dearest_micros) = connection.query_row(
-            "SELECT COALESCE(SUM(cost_micros), 0),
+            "SELECT COALESCE(SUM(COALESCE(declared_cost_micros, cost_micros)), 0),
                     COUNT(*),
-                    COALESCE(SUM(CASE WHEN cost_micros IS NULL THEN 1 ELSE 0 END), 0),
-                    MAX(cost_micros)
+                    COALESCE(SUM(CASE WHEN declared_cost_micros IS NULL
+                                       AND cost_micros IS NULL THEN 1 ELSE 0 END), 0),
+                    MAX(COALESCE(declared_cost_micros, cost_micros))
              FROM model_calls WHERE run_id = ?1",
             params![run_id],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
