@@ -1,5 +1,3 @@
-import { Panel } from "@xyflow/react";
-
 /* THE SAME GLYPH AS ON THE CANVAS, AND NOT A SECOND DRAWING OF IT. The bar
    carried its own set of nine marks in its own visual language: a species read
    as two pictures, so a mark learned in the toolbox was not on the board. */
@@ -7,12 +5,10 @@ import { KIND_LABEL, KindIcon } from "./StepNode";
 import { DEFAULT_ACTION_FOR_KIND, type StepKind } from "./flow";
 
 /**
- * **THE TOOLBOX SITS INSIDE THE CANVAS, NOT IN THE RAIL BESIDE IT.** It is a
- * React Flow `Panel`, which draws outside the element carrying the pan/zoom
- * `transform`: a bar drawn in the viewport scrolls away on the first drag.
- * `bottom-left` and not `bottom-center`, because the bottom band already holds
- * the zoom controls and the minimap; anchored to the side the bar runs the
- * corridor `styles.css` declares, and `Toolbar.test.tsx` redoes that sum.
+ * **THE TOOLBOX OWNS A BAND, NOT A CORNER OF THE PAPER.** As a React Flow
+ * `Panel` it lay inside the navigable viewport, and at 375px a step underneath
+ * took no click. A sibling of the graph inside `.canvas` cannot intersect it:
+ * a taller bar shortens the paper instead of covering it.
  */
 
 /**
@@ -55,7 +51,7 @@ export function Toolbar({ flowName, onAdd }: ToolbarProps) {
   return (
     /* WHERE THE STEP LANDS IS STILL SAID, WHERE IT COSTS NOTHING: the drawn row
        repeated the name at the top of the paper, and said it to no reader. */
-    <Panel position="bottom-left" className="toolbar" aria-label={`Add a step to ${flowName}`}>
+    <div className="toolbar" role="toolbar" aria-label={`Add a step to ${flowName}`}>
       <div className="toolbar__row">
         {TOOL_GROUPS.map((group) => (
           <div className="toolbar__group" key={group.label} role="group" aria-label={group.label}>
@@ -74,7 +70,7 @@ export function Toolbar({ flowName, onAdd }: ToolbarProps) {
           </div>
         ))}
       </div>
-    </Panel>
+    </div>
   );
 }
 
