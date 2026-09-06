@@ -43,11 +43,7 @@ import type { CommandLine } from "./profiles";
 // re-exported here because this is where every pane already looks for it.
 export { BORN_COLS, BORN_ROWS };
 
-/**
- * **THE SHAPE CARRIES THE MEANING AND THE COLOUR ONLY REPEATS IT.** A notch
- * that is amber and nothing else is invisible to a third of the people who
- * would need it most, and unreadable in a screenshot printed in grey.
- */
+/** **THE SHAPE CARRIES THE MEANING AND THE COLOUR ONLY REPEATS IT.** */
 export const DECISION_MARK = "◤";
 export const BLOCKED_MARK = "◼";
 
@@ -63,9 +59,8 @@ export const STIR_MS = 1200;
 
 /**
  * True for one breath after `value` crosses over, and **never for arriving**:
- * `null` is «nothing known yet», and the first real value after it is the
- * window starting, not something that happened. A highlight for that is the
- * window announcing itself — the movement this pane is forbidden.
+ * `null` is «nothing known yet», and a highlight for the first value after it
+ * is the window announcing itself.
  */
 export function useStir(value: string | null, ms = STIR_MS): boolean {
   const [stirred, setStirred] = useState(false);
@@ -315,8 +310,7 @@ export function TerminalPane({
             {attention.need === "decision" ? DECISION_MARK : BLOCKED_MARK}
           </span>
         )}
-        {/* WHERE THIS AGENT IS STANDING, ALWAYS IN THE SAME PLACE: a position
-            that moves is one the corner of the eye cannot learn. */}
+        {/* WHERE THIS AGENT IS STANDING: a place the corner of the eye learns. */}
         <span className="pane__where">
           <span className="pane__tree">{summary.workspaceName}</span>
           <span className="pane__who" title="the program started inside, and the profile it runs under">
