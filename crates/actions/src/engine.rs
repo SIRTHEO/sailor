@@ -527,9 +527,19 @@ impl ExternalEngineAction {
                     candidate.declared_class(&stdout, &stderr)
                 };
                 let cannot_work = class.is_some();
+                // **A SILENCE IS ITS OWN CLASS, AND NEVER A SUCCESS.** With no
+                // shape it went out as `status: "ok"` and nothing in it; with
+                // one it died on the shape, three steps past the cause. A
+                // class the descriptor declares comes first: this is what is
+                // left when nobody declared anything. Fault 96.
+                let said_nothing = !cannot_work && answered.trim().is_empty();
                 // The class is the same as the other branch's: a spent quota
                 // or a door shut for another reason, never the exit code.
-                note(reading.clone(), class, &stdout);
+                note(
+                    reading.clone(),
+                    class.or(said_nothing.then_some("empty_answer")),
+                    &stdout,
+                );
                 self.set_aside_if_spent(candidate, class, ended_at, &stdout, &stderr);
                 // La tolleranza viene dopo, per la stessa ragione dell'altro
                 // ramo: un passo che con `accept` dichiara di volersi tenere il
@@ -537,6 +547,15 @@ impl ExternalEngineAction {
                 // qualcun altro ci riprovi al posto suo.
                 if cannot_work && !tolerates(&spec.accept, "exit_error") {
                     return engine_cannot_work(named, solo, &stdout, &stderr);
+                }
+                if said_nothing {
+                    return Err(ActionError::new(
+                        "empty_answer",
+                        format!(
+                            "{named} exited with success and said nothing: an empty answer \
+                             is not an answer, and nothing downstream can be built on it"
+                        ),
+                    ));
                 }
                 // **L'USCITA DEL PASSO NON CAMBIA PERCHÉ SI È MISURATO.** Se il
                 // descrittore ha chiesto un involucro per farsi dire i token,
@@ -583,7 +602,19 @@ impl ExternalEngineAction {
                 // `exhausted` è una cosa che passa da sé alle sette del mattino,
                 // `exit_error` no, e una somma che le mescola non dice niente a
                 // nessuno.
-                let class = candidate.declared_class(&stdout, &stderr);
+                //
+                // **AND THE SHAPE IS READ BEFORE THE WORDS HERE TOO.** An exit
+                // code is a veto over an answer in shape, never a reason to
+                // read a refusal inside it: a chain that did would hand the
+                // work on and throw an answer away. Fault 95, in the branch
+                // its remedy never reached.
+                let answered = reading.answer.clone().unwrap_or_else(|| stdout.clone());
+                let in_shape = shape.is_some_and(|shape| shaped_answer(shape, &answered).is_ok());
+                let class = if in_shape {
+                    None
+                } else {
+                    candidate.declared_class(&stdout, &stderr)
+                };
                 let exhausted = class.is_some();
                 note(reading.clone(), Some(class.unwrap_or("exit_error")), &stdout);
                 self.set_aside_if_spent(candidate, class, ended_at, &stdout, &stderr);
@@ -1243,6 +1274,75 @@ mod tests {
 
         assert_eq!(error.class, "answer_not_json");
         assert!(error.said.contains("ci penso io"), "{}", error.said);
+    }
+
+    /// **AN EMPTY ANSWER IS NEVER A SUCCESS**, however the engine exited. A
+    /// shipped one, asked with the line its own descriptor declares, said
+    /// nothing and exited zero: with a shape the step fell three steps past
+    /// the cause, without one it closed green over nothing. Fault 96.
+    #[test]
+    fn an_empty_answer_is_never_a_success() {
+        for line in ["exit 0", "printf '  \\n\\t'"] {
+            let error = ExternalEngineAction::new()
+                .execute(
+                    &json!({"bin": "sh", "args": ["-c", line], "timeout_secs": 5}),
+                    &SharedState::new(),
+                )
+                .expect_err("an empty output is not an answer");
+
+            assert_eq!(
+                error.class, "empty_answer",
+                "on the line «{line}», which exits zero saying nothing: {}",
+                error.said
+            );
+        }
+    }
+
+    /// With no schema, «not empty» is the least that makes an answer a
+    /// candidate: it does not prove the answer right, and it is all that can
+    /// be demanded where nobody declared a shape.
+    #[test]
+    fn with_no_shape_declared_only_an_empty_answer_is_refused() {
+        let action = ExternalEngineAction::new();
+
+        let ActionOutcome::Went(output) = action
+            .execute(
+                &json!({"bin": "sh", "args": ["-c", "echo detto"], "timeout_secs": 5}),
+                &SharedState::new(),
+            )
+            .expect("a text that is not empty is handed on as it is")
+        else {
+            panic!("an engine that answers is always Went")
+        };
+        assert_eq!(output["stdout"], "detto\n");
+
+        let error = action
+            .execute(
+                &json!({"bin": "sh", "args": ["-c", "printf ' '"], "timeout_secs": 5}),
+                &SharedState::new(),
+            )
+            .expect_err("one space is not an answer");
+        assert_eq!(error.class, "empty_answer", "{}", error.said);
+    }
+
+    /// A silence is called a silence: with a shape declared the step said «the
+    /// answer is not JSON; it saw «»», which sends the reader looking for a
+    /// defect inside an answer instead of at its absence.
+    #[test]
+    fn a_silence_is_named_a_silence_and_not_a_broken_shape() {
+        let input = json!({
+            "bin": "sh",
+            "args": ["-c", "exit 0"],
+            "answer_shape": {"type": "object", "properties": {}, "required": [], "allow_extra": true},
+            "stdin": {"$json": "/answer_shape"},
+            "timeout_secs": 5
+        });
+
+        let error = ExternalEngineAction::new()
+            .execute(&with_references_resolved(input), &SharedState::new())
+            .expect_err("it said nothing at all");
+
+        assert_eq!(error.class, "empty_answer", "{}", error.said);
     }
 
     /// I modelli incorniciano: si accetta il primo blocco recintato, anche
