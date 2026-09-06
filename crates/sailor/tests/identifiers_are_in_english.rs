@@ -260,6 +260,12 @@ fn every_declared_identifier_is_in_english() {
         "cercato in {} sorgenti: troppo pochi, la scansione non sta guardando dove crede",
         sources.len()
     );
+    workspace::measured_against(
+        sources.len(),
+        "sources read for declarations",
+        ITALIAN_WORDS.len(),
+        "words that must not name anything",
+    );
 
     let mut found: Vec<String> = Vec::new();
     for path in &sources {

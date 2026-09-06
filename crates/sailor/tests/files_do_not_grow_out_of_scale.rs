@@ -39,7 +39,9 @@ fn walk(dir: &Path, found: &mut Vec<PathBuf>) {
 
 #[test]
 fn no_more_files_run_past_the_scale_than_today() {
-    let mut over: Vec<(usize, PathBuf)> = sources()
+    let walked = sources();
+    workspace::measured(walked.len(), "sources counted line by line");
+    let mut over: Vec<(usize, PathBuf)> = walked
         .into_iter()
         .filter_map(|path| {
             let lines = std::fs::read_to_string(&path).ok()?.lines().count();

@@ -1,0 +1,92 @@
+//! The gate lets nothing through on an exit code alone: a judge hands in its
+//! own words and the gate decides from them. Not a judge itself — it opens no
+//! source, it drives the gate — so it carries no seed and no receipt.
+
+use sailor::ratchet_cmd::{verdict_of, Gate, Handed, Verdict};
+
+/// The element the perimeter must contain: a judge that walked can count it.
+const SENTINEL: &str = "the sentinel this perimeter demands";
+
+/// What a judge that really walked hands in.
+fn a_judge_that_walked() -> String {
+    format!(
+        "running 3 tests\n{} 214 sources holding {SENTINEL}{}214 paths git tracks\nok.",
+        workspace::MEASURED,
+        workspace::AGAINST
+    )
+}
+
+/// **THE OBSERVER THAT GIVES NO EVIDENCE OF HAVING READ THE SENTINEL**: every
+/// test passed, the process exited zero, and that is all it proved.
+fn a_judge_that_only_passed() -> String {
+    "running 3 tests\ntest result: ok. 3 passed; 0 failed".to_owned()
+}
+
+/// **THE PROOF.** The perimeter demands the sentinel; the observer proves
+/// nothing about it and still exits zero.
+#[test]
+fn a_judge_that_proves_nothing_about_the_perimeter_is_unmeasured_and_stops_the_run() {
+    let silent = a_judge_that_only_passed();
+    let handed = [Handed { judge: "the_sentinel_is_read", passed: true, said: &silent }];
+
+    let gate = Gate::over(&handed);
+
+    assert_eq!(
+        verdict_of(true, &silent),
+        Verdict::NoReceipt,
+        "a judge that exited zero having said nothing about {SENTINEL} was taken for a measurement"
+    );
+    assert_eq!(gate.unmeasured(), 1, "the run did not count the judge that proved no perimeter");
+    assert_eq!(gate.green(), 0, "the green count rose on a judge that measured nothing");
+    assert!(
+        !gate.lets_through(0),
+        "the gate let a run through on an exit code alone: {}",
+        gate.closing_line()
+    );
+    assert!(
+        !gate.closing_line().contains("every seed holds"),
+        "the closing line called the run clean: {}",
+        gate.closing_line()
+    );
+}
+
+/// The control, or a gate refusing everything would meet the demand above.
+#[test]
+fn the_same_run_with_a_receipt_is_green_and_goes_through() {
+    let walked = a_judge_that_walked();
+    let gate = Gate::over(&[Handed { judge: "the_sentinel_is_read", passed: true, said: &walked }]);
+
+    assert_eq!(gate.green(), 1);
+    assert_eq!(gate.unmeasured(), 0);
+    assert!(gate.lets_through(0), "{}", gate.closing_line());
+    assert!(gate.closing_line().contains("every seed holds"), "{}", gate.closing_line());
+}
+
+/// A receipt is not a password: an empty perimeter is refused like silence.
+#[test]
+fn an_empty_perimeter_and_an_empty_oracle_are_refused_like_silence() {
+    let empty_walk = format!("{} 0 sources under crates", workspace::MEASURED);
+    let empty_oracle =
+        format!("{} 214 sources{}0 paths git tracks", workspace::MEASURED, workspace::AGAINST);
+    let fell = a_judge_that_walked();
+
+    assert_eq!(verdict_of(true, &empty_walk), Verdict::NoReceipt);
+    assert_eq!(verdict_of(true, &empty_oracle), Verdict::NoReceipt);
+    assert_eq!(verdict_of(false, &fell), Verdict::Red);
+}
+
+/// The two silences are not one number: mixing them would bury the honest
+/// declaration under the backlog of judges nobody has converted yet.
+#[test]
+fn declaring_an_empty_oracle_and_handing_in_nothing_are_counted_apart() {
+    let blind = format!("{} nothing here to ask", workspace::MEASURED_NOTHING);
+    let silent = a_judge_that_only_passed();
+    let gate = Gate::over(&[
+        Handed { judge: "blind", passed: true, said: &blind },
+        Handed { judge: "silent", passed: true, said: &silent },
+    ]);
+
+    assert_eq!(gate.measured_nothing(), 1);
+    assert_eq!(gate.unmeasured(), 1);
+    assert_eq!(gate.green(), 0);
+}

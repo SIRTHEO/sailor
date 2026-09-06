@@ -45,13 +45,18 @@ fn tracked() -> Option<Vec<String>> {
         .output()
         .expect("git lists the tree");
     assert!(listed.status.success(), "git ls-files answers");
-    Some(
-        String::from_utf8_lossy(&listed.stdout)
-            .split('\0')
-            .filter(|path| !path.is_empty())
-            .map(str::to_owned)
-            .collect(),
-    )
+    let paths: Vec<String> = String::from_utf8_lossy(&listed.stdout)
+        .split('\0')
+        .filter(|path| !path.is_empty())
+        .map(str::to_owned)
+        .collect();
+    workspace::measured_against(
+        paths.len(),
+        "tracked paths read",
+        NAMES_THAT_ARE_A_PERSONS.len(),
+        "names a file must never carry",
+    );
+    Some(paths)
 }
 
 #[test]
