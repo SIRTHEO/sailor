@@ -39,10 +39,11 @@ fn families_the_window_names(source: &str) -> Vec<String> {
 #[test]
 fn the_window_names_the_kinds_the_inventory_has() {
     let path = repository_root().join("desktop/src/Installed.tsx");
-    let Ok(source) = std::fs::read_to_string(&path) else {
-        workspace::measured_nothing("this tree carries no desktop/src/Installed.tsx to read");
-        return;
-    };
+    // Its absence is the defect, not a state of the tree: the page that names
+    // the kinds is what this judge reads.
+    let source = std::fs::read_to_string(&path).unwrap_or_else(|error| {
+        panic!("desktop/src/Installed.tsx is gone, so the kinds cannot be compared: {error}")
+    });
 
     let named = families_the_window_names(&source);
     assert!(
