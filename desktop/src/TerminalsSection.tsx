@@ -10,14 +10,10 @@ import type { TerminalSummary } from "./terminal";
 import { Terminals } from "./Terminals";
 import type { Bench } from "./Workbench";
 import { Worktrees } from "./Worktrees";
+import { TERMINALS_TABS, type TerminalsTab } from "./terminalstabs";
 
-export type TerminalsTab = "live" | "projects" | "worktrees";
-
-export const TERMINALS_TABS: { id: TerminalsTab; name: string; about: string }[] = [
-  { id: "live", name: "Live", about: "the terminals open now" },
-  { id: "projects", name: "Projects", about: "the ones sailor has been opened in" },
-  { id: "worktrees", name: "Worktrees", about: "copies of a repository, side by side" },
-];
+export { TERMINALS_TABS };
+export type { TerminalsTab };
 
 export function TerminalsSection({
   native,
