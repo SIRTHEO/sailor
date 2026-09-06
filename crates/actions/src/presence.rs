@@ -11,17 +11,17 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Il nome sotto cui `WorkClaimAction` si registra.
+/// The name `WorkClaimAction` registers itself under.
 pub const WORK_CLAIM_ACTION: &str = "work_claim";
-/// Il nome sotto cui `WorkReleaseAction` si registra.
+/// The name `WorkReleaseAction` registers itself under.
 pub const WORK_RELEASE_ACTION: &str = "work_release";
-/// Il nome sotto cui `WorkSurveyAction` si registra.
+/// The name `WorkSurveyAction` registers itself under.
 pub const WORK_SURVEY_ACTION: &str = "work_survey";
 
-/// La collezione del deposito dove vivono gli annunci.
+/// The ledger collection the claims live in.
 pub const CLAIMS_COLLECTION: &str = "work-claims";
 
-/// Quanto dura un annuncio che non dichiara una durata sua.
+/// How long a claim that declares no duration of its own lasts.
 pub const DEFAULT_LEASE_SECONDS: i64 = 900;
 
 /// **THE SURVEY REGISTERS WITHOUT A STORE, THE TWO THAT WRITE DO NOT.** A
@@ -160,23 +160,23 @@ pub fn release_claim(ledger: &Ledger, key: &str, at: i64) -> Result<bool, ledger
     Ok(true)
 }
 
-/// Quanto due annunci si sovrappongono, dal più stretto al più largo.
+/// How far two claims overlap, from the narrowest to the widest.
 ///
-/// **SONO TRE E NON UNO PERCHÉ I CASI VISSUTI SONO DUE, DI GRAVITÀ DIVERSA.**
-/// Sette agenti condividono *sempre* la repo: se `same_repository` valesse
-/// quanto il resto, ogni annuncio sarebbe una collisione, e un allarme che
-/// suona sempre è un allarme che qualcuno spegne il primo giorno. Chi ha perso
-/// il lavoro non committato lo ha perso da uno che stava nel **suo stesso
-/// albero**, ed è quella la specie che ferma.
+/// **THREE AND NOT ONE, BECAUSE THE LIVED CASES ARE TWO OF DIFFERENT GRAVITY.**
+/// Seven agents *always* share the repository: were `same_repository` worth as
+/// much as the rest, every claim would be a collision, and an alarm that always
+/// rings is one somebody switches off on day one. Whoever lost uncommitted work
+/// lost it to somebody in their **own tree**, and that is the species that
+/// stops the work.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Overlap {
-    /// Altro albero di lavoro, stessa repo: da sapere, non da fermarsi.
+    /// Another worktree, same repository: worth knowing, not worth stopping for.
     Repository,
-    /// Stesso albero di lavoro, percorsi dichiarati e disgiunti. Conta lo
-    /// stesso: un `git commit` non guarda i percorsi che qualcuno ha dichiarato.
+    /// Same worktree, declared and disjoint paths. It counts anyway: a
+    /// `git commit` does not look at the paths somebody declared.
     Workdir,
-    /// Stesso albero e percorsi che si toccano — o uno dei due non ne ha
-    /// dichiarati, cioè ha preso tutto.
+    /// Same tree and paths that touch — or one of the two declared none, which
+    /// means it took everything.
     Paths,
 }
 
@@ -190,11 +190,11 @@ impl Overlap {
     }
 }
 
-/// Un percorso contiene l'altro, **a segmenti interi**.
+/// One path contains the other, **whole segment by whole segment**.
 ///
-/// Il confronto per testo direbbe che `crates/act` contiene `crates/actions`, e
-/// una collisione inventata costa quanto una mancata: chi la riceve smette di
-/// credere alle vere.
+/// Comparing as text would say `crates/act` contains `crates/actions`, and an
+/// invented collision costs as much as a missed one: whoever gets it stops
+/// believing the real ones.
 fn one_path_contains_the_other(left: &str, right: &str) -> bool {
     let left: Vec<&str> = left
         .trim_matches('/')
@@ -211,8 +211,8 @@ fn one_path_contains_the_other(left: &str, right: &str) -> bool {
 }
 
 fn paths_meet(mine: &[String], theirs: &[String]) -> bool {
-    // Chi non dichiara percorsi ha preso l'albero intero: è il valore
-    // predefinito, e deve essere quello prudente.
+    // Declaring no paths means taking the whole tree: that is the default, and
+    // the default has to be the cautious one.
     if mine.is_empty() || theirs.is_empty() {
         return true;
     }
@@ -235,14 +235,14 @@ fn paths_at(value: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Perché un annuncio non trattiene più nessuno — o `None` se trattiene ancora.
+/// Why a claim holds nobody any more — or `None` while it still holds.
 ///
-/// **Le due ragioni restano separate apposta.** `released` è «qualcuno ha
-/// guardato e ha finito»; `expired` è «nessuno si è più fatto vivo», che sulla
-/// macchina di Theo vuol dire quasi sempre un processo ucciso dal sonno del
-/// sistema. Fonderle in un unico «non c'è più» toglierebbe a chi legge l'unica
-/// informazione che cambia cosa fare: nel primo caso il lavoro è finito, nel
-/// secondo è a metà e nessuno lo sa.
+/// **The two reasons stay apart on purpose.** `released` is «somebody looked and
+/// finished»; `expired` is «nobody showed up again», which on this machine
+/// nearly always means a process killed by the system going to sleep. Merging
+/// them into one «gone» would take from the reader the one fact that changes
+/// what to do: in the first case the work is finished, in the second it is
+/// half-done and nobody knows.
 fn why_gone(claim: &Value, at: i64) -> Option<&'static str> {
     if claim["released_at"].is_i64() {
         return Some("released");
@@ -254,7 +254,7 @@ fn why_gone(claim: &Value, at: i64) -> Option<&'static str> {
     None
 }
 
-/// Quanto l'annuncio di un altro tocca il mio — `None` se non lo tocca.
+/// How far somebody else's claim touches mine — `None` when it does not.
 fn overlap_between(mine: &ClaimSpec, theirs: &Value) -> Option<Overlap> {
     if text_at(theirs, "repository") != mine.repository {
         return None;
@@ -302,14 +302,13 @@ impl Action for WorkClaimAction {
             conversation: None,
             state: "working".to_owned(),
         });
-        // **PRIMA SI SCRIVE, POI SI GUARDA.** L'ordine non è indifferente: due
-        // agenti che partono nello stesso istante devono vedersi *almeno da un
-        // lato*. Guardando prima di scrivere, entrambi leggerebbero un deposito
-        // che non contiene ancora l'altro e concluderebbero «sono solo» —
-        // esattamente la corsa critica che questo nodo esiste per rendere
-        // visibile. Scrivendo prima, chi arriva secondo vede sempre il primo, e
-        // nel caso peggiore — la stessa frazione di secondo — si vedono tutti e
-        // due, che è l'errore dalla parte giusta.
+        // **WRITE FIRST, LOOK AFTER.** The order matters: two agents starting in
+        // the same instant must see each other *from at least one side*. Looking
+        // before writing, both would read a ledger not yet holding the other and
+        // conclude «I am alone» — exactly the race this node exists to make
+        // visible. Writing first, whoever arrives second always sees the first,
+        // and at worst — the same fraction of a second — they see each other,
+        // which is the error on the right side.
         self.ledger
             .put_record(&record)
             .map_err(|error| ActionError::new("store_refused", error.to_string()))?;
@@ -341,15 +340,15 @@ impl Action for WorkClaimAction {
                 "expires_at": other.value["expires_at"].clone(),
             }));
         }
-        // Il più stretto per primo: chi legge solo la prima riga legge la peggiore.
+        // Narrowest first: reading only the first line reads the worst one.
         collisions.sort_by(|a, b| b["kind"].as_str().cmp(&a["kind"].as_str()));
 
-        // **IL FRENO SI DICHIARA, E NON SCATTA SU `same_repository`.** Sette
-        // agenti condividono sempre la repo: un freno che scattasse lì
-        // fermerebbe ogni annuncio di ogni giorno, e chi lo subisce lo spegne —
-        // dopodiché non frena più niente. È la stessa forma del modello Bazel
-        // in `docs/decisions.md`: si entra come avviso, si diventa barriera solo
-        // dove qualcuno l'ha chiesto.
+        // **THE BRAKE IS DECLARED, AND NEVER TRIPS ON `same_repository`.** Seven
+        // agents always share the repository: a brake tripping there would stop
+        // every claim of every day, and whoever suffers it switches it off —
+        // after which it brakes nothing. Same shape as the Bazel model in
+        // `docs/decisions.md`: you arrive as a warning and become a barrier
+        // where somebody asked for one.
         if spec.refuse_when_shared {
             let holding: Vec<String> = collisions
                 .iter()
@@ -485,7 +484,7 @@ mod tests {
         }
     }
 
-    /// Un contatore nel nome, non solo l'orologio: guasto 21.
+    /// A counter in the name, not the clock alone: fault 21.
     fn store() -> (Ledger, TestStore) {
         let sequence = NEXT.fetch_add(1, Ordering::Relaxed);
         let path = std::env::temp_dir().join(format!(
@@ -519,8 +518,8 @@ mod tests {
         value
     }
 
-    /// **IL CASO VISSUTO.** Due agenti nello stesso albero di lavoro: il secondo
-    /// deve sapere del primo, per nome.
+    /// **THE LIVED CASE.** Two agents in one worktree: the second has to learn
+    /// about the first, by name.
     #[test]
     fn a_second_agent_in_the_same_workdir_learns_about_the_first() {
         let (ledger, _guard) = store();
@@ -552,7 +551,7 @@ mod tests {
         assert_eq!(collisions[0]["kind"], json!("same_paths"));
     }
 
-    /// **L'AGENTE MORTO MALE.** Un annuncio scaduto non è una collisione.
+    /// **THE AGENT THAT DIED BADLY.** An expired claim is not a collision.
     #[test]
     fn an_expired_claim_is_not_a_collision() {
         let (ledger, _guard) = store();
@@ -640,7 +639,7 @@ mod tests {
         );
     }
 
-    /// **LA LEZIONE DEL DOPPIO 27.** Chi rinnova non tocca la riga di nessun altro.
+    /// **THE LESSON OF THE DOUBLE 27.** A renewal touches nobody else's row.
     #[test]
     fn a_renewal_never_erases_another_agents_claim() {
         let (ledger, _guard) = store();
@@ -676,8 +675,8 @@ mod tests {
         assert_eq!(working.len(), 2, "il rinnovo di una non cancella l'altra");
     }
 
-    /// **IL CASO DEI SETTE.** Alberi diversi della stessa repo si vedono, ma la
-    /// collisione è di un'altra specie.
+    /// **THE CASE OF THE SEVEN.** Different trees of one repository see each
+    /// other, but the collision is of another species.
     #[test]
     fn different_worktrees_of_one_repository_see_each_other_as_a_lesser_kind() {
         let (ledger, _guard) = store();
@@ -704,8 +703,8 @@ mod tests {
         assert_eq!(collisions[0]["kind"], json!("same_repository"));
     }
 
-    /// Percorsi dichiarati e disgiunti nello stesso albero: si vedono, ma non
-    /// sugli stessi file.
+    /// Declared and disjoint paths in one tree: they see each other, but not
+    /// over the same files.
     #[test]
     fn disjoint_declared_paths_in_one_workdir_are_a_lesser_kind() {
         let (ledger, _guard) = store();
@@ -754,9 +753,9 @@ mod tests {
         );
     }
 
-    /// **UNA COLLISIONE INVENTATA COSTA QUANTO UNA MANCATA.** `crates/act` non è
-    /// dentro `crates/actions`: chi confronta per testo lo direbbe, e chi riceve
-    /// un allarme falso smette di credere anche ai veri.
+    /// **AN INVENTED COLLISION COSTS AS MUCH AS A MISSED ONE.** `crates/act` is
+    /// not inside `crates/actions`: comparing as text would say it is, and
+    /// whoever gets a false alarm stops believing the true ones too.
     #[test]
     fn a_text_prefix_that_is_not_a_path_prefix_is_not_a_collision() {
         let (ledger, _guard) = store();
@@ -784,8 +783,8 @@ mod tests {
         );
     }
 
-    /// Un rilascio smette di trattenere **subito**, e resta distinguibile da una
-    /// scadenza: `released_at` scritto, non un annuncio sparito.
+    /// A release stops holding **at once**, and stays distinguishable from an
+    /// expiry: `released_at` written, not a claim gone missing.
     #[test]
     fn a_release_stops_holding_at_once_and_stays_distinguishable_from_an_expiry() {
         let (ledger, _guard) = store();
@@ -841,7 +840,7 @@ mod tests {
         );
     }
 
-    /// Il freno **si dichiara**: chi non lo chiede prosegue informato.
+    /// The brake **is declared**: whoever does not ask for it carries on informed.
     #[test]
     fn refuse_when_shared_stops_the_second_and_names_the_first() {
         let (ledger, _guard) = store();
@@ -868,9 +867,9 @@ mod tests {
         );
     }
 
-    /// **`same_repository` non ferma mai**, nemmeno a freno dichiarato: sette
-    /// agenti condividono sempre la repo, e un freno che scatta sempre è un
-    /// freno che qualcuno spegne il primo giorno.
+    /// **`same_repository` never stops anyone**, not even with the brake
+    /// declared: seven agents always share the repository, and a brake that
+    /// always trips is one somebody switches off on day one.
     #[test]
     fn refuse_when_shared_ignores_a_mere_shared_repository() {
         let (ledger, _guard) = store();
@@ -894,7 +893,7 @@ mod tests {
         assert_eq!(outcome["collisions"][0]["kind"], json!("same_repository"));
     }
 
-    /// Il censimento separa chi lavora da chi non c'è più, e dice **perché**.
+    /// The survey separates the working from the gone, and says **why**.
     #[test]
     fn a_survey_separates_the_living_from_the_gone_and_says_why() {
         let (ledger, _guard) = store();
@@ -929,10 +928,8 @@ mod tests {
         assert_eq!(gone[0]["why"], json!("expired"));
     }
 
-    // **GUASTO 28: LA PROVA SI È SPOSTATA DOVE STA LA REGOLA.** Questa
-    // chiamava `execute` con `{"$from": "/root"}` dentro, e reggeva perché
-    // queste tre azioni risolvevano i rinvii ciascuna per conto proprio — una
-    // delle dodici copie della stessa riga. Adesso c'è un posto solo,
-    // `flow::step_input`, e la prova che ogni azione riceva l'ingresso sciolto
-    // sta lì: `crates/flow/tests/a_reference_reaches_every_action.rs`.
+    // **FAULT 28: THE PROOF SITS WHERE THE RULE SITS.** References are resolved
+    // in one place, `flow::step_input`, and that every action receives its input
+    // resolved is proved by
+    // `crates/flow/tests/a_reference_reaches_every_action.rs`.
 }

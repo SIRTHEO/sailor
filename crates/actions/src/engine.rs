@@ -26,7 +26,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-// ── le due azioni registrabili in un flow::ActionRegistry ───────────────
+// ── the two actions registrable in a flow::ActionRegistry ───────────────
 
 #[derive(Debug, Serialize)]
 struct EngineOutcomeJson {
@@ -35,22 +35,18 @@ struct EngineOutcomeJson {
     stderr: String,
 }
 
-/// Invoca un motore esterno leggendo la sua ricetta dall'ingresso tipato del
-/// passo. Non sa nulla di quale motore o di quale coda la chiama.
+/// Invokes an external engine, reading its recipe from the step's typed input;
+/// it knows nothing of which engine, or which queue, calls it. The recipe may
+/// carry references (`reference`): that is how one engine's brief becomes the
+/// next engine's input.
 ///
-/// La ricetta può contenere rinvii (`reference`): è così che l'incarico scritto
-/// da un motore diventa l'ingresso del motore dopo.
-///
-/// **UN FALLIMENTO ROMPE IL PASSO.** Un'uscita diversa da zero, un tempo
-/// scaduto, un binario che non parte: ognuno di questi chiude il passo come
-/// rotto, con dentro il perché e le ultime righe di ciò che il motore ha detto.
-/// I passi che dipendono da lui non partono — che è il punto: prima del
-/// 28/08/2026 partivano, ricevendo il vuoto e spendendo una chiamata vera.
-///
-/// **E RESTA POSSIBILE DIRE IL CONTRARIO**, perché esiste chi esegue un comando
-/// apposta per vedere se fallisce: `"accept": ["exit_error"]` nel passo rimette
-/// quell'esito fra i dati, con lo `status` che lo dice, come era per tutti
-/// prima. Ma va scritto, e vale solo per l'esito nominato.
+/// **A FAILURE BREAKS THE STEP.** A nonzero exit, a timeout, a binary that will
+/// not start: each closes the step as broken, carrying the why and the last
+/// lines the engine said, and the steps depending on it do not start — else
+/// they start on emptiness with a real call already spent. **The opposite can
+/// still be said**: `"accept": ["exit_error"]` puts that outcome back among the
+/// data with `status` saying so, but it must be written, and it holds for the
+/// named outcome only.
 pub struct ExternalEngineAction {
     pub(crate) tools: Option<Arc<dyn ToolResolver>>,
     pub(crate) watcher: Option<Arc<dyn StepSinks>>,
@@ -71,8 +67,8 @@ impl Default for ExternalEngineAction {
 }
 
 impl ExternalEngineAction {
-    /// Senza risolutore: un passo che chiede uno strumento per identificativo
-    /// riceve un errore che dice come si ripara, invece di un binario indovinato.
+    /// With no resolver: a step asking for a tool by id gets an error saying
+    /// how it is repaired, rather than a guessed binary.
     pub fn new() -> Self {
         Self {
             tools: None,
@@ -84,8 +80,8 @@ impl ExternalEngineAction {
         }
     }
 
-    /// Con un risolutore: `"tool": "codex"` diventa il percorso che vale
-    /// `codex` su questa macchina.
+    /// With a resolver: `"tool": "codex"` becomes the path that stands for
+    /// `codex` on this machine.
     pub fn resolving_with(resolver: impl ToolResolver + 'static) -> Self {
         Self {
             tools: Some(Arc::new(resolver)),
@@ -117,27 +113,23 @@ impl ExternalEngineAction {
         self
     }
 
-    /// Con qualcuno che guarda: il testo del motore gli arriva mentre esce,
-    /// marcato col passo che lo sta producendo. `None` vuol dire che nessuno
-    /// guarda, ed è il valore con cui l'azione nasce — chi la registra decide,
-    /// non questo crate.
+    /// With someone watching: the engine's text reaches them as it comes out,
+    /// marked with the step producing it. `None` means nobody watches, and it
+    /// is the value the action is born with — whoever registers it decides,
+    /// not this crate.
     pub fn watched_by(mut self, watcher: Option<Arc<dyn StepSinks>>) -> Self {
         self.watcher = watcher;
         self
     }
 
-    /// Con un deposito dove registrare quanto è costata ogni chiamata.
+    /// With a store to record what each call cost.
     ///
-    /// **PERCHÉ IL DEPOSITO ARRIVA PER COSTRUZIONE E LA CORSA NO.** Chi
-    /// costruisce il registro delle azioni ha già il deposito aperto in mano —
-    /// è la stessa strada che `store::register_store` segue da sempre — ma non
-    /// ha ancora la corsa: il `run_id` nasce dopo, quando si sta per partire.
-    /// La corsa arriva quindi dallo stato condiviso (`flow::CURRENT_RUN`), che
-    /// l'esecutore riempie passo per passo.
-    ///
-    /// `None` è il valore con cui l'azione nasce, e vuol dire che non si
-    /// registra niente: un motore invocato senza deposito funziona esattamente
-    /// come prima.
+    /// **WHY THE STORE ARRIVES BY CONSTRUCTION AND THE RUN DOES NOT.** Whoever
+    /// builds the action registry already holds the store open — the same road
+    /// `store::register_store` has always taken — but has no run yet: the
+    /// `run_id` is born later, as the run is about to start, so it comes from
+    /// the shared state (`flow::CURRENT_RUN`) the executor fills step by step.
+    /// `None`, the value the action is born with, records nothing.
     pub fn recording_to(mut self, ledger: Option<Ledger>) -> Self {
         self.ledger = ledger;
         self
@@ -250,18 +242,17 @@ fn tree_of_its_own(
         .map_err(|why| ActionError::new("tree_not_cut", why))
 }
 
-/// L'esito di una domanda a **un** motore della catena.
+/// What asking **one** engine of the chain came to.
 enum Asked {
-    /// Questo motore ha risposto: quella è la risposta del passo, comunque sia
-    /// andata. Nessuno dopo di lui viene provato.
+    /// This engine answered: that is the step's answer, however it went. Nobody
+    /// after it is tried.
     Answered(ActionOutcome),
-    /// Questo motore ha dichiarato di non poter lavorare — con le parole che il
-    /// suo descrittore dichiara, non con un'interpretazione nostra. Si prova il
-    /// prossimo.
+    /// This engine declared it cannot work — in the words its own descriptor
+    /// declares, not in a reading of ours. The next one is tried.
     CannotWork(String),
 }
 
-/// Perché ognuno è stato messo da parte, in una riga sola.
+/// Why each one was set aside, in a single line.
 fn each_one_why(reasons: &[String]) -> String {
     if reasons.is_empty() {
         return "Nessun motivo registrato.".to_owned();
@@ -269,19 +260,18 @@ fn each_one_why(reasons: &[String]) -> String {
     reasons.join(" · ")
 }
 
-/// Cosa succede a un passo quando il motore ha detto di **non poter lavorare**.
+/// What happens to a step when the engine said it **cannot work**.
 ///
-/// **STA IN UNA COPIA SOLA, E NON È PIGNOLERIA.** La *regola* — quali parole
-/// contano — era già in un posto solo (`mentions_any`); la **conseguenza** no:
-/// era scritta due volte, una per ramo, e le due copie erano già divergenti
-/// appena nate. È il guasto 10 rientrato dalla porta di servizio, sullo stesso
-/// codice che stava riparando il guasto sul ripiego.
+/// **IT LIVES IN ONE COPY, AND THAT IS NOT FUSSINESS.** The *rule* — which
+/// words count — was already in one place (`mentions_any`); the **consequence**
+/// was not, and its two copies, one per branch, diverged from birth. Fault 10
+/// back in through the side door, on the very code repairing the fallback.
 ///
-/// La differenza che questa funzione tiene è quella che conta per chi legge:
-/// **con una catena dietro** il lavoro passa al prossimo, e non c'è ancora
-/// nessun errore da dare; **da solo** non c'è nessun prossimo, ma la diagnosi
-/// resta — chi legge «esaurito» sa che deve aspettare o cambiare profilo, chi
-/// legge «uscito in errore» va a cercare un guasto che non c'è.
+/// The difference this function keeps is what matters to a reader: **with a
+/// chain behind it** the work passes on and there is no error to give yet;
+/// **on its own** there is no next, but the diagnosis stays — «exhausted» says
+/// wait or change profile, «exited in error» sends a reader hunting for a
+/// fault that is not there.
 fn engine_cannot_work(
     named: &str,
     solo: bool,
@@ -327,17 +317,17 @@ fn compose(
         Some(id) => format!("«{id}» (`{bin}`)"),
         None => format!("`{bin}`"),
     };
-    // Prima di montare la riga: questa chiamata continua qualcosa, o parte
-    // da zero? Non può fallire — al massimo riparte da zero dicendolo.
+    // Before composing the line: does this call continue something, or start
+    // fresh? It cannot fail — at worst it starts fresh and says so.
     let session = session_plan(candidate, spec.session.as_ref(), spec.blind, record, live, &named);
     let mut args = session
         .args
         .clone()
         .unwrap_or_else(|| candidate.args.clone());
-    // Il testo della domanda va dove quel motore lo vuole: sull'ingresso per
-    // chi legge da lì, in coda agli argomenti per chi lo vuole scritto sulla
-    // riga. È l'unica differenza fra due motori che il flusso non deve più
-    // conoscere.
+    // The question's text goes where that engine wants it: on stdin for those
+    // reading from there, appended to the arguments for those wanting it on
+    // the line. It is the one difference between two engines the flow no
+    // longer has to know.
     let stdin = match candidate.prompt {
         PromptVia::Stdin => spec.stdin.clone(),
         PromptVia::LastArg => {
@@ -358,12 +348,11 @@ fn compose(
             live.chunk(Pipe::Stderr, format!("[sailor] preferring {why}\n").as_bytes());
         }
     }
-    // **LA DOTAZIONE DI SAILOR, NON QUELLA DEL TERMINALE.** È il guasto 18:
-    // fino al 01/09/2026 questa riga era `env: spec.env.clone()`, e un
-    // motore lanciato da un passo di flusso ereditava l'ambiente di chi
-    // aveva aperto il terminale — cioè leggeva la casa del vicino, mentre
-    // `sailor run` lo stesso motore lo portava nella propria. Il profilo sta
-    // **sotto** `spec.env`: chi scrive una variabile nel passo vince.
+    // **SAILOR'S EQUIPMENT, NOT THE TERMINAL'S.** Fault 18: with
+    // `env: spec.env.clone()` an engine launched from a flow step inherited
+    // the environment of whoever opened the terminal — reading the
+    // neighbour's home, while `sailor run` took the same engine into its own.
+    // The profile sits **under** `spec.env`: a variable written in the step wins.
     let equipment = current_equipment_for(bin, &spec.env);
     Prepared {
         invocation: EngineInvocation {
@@ -441,8 +430,8 @@ impl ExternalEngineAction {
             named,
         } = prepared;
         let seconds = spec.timeout_secs;
-        // Gli istanti si prendono stretti attorno alla chiamata: è la durata di
-        // *questa* invocazione, non del passo che la contiene.
+        // The instants are taken tight around the call: it is the duration of
+        // *this* invocation, not of the step containing it.
         let started_at = now_secs();
         let result = invoke_external_engine_watched_until(
             invocation,
@@ -450,19 +439,18 @@ impl ExternalEngineAction {
             &candidate.waits_for_a_person_when,
         );
         let ended_at = now_secs();
-        // Il consumo si legge da ciò che il motore ha detto, secondo quanto il
-        // suo descrittore dichiara. Chi non dichiara niente lascia tutto
-        // sconosciuto — e non è un ramo `if` per fornitore: è l'assenza di un
-        // dato nel descrittore.
+        // Usage is read off what the engine said, as its descriptor declares.
+        // One declaring nothing leaves everything unknown — not an `if` branch
+        // per vendor: the absence of a field in the descriptor.
         let read = |stdout: &str, stderr: &str| match &candidate.declared_usage {
             Some(declared) => models::usage::read_declared(&declared.from.text(stdout, stderr), declared),
             None => Reading::default(),
         };
-        // Ogni ramo passa di qui: anche il fallimento e anche il silenzio, che è
-        // il punto — una chiamata interrotta ha comunque bruciato la quota.
-        // `said` è l'uscita **grezza**, prima che l'involucro venga tolto: è lì
-        // che un motore scrive di quale sessione ha parlato, nello stesso posto
-        // in cui scrive i propri token.
+        // Every branch comes through here: failure and silence too, which is
+        // the point — an interrupted call burnt the quota all the same. `said`
+        // is the **raw** output, before the wrapper is stripped: that is where
+        // an engine names the session it spoke on, in the same place it writes
+        // its own tokens.
         let note = |reading: Reading, error_type: Option<&'static str>, said: &str| {
             if let Some(record) = record {
                 let session_id = session.session_id(said);
@@ -486,37 +474,30 @@ impl ExternalEngineAction {
         let outcome = match result {
             EngineResult::Ok { stdout, stderr } => {
                 let reading = read(&stdout, &stderr);
-                // **DIRE DI NON POTER LAVORARE E USCIRE ZERO SONO COMPATIBILI, E
-                // FINO AL 01/09/2026 QUI NON SI GUARDAVA.** La domanda «questo
-                // motore ha detto di non poter lavorare?» stava solo nel ramo
-                // `ExitError`: di qua la risposta era presa per buona comunque,
-                // il ripiego non scattava, e la riga del deposito nasceva con
-                // `error_type: None` — cioè il passo si chiudeva **verde** su una
-                // non-risposta, che è peggio del ripiego perso.
+                // **SAYING IT CANNOT WORK AND EXITING ZERO ARE COMPATIBLE.**
+                // The question «did this engine say it cannot work?» lived
+                // only in the `ExitError` branch: here the answer was taken
+                // as good, no fallback fired, and the store's row was born
+                // with `error_type: None` — the step closing **green** over
+                // what was never an answer, which is worse than a lost
+                // fallback. Not a textbook case: `CODEX_HOME=<empty> codex
+                // exec < /dev/null` answers «No prompt provided via stdin» and
+                // exits **zero** (fault 39, measured on this machine); with
+                // an `answer_shape` declared the step then died on a shape
+                // error, the wrong symptom three rungs further on.
                 //
-                // Non è un caso di scuola: `CODEX_HOME=<cartella vuota> codex
-                // exec < /dev/null` risponde «No prompt provided via stdin» ed
-                // esce **zero** (guasto 39, misurato su questa macchina). Con un
-                // `answer_shape` dichiarato il passo moriva poi su un errore di
-                // forma, cioè sul sintomo sbagliato tre gradini più in là.
+                // **THE DRY PROBE ALREADY HAD THE DISTINCTION**:
+                // `judge_dry_run` asks `unusable_when` on `Ok` *and* on
+                // `ExitError`. Static check and real run diverged on the same
+                // engine — fault 39's shape on another field. Here they
+                // converge: **one question, the same two branches**.
                 //
-                // **LA SONDA A SECCO LA DISTINZIONE CE L'AVEVA GIÀ**:
-                // `judge_dry_run` interroga `unusable_when` su `Ok` *e* su
-                // `ExitError`. Il controllo statico e la corsa vera divergevano
-                // sullo stesso motore, ed è la forma del guasto 39 su un altro
-                // campo. Qui convergono: **una sola domanda, gli stessi due
-                // rami**.
-                //
-                // **LA RIGA SI SCRIVE PRIMA DELLA TOLLERANZA, COME NELL'ALTRO
-                // RAMO.** Sono due domande diverse e vanno tenute separate: la
-                // specie dice **cos'è successo**, `accept` dice **cosa ne fa la
-                // corsa**. Nel primo tentativo di chiudere questo guasto il
-                // `note(...)` stava dentro il ramo della non-tolleranza, e un
-                // passo con `accept: ["exit_error"]` tornava a scrivere una riga
-                // `NULL` su un motore che aveva appena detto di non poter
-                // lavorare — cioè il difetto sopravviveva dentro il proprio
-                // rimedio, in un angolo. L'ha trovato un giudice che non aveva
-                // scritto il lavoro.
+                // **THE ROW IS WRITTEN BEFORE TOLERANCE, AS IN THE OTHER
+                // BRANCH.** Two different questions, kept apart: the species
+                // says **what happened**, `accept` says **what the run makes
+                // of it**. With `note(...)` inside the intolerant branch, a
+                // step with `accept: ["exit_error"]` writes a `NULL` row over
+                // an engine that has just said it cannot work.
                 // **AN ANSWER IN THE DECLARED SHAPE IS WORK DONE**, and the
                 // words that mean a refusal are not looked for inside it: an
                 // engine reading a tree whose own documents discuss quotas
@@ -543,10 +524,10 @@ impl ExternalEngineAction {
                     &stdout,
                 );
                 self.set_aside_if_spent(candidate, class, ended_at, &stdout, &stderr);
-                // La tolleranza viene dopo, per la stessa ragione dell'altro
-                // ramo: un passo che con `accept` dichiara di volersi tenere il
-                // fallimento di questo motore lo vuole come dato, e non vuole che
-                // qualcun altro ci riprovi al posto suo.
+                // Tolerance comes after, for the same reason as the other
+                // branch: a step declaring with `accept` that it keeps this
+                // engine's failure wants it as data, and does not want anyone
+                // else retrying in its place.
                 if cannot_work && !tolerates(&spec.accept, "exit_error") {
                     return engine_cannot_work(named, solo, &stdout, &stderr);
                 }
@@ -559,13 +540,12 @@ impl ExternalEngineAction {
                         ),
                     ));
                 }
-                // **L'USCITA DEL PASSO NON CAMBIA PERCHÉ SI È MISURATO.** Se il
-                // descrittore ha chiesto un involucro per farsi dire i token,
-                // qui la risposta si tira fuori dall'involucro e `stdout` torna
-                // a essere quello di prima. Misurare non deve cambiare ciò che
-                // si misura: un flusso a valle che dichiara la forma della
-                // propria risposta diventerebbe rosso per una misura che non ha
-                // chiesto.
+                // **THE STEP'S OUTPUT DOES NOT CHANGE BECAUSE IT WAS
+                // MEASURED.** If the descriptor asked for a wrapper to be told
+                // the tokens, the answer is pulled back out of it here and
+                // `stdout` is what it was. Measuring must not change what it
+                // measures: a downstream flow declaring the shape of its own
+                // answer would go red over a measurement it never asked for.
                 let stdout = reading.answer.unwrap_or(stdout);
                 match shape {
                     Some(shape) => {
@@ -587,23 +567,21 @@ impl ExternalEngineAction {
                 stdout,
                 stderr,
             } => {
-                // Il consumo si legge dall'uscita GREZZA, prima di qualunque
-                // altra cosa: un motore uscito in errore può aver già speso, e
-                // i suoi token vanno letti dove li ha scritti.
+                // Usage is read off the RAW output, before anything else: an
+                // engine that exited in error may already have spent, and its
+                // tokens must be read where it wrote them.
                 let reading = read(&stdout, &stderr);
-                // **ESAURITO NON È ROTTO, E SI GUARDA PRIMA DI SCRIVERE LA
-                // RIGA.** Fino al 31/08/2026 questa distinzione stava dieci
-                // righe più in basso e valeva solo quando c'era una catena
-                // (`!solo && ...`): un passo con un motore solo che aveva finito
-                // la quota veniva registrato come `exit_error`, indistinguibile
-                // da un motore che si rompe. È il guasto 14, e il 29/08 è
-                // costato una serata — Claude era al limite settimanale, la
-                // corsa si è fermata come se fosse rotto, e `agy` era vivo.
+                // **EXHAUSTED IS NOT BROKEN, AND IT IS LOOKED AT BEFORE THE
+                // ROW IS WRITTEN.** This distinction sat ten lines lower and
+                // held for a chain and nowhere else: a step with a single
+                // engine out of quota was recorded as `exit_error`,
+                // indistinguishable from one that breaks. Fault 14 — Claude at
+                // its weekly limit stopped a run as if broken, `agy` alive.
                 //
-                // La specie della riga nel deposito cambia di conseguenza:
-                // `exhausted` è una cosa che passa da sé alle sette del mattino,
-                // `exit_error` no, e una somma che le mescola non dice niente a
-                // nessuno.
+                // The species of the row in the store changes accordingly:
+                // `exhausted` clears by itself at seven in the morning,
+                // `exit_error` does not, and a total that mixes them tells
+                // nobody anything.
                 //
                 // **AND THE SHAPE IS READ BEFORE THE WORDS HERE TOO.** An exit
                 // code is a veto over an answer in shape, never a reason to
@@ -621,13 +599,12 @@ impl ExternalEngineAction {
                 note(reading.clone(), Some(class.unwrap_or("exit_error")), &stdout);
                 self.set_aside_if_spent(candidate, class, ended_at, &stdout, &stderr);
                 if !tolerates(&spec.accept, "exit_error") {
-                    // La tolleranza viene prima: un passo che si aspetta un
-                    // fallimento lo vuole come dato, non vuole che qualcun altro
-                    // ci riprovi al posto suo.
+                    // Tolerance comes first: a step expecting a failure wants
+                    // it as data, not someone else retrying in its place.
                     if exhausted {
-                        // La conseguenza è **la stessa** dell'uscita zero, e sta
-                        // in un posto solo: due copie di questo blocco erano già
-                        // divergenti appena nate.
+                        // The consequence is **the same** as for a zero exit,
+                        // and lives in one place: two copies of this block
+                        // diverged from birth.
                         return engine_cannot_work(named, solo, &stdout, &stderr);
                     }
                     let before = if set_aside.is_empty() {
@@ -644,13 +621,13 @@ impl ExternalEngineAction {
                         ),
                     ));
                 }
-                // Come nel ramo riuscito: l'involucro si toglie, l'uscita del
-                // passo resta quella di prima.
+                // As in the successful branch: the wrapper comes off, the
+                // step's output stays what it was.
                 let stdout = reading.answer.unwrap_or(stdout);
                 match shape {
-                    // Un motore che ha parlato deve rispettare la forma anche
-                    // quando il passo gli perdona l'uscita in errore: quella
-                    // tolleranza riguarda il codice di uscita, non la risposta.
+                    // An engine that spoke must respect the shape even when
+                    // the step forgives its error exit: that tolerance covers
+                    // the exit code, not the answer.
                     Some(shape) => {
                         return shaped_answer(shape, &stdout).map(|answer| {
                             Asked::Answered(ActionOutcome::Went(
@@ -694,17 +671,16 @@ impl ExternalEngineAction {
                 }
             }
             EngineResult::TimedOut => {
-                // Ucciso a metà: non ha detto niente, quindi non c'è niente da
-                // leggere. La riga si scrive lo stesso, coi token sconosciuti —
-                // il tempo che ha girato l'ha speso davvero.
-                // Ucciso a metà non ha detto niente: nessun identificativo da
-                // leggere, e la sessione resta ignota anche se ne aveva aperta
-                // una. Riprendere quella di un passo interrotto vorrebbe dire
-                // ripartire da un contesto tagliato in un punto qualunque.
+                // Killed halfway: it said nothing, so there is nothing to
+                // read. The row is written all the same, with unknown tokens —
+                // the time it ran it truly spent. No session id either, so the
+                // session stays unknown even if it had opened one: resuming an
+                // interrupted step's session would restart from a context cut
+                // at an arbitrary point.
                 note(Reading::default(), Some("timed_out"), "");
-                // Nessun ripiego su un tetto di tempo: un motore ucciso a metà
-                // può aver già fatto qualcosa, e rifare quel lavoro altrove
-                // sarebbe farlo due volte senza saperlo.
+                // No fallback on a time limit: an engine killed halfway may
+                // already have done something, and redoing that work elsewhere
+                // would be doing it twice without knowing.
                 if !tolerates(&spec.accept, "timed_out") {
                     return Err(ActionError::new(
                         "engine_timed_out",
@@ -718,15 +694,14 @@ impl ExternalEngineAction {
                 }
             }
             EngineResult::SpawnFailed { reason } => {
-                // Non si è nemmeno avviato: non ha consumato niente, ma la
-                // riga dice che ci si è provati — e senza di lei una catena che
-                // ripiega su un secondo motore sembrerebbe averlo scelto per
-                // prima, invece che per ripiego.
+                // It never even started: it consumed nothing, but the row says
+                // it was tried — without it, a chain falling back to a second
+                // engine would look like it had picked that one first.
                 note(Reading::default(), Some("spawn_failed"), "");
                 if !tolerates(&spec.accept, "spawn_failed") {
-                    // Non essersi avviato è il caso più netto di «non poteva
-                    // lavorare»: non ha fatto niente, e non serve che il suo
-                    // descrittore lo dichiari.
+                    // Failing to start is the clearest case of «could not
+                    // work»: it did nothing, and its descriptor need not
+                    // declare it.
                     if !solo {
                         return Ok(Asked::CannotWork(format!(
                             "{named} could not be started: {reason}"
@@ -822,18 +797,17 @@ impl ExternalEngineAction {
 }
 
 impl Action for ExternalEngineAction {
-    /// I campi che questa azione non conosce, letti dalla **struttura vera**.
+    /// The fields this action does not know, read off the **real structure**.
     ///
-    /// Non è un elenco scritto a mano accanto a `EngineSpec`: sarebbe una
-    /// seconda copia della stessa verità, e le seconde copie divergono. Qui si
-    /// tenta la deserializzazione e si guarda cosa è finito in `extra` — quindi
-    /// aggiungere un campo alla specifica basta, non c'è nient'altro da
-    /// aggiornare.
+    /// Not a list written by hand beside `EngineSpec`: that would be a second
+    /// copy of one truth, and second copies diverge. Here deserialisation is
+    /// attempted and whatever landed in `extra` is looked at — so adding a
+    /// field to the spec is enough, there is nothing else to update.
     ///
-    /// Un ingresso che non si deserializza affatto non produce niente: a
-    /// controllo il `with` è **parziale** per costruzione — il resto arriva
-    /// dalle dipendenze — e lamentarsi di un `timeout_secs` mancante direbbe
-    /// una cosa falsa.
+    /// An input that does not deserialise at all yields nothing: at check time
+    /// `with` is **partial** by construction — the rest comes from the
+    /// dependencies — and complaining about a missing `timeout_secs` would say
+    /// something false.
     /// **A STEP THAT NAMES ONLY TOOLS NOBODY CAN ASK A QUESTION OF SPENDS
     /// NOTHING**, and that is read off the descriptors, not off a list here:
     /// an engine declares how it is asked, `cargo` and `npm` declare no such
@@ -869,12 +843,12 @@ impl Action for ExternalEngineAction {
         shared: &SharedState,
     ) -> Result<(ActionOutcome, Option<Ran>), ActionError> {
         let live = sink_for_step(&self.watcher, shared);
-        // Dove annotare la spesa. Si costruisce qui perché `shared` più avanti
-        // non c'è più, ed è `None` — cioè non si annota niente — se manca il
-        // deposito o uno dei due identificativi.
+        // Where the spend is noted. Built here because `shared` is gone further
+        // down, and `None` — nothing noted — when the store or either of the
+        // two ids is missing.
         let record = recording_for(&self.ledger, shared);
-        // La forma si tiene anche com'era scritta: è quel testo, non una sua
-        // riscrittura, che deve comparire nel prompt.
+        // The shape is kept as it was written too: that text, not a rewriting
+        // of it, is what must appear in the prompt.
         let written_shape = input.get("answer_shape").map(|shape| {
             serde_json::to_string(shape).expect("a value already in memory always reserialises")
         });
@@ -901,13 +875,13 @@ impl Action for ExternalEngineAction {
         if let Some(written) = &written_shape {
             shape_was_asked_for(written, &spec)?;
         }
-        // Prima di spendere qualunque cosa: se nessuno dei motori chiesti è
-        // usabile qui, il passo si ferma e dice di ognuno perché.
+        // Before spending anything: if none of the engines asked for is usable
+        // here, the step stops and says why for each of them.
         let (candidates, refused) = self.candidates(&spec)?;
         if candidates.is_empty() {
-            // Un motore solo che non si trova resta `tool_unavailable` col
-            // motivo del risolutore: è il caso più comune, e quel messaggio è
-            // già il migliore che si possa dare.
+            // A single engine that cannot be found stays `tool_unavailable`
+            // with the resolver's reason: the commonest case, and that message
+            // is already the best there is to give.
             if let [only] = refused.as_slice() {
                 if only.unresolved {
                     return Err(ActionError::new("tool_unavailable", only.reason.clone()));
@@ -923,13 +897,13 @@ impl Action for ExternalEngineAction {
         }
         let mut set_aside: Vec<String> = refused.iter().map(Refused::line).collect();
         let shape = spec.answer_shape.as_ref();
-        // Un passo che chiede **un** motore solo non ha nessun ripiego da fare,
-        // e deve restare identico a com'era: gli stessi esiti, gli stessi
-        // messaggi. La catena cambia il comportamento solo dove c'è una catena.
+        // A step asking for **one** engine has no fallback to make, and must
+        // stay identical: the same outcomes, the same messages. The chain
+        // changes behaviour where there is a chain, and nowhere else.
         let solo = candidates.len() == 1 && refused.is_empty();
-        // Gli identificativi dei motori già provati, per la catena di ripiego
-        // scritta nella riga: `set_aside` porta frasi per una persona, questo
-        // porta nomi che una somma può raggruppare.
+        // The ids of the engines already tried, for the fallback chain written
+        // in the row: `set_aside` carries sentences for a person, this carries
+        // names a total can group by.
         let mut chain = Chain {
             tried_before: Vec::new(),
             fell_back_from: self.fell_back_from(&spec, &candidates),
@@ -975,17 +949,16 @@ impl Action for ExternalEngineAction {
         })
     }
 
-    /// Non dichiara di potersi rifare, e quindi finisce a una persona.
+    /// It does not declare itself redoable, so it ends up with a person.
     ///
-    /// Vale anche con una catena: un motore che ha dichiarato di non poter
-    /// lavorare non ha fatto niente, ma quello che ha risposto sì.
-    /// È la scelta giusta per il caso generale: dietro `bin` e `args` può
-    /// esserci qualunque cosa — un motore che ha già riscritto mezzo albero,
-    /// una richiesta di rete già partita — e da fuori non si distingue da un
-    /// comando che non ha fatto niente. Chi sa che il proprio motore è
-    /// idempotente lo dichiara nella propria azione, come fa il servizio
-    /// notturno: la specie appartiene a chi conosce il lavoro, non alla
-    /// primitiva che lo lancia.
+    /// True with a chain too: an engine that declared it cannot work did
+    /// nothing, but the one that answered did. The right call for the general
+    /// case: behind `bin` and `args` there can be anything — an engine that
+    /// already rewrote half a tree, a network request already out — and from
+    /// outside it looks like a command that did nothing. Whoever knows their
+    /// own engine is idempotent declares it in their own action, as the night
+    /// service does: the species belongs to whoever knows the work, not to the
+    /// primitive that launches it.
     fn species(&self) -> StepSpecies {
         StepSpecies::HandToHuman
     }
@@ -996,9 +969,9 @@ mod tests {
     use super::*;
     use crate::tests::with_references_resolved;
 
-    /// DI QUALE PASSO È IL TESTO: l'azione chiede il destinatario alla fabbrica
-    /// nominando il passo che lo `SharedState` le porta, e quello che consegna è
-    /// ciò che il motore ha detto.
+    /// WHOSE STEP THE TEXT IS: the action asks the factory for the recipient,
+    /// naming the step `SharedState` hands it, and what it delivers is what
+    /// the engine said.
     #[test]
     fn the_action_asks_the_factory_for_the_step_it_is_running() {
         #[derive(Default)]
@@ -1019,8 +992,8 @@ mod tests {
             }
         }
 
-        /// La fabbrica sta dietro un `Arc` perché la prova deve poter leggere
-        /// ciò che ha registrato dopo che l'azione ha finito con lei.
+        /// The factory sits behind an `Arc` so the test can read what it
+        /// recorded once the action is done with it.
         struct FactoryArc(Arc<Factory>);
 
         impl StepSinks for FactoryArc {
@@ -1056,8 +1029,8 @@ mod tests {
         assert!(said.contains("detto-dal-motore"), "consegnato: {said:?}");
     }
 
-    /// Senza la chiave del passo nello stato condiviso non si consegna niente:
-    /// un testo che nessuno sa attribuire è peggio del silenzio.
+    /// With no step key in the shared state nothing is delivered: a text nobody
+    /// can attribute is worse than silence.
     #[test]
     fn no_step_id_means_nobody_is_asked() {
         struct Never;
@@ -1079,15 +1052,15 @@ mod tests {
             .expect("il passo doveva riuscire lo stesso");
     }
 
-    /// **UN PASSO CON UNA DIPENDENZA CONTINUA A GIRARE, E QUI STA IL RISCHIO
-    /// DEL CONTROLLO NUOVO.**
+    /// **A STEP WITH A DEPENDENCY KEEPS RUNNING, AND THERE LIES THE RISK OF
+    /// THE NEW CHECK.**
     ///
-    /// L'ingresso vero di un passo è l'uscita del passo prima, col `with`
-    /// sovrapposto: `status`, `stdout`, `stderr` e qualunque altra cosa quel
-    /// passo abbia prodotto arrivano qui dentro. Se `EngineSpec` li rifiutasse —
-    /// la strada ovvia, `deny_unknown_fields` — nessun passo con una dipendenza
-    /// partirebbe più, e il rimedio al guasto 20 sarebbe molto peggio del
-    /// guasto. Questa prova tiene quella porta chiusa.
+    /// A step's real input is the previous step's output with `with` laid over
+    /// it: `status`, `stdout`, `stderr` and whatever else that step produced
+    /// arrive in here. Were `EngineSpec` to refuse them — the obvious road,
+    /// `deny_unknown_fields` — no step with a dependency would start again, and
+    /// the remedy for fault 20 would be far worse than the fault. This test
+    /// holds that door shut.
     #[test]
     fn an_input_carrying_the_previous_step_output_still_runs() {
         let action = ExternalEngineAction::new();
@@ -1095,8 +1068,8 @@ mod tests {
             "bin": "echo",
             "args": ["fatto"],
             "timeout_secs": 10,
-            // Quello che arriva dal passo prima, e che questa azione non
-            // conosce né deve conoscere.
+            // What arrives from the previous step, which this action neither
+            // knows nor has to know.
             "status": "ok",
             "stdout": "l'uscita di chi mi precede\n",
             "stderr": "",
@@ -1112,8 +1085,8 @@ mod tests {
         assert_eq!(output["stdout"], "fatto\n", "e fa il proprio lavoro");
     }
 
-    /// La gemella del controllo statico, provata **qui** dove vive la verità:
-    /// gli stessi campi che a esecuzione si ignorano, a controllo si nominano.
+    /// The twin of the static check, tested **here** where the truth lives: the
+    /// same fields ignored at run time are named at check time.
     #[test]
     fn the_action_can_name_the_fields_it_does_not_know() {
         let action = ExternalEngineAction::new();
@@ -1135,7 +1108,7 @@ mod tests {
         );
     }
 
-    // ── le azioni registrabili ─────────────────────────────────────────
+    // ── the registrable actions ────────────────────────────────────────
 
     #[test]
     fn the_external_engine_action_reads_its_json_input() {
@@ -1156,14 +1129,13 @@ mod tests {
         assert!(output["stdout"].as_str().unwrap().contains("answer: 42"));
     }
 
-    /// **LA MISURA CHE POTEVA VENIRE DIVERSA, ED È QUELLA CHE PRIMA VENIVA
-    /// DIVERSA.** Fino al 28/08/2026 questo stesso ingresso chiudeva il passo
-    /// `Went` con dentro `status: exit_error`. Il mutante che rifà cadere la
-    /// prova è togliere il `return Err` dal ramo `ExitError` dell'azione.
+    /// **THE MEASUREMENT THAT COULD HAVE COME OUT DIFFERENT, AND ONCE DID.**
+    /// This same input used to close the step `Went` carrying
+    /// `status: exit_error`. The mutant that fells the test again is removing
+    /// the `return Err` from the action's `ExitError` branch.
     ///
-    /// Il messaggio non è un dettaglio: un passo rotto non scrive nessuna
-    /// uscita tipata, quindi il codice e ciò che il motore ha detto o stanno
-    /// qui o sono persi.
+    /// The message is no detail: a broken step writes no typed output, so the
+    /// code and what the engine said are either here or lost.
     #[test]
     fn an_engine_that_exits_nonzero_breaks_its_own_step() {
         let action = ExternalEngineAction::new();
@@ -1182,9 +1154,9 @@ mod tests {
         assert!(error.said.contains("dettaglio-che-serve"), "{}", error.said);
     }
 
-    /// L'altra metà, senza la quale la prima non proverebbe una scelta ma una
-    /// mancanza: chi esegue un comando **apposta** per vederlo fallire lo
-    /// dichiara, e riprende il vecchio comportamento per quell'esito solo.
+    /// The other half, without which the first would prove not a choice but a
+    /// gap: whoever runs a command **on purpose** to see it fail declares so,
+    /// and gets the old behaviour back for that outcome alone.
     #[test]
     fn a_step_can_declare_that_a_nonzero_exit_is_an_acceptable_outcome() {
         let action = ExternalEngineAction::new();
@@ -1205,8 +1177,8 @@ mod tests {
         assert_eq!(output["status"], "exit_error");
     }
 
-    /// La tolleranza dichiarata su un esito che non esiste sarebbe un rigore
-    /// che nessuno ha scelto: si scopre subito, non il giorno in cui serviva.
+    /// A tolerance declared for an outcome that does not exist would be a
+    /// strictness nobody chose: found at once, not on the day it was needed.
     #[test]
     fn a_tolerance_for_an_impossible_outcome_is_refused() {
         let action = ExternalEngineAction::new();
@@ -1225,8 +1197,8 @@ mod tests {
         assert!(error.said.contains("exit_error"), "{}", error.said);
     }
 
-    /// Un binario che non c'è è il caso più comune di flusso scritto altrove, e
-    /// deve dire **quale** binario: il messaggio è tutta la riparazione.
+    /// A missing binary is the commonest case of a flow written elsewhere, and
+    /// it must say **which** binary: the message is the whole repair.
     #[test]
     fn a_binary_that_will_not_start_breaks_the_step_and_names_itself() {
         let action = ExternalEngineAction::new();
@@ -1257,16 +1229,15 @@ mod tests {
         assert!(error.said.contains("within 1 seconds"), "{}", error.said);
     }
 
-    // ── la forma dichiarata della risposta ────────────────────────────
+    // ── the declared shape of the answer ──────────────────────────────
 
-    /// Il passo dichiara la forma **una volta**, e da quel campo escono tutte e
-    /// due le cose: il testo che va nel prompt e il metro su cui si misura la
-    /// risposta. Qui il motore finto risponde bene ma prolisso.
+    /// The step declares the shape **once**, and both things come out of that
+    /// field: the text that goes into the prompt and the yardstick the answer
+    /// is measured by. Here the fake engine answers well but at length.
     ///
-    /// Due cose insieme, e la seconda è quella che si paga a ogni chiamata a
-    /// valle: la risposta è accettata, e al passo dopo arriva **solo** ciò che
-    /// la forma dichiara — niente preamboli, niente campi in più, niente testo
-    /// grezzo.
+    /// Two things at once, and the second is paid for on every downstream call:
+    /// the answer is accepted, and **only** what the shape declares reaches the
+    /// next step — no preamble, no extra fields, no raw text.
     #[test]
     fn a_declared_shape_is_enforced_and_only_what_it_declares_is_handed_on() {
         let said = r#"{"paths": ["src/a.rs", "src/b.rs"], "total": 2, "ragionamento": "ho guardato ovunque, e poi ancora"}"#;
@@ -1306,10 +1277,10 @@ mod tests {
         );
     }
 
-    /// **LA MISURA CHE POTEVA VENIRE DIVERSA**: la stessa forma, un motore che
-    /// risponde con un campo del tipo sbagliato. Il mutante che la fa cadere è
-    /// togliere la validazione dopo la lettura — e allora un `total` scritto a
-    /// parole arriverebbe intatto al passo dopo.
+    /// **THE MEASUREMENT THAT COULD HAVE COME OUT DIFFERENT**: the same shape,
+    /// an engine answering with a field of the wrong type. The mutant that
+    /// fells it is removing the validation after the read — a `total` spelt
+    /// out in words would then reach the next step intact.
     #[test]
     fn an_answer_that_does_not_fit_the_shape_breaks_the_step() {
         let said = r#"{"paths": [], "total": "parecchi"}"#;
@@ -1478,14 +1449,14 @@ mod tests {
         assert_eq!(error.class, "empty_answer", "{}", error.said);
     }
 
-    /// I modelli incorniciano: si accetta il primo blocco recintato, anche
-    /// preceduto da una riga di cortesia. Senza questa regola la forma sarebbe
-    /// rispettata e il passo rosso lo stesso.
+    /// Models fence their output: the first fenced block is accepted, even
+    /// behind a line of courtesy. Without this rule the shape would be
+    /// respected and the step red all the same.
     #[test]
     fn an_answer_inside_a_fence_is_read_anyway() {
         let input = json!({
             "bin": "sh",
-            // Stringa grezza: le sequenze `\n` le interpreta `printf`, non Rust.
+            // Raw string: `printf` reads the `\n` sequences, not Rust.
             "args": ["-c", r#"printf 'Ecco:\n```json\n{"total": 7}\n```\n'"#],
             "answer_shape": {
                 "type": "object",
@@ -1507,9 +1478,9 @@ mod tests {
         assert_eq!(output["answer"]["total"], 7);
     }
 
-    /// **CHIEDERE E VERIFICARE SONO UNA COSA SOLA.** Qui la forma è dichiarata
-    /// ma non compare nel prompt: il passo si ferma prima di spendere, e lo si
-    /// vede dal fatto che il binario inesistente non arriva mai a lamentarsi.
+    /// **ASKING AND CHECKING ARE ONE THING.** Here the shape is declared but
+    /// never appears in the prompt: the step stops before spending, and it
+    /// shows in the missing binary never getting to complain.
     #[test]
     fn a_shape_that_never_reaches_the_prompt_stops_the_step_before_spending() {
         let input = json!({
@@ -1531,8 +1502,8 @@ mod tests {
         assert!(error.said.contains("$json"), "{}", error.said);
     }
 
-    /// La forma vale su ciò che il motore ha detto: un passo che tollera di non
-    /// sentire niente non può pretendere una forma da quel niente.
+    /// The shape holds over what the engine said: a step that tolerates hearing
+    /// nothing cannot demand a shape out of that nothing.
     #[test]
     fn a_shape_cannot_live_with_a_tolerance_that_leaves_no_answer() {
         let input = json!({
@@ -1552,13 +1523,13 @@ mod tests {
         assert!(error.said.contains("timed_out"), "{}", error.said);
     }
 
-    /// **IL PASSAGGIO DI CONSEGNE, PROVATO SULL'AZIONE E NON SOLO SUL MODULO.**
-    /// L'ingresso è quello che il motore compone davvero per un passo con una
-    /// dipendenza: l'uscita del passo prima (`status`, `stdout`, `stderr`) più
-    /// i valori fissi del campo `with`, coi rinvii già sciolti come li scioglie
-    /// `flow::step_input`. Qui si prova che l'azione **usa** ciò che arriva; che
-    /// ad arrivare sciolto sia l'ingresso di *ogni* azione lo prova
-    /// l'esecutore, dov'è l'unico posto che lo fa.
+    /// **THE HANDOVER, TESTED ON THE ACTION AND NOT ONLY ON THE MODULE.** The
+    /// input is what the engine really composes for a step with a dependency:
+    /// the previous step's output (`status`, `stdout`, `stderr`) plus the fixed
+    /// values of the `with` field, references already resolved as
+    /// `flow::step_input` resolves them. Here it is proven the action **uses**
+    /// what arrives; that *every* action's input arrives resolved is proven by
+    /// the executor, the one place that does it.
     #[test]
     fn a_step_sends_the_previous_engines_answer_into_the_next_one() {
         let action = ExternalEngineAction::new();
@@ -1587,13 +1558,12 @@ mod tests {
         );
     }
 
-    // **UN PUNTATORE CHE NON TROVA NIENTE FERMA IL PASSO, E NON PIÙ QUI.** La
-    // prova stava in questo modulo perché la risoluzione stava in questa
-    // azione. Dal 01/09/2026 sta in `flow::step_input`, quindi il passo si
-    // ferma **prima che l'azione esista**: si prova dove accade, in
-    // `crates/flow/tests/a_reference_reaches_every_action.rs`. Tenerla anche qui
-    // vorrebbe dire due prove della stessa regola in due punti — e quella qui
-    // sarebbe verde chiamando la risoluzione a mano, cioè misurando la prova.
+    // **A REFERENCE THAT FINDS NOTHING STOPS THE STEP, AND NO LONGER HERE.**
+    // Resolution lives in `flow::step_input`, so the step stops **before the
+    // action exists**: it is tested where it happens, in
+    // `crates/flow/tests/a_reference_reaches_every_action.rs`. Keeping it here
+    // too would be two tests of one rule in two places — and this one would go
+    // green by calling resolution by hand, measuring the test itself.
 
     /// The record of an engine step carries the binary and the arguments as
     /// started — with the answer, and with the error when the engine broke.

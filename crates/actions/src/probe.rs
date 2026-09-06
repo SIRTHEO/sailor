@@ -9,64 +9,60 @@ use crate::{read_scalar, Pointer};
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-// ── la prova a secco di una riga di comando ─────────────────────────────
+// ── the dry trial of a command line ─────────────────────────────────────────
 
-/// Come sta messa una riga di comando montata da un descrittore, provata
-/// **senza dare la domanda**.
+/// How a descriptor's command line stands, tried **without the prompt**.
 ///
-/// **PERCHÉ NON C'È UN «PASSATO/FALLITO».** Cinque esiti perché ci sono cinque
-/// riparazioni diverse, e chi legge deve sapere quale gli tocca: una riga rotta
-/// si corregge nel descrittore, un motore esaurito si aspetta, un descrittore
-/// che tace si misura, un motore che non risponde si indaga. Metterne due sotto
-/// la stessa parola manda a fare il lavoro sbagliato.
+/// **WHY THERE IS NO PASS/FAIL.** Five outcomes because there are five repairs,
+/// and the reader must know which is theirs: a broken line is fixed in the
+/// descriptor, an exhausted engine waited out, a silent descriptor measured, a
+/// mute engine investigated. One word for two sends people to the wrong work.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ProbeVerdict {
-    /// Il motore ha detto «mancava solo la domanda»: la riga è montata bene.
+    /// The engine said "only the prompt was missing": the line is sound.
     Sound,
-    /// Il motore si è lamentato di **qualcos'altro**: la riga è malformata, e
-    /// le sue parole sono la diagnosi. Sul guasto 27 la frase di `agy` diceva
-    /// esattamente quale bandiera aveva mangiato quale argomento — nessuna
-    /// classificazione nostra avrebbe potuto dire altrettanto.
+    /// The engine complained about **something else**: the line is malformed,
+    /// and its words are the diagnosis. On fault 27 the sentence from `agy`
+    /// said exactly which flag had eaten which argument — no classification of
+    /// ours could have said as much.
     Broken { said: String },
-    /// Il motore ha detto di non poter lavorare adesso — quota, credenziali —
-    /// e questo non dice niente sulla riga: si riprova quando torna.
+    /// The engine said it cannot work right now — quota, credentials — which
+    /// says nothing about the line: try again when it comes back.
     CannotWork { said: String },
-    /// Il descrittore non dichiara come questo motore rifiuta senza domanda.
-    /// **Non è «la riga è sana»**: è che nessuno ha guardato.
+    /// The descriptor does not declare how this engine refuses with no prompt.
+    /// **Not "the line is sound"**: nobody looked.
     NotDeclared,
-    /// Nessuna risposta dentro il tetto di tempo, o processo che non è partito.
+    /// No answer within the time cap, or a process that never started.
     ///
-    /// Il motivo viaggia col verdetto perché le due cose si riparano in modi
-    /// diversi, e un rapporto che le confondesse manderebbe a cercare un motore
-    /// lento dove c'è un eseguibile che non parte.
+    /// The reason travels with the verdict because the two are repaired in
+    /// different ways, and a report that confused them would send someone
+    /// hunting a slow engine where there is an executable that does not start.
     TimedOut { why: String },
 }
 
-/// Il verdetto su una riga provata a secco, **senza eseguire niente**.
+/// The verdict on a line tried dry, **without executing anything**.
 ///
-/// **PERCHÉ È UNA FUNZIONE PURA E SEPARATA DA CHI ESEGUE.** Perché il giudizio
-/// è la parte che si sbaglia, e una prova che debba avviare un motore vero per
-/// interrogarlo non si scrive: si prova con i testi che i motori hanno detto
-/// davvero, copiati una volta e poi fermi lì.
+/// **WHY IT IS PURE AND SEPARATE FROM THE EXECUTOR.** Judgement is the part that
+/// goes wrong, and a test that had to start a real engine cannot be written: it
+/// is tried against texts the engines really said, copied once and left frozen.
 ///
-/// **IL VERDETTO STA NEL TESTO, NON NEL CODICE D'USCITA**, e non è una
-/// preferenza. Misurato il 31/08/2026 su questa macchina: `agy` esce **2** sia
-/// quando rifiuta bene («flag needs an argument: -print») sia quando la riga è
-/// quella malformata del guasto 27 («--print took "--output-format" as its
-/// prompt…»). Una sonda che giudicasse dall'esito vedrebbe i due casi identici,
-/// e passerebbe sopra al guasto 27 esattamente come ci è passato sopra chi
-/// l'ha scritto. Per questo questa funzione non riceve nemmeno il codice
-/// d'uscita: non c'è modo di usarlo per sbaglio.
+/// **THE VERDICT IS IN THE TEXT, NOT IN THE EXIT CODE**, and that is not a
+/// preference. Measured on this machine, `agy` exits **2** both when it refuses
+/// properly ("flag needs an argument: -print") and when the line is the
+/// malformed one of fault 27 ("--print took "--output-format" as its prompt…").
+/// A probe judging by exit status would see the two as identical and walk past
+/// fault 27 exactly as its author did — so this function is not even handed the
+/// exit code: there is no way to use it by mistake.
 ///
-/// **L'ORDINE DI LETTURA È VINCOLANTE: PRIMA `unusable_when`.** Un motore che
-/// ha finito la quota si lamenta di quello, non della riga; letto nell'ordine
-/// opposto, un `claude` esaurito verrebbe dichiarato **rotto** — e chi legge
-/// andrebbe a correggere un descrittore sano mentre bastava aspettare. Un
-/// motore esaurito non è un motore rotto.
+/// **THE READING ORDER IS BINDING: `unusable_when` FIRST.** An engine out of
+/// quota complains about the quota, not the line; the other way round, an
+/// exhausted `claude` would be declared **broken**, sending the reader to
+/// correct a healthy descriptor when waiting was enough. An exhausted engine is
+/// not a broken engine.
 pub fn judge_dry_run(recipe: &AskRecipe, stdout: &str, stderr: &str) -> ProbeVerdict {
-    // Le due pipe si guardano insieme: chi scrive il rifiuto su stdout e chi lo
-    // scrive su stderr sono lo stesso caso, e sceglierne una sola avrebbe reso
-    // il verdetto dipendente da un dettaglio che nessun descrittore dichiara.
+    // Both pipes are read together: an engine writing its refusal to stdout and
+    // one writing it to stderr are the same case, and picking only one would tie
+    // the verdict to a detail no descriptor declares.
     let said = [stdout.trim(), stderr.trim()]
         .into_iter()
         .filter(|piece| !piece.is_empty())
@@ -98,71 +94,63 @@ pub fn judge_dry_run(recipe: &AskRecipe, stdout: &str, stderr: &str) -> ProbeVer
     ProbeVerdict::Broken { said }
 }
 
-/// Cosa ha detto un motore alla riga montata senza domanda, o perché non ha
-/// detto niente.
+/// What an engine said to the line mounted without a prompt, or why it said
+/// nothing.
 #[derive(Clone, Debug)]
 pub enum DryRun {
     Answered { stdout: String, stderr: String },
     NoAnswer { why: String },
 }
 
-/// Chi esegue la prova a secco.
+/// Who runs the dry trial.
 ///
-/// **PERCHÉ UN TRATTO E NON UNA CHIAMATA DIRETTA.** Perché altrimenti ogni
-/// prova su questo codice dovrebbe avviare `claude`, `codex` e `agy` veri: la
-/// batteria dipenderebbe da cosa è installato su chi la esegue e da come sta
-/// messa la quota di quel giorno — cioè non potrebbe venire diversa per la
-/// ragione che dichiara. Con un tratto le prove iniettano quattro finti
-/// eseguibili e ottengono quattro verdetti, sempre gli stessi.
+/// **WHY A TRAIT AND NOT A DIRECT CALL.** Otherwise every test here would start
+/// real `claude`, `codex` and `agy`, depending on the host's installs and that
+/// day's quota — coming out different for a reason it never declares. With a
+/// trait the tests inject four fake executables and get four fixed verdicts.
 pub trait DryProbe: Send + Sync {
     fn run(&self, bin: &str, args: &[String], stdin: Option<Vec<u8>>) -> DryRun;
 }
 
-/// Il tetto di tempo di una prova a secco.
+/// The time cap of a dry trial.
 ///
-/// **SERVE UN TETTO ESPLICITO PERCHÉ SU QUESTA MACCHINA `timeout` E `gtimeout`
-/// NON ESISTONO**: verificato il 31/08/2026 con `command -v`. Chi si aspettasse
-/// di poterli mettere davanti alla riga scoprirebbe il contrario solo quando un
-/// motore si mette ad aspettare qualcosa e blocca il controllo di tutti gli
-/// altri. Il tetto lo mette `invoke_external_engine`, che ce l'ha già.
+/// **AN EXPLICIT CAP IS NEEDED BECAUSE `timeout` AND `gtimeout` DO NOT EXIST ON
+/// THIS MACHINE**: verified with `command -v`. Anyone expecting to prefix the
+/// line with them would find out only when an engine waits on something and
+/// blocks every other check. `invoke_external_engine` applies it; it has one.
 pub const DRY_PROBE_TIMEOUT: Duration = Duration::from_secs(20);
 
-/// La sonda vera: monta la riga e la esegue senza dare la domanda.
+/// The real probe: it mounts the line and runs it without the prompt.
 pub struct RealDryProbe;
 
 impl DryProbe for RealDryProbe {
     fn run(&self, bin: &str, args: &[String], stdin: Option<Vec<u8>>) -> DryRun {
-        // **LA STESSA DOTAZIONE DELLA CORSA VERA, E QUI STA TUTTO IL VALORE DEL
-        // VAGLIO.** Fino al 01/09/2026 questa riga era `BTreeMap::new()`: il
-        // vaglio provava il motore nella casa di chi aveva aperto il terminale —
-        // autenticata — e il passo lo faceva partire in quella del profilo
-        // attivo, che può non avere nessuna credenziale. `flow check` chiudeva
-        // in verde e la corsa falliva, e chi aveva letto il verde non aveva
-        // sbagliato niente. Un controllo che prova un mondo diverso da quello in
-        // cui si lavora è peggio di nessun controllo, perché rassicura.
+        // **THE SAME EQUIPMENT AS THE REAL RUN, AND HERE LIES THE WHOLE VALUE
+        // OF THE CHECK.** With an empty map the check would try the engine in
+        // the home of whoever opened the terminal — authenticated — while the
+        // step starts it in the active profile's home, which may hold no
+        // credential at all: `flow check` closes green and the run fails, and
+        // whoever read the green did nothing wrong. A check that tries a world
+        // other than the one worked in is worse than none, because it reassures.
         //
-        // **NIENTE DALLO SPAZIO DI UN PASSO, ED È DELIBERATO.** Il vaglio non
-        // sta provando un passo: sta provando la riga che il **descrittore**
-        // monta, quella sola volta per motore. Le variabili che un passo
-        // dichiara valgono per quella chiamata lì, e infilarle qui darebbe un
-        // verdetto che non vale per gli altri passi che nominano lo stesso
-        // motore.
+        // **NOTHING FROM A STEP'S SCOPE, AND THAT IS DELIBERATE.** The check is
+        // not trying a step: it is trying the line the **descriptor** mounts,
+        // that one time per engine. The variables a step declares hold for that
+        // one call, and slipping them in here would give a verdict that does
+        // not hold for the other steps naming the same engine.
         //
-        // **QUESTO NON DICE SE LA CASA È AUTENTICATA, ED È UN LIMITE DELLA
-        // TECNICA.** Il vaglio toglie la domanda apposta, quindi il motore si
-        // ferma sulla domanda mancante e non arriva mai ai controlli che
-        // verrebbero dopo — le credenziali stanno di là. Rimisurato il
-        // 01/09/2026 nelle due case: `codex exec < /dev/null` risponde **la
-        // stessa cosa** — «No prompt provided via stdin.» — e esce 1 tutte e due
-        // le volte. (Fino a quella misura questa riga diceva «esce zero»: il
-        // numero era falso, l'identità delle due risposte no, ed è quella che
-        // porta la conclusione.)
+        // **THIS DOES NOT SAY WHETHER THE HOME IS AUTHENTICATED, AND THAT IS A
+        // LIMIT OF THE TECHNIQUE.** The check removes the prompt on purpose, so
+        // the engine stops at the missing prompt and never reaches the checks
+        // that would come after — the credentials are over there. Measured in
+        // both homes: `codex exec < /dev/null` answers **the same thing** — "No
+        // prompt provided via stdin." — and exits 1 both times.
         //
-        // **LA DOMANDA CHE MANCA SI FA A PARTE, E ADESSO ESISTE**: è
-        // `probe_login_status`, che chiede al motore con le parole che il
-        // descrittore dichiara in `login_status`. Non va infilata qui: questa
-        // sonda prova *la riga*, e mescolare i due verdetti renderebbe
-        // impossibile dire quale dei due ha detto di no.
+        // **THE MISSING QUESTION IS ASKED APART**: by `probe_login_status`,
+        // which asks the engine with the words the descriptor declares in
+        // `login_status`. It does not belong here: this probe tries *the line*,
+        // and mixing the two verdicts would make it impossible to say which of
+        // them said no.
         let equipment = current_equipment_for(bin, &BTreeMap::new());
         let result = invoke_external_engine(&EngineInvocation {
             bin: bin.to_owned(),
@@ -173,9 +161,9 @@ impl DryProbe for RealDryProbe {
             timeout: DRY_PROBE_TIMEOUT,
         });
         match result {
-            // Un rifiuto è un'uscita non-zero, quindi il caso normale sta qui;
-            // ma un motore che esce **zero** senza domanda è a maggior ragione
-            // qualcosa da guardare, e buttarlo via lo nasconderebbe.
+            // A refusal exits nonzero, so the normal case lands here; but an
+            // engine that exits **zero** with no prompt is all the more worth
+            // looking at, and throwing it away would hide it.
             EngineResult::Ok { stdout, stderr }
             | EngineResult::ExitError { stdout, stderr, .. }
             | EngineResult::WaitingForAPerson { stdout, stderr } => {
@@ -194,14 +182,12 @@ impl DryProbe for RealDryProbe {
     }
 }
 
-/// Monta la riga di una ricetta senza la domanda, la fa provare, e giudica.
+/// Mounts a recipe's line without the prompt, has it tried, and judges.
 ///
-/// **COME SI TOGLIE LA DOMANDA DIPENDE DA DOVE ANDAVA**, ed è la sola parte del
-/// montaggio che questa funzione decide: a chi la vuole sull'ingresso si dà un
-/// ingresso **vuoto e chiuso** — che è ciò che fa `< /dev/null` — e a chi la
-/// vuole come ultimo argomento si dà la riga senza quell'argomento. Sbagliare
-/// qui non darebbe un errore: darebbe un motore che *aspetta*, e la prova a
-/// secco diventerebbe un modo per appendere il controllo.
+/// **HOW THE PROMPT IS REMOVED DEPENDS ON WHERE IT WENT**, the one mounting
+/// choice this function makes: stdin-fed engines get an **empty, closed** stdin
+/// (`< /dev/null`), last-argument engines get the line minus that argument. Get
+/// it wrong and there is no error, only an engine that *waits* — a hung check.
 pub fn probe_dry_run(probe: &dyn DryProbe, bin: &str, recipe: &AskRecipe) -> ProbeVerdict {
     probe_dry_run_with(probe, bin, recipe, &command_line(recipe))
 }
@@ -228,114 +214,112 @@ pub fn probe_dry_run_with(
     }
 }
 
-// ── la casa è autenticata? lo dice il motore ─────────────────────────────
+// ── is the home authenticated? the engine says ──────────────────────────────
 
-/// Come si chiede a un motore **se la casa da cui parte è autenticata**, e con
-/// quali parole risponde di sì e di no.
+/// How an engine is asked **whether the home it starts from is authenticated**,
+/// and with which words it answers yes and no.
 ///
-/// **PERCHÉ NON SI GUARDA IL DISCO.** Cercare `auth.json` sarebbe una seconda
-/// copia della verità, da riscrivere per ogni motore e da tenere allineata a
-/// mano mentre i motori cambiano dove mettono le cose. Chi sa rispondere è il
-/// motore; il descrittore dichiara soltanto **come si chiede** e **come si
-/// riconosce la risposta** — la stessa disciplina di `unusable_when` e
-/// `refuses_without_prompt`, applicata a una terza domanda.
+/// **WHY THE DISK IS NOT INSPECTED.** Hunting for `auth.json` would be a second
+/// copy of the truth, rewritten per engine and kept aligned by hand as engines
+/// move where they keep things. The engine knows; the descriptor declares only
+/// **how to ask** and **how to recognise the answer** — the discipline of
+/// `unusable_when` and `refuses_without_prompt`, applied to a third question.
 ///
-/// **PERCHÉ SERVE UN CANALE A SÉ, E IL VAGLIO A SECCO NON BASTA.** `flow check`
-/// prova la riga **senza la domanda**: il motore si ferma su «non mi hai dato
-/// niente da fare» e non arriva mai ai controlli che vengono dopo, dove stanno
-/// le credenziali. Misurato il 01/09/2026 nelle due case: `codex exec <
-/// /dev/null` risponde «No prompt provided via stdin.» ed esce 1 **in tutte e
-/// due**, parola per parola la stessa cosa. È un limite della tecnica, non un
-/// difetto da riparare in essa: la domanda sulle credenziali si fa a parte, e
-/// costa zero perché è locale — nessun fornitore viene chiamato.
+/// **WHY A CHANNEL OF ITS OWN IS NEEDED, AND THE DRY TRIAL IS NOT ENOUGH.**
+/// `flow check` tries the line **without the prompt**: the engine stops at "you
+/// gave me nothing to do" and never reaches the checks that come after, where
+/// the credentials are. Measured in both homes, `codex exec < /dev/null` answers
+/// "No prompt provided via stdin." and exits 1 **in both**, word for word the
+/// same. A limit of the technique, not a defect to repair inside it: the
+/// credentials question is asked apart, and costs nothing — it is local, and no
+/// provider is called.
 #[derive(Clone, Debug)]
 pub struct LoginRecipe {
-    /// Le opzioni, o il sottocomando, con cui si fa la domanda: `["login",
+    /// The options, or the subcommand, the question is asked with: `["login",
     /// "status"]`, `["auth", "status"]`.
     pub args: Vec<String>,
-    /// Dove sta la risposta dentro ciò che il motore ha detto.
+    /// Where the answer sits inside what the engine said.
     ///
-    /// **È IL PUNTATORE DI `usage`, NON UN SECONDO MECCANISMO**, e la ragione è
-    /// che il problema è lo stesso: due motori dicono la stessa cosa in due
-    /// forme diverse. `codex` risponde in prosa — «Logged in using ChatGPT» — e
-    /// allora non c'è niente da puntare, il soggetto è tutto ciò che ha detto.
-    /// `claude` risponde con un involucro JSON e mette la risposta in un campo
-    /// booleano, `"loggedIn": true`, e allora il cammino di chiavi la raggiunge.
+    /// **IT IS `usage`'s POINTER, NOT A SECOND MECHANISM**, because the
+    /// problem is the same: two engines say the same thing in two shapes.
+    /// `codex` answers in prose — "Logged in using ChatGPT" — so there is
+    /// nothing to point at, the subject is everything it said. `claude`
+    /// answers in a JSON wrapper with a boolean field, `"loggedIn": true`,
+    /// and there the key path reaches it.
     ///
-    /// `None` non è «non guardare»: è «il soggetto è l'uscita intera», che è la
-    /// forma più comune e quella che non richiede di dichiarare niente.
+    /// `None` is not "do not look": it is "the subject is the whole output",
+    /// the commonest shape and the one that requires declaring nothing.
     pub answer: Option<Pointer>,
-    /// Le parole con cui questo motore dichiara di **essere** autenticato.
+    /// The words this engine declares it **is** authenticated with.
     pub logged_in_when: Vec<String>,
-    /// Le parole con cui dichiara di **non** esserlo.
+    /// The words it declares it is **not**.
     ///
-    /// **VANNO DICHIARATE TUTTE E DUE, E LA MANCANZA DI UNA SPEGNE IL
-    /// CONTROLLO.** Un descrittore che sapesse riconoscere solo il sì
-    /// chiamerebbe «non riconosciuto» ogni no, e chi legge non saprebbe
-    /// distinguere un motore non autenticato da uno che ha risposto qualcosa di
-    /// strano. Meglio tacere: vedi [`LoginVerdict::NotDeclared`].
+    /// **BOTH MUST BE DECLARED, AND ONE MISSING TURNS THE CHECK OFF.** A
+    /// descriptor recognising the yes alone would call every no
+    /// "unrecognised", and the reader could not tell an unauthenticated
+    /// engine from one that answered something strange. Better to stay
+    /// silent: see [`LoginVerdict::NotDeclared`].
     pub logged_out_when: Vec<String>,
 }
 
-/// Che cosa si è potuto sapere sulle credenziali di una casa.
+/// What could be learned about a home's credentials.
 ///
-/// **QUATTRO ESITI E NON DUE, PER LA RAGIONE DI SEMPRE.** «Nessuno ha guardato»,
-/// «ha risposto e non l'ho capito» e «ha detto di no» sono tre fatti diversi, e
-/// **nessuno dei tre è un sì**. Un tipo a due stati costringerebbe a scegliere
-/// da che parte far cadere i primi due, e la direzione comoda è sempre quella
-/// che tranquillizza — cioè quella che rimette il difetto.
+/// **FOUR OUTCOMES AND NOT TWO, FOR THE USUAL REASON.** "Nobody looked", "it
+/// answered and I did not understand it" and "it said no" are three different
+/// facts, and **none of the three is a yes**. A two-state type would force a
+/// choice of which side the first two fall on, and the convenient direction is
+/// always the reassuring one — the one that puts the defect back.
 #[derive(Clone, Debug)]
 pub enum LoginVerdict {
-    /// Il motore dichiara di essere autenticato in questa casa.
+    /// The engine declares it is authenticated in this home.
     LoggedIn { said: String },
-    /// Il motore dichiara di **non** esserlo: le chiamate partiranno senza
-    /// credenziali.
+    /// The engine declares it is **not**: calls will go out with no
+    /// credentials.
     LoggedOut { said: String },
-    /// Il descrittore non dichiara il blocco, o lo dichiara a metà. **Nessuno
-    /// ha guardato**, e non c'è niente da dire su questa casa.
+    /// The descriptor omits the block, or declares half of it. **Nobody
+    /// looked**, and there is nothing to say about this home.
     NotDeclared,
-    /// Ha risposto, e la risposta non somiglia a nessuna delle due forme
-    /// dichiarate. Le sue parole sono la diagnosi.
+    /// It answered, and the answer resembles neither declared shape. Its
+    /// words are the diagnosis.
     Unrecognised { said: String },
-    /// Non ha risposto affatto: non è partito, o ha superato il tetto di tempo.
+    /// It did not answer at all: it never started, or it ran past the time cap.
     NoAnswer { why: String },
 }
 
 impl LoginVerdict {
-    /// Vero **solo** quando il motore ha detto di sì. Ogni altro esito, dubbio
-    /// compreso, risponde di no: è la forma in cui il verso dell'errore si
-    /// scrive una volta sola invece che a ogni luogo di lettura.
+    /// True **only** when the engine said yes. Every other outcome, doubt
+    /// included, answers no: this is how the direction of the error gets
+    /// written once instead of at every reading site.
     pub fn is_logged_in(&self) -> bool {
         matches!(self, LoginVerdict::LoggedIn { .. })
     }
 }
 
-/// Legge la risposta di un motore alla domanda «sei autenticato?».
+/// Reads an engine's answer to "are you authenticated?".
 ///
-/// **PURA, E SEPARATA DA CHI ESEGUE**, per la stessa ragione di
-/// [`judge_dry_run`]: il giudizio è la parte che si sbaglia, e una prova che
-/// dovesse lanciare `codex` direbbe com'è messa la macchina di chi la esegue
-/// invece che se il riconoscimento funziona.
+/// **PURE, AND SEPARATE FROM THE EXECUTOR**, for the reason behind
+/// [`judge_dry_run`]: judgement is the part that goes wrong, and a test that had
+/// to launch `codex` would report the state of the runner's machine instead of
+/// whether the recognition works.
 ///
-/// **IL CODICE D'USCITA NON ENTRA NEMMENO QUI.** Sui due motori misurati il
-/// 01/09/2026 l'esito *distinguerebbe* — `codex login status` esce 1 non
-/// autenticato e 0 autenticato, e `claude auth status` fa lo stesso — ma è un
-/// fatto di quei due e non una regola che si possa scrivere nel codice: un
-/// motore che rispondesse «Not logged in» uscendo zero verrebbe dichiarato
-/// autenticato da chiunque leggesse l'esito, e nessuno se ne accorgerebbe. Il
-/// testo lo dichiara il descrittore, l'esito no.
+/// **THE EXIT CODE DOES NOT ENTER HERE EITHER.** On the two engines measured it
+/// *would* distinguish — `codex login status` exits 1 unauthenticated and 0
+/// authenticated, `claude auth status` the same — but that is a fact about those
+/// two, not a rule to write into the code: an engine answering "Not logged in"
+/// while exiting zero would be declared authenticated by anyone reading the
+/// status, and nobody would notice. The descriptor declares the text, not it.
 ///
-/// **L'ORDINE DI LETTURA È VINCOLANTE: PRIMA IL NO.** «Not logged in»
-/// *contiene* «logged in», e in generale il modo di dire di no è il modo di dire
-/// di sì con una negazione davanti. Letto nell'ordine opposto, una casa vuota
-/// risulterebbe autenticata — che è precisamente il silenzio che questo blocco
-/// esiste per rompere. Le parole dichiarate misurate lo eviterebbero già; questo
-/// lo evita anche quando chi scrive il descrittore è stato distratto.
+/// **THE READING ORDER IS BINDING: THE NO FIRST.** "Not logged in" *contains*
+/// "logged in", and in general the way to say no is the way to say yes with a
+/// negation in front. Read the other way round, an empty home would come out
+/// authenticated — precisely the silence this block exists to break. Measured
+/// declared words would already avoid it; this avoids it even when the
+/// descriptor's author was distracted.
 pub fn judge_login_status(recipe: &LoginRecipe, stdout: &str, stderr: &str) -> LoginVerdict {
-    // **LE DUE PIPE INSIEME, E QUI NON È UN DETTAGLIO**: `codex login status`
-    // non scrive niente su stdout — la risposta è tutta su stderr, misurato il
-    // 01/09/2026. Chi ne leggesse una sola non troverebbe mai nessuna delle due
-    // forme e direbbe sempre «nessuno ha guardato».
+    // **BOTH PIPES TOGETHER, AND HERE IT IS NOT A DETAIL**: `codex login status`
+    // writes nothing to stdout — the answer is all on stderr, measured. Reading
+    // one of them alone would never find either declared shape, and would always
+    // say "nobody looked".
     let said = [stdout.trim(), stderr.trim()]
         .into_iter()
         .filter(|piece| !piece.is_empty())
@@ -347,32 +331,31 @@ pub fn judge_login_status(recipe: &LoginRecipe, stdout: &str, stderr: &str) -> L
         return LoginVerdict::NotDeclared;
     }
 
-    // Il puntatore sceglie il soggetto, e basta: le parole si cercano dentro
-    // quello, con la stessa regola di `unusable_when`. Senza puntatore il
-    // soggetto è ciò che il motore ha detto per intero.
+    // The pointer picks the subject, nothing more: the words are looked for
+    // inside it, by the rule of `unusable_when`. With no pointer the subject is
+    // everything the engine said.
     let subject = match recipe.answer.as_ref() {
         None => Some(said.clone()),
         Some(pointer) => read_scalar(&said, pointer),
     };
-    // Un puntatore che non trova niente non è un sì: l'involucro non era quello
-    // che il descrittore dichiarava, e la risposta resta sconosciuta.
+    // A pointer that finds nothing is not a yes: the wrapper was not the one the
+    // descriptor declared, and the answer stays unknown.
     let Some(subject) = subject else {
         return LoginVerdict::Unrecognised { said };
     };
 
-    // **SI MOSTRA IL SOGGETTO, NON L'INVOLUCRO CHE LO CONTENEVA.** La risposta
-    // vera di `claude auth status` porta con sé l'indirizzo di posta del
-    // proprietario, l'identificativo e il nome della sua organizzazione e il
-    // tipo di abbonamento; questo testo finisce in `sailor profiles list` e nel
-    // rapporto di `sailor flow check`, cioè in due uscite che si incollano in
-    // una consegna e si versano in un registro. **Una diagnosi non deve
-    // portarsi dietro chi la usa.**
+    // **THE SUBJECT IS SHOWN, NOT THE WRAPPER THAT HELD IT.** The real answer
+    // of `claude auth status` carries the owner's email address, the id and
+    // name of their organisation and the subscription type; this text ends up
+    // in `sailor profiles list` and in the `sailor flow check` report, two
+    // outputs that get pasted into a delivery and poured into a ledger. **A
+    // diagnosis must not drag its user along with it.**
     //
-    // Non si perde niente: dove un puntatore c'è, il valore che ha isolato *è*
-    // la risposta — «false» è più preciso dell'involucro, non meno — e dove non
-    // c'è, il soggetto è già tutto ciò che il motore ha detto. È la stessa
-    // regola delle righe rotte («le parole del motore per intero») applicata a
-    // un motore che risponde con un campo invece che con una frase.
+    // Nothing is lost: where a pointer exists, the value it isolated *is* the
+    // answer — "false" is more precise than the wrapper, not less — and where
+    // there is none, the subject is already everything the engine said. It is
+    // the rule of broken lines ("the engine's words in full") applied to an
+    // engine that answers with a field instead of a sentence.
     let shown = if recipe.answer.is_some() {
         subject.clone()
     } else {
@@ -388,23 +371,22 @@ pub fn judge_login_status(recipe: &LoginRecipe, stdout: &str, stderr: &str) -> L
     LoginVerdict::Unrecognised { said: shown }
 }
 
-/// Chi fa la domanda locale «sei autenticato?», **dentro una casa precisa**.
+/// Who asks the local "are you authenticated?", **inside one named home**.
 ///
-/// **PERCHÉ UN TRATTO A SÉ E NON [`DryProbe`].** Sono due domande diverse su due
-/// mondi diversi: il vaglio a secco prova la riga nella casa del profilo attivo,
-/// e chi la compone non la sceglie; questa domanda va fatta **in una casa
-/// nominata** — `sailor profiles list` la fa a ogni profilo, non solo a quello
-/// in forza, e con `DryProbe` non avrebbe modo di dirlo. L'ambiente è quindi un
-/// argomento, non una cosa che l'esecutore va a leggersi da solo.
+/// **WHY A TRAIT OF ITS OWN AND NOT [`DryProbe`].** Two questions over two
+/// worlds: the dry trial tries the line in the active profile's home, chosen by
+/// nobody; this one is asked **in a named home** — `sailor profiles list` asks
+/// it of every profile, not just the one in force, and `DryProbe` has no way to
+/// say so. The environment is an argument, not something the executor reads.
 pub trait LoginProbe: Send + Sync {
     fn ask(&self, bin: &str, args: &[String], env: &BTreeMap<String, String>) -> DryRun;
 }
 
-/// Le due domande locali che si possono fare a un motore senza spendere.
+/// The two local questions an engine can be asked without spending.
 ///
-/// Sta insieme perché chi controlla un flusso le fa tutte e due nello stesso
-/// momento e sullo stesso mondo; separate, ogni luogo di chiamata dovrebbe
-/// portarsi due argomenti che valgono sempre la stessa cosa.
+/// They sit together because whoever checks a flow asks both at the same moment
+/// and over the same world; kept apart, every call site would have to carry two
+/// arguments that always mean the same thing.
 pub trait EngineProbe: DryProbe + LoginProbe {}
 
 impl<T: DryProbe + LoginProbe> EngineProbe for T {}
@@ -416,10 +398,10 @@ impl LoginProbe for RealDryProbe {
             args: args.to_vec(),
             env: env.clone(),
             workdir: None,
-            // **L'INGRESSO VUOTO E CHIUSO, CIOÈ `< /dev/null`.** Un motore che
-            // si mettesse ad aspettare qualcosa dall'ingresso appenderebbe il
-            // controllo di tutti gli altri: è la trappola già pagata su `codex
-            // exec`, e costa un carattere evitarla.
+            // **EMPTY, CLOSED STDIN, THAT IS `< /dev/null`.** An engine that
+            // started waiting on stdin would hang the check of all the others:
+            // the trap already paid for on `codex exec`, and one character
+            // avoids it.
             stdin: Some(Vec::new()),
             timeout: DRY_PROBE_TIMEOUT,
         });
@@ -442,20 +424,19 @@ impl LoginProbe for RealDryProbe {
     }
 }
 
-/// Chiede a `bin`, dentro la casa che `env` dichiara, se è autenticato.
+/// Asks `bin`, inside the home `env` declares, whether it is authenticated.
 ///
-/// **NON COSTA NIENTE E NON CHIAMA NESSUN FORNITORE.** Misurato il 01/09/2026:
-/// `codex login status` e `claude auth status` leggono un file locale e
-/// rispondono. Sono l'unico modo di sapere la cosa senza andare a guardare il
-/// disco al posto del motore.
+/// **IT COSTS NOTHING AND CALLS NO PROVIDER.** Measured: `codex login status`
+/// and `claude auth status` read a local file and answer. They are the way to
+/// know this without going to look at the disk in the engine's place.
 pub fn probe_login_status(
     probe: &dyn LoginProbe,
     bin: &str,
     env: &BTreeMap<String, String>,
     recipe: &LoginRecipe,
 ) -> LoginVerdict {
-    // Un descrittore che non dichiara non fa partire nessun processo: chiedere
-    // per poi non saper leggere la risposta sarebbe tempo speso per niente.
+    // A descriptor that declares nothing starts no process: asking and then
+    // being unable to read the answer would be time spent for nothing.
     let declared = |marks: &[String]| marks.iter().any(|mark| !mark.trim().is_empty());
     if !declared(&recipe.logged_in_when) || !declared(&recipe.logged_out_when) {
         return LoginVerdict::NotDeclared;

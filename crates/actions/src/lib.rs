@@ -1,38 +1,27 @@
-//! Azioni riusabili da qualunque `flow::Graph`: invocare un motore esterno,
-//! eseguire una verifica con un tempo massimo, e la primitiva che impone il
-//! limite di durata a entrambe. Agnostiche a qualunque coda, servizio o
-//! percorso: chi le usa passa binario, argomenti, ambiente e percorsi
-//! nell'ingresso tipato del passo — niente è cablato qui dentro.
+//! Actions reusable from any `flow::Graph`: invoking an external engine,
+//! running a check under a deadline, and the primitive that imposes that
+//! deadline on both. Agnostic to any queue, service or path: the caller passes
+//! binary, arguments, environment and paths in the step's typed input, and
+//! nothing is wired in here.
 //!
-//! CONSOLIDA (non duplica) la logica che prima viveva solo in
-//! `notte::main::run_with_timeout`: quel file la richiama da qui adesso.
+//! The two registrable actions (`ExternalEngineAction`, `ShellCheckAction`)
+//! speak JSON with `flow::ActionRegistry`; `invoke_external_engine` and
+//! `run_shell_check` are plain functions for whoever composes several actions
+//! into one step. Both read their input **after** references are resolved, so
+//! work decided by one step reaches the next without ever leaving the graph.
 //!
-//! Le due azioni registrabili (`ExternalEngineAction`, `ShellCheckAction`)
-//! parlano JSON con `flow::ActionRegistry`. Chi compone un passo unico da più
-//! azioni (motore poi verifica, come fa `notte`) può anche chiamare
-//! direttamente `invoke_external_engine`/`run_shell_check`: sono funzioni
-//! semplici, non solo azioni registrate.
+//! **A FAILING STEP IS RED**, and the steps depending on it do not start. A
+//! step that runs a command on purpose to watch it fail declares its tolerance
+//! outcome by outcome with `accept`: leniency is a written decision, strictness
+//! is the default.
 //!
-//! Tutte e due leggono il proprio ingresso **dopo** che i rinvii sono stati
-//! risolti (`reference`): è così che il lavoro deciso da un passo arriva al
-//! passo dopo senza uscire dal grafo.
-//!
-//! **UN PASSO CHE FALLISCE È ROSSO, E NON PER GENTILEZZA DI CHI VIENE DOPO.**
-//! Fino al 28/08/2026 un motore uscito in errore lasciava il passo `Went` con
-//! dentro un campo `status: exit_error`: la corsa diventava rossa solo se
-//! qualcuno, più avanti nel grafo, guardava quel campo. Adesso un esito di
-//! fallimento rompe il proprio passo, e i passi che ne dipendono non partono.
-//! Chi vuole il contrario lo dichiara nel passo, esito per esito, col campo
-//! `accept` — c'è chi esegue un comando apposta per vedere se fallisce. La
-//! tolleranza è una decisione scritta; il rigore è il valore predefinito.
-//!
-//! **UN PASSO NOMINA LO STRUMENTO, NON IL BINARIO.** `bin` resta per un comando
-//! qualunque, ma un motore si chiede per identificativo (`tool`) e chi compone
-//! il registro delle azioni decide come si risolve — su questa macchina lo fa
-//! `toolbox` leggendo i suoi descrittori. Un flusso che scrive `"bin": "claude"`
-//! gira solo dove quel nome è nel percorso di chi esegue; uno che scrive
-//! `"tool": "claude-code"` gira ovunque quel descrittore trovi qualcosa, e si
-//! ferma con un messaggio utile dove non lo trova.
+//! **A STEP NAMES THE TOOL, NOT THE BINARY.** `bin` stays for an arbitrary
+//! command, but an engine is asked for by identifier (`tool`) and whoever
+//! composes the action registry decides how it resolves — here `toolbox` does,
+//! reading its descriptors. A flow writing `"bin": "claude"` runs only where
+//! that name is on the caller's path; one writing `"tool": "claude-code"` runs
+//! wherever that descriptor finds something, and stops with a useful message
+//! where it does not.
 
 pub mod apply;
 pub mod budget;
@@ -62,14 +51,12 @@ mod session;
 mod shell;
 mod spec;
 
-/// I tipi puri con cui un descrittore dichiara dove stanno i suoi numeri,
-/// ri-esportati da qui.
+/// The pure types a descriptor declares where its numbers live with,
+/// re-exported from here.
 ///
-/// **PERCHÉ RI-ESPORTATI E NON RIDEFINITI.** `toolbox` deve poter costruire una
-/// ricetta senza dipendere a sua volta da `models`, e una copia di questi tipi
-/// da questa parte del confine sarebbe una seconda definizione della stessa
-/// cosa: due strutture gemelle divergono al primo campo che qualcuno aggiunge a
-/// una sola delle due.
+/// **RE-EXPORTED, NOT REDEFINED.** `toolbox` builds a recipe without depending
+/// on `models` itself, and a copy of these types on this side of the boundary
+/// would be a second definition: twin structs diverge at the first added field.
 pub use models::usage::{
     read_declared, read_scalar, read_text, Declared, Pointer, Reading, Reports, Shape,
 };
@@ -104,21 +91,18 @@ pub use spec::{
 pub(crate) use answer::{check_tolerance, tolerates};
 pub(crate) use process::sink_for_step;
 
-/// Il nome sotto cui `ExternalEngineAction` si registra in un
+/// The name `ExternalEngineAction` registers itself under in a
 /// `flow::ActionRegistry`.
 pub const EXTERNAL_ENGINE_ACTION: &str = "external_engine";
-/// Il nome sotto cui `ShellCheckAction` si registra.
+/// The name `ShellCheckAction` registers itself under.
 pub const SHELL_CHECK_ACTION: &str = "shell_check";
 
-/// Registra entrambe le azioni sotto i loro nomi stabili: la scorciatoia per
-/// chi vuole entrambe senza scegliere i nomi a mano.
-/// Registra entrambe le azioni sotto i loro nomi stabili.
+/// Registers both actions under their stable names.
 ///
-/// Il motore registrato qui **non sa risolvere uno strumento per
-/// identificativo**: un passo che scrive `tool` riceve un errore che dice come
-/// si ripara. Chi vuole quella capacità registra `EXTERNAL_ENGINE_ACTION` con
-/// `ExternalEngineAction::resolving_with(...)` dopo questa chiamata — lo fa
-/// `sailor flow`, che è l'unico punto dove `toolbox` e le azioni si incontrano.
+/// The engine registered here **cannot resolve a tool by identifier**: a step
+/// writing `tool` gets an error saying how to repair it. For that capability,
+/// register `EXTERNAL_ENGINE_ACTION` with `ExternalEngineAction::resolving_with`
+/// after this call — `sailor flow` does, the one place toolbox and it meet.
 pub fn register_default(registry: &mut flow::ActionRegistry) {
     registry.register(EXTERNAL_ENGINE_ACTION, ExternalEngineAction::new());
     registry.register(SHELL_CHECK_ACTION, ShellCheckAction::new());
@@ -131,21 +115,19 @@ mod tests {
     use super::*;
     use serde_json::Value;
 
-    /// L'ingresso come lo riceve un'azione **quando gira davvero**: coi rinvii
-    /// già sciolti.
+    /// The input as an action receives it **when it really runs**: with
+    /// references already resolved.
     ///
-    /// **PERCHÉ UNA PROVA DI QUESTO CRATE NE HA BISOGNO.** Dal 01/09/2026 i
-    /// rinvii li scioglie `flow::step_input`, una volta sola dove l'ingresso si
-    /// compone — è la cura del guasto 28, e la ragione per cui nel codice di
-    /// questo crate non c'è più nessuna chiamata a `resolve_references`. Una
-    /// prova che invochi `execute` direttamente salta quel passaggio: senza
-    /// questa riga proverebbe l'azione in un mondo in cui non gira mai, che è
-    /// il guasto 39.
-    ///
-    /// **NON È UNA SECONDA COPIA DELLA REGOLA**: chiama la funzione vera. E
-    /// non prova niente da sola — ciò che i rinvii arrivino sciolti a **ogni**
-    /// azione lo prova `crates/flow/tests/a_reference_reaches_every_action.rs`,
-    /// che passa dall'esecutore invece di chiamare la risoluzione a mano.
+    /// **WHY A TEST OF THIS CRATE NEEDS IT.** References are resolved by
+    /// `flow::step_input`, once, where the input is composed — the cure for
+    /// fault 28, and why this crate's code holds no call to
+    /// `resolve_references`. A test invoking `execute` directly skips that step
+    /// and would prove the action in a world it never runs in, which is fault
+    /// 39. It is no second copy of the rule: it calls the real function, and
+    /// proves nothing by itself. That references reach **every** action already
+    /// resolved is proved by
+    /// `crates/flow/tests/a_reference_reaches_every_action.rs`, which goes
+    /// through the executor instead of resolving by hand.
     pub(crate) fn with_references_resolved(input: Value) -> Value {
         flow::reference::resolve_references(&input).expect("i rinvii della prova si sciolgono")
     }

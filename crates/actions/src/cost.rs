@@ -6,34 +6,26 @@ use crate::{Reading, EXTERNAL_ENGINE_ACTION};
 use flow::SharedState;
 use ledger::{EngineIdentity, Ledger, ModelCallRecord};
 
-// ── quanto è costata una chiamata ────────────────────────────────────────
+// ── what a call cost ─────────────────────────────────────────────────────
 
-/// Dove sta il listino locale su questa macchina.
-///
-/// Risposta a «il listino deve essere modificabile senza ricompilare»: è un
-/// file JSON nella casa di Sailor, accanto al deposito e ai flussi, e si
-/// riscrive con un editor di testo. `SAILOR_PRICING` lo sposta altrove — serve
-/// alle prove, e a chi tiene più listini.
-///
-/// **NON STA IN `modelli.json`**, che è la *scelta* dell'utente su quale
-/// modello usare: mescolare «cosa voglio» e «quanto costa» farebbe sì che
-/// cambiare una preferenza tocchi un listino, e viceversa.
+/// Where the local price list lives: a JSON file in Sailor's home, beside the
+/// ledger and the flows, so it can be rewritten with a text editor instead of
+/// recompiled. `SAILOR_PRICING` moves it elsewhere, for the tests and for
+/// whoever keeps several lists. **IT IS NOT `modelli.json`**, which holds the
+/// user's *choice* of model: mixing «what I want» with «what it costs» would
+/// make changing a preference touch a price list, and the reverse.
 const PRICING_ENV: &str = "SAILOR_PRICING";
 const PRICING_FILE: &str = "pricing.json";
 
-/// Il listino da applicare: quello spedito col prodotto, sovrascritto da quello
-/// scritto in casa.
+/// The price list to apply: the shipped one, overridden by the home one.
 ///
-/// **PURO, E NON È UN VEZZO.** Il testo di casa entra come argomento e il
-/// listino esce: così la regola — «senza niente in casa il costo si sa lo
-/// stesso» — si interroga senza toccare il disco e senza scrivere una variabile
-/// d'ambiente, che è di **processo** e rovinerebbe le prove che girano in
-/// parallelo nello stesso. Chi legge il file sta in [`load_pricing`].
-///
-/// **UN FILE DI CASA ILLEGGIBILE NON TOGLIE IL LISTINO A TUTTI.** Si torna a
-/// quello spedito: prima del 01/09/2026 un JSON scritto male lasciava il costo
-/// sconosciuto per l'intera corsa, che è il guasto 35 nella sua forma più
-/// silenziosa — un errore di battitura che spegne un tetto di spesa.
+/// **PURE, AND NOT A FLOURISH.** The home text arrives as an argument, so «with
+/// nothing at home the cost is still known» can be asked without the disk and
+/// without an environment variable — per **process**, and fatal to tests run in
+/// parallel inside it. Reading the file is [`load_pricing`]. An unreadable home
+/// file disarms nobody: it falls back to the shipped list, since a malformed
+/// JSON once left the cost unknown for a whole run — fault 35 at its quietest, a
+/// typo that switches off a spending cap.
 pub fn price_list_from(home_text: Option<&str>) -> models::pricing::PriceList {
     let shipped = models::pricing::shipped();
     match home_text.and_then(|text| models::pricing::PriceList::parse(text).ok()) {
@@ -42,16 +34,14 @@ pub fn price_list_from(home_text: Option<&str>) -> models::pricing::PriceList {
     }
 }
 
-/// Il listino di questa macchina: quello spedito, sovrascritto dal file di casa.
+/// This machine's price list: the shipped one, overridden by the home file.
 ///
-/// **RILETTO A OGNI CHIAMATA, NON TENUTO IN MEMORIA**: un prezzo cambiato a metà
-/// di una corsa lunga vale dalla chiamata dopo, invece che dal prossimo riavvio.
-/// Il costo è una lettura di un file piccolo accanto all'avvio di un processo
-/// esterno — cioè niente, in confronto a ciò che sta per succedere.
-///
-/// **PUBBLICA PERCHÉ `sailor flow check` DEVE POTER DIRE COSA NON SA PREZZARE.**
-/// Un freno che non frena si deve vedere prima di lanciare, e chi lo mostra è un
-/// comando, non questo crate.
+/// **RE-READ ON EVERY CALL, NEVER CACHED**: a price changed halfway through a
+/// long run counts from the next call, not from the next restart, and reading a
+/// small file beside the launch of an external process costs nothing next to
+/// what is about to happen. **PUBLIC BECAUSE `sailor flow check` MUST SAY WHAT
+/// IT CANNOT PRICE**: a brake that does not brake has to be seen before
+/// launching, and showing it is a command's job, not this crate's.
 pub fn current_price_list() -> models::pricing::PriceList {
     let path = match std::env::var_os(PRICING_ENV).filter(|value| !value.is_empty()) {
         Some(declared) => Some(std::path::PathBuf::from(declared)),
@@ -61,12 +51,12 @@ pub fn current_price_list() -> models::pricing::PriceList {
     price_list_from(text.as_deref())
 }
 
-/// Dove registrare quanto si è speso: deposito, corsa e passo.
+/// Where to record what was spent: ledger, run and step.
 ///
-/// Servono tutti e tre. Senza uno solo **non si scrive nessuna riga**, invece
-/// di scriverne una attribuita a nessuno: una riga senza corsa non si somma con
-/// nessun'altra e sporcherebbe i conti peggio di una riga mancante. È la stessa
-/// regola che `sink_for_step` applica già al testo dal vivo.
+/// All three are needed. Missing one, **no row is written at all** rather than
+/// one attributed to nobody: a row with no run sums with nothing else and would
+/// foul the accounts worse than a missing row. Same rule `sink_for_step` already
+/// applies to the live text.
 pub(crate) struct Recording<'a> {
     pub(crate) ledger: &'a Ledger,
     pub(crate) run_id: String,
@@ -81,9 +71,9 @@ pub(crate) fn recording_for<'a>(ledger: &'a Option<Ledger>, shared: &SharedState
     })
 }
 
-/// Un contatore di processo, perché due chiamate nello stesso secondo dentro lo
-/// stesso passo non si sovrascrivano a vicenda: `call_id` è chiave primaria, e
-/// una collisione farebbe sparire una spesa invece di sommarla.
+/// A per-process counter, so two calls in the same second inside the same step
+/// do not overwrite each other: `call_id` is the primary key, and a collision
+/// would make a charge vanish instead of summing it.
 static CALLS_SO_FAR: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 pub(crate) fn now_secs() -> i64 {
@@ -104,17 +94,17 @@ pub(crate) struct Chain {
     pub(crate) fell_back_from: Vec<String>,
 }
 
-/// Ciò che si sa di una chiamata appena finita, prima di darle un prezzo.
+/// What is known of a call just finished, before it is priced.
 pub(crate) struct Spent {
     pub(crate) reading: Reading,
     pub(crate) error_type: Option<&'static str>,
     pub(crate) started_at: i64,
     pub(crate) ended_at: i64,
-    /// La sessione sotto cui questa chiamata è girata, quando si sa qual è.
+    /// The session this call ran under, when it is known.
     pub(crate) session_id: Option<String>,
-    /// Con quale identità il processo è partito: quale casa, e come è stata
-    /// scelta. Senza, due corse dello stesso flusso non sono la stessa misura —
-    /// e la riga non porta la ragione per cui i due consumi differiscono.
+    /// The identity the process started under: which home, and how it was
+    /// chosen. Without it two runs of the same flow are not the same measure —
+    /// the row carries no reason for the two usages differing.
     pub(crate) identity: EngineIdentity,
     /// The kind of work the step declared, for the sum per kind.
     pub(crate) work_kind: Option<String>,
@@ -123,22 +113,18 @@ pub(crate) struct Spent {
     pub(crate) session_mode: Option<ledger::SessionMode>,
 }
 
-/// Scrive nel deposito la riga di **questa** chiamata.
+/// Writes the row of **this** call into the ledger.
 ///
-/// **SI SCRIVE ANCHE QUANDO È ANDATA MALE**, ed è una scelta deliberata: un
-/// turno interrotto brucia comunque la quota, e azzerarne il costo
-/// sottostimerebbe la spesa esattamente nei minuti che precedono un
-/// esaurimento — cioè quando la misura serve. Separare «lavoro utile» da
-/// «quota consumata» è compito di chi legge le righe, non di chi le scrive.
-///
-/// **E SI SCRIVE ANCHE QUANDO I TOKEN SONO SCONOSCIUTI.** «Questo motore è
-/// stato chiamato quaranta volte, token non dichiarati» è un'informazione su
-/// cui si può agire; il silenzio nasconde il buco, e un totale che si presenta
-/// come completo mentre è parziale è la bugia da cui questo lavoro nasce.
-///
-/// Un fallimento del deposito non rompe il passo: la misura è al servizio del
-/// lavoro, non il contrario, e far fallire una chiamata già riuscita perché non
-/// si è potuto annotarla sarebbe il contrario di ciò che si sta costruendo.
+/// **IT IS WRITTEN EVEN WHEN THE CALL WENT BADLY**, deliberately: an interrupted
+/// turn burns quota all the same, and zeroing its cost would understate spending
+/// exactly in the minutes before an exhaustion — when the measure is wanted.
+/// Telling «useful work» from «quota consumed» belongs to whoever reads the
+/// rows. **AND EVEN WHEN THE TOKENS ARE UNKNOWN**: «this engine was called forty
+/// times, tokens undeclared» can be acted on, while silence hides the hole, and
+/// a total presenting itself as complete while it is partial is the lie this
+/// work exists to end. A ledger failure does not break the step: the measure
+/// serves the work, and failing a call that already succeeded for want of a note
+/// would be the opposite of what is being built.
 pub(crate) fn record_the_call(
     record: &Recording<'_>,
     candidate: &Candidate,
@@ -146,29 +132,27 @@ pub(crate) fn record_the_call(
     spent: Spent,
 ) {
     let Some(cli) = candidate.id.as_deref() else {
-        // Un `bin` scritto a mano nel passo non è una chiamata a un modello:
-        // `sh -c echo` non consuma nessuna quota, e riempirne il deposito
-        // renderebbe illeggibile proprio la vista che questo lavoro esiste per
-        // rendere leggibile.
+        // A `bin` written by hand in the step is not a model call: `sh -c echo`
+        // burns no quota, and filling the ledger with it would make unreadable
+        // the very view this work exists to make readable.
         return;
     };
     if !candidate.can_be_asked {
-        // **E NON LO È NEMMENO UNO STRUMENTO CHE NON SI PUÒ INTERROGARE.**
-        // `git` e `cargo` stanno nel catalogo, si eseguono da un passo, e non
-        // consumano quota di nessun abbonamento. Contarli fra le chiamate ai
-        // modelli non è solo rumore: arrivano senza costo, quindi rendono
-        // `Spend::is_complete()` falso su **ogni** corsa vera — misurato il
-        // 31/08/2026 sul deposito di questa macchina, tre righe su ventiquattro
-        // — e la frase d'onestà del tetto («la spesa vera è più alta») si
-        // accende sempre, anche quando non c'è niente di ignoto. Un avviso
-        // sempre acceso non lo legge nessuno, e a perdersi è quello vero.
+        // **NOR IS A TOOL THAT CANNOT BE ASKED ANYTHING.** `git` and `cargo` are
+        // in the catalogue, run from a step, and burn no subscription's quota.
+        // Counting them among model calls is worse than noise: they arrive with
+        // no cost, so they make `Spend::is_complete()` false on **every** real
+        // run — three rows out of twenty-four on this machine's ledger — and the
+        // cap's honesty line («the true spend is higher») lights up always, even
+        // with nothing unknown. An always-lit warning is read by nobody, and the
+        // one that gets lost is the real one.
         return;
     }
     let reading = spent.reading;
     let price_list = current_price_list();
-    // Il legame col listino passa dal nome che il motore stesso dichiara, non
-    // da un'ipotesi: un modello presunto sarebbe un numero inventato con la
-    // faccia di una misura, creduto per sempre da chiunque lo legga.
+    // The link to the price list runs through the name the engine itself states,
+    // never a guess: a presumed model would be an invented number wearing the
+    // face of a measure, believed for ever by whoever reads it.
     let entry = reading
         .model
         .as_deref()
@@ -196,14 +180,14 @@ pub(crate) fn record_the_call(
         step_id: Some(record.step_id.clone()),
         purpose: EXTERNAL_ENGINE_ACTION.to_owned(),
         cli: cli.to_owned(),
-        // Un passo nomina lo strumento, non il modello: nessuno qui *chiede* un
-        // modello, e scriverne uno sarebbe inventarlo. Vuoto vuol dire «non
-        // dichiarato», e la finestra lo mostra come tale.
+        // A step names the tool, not the model: nobody here *asks* for a model,
+        // and writing one down would be inventing it. Empty means «undeclared»,
+        // and the window shows it as such.
         requested_model: String::new(),
         actual_model: reading.model.clone().unwrap_or_default(),
-        // I turni arrivano dalla stessa uscita da cui arrivano i token, e
-        // finora venivano buttati via. Sono la quantita' che spiega perche' una
-        // catena di passi costa piu' di una sessione sola.
+        // Turns come from the same output the tokens do, and they are the
+        // quantity that explains why a chain of steps costs more than a single
+        // session.
         turns: reading.turns,
         input_tokens: reading.input_tokens,
         output_tokens: reading.output_tokens,
@@ -212,23 +196,22 @@ pub(crate) fn record_the_call(
         cache_write_long_tokens: reading.cache_write_long_tokens,
         total_tokens: reading.total_tokens,
         cost_micros,
-        // Il costo del motore accanto al nostro, mai al posto suo.
+        // The engine's own cost sits beside ours, never in its place.
         declared_cost_micros: reading
             .declared_cost
             .map(|usd| (usd * 1_000_000.0).round() as i64),
-        // La valuta è quella del listino con cui si è calcolato: senza un conto
-        // fatto non c'è nessuna valuta da dichiarare.
+        // The currency is that of the price list the sum was made with: with no
+        // sum made there is no currency to declare.
         price_currency: cost_micros.map(|_| price_list.currency.clone()),
         input_price_micros_per_million: prices.input,
         output_price_micros_per_million: prices.output,
         cached_price_micros_per_million: prices.cached,
         cache_write_price_micros_per_million: prices.cache_write,
         cache_write_long_price_micros_per_million: prices.cache_write_long,
-        // **CON QUALE IDENTITÀ QUESTO PROCESSO È PARTITO.** Non «sotto quale
-        // profilo»: quale casa, e come è stata scelta. La differenza è il difetto
-        // che questa riga esisteva per avere e non aveva — un passo che scriveva
-        // da sé la variabile di casa faceva partire il motore altrove, e qui
-        // finiva scritto il nome del profilo attivo.
+        // **THE IDENTITY THIS PROCESS STARTED UNDER.** Not «under which
+        // profile»: which home, and how it was chosen. A step that sets the home
+        // variable itself starts the engine elsewhere, while what would land
+        // here is the name of the active profile.
         engine_identity: spent.identity,
         retry_chain: chain.tried_before.clone(),
         fell_back_from: chain.fell_back_from.clone(),
@@ -244,13 +227,12 @@ pub(crate) fn record_the_call(
 
 #[cfg(test)]
 mod what_it_cost {
-    //! Le prove della misura: quanto ha consumato una chiamata, dove finisce
-    //! scritta, e che cosa succede a chi non lo dichiara.
+    //! The proofs of the measure: what a call consumed, where it ends up
+    //! written, and what happens to an engine that declares none of it.
     //!
-    //! **NESSUN MOTORE VERO E NESSUNA CHIAMATA A PAGAMENTO.** I motori qui
-    //! dentro sono script di shell scritti al volo, come quelli che il resto di
-    //! questo file usa già: sono l'unico modo di provare una misura senza
-    //! comprarla.
+    //! **NO REAL ENGINE AND NO PAID CALL.** The engines in here are shell
+    //! scripts written on the fly, as everywhere else in this file: the one way
+    //! to prove a measure without buying it.
 
     use super::*;
     use crate::cooldown;
@@ -271,7 +253,7 @@ mod what_it_cost {
         dir
     }
 
-    /// Uno script eseguibile che si comporta come gli si dice.
+    /// An executable script that behaves as it is told.
     fn fake_engine(dir: &std::path::Path, name: &str, body: &str) -> String {
         let path = dir.join(name);
         std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).expect("scrivere il finto motore");
@@ -280,8 +262,8 @@ mod what_it_cost {
         path.to_string_lossy().into_owned()
     }
 
-    /// Il listino di prova, con la cache a un decimo dell'ingresso: è la
-    /// differenza che il criterio 3 del mandato esiste per non perdere.
+    /// The test price list, with cache at a tenth of input: the difference
+    /// criterion 3 of the brief exists so as not to lose.
     const PRICE_LIST: &str = r#"{
       "currency": "USD",
       "dated": "2026-08-29",
@@ -298,8 +280,8 @@ mod what_it_cost {
         path
     }
 
-    /// Uno stato condiviso come quello che l'esecutore prepara prima di ogni
-    /// azione: corsa e passo, sotto le chiavi riservate di `flow`.
+    /// A shared state like the one the executor prepares before every action:
+    /// run and step, under `flow`'s reserved keys.
     fn shared(run: &str, step: &str) -> SharedState {
         let mut shared = SharedState::new();
         shared.insert(flow::CURRENT_RUN.to_owned(), json!(run));
@@ -307,8 +289,8 @@ mod what_it_cost {
         shared
     }
 
-    /// Un risolutore che punta a uno script e gli attacca la ricetta che gli si
-    /// dà: è il posto dove, nella vita vera, arriva un descrittore.
+    /// A resolver pointing at a script with whatever recipe it is handed: the
+    /// place where, in real life, a descriptor arrives.
     struct Declares {
         bin: String,
         recipe: Option<AskRecipe>,
@@ -332,8 +314,8 @@ mod what_it_cost {
         ))
     }
 
-    /// La ricetta di un motore che sa dire quanto ha consumato: chiede
-    /// l'involucro e dichiara dove stanno i numeri, il modello e la risposta.
+    /// The recipe of an engine able to say what it consumed: it asks for the
+    /// envelope and declares where the numbers, the model and the answer are.
     fn declaring_recipe() -> AskRecipe {
         AskRecipe {
             args: Vec::new(),
@@ -366,10 +348,10 @@ mod what_it_cost {
         }
     }
 
-    /// Un motore che risponde con l'involucro **solo** se gli si è chiesto
-    /// `--output-format json`, e in chiaro altrimenti: è il comportamento vero
-    /// di una riga di comando, e senza di lui la prova sull'uscita invariata
-    /// non proverebbe niente.
+    /// An engine that answers with the envelope **only** when asked for
+    /// `--output-format json`, and in plain text otherwise: the real behaviour
+    /// of a command line, and without it the proof on the unchanged output would
+    /// prove nothing.
     const WRAPS_ON_DEMAND: &str = r#"cat > /dev/null
 printf '%s\n' "$@" > "$(dirname "$0")/argv"
 if [ "$1" = "--output-format" ] && [ "$2" = "json" ]; then
@@ -378,16 +360,15 @@ else
   printf 'la risposta vera'
 fi"#;
 
-    /// **UN MOTORE CHE RISPONDE IN JSON SENZA CHE NESSUNO GLIEL'ABBIA CHIESTO.**
-    /// Serve a provare che il consumo si legge perché un DESCRITTORE lo
-    /// dichiara, non perché l'uscita per caso somiglia a un formato noto: se
-    /// qui dentro comparisse un ramo cablato su chiavi di un fornitore, i suoi
-    /// token verrebbero letti lo stesso, ed è esattamente ciò che il vincolo di
-    /// indipendenza dal modello vieta.
+    /// **AN ENGINE THAT ANSWERS IN JSON WITHOUT ANYBODY ASKING IT TO.** It
+    /// proves the usage is read because a DESCRIPTOR declares it, not because
+    /// the output happens to resemble a known format: were a branch wired to one
+    /// vendor's keys to appear in here, its tokens would be read all the same,
+    /// which is exactly what the model-independence constraint forbids.
     const ALWAYS_WRAPS: &str = r#"cat > /dev/null
 printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd":0.5,"usage":{"input_tokens":1000000,"output_tokens":1000000,"cache_read_input_tokens":1000000}}'"#;
 
-    /// La riga di comando con cui il finto motore è stato davvero invocato.
+    /// The command line the fake engine was really invoked with.
     fn argv_of(dir: &std::path::Path) -> Vec<String> {
         std::fs::read_to_string(dir.join("argv"))
             .expect("il motore finto ha scritto la propria riga di comando")
@@ -402,28 +383,21 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let dump = ledger
             .projection_dump()
             .expect("il deposito sa dire cosa contiene");
-        // **UNA SOLA LETTURA DELLA PROIEZIONE, E NON È PIÙ QUI.**
-        //
-        // Fino al 01/09/2026 questo modulo teneva una copia privata di
-        // `ui::parse::parse_model_call_row` — ventotto indici scritti a mano,
-        // uguali a quelli dell'originale — perché «`actions` non dipende da
-        // `ui`, e la dipendenza inversa sarebbe un ciclo». Non lo era: `ui` non
-        // ha mai dipeso da `actions`, e comunque un ciclo di sole prove cargo lo
-        // ammette apposta, com'è scritto nel `Cargo.toml` di `flow`.
-        //
-        // Il costo di quella copia era preciso: una colonna spostata avrebbe
-        // fatto sbagliare **le due letture allo stesso modo**, e le prove che
-        // confrontano l'una con l'altra sarebbero rimaste verdi. Adesso a
-        // leggere è una sola, e a tenerla onesta c'è
-        // `ledger::MODEL_CALL_DUMP_COLUMNS`, che non è né la lettura né la
-        // scrittura.
+        // **ONE READER OF THE PROJECTION, AND IT IS NOT HERE.** A private copy
+        // of `ui::parse::parse_model_call_row` — twenty-eight hand-written
+        // indices — would let a moved column break **both readings the same
+        // way**, leaving the tests that compare one against the other green.
+        // `actions` may depend on `ui`: `ui` never depended on `actions`, and
+        // cargo allows a test-only cycle on purpose, as `flow`'s `Cargo.toml`
+        // says. Keeping the single reader honest is
+        // `ledger::MODEL_CALL_DUMP_COLUMNS`, neither reading nor writing.
         ui::parse::parse_model_calls(&dump)
     }
 
-    /// Il listino vive in un file, e le prove non devono contendersi la casa di
-    /// chi le esegue: `SAILOR_PRICING` lo sposta. Una serratura perché le prove
-    /// girano in parallelo nello stesso processo e la variabile d'ambiente è una
-    /// sola — senza, due prove si toglierebbero il listino a vicenda.
+    /// The price list lives in a file, and the tests must not fight over the
+    /// home of whoever runs them: `SAILOR_PRICING` moves it. A lock, because the
+    /// tests run in parallel inside one process and there is a single
+    /// environment variable — two tests would take the list from each other.
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn with_price_list<T>(price_list: Option<&std::path::Path>, body: impl FnOnce() -> T) -> T {
@@ -439,12 +413,12 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         out
     }
 
-    // ── (a) chi dichiara: token veri, cache a parte, costo dal listino ─
+    // ── (a) who declares: true tokens, cache apart, cost from the list ─
 
-    /// **IL CRITERIO 2 E IL CRITERIO 3 INSIEME.** Un motore che dichiara come si
-    /// legge il suo consumo produce una riga nel deposito con i token veri, la
-    /// cache in una colonna sua, e il costo calcolato dal listino locale — non
-    /// quello che il motore stesso dichiara.
+    /// **CRITERION 2 AND CRITERION 3 TOGETHER.** An engine that declares how its
+    /// usage is read produces a ledger row with the true tokens, the cache in a
+    /// column of its own, and the cost computed from the local price list — not
+    /// the one the engine itself states.
     #[test]
     fn a_declaring_engine_writes_a_row_with_true_tokens_and_a_cost_from_the_price_list() {
         let dir = scratch("dichiara");
@@ -480,24 +454,24 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
             Some(1_000_000),
             "la cache ha una colonna sua e non finisce dentro l'ingresso"
         );
-        // 1M a 3 $ + 1M a 15 $ + 1M di cache a 0,30 $ = 18,30 $ = 18 300 000 micro.
+        // 1M at 3 $ + 1M at 15 $ + 1M of cache at 0.30 $ = 18.30 $ = 18 300 000 micros.
         assert_eq!(call.cost_micros, Some(18_300_000));
         assert_eq!(call.price_currency.as_deref(), Some("USD"));
         assert_eq!(call.cached_price_micros_per_million, Some(300_000));
-        // Il costo che il motore dichiara di suo sta accanto, mai al posto:
-        // 0,5 $ è volutamente diverso dal conto del listino.
+        // The cost the engine states of its own sits beside, never in place:
+        // 0.5 $ is deliberately different from the price list's sum.
         assert_eq!(call.declared_cost_micros, Some(500_000));
         assert_eq!(call.error_type, None);
         assert!(call.ended_at.is_some());
 
-        // E l'uscita del passo è il testo, non l'involucro.
+        // And the step's output is the text, not the envelope.
         assert_eq!(output["stdout"], "la risposta vera");
     }
 
-    /// **IL CRITERIO 3, DALLA PARTE IN CUI SI ROMPE.** Se la cache fosse contata
-    /// al prezzo dell'ingresso invece che al suo, questo costo verrebbe dieci
-    /// volte più caro sulla parte della cache. La prova sopra fissa il numero;
-    /// questa dice perché quel numero e non un altro.
+    /// **CRITERION 3, FROM THE SIDE WHERE IT BREAKS.** Were the cache counted at
+    /// the input price instead of its own, this cost would come out ten times
+    /// dearer on the cache's share. The proof above pins the number; this one
+    /// says why that number and no other.
     #[test]
     fn cache_priced_as_input_would_cost_ten_times_more() {
         let solo_cache = models::pricing::cost_micros(
@@ -520,11 +494,11 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         );
     }
 
-    // ── (b) chi non dichiara niente: identico, e sconosciuto ───────────
+    // ── (b) who declares nothing: identical, and unknown ───────────────
 
-    /// **IL CRITERIO 4.** Un motore senza blocco `usage` produce la stessa
-    /// identica uscita di prima, e la sua riga porta i token a SCONOSCIUTO.
-    /// Mai zero: uno zero si somma, e nessuna vista a valle può correggerlo.
+    /// **CRITERION 4.** An engine with no `usage` block produces exactly the
+    /// same output as before, and its row carries the tokens as UNKNOWN. Never
+    /// zero: a zero sums, and no downstream view can correct it.
     #[test]
     fn an_engine_that_declares_nothing_is_unchanged_and_leaves_the_tokens_unknown() {
         let dir = scratch("non-dichiara");
@@ -557,7 +531,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
             panic!("un motore che risponde è sempre Went")
         };
 
-        // Stessa uscita di sempre: nessun campo in più, nessun involucro.
+        // The same output as always: no extra field, no envelope.
         assert_eq!(output["status"], "ok");
         assert_eq!(output["stdout"], "la risposta vera");
         assert_eq!(
@@ -577,12 +551,11 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         assert_eq!(call.actual_model, "", "nessun modello dichiarato");
     }
 
-    // ── (c) una chiamata fallita scrive comunque la sua riga ───────────
+    // ── (c) a failed call writes its row all the same ──────────────────
 
-    /// **IL CRITERIO 5.** Un motore uscito in errore scrive la sua riga con la
-    /// causa: un turno interrotto brucia comunque la quota, e azzerarne il
-    /// costo sottostimerebbe la spesa proprio nei minuti che precedono un
-    /// esaurimento.
+    /// **CRITERION 5.** An engine that exited in error writes its row with the
+    /// cause: an interrupted turn burns quota all the same, and zeroing its cost
+    /// would understate spending in the very minutes before an exhaustion.
     #[test]
     fn a_failed_call_still_writes_its_row_with_the_cause() {
         let dir = scratch("fallita");
@@ -612,19 +585,16 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         assert_eq!(calls[0].input_tokens, None, "non ha fatto in tempo a dirlo");
     }
 
-    /// **ESAURITO E ROTTO SONO DUE COSE, ANCHE QUANDO IL MOTORE È UNO SOLO.**
+    /// **SPENT AND BROKEN ARE TWO THINGS, EVEN WITH A LONE ENGINE.**
     ///
-    /// Il guasto 14, per esteso. Il 29/08/2026 Claude era al limite settimanale
-    /// e il passo si è fermato con un errore che diceva «uscito in errore»: chi
-    /// l'ha letto è andato a cercare un guasto che non c'era, mentre la cosa da
-    /// fare era aspettare le sette o cambiare motore. La distinzione esisteva
-    /// già nel codice ma valeva **solo con una catena** (`!solo && ...`), cioè
-    /// mai nel caso in cui è capitato.
-    ///
-    /// Si guarda in due posti perché sono due lettori diversi: la classe
-    /// dell'errore la legge una persona adesso, `error_type` nel deposito la
-    /// legge una somma fra un mese — e una somma che mescola le quote finite coi
-    /// guasti veri non dice niente a nessuno.
+    /// Fault 14 in full. Claude at its weekly limit stopped the step with an
+    /// error reading «exited in error», sending its reader after a fault that
+    /// was not there when the thing to do was wait for seven or change engine:
+    /// the distinction existed in the code but was guarded behind «there is a
+    /// chain», so it never held in the case that happened. Two places are
+    /// watched because there are two readers: a person reads the error class
+    /// now, a sum a month from now reads `error_type` in the ledger — and a sum
+    /// that mixes spent quotas with real faults tells nobody anything.
     #[test]
     fn a_single_engine_that_ran_out_is_not_reported_as_broken() {
         let dir = scratch("esaurito-da-solo");
@@ -667,10 +637,10 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         );
     }
 
-    /// **UN GUASTO VERO RESTA UN GUASTO.** La gemella della prova sopra: stesso
-    /// motore solo, stessa ricetta con le stesse parole di esaurimento, ma
-    /// un'uscita che quelle parole non le contiene. Senza questa, far dire
-    /// «esaurito» a *qualunque* fallimento passerebbe verde.
+    /// **A REAL FAULT STAYS A FAULT.** The twin of the proof above: same lone
+    /// engine, same recipe with the same exhaustion words, but an output that
+    /// does not contain them. Without it, making *any* failure say «exhausted»
+    /// would pass green.
     #[test]
     fn a_single_engine_that_truly_broke_is_still_reported_as_broken() {
         let dir = scratch("rotto-da-solo");
@@ -1287,17 +1257,15 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         );
     }
 
-    /// **E IL DEPOSITO DEVE DIRLO ANCHE QUANDO L'USCITA È ZERO.**
+    /// **AND THE LEDGER MUST SAY SO EVEN WHEN THE EXIT IS ZERO.**
     ///
-    /// La metà che non si vede dal comportamento del passo. Le due
-    /// prove gemelle in `tests` guardano se il ripiego scatta; questa guarda la
-    /// riga che resta scritta, ed è quella che qualcuno leggerà domani. Fino al
-    /// 01/09/2026 nasceva con `error_type: None`, cioè **indistinguibile da una
-    /// chiamata riuscita**: una somma che le mescola dice che quel motore ha
-    /// risposto, e chi la legge non va a cercare niente.
-    ///
-    /// Senza questa prova un mutante che lascia scattare il ripiego ma scrive
-    /// `None` invece di `exhausted` passerebbe sotto alle altre due.
+    /// The half the step's behaviour does not show. The twin proofs in `tests`
+    /// watch whether the fallback fires; this one watches the row left behind,
+    /// which is what somebody reads tomorrow. Born with `error_type: None` it is
+    /// **indistinguishable from a call that worked**: a sum mixing the two says
+    /// that engine answered, and its reader goes looking for nothing. Without
+    /// this proof a mutant that lets the fallback fire but writes `None` instead
+    /// of `exhausted` would slip under the other two.
     #[test]
     fn a_zero_exit_refusal_is_recorded_as_exhausted_not_as_a_clean_call() {
         let dir = scratch("esaurito-a-zero-nel-deposito");
@@ -1332,21 +1300,17 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         );
     }
 
-    /// **E LA SPECIE NON DIPENDE DA `accept`, IN NESSUNO DEI DUE RAMI.**
+    /// **AND THE KIND DOES NOT DEPEND ON `accept`, IN EITHER BRANCH.**
     ///
-    /// La tolleranza di un passo riguarda **cosa fa la corsa** — se il
-    /// fallimento è un dato che il passo si tiene, o una ragione per fermarsi —
-    /// e non deve toccare **cosa resta scritto**. Nel ramo `ExitError` questo
-    /// vale da sempre, perché lì il `note(...)` sta prima del controllo di
-    /// tolleranza; nel primo tentativo di chiudere questo guasto, nel ramo `Ok`
-    /// stava **dopo**, e con `accept: ["exit_error"]` dichiarato la riga
-    /// nasceva di nuovo `NULL` — cioè indistinguibile da una risposta vera.
-    /// Il difetto sopravviveva in un angolo del proprio rimedio, e l'ha trovato
-    /// un giudice che non aveva scritto il lavoro.
-    ///
-    /// Le due metà stanno insieme apposta: sono la stessa affermazione — «la
-    /// specie è la stessa e non dipende dalla tolleranza» — su tutti e due i
-    /// codici d'uscita, ed è quella che il commento accanto al codice dichiara.
+    /// A step's tolerance is about **what the run does** — whether the failure
+    /// is a datum the step keeps or a reason to stop — and must not touch **what
+    /// stays written**. In the `ExitError` branch that always held, since
+    /// `note(...)` sits ahead of the tolerance check; in the `Ok` branch it sat
+    /// behind it, so with `accept: ["exit_error"]` declared the row was born
+    /// `NULL` again — indistinguishable from a real answer, the defect surviving
+    /// in a corner of its own remedy. The two halves sit together on purpose:
+    /// they are one claim — «the kind is the same and does not depend on the
+    /// tolerance» — over both exit codes.
     #[test]
     fn a_tolerated_refusal_is_recorded_as_exhausted_whatever_the_exit_code() {
         for (name, exit, script) in [
@@ -1371,8 +1335,8 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
                 recipe: Some(recipe),
             })
             .recording_to(Some(ledger));
-            // Il passo dichiara di volersi tenere il fallimento di questo
-            // motore: la corsa non si ferma, e infatti il passo va avanti.
+            // The step declares it will keep this engine's failure: the run does
+            // not stop, and indeed the step carries on.
             let input = json!({
                 "tool": "motore-di-prova",
                 "stdin": "ciao",
@@ -1406,9 +1370,9 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         }
     }
 
-    /// Un motore che non parte lascia comunque traccia, con la causa sua: senza
-    /// questa riga una catena che ripiega sembrerebbe aver scelto il secondo
-    /// motore per primo.
+    /// An engine that never starts still leaves a trace, with its own cause:
+    /// without this row a chain that falls back would look as if it had chosen
+    /// the second engine first.
     #[test]
     fn an_engine_that_never_starts_leaves_its_own_row_too() {
         let dir = scratch("mai-partito");
@@ -1431,14 +1395,14 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         assert_eq!(calls[0].error_type.as_deref(), Some("spawn_failed"));
     }
 
-    // ── l'uscita del passo non cambia perché si misura ─────────────────
+    // ── the step's output does not change because it is measured ───────
 
-    /// **IL VINCOLO CHE NESSUNO HA CHIESTO E CHE ROMPEREBBE UN FLUSSO VERO.**
-    /// `flows/come-lo-risolvono-gli-altri.flow.json` dichiara `allow_extra: false`
-    /// sulla forma della risposta di un passo motore. Se chiedere l'involucro
-    /// lasciasse l'involucro dentro `stdout`, quel flusso diventerebbe rosso per
-    /// una misura che non ha chiesto. Qui si guarda che il testo che esce sia
-    /// **identico** con e senza la misura accesa.
+    /// **THE CONSTRAINT NOBODY ASKED FOR, AND THAT WOULD BREAK A REAL FLOW.**
+    /// A shipped flow declares `allow_extra: false` on the answer shape of an
+    /// engine step. If asking for the envelope left the envelope inside
+    /// `stdout`, that flow would go red over a measure it never asked for. Here
+    /// the text coming out must be **identical** with and without the measure
+    /// switched on.
     #[test]
     fn asking_for_a_json_envelope_does_not_change_what_the_step_receives() {
         let dir = scratch("involucro");
@@ -1493,8 +1457,8 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
             without, with,
             "misurare non deve cambiare di una virgola ciò che il passo consegna a valle"
         );
-        // E la misura c'è stata davvero: senza questo, la prova passerebbe anche
-        // se il blocco `usage` non fosse mai arrivato al punto di invocazione.
+        // And the measure really happened: without this, the proof would pass
+        // even if the `usage` block never reached the invocation.
         assert_eq!(
             calls_in(&dir.join("con"))[0].input_tokens,
             Some(1_000_000),
@@ -1503,17 +1467,17 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         assert_eq!(calls_in(&dir.join("senza"))[0].input_tokens, None);
     }
 
-    // ── senza il posto dove scrivere, non si scrive niente ─────────────
+    // ── without a place to write, nothing is written ───────────────────
 
-    /// Una riga attribuita a nessuno sporcherebbe le somme peggio di una riga
-    /// mancante: senza deposito, o senza corsa, non si registra.
+    /// A row attributed to nobody would foul the sums worse than a missing row:
+    /// with no ledger, or no run, nothing is recorded.
     #[test]
     fn without_a_ledger_or_without_a_run_nothing_is_written() {
         let dir = scratch("senza-appigli");
         let bin = fake_engine(&dir, "motore", WRAPS_ON_DEMAND);
         let recipe = declaring_recipe();
 
-        // Senza deposito: il passo funziona lo stesso.
+        // With no ledger: the step works all the same.
         let action = ExternalEngineAction::resolving_with(Declares {
             bin: bin.clone(),
             recipe: Some(recipe.clone()),
@@ -1523,7 +1487,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
             .execute(&input, &shared("corsa-7", "passo-7"))
             .is_ok());
 
-        // Col deposito ma senza la chiave della corsa: nessuna riga.
+        // With the ledger but no run key: no row.
         let ledger = Ledger::open(dir.join("deposito")).expect("deposito");
         let action = ExternalEngineAction::resolving_with(Declares {
             bin,
@@ -1539,10 +1503,9 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         );
     }
 
-    /// Un `bin` scritto a mano nel passo non è una chiamata a un modello:
-    /// `sh -c echo` non consuma nessuna quota, e riempirne il deposito
-    /// renderebbe illeggibile la vista che questo lavoro esiste per rendere
-    /// leggibile.
+    /// A `bin` written by hand in the step is not a model call: `sh -c echo`
+    /// burns no quota, and filling the ledger with it would make unreadable the
+    /// view this work exists to make readable.
     #[test]
     fn a_hand_written_bin_is_not_a_model_call() {
         let dir = scratch("bin-a-mano");
@@ -1556,23 +1519,21 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         assert!(calls_in(&dir.join("deposito")).is_empty());
     }
 
-    /// **`cargo` E `git` NON SONO CHIAMATE A UN MODELLO, E IL DEPOSITO NON DEVE
-    /// CONTARLE.**
+    /// **`cargo` AND `git` ARE NOT MODEL CALLS, AND THE LEDGER MUST NOT COUNT
+    /// THEM.**
     ///
-    /// Misurato sul deposito di questa macchina il 31/08/2026: su ventiquattro
-    /// righe di `model_calls`, due sono `git` e una `cargo`. Nessuna delle tre
-    /// consuma quota di nessun abbonamento, e tutte e tre arrivano senza costo —
-    /// quindi `Spend::is_complete()` è **falso su ogni corsa vera**, e la frase
-    /// d'onestà del tetto («la spesa vera è più alta») si accende sempre, anche
-    /// quando non c'è niente di ignoto. Un avviso sempre acceso non lo legge
-    /// nessuno, ed è così che si perde quello vero — la riga di codex, che il
-    /// costo davvero non lo dichiara.
-    ///
-    /// **CHI DECIDE È IL DESCRITTORE, NON UN ELENCO DI NOMI SCRITTO QUI.** Uno
-    /// strumento è un motore se dichiara **come gli si fa una domanda**
-    /// (`ask`): `git` e `cargo` non lo dichiarano, e nessun elenco di nomi qui
-    /// dentro invecchierebbe bene. È la stessa regola del guasto 3 — quello che
-    /// il catalogo dichiara vale più di quello che il codice indovina.
+    /// Measured on this machine's ledger: of twenty-four `model_calls` rows, two
+    /// are `git` and one `cargo`. None of the three burns any subscription's
+    /// quota, and all three arrive with no cost — so `Spend::is_complete()` is
+    /// **false on every real run**, and the cap's honesty line («the true spend
+    /// is higher») lights up always, even with nothing unknown. An always-lit
+    /// warning is read by nobody, and that is how the real one is lost — the
+    /// codex row, which genuinely does not state its cost. **THE DESCRIPTOR
+    /// DECIDES, NOT A LIST OF NAMES WRITTEN HERE**: a tool is an engine if it
+    /// declares **how it is asked a question** (`ask`), which `git` and `cargo`
+    /// do not, and no list of names in here would age well. Same rule as fault
+    /// 3 — what the catalogue declares counts for more than what the code
+    /// guesses.
     #[test]
     fn a_tool_that_cannot_be_asked_anything_is_not_a_model_call() {
         let dir = scratch("non-e-un-motore");
@@ -1580,8 +1541,8 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let ledger = Ledger::open(dir.join("deposito")).expect("deposito");
         let action = ExternalEngineAction::resolving_with(Declares {
             bin,
-            // Nessuna ricetta `ask`: è com'è dichiarato `cargo` nel catalogo
-            // spedito, e il passo si scrive le proprie opzioni.
+            // No `ask` recipe: this is how `cargo` is declared in the shipped
+            // catalogue, and the step writes its own options.
             recipe: None,
         })
         .recording_to(Some(ledger));
@@ -1601,15 +1562,15 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         );
     }
 
-    /// Le opzioni scritte dal passo vincono, e con loro il consumo resta
-    /// sconosciuto: allungare alle spalle di chi ha scritto quella riga di
-    /// comando una domanda che non ha fatto sarebbe decidere al posto suo. La
-    /// riga però si scrive, e dice proprio questo.
+    /// The options the step writes win, and with them the usage stays unknown:
+    /// appending, behind the back of whoever wrote that command line, a question
+    /// they never asked would be deciding for them. The row is written all the
+    /// same, and says exactly this.
     ///
-    /// **È LA GEMELLA DELLA PROVA QUI SOPRA**, e le due vanno lette insieme: un
-    /// motore vero interrogato con le opzioni del passo **resta** nel conto, e
-    /// solo chi non è un motore ne esce. Senza questa, il filtro potrebbe
-    /// svuotare la tabella e la prova sopra sarebbe verde lo stesso.
+    /// **THE TWIN OF THE PROOF ABOVE**, to be read together: a real engine asked
+    /// with the step's options **stays** in the count, and what leaves it is
+    /// what is no engine. Without this, the filter could empty the table and the
+    /// proof above would stay green.
     #[test]
     fn when_the_step_writes_its_own_args_the_usage_is_not_asked_for() {
         let dir = scratch("args-del-passo");
@@ -1634,11 +1595,10 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         };
 
         assert_eq!(output["stdout"], "la risposta vera");
-        // **IL BRACCIO CHE CONTA**: la riga di comando è ESATTAMENTE quella che
-        // il passo ha scritto. Accodarci le opzioni del consumo sarebbe
-        // allungare alle spalle di chi l'ha scritta una domanda che non ha
-        // fatto, e da fuori non si vedrebbe: solo guardando l'argv del processo
-        // la differenza salta fuori.
+        // **THE ARM THAT COUNTS**: the command line is EXACTLY the one the step
+        // wrote. Appending the usage options would add, behind its author's
+        // back, a question they never asked, and from outside it would be
+        // invisible: the difference shows up in the process argv and nowhere else.
         assert_eq!(
             argv_of(&dir),
             vec!["--a-modo-mio".to_owned()],
@@ -1649,11 +1609,11 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         assert_eq!(calls[0].input_tokens, None, "ma non misurata");
     }
 
-    /// **IL VINCOLO DI INDIPENDENZA DAL MODELLO, NEL PUNTO IN CUI SI ROMPE.**
-    /// Un motore che non dichiara `usage` resta non misurato ANCHE SE la sua
-    /// uscita è un involucro JSON con dentro chiavi che qualcuno riconoscerebbe.
-    /// Se il codice avesse un ramo cablato su un fornitore — «se somiglia a
-    /// questo, leggi qui» — questa prova diventerebbe rossa, e deve.
+    /// **THE MODEL-INDEPENDENCE CONSTRAINT, AT THE POINT WHERE IT BREAKS.** An
+    /// engine that declares no `usage` stays unmeasured EVEN IF its output is a
+    /// JSON envelope holding keys somebody would recognise. Were the code to
+    /// carry a branch wired to one vendor — «if it looks like this, read here» —
+    /// this proof would go red, and it must.
     #[test]
     fn output_that_merely_looks_familiar_is_not_read_without_a_declaration() {
         let dir = scratch("nessun-ramo-cablato");
@@ -1693,8 +1653,8 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         );
         assert_eq!(calls[0].cost_micros, None);
         assert_eq!(calls[0].actual_model, "");
-        // E l'uscita del passo è quella grezza: senza `answer` dichiarato non
-        // si spacchetta niente, perché nessuno ha detto dove guardare.
+        // And the step's output is the raw one: with no `answer` declared
+        // nothing is unwrapped, because nobody said where to look.
         assert!(
             output["stdout"].as_str().unwrap().starts_with('{'),
             "l'involucro resta tale e quale: {}",
@@ -1702,14 +1662,14 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         );
     }
 
-    // ── (f) sotto quale dotazione la chiamata è girata ─────────────────
+    // ── (f) under which equipment the call ran ─────────────────────────
 
-    /// La stessa serratura di `with_price_list`, per lo stato dei profili:
-    /// `PROFILES_STATE_PATH` è una variabile sola come `SAILOR_PRICING`, e due
-    /// prove che la scrivessero insieme si toglierebbero la dotazione a vicenda.
-    /// Il listino si punta al vuoto apposta — qui si guarda il profilo, non il
-    /// costo, e dipendere dal file di casa di chi esegue le prove sarebbe un
-    /// modo di venire diversi senza che niente sia cambiato.
+    /// The same lock as `with_price_list`, for the profiles state:
+    /// `PROFILES_STATE_PATH` is a single variable like `SAILOR_PRICING`, and two
+    /// tests writing it together would take the equipment from each other. The
+    /// price list is pointed at nothing on purpose — what is watched here is the
+    /// profile, not the cost, and leaning on the home file of whoever runs the
+    /// tests would be a way of coming out different with nothing changed.
     fn with_profiles_state<T>(state: &std::path::Path, body: impl FnOnce() -> T) -> T {
         let _guard = ENV_LOCK
             .lock()
@@ -1722,25 +1682,23 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         out
     }
 
-    /// **LA DOTAZIONE SOTTO CUI LA CHIAMATA È GIRATA FINISCE NELLA SUA RIGA.**
+    /// **THE EQUIPMENT THE CALL RAN UNDER ENDS UP ON ITS ROW.**
     ///
-    /// Guasto 18, seconda metà. Senza, due corse dello stesso flusso non sono la
-    /// stessa misura: la stessa catena di passi, sotto due profili, dà due
-    /// consumi diversi per una ragione che la riga non porta. Fino al
-    /// 01/09/2026 questa colonna la scriveva vuota ogni chiamata.
+    /// Fault 18, second half. Without it two runs of the same flow are not the
+    /// same measure: one chain of steps, under two profiles, gives two different
+    /// usages for a reason the row does not carry, and the column was written
+    /// empty on every call. **THE HOME PATH BELONGS IN IT**, being what a
+    /// diagnosis leans on: a profile name is reused, moved and deleted, a path
+    /// is the place one goes to look.
     ///
-    /// **E IL PERCORSO DELLA CASA CI STA DENTRO**, che è il dato su cui una
-    /// diagnostica si appoggia: un nome di profilo si riusa, si sposta e si
-    /// cancella, un percorso è il posto dove si va a guardare.
-    ///
-    /// *Mutante eseguito*: rimettere `engine_identity: EngineIdentity::default()`
-    /// in `record_the_call`. Questa diventa rossa e la gemella qui sotto resta
-    /// verde — ed è per questo che ci sono tutte e due.
+    /// *Mutant run*: put `engine_identity: EngineIdentity::default()` back in
+    /// `record_the_call`. This one goes red while the twin below stays green —
+    /// which is why there are two.
     #[test]
     fn the_row_says_under_which_equipment_the_call_ran() {
         let dir = scratch("dotazione");
-        // Il nome del file È il legame: `cli_for_executable` riconosce la riga
-        // di comando dall'eseguibile, non dall'identificativo del descrittore.
+        // The file name IS the link: `cli_for_executable` recognises the command
+        // line from the executable, not from the descriptor's id.
         let bin = fake_engine(&dir, "codex", ALWAYS_WRAPS);
         let state = dir.join("profili.json");
         std::fs::write(
@@ -1782,16 +1740,14 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         );
     }
 
-    /// La gemella: senza nessun profilo attivo la riga dice **ereditata**, non un
-    /// nome inventato e nemmeno un vuoto. Senza di lei un mutante che scrivesse
-    /// sempre la stessa identità passerebbe la prova qui sopra.
+    /// The twin: with no profile in force the row says **inherited**, not an
+    /// invented name and not an emptiness either. Without it a mutant that
+    /// always wrote the same identity would pass the proof above.
     ///
-    /// **«EREDITATA» È IL PUNTO DELLA CURA.** Prima qui c'era la stringa vuota,
-    /// la stessa che usciva quando il binario non era un motore conosciuto,
-    /// quando il profilo era sparito, e quando la casa non si sposta con una
-    /// variabile. Quattro fatti diversi e un vuoto solo: adesso questo dice che
-    /// il processo è partito con la casa di chi ha aperto il terminale, e quale
-    /// riga di comando era.
+    /// **«INHERITED» IS THE POINT OF THE CURE.** One empty string served four
+    /// different facts — an unknown binary, a vanished profile, a home no
+    /// variable moves, and this case; now this one says the process started with
+    /// the home of whoever opened the terminal, and which command line it was.
     #[test]
     fn with_no_profile_in_force_the_row_says_the_identity_was_inherited() {
         let dir = scratch("nessuna-dotazione");
@@ -1822,26 +1778,25 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         );
     }
 
-    /// Un finto `codex` che dice **con quale casa è partito davvero**: la scrive
-    /// su un file accanto a sé, e poi risponde nell'involucro come gli altri.
-    /// Senza questo file la prova qui sotto guarderebbe solo il deposito, cioè
-    /// solo metà del difetto.
+    /// A fake `codex` that says **which home it really started in**: it writes
+    /// it to a file beside itself, then answers in the envelope like the others.
+    /// Without that file the proof below would watch the ledger alone, which is
+    /// half the defect.
     const WRITES_DOWN_ITS_HOME: &str = r#"cat > /dev/null
 printf '%s' "$CODEX_HOME" > "$(dirname "$0")/casa"
 printf '{"result":"la risposta vera","model":"modello-di-prova","usage":{"input_tokens":1,"output_tokens":1}}'"#;
 
-    /// **IL DEPOSITO REGISTRA UN'IDENTITÀ CHE IL PROCESSO NON HA USATO.**
+    /// **THE LEDGER RECORDS AN IDENTITY THE PROCESS NEVER USED.**
     ///
-    /// Che il passo vinca è la decisione, non il difetto. Il difetto è che la
-    /// riga continua a nominare il profilo attivo: il motore è partito nella
-    /// casa scritta nel passo, e chi legge il deposito per sapere con quali
-    /// credenziali quel processo ha girato legge il nome di un profilo che non è
-    /// mai stato messo in forza. È il caso in cui qualcuno ha cambiato identità
-    /// apposta — cioè esattamente quello che una diagnostica o un controllo di
-    /// sicurezza esiste per vedere — ed è il caso in cui il dato mente.
-    ///
-    /// **LE DUE METÀ SI GUARDANO INSIEME.** Cosa ha ricevuto il processo, e cosa
-    /// dice la riga. Separate, ognuna delle due resta verde col difetto dentro.
+    /// That the step wins is the decision, not the defect. The defect is the row
+    /// going on naming the active profile: the engine started in the home
+    /// written in the step, and whoever reads the ledger to learn which
+    /// credentials that process ran with reads the name of a profile never put
+    /// in force. This is the case where somebody changed identity deliberately —
+    /// exactly what a diagnosis or a security check exists to see — and the case
+    /// where the datum lies. **THE TWO HALVES ARE WATCHED TOGETHER**: what the
+    /// process received, and what the row says. Apart, each stays green with the
+    /// defect inside.
     #[test]
     fn the_row_does_not_name_a_profile_the_step_replaced() {
         let dir = scratch("dotazione-scavalcata");
@@ -1896,15 +1851,15 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","usage":{"input_
         );
     }
 
-    /// **IL GETTONE NON ENTRA IN NESSUN CAMPO DELL'IDENTITÀ.**
+    /// **NO SECRET ENTERS ANY FIELD OF THE IDENTITY.**
     ///
-    /// Un passo può portare nel proprio ambiente qualunque variabile, chiavi
-    /// comprese. Ciò che finisce nel deposito è **quale casa** e **come è stata
-    /// scelta**, mai cosa c'era intorno: una riga di registro si legge in una
-    /// diagnostica, si copia in un rapporto e si manda a qualcuno.
+    /// A step may carry any variable in its environment, keys included. What
+    /// ends up in the ledger is **which home** and **how it was chosen**, never
+    /// what surrounded it: a ledger row is read in a diagnosis, copied into a
+    /// report and sent to somebody.
     ///
-    /// *Mutante eseguito*: vedi la consegna — far portare all'identità l'intero
-    /// ambiente rende rossa questa e nessun'altra.
+    /// *Mutant run*: making the identity carry the whole environment turns this
+    /// one red and no other.
     #[test]
     fn no_secret_from_the_step_ends_up_in_the_recorded_identity() {
         let dir = scratch("nessun-gettone");
@@ -1928,7 +1883,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","usage":{"input_
             recipe: Some(declaring_recipe()),
         })
         .recording_to(Some(ledger));
-        // Un gettone riconoscibile: se comparisse da qualche parte, si vede.
+        // A recognisable secret: if it showed up anywhere, it would be seen.
         let input = json!({
             "tool": "motore-di-prova",
             "stdin": "ciao",

@@ -5,32 +5,30 @@
 use crate::probe::LoginRecipe;
 use crate::{Declared, Pointer};
 
-/// Come si passa da «voglio *questo* strumento» all'eseguibile che lo è qui.
+/// How «I want *this* tool» becomes the executable that is it here.
 ///
-/// **PERCHÉ UN TRATTO E NON UNA CHIAMATA.** Chi sa quali strumenti esistono su
-/// una macchina è `toolbox`, e `toolbox` dipende da questo crate: chiamarlo da
-/// qui chiuderebbe un anello. Ma la ragione vera viene prima dell'anello: un
-/// flusso non deve sapere *come* si cerca uno strumento. Chi compone il registro
-/// delle azioni sceglie — dove Sailor gira si leggono i descrittori, in una
-/// prova si risponde senza toccare il disco — e il flusso resta lo stesso file.
+/// **WHY A TRAIT AND NOT A CALL.** `toolbox` knows which tools a machine has,
+/// and it depends on this crate: calling it from here would close a loop. The
+/// deeper reason comes first: a flow must not know *how* a tool is looked for.
+/// Whoever composes the action registry chooses — descriptors read where Sailor
+/// runs, an answer without the disk in a test — and the flow stays one file.
 pub trait ToolResolver: Send + Sync {
-    /// Il percorso dell'eseguibile che vale `id` su questa macchina, oppure il
-    /// motivo per cui non si può usare, scritto per una persona: quel testo
-    /// finisce dentro il passo rosso, ed è tutto ciò che chi legge avrà.
+    /// The path of the executable that is `id` on this machine, or why it
+    /// cannot be used, written for a person: that text lands inside the red
+    /// step, and is all the reader will have.
     fn resolve(&self, id: &str) -> Result<String, String>;
 
-    /// Come si fa una domanda secca a `id`, se il suo descrittore lo dichiara.
+    /// How a one-shot question is put to `id`, when its descriptor says.
     ///
-    /// **PERCHÉ IL PASSO NON DEVE SAPERLO.** Finché le opzioni di un motore
-    /// stanno scritte dentro un passo — `-p` per uno, `--mode plan --print` per
-    /// un altro — quel passo è legato a quel motore, e un flusso «indipendente
-    /// dal modello» lo è solo nel nome. Il 29/08/2026 sei passi su sei di un
-    /// flusso nominavano lo stesso motore: quando quello ha esaurito la quota,
-    /// il flusso è morto mentre un altro motore, installato e vivo, non è stato
-    /// nemmeno provato.
+    /// **WHY THE STEP MUST NOT KNOW.** While an engine's options are written
+    /// inside a step — `-p` for one, `--mode plan --print` for another — that
+    /// step is bound to that engine, and a «model-independent» flow is one in
+    /// name only. Six steps out of six naming the same engine is what killed a
+    /// flow the day that engine ran out of quota, with another engine,
+    /// installed and live, never tried.
     ///
-    /// Chi non la dichiara restituisce `None`, e il passo dovrà dire le opzioni
-    /// da sé: si funziona peggio, non in silenzio.
+    /// Whoever does not declare it gets `None`, and the step must say the
+    /// options itself: it works worse, but never silently.
     fn ask_recipe(&self, _id: &str) -> Option<AskRecipe> {
         None
     }
@@ -47,27 +45,24 @@ pub trait ToolResolver: Send + Sync {
         Vec::new()
     }
 
-    /// Come **questo** motore apre, riprende e ramifica una sessione, se lo sa
-    /// fare.
+    /// How **this** engine opens, resumes and forks a session, when it can.
     ///
-    /// **IL PREDEFINITO È `None`, E QUEL `None` È IL VINCOLO PERMANENTE.** Un
-    /// motore che non sa riprendere non diventa un errore e non diventa un ramo
-    /// `if` scritto per lui: riceve la riga di comando di sempre, riparte da
-    /// zero, e paga di più. È l'unica forma che «indipendenza dal modello»
-    /// può prendere qui — la capacità è un dato di chi la dichiara, non una
-    /// costante scritta accanto al codice che la userebbe.
+    /// **THE DEFAULT IS `None`, AND THAT `None` IS THE PERMANENT CONSTRAINT.**
+    /// An engine that cannot resume becomes neither an error nor an `if` branch
+    /// written for it: it gets the usual command line, starts over, and pays
+    /// more. It is the shape «model independence» takes here — a capability is
+    /// a fact about whoever declares it, not a constant beside the code.
     fn session_recipe(&self, _id: &str) -> Option<SessionRecipe> {
         None
     }
 
-    /// Come si chiede a `id` se la casa da cui parte è autenticata.
+    /// How `id` is asked whether the home it starts from is authenticated.
     ///
-    /// **`None` VUOL DIRE «NESSUNO HA GUARDATO», MAI «È AUTENTICATO».** Chi non
-    /// la dichiara non fa scattare nessun avviso e non ne fa scattare nemmeno
-    /// uno tranquillizzante: il controllo tace su quel motore, e chi legge sa
-    /// che tace. È la stessa regola di `refuses_without_prompt`, e il verso
-    /// conta — un predefinito che dicesse di sì renderebbe silenziosa proprio la
-    /// condizione che questo canale esiste per rendere visibile.
+    /// **`None` MEANS «NOBODY LOOKED», NEVER «IT IS AUTHENTICATED».** Whoever
+    /// does not declare it raises no warning, and no reassurance either: the
+    /// check is silent on that engine, and the reader sees it is silent. Same
+    /// rule as `refuses_without_prompt`, and the direction matters — a default
+    /// saying yes would silence the condition this channel exists to show.
     fn login_recipe(&self, _id: &str) -> Option<LoginRecipe> {
         None
     }
@@ -92,90 +87,86 @@ pub trait ToolResolver: Send + Sync {
     }
 }
 
-/// Il segnaposto che, dentro le opzioni di una ricetta di sessione, prende il
-/// posto dell'identificativo della sessione.
+/// The placeholder standing in for the session identifier inside a session
+/// recipe's options.
 ///
-/// Sta qui e non in `toolbox` perché è **il contratto fra i due**: chi scrive
-/// un file di capacità e chi monta la riga di comando devono nominare la stessa
-/// cosa, e due costanti gemelle in due crate divergono al primo che la cambia.
+/// It lives here and not in `toolbox` because it is **the contract between the
+/// two**: a capability file and the code assembling the command line must name
+/// the same thing, and twin constants in two crates diverge on first edit.
 pub const SESSION_PLACEHOLDER: &str = "{session}";
 
-/// Cosa un motore sa fare con le proprie sessioni, in opzioni già scritte.
+/// What an engine can do with its own sessions, as options already written.
 ///
-/// **OGNI MODO PORTA LA RIGA INTERA, NON LE OPZIONI IN PIÙ.** Sembra una
-/// duplicazione di `AskRecipe::args` e non lo è: su `codex` riprendere non è
-/// un'opzione aggiunta, è **un sottocomando diverso** — `codex exec resume
-/// <id>` contro `codex exec` — e su `codex` ramificare è un terzo sottocomando
-/// ancora, `codex exec fork <id>`. Un modello «aggiungi queste opzioni» non
-/// saprebbe esprimere nessuno dei due, e li escluderebbe entrambi per sempre.
-/// Verificato il 31/08/2026 con `codex exec --help` su questa macchina.
+/// **EVERY MODE CARRIES THE WHOLE LINE, NOT THE EXTRA OPTIONS.** It looks like
+/// a duplicate of `AskRecipe::args` and is not: on `codex`, resuming is not an
+/// added option but **a different subcommand** — `codex exec resume <id>`
+/// against `codex exec` — and forking is a third one, `codex exec fork <id>`.
+/// An «add these options» model could express neither, and would rule both out
+/// for good. Verified with `codex exec --help` on this machine.
 ///
-/// Ciò che resta condiviso con la ricetta della domanda resta condiviso: le
-/// opzioni del consumo e quelle che devono stare attaccate alla domanda si
-/// accodano qui come si accodano là, perché **misurare non deve smettere di
-/// funzionare quando si riprende** — sarebbe il modo più elegante di perdere
-/// proprio i numeri che dicono se la ripresa conviene.
+/// What is shared with the ask recipe stays shared: the usage options, and the
+/// ones that must stay glued to the question, are appended here as they are
+/// appended there, because **measuring must not stop working on a resume** —
+/// that would be the most elegant way to lose the very numbers saying whether
+/// resuming pays.
 ///
-/// `None` su un modo vuol dire che quel motore non lo sa fare: si riparte da
-/// zero, e si paga di più.
+/// `None` on a mode means the engine cannot do it: it starts over, and pays
+/// more.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SessionRecipe {
-    /// Apre una sessione. Se la riga contiene il segnaposto, l'identificativo
-    /// lo scegliamo noi; se non lo contiene, lo conia il motore e lo si va a
-    /// leggere con `id_from`.
+    /// Opens a session. If the line holds the placeholder we choose the
+    /// identifier; if it does not, the engine mints it and `id_from` reads it
+    /// back.
     pub open: Option<Vec<String>>,
-    /// Riprende una sessione esistente, che resta la stessa.
+    /// Resumes an existing session, which stays the same one.
     pub resume: Option<Vec<String>>,
-    /// Ramifica una sessione esistente: il tronco resta dov'è, e il lavoro di
-    /// questo passo non lo tocca.
+    /// Forks an existing session: the trunk stays where it is, and this step's
+    /// work does not touch it.
     pub fork: Option<Vec<String>>,
-    /// Dove, in ciò che il motore ha detto, sta l'identificativo della sessione
-    /// **che ha appena usato**.
+    /// Where, in what the engine said, the identifier of the session it
+    /// **just used** sits.
     ///
-    /// **SERVE PERCHÉ NON TUTTI LASCIANO SCEGLIERE IL NOME, ED È LA MAGGIORANZA.**
-    /// Verificato il 31/08/2026: `codex` non ha nessuna opzione per imporre un
-    /// identificativo, ma lo **stampa** — `session id: <uuid>` — nello stesso
-    /// flusso di testo da cui il suo descrittore legge già i token. Senza
-    /// questa via, i motori che coniano da sé sarebbero esclusi per sempre da
-    /// una capacità che hanno.
+    /// **IT EXISTS BECAUSE MOST ENGINES DO NOT LET THE NAME BE CHOSEN.**
+    /// `codex` has no option to impose an identifier, but it **prints** one —
+    /// `session id: <uuid>` — in the same text its descriptor already reads
+    /// tokens from. Without this route, engines that mint their own would be
+    /// shut out for good from a capability they have.
     ///
-    /// **E VALE ANCHE DOPO UNA RAMIFICAZIONE**, che è dove rende di più: un
-    /// ramo nasce con un identificativo nuovo che nessuno ci ha chiesto, e
-    /// leggerlo è l'unico modo perché un passo ancora più avanti possa
-    /// continuare **quel ramo** invece del tronco.
+    /// **AND IT HOLDS AFTER A FORK TOO**, where it pays most: a branch is born
+    /// with a new identifier nobody asked for, and reading it is the way a
+    /// later step can carry on **that branch** instead of the trunk.
     pub id_from: Option<Pointer>,
 }
 
-/// Dove va a finire il testo della domanda quando si interroga un motore.
+/// Where the question's text ends up when an engine is asked.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PromptVia {
-    /// Sull'ingresso standard.
+    /// On standard input.
     Stdin,
-    /// Come ultimo argomento della riga di comando.
+    /// As the last argument of the command line.
     LastArg,
 }
 
-/// La riga di comando di una ricetta, **senza** il testo della domanda.
+/// A recipe's command line, **without** the question's text.
 ///
-/// L'ordine è: le opzioni della domanda, quelle che servono a farsi dire il
-/// consumo, e per ultime quelle che devono restare attaccate alla domanda.
+/// The order is: the question's options, the ones that ask for the usage, and
+/// last the ones that must stay glued to the question.
 ///
-/// **STA FUORI DAL PUNTO CHE LA USA PERCHÉ SI POSSA GUARDARE SENZA ESEGUIRE
-/// NIENTE.** Un ordine sbagliato qui non rompe la compilazione e non rompe
-/// nessuna prova sui singoli blocchi: si vede solo lanciando il motore giusto,
-/// che è come il guasto 1 è arrivato in produzione e come ci è tornato il
-/// 31/08/2026 da un'altra porta.
+/// **IT SITS OUTSIDE THE PLACE THAT USES IT SO IT CAN BE READ WITHOUT RUNNING
+/// ANYTHING.** A wrong order here breaks no compile and no unit test: it shows
+/// up by launching the right engine and no other way, which is how fault 1
+/// reached production, and how it came back through another door.
 pub fn command_line(recipe: &AskRecipe) -> Vec<String> {
     command_line_with(recipe, &recipe.args)
 }
 
-/// La stessa riga, con le opzioni della domanda sostituite da altre.
+/// The same line, with the question's options replaced by others.
 ///
-/// Serve alle sessioni: `codex exec resume <id>` non è `codex exec` con
-/// qualcosa in coda, è un'altra riga. Ciò che sta **dopo** le opzioni della
-/// domanda — il consumo e ciò che deve restare attaccato al testo — non cambia,
-/// ed è il motivo per cui questa funzione esiste invece di lasciar montare la
-/// riga a chi chiama: un motore ripreso deve continuare a dire quanto consuma.
+/// Sessions need it: `codex exec resume <id>` is not `codex exec` with
+/// something appended, it is another line. What sits **after** the question's
+/// options — the usage, and what must stay glued to the text — does not change,
+/// and that is why this function exists instead of letting the caller assemble
+/// the line: a resumed engine must go on saying what it spends.
 pub fn command_line_with(recipe: &AskRecipe, ask_args: &[String]) -> Vec<String> {
     let mut args = ask_args.to_vec();
     if let Some(usage) = &recipe.usage {
@@ -216,28 +207,26 @@ pub fn command_line_naming_model_and_ceiling(
     command_line_with(recipe, &ask_args)
 }
 
-/// Come si interroga un motore in un colpo solo, e come quel motore dice di
-/// **non poter lavorare**.
+/// How an engine is asked in one shot, and how it says it **cannot work**.
 #[derive(Clone, Debug)]
 pub struct AskRecipe {
-    /// Le opzioni che vogliono una domanda secca, senza il testo della domanda.
+    /// The options that ask for a one-shot question, without its text.
     pub args: Vec<String>,
-    /// Dove va il testo della domanda.
+    /// Where the question's text goes.
     pub prompt: PromptVia,
-    /// Le opzioni che devono restare **attaccate alla domanda**, dopo quelle
-    /// del consumo. Vuoto per quasi tutti; vedi `Ask::args_before_prompt`.
+    /// The options that must stay **glued to the question**, after the usage
+    /// ones. Empty for nearly every engine; see `Ask::args_before_prompt`.
     pub args_before_prompt: Vec<String>,
-    /// I frammenti che, comparendo nell'uscita di un fallimento, dicono che
-    /// **questo motore non poteva lavorare** — quota esaurita, credenziali
-    /// mancanti — e non che il lavoro fosse sbagliato.
+    /// The fragments that, appearing in a failure's output, say **this engine
+    /// could not work** — quota spent, credentials missing — and not that the
+    /// work itself was wrong.
     ///
-    /// **PERCHÉ LA DISTINZIONE È TUTTO.** Passare al motore successivo a ogni
-    /// fallimento sarebbe la cosa peggiore: un mandato scritto male
-    /// scenderebbe la catena fino a un modello che risponde comunque, e la
-    /// risposta sbagliata arriverebbe senza che nessuno sappia perché. Si passa
-    /// oltre **solo** quando il motore ha dichiarato di non poter lavorare, e
-    /// solo con le parole che il suo descrittore dichiara: chi non le dichiara
-    /// non fa scattare nessun ripiego.
+    /// **THE DISTINCTION IS EVERYTHING.** Moving to the next engine on every
+    /// failure would be the worst thing: a badly written brief would walk down
+    /// the chain to a model that answers anyway, and the wrong answer would
+    /// arrive with nobody knowing why. The chain moves on **only** when the
+    /// engine declared it could not work, and on the words its descriptor
+    /// declares: whoever declares none triggers no fallback.
     pub unusable_when: Vec<String>,
     /// The words that mean the quota is spent, and how long to set the engine
     /// aside when they appear. Empty and `None` when the descriptor does not
@@ -250,39 +239,38 @@ pub struct AskRecipe {
     /// Measured: without a question it exits quietly with an empty stdout
     /// instead of refusing in words.
     pub silent_without_prompt: bool,
-    /// I frammenti con cui questo motore rifiuta la riga **montata senza la
-    /// domanda**: «la riga andava bene, mancava solo il testo».
+    /// The fragments this engine refuses a line **assembled without the
+    /// question** with: «the line was fine, the text was missing».
     ///
-    /// Viaggia con la ricetta e non accanto, perché serve esattamente dove
-    /// serve la riga: chi monta `command_line` per provarla a secco deve poter
-    /// giudicare la risposta senza tornare a chiedere niente al catalogo.
-    /// Vuoto vuol dire «nessuno ha guardato», mai «la riga è sana».
+    /// It travels with the recipe and not beside it, because it is needed
+    /// exactly where the line is: whoever assembles `command_line` for a dry
+    /// run must judge the answer without asking the catalogue again. Empty
+    /// means «nobody looked», never «the line is sound».
     pub refuses_without_prompt: Vec<String>,
-    /// Come si legge **quanto ha consumato**, se il suo descrittore lo dichiara.
+    /// How **what it spent** is read, when its descriptor declares it.
     ///
-    /// Viaggia sulla stessa strada di tutto il resto della ricetta: chi scrive
-    /// un descrittore lo dichiara una volta, e nessun flusso deve conoscerlo.
-    /// `None` è la risposta di chi non lo dichiara, e non è un guasto: quel
-    /// motore si invoca come prima e i suoi token restano sconosciuti.
+    /// It travels the same road as the rest of the recipe: a descriptor
+    /// declares it once, and no flow need know it. `None` is the answer from
+    /// whoever declares nothing, and is no fault: that engine is invoked as
+    /// before, and its tokens stay unknown.
     pub usage: Option<UsageRecipe>,
 }
 
-/// Le opzioni da aggiungere per farsi dire il consumo, e dove leggerlo.
+/// The options to add to be told the usage, and where to read it.
 #[derive(Clone, Debug)]
 pub struct UsageRecipe {
     pub args: Vec<String>,
     pub declared: Declared,
 }
 
-/// Se questa uscita contiene una delle parole dichiarate. Il confronto ignora
-/// maiuscole e minuscole: nessun fornitore promette di non cambiarle. Un
-/// frammento vuoto non conta — combacerebbe con tutto, e trasformerebbe
-/// qualunque uscita in una corrispondenza.
+/// Whether this output holds one of the declared words. The comparison ignores
+/// case: no provider promises not to change it. An empty fragment does not
+/// count — it would match everything, turning any output into a hit.
 ///
-/// **STA QUI IN UNA COPIA SOLA** perché i due elenchi che un descrittore
-/// dichiara — «non posso lavorare» e «mancava la domanda» — si leggono nello
-/// stesso identico modo. Due funzioni gemelle divergerebbero sul primo
-/// dettaglio che qualcuno cambia a una sola delle due, ed è il guasto 10.
+/// **IT LIVES HERE IN A SINGLE COPY** because the two lists a descriptor
+/// declares — «I cannot work» and «the question was missing» — are read in
+/// exactly the same way. Twin functions would diverge on the first detail
+/// somebody changes in one of them, and that is fault 10.
 pub(crate) fn mentions_any(marks: &[String], output: &str) -> bool {
     let output = output.to_lowercase();
     marks
@@ -290,7 +278,7 @@ pub(crate) fn mentions_any(marks: &[String], output: &str) -> bool {
         .any(|mark| !mark.trim().is_empty() && output.contains(&mark.to_lowercase()))
 }
 
-/// Se questa uscita è il modo in cui un motore dice di non poter lavorare.
+/// Whether this output is how an engine says it cannot work.
 pub(crate) fn says_it_cannot_work(marks: &[String], output: &str) -> bool {
     mentions_any(marks, output)
 }
