@@ -32,7 +32,7 @@ pub fn run(args: &[String]) -> i32 {
                     );
                     return 2;
                 };
-                match parse_kind(raw) {
+                match Kind::from_label(raw) {
                     Some(k) => only = Some(k),
                     None => {
                         eprintln!(
@@ -279,17 +279,6 @@ fn print_changes() -> Result<(), String> {
     Ok(())
 }
 
-fn parse_kind(raw: &str) -> Option<Kind> {
-    match raw {
-        "skill" | "competenza" => Some(Kind::Skill),
-        "agent" | "agente" => Some(Kind::Agent),
-        "command" | "comando" => Some(Kind::Command),
-        "rule" | "regola" => Some(Kind::Rule),
-        "hook" | "gancio" => Some(Kind::Hook),
-        _ => None,
-    }
-}
-
 fn print_human(found: &Inventory, only: Option<Kind>, unreachable_only: bool) {
     println!("{}", catalogue::say("cli.inventory.roots_looked_at", &[]));
     for root in &found.roots {
@@ -309,14 +298,7 @@ fn print_human(found: &Inventory, only: Option<Kind>, unreachable_only: bool) {
     }
     println!();
 
-    let kinds = [
-        Kind::Skill,
-        Kind::Agent,
-        Kind::Command,
-        Kind::Rule,
-        Kind::Hook,
-    ];
-    for kind in kinds {
+    for kind in Kind::ALL {
         if only.is_some_and(|k| k != kind) {
             continue;
         }
@@ -358,5 +340,18 @@ fn print_human(found: &Inventory, only: Option<Kind>, unreachable_only: bool) {
             println!("  {:<34} {:<18}{}", entry.name, entry.origin, mark);
         }
         println!();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_kind_option_knows_every_family_and_nothing_else() {
+        for kind in Kind::ALL {
+            assert_eq!(Kind::from_label(kind.label()), Some(kind), "{}", kind.label());
+        }
+        assert_eq!(Kind::from_label("competenza"), None);
     }
 }
