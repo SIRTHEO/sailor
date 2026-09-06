@@ -18,6 +18,7 @@ mod beat;
 mod cap_and_schedule;
 mod check;
 mod cost;
+mod edit;
 mod engines;
 mod extensions;
 mod hazards;
@@ -31,6 +32,7 @@ use beat::{due_flows, tick_flows, waiting_report};
 use cap_and_schedule::{cap_of, schedule_of, set_cap, set_schedule};
 use check::check_flow;
 use cost::cost_of;
+use edit::edit_flow;
 use relocate::relocate_flow;
 use run_and_resume::{resume_run, run_flow};
 
@@ -74,6 +76,9 @@ fn dispatch(args: &[String], sources: &[FlowSource]) -> Result<String, String> {
         [command, name, value] if command == "schedule" => set_schedule(sources, name, value, None),
         [command, name, value, weight] if command == "schedule" => {
             set_schedule(sources, name, value, Some(weight))
+        }
+        [command, name, gesture @ ..] if command == "edit" && !gesture.is_empty() => {
+            edit_flow(sources, name, gesture)
         }
         [command] if command == "publish" => crate::publish_cmd::publish_flows(sources, None),
         [command, remote] if command == "publish" => {
@@ -210,6 +215,38 @@ pub const USAGE: &[Form] = &[
     Form {
         form: "sailor flow schedule <name> [3600s|07:30|none] [light|heavy]",
         says_key: "",
+    },
+    Form {
+        form: "sailor flow edit <name> trigger <3600s|07:30|none> [light|heavy]",
+        says_key: "",
+    },
+    Form {
+        form: "sailor flow edit <name> cap <micros|none>",
+        says_key: "",
+    },
+    Form {
+        form: "sailor flow edit <name> add-step <step> <action>",
+        says_key: "",
+    },
+    Form {
+        form: "sailor flow edit <name> remove-step <step>",
+        says_key: "",
+    },
+    Form {
+        form: "sailor flow edit <name> connect <from> <to>",
+        says_key: "cli.flow.form.connect",
+    },
+    Form {
+        form: "sailor flow edit <name> disconnect <from> <to>",
+        says_key: "",
+    },
+    Form {
+        form: "sailor flow edit <name> engines <step> <a,b|none>",
+        says_key: "",
+    },
+    Form {
+        form: "sailor flow edit <name> field <step> <key> <value|none>",
+        says_key: "cli.flow.form.field",
     },
     Form {
         form: "sailor flow relocate <name> [prefix-to-strip]",
