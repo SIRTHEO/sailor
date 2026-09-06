@@ -128,14 +128,6 @@ export function namedByTheMachine(id: Section): boolean {
   return rows.length > 0 && rows.every((row) => row.memoryTab === undefined);
 }
 
-/**
- * The places the strip above the work carries: the ones that belong to no
- * ground below it. The board hangs under the tree it draws, and a place the
- * machine's ground already holds is not offered twice.
- */
-export function inTheStrip(): Place[] {
-  return PLACES.filter((place) => !UNDER_A_TREE.includes(place.id) && !namedByTheMachine(place.id));
-}
 
 /**
  * The places that belong to the tree you stand in, and hang under it. Not a
