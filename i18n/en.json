@@ -626,6 +626,8 @@
   "window.flow.live.stopping": "stopping · {done} of {steps}",
   "window.flow.live.waiting": "waiting for you",
   "window.flow.live.went": "went",
+  "window.ground.machine": "this mac",
+  "window.ground.terminals": "the terminals",
   "window.step.kind.branch": "branch",
   "window.step.kind.check": "check",
   "window.step.kind.deposit": "store",
