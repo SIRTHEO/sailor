@@ -378,6 +378,8 @@ mod resuming_instead_of_rediscovering {
             declared_usage: None,
             can_be_asked: true,
             why: None,
+            ceiling: None,
+            no_ceiling_because: "this fixture declares none".to_owned(),
             session: SessionRecipe {
                 open: Some(vec!["--session".to_owned(), SESSION_PLACEHOLDER.to_owned()]),
                 resume: Some(vec!["--resume".to_owned(), SESSION_PLACEHOLDER.to_owned()]),

@@ -271,6 +271,52 @@ pub fn admits(
     })
 }
 
+/// What a suspended run says, in both languages, from the catalogue.
+///
+/// The sentence is composed here and not by whoever displays: this one is read
+/// by a person deciding whether to raise a cap, and the two numbers must arrive
+/// together with what is not known about them.
+pub fn why_it_is_suspended(stopped: &Suspension) -> String {
+    let remaining = in_units(stopped.remaining_micros);
+    let mut said = match stopped.reserve.why() {
+        None => catalogue::say(
+            "run.suspended.with_a_reserve",
+            &[
+                ("remaining", &remaining),
+                (
+                    "reserve",
+                    &in_units(stopped.reserve.micros().unwrap_or_default()),
+                ),
+            ],
+        ),
+        Some(why) => catalogue::say(
+            "run.suspended.without_a_reserve",
+            &[("remaining", &remaining), ("why", why)],
+        ),
+    };
+    if let flow::CostReading::AtLeast {
+        calls,
+        calls_without_cost,
+        ..
+    } = stopped.spent
+    {
+        said.push_str(&catalogue::say(
+            "run.suspended.the_spend_is_a_floor",
+            &[
+                ("calls", &calls.to_string()),
+                ("without_cost", &calls_without_cost.to_string()),
+            ],
+        ));
+    }
+    said
+}
+
+/// A figure of micro-units as a person reads it. The same scale the run record
+/// and the flow commands print: equivalent cost, never money charged.
+pub fn in_units(micros: i64) -> String {
+    format!("{:.2}", micros as f64 / MICROS_PER_UNIT as f64)
+}
+
 // ── the reserves of the calls already under way ──────────────────────────
 
 /// What each run has reserved for the calls it has in flight.
