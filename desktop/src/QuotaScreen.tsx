@@ -17,7 +17,7 @@ import {
   type Window as QuotaWindow,
 } from "./quota";
 
-type Ask<T> = { state: "asking" } | { state: "asked"; seen: T } | { state: "mute"; why: string };
+export type Ask<T> = { state: "asking" } | { state: "asked"; seen: T } | { state: "mute"; why: string };
 
 /** A bar for a fraction already spent. Full is not a failure — it is a fact. */
 function Spent({ fraction }: { fraction: number }) {
@@ -29,8 +29,9 @@ function Spent({ fraction }: { fraction: number }) {
   );
 }
 
-export function QuotaScreen({ native, now }: { native: boolean; now: number }) {
-  const [windows, setWindows] = useState<Ask<QuotaWindow[]>>({ state: "asking" });
+export function QuotaScreen({ native, now, readings }: { native: boolean; now: number; readings?: Ask<QuotaWindow[]> }) {
+  const [ownWindows, setWindows] = useState<Ask<QuotaWindow[]>>({ state: "asking" });
+  const windows = readings ?? ownWindows;
   const [book, setBook] = useState<Ask<Catalogue>>({ state: "asking" });
   const [look, setLook] = useState("");
   const [freeOnly, setFreeOnly] = useState(false);
@@ -52,12 +53,12 @@ export function QuotaScreen({ native, now }: { native: boolean; now: number }) {
       setBook({ state: "mute", why });
       return;
     }
-    quota().then(
+    if (readings === undefined) quota().then(
       (seen) => setWindows({ state: "asked", seen }),
       (error) => setWindows({ state: "mute", why: String(error) }),
     );
     readBook();
-  }, [native, readBook]);
+  }, [native, readBook, readings === undefined]);
 
   const choose = useCallback(
     (kind: string, id: string) => {
