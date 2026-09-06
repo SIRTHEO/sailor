@@ -150,29 +150,12 @@ describe("il foglio si legge tutto", () => {
 });
 
 /**
- * **DIVIETO 11 — NESSUNA COLONNA FISSA SENZA UNA VIA D'USCITA.**
- *
- * Un elemento con una `width` in pixel e `flex-shrink: 0` tiene quella
- * larghezza qualunque sia la finestra: è il suo scopo. Ma due di quegli
- * elementi ai lati di una tela flessibile si spartiscono la finestra prima
- * che la tela abbia voce, e sotto una certa larghezza **la tela va a zero**.
- *
- * Misurato il 01/09/2026 con un browser vero, appena aperta la vista dei
- * flussi:
- *
- *     375px →  colonna 232 · TELA 0 · pannello 288   (232+288 = 520 > 375)
- *    1440px →  colonna 232 · tela 920 · pannello 288
- *
- * A 375 pixel la superficie principale del prodotto non è stretta, non è
- * coperta, non è sotto: **non c'è**, e nessuna delle 12.494 righe di questo
- * albero diventava rossa per dirlo. In 2750 righe di foglio non esisteva una
- * sola regola-@ di impaginazione — le due che c'erano parlano entrambe di
- * movimento.
- *
- * La misura completa, che una prova sul foglio non può fare, sta in
- * `npm run check:canvas`: quella guarda la geometria disegnata. Questa guarda
- * la causa, ed è la più economica delle due — gira in millisecondi, dentro la
- * batteria, senza browser.
+ * **PROHIBITION 11 — NO FIXED COLUMN WITHOUT A WAY OUT.** A pixel `width` with
+ * `flex-shrink: 0` holds whatever the window does; two of them beside an
+ * elastic canvas divide the window before the canvas has a say, and at 375px
+ * the rail and the inspector came to 520 while the canvas was zero pixels wide.
+ * `npm run check:canvas` measures the drawn geometry; this one reads the cause
+ * out of the sheet, in milliseconds and without a browser.
  */
 describe("divieto 11 — una colonna fissa dichiara come si comporta da stretta", () => {
   /** La finestra più stretta che questo progetto dichiara di sostenere: è la

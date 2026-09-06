@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 /**
- * **THE WINDOW IS THE TERMINALS; THE SECTIONS OPEN INSIDE THAT WORK.** As a
- * destination among seven the centre of the work was subordinate to the
- * navigation: getting to it was a choice, and every rebuild made it again. It
- * is the ground now, and what a person left open is what comes back.
+ * **THE WINDOW IS THE TERMINALS; THE SECTIONS OPEN INSIDE THAT WORK.** As one
+ * destination among seven the centre of the work was subordinate to navigation
+ * and every rebuild chose it again. It is the ground, and it comes back.
  */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
