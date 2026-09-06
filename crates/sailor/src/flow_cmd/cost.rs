@@ -426,44 +426,146 @@ pub(super) fn in_units(micros: i64) -> String {
 
 // ── quello che il listino non sa prezzare ────────────────────────────────
 
-/// I nomi che questo listino non sa prezzare, ciascuno col perché.
+/// Why this list cannot price a name, or nothing at all when it can.
 ///
-/// **IL PERCHÉ STA ACCANTO AL NOME PERCHÉ SONO DUE RIPARAZIONI DIVERSE.** Un
-/// nome che il listino non conosce si ripara aggiungendo una voce — o un alias,
-/// se è lo stesso modello con un altro nome; una voce che c'è ma non ha i prezzi
-/// si ripara scrivendo i prezzi. Un elenco di soli nomi manderebbe a riscrivere
-/// una voce che esiste già.
+/// **THE WHY SITS BESIDE THE NAME BECAUSE THEY ARE TWO DIFFERENT REPAIRS.** A
+/// name the list does not know wants an entry — or an alias, if it is the same
+/// model under another name; an entry with no prices wants the prices. A list
+/// of bare names would send somebody to rewrite an entry that is already there.
+fn why_it_cannot_be_priced(prices: &PriceList, name: &str) -> Option<String> {
+    match prices.knows(name) {
+        Known::Priced => None,
+        Known::Absent => Some(catalogue::say(
+            "cli.flow.model_absent_from_the_list",
+            &[("model", name)],
+        )),
+        Known::ListedWithoutPrice => Some(catalogue::say(
+            "cli.flow.model_listed_without_price",
+            &[("model", name)],
+        )),
+    }
+}
+
+/// The names this list cannot price, each with its why.
 fn cannot_be_priced(prices: &PriceList, seen: &BTreeSet<String>) -> Vec<String> {
     seen.iter()
-        .filter_map(|name| match prices.knows(name) {
-            Known::Priced => None,
-            Known::Absent => Some(catalogue::say(
-                "cli.flow.model_absent_from_the_list",
-                &[("model", name)],
-            )),
-            Known::ListedWithoutPrice => Some(catalogue::say(
-                "cli.flow.model_listed_without_price",
-                &[("model", name)],
-            )),
+        .filter_map(|name| why_it_cannot_be_priced(prices, name))
+        .collect()
+}
+
+/// What a flow says about the models of the run that is about to start.
+///
+/// **A STEP THAT NAMES NO MODEL IS NOT A STEP WITH A DEFAULT ONE.** Whoever
+/// answers picks it, and it changes underneath: `unnamed` is therefore the list
+/// of steps to repair by writing a `model`, and not an elegant absence.
+#[derive(Debug, Default)]
+pub(super) struct ModelsAskedByTheFlow {
+    /// Each model the flow names, and the steps naming it.
+    named: BTreeMap<String, BTreeSet<String>>,
+    /// Each step asking an engine without naming its model, and those engines.
+    unnamed: BTreeMap<String, BTreeSet<String>>,
+}
+
+/// Read off the steps, engine by engine of every chain.
+///
+/// **THE MISSING MODELS ARE ASKED OF THE DESCRIPTOR, NOT GUESSED FROM A NAME.**
+/// The same action runs a build command, which names a tool and can be told no
+/// model: sending somebody to write a `model` for it would be a repair that
+/// gets refused. What is named is kept whoever it was asked of.
+pub(super) fn models_asked_by(
+    flow: &flow::FlowFile,
+    tools: &dyn actions::ToolResolver,
+) -> ModelsAskedByTheFlow {
+    let mut asked = ModelsAskedByTheFlow::default();
+    for step in flow.graph.steps() {
+        if step.action != actions::EXTERNAL_ENGINE_ACTION {
+            continue;
+        }
+        let Some(with) = step.with.as_ref() else {
+            continue;
+        };
+        let named = actions::models_named_in(with);
+        for engine in actions::engines_named_in(with) {
+            match named.get(&engine) {
+                Some(model) => {
+                    asked
+                        .named
+                        .entry(model.clone())
+                        .or_default()
+                        .insert(step.id.clone());
+                }
+                None if tools.model_option(&engine).is_some() => {
+                    asked
+                        .unnamed
+                        .entry(step.id.clone())
+                        .or_default()
+                        .insert(engine);
+                }
+                None => {}
+            }
+        }
+    }
+    asked
+}
+
+/// The names, joined as a person reads them.
+fn joined(names: &BTreeSet<String>) -> String {
+    names.iter().cloned().collect::<Vec<_>>().join(", ")
+}
+
+/// Every model this flow names that the list cannot price, with its steps.
+fn named_and_unpriced(prices: &PriceList, asked: &ModelsAskedByTheFlow) -> Vec<String> {
+    asked
+        .named
+        .iter()
+        .filter_map(|(model, steps)| {
+            let why = why_it_cannot_be_priced(prices, model)?;
+            Some(catalogue::say(
+                "cli.flow.model_named_by_steps",
+                &[("named", &why), ("steps", &joined(steps))],
+            ))
         })
         .collect()
 }
 
-/// Che cosa il listino sa dire di questo flusso, **prima** di lanciarlo.
+/// What the ledger says about the models past runs were answered by, and
+/// whether one of them has no price.
+fn past_models_into(said: &mut String, prices: &PriceList, seen: Option<&BTreeSet<String>>) -> bool {
+    let Some(seen) = seen else {
+        said.push_str(&catalogue::say("cli.flow.models_store_unreadable", &[]));
+        return false;
+    };
+    if seen.is_empty() {
+        said.push_str(&catalogue::say("cli.flow.models_never_run_here", &[]));
+        return false;
+    }
+    let unpriced = cannot_be_priced(prices, seen);
+    let key = if unpriced.is_empty() {
+        "cli.flow.past_models_all_priced"
+    } else {
+        "cli.flow.past_models_unpriced"
+    };
+    let names = if unpriced.is_empty() {
+        joined(seen)
+    } else {
+        unpriced.join(", ")
+    };
+    let _ = write!(said, "\n{}", catalogue::say(key, &[("models", &names)]));
+    !unpriced.is_empty()
+}
+
+/// What the price list can say about this flow, **before** it is launched.
 ///
-/// **PERCHÉ UN FRENO CHE NON FRENA SI DEVE VEDERE PRIMA.** È la seconda metà
-/// della cura del guasto 35, e senza di lei la prima non basta: adesso il
-/// listino viaggia col prodotto, ma i modelli che nessuno ha prezzato — quelli di
-/// OpenAI e di Google, tenuti fuori di proposito perché nessuno ne ha verificato
-/// i prezzi — continuano a lasciare il costo sconosciuto. Chi non ha un prezzo
-/// per un modello deve **saperlo**, non scoprirlo con uno zero.
-///
-/// **I MODELLI ARRIVANO DAL DEPOSITO, NON DAL FLUSSO.** Un passo nomina lo
-/// strumento, non il modello: nessuno *chiede* un modello, e indovinarne uno
-/// sarebbe inventarlo. L'unica fonte onesta è chi ha già risposto, cioè le corse
-/// passate — per questo un flusso mai girato qui non riceve un elenco vuoto ma
-/// una frase che dice che non si sa, come per il rilevatore assente.
-pub(super) fn what_is_priced(prices: &PriceList, seen: Option<&BTreeSet<String>>, cap: Option<i64>) -> String {
+/// **THREE THINGS AND NOT TWO, AND THE PAST RUNS ARE THE LAST.** A step that
+/// names its model is a fact about the run ahead; a step naming none leaves the
+/// choice to whoever answers, and that default changes underneath; the models
+/// of past runs are a reading of the ledger, never a promise. See fault 104.
+pub(super) fn what_is_priced(
+    prices: &PriceList,
+    asked: &ModelsAskedByTheFlow,
+    seen: Option<&BTreeSet<String>>,
+    cap: Option<i64>,
+) -> String {
     let mut said = format!(
         "\n{}",
         catalogue::say(
@@ -471,43 +573,50 @@ pub(super) fn what_is_priced(prices: &PriceList, seen: Option<&BTreeSet<String>>
             &[("count", &prices.entries.len().to_string())],
         )
     );
-    let Some(seen) = seen else {
-        said.push_str(&catalogue::say("cli.flow.models_store_unreadable", &[]));
-        return said;
-    };
-    if seen.is_empty() {
-        said.push_str(&catalogue::say("cli.flow.models_never_run_here", &[]));
-        return said;
+    // **THE WORST FIRST**: currency nobody can count, knowable before launching.
+    let unpriced = named_and_unpriced(prices, asked);
+    if !unpriced.is_empty() {
+        let _ = write!(
+            said,
+            "\n{}",
+            catalogue::say("cli.flow.flow_models_unpriced", &[("models", &unpriced.join("; "))])
+        );
     }
-    let unpriced = cannot_be_priced(prices, seen);
-    if unpriced.is_empty() {
+    let priced: Vec<String> = asked
+        .named
+        .keys()
+        .filter(|name| prices.knows(name) == Known::Priced)
+        .cloned()
+        .collect();
+    if !priced.is_empty() {
+        let _ = write!(
+            said,
+            "\n{}",
+            catalogue::say("cli.flow.flow_models_priced", &[("models", &priced.join(", "))])
+        );
+    }
+    if !asked.unnamed.is_empty() {
+        let steps: Vec<String> = asked
+            .unnamed
+            .iter()
+            .map(|(step, engines)| format!("{step} ({})", joined(engines)))
+            .collect();
         let _ = write!(
             said,
             "\n{}",
             catalogue::say(
-                "cli.flow.past_models_all_priced",
-                &[(
-                    "models",
-                    &seen.iter().cloned().collect::<Vec<_>>().join(", ")
-                )],
+                "cli.flow.steps_that_name_no_model",
+                &[("steps", &steps.join(", "))]
             )
         );
-        return said;
     }
-    let _ = write!(
-        said,
-        "\n{}",
-        catalogue::say(
-            "cli.flow.past_models_unpriced",
-            &[("models", &unpriced.join(", "))]
-        )
-    );
+    let past_unpriced = past_models_into(&mut said, prices, seen);
     // **LA RIGA DEL TETTO SOLO QUANDO LE DUE COSE COINCIDONO.** Un tetto senza
     // modelli scoperti non ha niente da dichiarare, e modelli scoperti senza
     // tetto non fermano niente: è la coincidenza a essere pericolosa, ed è la
     // frase per cui il guasto 35 è stato scritto — un freno che non frena si
     // deve vedere prima di lanciare, non a fattura arrivata.
-    if cap.is_some() {
+    if cap.is_some() && (past_unpriced || !unpriced.is_empty()) {
         said.push_str(&catalogue::say("cli.flow.cap_will_not_count_them", &[]));
     }
     said
@@ -535,6 +644,12 @@ mod tests {
         .expect("il listino di prova si legge")
     }
 
+    /// A flow naming no model of its own: what every report looked like before
+    /// a step could name one.
+    fn naming_nothing() -> ModelsAskedByTheFlow {
+        ModelsAskedByTheFlow::default()
+    }
+
     /// **CHI NON HA UN PREZZO PER UN MODELLO DEVE SAPERLO, E SAPERE QUALE.**
     ///
     /// È la seconda metà della cura del guasto 35. Il primo modello è prezzato e
@@ -548,6 +663,7 @@ mod tests {
     fn a_model_without_a_price_is_named_and_the_reason_with_it() {
         let said = what_is_priced(
             &a_small_price_list(),
+            &naming_nothing(),
             Some(&names(&["prezzato", "a-meta", "mai-visto"])),
             None,
         );
@@ -572,7 +688,12 @@ mod tests {
     /// regola per cui la riga del tetto c'è anche quando il tetto non c'è.
     #[test]
     fn when_everything_is_priced_the_report_says_so_instead_of_falling_silent() {
-        let said = what_is_priced(&a_small_price_list(), Some(&names(&["prezzato"])), None);
+        let said = what_is_priced(
+            &a_small_price_list(),
+            &naming_nothing(),
+            Some(&names(&["prezzato"])),
+            None,
+        );
 
         assert!(said.contains("all priced"), "{said}");
         assert!(!said.contains("no entry"), "{said}");
@@ -590,8 +711,13 @@ mod tests {
     /// vuoto. Le due frasi diventano una e questa prova diventa rossa.
     #[test]
     fn a_ledger_that_could_not_be_read_is_not_a_flow_that_never_ran() {
-        let unreadable = what_is_priced(&a_small_price_list(), None, None);
-        let never_ran = what_is_priced(&a_small_price_list(), Some(&BTreeSet::new()), None);
+        let unreadable = what_is_priced(&a_small_price_list(), &naming_nothing(), None, None);
+        let never_ran = what_is_priced(
+            &a_small_price_list(),
+            &naming_nothing(),
+            Some(&BTreeSet::new()),
+            None,
+        );
 
         assert_ne!(unreadable, never_ran);
         assert!(unreadable.contains("could not be read"), "{unreadable}");
@@ -600,16 +726,161 @@ mod tests {
 
     /// **UN FLUSSO MAI GIRATO QUI NON RICEVE UN ELENCO VUOTO, MA UNA FRASE.**
     ///
-    /// I modelli si sanno solo da chi ha già risposto: un passo nomina lo
-    /// strumento, non il modello. Dire «tutti prezzati» senza aver visto niente
-    /// sarebbe una rassicurazione costruita sul nulla — è la stessa distinzione
-    /// che il rilevatore tiene fra «non c'è» e «non ho potuto guardare».
+    /// Dire «tutti prezzati» senza aver visto niente sarebbe una rassicurazione
+    /// costruita sul nulla — è la stessa distinzione che il rilevatore tiene fra
+    /// «non c'è» e «non ho potuto guardare».
     #[test]
     fn a_flow_that_never_ran_here_is_told_that_nothing_is_known_yet() {
-        let said = what_is_priced(&a_small_price_list(), Some(&BTreeSet::new()), None);
+        let said = what_is_priced(
+            &a_small_price_list(),
+            &naming_nothing(),
+            Some(&BTreeSet::new()),
+            None,
+        );
 
         assert!(!said.contains("all priced"), "{said}");
         assert!(said.contains("has never run here"), "{said}");
+    }
+
+    /// A world where one tool is told a model and one is not, which is what
+    /// the descriptors declare between an engine and a build command.
+    struct WhereOneToolTakesNoModel;
+
+    impl actions::ToolResolver for WhereOneToolTakesNoModel {
+        fn resolve(&self, id: &str) -> Result<String, String> {
+            Ok(id.to_owned())
+        }
+
+        fn model_option(&self, id: &str) -> Option<Vec<String>> {
+            (id != "un-attrezzo").then(|| vec!["--model".to_owned()])
+        }
+    }
+
+    /// Four steps: one names a model for the first engine of its chain and not
+    /// for the second, one names none at all, one runs a build command through
+    /// the same action, and one runs a shell check.
+    fn a_flow_naming_one_model(model: &str) -> FlowFile {
+        let json = format!(
+            r#"{{
+                "id": "prova", "description": "flusso di prova",
+                "graph": {{"steps": [
+                    {{"id": "nomina", "deps": [], "action": "external_engine",
+                     "max_attempts": 1, "when": null,
+                     "input_schema": {{"type": "any"}}, "output_schema": {{"type": "any"}},
+                     "with": {{"tool": ["un-motore", "un-altro"],
+                              "model": {{"un-motore": "{model}"}}, "timeout_secs": 10}}}},
+                    {{"id": "tace", "deps": [], "action": "external_engine",
+                     "max_attempts": 1, "when": null,
+                     "input_schema": {{"type": "any"}}, "output_schema": {{"type": "any"}},
+                     "with": {{"tool": "un-motore", "timeout_secs": 10}}}},
+                    {{"id": "costruisce", "deps": [], "action": "external_engine",
+                     "max_attempts": 1, "when": null,
+                     "input_schema": {{"type": "any"}}, "output_schema": {{"type": "any"}},
+                     "with": {{"tool": "un-attrezzo", "args": ["prova"], "timeout_secs": 10}}}},
+                    {{"id": "esegue", "deps": [], "action": "shell_check",
+                     "max_attempts": 1, "when": null,
+                     "input_schema": {{"type": "any"}}, "output_schema": {{"type": "any"}},
+                     "with": {{"tool": "un-attrezzo", "command": "true", "timeout_secs": 10}}}}
+                ], "skippable_dependencies": []}},
+                "inputs": {{}}
+            }}"#
+        );
+        serde_json::from_str(&json).expect("caricare il flusso")
+    }
+
+    /// **A MODEL THE FLOW NAMES AND THE LIST CANNOT PRICE IS SAID FIRST.** It
+    /// is currency nobody can count, and unlike the past runs it is a fact
+    /// about the run ahead; the step naming it is where it is repaired.
+    ///
+    /// *Mutant run*: make `what_is_priced` ignore `asked`, which is the check
+    /// that looked at the ledger alone.
+    #[test]
+    fn a_model_this_flow_names_and_the_list_cannot_price_is_said_first() {
+        let asked = models_asked_by(
+            &a_flow_naming_one_model("mai-visto"),
+            &WhereOneToolTakesNoModel,
+        );
+
+        let said = what_is_priced(
+            &a_small_price_list(),
+            &asked,
+            Some(&names(&["prezzato"])),
+            None,
+        );
+
+        assert!(
+            said.contains("mai-visto (no entry in the price list), named by nomina"),
+            "{said}"
+        );
+        assert!(
+            said.find("THIS FLOW NAMES") < said.find("all priced"),
+            "the flow's own run comes before a reading of the past: {said}"
+        );
+    }
+
+    /// **A NAMED MODEL THAT IS PRICED IS SAID TOO**, for the reason «all
+    /// priced» is said: a report that falls silent leaves the reader wondering
+    /// whether the check looked at all.
+    #[test]
+    fn a_model_this_flow_names_that_is_priced_is_said_to_be_priced() {
+        let asked = models_asked_by(
+            &a_flow_naming_one_model("prezzato"),
+            &WhereOneToolTakesNoModel,
+        );
+
+        let said = what_is_priced(&a_small_price_list(), &asked, Some(&BTreeSet::new()), None);
+
+        assert!(said.contains("this flow names, all priced: prezzato"), "{said}");
+        assert!(!said.contains("THIS FLOW NAMES"), "{said}");
+    }
+
+    /// **A STEP THAT NAMES NO MODEL IS SAID BY NAME.** The default is picked
+    /// by whoever answers and changes underneath — fault 104. The list is what
+    /// a `model` repairs, uncovered engines of a chain included.
+    ///
+    /// *Mutant run*: make `what_is_priced` ignore `asked`.
+    #[test]
+    fn a_step_that_names_no_model_is_named_because_nobody_knows_who_answers() {
+        let asked = models_asked_by(
+            &a_flow_naming_one_model("prezzato"),
+            &WhereOneToolTakesNoModel,
+        );
+
+        let said = what_is_priced(&a_small_price_list(), &asked, Some(&BTreeSet::new()), None);
+
+        assert!(
+            said.contains("nomina (un-altro), tace (un-motore)"),
+            "both the uncovered engine of a chain and the silent step: {said}"
+        );
+        assert!(
+            said.contains("no telling which model will answer"),
+            "{said}"
+        );
+        assert!(
+            !said.contains("esegue") && !said.contains("costruisce"),
+            "a step running a command cannot be told a model: {said}"
+        );
+    }
+
+    /// **THE PAST RUNS ARE A READING, NEVER A PROMISE.** «All priced» read as
+    /// a guarantee about the run ahead is fault 104 word for word: the check
+    /// was green and the model that answered had no entry in the list.
+    ///
+    /// *Mutant run*: put the old sentence back, «models used by past runs: all
+    /// priced ({models})».
+    #[test]
+    fn the_models_of_past_runs_are_offered_as_a_reading_and_not_as_a_promise() {
+        let said = what_is_priced(
+            &a_small_price_list(),
+            &naming_nothing(),
+            Some(&names(&["prezzato"])),
+            None,
+        );
+
+        assert!(
+            said.contains("never a promise about which model will answer next"),
+            "{said}"
+        );
     }
 
     /// **UN TETTO CHE NON PUÒ SCATTARE SI DEVE VEDERE PRIMA DI LANCIARE.**
@@ -627,16 +898,26 @@ mod tests {
         let unpriced = names(&["mai-visto"]);
         let priced = names(&["prezzato"]);
 
-        let with_cap = what_is_priced(&a_small_price_list(), Some(&unpriced), Some(5_000_000));
+        let with_cap = what_is_priced(
+            &a_small_price_list(),
+            &naming_nothing(),
+            Some(&unpriced),
+            Some(5_000_000),
+        );
         assert!(with_cap.contains("the spend cap"), "{with_cap}");
 
-        let all_priced = what_is_priced(&a_small_price_list(), Some(&priced), Some(5_000_000));
+        let all_priced = what_is_priced(
+            &a_small_price_list(),
+            &naming_nothing(),
+            Some(&priced),
+            Some(5_000_000),
+        );
         assert!(
             !all_priced.contains("the spend cap"),
             "senza modelli scoperti il tetto non ha niente da dichiarare: {all_priced}"
         );
 
-        let no_cap = what_is_priced(&a_small_price_list(), Some(&unpriced), None);
+        let no_cap = what_is_priced(&a_small_price_list(), &naming_nothing(), Some(&unpriced), None);
         assert!(
             !no_cap.contains("the spend cap"),
             "un flusso senza tetto non ha un tetto da avvisare: {no_cap}"
