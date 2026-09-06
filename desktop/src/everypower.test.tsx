@@ -49,9 +49,15 @@ describe("what ⌘K can reach", () => {
     const labels = offered();
 
     for (const place of PLACES) {
-      // A section the machine's ground names better is named by that row: the
-      // ledger is «Ledger» in one list and a place id in the other.
-      const named = [place.name, ...MACHINE.filter((row) => row.section === place.id).map((row) => row.name)];
+      // A section the machine's ground names better is named by that row. Not
+      // by a row that opens ONE VIEW inside it: «Ledger» reaches the tables,
+      // not the runs beside them, and counting it hid the section behind it.
+      const named = [
+        place.name,
+        ...MACHINE.filter((row) => row.section === place.id && row.memoryTab === undefined).map(
+          (row) => row.name,
+        ),
+      ];
       expect(
         named.some((name) => names(labels, name)),
         `«${place.name}» is a section of this window and ⌘K cannot reach it`,

@@ -69,7 +69,12 @@ describe("what this machine holds is reached by name", () => {
    */
   test("AND THE WINDOW REOPENS ON THE MACHINE SCREEN IT WAS LEFT ON", () => {
     const first = render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: /^Models/ }));
+    offered();
+    fireEvent.click(
+      Array.from(document.querySelectorAll<HTMLElement>(".palette__entry")).find(
+        (one) => one.querySelector(".palette__label")?.textContent === "Models",
+      ) as HTMLElement,
+    );
     expect(
       Array.from(first.container.querySelectorAll(".topbar__crumb")).map((one) => one.textContent),
     ).toEqual([MACHINE_GROUND, "Models"]);
