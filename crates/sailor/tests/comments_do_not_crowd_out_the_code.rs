@@ -47,14 +47,14 @@ const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
     ("registry", 322),
     ("relay", 154),
     ("release", 490),
-    ("sailor", 211),
+    ("sailor", 210),
     ("sessions", 252),
     ("supervisor", 286),
     ("terminal", 287),
     ("toolbox", 291),
     ("trigger", 237),
     ("ui", 186),
-    ("workspace", 158),
+    ("workspace", 153),
 ];
 
 /// How far a seed may drift above what the tree actually holds. **Zero.**

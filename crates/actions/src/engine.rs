@@ -151,6 +151,9 @@ struct OwnTree {
     repo: PathBuf,
     at: PathBuf,
     live: Option<Arc<dyn LiveSink>>,
+    /// The register the tree was written into, so the same binding that takes
+    /// it down takes it off the page. See fault 97.
+    register: Ledger,
 }
 
 impl OwnTree {
@@ -167,7 +170,7 @@ impl OwnTree {
 impl Drop for OwnTree {
     fn drop(&mut self) {
         let at = self.at.to_string_lossy().into_owned();
-        match workspace::close_tree(&self.repo, &self.at) {
+        match workspace::close_tree(&self.repo, &self.at, &self.register) {
             workspace::Closing::TakenDown => {}
             workspace::Closing::GitRefused(said) => self.say(catalogue::say(
                 "engine.tree_kept_over_work",
@@ -189,6 +192,7 @@ fn tree_of_its_own(
     spec: &EngineSpec,
     shared: &SharedState,
     live: Option<Arc<dyn LiveSink>>,
+    register: Option<Ledger>,
 ) -> Result<Option<OwnTree>, ActionError> {
     let Some(asked) = spec.tree.as_deref() else {
         return Ok(None);
@@ -222,9 +226,25 @@ fn tree_of_its_own(
             ),
         ));
     };
+    let Some(register) = register else {
+        return Err(ActionError::new(
+            "tree_not_cut",
+            format!(
+                "the step asks for a `{TREE}` of its own and this run has no store: a tree \
+                 nobody wrote down is disk nobody would ever come back for"
+            ),
+        ));
+    };
     let repo = PathBuf::from(&root);
-    workspace::tree_for(&repo, &run, &step)
-        .map(|at| Some(OwnTree { repo, at, live }))
+    workspace::tree_for(&repo, &run, &step, &register)
+        .map(|at| {
+            Some(OwnTree {
+                repo,
+                at,
+                live,
+                register,
+            })
+        })
         .map_err(|why| ActionError::new("tree_not_cut", why))
 }
 
@@ -763,7 +783,7 @@ impl Action for ExternalEngineAction {
         check_tolerance(&spec.accept, &ENGINE_FAILURES)?;
         // Held until this step returns, and taken down then: the binding is
         // what closes the tree, so it outlives every path out of here.
-        let own_tree = tree_of_its_own(&spec, shared, live.clone())?;
+        let own_tree = tree_of_its_own(&spec, shared, live.clone(), self.ledger.clone())?;
         if let Some(cut) = &own_tree {
             if let Some(live) = live.as_deref() {
                 live.chunk(

@@ -150,12 +150,56 @@ pub fn create(repo: &Path, branch: &str, name: Option<&str>) -> Result<PathBuf, 
     Ok(path)
 }
 
+/// A tree Sailor cut and is answerable for until somebody closes it. The opener
+/// is a pid because a tree outlives its run exactly when that process died, and
+/// only a pid can be asked whether it is still breathing. See fault 97.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct OpenTree {
+    pub path: String,
+    pub repo: String,
+    pub run: String,
+    pub step: String,
+    pub opened_by_pid: u32,
+    pub opened_at: i64,
+}
+
+/// Where the trees Sailor cuts are written down. A trait, so this crate keeps
+/// talking to git and nothing else and whoever holds Sailor's state implements
+/// it. No do-nothing register is offered: that is fault 97 itself.
+pub trait OpenTrees {
+    fn tree_opened(&self, tree: &OpenTree) -> Result<(), String>;
+    fn tree_closed(&self, path: &str) -> Result<(), String>;
+    fn trees_left_open(&self) -> Result<Vec<OpenTree>, String>;
+}
+
+fn now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_secs() as i64)
+        .unwrap_or_default()
+}
+
 /// The tree one step of one run works in, detached so no branch is left behind.
 /// An existing one is the answer: a retried step needs what its first attempt
-/// left.
-pub fn tree_for(repo: &Path, run: &str, step: &str) -> Result<PathBuf, String> {
+/// left. Cutting and writing down are one gesture: a tree the register refused
+/// goes straight back, since nobody could ever find it again.
+pub fn tree_for(
+    repo: &Path,
+    run: &str,
+    step: &str,
+    register: &dyn OpenTrees,
+) -> Result<PathBuf, String> {
     let path = tree_path(repo, &format!("{}/{}", safe(run), safe(step)));
+    let opened = OpenTree {
+        path: path.to_string_lossy().into_owned(),
+        repo: repo.to_string_lossy().into_owned(),
+        run: run.to_owned(),
+        step: step.to_owned(),
+        opened_by_pid: std::process::id(),
+        opened_at: now(),
+    };
     if path.exists() {
+        register.tree_opened(&opened)?;
         return Ok(path);
     }
     if let Some(parent) = path.parent() {
@@ -163,6 +207,10 @@ pub fn tree_for(repo: &Path, run: &str, step: &str) -> Result<PathBuf, String> {
     }
     let target = path.to_string_lossy().into_owned();
     git(repo, &["worktree", "add", "--detach", &target, "HEAD"])?;
+    if let Err(why) = register.tree_opened(&opened) {
+        let _ = take_down(repo, &path);
+        return Err(why);
+    }
     Ok(path)
 }
 
@@ -183,24 +231,85 @@ pub enum Closing {
     HoldsACommitNobodyElseHas(String),
 }
 
+/// What a person's sweep did with one tree. Kept apart from [`Closing`]: the
+/// two extra answers are ones only a sweep can give.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Swept {
+    Closed(Closing),
+    /// Named by its branch, or by its head when it is on none.
+    NotInTheTrunkYet(String),
+    /// The directory was gone and the register was the last to hold it.
+    AlreadyGone,
+}
+
 /// Takes down the tree cut for one step, once nobody is coming back to it.
 /// Two things keep it, and neither is ever overridden: git's refusal over
 /// uncommitted work, and a commit that only this tree holds. See fault 89.
-pub fn close_tree(repo: &Path, tree: &Path) -> Closing {
+/// Taking down and forgetting are one gesture, or Sailor keeps looking for it.
+pub fn close_tree(repo: &Path, tree: &Path, register: &dyn OpenTrees) -> Closing {
     if let Some(commit) = a_commit_no_branch_holds(repo, tree) {
         return Closing::HoldsACommitNobodyElseHas(commit);
     }
-    let at = tree.to_string_lossy().into_owned();
-    match git(repo, &["worktree", "remove", &at]) {
+    match take_down(repo, tree) {
         Err(refusal) => Closing::GitRefused(refusal),
-        Ok(_) => {
-            // The run's directory goes with its last step: a full one errors.
-            if let Some(parent) = tree.parent() {
-                let _ = std::fs::remove_dir(parent);
-            }
+        Ok(()) => {
+            let _ = register.tree_closed(&tree.to_string_lossy());
             Closing::TakenDown
         }
     }
+}
+
+/// A person's sweep decides on history and not on files: nothing the trunk has
+/// not got is touched, branch or detached. Over-conservative on purpose, since
+/// a tree kept is only named and a tree taken down is gone.
+pub fn close_if_the_trunk_holds_it(repo: &Path, tree: &Path, register: &dyn OpenTrees) -> Swept {
+    if !tree.exists() {
+        let _ = register.tree_closed(&tree.to_string_lossy());
+        return Swept::AlreadyGone;
+    }
+    if !the_trunk_already_holds(repo, tree) {
+        return Swept::NotInTheTrunkYet(what_it_carries(tree));
+    }
+    Swept::Closed(close_tree(repo, tree, register))
+}
+
+fn take_down(repo: &Path, tree: &Path) -> Result<(), String> {
+    let at = tree.to_string_lossy().into_owned();
+    git(repo, &["worktree", "remove", &at])?;
+    // The run's directory goes with its last step: a full one errors.
+    if let Some(parent) = tree.parent() {
+        let _ = std::fs::remove_dir(parent);
+    }
+    Ok(())
+}
+
+/// Unreadable head, missing trunk, no git: all false, because the answer that
+/// keeps a tree standing is the one that loses nothing.
+pub fn the_trunk_already_holds(repo: &Path, tree: &Path) -> bool {
+    let Ok(head) = git(tree, &["rev-parse", "HEAD"]) else {
+        return false;
+    };
+    let head = head.trim();
+    !head.is_empty()
+        && git(
+            repo,
+            &["merge-base", "--is-ancestor", head, branches::TRUNK],
+        )
+        .is_ok()
+}
+
+/// The branch a tree is on, or its head when it is on none: the address a
+/// person needs to go and look at what would have been lost.
+fn what_it_carries(tree: &Path) -> String {
+    let branch = git(tree, &["symbolic-ref", "--short", "HEAD"])
+        .map(|name| name.trim().to_owned())
+        .unwrap_or_default();
+    if !branch.is_empty() {
+        return branch;
+    }
+    git(tree, &["rev-parse", "--short", "HEAD"])
+        .map(|head| head.trim().to_owned())
+        .unwrap_or_default()
 }
 
 /// The head of `tree` when no branch of `repo` holds it. Git's refusal does
@@ -371,6 +480,52 @@ pub fn measured_against(walked: usize, what: &str, held: usize, oracle: &str) {
 mod tests {
     use super::*;
 
+    /// A register of this test's own: the rules live here, the store elsewhere.
+    #[derive(Default)]
+    struct APage(std::sync::Mutex<Vec<OpenTree>>);
+
+    impl APage {
+        fn open_now(&self) -> Vec<OpenTree> {
+            self.0.lock().map(|held| held.clone()).unwrap_or_default()
+        }
+    }
+
+    impl OpenTrees for APage {
+        fn tree_opened(&self, tree: &OpenTree) -> Result<(), String> {
+            let mut held = self.0.lock().map_err(|_| "the page is poisoned".to_owned())?;
+            held.retain(|known| known.path != tree.path);
+            held.push(tree.clone());
+            Ok(())
+        }
+
+        fn tree_closed(&self, path: &str) -> Result<(), String> {
+            let mut held = self.0.lock().map_err(|_| "the page is poisoned".to_owned())?;
+            held.retain(|known| known.path != path);
+            Ok(())
+        }
+
+        fn trees_left_open(&self) -> Result<Vec<OpenTree>, String> {
+            Ok(self.open_now())
+        }
+    }
+
+    /// A register that refuses every write: the store is unreachable.
+    struct ARefusal;
+
+    impl OpenTrees for ARefusal {
+        fn tree_opened(&self, _tree: &OpenTree) -> Result<(), String> {
+            Err("the page will not take it".to_owned())
+        }
+
+        fn tree_closed(&self, _path: &str) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn trees_left_open(&self) -> Result<Vec<OpenTree>, String> {
+            Ok(Vec::new())
+        }
+    }
+
     /// A scratch place of this test's own, never a directory of this machine.
     fn a_scratch(label: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!(
@@ -417,12 +572,13 @@ mod tests {
     #[test]
     fn a_tree_holding_work_is_kept_and_a_clean_one_is_taken_down() {
         let (scratch, repo) = a_repository("closing");
-        let clean = tree_for(&repo, "run-1", "clean").expect("a tree");
-        let dirty = tree_for(&repo, "run-1", "dirty").expect("a tree");
+        let page = APage::default();
+        let clean = tree_for(&repo, "run-1", "clean", &page).expect("a tree");
+        let dirty = tree_for(&repo, "run-1", "dirty", &page).expect("a tree");
         std::fs::write(dirty.join("left-behind"), "half a thought\n").expect("work left");
 
-        let went = close_tree(&repo, &clean);
-        let stayed = close_tree(&repo, &dirty);
+        let went = close_tree(&repo, &clean, &page);
+        let stayed = close_tree(&repo, &dirty, &page);
         let clean_is_gone = !clean.exists();
         let work_is_there = dirty.join("left-behind").exists();
         let listed = String::from_utf8_lossy(&run_git(&repo, &["worktree", "list"]).stdout)
@@ -453,12 +609,13 @@ mod tests {
     #[test]
     fn a_tree_holding_a_commit_no_branch_has_is_kept() {
         let (scratch, repo) = a_repository("committed");
-        let tree = tree_for(&repo, "run-2", "committed").expect("a tree");
+        let page = APage::default();
+        let tree = tree_for(&repo, "run-2", "committed", &page).expect("a tree");
         std::fs::write(tree.join("answer"), "the engine's work\n").expect("work");
         assert!(run_git(&tree, &["add", "answer"]).status.success());
         assert!(run_git(&tree, &["commit", "-q", "-m", "what it found"]).status.success());
 
-        let stayed = close_tree(&repo, &tree);
+        let stayed = close_tree(&repo, &tree, &page);
         let there = tree.join("answer").exists();
         let _ = std::fs::remove_dir_all(&scratch);
 
@@ -467,6 +624,102 @@ mod tests {
             "{stayed:?}"
         );
         assert!(there, "the commit's tree was taken down anyway");
+    }
+
+    /// **FAULT 97.** Cutting writes down who asked, when and for which run and
+    /// step; closing takes the entry away.
+    #[test]
+    fn a_tree_sailor_cuts_is_one_sailor_knows_it_has_open() {
+        let (scratch, repo) = a_repository("written-down");
+        let page = APage::default();
+
+        let tree = tree_for(&repo, "run-4", "asks", &page).expect("a tree");
+        let open = page.trees_left_open().expect("the page reads back");
+        let closed = close_tree(&repo, &tree, &page);
+        let after = page.trees_left_open().expect("the page reads back");
+        let _ = std::fs::remove_dir_all(&scratch);
+
+        assert_eq!(open.len(), 1, "{open:?}");
+        assert_eq!(open[0].path, tree.to_string_lossy());
+        assert_eq!(open[0].run, "run-4");
+        assert_eq!(open[0].step, "asks");
+        assert_eq!(open[0].opened_by_pid, std::process::id());
+        assert!(open[0].opened_at > 0, "the tree was opened at no time");
+        assert_eq!(closed, Closing::TakenDown);
+        assert!(after.is_empty(), "a tree taken down is still on the page: {after:?}");
+    }
+
+    /// A tree nobody wrote down is the fault itself: the cut is undone.
+    #[test]
+    fn a_tree_the_register_refuses_is_never_left_standing() {
+        let (scratch, repo) = a_repository("unwritten");
+
+        let refused = tree_for(&repo, "run-5", "unwritten", &ARefusal).expect_err("no page, no tree");
+        let listed = String::from_utf8_lossy(&run_git(&repo, &["worktree", "list"]).stdout)
+            .into_owned();
+        let standing = tree_path(&repo, "run-5/unwritten").exists();
+        let _ = std::fs::remove_dir_all(&scratch);
+
+        assert!(!refused.is_empty(), "the refusal said nothing");
+        assert!(!standing, "the tree is on disk with nobody holding its address");
+        assert!(!listed.contains("run-5"), "git still holds it:\n{listed}");
+    }
+
+    /// **THE ONE THAT MATTERS.** A tree whose branch the trunk has not got is
+    /// named and left exactly where it is, work and all.
+    #[test]
+    fn a_sweep_never_closes_a_tree_whose_work_the_trunk_has_not_got() {
+        let (scratch, repo) = a_repository("sweeping");
+        assert!(run_git(&repo, &["branch", "-M", branches::TRUNK]).status.success());
+        let page = APage::default();
+        let merged = create(&repo, "work/gia-dentro", None).expect("a tree on a merged branch");
+        let ahead = create(&repo, "work/ancora-fuori", None).expect("a tree on its own branch");
+        std::fs::write(ahead.join("answer"), "a night of work\n").expect("work");
+        assert!(run_git(&ahead, &["add", "answer"]).status.success());
+        assert!(run_git(&ahead, &["commit", "-q", "-m", "not in the trunk"]).status.success());
+        for tree in [&merged, &ahead] {
+            page.tree_opened(&OpenTree {
+                path: tree.to_string_lossy().into_owned(),
+                repo: repo.to_string_lossy().into_owned(),
+                run: "by-hand".to_owned(),
+                step: "by-hand".to_owned(),
+                opened_by_pid: std::process::id(),
+                opened_at: now(),
+            })
+            .expect("the page takes it");
+        }
+
+        let went = close_if_the_trunk_holds_it(&repo, &merged, &page);
+        let stayed = close_if_the_trunk_holds_it(&repo, &ahead, &page);
+        let work_is_there = ahead.join("answer").exists();
+        let still_open = page.trees_left_open().expect("the page reads back");
+        let _ = std::fs::remove_dir_all(&scratch);
+
+        assert_eq!(went, Swept::Closed(Closing::TakenDown));
+        assert_eq!(
+            stayed,
+            Swept::NotInTheTrunkYet("work/ancora-fuori".to_owned()),
+            "a tree the trunk has not got was swept away"
+        );
+        assert!(work_is_there, "the work was lost");
+        assert_eq!(still_open.len(), 1, "{still_open:?}");
+        assert!(still_open[0].path.ends_with("ancora-fuori"), "{still_open:?}");
+    }
+
+    /// A tree removed by hand leaves the page, or the sweep keeps naming it.
+    #[test]
+    fn a_tree_already_gone_leaves_the_page() {
+        let (scratch, repo) = a_repository("gone");
+        let page = APage::default();
+        let tree = tree_for(&repo, "run-6", "gone", &page).expect("a tree");
+        std::fs::remove_dir_all(&tree).expect("somebody removed it by hand");
+
+        let closing = close_if_the_trunk_holds_it(&repo, &tree, &page);
+        let after = page.trees_left_open().expect("the page reads back");
+        let _ = std::fs::remove_dir_all(&scratch);
+
+        assert_eq!(closing, Swept::AlreadyGone);
+        assert!(after.is_empty(), "{after:?}");
     }
 
     /// A tree cut under a run and a step says which; one a person cut does not.
