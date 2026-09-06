@@ -2,6 +2,7 @@
   "margin_percent": 25,
   "flows": {
     "consolidate-memories": { "tokens_a_run": 0, "runs_measured": 0, "words_it_sends": 3916 },
+    "consult-a-strong-model": { "tokens_a_run": 0, "runs_measured": 0, "words_it_sends": 1169 },
     "dispatch-the-work": { "tokens_a_run": 130894, "runs_measured": 4, "words_it_sends": 3878 },
     "draft-a-flow": { "tokens_a_run": 105816, "runs_measured": 4, "words_it_sends": 9130 },
     "migrate-to-sailor": { "tokens_a_run": 0, "runs_measured": 0, "words_it_sends": 0 },
