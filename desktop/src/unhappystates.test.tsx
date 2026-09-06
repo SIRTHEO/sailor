@@ -795,28 +795,14 @@ describe("the three states of the canvas with no flows", () => {
   });
 
   /**
-   * **WHOEVER MEASURES MUST BE MEASURED**, and a check promising more than it
-   * proves is the very fault this file accuses in the screen. So the title says
-   * how many forms it sees, and the ones it does not see are named here.
-   *
-   * **THE TEN IT SEES**: deleted, `display: none`, `visibility: hidden`,
-   * `opacity: 0`, a scale at zero, a size at zero, `clip-path`,
-   * `clip: rect(0,0,0,0)` on a positioned box, a font size of zero, and the box
-   * that clips at a fixed height. A scale counts once and holds twice, because
-   * `transform: scale(0)` and `scale: 0` are the same thing written in two
-   * places — the second a property of its own — and in Chromium the three `li`
-   * collapse to 0×0 either way: looking only inside `transform` was an open
-   * door. The one-pixel height with `overflow: hidden` is not a case of its
-   * own; it falls under the clipping box, and the test below shows it.
-   *
-   * **EIGHT OF THE ONES IT DOES NOT SEE**: `content-visibility: hidden`;
-   * `position: absolute` with an off-screen `left`; `z-index: -1` under an
-   * opaque sibling; `color: transparent`; `text-indent: -9999px`;
-   * `filter: opacity(0)`; `translateX(-9999px)`; `overflow` with a % height.
-   * Eight and not all, a sample: what they lack is one thing, the sheet's
-   * computation carried to the end — where an element lands, how big a
-   * percentage makes it, who covers whom. In jsdom none of that exists, so the
-   * place to win this is a real Chrome and not one more rule here.
+   * **WHOEVER MEASURES MUST BE MEASURED**, so the title says how many forms it
+   * sees and the rest are named here. **THE TEN IT SEES**: deleted, `display:
+   * none`, `visibility: hidden`, `opacity: 0`, a scale at zero, a size at zero,
+   * `clip-path`, `clip: rect(0,0,0,0)`, a font size of zero, a box clipping at
+   * a fixed height. **EIGHT IT DOES NOT**: `content-visibility`, an off-screen
+   * `left`, `z-index: -1`, `color: transparent`, `text-indent`, `filter:
+   * opacity(0)`, `translateX(-9999px)`, `overflow` with a % height — all of
+   * them wanting the sheet computed to the end, which is a real Chrome's job.
    */
   test("THE SHAPE CHECK SEES TEN WAYS OF VANISHING, and eight it does not see are written above", () => {
     render(<BlankCanvas state="empty" brokenCount={0} onCreate={() => {}} />);
