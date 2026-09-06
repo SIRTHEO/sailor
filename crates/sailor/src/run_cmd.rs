@@ -88,7 +88,7 @@ fn resolve_with(
     // there in a terminal too. Refused rather than launched without it: an
     // engine that quietly falls back to the subscription spends money the
     // person had said should be spent elsewhere.
-    let mut env = build_environment(cli, &profile.home_dir);
+    let mut env = build_environment(cli, &profile.home_dir, key_of);
     env.extend(profiles::endpoint_environment(cli, profile, key_of)?);
 
     Ok(Launch {
