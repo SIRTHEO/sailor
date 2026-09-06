@@ -106,6 +106,12 @@ fn the_tracking_waits_for_nothing_and_polls_nothing() {
             ticking.push(format!("{}: {problem}", path.display()));
         }
     }
+    workspace::measured_against(
+        sources.len(),
+        "tracking sources read",
+        SIGNS_OF_A_CLOCK.len(),
+        "signs of a clock",
+    );
 
     assert!(
         ticking.is_empty(),
