@@ -55,8 +55,7 @@ pub fn load_store_from(path: &Path) -> Result<ProfileStore, String> {
 /// For a path with no directory in front, `parent()` answers `Some("")`, and
 /// `create_dir_all("")` fails with «no such file» — the save would refuse while
 /// holding permission on the current directory. A function of its own so the
-/// test can judge the decision without `set_current_dir`, which is per
-/// **process**: while it ran, parallel tests wrote elsewhere and fell.
+/// test judges the decision without `set_current_dir`, which is per process.
 fn parent_to_create(path: &Path) -> Option<&Path> {
     path.parent().filter(|p| !p.as_os_str().is_empty())
 }
@@ -134,11 +133,9 @@ mod tests {
     impl TempDir {
         fn new() -> Self {
             // **THE COUNTER IS NOT SPARE: without it these tests stole each
-            // other's directory.** `cargo test` runs a crate's tests on threads
-            // of the **same** process, so the pid is identical for all of them,
-            // and macOS's clock has no real nanosecond resolution — two tests
-            // starting together got the same name, and the first to finish
-            // deleted the other's directory on its way out.
+            // other's directory.** A crate's tests run on threads of the same
+            // process, so the pid is shared, and the clock has no real
+            // nanosecond resolution: two starting together got one name.
             static NEXT: AtomicU64 = AtomicU64::new(0);
             let unique = format!(
                 "profiles-test-{}-{}-{}",
