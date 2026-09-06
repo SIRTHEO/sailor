@@ -633,7 +633,11 @@ button.is-danger {
   background: var(--danger-soft);
 }
 
-button {
+/* IT STEPS ASIDE FOR A COMPONENT THAT PAINTS ITSELF. This sheet is unlayered
+   and Tailwind's utilities are not, so unlayered wins whatever the
+   specificity: without the `:not`, a shadcn button renders as a hand-rolled
+   one and the component is a dependency paid for and inert. */
+button:not([data-slot]) {
   font: inherit;
   font-family: var(--font-prose);
   font-size: var(--text-small);
@@ -646,7 +650,7 @@ button {
   transition: border-color var(--motion-fast) var(--ease), background var(--motion-fast) var(--ease);
 }
 
-button:hover:not(:disabled) {
+button:not([data-slot]):hover:not(:disabled) {
   border-color: var(--ink);
 }
 
@@ -656,7 +660,7 @@ button:hover:not(:disabled) {
  * the viewer has to be able to read it. `opacity` over the browser's own
  * grey lands at 1.30:1; `--muted` on `--bg` is 4.80:1.
  */
-button:disabled {
+button:not([data-slot]):disabled {
   color: var(--muted);
   background: var(--bg);
   border-style: dashed;
@@ -4166,16 +4170,6 @@ tr[data-followable]:hover {
   border-style: dashed;
 }
 
-.terminals__elsewhere {
-  border: 0;
-  background: none;
-  padding: 0 var(--space-2);
-  font-size: var(--text-small);
-  color: var(--muted);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
 .terminals__field {
   display: flex;
   flex-direction: column;
@@ -4187,21 +4181,6 @@ tr[data-followable]:hover {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1);
-}
-
-.terminals__engine {
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--muted);
-  font: inherit;
-  padding: 2px 8px;
-  cursor: pointer;
-}
-
-.terminals__engine[data-chosen] {
-  border-color: var(--focus);
-  color: var(--ink);
 }
 
 .terminals__input,
@@ -4583,28 +4562,6 @@ tr[data-followable]:hover {
   border-left-color: var(--danger);
 }
 
-.terminals__tabs {
-  display: flex;
-  gap: var(--space-1);
-  flex-wrap: wrap;
-}
-
-/* A tab carries the workspace name, because that is what a terminal *is*. Two
-   terminals on the same repo are told apart by the id, and the id lives in the
-   pane, where it is there to be copied. */
-.terminals__tab {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  font-family: var(--font-prose);
-  font-size: var(--text-small);
-}
-
-.terminals__tab[data-here] {
-  border-color: var(--ink);
-  background: var(--raised);
-}
-
 .terminals__word,
 .pane__state {
   font-family: var(--font-display);
@@ -4691,23 +4648,38 @@ tr[data-followable]:hover {
   }
 }
 
-.terminals__tab[data-state="alive"] .terminals__word,
+.terminals__tab[data-liveness="alive"] .terminals__word,
 .pane__state[data-state="alive"] {
   color: var(--state-running);
 }
 
-.terminals__tab[data-state="closed"] .terminals__word,
+.terminals__tab[data-liveness="closed"] .terminals__word,
 .pane__state[data-state="closed"] {
   color: var(--state-broke);
 }
 
-.terminals__tab[data-state="unknown"] .terminals__word,
+.terminals__tab[data-liveness="unknown"] .terminals__word,
 .pane__state[data-state="unknown"] {
   color: var(--state-capped);
 }
 
 /* EVERY TERMINAL AT ONCE: the one in focus large on the left, the others
    stacked beside it. One pane alone takes the whole width. */
+/* A tab carries the workspace name, because that is what a terminal *is*. Two
+   terminals on the same repo are told apart by the id, which lives in the pane
+   where it can be copied. The chrome is `TabsTrigger`; this is the content. */
+.terminals__tab {
+  align-items: baseline;
+  gap: var(--space-2);
+  font-family: var(--font-prose);
+}
+
+/* THE PANEL IS NOT A BOX. Radix wraps each pane so the tab can point at it,
+   and a wrapper in the middle of a grid takes the place of the pane it holds. */
+.terminals__panel {
+  display: contents;
+}
+
 .terminals__panes {
   display: grid;
   grid-template-columns: 2fr 1fr;
