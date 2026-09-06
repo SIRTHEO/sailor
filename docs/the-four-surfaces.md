@@ -1,138 +1,141 @@
-# Le quattro superfici: cosa Sailor espone, e cosa invece si compone
+# The four surfaces: what Sailor exposes, and what gets composed instead
 
-**31/08/2026.** Nato da una domanda di Theo — «quali nodi di prodotto mancano al
-sistema?» — e dalla risposta sbagliata che ha ricevuto per prima: un elenco di
-buchi. Un elenco di buchi invecchia in una settimana e non dice dove mettere la
-cosa successiva. Questo documento prova a dire la stessa cosa in modo che regga:
-non *quali nodi mancano*, ma **quale superficie il sistema espone**, così che la
-domanda diventi «quale potere non abbiamo ancora, e quale flusso me lo
-dimostra».
+**31/08/2026.** Born from a question of Theo's — «which product nodes is the
+system missing?» — and from the wrong answer it got first: a list of holes. A
+list of holes ages in a week and does not say where to put the next thing. This
+document tries to say the same thing in a way that holds: not *which nodes are
+missing*, but **which surface the system exposes**, so that the question becomes
+«which power do we not have yet, and which flow proves it to me».
 
-## Da dove viene, con i numeri
+## Where it comes from, with the numbers
 
-Il 31/08 è stato censito `dev-stack`, l'orchestratore dell'ambiente di sviluppo
-di un altro progetto: 27 script, ~2.400 righe di shell, 35 ricette. La domanda
-iniziale era «quali di questi diventano flussi di Sailor». Il censimento ha
-risposto un'altra cosa, ed è questa: **22 voci su 52 sono migrabili, 15 sono
-ferme dietro una capacità che Sailor non ha.** Ma le quindici non chiedevano
-quindici nodi diversi: chiedevano **cinque poteri** — tenere vivo un processo,
-terminarne uno, parlare in rete, portare un segreto senza scriverlo, restituire
-un valore invece di un esito.
+On 31/08 `dev-stack` was surveyed, the development-environment orchestrator of
+another project: 27 scripts, ~2,400 lines of shell, 35 recipes. The opening
+question was «which of these become Sailor flows». The survey answered something
+else, and it is this: **22 entries out of 52 are migrable, 15 are stuck behind a
+capability Sailor does not have.** But the fifteen were not asking for fifteen
+different nodes: they were asking for **five powers** — keeping a process alive,
+killing one, speaking over the network, carrying a secret without writing it
+down, returning a value instead of an outcome.
 
-Nello stesso momento sette cantieri aperti su Sailor stavano costruendo
-`supervisor`, `terminal`, `presence`, `mcp` — cioè quei poteri, ognuno con la
-propria forma, senza un criterio comune su cosa fossero.
+At the same moment, seven building sites open on Sailor were building
+`supervisor`, `terminal`, `presence`, `mcp` — that is, those powers, each in its
+own shape, with no shared criterion for what they were.
 
-Il difetto che questo documento vuole impedire ha già un precedente misurato:
-**la finestra offre otto tipi di passo e il motore ne esegue tre**, e nessuno se
-n'era accorto perché i tipi non stanno in un posto solo.
+The defect this document means to prevent already has a measured precedent:
+**the window offers eight kinds of step and the engine runs three**, and nobody
+had noticed, because the kinds do not live in one single place.
 
-## Il confine, che è già scritto
+## The boundary, which is already written down
 
-Il vincolo permanente dice: *«programmiamo a codice solo ciò che tocca il mondo…
-il confine è il potere, non "esegue contro decide"»*. Da lì discendono due
-frasi, e sono tutto il documento:
+The permanent constraint says: *«we write in code only what touches the world…
+the boundary is the power, not "runs versus decides"»*. Two sentences follow
+from it, and they are the whole document:
 
-- **Il codice espone poteri.** Non nodi: poteri.
-- **I flussi compongono poteri.** Un'orchestrazione è un file di dati che mette
-  in fila poteri che il motore già espone. **Se un'orchestrazione richiede
-  codice nuovo, manca un potere — non manca un flusso.**
+- **The code exposes powers.** Not nodes: powers.
+- **Flows compose powers.** An orchestration is a data file that lines up powers
+  the engine already exposes. **If an orchestration calls for new code, a power
+  is missing — not a flow.**
 
-## Le quattro superfici
+## The four surfaces
 
-Ogni azione registrata appartiene a una sola di queste, e lo dichiara.
+Every registered action belongs to one of these alone, and declares it.
 
-### 1. `sense` — leggere il mondo senza toccarlo
+### 1. `sense` — reading the world without touching it
 
-Processi vivi, porte, carico, disco, rete, stato di un repository, l'indice del
-codice, e il consumo: quanto è stato speso, quanto resta, su quale fornitore.
+Live processes, ports, load, disk, network, the state of a repository, the index
+of the code, and the spend: how much has gone, how much is left, on which
+provider.
 
-Due proprietà rendono un'azione un sensore, e la seconda è quella che si
-dimentica:
+Two properties make an action a sensor, and the second is the one that gets
+forgotten:
 
-1. non cambia niente;
-2. **distingue «zero» da «non posso vedere»**.
+1. it changes nothing;
+2. **it tells «zero» apart from «I cannot see»**.
 
-La seconda viene dal guasto 12: `pgrep` dentro il perimetro rispondeva vuoto
-*senza errore*, e una sorveglianza ha dichiarato «nessun flusso in esecuzione»
-mentre due giravano. Un sensore cieco che risponde zero è peggio di un sensore
-assente, perché il flusso a valle si fida.
+The second comes from fault 12: inside the perimeter `pgrep` answered empty
+*without an error*, and a watch declared «no flow running» while two were
+running. A blind sensor that answers zero is worse than an absent one, because
+the flow downstream trusts it.
 
-### 2. `act` — toccare il mondo
+### 2. `act` — touching the world
 
-Avviare e fermare un processo, scrivere un file, invocare un motore, fare una
-richiesta di rete, committare.
+Starting and stopping a process, writing a file, calling an engine, making a
+network request, committing.
 
-Un attuatore dichiara **cosa può rompere**: è il modello Bazel già deciso il
-29/08 — un passo dichiara cosa gli serve e il resto per lui non esiste. Un
-attuatore che non lo dichiara non si registra.
+An actuator declares **what it can break**: it is the Bazel model already
+decided on 29/08 — a step declares what it needs, and the rest does not exist
+for it. An actuator that does not declare it does not get registered.
 
-### 3. `remember` — il deposito, come fonte a cui si fanno domande
+### 3. `remember` — the store, as a source you put questions to
 
-Corse, costi, guasti, decisioni. Non un archivio: una cosa che si interroga. La
-distanza da colmare è scritta in un mandato di agosto — *«Sailor registra tutto
-quello che succede e non torna mai a leggerlo»*.
+Runs, costs, faults, decisions. Not an archive: a thing you interrogate. The
+distance still to close is written in a mandate from August — *«Sailor records
+everything that happens and never goes back to read it»*.
 
-### 4. `gate` — chi può cosa, e dove entra una persona
+### 4. `gate` — who may do what, and where a person comes in
 
-Il permesso umano non è un nodo speciale: è la dichiarazione che certi poteri,
-in certi contesti, vogliono una firma. Discende da due vincoli permanenti già
-scritti — «chi crea non giudica» e il giudizio umano che resta sopra il ciclo.
-Finché vive fuori dal sistema, ogni cancello è un'usanza e non un meccanismo.
+Human permission is not a special node: it is the declaration that certain
+powers, in certain contexts, want a signature. It follows from two permanent
+constraints already written down — «whoever creates does not judge», and the
+human judgement that stays above the cycle. As long as it lives outside the
+system, every gate is a custom and not a mechanism.
 
-## Cosa deve dichiarare un'azione, per essere registrata
+## What an action has to declare, to be registered
 
-1. **la superficie** — una sola fra `sense`, `act`, `remember`, `gate`;
-2. **i poteri che pretende** — rete, disco, processi, denaro, segreti;
-3. **cosa risponde quando non può rispondere** — obbligatorio per `sense`, ed è
-   il guasto 12 reso impossibile.
+1. **the surface** — one alone out of `sense`, `act`, `remember`, `gate`;
+2. **the powers it demands** — network, disk, processes, money, secrets;
+3. **what it answers when it cannot answer** — required for `sense`, and it is
+   fault 12 made impossible.
 
-I nomi delle superfici stanno in inglese perché li legge il compilatore; tutto
-ciò che legge una persona resta in italiano, come già deciso il 31/08.
+The names of the surfaces are in English because the compiler reads them;
+everything a person reads stays in Italian, as already decided on 31/08.
 
-## Cosa vuol dire «aperto», in tre proprietà
+## What «open» means, in three properties
 
-**Si chiede, non si sa.** Un flusso non contiene l'elenco di ciò che esiste: lo
-interroga. È la cura già scritta per gli strumenti — *«chiedere al motore, non
-tenere una lista»* — estesa a poteri, competenze e fornitori. Quando vale
-ovunque, la domanda «quali nodi mancano» non serve più: risponde il sistema.
+**You ask, you do not know.** A flow does not hold the list of what exists: it
+interrogates it. It is the cure already written for tools — *«ask the engine, do
+not keep a list»* — carried over to powers, skills and providers. Once it holds
+everywhere, the question «which nodes are missing» is no longer needed: the
+system answers it.
 
-**Si aggiunge senza ricompilare chi lo usa.** Un potere nuovo, anche di terzi,
-entra con un descrittore — la stessa forma con cui entra un motore. È già la
-direzione di prodotto numero 3: *«un progetto esterno si collega come azione
-nuova; non serve inventare un meccanismo, serve scegliere il progetto»*.
+**It is added without recompiling whoever uses it.** A new power, a third
+party's included, comes in with a descriptor — the same shape by which an engine
+comes in. It is already product direction number 3: *«an external project plugs
+in as a new action; there is no mechanism to invent, there is a project to
+choose»*.
 
-**Si porta via.** Un flusso dichiara tutto ciò che pretende, e chi lo riceve o
-lo esegue o **gli viene detto perché non può**. Oggi è il contrario: il guasto 17
-(competenze presenti su una macchina sola, non dichiarate) e il guasto 25 (la
-radice del repository scritta dentro il flusso) sono lo stesso difetto visto da
-due lati.
+**It travels.** A flow declares everything it demands, and whoever receives it
+either runs it or **is told why it cannot**. Today it is the other way round:
+fault 17 (skills present on one machine only, undeclared) and fault 25 (the
+repository root written inside the flow) are the same defect seen from two
+sides.
 
-## Perché non basta scriverlo qui
+## Why writing it down here is not enough
 
-*«Chi scrive una regola nuova scrive anche ciò che la rende rossa.»* Questa ha il
-suo controllo, e senza non entra:
+*«Whoever writes a new rule writes what makes it red as well.»* This one has its
+own check, and without it it does not come in:
 
-> una prova che scorre il registro delle azioni e **fallisce se un'azione non
-> dichiara la propria superficie e i propri poteri**; e, per le sole `sense`,
-> fallisce se non dichiara cosa risponde da cieca.
+> a test that walks the action registry and **fails if an action does not
+> declare its own surface and its own powers**; and, for `sense` alone, fails if
+> it does not declare what it answers when blind.
 
-**Quella prova non è mai stata scritta, e la scelta è stata presa il
-04/09/2026: questo documento resta dichiarato e non in vigore.** Nessuna azione
-porta una superficie — cercare `surface` nei crate torna due file, e uno dei
-due, `crates/actions/src/history.rs`, lo dice di sé. Non si ritira, perché il
-disegno regge; non si costruisce adesso, perché paga solo insieme al modello
-dei poteri di un passo, che è previsto dopo. Fino ad allora, per la regola di
-questo stesso progetto, **qui c'è un'intenzione e non un vincolo** — ed è il
-guasto 67, che resta aperto e ora ha una risposta invece di una domanda.
+**That test was never written, and the choice was made on 04/09/2026: this
+document stays declared and not in force.** No action carries a surface —
+searching the crates for `surface` returns two files, and one of the two,
+`crates/actions/src/history.rs`, says so of itself. It is not withdrawn, because
+the design holds; it is not built now, because it only pays off together with
+the model of a step's powers, which comes later. Until then, by this very
+project's own rule, **what is here is an intention and not a constraint** — and
+it is fault 67, which stays open and now has an answer instead of a question.
 
-Nasce rossa sulle nove azioni di oggi — nessuna dichiara niente — ed è il modo
-in cui questa pagina resta viva invece di diventare la descrizione di ciò che è
-già successo.
+It is born red on today's nine actions — none of them declares anything — and
+that is how this page stays alive instead of turning into the description of
+what has already happened.
 
-## Il debito che questo documento dichiara
+## The debt this document declares
 
-I sette cantieri aperti il 31/08 hanno prodotto crate nuovi **prima** di questo
-criterio. Adeguarli è una decisione di Theo: se non si adeguano prima di
-chiudere, la regola nasce con quattro eccezioni non scritte, che è il modo in cui
-la finestra è arrivata a otto tipi contro tre.
+The seven building sites open on 31/08 produced new crates **before** this
+criterion. Bringing them into line is a decision of Theo's: if they are not
+brought into line before it closes, the rule is born with four unwritten
+exceptions, which is how the window got to eight kinds against three.
