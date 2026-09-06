@@ -584,6 +584,7 @@
   "run.failure.no_parent_run": "there is no run in progress — a subflow only exists inside one",
   "run.failure.no_parent_step": "no step is in progress — there would be nothing to attribute the child run to",
   "run.failure.no_preflight": "no check ties the server's answer to the directory this step is about",
+  "run.failure.no_run": "there is no run to name this entry after, and an entry that names itself after nothing is one nobody finds again",
   "run.failure.no_store": "nobody knows where the store lives",
   "run.failure.no_tool_resolver": "nobody knows where to find that tool",
   "run.failure.no_usable_engine": "none of the engines the step asks for could work",
