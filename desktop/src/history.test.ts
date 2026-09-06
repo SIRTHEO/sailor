@@ -4,12 +4,12 @@ import { countByFamily } from "./Installed";
 import type { Execution, InstalledEntry } from "./engine";
 
 /**
- * **LE REGOLE CHE DECIDONO IL COLORE DI UNA RIGA.**
+ * **THE RULES THAT DECIDE THE COLOUR OF A ROW.**
  *
- * Sbagliarle non fa cadere niente: la tabella si disegna lo stesso, e chi legge
- * crede a quello che vede. Una corsa rotta contata fra le aperte esce
- * dall'occhio di chi cerca i guasti, ed è il difetto più caro possibile in una
- * vista che esiste per trovarli.
+ * Getting them wrong drops nothing: the table draws all the same, and whoever
+ * reads it believes what they see. A broken run counted among the open ones
+ * leaves the eye of whoever hunts faults, and that is the costliest possible
+ * fault in a view that exists to find them.
  */
 
 function run(over: Partial<Execution>): Execution {
@@ -47,9 +47,9 @@ function run(over: Partial<Execution>): Execution {
 
 describe("outcomeOf", () => {
   test("ROTTA VINCE SU APERTA", () => {
-    // Una corsa con un passo caduto e un altro ancora in volo è un guasto che
-    // sta ancora bruciando. Contarla fra le aperte la toglierebbe dall'occhio
-    // di chi guarda i guasti — ed è la riga che questa prova difende.
+    // A run with one step down and another still in flight is a fault that is
+    // still burning. Counting it among the open ones would take it out of the
+    // eye of whoever watches faults — and that is the line this test defends.
     const both = run({
       status: "running",
       steps_broke: 1,
@@ -63,23 +63,23 @@ describe("outcomeOf", () => {
   });
 
   test("uno stato che non conosciamo non diventa «andata»", () => {
-    // «altro» è brutto da leggere e onesto: inventare un successo su uno stato
-    // che il motore non ha dichiarato è il modo in cui una vista comincia a
-    // mentire senza che nessuno la smentisca.
+    // «other» is ugly to read and honest: inventing a success on a state the
+    // engine never declared is how a view starts to lie with nobody there to
+    // contradict it.
     expect(outcomeOf(run({ status: "waiting", steps_open: [] }))).toBe("other");
   });
 
   test("i tentativi non cambiano l'esito", () => {
-    // Un passo ripetuto e poi riuscito è una corsa andata, e la fatica si legge
-    // nella colonna dei ritentati invece che in un rosso che non c'è.
+    // A step repeated and then successful is a run that went, and the effort
+    // reads in the retried column instead of in a red that is not there.
     expect(outcomeOf(run({ steps_retried: 2 }))).toBe("went");
   });
 });
 
 describe("lastedOf", () => {
   test("una corsa mai finita non dura zero", () => {
-    // `0 s` su una corsa che non è mai finita è la bugia comoda: sembra
-    // istantanea invece che interrotta.
+    // `0 s` on a run that never ended is the convenient lie: it looks
+    // instantaneous rather than interrupted.
     expect(lastedOf(null)).toBe("—");
   });
 
@@ -102,8 +102,8 @@ describe("whenOf", () => {
 
 describe("countByFamily", () => {
   test("le famiglie a zero restano nell'elenco", () => {
-    // Una famiglia che sparisce quando è vuota fa credere che non esista: chi
-    // non ha ancora scritto un gancio deve vedere «ganci 0», non il silenzio.
+    // A family that disappears when empty makes you believe it does not exist:
+    // whoever has yet to write a hook must see «hooks 0», not silence.
     const entries: InstalledEntry[] = [
       { kind: "skill", name: "a", description: "", origin: "casa", path: "/a", reach: { state: "active" }, by_model: true },
       { kind: "skill", name: "b", description: "", origin: "casa", path: "/b", reach: { state: "active" }, by_model: true },

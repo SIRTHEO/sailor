@@ -1,17 +1,17 @@
-//! Il collegamento: una richiesta smistata da un terminale diventa il segnale
-//! che fa partire un flusso.
+//! The joint: a request routed by a terminal becomes the signal that starts a
+//! flow.
 //!
-//! **PERCHÉ QUESTA PROVA ESISTE SEPARATA DALLE ALTRE.** Il crate `terminal` non
-//! dipende né da `flow` né da `trigger`: un terminale deve poter aprirsi anche
-//! quando i flussi sono rotti, e far entrare il motore dei flussi qui vorrebbe
-//! dire che aprire una shell tira su il deposito. Ma un pezzo che si incastra
-//! solo «in teoria» non si incastra: questa prova prende l'uscita vera dello
-//! smistamento, la dà all'innesco manuale vero, e guarda cosa ne esce. Le due
-//! metà si toccano qui, e solo qui — è una dipendenza di prova, non di prodotto.
+//! **WHY THIS PROOF LIVES APART FROM THE OTHERS.** The `terminal` crate depends
+//! on neither `flow` nor `trigger`: a terminal must open even when flows are
+//! broken, and letting the flow engine in here would mean opening a shell pulls
+//! up the ledger. But a piece that only fits "in theory" does not fit: this
+//! proof takes the real output of the routing, hands it to the real manual
+//! trigger, and watches what comes out. The two halves touch here, and only
+//! here — a test dependency, not a product one.
 //!
-//! **NON FA PARTIRE NESSUN MOTORE.** Il passo di innesco non chiama niente e non
-//! costa niente: mette in forma il segnale. I passi che spendono stanno a valle,
-//! e provarli vorrebbe dire pagare chiamate vere a ogni `cargo test`.
+//! **IT STARTS NO ENGINE.** The trigger step calls nothing and costs nothing:
+//! it shapes the signal. The steps that spend are downstream, and proving them
+//! would mean paying for real calls at every `cargo test`.
 
 use flow::{Action, ActionOutcome, SharedState};
 use serde_json::{json, Value};
@@ -27,7 +27,7 @@ impl CommandLookup for NothingIsRunnable {
     }
 }
 
-/// L'innesco manuale, invocato come lo invocherebbe un passo di flusso.
+/// The manual trigger, called as a flow step would call it.
 fn fire(input: Value) -> Value {
     match TriggerAction
         .execute(&input, &SharedState::new())
@@ -39,10 +39,10 @@ fn fire(input: Value) -> Value {
     }
 }
 
-/// **LA CATENA INTERA, IN UNA PROVA SOLA.** La riga scritta in un terminale
-/// viene smistata; ciò che ne esce diventa il segnale dell'innesco manuale; e i
-/// campi che i passi a valle leggono contengono la richiesta, chi l'ha scritta e
-/// in quale spazio di lavoro.
+/// **THE WHOLE CHAIN, IN ONE PROOF.** The line typed in a terminal is routed;
+/// what comes out becomes the manual trigger's signal; and the fields the
+/// downstream steps read hold the request, who wrote it, and in which
+/// workspace.
 #[test]
 fn a_routed_request_becomes_the_signal_of_a_manual_trigger() {
     let catalog = Catalog::load(&[terminal::Source::Builtin]);
@@ -56,9 +56,9 @@ fn a_routed_request_becomes_the_signal_of_a_manual_trigger() {
     assert_eq!(flow, "dispatch-the-work");
     assert_eq!(route, "marked-request");
 
-    // Questo è il giunto: ciò che lo smistamento ha prodotto, messo in mano
-    // all'innesco. `who` e `where` sono ciò che il terminale sa di sé — è la
-    // ragione per cui un terminale nasce legato a uno spazio di lavoro.
+    // This is the joint: what the routing produced, put into the trigger's
+    // hands. `who` and `where` are what the terminal knows of itself — the
+    // reason a terminal is born tied to a workspace.
     let signal = fire(json!({
         "source": "manual",
         "text": text,
@@ -76,10 +76,10 @@ fn a_routed_request_becomes_the_signal_of_a_manual_trigger() {
     assert_eq!(signal["kind"], "manual");
 }
 
-/// **IL FLUSSO A CUI SI MANDA HA DAVVERO UN NODO DI INGRESSO CHE ACCETTA UN
-/// SEGNALE MANUALE.** Senza questo controllo, una regola potrebbe puntare a un
-/// flusso che comincia con un passo qualunque, e il collegamento si romperebbe
-/// alla prima corsa vera invece che qui.
+/// **THE FLOW IT SENDS TO REALLY HAS AN ENTRY NODE THAT ACCEPTS A MANUAL
+/// SIGNAL.** Without this check a rule could point at a flow beginning with any
+/// step at all, and the joint would break on the first real run instead of
+/// here.
 #[test]
 fn the_flow_the_shipped_rules_name_starts_with_a_manual_trigger() {
 
@@ -120,10 +120,9 @@ fn the_flow_the_shipped_rules_name_starts_with_a_manual_trigger() {
     }
 }
 
-/// Una riga che lo smistamento lascia passare **non** produce nessun segnale:
-/// non c'è niente da consegnare a nessun innesco. È il confine che rende sicuro
-/// il collegamento — un segnale finto farebbe partire i motori a valle, e costa
-/// chiamate vere.
+/// A line the routing lets through produces **no** signal: there is nothing to
+/// hand any trigger. It is the boundary that makes the joint safe — a fake
+/// signal would start the engines downstream, and that costs real calls.
 #[test]
 fn a_command_produces_no_signal_at_all() {
     let catalog = Catalog::load(&[terminal::Source::Builtin]);

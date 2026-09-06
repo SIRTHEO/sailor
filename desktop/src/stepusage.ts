@@ -2,46 +2,43 @@ import type { CallView, RunUsage } from "./flow";
 import { nodeId } from "./layout";
 
 /**
- * Quanto è costato un singolo passo, e con quale motore l'ha fatto.
+ * What a single step cost, and with which engine it did it.
  *
- * **Perché esiste.** `RunUsage.calls` arriva già dal deposito a ogni corsa
- * guardata, porta per ogni chiamata il modello davvero usato, i token e il
- * costo — e finiva schiacciato in una sola riga di totale in fondo alla
- * console. Chi guardava un flusso non poteva sapere quale passo aveva speso,
- * né su quale modello: era esattamente l'opacità che il vincolo «chiarezza per
- * chi guarda» vieta.
+ * **Why it exists.** `RunUsage.calls` already arrives from the store on every run
+ * watched, carrying for each call the model really used, the tokens and the cost —
+ * and it ended up crushed into one total line at the foot of the console. Whoever
+ * watched a flow could not know which step had spent, nor on which model: exactly
+ * the opacity the constraint «clarity for whoever is watching» forbids.
  *
- * Sta in un file suo, senza React, perché il calcolo si possa provare senza
- * montare una tela — la stessa ragione per cui `runstate.ts` è stato staccato.
+ * It sits in a file of its own, without React, so the reckoning can be tested
+ * without mounting a canvas — the same reason `runstate.ts` was split off.
  */
 
 export interface StepUsage {
   /**
-   * I modelli **davvero** usati, in ordine di prima chiamata.
+   * The models **really** used, in order of first call.
    *
-   * È un elenco e non una stringa perché un passo che ritenta può cadere su un
-   * modello diverso dal primo, e mostrarne uno solo direbbe il falso su cosa è
-   * successo. Il modello dichiarato nel passo è un'altra cosa e sta altrove:
-   * questo è quello che il motore ha risposto di aver usato.
+   * A list and not a string because a step that retries can land on a model other
+   * than the first, and showing one alone would lie about what happened. The model
+   * declared in the step is elsewhere: this is what the engine answered it used.
    */
   models: string[];
   inputTokens: number;
   outputTokens: number;
   /**
-   * `null` quando **nessuna** chiamata del passo ha dichiarato un costo.
+   * `null` when **no** call of the step declared a cost.
    *
-   * Non è zero: zero vorrebbe dire «è girato gratis», e la differenza è quella
-   * già scritta fra le decisioni — Codex dichiara il totale dei token e non i
-   * due lati, quindi la sua riga resta senza costo. Un passo che mostra `0,0000 $`
-   * dove nessuno ha misurato niente è una misura inventata.
+   * Not zero: zero would mean «it ran for free», and the difference is written
+   * among the decisions — Codex declares the token total, not the two sides, so its
+   * line stays costless. `0,0000 $` where nobody measured is an invented measure.
    */
   costMicros: number | null;
   calls: number;
-  /** Quante chiamate sono rimaste fuori dal conto del costo. */
+  /** How many calls stayed out of the cost reckoning. */
   callsWithoutCost: number;
 }
 
-/** Somma nulla, per un passo che non ha ancora chiamato nessuno. */
+/** A null sum, for a step that has called nobody yet. */
 function empty(): StepUsage {
   return { models: [], inputTokens: 0, outputTokens: 0, costMicros: null, calls: 0, callsWithoutCost: 0 };
 }
@@ -50,9 +47,8 @@ function fold(into: StepUsage, call: CallView): StepUsage {
   const models = into.models.includes(call.actual_model) || call.actual_model === ""
     ? into.models
     : [...into.models, call.actual_model];
-  // Un costo assente lascia `null` finché non ne arriva uno vero: sommare
-  // `null` come zero è il modo esatto in cui un totale parziale si traveste da
-  // totale.
+  // An absent cost leaves `null` until a real one arrives: summing `null` as
+  // zero is exactly how a partial total disguises itself as a total.
   const cost = call.cost_micros === null
     ? into.costMicros
     : (into.costMicros ?? 0) + call.cost_micros;
@@ -67,14 +63,14 @@ function fold(into: StepUsage, call: CallView): StepUsage {
 }
 
 /**
- * Le chiamate di una corsa, raccolte per passo e chiavate `flusso::passo`.
+ * A run's calls, gathered per step and keyed `flusso::passo`.
  *
- * La chiave è qualificata col flusso per la ragione già pagata sulla tela
- * unica: `verifica` e `verdetto` esistono in più flussi, e una chiave nuda
- * farebbe apparire su un nodo la spesa di un altro.
+ * The key is qualified with the flow for the reason already paid on the single
+ * canvas: `verifica` and `verdetto` exist in more than one flow, and a bare key
+ * would show on one node the spend of another.
  *
- * Le chiamate senza `step_id` — quelle della corsa e non di un passo — restano
- * fuori: appartengono al totale, non a un nodo.
+ * Calls with no `step_id` — the run's, not a step's — stay out: they belong to
+ * the total, not to a node.
  */
 export function stepUsageOfRun(usage: RunUsage | null, flowName: string): Map<string, StepUsage> {
   const perStep = new Map<string, StepUsage>();
@@ -87,27 +83,26 @@ export function stepUsageOfRun(usage: RunUsage | null, flowName: string): Map<st
   return perStep;
 }
 
-/** Vero quando il costo mostrato è più basso di quello vero, e va detto. */
+/** True when the cost shown is lower than the real one, and must be said. */
 export function usageIsPartial(usage: StepUsage): boolean {
   return usage.callsWithoutCost > 0;
 }
 
 /**
- * Il costo, in euro-virgola-italiana e con l'unità attaccata.
+ * The cost, with an Italian decimal comma and the unit attached.
  *
- * Quattro decimali perché una chiamata sola costa spesso meno di un centesimo, e
- * arrotondare a due la farebbe leggere `0,00 $` — che è lo stesso inganno del
- * costo assente mostrato come zero.
+ * Four decimals because one call often costs less than a cent, and rounding to
+ * two would make it read `0,00 $` — the same deceit as an absent cost shown as zero.
  */
 export function formatCost(micros: number): string {
   return `$${(micros / 1e6).toFixed(4)}`;
 }
 
 /**
- * I token in forma corta: `840`, `12.4k`, `1.03M`.
+ * The tokens in short form: `840`, `12.4k`, `1.03M`.
  *
- * Su un nodo non c'è spazio per sette cifre, e il numero esatto non è la
- * domanda che si fa guardando una tela — l'ordine di grandezza sì.
+ * On a node there is no room for seven digits, and the exact number is not the
+ * question you ask looking at a canvas — the order of magnitude is.
  */
 export function formatTokens(n: number): string {
   if (n < 1000) return String(n);
