@@ -226,7 +226,9 @@ pub fn registry_in(
     // a step that writes into nothing is worse than a step that stops.
     actions::store::register_store(&mut registry, ledger);
     // Last: the list it hands out is everything above.
-    actions::draft::register_draft(&mut registry, flows);
+    actions::draft::register_draft(&mut registry, flows.clone());
+    // Last of all: it must see `action_list` and `flow_draft` as named too.
+    actions::unused_actions::register_unused_actions(&mut registry, flows);
     registry
 }
 
