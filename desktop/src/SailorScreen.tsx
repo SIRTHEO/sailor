@@ -13,6 +13,7 @@ import { MachineScreen } from "./MachineScreen";
 import { Manual } from "./Manual";
 import { ModelsScreen } from "./ModelsScreen";
 import { ProfileList } from "./ProfileList";
+import { RunningScreen } from "./RunningScreen";
 
 
 export function SailorScreen({
@@ -32,6 +33,7 @@ export function SailorScreen({
     // Exactly one place, so it says which: a guard asks whether THAT place drew.
     <div className="section" data-place="sailor">
       <div className="section__body">
+        {tab === "running" && <RunningScreen native={native} />}
         {tab === "keeps" && <KeepsScreen native={native} />}
         {tab === "cando" && <AbilitiesScreen native={native} />}
         {tab === "engines" && <EnginesScreen native={native} onTerminalOpened={onTerminalOpened} />}

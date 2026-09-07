@@ -5,6 +5,7 @@
  * `self is not defined`.
  */
 export type SailorTab =
+  | "running"
   | "keeps"
   | "cando"
   | "engines"
@@ -15,6 +16,7 @@ export type SailorTab =
   | "look";
 
 export const SAILOR_TABS: { id: SailorTab; name: string; about: string; group: string }[] = [
+  { id: "running", name: "What it is running", about: "what sailor lit on this machine and never saw end", group: "itself" },
   { id: "keeps", name: "What it keeps", about: "every store, its path and its size", group: "itself" },
   { id: "cando", name: "What it can do", about: "the actions a flow may use", group: "itself" },
   { id: "engines", name: "Engines", about: "which command lines are here, signed in, and how full", group: "setup" },

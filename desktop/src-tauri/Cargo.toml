@@ -32,6 +32,11 @@ ledger = { path = "../../crates/ledger" }
 # in, which is how a project enters the list without anybody typing `init`.
 sessions = { path = "../../crates/sessions" }
 
+# What Sailor lit on this machine and never saw end, and the gesture that puts
+# it out. The same reading `sailor machine` gives, so the window and the command
+# line cannot come to disagree about what is running.
+machine = { path = "../../crates/machine" }
+
 # Which actions the engine can run: the same list the command line uses. A
 # copy here once ran the same flow in two ways depending on who launched it.
 registry = { path = "../../crates/registry" }
