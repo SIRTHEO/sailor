@@ -265,6 +265,63 @@ fn stopped_and_skipped_outcomes_round_trip_through_the_operational_column() {
     }
 }
 
+/// A run of `entity`, with `compile` closed under `outcome` — the minimum a
+/// [`StepReach`] query needs: a `runs` row to join against, since a step with
+/// no run behind it is not a run this flow ever made.
+fn a_run_reaching(ledger: &Ledger, run_id: &str, entity: &str, outcome: Outcome) {
+    ledger
+        .record_run(&RunRecord {
+            run_id: run_id.to_owned(),
+            kind: "flow".to_owned(),
+            entity: entity.to_owned(),
+            parent_run_id: None,
+            started_by: "test".to_owned(),
+            status: "complete".to_owned(),
+            total_cost_micros: 0,
+            error: None,
+            started_at: 1,
+            ended_at: Some(2),
+            worktree: None,
+            stop_reason: None,
+        })
+        .expect("record the run");
+    ledger
+        .append_step_started(&started(run_id))
+        .expect("write the record");
+    let mut completion = completion();
+    completion.outcome = outcome;
+    ledger
+        .close_step(run_id, "compile", 1, 7, completion)
+        .expect("close the step");
+}
+
+/// **REACHED, GATED, OR NEVER RUN AT ALL ARE THREE DIFFERENT ANSWERS.** A step
+/// skipped every time is not the same fault as a step no run has ever closed,
+/// and a step reached even once is not dormant at all — mixing any two of the
+/// three would misname a cure.
+#[test]
+fn step_reach_tells_gated_from_dormant_from_never_run() {
+    let directory = TestDirectory::new("reach");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    a_run_reaching(&ledger, "run-gated", "gated-flow", Outcome::Skipped);
+    a_run_reaching(&ledger, "run-live", "live-flow", Outcome::Went);
+
+    assert_eq!(
+        ledger.step_reach("gated-flow", "compile").expect("query"),
+        StepReach::AlwaysSkipped
+    );
+    assert_eq!(
+        ledger.step_reach("live-flow", "compile").expect("query"),
+        StepReach::ReachedAtLeastOnce
+    );
+    assert_eq!(
+        ledger
+            .step_reach("nobody-ran-this-flow", "compile")
+            .expect("query"),
+        StepReach::NeverClosed
+    );
+}
+
 #[test]
 fn two_processes_using_ledger_api_serialize_writers() {
     let directory = TestDirectory::new("concurrency");

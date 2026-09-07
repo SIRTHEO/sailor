@@ -30,6 +30,7 @@ pub mod faults;
 pub mod handoff;
 pub mod history;
 pub mod mcp;
+pub mod dormant_steps;
 pub mod draft;
 pub mod memory;
 pub mod notes;
