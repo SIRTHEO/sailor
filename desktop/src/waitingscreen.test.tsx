@@ -76,7 +76,7 @@ function execution(runId: string, status: string, endedAt: number, over: Partial
       cache_write_tokens: 0,
       cost_micros: 0,
       calls: 0,
-      calls_without_tokens: 0,
+      turns: 0, total_tokens_only: 0, calls_without_tokens: 0,
       calls_without_cost: 0,
     },
     tokens_by_model: {},

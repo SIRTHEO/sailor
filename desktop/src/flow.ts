@@ -249,6 +249,9 @@ export interface TokenTotals {
   total_tokens_only: number;
   cost_micros: number;
   calls: number;
+  /** Laps of the model inside the calls: what explains why a chain costs more
+   * than one long session. */
+  turns: number;
   calls_without_tokens: number;
   calls_without_cost: number;
 }
