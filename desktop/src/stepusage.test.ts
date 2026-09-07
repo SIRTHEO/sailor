@@ -29,6 +29,7 @@ function call(over: Partial<CallView>): CallView {
     error_type: null,
     started_at: 0,
     ended_at: 1,
+    engine_identity: { kind: "not_a_known_engine" },
     ...over,
   } as CallView;
 }

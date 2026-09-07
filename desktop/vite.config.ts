@@ -29,7 +29,21 @@ export default defineConfig({
     // with two surfaces — the crates embed them with `include_str!`, the
     // bundler packs them here. In either one's house, the other would be a
     // guest.
-    fs: { allow: [".", "../crates/flow/system", "../crates/flow/src", "../i18n"] },
+    // The contract tests read the crate that owns each shape, so those
+    // directories are named too. **THE GUARD BITES ONLY UNDER JSDOM**: two of
+    // them read crates that were on no list and passed, because a test in the
+    // node environment never meets it — so an unlisted directory is a test one
+    // pragma away from failing.
+    fs: {
+      allow: [
+        ".",
+        "../crates/flow/system",
+        "../crates/flow/src",
+        "../crates/ledger/src",
+        "../crates/ui/src",
+        "../i18n",
+      ],
+    },
   },
   // `SAILOR_LANG` arriva fino alla finestra, che altrimenti vedrebbe solo le
   // variabili con prefisso `VITE_`. In mancanza si parla inglese.
