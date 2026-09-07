@@ -101,6 +101,17 @@ fn glance_at(ledger: &Ledger) -> Result<Glance, ledger::LedgerError> {
     })
 }
 
+/// Which flows a beat would hold instead of starting, whatever their
+/// schedule says: one place, so `tick_flows_with` and `due_flows_with` can
+/// never quietly disagree about which streak counts as stuck.
+fn stuck_flows(streaks: &[flow::FailureStreak]) -> std::collections::BTreeMap<&str, usize> {
+    streaks
+        .iter()
+        .filter(|streak| streak.length() >= flow::FAILURES_THAT_MAKE_A_FAULT)
+        .map(|streak| (streak.flow.as_str(), streak.length()))
+        .collect()
+}
+
 impl LastRuns {
     /// `consequence` is the catalogue key for what not looking cost, since the
     /// beat and the due list pay it differently.
@@ -175,12 +186,7 @@ fn tick_flows_with(sources: &[FlowSource], last: LastRuns, start: Starter<'_>) -
     // hold reads the streak fresh every beat: it lifts only once a NEW run
     // closes complete — by hand, the one path left while this one is held —
     // never from a fix alone that has not yet been run.
-    let stuck: std::collections::BTreeMap<&str, usize> = glance
-        .streaks
-        .iter()
-        .filter(|streak| streak.length() >= flow::FAILURES_THAT_MAKE_A_FAULT)
-        .map(|streak| (streak.flow.as_str(), streak.length()))
-        .collect();
+    let stuck = stuck_flows(&glance.streaks);
 
     let mut report = String::new();
     let mut ran = 0usize;
@@ -289,6 +295,14 @@ fn tick_flows_with(sources: &[FlowSource], last: LastRuns, start: Starter<'_>) -
 }
 
 pub(super) fn due_flows(sources: &[FlowSource]) -> Result<String, String> {
+    due_flows_with(sources, last_runs())
+}
+
+/// Split from `due_flows` so a test can hand it a `Glance` straight from a
+/// scratch ledger, the same way `tick_flows_with` is tested: this list must
+/// agree with what a beat would actually do, and the only way to prove that
+/// is to read the same streak data a beat reads, not a second guess of it.
+fn due_flows_with(sources: &[FlowSource], last: LastRuns) -> Result<String, String> {
     let known = known_flows(sources);
     if known.is_empty() {
         return Ok(nothing_found(sources));
@@ -297,9 +311,12 @@ pub(super) fn due_flows(sources: &[FlowSource]) -> Result<String, String> {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    let last = last_runs()
-        .read_or_say_it_could_not("cli.flow.due_could_not_look")?
-        .last_started;
+    let glance = last.read_or_say_it_could_not("cli.flow.due_could_not_look")?;
+    let last = &glance.last_started;
+    // The same map `tick_flows_with` builds, off the same streak data: a
+    // flow this list calls "due" must be a flow a beat would actually start,
+    // or whoever reads the list is planning around a beat that will not run.
+    let stuck = stuck_flows(&glance.streaks);
 
     let mut report = String::new();
     let mut due = 0usize;
@@ -318,7 +335,12 @@ pub(super) fn due_flows(sources: &[FlowSource]) -> Result<String, String> {
             continue;
         };
         let last_run = last.get(&flow.id).copied();
-        let verdict = if flow::is_due(schedule, last_run, now) {
+        let verdict = if let Some(length) = stuck.get(flow.id.as_str()) {
+            catalogue::say(
+                "cli.flow.suspended_after_failures",
+                &[("times", &length.to_string())],
+            )
+        } else if flow::is_due(schedule, last_run, now) {
             due += 1;
             catalogue::say("cli.flow.due", &[])
         } else {
@@ -689,6 +711,54 @@ mod tests {
         assert!(
             ledger.faults_written().expect("the memory").is_empty(),
             "altro-flusso's fault was never actually written, so nothing here should say it was"
+        );
+        drop(ledger);
+        let _ = fs::remove_dir_all(&scratch);
+    }
+
+    /// **THE LIST MUST NOT PROMISE WHAT THE BEAT WOULD NOT DO.** A flow held
+    /// by `tick_flows_with` for a three-failure streak, but reported "due" by
+    /// `sailor flow due`, is a list a person plans around while the beat
+    /// itself sits still — the exact gap a review of the first fix found.
+    #[test]
+    fn due_agrees_with_the_beat_about_a_flow_stuck_on_three_failures() {
+        let scratch = std::env::temp_dir().join(format!("sailor-elenco-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&scratch);
+        fs::create_dir_all(&scratch).expect("create the test directory");
+        fs::write(
+            scratch.join("ogni-minuto.flow.json"),
+            r#"{"id":"ogni-minuto","description":"un flusso a intervallo",
+                "schedule":{"recurrence":{"kind":"every_seconds","seconds":60},"weight":"light"},
+                "graph":{"steps":[{"id":"innesco","deps":[],"action":"trigger","max_attempts":1,
+                "when":null,"with":{"source":"manual","text":"vai"},
+                "input_schema":{"type":"any"},"output_schema":{"type":"any"}}]},"inputs":{}}"#,
+        )
+        .expect("write a scheduled flow");
+        let sources = vec![FlowSource {
+            origin: "prova",
+            dir: scratch.clone(),
+        }];
+        let now = now_secs().unwrap_or(0);
+        let ledger = Ledger::open(scratch.join("ledger")).expect("a scratch ledger");
+        for (run, at) in [
+            ("ogni-minuto-1", now - 1000),
+            ("ogni-minuto-2", now - 900),
+            ("ogni-minuto-3", now - 800),
+        ] {
+            ledger
+                .record_run(&a_closed_run("ogni-minuto", run, "failed", at))
+                .expect("a failed run");
+        }
+
+        let said = due_flows_with(&sources, LastRuns::Read(glance_at(&ledger).expect("a glance")))
+            .expect("due works over a stuck flow");
+        assert!(
+            said.contains("ogni-minuto\tsuspended after 3 failed runs in a row"),
+            "{said}"
+        );
+        assert!(
+            !said.contains("ogni-minuto\tdue"),
+            "a flow the beat holds must not be listed as due: {said}"
         );
         drop(ledger);
         let _ = fs::remove_dir_all(&scratch);
