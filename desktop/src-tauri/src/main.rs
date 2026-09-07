@@ -28,6 +28,7 @@ mod keeps;
 mod ledger;
 mod live;
 mod locks;
+mod machine;
 mod manual;
 mod models;
 mod profiles;
@@ -186,6 +187,8 @@ fn main() {
             ledger::ledger_tables,
             ledger::ledger_query,
             keeps::what_sailor_keeps,
+            machine::what_sailor_lit,
+            machine::free_the_machine,
             flows::engine_actions,
             run::flow_trigger,
             run::start_run,
