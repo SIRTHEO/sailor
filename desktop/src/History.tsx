@@ -76,6 +76,17 @@ function seenTokens(call: ModelCall): number {
 }
 
 /**
+ * The model, and the one asked for when they differ. Shown only the answer, a
+ * run priced at the wrong model read as a run that had chosen it. Asking for
+ * nothing is no substitution: the engine's default is a declared fallback.
+ */
+export function modelReading(call: Pick<ModelCall, "requested_model" | "actual_model">): string {
+  const answered = call.actual_model === "" ? t("ui.cost.model_not_declared") : call.actual_model;
+  if (call.requested_model === "" || call.requested_model === call.actual_model) return answered;
+  return `${answered} — asked for ${call.requested_model}`;
+}
+
+/**
  * A run's calls to the model, opened only if asked for.
  *
  * **THE COMPUTED COST AND THE DECLARED ONE SIT SIDE BY SIDE.** Sailor derives one
@@ -97,6 +108,7 @@ export function Calls({ calls }: { calls: ModelCall[] }) {
             <th>step</th>
             <th>engine</th>
             <th>model</th>
+            <th className="now__num">turns</th>
             <th className="now__num">tokens</th>
             <th className="now__num">cost</th>
             <th className="now__num">declared</th>
@@ -112,9 +124,10 @@ export function Calls({ calls }: { calls: ModelCall[] }) {
                   {call.cli === "" ? call.purpose : call.cli}
                   {call.error_type !== null && <span className="now__why">{call.error_type}</span>}
                 </td>
-                <td className="now__when">
-                  {call.actual_model === "" ? t("ui.cost.model_not_declared") : call.actual_model}
+                <td className="now__when" data-swapped={call.requested_model !== "" && call.requested_model !== call.actual_model ? "" : undefined}>
+                  {modelReading(call)}
                 </td>
+                <td className="now__num">{call.turns === null ? "—" : call.turns.toLocaleString("en-GB")}</td>
                 <td className="now__num">{tokens < 0 ? "not said" : tokens.toLocaleString("en-GB")}</td>
                 <td className="now__num">{call.cost_micros === null ? "not said" : money(call.cost_micros)}</td>
                 <td className="now__num">
