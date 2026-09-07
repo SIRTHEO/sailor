@@ -88,4 +88,21 @@ describe("the permanent menu is out of the ordinary view", () => {
     }
     expect(screen.getByRole("button", { name: /^Board/ }), "no way to the board out here").toBeTruthy();
   });
+
+  /**
+   * **A QUESTION YOU HAVE TO KNOW THE NAME OF IS NOT OFFERED.** Held behind the
+   * palette alone, the places cost a person the name of a place they had not
+   * seen yet — the verdict on that shape was «ingestibile».
+   */
+  test("AND THE QUESTIONS ARE IN THE COLUMN, not only behind the palette", () => {
+    const { container } = render(<App />);
+    const inTheColumn = Array.from(
+      container.querySelectorAll(".world__place .world__label"),
+    ).map((one) => one.textContent);
+
+    expect(inTheColumn, "the column offers no question at all").not.toEqual([]);
+    for (const place of PLACES) {
+      expect(inTheColumn, `«${place.name}» is reachable only by typing`).toContain(place.name);
+    }
+  });
 });

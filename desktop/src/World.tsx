@@ -5,7 +5,7 @@
  * is. A thing can also sit outside every workspace, a place of its own.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { UNDER_THE_TREE, type Section } from "./places";
+import { PLACES, UNDER_THE_TREE, type Section } from "./places";
 import { grouped, treeName } from "./workspacetrees";
 import { projects, workHere, type Project } from "./workspaces";
 import type { TerminalSummary } from "./terminal";
@@ -257,9 +257,31 @@ export function World({
 
   return (
     <nav className="world" aria-label="the world">
-      {/* NO PERMANENT LIST OF WHERE YOU COULD BE. A strip of destinations is
-          navigation holding space the work needs; what is left here is the
-          tree you stand in and what hangs under it, which is context. */}
+      {/* **THE QUESTIONS COME FIRST, AND THEY ARE FEW ENOUGH TO STAY.** Held
+          out of here as «a strip of destinations holding space the work
+          needs», the four cost a person the palette and the name of a place
+          they had to know already — the verdict was «ingestibile». Four rows
+          is not a strip: it is the answer to «where am I and what wants me». */}
+      <div className="world__places">
+        {PLACES.map((place) => (
+          <button
+            type="button"
+            key={place.id}
+            className="world__place"
+            data-here={here === place.id ? "" : undefined}
+            title={place.asks}
+            onClick={() => onGo(place.id)}
+          >
+            <span className="world__glyph" aria-hidden="true">
+              {place.glyph}
+            </span>
+            <span className="world__label">{place.name}</span>
+            {counts[place.id] !== undefined && (
+              <span className="world__count">{counts[place.id]}</span>
+            )}
+          </button>
+        ))}
+      </div>
       <div className="world__head">workspaces</div>
 
       {why !== null && <div className="world__mute">{why}</div>}
