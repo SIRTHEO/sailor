@@ -11,7 +11,7 @@ use std::process::Command;
 
 
 pub const USAGE: &[crate::Form] = &[crate::Form {
-    form: "sailor ratchet [--only <judge>]",
+    form: "sailor ratchet [--only <judge>]...",
     says_key: "cli.ratchet.says",
 }];
 
@@ -38,13 +38,16 @@ pub fn run(args: &[String]) -> i32 {
     }
 }
 
-fn parse_options(args: &[String]) -> Result<Option<String>, String> {
-    let mut only = None;
+/// Which judges were asked for. **A LIST, BECAUSE THE OPTION IS REPEATABLE**:
+/// held in one slot, a second `--only` overwrote the first and the run
+/// measured one judge while saying nothing about the other.
+fn parse_options(args: &[String]) -> Result<Vec<String>, String> {
+    let mut only = Vec::new();
     let mut rest = args.iter();
     while let Some(word) = rest.next() {
         match word.as_str() {
             "--only" => {
-                only = Some(rest.next().cloned().ok_or_else(|| {
+                only.push(rest.next().cloned().ok_or_else(|| {
                     catalogue::say("cli.option_wants_a_value", &[("option", "--only")])
                 })?)
             }
@@ -57,6 +60,13 @@ fn parse_options(args: &[String]) -> Result<Option<String>, String> {
         }
     }
     Ok(only)
+}
+
+/// The first asked-for name no judge answers to, if there is one.
+fn named_no_judge<'a>(only: &'a [String], judges: &[Judge]) -> Option<&'a str> {
+    only.iter()
+        .find(|name| !judges.iter().any(|judge| &judge.test == *name))
+        .map(String::as_str)
 }
 
 /// One judge: the crate that holds it and the test's name.
@@ -429,14 +439,19 @@ pub(crate) fn root_to_measure() -> Result<PathBuf, String> {
     }
 }
 
-fn measured(only: &Option<String>) -> Result<bool, String> {
+fn measured(only: &[String]) -> Result<bool, String> {
     let root = root_to_measure()?;
     let clean = root.join("target").join("ratchet-tree");
     let moved = clean_tree_with_changes(&root, &clean)?;
     let judges: Vec<Judge> = judges_in(&root)
         .into_iter()
-        .filter(|judge| only.as_ref().is_none_or(|name| &judge.test == name))
+        .filter(|judge| only.is_empty() || only.iter().any(|name| &judge.test == name))
         .collect();
+    // **A NAME THAT NAMES NOTHING IS A TYPO**, not a shorter run: answered
+    // with a run of the judges it did match, the typo passes for green.
+    if let Some(unknown) = named_no_judge(only, &judges) {
+        return Err(catalogue::say("cli.ratchet.no_such_judge", &[("judge", unknown)]));
+    }
     if judges.is_empty() {
         return Err(catalogue::say("cli.ratchet.no_judge", &[]));
     }
@@ -505,7 +520,7 @@ fn measured(only: &Option<String>) -> Result<bool, String> {
     }
     let gate = Gate { counted };
     println!("{}", gate.closing_line());
-    if let Some(fallen) = gate.seed_may_fall_to(only.is_none(), NO_RECEIPT_TODAY) {
+    if let Some(fallen) = gate.seed_may_fall_to(only.is_empty(), NO_RECEIPT_TODAY) {
         println!(
             "{}",
             catalogue::say(
@@ -740,6 +755,33 @@ mod tests {
 
     /// The seed is a debt, and the run says so the moment it holds less than
     /// the seed claims — but only when the whole battery was asked.
+    /// **`--only` TWICE ASKED FOR TWO JUDGES AND GOT ONE.** The second name
+    /// replaced the first and the run said «1 judge», so a person reading
+    /// «every seed holds» had been told about half of what they asked.
+    #[test]
+    fn every_judge_named_is_a_judge_asked_for() {
+        let asked = |args: &[&str]| {
+            parse_options(&args.iter().map(|word| (*word).to_owned()).collect::<Vec<_>>())
+        };
+        assert_eq!(asked(&["--only", "one", "--only", "two"]), Ok(vec!["one".to_owned(), "two".to_owned()]));
+        assert_eq!(asked(&[]), Ok(Vec::new()), "asking for none is asking for all");
+    }
+
+    /// A name matching no judge is a typo, and a typo must not read as a run
+    /// that held: with two names and one misspelt, the other one's green
+    /// would have closed the gate.
+    #[test]
+    fn a_name_that_names_no_judge_stops_the_run() {
+        let judges =
+            vec![Judge { package: "sailor".to_owned(), test: "comments".to_owned() }];
+        assert_eq!(named_no_judge(&["comments".to_owned()], &judges), None);
+        assert_eq!(
+            named_no_judge(&["comments".to_owned(), "commnets".to_owned()], &judges),
+            Some("commnets")
+        );
+        assert_eq!(named_no_judge(&[], &judges), None, "asking for none names nothing wrong");
+    }
+
     #[test]
     fn the_receipt_seed_is_nudged_down_only_over_a_whole_run() {
         let seed = 3;
