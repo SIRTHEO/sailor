@@ -631,6 +631,76 @@ pub fn pid_is_alive(pid: u32) -> bool {
     std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
+/// What the system says about a pid: whether it breathes, and since when.
+///
+/// **THE SECOND HALF IS WHAT MAKES A KILL SAFE.** Pid numbers are reused, so
+/// `pid_is_alive` alone lets a row written hours ago point at whatever holds
+/// that number now — and a gesture that stops what nobody wants would stop a
+/// stranger. A birth time settles it: the process the store wrote cannot have
+/// been born after the store wrote it down.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WhoHoldsThePid {
+    /// Alive, and the system said when it began — seconds since the epoch.
+    Since(i64),
+    /// Alive, and this machine would not say when. **Not a licence**: the
+    /// caller is told it could not check, and decides knowing that.
+    AliveButUnsaid,
+    Nobody,
+}
+
+/// Asks the system who holds a pid. See [`WhoHoldsThePid`].
+pub fn who_holds_the_pid(pid: u32) -> WhoHoldsThePid {
+    if !pid_is_alive(pid) {
+        return WhoHoldsThePid::Nobody;
+    }
+    match born_at(pid) {
+        Some(second) => WhoHoldsThePid::Since(second),
+        None => WhoHoldsThePid::AliveButUnsaid,
+    }
+}
+
+/// **A PID BELONGS TO THE PROCESS THE STORE WROTE** only if it was not born
+/// after the store wrote it. `slack` covers the gap between a process starting
+/// and Sailor recording it, and clocks that disagree by a hair; anything born
+/// later than that is a different process wearing a reused number.
+pub const A_RECORD_IS_NEVER_THIS_LATE: i64 = 120;
+
+/// Whether the pid alive now is the one recorded as starting at `started_at`.
+/// A machine that will not say answers `true` — the caller is told separately
+/// that it could not be checked, and a refusal to look is not evidence.
+pub fn the_same_process(pid: u32, started_at: i64) -> bool {
+    match who_holds_the_pid(pid) {
+        WhoHoldsThePid::Nobody => false,
+        WhoHoldsThePid::AliveButUnsaid => true,
+        WhoHoldsThePid::Since(born) => born <= started_at + A_RECORD_IS_NEVER_THIS_LATE,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn born_at(pid: u32) -> Option<i64> {
+    let mut about: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+    let wanted = std::mem::size_of::<libc::proc_bsdinfo>() as i32;
+    // SAFETY: the kernel fills at most `wanted` bytes of a struct we own and
+    // zeroed; the call reads no memory of ours and returns how much it wrote.
+    let written = unsafe {
+        libc::proc_pidinfo(
+            pid as libc::c_int,
+            libc::PROC_PIDTBSDINFO,
+            0,
+            std::ptr::addr_of_mut!(about).cast(),
+            wanted,
+        )
+    };
+    // A short answer is a refusal, not a birth time: another user's process
+    // gives zero here, and reading the zeroed struct would date it to 1970.
+    (written == wanted).then_some(about.pbi_start_tvsec as i64)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn born_at(_pid: u32) -> Option<i64> {
+    None
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FailedStep {
     pub run_id: String,
