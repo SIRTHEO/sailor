@@ -17,6 +17,24 @@ export interface Where {
   /** The bench: which terminal judges which handed step, kept for the same
    * reason as the rest — the terminal survives the swap, the strip must too. */
   bench?: { terminalId: string; runId: string; stepId: string; mandate: string } | null;
+  /** When it was written, in seconds. Absent on a note from before the field,
+   * which is then read as old — the safe way round. */
+  at?: number;
+}
+
+/**
+ * How long a written-down place stays the place you were.
+ *
+ * **IT COVERS A REBUILD AND A CRASH, AND NOTHING LONGER**: kept for ever, it
+ * would open the window where somebody stood the night before.
+ */
+export const STILL_WHERE_YOU_WERE_SECS = 600;
+
+/** Whether the note is recent enough to be where you were, rather than where
+ * you once were. A note with no instant is old: it was written before anyone
+ * asked the question. */
+export function stillThere(where: Where, now: number): boolean {
+  return where.at !== undefined && now >= where.at && now - where.at <= STILL_WHERE_YOU_WERE_SECS;
 }
 
 function store(): Storage | null {
@@ -45,7 +63,7 @@ export function whereYouWere(): Where {
 /** Writes down where you are now, merged over what was already there. */
 export function rememberWhere(some: Where): void {
   try {
-    const merged = { ...whereYouWere(), ...some };
+    const merged = { ...whereYouWere(), ...some, at: Math.floor(Date.now() / 1000) };
     store()?.setItem(KEY, JSON.stringify(merged));
   } catch {
     // A refused store costs the walk back once, and nothing else.

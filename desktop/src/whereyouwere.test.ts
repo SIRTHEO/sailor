@@ -4,7 +4,7 @@
  * is what makes the swap at every build cost nothing.
  */
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { amongThese, rememberWhere, whereYouWere } from "./whereyouwere";
+import { amongThese, rememberWhere, stillThere, STILL_WHERE_YOU_WERE_SECS, whereYouWere } from "./whereyouwere";
 
 beforeEach(() => window.localStorage.clear());
 afterEach(() => window.localStorage.clear());
@@ -17,7 +17,21 @@ describe("where you were", () => {
   test("WHAT IS WRITTEN COMES BACK, and a second note keeps the first", () => {
     rememberWhere({ place: "terminals" });
     rememberWhere({ focus: "prima-corsa" });
-    expect(whereYouWere()).toEqual({ place: "terminals", focus: "prima-corsa" });
+    const { at, ...written } = whereYouWere();
+    expect(written).toEqual({ place: "terminals", focus: "prima-corsa" });
+    expect(at, "a note with no instant cannot be told from one written yesterday").toBeTypeOf("number");
+  });
+
+  /**
+   * **AN OLD NOTE IS NOT WHERE YOU ARE.** It covers a rebuild and a crash: held
+   * for ever, the window would open on the place somebody stood the night
+   * before instead of on what waits for them.
+   */
+  test("AND IT STOPS BEING WHERE YOU WERE ONCE THE NIGHT HAS PASSED", () => {
+    const now = 1_000_000;
+    expect(stillThere({ place: "terminals", at: now - 30 }, now)).toBe(true);
+    expect(stillThere({ place: "terminals", at: now - STILL_WHERE_YOU_WERE_SECS - 1 }, now)).toBe(false);
+    expect(stillThere({ place: "terminals" }, now), "a note from before the instant reads as old").toBe(false);
   });
 
   test("THE BENCH IS WRITTEN DOWN TOO: the terminal survives the swap, and so does what it is for", () => {
