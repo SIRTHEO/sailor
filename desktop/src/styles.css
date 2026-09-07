@@ -6877,3 +6877,9 @@ tr[data-followable]:hover {
   font-size: var(--text-micro);
   color: var(--muted);
 }
+
+/* A model that answered where another was asked for: the one cell in this
+   table that says a decision was not honoured. */
+.now__table [data-swapped] {
+  color: var(--spend-warning);
+}
