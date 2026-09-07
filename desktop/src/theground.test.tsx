@@ -54,18 +54,29 @@ async function typeInThePalette(label: string): Promise<void> {
 }
 
 describe("the terminals are the ground of the window", () => {
-  test("AT REST THE WORK IS ON SCREEN, and it is no longer a place to choose", () => {
+  /**
+   * **A FRESH WINDOW OPENS ON WHAT WAITS FOR A PERSON.** It was the work, which
+   * answers «where was I» — the question of somebody who never left.
+   */
+  test("A WINDOW THAT WAS NOT JUST HERE OPENS ON THE DECISIONS THAT WAIT", () => {
+    window.localStorage.clear();
     const { container } = render(<App />);
+    expect(crumbsOf(container)[0]).toBe(nameOfPlace("waiting"));
+  });
+
+  test("AND THE WORK IS THE GROUND BEHIND IT, never the board", async () => {
+    const { container } = render(<App />);
+    await typeInThePalette("Live");
 
     expect(
       container.querySelector(".section--sessions[hidden]"),
-      "the window opens on something other than the work",
+      "the work is not on screen where the work is the ground",
     ).toBeNull();
     expect(container.querySelector(".body[hidden]"), "the board is the ground again").not.toBeNull();
     expect(crumbsOf(container)).toEqual([TERMINALS_GROUND, "Live"]);
 
-    // Named, so a person who walked away can come back — and first among the
-    // places, so no rebuild can push the work below what merely describes it.
+    // Named, so a person who walked away can come back — and above what only
+    // describes the work, so no rebuild pushes it below its own account.
     expect(PLACES.map((one) => one.id)).toContain("terminals");
     expect(
       PLACES.findIndex((one) => one.id === "terminals"),

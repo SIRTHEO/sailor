@@ -113,7 +113,9 @@ describe("the column is the world", () => {
   test("THE BAR SAYS WHERE YOU ARE: the place, then the entry inside it", async () => {
     const { container } = render(<App />);
     const crumbs = () => Array.from(container.querySelectorAll(".topbar__crumb")).map((one) => one.textContent);
-    // At rest the window is the work, and the entry inside it is the view.
+    // A fresh window opens on what waits; the work is one crumb away, and the
+    // entry inside it is the view.
+    await typeInThePalette("Live");
     expect(crumbs()).toEqual([TERMINALS_GROUND, "Live"]);
 
     // The board opens on a flow, so the entry inside the place is that flow:
@@ -495,7 +497,12 @@ describe("a window replaced by a build", () => {
   test("A FLOW THAT IS NOT THERE ANY MORE IS NOT A PLACE", () => {
     // Renamed, deleted, or belonging to a tree nobody stands in now: the board
     // opens where everybody starts instead of on a name nothing answers to.
-    window.localStorage.setItem("sailor.where", JSON.stringify({ place: "board", focus: "a-ghost" }));
+    // Stamped now, or the note reads as old and the window opens on what waits
+    // instead of on the board this test is about.
+    window.localStorage.setItem(
+      "sailor.where",
+      JSON.stringify({ place: "board", focus: "a-ghost", at: Math.floor(Date.now() / 1000) }),
+    );
     const { container } = render(<App />);
     const open = container.querySelectorAll("button.rail__item[data-open]");
     expect(open, "the board opened on nothing, or on two things").toHaveLength(1);

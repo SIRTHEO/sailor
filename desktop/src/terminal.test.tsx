@@ -1234,8 +1234,10 @@ describe("the terminals inside the window", () => {
   test("THE SCREEN STAYS MOUNTED BEHIND THE OTHER PLACES: going to Flows and back destroys no pane", async () => {
     // Outside the shell the screen is mute, and that is enough: what is
     // measured is that the element survives the change of place, hidden.
-    // No click to get here: the terminals are the ground the window opens on.
+    // The work is the ground, and one crumb from the screen a fresh window
+    // opens on: reached by name, then left and returned to.
     const { container } = render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /^the work/ }));
     // The section is a dynamic import away: on the first tick there is only
     // the gap its fallback leaves.
     await waitFor(() => expect(container.querySelector(".terminals")).toBeTruthy());
