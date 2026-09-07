@@ -188,6 +188,7 @@ fn main() {
             ledger::ledger_query,
             keeps::what_sailor_keeps,
             machine::what_sailor_lit,
+            machine::the_dev_port,
             machine::free_the_machine,
             flows::engine_actions,
             run::flow_trigger,

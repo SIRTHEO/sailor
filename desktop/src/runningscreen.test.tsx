@@ -6,9 +6,9 @@
  * the run behind it is asked about, and the gesture here acts on that answer.
  */
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test } from "vitest";
 import { RunningScreen } from "./RunningScreen";
-import { standingOf, upFor, type Standing } from "./running";
+import { portReading, standingOf, upFor, type Standing, type ThePort } from "./running";
 
 afterEach(() => {
   cleanup();
@@ -29,13 +29,15 @@ function row(over: Partial<Standing>): Standing {
 }
 
 /** The shell, answering the reading and remembering what it was asked to stop. */
-function answering(rows: Standing[]): { asked: string[] } {
+function answering(rows: Standing[], port: ThePort = { on: "free" }): { asked: string[] } {
   const asked: string[] = [];
   (window as unknown as { __TAURI__: unknown }).__TAURI__ = {
     core: {
       invoke: (name: string) => {
         asked.push(name);
-        return Promise.resolve(name === "what_sailor_lit" ? rows : []);
+        if (name === "what_sailor_lit") return Promise.resolve(rows);
+        if (name === "the_dev_port") return Promise.resolve(port);
+        return Promise.resolve([]);
       },
     },
   };
@@ -112,6 +114,34 @@ describe("what Sailor is running", () => {
     await waitFor(() =>
       expect(screen.getByText(/would not stop: it was asked to leave and did not/)).toBeTruthy(),
     );
+  });
+
+  /**
+   * **WHAT NEVER PASSED THROUGH SAILOR IS WHAT SAILOR CANNOT FREE**, and it is
+   * the case that actually filled this machine: a dev server started by hand,
+   * in no row, that no sweep will ever find. A clean list while the machine
+   * grinds is the screen telling a lie by omission.
+   */
+  test("a port held by something sailor never lit is said", async () => {
+    answering([], { on: "somebody" });
+    render(<RunningScreen native />);
+    await waitFor(() => expect(screen.getByText(/never lit is holding/)).toBeTruthy());
+  });
+
+  /** And a port Sailor itself lit is already a row above: saying it twice
+   *  teaches the reader that this line carries no news. */
+  test("a port sailor lit, and a free one, are not news", () => {
+    expect(portReading({ on: "free" })).toBeNull();
+    expect(portReading({ on: "ours", pid: 12, purpose: "live" })).toBeNull();
+  });
+
+  /** **UNKNOWN IS NOT FREE.** Read as «in use», a refusal sends a person
+   *  hunting a process that is not there; read as free, it hides a real one. */
+  test("a machine that would not let us look says so, and says why", () => {
+    const said = portReading({ on: "could_not_look", why: "127.0.0.1: not permitted" });
+    expect(said).toContain("would not let us look");
+    expect(said).toContain("not permitted");
+    expect(said).toContain("unknown is not free");
   });
 
   test("how long it has been up reads in the units a person uses", () => {

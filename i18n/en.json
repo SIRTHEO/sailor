@@ -689,9 +689,8 @@
   "cli.machine.run_is_over": ", and its run is over",
   "cli.machine.row": "{pid}  {breath}  {purpose}{tail}",
   "cli.machine.standing": "{running} of {total} still there",
-  "cli.machine.somebody_on_the_port": "somebody holds port {port} and sailor did not start them ({who}): a process that never passed through sailor is one sailor cannot free",
+  "cli.machine.somebody_on_the_port": "port {port} is held by something sailor never lit: what did not pass through sailor is what sailor cannot free, so this one is yours to stop",
   "cli.machine.freed": "{closed} row(s) closed: they had stopped breathing and the store still called them running",
-  "cli.machine.still_breathing": "pid {pid} ({purpose}) is alive and its run is over: stop it yourself, or start the next one through sailor so it can be stopped for you",
   "cli.machine.stopped": "stopped pid {pid} ({purpose}): sailor lit it and its run is over",
   "cli.machine.would_not_stop": "pid {pid} ({purpose}) would not stop: {why}. It stays written down as running, which is better than declaring it dead without being sure",
   "cli.command.ratchet": "measures the judges with a seed on a clean HEAD with only this tree's changes laid over",
@@ -841,5 +840,6 @@
   "cli.session.census_terminal": "{tty} ({ancestor}), {processes} processes",
   "cli.clock_before_the_epoch": "the system clock is before the Unix epoch: {error}",
   "cli.unknown_command": "sailor: unknown command '{name}'; the commands are: {commands}",
-  "cli.ratchet.another_gate": "another gate is already measuring this tree: they share one copy of HEAD and would lay it over each other mid-measure, which turns a healthy judge red. Wait for it, or measure a different checkout"
+  "cli.ratchet.another_gate": "another gate is already measuring this tree: they share one copy of HEAD and would lay it over each other mid-measure, which turns a healthy judge red. Wait for it, or measure a different checkout",
+  "cli.machine.could_not_look_at_the_port": "port {port}: this machine would not let us look ({why}), so whether anything holds it is unknown — and unknown is not free"
 }

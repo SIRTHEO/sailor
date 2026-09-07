@@ -8,7 +8,7 @@
 
 import { useState } from "react";
 import { useAsk, useClock } from "./ask";
-import { freeTheMachine, standingOf, upFor, type Freed, type Standing } from "./running";
+import { freeTheMachine, portReading, standingOf, theDevPort, upFor, type Freed, type Standing, type ThePort } from "./running";
 
 const READ_EVERY_MS = 10000;
 
@@ -34,6 +34,12 @@ export function RunningScreen({ native }: { native: boolean }) {
     READ_EVERY_MS,
     "outside the native shell: the engine reads what is running",
   );
+  const port = useAsk<ThePort>(
+    native,
+    theDevPort,
+    READ_EVERY_MS,
+    "outside the native shell: the engine looks at the port",
+  ).asked;
   const now = useClock();
   const [freeing, setFreeing] = useState(false);
   const [done, setDone] = useState<Freed[] | null>(null);
@@ -50,6 +56,11 @@ export function RunningScreen({ native }: { native: boolean }) {
           Every process Sailor lit and never saw end. A row names a process, not a number: a pid whose
           process is gone reads as ended even when something else has since been given that number.
         </p>
+        {port.state === "answered" && portReading(port.value) !== null && (
+          <p className="keeps__note" data-asks="">
+            {portReading(port.value)}
+          </p>
+        )}
         {asked.state === "asking" && <p className="keeps__note">Looking…</p>}
         {asked.state === "mute" && <p className="keeps__note">{asked.why}</p>}
         {asked.state === "answered" && rows.length === 0 && (
