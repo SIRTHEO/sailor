@@ -30,6 +30,7 @@ const PANICS_TODAY: &[(&str, usize)] = &[
     ("flow", 5),
     ("inventory", 0),
     ("ledger", 1),
+    ("machine", 0),
     ("models", 4),
     ("profiles", 1),
     ("registry", 0),
