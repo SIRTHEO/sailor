@@ -93,6 +93,12 @@ impl MemoryWriteAction {
         Self { ledger }
     }
 
+    /// **THIS READ-THEN-WRITE IS NOT ITSELF ATOMIC.** Two callers racing the
+    /// same `{workspace_id}:{node_id}` without a claim could compute the same
+    /// `revision` and one write would silently replace the other's key. The
+    /// safety today is `remember-in-the-graph`'s, whose `claim` step runs
+    /// before this one — a caller that skips `work_claim` first accepts this
+    /// race; this action does not check for one itself.
     fn write_node(&self, spec: NodeSpec) -> Result<ActionOutcome, ActionError> {
         let at = spec.at.unwrap_or_else(now);
         let existing = self
