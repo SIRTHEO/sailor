@@ -181,3 +181,90 @@ fn try_to_bind(port: u16) -> OnThePort {
     }
     OnThePort::Free
 }
+
+/// One process weighing on the machine, Sailor's or not; `sailor_lit` is true
+/// when a row of Sailor's still calls this pid running.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Weighing {
+    pub pid: u32,
+    pub kilobytes: u64,
+    pub command: String,
+    pub sailor_lit: bool,
+}
+
+/// What is on the machine, or why we cannot say.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TheLoad {
+    Seen {
+        /// The one, five and fifteen minute averages.
+        load: [f64; 3],
+        /// The heaviest, heaviest first.
+        heaviest: Vec<Weighing>,
+    },
+    /// **NOT AN EMPTY LIST**: «nothing is running» would call a grinding
+    /// machine idle.
+    CouldNotLook(String),
+}
+
+/// How many of the heaviest are worth naming.
+const ENOUGH_TO_SEE_THE_TROUBLE: usize = 8;
+
+/// **WHAT SAILOR DID NOT LIGHT STILL FILLS THE MACHINE**, and `left_running`
+/// answers «0 of 0» while it grinds. This asks the system, and marks its own.
+pub fn what_weighs(store: &ledger::Ledger) -> Result<TheLoad, ledger::LedgerError> {
+    let ours: std::collections::BTreeSet<u32> =
+        left_running(store)?.into_iter().map(|item| item.record.pid).collect();
+    Ok(match ask_the_system() {
+        Err(why) => TheLoad::CouldNotLook(why),
+        Ok(text) => TheLoad::Seen {
+            load: load_average(),
+            heaviest: heaviest_of(&text, &ours),
+        },
+    })
+}
+
+fn ask_the_system() -> Result<String, String> {
+    let out = std::process::Command::new("ps")
+        .args(["-Ao", "pid=,rss=,comm="])
+        .output()
+        .map_err(|error| format!("ps: {error}"))?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_owned());
+    }
+    let text = String::from_utf8_lossy(&out.stdout).into_owned();
+    // A sandbox can let `ps` run and show it nothing: silence from a table
+    // holding at least this process is a refusal, not a fact.
+    if text.trim().is_empty() {
+        return Err("the process table came back empty, which cannot be true".to_owned());
+    }
+    Ok(text)
+}
+
+/// The heaviest rows of `ps`, heaviest first. An unreadable line is skipped.
+pub fn heaviest_of(text: &str, ours: &std::collections::BTreeSet<u32>) -> Vec<Weighing> {
+    let mut found: Vec<Weighing> = text
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split_whitespace();
+            let pid: u32 = parts.next()?.parse().ok()?;
+            let kilobytes: u64 = parts.next()?.parse().ok()?;
+            let command: String = parts.collect::<Vec<_>>().join(" ");
+            (!command.is_empty()).then_some(Weighing {
+                sailor_lit: ours.contains(&pid),
+                pid,
+                kilobytes,
+                command,
+            })
+        })
+        .collect();
+    found.sort_by_key(|one| std::cmp::Reverse(one.kilobytes));
+    found.truncate(ENOUGH_TO_SEE_THE_TROUBLE);
+    found
+}
+
+fn load_average() -> [f64; 3] {
+    let mut said = [0.0f64; 3];
+    // SAFETY: the call writes three doubles into an array we own and sized.
+    let got = unsafe { libc::getloadavg(said.as_mut_ptr(), 3) };
+    if got == 3 { said } else { [0.0; 3] }
+}

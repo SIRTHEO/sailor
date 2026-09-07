@@ -61,6 +61,34 @@ export function portReading(port: ThePort): string | null {
   }
 }
 
+/** One process weighing on the machine, whether or not Sailor lit it. */
+export interface Weighing {
+  pid: number;
+  kilobytes: number;
+  command: string;
+  sailor_lit: boolean;
+}
+
+/**
+ * What weighs here. **`CouldNotLook` IS NOT AN EMPTY MACHINE**: refused a look,
+ * a reading that showed nothing would call the machine idle while it grinds.
+ */
+export type TheLoad =
+  | { saw: "seen"; load: [number, number, number]; heaviest: Weighing[] }
+  | { saw: "could_not_look"; why: string };
+
+export async function whatWeighsHere(): Promise<TheLoad> {
+  const invoke = invoker();
+  if (!invoke) throw new Error("outside the native shell: the engine looks at the machine");
+  return invoke<TheLoad>("what_weighs_here");
+}
+
+/** Kilobytes as a person reads them. */
+export function weightWords(kilobytes: number): string {
+  if (kilobytes < 1024) return `${kilobytes} KB`;
+  return `${Math.round(kilobytes / 1024)} MB`;
+}
+
 export async function whatSailorLit(): Promise<Standing[]> {
   const invoke = invoker();
   if (!invoke) throw new Error("outside the native shell: nothing to look at");

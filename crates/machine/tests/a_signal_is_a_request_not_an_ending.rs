@@ -293,3 +293,35 @@ fn a_port_says_which_of_the_four_things_is_true_about_it() {
         "a port nobody holds read as held"
     );
 }
+
+/// **A REFUSAL IS NOT AN EMPTY MACHINE.** `left_running` reads Sailor's own
+/// rows, so on a machine ground to a halt by processes nobody recorded it
+/// answers «0 of 0». This asks the system, and a look it was refused must not
+/// come back as «nothing is running» while the machine grinds.
+#[test]
+fn the_heaviest_are_read_from_the_system_and_sailors_own_are_marked() {
+    let ours = std::collections::BTreeSet::from([4321u32]);
+    let said = "  4321 175360 node\n   777  20000 sh\n  1313 478160 Orca Helper (Renderer)\n";
+    let heaviest = machine::heaviest_of(said, &ours);
+
+    assert_eq!(heaviest.len(), 3, "a readable line was dropped: {heaviest:?}");
+    assert_eq!(heaviest[0].pid, 1313, "the list is not heaviest first");
+    assert_eq!(heaviest[0].kilobytes, 478_160);
+    assert_eq!(heaviest[0].command, "Orca Helper (Renderer)", "a command with spaces was cut");
+    assert!(!heaviest[0].sailor_lit, "a process nobody recorded was called sailor's");
+    assert!(
+        heaviest.iter().any(|one| one.pid == 4321 && one.sailor_lit),
+        "a process sailor lit was not marked as its own"
+    );
+}
+
+/// A line this cannot read is skipped, never guessed at: a header, a truncated
+/// row, a number that is not one.
+#[test]
+fn a_line_that_cannot_be_read_is_left_out_rather_than_invented() {
+    let ours = std::collections::BTreeSet::new();
+    let said = "  PID   RSS COMM\n   nope 100 x\n   55 notanumber y\n   66 100\n   77 100 real\n";
+    let heaviest = machine::heaviest_of(said, &ours);
+    assert_eq!(heaviest.len(), 1, "an unreadable line was invented into a row: {heaviest:?}");
+    assert_eq!(heaviest[0].pid, 77);
+}

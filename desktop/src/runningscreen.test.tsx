@@ -7,7 +7,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 import { RunningScreen } from "./RunningScreen";
-import { portReading, standingOf, upFor, type Standing, type ThePort } from "./running";
+import { portReading, standingOf, upFor, weightWords, type Standing, type TheLoad, type ThePort } from "./running";
 
 afterEach(() => {
   cleanup();
@@ -28,7 +28,13 @@ function row(over: Partial<Standing>): Standing {
 }
 
 /** The shell, answering the reading and remembering what it was asked to stop. */
-function answering(rows: Standing[], port: ThePort = { on: "free" }): { asked: string[] } {
+const IDLE: TheLoad = { saw: "seen", load: [0, 0, 0], heaviest: [] };
+
+function answering(
+  rows: Standing[],
+  port: ThePort = { on: "free" },
+  load: TheLoad = IDLE,
+): { asked: string[] } {
   const asked: string[] = [];
   (window as unknown as { __TAURI__: unknown }).__TAURI__ = {
     core: {
@@ -36,6 +42,7 @@ function answering(rows: Standing[], port: ThePort = { on: "free" }): { asked: s
         asked.push(name);
         if (name === "what_sailor_lit") return Promise.resolve(rows);
         if (name === "the_dev_port") return Promise.resolve(port);
+        if (name === "what_weighs_here") return Promise.resolve(load);
         return Promise.resolve([]);
       },
     },
@@ -99,12 +106,14 @@ describe("what Sailor is running", () => {
   test("a process that would not stop is reported, not called dead", async () => {
     (window as unknown as { __TAURI__: unknown }).__TAURI__ = {
       core: {
-        invoke: (name: string) =>
-          Promise.resolve(
-            name === "what_sailor_lit"
-              ? [row({ pid: 77, purpose: "live" })]
-              : [{ pid: 77, purpose: "live", stopped: false, why: "it was asked to leave and did not" }],
-          ),
+        invoke: (name: string) => {
+          if (name === "what_sailor_lit") return Promise.resolve([row({ pid: 77, purpose: "live" })]);
+          if (name === "the_dev_port") return Promise.resolve({ on: "free" });
+          if (name === "what_weighs_here") return Promise.resolve(IDLE);
+          return Promise.resolve([
+            { pid: 77, purpose: "live", stopped: false, why: "it was asked to leave and did not" },
+          ]);
+        },
       },
     };
     render(<RunningScreen native />);
@@ -141,6 +150,40 @@ describe("what Sailor is running", () => {
     expect(said).toContain("would not let us look");
     expect(said).toContain("not permitted");
     expect(said).toContain("unknown is not free");
+  });
+
+  /**
+   * **«NOTHING RUNNING» ON A GRINDING MACHINE IS THE LIE THIS ENDS.** Sailor's
+   * own rows can be empty while nine processes nobody recorded hold the memory,
+   * and that is the case a person opens this screen in.
+   */
+  test("what sailor never lit is shown, and said to be beyond its reach", async () => {
+    answering([], { on: "free" }, {
+      saw: "seen",
+      load: [12.3, 8.7, 7.5],
+      heaviest: [
+        { pid: 16942, kilobytes: 175_360, command: "node", sailor_lit: false },
+        { pid: 4321, kilobytes: 20_480, command: "npx", sailor_lit: true },
+      ],
+    });
+    render(<RunningScreen native />);
+    await waitFor(() => expect(screen.getByText("node")).toBeTruthy());
+    expect(screen.getByText(/Load 12\.30 now/)).toBeTruthy();
+    expect(screen.getByText("sailor cannot free it")).toBeTruthy();
+    expect(screen.getByText("sailor lit it")).toBeTruthy();
+  });
+
+  /** **A REFUSAL IS NOT AN IDLE MACHINE**, and the screen must not draw one. */
+  test("a machine that would not be looked at says so instead of showing nothing", async () => {
+    answering([], { on: "free" }, { saw: "could_not_look", why: "ps: not permitted" });
+    render(<RunningScreen native />);
+    await waitFor(() => expect(screen.getByText(/would not say what is running/)).toBeTruthy());
+    expect(screen.queryByText(/Load /)).toBeNull();
+  });
+
+  test("a size reads in the units a person uses", () => {
+    expect(weightWords(512)).toBe("512 KB");
+    expect(weightWords(175_360)).toBe("171 MB");
   });
 
   test("how long it has been up reads in the units a person uses", () => {

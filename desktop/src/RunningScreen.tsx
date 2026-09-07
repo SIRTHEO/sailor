@@ -6,7 +6,10 @@
 
 import { useState } from "react";
 import { useAsk, useClock } from "./ask";
-import { freeTheMachine, portReading, standingOf, theDevPort, upFor, type Freed, type Standing, type ThePort } from "./running";
+import {
+  freeTheMachine, portReading, standingOf, theDevPort, upFor, weightWords, whatWeighsHere,
+  type Freed, type Standing, type TheLoad, type ThePort,
+} from "./running";
 
 const READ_EVERY_MS = 10000;
 
@@ -37,6 +40,12 @@ export function RunningScreen({ native }: { native: boolean }) {
     theDevPort,
     READ_EVERY_MS,
     "outside the native shell: the engine looks at the port",
+  ).asked;
+  const load = useAsk<TheLoad>(
+    native,
+    whatWeighsHere,
+    READ_EVERY_MS,
+    "outside the native shell: the engine looks at the machine",
   ).asked;
   const now = useClock();
   const [freeing, setFreeing] = useState(false);
@@ -133,6 +142,47 @@ export function RunningScreen({ native }: { native: boolean }) {
               </li>
             ))}
           </ul>
+        )}
+        {load.state === "answered" && (
+          <div className="keeps__main">
+            {/* **«NOTHING RUNNING» ON A GRINDING MACHINE IS THE LIE THIS ENDS.**
+                The rows above are Sailor's own; what fills a machine is usually
+                what never passed through it. */}
+            <h2 className="keeps__title">What weighs on this machine</h2>
+            {load.value.saw === "could_not_look" ? (
+              <p className="keeps__note">
+                This machine would not say what is running on it ({load.value.why}), so the rows above
+                are Sailor's own and nothing else — which is not the same as nothing else being there.
+              </p>
+            ) : (
+              <>
+                <p className="keeps__lead">
+                  Load {load.value.load[0].toFixed(2)} now, {load.value.load[1].toFixed(2)} over five
+                  minutes, {load.value.load[2].toFixed(2)} over fifteen.
+                </p>
+                <table className="keeps__table">
+                  <thead>
+                    <tr>
+                      <th className="keeps__num">size</th>
+                      <th className="keeps__num">pid</th>
+                      <th>command</th>
+                      <th>whose</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {load.value.heaviest.map((one) => (
+                      <tr key={one.pid}>
+                        <td className="keeps__num">{weightWords(one.kilobytes)}</td>
+                        <td className="keeps__num">{one.pid}</td>
+                        <td className="now__when">{one.command}</td>
+                        <td>{one.sailor_lit ? "sailor lit it" : "sailor cannot free it"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )}
+          </div>
         )}
       </div>
     </div>

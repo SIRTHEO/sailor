@@ -7,7 +7,10 @@
 
 use crate::Form;
 use ledger::Ledger;
-use machine::{left_running, on_the_port, stop_the_ones_nobody_wants, OnThePort, Teardown, DEV_PORT};
+use machine::{
+    left_running, on_the_port, stop_the_ones_nobody_wants, what_weighs, OnThePort, Teardown,
+    TheLoad, DEV_PORT,
+};
 
 pub const USAGE: &[Form] = &[
     Form {
@@ -119,7 +122,42 @@ fn reading() -> Result<String, String> {
         said.push('\n');
         said.push_str(&word);
     }
+    said.push('\n');
+    said.push_str(&about_the_load(&store)?);
     Ok(said)
+}
+
+/// **«0 OF 0» ON A MACHINE THAT IS GRINDING.** The rows above are Sailor's own,
+/// and what fills a machine is usually what never passed through it. Asked of
+/// the system, and marked where a row does name it.
+fn about_the_load(store: &Ledger) -> Result<String, String> {
+    match what_weighs(store).map_err(|error| error.to_string())? {
+        TheLoad::CouldNotLook(why) => Ok(catalogue::say("cli.machine.could_not_look", &[("why", &why)])),
+        TheLoad::Seen { load, heaviest } => {
+            let mut said = catalogue::say(
+                "cli.machine.load",
+                &[
+                    ("one", &format!("{:.2}", load[0])),
+                    ("five", &format!("{:.2}", load[1])),
+                    ("fifteen", &format!("{:.2}", load[2])),
+                ],
+            );
+            for one in &heaviest {
+                said.push('\n');
+                // Two sentences, not one with a hole: an empty catalogue entry
+                // is a sentence nobody wrote, and the catalogue refuses it.
+                said.push_str(&catalogue::say(
+                    if one.sailor_lit { "cli.machine.weighs_ours" } else { "cli.machine.weighs" },
+                    &[
+                        ("pid", &one.pid.to_string()),
+                        ("megabytes", &format!("{}", one.kilobytes / 1024)),
+                        ("command", &one.command),
+                    ],
+                ));
+            }
+            Ok(said)
+        }
+    }
 }
 
 /// The dev port, when it has something to say. A port Sailor itself lit is not
