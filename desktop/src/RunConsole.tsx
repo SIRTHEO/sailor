@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Ran, Refusal, RunEvent, RunSnapshot } from "./engine";
 import { t as translate, tryT } from "./i18n";
-import { totalsArePartial, type RunUsage } from "./flow";
+import { totalsArePartial, type RunUsage, type TokenTotals } from "./flow";
 import { StepRefusal } from "./StepRefusal";
 import { StepRan } from "./StepRan";
 
@@ -385,6 +385,29 @@ export function costReading(usage: Pick<RunUsage, "tokens" | "total_cost_micros"
   });
 }
 
+/**
+ * Which engines answered, dearest first. The ledger has kept the split since
+ * the dashboard summed it, and no screen read it: a run said what it cost and
+ * never which model had cost it.
+ */
+export function byModel(usage: Pick<RunUsage, "tokens_by_model">): Array<{
+  model: string;
+  totals: TokenTotals;
+  price: string;
+}> {
+  return Object.entries(usage.tokens_by_model)
+    .map(([model, totals]) => ({ model, totals, price: priceOf(totals) }))
+    // A tie on cost still has to come out in one order, or the line reshuffles
+    // itself between two readings of the same run.
+    .sort((a, b) => b.totals.cost_micros - a.totals.cost_micros || a.model.localeCompare(b.model));
+}
+
+/** The same three cases as the run's own total, so the parts read like the sum. */
+function priceOf(totals: TokenTotals): string {
+  if (totals.calls_without_cost >= totals.calls) return "price unknown";
+  return totals.calls_without_cost > 0 ? `at least ${money(totals.cost_micros)}` : money(totals.cost_micros);
+}
+
 export function Spend({ usage }: { usage: RunUsage }) {
   const t = usage.tokens;
   if (t.calls === 0) return null;
@@ -407,6 +430,11 @@ export function Spend({ usage }: { usage: RunUsage }) {
           unsplit total {tokens(t.total_tokens_only)}
         </span>
       )}
+      {byModel(usage).map(({ model, totals, price }) => (
+        <span className="console__spend-model" key={model} title={`${tokens(totals.input_tokens)} in, ${tokens(totals.output_tokens)} out`}>
+          {model} ×{totals.calls} · {price}
+        </span>
+      ))}
       {totalsArePartial(t) && (
         <span className="console__spend-partial">
           partial total:{" "}

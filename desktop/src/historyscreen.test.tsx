@@ -57,7 +57,7 @@ function runWith(call: ModelCall): Execution {
       cache_write_tokens: 0,
       cost_micros: 0,
       calls: 1,
-      calls_without_tokens: 0,
+      total_tokens_only: 0, turns: 0, calls_without_tokens: 0,
       calls_without_cost: 1,
     },
     tokens_by_model: {},

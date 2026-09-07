@@ -1,7 +1,23 @@
 import { describe, expect, test } from "vitest";
+
 import { lastedOf, outcomeOf, runsIn, whenOf } from "./History";
 import { countByFamily } from "./Installed";
 import type { Execution, InstalledEntry } from "./engine";
+import type { TokenTotals } from "./flow";
+
+/** Named, never spelled: a fixture written out by hand drifts from the wire. */
+const NOTHING_SPENT: TokenTotals = {
+  input_tokens: 0,
+  output_tokens: 0,
+  cached_tokens: 0,
+  cache_write_tokens: 0,
+  total_tokens_only: 0,
+  cost_micros: 0,
+  calls: 0,
+  turns: 0,
+  calls_without_tokens: 0,
+  calls_without_cost: 0,
+};
 
 /**
  * **THE RULES THAT DECIDE THE COLOUR OF A ROW.**
@@ -29,16 +45,7 @@ function run(over: Partial<Execution>): Execution {
     steps_broke: 0,
     steps_retried: 0,
     steps_open: [],
-    tokens: {
-      input_tokens: 0,
-      output_tokens: 0,
-      cached_tokens: 0,
-      cache_write_tokens: 0,
-      cost_micros: 0,
-      calls: 0,
-      calls_without_tokens: 0,
-      calls_without_cost: 0,
-    },
+    tokens: NOTHING_SPENT,
     tokens_by_model: {},
     calls: [],
     ...over,

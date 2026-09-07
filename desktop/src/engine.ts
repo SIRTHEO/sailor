@@ -12,7 +12,7 @@
 // exist. There the example data shows, and the reader must tell so from the
 // window rather than from the code.
 
-import type { FlowEntry, FlowFile, Origin, RunUsage } from "./flow";
+import type { FlowEntry, FlowFile, Origin, RunUsage, TokenTotals } from "./flow";
 import { parseTools, publishTools, type Tool } from "./tools";
 
 type Invoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
@@ -380,18 +380,10 @@ export interface Execution {
   steps_broke: number;
   steps_retried: number;
   steps_open: Array<{ step_id: string; attempt: number; started_at: number; open_for_secs: number }>;
-  tokens: {
-    input_tokens: number;
-    output_tokens: number;
-    cached_tokens: number;
-    cache_write_tokens: number;
-    cost_micros: number;
-    calls: number;
-    calls_without_tokens: number;
-    calls_without_cost: number;
-  };
-  /** Tokens seen per model, already summed by the engine. */
-  tokens_by_model: Record<string, { input_tokens: number; output_tokens: number; cached_tokens: number; cache_write_tokens: number; cost_micros: number; calls: number }>;
+  tokens: TokenTotals;
+  /** Tokens seen per model, already summed by the engine. Both fields take the
+   * shared shape: the half-copies written here had lost four of its fields. */
+  tokens_by_model: Record<string, TokenTotals>;
   calls: ModelCall[];
 }
 
