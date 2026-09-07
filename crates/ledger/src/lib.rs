@@ -1396,28 +1396,35 @@ impl Ledger {
         Ok(rows.collect::<Result<BTreeMap<_, _>, _>>()?)
     }
 
-    /// Every table of the projection with how many rows it holds, for whoever
-    /// wants to look at the store as it is rather than through a question
-    /// somebody else wrote.
+    /// Every table of every schema with how many rows it holds — the attached
+    /// event log included, which is the source and not the projection — for
+    /// whoever wants the store as it is, not through somebody else's question.
     pub fn tables(&self) -> Result<Vec<TableCount>, LedgerError> {
         let connection = self.lock()?;
-        let mut statement = connection.prepare(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' \
-             ORDER BY name",
-        )?;
-        let names: Vec<String> = statement
-            .query_map([], |row| row.get(0))?
-            .collect::<Result<_, _>>()?;
-        names
-            .into_iter()
-            .map(|name| {
-                let rows: i64 =
-                    connection.query_row(&format!("SELECT COUNT(*) FROM \"{name}\""), [], |row| {
-                        row.get(0)
-                    })?;
-                Ok(TableCount { name, rows })
-            })
-            .collect()
+        let mut schemas = connection.prepare("SELECT name FROM pragma_database_list")?;
+        let schemas: Vec<String> =
+            schemas.query_map([], |row| row.get(0))?.collect::<Result<_, _>>()?;
+        let mut found = Vec::new();
+        for schema in schemas {
+            let mut statement = connection.prepare(&format!(
+                "SELECT name FROM \"{schema}\".sqlite_master \
+                 WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+            ))?;
+            let names: Vec<String> =
+                statement.query_map([], |row| row.get(0))?.collect::<Result<_, _>>()?;
+            for name in names {
+                let rows: i64 = connection.query_row(
+                    &format!("SELECT COUNT(*) FROM \"{schema}\".\"{name}\""),
+                    [],
+                    |row| row.get(0),
+                )?;
+                let shown =
+                    if schema == "main" { name } else { format!("{schema}.{name}") };
+                found.push(TableCount { name: shown, rows });
+            }
+        }
+        found.sort_by(|one, other| one.name.cmp(&other.name));
+        Ok(found)
     }
 
     /// Answers one `SELECT` a person typed, read-only, at most `limit` rows.
