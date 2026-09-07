@@ -1952,8 +1952,20 @@ tr[data-followable]:hover {
 }
 
 /* A broken flow is visible and recognisable, never absent. */
+/* **A BROKEN FLOW IS A FAULT, NOT A ROW OF A LIST.** Clipped to the note's 74
+   pixels its reason read «unknown f…». It wraps onto its own line. */
 .rail__item[data-broken] {
   cursor: default;
+  flex-wrap: wrap;
+}
+
+.rail__item[data-broken] .rail__note {
+  margin-left: 0;
+  max-width: none;
+  flex-basis: 100%;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
 }
 
 .rail__item[data-broken] .rail__label {
