@@ -23,6 +23,7 @@ function callOf(actualModel: string): ModelCall {
     output_tokens: 5,
     cached_tokens: null,
     cache_write_tokens: null,
+    cache_write_long_tokens: null,
     total_tokens: 15,
     turns: 1,
     cost_micros: 0,

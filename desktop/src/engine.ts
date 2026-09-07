@@ -407,6 +407,9 @@ export interface ModelCall {
   output_tokens: number | null;
   cached_tokens: number | null;
   cache_write_tokens: number | null;
+  /** Cache writes kept for the long duration: dearer again than the short
+   * ones, and summed with them by the engine. */
+  cache_write_long_tokens: number | null;
   total_tokens: number | null;
   turns: number | null;
   cost_micros: number | null;
