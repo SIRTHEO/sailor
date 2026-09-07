@@ -95,6 +95,41 @@ impl Census {
     }
 }
 
+/// Terminals the register still calls open that nothing lives on any more.
+///
+/// **TWO STATES, BECAUSE A CENSUS CAN REFUSE.** Answered with a list alone, a
+/// machine that would not let us look would report «none abandoned», which is
+/// a check that could not measure passing for a clean machine.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "answer", rename_all = "snake_case")]
+pub enum Abandoned {
+    /// We looked. These ttys the register calls open carry no process.
+    Seen { ttys: Vec<String> },
+    /// We did not look, so nothing is said about any of them.
+    CouldNotLook { refusal: Refusal },
+}
+
+impl Census {
+    /// Which open rows of the register no process backs.
+    ///
+    /// A terminal killed without closing stays open in the register for ever,
+    /// by design — it is a fact to show, not to hide. This is the reading that
+    /// shows it. Rows already closed are not asked about: they claim nothing.
+    pub fn abandoned(&self, rows: &[crate::store::TerminalRow]) -> Abandoned {
+        if let Census::Refused(refusal) = self {
+            return Abandoned::CouldNotLook { refusal: refusal.clone() };
+        }
+        let alive: BTreeSet<&str> = self.seen().iter().map(|one| one.tty.as_str()).collect();
+        Abandoned::Seen {
+            ttys: rows
+                .iter()
+                .filter(|row| row.is_open() && !alive.contains(row.tty.as_str()))
+                .map(|row| row.tty.clone())
+                .collect(),
+        }
+    }
+}
+
 /// Who answers questions about the machine. **A trait because the denial has to
 /// be provable**: inside the sandbox the tests run in `ps` is really denied, so
 /// a test that invoked it would measure the sandbox and not the code. A fake
