@@ -24,6 +24,7 @@
 //! update it. It lives in `COMMANDS`, `print_usage` prints it, and the window
 //! shows it by reading it from there.
 
+pub mod board_cmd;
 pub mod faults_cmd;
 pub mod flow_cmd;
 pub mod inventory_cmd;
@@ -143,6 +144,12 @@ pub fn is_a_form(forms: &[Form], verb: &str) -> bool {
 }
 
 pub const COMMANDS: &[Command] = &[
+    Command {
+        name: "board",
+        description_key: "cli.command.board",
+        usage: board_cmd::USAGE,
+        run: board_cmd::run,
+    },
     Command {
         name: "release",
         description_key: "cli.command.release",
