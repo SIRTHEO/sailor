@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { PLACES, UNDER_THE_TREE, type Section } from "./places";
 import { grouped, treeName } from "./workspacetrees";
 import { projects, workHere, type Project } from "./workspaces";
+import type { Source } from "./boardhead";
 import type { TerminalSummary } from "./terminal";
 import { HandMark } from "./StepNode";
 import type { FlowLive } from "./flowlive";
@@ -125,6 +126,7 @@ export function reopenIn(seen: Project[]): Project | null {
 
 export function World({
   native,
+  source,
   here,
   onGo,
   counts,
@@ -137,6 +139,9 @@ export function World({
   onNewFlow,
 }: {
   native: boolean;
+  /** Where the flows below came from. Only «sample» is drawn: the rest is the
+   * board head's business, and the column has one thing to say. */
+  source: Source;
   here: Section;
   onGo: (section: Section) => void;
   counts: Partial<Record<Section, number>>;
@@ -239,6 +244,11 @@ export function World({
     );
   }
 
+  /* **A FIXTURE IS NOT ONE OF YOUR FLOWS.** Outside the shell the column
+     listed invented flows — one of them broken on purpose — and said nothing:
+     the declaration lived on the board's head, which is not on screen unless
+     you are on the board. Somebody read the list and asked what «notte» was. */
+  const sample = source === "sample";
   const mine = ofTheTree(flowGroups);
   const shared = everywhere(flowGroups);
   const anyFlow = flowGroups.some((group) => group.flows.length > 0);
@@ -282,6 +292,12 @@ export function World({
           </button>
         ))}
       </div>
+      {sample && (
+        <div className="world__sample">
+          sample data: these flows are not on your disk
+        </div>
+      )}
+
       <div className="world__head">workspaces</div>
 
       {why !== null && <div className="world__mute">{why}</div>}
