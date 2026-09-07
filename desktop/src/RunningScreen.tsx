@@ -1,10 +1,8 @@
 // What Sailor lit on this machine and never saw end.
 //
-// **THE MACHINE FILLING UP IS NOTICED HERE AND WAS ANSWERED NOWHERE HERE.**
-// Everything goes slow, and the only way to find out which of forty processes
-// was Sailor's was to read `ps` and guess. A row says what it is for, whether
-// it is still there, and whether anybody is still waiting on it — and the
-// gesture stops the ones a finished run left behind, and nothing else.
+// **THE MACHINE FILLING UP IS NOTICED HERE AND WAS ANSWERED NOWHERE HERE**:
+// finding which of forty processes was Sailor's meant reading `ps` and
+// guessing. A row says what it is for, whether it is there, and who wants it.
 
 import { useState } from "react";
 import { useAsk, useClock } from "./ask";

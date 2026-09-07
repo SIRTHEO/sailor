@@ -1,10 +1,8 @@
 //! What Sailor lit on this machine, and the gesture that puts it out.
 //!
-//! **THE COMMAND LINE HAD THIS AND THE WINDOW DID NOT.** A machine that fills
-//! up is noticed in the window — everything is slow — and answered nowhere in
-//! it, so the answer was a person reading `ps` and guessing which of those
-//! lines was Sailor's. The reading is the crate's, not a second one written
-//! here: two readings of what is running is how they come to disagree.
+//! **THE COMMAND LINE HAD THIS AND THE WINDOW DID NOT.** A machine filling up
+//! is noticed in the window and was answered nowhere in it. The reading is the
+//! crate's: two readings of what runs is how they come to disagree.
 
 use serde::Serialize;
 

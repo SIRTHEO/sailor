@@ -2847,12 +2847,12 @@ fn liveness_asks_about_one_known_pid_not_for_a_list() {
         !pid_is_alive(pid),
         "a reaped and buried process still reads as alive: pid {pid}"
     );
+    assert_eq!(super::who_holds_the_pid(pid), super::WhoHoldsThePid::Nobody);
+    assert!(!super::the_same_process(pid, 0), "a dead pid still answers for a row");
 }
 
-/// **THE CASE THAT LETS A GESTURE KILL A STRANGER.** A row written hours ago
-/// names a number, not a process, and numbers come round again. Asked only
-/// «is it alive», a stop gesture reads a stranger who inherited the number as
-/// the thing it was told to stop.
+/// **THE CASE THAT LETS A GESTURE KILL A STRANGER.** Asked only «is it
+/// alive», a stop gesture reads whoever inherited the number as its target.
 #[test]
 fn a_pid_born_after_the_row_that_names_it_is_a_different_process() {
     let mine = std::process::id();
@@ -2866,8 +2866,6 @@ fn a_pid_born_after_the_row_that_names_it_is_a_different_process() {
             assert!(born <= now, "this process was born in the future");
             assert!(now - born < 86_400, "this test has not been running for a day");
         }
-        // Said and allowed for: a machine that will not answer is not a defect
-        // here, but the rest of this test would be measuring nothing.
         other => panic!("this machine would not say when its own process began: {other:?}"),
     }
 
@@ -2879,8 +2877,7 @@ fn a_pid_born_after_the_row_that_names_it_is_a_different_process() {
         !super::the_same_process(mine, 0),
         "a row from 1970 owns a process born today, and a stop gesture would kill it"
     );
-    // The slack is a grace, not a door. A row is old enough to own this
-    // process when it was written no earlier than the grace before its birth.
+    // A row owns it if written no earlier than the grace before its birth.
     let super::WhoHoldsThePid::Since(born) = super::who_holds_the_pid(mine) else {
         unreachable!("settled above");
     };
@@ -2892,16 +2889,6 @@ fn a_pid_born_after_the_row_that_names_it_is_a_different_process() {
         !super::the_same_process(mine, born - super::A_RECORD_IS_NEVER_THIS_LATE - 1),
         "the grace reaches further back than it says, and by that much a stranger passes"
     );
-}
-
-/// A pid nobody holds belongs to nobody, and belongs to no row either.
-#[test]
-fn a_pid_nobody_holds_is_nobodys() {
-    let mut child = Command::new("/bin/sh").args(["-c", "exit 0"]).spawn().expect("a child");
-    let pid = child.id();
-    child.wait().expect("bury it");
-    assert_eq!(super::who_holds_the_pid(pid), super::WhoHoldsThePid::Nobody);
-    assert!(!super::the_same_process(pid, 0), "a dead pid still answers for a row");
 }
 
 /// **A BROWSER IS NOT A BACK DOOR.** The store is append-only; a person may
@@ -3525,15 +3512,11 @@ fn every_column_a_migration_adds_exists_in_a_fresh_store_under_its_version() {
     }
 }
 
-/// **A REFUSAL TO ANSWER IS NOT A BIRTH TIME.** The system fills nothing when
-/// asked about a process it will not describe, and reading the struct anyway
-/// dates that process to 1970 — which makes every row in the store look older
-/// than it, and every stranger look like something Sailor is free to stop.
-/// The first process on the machine belongs to root, and is the case to hand.
+/// **A REFUSAL TO ANSWER IS NOT A BIRTH TIME.** Read anyway it dates the
+/// process to 1970, and every stranger looks older than every row.
 #[test]
 fn a_process_this_machine_will_not_describe_is_not_dated_to_1970() {
     match super::who_holds_the_pid(1) {
-        // Run as root, the machine does answer, and the answer is a real date.
         super::WhoHoldsThePid::Since(born) => assert!(
             born > 0,
             "a refusal was read as a birth time, and dated the first process to 1970"

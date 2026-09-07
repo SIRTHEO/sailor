@@ -74,11 +74,9 @@ export async function freeTheMachine(): Promise<Freed[]> {
 }
 
 /**
- * What a row is, in one word.
- *
- * **«LEFTOVER» IS THE WHOLE POINT OF THE SCREEN.** Alive and wanted looks
- * exactly like alive and forgotten if the only question asked is whether it
- * breathes — and it is the forgotten ones that fill a machine.
+ * What a row is, in one word. **«LEFTOVER» IS THE POINT OF THE SCREEN**: alive
+ * and wanted looks like alive and forgotten if the only question is whether it
+ * breathes, and the forgotten ones fill a machine.
  */
 export type Standingness = "leftover" | "wanted" | "unclaimed" | "ended";
 

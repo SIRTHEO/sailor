@@ -1,9 +1,7 @@
 // A scripted walkthrough for a person who has never opened Sailor: no
-// repository, no engine, no profile. It plays a fake flow at a pace a human
-// can follow, using the same marks and tokens the real terminal draws with.
-//
-// **NOTHING HERE TALKS TO AN ENGINE.** The steps and their output lines are
-// written in this file, not fetched, not run. A demonstration that could fail
+// repository, no engine, no profile, played at a pace a human can follow with
+// the marks the real terminal draws with. **NOTHING HERE TALKS TO AN ENGINE**:
+// the steps are written in this file, because a demonstration that could fail
 // for a real reason would stop being a safe first thing to click.
 
 import { useEffect, useRef, useState } from "react";

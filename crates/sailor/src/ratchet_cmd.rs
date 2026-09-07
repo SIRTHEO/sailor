@@ -546,12 +546,9 @@ pub(crate) fn root_to_measure() -> Result<PathBuf, String> {
     }
 }
 
-/// **ONE GATE PER TREE, AND THE KERNEL KEEPS THE COUNT.** Two runs share one
-/// `target/ratchet-tree` and one `target/ratchet`: each lays HEAD over the
-/// other's tree mid-measure, so a healthy judge goes red on sources that were
-/// never together — and the two builds together took a machine down. Held for
-/// the whole run and released by the kernel when this process ends, whichever
-/// way it ends, so a killed gate leaves no lock behind for the next one.
+/// **ONE GATE PER TREE, AND THE KERNEL KEEPS THE COUNT.** Two runs lay HEAD
+/// over each other mid-measure, so a healthy judge goes red — and two builds
+/// at once took a machine down. A killed gate leaves no lock behind.
 /// Nothing reads the descriptor, and that is the mechanism: the lock lives as
 /// long as it stays open, and closing it is what hands the gate on. An explicit
 /// unlock in `Drop` would be a line no test can tell from its absence.
@@ -611,11 +608,10 @@ fn measured(only: &[String]) -> Result<bool, String> {
     );
     let mut counted = Verdicts::default();
     for judge in &judges {
-        // **NOTHING IS TOUCHED TO FORCE A REBUILD.** Every judge's test file was,
-        // so that `env!("CARGO_MANIFEST_DIR")` could not be a stale path — but
-        // the tree is laid at one fixed place per checkout, so that path is the
-        // same every run. What a judge embeds at compile time is cargo's own
-        // affair: `include_str!` registers the file it read, measured here.
+        // **NOTHING IS TOUCHED TO FORCE A REBUILD.** Every judge's test file
+        // was, against a stale `CARGO_MANIFEST_DIR` — but the tree is laid at
+        // one fixed place, so that path never moves. What a judge embeds is
+        // cargo's own affair, and measured here.
         let out = Command::new("cargo")
             .current_dir(&clean)
             // Its own target: sharing `target/from-head` with the release put two
@@ -752,22 +748,9 @@ mod tests {
         (root, scratch.join("measured"))
     }
 
-    /// **A REMOVAL IS A CHANGE THE OVERLAY HAS TO CARRY** — fault 99. Both
-    /// places it can live: staged in the index, and taken out of the working
-    /// tree without being staged.
-    /// **THE POINT OF THE WHOLE THING, AND THE COMMIT IS WHY.** `git archive`
-    /// stamps every file it writes with the commit's own date, so one commit
-    /// gave twenty crates a new modification time and cargo rebuilt all of it —
-    /// on every commit, not on every run. A gate took forty minutes, was
-    /// therefore run rarely, and four red judges were found after nine commits.
-    /// **TWO GATES ON ONE TREE MAKE A RED JUDGE OUT OF NOTHING**, and took a
-    /// machine down doing it: they lay HEAD over each other mid-measure, so a
-    /// judge reads sources that were never together anywhere.
-    /// **THE ONE REASON THE GATE USED TO TOUCH EVERY JUDGE.** A judge that
-    /// embeds a file at compile time would, with a cached binary, measure the
-    /// tree before this one — silently, and three judges here do embed. Cargo
-    /// registers what `include_str!` read and rebuilds when it changes; this
-    /// is that claim, measured rather than believed.
+    /// **THE ONE REASON THE GATE USED TO TOUCH EVERY JUDGE.** With a cached
+    /// binary, a judge that embeds a file would measure the tree before this
+    /// one, and three do embed. Cargo rebuilds on what `include_str!` read.
     #[test]
     fn cargo_rebuilds_a_test_that_embedded_a_file_the_tree_changed() {
         let root = std::env::temp_dir().join(format!("sailor-embed-{}", std::process::id()));
@@ -805,6 +788,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// **TWO GATES ON ONE TREE MAKE A RED JUDGE OUT OF NOTHING**: they lay
+    /// HEAD over each other, so a judge reads sources never together anywhere.
     #[test]
     fn a_second_gate_on_the_same_tree_is_refused() {
         let root = std::env::temp_dir().join(format!("sailor-onegate-{}", std::process::id()));
@@ -820,6 +805,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// **THE POINT OF IT, AND THE COMMIT IS WHY.** `git archive` stamps every
+    /// file with the commit's date, so one commit gave twenty crates a new one
+    /// and cargo rebuilt all of it — per commit, not per run.
     #[test]
     fn a_file_untouched_by_a_commit_keeps_its_modification_time() {
         let (root, tree) =
@@ -887,6 +875,9 @@ mod tests {
         assert!(tree.join("kept.md").exists(), "it took the neighbours with it");
     }
 
+    /// **A REMOVAL IS A CHANGE THE OVERLAY HAS TO CARRY** — fault 99. Both
+    /// places it can live: staged in the index, and taken out of the working
+    /// tree without being staged.
     #[test]
     fn a_file_the_change_removes_leaves_the_measured_tree() {
         let (root, measured) = a_repository_holding(
