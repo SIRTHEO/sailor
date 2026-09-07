@@ -388,6 +388,21 @@ export interface Execution {
 }
 
 /**
+ * Which identity the process behind a call started under. Mirrors
+ * `EngineIdentity` in `crates/ledger`: every case answers which home and how it
+ * was chosen at once, because a right path with a wrong reason reads as fine.
+ */
+export type EngineIdentity =
+  | { kind: "profile_in_force"; cli_id: string; profile_name: string; home_dir: string; endpoint?: string }
+  | { kind: "chosen_by_the_step"; cli_id: string; home_dir: string }
+  | { kind: "inherited_from_the_terminal"; cli_id: string }
+  | { kind: "profile_vanished"; cli_id: string; profile_name: string }
+  | { kind: "not_moved_by_an_env_var"; cli_id: string; profile_name: string; why: string }
+  | { kind: "not_a_known_engine" }
+  | { kind: "declared_by_an_agent" }
+  | { kind: "unrecorded"; legacy: string };
+
+/**
  * A model call inside a run.
  *
  * **`declared_cost_micros` IS NOT A DUPLICATE OF `cost_micros`.** One is the
@@ -418,6 +433,8 @@ export interface ModelCall {
   error_type: string | null;
   started_at: number;
   ended_at: number | null;
+  /** Under which identity the process was started. */
+  engine_identity: EngineIdentity;
 }
 
 /** Every run the ledger remembers, newest first. */

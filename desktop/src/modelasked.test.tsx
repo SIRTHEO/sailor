@@ -28,6 +28,7 @@ const call = (over: Partial<ModelCall> = {}): ModelCall => ({
   error_type: null,
   started_at: 1,
   ended_at: 2,
+  engine_identity: { kind: "not_a_known_engine" },
   ...over,
 });
 
