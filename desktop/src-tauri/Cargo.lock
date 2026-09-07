@@ -2768,6 +2768,7 @@ dependencies = [
  "flow",
  "inventory",
  "ledger",
+ "machine",
  "models",
  "profiles",
  "registry",
