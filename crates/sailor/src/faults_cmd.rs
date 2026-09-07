@@ -24,6 +24,10 @@ pub const USAGE: &[Form] = &[
         says_key: "cli.faults.form.status",
     },
     Form {
+        form: "sailor faults reword <n> < fault.json",
+        says_key: "cli.faults.form.reword",
+    },
+    Form {
         form: "sailor faults render [--file <md>]",
         says_key: "cli.faults.form.render",
     },
@@ -114,6 +118,7 @@ fn dispatch(args: &[String]) -> Result<String, String> {
         "list" => list(&store, &options),
         "add" => add(&store),
         "status" => set_status(&store, &loose),
+        "reword" => reword(&store, &loose),
         "render" => render(&store, &options),
         "import" => import(&store, &loose),
         "check" => check(&store, &loose),
@@ -213,6 +218,65 @@ fn what_the_repository_could_not_publish(text: &str) -> Result<(), String> {
             ("at", &at.to_string()),
             ("count", &found.len().to_string()),
         ],
+    ))
+}
+
+/// The three prose columns of a fault, and nothing else. Unknown fields are
+/// refused: handed the shape `add` takes, a date and a status would be dropped
+/// in silence and whoever edited them would believe they had landed.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Rewording {
+    what_happened: String,
+    how_it_showed: String,
+    what_would_prevent: String,
+}
+
+/// Rewrites the prose of a fault already on record, keeping its number, its
+/// date and its standing: what happened does not change because the words did.
+fn reword(store: &Faults, loose: &[String]) -> Result<String, String> {
+    let raw = std::io::read_to_string(std::io::stdin()).map_err(|error| {
+        catalogue::say(
+            "cli.faults.cannot_read_the_fault",
+            &[("error", &error.to_string())],
+        )
+    })?;
+    reworded(store, loose, &raw)
+}
+
+/// The decision, with the text already in hand. **IT EXISTS SO IT CAN BE
+/// TESTED**: `reword` reads standard input, which a test cannot give it.
+fn reworded(store: &Faults, loose: &[String], raw: &str) -> Result<String, String> {
+    let [number] = loose else {
+        return Err(catalogue::say("cli.faults.usage_reword", &[]));
+    };
+    let number: i64 = number
+        .parse()
+        .map_err(|_| catalogue::say("cli.faults.not_a_number", &[("number", number)]))?;
+    let said: Rewording = serde_json::from_str(raw).map_err(|error| {
+        catalogue::say(
+            "cli.faults.shape_of_a_fault",
+            &[("error", &error.to_string())],
+        )
+    })?;
+    if said.what_would_prevent.trim().is_empty() {
+        return Err(catalogue::say("cli.faults.no_prevention", &[]));
+    }
+    what_the_repository_could_not_publish(raw)?;
+    let standing = store.get(number).map_err(|error| error.to_string())?;
+    store
+        .restore(&Fault {
+            number,
+            happened_on: standing.happened_on,
+            what_happened: said.what_happened,
+            how_it_showed: said.how_it_showed,
+            what_would_prevent: said.what_would_prevent,
+            status: standing.status,
+        })
+        .map_err(|error| error.to_string())?;
+    Ok(catalogue::say(
+        "cli.faults.reworded",
+        &[("number", &number.to_string())],
     ))
 }
 
@@ -404,6 +468,78 @@ mod tests {
         ));
         std::fs::create_dir_all(&dir).expect("the scratch directory");
         dir
+    }
+
+    fn a_store_holding(label: &str, draft: &Draft) -> (PathBuf, Faults, i64) {
+        let dir = scratch(label);
+        let store = Faults::open(dir.join("faults.db")).expect("the store");
+        let recorded = store.record(draft).expect("record");
+        (dir, store, recorded.number)
+    }
+
+    fn a_fault() -> Draft {
+        Draft {
+            happened_on: "07/09".to_owned(),
+            what_happened: "a thing broke inside a worktree an outside app manages".to_owned(),
+            how_it_showed: "the attach refused".to_owned(),
+            what_would_prevent: "an identity the caller can supply".to_owned(),
+            status: "**open**".to_owned(),
+        }
+    }
+
+    /// **A FAULT'S PROSE WAS WRITTEN ONCE AND COULD NOT BE CORRECTED.** Only the
+    /// standing had a verb, so text that turned a judge red — a product name in
+    /// a public document — had no cure but a hand inside the store.
+    #[test]
+    fn rewording_a_fault_keeps_its_number_its_date_and_its_standing() {
+        let (dir, store, number) = a_store_holding("reword", &a_fault());
+        let said = reworded(
+            &store,
+            &[number.to_string()],
+            r#"{"what_happened":"a thing broke where no tty is reachable",
+                "how_it_showed":"the attach refused",
+                "what_would_prevent":"an identity the caller can supply"}"#,
+        )
+        .expect("the words are rewritten");
+        assert!(said.contains(&number.to_string()), "{said}");
+
+        let after = store.get(number).expect("the fault is still there");
+        assert_eq!(after.what_happened, "a thing broke where no tty is reachable");
+        assert_eq!(after.happened_on, "07/09", "the date moved with the words");
+        assert_eq!(after.status, "**open**", "the standing moved with the words");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **A DATE OR A STANDING SENT HERE WOULD BE DROPPED IN SILENCE**, and
+    /// whoever edited a file of the shape `add` takes would believe both had
+    /// landed. Refused instead, by name.
+    #[test]
+    fn a_rewording_carrying_more_than_the_prose_is_refused() {
+        let (dir, store, number) = a_store_holding("reword-extra", &a_fault());
+        let refused = reworded(
+            &store,
+            &[number.to_string()],
+            r#"{"happened_on":"01/01","what_happened":"a","how_it_showed":"b",
+                "what_would_prevent":"c","status":"**closed**"}"#,
+        );
+        assert!(refused.is_err(), "a date and a standing were accepted and dropped");
+        let after = store.get(number).expect("the fault is still there");
+        assert_eq!(after.status, "**open**", "the refused text changed the store anyway");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Without that column the record is a diary, which is the one thing it
+    /// exists not to be — and rewording must not be the way round it.
+    #[test]
+    fn a_rewording_that_drops_the_prevention_is_refused() {
+        let (dir, store, number) = a_store_holding("reword-diary", &a_fault());
+        let refused = reworded(
+            &store,
+            &[number.to_string()],
+            r#"{"what_happened":"a","how_it_showed":"b","what_would_prevent":"  "}"#,
+        );
+        assert!(refused.is_err(), "a fault with no prevention was written");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// **A DOCUMENTED OPTION THAT NO CODE READS IS A COMMAND THAT LIES.** The
