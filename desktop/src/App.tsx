@@ -34,7 +34,7 @@ import { BlankCanvas, type PlacesAsk } from "./BlankCanvas";
 import { MACHINE, MACHINE_GROUND, SECTIONS, TERMINALS_GROUND, nameOfPlace, onItsOwnName, type MachineRow, type Section } from "./places";
 import { World, OF_THIS_TREE, type FlowGroup } from "./World";
 import { liveOf, newestPerFlow } from "./flowlive";
-import { amongThese, rememberWhere, whereYouWere } from "./whereyouwere";
+import { amongThese, rememberWhere, stillThere, whereYouWere } from "./whereyouwere";
 import type { Project } from "./workspaces";
 import {
   DropdownMenu,
@@ -288,7 +288,14 @@ export default function App() {
   // EVERY SECTION, NOT EVERY OFFERED PLACE: what the machine's screens live in
   // is named by no row of the place list, and reading that list here would send
   // whoever left the window on Profiles back to the board.
-  const [place, setPlace] = useState<Place>(() => amongThese(wasAt.current.place, SECTIONS, "terminals"));
+  /* **AND A NIGHT IS A REASON TO LOSE IT.** The window opens on the decisions
+     that wait for a person and on what happened while they were away; a place
+     kept for ever would open it where somebody stood yesterday. */
+  const [place, setPlace] = useState<Place>(() =>
+    stillThere(wasAt.current, Math.floor(Date.now() / 1000))
+      ? amongThese(wasAt.current.place, SECTIONS, "waiting")
+      : "waiting",
+  );
   const [memoryTab, setMemoryTab] = useState<MemoryTab>(() =>
     amongThese(wasAt.current.memoryTab, MEMORY_TABS.map((one) => one.id), "runs"),
   );
