@@ -2,7 +2,7 @@
 
 **01/09/2026.** Born from a request of Theo's — *«if we need to, let us do the
 time nodes, timers, cron that fire on the dot every so often»* — and from the
-answer research found in my place, in a repository that is not this one.
+answer research gave instead of the one asked for.
 
 The **measured facts** are kept apart from the **decisions**, which are Theo's.
 Where a number appears without the word «measured», it is a reading of the code,
@@ -10,9 +10,8 @@ not a test that was run.
 
 ## The rule already exists, and we did not write it
 
-A rule written months ago in a private repository — which is therefore not cited
-here — starts from this: a cleanup cron is almost always the symptom of a badly
-modelled data life cycle.
+The rule was not invented here, and it starts from this: a cleanup cron is
+almost always the symptom of a badly modelled data life cycle.
 
 It is the same thing Theo said on 31/08 with an image: *if I fall ill because I
 stand at −10 in a t-shirt, I do not buy the medicine — I buy the clothes*. The
@@ -31,21 +30,24 @@ have a comment explaining why steps 1-3 do not apply»*, and **«cron is never t
 engine — whoever enqueues has to wake»**. A queue drained only by the tick has
 the tick's interval for latency, always.
 
-## The cost of not having the first three levels, measured
+## The cost of not having the first three levels
 
-On 31/08/2026, in a working repository that is not this one, there were **31
-orphan branches**. Deciding what to do with them took **twenty-one agents and
-about half an hour**: one examiner per group and an adversarial judge for every
-verdict. It was not zeal — the question «has this work already arrived
-somewhere else?» is answered only by comparing the content file by file,
-because the requests are merged by squashing and so the branch turns out
-**never** to be an ancestor of the trunk: `git cherry` and `--contains` always
-answer «not merged», even when the work has been in for weeks.
+The case that produced this section was measured elsewhere and is not published
+here, so take the ranking above on its reasoning and not on numbers this
+document does not show. What carries over is the mechanism, and it is general.
 
-Outcome: 23 to close, 4 to carry on, 4 to decide. **One single verdict out of 31
-was overturned by the judge** — which says the analysis works, and at the same
-time that it cost twenty-one agents to confirm what whoever created those
-branches already knew on the first day.
+Once a branch is orphaned, the question «has this work already arrived somewhere
+else?» has no cheap answer. Where requests are merged by squashing, the branch
+is **never** an ancestor of the trunk, so `git cherry` and `--contains` answer
+«not merged» even for work that has been in for weeks. What is left is comparing
+the content file by file — one reading per branch, and a second opinion on every
+verdict, because a wrong «already in» deletes work.
+
+That is the whole argument for the first three levels. The expensive part is not
+the sweeping, which a cron does for nothing; it is that by the time anything
+sweeps, **the knowledge of what the thing was for is gone**, and it has to be
+reconstructed from the content by whoever did not write it. Levels 1 to 3 all
+act while that knowledge is still in the room.
 
 ## The four levels applied to a branch
 
@@ -93,8 +95,8 @@ bot the net runs every five minutes and is the engine of nothing.
 `{"status": ...}` and no more (`crates/actions/src/lib.rs`, branch `Ok(ActionOutcome::Went(json!({ "status": status })))`).
 The command's output does not reach the flow. So «does the branch still exist?»
 can be asked; «which request concerns it, and is it merged?» cannot. It is the
-fifth of the powers the `dev-stack` survey had already isolated — *returning a
-value instead of an outcome*.
+fifth of the powers that survey had already isolated — *returning a value
+instead of an outcome*.
 
 **The shapes of trigger are two, and they are code.** `trigger::Kind` has two
 variants only, `manual` and `terminal`; the list of descriptors is data — a JSON

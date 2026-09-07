@@ -7,16 +7,16 @@ document tries to say the same thing in a way that holds: not *which nodes are
 missing*, but **which surface the system exposes**, so that the question becomes
 «which power do we not have yet, and which flow proves it to me».
 
-## Where it comes from, with the numbers
+## Where it comes from
 
-On 31/08 `dev-stack` was surveyed, the development-environment orchestrator of
-another project: 27 scripts, ~2,400 lines of shell, 35 recipes. The opening
-question was «which of these become Sailor flows». The survey answered something
-else, and it is this: **22 entries out of 52 are migrable, 15 are stuck behind a
-capability Sailor does not have.** But the fifteen were not asking for fifteen
-different nodes: they were asking for **five powers** — keeping a process alive,
-killing one, speaking over the network, carrying a secret without writing it
-down, returning a value instead of an outcome.
+On 31/08 a body of shell scripts from elsewhere — a development-environment
+orchestrator, whose survey is not published here — was read with one question:
+«which of these become Sailor flows». The survey answered something else, and
+that answer is the whole of this document: the entries that could not migrate
+were not asking for one node each. They were asking for **five powers** Sailor
+did not have — keeping a process alive, killing one, speaking over the network,
+carrying a secret without writing it down, returning a value instead of an
+outcome.
 
 At the same moment, seven building sites open on Sailor were building
 `supervisor`, `terminal`, `presence`, `mcp` — that is, those powers, each in its

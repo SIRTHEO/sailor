@@ -578,8 +578,8 @@ place.
 
 ### An action declares the surface it belongs to, and the powers it demands
 
-**31/08/2026 — Theo**, after the survey of `dev-stack` (27 scripts of another
-project, candidates to become flows).
+**31/08/2026 — Theo**, after surveying a body of shell scripts from elsewhere,
+candidates to become flows.
 
 The surfaces are four, and an action declares **one only**: `sense` reads the
 world without touching it, `act` touches it, `remember` is the interrogable
@@ -589,8 +589,8 @@ money, secrets — and the `sense` ones declare in addition **what they answer
 when they cannot see**.
 
 **Why it is not an aesthetic taxonomy.** The survey was looking for «which
-scripts become flows» and found something else: 15 entries stuck on **five
-missing powers**, not on fifteen nodes. The right question is not which node is
+scripts become flows» and found something else: the stuck entries were stuck on
+**five missing powers**, not on one missing node each. The right question is not which node is
 missing, it is **which power we do not have and which flow proves it**. And the
 rule that follows from it is a single line: *if an orchestration calls for new
 code, a power is missing — not a flow.*
