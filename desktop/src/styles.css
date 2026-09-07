@@ -6790,3 +6790,47 @@ tr[data-followable]:hover {
   color: var(--on-accent);
   border-color: transparent;
 }
+
+/* THE QUESTIONS, AT THE TOP OF THE COLUMN. Their own block and not a row of the
+   flows: what they answer does not change with the tree, and reading the two
+   families in one rhythm is what made this column unreadable. */
+.world__places {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.world__place {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-2);
+  font-size: var(--text-body);
+  text-align: left;
+}
+
+.world__place:hover {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
+
+.world__place[data-here] {
+  background: var(--surface-2);
+  border-color: var(--line);
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+.world__place .world__count {
+  margin-left: auto;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
