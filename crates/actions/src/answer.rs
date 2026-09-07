@@ -123,6 +123,36 @@ pub(crate) fn how_it_exited(code: Option<i32>) -> String {
     }
 }
 
+/// Strips the control bytes a live terminal redraw leaves behind: a CSI
+/// sequence (`ESC [` to its final letter) and a bare backspace. Fault 133:
+/// `ollama --verbose` corrects a partial word by moving the cursor back
+/// and erasing, even with stdout piped to a file, not a terminal. The
+/// escape byte is illegal inside a JSON string, so the parse dies on
+/// ollama's own redraw, not on what the model answered.
+fn without_terminal_redraw(text: &str) -> String {
+    let mut kept = String::with_capacity(text.len());
+    let mut chars = text.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '\u{8}' {
+            continue;
+        }
+        if ch == '\u{1b}' {
+            let mut lookahead = chars.clone();
+            if lookahead.next() == Some('[') {
+                chars = lookahead;
+                for next in chars.by_ref() {
+                    if next.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+                continue;
+            }
+        }
+        kept.push(ch);
+    }
+    kept
+}
+
 /// The text to read as JSON inside what an engine said.
 ///
 /// A model often frames its answer in a fenced block, sometimes after a line of
@@ -130,20 +160,21 @@ pub(crate) fn how_it_exited(code: Option<i32>) -> String {
 /// The outermost braces inside a sentence are not hunted for — that rule would
 /// also accept half an answer, or an example quoted in passing, and wrong data
 /// getting through is worse than a red.
-fn json_body(said: &str) -> &str {
-    let trimmed = said.trim();
+fn json_body(said: &str) -> String {
+    let cleaned = without_terminal_redraw(said);
+    let trimmed = cleaned.trim();
     let Some(open) = trimmed.find("```") else {
-        return trimmed;
+        return trimmed.to_string();
     };
     let after = &trimmed[open + 3..];
     // The fence line may carry the language name: it is thrown away.
     let body = match after.find('\n') {
         Some(end) => &after[end + 1..],
-        None => return trimmed,
+        None => return trimmed.to_string(),
     };
     match body.find("```") {
-        Some(close) => body[..close].trim(),
-        None => body.trim(),
+        Some(close) => body[..close].trim().to_string(),
+        None => body.trim().to_string(),
     }
 }
 
@@ -219,7 +250,7 @@ fn byte_at(text: &str, line: usize, column: usize) -> Option<usize> {
 /// Reads an engine's answer against the shape the step declared.
 pub(crate) fn shaped_answer(shape: &ValueSchema, said: &str) -> Result<Value, ActionError> {
     let body = json_body(said);
-    let value: Value = serde_json::from_str(body).map_err(|error| {
+    let value: Value = serde_json::from_str(&body).map_err(|error| {
         ActionError::new(
             "answer_not_json",
             format!(
@@ -231,7 +262,7 @@ pub(crate) fn shaped_answer(shape: &ValueSchema, said: &str) -> Result<Value, Ac
             ANSWER_SHAPE_CHECK,
             "",
             RefusalRule::NotJson,
-            &around_the_break(body, &error),
+            &around_the_break(&body, &error),
         ))
     })?;
     shape.validate(&value).map_err(|error| {
@@ -281,5 +312,24 @@ mod tests {
         let seen = &error.refusal.expect("a refusal is recorded").seen;
         assert!(seen.contains("engine_exhausted"), "{seen}");
         assert!(!seen.starts_with("{\"understanding\""), "{seen}");
+    }
+
+    /// **FAULT 133, ON A TRANSCRIPT CAPTURED FOR REAL.** `ollama run
+    /// qwen2.5-coder:14b --verbose`, stdout piped to a file, answered with
+    /// the byte sequence below where it corrected «nume» mid-line —
+    /// `ESC[4D ESC[K`, cursor back four columns then erase to the end of
+    /// line. Embedded in a shaped answer, the raw ESC byte alone is enough
+    /// to make a compliant JSON parser refuse the whole string.
+    #[test]
+    fn a_redraw_ollama_leaves_in_the_answer_does_not_stop_the_json_from_parsing() {
+        let shape: ValueSchema = serde_json::from_value(json!({
+            "type": "object", "properties": {"ok": {"type": "boolean"}, "note": {"type": "string"}}, "required": ["ok"], "allow_extra": false
+        }))
+        .expect("a shape");
+        let said = "{\"ok\": true, \"note\": \"fino al 30\u{b0} nume\u{1b}[4D\u{1b}[Knumero finito\"}";
+
+        let value = shaped_answer(&shape, said).expect("the redraw is not the model's answer");
+
+        assert_eq!(value["ok"], json!(true));
     }
 }
