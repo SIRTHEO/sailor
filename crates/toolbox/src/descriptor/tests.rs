@@ -754,3 +754,37 @@ fn the_shipped_codex_descriptor_declares_how_to_read_its_tokens() {
          what it always was"
     );
 }
+
+/// **THE WORDS DECLARED MUST BE THE WORDS SAID.** Measured live, twice: `codex`'s
+/// real exhaustion line is «You've hit your usage limit...», which none of
+/// `401 unauthorized`, `missing bearer`, `quota`, `insufficient_quota` hold. A
+/// chain with `codex` first read the real exit as unclassified and stopped the
+/// whole step instead of falling through — the descriptor knew the exhaustion
+/// by a name codex never says.
+#[test]
+fn the_shipped_codex_descriptor_knows_the_words_codex_actually_says_when_worn_out() {
+    let catalog = Catalog::load(&[Source::Builtin]);
+    let codex = catalog
+        .live()
+        .into_iter()
+        .find(|loaded| loaded.descriptor.id == "codex")
+        .expect("codex is shipped with the product");
+    let ask = codex.descriptor.ask.as_ref().expect("codex takes a question");
+    let said = "ERROR: You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), \
+                visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 8:09 PM.";
+    let names_it = |marks: &[String]| {
+        marks
+            .iter()
+            .any(|mark| said.to_lowercase().contains(&mark.to_lowercase()))
+    };
+    assert!(
+        names_it(&ask.unusable_when),
+        "codex's real usage-limit line is not among {:?}",
+        ask.unusable_when
+    );
+    assert!(
+        names_it(&ask.exhausted_when),
+        "codex's real usage-limit line is not among {:?}",
+        ask.exhausted_when
+    );
+}
