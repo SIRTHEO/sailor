@@ -262,52 +262,10 @@ impl LiveStatus {
     }
 }
 
-/// A process the ledger calls running, and what the system says about it.
-#[derive(Debug, Clone)]
-pub struct LeftRunning {
-    pub record: ledger::ProcessRecord,
-    /// **Two different questions, kept apart on purpose.** The ledger says
-    /// what was started; this says whether that pid still breathes.
-    pub still_alive: bool,
-}
-
-/// What was left running, confirmed pid by pid.
-pub fn left_running(store: &ledger::Ledger) -> Result<Vec<LeftRunning>, ledger::LedgerError> {
-    Ok(store
-        .processes_left_running()?
-        .into_iter()
-        .map(|record| LeftRunning {
-            still_alive: ledger::pid_is_alive(record.pid),
-            record,
-        })
-        .collect())
-}
-
-/// Closes, in the ledger, the rows of processes that stopped breathing.
-///
-/// **THE LEDGER CANNOT SEE A VIOLENT DEATH**: a process killed from outside
-/// writes no ending and stays «running» for ever. A list full of ghosts is a
-/// list nobody reads, which is how a process registry stops preventing fault 4.
-/// Returns how many it closed.
-pub fn close_the_ones_that_stopped_breathing(
-    store: &ledger::Ledger,
-    now: i64,
-) -> Result<usize, ledger::LedgerError> {
-    let mut closed = 0;
-    for gone in left_running(store)?
-        .into_iter()
-        .filter(|item| !item.still_alive)
-    {
-        store.record_process_ended(&ledger::ProcessEndRecord {
-            process_id: gone.record.process_id,
-            // No exit code is invented: nobody saw it leave.
-            exit_code: None,
-            ended_at: now,
-        })?;
-        closed += 1;
-    }
-    Ok(closed)
-}
+pub use machine::{
+    close_the_ones_that_stopped_breathing, left_running, stop_the_ones_nobody_wants, LeftRunning,
+    Teardown,
+};
 
 /// Why the port cannot be taken, when somebody is on it. **Both localhost
 /// addresses**: a server on `::1` leaves `127.0.0.1` free, and asking one of

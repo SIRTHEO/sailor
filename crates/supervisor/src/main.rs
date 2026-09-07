@@ -110,59 +110,28 @@ fn list_left_running(store: Option<&ledger::Ledger>) {
     }
 }
 
-/// Stops what was left running, and writes it down. **The second half of
-/// fault 4**: whoever found the port taken had to hunt the pid by hand.
+/// Stops what was left running: **the second half of fault 4**. Explicit, so
+/// nothing is «still wanted»; the teardown lives in `machine`.
 fn stop_left_running(store: Option<&ledger::Ledger>) {
     let Some(store) = store else {
         eprintln!("with no ledger there is nothing to stop");
         return;
     };
-    // Ghosts go first: closing in the ledger what is already dead avoids
-    // announcing the stop of something that is not there.
-    match close_the_ones_that_stopped_breathing(store, now()) {
-        Ok(0) => {}
-        Ok(closed) => println!("{closed} entries closed: they were processes already dead."),
-        Err(error) => eprintln!("closing the dead: {error}"),
-    }
-
-    let left = match left_running(store) {
-        Ok(left) => left,
-        Err(error) => {
-            eprintln!("reading the ledger: {error}");
-            return;
-        }
-    };
-    for item in left.into_iter().filter(|item| item.still_alive) {
-        // SAFETY: `kill` reads and writes integers. The pid comes from the
-        // ledger, so from something Sailor lit: nobody else's is stopped.
-        let sent = unsafe { libc_kill(item.record.pid) };
-        if sent {
-            let _ = store.record_process_ended(&ledger::ProcessEndRecord {
-                process_id: item.record.process_id.clone(),
-                exit_code: None,
-                ended_at: now(),
-            });
-            println!(
-                "stopped {} (pid {})",
-                item.record.process_id, item.record.pid
-            );
-        } else {
-            eprintln!(
-                "{} (pid {}) could not be stopped: it stays written down as running, \
-                 which is better than declaring it dead without being sure",
-                item.record.process_id, item.record.pid
-            );
+    match supervisor::stop_the_ones_nobody_wants(store, now(), &|_| Ok(false)) {
+        Err(error) => eprintln!("reading the ledger: {error}"),
+        Ok(done) => {
+            for one in done {
+                match one {
+                    supervisor::Teardown::Gone { process_id, pid, .. } => {
+                        println!("stopped {process_id} (pid {pid})")
+                    }
+                    supervisor::Teardown::StillThere { process_id, pid, why, .. } => {
+                        eprintln!("{process_id} (pid {pid}) could not be stopped: {why}")
+                    }
+                }
+            }
         }
     }
-}
-
-/// SIGTERM on one pid. Not `pkill`, not `killall`: a known number.
-unsafe fn libc_kill(pid: u32) -> bool {
-    extern "C" {
-        fn kill(pid: i32, signal: i32) -> i32;
-    }
-    const SIGTERM: i32 = 15;
-    kill(pid as i32, SIGTERM) == 0
 }
 
 /// `--at-once` puts every build on the screen the moment it is done, which is
