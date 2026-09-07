@@ -11,7 +11,8 @@ use std::time::Duration;
 pub struct LeftRunning {
     pub record: ledger::ProcessRecord,
     /// **Two different questions, kept apart on purpose.** The ledger says
-    /// what was started; this says whether that pid still breathes.
+    /// what was started; this says whether *that* process is still there —
+    /// not merely whether something now holds the number it was given.
     pub still_alive: bool,
 }
 
@@ -21,7 +22,11 @@ pub fn left_running(store: &ledger::Ledger) -> Result<Vec<LeftRunning>, ledger::
         .processes_left_running()?
         .into_iter()
         .map(|record| LeftRunning {
-            still_alive: ledger::pid_is_alive(record.pid),
+            // **THE ROW NAMES A PROCESS, NOT A NUMBER.** Pid numbers come round
+            // again: asked only whether the number is taken, a row written
+            // hours ago answers for whoever holds it now, and the gesture
+            // below would put out somebody else's work.
+            still_alive: ledger::the_same_process(record.pid, record.started_at),
             record,
         })
         .collect())
@@ -30,7 +35,10 @@ pub fn left_running(store: &ledger::Ledger) -> Result<Vec<LeftRunning>, ledger::
 /// Closes, in the ledger, the rows of processes that stopped breathing.
 ///
 /// **THE LEDGER CANNOT SEE A VIOLENT DEATH**: a process killed from outside
-/// writes no ending and stays «running» for ever. A list full of ghosts is a
+/// writes no ending and stays «running» for ever. Nor can it see a number
+/// handed on: a row whose pid now belongs to a stranger is closed here too,
+/// because the process it named did end — which is exactly why it is closed
+/// and never signalled. A list full of ghosts is a
 /// list nobody reads, which is how a process registry stops preventing fault 4.
 /// Returns how many it closed.
 pub fn close_the_ones_that_stopped_breathing(
