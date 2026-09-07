@@ -71,6 +71,9 @@ const SailorScreen = lazy(() =>
 const TerminalsSection = lazy(() =>
   import("./TerminalsSection").then((module) => ({ default: module.TerminalsSection })),
 );
+// A first-time visitor's entry point, not the operator's: nothing on the path
+// this window opens on every day needs it in the same chunk.
+const Demo = lazy(() => import("./Demo").then((module) => ({ default: module.Demo })));
 
 /** What stands where a section will be: nothing. A section a few hundred
  *  milliseconds away does not need announcing, and a spinner that flashes is
@@ -319,6 +322,7 @@ export default function App() {
   }, []);
   const [ledgerTable, setLedgerTable] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [demoOpen, setDemoOpen] = useState(false);
 
   // ONE WAY IN PER ROW OF THE MACHINE'S GROUND, whether it is pressed in the
   // column or typed into the palette: the row says which view it lands on, and
@@ -1364,13 +1368,28 @@ export default function App() {
       hint: flows.get(name)?.origin ?? undefined,
       run: () => void handleRun(name),
     }));
-    return [...go, ...ground, ...machine, ...open, ...run];
+    // A distinct entry, not «Go to»: it opens over the operator's work rather
+    // than replacing it, and it asks nothing of an engine or a repository.
+    const demo: Entry[] = [
+      {
+        group: "Demonstration",
+        label: "See Sailor at work",
+        hint: "a scripted walkthrough, no repository or engine needed",
+        run: () => setDemoOpen(true),
+      },
+    ];
+    return [...go, ...ground, ...machine, ...open, ...run, ...demo];
   }, [flows, handleRun, goToMachine]);
 
   return (
     <TooltipProvider>
     <div className="app">
       <Palette entries={paletteEntries} open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      {demoOpen && (
+        <Suspense fallback={ARRIVING}>
+          <Demo open={demoOpen} onClose={() => setDemoOpen(false)} />
+        </Suspense>
+      )}
       <TopBar
         crumbs={crumbs}
         chips={
