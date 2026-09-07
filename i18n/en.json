@@ -151,6 +151,7 @@
   "cli.flow.schedule_unchanged": "flow {flow} ({origin}): the trigger was already {before}, nothing was touched",
   "cli.flow.schedule_written": "flow {flow} ({origin}): trigger\n  from: {before}\n  to:   {after}\nwritten in {directory}",
   "cli.flow.ships_inside_the_binary": "«{flow}» ships inside the binary: there is no file to rewrite. To change it, write a flow of the same name in your home or in the project — yours wins — and change that one. I will not do it for you: a flow that appeared by itself is a flow nobody knows they have",
+  "cli.flow.suspended_after_failures": "suspended after {times} failed runs in a row: it will not start on its own again until touched — a relevant change, or a run started by hand",
   "cli.flow.suggestion": "suggestion: {suggested} micro ({units}) — the dearest run observed ({worst_run}) plus the dearest call observed ({dearest_call}). The second term is not a safety margin: it is the grain at which the cap can stop, because the check comes before opening a front",
   "cli.flow.tokens_line": "token: {in} in · {out} out · {read} read from cache · {written} written to cache",
   "cli.flow.totals_not_split": "totals not split out (those that declare neither side): {count}",
