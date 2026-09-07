@@ -32,6 +32,7 @@ pub mod models_cmd;
 pub mod notes_cmd;
 pub mod profiles_cmd;
 pub mod publish_cmd;
+pub mod machine_cmd;
 pub mod ratchet_cmd;
 pub mod release_cmd;
 pub mod remember_cmd;
@@ -165,6 +166,12 @@ pub const COMMANDS: &[Command] = &[
         description_key: "cli.command.memory",
         usage: memory_cmd::USAGE,
         run: memory_cmd::run,
+    },
+    Command {
+        name: "machine",
+        description_key: "cli.command.machine",
+        usage: machine_cmd::USAGE,
+        run: machine_cmd::run,
     },
     Command {
         name: "ratchet",

@@ -90,6 +90,11 @@ pub const FLOWS: &[(&str, &str)] = &[
         "watch-the-crew",
         include_str!("../system/watch-the-crew.flow.json"),
     ),
+    // What the machine has left, and what Sailor can give back.
+    (
+        "free-the-machine",
+        include_str!("../system/free-the-machine.flow.json"),
+    ),
     (
         "draft-a-flow",
         include_str!("../system/draft-a-flow.flow.json"),
