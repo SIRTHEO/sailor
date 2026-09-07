@@ -6834,3 +6834,16 @@ tr[data-followable]:hover {
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
+
+/* The engine's own reason for a step: quieter than the outcome it explains,
+   and quieter still where it only confirms that the ordinary thing happened. */
+.step-why {
+  font-size: var(--text-small);
+  color: var(--muted);
+  padding: 2px 0;
+  overflow-wrap: anywhere;
+}
+
+.step-why[data-held] {
+  color: var(--text-3);
+}
