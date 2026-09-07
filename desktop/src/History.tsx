@@ -65,10 +65,22 @@ function money(micros: number): string {
   return `$${(micros / 1_000_000).toFixed(3)}`;
 }
 
+/**
+ * The counted parts of a call. **THE SAME ONES `TokenTotals::add` SUMS**: this
+ * window redoes a sum the engine also makes, and a part missing here makes the
+ * row disagree with the total printed above it.
+ */
+export const TOKEN_PARTS = [
+  "input_tokens",
+  "output_tokens",
+  "cached_tokens",
+  "cache_write_tokens",
+  "cache_write_long_tokens",
+] as const;
+
 /** Tokens seen from a call: the ones it declared, not an estimate. */
-function seenTokens(call: ModelCall): number {
-  const parts = [call.input_tokens, call.output_tokens, call.cached_tokens, call.cache_write_tokens];
-  const known = parts.filter((part): part is number => part !== null);
+export function seenTokens(call: ModelCall): number {
+  const known = TOKEN_PARTS.map((part) => call[part]).filter((part): part is number => part !== null);
   // NO NUMBER IS NOT ZERO. A call that declared no tokens did not consume zero
   // of them: we do not know, and writing zero is the convenient lie.
   if (known.length === 0) return call.total_tokens ?? -1;
