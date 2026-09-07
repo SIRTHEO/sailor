@@ -17,6 +17,7 @@ const WARNINGS_TODAY: &[(&str, usize)] = &[
     ("flow", 0),
     ("inventory", 0),
     ("ledger", 0),
+    ("machine", 0),
     ("models", 0),
     ("profiles", 0),
     ("registry", 0),

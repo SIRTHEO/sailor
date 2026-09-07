@@ -190,7 +190,7 @@ mod tests {
             command: "npx".to_owned(),
             args: vec!["vite".to_owned()],
             working_directory: "/work/a-project/desktop".to_owned(),
-            port: Some(DEV_PORT),
+            port: None,
             purpose: "live".to_owned(),
             started_by: "supervisor".to_owned(),
             run_id: run_id.map(str::to_owned),
@@ -249,8 +249,11 @@ mod tests {
         assert_eq!(standing(&store).expect("before").len(), 1);
         assert!(!standing(&store).expect("before")[0].alive, "the fixture pid is alive here");
 
-        let closed = close_the_ones_that_stopped_breathing(&store, 1_700_000_200).expect("free");
-        assert_eq!(closed, 1, "the ghost row was left open");
+        // Nobody wants it and its pid is gone: the teardown closes the row
+        // without a signal, because there is nothing left to signal.
+        let done = machine::stop_the_ones_nobody_wants(&store, 1_700_000_200, &|_| Ok(false))
+            .expect("free");
+        assert!(done.is_empty(), "a pid that was already gone was signalled: {done:?}");
         assert!(standing(&store).expect("after").is_empty(), "the row is still called running");
         let _ = std::fs::remove_dir_all(&dir);
     }
