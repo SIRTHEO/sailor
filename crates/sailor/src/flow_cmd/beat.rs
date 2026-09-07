@@ -172,9 +172,9 @@ fn tick_flows_with(sources: &[FlowSource], last: LastRuns, start: Starter<'_>) -
     // A streak this long already owes the register a fault (see
     // `flow::faults_due` below): starting the flow again on its own schedule
     // would spend a call on something already known to fail this way. The
-    // hold reads the streak fresh every beat, so it lifts itself the moment a
-    // run — by hand, once whatever was wrong is fixed — breaks it with a
-    // success: nothing here remembers "suspended" past the ledger saying so.
+    // hold reads the streak fresh every beat: it lifts only once a NEW run
+    // closes complete — by hand, the one path left while this one is held —
+    // never from a fix alone that has not yet been run.
     let stuck: std::collections::BTreeMap<&str, usize> = glance
         .streaks
         .iter()
@@ -239,7 +239,22 @@ fn tick_flows_with(sources: &[FlowSource], last: LastRuns, start: Starter<'_>) -
     // the fault writer is started here with that flow as its mandate. The
     // failed run is remembered whatever the start came to: a writer that
     // cannot run says so once, instead of being asked again at every beat.
+    // It has no schedule of its own, so `stuck` below is the only place a
+    // writer failing this way ever gets held instead of tried again.
     for fault in flow::faults_due(&glance.streaks, &glance.faults_written) {
+        if let Some(length) = stuck.get(flow::system::FAULT_WRITER) {
+            held += 1;
+            let _ = writeln!(
+                report,
+                "{}\thold\t{}",
+                flow::system::FAULT_WRITER,
+                catalogue::say(
+                    "cli.flow.suspended_after_failures",
+                    &[("times", &length.to_string())],
+                ),
+            );
+            continue;
+        }
         ran += 1;
         let (word, said) = match start(flow::system::FAULT_WRITER, Some(&fault.flow)) {
             Ok(said) => ("ran", said),
@@ -470,8 +485,10 @@ mod tests {
     /// **A FLOW THAT FAILS THREE TIMES IN A ROW WRITES A FAULT BY ITSELF.**
     /// The beat sees the streak in the ledger, starts the fault writer with
     /// that flow as its mandate, says so in its report, and remembers the
-    /// failed run so the next beat does not ask twice. The fault writer's own
-    /// failures never start it about itself.
+    /// failed run so the next beat does not ask twice. (That the writer never
+    /// targets its own streak is `streak::the_fault_writer_never_writes_
+    /// about_itself`; this one is about a healthy writer answering for
+    /// something else.)
     #[test]
     fn a_flow_that_failed_three_times_in_a_row_has_its_fault_written_once() {
         let scratch = std::env::temp_dir().join(format!("sailor-guasto-{}", std::process::id()));
@@ -497,12 +514,11 @@ mod tests {
                 .record_run(&a_closed_run("ogni-minuto", run, "failed", at))
                 .expect("a failed run");
         }
-        for (run, at) in [("writer-1", now - 30), ("writer-2", now - 20), ("writer-3", now - 10)] {
-            ledger
-                .record_run(&a_closed_run(flow::system::FAULT_WRITER, run, "failed", at))
-                .expect("a failed run of the fault writer");
-        }
-
+        // The writer's own health is deliberately not exercised here — that
+        // interaction (a writer stuck on its own streak) has its own test,
+        // `a_fault_writer_stuck_on_its_own_streak_is_held_instead_of_tried_
+        // again`; this one stays about a single target's fault getting
+        // written by a writer that is free to run.
         let mut started: Vec<(String, Option<String>)> = Vec::new();
         let said = tick_flows_with(
             &sources,
@@ -548,9 +564,8 @@ mod tests {
     /// **A FLOW THAT LOST ITS LAST THREE RUNS DOES NOT GET A FOURTH FOR
     /// FREE.** Its schedule would call it due — the failures are old enough —
     /// but a beat that started it anyway would spend a call on a flow that
-    /// already earned a fault for failing this way. The hold lifts by itself
-    /// the moment a run, by hand once whatever was wrong is fixed, breaks the
-    /// streak with a success.
+    /// already earned a fault for failing this way. Only a NEW run closing
+    /// complete lifts it — never a fix that has not yet been run once.
     #[test]
     fn a_flow_stuck_on_three_failures_is_held_even_when_its_schedule_says_due() {
         let scratch = std::env::temp_dir().join(format!("sailor-bloccato-{}", std::process::id()));
@@ -600,18 +615,81 @@ mod tests {
         );
         assert!(said.contains("0 run, 1 held"), "{said}");
 
-        // A success breaks the streak: the next beat is due again, on its
-        // own schedule, with nothing left to hold it back.
+        // A success breaks the streak. Recorded past the 60-second schedule
+        // (not the "-5" a lighter check would settle for), so this proves the
+        // stronger claim: not merely that the hold text changes, but that a
+        // beat actually starts the flow once it is both cleared and due.
         ledger
-            .record_run(&a_closed_run("ogni-minuto", "ogni-minuto-4", "complete", now - 5))
+            .record_run(&a_closed_run("ogni-minuto", "ogni-minuto-4", "complete", now - 61))
             .expect("a successful run");
+        let mut started: Vec<String> = Vec::new();
+        let said = tick_flows_with(
+            &sources,
+            LastRuns::Read(glance_at(&ledger).expect("a glance")),
+            &mut |name, _| {
+                started.push(name.to_owned());
+                Ok(format!("flow {name} complete; run {name}-88"))
+            },
+        )
+        .expect("a beat after the fix works");
+        assert_eq!(started, vec!["ogni-minuto".to_owned()], "{said}");
+        assert!(said.contains("ogni-minuto\tran\t"), "{said}");
+        drop(ledger);
+        let _ = fs::remove_dir_all(&scratch);
+    }
+
+    /// **THE FAULT WRITER HAS NO SCHEDULE OF ITS OWN, SO THE HOLD ABOVE NEVER
+    /// SEES IT.** Its only automatic start is this loop, once for every other
+    /// flow's fresh streak — and a writer stuck on its own three losses would
+    /// be tried again for the next flow's fault, and the next, never held and
+    /// never recorded as the thing actually broken.
+    #[test]
+    fn a_fault_writer_stuck_on_its_own_streak_is_held_instead_of_tried_again() {
+        let scratch = std::env::temp_dir().join(format!("sailor-scrittore-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&scratch);
+        fs::create_dir_all(&scratch).expect("create the test directory");
+        // `tick_flows_with` returns early on an empty catalogue, before ever
+        // reaching the fault-writer loop this test is about — one known flow
+        // (never itself triggered here) is enough to get past that guard.
+        fs::write(
+            scratch.join("un-flusso.flow.json"),
+            r#"{"id":"un-flusso","description":"un flusso qualsiasi",
+                "graph":{"steps":[{"id":"innesco","deps":[],"action":"trigger","max_attempts":1,
+                "when":null,"with":{"source":"manual","text":"vai"},
+                "input_schema":{"type":"any"},"output_schema":{"type":"any"}}]},"inputs":{}}"#,
+        )
+        .expect("write a flow with no schedule of its own");
+        let sources = vec![FlowSource {
+            origin: "prova",
+            dir: scratch.clone(),
+        }];
+        let now = now_secs().unwrap_or(0);
+        let ledger = Ledger::open(scratch.join("ledger")).expect("a scratch ledger");
+        for (run, at) in [("writer-1", now - 300), ("writer-2", now - 200), ("writer-3", now - 100)] {
+            ledger
+                .record_run(&a_closed_run(flow::system::FAULT_WRITER, run, "failed", at))
+                .expect("a failed run of the writer, unrelated to any target flow");
+        }
+        for (run, at) in [("altro-1", now - 30), ("altro-2", now - 20), ("altro-3", now - 10)] {
+            ledger
+                .record_run(&a_closed_run("altro-flusso", run, "failed", at))
+                .expect("a fresh streak on a different flow, owing a fault of its own");
+        }
+
         let said = tick_flows_with(
             &sources,
             LastRuns::Read(glance_at(&ledger).expect("a glance")),
             &mut never_starts,
         )
-        .expect("a beat after the fix works");
-        assert!(said.contains("ogni-minuto\thold\tnot due"), "{said}");
+        .expect("a beat over a stuck writer works");
+        assert!(
+            said.contains("write-down-what-broke\thold\tsuspended after 3 failed runs in a row"),
+            "{said}"
+        );
+        assert!(
+            ledger.faults_written().expect("the memory").is_empty(),
+            "altro-flusso's fault was never actually written, so nothing here should say it was"
+        );
         drop(ledger);
         let _ = fs::remove_dir_all(&scratch);
     }
