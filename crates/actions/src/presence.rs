@@ -415,6 +415,46 @@ impl Action for WorkReleaseAction {
     }
 }
 
+/// One reading of the board: who the store calls working right now, and who
+/// is gone and why.
+#[derive(Debug, Clone)]
+pub struct Board {
+    pub at: i64,
+    pub working: Vec<Value>,
+    pub gone: Vec<Value>,
+}
+
+/// The same reading a flow gets from `work_survey`, callable directly.
+///
+/// **ONE COPY OF THE SHAPE**, the same reason [`claim_record`] is the only
+/// place a claim is built: `sailor board` and a flow's `work_survey` step
+/// must answer the same question the same way, or the two are two boards.
+pub fn survey(
+    ledger: &Ledger,
+    repository: Option<&str>,
+    at: i64,
+) -> Result<Board, ledger::LedgerError> {
+    let records = ledger.records_in(CLAIMS_COLLECTION)?;
+    let mut working: Vec<Value> = Vec::new();
+    let mut gone: Vec<Value> = Vec::new();
+    for record in records {
+        if let Some(wanted) = repository {
+            if record.value["repository"] != json!(wanted) {
+                continue;
+            }
+        }
+        match why_gone(&record.value, at) {
+            None => working.push(record.value),
+            Some(why) => {
+                let mut entry = record.value;
+                entry["why"] = json!(why);
+                gone.push(entry);
+            }
+        }
+    }
+    Ok(Board { at, working, gone })
+}
+
 pub struct WorkSurveyAction {
     ledger: Option<Ledger>,
 }
@@ -437,30 +477,12 @@ impl Action for WorkSurveyAction {
                     .to_owned(),
             )
         })?;
-        let records = ledger
-            .records_in(CLAIMS_COLLECTION)
+        let board = survey(ledger, spec.repository.as_deref(), at)
             .map_err(|error| ActionError::new("store_unreadable", error.to_string()))?;
-        let mut working: Vec<Value> = Vec::new();
-        let mut gone: Vec<Value> = Vec::new();
-        for record in records {
-            if let Some(wanted) = &spec.repository {
-                if record.value["repository"] != json!(wanted) {
-                    continue;
-                }
-            }
-            match why_gone(&record.value, at) {
-                None => working.push(record.value),
-                Some(why) => {
-                    let mut entry = record.value;
-                    entry["why"] = json!(why);
-                    gone.push(entry);
-                }
-            }
-        }
         Ok(ActionOutcome::Went(json!({
-            "at": at,
-            "working": working,
-            "gone": gone,
+            "at": board.at,
+            "working": board.working,
+            "gone": board.gone,
         })))
     }
 

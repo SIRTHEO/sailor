@@ -125,6 +125,18 @@ pub const FLOWS: &[(&str, &str)] = &[
         "find-the-dead-powers",
         include_str!("../system/find-the-dead-powers.flow.json"),
     ),
+    (
+        "remember-in-the-graph",
+        include_str!("../system/remember-in-the-graph.flow.json"),
+    ),
+    (
+        "recall-a-decision",
+        include_str!("../system/recall-a-decision.flow.json"),
+    ),
+    (
+        "notice-a-divergence",
+        include_str!("../system/notice-a-divergence.flow.json"),
+    ),
 ];
 
 /// A place where flows are looked for, with the name a reader sees.

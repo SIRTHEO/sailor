@@ -1,0 +1,295 @@
+{
+  "id": "remember-in-the-graph",
+  "description": "WHAT USED TO BECOME A NINTH FILE IN `docs/` BECOMES A NODE INSTEAD. Two consultations measured the same gap the same day: Sailor already keeps a real deposit, and nothing reads it back — the pull to write down a decision lands on a `.md` file because the deposit is not one command away. This flow is that command. THE MANDATE IS THE NODE, ALREADY SHAPED: a JSON object naming `workspace_id` (which area of a project this belongs to — Theo's own example is one project with a products area and a separate ads area), `node_id` (a name chosen by whoever writes it, not generated, so the same decision written twice is a revision and not a duplicate), `kind`, `title`, `written_by`, and optionally `summary`/`status`. THE SHAPE IS CHECKED BEFORE IT IS KEPT: the `parse` step's `answer_shape` is the same JSON Schema `memory_write` itself expects, so a malformed mandate stops here with a named missing field, not inside the action with a serde error. THE WRITE IS CLAIMED, NOT JUST SENT: `work_claim`/`work_release` existed since before this flow and named no shipped flow that called them — a report measured it the same day this was written. `claim` locks exactly `{workspace_id}:{node_id}`, never the whole area: two runs remembering different decisions in the same workspace never see each other, and two runs racing the same `node_id` do — the second one's `claim` step breaks and `remember` never starts, instead of two revisions landing in whichever order the disks happened to flush. `release` always follows on the same process, so the same pid that claimed is the one that lets go. NOTHING HERE INVENTS AN EDGE: this flow writes one node. Linking it to another belongs to whichever flow makes that connection on purpose — an edge is a decision, never an inference this one is entitled to make silently.",
+  "graph": {
+    "steps": [
+      {
+        "id": "trigger",
+        "deps": [],
+        "action": "trigger",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "source": "manual"
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "who": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "parse",
+        "deps": [
+          "trigger"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -e; if [ -z \"$MANDATE\" ]; then printf 'the mandate is empty: it must be the node itself, as JSON — workspace_id, node_id, kind, title, written_by\\n' >&2; exit 1; fi; printf '%s' \"$MANDATE\" | python3 -c \"import json, sys; d = json.load(sys.stdin); d.setdefault('summary', ''); d.setdefault('status', 'open'); print(json.dumps(d))\"",
+          "env": {
+            "MANDATE": {
+              "$from": "/text"
+            }
+          },
+          "timeout_secs": 10,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "workspace_id": {
+                "type": "string"
+              },
+              "node_id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "written_by": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspace_id",
+              "node_id",
+              "kind",
+              "title",
+              "summary",
+              "status",
+              "written_by"
+            ],
+            "allow_extra": false
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "command",
+            "timeout_secs"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string"
+            },
+            "answer": {
+              "type": "object",
+              "properties": {
+                "workspace_id": {
+                  "type": "string"
+                },
+                "node_id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "written_by": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "workspace_id",
+                "node_id",
+                "kind",
+                "title",
+                "summary",
+                "status",
+                "written_by"
+              ],
+              "allow_extra": true
+            }
+          },
+          "required": [
+            "status",
+            "answer"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "claim",
+        "deps": [
+          "parse"
+        ],
+        "action": "work_claim",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "agent": {
+            "$from": "/answer/written_by"
+          },
+          "repository": "sailor-memory-graph",
+          "workdir": {
+            "$join": [
+              {
+                "$from": "/answer/workspace_id"
+              },
+              ":",
+              {
+                "$from": "/answer/node_id"
+              }
+            ]
+          },
+          "doing": {
+            "$from": "/answer/title"
+          },
+          "refuse_when_shared": true
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "expires_at": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "key",
+            "expires_at"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "remember",
+        "deps": [
+          "claim",
+          "parse"
+        ],
+        "action": "memory_write",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "what": "node",
+          "workspace_id": {
+            "$from": "/parse/answer/workspace_id"
+          },
+          "node_id": {
+            "$from": "/parse/answer/node_id"
+          },
+          "kind": {
+            "$from": "/parse/answer/kind"
+          },
+          "title": {
+            "$from": "/parse/answer/title"
+          },
+          "summary": {
+            "$from": "/parse/answer/summary"
+          },
+          "status": {
+            "$from": "/parse/answer/status"
+          },
+          "written_by": {
+            "$from": "/parse/answer/written_by"
+          }
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "revision": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "key",
+            "revision"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "release",
+        "deps": [
+          "remember",
+          "parse"
+        ],
+        "action": "work_release",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "agent": {
+            "$from": "/parse/answer/written_by"
+          }
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      }
+    ]
+  },
+  "inputs": {
+    "trigger": {
+      "source": "manual"
+    }
+  }
+}

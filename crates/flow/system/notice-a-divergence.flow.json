@@ -1,0 +1,238 @@
+{
+  "id": "notice-a-divergence",
+  "description": "READS THE SAME GRAPH `remember-in-the-graph` WRITES, TO ANSWER ONE QUESTION: does this mandate's vocabulary belong to the workspace it arrived in, or to another one the graph already knows about? Theo's own condition, twice repeated: Sailor may PROPOSE a handoff, never perform one. `topic_drift` only reads and only answers; the last step here is `handed_to_agent`, which starts nothing and waits for a person to close it — the same reason that action exists at all. THE MANDATE NAMES WHERE IT IS AND WHAT WAS JUST SAID: `workspace_id` and `text`, nothing else; the graph and the comparison come from the store, not from this flow's own judgement.",
+  "graph": {
+    "steps": [
+      {
+        "id": "trigger",
+        "deps": [],
+        "action": "trigger",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "source": "manual"
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "who": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "parse",
+        "deps": [
+          "trigger"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -e; if [ -z \"$MANDATE\" ]; then printf 'the mandate is empty: it must name workspace_id and text, as JSON\\n' >&2; exit 1; fi; printf '%s' \"$MANDATE\" | python3 -c \"import json, sys; d = json.load(sys.stdin); print(json.dumps({'workspace_id': d['workspace_id'], 'text': d['text']}))\"",
+          "env": {
+            "MANDATE": {
+              "$from": "/text"
+            }
+          },
+          "timeout_secs": 10,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "workspace_id": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspace_id",
+              "text"
+            ],
+            "allow_extra": false
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "command",
+            "timeout_secs"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string"
+            },
+            "answer": {
+              "type": "object",
+              "properties": {
+                "workspace_id": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "workspace_id",
+                "text"
+              ],
+              "allow_extra": true
+            }
+          },
+          "required": [
+            "status",
+            "answer"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "check",
+        "deps": [
+          "parse"
+        ],
+        "action": "topic_drift",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "workspace_id": {
+            "$from": "/answer/workspace_id"
+          },
+          "text": {
+            "$from": "/answer/text"
+          }
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "workspace_id": {
+              "type": "string"
+            },
+            "own_overlap": {
+              "type": "number"
+            },
+            "elsewhere": {
+              "type": "any"
+            },
+            "diverges": {
+              "type": "boolean"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "workspace_id",
+            "own_overlap",
+            "diverges",
+            "reason"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "propose",
+        "deps": [
+          "check"
+        ],
+        "action": "handed_to_agent",
+        "max_attempts": 1,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/diverges",
+          "value": true
+        },
+        "with": {
+          "mandate": {
+            "$join": [
+              "This mandate reads closer to workspace '",
+              {
+                "$from": "/elsewhere/workspace_id"
+              },
+              "' than to '",
+              {
+                "$from": "/workspace_id"
+              },
+              "'. Own overlap: ",
+              {
+                "$json": "/own_overlap"
+              },
+              "; overlap with '",
+              {
+                "$from": "/elsewhere/workspace_id"
+              },
+              "': ",
+              {
+                "$json": "/elsewhere/overlap"
+              },
+              "."
+            ]
+          },
+          "holder": "whoever is alive in the terminal",
+          "handoff_timeout_secs": 3600,
+          "options": [
+            {
+              "label": "start a handoff",
+              "facts": "this belongs elsewhere: hand off and clear before going on"
+            },
+            {
+              "label": "stay",
+              "facts": "this is still the same work: the reading does not apply here"
+            }
+          ]
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      }
+    ],
+    "skippable_dependencies": []
+  },
+  "inputs": {
+    "trigger": {
+      "source": "manual"
+    }
+  }
+}

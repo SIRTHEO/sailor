@@ -1,0 +1,226 @@
+{
+  "id": "recall-a-decision",
+  "description": "THE FIRST FLOW WHOSE OWN BEHAVIOUR CHANGES WITH WHAT THE GRAPH HOLDS. `memory_write`/`memory_query` were proved at the action level, alone; nothing had yet proved a FLOW reads the graph automatically and answers differently because of it — the exact gap two consultations named the same day. THREE CASES, LIVE-TESTED, NOT ASSUMED: nothing written for a node answers `found: false`; a node written once answers with its own title; a node written twice for the same `node_id` answers with the SECOND title, never the first — the superseded revision stays in the store, and this flow still never sees it. THE MANDATE NAMES WHAT TO RECALL, NOT WHAT WAS DECIDED: `workspace_id` and `node_id` are the only two things asked of whoever calls this — everything else comes from the graph or does not come at all.",
+  "graph": {
+    "steps": [
+      {
+        "id": "trigger",
+        "deps": [],
+        "action": "trigger",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "source": "manual"
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "who": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "ask",
+        "deps": [
+          "trigger"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -e; if [ -z \"$MANDATE\" ]; then printf 'the mandate is empty: it must name workspace_id and node_id, as JSON\\n' >&2; exit 1; fi; printf '%s' \"$MANDATE\" | python3 -c \"import json, sys; d = json.load(sys.stdin); print(json.dumps({'workspace_id': d['workspace_id'], 'node_id': d['node_id']}))\"",
+          "env": {
+            "MANDATE": {
+              "$from": "/text"
+            }
+          },
+          "timeout_secs": 10,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "workspace_id": {
+                "type": "string"
+              },
+              "node_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspace_id",
+              "node_id"
+            ],
+            "allow_extra": false
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "command",
+            "timeout_secs"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string"
+            },
+            "answer": {
+              "type": "object",
+              "properties": {
+                "workspace_id": {
+                  "type": "string"
+                },
+                "node_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "workspace_id",
+                "node_id"
+              ],
+              "allow_extra": true
+            }
+          },
+          "required": [
+            "status",
+            "answer"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "look",
+        "deps": [
+          "ask"
+        ],
+        "action": "memory_query",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "workspace_id": {
+            "$from": "/answer/workspace_id"
+          },
+          "node_id": {
+            "$from": "/answer/node_id"
+          }
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "workspace_id": {
+              "type": "string"
+            },
+            "nodes": {
+              "type": "any"
+            },
+            "edges": {
+              "type": "any"
+            }
+          },
+          "required": [
+            "workspace_id",
+            "nodes"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "answer",
+        "deps": [
+          "look"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "printf '%s' \"$NODES\" | python3 -c \"import json, sys; nodes = json.load(sys.stdin); title = nodes[0]['title'] if nodes else None; status = nodes[0]['status'] if nodes else None; print(json.dumps({'found': bool(nodes), 'title': title, 'status': status}))\"",
+          "env": {
+            "NODES": {
+              "$json": "/nodes"
+            }
+          },
+          "timeout_secs": 10,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "found": {
+                "type": "any"
+              },
+              "title": {
+                "type": "any"
+              },
+              "status": {
+                "type": "any"
+              }
+            },
+            "required": [
+              "found"
+            ],
+            "allow_extra": false
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "command",
+            "timeout_secs"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      }
+    ]
+  },
+  "inputs": {
+    "trigger": {
+      "source": "manual"
+    }
+  }
+}

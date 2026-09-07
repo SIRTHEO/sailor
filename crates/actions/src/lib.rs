@@ -32,6 +32,7 @@ pub mod history;
 pub mod mcp;
 pub mod dormant_steps;
 pub mod draft;
+pub mod graph_memory;
 pub mod memory;
 pub mod notes;
 pub mod presence;
@@ -39,6 +40,7 @@ pub mod reserve;
 pub mod search;
 pub mod store;
 pub mod terminals;
+pub mod topic_drift;
 pub mod unused_actions;
 
 mod answer;

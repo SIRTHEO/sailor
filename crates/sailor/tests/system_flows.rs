@@ -744,3 +744,240 @@ fn without_a_detection_the_step_refuses_instead_of_guessing() {
         .expect_err("senza rilevamento il passo non può rispondere");
     assert_eq!(error.class, "invalid_input");
 }
+
+// ── the graph a flow reads back ──────────────────────────────────────────
+
+/// Like `run`, but over a **real, shared ledger** instead of `House::empty()`
+/// with no store: `memory_write`/`memory_query` need one to have anything to
+/// disagree about between calls, and the trigger's `text` is overridden
+/// instead of taken from the flow's own shipped default.
+fn run_with_ledger(
+    flow: &FlowFile,
+    ledger: &ledger::Ledger,
+    mandate_text: &str,
+) -> (Execution, Vec<flow::StepRecord>) {
+    let store = InMemoryRecordStore::default();
+    let run_id = format!(
+        "prova-{}-{}",
+        flow.id,
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("l'orologio")
+            .as_nanos()
+    );
+    let mut root_inputs: BTreeMap<String, Value> = BTreeMap::new();
+    root_inputs.insert(
+        "trigger".to_owned(),
+        serde_json::json!({"source": "manual", "text": mandate_text}),
+    );
+    let registry = registry::registry_in(registry::House::empty(), Some(ledger.clone()), None);
+    let request = ExecutionRequest {
+        run_id: run_id.clone(),
+        root_inputs,
+        gates: Vec::new(),
+        shared: SharedState::new(),
+        spend_cap_micros: None,
+        stops: flow::RunStops::default(),
+    };
+    let execution = InProcessExecutor
+        .execute(&flow.graph, request, &store, &registry, &Tick::new(0))
+        .expect("l'esecuzione non deve rompersi");
+    let records = store.records(&run_id).expect("le tracce della corsa");
+    (execution, records)
+}
+
+/// **THE FIRST FLOW WHOSE OWN ANSWER CHANGES WITH WHAT THE GRAPH HOLDS.**
+/// Three states against the same ledger: nothing written, a node written
+/// once, and the same node written again — the superseded revision must
+/// never win.
+#[test]
+fn a_flow_that_reads_the_graph_answers_differently_as_it_changes() {
+    let dir = std::env::temp_dir().join(format!("sailor-recall-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("cartella di lavoro");
+    let ledger = ledger::Ledger::open(&dir).expect("deposito di lavoro");
+
+    let remember = shipped("remember-in-the-graph");
+    let recall = shipped("recall-a-decision");
+    let ask = r#"{"workspace_id":"sailor","node_id":"the-question"}"#;
+
+    // Nothing written yet: the flow has to say so, not guess.
+    let (_, records) = run_with_ledger(&recall, &ledger, ask);
+    let answer = output_of(&records, "answer");
+    assert_eq!(answer["answer"]["found"], serde_json::json!(false), "{answer}");
+
+    // Written once: the flow answers with it.
+    run_with_ledger(
+        &remember,
+        &ledger,
+        r#"{"workspace_id":"sailor","node_id":"the-question","kind":"decision","title":"Prima versione","written_by":"test"}"#,
+    );
+    let (_, records) = run_with_ledger(&recall, &ledger, ask);
+    let answer = output_of(&records, "answer");
+    assert_eq!(answer["answer"]["title"], serde_json::json!("Prima versione"), "{answer}");
+
+    // Written again for the same node_id: the second revision answers, and
+    // the first — still sitting in the store, marked superseded — never does.
+    run_with_ledger(
+        &remember,
+        &ledger,
+        r#"{"workspace_id":"sailor","node_id":"the-question","kind":"decision","title":"Seconda versione, quella vera","written_by":"test"}"#,
+    );
+    let (_, records) = run_with_ledger(&recall, &ledger, ask);
+    let answer = output_of(&records, "answer");
+    assert_eq!(
+        answer["answer"]["title"],
+        serde_json::json!("Seconda versione, quella vera"),
+        "a superseded revision must never win: {answer}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// **A WRITE INTO THE GRAPH IS CLAIMED, NOT JUST SENT.** Two runs racing the
+/// same `{workspace_id}:{node_id}` must not both win; two runs on different
+/// `node_id`s in the same workspace must not even notice each other.
+#[test]
+fn a_write_into_the_graph_is_refused_while_another_agent_holds_the_same_node() {
+    let dir = std::env::temp_dir().join(format!("sailor-claimed-write-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("cartella di lavoro");
+    let ledger = ledger::Ledger::open(&dir).expect("deposito di lavoro");
+
+    // Somebody else is already at work on the very same node. The claim step
+    // inside the flow reads the real clock, not the fake one the executor
+    // uses for its own sequencing — so this has to be real "now" too.
+    let held_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("l'orologio")
+        .as_secs() as i64;
+    let holder = actions::presence::Claim {
+        agent: "another-agent".to_owned(),
+        key: actions::presence::claim_key("another-agent", "999"),
+        repository: "sailor-memory-graph".to_owned(),
+        workdir: Some("sailor:the-question".to_owned()),
+        branch: None,
+        paths: Vec::new(),
+        doing: Some("already remembering this one".to_owned()),
+        pid: 999,
+        at: held_at,
+        lease_seconds: 900,
+        conversation: None,
+        state: "working".to_owned(),
+    };
+    ledger
+        .put_record(&actions::presence::claim_record(&holder))
+        .expect("la presa concorrente si scrive");
+
+    let remember = shipped("remember-in-the-graph");
+    let mandate = r#"{"workspace_id":"sailor","node_id":"the-question","kind":"decision","title":"Tentativo mentre un altro tiene lo stesso nodo","written_by":"me"}"#;
+
+    // While the other claim holds, the write must not go through.
+    let (execution, records) = run_with_ledger(&remember, &ledger, mandate);
+    assert_ne!(
+        execution.decisions.last(),
+        Some(&Decision::Complete),
+        "una scrittura concorrente sullo stesso nodo non deve mai completare"
+    );
+    let claim_record = records
+        .iter()
+        .find(|record| record.step_id == "claim")
+        .expect("il passo «claim» ha lasciato traccia");
+    assert_eq!(claim_record.failure_class.as_deref(), Some("work_is_shared"));
+    assert!(
+        ledger
+            .records_in(actions::graph_memory::NODES_COLLECTION)
+            .expect("il grafo si legge")
+            .is_empty(),
+        "il nodo non deve esistere finché la presa altrui è viva"
+    );
+
+    // A different node, in the same workspace, is untouched by the collision.
+    let (execution, records) = run_with_ledger(
+        &remember,
+        &ledger,
+        r#"{"workspace_id":"sailor","node_id":"unrelated","kind":"decision","title":"Non c'entra niente","written_by":"me"}"#,
+    );
+    assert_eq!(execution.decisions.last(), Some(&Decision::Complete));
+    assert_eq!(
+        output_of(&records, "remember")["revision"],
+        serde_json::json!(1)
+    );
+
+    // Once the other agent releases, the same write goes through.
+    actions::presence::release_claim(&ledger, &holder.key, held_at + 60)
+        .expect("il rilascio non deve rompersi");
+    let (execution, records) = run_with_ledger(&remember, &ledger, mandate);
+    assert_eq!(
+        execution.decisions.last(),
+        Some(&Decision::Complete),
+        "rilasciata la presa altrui, la scrittura deve riuscire"
+    );
+    assert_eq!(
+        output_of(&records, "remember")["revision"],
+        serde_json::json!(1)
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// **A DIVERGENCE IS PROPOSED, NEVER PERFORMED.** Text that matches its own
+/// workspace completes the run with nothing handed to anyone; text that
+/// reads closer to another workspace stops the run at `propose`, `Waiting`,
+/// for a person to close — never `Complete` on its own account.
+#[test]
+fn a_divergence_is_proposed_and_a_match_at_home_completes_quietly() {
+    let dir = std::env::temp_dir().join(format!("sailor-notice-divergence-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("cartella di lavoro");
+    let ledger = ledger::Ledger::open(&dir).expect("deposito di lavoro");
+
+    let remember = shipped("remember-in-the-graph");
+    let notice = shipped("notice-a-divergence");
+
+    run_with_ledger(
+        &remember,
+        &ledger,
+        r#"{"workspace_id":"acme-products","node_id":"pricing","kind":"decision","title":"acme pricing model","summary":"flat fee decision for acme checkout","written_by":"test"}"#,
+    );
+    run_with_ledger(
+        &remember,
+        &ledger,
+        r#"{"workspace_id":"acme-ads","node_id":"budget","kind":"decision","title":"acme ads campaign budget","summary":"ten k per month on paid ads spend","written_by":"test"}"#,
+    );
+
+    // On topic: nothing is proposed, the run completes on its own.
+    let (execution, records) = run_with_ledger(
+        &notice,
+        &ledger,
+        r#"{"workspace_id":"acme-products","text":"let's revisit the acme pricing model decision"}"#,
+    );
+    assert_eq!(execution.decisions.last(), Some(&Decision::Complete), "{execution:?}");
+    let propose = records
+        .iter()
+        .find(|record| record.step_id == "propose")
+        .expect("«propose» lascia traccia anche saltato");
+    assert_eq!(propose.outcome, Some(Outcome::Skipped), "{propose:?}");
+
+    // Off topic: the flow stops and waits for a person, it does not act.
+    let (execution, records) = run_with_ledger(
+        &notice,
+        &ledger,
+        r#"{"workspace_id":"acme-products","text":"what should the ads campaign budget be this month"}"#,
+    );
+    assert_ne!(
+        execution.decisions.last(),
+        Some(&Decision::Complete),
+        "una divergenza proposta non deve mai completare da sola: {execution:?}"
+    );
+    let propose = records
+        .iter()
+        .find(|record| record.step_id == "propose")
+        .expect("«propose» lascia traccia");
+    assert_eq!(propose.outcome, Some(Outcome::Waiting), "{propose:?}");
+    let check = output_of(&records, "check");
+    assert_eq!(check["diverges"], serde_json::json!(true), "{check}");
+    assert_eq!(check["elsewhere"]["workspace_id"], serde_json::json!("acme-ads"), "{check}");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

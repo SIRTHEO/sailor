@@ -36,6 +36,11 @@
       "runs_measured": 0,
       "words_it_sends": 0
     },
+    "notice-a-divergence": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
+    },
     "one-agent-on-one-task": {
       "tokens_a_run": 0,
       "runs_measured": 0,
@@ -47,6 +52,16 @@
       "words_it_sends": 0
     },
     "put-the-crew-to-work": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
+    },
+    "recall-a-decision": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
+    },
+    "remember-in-the-graph": {
       "tokens_a_run": 0,
       "runs_measured": 0,
       "words_it_sends": 0
