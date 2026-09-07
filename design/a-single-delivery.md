@@ -82,7 +82,7 @@ OUTSIDE EVERY WORKSPACE
    ▮ a-terminal                                  ← outside is a place, not an absence
 ```
 
-Four requirements, and they are the client's:
+Four requirements, and they are not negotiable:
 
 1. **The workspaces are there**, and the flows of a workspace sit with its board.
    A workspace has **several trees** (one checkout per branch): the name groups,
