@@ -107,14 +107,28 @@ const WHERE_THE_PRODUCT_SPEAKS: &[&str] = &[
 
 struct Found {
     count: usize,
+    /// How many sources were opened. **THE RECEIPT IS THE PERIMETER, NOT THE
+    /// DEBT**: handed the debt, this judge reported «measured: 0» the day the
+    /// debt reached zero, and `sailor ratchet` read that as a judge that had
+    /// walked nothing — green, and saying nothing about the tree.
+    walked: usize,
     worst: Vec<String>,
 }
 
 fn count_in(root: &Path) -> Found {
     let mut sources = Vec::new();
     for place in WHERE_THE_PRODUCT_SPEAKS {
+        let before = sources.len();
         walk(&root.join(place), &mut sources);
+        // **A TREE THAT MOVED TAKES THE PERIMETER WITH IT.** Renamed, `walk`
+        // returns nothing, the debt is nothing, and a seed of nothing agrees:
+        // the judge would pass by having stopped looking.
+        assert!(
+            sources.len() > before,
+            "«{place}» holds no source this judge can read: it was renamed, or the list is stale"
+        );
     }
+    let walked = sources.len();
     let (mut count, mut worst) = (0, Vec::new());
     for path in sources {
         let Ok(text) = std::fs::read_to_string(&path) else {
@@ -139,7 +153,7 @@ fn count_in(root: &Path) -> Found {
             }
         }
     }
-    Found { count, worst }
+    Found { count, walked, worst }
 }
 
 /// **THE SEED IS A KNOB, NOT A LITERAL**, and clippy cannot know that: at zero
@@ -153,7 +167,12 @@ fn the_sentences_the_product_says_only_ever_get_more_english() {
     let stale = HOW_STALE_A_SEED_MAY_BE as i64;
     let found = count_in(&root());
     let measured = found.count as i64;
-    workspace::measured(found.count, "sentences the product says not in English");
+    workspace::measured_against(
+        found.walked,
+        "sources the product speaks from",
+        WHERE_THE_PRODUCT_SPEAKS.len(),
+        "trees it was pointed at",
+    );
     assert!(
         measured <= declared,
         "sentences not in English: {} (declared {SENTENCES_NOT_IN_ENGLISH}). \
