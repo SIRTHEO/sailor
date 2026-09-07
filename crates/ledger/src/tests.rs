@@ -2865,6 +2865,16 @@ fn a_browsed_statement_reads_any_table_and_cannot_write() {
         .expect("the runs table is listed");
     assert_eq!(runs.rows, 1, "{tables:?}");
 
+    let events = tables
+        .iter()
+        .find(|table| table.name == "events.events")
+        .expect("the attached event log is listed among the tables");
+    assert!(events.rows > 0, "the log is listed and counted empty: {tables:?}");
+    assert!(
+        tables.iter().all(|table| !table.name.starts_with("main.")),
+        "a table of the main schema is named as if it were attached: {tables:?}"
+    );
+
     let answer = ledger
         .browse("SELECT run_id, status FROM runs", 10)
         .expect("a select is answered");
