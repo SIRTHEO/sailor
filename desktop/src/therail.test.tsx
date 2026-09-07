@@ -109,6 +109,7 @@ describe("a flow's row and its state", () => {
     const { container } = render(
       <World
         native={false}
+      source="engine"
         here="board"
         onGo={() => {}}
         counts={{ board: 1 }}

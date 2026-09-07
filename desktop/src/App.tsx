@@ -1399,6 +1399,7 @@ export default function App() {
       <div className="app__body">
       <World
         native={NATIVE}
+        source={source}
         here={place}
         onGo={setPlace}
         counts={{ board: flows.size, terminals: terminalCount }}
