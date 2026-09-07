@@ -325,3 +325,36 @@ fn a_line_that_cannot_be_read_is_left_out_rather_than_invented() {
     assert_eq!(heaviest.len(), 1, "an unreadable line was invented into a row: {heaviest:?}");
     assert_eq!(heaviest[0].pid, 77);
 }
+
+/// **THE MACHINE IS SHARED, SO THE CORE COUNT IS A CEILING AND NOT AN ANSWER.**
+/// Three gates were killed for memory on 07/09 while a core count of compilers
+/// ran beside another session's.
+#[test]
+fn the_compilers_are_counted_from_what_is_spare_not_from_the_cores() {
+    let said = "Mach Virtual Memory Statistics: (page size of 16384 bytes)\n\
+                Pages free:                                     3813.\n\
+                Pages active:                                 188777.\n\
+                Pages inactive:                               186518.\n\
+                Pages speculative:                               738.\n\
+                Pages wired down:                             211282.\n\
+                Pages purgeable:                                   2.\n";
+    let machine::Spare::Bytes(spare) = machine::spare_in(said) else {
+        panic!("a plain vm_stat reading was refused");
+    };
+    // Free, inactive, speculative and purgeable pages, and nothing wired or
+    // active: those are somebody's.
+    assert_eq!(spare, (3813 + 186_518 + 738 + 2) * 16384);
+
+    let plenty = machine::Spare::Bytes(machine::A_COMPILER_WANTS * 100);
+    assert_eq!(machine::how_many_compilers(&plenty, 12), 12, "the cores are a ceiling");
+    let scarce = machine::Spare::Bytes(machine::A_COMPILER_WANTS * 2);
+    assert_eq!(machine::how_many_compilers(&scarce, 12), 2, "it took more than fits");
+    let none = machine::Spare::Bytes(0);
+    assert_eq!(machine::how_many_compilers(&none, 12), 1, "it asked for no compilers at all");
+
+    // **A REFUSAL IS NOT GROUNDS FOR SLOWING ANYBODY DOWN**, nor for speeding
+    // up: it yields the ceiling, which is what cargo would have done unasked.
+    let refused = machine::Spare::CouldNotLook("not permitted".to_owned());
+    assert_eq!(machine::how_many_compilers(&refused, 12), 12);
+    assert!(matches!(machine::spare_in("nothing like vm_stat"), machine::Spare::CouldNotLook(_)));
+}

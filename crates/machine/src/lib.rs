@@ -268,3 +268,64 @@ fn load_average() -> [f64; 3] {
     let got = unsafe { libc::getloadavg(said.as_mut_ptr(), 3) };
     if got == 3 { said } else { [0.0; 3] }
 }
+
+/// Memory going spare, or why we cannot say.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Spare {
+    Bytes(u64),
+    /// **A REFUSAL IS NEITHER A FULL MACHINE NOR AN EMPTY ONE.**
+    CouldNotLook(String),
+}
+
+/// What one compiler wants. **MEASURED**: the heaviest `rustc` here peaked at
+/// 238 MB resident; the margin is for the linker that follows it.
+pub const A_COMPILER_WANTS: u64 = 512 * 1024 * 1024;
+
+/// Pages nobody holds: free, and the ones the system would hand over unasked.
+pub fn spare_memory() -> Spare {
+    match std::process::Command::new("vm_stat").output() {
+        Err(error) => Spare::CouldNotLook(format!("vm_stat: {error}")),
+        Ok(out) if !out.status.success() => {
+            Spare::CouldNotLook(String::from_utf8_lossy(&out.stderr).trim().to_owned())
+        }
+        Ok(out) => spare_in(&String::from_utf8_lossy(&out.stdout)),
+    }
+}
+
+pub fn spare_in(text: &str) -> Spare {
+    let Some(page) = text
+        .lines()
+        .next()
+        .and_then(|line| line.split("page size of ").nth(1))
+        .and_then(|rest| rest.split_whitespace().next())
+        .and_then(|number| number.parse::<u64>().ok())
+    else {
+        return Spare::CouldNotLook("vm_stat did not say its page size".to_owned());
+    };
+    let pages = |name: &str| -> Option<u64> {
+        text.lines()
+            .find(|line| line.starts_with(name))
+            .and_then(|line| line.split(':').nth(1))
+            .map(|rest| rest.trim().trim_end_matches('.'))
+            .and_then(|number| number.parse::<u64>().ok())
+    };
+    let Some(free) = pages("Pages free") else {
+        return Spare::CouldNotLook("vm_stat did not say how many pages are free".to_owned());
+    };
+    let spare = free
+        + pages("Pages inactive").unwrap_or(0)
+        + pages("Pages speculative").unwrap_or(0)
+        + pages("Pages purgeable").unwrap_or(0);
+    Spare::Bytes(spare * page)
+}
+
+/// How many compilers this machine holds at once. **IT IS SHARED BETWEEN
+/// SESSIONS**, so the core count is a ceiling and not an answer: three gates
+/// were killed for memory running one core count of them. Refused a look, it
+/// yields the ceiling — a refusal is no grounds for slowing anybody down.
+pub fn how_many_compilers(spare: &Spare, cores: usize) -> usize {
+    let Spare::Bytes(bytes) = spare else {
+        return cores.max(1);
+    };
+    ((bytes / A_COMPILER_WANTS) as usize).clamp(1, cores.max(1))
+}
