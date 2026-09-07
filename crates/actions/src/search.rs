@@ -67,12 +67,17 @@ pub fn memory_behind(ledger: &Ledger, hit: &Hit) -> Option<Memory> {
 /// The note a hit stands for, when its id names one: the title the id alone
 /// does not say. `None` for every other kind of hit, and for one taken out.
 pub fn note_behind(ledger: &Ledger, hit: &Hit) -> Option<Note> {
-    let slug = hit
+    // The hit carries the store key: `<tree>#<slug>`, or a bare older slug.
+    let key = hit
         .id
         .strip_prefix("store:")?
         .strip_prefix(NOTES_COLLECTION)?
         .strip_prefix('/')?;
-    crate::notes::read(ledger, slug)
+    let (tree, slug) = match key.rsplit_once('#') {
+        Some((tree, slug)) => (Some(tree), slug),
+        None => (None, key),
+    };
+    crate::notes::read(ledger, tree, slug)
         .ok()
         .flatten()
         .filter(Note::kept)

@@ -72,34 +72,64 @@ pub fn title_of(text: &str, slug: &str) -> String {
         .map_or_else(|| slug.to_owned(), str::to_owned)
 }
 
-/// Takes a note in. **A second import under the same slug replaces the first**
-/// rather than filing a copy beside it: the slug is the address, and two
-/// documents at one address is the state nobody can read back.
+/// The address a note is held at. **THE TREE IS PART OF IT**: one store serves
+/// every checkout, so a slug alone makes `decisions.md` here and in another
+/// project one row. No tree keeps the bare slug, read from everywhere.
+pub fn note_key(tree: Option<&str>, slug: &str) -> String {
+    match tree {
+        Some(tree) if !tree.trim().is_empty() => format!("{tree}#{slug}"),
+        _ => slug.to_owned(),
+    }
+}
+
+/// Takes a note in. **A second import under the same slug and the same tree
+/// replaces the first** rather than filing a copy beside it: two documents at
+/// one address is the state nobody can read back. Another tree is another
+/// address, and replaces nothing.
 pub fn import(ledger: &Ledger, note: Note) -> Result<Imported, LedgerError> {
     if note.slug.trim().is_empty() {
         return Err(LedgerError::Refused("a note needs a slug".to_owned()));
     }
-    let replaced = read(ledger, &note.slug)?.is_some_and(|held| held.kept());
+    let replaced = read(ledger, note.tree.as_deref(), &note.slug)?.is_some_and(|held| held.kept());
     write_note(ledger, &note)?;
     Ok(Imported { note, replaced })
 }
 
 fn write_note(ledger: &Ledger, note: &Note) -> Result<(), LedgerError> {
+    write_note_at(ledger, note, &note_key(note.tree.as_deref(), &note.slug))
+}
+
+fn write_note_at(ledger: &Ledger, note: &Note, key: &str) -> Result<(), LedgerError> {
     ledger.put_record(&StoreRecord {
         collection: NOTES_COLLECTION.to_owned(),
-        key: note.slug.clone(),
+        key: key.to_owned(),
         value: serde_json::to_value(note)?,
         written_by: WRITTEN_BY.to_owned(),
         written_at: note.imported_at,
     })
 }
 
-/// What the store holds under a slug, taken out or not.
-pub fn read(ledger: &Ledger, slug: &str) -> Result<Option<Note>, LedgerError> {
-    let Some(record) = ledger.read_record(NOTES_COLLECTION, slug)? else {
-        return Ok(None);
-    };
-    Ok(serde_json::from_value(record.value).ok())
+/// What the store holds under a slug in a tree, taken out or not.
+///
+/// **THE BARE SLUG IS THE MIGRATION.** Older notes are held under it, and each
+/// migrates itself on its next import; a rewriting pass would double every row
+/// and leave the old one answering.
+pub fn read(ledger: &Ledger, tree: Option<&str>, slug: &str) -> Result<Option<Note>, LedgerError> {
+    for key in [note_key(tree, slug), slug.to_owned()] {
+        if let Some(record) = ledger.read_record(NOTES_COLLECTION, &key)? {
+            return Ok(serde_json::from_value(record.value).ok());
+        }
+    }
+    Ok(None)
+}
+
+/// The address a note actually answers from, which may be the legacy one.
+fn key_that_answers(ledger: &Ledger, tree: Option<&str>, slug: &str) -> Result<String, LedgerError> {
+    let scoped = note_key(tree, slug);
+    if ledger.read_record(NOTES_COLLECTION, &scoped)?.is_some() {
+        return Ok(scoped);
+    }
+    Ok(slug.to_owned())
 }
 
 /// Every note still held, newest first; the slug settles a tie so two imported
@@ -124,8 +154,8 @@ pub fn all(ledger: &Ledger) -> Result<Vec<Note>, LedgerError> {
 ///
 /// The event log keeps every write, as it does for a memory; what leaves is the
 /// row the store answers from, and the text with it.
-pub fn remove(ledger: &Ledger, slug: &str, at: i64) -> Result<bool, LedgerError> {
-    let Some(held) = read(ledger, slug)?.filter(Note::kept) else {
+pub fn remove(ledger: &Ledger, tree: Option<&str>, slug: &str, at: i64) -> Result<bool, LedgerError> {
+    let Some(held) = read(ledger, tree, slug)?.filter(Note::kept) else {
         return Ok(false);
     };
     let gone = Note {
@@ -133,7 +163,9 @@ pub fn remove(ledger: &Ledger, slug: &str, at: i64) -> Result<bool, LedgerError>
         removed_at: Some(at),
         ..held
     };
-    write_note(ledger, &gone)?;
+    // Back where it answered from: written to the scoped address instead, a
+    // legacy note would stay whole under its own key and read as still here.
+    write_note_at(ledger, &gone, &key_that_answers(ledger, tree, slug)?)?;
     Ok(true)
 }
 
@@ -167,6 +199,62 @@ fn civil_from_days(days: i64) -> (i64, i64, i64) {
 
 #[cfg(test)]
 mod tests {
+
+    /// **ONE SLUG IN TWO TREES IS TWO NOTES**, and with the slug alone they
+    /// were one row: the second import silently took the first one's place.
+    #[test]
+    fn one_slug_in_two_trees_is_two_notes() {
+        let dir = scratch("two-trees");
+        let ledger = Ledger::open(&dir).expect("a ledger");
+        let in_tree = |tree: &str, text: &str, at: i64| Note {
+            tree: Some(tree.to_owned()),
+            ..note("decisions", text, at)
+        };
+        import(&ledger, in_tree("/trees/a", "the body of a", 10)).expect("the first");
+        let second = import(&ledger, in_tree("/trees/b", "the body of b", 20)).expect("the second");
+
+        let held = all(&ledger).expect("a listing");
+        let a = read(&ledger, Some("/trees/a"), "decisions").expect("a read");
+        let b = read(&ledger, Some("/trees/b"), "decisions").expect("a read");
+        drop(ledger);
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(!second.replaced, "an import in another tree replaced a note that is not its own");
+        assert_eq!(held.len(), 2, "one slug in two trees left one note: {held:?}");
+        assert_eq!(
+            a.expect("the note of tree a").text,
+            "the body of a",
+            "the import in tree b overwrote the note of tree a"
+        );
+        assert_eq!(b.expect("the note of tree b").text, "the body of b");
+    }
+
+    /// **THE BARE SLUG IS THE MIGRATION**: older notes must stay reachable, or
+    /// they vanish from every tree at once and nobody is told.
+    #[test]
+    fn a_note_written_before_the_tree_entered_the_address_is_still_found() {
+        let dir = scratch("legacy");
+        let ledger = Ledger::open(&dir).expect("a ledger");
+        let old = note("decisions", "written when the slug was the address", 10);
+        ledger
+            .put_record(&StoreRecord {
+                collection: NOTES_COLLECTION.to_owned(),
+                key: "decisions".to_owned(),
+                value: serde_json::to_value(&old).expect("a note is json"),
+                written_by: WRITTEN_BY.to_owned(),
+                written_at: 10,
+            })
+            .expect("the legacy row");
+
+        let found = read(&ledger, Some("/trees/a"), "decisions").expect("a read");
+        drop(ledger);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(
+            found.expect("the legacy note").text,
+            "written when the slug was the address",
+            "a note written before the tree was part of the key is unreachable"
+        );
+    }
     use super::*;
 
     fn scratch(name: &str) -> std::path::PathBuf {

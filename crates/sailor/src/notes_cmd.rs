@@ -145,11 +145,14 @@ fn now() -> i64 {
         .unwrap_or_default()
 }
 
-/// The tree the note is being taken in from, when there is one to name.
+/// The tree a note comes in from. **THE PROJECT, NOT THE CHECKOUT**: four
+/// worktrees of one project would otherwise hold four notes of one name.
 fn tree_here() -> Option<String> {
-    std::env::current_dir()
-        .ok()
-        .map(|here| actions::memory::tree_of(&here))
+    let here = std::env::current_dir().ok()?;
+    Some(match flow::workspace::find_root(&here) {
+        Some(root) => root.to_string_lossy().into_owned(),
+        None => actions::memory::tree_of(&here),
+    })
 }
 
 /// Takes a markdown file in. A second import under the same slug replaces the
@@ -254,7 +257,7 @@ fn remove(ledger: &Ledger, loose: &[String]) -> Result<Written, String> {
     let [slug] = loose else {
         return Err(catalogue::say("cli.notes.usage_remove", &[]));
     };
-    if !notes::remove(ledger, slug, now()).map_err(|error| error.to_string())? {
+    if !notes::remove(ledger, tree_here().as_deref(), slug, now()).map_err(|error| error.to_string())? {
         return Err(catalogue::say("cli.notes.no_such_note", &[("slug", slug)]));
     }
     Ok(Written::Said(catalogue::say(
@@ -265,7 +268,7 @@ fn remove(ledger: &Ledger, loose: &[String]) -> Result<Written, String> {
 
 /// The note under a slug, or the refusal that names the slug nobody wrote.
 fn held(ledger: &Ledger, slug: &str) -> Result<Note, String> {
-    notes::read(ledger, slug)
+    notes::read(ledger, tree_here().as_deref(), slug)
         .map_err(|error| error.to_string())?
         .filter(Note::kept)
         .ok_or_else(|| catalogue::say("cli.notes.no_such_note", &[("slug", slug)]))
