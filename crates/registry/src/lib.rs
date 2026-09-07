@@ -224,7 +224,10 @@ pub fn registry_in(
     // The three nodes of the store, registered **even without one**, for the
     // reason declared above `subflow`. Running without a store refuses instead:
     // a step that writes into nothing is worse than a step that stops.
-    actions::store::register_store(&mut registry, ledger);
+    actions::store::register_store(&mut registry, ledger.clone());
+    // The other half of "which capability is a body with nobody home": this
+    // one reads the ledger, so it needs one — same reasoning as `subflow`.
+    actions::dormant_steps::register_dormant_steps(&mut registry, flows.clone(), ledger);
     // Last: the list it hands out is everything above.
     actions::draft::register_draft(&mut registry, flows.clone());
     // Last of all: it must see `action_list` and `flow_draft` as named too.

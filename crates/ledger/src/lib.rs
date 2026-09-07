@@ -884,6 +884,22 @@ pub struct StepOutcome {
     pub bytes_discarded: Option<i64>,
 }
 
+/// Whether a step ever got past its own `when`, across every run its flow has
+/// closed: `Skipped` is the outcome the engine gives a step whose condition
+/// never held, before an action is ever reached — every other outcome means
+/// the action itself ran at least once. Referenced by a flow and unresolved
+/// are two different faults; conflating them hides one behind the other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StepReach {
+    /// No closed attempt on record at all — silence, not evidence: the flow
+    /// may simply not have run yet.
+    NeverClosed,
+    /// Every closed attempt was `Skipped`: reached, gated, and never once let
+    /// through.
+    AlwaysSkipped,
+    ReachedAtLeastOnce,
+}
+
 /// How long a step takes, measured on successful attempts only.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct StepDurations {
@@ -1924,6 +1940,30 @@ impl Ledger {
             ended_at,
             steps,
         }))
+    }
+
+    /// [`StepReach`] for one step of one flow, over every run on record —
+    /// not a window, because a step skipped in the last ten runs and reached
+    /// once three months ago is reached, not dormant.
+    pub fn step_reach(&self, entity: &str, step_id: &str) -> Result<StepReach, LedgerError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT s.outcome FROM steps s JOIN runs r ON r.run_id = s.run_id
+             WHERE r.entity = ?1 AND s.step_id = ?2 AND s.outcome IS NOT NULL",
+        )?;
+        let outcomes: Vec<Option<String>> = statement
+            .query_map(params![entity, step_id], |row| row.get(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(if outcomes.is_empty() {
+            StepReach::NeverClosed
+        } else if outcomes
+            .iter()
+            .all(|outcome| outcome.as_deref() == Some("Skipped"))
+        {
+            StepReach::AlwaysSkipped
+        } else {
+            StepReach::ReachedAtLeastOnce
+        })
     }
 
     /// How long a step took, successful attempt by successful attempt.
