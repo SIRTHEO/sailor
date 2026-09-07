@@ -715,6 +715,7 @@
   "cli.ratchet.some_red": "{green} verdi, {red} rossi, {not_measured} non misurati, {no_receipt} senza ricevuta: un seme non tiene, e le righe qui sopra dicono cosa scrivere",
   "cli.ratchet.nothing_red_but_unmeasured": "{green} verdi, {red} rossi, {not_measured} non misurati, {no_receipt} senza ricevuta: nessun seme è caduto, e questa corsa non è pulita — un giudice che non ha provato alcun perimetro non ha detto nulla sull'albero",
   "cli.ratchet.receipt_seed_may_fall": "meno giudici senza ricevuta di quanti ne dica il seme: abbassa NO_RECEIPT_TODAY da {seed} a {measured}",
+  "cli.ratchet.another_gate": "un altro cancello sta già misurando quest'albero: condividono una copia di HEAD e si sovrapporrebbero a metà misura, il che rende rosso un giudice sano. Aspettalo, oppure misura un altro checkout",
   "cli.release.suite_already_green": "la suite era già passata su questo albero ({tree}): non la rieseguo",
   "cli.release.suite_not_remembered": "la suite è passata ma {memo} non si scrive ({error}): il prossimo rilascio la rifà",
   "cli.release.pushed": "spinto: {line}",
