@@ -546,8 +546,44 @@ pub(crate) fn root_to_measure() -> Result<PathBuf, String> {
     }
 }
 
+/// **ONE GATE PER TREE, AND THE KERNEL KEEPS THE COUNT.** Two runs share one
+/// `target/ratchet-tree` and one `target/ratchet`: each lays HEAD over the
+/// other's tree mid-measure, so a healthy judge goes red on sources that were
+/// never together — and the two builds together took a machine down. Held for
+/// the whole run and released by the kernel when this process ends, whichever
+/// way it ends, so a killed gate leaves no lock behind for the next one.
+/// Nothing reads the descriptor, and that is the mechanism: the lock lives as
+/// long as it stays open, and closing it is what hands the gate on. An explicit
+/// unlock in `Drop` would be a line no test can tell from its absence.
+struct OneGateAtATime(#[allow(dead_code)] std::fs::File);
+
+fn only_gate_in(root: &Path) -> Result<OneGateAtATime, String> {
+    let target = root.join("target");
+    std::fs::create_dir_all(&target).map_err(|error| format!("{}: {error}", target.display()))?;
+    let path = target.join("ratchet.lock");
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)
+        .map_err(|error| format!("{}: {error}", path.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::io::AsRawFd;
+        // SAFETY: `flock` takes a descriptor we own and a flag; it touches no
+        // memory of ours. `LOCK_NB` makes it answer instead of waiting: a gate
+        // that queued for forty minutes and then ran would look like a hang.
+        let taken = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+        if taken != 0 {
+            return Err(catalogue::say("cli.ratchet.another_gate", &[]));
+        }
+    }
+    Ok(OneGateAtATime(file))
+}
+
 fn measured(only: &[String]) -> Result<bool, String> {
     let root = root_to_measure()?;
+    let _only_one = only_gate_in(&root)?;
     let clean = root.join("target").join("ratchet-tree");
     let moved = clean_tree_with_changes(&root, &clean)?;
     let judges: Vec<Judge> = judges_in(&root)
@@ -729,6 +765,24 @@ mod tests {
     /// gave twenty crates a new modification time and cargo rebuilt all of it —
     /// on every commit, not on every run. A gate took forty minutes, was
     /// therefore run rarely, and four red judges were found after nine commits.
+    /// **TWO GATES ON ONE TREE MAKE A RED JUDGE OUT OF NOTHING**, and took a
+    /// machine down doing it: they lay HEAD over each other mid-measure, so a
+    /// judge reads sources that were never together anywhere.
+    #[test]
+    fn a_second_gate_on_the_same_tree_is_refused() {
+        let root = std::env::temp_dir().join(format!("sailor-onegate-{}", std::process::id()));
+        std::fs::create_dir_all(&root).expect("the scratch tree");
+        let held = only_gate_in(&root).expect("the first gate takes the lock");
+        let refused = only_gate_in(&root);
+        assert!(refused.is_err(), "a second gate was let in beside the first");
+
+        // And released when the first ends, however it ends: a lock a crash
+        // leaves behind would shut the gate for good.
+        drop(held);
+        assert!(only_gate_in(&root).is_ok(), "the lock outlived the gate that took it");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn a_file_untouched_by_a_commit_keeps_its_modification_time() {
         let (root, tree) =
