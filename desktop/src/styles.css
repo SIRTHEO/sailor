@@ -6883,3 +6883,8 @@ tr[data-followable]:hover {
 .now__table [data-swapped] {
   color: var(--spend-warning);
 }
+
+/* The one identity that asks for a hand: a profile the list no longer has. */
+.now__table [data-asks] {
+  color: var(--danger);
+}

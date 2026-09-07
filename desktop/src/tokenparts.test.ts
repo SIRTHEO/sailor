@@ -15,7 +15,8 @@ const call = (over: Partial<ModelCall>): ModelCall => ({
   input_tokens: null, output_tokens: null, cached_tokens: null,
   cache_write_tokens: null, cache_write_long_tokens: null, total_tokens: null,
   turns: null, cost_micros: null, declared_cost_micros: null,
-  error_type: null, started_at: 1, ended_at: 2, ...over,
+  error_type: null, started_at: 1, ended_at: 2,
+  engine_identity: { kind: "not_a_known_engine" }, ...over,
 });
 
 describe("the tokens counted from one call", () => {

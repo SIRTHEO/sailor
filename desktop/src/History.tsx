@@ -5,7 +5,7 @@
 
 import { useState } from "react";
 import { useAsk, useClock } from "./ask";
-import { executionHistory, type Execution, type ModelCall } from "./engine";
+import { executionHistory, type EngineIdentity, type Execution, type ModelCall } from "./engine";
 import { t } from "./i18n";
 
 /** How often it is reread: the history grows slowly. */
@@ -99,6 +99,53 @@ export function modelReading(call: Pick<ModelCall, "requested_model" | "actual_m
 }
 
 /**
+ * The identity a call ran under, and whether it asks for a hand. **ONLY ONE
+ * CASE ASKS**, and the crate says which: a profile the list no longer has is
+ * state to repair. Marking the rest teaches a reader to ignore the mark.
+ */
+export function identityReading(identity: EngineIdentity | null | undefined): {
+  said: string;
+  asks: boolean;
+} {
+  // **A SHAPE THIS WINDOW CANNOT READ IS NOT A CRASH**, and it is not «not
+  // recorded» either: the row carries an identity, and it is this side that has
+  // no words for it. The two are different facts and read differently.
+  const words = identity ? wordsFor(identity) : undefined;
+  return typeof words?.said === "string" && words.said !== ""
+    ? words
+    : { said: "an identity with no words here", asks: false };
+}
+
+function wordsFor(identity: EngineIdentity): { said: string; asks: boolean } | undefined {
+  const asks = identity.kind === "profile_vanished";
+  switch (identity.kind) {
+    case "profile_in_force":
+      return {
+        // The endpoint is a money fact: it says the spend was not charged to
+        // the subscription the command line belongs to.
+        said: identity.endpoint === undefined
+          ? identity.profile_name
+          : `${identity.profile_name} → ${identity.endpoint}`,
+        asks,
+      };
+    case "chosen_by_the_step":
+      return { said: "the step chose the home", asks };
+    case "inherited_from_the_terminal":
+      return { said: "this machine's own", asks };
+    case "profile_vanished":
+      return { said: `«${identity.profile_name}» is gone from the list`, asks };
+    case "not_moved_by_an_env_var":
+      return { said: `«${identity.profile_name}» not in force: ${identity.why}`, asks };
+    case "not_a_known_engine":
+      return { said: "not an engine sailor knows", asks };
+    case "declared_by_an_agent":
+      return { said: "an agent already in the terminal", asks };
+    case "unrecorded":
+      return { said: identity.legacy === "" ? "not recorded" : `not recorded: ${identity.legacy}`, asks };
+  }
+}
+
+/**
  * A run's calls to the model, opened only if asked for.
  *
  * **THE COMPUTED COST AND THE DECLARED ONE SIT SIDE BY SIDE.** Sailor derives one
@@ -120,6 +167,7 @@ export function Calls({ calls }: { calls: ModelCall[] }) {
             <th>step</th>
             <th>engine</th>
             <th>model</th>
+            <th>identity</th>
             <th className="now__num">turns</th>
             <th className="now__num">tokens</th>
             <th className="now__num">cost</th>
@@ -138,6 +186,9 @@ export function Calls({ calls }: { calls: ModelCall[] }) {
                 </td>
                 <td className="now__when" data-swapped={call.requested_model !== "" && call.requested_model !== call.actual_model ? "" : undefined}>
                   {modelReading(call)}
+                </td>
+                <td className="now__when" data-asks={identityReading(call.engine_identity).asks ? "" : undefined}>
+                  {identityReading(call.engine_identity).said}
                 </td>
                 <td className="now__num">{call.turns === null ? "—" : call.turns.toLocaleString("en-GB")}</td>
                 <td className="now__num">{tokens < 0 ? "not said" : tokens.toLocaleString("en-GB")}</td>
