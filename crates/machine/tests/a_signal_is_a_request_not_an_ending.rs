@@ -253,3 +253,66 @@ fn a_row_whose_number_was_handed_on_closes_without_a_signal() {
     let _ = stranger.kill();
     let _ = stranger.wait();
 }
+
+/// **A REFUSAL TO LOOK IS NOT A SIGHTING**, and the difference is the whole
+/// value of the reading: told «somebody is on the port» a person goes hunting
+/// for a process that is not there, and told nothing they never learn that
+/// something Sailor cannot free is holding it.
+#[test]
+fn a_port_says_which_of_the_four_things_is_true_about_it() {
+    let dir = scratch("port");
+    let store = ledger::Ledger::open(&dir.0).expect("the store");
+
+    // A port this test holds itself: taken, and no row of Sailor's names it.
+    let held = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a port to hold");
+    let taken = held.local_addr().expect("its number").port();
+    assert_eq!(
+        machine::on_the_port(&store, taken).expect("the reading"),
+        machine::OnThePort::Somebody,
+        "a port held by something sailor never lit read as free"
+    );
+
+    // And one nobody holds. Bound and released a moment ago, so it exists and
+    // is nobody's — asking about a number picked out of the air proves less.
+    let free = {
+        let opened = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a port");
+        opened.local_addr().expect("its number").port()
+    };
+    assert_eq!(
+        machine::on_the_port(&store, free).expect("the reading"),
+        machine::OnThePort::Free,
+        "a port nobody holds read as held"
+    );
+}
+
+/// And a port Sailor lit is Sailor's, which is what makes the other answer mean
+/// something: without this the reading would call every dev server a stranger.
+#[test]
+fn a_port_sailor_lit_is_named_as_sailors_own() {
+    let dir = scratch("our-port");
+    let store = ledger::Ledger::open(&dir.0).expect("the store");
+    let mut ours = light("sleep 30");
+    let held = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a port to hold");
+    let port = held.local_addr().expect("its number").port();
+    store
+        .record_process_started(&ledger::ProcessRecord {
+            process_id: "p-port".to_owned(),
+            pid: ours.id(),
+            command: "npx".to_owned(),
+            args: vec!["vite".to_owned()],
+            working_directory: "/somewhere".to_owned(),
+            port: Some(port),
+            purpose: "live".to_owned(),
+            started_by: "the test".to_owned(),
+            run_id: None,
+            started_at: now(),
+        })
+        .expect("write the start");
+
+    match machine::on_the_port(&store, port).expect("the reading") {
+        machine::OnThePort::Ours(record) => assert_eq!(record.pid, ours.id()),
+        other => panic!("a port sailor lit was read as a stranger's: {other:?}"),
+    }
+    let _ = ours.kill();
+    let _ = ours.wait();
+}

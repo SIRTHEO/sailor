@@ -136,3 +136,60 @@ fn signal_the_group(pid: u32) -> bool {
     }
 }
 
+
+/// The port of the window's development server: **the port of fault 4**, held
+/// by an orphan twice in one night. Written down again in
+/// `desktop/src-tauri/tauri.conf.json`, and `the_dev_port_matches_the_tauri_config`
+/// compares the two copies. It lives here, with the reading that asks about it,
+/// so the window and the command line ask the same question of the same number.
+pub const DEV_PORT: u16 = 5183;
+
+/// What is on a port, as far as this machine will say.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OnThePort {
+    /// Nothing: both localhost addresses took a listener.
+    Free,
+    /// A process Sailor lit and still calls running.
+    Ours(Box<ledger::ProcessRecord>),
+    /// Taken, and Sailor has no row for it — the case that fills a machine,
+    /// because what never passed through Sailor cannot be freed by it.
+    Somebody,
+    /// **A REFUSAL IS NOT AN ANSWER.** Inside a sandbox binding is denied, and
+    /// read as «in use» it accuses a machine that is merely not letting us look.
+    CouldNotLook(String),
+}
+
+/// Who is on a port: the store first, then the socket.
+///
+/// **BOTH LOCALHOST ADDRESSES.** A server on `::1` leaves `127.0.0.1` free,
+/// and asking only one of them answers «nobody» with somebody plainly there.
+pub fn on_the_port(
+    store: &ledger::Ledger,
+    port: u16,
+) -> Result<OnThePort, ledger::LedgerError> {
+    if let Some(record) = store.process_holding_port(port)? {
+        if ledger::the_same_process(record.pid, record.started_at) {
+            return Ok(OnThePort::Ours(Box::new(record)));
+        }
+    }
+    Ok(try_to_bind(port))
+}
+
+/// The socket alone, with no store to ask first. **A REFUSAL IS ITS OWN
+/// ANSWER**, which is the whole reason this is not a bool.
+pub fn on_the_port_by_binding(port: u16) -> OnThePort {
+    try_to_bind(port)
+}
+
+fn try_to_bind(port: u16) -> OnThePort {
+    for address in ["127.0.0.1", "::1"] {
+        match std::net::TcpListener::bind((address, port)) {
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => {
+                return OnThePort::Somebody
+            }
+            Err(error) => return OnThePort::CouldNotLook(format!("{address}: {error}")),
+        }
+    }
+    OnThePort::Free
+}

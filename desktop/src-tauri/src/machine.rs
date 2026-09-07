@@ -41,6 +41,37 @@ fn run_is_over(store: &ledger::Ledger, run_id: Option<&str>) -> Result<bool, Str
         .map(|header| header.is_none_or(|header| header.ended_at.is_some()))
 }
 
+/// What is on the window's own development port. **THE CASE THAT FILLED THIS
+/// MACHINE**: a server started by hand holds it, sits in no row, and no sweep
+/// will ever find it — so the screen says so instead of showing a clean list
+/// while the machine grinds.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "on", rename_all = "snake_case")]
+pub(crate) enum ThePort {
+    Free,
+    Ours { pid: u32, purpose: String },
+    /// Held, and Sailor has no row for it.
+    Somebody,
+    /// **UNKNOWN IS NOT FREE.** Inside a sandbox binding is denied, and read as
+    /// «in use» it accuses a machine that merely would not let us look.
+    CouldNotLook { why: String },
+}
+
+#[tauri::command]
+pub(crate) fn the_dev_port() -> Result<ThePort, String> {
+    let store = open_store()?;
+    Ok(
+        match machine::on_the_port(&store, machine::DEV_PORT).map_err(|error| error.to_string())? {
+            machine::OnThePort::Free => ThePort::Free,
+            machine::OnThePort::Ours(record) => {
+                ThePort::Ours { pid: record.pid, purpose: record.purpose }
+            }
+            machine::OnThePort::Somebody => ThePort::Somebody,
+            machine::OnThePort::CouldNotLook(why) => ThePort::CouldNotLook { why },
+        },
+    )
+}
+
 #[tauri::command]
 pub(crate) fn what_sailor_lit() -> Result<Vec<Standing>, String> {
     let store = open_store()?;

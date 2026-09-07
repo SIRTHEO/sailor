@@ -28,6 +28,39 @@ export interface Freed {
   why: string;
 }
 
+/**
+ * What is on the window's own development port. **THE CASE THAT FILLED THIS
+ * MACHINE**: a server started by hand holds it, sits in no row, and no sweep
+ * will ever find it.
+ */
+export type ThePort =
+  | { on: "free" }
+  | { on: "ours"; pid: number; purpose: string }
+  | { on: "somebody" }
+  /** **UNKNOWN IS NOT FREE**: a machine that would not let us look said so. */
+  | { on: "could_not_look"; why: string };
+
+export async function theDevPort(): Promise<ThePort> {
+  const invoke = invoker();
+  if (!invoke) throw new Error("outside the native shell: nothing to look at");
+  return invoke<ThePort>("the_dev_port");
+}
+
+/** What the screen says about the port, or nothing when there is nothing to say. */
+export function portReading(port: ThePort): string | null {
+  switch (port.on) {
+    // A port Sailor lit is already a row above; saying it twice teaches the
+    // reader that this line carries no news.
+    case "free":
+    case "ours":
+      return null;
+    case "somebody":
+      return "something sailor never lit is holding the window's development port: what did not pass through sailor is what sailor cannot free, so this one is yours to stop";
+    case "could_not_look":
+      return `this machine would not let us look at the window's development port (${port.why}), so whether anything holds it is unknown — and unknown is not free`;
+  }
+}
+
 export async function whatSailorLit(): Promise<Standing[]> {
   const invoke = invoker();
   if (!invoke) throw new Error("outside the native shell: nothing to look at");

@@ -223,11 +223,7 @@ pub struct LiveStatus {
 /// What the file is called, under Sailor's home.
 pub const STATUS_FILE: &str = "live-status.json";
 
-/// The port of the window's development server: **the port of fault 4**, held
-/// by an orphan twice in one night. Written down again in
-/// `desktop/src-tauri/tauri.conf.json`, and `the_dev_port_matches_the_tauri_config`
-/// compares the two copies.
-pub const DEV_PORT: u16 = 5183;
+
 
 impl LiveStatus {
     /// Where the status file is, given Sailor's home.
@@ -264,20 +260,22 @@ impl LiveStatus {
 
 pub use machine::{
     close_the_ones_that_stopped_breathing, left_running, stop_the_ones_nobody_wants, LeftRunning,
-    Teardown,
+    Teardown, DEV_PORT,
 };
 
-/// Why the port cannot be taken, when somebody is on it. **Both localhost
-/// addresses**: a server on `::1` leaves `127.0.0.1` free, and asking one of
-/// them answers «nobody» with somebody plainly there.
+/// Why the port cannot be taken, when somebody is on it.
+///
+/// **KEPT BECAUSE THE LIVE MODE ASKS A NARROWER QUESTION**: it wants the reason
+/// its own bind will fail, in the words the operating system used. Whoever asks
+/// «what is on this port» wants `machine::on_the_port`, which tells a port in
+/// use from a machine that would not let us look.
 pub fn who_holds(port: u16) -> Option<String> {
-    for address in ["127.0.0.1", "::1"] {
-        match std::net::TcpListener::bind((address, port)) {
-            Ok(_) => {}
-            Err(error) => return Some(format!("{address}: {error}")),
-        }
+    match machine::on_the_port_by_binding(port) {
+        machine::OnThePort::Free => None,
+        machine::OnThePort::Somebody => Some(format!("port {port} is in use")),
+        machine::OnThePort::CouldNotLook(why) => Some(why),
+        machine::OnThePort::Ours(record) => Some(format!("pid {}", record.pid)),
     }
-    None
 }
 
 /// Now, in seconds since the epoch.

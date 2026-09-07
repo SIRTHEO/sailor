@@ -7,7 +7,7 @@
 
 use crate::Form;
 use ledger::Ledger;
-use machine::{left_running, stop_the_ones_nobody_wants, Teardown};
+use machine::{left_running, on_the_port, stop_the_ones_nobody_wants, OnThePort, Teardown, DEV_PORT};
 
 pub const USAGE: &[Form] = &[
     Form {
@@ -111,7 +111,33 @@ fn reading() -> Result<String, String> {
             ("total", &rows.len().to_string()),
         ],
     ));
+    // **WHAT NEVER PASSED THROUGH SAILOR CANNOT BE FREED BY IT**, and that is
+    // the case that filled this machine: a dev server started by hand holds the
+    // port, is in no row, and no sweep will ever find it. Saying so is all this
+    // can do, and it is more than saying nothing.
+    if let Some(word) = about_the_port(&store)? {
+        said.push('\n');
+        said.push_str(&word);
+    }
     Ok(said)
+}
+
+/// The dev port, when it has something to say. A port Sailor itself lit is not
+/// news — it is already a row above.
+fn about_the_port(store: &Ledger) -> Result<Option<String>, String> {
+    match on_the_port(store, DEV_PORT).map_err(|error| error.to_string())? {
+        OnThePort::Free | OnThePort::Ours(_) => Ok(None),
+        OnThePort::Somebody => Ok(Some(catalogue::say(
+            "cli.machine.somebody_on_the_port",
+            &[("port", &DEV_PORT.to_string())],
+        ))),
+        // A machine that would not let us look says so: read as «in use», a
+        // refusal sends a person hunting for a process that is not there.
+        OnThePort::CouldNotLook(why) => Ok(Some(catalogue::say(
+            "cli.machine.could_not_look_at_the_port",
+            &[("port", &DEV_PORT.to_string()), ("why", &why)],
+        ))),
+    }
 }
 
 /// **A GESTURE THAT ONLY REPORTS IS NOT A GESTURE** — and one that acts where
