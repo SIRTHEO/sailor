@@ -21,6 +21,11 @@
       "runs_measured": 4,
       "words_it_sends": 9130
     },
+    "free-the-machine": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
+    },
     "migrate-to-sailor": {
       "tokens_a_run": 0,
       "runs_measured": 0,

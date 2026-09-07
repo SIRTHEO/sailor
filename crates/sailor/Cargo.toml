@@ -24,7 +24,7 @@ actions = { path = "../actions" }
 faults = { path = "../faults" }
 flow = { path = "../flow" }
 ledger = { path = "../ledger" }
-supervisor = { path = "../supervisor" }
+machine = { path = "../machine" }
 inventory = { path = "../inventory" }
 # What this machine has (command lines, MCP servers, tools), which a step asks
 # for with `detect_tools` and which resolves the tools steps name. `trigger`

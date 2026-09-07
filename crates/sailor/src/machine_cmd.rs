@@ -7,7 +7,7 @@
 
 use crate::Form;
 use ledger::Ledger;
-use supervisor::{close_the_ones_that_stopped_breathing, left_running, who_holds, DEV_PORT};
+use machine::{left_running, stop_the_ones_nobody_wants, Teardown};
 
 pub const USAGE: &[Form] = &[
     Form {
@@ -84,9 +84,25 @@ fn reading() -> Result<String, String> {
     let rows = standing(&store)?;
     let mut said = String::new();
     for row in &rows {
-        let breath = if row.alive { "alive" } else { "gone" };
-        let wanted = if row.run_is_over { ", and its run is over" } else { "" };
-        said.push_str(&format!("{:>7}  {breath:<5}  {}{wanted}\n", row.pid, row.purpose));
+        let breath = catalogue::say(
+            if row.alive { "cli.machine.alive" } else { "cli.machine.gone" },
+            &[],
+        );
+        let tail = if row.run_is_over {
+            catalogue::say("cli.machine.run_is_over", &[])
+        } else {
+            String::new()
+        };
+        said.push_str(&catalogue::say(
+            "cli.machine.row",
+            &[
+                ("pid", &row.pid.to_string()),
+                ("breath", &breath),
+                ("purpose", &row.purpose),
+                ("tail", &tail),
+            ],
+        ));
+        said.push('\n');
     }
     said.push_str(&catalogue::say(
         "cli.machine.standing",
@@ -95,32 +111,46 @@ fn reading() -> Result<String, String> {
             ("total", &rows.len().to_string()),
         ],
     ));
-    // **SOMEBODY ON THE PORT SAILOR DID NOT START IS THE FAULT ITSELF.** The
-    // register cannot hold what never passed through it, and this is the only
-    // line that can say so.
-    if let Some(who) = who_holds(DEV_PORT) {
-        said.push('\n');
-        said.push_str(&catalogue::say(
-            "cli.machine.somebody_on_the_port",
-            &[("port", &DEV_PORT.to_string()), ("who", who.as_str())],
-        ));
-    }
     Ok(said)
 }
 
+/// **A GESTURE THAT ONLY REPORTS IS NOT A GESTURE** — and one that acts where
+/// it cannot tell is worse. Only a process whose run demonstrably ended is
+/// stopped: a run still open means somebody may be using it, and no run at all
+/// means nobody wrote down who wanted it, which is not the same as nobody.
 fn free() -> Result<String, String> {
     let store = open_ledger()?;
-    let closed = close_the_ones_that_stopped_breathing(&store, now())
-        .map_err(|error| error.to_string())?;
-    let rows = standing(&store)?;
-    let still: Vec<&Standing> = rows.iter().filter(|row| row.alive && row.run_is_over).collect();
-    let mut said = catalogue::say("cli.machine.freed", &[("closed", &closed.to_string())]);
-    for row in &still {
+    let done = stop_the_ones_nobody_wants(&store, now(), &|record| {
+        let Some(run) = record.run_id.as_deref() else {
+            // Left alone, and named in the reading instead.
+            return Ok(true);
+        };
+        Ok(store.run_header(run)?.is_none_or(|header| header.ended_at.is_none()))
+    })
+    .map_err(|error| error.to_string())?;
+    let mut said = catalogue::say(
+        "cli.machine.freed",
+        &[(
+            "closed",
+            &done
+                .iter()
+                .filter(|one| matches!(one, Teardown::Gone { .. }))
+                .count()
+                .to_string(),
+        )],
+    );
+    for one in &done {
         said.push('\n');
-        said.push_str(&catalogue::say(
-            "cli.machine.still_breathing",
-            &[("pid", &row.pid.to_string()), ("purpose", &row.purpose)],
-        ));
+        said.push_str(&match one {
+            Teardown::Gone { pid, purpose, .. } => catalogue::say(
+                "cli.machine.stopped",
+                &[("pid", &pid.to_string()), ("purpose", purpose)],
+            ),
+            Teardown::StillThere { pid, purpose, why, .. } => catalogue::say(
+                "cli.machine.would_not_stop",
+                &[("pid", &pid.to_string()), ("purpose", purpose), ("why", why)],
+            ),
+        });
     }
     Ok(said)
 }
