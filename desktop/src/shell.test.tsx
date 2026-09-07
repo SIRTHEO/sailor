@@ -272,6 +272,7 @@ describe("the bar's three facts", () => {
       output_tokens: 0,
       cached_tokens: 0,
       cache_write_tokens: 0,
+      cache_write_long_tokens: null,
       cost_micros: 340_000,
       unmeasured: 0,
       unpriced: 0,

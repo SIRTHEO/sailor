@@ -20,6 +20,7 @@ const call = (over: Partial<ModelCall> = {}): ModelCall => ({
   output_tokens: 5,
   cached_tokens: 0,
   cache_write_tokens: 0,
+  cache_write_long_tokens: null,
   total_tokens: 15,
   turns: 3,
   cost_micros: 1000,
