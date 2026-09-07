@@ -6888,3 +6888,106 @@ tr[data-followable]:hover {
 .now__table [data-asks] {
   color: var(--danger);
 }
+
+/* ===========================================================================
+   THE DEMONSTRATION — a distinct entry, reversible, no engine underneath it.
+   Full-screen because it is a place, not a dialog over the operator's work.
+   =========================================================================== */
+
+.demo {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: var(--bg);
+}
+
+.demo__close {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  font-size: var(--text-large);
+  line-height: 1;
+  padding: var(--space-2) var(--space-3);
+}
+
+.demo__stage {
+  width: min(560px, 90vw);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+.demo__title {
+  font-family: var(--font-display);
+  font-size: var(--text-display);
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+
+.demo__sub {
+  font-family: var(--font-prose);
+  font-size: var(--text-mid);
+  color: var(--muted);
+  margin: 0;
+}
+
+.demo__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.demo__step {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+}
+
+/* THE WORD CARRIES THE STATE; THE MARK ONLY REPEATS IT — prohibition 5. */
+.demo__mark { color: var(--state-waiting); }
+.demo__step[data-state="working"] .demo__mark { color: var(--state-running); }
+.demo__step[data-state="done"] .demo__mark { color: var(--state-went); }
+
+.demo__step-word {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+}
+
+.demo__step-title {
+  font-family: var(--font-prose);
+  font-size: var(--text-body);
+  color: var(--ink);
+}
+
+.demo__lines {
+  flex-basis: 100%;
+  margin: var(--space-1) 0 0;
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+
+.demo__done {
+  font-family: var(--font-prose);
+  font-size: var(--text-mid);
+  color: var(--muted);
+  margin: 0;
+}
