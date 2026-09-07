@@ -12,6 +12,7 @@ members = [
     "crates/flow",
     "crates/inventory",
     "crates/ledger",
+    "crates/machine",
     "crates/models",
     "crates/profiles",
     "crates/registry",
