@@ -840,5 +840,6 @@
   "cli.session.event_on_terminal": "{event} on {tty}",
   "cli.session.census_terminal": "{tty} ({ancestor}), {processes} processes",
   "cli.clock_before_the_epoch": "the system clock is before the Unix epoch: {error}",
-  "cli.unknown_command": "sailor: unknown command '{name}'; the commands are: {commands}"
+  "cli.unknown_command": "sailor: unknown command '{name}'; the commands are: {commands}",
+  "cli.ratchet.another_gate": "another gate is already measuring this tree: they share one copy of HEAD and would lay it over each other mid-measure, which turns a healthy judge red. Wait for it, or measure a different checkout"
 }
