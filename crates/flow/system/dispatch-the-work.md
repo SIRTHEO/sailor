@@ -144,15 +144,12 @@ Why listening to a terminal cannot be done honestly today:
 2. **Sailor's terminal does not exist yet**: nobody writes the file the
    descriptor declares. The path written there is the shape it will have, not a
    measurement.
-3. **Orca's panel register is not an honest source** (measured on 28/08/2026):
-   `terminal-history/*/output.log` is a binary frame format with ANSI terminal
-   bytes inside — screen redraws, not messages — emptied in place beyond 5 MB
-   and written in batches every ~5 seconds. A reader queuing behind it loses
-   content without noticing, and rebuilding the text would mean rewriting a
-   terminal emulator. The only supported way is
-   `orca terminal read --json --cursor N`, which returns text: it is the shape
-   declared in the descriptor, and it needs a reader that keeps the cursor from
-   one run to the next.
+3. **A host's own log file is not a supported source.** Whatever a terminal
+   writes for its own redraw is its private business and may change without
+   notice; reading it is how an integration breaks on somebody else's release.
+   Sailor takes the supported road a host publishes — for Orca, its documented
+   read command, which returns text and takes a cursor — and it needs a reader
+   that keeps that cursor from one run to the next.
 
 ## The perimeter, declared and not enforced
 
