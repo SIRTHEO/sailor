@@ -43,7 +43,28 @@ fn light(line: &str) -> std::process::Child {
     command.spawn().expect("light the process")
 }
 
+/// The second we are in. **A ROW IS WRITTEN WHEN THE PROCESS STARTS**, and
+/// these tests light real processes: a row dated years back would name a pid
+/// this machine has since handed to somebody else, which is a different case
+/// and has a test of its own below.
+fn now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("a clock after 1970")
+        .as_secs() as i64
+}
+
 fn written(store: &ledger::Ledger, process_id: &str, pid: u32, run_id: Option<&str>) {
+    written_as_of(store, process_id, pid, run_id, now());
+}
+
+fn written_as_of(
+    store: &ledger::Ledger,
+    process_id: &str,
+    pid: u32,
+    run_id: Option<&str>,
+    started_at: i64,
+) {
     store
         .record_process_started(&ledger::ProcessRecord {
             process_id: process_id.to_owned(),
@@ -55,7 +76,7 @@ fn written(store: &ledger::Ledger, process_id: &str, pid: u32, run_id: Option<&s
             purpose: "a-test".to_owned(),
             started_by: "the test".to_owned(),
             run_id: run_id.map(str::to_owned),
-            started_at: 1_700_000_000,
+            started_at,
         })
         .expect("write the start");
 }
@@ -198,4 +219,37 @@ fn what_the_leader_started_goes_with_it() {
         !ledger::pid_is_alive(grandchild),
         "the leader was stopped and what it started stayed: pid {grandchild} is still there"
     );
+}
+
+/// **THE CASE THAT WOULD PUT OUT SOMEBODY ELSE'S WORK.** A row names a number,
+/// and numbers come round again. Asked only whether the number is taken, a row
+/// written years ago answers for whoever holds it now — and this sweep, whose
+/// whole job is to stop what nobody wants, would signal a stranger's group.
+///
+/// The process here is alive and is not the one the row names. It must be left
+/// breathing, and the row must be closed all the same: the process it named
+/// really did end, and a row nobody can act on is a row that hides the rest.
+#[test]
+fn a_row_whose_number_was_handed_on_closes_without_a_signal() {
+    let dir = scratch("handed-on");
+    let store = ledger::Ledger::open(&dir.0).expect("the store");
+    let mut stranger = light("sleep 30");
+    // The row claims a process from years back; the pid it names was lit a
+    // moment ago, so it cannot be the same one.
+    written_as_of(&store, "p-stale", stranger.id(), None, 1_700_000_000);
+
+    let done = stop_the_ones_nobody_wants(&store, now(), &|_| Ok(false))
+        .expect("the sweep answers");
+
+    assert!(done.is_empty(), "a stranger's process was signalled: {done:?}");
+    assert!(
+        ledger::pid_is_alive(stranger.id()),
+        "a process nobody recorded was put out because it inherited a number"
+    );
+    assert!(
+        left_running(&store).expect("read").is_empty(),
+        "the row is still called running, and every sweep after this reads a stranger as ours"
+    );
+    let _ = stranger.kill();
+    let _ = stranger.wait();
 }
