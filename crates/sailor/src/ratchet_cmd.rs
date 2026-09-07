@@ -347,8 +347,30 @@ pub struct Overlay {
 /// A clean copy of HEAD with this tree's changes laid over it, tracked by a
 /// repository of its own.
 pub fn clean_tree_with_changes(root: &Path, into: &Path) -> Result<Overlay, String> {
-    let _ = std::fs::remove_dir_all(into);
-    std::fs::create_dir_all(into).map_err(|error| format!("{}: {error}", into.display()))?;
+    // **THE TREE IS UPDATED, NOT REMADE.** Deleting and re-extracting gave every
+    // file of twenty crates a new modification time, so cargo rebuilt all of it
+    // on every run: a gate took forty minutes, was therefore run rarely, and
+    // four red judges were found only after nine commits had landed.
+    let next = beside(into);
+    let _ = std::fs::remove_dir_all(&next);
+    std::fs::create_dir_all(&next).map_err(|error| format!("{}: {error}", next.display()))?;
+    lay_out_head(root, &next)?;
+    let moved = lay_over_the_changes(root, &next)?;
+    bring_across(&next, into)?;
+    let _ = std::fs::remove_dir_all(&next);
+    tracked_by_a_repository_of_its_own(into)?;
+    Ok(moved)
+}
+
+/// Where the tree is built before it is brought across. Beside the tree, so the
+/// two are on one filesystem and a copy is a copy and not a transfer.
+fn beside(into: &Path) -> PathBuf {
+    let mut name = into.file_name().unwrap_or_default().to_os_string();
+    name.push("-next");
+    into.with_file_name(name)
+}
+
+fn lay_out_head(root: &Path, into: &Path) -> Result<(), String> {
     let archive = Command::new("git")
         .arg("-C")
         .arg(root)
@@ -375,9 +397,13 @@ pub fn clean_tree_with_changes(root: &Path, into: &Path) -> Result<Overlay, Stri
             .map_err(|error| format!("tar: {error}"))?;
     }
     let status = untar.wait().map_err(|error| format!("tar: {error}"))?;
-    if !status.success() {
-        return Err(catalogue::say("cli.ratchet.archive_failed", &[]));
+    if status.success() {
+        return Ok(());
     }
+    Err(catalogue::say("cli.ratchet.archive_failed", &[]))
+}
+
+fn lay_over_the_changes(root: &Path, into: &Path) -> Result<Overlay, String> {
     let mut moved = Overlay::default();
     for change in changed_here(root, into)? {
         match change {
@@ -399,8 +425,89 @@ pub fn clean_tree_with_changes(root: &Path, into: &Path) -> Result<Overlay, Stri
             }
         }
     }
-    tracked_by_a_repository_of_its_own(into)?;
     Ok(moved)
+}
+
+/// The repository the measured tree carries, which is not part of what is
+/// measured: it is remade from the sources every run and must survive this.
+const THE_TREES_OWN_REPOSITORY: &str = ".git";
+
+/// Makes `to` hold exactly what `from` holds, **touching only what differs**.
+///
+/// A file with the same bytes is left alone, mtime and all, which is the whole
+/// point: cargo decides what to rebuild by modification time. A file that
+/// differs is written, and so gets a new one, which is equally the point.
+fn bring_across(from: &Path, to: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(to).map_err(|error| format!("{}: {error}", to.display()))?;
+    let wanted = files_under(from)?;
+    for relative in &wanted {
+        let source = from.join(relative);
+        let target = to.join(relative);
+        if same_bytes(&source, &target) {
+            continue;
+        }
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| format!("{}: {error}", parent.display()))?;
+        }
+        std::fs::copy(&source, &target).map_err(|error| format!("{}: {error}", source.display()))?;
+    }
+    // **WHAT IS NO LONGER THERE MUST GO.** Left behind, a file deleted at HEAD
+    // would be measured for ever, and the gate would be reading a tree that
+    // exists nowhere.
+    let held: std::collections::BTreeSet<PathBuf> = wanted.into_iter().collect();
+    for relative in files_under(to)? {
+        if relative.starts_with(THE_TREES_OWN_REPOSITORY) || held.contains(&relative) {
+            continue;
+        }
+        std::fs::remove_file(to.join(&relative))
+            .map_err(|error| format!("{}: {error}", relative.display()))?;
+        // **AND THE DIRECTORY IT LEAVES EMPTY.** Git tracks no empty directory,
+        // so one here exists nowhere at HEAD: a judge that reads a crate as a
+        // folder would count one the sources no longer hold.
+        let mut empty = to.join(&relative);
+        while empty.pop() && empty != to && std::fs::remove_dir(&empty).is_ok() {}
+    }
+    Ok(())
+}
+
+/// Every file under a directory, as paths relative to it.
+fn files_under(root: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut found = Vec::new();
+    let mut todo = vec![root.to_path_buf()];
+    while let Some(directory) = todo.pop() {
+        let entries = match std::fs::read_dir(&directory) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(format!("{}: {error}", directory.display())),
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            // A symbolic link is copied as the link it is, never followed: a
+            // link out of the tree would drag in a file nobody committed.
+            if path.is_dir() && !path.is_symlink() {
+                todo.push(path);
+            } else if let Ok(relative) = path.strip_prefix(root) {
+                found.push(relative.to_path_buf());
+            }
+        }
+    }
+    Ok(found)
+}
+
+/// Whether two files hold the same bytes. A missing one holds nothing, which
+/// is not the same as holding nothing: it differs, and is written.
+fn same_bytes(one: &Path, other: &Path) -> bool {
+    let (Ok(here), Ok(there)) = (std::fs::metadata(one), std::fs::metadata(other)) else {
+        return false;
+    };
+    if here.len() != there.len() {
+        return false;
+    }
+    match (std::fs::read(one), std::fs::read(other)) {
+        (Ok(here), Ok(there)) => here == there,
+        _ => false,
+    }
 }
 
 /// **A JUDGE THAT ASKS GIT MUST HAVE SOMETHING TO ASK.** `git archive` carries
@@ -617,6 +724,78 @@ mod tests {
     /// **A REMOVAL IS A CHANGE THE OVERLAY HAS TO CARRY** — fault 99. Both
     /// places it can live: staged in the index, and taken out of the working
     /// tree without being staged.
+    /// **THE POINT OF THE WHOLE THING, AND THE COMMIT IS WHY.** `git archive`
+    /// stamps every file it writes with the commit's own date, so one commit
+    /// gave twenty crates a new modification time and cargo rebuilt all of it —
+    /// on every commit, not on every run. A gate took forty minutes, was
+    /// therefore run rarely, and four red judges were found after nine commits.
+    #[test]
+    fn a_file_untouched_by_a_commit_keeps_its_modification_time() {
+        let (root, tree) =
+            a_repository_holding("unchanged", &[("kept.md", "one\n"), ("other.md", "two\n")]);
+        clean_tree_with_changes(&root, &tree).expect("the first lay-out");
+        let laid = std::fs::metadata(tree.join("kept.md")).expect("read").modified().expect("mtime");
+
+        // A commit that says nothing about `kept.md`, a second later, so the
+        // archive of it carries a different date for every file it holds.
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        std::fs::write(root.join("other.md"), "three\n").expect("touch the other one");
+        git(&root, &["add", "other.md"]);
+        git(&root, &["commit", "--quiet", "-m", "the other one moves"]);
+        clean_tree_with_changes(&root, &tree).expect("the second lay-out");
+
+        let again = std::fs::metadata(tree.join("kept.md")).expect("read").modified().expect("mtime");
+        assert_eq!(
+            laid, again,
+            "a commit that never touched this file gave it a new date, and cargo will rebuild it"
+        );
+        let moved = std::fs::metadata(tree.join("other.md")).expect("read").modified().expect("mtime");
+        assert!(moved > laid, "the file the commit did touch kept its old date");
+    }
+
+    /// And one that did change gets a new one, or the tree would be measured
+    /// with yesterday's build.
+    #[test]
+    fn a_file_that_changed_is_written_again() {
+        let (root, tree) = a_repository_holding("changed", &[("kept.md", "one\n")]);
+        clean_tree_with_changes(&root, &tree).expect("the first lay-out");
+        let laid = std::fs::metadata(tree.join("kept.md")).expect("read").modified().expect("mtime");
+
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        std::fs::write(root.join("kept.md"), "two\n").expect("change it in the working tree");
+        clean_tree_with_changes(&root, &tree).expect("the second lay-out");
+
+        assert_eq!(std::fs::read_to_string(tree.join("kept.md")).expect("read"), "two\n");
+        let again = std::fs::metadata(tree.join("kept.md")).expect("read").modified().expect("mtime");
+        assert!(again > laid, "a changed file kept its old time, and cargo will not rebuild it");
+    }
+
+    /// **A TREE THAT IS UPDATED CAN HOLD YESTERDAY'S FILES.** Remaking it made
+    /// this impossible and free; updating it makes it possible, so it is
+    /// asserted: a file no longer at HEAD and no longer in the working tree
+    /// would otherwise be measured for ever.
+    #[test]
+    fn a_file_that_left_the_sources_leaves_the_measured_tree() {
+        let (root, tree) =
+            a_repository_holding("gone", &[("kept.md", "one\n"), ("old/going.md", "two\n")]);
+        clean_tree_with_changes(&root, &tree).expect("the first lay-out");
+        assert!(tree.join("old/going.md").exists(), "the fixture never had it");
+
+        git(&root, &["rm", "--quiet", "old/going.md"]);
+        git(&root, &["commit", "--quiet", "-m", "it goes"]);
+        clean_tree_with_changes(&root, &tree).expect("the second lay-out");
+
+        assert!(
+            !tree.join("old/going.md").exists(),
+            "a file that left the sources is still measured"
+        );
+        // Git tracks no empty directory, so one left here is a folder that
+        // exists at no commit — and a judge that reads a crate as a folder
+        // would count it.
+        assert!(!tree.join("old").exists(), "the directory it emptied is still measured");
+        assert!(tree.join("kept.md").exists(), "it took the neighbours with it");
+    }
+
     #[test]
     fn a_file_the_change_removes_leaves_the_measured_tree() {
         let (root, measured) = a_repository_holding(
