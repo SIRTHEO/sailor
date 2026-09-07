@@ -1,0 +1,163 @@
+{
+  "id": "put-the-crew-to-work",
+  "description": "ORGANISES THE WORK AND STARTS ONE AGENT PER ASSIGNMENT, EACH UNDER ITS OWN ACCOUNT. WHAT TO LOOK AT HERE. (1) THE CREW IS DECLARED IN THE TRIGGER, NOT IN THE GRAPH: to run a different crew you edit `crew` and nothing else — one entry per agent, naming its task and the home that holds that account's credentials. A graph that named the agents would need editing to add one, and a flow you must rewrite to reuse is a script with extra steps. (2) THE ASSIGNMENTS ARE CHECKED BEFORE ANY ARE STARTED. Half a crew running while the other half is refused is the worst of both: the check below reads every entry and stops the run naming the bad one, before a token is spent. (3) EACH AGENT IS ITS OWN RUN. `for_each` gives every assignment a child run with its own record, its own cap and its own verdict, so one agent that breaks does not take the others with it and the ledger can say which did what. (4) NOTHING ROTATES BY ITSELF. Which account carries which task is written down by a person; Sailor reads those credentials and never renews them. Choosing an account by remaining quota is a different flow and a different decision.",
+  "inputs": {
+    "trigger": {
+      "text": "the crew",
+      "who": ""
+    },
+    "tree": "",
+    "crew": [
+      {
+        "task": "say in one line what this tree is for, and stop",
+        "home_var": "CLAUDE_CONFIG_DIR",
+        "home": "/replace/with/an/account/home"
+      }
+    ]
+  },
+  "wall_secs": 5400,
+  "spend_cap_micros": 6000000,
+  "graph": {
+    "skippable_dependencies": [],
+    "steps": [
+      {
+        "id": "trigger",
+        "deps": [],
+        "action": "trigger",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "source": "manual"
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "who": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "text"
+          ],
+          "allow_extra": false
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "who": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "text"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "every_assignment_is_whole",
+        "deps": [],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "phase": "before spending",
+        "with": {
+          "command": "set -eu\n# **HALF A CREW IS THE WORST OUTCOME.** Read every entry first and refuse the\n# whole run naming the bad one, rather than start the good ones and discover\n# the rest one paid call at a time.\nprintf '%s' \"$CREW\" | python3 -c '\nimport json,sys\ncrew = json.load(sys.stdin)\nif not isinstance(crew, list) or not crew:\n    sys.exit(\"the crew is empty: there is nobody to put to work\")\nfor at, one in enumerate(crew):\n    for named in (\"task\", \"home_var\", \"home\"):\n        if not str(one.get(named, \"\")).strip():\n            sys.exit(f\"assignment {at} names no {named}\")\nprint(json.dumps({\"assignments\": len(crew)}))\n'\n",
+          "env": {
+            "CREW": "/crew"
+          },
+          "timeout_secs": 60,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "assignments": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "assignments"
+            ],
+            "allow_extra": false
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "crew": {
+              "type": "any"
+            }
+          },
+          "required": [
+            "crew"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "assignments": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "assignments"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "the_crew",
+        "deps": [
+          "every_assignment_is_whole"
+        ],
+        "action": "for_each",
+        "max_attempts": 1,
+        "when": null,
+        "phase": "the work",
+        "with": {
+          "flow": "one-agent-on-one-task",
+          "items": "/crew",
+          "inputs": {
+            "tree": "/tree"
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "assignments": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "assignments"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "ran": {
+              "type": "any"
+            }
+          },
+          "required": [],
+          "allow_extra": true
+        }
+      }
+    ]
+  }
+}

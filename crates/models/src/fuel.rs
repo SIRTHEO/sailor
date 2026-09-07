@@ -46,11 +46,25 @@ pub struct Preference {
     pub why: String,
 }
 
+/// **A WINDOW IS SPENT FOR THE WHOLE ENGINE.** A provider refuses on the first
+/// limit out, so window by window an empty engine wins on its weekly fuel.
+fn engines_with_a_window_already_out(fuels: &[Fuel]) -> std::collections::BTreeSet<&str> {
+    fuels
+        .iter()
+        .filter(|fuel| fuel.left_fraction <= 0.0)
+        .map(|fuel| fuel.engine.as_str())
+        .collect()
+}
+
 /// Among the windows read, the engine whose fuel expires fastest unused; a
 /// tie keeps the first. `None` when nothing was read or nothing expires.
+///
+/// An engine any of whose windows is out is not offered at all: see above.
 pub fn prefer(fuels: &[Fuel]) -> Option<Preference> {
+    let spent = engines_with_a_window_already_out(fuels);
     let best = fuels
         .iter()
+        .filter(|fuel| !spent.contains(fuel.engine.as_str()))
         .filter(|fuel| fuel.expiring_per_hour() > 0.0)
         .fold(None::<&Fuel>, |best, fuel| match best {
             Some(kept) if kept.expiring_per_hour() >= fuel.expiring_per_hour() => Some(kept),
@@ -152,6 +166,25 @@ mod tests {
         assert_eq!(prefer(&[fuel("x", 0.5, None), fuel("y", 0.0, Some(60))]), None);
         // A tie keeps the order the windows were read in.
         assert_eq!(prefer(&[fuel("a", 0.5, Some(60)), fuel("b", 0.5, Some(60))]).unwrap().engine, "a");
+    }
+
+    /// **THE CASE THAT SENDS WORK TO A LINE CERTAIN TO REFUSE IT.**
+    #[test]
+    fn an_engine_with_one_window_already_out_is_not_offered() {
+        let out = Fuel { unit: "five_hour".to_owned(), ..fuel("spent", 0.0, Some(3600)) };
+        let plenty = Fuel { unit: "seven_day".to_owned(), ..fuel("spent", 0.90, Some(2 * 3600)) };
+        let other = Fuel { unit: "five_hour".to_owned(), ..fuel("free", 0.20, Some(6 * 86_400)) };
+
+        let chosen = prefer(&[out, plenty, other]).expect("one engine is usable");
+        assert_eq!(
+            chosen.engine, "free",
+            "an engine whose five-hour window is out was chosen on its weekly one"
+        );
+
+        // Every engine out: «this one» is worse than saying nothing.
+        let a = fuel("a", 0.0, Some(60));
+        let b = Fuel { unit: "seven_day".to_owned(), ..fuel("a", 0.9, Some(120)) };
+        assert_eq!(prefer(&[a, b]), None, "an engine with no room left was still offered");
     }
 
     #[test]

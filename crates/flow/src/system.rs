@@ -99,6 +99,16 @@ pub const FLOWS: &[(&str, &str)] = &[
         "draft-a-flow",
         include_str!("../system/draft-a-flow.flow.json"),
     ),
+    // One agent, one task, one named account; the child of the flow below.
+    (
+        "one-agent-on-one-task",
+        include_str!("../system/one-agent-on-one-task.flow.json"),
+    ),
+    // The crew is declared in the trigger, one entry per agent.
+    (
+        "put-the-crew-to-work",
+        include_str!("../system/put-the-crew-to-work.flow.json"),
+    ),
     // Once a day an engine reads every memory and says what to keep and drop.
     (
         "consolidate-memories",

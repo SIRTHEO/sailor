@@ -1,0 +1,199 @@
+{
+  "id": "one-agent-on-one-task",
+  "description": "ONE AGENT, ON ONE TASK, UNDER ONE NAMED ACCOUNT. The child of «put-the-crew-to-work», and useful on its own. WHAT TO LOOK AT HERE. (1) THE ACCOUNT VARIES AND THE ENGINE DOES NOT, and that is measured rather than chosen: with the engine read from an input, `sailor flow check` answers «tools no descriptor declares» and the cap falls from a guaranteed one to a stop threshold — it could hold back the next call but never the overshoot of one already running, because nothing can be priced before the run starts. A named engine keeps the cap a cap. To put another command line to work, name it in a copy of this file: the ids are the ones the descriptors declare, and `sailor flow check` refuses any other by name. (2) THE ACCOUNT IS A HOME, AND IT IS NAMED, NEVER GUESSED: `home_var` and `home` come in from the caller and are written into the step's `env`, which wins over the equipment Sailor would otherwise pass. A home written wrong does not fall back to the default one — the check refuses an empty value before a token is spent, because a variable set to the value the command line would have used anyway disauthenticates it, and every engine that reads it goes from signed in to signed out without saying so. (3) NOTHING IS REFRESHED. Sailor reads the credentials that home already holds and never renews them: a refresh out of band breaks the command line's own access. An account that is not signed in is a refusal to carry back, not a thing to repair here. (4) THE WALL AND THE CEILING ARE IN THE FILE, not in the good intentions of whoever launches it. `max_spend_micros` is what makes the cap a guaranteed one: the engine takes a ceiling in currency, and a step that declares none can be admitted and then overshoot inside a single call.",
+  "inputs": {
+    "trigger": {
+      "text": "",
+      "who": ""
+    },
+    "task": "",
+    "home_var": "",
+    "home": "",
+    "tree": ""
+  },
+  "wall_secs": 1800,
+  "spend_cap_micros": 2000000,
+  "graph": {
+    "skippable_dependencies": [],
+    "steps": [
+      {
+        "id": "trigger",
+        "deps": [],
+        "action": "trigger",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "source": "manual"
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "who": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "text"
+          ],
+          "allow_extra": false
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "who": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "text"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "the_account_is_named",
+        "deps": [],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "phase": "before spending",
+        "with": {
+          "command": "set -eu\n# **AN EMPTY HOME IS NOT THE DEFAULT HOME.** A variable set to the value the\n# command line would have used anyway disauthenticates it, so an assignment\n# that names no account is refused here, before a token is spent.\n[ -n \"${HOME_VAR:-}\" ] || { echo 'the assignment names no variable for the account home' >&2; exit 1; }\n[ -n \"${ACCOUNT_HOME:-}\" ] || { echo 'the assignment names no account home' >&2; exit 1; }\n[ -d \"$ACCOUNT_HOME\" ] || { echo \"the account home $ACCOUNT_HOME is not a directory on this machine\" >&2; exit 1; }\nprintf '{\"home_var\": \"%s\", \"home\": \"%s\"}\\n' \"$HOME_VAR\" \"$ACCOUNT_HOME\"\n",
+          "env": {
+            "HOME_VAR": "/home_var",
+            "ACCOUNT_HOME": "/home"
+          },
+          "timeout_secs": 30,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "home_var": {
+                "type": "string"
+              },
+              "home": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "home_var",
+              "home"
+            ],
+            "allow_extra": false
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "home_var": {
+              "type": "string"
+            },
+            "home": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "home_var",
+            "home"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "home_var": {
+              "type": "string"
+            },
+            "home": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "home_var",
+            "home"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "the_agent",
+        "deps": [
+          "the_account_is_named"
+        ],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "phase": "the work",
+        "with": {
+          "tool": "claude-code",
+          "tree": "/tree",
+          "stdin": "/task",
+          "env": {
+            "/home_var": "/home"
+          },
+          "timeout_secs": 1500,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "did": {
+                "type": "string"
+              },
+              "left_undone": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "did"
+            ],
+            "allow_extra": true
+          },
+          "max_spend_micros": 1500000
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "home_var": {
+              "type": "string"
+            },
+            "home": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "home_var",
+            "home"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "did": {
+              "type": "string"
+            },
+            "left_undone": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "did"
+          ],
+          "allow_extra": true
+        }
+      }
+    ]
+  }
+}
