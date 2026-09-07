@@ -739,6 +739,94 @@ mod tests {
         );
     }
 
+    /// A make-believe executable that answers with its own name, so a test
+    /// can tell which of several working engines actually ran.
+    fn engine_that_names_itself(dir: &std::path::Path, name: &str) -> String {
+        let path = dir.join(name);
+        std::fs::write(&path, format!("#!/bin/sh\necho \"{name}-answered\"\n"))
+            .expect("write the fake engine");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+                .expect("make it executable");
+        }
+        path.to_string_lossy().into_owned()
+    }
+
+    struct KindTools {
+        written_first: String,
+        kind_preferred: String,
+    }
+
+    impl ToolResolver for KindTools {
+        fn resolve(&self, id: &str) -> Result<String, String> {
+            match id {
+                "written-first" => Ok(self.written_first.clone()),
+                "kind-preferred" => Ok(self.kind_preferred.clone()),
+                other => Err(format!("«{other}» is not on this machine")),
+            }
+        }
+        fn ask_recipe(&self, id: &str) -> Option<AskRecipe> {
+            match id {
+                "written-first" | "kind-preferred" => Some(AskRecipe {
+                    args: Vec::new(),
+                    prompt: PromptVia::Stdin,
+                    args_before_prompt: Vec::new(),
+                    unusable_when: Vec::new(),
+                    silent_without_prompt: false,
+                    refuses_without_prompt: Vec::new(),
+                    exhausted_when: Vec::new(),
+                    cooldown_secs: None,
+                    waits_for_a_person_when: Vec::new(),
+                    usage: None,
+                }),
+                _ => None,
+            }
+        }
+    }
+
+    /// **THE STRENGTHS TABLE ACTUALLY REORDERS A REAL RUN, NOT JUST THE
+    /// STEP'S PLAN OF IT.** Both engines here work; if the chain as written
+    /// were tried as written, `written-first` would answer. It never
+    /// answers here — the strengths table put `kind-preferred` ahead of it
+    /// before either one was asked anything.
+    #[test]
+    fn a_kind_the_strengths_table_knows_reorders_the_chain_before_anything_is_asked() {
+        let dir = scratch("kind-reorders-the-chain");
+        let tools = KindTools {
+            written_first: engine_that_names_itself(&dir, "written-first"),
+            kind_preferred: engine_that_names_itself(&dir, "kind-preferred"),
+        };
+        let strengths_path = dir.join("strengths.json");
+        std::fs::write(
+            &strengths_path,
+            json!({"rows": {"test-kind": ["kind-preferred"]}}).to_string(),
+        )
+        .expect("write the strengths override");
+
+        let mut action = ExternalEngineAction::resolving_with(tools);
+        action.strengths = Some(strengths_path);
+        let input = json!({
+            "kind": "test-kind",
+            "tool": ["written-first", "kind-preferred"],
+            "timeout_secs": 10
+        });
+
+        let ActionOutcome::Went(output) = action
+            .execute(&input, &SharedState::new())
+            .expect("a working engine answers")
+        else {
+            panic!("an engine that answers is always Went")
+        };
+
+        assert_eq!(
+            output["stdout"], "kind-preferred-answered\n",
+            "the chain as written names «written-first» before «kind-preferred»; \
+             only a real reorder by kind explains the other one answering"
+        );
+    }
+
     /// A make-believe engine that answers **in the declared shape** and then
     /// exits in error saying the words of its own refusal.
     fn engine_that_answers_in_shape_then_exits_in_error(dir: &std::path::Path) -> String {

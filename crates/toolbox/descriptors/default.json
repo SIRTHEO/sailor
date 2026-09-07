@@ -477,7 +477,7 @@
       "label": "OpenRouter CLI",
       "detect": { "command": "openrouter" },
       "version": { "args": ["--version"] },
-      "note": "The `@openrouter/cli` package on npm, published by OpenRouter; it installs the `openrouter` command. It is here as a descriptor and not as code: the proof that a new command line is declared without recompiling."
+      "note": "The `@openrouter/cli` package on npm, published by OpenRouter; it installs the `openrouter` command. NO `ask`: measured 07/09/2026, the package's own README lists exactly two commands, a DevTools telemetry viewer and a Claude Code statusline — its proxy/chat functionality was removed in v1.0.0. It cannot answer a question on any machine, configured or not, so no row in `strengths.default.json` names it; kept as a descriptor for `detect`/`version` only, so `sailor inventory` can still say whether it is installed."
     },
     {
       "id": "ollama",
