@@ -93,6 +93,14 @@ fn is_not_english(line: &str) -> bool {
 /// 11,476 non-English lines while `desktop/` — twelve thousand lines of
 /// TypeScript and CSS — was watched by nobody. An invisible debt falls to zero
 /// on its own without anyone paying it.
+/// Files that sit in none of the directories above.
+///
+/// **A FILE IN NO DIRECTORY THIS WALKS IS A FILE NO RULE REACHES.** The
+/// window's build config decides how the product is assembled and sat outside
+/// every perimeter, keeping four comments in the other language long after the
+/// tree had stopped speaking it, with nothing red.
+const NAMED_ONE_BY_ONE: &[&str] = &["desktop/vite.config.ts"];
+
 fn sources() -> Vec<PathBuf> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -106,6 +114,11 @@ fn sources() -> Vec<PathBuf> {
         "desktop/scripts",
     ] {
         walk(&root.join(place), &mut found);
+    }
+    for named in NAMED_ONE_BY_ONE {
+        let path = root.join(named);
+        assert!(path.is_file(), "«{named}» is named here and is not there: it moved, or the list is stale");
+        found.push(path);
     }
     found
 }
@@ -128,6 +141,24 @@ fn walk(dir: &Path, found: &mut Vec<PathBuf>) {
         {
             found.push(path);
         }
+    }
+}
+
+/// Whoever measures gets measured: emptied, the list above would take its
+/// files out of the perimeter and every seed would hold, because the numbers
+/// they contribute round away.
+#[test]
+fn the_files_named_one_by_one_are_inside_the_perimeter() {
+    assert!(
+        !NAMED_ONE_BY_ONE.is_empty(),
+        "the list is empty: the files it held are measured by nobody"
+    );
+    let walked = sources();
+    for named in NAMED_ONE_BY_ONE {
+        assert!(
+            walked.iter().any(|path| path.ends_with(named)),
+            "«{named}» is named and does not reach the count"
+        );
     }
 }
 
