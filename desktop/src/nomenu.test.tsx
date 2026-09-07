@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 /**
- * **THE ORDINARY VIEW CARRIES NO MENU OF DESTINATIONS.** A permanent list of
- * where you could be holds space the work needs; sections are reached by
- * typing. What it removes must stay reachable, or the removal is a loss.
+ * **NO LONG MENU, AND NO PLACE REACHED ONLY BY TYPING.** The rest is typed;
+ * the four questions stay, because a name is a thing you have to know first.
  */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";

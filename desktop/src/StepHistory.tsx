@@ -3,6 +3,7 @@ import { stepHistory, type StepPassage } from "./engine";
 import { OUTCOME_LABEL, whyFailed } from "./RunConsole";
 import { StepRefusal } from "./StepRefusal";
 import { StepRan } from "./StepRan";
+import { StepWhy } from "./StepWhy";
 
 /**
  * What came into this node, over time. The run view tells today's call; this
@@ -110,6 +111,11 @@ export function StepHistory({ flowName, stepId }: StepHistoryProps) {
                 {passage.signal_where && ` · from ${passage.signal_where}`}
                 {passage.signal_who && ` · ${passage.signal_who}`}
               </div>
+
+              {/* **NOT BEHIND THE CLICK.** Why a step did nothing is the first
+                  question asked of it, and an answer only whoever already
+                  suspects goes looking for is an answer to nobody. */}
+              {passage.why && <StepWhy why={passage.why} />}
 
               {passage.attempt > 1 && (
                 <div className="passage__attempt">attempt {passage.attempt} of this run</div>
