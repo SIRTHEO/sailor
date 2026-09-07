@@ -1,8 +1,7 @@
 //! What Sailor lit on this machine, and how it is put out.
 //!
-//! **APART FROM THE LIVE MODE ON PURPOSE**: the command line must not depend on
-//! the supervisor, and this is not rebuild machinery — it is the `processes`
-//! table and a signal. Both sides read it from here.
+//! **APART FROM THE LIVE MODE ON PURPOSE**: the command line must not depend
+//! on the supervisor. It is the `processes` table and a signal, read by both.
 
 use std::time::Duration;
 
@@ -10,9 +9,8 @@ use std::time::Duration;
 #[derive(Debug, Clone)]
 pub struct LeftRunning {
     pub record: ledger::ProcessRecord,
-    /// **Two different questions, kept apart on purpose.** The ledger says
-    /// what was started; this says whether *that* process is still there —
-    /// not merely whether something now holds the number it was given.
+    /// **Two questions, kept apart.** The ledger says what was started; this
+    /// says whether *that* process is there, not whether its number is taken.
     pub still_alive: bool,
 }
 
@@ -22,10 +20,9 @@ pub fn left_running(store: &ledger::Ledger) -> Result<Vec<LeftRunning>, ledger::
         .processes_left_running()?
         .into_iter()
         .map(|record| LeftRunning {
-            // **THE ROW NAMES A PROCESS, NOT A NUMBER.** Pid numbers come round
-            // again: asked only whether the number is taken, a row written
-            // hours ago answers for whoever holds it now, and the gesture
-            // below would put out somebody else's work.
+            // **THE ROW NAMES A PROCESS, NOT A NUMBER.** Numbers come round:
+            // asked only whether one is taken, an old row answers for whoever
+            // holds it now, and the sweep puts out somebody else's work.
             still_alive: ledger::the_same_process(record.pid, record.started_at),
             record,
         })
@@ -34,13 +31,9 @@ pub fn left_running(store: &ledger::Ledger) -> Result<Vec<LeftRunning>, ledger::
 
 /// Closes, in the ledger, the rows of processes that stopped breathing.
 ///
-/// **THE LEDGER CANNOT SEE A VIOLENT DEATH**: a process killed from outside
-/// writes no ending and stays «running» for ever. Nor can it see a number
-/// handed on: a row whose pid now belongs to a stranger is closed here too,
-/// because the process it named did end — which is exactly why it is closed
-/// and never signalled. A list full of ghosts is a
-/// list nobody reads, which is how a process registry stops preventing fault 4.
-/// Returns how many it closed.
+/// **THE LEDGER CANNOT SEE A VIOLENT DEATH**, nor a number handed on: both
+/// leave a row saying «running» for ever, and a list of ghosts is a list
+/// nobody reads. A handed-on row is closed here and never signalled.
 pub fn close_the_ones_that_stopped_breathing(
     store: &ledger::Ledger,
     now: i64,
@@ -71,16 +64,14 @@ pub enum Teardown {
     StillThere { process_id: String, pid: u32, purpose: String, why: String },
 }
 
-/// How long to wait for a signalled process before asking again. **A SIGNAL IS
-/// A REQUEST, NOT AN ENDING**: recording an end because `kill` returned zero
-/// writes a death nobody saw.
+/// How long to wait before asking again. **A SIGNAL IS A REQUEST**: an end
+/// recorded because `kill` returned zero is a death nobody saw.
 const A_MOMENT_TO_LEAVE: Duration = Duration::from_millis(600);
 
 /// Stops what Sailor lit and nobody wants any more.
 ///
 /// **UNCERTAINTY STOPS THE ACTION**: `wanted` may fail, and a failure is not
-/// permission. Read with `.ok()`, a ledger that would not open became a licence
-/// to kill everything it could not be asked about.
+/// permission. Read with `.ok()`, an unopenable ledger licensed every kill.
 pub fn stop_the_ones_nobody_wants(
     store: &ledger::Ledger,
     now: i64,
@@ -97,8 +88,8 @@ pub fn stop_the_ones_nobody_wants(
     Ok(done)
 }
 
-/// **THE GROUP, NOT THE PID**, which is what `Process::stop` signals: reaching
-/// for the leader alone leaves the grandchildren holding the port.
+/// **THE GROUP, NOT THE PID**: the leader alone leaves the grandchildren
+/// holding the port.
 fn stop_one(
     store: &ledger::Ledger,
     now: i64,
@@ -137,11 +128,9 @@ fn signal_the_group(pid: u32) -> bool {
 }
 
 
-/// The port of the window's development server: **the port of fault 4**, held
-/// by an orphan twice in one night. Written down again in
-/// `desktop/src-tauri/tauri.conf.json`, and `the_dev_port_matches_the_tauri_config`
-/// compares the two copies. It lives here, with the reading that asks about it,
-/// so the window and the command line ask the same question of the same number.
+/// The window's development port: **the port of fault 4**, held by an orphan
+/// twice in one night. Written again in `desktop/src-tauri/tauri.conf.json`;
+/// `the_dev_port_matches_the_tauri_config` compares the two.
 pub const DEV_PORT: u16 = 5183;
 
 /// What is on a port, as far as this machine will say.
@@ -151,18 +140,17 @@ pub enum OnThePort {
     Free,
     /// A process Sailor lit and still calls running.
     Ours(Box<ledger::ProcessRecord>),
-    /// Taken, and Sailor has no row for it — the case that fills a machine,
-    /// because what never passed through Sailor cannot be freed by it.
+    /// Taken, and Sailor has no row for it: what never passed through Sailor
+    /// cannot be freed by it. This is the case that fills a machine.
     Somebody,
-    /// **A REFUSAL IS NOT AN ANSWER.** Inside a sandbox binding is denied, and
-    /// read as «in use» it accuses a machine that is merely not letting us look.
+    /// **A REFUSAL IS NOT AN ANSWER.** In a sandbox binding is denied, and read
+    /// as «in use» it accuses a machine that would not let us look.
     CouldNotLook(String),
 }
 
-/// Who is on a port: the store first, then the socket.
-///
-/// **BOTH LOCALHOST ADDRESSES.** A server on `::1` leaves `127.0.0.1` free,
-/// and asking only one of them answers «nobody» with somebody plainly there.
+/// Who is on a port: the store first, then the socket. **BOTH LOCALHOST
+/// ADDRESSES** — a server on `::1` leaves `127.0.0.1` free, and asking one
+/// answers «nobody» with somebody plainly there.
 pub fn on_the_port(
     store: &ledger::Ledger,
     port: u16,
@@ -175,8 +163,8 @@ pub fn on_the_port(
     Ok(try_to_bind(port))
 }
 
-/// The socket alone, with no store to ask first. **A REFUSAL IS ITS OWN
-/// ANSWER**, which is the whole reason this is not a bool.
+/// The socket alone, no store asked first. A refusal is its own answer here,
+/// which is why this is not a bool.
 pub fn on_the_port_by_binding(port: u16) -> OnThePort {
     try_to_bind(port)
 }

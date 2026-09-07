@@ -43,10 +43,7 @@ fn light(line: &str) -> std::process::Child {
     command.spawn().expect("light the process")
 }
 
-/// The second we are in. **A ROW IS WRITTEN WHEN THE PROCESS STARTS**, and
-/// these tests light real processes: a row dated years back would name a pid
-/// this machine has since handed to somebody else, which is a different case
-/// and has a test of its own below.
+/// The second we are in: a row is written when the process starts.
 fn now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -221,14 +218,9 @@ fn what_the_leader_started_goes_with_it() {
     );
 }
 
-/// **THE CASE THAT WOULD PUT OUT SOMEBODY ELSE'S WORK.** A row names a number,
-/// and numbers come round again. Asked only whether the number is taken, a row
-/// written years ago answers for whoever holds it now — and this sweep, whose
-/// whole job is to stop what nobody wants, would signal a stranger's group.
-///
-/// The process here is alive and is not the one the row names. It must be left
-/// breathing, and the row must be closed all the same: the process it named
-/// really did end, and a row nobody can act on is a row that hides the rest.
+/// **THE CASE THAT WOULD PUT OUT SOMEBODY ELSE'S WORK.** A row written years
+/// ago answers for whoever holds its number now, and this sweep would signal
+/// a stranger's group. It stays breathing; the row closes anyway.
 #[test]
 fn a_row_whose_number_was_handed_on_closes_without_a_signal() {
     let dir = scratch("handed-on");
@@ -254,46 +246,23 @@ fn a_row_whose_number_was_handed_on_closes_without_a_signal() {
     let _ = stranger.wait();
 }
 
-/// **A REFUSAL TO LOOK IS NOT A SIGHTING**, and the difference is the whole
-/// value of the reading: told «somebody is on the port» a person goes hunting
-/// for a process that is not there, and told nothing they never learn that
-/// something Sailor cannot free is holding it.
+/// The four answers in one test: **two asking for an ephemeral port at once
+/// take each other's number**, and one test cannot race itself.
 #[test]
 fn a_port_says_which_of_the_four_things_is_true_about_it() {
     let dir = scratch("port");
     let store = ledger::Ledger::open(&dir.0).expect("the store");
 
-    // A port this test holds itself: taken, and no row of Sailor's names it.
     let held = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a port to hold");
-    let taken = held.local_addr().expect("its number").port();
+    let number = held.local_addr().expect("its number").port();
     assert_eq!(
-        machine::on_the_port(&store, taken).expect("the reading"),
+        machine::on_the_port(&store, number).expect("the reading"),
         machine::OnThePort::Somebody,
         "a port held by something sailor never lit read as free"
     );
 
-    // And one nobody holds. Bound and released a moment ago, so it exists and
-    // is nobody's — asking about a number picked out of the air proves less.
-    let free = {
-        let opened = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a port");
-        opened.local_addr().expect("its number").port()
-    };
-    assert_eq!(
-        machine::on_the_port(&store, free).expect("the reading"),
-        machine::OnThePort::Free,
-        "a port nobody holds read as held"
-    );
-}
-
-/// And a port Sailor lit is Sailor's, which is what makes the other answer mean
-/// something: without this the reading would call every dev server a stranger.
-#[test]
-fn a_port_sailor_lit_is_named_as_sailors_own() {
-    let dir = scratch("our-port");
-    let store = ledger::Ledger::open(&dir.0).expect("the store");
+    // With a row claiming it: **a port Sailor lit is Sailor's**.
     let mut ours = light("sleep 30");
-    let held = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a port to hold");
-    let port = held.local_addr().expect("its number").port();
     store
         .record_process_started(&ledger::ProcessRecord {
             process_id: "p-port".to_owned(),
@@ -301,18 +270,26 @@ fn a_port_sailor_lit_is_named_as_sailors_own() {
             command: "npx".to_owned(),
             args: vec!["vite".to_owned()],
             working_directory: "/somewhere".to_owned(),
-            port: Some(port),
+            port: Some(number),
             purpose: "live".to_owned(),
             started_by: "the test".to_owned(),
             run_id: None,
             started_at: now(),
         })
         .expect("write the start");
-
-    match machine::on_the_port(&store, port).expect("the reading") {
+    match machine::on_the_port(&store, number).expect("the reading") {
         machine::OnThePort::Ours(record) => assert_eq!(record.pid, ours.id()),
         other => panic!("a port sailor lit was read as a stranger's: {other:?}"),
     }
     let _ = ours.kill();
     let _ = ours.wait();
+
+    // Let go, its row gone with the process: nobody's.
+    drop(held);
+    let store = ledger::Ledger::open(&scratch("port-free").0).expect("a store with no rows");
+    assert_eq!(
+        machine::on_the_port(&store, number).expect("the reading"),
+        machine::OnThePort::Free,
+        "a port nobody holds read as held"
+    );
 }

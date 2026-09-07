@@ -840,5 +840,6 @@
   "cli.session.event_on_terminal": "{event} su {tty}",
   "cli.session.census_terminal": "{tty} ({ancestor}), {processes} processi",
   "cli.clock_before_the_epoch": "l'orologio di sistema precede Unix epoch: {error}",
-  "cli.unknown_command": "sailor: comando sconosciuto '{name}'; comandi disponibili: {commands}"
+  "cli.unknown_command": "sailor: comando sconosciuto '{name}'; comandi disponibili: {commands}",
+  "cli.ratchet.another_gate": "un altro cancello sta già misurando questo albero: condividono una sola copia di HEAD e se la stenderebbero addosso a metà misura, che fa diventare rosso un giudice sano. Aspetta che finisca, o misura un altro checkout"
 }

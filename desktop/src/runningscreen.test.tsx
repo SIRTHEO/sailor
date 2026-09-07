@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 /**
- * **THE MACHINE FILLING UP WAS NOTICED IN THE WINDOW AND ANSWERED NOWHERE IN
- * IT.** What this screen must never do is offer to stop something somebody is
- * waiting on: alive-and-wanted looks exactly like alive-and-forgotten unless
- * the run behind it is asked about, and the gesture here acts on that answer.
+ * What this screen must never do is offer to stop something somebody is waiting
+ * on: alive-and-wanted looks like alive-and-forgotten unless the run behind it
+ * is asked about, and the gesture acts on that answer.
  */
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
