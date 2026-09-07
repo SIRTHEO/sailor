@@ -151,6 +151,7 @@
   "cli.flow.schedule_unchanged": "flusso {flow} ({origin}): l'innesco era già {before}, non è stato toccato niente",
   "cli.flow.schedule_written": "flusso {flow} ({origin}): innesco\n  da:  {before}\n  a:   {after}\nscritto in {directory}",
   "cli.flow.ships_inside_the_binary": "«{flow}» viaggia dentro il binario: non c'è nessun file da riscrivere. Per cambiarlo, scrivi un flusso con lo stesso nome nella tua casa o nel progetto — vince il tuo — e cambia quello. Non lo faccio io al posto tuo: un flusso comparso da solo è un flusso che nessuno sa di avere",
+  "cli.flow.suspended_after_failures": "sospeso dopo {times} corse fallite di fila: non riparte da solo finché non viene toccato — una modifica pertinente, o una corsa avviata a mano",
   "cli.flow.suggestion": "suggerimento: {suggested} micro ({units}) — la corsa più cara osservata ({worst_run}) più la chiamata più cara osservata ({dearest_call}). Il secondo termine non è un margine di sicurezza: è la grana con cui il tetto sa fermarsi, perché il controllo scatta prima di aprire un fronte",
   "cli.flow.tokens_line": "token: {in} in · {out} out · {read} letti da cache · {written} scritti in cache",
   "cli.flow.totals_not_split": "totali non divisi (quelli che non dichiarano né l'uno né l'altro): {count}",

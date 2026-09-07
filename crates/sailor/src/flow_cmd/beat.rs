@@ -169,6 +169,18 @@ fn tick_flows_with(sources: &[FlowSource], last: LastRuns, start: Starter<'_>) -
         .unwrap_or(0);
     let glance = last.read_or_say_it_could_not("cli.flow.beat_could_not_look")?;
     let last = &glance.last_started;
+    // A streak this long already owes the register a fault (see
+    // `flow::faults_due` below): starting the flow again on its own schedule
+    // would spend a call on something already known to fail this way. The
+    // hold reads the streak fresh every beat, so it lifts itself the moment a
+    // run — by hand, once whatever was wrong is fixed — breaks it with a
+    // success: nothing here remembers "suspended" past the ledger saying so.
+    let stuck: std::collections::BTreeMap<&str, usize> = glance
+        .streaks
+        .iter()
+        .filter(|streak| streak.length() >= flow::FAILURES_THAT_MAKE_A_FAULT)
+        .map(|streak| (streak.flow.as_str(), streak.length()))
+        .collect();
 
     let mut report = String::new();
     let mut ran = 0usize;
@@ -182,10 +194,15 @@ fn tick_flows_with(sources: &[FlowSource], last: LastRuns, start: Starter<'_>) -
             Ok(flow) => match flow.schedule.as_ref() {
                 None => Some(catalogue::say("cli.flow.no_schedule_by_hand_only", &[])),
                 Some(schedule) => {
-                    let last_run = last.get(&flow.id).copied();
-                    if flow::is_due(schedule, last_run, now) {
+                    if let Some(length) = stuck.get(flow.id.as_str()) {
+                        Some(catalogue::say(
+                            "cli.flow.suspended_after_failures",
+                            &[("times", &length.to_string())],
+                        ))
+                    } else if flow::is_due(schedule, last.get(&flow.id).copied(), now) {
                         None
                     } else {
+                        let last_run = last.get(&flow.id).copied();
                         Some(match last_run {
                             Some(seconds) => catalogue::say(
                                 "cli.flow.not_due_last_ran",
@@ -501,7 +518,10 @@ mod tests {
             vec![(flow::system::FAULT_WRITER.to_owned(), Some("ogni-minuto".to_owned()))],
             "{said}"
         );
-        assert!(said.contains("ogni-minuto\thold\tnot due"), "{said}");
+        assert!(
+            said.contains("ogni-minuto\thold\tsuspended after 3 failed runs in a row"),
+            "the streak is what holds it now, ahead of the schedule that would also say so: {said}"
+        );
         assert!(
             said.contains("write-down-what-broke\tran\t«ogni-minuto» failed 3 runs in a row"),
             "the report must say which flow, how often, and that the fault is being written: {said}"
@@ -521,6 +541,77 @@ mod tests {
         )
         .expect("a beat after the fault works");
         assert!(said.contains("0 run, 1 held"), "{said}");
+        drop(ledger);
+        let _ = fs::remove_dir_all(&scratch);
+    }
+
+    /// **A FLOW THAT LOST ITS LAST THREE RUNS DOES NOT GET A FOURTH FOR
+    /// FREE.** Its schedule would call it due — the failures are old enough —
+    /// but a beat that started it anyway would spend a call on a flow that
+    /// already earned a fault for failing this way. The hold lifts by itself
+    /// the moment a run, by hand once whatever was wrong is fixed, breaks the
+    /// streak with a success.
+    #[test]
+    fn a_flow_stuck_on_three_failures_is_held_even_when_its_schedule_says_due() {
+        let scratch = std::env::temp_dir().join(format!("sailor-bloccato-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&scratch);
+        fs::create_dir_all(&scratch).expect("create the test directory");
+        fs::write(
+            scratch.join("ogni-minuto.flow.json"),
+            r#"{"id":"ogni-minuto","description":"un flusso a intervallo",
+                "schedule":{"recurrence":{"kind":"every_seconds","seconds":60},"weight":"light"},
+                "graph":{"steps":[{"id":"innesco","deps":[],"action":"trigger","max_attempts":1,
+                "when":null,"with":{"source":"manual","text":"vai"},
+                "input_schema":{"type":"any"},"output_schema":{"type":"any"}}]},"inputs":{}}"#,
+        )
+        .expect("write a scheduled flow");
+        let sources = vec![FlowSource {
+            origin: "prova",
+            dir: scratch.clone(),
+        }];
+        let now = now_secs().unwrap_or(0);
+        let ledger = Ledger::open(scratch.join("ledger")).expect("a scratch ledger");
+        // Long past the 60-second schedule: is_due would say yes on its own.
+        for (run, at) in [
+            ("ogni-minuto-1", now - 1000),
+            ("ogni-minuto-2", now - 900),
+            ("ogni-minuto-3", now - 800),
+        ] {
+            ledger
+                .record_run(&a_closed_run("ogni-minuto", run, "failed", at))
+                .expect("a failed run");
+        }
+        // The fault about this streak is already written: the beat owes no
+        // further fault-writer call either, so the only question this test
+        // asks is whether the flow itself gets started a fourth time.
+        ledger
+            .remember_fault_written("ogni-minuto", "ogni-minuto-3", "test", now - 800)
+            .expect("remember the fault already written");
+
+        let said = tick_flows_with(
+            &sources,
+            LastRuns::Read(glance_at(&ledger).expect("a glance")),
+            &mut never_starts,
+        )
+        .expect("a beat over a stuck flow works");
+        assert!(
+            said.contains("ogni-minuto\thold\tsuspended after 3 failed runs in a row"),
+            "{said}"
+        );
+        assert!(said.contains("0 run, 1 held"), "{said}");
+
+        // A success breaks the streak: the next beat is due again, on its
+        // own schedule, with nothing left to hold it back.
+        ledger
+            .record_run(&a_closed_run("ogni-minuto", "ogni-minuto-4", "complete", now - 5))
+            .expect("a successful run");
+        let said = tick_flows_with(
+            &sources,
+            LastRuns::Read(glance_at(&ledger).expect("a glance")),
+            &mut never_starts,
+        )
+        .expect("a beat after the fix works");
+        assert!(said.contains("ogni-minuto\thold\tnot due"), "{said}");
         drop(ledger);
         let _ = fs::remove_dir_all(&scratch);
     }
