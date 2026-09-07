@@ -739,12 +739,17 @@ mod tests {
         );
     }
 
-    /// A make-believe executable that answers with its own name, so a test
-    /// can tell which of several working engines actually ran.
-    fn engine_that_names_itself(dir: &std::path::Path, name: &str) -> String {
+    /// A make-believe executable that answers with its own name AND appends
+    /// it to a shared log — answering is not the same as being asked, and a
+    /// test that only reads the answer cannot tell a race from a real
+    /// exclusion. The log can.
+    fn engine_that_names_itself(dir: &std::path::Path, name: &str, log: &std::path::Path) -> String {
         let path = dir.join(name);
-        std::fs::write(&path, format!("#!/bin/sh\necho \"{name}-answered\"\n"))
-            .expect("write the fake engine");
+        std::fs::write(
+            &path,
+            format!("#!/bin/sh\necho \"{name}\" >> \"{}\"\necho \"{name}-answered\"\n", log.display()),
+        )
+        .expect("write the fake engine");
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -787,16 +792,22 @@ mod tests {
     }
 
     /// **THE STRENGTHS TABLE ACTUALLY REORDERS A REAL RUN, NOT JUST THE
-    /// STEP'S PLAN OF IT.** Both engines here work; if the chain as written
-    /// were tried as written, `written-first` would answer. It never
-    /// answers here — the strengths table put `kind-preferred` ahead of it
-    /// before either one was asked anything.
+    /// STEP'S PLAN OF IT — AND THE ONE IT SETS ASIDE IS NEVER ASKED, NOT
+    /// JUST OUTRACED.** Both engines here work; if the chain as written were
+    /// tried as written, `written-first` would answer, and either way it
+    /// would show up in the call log. It never does: the strengths table
+    /// put `kind-preferred` ahead of it before either one was asked anything.
     #[test]
     fn a_kind_the_strengths_table_knows_reorders_the_chain_before_anything_is_asked() {
         let dir = scratch("kind-reorders-the-chain");
+        // The scratch directory is a fixed path, reused across separate test
+        // runs (`scratch` only `create_dir_all`s it): a log left over from an
+        // earlier run of THIS SAME test would fail it on nothing it did wrong.
+        let log = dir.join("called.log");
+        let _ = std::fs::remove_file(&log);
         let tools = KindTools {
-            written_first: engine_that_names_itself(&dir, "written-first"),
-            kind_preferred: engine_that_names_itself(&dir, "kind-preferred"),
+            written_first: engine_that_names_itself(&dir, "written-first", &log),
+            kind_preferred: engine_that_names_itself(&dir, "kind-preferred", &log),
         };
         let strengths_path = dir.join("strengths.json");
         std::fs::write(
@@ -824,6 +835,13 @@ mod tests {
             output["stdout"], "kind-preferred-answered\n",
             "the chain as written names «written-first» before «kind-preferred»; \
              only a real reorder by kind explains the other one answering"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&log).unwrap_or_default(),
+            "kind-preferred\n",
+            "an engine a working candidate ahead of it in the chain has already \
+             answered for is not asked at all — not asked and outraced are two \
+             different claims, and only the log tells them apart"
         );
     }
 
