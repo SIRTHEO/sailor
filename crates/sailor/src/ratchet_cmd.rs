@@ -606,6 +606,10 @@ fn measured(only: &[String]) -> Result<bool, String> {
             ],
         )
     );
+    let compilers = machine::how_many_compilers(
+        &machine::spare_memory(),
+        std::thread::available_parallelism().map_or(1, |cores| cores.get()),
+    );
     let mut counted = Verdicts::default();
     for judge in &judges {
         // **NOTHING IS TOUCHED TO FORCE A REBUILD.** Every judge's test file
@@ -620,7 +624,11 @@ fn measured(only: &[String]) -> Result<bool, String> {
             .env("CARGO_TARGET_DIR", root.join("target").join("ratchet"))
             // `--nocapture`: saying it measured nothing is what a judge does
             // while passing, and a passing judge's words are otherwise dropped.
-            .args(["test", "--quiet", "-p", &judge.package, "--test", &judge.test, "--", "--nocapture"])
+            // **AS MANY COMPILERS AS THE MACHINE CAN HOLD**, which is not the
+            // core count: this machine is shared between sessions, and three
+            // gates were killed for memory running one core count of them.
+            .args(["test", "--quiet", "--jobs", &compilers.to_string()])
+            .args(["-p", &judge.package, "--test", &judge.test, "--", "--nocapture"])
             .output()
             .map_err(|error| format!("cargo test: {error}"))?;
         let text = String::from_utf8_lossy(&out.stdout) + String::from_utf8_lossy(&out.stderr);
