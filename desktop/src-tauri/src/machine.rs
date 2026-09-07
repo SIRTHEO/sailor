@@ -70,6 +70,44 @@ pub(crate) fn the_dev_port() -> Result<ThePort, String> {
     )
 }
 
+/// What weighs on the machine, whether or not Sailor lit it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "saw", rename_all = "snake_case")]
+pub(crate) enum TheLoad {
+    Seen { load: [f64; 3], heaviest: Vec<Weighing> },
+    /// **NOT AN EMPTY MACHINE.** Refused a look, «nothing is running» would
+    /// call the machine idle while it grinds.
+    CouldNotLook { why: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct Weighing {
+    pub pid: u32,
+    pub kilobytes: u64,
+    pub command: String,
+    pub sailor_lit: bool,
+}
+
+#[tauri::command]
+pub(crate) fn what_weighs_here() -> Result<TheLoad, String> {
+    let store = open_store()?;
+    Ok(match machine::what_weighs(&store).map_err(|error| error.to_string())? {
+        machine::TheLoad::CouldNotLook(why) => TheLoad::CouldNotLook { why },
+        machine::TheLoad::Seen { load, heaviest } => TheLoad::Seen {
+            load,
+            heaviest: heaviest
+                .into_iter()
+                .map(|one| Weighing {
+                    pid: one.pid,
+                    kilobytes: one.kilobytes,
+                    command: one.command,
+                    sailor_lit: one.sailor_lit,
+                })
+                .collect(),
+        },
+    })
+}
+
 #[tauri::command]
 pub(crate) fn what_sailor_lit() -> Result<Vec<Standing>, String> {
     let store = open_store()?;
