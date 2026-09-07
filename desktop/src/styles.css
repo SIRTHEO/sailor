@@ -6847,3 +6847,10 @@ tr[data-followable]:hover {
 .step-why[data-held] {
   color: var(--text-3);
 }
+
+/* Which engine answered, beside what it cost: the parts of the spend, told
+   apart from the totals they add up to. */
+.console__spend-model {
+  color: var(--muted);
+  white-space: nowrap;
+}

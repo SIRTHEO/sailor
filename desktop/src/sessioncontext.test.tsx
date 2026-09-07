@@ -13,7 +13,7 @@ import { belowThreshold, contrastPairs, inOtherScheme, parseStylesheet } from ".
 afterEach(() => { cleanup(); delete (window as unknown as { __TAURI__?: unknown }).__TAURI__; });
 
 const terminal: TerminalSummary = { id: "one", workspaceRoot: "/work/project", workspaceName: "project", program: "engine", profile: null, alive: true, processId: 1, device: "ttys001", moved: 0, estimatedTokens: 0 };
-const tokens: RunUsage["tokens"] = { calls: 2, calls_without_cost: 1, calls_without_tokens: 0, cost_micros: 1000000, input_tokens: 10, output_tokens: 20, cached_tokens: 0, cache_write_tokens: 0, total_tokens_only: 0 };
+const tokens: RunUsage["tokens"] = { calls: 2, calls_without_cost: 1, turns: 0, total_tokens_only: 0, calls_without_tokens: 0, cost_micros: 1000000, input_tokens: 10, output_tokens: 20, cached_tokens: 0, cache_write_tokens: 0 };
 const run: Execution = { run_id: "run-one", kind: "flow", entity: "build", worktree: terminal.workspaceRoot, status: "succeeded", started_at: 1, ended_at: 4, duration_secs: 3, total_cost_micros: 1000000, error: null, steps_total: 1, steps_went: 1, steps_broke: 0, steps_retried: 0, steps_open: [], tokens, tokens_by_model: {}, calls: [] };
 const usage: RunUsage = { ...run, tokens, tokens_by_model: {}, calls: [] };
 const refusal = { check: "gate", rule: "not_allowed", path: "src", seen: "missing authority" };

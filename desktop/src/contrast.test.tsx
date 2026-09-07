@@ -173,7 +173,7 @@ describe("the run history", () => {
           started_at: 1000, ended_at: 1100, duration_secs: 100, total_cost_micros: 412000,
           error: "the step «tests» fell over: 1 failed", steps_total: 5, steps_went: 3,
           steps_broke: 1, steps_retried: 2, steps_open: [],
-          tokens: { input_tokens: 1, output_tokens: 1, cached_tokens: 0, cache_write_tokens: 0, cost_micros: 412000, calls: 1, calls_without_tokens: 0, calls_without_cost: 0 },
+          tokens: { input_tokens: 1, output_tokens: 1, cached_tokens: 0, cache_write_tokens: 0, cost_micros: 412000, calls: 1, total_tokens_only: 0, turns: 0, calls_without_tokens: 0, calls_without_cost: 0 },
           tokens_by_model: {},
           calls: [
             {
@@ -197,7 +197,7 @@ describe("the run history", () => {
           run_id: "r2", kind: "flow", entity: "relay", status: "succeeded",
           started_at: 900, ended_at: 950, duration_secs: 50, total_cost_micros: 0,
           error: null, steps_total: 2, steps_went: 2, steps_broke: 0, steps_retried: 0, steps_open: [],
-          tokens: { input_tokens: 0, output_tokens: 0, cached_tokens: 0, cache_write_tokens: 0, cost_micros: 0, calls: 0, calls_without_tokens: 0, calls_without_cost: 0 },
+          tokens: { input_tokens: 0, output_tokens: 0, cached_tokens: 0, cache_write_tokens: 0, cost_micros: 0, calls: 0, total_tokens_only: 0, turns: 0, calls_without_tokens: 0, calls_without_cost: 0 },
           tokens_by_model: {}, calls: [],
         },
         {
@@ -205,7 +205,7 @@ describe("the run history", () => {
           started_at: 800, ended_at: null, duration_secs: null, total_cost_micros: 3000,
           error: null, steps_total: 4, steps_went: 1, steps_broke: 0, steps_retried: 0,
           steps_open: [{ step_id: "implementa", attempt: 1, started_at: 800, open_for_secs: 300 }],
-          tokens: { input_tokens: 0, output_tokens: 0, cached_tokens: 0, cache_write_tokens: 0, cost_micros: 3000, calls: 1, calls_without_tokens: 1, calls_without_cost: 0 },
+          tokens: { input_tokens: 0, output_tokens: 0, cached_tokens: 0, cache_write_tokens: 0, cost_micros: 3000, calls: 1, total_tokens_only: 0, turns: 0, calls_without_tokens: 1, calls_without_cost: 0 },
           tokens_by_model: {}, calls: [],
         },
       ],
