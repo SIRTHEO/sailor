@@ -113,7 +113,8 @@
           "tool": [
             "claude-code",
             "codex",
-            "agy"
+            "agy",
+            "ollama-coder-14b"
           ],
           "kind": "implementation",
           "data": "private",
