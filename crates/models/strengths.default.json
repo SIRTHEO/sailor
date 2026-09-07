@@ -13,7 +13,7 @@
   "measured_on": "the mandate of 02/09/2026; no ledger measure per kind yet",
   "rows": {
     "mechanical": ["ollama"],
-    "research": ["openrouter-cli", "gemini-cli"],
+    "research": ["agy", "gemini-cli"],
     "implementation": ["codex", "claude-code"],
     "judgement": ["codex", "claude-code"],
     "writing": ["claude-code", "gemini-cli"]
