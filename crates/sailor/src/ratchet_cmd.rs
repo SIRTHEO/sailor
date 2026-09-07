@@ -611,16 +611,11 @@ fn measured(only: &[String]) -> Result<bool, String> {
     );
     let mut counted = Verdicts::default();
     for judge in &judges {
-        // Touched so it recompiles: `env!("CARGO_MANIFEST_DIR")` is baked in at
-        // compile time, and a cached binary would measure the previous tree.
-        let file = clean
-            .join("crates")
-            .join(&judge.package)
-            .join("tests")
-            .join(format!("{}.rs", judge.test));
-        let _ = std::fs::OpenOptions::new().append(true).open(&file).and_then(|f| f.set_len(
-            std::fs::metadata(&file).map(|m| m.len()).unwrap_or(0),
-        ));
+        // **NOTHING IS TOUCHED TO FORCE A REBUILD.** Every judge's test file was,
+        // so that `env!("CARGO_MANIFEST_DIR")` could not be a stale path — but
+        // the tree is laid at one fixed place per checkout, so that path is the
+        // same every run. What a judge embeds at compile time is cargo's own
+        // affair: `include_str!` registers the file it read, measured here.
         let out = Command::new("cargo")
             .current_dir(&clean)
             // Its own target: sharing `target/from-head` with the release put two
@@ -768,6 +763,48 @@ mod tests {
     /// **TWO GATES ON ONE TREE MAKE A RED JUDGE OUT OF NOTHING**, and took a
     /// machine down doing it: they lay HEAD over each other mid-measure, so a
     /// judge reads sources that were never together anywhere.
+    /// **THE ONE REASON THE GATE USED TO TOUCH EVERY JUDGE.** A judge that
+    /// embeds a file at compile time would, with a cached binary, measure the
+    /// tree before this one — silently, and three judges here do embed. Cargo
+    /// registers what `include_str!` read and rebuilds when it changes; this
+    /// is that claim, measured rather than believed.
+    #[test]
+    fn cargo_rebuilds_a_test_that_embedded_a_file_the_tree_changed() {
+        let root = std::env::temp_dir().join(format!("sailor-embed-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("tests")).expect("the scratch crate");
+        std::fs::create_dir_all(root.join("src")).expect("the source directory");
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[package]\nname = \"embedded\"\nversion = \"0.0.0\"\nedition = \"2021\"\n",
+        )
+        .expect("the manifest");
+        std::fs::write(root.join("src/lib.rs"), "").expect("the library");
+        std::fs::write(
+            root.join("tests/reads.rs"),
+            "#[test]\nfn says() { println!(\"EMBEDDED {}\", include_str!(\"../held.txt\").trim()); }\n",
+        )
+        .expect("the test that embeds");
+
+        let said = |root: &Path| -> String {
+            let out = Command::new("cargo")
+                .current_dir(root)
+                .args(["test", "--quiet", "--test", "reads", "--", "--nocapture"])
+                .output()
+                .expect("cargo runs");
+            String::from_utf8_lossy(&out.stdout).to_string()
+        };
+
+        std::fs::write(root.join("held.txt"), "first\n").expect("what it embeds");
+        assert!(said(&root).contains("EMBEDDED first"), "the first build did not read the file");
+        std::fs::write(root.join("held.txt"), "second\n").expect("change what it embeds");
+        assert!(
+            said(&root).contains("EMBEDDED second"),
+            "a cached binary carried the file the tree used to hold, and a judge would measure it"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn a_second_gate_on_the_same_tree_is_refused() {
         let root = std::env::temp_dir().join(format!("sailor-onegate-{}", std::process::id()));
