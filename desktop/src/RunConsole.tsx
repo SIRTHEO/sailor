@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Ran, Refusal, RunEvent, RunSnapshot } from "./engine";
+import type { Ran, Refusal, RunEvent, RunSnapshot, Why } from "./engine";
 import { t as translate, tryT } from "./i18n";
 import { totalsArePartial, type RunUsage, type TokenTotals } from "./flow";
 import { StepRefusal } from "./StepRefusal";
 import { StepRan } from "./StepRan";
+import { StepWhy } from "./StepWhy";
 
 /**
  * A run as it goes: what is running, what finished, what it said.
@@ -190,6 +191,9 @@ interface StepPane {
   refusal: Refusal | null;
   /** The program and the arguments the step started, when it started one. */
   ran: Ran | null;
+  /** Why the engine did with it what it did: it arrives at open, with the
+   * input, and a step that never closes is the one whose reason is wanted. */
+  why: Why | null;
   lines: ConsoleLine[];
   /** True if the step produced text of its own, beyond the system lines. */
   spoke: boolean;
@@ -224,6 +228,7 @@ export function panesFromEvents(events: RunEvent[]): StepPane[] {
         failure: null,
         refusal: null,
         ran: null,
+        why: readWhy(payload?.why),
         lines: [],
         spoke: false,
         // The step record carries the input, from which what it runs is read.
@@ -264,6 +269,27 @@ export function readRefusal(value: unknown): Refusal | null {
     return null;
   }
   return { check, path, rule, seen };
+}
+
+/**
+ * The reason the record carries, when it carries one whole. A half-shaped
+ * reason is no reason: read in part it would say the engine judged something
+ * it never judged.
+ */
+export function readWhy(value: unknown): Why | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const { because, held, wanted, looked_at } = record;
+  if (because !== "condition" || typeof held !== "boolean" || typeof wanted !== "string") return null;
+  if (looked_at !== null && looked_at !== undefined && typeof looked_at !== "string") return null;
+  return {
+    because: "condition",
+    held,
+    wanted,
+    looked_at: typeof looked_at === "string" ? looked_at : null,
+    found: record.found ?? null,
+    found_was_there: record.found_was_there === true,
+  };
 }
 
 /** The line a closing fact carries, when it carries one whole. */
@@ -583,6 +609,10 @@ export function RunConsole({
                 </span>
               </header>
               <div className="pane__body">
+                {/* WHY, BEFORE WHAT CAME IN. A step the engine skipped shows
+                    no text at all, and the reason is the only thing there is
+                    to read about it. */}
+                {pane.why && <StepWhy why={pane.why} />}
                 {/* WHAT CAME IN, before what came out: it is the order in which
                     a step is understood, and until now there was the second
                     half alone. Closed by default — a long input would bury the
