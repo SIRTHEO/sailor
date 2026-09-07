@@ -44,10 +44,18 @@
       "label": "Sailor's own terminal",
       "listen": {
         "kind": "appended_lines",
-        "files": ["~/.sailor/terminals/*/messages.jsonl"],
-        "text_pointer": ["text"],
-        "who_pointer": ["who"],
-        "where_pointer": ["session"]
+        "files": [
+          "~/.sailor/terminals/*/messages.jsonl"
+        ],
+        "text_pointer": [
+          "text"
+        ],
+        "who_pointer": [
+          "who"
+        ],
+        "where_pointer": [
+          "session"
+        ]
       },
       "note": "The terminal engine exists now — `crates/terminal` — but NOBODY WRITES THIS FILE, and the path above is still the shape it will have rather than a measurement. That is a choice, not an oversight: a terminal running in the same process hands its routed request straight to the `manual` trigger, which carries the signal with it, and going through a file would be writing in order to read yourself back. This entry serves the case that does not exist yet: a terminal in ANOTHER process, which has to get its request to a Sailor living elsewhere. For that, the two things written in `trigger::action` are still missing — a process that stays up waiting, and a reader that keeps the point it reached."
     },
@@ -58,10 +66,14 @@
       "listen": {
         "kind": "cursor_command",
         "tool": "orca",
-        "args": ["terminal", "read", "--json"],
+        "args": [
+          "terminal",
+          "read",
+          "--json"
+        ],
         "cursor_argument": "--cursor"
       },
-      "note": "Measured, not assumed. That product records pane output in `terminal-history/*/output.log`, which is NOT an honest source: it is a binary frame format (magic OCKL) holding ANSI terminal bytes — screen redraws, not messages — truncated in place past 5 MB and written in batches every ~5 seconds, so a reader tailing it loses content without noticing. The only supported road is this cursor command, which returns text. It needs a tool descriptor with id `orca`, which is not shipped: add it in ~/.config/sailor/tools.d/."
+      "note": "Sailor reads a host terminal only by the road that host publishes. For this one that is its documented read command, which returns text and takes a cursor; a terminal's own log file is written for its own redraw, may change without notice, and reading it is how an integration breaks on somebody else's release. It needs a tool descriptor with id `orca`, which is not shipped: add it in ~/.config/sailor/tools.d/."
     }
   ]
 }
