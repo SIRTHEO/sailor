@@ -12,6 +12,7 @@ import {
   STATE_WORD,
   ago,
   blindSpots,
+  abandonedDecisions,
   brokenDecisions,
   handedDecisions,
   headingOf,
@@ -140,6 +141,7 @@ export function WaitingScreen({ native, now, since, sources, onRun, onQuota }: W
       : []),
     ...(seen.history.state === "answered" ? brokenDecisions(seen.history.value, from) : []),
     ...(seen.quota.state === "answered" ? quotaDecisions(seen.quota.value, now) : []),
+    ...abandonedDecisions(seen.terminals),
   ]);
   const history = seen.history.state === "answered" ? seen.history.value : null;
   const reports = history === null ? [] : reportsFrom(history, from);

@@ -397,6 +397,19 @@ pub(crate) fn terminal_list(app: AppHandle) -> Result<Vec<terminal::Summary>, St
     Ok(listed)
 }
 
+/// Which terminals the register still calls open hold nobody.
+///
+/// **THREE WAYS TO KNOW NOTHING, AND NONE OF THEM IS «NONE»**: a register that
+/// will not open is an error, a machine that will not be questioned comes back
+/// saying so, and only a clean register is an empty list. Fault 126.
+#[tauri::command]
+pub(crate) fn terminals_abandoned() -> Result<sessions::census::Abandoned, String> {
+    let path = sessions::Sessions::default_path().map_err(|why| why.to_string())?;
+    let store = sessions::Sessions::open(path).map_err(|why| why.to_string())?;
+    let rows = store.terminals().map_err(|why| why.to_string())?;
+    Ok(sessions::census::Census::of(&sessions::census::LocalMachine).abandoned(&rows))
+}
+
 /// What a terminal printed before this pane looked at it.
 ///
 /// Served by the host from its bounded backlog: a pane that mounts five

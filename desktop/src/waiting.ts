@@ -1,9 +1,9 @@
 // What waits for a person, and what happened while the window was shut.
 //
-// **EVERY ROW HERE NAMES A COMMAND THE SHELL ANSWERS.** The census of the
-// machine's terminals — `sailor session census` — names none: no
-// `#[tauri::command]` exposes it, so that fact is absent rather than guessed
-// from the panes this window happens to hold open, which is a different thing.
+// **EVERY ROW HERE NAMES A COMMAND THE SHELL ANSWERS**, the census of the
+// machine's terminals included, since `terminals_abandoned` exposes it. A fact
+// nothing answers for stays absent rather than guessed from the panes this
+// window happens to hold open, which is a different thing.
 
 import type { Asked } from "./ask";
 import {
@@ -15,6 +15,7 @@ import {
   type OpenRun,
 } from "./engine";
 import { quota, windowName, type Window as QuotaWindow } from "./quota";
+import { abandonedTerminals, type Abandoned } from "./terminal";
 
 /** The state a row carries. Drawn as a shape, and said as a word beside it. */
 export type RowState = "human" | "broke" | "quota" | "went" | "capped" | "stopped";
@@ -162,6 +163,24 @@ export function handedDecisions(
   return decisions;
 }
 
+/**
+ * Terminals the register calls open that hold nobody. A terminal killed
+ * without closing stays open for ever, by design; nothing dates its death, so
+ * the row carries no «since» rather than an invented one.
+ */
+export function abandonedDecisions(asked: Asked<Abandoned>): Decision[] {
+  if (asked.state !== "answered" || asked.value.answer !== "seen") return [];
+  return asked.value.ttys.map((tty) => ({
+    id: `terminal/${tty}`,
+    state: "stopped" as const,
+    question: `«${tty}» is open on the register and holds nobody`,
+    context: "killed without closing: nothing runs there any more",
+    since: null,
+    runId: null,
+    stepId: null,
+  }));
+}
+
 /** The runs that broke in the span looked at. */
 export function brokenDecisions(history: Execution[], since: number): Decision[] {
   const broken = endedSince(history, since).filter((run) => outcomeOfRun(run) === "broke");
@@ -239,13 +258,15 @@ export function reportsFrom(history: Execution[], since: number): Report[] {
 /** Every source the screen reads, each carrying its own outcome. */
 export interface Sources {
   open: Asked<OpenRun[]>;
+  /** Terminals the register calls open that hold nobody. */
+  terminals: Asked<Abandoned>;
   handed: Asked<Record<string, HandedStep[]>>;
   history: Asked<Execution[]>;
   quota: Asked<QuotaWindow[]>;
 }
 
 /** How many there are, so «all of them are mute» is not a hand-kept number. */
-export const HOW_MANY_SOURCES = 4;
+export const HOW_MANY_SOURCES = 5;
 
 /** One source falling silent must not silence the others. */
 async function tried<T>(work: Promise<T>): Promise<Asked<T>> {
@@ -273,12 +294,13 @@ async function handedFor(open: Asked<OpenRun[]>): Promise<Asked<Record<string, H
 }
 
 export async function readSources(): Promise<Sources> {
-  const [open, history, windows] = await Promise.all([
+  const [open, history, windows, terminals] = await Promise.all([
     tried(openRuns()),
     tried(executionHistory()),
     tried(quota()),
+    tried(abandonedTerminals()),
   ]);
-  return { open, history, quota: windows, handed: await handedFor(open) };
+  return { open, history, quota: windows, terminals, handed: await handedFor(open) };
 }
 
 /** What could not be read, named. A count with a hole in it is not a count. */
@@ -288,10 +310,17 @@ export function blindSpots(sources: Sources): string[] {
     ["the steps handed to you", sources.handed],
     ["the history of runs", sources.history],
     ["the quota", sources.quota],
+    ["the terminals", sources.terminals],
   ];
   const blind: string[] = [];
   for (const [name, asked] of named) {
     if (asked.state === "mute") blind.push(`${name} (${asked.why})`);
+  }
+  // **A MACHINE THAT WOULD NOT BE QUESTIONED IS A HOLE IN THE COUNT**, not a
+  // clean register: the command answered, and its answer is that nobody looked.
+  if (sources.terminals.state === "answered" && sources.terminals.value.answer === "could_not_look") {
+    const { tool, reason } = sources.terminals.value.refusal;
+    blind.push(`the terminals (${tool}: ${reason})`);
   }
   return blind;
 }

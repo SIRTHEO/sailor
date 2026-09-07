@@ -24,6 +24,7 @@ function answered(sources: Partial<Sources>): Sources {
     handed: { state: "answered", value: {} },
     history: { state: "answered", value: [] },
     quota: { state: "answered", value: [] },
+    terminals: { state: "answered", value: { answer: "seen", ttys: [] } },
     ...sources,
   };
 }
@@ -128,7 +129,7 @@ describe("nothing waiting, and not being able to tell", () => {
         native
         now={NOW}
         since={AWAY}
-        sources={{ open: dead, handed: dead, history: dead, quota: dead }}
+        sources={{ open: dead, handed: dead, history: dead, quota: dead, terminals: dead }}
       />,
     );
     expect(screen.getByText(/Nothing here answered/)).toBeTruthy();
@@ -345,6 +346,7 @@ describe("reading the engine for itself", () => {
           }
           if (command === "execution_history") return Promise.resolve([]);
           if (command === "quota") return Promise.resolve([]);
+          if (command === "terminals_abandoned") return Promise.resolve({ answer: "seen", ttys: [] });
           return Promise.reject(new Error(`no ${command}`));
         },
       },

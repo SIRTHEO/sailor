@@ -195,6 +195,25 @@ export async function listTerminals(): Promise<TerminalSummary[]> {
 }
 
 /**
+ * The register's answer about terminals nothing lives on: a list, or the
+ * refusal that says nobody looked. Mirrors `Abandoned` in `crates/sessions`.
+ */
+export type Abandoned =
+  | { answer: "seen"; ttys: string[] }
+  | { answer: "could_not_look"; refusal: { tool: string; reason: string } };
+
+/**
+ * Which terminals the register still calls open hold nobody. Outside the shell
+ * there is no register and no machine to question, so it throws rather than
+ * answer «none» — the fact that made fault 127.
+ */
+export async function abandonedTerminals(): Promise<Abandoned> {
+  const invoke = invoker();
+  if (!invoke) throw new Error("outside the native shell: no register to read");
+  return invoke<Abandoned>("terminals_abandoned");
+}
+
+/**
  * What a terminal printed before this pane looked at it. `upto` is where the
  * live events take over: a pane writes the backlog, then only the events whose
  * `at` is not below it.
