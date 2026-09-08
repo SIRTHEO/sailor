@@ -55,6 +55,33 @@ pub struct KnownCli {
     /// The files it reads at its start, each relative to the project root or
     /// under `~`. Empty where nobody established them, which is not «none».
     pub reads_instructions_from: Vec<String>,
+    /// Inside a home, the files whose presence means somebody signed in there.
+    pub signed_in_when: Vec<String>,
+}
+
+/// Whether a home carries credentials. **UNKNOWN IS NOT SIGNED OUT**: nobody
+/// established where this command line keeps them, so nothing is being said.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SignedIn {
+    Yes,
+    No,
+    NobodyEstablished,
+}
+
+/// `there` answers whether a path exists, so a test hands it its own machine.
+pub fn signed_in(cli: &KnownCli, home: &Path, there: &dyn Fn(&Path) -> bool) -> SignedIn {
+    if cli.signed_in_when.is_empty() {
+        return SignedIn::NobodyEstablished;
+    }
+    if cli
+        .signed_in_when
+        .iter()
+        .any(|file| there(&home.join(file)))
+    {
+        SignedIn::Yes
+    } else {
+        SignedIn::No
+    }
 }
 
 /// The two variables a command line reads to talk to an endpoint other than
@@ -195,6 +222,8 @@ struct DeclaredCli {
     endpoint: Option<NativeEndpoint>,
     #[serde(default)]
     reads_instructions_from: Vec<String>,
+    #[serde(default)]
+    signed_in_when: Vec<String>,
 }
 
 /// Exactly one field is written; neither means **no known way**.
@@ -246,6 +275,7 @@ impl From<DeclaredCli> for KnownCli {
             home_already_here: already_at,
             endpoint: declared.endpoint,
             reads_instructions_from: declared.reads_instructions_from,
+            signed_in_when: declared.signed_in_when,
         }
     }
 }
@@ -619,6 +649,7 @@ mod tests {
             home_already_here: None,
             endpoint: None,
             reads_instructions_from: Vec::new(),
+            signed_in_when: Vec::new(),
         };
         let env = build_environment(&cli, Path::new("/home/profiles/acme/work"), &|_| None);
         assert!(env.is_empty());

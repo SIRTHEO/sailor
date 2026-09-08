@@ -13,7 +13,7 @@
 //! and did not travel with the product; the equipment was there and never
 //! reached the engines.
 
-use actions::{equipment_for, equipment_with_keys};
+use actions::{equipment_for, equipment_with_keys_and_disk};
 use ledger::EngineIdentity;
 use profiles::{Profile, ProfileEndpoint, ProfileStore};
 use std::collections::BTreeMap;
@@ -104,7 +104,13 @@ fn a_profile_with_a_native_endpoint_points_the_engine_there_and_says_so() {
             key_var: "A_KEY_VAR".to_owned(),
             protocol: protocol.to_owned(),
         });
-        equipment_with_keys(&store, "/opt/homebrew/bin/codex", &BTreeMap::new(), &keys)
+        equipment_with_keys_and_disk(
+            &store,
+            "/opt/homebrew/bin/codex",
+            &BTreeMap::new(),
+            &keys,
+            &|path: &std::path::Path| path.ends_with("auth.json"),
+        )
     };
 
     let native = pointed("openai-responses");
@@ -338,5 +344,75 @@ fn a_stale_active_name_that_matches_no_profile_moves_nothing() {
             cli_id: "codex".to_owned(),
             profile_name: "sparito".to_owned(),
         }
+    );
+}
+
+/// **A PROFILE NOBODY IS SIGNED IN TO IS PAID FOR BEFORE IT FAILS.** The chain
+/// tried it, the engine started, the call went out and came back unauthorised:
+/// the refusal belongs before the launch, where every other one already is.
+#[test]
+fn a_profile_whose_home_carries_no_credentials_is_refused_before_it_is_launched() {
+    let store = a_store_with_one_active_profile();
+    let nothing_on_this_disk = |_: &std::path::Path| false;
+
+    let equipment = equipment_with_keys_and_disk(
+        &store,
+        "codex",
+        &step_env(&[]),
+        &|_| None,
+        &nothing_on_this_disk,
+    );
+
+    let why = equipment.refused.expect("a signed-out profile was let through");
+    assert!(why.contains("lavoro"), "the refusal does not name the profile: {why}");
+    assert!(
+        why.contains("/case/codex/lavoro"),
+        "the refusal does not name the home to go and look at: {why}"
+    );
+}
+
+/// The same profile, with its credentials where the command line declares them:
+/// nothing is refused, and the environment still reaches the engine.
+#[test]
+fn a_profile_signed_in_where_its_command_line_says_is_not_refused() {
+    let store = a_store_with_one_active_profile();
+    let signed_in = |path: &std::path::Path| path.ends_with("auth.json");
+
+    let equipment =
+        equipment_with_keys_and_disk(&store, "codex", &step_env(&[]), &|_| None, &signed_in);
+
+    assert_eq!(equipment.refused, None, "a signed-in profile was refused");
+    assert_eq!(
+        equipment.env.get("CODEX_HOME"),
+        Some(&"/case/codex/lavoro".to_owned()),
+        "the home stopped reaching the engine"
+    );
+}
+
+/// **UNKNOWN IS NOT SIGNED OUT.** Where nobody established where a command line
+/// keeps its credentials, an empty disk says nothing about it: the engine is
+/// tried and answers for itself, rather than being excluded on a guess.
+#[test]
+fn a_command_line_that_declares_no_credentials_file_is_never_refused_for_one() {
+    let mut store = ProfileStore::default();
+    store.profiles.push(Profile {
+        name: "sola".to_owned(),
+        cli_id: "gemini".to_owned(),
+        home_dir: PathBuf::from("/case/gemini/sola"),
+        endpoint: None,
+    });
+    store.active.insert("gemini".to_owned(), "sola".to_owned());
+
+    let equipment = equipment_with_keys_and_disk(
+        &store,
+        "gemini",
+        &step_env(&[]),
+        &|_| None,
+        &|_: &std::path::Path| false,
+    );
+
+    assert_eq!(
+        equipment.refused, None,
+        "an engine was excluded because nobody had established where it keeps credentials"
     );
 }

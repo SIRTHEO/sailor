@@ -58,6 +58,18 @@ pub fn equipment_with_keys(
     step_env: &BTreeMap<String, String>,
     key_of: &dyn Fn(&str) -> Option<String>,
 ) -> Equipment {
+    equipment_with_keys_and_disk(store, bin, step_env, key_of, &|path| path.exists())
+}
+
+/// [`equipment_with_keys`] with the machine's disk read through `there`, so a
+/// test says what is on it without laying a home down.
+pub fn equipment_with_keys_and_disk(
+    store: &profiles::ProfileStore,
+    bin: &str,
+    step_env: &BTreeMap<String, String>,
+    key_of: &dyn Fn(&str) -> Option<String>,
+    there: &dyn Fn(&std::path::Path) -> bool,
+) -> Equipment {
     let Some(cli) = profiles::cli_for_executable(bin) else {
         // An arbitrary command — `sh`, a script — has no home to move, and
         // handing it one would mean nothing.
@@ -90,6 +102,7 @@ pub fn equipment_with_keys(
         Some(Err(why)) => Some(why),
         None => None,
     };
+    let refused = refused.or_else(|| resolved.and_then(|profile| signed_out(cli, profile, there)));
     // Profile first, step on top: a variable written in the step wins.
     let mut env = from_the_profile;
     env.extend(
@@ -101,6 +114,29 @@ pub fn equipment_with_keys(
         env,
         identity: identity_of(cli, named.map(String::as_str), resolved, step_env),
         refused,
+    }
+}
+
+/// Why this profile must not be started: its home carries no credentials.
+///
+/// **ONLY A MEASURED NO REFUSES.** Where nobody established where a command
+/// line keeps its credentials, nothing is said and nothing is refused — the
+/// engine is tried and answers for itself.
+fn signed_out(
+    cli: &profiles::KnownCli,
+    profile: &profiles::Profile,
+    there: &dyn Fn(&std::path::Path) -> bool,
+) -> Option<String> {
+    match profiles::signed_in(cli, &profile.home_dir, there) {
+        profiles::SignedIn::No => Some(catalogue::say(
+            "engine.profile_is_signed_out",
+            &[
+                ("profile", &profile.name),
+                ("cli", &cli.display_name),
+                ("home", &profile.home_dir.display().to_string()),
+            ],
+        )),
+        profiles::SignedIn::Yes | profiles::SignedIn::NobodyEstablished => None,
     }
 }
 

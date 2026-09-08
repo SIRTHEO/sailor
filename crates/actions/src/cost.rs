@@ -258,6 +258,13 @@ mod what_it_cost {
         dir
     }
 
+    /// The credentials `codex` declares under `signed_in_when`: a profile a
+    /// call runs under is one somebody signed in to.
+    fn signed_in_at(home: &std::path::Path) {
+        std::fs::create_dir_all(home).expect("the home");
+        std::fs::write(home.join("auth.json"), "{}").expect("the credentials");
+    }
+
     /// An executable script that behaves as it is told.
     fn fake_engine(dir: &std::path::Path, name: &str, body: &str) -> String {
         let path = dir.join(name);
@@ -1390,17 +1397,10 @@ printf '{"result":"the true answer","model":"modello-di-prova","total_cost_usd":
         );
     }
 
-    /// **AND THE KIND DOES NOT DEPEND ON `accept`, IN EITHER BRANCH.**
-    ///
-    /// A step's tolerance is about **what the run does** — whether the failure
-    /// is a datum the step keeps or a reason to stop — and must not touch **what
-    /// stays written**. In the `ExitError` branch that always held, since
-    /// `note(...)` sits ahead of the tolerance check; in the `Ok` branch it sat
-    /// behind it, so with `accept: ["exit_error"]` declared the row was born
-    /// `NULL` again — indistinguishable from a real answer, the defect surviving
-    /// in a corner of its own remedy. The two halves sit together on purpose:
-    /// they are one claim — «the kind is the same and does not depend on the
-    /// tolerance» — over both exit codes.
+    /// **THE KIND DOES NOT DEPEND ON `accept`, IN EITHER BRANCH.** A step's
+    /// tolerance decides what the run does, never what stays written: in the
+    /// `Ok` branch it sat ahead of `note(...)`, so a tolerated refusal was born
+    /// `NULL` again — the defect surviving in a corner of its own remedy.
     #[test]
     fn a_tolerated_refusal_is_recorded_as_exhausted_whatever_the_exit_code() {
         for (name, exit, script) in [
@@ -1609,21 +1609,11 @@ printf '{"result":"the true answer","model":"modello-di-prova","total_cost_usd":
         assert!(calls_in(&dir.join("deposito")).is_empty());
     }
 
-    /// **`cargo` AND `git` ARE NOT MODEL CALLS, AND THE LEDGER MUST NOT COUNT
-    /// THEM.**
-    ///
-    /// Measured on this machine's ledger: of twenty-four `model_calls` rows, two
-    /// are `git` and one `cargo`. None of the three burns any subscription's
-    /// quota, and all three arrive with no cost — so `Spend::is_complete()` is
-    /// **false on every real run**, and the cap's honesty line («the true spend
-    /// is higher») lights up always, even with nothing unknown. An always-lit
-    /// warning is read by nobody, and that is how the real one is lost — the
-    /// codex row, which genuinely does not state its cost. **THE DESCRIPTOR
-    /// DECIDES, NOT A LIST OF NAMES WRITTEN HERE**: a tool is an engine if it
-    /// declares **how it is asked a question** (`ask`), which `git` and `cargo`
-    /// do not, and no list of names in here would age well. Same rule as fault
-    /// 3 — what the catalogue declares counts for more than what the code
-    /// guesses.
+    /// **`cargo` AND `git` ARE NOT MODEL CALLS.** Counted, they arrive with no
+    /// cost, so the cap's honesty line lights up on every run and the real
+    /// unknown — the codex row — is lost in it. **THE DESCRIPTOR DECIDES, NOT A
+    /// LIST OF NAMES HERE**: a tool is an engine if it declares how it is asked
+    /// a question (`ask`), which neither does.
     #[test]
     fn a_tool_that_cannot_be_asked_anything_is_not_a_model_call() {
         let dir = scratch("not-an-engine");
@@ -1802,6 +1792,7 @@ printf '{"result":"the true answer","model":"modello-di-prova","total_cost_usd":
             .to_string(),
         )
         .expect("write the profiles state");
+        signed_in_at(&dir.join("casa"));
 
         let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {
@@ -1903,6 +1894,7 @@ printf '{"result":"the true answer","model":"modello-di-prova","usage":{"input_t
             .to_string(),
         )
         .expect("write the profiles state");
+        signed_in_at(&dir.join("casa-del-profilo"));
 
         let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {
@@ -1966,6 +1958,7 @@ printf '{"result":"the true answer","model":"modello-di-prova","usage":{"input_t
             .to_string(),
         )
         .expect("write the profiles state");
+        signed_in_at(&dir.join("casa"));
 
         let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let action = ExternalEngineAction::resolving_with(Declares {

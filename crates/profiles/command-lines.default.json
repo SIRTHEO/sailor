@@ -40,7 +40,12 @@
     "",
     "To change the list on one machine, write $SAILOR_HOME/command-lines.json:",
     "an `id` present there replaces the one shipped here, and ids not in here",
-    "are added."
+    "are added.",
+    "",
+    "`signed_in_when` names the files inside a home whose presence means somebody",
+    "signed in there. Measured on this machine, never guessed. Absent means NOBODY",
+    "ESTABLISHED IT, and no engine is ever refused for that: unknown is not signed",
+    "out. gemini and antigravity keep nothing under such a name, so neither declares one."
   ],
   "command_lines": [
     {
@@ -52,6 +57,7 @@
       "home": { "variable": "CLAUDE_CONFIG_DIR", "already_at": ".claude" },
       "home_note": "checked against the installed binary: the variable moves the whole directory, credentials and settings included.",
       "reads_instructions_from": ["~/.claude/CLAUDE.md", "CLAUDE.md"],
+      "signed_in_when": [".credentials.json"],
       "endpoint": {
         "url_var": "ANTHROPIC_BASE_URL",
         "key_var": "ANTHROPIC_API_KEY",
@@ -67,6 +73,7 @@
       "home": { "variable": "CODEX_HOME", "already_at": ".codex" },
       "home_note": "checked with `doctor`: it shows auth.json and config.toml inside the directory the variable names.",
       "reads_instructions_from": ["~/.codex/AGENTS.md", "AGENTS.md"],
+      "signed_in_when": ["auth.json"],
       "endpoint": {
         "url_var": "OPENAI_BASE_URL",
         "key_var": "OPENAI_API_KEY",
