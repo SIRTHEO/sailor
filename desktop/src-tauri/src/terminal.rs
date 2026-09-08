@@ -379,6 +379,20 @@ pub(crate) fn terminal_close(id: String) -> Result<(), String> {
     client()?.close(&id)
 }
 
+/// `None` when no host was ever started, which is honestly no terminals. Any
+/// other refusal is a host that is there and will not talk, and answering that
+/// with an empty list would print «no terminal is open» over a question nobody
+/// answered.
+fn listed_by_host(client: &Client) -> Result<Option<Vec<terminal::Summary>>, String> {
+    if let Err(why) = client.hello() {
+        if why.kind() == std::io::ErrorKind::NotFound {
+            return Ok(None);
+        }
+        return Err(format!("the terminal host would not answer: {why}"));
+    }
+    client.list().map(Some)
+}
+
 /// Which terminals are open and in which workspace.
 ///
 /// **NO HOST IS NO TERMINALS, NOT A FAILURE.** The host starts when the first
@@ -386,11 +400,9 @@ pub(crate) fn terminal_close(id: String) -> Result<(), String> {
 /// starting a resident process to say so would be starting it for nothing.
 #[tauri::command]
 pub(crate) fn terminal_list(app: AppHandle) -> Result<Vec<terminal::Summary>, String> {
-    let client = client()?;
-    if client.hello().is_err() {
+    let Some(listed) = listed_by_host(&client()?)? else {
         return Ok(Vec::new());
-    }
-    let listed = client.list()?;
+    };
     for row in &listed {
         follow(&app, &row.id);
     }
@@ -429,6 +441,40 @@ pub(crate) fn terminal_backlog(id: String) -> Result<Backlog, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn scratch(label: &str) -> PathBuf {
+        let directory = std::env::temp_dir()
+            .join(format!("sailor-host-{label}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("a scratch directory");
+        directory
+    }
+
+    #[test]
+    fn no_host_at_all_is_no_terminals() {
+        let store = scratch("absent");
+        let listed = listed_by_host(&Client::in_store(&store));
+        let _ = std::fs::remove_dir_all(&store);
+        assert_eq!(listed, Ok(None), "a host never started is honestly nothing");
+    }
+
+    /// A host that is there and will not talk must not read as an empty list:
+    /// the window prints «no terminal is open» over it.
+    #[test]
+    fn a_host_that_will_not_answer_is_an_error_and_not_an_empty_list() {
+        let store = scratch("mute");
+        let client = Client::in_store(&store);
+        if let Some(parent) = client.address().parent() {
+            std::fs::create_dir_all(parent).expect("the address directory");
+        }
+        std::fs::write(client.address(), b"not a socket").expect("something at the address");
+
+        let listed = listed_by_host(&client);
+        let _ = std::fs::remove_dir_all(&store);
+
+        let why = listed.expect_err("an address that answers nothing is not an empty list");
+        assert!(why.contains("would not answer"), "{why}");
+    }
 
     /// **THE ARGUMENTS AND THE ENVIRONMENT CROSS THE BRIDGE AS GIVEN.** The
     /// window and the host each prove their own end; this is the piece in
