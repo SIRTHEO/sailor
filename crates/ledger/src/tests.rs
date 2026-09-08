@@ -3481,6 +3481,21 @@ fn a_repeat_of_a_successful_call_would_have_been_answered() {
     assert_eq!(tally.spent_micros, 100, "{tally:?}");
 }
 
+/// **A CALL NOBODY PRICED IS NOT A CALL THAT COST NOTHING.** Added as zero it
+/// made the total read as the whole spend.
+#[test]
+fn a_call_no_engine_priced_is_counted_apart_from_the_spend() {
+    let directory = TestDirectory::new("unpriced");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    engine_call(&ledger, "run-a", asking("count the crates"), "m", Outcome::Went, Some(30));
+    engine_call(&ledger, "run-b", asking("count the tests"), "m", Outcome::Went, None);
+
+    let tally = ledger.repeated_engine_calls().expect("count the repeats");
+    assert_eq!(tally.calls, 2, "{tally:?}");
+    assert_eq!(tally.spent_micros, 30, "the priced one is the whole of what is known: {tally:?}");
+    assert_eq!(tally.calls_without_a_cost, 1, "{tally:?}");
+}
+
 /// Drop the prompt from the key and the second call is answered with the
 /// first one's output: the stale answer the whole idea risks.
 #[test]

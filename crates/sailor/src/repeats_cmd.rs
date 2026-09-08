@@ -73,6 +73,12 @@ pub fn report(tally: &RepeatedCalls) -> String {
             ],
         ),
     ];
+    if tally.calls_without_a_cost > 0 {
+        lines.push(catalogue::say(
+            "cli.repeats.spent_is_a_floor",
+            &[("count", &tally.calls_without_a_cost.to_string())],
+        ));
+    }
     if tally.served_on_an_unresolved_prompt > 0 {
         lines.push(catalogue::say(
             "cli.repeats.matched_on_a_pointer",
@@ -111,6 +117,7 @@ mod tests {
             served_micros: 4_957_937,
             served_without_a_cost: 4,
             calls_without_a_key: 0,
+            calls_without_a_cost: 7,
             spent_micros: 37_886_794,
         }
     }
@@ -142,6 +149,30 @@ mod tests {
                 &[("count", "4")]
             )),
             "{said}"
+        );
+    }
+
+    /// **THE TOTAL IS A FLOOR AND SAYS SO.** The spend sums the calls that were
+    /// priced; the ones no engine priced were added as zero and left unsaid, so
+    /// the headline read as money spent when it was money counted.
+    #[test]
+    fn a_spend_missing_the_calls_nobody_priced_says_it_is_a_floor() {
+        let said = report(&tally());
+        assert!(
+            said.contains(&catalogue::say(
+                "cli.repeats.spent_is_a_floor",
+                &[("count", "7")]
+            )),
+            "{said}"
+        );
+
+        let all_priced = RepeatedCalls {
+            calls_without_a_cost: 0,
+            ..tally()
+        };
+        assert!(
+            !report(&all_priced).contains("floor"),
+            "with every call priced the caveat is a falsehood"
         );
     }
 

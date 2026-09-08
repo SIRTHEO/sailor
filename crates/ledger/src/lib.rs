@@ -868,6 +868,7 @@ pub struct RepeatedCalls {
     pub served_without_a_cost: i64,
     /// Calls whose step this store no longer holds: no key, so never served.
     pub calls_without_a_key: i64,
+    pub calls_without_a_cost: i64,
     pub spent_micros: i64,
 }
 
@@ -1902,7 +1903,10 @@ impl Ledger {
         for row in rows {
             let (cost, model, error_type, digest, input, outcome) = row?;
             tally.calls += 1;
-            tally.spent_micros += cost.unwrap_or(0);
+            match cost {
+                Some(micros) => tally.spent_micros += micros,
+                None => tally.calls_without_a_cost += 1,
+            }
             let Some(digest) = digest else {
                 tally.calls_without_a_key += 1;
                 continue;

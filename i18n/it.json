@@ -435,6 +435,7 @@
   "cli.repeats.no_step_so_no_key": "  {count} chiamate non hanno più il loro passo nel deposito, quindi nessuna chiave: mai risposte",
   "cli.repeats.nothing_to_measure": "nessuna chiamata a un motore registrata: niente da misurare, che non è la stessa cosa di niente da risparmiare",
   "cli.repeats.saved_but_never_priced": "  di quelle, {count} sono chiamate il cui costo nessun motore ha dichiarato: risparmiate, ma non contabili",
+  "cli.repeats.spent_is_a_floor": "  {count} di quelle chiamate non sono mai state prezzate dal motore: la spesa qui sopra è un minimo, non un totale",
   "cli.repeats.the_share_is_a_ceiling": "la chiave lascia fuori il commit dell'albero e la versione del descrittore, che possono solo spezzare le chiavi: questa quota è un tetto",
   "cli.repeats.would_have_been_answered": "{served} sarebbero state risposte dal registro: il {share}% delle chiamate, {saved} della spesa",
   "cli.run.active_profile_gone": "il profilo attivo «{profile}» per {id} non è più nello stato",
