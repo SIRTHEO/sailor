@@ -204,6 +204,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     )?;
 
     let build_target = root.join("target/from-head");
+    crate::machine_cmd::a_build_directory_is_taken(&build_target, None, "release");
     // The crates sit at the root of the tree since the move: there is no
     // sub-tree left to build from.
     let cloned_rust = repository.clone();

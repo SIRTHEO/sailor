@@ -270,22 +270,19 @@ fn load_average() -> [f64; 3] {
     if got == 3 { said } else { [0.0; 3] }
 }
 
-/// A build directory somebody left behind, and what it costs.
+/// A build directory on this disk and what it costs; who holds it is the register's affair.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LeftBehind {
     pub path: PathBuf,
     pub bytes: u64,
-    /// Seconds since anything in it was written.
-    pub idle_secs: i64,
 }
 
 /// **THE TAG IS THE PROOF, NOT THE NAME.** Cargo writes it in the directory it
 /// was pointed at and nowhere else, so `target/debug` carries none.
 const CARGO_WROTE_THIS: &str = "Signature: 8a477f597d28d172789f06886806bc55";
 
-/// The build directories under `<root>/target`, heaviest first. A busy one is
-/// listed too: `idle_secs` is what the caller decides on.
-pub fn build_directories_left(root: &Path, now: i64) -> Vec<LeftBehind> {
+/// The build directories under `<root>/target`, heaviest first.
+pub fn build_directories_left(root: &Path) -> Vec<LeftBehind> {
     let Ok(entries) = std::fs::read_dir(root.join("target")) else {
         return Vec::new();
     };
@@ -295,7 +292,6 @@ pub fn build_directories_left(root: &Path, now: i64) -> Vec<LeftBehind> {
         .filter(|path| cargo_built_it(path))
         .map(|path| LeftBehind {
             bytes: what_it_holds(&path),
-            idle_secs: idle_for(&path, now),
             path,
         })
         .collect();
@@ -320,21 +316,6 @@ fn what_it_holds(path: &Path) -> u64 {
             Err(_) => 0,
         })
         .sum()
-}
-
-/// How long since anything was written in it; unreadable counts as busy.
-fn idle_for(path: &Path, now: i64) -> i64 {
-    let newest = ["debug", "release", "."]
-        .iter()
-        .filter_map(|inside| std::fs::metadata(path.join(inside)).ok())
-        .filter_map(|held| held.modified().ok())
-        .filter_map(|when| when.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|since| since.as_secs() as i64)
-        .max();
-    match newest {
-        Some(second) => (now - second).max(0),
-        None => 0,
-    }
 }
 
 /// Memory going spare, or why we cannot say.

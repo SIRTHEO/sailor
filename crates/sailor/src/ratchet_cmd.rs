@@ -643,6 +643,8 @@ fn measured(asked: &Asked) -> Result<bool, String> {
         &machine::spare_memory(),
         std::thread::available_parallelism().map_or(1, |cores| cores.get()),
     );
+    let measured_in = root.join("target").join("ratchet");
+    crate::machine_cmd::a_build_directory_is_taken(&measured_in, None, "ratchet");
     let mut counted = Verdicts::default();
     for judge in &judges {
         // **NOTHING IS TOUCHED TO FORCE A REBUILD.** Every judge's test file
@@ -654,7 +656,7 @@ fn measured(asked: &Asked) -> Result<bool, String> {
             // Its own target: sharing `target/from-head` with the release put two
             // trees' binaries in one place, and a release running at the same
             // time went red on a target it could not name.
-            .env("CARGO_TARGET_DIR", root.join("target").join("ratchet"))
+            .env("CARGO_TARGET_DIR", &measured_in)
             // `--nocapture`: saying it measured nothing is what a judge does
             // while passing, and a passing judge's words are otherwise dropped.
             // **AS MANY COMPILERS AS THE MACHINE CAN HOLD**, which is not the

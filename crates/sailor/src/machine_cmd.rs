@@ -8,6 +8,7 @@
 use crate::Form;
 use ledger::Ledger;
 use std::path::Path;
+use ledger::holdings::{Holding, Whose};
 use machine::{
     build_directories_left, left_running, on_the_port, stop_the_ones_nobody_wants, what_weighs,
     LeftBehind, OnThePort, Teardown, TheLoad, DEV_PORT,
@@ -22,6 +23,10 @@ pub const USAGE: &[Form] = &[
         form: "sailor machine free",
         says_key: "cli.machine.form.free",
     },
+    Form {
+        form: "sailor machine free-one <path>",
+        says_key: "cli.machine.form.free_one",
+    },
 ];
 
 pub fn run(args: &[String]) -> i32 {
@@ -29,6 +34,10 @@ pub fn run(args: &[String]) -> i32 {
     let answered = match verb {
         "" => reading(),
         "free" => free(),
+        "free-one" => match args.get(1) {
+            Some(path) => free_one(path, open_ledger().ok().as_ref()),
+            None => Err(crate::forms_as_lines(USAGE).join("\n")),
+        },
         other => Err(catalogue::say("cli.no_such_form", &[("verb", other)])),
     };
     match answered {
@@ -86,7 +95,7 @@ fn standing(store: &Ledger) -> Result<Vec<Standing>, String> {
 fn reading() -> Result<String, String> {
     let store = match open_ledger() {
         Ok(store) => store,
-        Err(why) => return Ok(without_the_store(&why, about_the_disk())),
+        Err(why) => return Ok(without_the_store(&why, about_the_disk(None))),
     };
     let rows = standing(&store)?;
     let mut said = String::new();
@@ -128,7 +137,7 @@ fn reading() -> Result<String, String> {
     }
     said.push('\n');
     said.push_str(&about_the_load(&store)?);
-    if let Some(word) = about_the_disk() {
+    if let Some(word) = about_the_disk(Some(&store)) {
         said.push('\n');
         said.push_str(&word);
     }
@@ -145,34 +154,116 @@ fn without_the_store(why: &str, disk: Option<String>) -> String {
     said
 }
 
-/// **A BUILD DIRECTORY IS SPACE NOBODY OWNS.** Whoever pointed cargo at one
-/// walked away from it; the disk filled to 97% under twenty-two of them, and
-/// the gesture that frees this machine did not know they existed.
-fn about_the_disk() -> Option<String> {
-    about_the_disk_in(&workspace::root().ok()?, now())
+pub const BUILD_DIRECTORY: &str = "build-directory";
+
+/// Written down as this process's, for the run that wanted it. `for_run` of
+/// `None` says it is a cache to reuse, not rubbish once the gesture is over.
+pub fn a_build_directory_is_taken(path: &Path, for_run: Option<String>, purpose: &str) {
+    let Ok(store) = open_ledger() else {
+        return;
+    };
+    let holding = ledger::holdings::this_process_takes(
+        BUILD_DIRECTORY,
+        &path.to_string_lossy(),
+        for_run,
+        purpose,
+    );
+    let _ = store.holding_taken(&holding);
 }
 
-fn about_the_disk_in(root: &Path, now: i64) -> Option<String> {
-    let left = build_directories_left(root, now);
-    if left.is_empty() {
+/// A build directory on the disk, and what the register says of it. `taken` is
+/// `None` for one Sailor never made: unknown is not the same as free.
+struct OnTheDisk {
+    left: LeftBehind,
+    taken: Option<(Holding, Whose)>,
+}
+
+impl OnTheDisk {
+    fn is_nobodys(&self) -> bool {
+        matches!(self.taken, Some((_, Whose::Nobody)))
+    }
+
+    fn whose_it_is(&self) -> String {
+        let Some((holding, whose)) = &self.taken else {
+            return catalogue::say("cli.machine.never_taken", &[]);
+        };
+        match whose {
+            Whose::TheProcessThatTookIt => catalogue::say(
+                "cli.machine.held_now",
+                &[
+                    ("pid", &holding.held_by_pid.to_string()),
+                    ("purpose", &holding.purpose),
+                ],
+            ),
+            Whose::TheRunItWasTakenFor => catalogue::say(
+                "cli.machine.its_run_is_open",
+                &[("run", holding.for_run.as_deref().unwrap_or(""))],
+            ),
+            Whose::KeptOnPurpose => {
+                catalogue::say("cli.machine.kept_on_purpose", &[("purpose", &holding.purpose)])
+            }
+            Whose::Nobody => catalogue::say("cli.machine.nobodys_now", &[]),
+            Whose::Uncertain => catalogue::say("cli.machine.holder_unsettled", &[]),
+        }
+    }
+}
+
+/// The build directories on the disk, each next to whoever holds it.
+///
+/// Without a store nothing is claimed by anybody, and so nothing is taken:
+/// the register is the only thing that knows, and a machine that cannot ask
+/// it must not guess.
+fn build_directories(root: &Path, store: Option<&Ledger>) -> Vec<OnTheDisk> {
+    let held = store
+        .and_then(|store| store.holdings_left_held(BUILD_DIRECTORY).ok())
+        .unwrap_or_default();
+    build_directories_left(root)
+        .into_iter()
+        .map(|left| {
+            let name = left.path.to_string_lossy().into_owned();
+            let taken = held.iter().find(|one| one.name == name).map(|holding| {
+                let settled = ledger::holdings::whose(holding, &|run| run_is_open(store, run));
+                (holding.clone(), settled)
+            });
+            OnTheDisk { left, taken }
+        })
+        .collect()
+}
+
+fn run_is_open(store: Option<&Ledger>, run: &str) -> Result<bool, String> {
+    let store = store.ok_or_else(|| catalogue::say("cli.no_home", &[]))?;
+    store
+        .run_header(run)
+        .map(|header| header.is_none_or(|one| one.ended_at.is_none()))
+        .map_err(|error| error.to_string())
+}
+
+fn about_the_disk(store: Option<&Ledger>) -> Option<String> {
+    about_the_disk_in(&workspace::root().ok()?, store)
+}
+
+fn about_the_disk_in(root: &Path, store: Option<&Ledger>) -> Option<String> {
+    let on_disk = build_directories(root, store);
+    if on_disk.is_empty() {
         return None;
     }
-    let held: u64 = left.iter().map(|one| one.bytes).sum();
+    let held: u64 = on_disk.iter().map(|one| one.left.bytes).sum();
     let mut said = catalogue::say(
         "cli.machine.build_directories",
         &[
-            ("count", &left.len().to_string()),
+            ("count", &on_disk.len().to_string()),
             ("gigabytes", &gigabytes(held)),
+            ("nobodys", &on_disk.iter().filter(|one| one.is_nobodys()).count().to_string()),
         ],
     );
-    for one in left.iter().take(ENOUGH_TO_SEE_THE_TROUBLE) {
+    for one in on_disk.iter().take(ENOUGH_TO_SEE_THE_TROUBLE) {
         said.push('\n');
         said.push_str(&catalogue::say(
             "cli.machine.build_directory",
             &[
-                ("path", &one.path.display().to_string()),
-                ("gigabytes", &gigabytes(one.bytes)),
-                ("hours", &(one.idle_secs / AN_HOUR).to_string()),
+                ("path", &one.left.path.display().to_string()),
+                ("gigabytes", &gigabytes(one.left.bytes)),
+                ("whose", &one.whose_it_is()),
             ],
         ));
     }
@@ -181,14 +272,6 @@ fn about_the_disk_in(root: &Path, now: i64) -> Option<String> {
 
 /// How many of the heaviest build directories are worth naming.
 const ENOUGH_TO_SEE_THE_TROUBLE: usize = 6;
-
-const AN_HOUR: i64 = 3_600;
-
-/// **HOW LONG BEFORE ONE IS NOBODY'S.** A cargo at work writes in its build
-/// directory constantly, so an hour of silence is nobody compiling there. It
-/// is declared, not guessed at each call: whoever raises it is saying they are
-/// willing to interrupt a longer build.
-const IDLE_BEFORE_IT_IS_NOBODYS: i64 = AN_HOUR;
 
 fn gigabytes(bytes: u64) -> String {
     format!("{:.1}", bytes as f64 / 1_073_741_824.0)
@@ -252,7 +335,7 @@ fn about_the_port(store: &Ledger) -> Result<Option<String>, String> {
 fn free() -> Result<String, String> {
     let store = match open_ledger() {
         Ok(store) => store,
-        Err(why) => return Ok(without_the_store(&why, free_the_disk())),
+        Err(why) => return Ok(without_the_store(&why, free_the_disk(None))),
     };
     let done = stop_the_ones_nobody_wants(&store, now(), &|record| {
         let Some(run) = record.run_id.as_deref() else {
@@ -286,7 +369,7 @@ fn free() -> Result<String, String> {
             ),
         });
     }
-    if let Some(word) = free_the_disk() {
+    if let Some(word) = free_the_disk(Some(&store)) {
         said.push('\n');
         said.push_str(&word);
     }
@@ -297,37 +380,67 @@ fn free() -> Result<String, String> {
 ///
 /// Only the ones still and quiet: one being written to is left where it is and
 /// named in the reading, the same rule the processes above follow.
-fn free_the_disk() -> Option<String> {
-    free_the_disk_in(&workspace::root().ok()?, now())
+fn free_the_disk(store: Option<&Ledger>) -> Option<String> {
+    free_the_disk_in(&workspace::root().ok()?, store)
 }
 
-fn free_the_disk_in(root: &Path, now: i64) -> Option<String> {
-    let idle: Vec<LeftBehind> = build_directories_left(root, now)
+fn free_the_disk_in(root: &Path, store: Option<&Ledger>) -> Option<String> {
+    let nobodys: Vec<OnTheDisk> = build_directories(root, store)
         .into_iter()
-        .filter(|one| one.idle_secs >= IDLE_BEFORE_IT_IS_NOBODYS)
+        .filter(OnTheDisk::is_nobodys)
         .collect();
-    if idle.is_empty() {
+    if nobodys.is_empty() {
         return None;
     }
     let mut taken = 0u64;
     let mut said = String::new();
-    for one in &idle {
-        if std::fs::remove_dir_all(&one.path).is_err() {
+    for one in &nobodys {
+        if std::fs::remove_dir_all(&one.left.path).is_err() {
             continue;
         }
-        taken += one.bytes;
+        if let (Some(store), Some((holding, _))) = (store, &one.taken) {
+            let _ = store.holding_let_go(BUILD_DIRECTORY, &holding.name);
+        }
+        taken += one.left.bytes;
         said.push('\n');
         said.push_str(&catalogue::say(
             "cli.machine.build_directory_taken",
             &[
-                ("path", &one.path.display().to_string()),
-                ("gigabytes", &gigabytes(one.bytes)),
+                ("path", &one.left.path.display().to_string()),
+                ("gigabytes", &gigabytes(one.left.bytes)),
             ],
         ));
     }
     Some(format!(
         "{}{said}",
         catalogue::say("cli.machine.disk_freed", &[("gigabytes", &gigabytes(taken))])
+    ))
+}
+
+/// One build directory named by a person, taken whatever the register says —
+/// except while a process is compiling in it, which is not theirs to interrupt.
+fn free_one(path: &str, store: Option<&Ledger>) -> Result<String, String> {
+    free_one_in(&workspace::root()?, path, store)
+}
+
+fn free_one_in(root: &Path, path: &str, store: Option<&Ledger>) -> Result<String, String> {
+    let asked = std::path::Path::new(path);
+    let Some(one) = build_directories(root, store)
+        .into_iter()
+        .find(|one| one.left.path == asked)
+    else {
+        return Err(catalogue::say("cli.machine.no_such_build_directory", &[("path", path)]));
+    };
+    if matches!(one.taken, Some((_, Whose::TheProcessThatTookIt))) {
+        return Err(one.whose_it_is());
+    }
+    std::fs::remove_dir_all(&one.left.path).map_err(|error| error.to_string())?;
+    if let (Some(store), Some((holding, _))) = (store, &one.taken) {
+        let _ = store.holding_let_go(BUILD_DIRECTORY, &holding.name);
+    }
+    Ok(catalogue::say(
+        "cli.machine.build_directory_taken",
+        &[("path", path), ("gigabytes", &gigabytes(one.left.bytes))],
     ))
 }
 
@@ -434,16 +547,32 @@ mod tests {
         assert!(standing(&store).expect("after").is_empty(), "the row is still called running");
         let _ = std::fs::remove_dir_all(&dir);
     }
-    /// Dates a directory and its `debug` back, so it reads as one nobody has
-    /// compiled in for a long time.
-    fn aged(path: &Path) {
-        for at in [path.join("debug"), path.to_path_buf()] {
-            let done = std::process::Command::new("touch")
-                .args(["-t", "202001010000"])
-                .arg(&at)
-                .status();
-            assert!(done.is_ok_and(|it| it.success()), "the fixture could not be dated back");
-        }
+    /// Writes down a build directory as taken by a process that is gone, for
+    /// the run named. A pid nothing on this machine holds settles the kernel's
+    /// half without depending on who else is running.
+    fn taken_by_a_dead_process(store: &Ledger, path: &Path, for_run: Option<&str>) {
+        store
+            .holding_taken(&Holding {
+                kind: BUILD_DIRECTORY.to_owned(),
+                name: path.to_string_lossy().into_owned(),
+                held_by_pid: i32::MAX as u32 - 1,
+                held_by_born_at: Some(1_700_000_000),
+                for_run: for_run.map(str::to_owned),
+                taken_at: 1_700_000_000,
+                purpose: "a measurement".to_owned(),
+            })
+            .expect("the holding goes in");
+    }
+
+    fn taken_by_this_process(store: &Ledger, path: &Path) {
+        store
+            .holding_taken(&ledger::holdings::this_process_takes(
+                BUILD_DIRECTORY,
+                &path.to_string_lossy(),
+                Some("still-going".to_owned()),
+                "compiling right now",
+            ))
+            .expect("the holding goes in");
     }
 
     /// A build directory of cargo's, made by hand, with the tag cargo writes.
@@ -460,18 +589,27 @@ mod tests {
 
     /// **THE DISK IS PART OF THE MACHINE.** The reading named processes, load
     /// and the port, and said nothing about twenty-two build directories that
-    /// had filled the disk to 97%: a gesture that frees half a machine.
+    /// had filled the disk to 97%.
     #[test]
-    fn the_reading_names_the_build_directories_nobody_owns() {
+    fn the_reading_names_every_build_directory_and_says_whose_each_is() {
         let root = scratch("build-dirs");
-        a_build_directory(&root, "una", 4_096);
+        let store = Ledger::open(root.join("store")).expect("the store");
+        a_build_directory(&root, "di-nessuno", 4_096);
+        a_build_directory(&root, "mai-presa", 4_096);
+        store.record_run(&a_run("over", Some(1_700_000_100))).expect("the ended run");
+        taken_by_a_dead_process(&store, &root.join("target").join("di-nessuno"), Some("over"));
         // The tree's ordinary work carries no tag of its own: cargo writes it
         // in the directory it was pointed at, and `target/debug` is not one.
         std::fs::create_dir_all(root.join("target").join("debug")).expect("the ordinary work");
 
-        let said = about_the_disk_in(&root, 1_700_000_000).expect("there is one to name");
+        let said = about_the_disk_in(&root, Some(&store)).expect("there is one to name");
 
-        assert!(said.contains("una"), "the build directory is not named: {said}");
+        assert!(said.contains("di-nessuno"), "the one nobody holds is not named: {said}");
+        assert!(said.contains("mai-presa"), "the one sailor never took is not named: {said}");
+        assert!(
+            said.contains(&catalogue::say("cli.machine.never_taken", &[])),
+            "a directory sailor never took is not said to be somebody else's: {said}"
+        );
         assert!(
             !said.contains("target/debug:"),
             "the tree's own work was offered up as a leftover: {said}"
@@ -479,31 +617,83 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// **ONE BEING WRITTEN TO IS NOBODY'S TO TAKE.** A cargo at work touches
-    /// its build directory constantly, so the still ones are the free ones and
-    /// the busy one is left where it is.
+    /// **THE CHAIN DECIDES, NOT THE CLOCK.** Taking one because nothing was
+    /// written in it for an hour deletes a slow build; leaving one because it
+    /// was written to a moment ago hoards a directory nobody will come back
+    /// to. The process and the run answer both, and neither is a guess.
     #[test]
-    fn freeing_takes_the_still_build_directories_and_leaves_the_busy_one() {
+    fn freeing_takes_only_what_no_process_and_no_run_still_wants() {
         let root = scratch("free-dirs");
-        a_build_directory(&root, "ferma", 4_096);
-        a_build_directory(&root, "al-lavoro", 4_096);
+        let store = Ledger::open(root.join("store")).expect("the store");
+        for name in ["di-nessuno", "corsa-aperta", "in-uso", "mai-presa"] {
+            a_build_directory(&root, name, 4_096);
+        }
+        store.record_run(&a_run("over", Some(1_700_000_100))).expect("the ended run");
+        store.record_run(&a_run("still-going", None)).expect("the open run");
+        taken_by_a_dead_process(&store, &root.join("target").join("di-nessuno"), Some("over"));
+        taken_by_a_dead_process(
+            &store,
+            &root.join("target").join("corsa-aperta"),
+            Some("still-going"),
+        );
+        taken_by_this_process(&store, &root.join("target").join("in-uso"));
 
-        // «ferma» is dated back to a day nobody was compiling; «al-lavoro» was
-        // written a moment ago, which is what a cargo at work looks like.
-        aged(&root.join("target").join("ferma"));
-        let said = free_the_disk_in(&root, now()).expect("there is one to take");
+        let said = free_the_disk_in(&root, Some(&store)).expect("there is one to take");
 
-        assert!(said.contains("ferma"), "the still one was not taken: {said}");
+        assert!(said.contains("di-nessuno"), "the one nobody holds was not taken: {said}");
         assert!(
-            !root.join("target").join("ferma").exists(),
+            !root.join("target").join("di-nessuno").exists(),
             "it was named as taken and is still on the disk"
         );
-        assert!(
-            root.join("target").join("al-lavoro").exists(),
-            "a build directory somebody is compiling in was taken away: {said}"
-        );
+        for kept in ["corsa-aperta", "in-uso", "mai-presa"] {
+            assert!(
+                root.join("target").join(kept).exists(),
+                "«{kept}» was taken away, and somebody still answers for it: {said}"
+            );
+        }
         let _ = std::fs::remove_dir_all(&root);
     }
+
+    /// A directory sailor never took stays until a person names it, and one a
+    /// live process is compiling in is refused even then.
+    #[test]
+    fn a_directory_named_by_a_person_is_taken_unless_a_process_is_in_it() {
+        let root = scratch("free-one");
+        let store = Ledger::open(root.join("store")).expect("the store");
+        a_build_directory(&root, "in-uso", 4_096);
+        taken_by_this_process(&store, &root.join("target").join("in-uso"));
+
+        let on_disk = build_directories(&root, Some(&store));
+        let busy = on_disk
+            .iter()
+            .find(|one| one.left.path.ends_with("in-uso"))
+            .expect("the busy one is on the disk");
+
+        assert!(
+            !busy.is_nobodys(),
+            "a directory this very process holds was called nobody's"
+        );
+        assert!(
+            busy.whose_it_is().contains(&std::process::id().to_string()),
+            "the reading does not say which process holds it: {}",
+            busy.whose_it_is()
+        );
+
+        let refused = free_one_in(&root, &busy.left.path.to_string_lossy(), Some(&store));
+        assert!(
+            refused.is_err(),
+            "a directory a live process is compiling in was taken on request: {refused:?}"
+        );
+        assert!(root.join("target").join("in-uso").exists(), "it was taken anyway");
+
+        a_build_directory(&root, "mai-presa", 4_096);
+        let mine = root.join("target").join("mai-presa");
+        let taken = free_one_in(&root, &mine.to_string_lossy(), Some(&store));
+        assert!(taken.is_ok(), "a directory named by a person was refused: {taken:?}");
+        assert!(!mine.exists(), "it was said to be taken and is still on the disk");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn a_store_that_will_not_open_still_leaves_the_machine_readable() {
         let said = without_the_store(

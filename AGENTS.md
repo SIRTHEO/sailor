@@ -237,6 +237,38 @@ If they do not match, `git reset --hard main` before reading any file at all.
 A copy cut from a reference nobody chose is not isolation: it is another project
 with the same name.
 
+## What Sailor makes ends by a chain, never by a clock
+
+A worktree, a build directory, a socket, a lease: anything Sailor puts on this
+machine outlives the call that made it, and something has to decide when it is
+over. **That something is never the age of the thing.** An idle threshold
+deletes a slow build at fifty-nine minutes and hoards for ever a directory
+nobody will come back to; both answers are guesses dressed as measurements.
+
+The chain is three gestures and two oracles, and it is written once in
+`ledger::holdings`:
+
+- **Taken.** Whoever makes the thing writes down what it is, the process that
+  took it *with the second the kernel says that process began*, and the run it
+  was taken for. A pid alone is not an owner: numbers are handed on, and a
+  recycled one would inherit somebody else's disk.
+- **Let go.** The ordinary end. The gesture that finishes releases it.
+- **Left held.** Everything nobody released, which is what a violent death
+  leaves. Its owner is settled by asking, in this order: the kernel, whether
+  that same process is still there; the store, whether the run it served has
+  ended. `Whose` has five answers because the refusal of either oracle is
+  `Uncertain` — **a machine that will not say is not permission**.
+
+Two consequences that are not optional:
+
+- **A thing taken for no run is a declared cache**, kept until a person names
+  it. `target/from-head` is one: the sweep that read the clock would have
+  deleted the release's own cache after an hour of quiet.
+- **A thing Sailor never took is not Sailor's to take.** Unknown is not free —
+  fault 100 in another costume. It is named in the reading and removed only
+  when a person names it, the same rule already written for a port Sailor did
+  not open.
+
 ## Integration has one branch only
 
 Eleven of those 53 existed **only to merge** — `fusione-quattro`, `fusione-sei`,
