@@ -768,13 +768,12 @@ impl ExternalEngineAction {
             .spent_in_run(&run_id)
             .map_err(|error| ActionError::new("store_unreadable", error.to_string()))?;
         let next = self.reserve_for(candidate, spec);
-        match reserve::admits(cap, &spent, reserve::in_flight(&run_id), &next) {
-            Ok(()) => Ok(next.micros().map(|micros| reserve::hold(&run_id, micros))),
-            Err(stopped) => Err(ActionError::new(
+        reserve::admit_and_hold(cap, &spent, &run_id, &next).map_err(|stopped| {
+            ActionError::new(
                 "spend_cap_admission",
                 reserve::why_it_is_suspended(&stopped),
-            )),
-        }
+            )
+        })
     }
 
     /// The most this call can cost, as a reserve or as the reason there is none.

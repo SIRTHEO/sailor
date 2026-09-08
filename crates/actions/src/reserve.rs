@@ -343,6 +343,16 @@ pub struct Held {
     micros: i64,
 }
 
+impl Held {
+    fn against(held: &mut BTreeMap<String, i64>, run_id: &str, micros: i64) -> Held {
+        *held.entry(run_id.to_owned()).or_insert(0) += micros;
+        Held {
+            run_id: run_id.to_owned(),
+            micros,
+        }
+    }
+}
+
 impl Drop for Held {
     fn drop(&mut self) {
         let mut held = IN_FLIGHT.lock().unwrap_or_else(|held| held.into_inner());
@@ -358,11 +368,34 @@ impl Drop for Held {
 /// Holds `micros` against `run_id` until the returned guard is dropped.
 pub fn hold(run_id: &str, micros: i64) -> Held {
     let mut held = IN_FLIGHT.lock().unwrap_or_else(|held| held.into_inner());
-    *held.entry(run_id.to_owned()).or_insert(0) += micros;
-    Held {
-        run_id: run_id.to_owned(),
-        micros,
-    }
+    Held::against(&mut held, run_id, micros)
+}
+
+/// Admits the next call and holds its reserve **without letting go of the lock
+/// in between**.
+///
+/// Reading the reserves, deciding, and holding used to take the lock three
+/// times. Measured with a barrier between the second and the third: two calls
+/// of 0.40 both admitted against a cap of 0.60, about one round in a hundred.
+/// The window is widest on a run's first front, where nothing is in flight yet
+/// and four calls may open at once.
+///
+/// **THE OTHER HALF OF THIS HOLE IS NOT CLOSED HERE.** These reserves live in
+/// one process. Two `sailor flow run` share the ledger and not this map, so
+/// their reserves do not see each other at all, with no timing needed: the cure
+/// is a reservation the store holds, and the store is not this file.
+pub fn admit_and_hold(
+    cap_micros: i64,
+    spent: &flow::Spend,
+    run_id: &str,
+    next: &Reserve,
+) -> Result<Option<Held>, Suspension> {
+    let mut held = IN_FLIGHT.lock().unwrap_or_else(|held| held.into_inner());
+    let in_flight = held.get(run_id).copied().unwrap_or(0);
+    admits(cap_micros, spent, in_flight, next)?;
+    Ok(next
+        .micros()
+        .map(|micros| Held::against(&mut held, run_id, micros)))
 }
 
 /// What this run holds for the calls already under way.
@@ -574,5 +607,83 @@ mod tests {
         };
         assert_eq!(ceiling_for(&in_tokens, &in_money), None);
         assert!(why_no_ceiling(Some(&in_tokens), &in_money).contains("tokens"));
+    }
+}
+
+#[cfg(test)]
+mod under_way {
+    use super::*;
+    use std::sync::{Arc, Barrier};
+
+    fn nothing_spent() -> flow::Spend {
+        flow::Spend::default()
+    }
+
+    /// **TWO CALLS THAT BOTH FIT ALONE MUST NOT BOTH PASS.** Measured before
+    /// this: reading the reserves, deciding and holding took the lock three
+    /// times, and with a barrier between the last two, two reserves of 0.40
+    /// were both admitted against a cap of 0.60 in about one round of a
+    /// hundred. Here they start together two hundred times.
+    #[test]
+    fn two_reserves_at_once_cannot_pass_the_cap() {
+        for round in 0..200 {
+            let run = format!("corsa-{round}");
+            let gate = Arc::new(Barrier::new(2));
+            // **THE GUARDS ARE KEPT ALIVE**: dropping one gives its room back,
+            // and the second call would then be admitted honestly. Written as
+            // `is_ok()`, this judge went red against a cure that works.
+            let taken: Vec<bool> = std::thread::scope(|scope| {
+                let each = |gate: Arc<Barrier>, run: String| {
+                    scope.spawn(move || {
+                        gate.wait();
+                        admit_and_hold(600_000, &nothing_spent(), &run, &Reserve::Known(400_000))
+                            .map_err(|_| ())
+                    })
+                };
+                let first = each(gate.clone(), run.clone());
+                let second = each(gate.clone(), run.clone());
+                let both = [
+                    first.join().expect("the first answers"),
+                    second.join().expect("the second answers"),
+                ];
+                both.iter().map(Result::is_ok).collect()
+            });
+            assert_eq!(
+                taken.iter().filter(|admitted| **admitted).count(),
+                1,
+                "round {round}: 0.80 was admitted against a cap of 0.60"
+            );
+        }
+    }
+
+    /// The control: a cap that holds both must admit both, or the judge above
+    /// would pass on an admission that says no to everything.
+    #[test]
+    fn a_cap_that_holds_both_admits_both() {
+        let run = "corsa-larga";
+        let first = admit_and_hold(900_000, &nothing_spent(), run, &Reserve::Known(400_000));
+        let second = admit_and_hold(900_000, &nothing_spent(), run, &Reserve::Known(400_000));
+        assert!(
+            first.is_ok() && second.is_ok(),
+            "both fit under the cap and one was refused"
+        );
+    }
+
+    /// A reserve released when its call ends frees the room it held, or a run
+    /// would spend its cap once and never again.
+    #[test]
+    fn a_reserve_dropped_gives_its_room_back() {
+        let run = "corsa-che-libera";
+        let held = admit_and_hold(600_000, &nothing_spent(), run, &Reserve::Known(400_000))
+            .expect("the first fits");
+        assert!(
+            admit_and_hold(600_000, &nothing_spent(), run, &Reserve::Known(400_000)).is_err(),
+            "the second passed while the first was still in flight"
+        );
+        drop(held);
+        assert!(
+            admit_and_hold(600_000, &nothing_spent(), run, &Reserve::Known(400_000)).is_ok(),
+            "the room the first held was never given back"
+        );
     }
 }
