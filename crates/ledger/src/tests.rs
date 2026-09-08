@@ -3481,6 +3481,45 @@ fn a_repeat_of_a_successful_call_would_have_been_answered() {
     assert_eq!(tally.spent_micros, 100, "{tally:?}");
 }
 
+/// **A CAP OVER ONE RUN IS NOT A CAP.** What a subflow spends sits under the
+/// child's own run, so a parent asking only for itself read zero.
+#[test]
+fn what_a_child_run_spends_is_spent_by_the_run_that_started_it() {
+    let directory = TestDirectory::new("below");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    for (run, parent) in [("padre", None), ("figlio", Some("padre")), ("nipote", Some("figlio"))] {
+        ledger
+            .record_run(&RunRecord {
+                run_id: run.to_owned(),
+                kind: "flow".to_owned(),
+                entity: "un-flusso".to_owned(),
+                parent_run_id: parent.map(str::to_owned),
+                started_by: "the test".to_owned(),
+                status: "running".to_owned(),
+                total_cost_micros: 0,
+                error: None,
+                started_at: 100,
+                ended_at: None,
+                worktree: None,
+                stop_reason: None,
+            })
+            .expect("record the run");
+        engine_call(&ledger, run, asking(run), "m", Outcome::Went, Some(10));
+    }
+
+    let alone = ledger.spent_in_run("padre").expect("the parent alone");
+    let below = ledger.spent_in_run_and_below("padre").expect("the parent and its children");
+
+    assert_eq!(alone.micros, 10, "the parent's own calls: {alone:?}");
+    assert_eq!(below.micros, 30, "the child and the grandchild count too: {below:?}");
+    assert_eq!(below.calls, 3, "{below:?}");
+    assert_eq!(
+        ledger.spent_in_run_and_below("nipote").expect("a leaf").micros,
+        10,
+        "a run with nothing under it answers for itself alone"
+    );
+}
+
 /// **A CALL NOBODY PRICED IS NOT A CALL THAT COST NOTHING.** Added as zero it
 /// made the total read as the whole spend.
 #[test]

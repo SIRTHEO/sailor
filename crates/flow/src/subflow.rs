@@ -576,12 +576,10 @@ fn earliest(one: Option<i64>, other: Option<i64>) -> Option<i64> {
     }
 }
 
-/// What is left of the parent's own cap, if it has one.
+/// What is left of the parent's cap, if it has one.
 ///
-/// Known limit: the store sums per run and the child's spend sits under its own
-/// `run_id`, so this remainder does not fall for what children spent. The worst
-/// case is the parent's cap times the number of its `subflow` steps. It closes
-/// by walking `parent_run_id` up into the sum.
+/// The store is asked for the run *and everything it started*: a remainder over
+/// the parent's own calls alone held `cap` times the number of `subflow` steps.
 fn remaining_of(
     shared: &SharedState,
     store: &Arc<dyn RecordStore>,

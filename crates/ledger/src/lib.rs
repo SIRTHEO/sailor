@@ -1862,6 +1862,38 @@ impl Ledger {
         })
     }
 
+    /// What a run and everything it started have spent.
+    ///
+    /// **A CAP OVER ONE RUN IS NOT A CAP.** A child's calls sit under the
+    /// child's own `run_id`, so a parent asking only for itself reads zero
+    /// however much its children spent, and its cap holds `cap` times the
+    /// number of `subflow` steps.
+    pub fn spent_in_run_and_below(&self, run_id: &str) -> Result<Spend, LedgerError> {
+        let connection = self.lock()?;
+        let (micros, calls, calls_without_cost, dearest_micros) = connection.query_row(
+            "WITH RECURSIVE below(run_id) AS (
+                 SELECT ?1
+                 UNION
+                 SELECT runs.run_id FROM runs
+                 JOIN below ON runs.parent_run_id = below.run_id
+             )
+             SELECT COALESCE(SUM(COALESCE(declared_cost_micros, cost_micros)), 0),
+                    COUNT(*),
+                    COALESCE(SUM(CASE WHEN declared_cost_micros IS NULL
+                                       AND cost_micros IS NULL THEN 1 ELSE 0 END), 0),
+                    MAX(COALESCE(declared_cost_micros, cost_micros))
+             FROM model_calls WHERE run_id IN (SELECT run_id FROM below)",
+            params![run_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )?;
+        Ok(Spend {
+            micros,
+            calls,
+            calls_without_cost,
+            dearest_micros,
+        })
+    }
+
     /// How many calls a record would have answered instead of making, counted
     /// over the calls this store already holds.
     ///
@@ -2370,9 +2402,10 @@ impl RecordStore for Ledger {
             .map_err(|error| flow::FlowError::Store(error.to_string()))
     }
 
-    /// The store keeps the calls, so it answers for real.
+    /// The store keeps the calls, so it answers for real -- and it answers for
+    /// the children too: what a subflow spends is spent by the run that asked.
     fn spent(&self, run_id: &str) -> Result<Spend, flow::FlowError> {
-        self.spent_in_run(run_id)
+        self.spent_in_run_and_below(run_id)
             .map_err(|error| flow::FlowError::Store(error.to_string()))
     }
 }

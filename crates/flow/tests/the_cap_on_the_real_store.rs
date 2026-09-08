@@ -308,3 +308,97 @@ fn a_cap_of_zero_writes_nothing_at_all_in_the_real_store() {
     assert!(went.written.is_empty(), "no step in the store");
     assert_eq!(went.spent_after, flow::Spend::default(), "no spend");
 }
+
+/// An action that spends **under a child run of its own**, as `subflow` does:
+/// the call is written against the child, and the parent's row names it.
+struct SpendsInAChild {
+    ledger: Ledger,
+    micros: i64,
+    times: Arc<AtomicUsize>,
+}
+
+impl Action for SpendsInAChild {
+    fn execute(&self, _input: &Value, shared: &SharedState) -> Result<ActionOutcome, ActionError> {
+        let turn = self.times.fetch_add(1, Ordering::SeqCst);
+        let parent = shared
+            .get(CURRENT_RUN)
+            .and_then(Value::as_str)
+            .ok_or_else(|| ActionError::new("no_run", "no run in the shared state"))?
+            .to_owned();
+        let child = format!("{parent}::child::{turn}");
+        self.ledger
+            .record_run(&ledger::RunRecord {
+                run_id: child.clone(),
+                kind: "flow".to_owned(),
+                entity: "un-sottoflusso".to_owned(),
+                parent_run_id: Some(parent),
+                started_by: "the test".to_owned(),
+                status: "complete".to_owned(),
+                total_cost_micros: self.micros,
+                error: None,
+                started_at: 100,
+                ended_at: Some(110),
+                worktree: None,
+                stop_reason: None,
+            })
+            .map_err(|error| ActionError::new("store", error.to_string()))?;
+        self.ledger
+            .record_model_call(&a_call_that_cost(&format!("{child}:0"), &child, self.micros))
+            .map_err(|error| ActionError::new("store", error.to_string()))?;
+        Ok(ActionOutcome::Went(json!("done")))
+    }
+}
+
+/// **WHAT A CHILD SPENDS IS SPENT.** The cap read `SUM(cost_micros)` over the
+/// parent's own run alone, and a subflow's calls sit under the child's run: a
+/// flow of five `subflow` steps could spend five times its cap with every
+/// figure in the store correct and the brake never touching.
+#[test]
+fn the_cap_stops_the_run_on_what_its_children_spent() {
+    let directory = TestDirectory::new("children-spend");
+    let ledger = Ledger::open(&directory.0).expect("open the store");
+    let times = Arc::new(AtomicUsize::new(0));
+    let mut actions = flow::ActionRegistry::default();
+    actions.register(
+        "costs",
+        SpendsInAChild {
+            ledger: ledger.clone(),
+            micros: 150,
+            times: Arc::clone(&times),
+        },
+    );
+
+    let execution = InProcessExecutor
+        .execute(
+            &two_in_a_row(),
+            ExecutionRequest {
+                holder: None,
+                run_id: "run-children".to_owned(),
+                root_inputs: Default::default(),
+                gates: vec![],
+                shared: SharedState::new(),
+                spend_cap_micros: Some(100),
+                stops: flow::RunStops::default(),
+            },
+            &ledger,
+            &actions,
+            &Ticking(AtomicI64::new(0)),
+        )
+        .expect("the execution is not a fault");
+
+    assert_eq!(
+        times.load(Ordering::SeqCst),
+        1,
+        "the second front opened over a cap its child had already passed"
+    );
+    assert!(
+        matches!(execution.decisions.last(), Some(Decision::CapReached(_))),
+        "the run did not stop on the cap: {:?}",
+        execution.decisions
+    );
+    assert_eq!(
+        ledger.spent_in_run("run-children").expect("the parent alone").micros,
+        0,
+        "the parent's own run holds no call at all: that is why this is the joint that matters"
+    );
+}
