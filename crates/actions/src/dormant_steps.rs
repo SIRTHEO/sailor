@@ -3,6 +3,16 @@
 //! its own `when` has never once let the action run" — a different fault,
 //! found only by reading the ledger, not the flow files.
 //!
+//! **A FLOW NEVER LAUNCHED AND A FLOW WHOSE STEP NEVER CLOSES ARE TWO
+//! DIFFERENT FACTS**, and this action used to say the first one once per
+//! step, which is the same fault this file's own header warns against
+//! conflating. A flow with four steps that has never run once said "four
+//! dormant steps" — one fact, told four times, drowning the flows that
+//! actually run but have one step that never does. `flow_ever_ran` is asked
+//! first, per flow, and a never-run flow is named once in `never_run`; only
+//! a flow that HAS run gets its steps checked for `always_skipped` or
+//! `never_closed`.
+//!
 //! **WHAT THIS DOES NOT ANSWER.** A run closed by a person testing something
 //! by hand counts the same as one an ordinary gesture started — a command
 //! typed, a scheduled trigger, a heartbeat, a window. The very first render of
@@ -21,6 +31,10 @@ use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
 pub const DORMANT_STEPS_ACTION: &str = "dormant_steps";
+
+/// See `unused_actions::NO_HOME_DECLARED` — the same reasoning, kept local
+/// because these two actions do not otherwise share a dependency.
+const NO_HOME_DECLARED: &str = "/sailor-no-home-declared";
 
 pub fn register_dormant_steps(
     registry: &mut flow::ActionRegistry,
@@ -53,26 +67,40 @@ impl Action for DormantStepsAction {
         let home = self
             .home_flows
             .clone()
-            .unwrap_or_else(|| Path::new("flows").to_path_buf());
+            .unwrap_or_else(|| Path::new(NO_HOME_DECLARED).to_path_buf());
+        let known = flow::system::load_all(&flow::system::sources_from_env(&home));
+        let flows_unreadable = known.iter().filter(|(_, _, entry)| entry.is_err()).count();
+        let mut never_run = Vec::new();
         let mut always_skipped = Vec::new();
         let mut never_closed = Vec::new();
-        for (flow_id, _, entry) in flow::system::load_all(&flow::system::sources_from_env(&home)) {
+        for (flow_id, _, entry) in &known {
             let Ok(flow) = entry else { continue };
+            if !ledger
+                .flow_ever_ran(flow_id)
+                .map_err(|error| ActionError::new("ledger_unreadable", error.to_string()))?
+            {
+                never_run.push(json!({ "flow": flow_id }));
+                continue;
+            }
             for step in flow.graph.steps() {
                 let reach = ledger
-                    .step_reach(&flow_id, &step.id)
+                    .step_reach(flow_id, &step.id)
                     .map_err(|error| ActionError::new("ledger_unreadable", error.to_string()))?;
                 let named = json!({ "flow": flow_id, "step": step.id, "action": step.action });
                 match reach {
                     StepReach::AlwaysSkipped => always_skipped.push(named),
+                    // The flow has run, so `NeverClosed` here means this one
+                    // step never has — not that nobody launched the flow.
                     StepReach::NeverClosed => never_closed.push(named),
                     StepReach::ReachedAtLeastOnce => {}
                 }
             }
         }
         Ok(ActionOutcome::Went(json!({
+            "never_run": never_run,
             "always_skipped": always_skipped,
             "never_closed": never_closed,
+            "flows_unreadable": flows_unreadable,
         })))
     }
 
@@ -177,22 +205,113 @@ mod tests {
         };
         let always_skipped = said["always_skipped"].as_array().expect("a list");
         let never_closed = said["never_closed"].as_array().expect("a list");
+        let never_run = said["never_run"].as_array().expect("a list");
         assert!(
             always_skipped
                 .iter()
                 .any(|entry| entry["flow"] == "gated-flow" && entry["step"] == "gate"),
             "{said:?}"
         );
+        // **A FLOW NOBODY HAS LAUNCHED IS NAMED ONCE, NOT ONCE PER STEP**:
+        // it belongs in `never_run`, not spread across `never_closed`.
         assert!(
-            never_closed
+            never_run
                 .iter()
-                .any(|entry| entry["flow"] == "untouched-flow" && entry["step"] == "gate"),
+                .any(|entry| entry["flow"] == "untouched-flow"),
+            "{said:?}"
+        );
+        assert!(
+            !never_closed
+                .iter()
+                .any(|entry| entry["flow"] == "untouched-flow"),
             "{said:?}"
         );
         assert!(
             !always_skipped
                 .iter()
                 .any(|entry| entry["flow"] == "untouched-flow"),
+            "{said:?}"
+        );
+    }
+
+    /// **A FLOW THAT RUNS, WITH ONE STEP THAT NEVER DOES, IS THE INTERESTING
+    /// CASE** — told apart from a flow nobody has launched at all, which is
+    /// silence about the whole flow, not evidence about one step of it.
+    #[test]
+    fn a_step_inside_a_running_flow_that_never_closes_is_never_closed_not_never_run() {
+        let dir = scratch("running-with-a-gap");
+        write_flow(&dir, "partly-live-flow");
+        let ledger = Ledger::open(&dir.join("ledger")).expect("open the ledger");
+        ledger
+            .record_run(&ledger::RunRecord {
+                run_id: "run-1".to_owned(),
+                kind: "flow".to_owned(),
+                entity: "partly-live-flow".to_owned(),
+                parent_run_id: None,
+                started_by: "test".to_owned(),
+                status: "complete".to_owned(),
+                total_cost_micros: 0,
+                error: None,
+                started_at: 1,
+                ended_at: Some(2),
+                worktree: None,
+                stop_reason: None,
+            })
+            .expect("record the run");
+        // Only `trigger` closes; `gate` never does — the flow ran, one step
+        // inside it did not.
+        ledger
+            .append_step_started(&flow::StepRecord::started(
+                "run-1",
+                "trigger",
+                1,
+                7,
+                Vec::new(),
+                json!({}),
+                Vec::new(),
+                100,
+            ))
+            .expect("write the record");
+        ledger
+            .close_step(
+                "run-1",
+                "trigger",
+                1,
+                7,
+                flow::Completion {
+                    outcome: flow::Outcome::Went,
+                    output: Some(json!({})),
+                    said: None,
+                    failure_class: None,
+                    refusal: None,
+                    ran: None,
+                    ended_at: 2,
+                    bytes_seen: None,
+                    bytes_discarded: None,
+                },
+            )
+            .expect("close the step");
+
+        let went = DormantStepsAction::new(Some(dir.clone()), Some(ledger))
+            .execute(&json!({}), &SharedState::default())
+            .expect("a ledger query does not fail");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let ActionOutcome::Went(said) = went else {
+            panic!("{went:?}")
+        };
+        let never_closed = said["never_closed"].as_array().expect("a list");
+        let never_run = said["never_run"].as_array().expect("a list");
+        assert!(
+            never_closed
+                .iter()
+                .any(|entry| entry["flow"] == "partly-live-flow" && entry["step"] == "gate"),
+            "{said:?}"
+        );
+        assert!(
+            !never_run
+                .iter()
+                .any(|entry| entry["flow"] == "partly-live-flow"),
             "{said:?}"
         );
     }
