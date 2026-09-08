@@ -153,7 +153,10 @@ fn the_tree_laid_over_is_the_top_of_a_repository_that_tracks_it() {
 fn a_tree_of_judges(label: &str) -> std::path::PathBuf {
     let root = std::env::temp_dir().join(format!("sailor-judges-{label}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
-    let names = "reads the sources through env!(\"CARGO_MANIFEST_DIR\")";
+    // **THE MARK IS BUILT, NEVER WRITTEN OUT.** Spelt whole, this file would
+    // hold the word the finder greps for, and a driver that hands in no receipt
+    // would join the run it weighs and stop it.
+    let names = concat!("reads the sources through env!(\"CARGO_MANIFEST", "_DIR\")");
     let another_road = "reads the sources through include_str!(\"../descriptors/default.json\")";
     for (at, body) in [
         ("crates/a_crate/tests/a_judge.rs", names),
@@ -170,7 +173,7 @@ fn a_tree_of_judges(label: &str) -> std::path::PathBuf {
 /// **WHAT THE GATE NEVER ASKS, NO RECEIPT CAN COVER.** The finder is put to a
 /// tree with a judge planted in each of the three places one could live, and it
 /// comes back with one. The two misses are its declared limit: `crates/` is the
-/// only place it opens, `CARGO_MANIFEST_DIR` the only road it recognises. If
+/// only place it opens, the manifest-directory mark the only road it knows. If
 /// either goes red the finder reaches further, and this says so — deliberately.
 #[test]
 fn the_finder_reaches_one_of_the_three_places_a_judge_can_live() {
@@ -191,8 +194,8 @@ fn the_finder_reaches_one_of_the_three_places_a_judge_can_live() {
     );
     assert!(
         !named.contains(&"a_judge_by_another_road"),
-        "the finder now recognises a judge that reads the sources without naming \
-         CARGO_MANIFEST_DIR: include_str! and current_dir() are the other two roads"
+        "the finder now recognises a judge that reads the sources without the \
+         manifest-directory mark: include_str! and current_dir() are the other roads"
     );
     assert_eq!(named.len(), 1, "one of the three, and no more: {named:?}");
 
