@@ -1070,9 +1070,13 @@ fn event_named(request: &Request<'_>, fallback: &str) -> TerminalEvent {
             .unwrap_or_else(|| fallback.to_owned()),
         transcript_path: request.payload.transcript_path.clone(),
         occurred_at: request.at,
-        // What we do not read today is kept as it arrived: a field thrown away
-        // is not recovered by looking harder tomorrow.
-        payload: (!request.raw.trim().is_empty()).then(|| request.raw.to_owned()),
+        // The keys `terminal::keeping` allows, and nothing else. A hook sends
+        // what a person typed and what the engine answered; keeping those
+        // would put a secret typed once on this disk for good.
+        payload: terminal::keeping::what_is_kept(
+            request.raw,
+            std::env::var(terminal::keeping::KEEP_BODIES).ok(),
+        ),
     }
 }
 
@@ -3719,8 +3723,61 @@ mod tests {
         let events = store.events_on("ttys004").expect("the events");
         assert_eq!(events[0].name, "SessionStart", "the name comes from the payload");
         assert!(
-            events[0].payload.is_some(),
-            "the payload is kept as it arrived"
+            events[0]
+                .payload
+                .as_deref()
+                .is_some_and(|kept| kept.contains("/tmp/abc.jsonl")),
+            "the operational metadata is kept"
+        );
+    }
+
+    /// The canary: a secret typed once must not be on this disk afterwards.
+    /// The words here are invented, and the check is on the file itself, not
+    /// on what a reader of the file chooses to show.
+    #[test]
+    fn a_secret_typed_into_a_terminal_is_not_kept() {
+        let scratch = Scratch::new("canary");
+        let store = scratch.store();
+        let canary = "kingfisher-onyx-4417";
+        let report = ask(
+            "event",
+            &format!(
+                r#"{{"session_id":"abc","cwd":"/work/sailor",
+                 "hook_event_name":"UserPromptSubmit",
+                 "prompt":"deploy with the passphrase {canary}",
+                 "last_assistant_message":"understood, {canary}",
+                 "background_tasks":[{{"description":"hold {canary}"}}]}}"#
+            ),
+            &store,
+            &one_terminal(),
+            &no_options(),
+        )
+        .expect("recording it");
+        assert_eq!(report.code, 0);
+        assert!(!report.message.contains(canary), "{}", report.message);
+
+        let events = store.events_on("ttys004").expect("the events");
+        assert_eq!(events[0].name, "UserPromptSubmit", "the count still holds");
+        assert_eq!(events[0].session_id.as_deref(), Some("abc"));
+
+        // Every file, not just the one the path names: a fresh write lives in
+        // the write-ahead log, and reading the main file alone is a check that
+        // passes while the secret is on the disk beside it.
+        let beside = store.path().parent().expect("the directory");
+        let mut looked_at = 0;
+        for file in std::fs::read_dir(beside).expect("the directory").flatten() {
+            let bytes = std::fs::read(file.path()).unwrap_or_default();
+            assert!(
+                !String::from_utf8_lossy(&bytes).contains(canary),
+                "the secret reached {:?}",
+                file.file_name()
+            );
+            looked_at += 1;
+        }
+        assert!(looked_at >= 2, "the log beside the store was not looked at");
+        assert!(
+            events.iter().all(|event| !format!("{event:?}").contains(canary)),
+            "the secret is in what an export reads back"
         );
     }
 
