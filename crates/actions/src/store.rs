@@ -381,7 +381,7 @@ mod tests {
             write
                 .execute(
                     &json!({
-                        "collection": "posta/theo",
+                        "collection": "posta/mira",
                         "key": key,
                         "value": {"oggetto": key},
                         "written_by": "a-test",
@@ -393,7 +393,7 @@ mod tests {
         }
 
         let ActionOutcome::Went(all) = list
-            .execute(&json!({"collection": "posta/theo"}), &shared)
+            .execute(&json!({"collection": "posta/mira"}), &shared)
             .expect("the listing")
         else {
             panic!("nothing waits here");
@@ -413,7 +413,7 @@ mod tests {
 
         let ActionOutcome::Went(fresh) = list
             .execute(
-                &json!({"collection": "posta/theo", "after": "2026-08-28T02"}),
+                &json!({"collection": "posta/mira", "after": "2026-08-28T02"}),
                 &shared,
             )
             .expect("the listing")

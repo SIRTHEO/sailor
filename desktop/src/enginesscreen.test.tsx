@@ -15,7 +15,7 @@ afterEach(() => {
 });
 
 const ANSWER: Engines = {
-  workspace_root: "/home/theo/personal/sailor",
+  workspace_root: "/home/mira/personal/sailor",
   engines: [
     {
       id: "codex", label: "Codex", presence: "present", reason: "found `codex` in /opt/homebrew/bin/codex",
@@ -28,11 +28,11 @@ const ANSWER: Engines = {
     },
     {
       id: "claude-code", label: "Claude Code", presence: "present", reason: "found `claude`",
-      executable: "/home/theo/.local/bin/claude", version: "2.1.258",
+      executable: "/home/mira/.local/bin/claude", version: "2.1.258",
       signed_in: "yes", signed_in_said: "loggedIn: true", profile_in_force: null,
       quota: [{ engine: "claude-code", unit: "seven_day", spent_fraction: 0.42, resets_at: "2026-09-06T04:59:59Z", observed_at: 1 }],
       quota_why: null,
-      sign_in: { program: "/home/theo/.local/bin/claude", args: ["auth", "login"], interactive: true, note: "" },
+      sign_in: { program: "/home/mira/.local/bin/claude", args: ["auth", "login"], interactive: true, note: "" },
       install: null,
       set_aside: { until: 1_788_400_000, said: "You've hit your weekly limit" },
       budget: { cap_micros: 20_000_000, window_secs: 86_400, spent_micros: 18_300_000, spent_why: null },
@@ -65,7 +65,7 @@ function shellThatAnswers(): { calls: Array<{ command: string; args: unknown }> 
       invoke: (command: string, args: unknown) => {
         calls.push({ command, args });
         if (command === "engines") return Promise.resolve(ANSWER);
-        if (command === "terminal_open") return Promise.resolve({ id: "t-1", workspaceRoot: "/home/theo/personal/sailor", alive: true });
+        if (command === "terminal_open") return Promise.resolve({ id: "t-1", workspaceRoot: "/home/mira/personal/sailor", alive: true });
         if (command === "terminal_press") return Promise.resolve(undefined);
         return Promise.reject(new Error(`unexpected: ${command}`));
       },
@@ -97,7 +97,7 @@ describe("the engines screen", () => {
     fireEvent.click(screen.getByText("sign in, in a terminal"));
     await waitFor(() => expect(shown).toBe(1));
     const opened = shell.calls.find((call) => call.command === "terminal_open");
-    expect(opened?.args).toMatchObject({ workspaceRoot: "/home/theo/personal/sailor", program: "/opt/homebrew/bin/codex", args: ["login"] });
+    expect(opened?.args).toMatchObject({ workspaceRoot: "/home/mira/personal/sailor", program: "/opt/homebrew/bin/codex", args: ["login"] });
   });
 
   test("AN INSTALL LINE IS TYPED, NOT RUN: the terminal opens bare and the line waits for Enter", async () => {

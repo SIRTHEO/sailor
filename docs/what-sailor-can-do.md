@@ -1,7 +1,7 @@
 # Everything Sailor can do, and how much of it shows
 
 **02/09/2026.** A systematic survey of the engine, crate by crate, measured by
-interrogating the code and the binary. Born from a sentence of Theo's in front
+interrogating the code and the binary. Born from a sentence of the owner's in front
 of a preview: *«you are doing maybe 1% of the product»*. He was right, and this
 document is the reckoning.
 

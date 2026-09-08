@@ -137,7 +137,7 @@ mod tests {
             attempt,
             u64::from(attempt),
             vec![],
-            json!({ "holder": "theo", "mandate": "read the diff and say" }),
+            json!({ "holder": "mira", "mandate": "read the diff and say" }),
             vec![],
             100,
         );
@@ -160,7 +160,7 @@ mod tests {
         let handed = handed_of(&records);
         assert_eq!(handed.len(), 1, "{handed:?}");
         assert_eq!(handed[0].step_id, "review");
-        assert_eq!(handed[0].holder, "theo");
+        assert_eq!(handed[0].holder, "mira");
         assert_eq!(handed[0].mandate, "read the diff and say");
         assert_eq!(handed[0].since, 140);
         assert!(handed_of(&[record("build", 1, None)]).is_empty());

@@ -1,6 +1,6 @@
 # The window that shows itself
 
-**02/09/2026.** Born from a sentence of Theo's — *«the user has to be able to
+**02/09/2026.** Born from a sentence of the owner's — *«the user has to be able to
 see everything Sailor is, from the things it saves to how it manages them»* —
 and from a second one that is its method: *«not everything ought to exist in the
 foreground»*.
@@ -99,7 +99,7 @@ answers the sentence this document is born from.
 
 ## The language
 
-`decisions.md`, a decision of 01/09/2026 taken by Theo: *«English everywhere,
+`decisions.md`, a decision of 01/09/2026 taken by the owner: *«English everywhere,
 restoring the charter the project was founded with»* — identifiers, comments,
 documentation, **and every message a user of the tool can see**.
 
@@ -111,7 +111,7 @@ is a decision already taken that I had not read.
 Checked against the window built the same day, on `sorgenti` from `ea2f6bf7`
 to `9768998b`, by two fresh-context judges whose findings were fixed in the
 last two commits. Outcome first, then what the judges left open, then what is
-still Theo's.
+still the owner's.
 
 - **Four places, not eleven.** The column drew Board / Terminals / Memory /
   Sailor, grouped «work · what happened · itself», each with a sub-rail:
@@ -172,7 +172,7 @@ still Theo's.
 6. The ledger keeps no root of a run's own: a run resumed after a move into
    another project resumes in the window's root, and says so.
 
-### What is still Theo's: the gestures
+### What is still the owner's: the gestures
 
 1. Open the window and walk the sections; the bar must never go silent.
 2. Memory › ledger: type `select * from runs order by 1 desc limit 5`.

@@ -195,7 +195,7 @@ pub struct Verdict {
 
 /// What the cap of a run made of these steps is.
 ///
-/// One handed step is enough on its own: Astra's rule, and the arithmetic
+/// One handed step is enough on its own, and the arithmetic
 /// behind it — a call started outside this control enters no sum here.
 pub fn verdict_on(facts: &[StepFact]) -> Verdict {
     let mut because = Vec::new();
@@ -239,7 +239,7 @@ pub struct Suspension {
 
 /// Whether the next call may be authorised.
 ///
-/// Astra's condition: `spend + reserves in flight + the maximum of the next
+/// The admission rule: `spend + reserves in flight + the maximum of the next
 /// call ≤ cap`. **A spend that could not be counted authorises nothing**:
 /// `AtLeast` is a floor, so the remainder over it bounds what is left instead
 /// of measuring it. A reserve nobody can bound is milder: the older rule holds.

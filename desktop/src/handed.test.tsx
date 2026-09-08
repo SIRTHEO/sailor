@@ -42,7 +42,7 @@ function pretendShell(answer: (command: string, args?: Record<string, unknown>) 
 
 const REVIEW = {
   step_id: "review",
-  holder: "theo",
+  holder: "mira",
   mandate: "read the diff and say whether it holds",
   since: 100,
   worktree: "/work/a-tree",
@@ -52,18 +52,18 @@ describe("a step handed to a person", () => {
   test("shows the mandate, is taken and closed with what was done, and the run reads again", async () => {
     const shell = pretendShell((command) => {
       if (command === "handed_steps") return [REVIEW];
-      if (command === "take_handed_step") return "step review opened by theo";
-      if (command === "close_handed_step") return "step review closed by theo: went\nThe run is resuming.";
+      if (command === "take_handed_step") return "step review opened by mira";
+      if (command === "close_handed_step") return "step review closed by mira: went\nThe run is resuming.";
       throw new Error(`no ${command}`);
     });
     let changed = 0;
     try {
       render(<Handed runId="relay-1" onChanged={() => (changed += 1)} />);
       await screen.findByText("read the diff and say whether it holds");
-      expect(screen.getByText("offered to «theo»")).toBeTruthy();
+      expect(screen.getByText("offered to «mira»")).toBeTruthy();
 
       fireEvent.click(screen.getByRole("button", { name: "take it" }));
-      await screen.findByText("step review opened by theo");
+      await screen.findByText("step review opened by mira");
       expect(shell.calls.find((call) => call.command === "take_handed_step")?.args).toEqual({
         runId: "relay-1",
         stepId: "review",
@@ -87,7 +87,7 @@ describe("a step handed to a person", () => {
   test("a refusal is shown as the engine said it, and nothing is marked done", async () => {
     const shell = pretendShell((command) => {
       if (command === "handed_steps") return [REVIEW];
-      if (command === "close_handed_step") throw new Error("theo wrote «build», the step this one judges: refused");
+      if (command === "close_handed_step") throw new Error("mira wrote «build», the step this one judges: refused");
       throw new Error(`no ${command}`);
     });
     let changed = 0;
@@ -174,7 +174,7 @@ describe("the bench: the work and the decision in the same place", () => {
 
   test("THE VERDICT IS GIVEN FROM THE BENCH, not from the row you walked away from", async () => {
     const shell = pretendShell((command) => {
-      if (command === "close_handed_step") return "step review closed by theo: went\nThe run is resuming.";
+      if (command === "close_handed_step") return "step review closed by mira: went\nThe run is resuming.";
       throw new Error(`no ${command}`);
     });
     let answered: string | null = null;

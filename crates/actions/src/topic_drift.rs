@@ -234,7 +234,8 @@ mod tests {
         assert_eq!(answer["reason"], json!("on_topic"), "{answer}");
     }
 
-    /// **THE CASE THIS ACTION EXISTS FOR.** Theo's own example: a session in
+    /// **THE CASE THIS ACTION EXISTS FOR**, and it is the owner's own example: a
+    /// session in
     /// `acme-products` starts talking like `acme-ads` instead.
     #[test]
     fn matching_another_workspace_better_is_a_divergence() {

@@ -22,7 +22,7 @@ terminal.
 
 Without a terminal in the window, an engine session cannot be held open inside
 Sailor: it is the piece that decides whether Sailor can replace the environment
-Theo works in today.
+the owner works in today.
 
 ## The names, and why they are in English
 

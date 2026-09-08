@@ -1,6 +1,6 @@
 # The four surfaces: what Sailor exposes, and what gets composed instead
 
-**31/08/2026.** Born from a question of Theo's — «which product nodes is the
+**31/08/2026.** Born from a question of the owner's — «which product nodes is the
 system missing?» — and from the wrong answer it got first: a list of holes. A
 list of holes ages in a week and does not say where to put the next thing. This
 document tries to say the same thing in a way that holds: not *which nodes are
@@ -136,6 +136,6 @@ what has already happened.
 ## The debt this document declares
 
 The seven building sites open on 31/08 produced new crates **before** this
-criterion. Bringing them into line is a decision of Theo's: if they are not
+criterion. Bringing them into line is a decision of the owner's: if they are not
 brought into line before it closes, the rule is born with four unwritten
 exceptions, which is how the window got to eight kinds against three.

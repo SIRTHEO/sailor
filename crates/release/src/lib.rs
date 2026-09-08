@@ -65,7 +65,7 @@ pub struct Target {
 /// `cargo metadata` whether each `bin` is real, because `bin` is a string and a
 /// table naming a deleted crate still compiles.
 ///
-/// Whether a one-row table should stay a table is Theo's call: `Service`,
+/// Whether a one-row table should stay a table is the owner's call: `Service`,
 /// `service_domain` and the readiness wait currently have no target using them.
 pub const TARGETS: &[Target] = &[
     // Whoever puts the others into service must be able to do it for itself:

@@ -62,7 +62,7 @@ fn a_routed_request_becomes_the_signal_of_a_manual_trigger() {
     let signal = fire(json!({
         "source": "manual",
         "text": text,
-        "who": "theo",
+        "who": "mira",
         "where": "sailor/il-terminale-1"
     }));
 
@@ -70,7 +70,7 @@ fn a_routed_request_becomes_the_signal_of_a_manual_trigger() {
         signal["text"],
         "trova i residui di configurazione rimasti sparsi"
     );
-    assert_eq!(signal["who"], "theo");
+    assert_eq!(signal["who"], "mira");
     assert_eq!(signal["where"], "sailor/il-terminale-1");
     assert_eq!(signal["source"], "manual");
     assert_eq!(signal["kind"], "manual");

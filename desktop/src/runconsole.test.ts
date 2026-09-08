@@ -88,7 +88,7 @@ describe("what a step says while it runs", () => {
  * step finishes. Once the run has ended, nothing is "stopping" any more.
  */
 describe("a stop asked by hand", () => {
-  const stop: RunEvent = { run_id: "r", seq: 2, kind: "stop_requested", at: 10, step_id: null, payload: { by: "theo" } };
+  const stop: RunEvent = { run_id: "r", seq: 2, kind: "stop_requested", at: 10, step_id: null, payload: { by: "mira" } };
 
   test("is a line of the console that says the running step finishes", () => {
     const lines = linesFromEvents([started(1, "engine", { bin: "claude" }), stop]);

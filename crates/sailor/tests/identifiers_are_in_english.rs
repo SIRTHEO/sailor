@@ -20,7 +20,7 @@
 //!
 //! **AND IT DOES NOT LOOK AT THE FLOWS, BY DECISION.** The `id`s of flows and
 //! steps — `sviluppa-sailor`, `verdetto` — and the names of the `.flow.json`
-//! files stay in Italian: Theo's decision, written in `docs/decisions.md`. They
+//! files stay in Italian: the owner's decision, written in `docs/decisions.md`. They
 //! are data the **ledger keeps**: renaming a step would make already recorded
 //! runs show unknown steps, and changing the name of a shipped flow would make
 //! the flow a user wrote at home to replace it stop winning — in silence.

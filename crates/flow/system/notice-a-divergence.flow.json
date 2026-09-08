@@ -1,6 +1,6 @@
 {
   "id": "notice-a-divergence",
-  "description": "READS THE SAME GRAPH `remember-in-the-graph` WRITES, TO ANSWER ONE QUESTION: does this mandate's vocabulary belong to the workspace it arrived in, or to another one the graph already knows about? Theo's own condition, twice repeated: Sailor may PROPOSE a handoff, never perform one. `topic_drift` only reads and only answers; the last step here is `handed_to_agent`, which starts nothing and waits for a person to close it — the same reason that action exists at all. THE MANDATE NAMES WHERE IT IS AND WHAT WAS JUST SAID: `workspace_id` and `text`, nothing else; the graph and the comparison come from the store, not from this flow's own judgement.",
+  "description": "READS THE SAME GRAPH `remember-in-the-graph` WRITES, TO ANSWER ONE QUESTION: does this mandate's vocabulary belong to the workspace it arrived in, or to another one the graph already knows about? The owner's condition, twice repeated: Sailor may PROPOSE a handoff, never perform one. `topic_drift` only reads and only answers; the last step here is `handed_to_agent`, which starts nothing and waits for a person to close it — the same reason that action exists at all. THE MANDATE NAMES WHERE IT IS AND WHAT WAS JUST SAID: `workspace_id` and `text`, nothing else; the graph and the comparison come from the store, not from this flow's own judgement.",
   "graph": {
     "steps": [
       {

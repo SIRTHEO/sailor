@@ -1201,8 +1201,8 @@ fn restart_service(service: Service) {
 ///
 /// THE LABEL COMES FROM THE ENVIRONMENT WHEN THERE IS ONE. A service's name is
 /// a property of the installation, not of the code, and this crate ships in a
-/// public repository: whoever installs `notte` elsewhere is not called Theo. The
-/// value written in the table stays this machine's default.
+/// public repository: whoever installs `notte` elsewhere shares neither this
+/// machine's home nor its service names. The table keeps this machine's own.
 fn service_domain(service: Service) -> String {
     let label = std::env::var("RELEASE_SERVICE_LABEL")
         .ok()

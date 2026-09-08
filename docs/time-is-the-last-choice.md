@@ -1,10 +1,10 @@
 # Time is the last choice: the four levels, applied to the life cycle of a branch
 
-**01/09/2026.** Born from a request of Theo's — *«if we need to, let us do the
+**01/09/2026.** Born from a request of the owner's — *«if we need to, let us do the
 time nodes, timers, cron that fire on the dot every so often»* — and from the
 answer research gave instead of the one asked for.
 
-The **measured facts** are kept apart from the **decisions**, which are Theo's.
+The **measured facts** are kept apart from the **decisions**, which are the owner's.
 Where a number appears without the word «measured», it is a reading of the code,
 not a test that was run.
 
@@ -13,7 +13,7 @@ not a test that was run.
 The rule was not invented here, and it starts from this: a cleanup cron is
 almost always the symptom of a badly modelled data life cycle.
 
-It is the same thing Theo said on 31/08 with an image: *if I fall ill because I
+It is the same thing the owner said on 31/08 with an image: *if I fall ill because I
 stand at −10 in a t-shirt, I do not buy the medicine — I buy the clothes*. The
 rule turns it into an **order of preference**, and cron is the fourth:
 
@@ -131,7 +131,7 @@ They are not implementation details: they change what the node *is*.
    concurrency limit of one, written by hand. A time node that does not provide
    for it manufactures double runs.
 
-## What is left to Theo
+## What is left to the owner
 
 - **Whether level 1 gets switched on in GitHub** — it is a checkbox, and on its
   own it takes away most of the problem. No flow does it better.

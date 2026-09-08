@@ -34,7 +34,7 @@ every other respect.
 
 ### English everywhere, restoring the charter the project was founded with
 
-**2026-09-01**, decided by Theo.
+**2026-09-01**, decided by the owner.
 
 Identifiers, comments, documentation, commit messages, and every message a user
 of the tool can see are in **English**. There is no inside language and no
@@ -75,7 +75,7 @@ the rest of `docs/`, convert as they are touched.
 
 ### The language is chosen by who reads: English what a stranger sees, Italian what whoever works here sees
 
-**01/09/2026**, decided by Theo while looking at the CI.
+**01/09/2026**, decided by the owner while looking at the CI.
 
 The `README`, the CI files and **the messages a user of the tool sees** — what
 `sailor` prints, what it says when it refuses, the `--help` texts — go in
@@ -223,7 +223,7 @@ about itself, and as fault 22, where a zero never computed passed for a
 measurement. Whoever writes a new rule writes what makes it red as well.
 
 ### The identifiers of the flows and of the steps stay in Italian
-**31/08/2026 — Theo.** `sviluppa-sailor`, `verdetto`, `implementa`, the names of
+**31/08/2026 — the owner.** `sviluppa-sailor`, `verdetto`, `implementa`, the names of
 the `.flow.json` files: they stay as they are. The boundary is not between code
 and data in the abstract — it is this: **what the compiler reads is in English;
 what the store keeps is data, and data does not get renamed for style.**
@@ -383,7 +383,7 @@ by the store, and it stays a separate axis. Mixing them would make an engine no
 run has ever named pass for used — which is fault 32.
 
 ### The power of a step: the Bazel model, under observation
-**29/08/2026 — Theo.** A step declares what it needs, and the rest does not
+**29/08/2026 — the owner.** A step declares what it needs, and the rest does not
 exist for it. The check comes in as a **warning** and becomes a barrier only
 with a change of configuration, after it has been seen working.
 **Why**: a specific ban gets got round, a restricted world does not; and the
@@ -393,14 +393,14 @@ introduce.
 touches. It is not free. *Not built yet.*
 
 ### The authorisations file does not exist
-**29/08/2026 — Theo.** Self-repair has no gate of its own: it is a flow like the
+**29/08/2026 — the owner.** Self-repair has no gate of its own: it is a flow like the
 others, with the powers it declares.
 **Why**: if the Bazel model holds for every step, a special mechanism for
 self-repair would be defending the same thing twice. And it is consistent with
 the fact that the flows we use to develop Sailor are not shipped to anybody.
 
 ### The system flows live inside the binary
-**29/08/2026 — Theo.** Embedded at compile time, not installed as files next to
+**29/08/2026 — the owner.** Embedded at compile time, not installed as files next to
 the program. Whoever wants a different one writes one with the same name in
 their own home or in the project, and theirs wins.
 **Why**: a flow shipped as a file can be missing, go stale or be deleted, and
@@ -408,7 +408,7 @@ then the product behaves differently on different machines without anybody
 understanding why. *Done: `crates/flow/system/`.*
 
 ### No bridle on the flow that develops
-**29/08/2026 — Theo.** The step that implements writes without asking
+**29/08/2026 — the owner.** The step that implements writes without asking
 permission.
 **Why**: the perimeter is not yet enforced by the engine, and waiting for it
 would have stopped everything. Whoever launches knows this. **Careful**: in a
@@ -425,7 +425,7 @@ the gate** — with five minutes of verification spent on code that did not stan
 up. A piece of work that does not compile has nothing for anybody to judge.
 
 ### Flows compose, they do not merge
-**29/08/2026 — Theo.** Research, dispatch, development and interrogation of the
+**29/08/2026 — the owner.** Research, dispatch, development and interrogation of the
 code are the phases of a single cycle, but they stay separate flows that call
 each other.
 **Why**: a ten-step flow that does everything cannot be used by halves, and the
@@ -448,10 +448,10 @@ document said «ten faults» while the file listed eleven, and a verifier reject
 a whole piece of research over that inconsistency — rightly.
 
 ### The unlocking order has changed: first use Sailor, then need nothing else
-**31/08/2026 — Theo.** The order written on 29/08 — calls, orchestration, cycle
+**31/08/2026 — the owner.** The order written on 29/08 — calls, orchestration, cycle
 — stays valid as a technical sequence, but **it is no longer the criterion by
 which what to do is chosen**. The new criterion is one only: *what is missing
-for Theo to be able to spend a working day inside Sailor.* Three blocks, in this
+for the owner to be able to spend a working day inside Sailor.* Three blocks, in this
 order, and the third is the consequence of the first two:
 
 1. **Sailor develops without dying while it is being used.** It has to be
@@ -472,7 +472,7 @@ order, and the third is the consequence of the first two:
 
 **Why this order and not the previous one.** The old order optimised the
 correctness of the engine; this one optimises the moment the system stops being
-a project and becomes the tool the work is done with. As long as Theo develops
+a project and becomes the tool the work is done with. As long as the owner develops
 Sailor elsewhere, every defect of Sailor's is paid for by somebody else — and
 none of its faults gets found by using it, which is the only way the faults of
 this repository have been found so far.
@@ -484,7 +484,7 @@ the flows too: writing new ones is not in the first two blocks, and whoever
 writes one while these three are open is working outside the order.
 
 ### The unlocking order: first the calls, then the orchestration, then the cycle
-**29/08/2026 — Theo.** Three blocks, in this order, and each is seen working
+**29/08/2026 — the owner.** Three blocks, in this order, and each is seen working
 before the next:
 
 1. **The calls to the models**, profiles and providers together. Including the
@@ -506,7 +506,7 @@ because until then every defect is multiplied by the number of runs.
 followed.
 
 ### Everything built as a flow has a flow that tends it
-**29/08/2026 — Theo.** Self-repair and development are not a separate project:
+**29/08/2026 — the owner.** Self-repair and development are not a separate project:
 they are the pair of flows that holds up everything we keep at the flow level.
 **Why**: what is not code has neither a compiler nor tests watching over it. A
 broken flow stays broken in silence until somebody launches it. If flows are the
@@ -515,7 +515,7 @@ constraint at the top of this file — then their maintenance has to be just as
 serious as the code's, and automatic for the same reason.
 
 ### An entry can be deprecated or decided again, and not on its own
-**29/08/2026 — Theo.** While the flows are being developed, the work entries
+**29/08/2026 — the owner.** While the flows are being developed, the work entries
 change: some no longer make sense, others have to be rethought. **This is done
 together with whoever uses the system, not autonomously.**
 **Why**: an entry that disappears without anybody knowing is indistinguishable
@@ -530,7 +530,7 @@ waiting for you and that no flow may take. And the passage into those states has
 to be recorded with who did it, like everything else in the store.
 
 ### Multi-provider is built at home, and is not a proxy
-**30/08/2026 — Theo, after looking at free-claude-code.** Neither
+**30/08/2026 — the owner, after looking at free-claude-code.** Neither
 `free-claude-code` nor any of the other intermediaries (Claude Code Router,
 LiteLLM, OmniRoute, 9router) gets integrated. The piece is made here.
 
@@ -578,7 +578,7 @@ place.
 
 ### An action declares the surface it belongs to, and the powers it demands
 
-**31/08/2026 — Theo**, after surveying a body of shell scripts from elsewhere,
+**31/08/2026 — the owner**, after surveying a body of shell scripts from elsewhere,
 candidates to become flows.
 
 The surfaces are four, and an action declares **one only**: `sense` reads the
@@ -611,7 +611,7 @@ its own blind answer. **It is born red on all nine of today's actions.**
 > surfaces do not exist in the code»*. As long as the test is not there, this
 > paragraph describes a rule nobody can violate, which by the rule above is a
 > rule that is not there. The choice between writing the test and withdrawing
-> the rule is Theo's, and it sits in fault 67: **this note does not take it, it
+> the rule is the owner's, and it sits in fault 67: **this note does not take it, it
 > makes it visible.**
 
 **The debt, declared.** The seven building sites open on 31/08 (`supervisor`,
@@ -672,7 +672,7 @@ stays written in `agy`'s descriptor, where whoever makes it will find it.
 
 ### Looking for the measurement comes before choosing the road that avoids it
 
-**01/09/2026, decided by Theo**, a few hours after the entry above and against
+**01/09/2026, decided by the owner**, a few hours after the entry above and against
 its second half.
 
 The entry above tells the truth and stands: a rule has two ways of being
@@ -699,7 +699,7 @@ silence.
 
 ### Where an engine sits in a chain is decided on a measurement, not on a habit
 
-**01/09/2026, decided by Theo.**
+**01/09/2026, decided by the owner.**
 
 Twelve positions in four flows declared the same order and **no document said
 why**. An order nobody decided is not a choice: it is a habit, and it defends
@@ -792,7 +792,7 @@ permanent constraint «independence from the model».
 - **The threshold of a flow that accompanies goes on the price, not on the
   quality.** Measured: the degradation of the quality is not observable (21
   sessions out of 44, a coin toss); the price of continuing grows by 34% and is
-  monotonic (37 out of 45). Waiting on a decision of Theo's.
+  monotonic (37 out of 45). Waiting on a decision of the owner's.
 
 - ~~**The third block has a precondition that has not been done yet.**~~ Done on
   30/08/2026: the front starts together. Two independent six-second steps take

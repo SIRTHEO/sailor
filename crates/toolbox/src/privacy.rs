@@ -51,7 +51,7 @@ pub fn what_cannot_be_published(text: &str, names: &[String], home: Option<&str>
         if name.is_empty() {
             continue;
         }
-        if let Some(at) = lowered.find(&name.to_lowercase()) {
+        if let Some(at) = names_at(&lowered, &name.to_lowercase()) {
             found.push(Reason::APrivateName { at });
         }
     }
@@ -64,6 +64,32 @@ pub fn what_cannot_be_published(text: &str, names: &[String], home: Option<&str>
         Reason::APrivateName { at } | Reason::APathOfThisMachine { at } => *at,
     });
     found
+}
+
+/// Where `name` appears **as a name** in already-lowercased `text`.
+///
+/// **A NAME IS NOT A SUBSTRING**: a short one lives inside ordinary words and
+/// inside an account handle, and a guard red on those is one people skip, so
+/// the character on each side must not be a letter, a digit or `_`. It misses
+/// a name glued inside a longer word — not the shape a leak takes.
+pub fn names_at(text: &str, name: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut from = 0;
+    while let Some(found) = text[from..].find(name) {
+        let at = from + found;
+        let before_is_word = at > 0 && is_word_byte(bytes[at - 1]);
+        let after = at + name.len();
+        let after_is_word = after < bytes.len() && is_word_byte(bytes[after]);
+        if !before_is_word && !after_is_word {
+            return Some(at);
+        }
+        from = at + name.len();
+    }
+    None
+}
+
+fn is_word_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
 }
 
 /// The names this machine declares, read from disk. Empty when unarmed.
@@ -80,6 +106,45 @@ pub fn declared_here(read: &dyn Fn(&Path) -> Option<String>) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    /// Declared as private, a short name fired on a dozen ordinary words and on
+    /// an account handle — none of them the name. **The name here is invented**,
+    /// and not for decoration: a test using a declared one would put it in the
+    /// repository, which is what this file exists to prevent.
+    #[test]
+    fn a_short_name_does_not_fire_inside_ordinary_words() {
+        let names = vec!["art".to_owned()];
+
+        for innocent in [
+            "struct StartsTheOthers {",
+            "the party had already charted a course",
+            "https://github.com/SIRART/sailor.git",
+        ] {
+            assert_eq!(
+                what_cannot_be_published(innocent, &names, None),
+                Vec::new(),
+                "«{innocent}» is not the name"
+            );
+        }
+    }
+
+    /// And it still fires where the name really is: a path segment, a quoted
+    /// value, a word in a sentence.
+    #[test]
+    fn the_name_written_to_be_read_is_still_caught() {
+        let names = vec!["art".to_owned()];
+
+        for guilty in [
+            "home: \"/home/art/.config/sailor\"",
+            "{\"who\": \"art\"}",
+            "it is Art's call, and it stays theirs",
+        ] {
+            assert!(
+                !what_cannot_be_published(guilty, &names, None).is_empty(),
+                "«{guilty}» carries the name"
+            );
+        }
+    }
+
     use super::*;
 
     #[test]

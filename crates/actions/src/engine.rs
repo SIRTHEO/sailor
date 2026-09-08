@@ -910,7 +910,7 @@ impl Action for ExternalEngineAction {
         };
         let mut last_ran = None;
         for candidate in &candidates {
-            // Astra's condition, before the call and not after it: the only
+            // The reservation is taken before the call and not after it: the only
             // moment at which stopping costs nothing. The reserve is held for
             // as long as the call runs, so a front of steps sharing one cap
             // counts what its siblings have already committed.

@@ -53,7 +53,7 @@ describe("what is happening to a flow", () => {
       event(1, "step_started", "uno", 100, { attempt: 1 }),
       event(2, "step_closed", "uno", 104, { outcome: "Went" }),
       event(3, "step_started", "due", 104, { attempt: 1 }),
-      event(4, "stop_requested", null, 120, { by: "theo" }),
+      event(4, "stop_requested", null, 120, { by: "mira" }),
     ];
     expect(liveOf(run({ events }), 1_000)).toEqual({ state: "stopping", done: 1, steps: 2 });
     // The absurd control: without the asking it is a run going, as before.

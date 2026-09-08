@@ -6,7 +6,7 @@ Sailor launches the command lines (Claude Code, Codex, Gemini), applies **one
 single body of rules to all of them**, and runs every piece of work as a
 **recorded flow** instead of a script, a hook or a binary of its own.
 
-The measure of every job: *does this thing take an approval away from Theo, or
+The measure of every job: *does this thing take an approval away from the owner, or
 bring him a better doubt?* If it does neither, it is not work.
 
 **Before fixing anything at all, read `docs/decisions.md`** — the permanent
@@ -20,7 +20,7 @@ This line once pointed at a document a cleanup had already deleted: for two days
 the first instruction of every session was an empty address, and nobody noticed,
 because a broken pointer in a document is not red.
 
-## The order of the work, decided by Theo
+## The order of the work, decided by the owner
 
 **Code in Sailor → debt removal → building the flow.** Never the other way
 round. You do not build inside what has to disappear.
@@ -191,7 +191,7 @@ Traps already paid for on this machine:
   reads is language, what the ledger keeps is data.** Renaming a step would
   make already-recorded runs show up as unknown steps, and renaming a shipped
   flow would silently stop a user's own replacement from winning. Decided by
-  Theo on 2026-08-31, in full in `docs/decisions.md`.
+  the owner on 2026-08-31, in full in `docs/decisions.md`.
 
 - **Commit messages: Conventional Commits.** `<type>(<scope>): <subject>`,
   lowercase, imperative, no trailing period. The body explains why, not what —
@@ -286,7 +286,7 @@ an evening, not of a job.
   re-measure.
 - **Whoever finds somebody else's branch does not delete it**: they prove it by
   content, and if it is superseded they say so to whoever opened it — or to
-  Theo — with the measurement alongside.
+  the owner — with the measurement alongside.
 - **There are two names you do not choose, and they have to be closed all the
   same.** An agent in a working copy is born on a branch the mechanism names by
   itself; a step that asks for a tree of its own opens a copy under the name of
@@ -352,7 +352,7 @@ the terms of the code and the product.
 
 They do not name the sessions, the agents, the models or how the work was
 divided among them; they do not say who reviewed whom; they do not name the
-person whose decision it was. «A second opinion from codex», «Theo's decision»,
+person whose decision it was. «A second opinion from codex», «the owner's decision»,
 «found by <a session's codename>» are the shape to avoid — a real request does
 not carry them, and a reader who was not here cannot use them.
 

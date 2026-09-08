@@ -1,4 +1,4 @@
-//! **THE CENSUS IS TRIGGERED, NOT CLOCKED.** Theo ruled timeouts out: no timer,
+//! **THE CENSUS IS TRIGGERED, NOT CLOCKED.** The owner ruled timeouts out: no timer,
 //! no wait loop, no watching in the background. The census is a function called
 //! when an event arrives, and at no other moment.
 //!

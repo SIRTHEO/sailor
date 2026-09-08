@@ -356,7 +356,7 @@ describe("the bar's three facts", () => {
 
 describe("the ledger as a database", () => {
   const TABLES = {
-    directory: "/home/theo/.config/sailor/ledger",
+    directory: "/home/mira/.config/sailor/ledger",
     exists: true,
     tables: [
       { name: "runs", rows: 2 },

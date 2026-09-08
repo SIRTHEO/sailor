@@ -119,7 +119,9 @@ fn occurrences_of(needle: &str) -> Vec<String> {
             continue;
         };
         for (number, line) in text.lines().enumerate() {
-            if line.to_lowercase().contains(&lowered) {
+            // The rule is asked of `toolbox::privacy`, never copied: two
+            // readers of one list drift.
+            if toolbox::privacy::names_at(&line.to_lowercase(), &lowered).is_some() {
                 let shown = path.strip_prefix(&root).unwrap_or(&path);
                 hits.push(format!("{}:{}", shown.display(), number + 1));
             }

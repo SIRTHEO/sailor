@@ -365,7 +365,7 @@ mod tests {
     }
 
     /// **THE BOUNDARY IS THE FIELD, NOT AN ASSUMPTION.** Two areas of one
-    /// project — Theo's own example, products and ads — stay apart by default.
+    /// project — products and ads, the owner's own example — stay apart by default.
     #[test]
     fn a_query_never_crosses_into_another_workspace_by_itself() {
         let (ledger, _guard) = store();
