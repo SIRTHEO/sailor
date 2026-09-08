@@ -75,6 +75,16 @@ pub fn title_of(text: &str, slug: &str) -> String {
 /// The address a note is held at. **THE TREE IS PART OF IT**: one store serves
 /// every checkout, so a slug alone makes `decisions.md` here and in another
 /// project one row. No tree keeps the bare slug, read from everywhere.
+/// The tree a note taken in `here` belongs to: the project that declares
+/// itself, and the folder's own name for a place that declares nothing. One
+/// source, because whoever files a note and whoever looks for it must agree.
+pub fn tree_at(here: &std::path::Path) -> Option<String> {
+    Some(match flow::workspace::find_root(here) {
+        Some(root) => root.to_string_lossy().into_owned(),
+        None => crate::memory::tree_of(here),
+    })
+}
+
 pub fn note_key(tree: Option<&str>, slug: &str) -> String {
     match tree {
         Some(tree) if !tree.trim().is_empty() => format!("{tree}#{slug}"),

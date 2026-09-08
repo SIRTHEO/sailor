@@ -36,6 +36,12 @@ fn typed(words: &[&str]) -> Vec<String> {
     words.iter().map(|word| (*word).to_owned()).collect()
 }
 
+/// The tree the command would file a note under from here, asked of the one
+/// place that answers it — not spelled out a second time.
+fn here() -> Option<String> {
+    actions::notes::tree_at(&std::env::current_dir().expect("a working directory"))
+}
+
 fn said(path: &std::path::Path) -> String {
     path.display().to_string()
 }
@@ -100,13 +106,16 @@ fn importing_the_same_slug_replaces_it_instead_of_filing_a_second() {
 
     let ledger = Ledger::open(&store).expect("a ledger");
     let held = actions::notes::all(&ledger).expect("the notes held");
+    // The same tree the command filed the first two under: a slug is only the
+    // half of a note's name, and asking under no tree at all would be asking
+    // about a different note.
     let again = actions::notes::import(
         &ledger,
         actions::notes::Note {
             slug: "a-working-note".to_owned(),
             title: "Third".to_owned(),
             text: "the third body\n".to_owned(),
-            tree: None,
+            tree: here(),
             imported_at: 9,
             removed_at: None,
         },
@@ -150,7 +159,10 @@ fn a_note_removed_is_no_longer_held_and_its_text_leaves_the_store() {
     let ledger = Ledger::open(&store).expect("a ledger");
     let held = actions::notes::all(&ledger).expect("the notes held");
     let row = ledger
-        .read_record(actions::notes::NOTES_COLLECTION, "a-note-to-drop")
+        .read_record(
+            actions::notes::NOTES_COLLECTION,
+            &actions::notes::note_key(here().as_deref(), "a-note-to-drop"),
+        )
         .expect("the store answers");
     drop(ledger);
     let _ = std::fs::remove_dir_all(&dir);

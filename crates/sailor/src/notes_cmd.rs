@@ -148,11 +148,7 @@ fn now() -> i64 {
 /// The tree a note comes in from. **THE PROJECT, NOT THE CHECKOUT**: four
 /// worktrees of one project would otherwise hold four notes of one name.
 fn tree_here() -> Option<String> {
-    let here = std::env::current_dir().ok()?;
-    Some(match flow::workspace::find_root(&here) {
-        Some(root) => root.to_string_lossy().into_owned(),
-        None => actions::memory::tree_of(&here),
-    })
+    actions::notes::tree_at(&std::env::current_dir().ok()?)
 }
 
 /// Takes a markdown file in. A second import under the same slug replaces the
