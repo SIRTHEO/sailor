@@ -145,6 +145,37 @@ fn head(text: &str, limit: usize) -> String {
     text[..end].to_owned()
 }
 
+/// What a pid cannot say by itself. The operating system reuses the number:
+/// when the holder dies and another process is born with it, whoever reads the
+/// number alone hands the step to a stranger.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HolderIdentity {
+    /// The second that process was born, as the operating system tells it.
+    /// `None` is a machine that would not say, and it stays `None`.
+    #[serde(default)]
+    pub born_at: Option<i64>,
+    /// One invocation of Sailor. Two runs of the same binary are two of these.
+    pub invocation: String,
+}
+
+/// Who holds a step, as far as the row itself can say. Reading the row is not
+/// asking the machine: that is `ledger::still_held`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Holder<'a> {
+    /// No process holds it. A handed step is held by a deadline instead.
+    Nobody,
+    /// A number and nothing else: a row written before identity existed. Never
+    /// read as alive — the number may belong to anybody by now.
+    ANumberAlone(u32),
+    Named {
+        pid: u32,
+        identity: &'a HolderIdentity,
+    },
+    /// An identity with no number to ask the machine about.
+    Ambiguous,
+}
+
 /// A step as a durable record.
 /// Intent is written BEFORE running; the outcome AFTER.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -182,6 +213,10 @@ pub struct StepRecord {
     /// without knowing what the caller named its own key.
     #[serde(default)]
     pub held_by_pid: Option<u32>,
+    /// The rest of the holder's identity, beside the number. Absent on a record
+    /// written before the field, and such a record is uncertain, never alive.
+    #[serde(default)]
+    pub held_by: Option<HolderIdentity>,
     /// The step's species, frozen at open: it says whether redoing it is safe.
     /// `None` is a record written before species existed, and counts as
     /// `HandToHuman` — never as `Repeatable`.
@@ -310,6 +345,7 @@ impl StepRecord {
             gates,
             attempt_relation: None,
             held_by_pid: None,
+            held_by: None,
             species: None,
             started_at,
             outcome: None,
@@ -322,6 +358,15 @@ impl StepRecord {
             ended_at: None,
             bytes_seen: None,
             bytes_discarded: None,
+        }
+    }
+
+    pub fn holder(&self) -> Holder<'_> {
+        match (self.held_by_pid, self.held_by.as_ref()) {
+            (None, None) => Holder::Nobody,
+            (Some(pid), None) => Holder::ANumberAlone(pid),
+            (Some(pid), Some(identity)) => Holder::Named { pid, identity },
+            (None, Some(_)) => Holder::Ambiguous,
         }
     }
 }
@@ -518,6 +563,7 @@ mod tests {
         // inherit a species nobody declared.
         assert_eq!(record.species, None);
         assert_eq!(record.held_by_pid, None);
+        assert_eq!(record.held_by, None);
         assert_eq!(record.ran, None, "nothing written before the field ran a line");
     }
 
@@ -668,5 +714,45 @@ mod tests {
         let back: StepRecord = serde_json::from_str(&text).expect("record reads back");
         assert_eq!(back.species, Some(StepSpecies::Compensable));
         assert_eq!(back.held_by_pid, Some(4321));
+    }
+
+    /// A pid on its own and a pid with an identity are two different rows, and
+    /// the second is the only one a reader may take for a live holder.
+    #[test]
+    fn the_row_says_which_of_the_four_holders_it_carries() {
+        let mut record = StepRecord::started("run", "step", 1, 1, vec![], json!(null), vec![], 1);
+        assert_eq!(record.holder(), Holder::Nobody);
+
+        record.held_by_pid = Some(4321);
+        assert_eq!(record.holder(), Holder::ANumberAlone(4321));
+
+        let identity = HolderIdentity {
+            born_at: Some(1_700_000_000),
+            invocation: "4321-9".to_owned(),
+        };
+        record.held_by = Some(identity.clone());
+        assert_eq!(
+            record.holder(),
+            Holder::Named {
+                pid: 4321,
+                identity: &identity
+            }
+        );
+
+        record.held_by_pid = None;
+        assert_eq!(record.holder(), Holder::Ambiguous);
+    }
+
+    #[test]
+    fn the_identity_of_the_holder_survives_a_round_trip() {
+        let mut record = StepRecord::started("run", "step", 1, 1, vec![], json!(null), vec![], 1);
+        record.held_by_pid = Some(4321);
+        record.held_by = Some(HolderIdentity {
+            born_at: Some(1_700_000_000),
+            invocation: "4321-9".to_owned(),
+        });
+        let text = serde_json::to_string(&record).expect("serializable record");
+        let back: StepRecord = serde_json::from_str(&text).expect("record reads back");
+        assert_eq!(back.held_by, record.held_by);
     }
 }

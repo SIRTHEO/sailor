@@ -31,8 +31,9 @@ pub use executor::{
 pub use file::{CapKind, FlowFile};
 pub use graph::{Condition, DependencyEdge, Graph, GraphError, Judgement, Step};
 pub use record::{
-    canonical_text, digest_input, truncate_said, AttemptRelation, Outcome, Ran, Refusal,
-    RefusalRule, StepRecord, StepSpecies, Why, ANSWER_SHAPE_CHECK, MAX_SAID_BYTES, MAX_SEEN_BYTES,
+    canonical_text, digest_input, truncate_said, AttemptRelation, Holder, HolderIdentity, Outcome,
+    Ran, Refusal, RefusalRule, StepRecord, StepSpecies, Why, ANSWER_SHAPE_CHECK, MAX_SAID_BYTES,
+    MAX_SEEN_BYTES,
 };
 pub use schedule::{is_due, Recurrence, Schedule, Weight};
 pub use schema::{SchemaError, ValueSchema};

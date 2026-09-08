@@ -5,7 +5,10 @@
 //! attached, but a new event and its projection are committed in two phases
 //! because WAL gives no atomicity across attached databases.
 
-use flow::{AttemptRelation, Completion, Outcome, RecordStore, Spend, StepRecord, StepSpecies};
+use flow::{
+    AttemptRelation, Completion, Holder, HolderIdentity, Outcome, RecordStore, Spend, StepRecord,
+    StepSpecies,
+};
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension, Transaction, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -100,7 +103,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// `PROJECTION_MIGRATIONS`, and the tests hold the two against each other. A
 /// column once landed in the migration without this going up, so an existing
 /// store never migrated and every read died on the missing column.
-const PROJECTION_SCHEMA_VERSION: i64 = 16;
+const PROJECTION_SCHEMA_VERSION: i64 = 17;
 
 /// One change to the projections, and the version that introduced it.
 enum ProjectionChange {
@@ -211,6 +214,13 @@ const PROJECTION_MIGRATIONS: &[(i64, ProjectionChange)] = &[
         ProjectionChange::AddColumns {
             table: "steps",
             columns: &[("why", "TEXT")],
+        },
+    ),
+    (
+        17,
+        ProjectionChange::AddColumns {
+            table: "steps",
+            columns: &[("held_by", "TEXT")],
         },
     ),
 ];
@@ -736,6 +746,71 @@ fn born_at(pid: u32) -> Option<i64> {
 #[cfg(not(target_os = "macos"))]
 fn born_at(_pid: u32) -> Option<i64> {
     None
+}
+
+/// One invocation of Sailor, told apart from the next. The kernel knows one
+/// process; this says which run of Sailor inside it wrote the row.
+pub fn invocation_id() -> String {
+    static THIS_ONE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    THIS_ONE
+        .get_or_init(|| {
+            let since = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_else(|before_the_epoch| before_the_epoch.duration());
+            format!("{}-{}", std::process::id(), since.as_nanos())
+        })
+        .clone()
+}
+
+/// The identity to write beside the pid when this process takes a step.
+pub fn this_process_holds() -> HolderIdentity {
+    HolderIdentity {
+        born_at: born_at(std::process::id()),
+        invocation: invocation_id(),
+    }
+}
+
+/// Whether the process a row names still holds the step.
+///
+/// **THREE ANSWERS, NOT TWO.** What cannot be settled is said as such: rounded
+/// to `Held` it keeps a finished step hostage, rounded to `Released` it hands
+/// live work to a second taker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StillHeld {
+    /// No process ever held it: a handed step, held by a deadline instead.
+    Nobody,
+    Held,
+    /// That process is gone, or its number belongs to somebody else now.
+    Released,
+    Uncertain,
+}
+
+pub fn still_held(record: &StepRecord) -> StillHeld {
+    match record.holder() {
+        Holder::Nobody => StillHeld::Nobody,
+        Holder::ANumberAlone(_) | Holder::Ambiguous => StillHeld::Uncertain,
+        Holder::Named { pid, identity } => holds_it_now(pid, identity),
+    }
+}
+
+fn holds_it_now(pid: u32, identity: &HolderIdentity) -> StillHeld {
+    if pid == std::process::id() && identity.invocation == invocation_id() {
+        return StillHeld::Held;
+    }
+    let Some(born) = identity.born_at else {
+        return StillHeld::Uncertain;
+    };
+    match who_holds_the_pid(pid) {
+        WhoHoldsThePid::Nobody => StillHeld::Released,
+        WhoHoldsThePid::AliveButUnsaid => StillHeld::Uncertain,
+        WhoHoldsThePid::Since(second) => {
+            if second == born {
+                StillHeld::Held
+            } else {
+                StillHeld::Released
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1434,7 +1509,7 @@ impl Ledger {
             "SELECT run_id, step_id, attempt, epoch, deps, input_digest, input,
                     gates, attempt_relation, started_at, outcome, output, said,
                     failure_class, ended_at, bytes_seen, bytes_discarded,
-                    held_by_pid, species, refusal, ran, why
+                    held_by_pid, species, refusal, ran, why, held_by
              FROM steps WHERE run_id = ?1 ORDER BY started_at, step_id, attempt",
         )?;
         let records = statement
@@ -2468,6 +2543,7 @@ fn create_projection_tables(connection: &Connection) -> Result<(), LedgerError> 
              refusal TEXT,
              ran TEXT,
              why TEXT,
+             held_by TEXT,
              PRIMARY KEY (run_id, step_id, attempt)
          );
          CREATE TABLE IF NOT EXISTS model_calls (
@@ -3158,9 +3234,9 @@ fn project_step(
          (run_id, step_id, attempt, epoch, deps, input_digest, input, gates,
           attempt_relation, started_at, outcome, output, said, failure_class,
           ended_at, bytes_seen, bytes_discarded, held_by_pid, species,
-          checkpointed, refusal, ran, why)
+          checkpointed, refusal, ran, why, held_by)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                 ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)
+                 ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)
          ON CONFLICT(run_id, step_id, attempt) DO UPDATE SET
           epoch=excluded.epoch, deps=excluded.deps,
           input_digest=excluded.input_digest, input=excluded.input,
@@ -3171,7 +3247,7 @@ fn project_step(
           bytes_seen=excluded.bytes_seen, bytes_discarded=excluded.bytes_discarded,
           held_by_pid=excluded.held_by_pid, species=excluded.species,
           checkpointed=excluded.checkpointed, refusal=excluded.refusal,
-          ran=excluded.ran, why=excluded.why",
+          ran=excluded.ran, why=excluded.why, held_by=excluded.held_by",
         params![
             record.run_id,
             record.step_id,
@@ -3209,6 +3285,11 @@ fn project_step(
                 .transpose()?,
             record
                 .why
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()?,
+            record
+                .held_by
                 .as_ref()
                 .map(serde_json::to_string)
                 .transpose()?,
@@ -3418,7 +3499,7 @@ fn read_step(
             "SELECT run_id, step_id, attempt, epoch, deps, input_digest, input,
                     gates, attempt_relation, started_at, outcome, output, said,
                     failure_class, ended_at, bytes_seen, bytes_discarded,
-                    held_by_pid, species, refusal, ran, why
+                    held_by_pid, species, refusal, ran, why, held_by
              FROM steps
              WHERE run_id = ?1 AND step_id = ?2 AND attempt = ?3 AND epoch = ?4",
             params![run_id, step_id, attempt, padded_u64(epoch)],
@@ -3454,6 +3535,7 @@ fn step_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StepRecord> {
     let refusal: Option<String> = row.get(19)?;
     let ran: Option<String> = row.get(20)?;
     let why: Option<String> = row.get(21)?;
+    let held_by: Option<String> = row.get(22)?;
     Ok(StepRecord {
         run_id: row.get(0)?,
         step_id: row.get(1)?,
@@ -3495,6 +3577,10 @@ fn step_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StepRecord> {
         bytes_seen: bytes_seen.map(|b| b as u64),
         bytes_discarded: bytes_discarded.map(|b| b as u64),
         held_by_pid: held_by_pid.map(|pid| pid as u32),
+        held_by: held_by
+            .as_deref()
+            .map(|value| json_column(value, 22))
+            .transpose()?,
         species: species.as_deref().map(parse_species).transpose()?,
     })
 }
@@ -3623,7 +3709,7 @@ fn dump_table(connection: &Connection, table: &str) -> Result<Value, LedgerError
         // The two born later sit at the end, where a positional reader that
         // predates them simply finds no cell.
         "runs" => "run_id,kind,entity,parent_run_id,started_by,status,total_cost_micros,error,started_at,ended_at,worktree,stop_reason",
-        "steps" => "run_id,step_id,attempt,epoch,deps,input_digest,input,gates,attempt_relation,started_at,outcome,output,said,failure_class,ended_at,bytes_seen,bytes_discarded,held_by_pid,species,checkpointed,refusal,ran,why",
+        "steps" => "run_id,step_id,attempt,epoch,deps,input_digest,input,gates,attempt_relation,started_at,outcome,output,said,failure_class,ended_at,bytes_seen,bytes_discarded,held_by_pid,species,checkpointed,refusal,ran,why,held_by",
         "flow_definitions" => "run_id,digest,body,recorded_at",
         "inventory_items" => "kind,name,path,origin,reach,reason,first_seen,last_seen,gone_at",
         "store" => "collection,key,value,written_by,written_at",
