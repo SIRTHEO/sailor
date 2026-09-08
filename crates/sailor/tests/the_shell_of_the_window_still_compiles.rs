@@ -130,8 +130,14 @@ fn run(mut command: Command) -> Verdict {
 /// The shell built once, and a second time offline when the first run could
 /// not reach what it builds with.
 fn measured(root: &Path) -> Verdict {
-    match run(compiler(root, false, callers_build_directory())) {
-        Verdict::NothingMeasured(_) => run(compiler(root, true, callers_build_directory())),
+    measured_with(|offline| compiler(root, offline, callers_build_directory()))
+}
+
+/// The same two tries over whatever compiler it is handed, so a machine that
+/// has none can be put to the judge.
+fn measured_with(mut compiler: impl FnMut(bool) -> Command) -> Verdict {
+    match run(compiler(false)) {
+        Verdict::NothingMeasured(_) => run(compiler(true)),
         settled => settled,
     }
 }
@@ -215,4 +221,64 @@ fn the_check_tells_a_broken_shell_from_a_missing_tool() {
         first.get_envs().all(|(key, _)| key != "CARGO_TARGET_DIR"),
         "and nothing is invented when the caller named none"
     );
+}
+
+/// A shell of its own under the temporary directory, with the source it is
+/// handed and a lock of its own: `--locked` refuses a tree that has none, and
+/// that refusal would stand in for every verdict below.
+fn a_shell(label: &str, source: &str) -> PathBuf {
+    let root = std::env::temp_dir().join(format!("sailor-shell-{label}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let shell = root.join("desktop").join("src-tauri");
+    std::fs::create_dir_all(shell.join("src")).expect("a scratch shell");
+    std::fs::write(
+        shell.join("Cargo.toml"),
+        "[package]\nname = \"a-shell\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\n",
+    )
+    .expect("a manifest");
+    std::fs::write(shell.join("src").join("main.rs"), source).expect("a source");
+    let locked = Command::new("cargo")
+        .arg("generate-lockfile")
+        .arg("--manifest-path")
+        .arg(shell.join("Cargo.toml"))
+        .arg("--offline")
+        .status();
+    assert!(locked.is_ok_and(|done| done.success()), "the scratch shell got no lock of its own");
+    root
+}
+
+/// **A SHELL THAT COMPILES IS NOT A WORKING CHECK.** The judge has only ever
+/// been pointed at a tree whose shell builds, so `Verdict::Broken` had never
+/// been returned by a real compiler — only by the reader, over text written by
+/// hand. Here a shell of its own is built under the temporary directory with a
+/// type error planted in it, and the whole judge is asked about that tree.
+#[test]
+fn a_type_error_planted_in_a_throwaway_shell_is_found_by_the_compiler() {
+    let root = a_shell("broken", "fn main() {\n    let held: u8 = \"not a number\";\n}\n");
+    let settled = measured(&root);
+    let Verdict::Broken(first) = &settled else {
+        panic!("the judge did not see the error planted in the shell: {settled:?}");
+    };
+    assert!(first.contains("error"), "the compiler's first word is not carried out: {first}");
+    let _ = std::fs::remove_dir_all(&root);
+
+    let sound = a_shell("sound", "fn main() {\n    let held: u8 = 1;\n    let _ = held;\n}\n");
+    assert_eq!(measured(&sound), Verdict::Compiles, "the control: a sound shell must compile");
+    let _ = std::fs::remove_dir_all(&sound);
+}
+
+/// **THE JUDGE MUST BE ABLE TO SAY IT DID NOT MEASURE.** With no compiler to
+/// run, a shell that was never built is not a shell that is broken.
+#[test]
+fn with_no_compiler_to_run_the_judge_declares_it_measured_nothing() {
+    let mut tries = 0;
+    let settled = measured_with(|_| {
+        tries += 1;
+        Command::new("a-cargo-this-machine-does-not-have")
+    });
+    assert!(
+        matches!(settled, Verdict::NothingMeasured(_)),
+        "with nothing to build with the judge must declare it measured nothing: {settled:?}"
+    );
+    assert_eq!(tries, 2, "the offline second try is the road to the answer, and it was not taken");
 }
