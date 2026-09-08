@@ -25,11 +25,9 @@ pub const MARKER: &str = "sailor.json";
 pub const ORIGIN_DECLARED: &str = "this project";
 
 /// The origin of flows from a project *guessed* by walking up to a `flows/`
-/// directory, with no marker at all. The warning rides in the origin and that
-/// is not laziness: `sailor flow list` prints the origin on every row and the
-/// window shows it beside every source, so it is the one place a reader really
-/// looks and there is exactly one of it. A warning written elsewhere would be a
-/// second truth to keep aligned — fault 10 — and would show only once.
+/// directory, with no marker at all. The warning rides in the origin because
+/// that is the one place every reader looks; written elsewhere it would be a
+/// second truth to keep aligned — fault 10.
 pub const ORIGIN_GUESSED: &str = "this project (no sailor.json: root guessed)";
 
 /// What a project declares about itself in its [`MARKER`]. Unknown fields are
@@ -72,11 +70,9 @@ impl Declaration {
 }
 
 /// The project root: the first directory holding a [`MARKER`], walking up from
-/// `from` for the same reason `system::project_flows_from` does — a program is
-/// almost never started at the root; the window starts in `desktop/src-tauri`.
-/// The two live two steps apart so "which project is this" cannot become two
-/// answers — fault 19. `None` is not "the current directory": nobody declared a
-/// root, and whoever needs one fails saying so, not working wherever it lands.
+/// `from` — a program is almost never started at the root. `None` is not "the
+/// current directory": nobody declared a root, and whoever needs one fails
+/// saying so, not working wherever it lands — fault 19.
 pub fn find_root(from: &Path) -> Option<PathBuf> {
     let mut here = Some(from);
     while let Some(directory) = here {

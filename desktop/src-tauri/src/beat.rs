@@ -75,6 +75,7 @@ pub fn judge(
     last: &BTreeMap<String, i64>,
     running: &[String],
     now: i64,
+    and_also: flow::AndAlso,
 ) -> Vec<(String, Option<String>)> {
     known
         .iter()
@@ -88,7 +89,7 @@ pub fn judge(
                     None => Some(catalogue::say("cli.flow.no_schedule_by_hand_only", &[])),
                     Some(schedule) => {
                         let last_run = last.get(&flow.id).copied();
-                        if flow::is_due(schedule, last_run, now) {
+                        if flow::is_due(schedule, last_run, now, and_also) {
                             None
                         } else {
                             Some(match last_run {
@@ -155,6 +156,7 @@ fn now_secs() -> i64 {
 #[derive(Default)]
 struct Glance {
     last_started: BTreeMap<String, i64>,
+    and_also: flow::AndAlso,
     streaks: Vec<FailureStreak>,
     faults_written: BTreeSet<String>,
     ledger: Option<ledger::Ledger>,
@@ -171,6 +173,10 @@ fn glance() -> Result<Glance, String> {
         .and_then(|ledger| {
             Ok(Glance {
                 last_started: ledger.last_started_at()?,
+                and_also: flow::AndAlso {
+                    something_is_left_behind: machine::something_is_left_behind(&ledger)
+                        .unwrap_or(false),
+                },
                 streaks: ledger.failure_streaks(flow::FAILURES_THAT_MAKE_A_FAULT)?,
                 faults_written: ledger.faults_written()?,
                 ledger: Some(ledger),
@@ -252,7 +258,7 @@ pub fn once(app: &AppHandle) -> Option<Report> {
             .collect(),
         Ok(glance) => {
             let running = runs.running_flows();
-            let mut decisions: Vec<Decision> = judge(&known, &glance.last_started, &running, now)
+            let mut decisions: Vec<Decision> = judge(&known, &glance.last_started, &running, now, glance.and_also)
                 .into_iter()
                 .map(|(flow, why)| {
                     let verdict = match why {
@@ -422,7 +428,7 @@ mod tests {
             ("fresh".to_owned(), now - 10),
         ]);
         let judged: BTreeMap<String, Option<String>> =
-            judge(&known, &last, &[], now).into_iter().collect();
+            judge(&known, &last, &[], now, flow::AndAlso::default()).into_iter().collect();
         assert_eq!(judged["stale"], None, "two minutes past a one-minute interval is due");
         assert_eq!(judged["never"], None, "a flow that never ran is due");
         assert!(judged["by-hand"].as_deref().is_some_and(|why| why.contains("by hand")));
@@ -437,12 +443,12 @@ mod tests {
         let known = vec![flow_called("long", Some(60))];
         let now = 1_000_000;
         let last = BTreeMap::from([("long".to_owned(), now - 600)]);
-        let judged = judge(&known, &last, &["long".to_owned()], now);
+        let judged = judge(&known, &last, &["long".to_owned()], now, flow::AndAlso::default());
         assert!(
             judged[0].1.as_deref().is_some_and(|why| why.contains("still running")),
             "{judged:?}"
         );
-        let judged = judge(&known, &last, &[], now);
+        let judged = judge(&known, &last, &[], now, flow::AndAlso::default());
         assert_eq!(judged[0].1, None, "with nothing running the same flow is due");
     }
 

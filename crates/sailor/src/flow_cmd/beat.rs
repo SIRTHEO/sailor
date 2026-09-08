@@ -87,6 +87,7 @@ enum LastRuns {
 #[derive(Default)]
 struct Glance {
     last_started: BTreeMap<String, i64>,
+    and_also: flow::AndAlso,
     streaks: Vec<flow::FailureStreak>,
     faults_written: BTreeSet<String>,
     ledger: Option<Ledger>,
@@ -95,6 +96,9 @@ struct Glance {
 fn glance_at(ledger: &Ledger) -> Result<Glance, ledger::LedgerError> {
     Ok(Glance {
         last_started: ledger.last_started_at()?,
+        and_also: flow::AndAlso {
+            something_is_left_behind: machine::something_is_left_behind(ledger).unwrap_or(false),
+        },
         streaks: ledger.failure_streaks(flow::FAILURES_THAT_MAKE_A_FAULT)?,
         faults_written: ledger.faults_written()?,
         ledger: Some(ledger.clone()),
@@ -183,7 +187,7 @@ fn tick_flows_with(sources: &[FlowSource], last: LastRuns, start: Starter<'_>) -
                 None => Some(catalogue::say("cli.flow.no_schedule_by_hand_only", &[])),
                 Some(schedule) => {
                     let last_run = last.get(&flow.id).copied();
-                    if flow::is_due(schedule, last_run, now) {
+                    if flow::is_due(schedule, last_run, now, glance.and_also) {
                         None
                     } else {
                         Some(match last_run {
@@ -265,9 +269,8 @@ pub(super) fn due_flows(sources: &[FlowSource]) -> Result<String, String> {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    let last = last_runs()
-        .read_or_say_it_could_not("cli.flow.due_could_not_look")?
-        .last_started;
+    let glance = last_runs().read_or_say_it_could_not("cli.flow.due_could_not_look")?;
+    let last = &glance.last_started;
 
     let mut report = String::new();
     let mut due = 0usize;
@@ -286,7 +289,7 @@ pub(super) fn due_flows(sources: &[FlowSource]) -> Result<String, String> {
             continue;
         };
         let last_run = last.get(&flow.id).copied();
-        let verdict = if flow::is_due(schedule, last_run, now) {
+        let verdict = if flow::is_due(schedule, last_run, now, glance.and_also) {
             due += 1;
             catalogue::say("cli.flow.due", &[])
         } else {

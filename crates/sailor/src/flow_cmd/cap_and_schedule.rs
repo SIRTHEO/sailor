@@ -363,6 +363,9 @@ fn said_schedule(schedule: Option<&flow::Schedule>) -> String {
             "cli.flow.once_a_day_at",
             &[("time", &format!("{hour:02}:{minute:02}"))],
         ),
+        flow::Recurrence::WhenSomethingIsLeftBehind => {
+            catalogue::say("cli.flow.when_something_is_left_behind", &[])
+        }
     };
     let weight = match schedule.weight {
         flow::Weight::Light => LIGHT,

@@ -139,6 +139,7 @@
   "cli.flow.not_yet": "non ancora",
   "cli.flow.nothing_found": "nessun flusso trovato. Ho guardato in:\n  {places}",
   "cli.flow.once_a_day_at": "una volta al giorno, dalle {time} locali",
+  "cli.flow.when_something_is_left_behind": "quando qualcosa che sailor ha fatto non ha più nessuno che ne risponde",
   "cli.flow.partial_counts": "parziale: {without_tokens} chiamate senza token dichiarati, {without_cost} senza costo noto",
   "cli.flow.unmeasured_heading": "non misurate, e fuori dalla cifra qui sopra:",
   "cli.flow.unmeasured_handed_step": "  {step}: consegnato a un agente — il consumo lo dichiara l'agente da sé, e nessuno l'ha misurato",

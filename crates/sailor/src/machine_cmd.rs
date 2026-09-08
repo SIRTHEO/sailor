@@ -10,7 +10,7 @@ use ledger::Ledger;
 use std::path::Path;
 use ledger::holdings::{Holding, Whose};
 use machine::{
-    build_directories_left, left_running, on_the_port, stop_the_ones_nobody_wants, what_weighs,
+    build_directories_left, BUILD_DIRECTORY, left_running, on_the_port, stop_the_ones_nobody_wants, what_weighs,
     LeftBehind, OnThePort, Teardown, TheLoad, DEV_PORT,
 };
 
@@ -153,8 +153,6 @@ fn without_the_store(why: &str, disk: Option<String>) -> String {
     }
     said
 }
-
-pub const BUILD_DIRECTORY: &str = "build-directory";
 
 /// Written down as this process's, for the run that wanted it. `for_run` of
 /// `None` says it is a cache to reuse, not rubbish once the gesture is over.

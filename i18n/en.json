@@ -139,6 +139,7 @@
   "cli.flow.not_yet": "not yet",
   "cli.flow.nothing_found": "no flow found. Looked in:\n  {places}",
   "cli.flow.once_a_day_at": "once a day, from {time} local",
+  "cli.flow.when_something_is_left_behind": "when something sailor made has nobody answering for it",
   "cli.flow.partial_counts": "partial: {without_tokens} calls with no declared tokens, {without_cost} with no known cost",
   "cli.flow.unmeasured_heading": "not measured, and outside the figure above:",
   "cli.flow.unmeasured_handed_step": "  {step}: handed to an agent — its consumption is self-declared by the agent, and nobody measured it",

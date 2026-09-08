@@ -1213,12 +1213,9 @@ impl Executor for InProcessExecutor {
     }
 }
 
-/// The *ceiling* on how many steps run together: under a cap the number itself
-/// comes from [`how_many_fit`]. Not a technical limit — the machine would hold
-/// more; engine quotas and the watcher's patience will not. Four is enough to
-/// erase the wait on a normal front, which in the flows written so far is two
-/// or three steps, and few enough not to open a dozen paid conversations for a
-/// run nobody is supervising. Public because `for_each` opens its children
+/// The *ceiling* on how many steps run together; under a cap the number comes
+/// from [`how_many_fit`]. Not a technical limit — engine quotas and the
+/// watcher's patience bind first. Public because `for_each` opens its children
 /// under the same ceiling: one width for the machine, declared once.
 pub const AT_ONCE: usize = 4;
 

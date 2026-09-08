@@ -36,7 +36,7 @@ pub use record::{
     Ran, Refusal, RefusalRule, StepRecord, StepSpecies, Why, ANSWER_SHAPE_CHECK, MAX_SAID_BYTES,
     MAX_SEEN_BYTES,
 };
-pub use schedule::{is_due, Recurrence, Schedule, Weight};
+pub use schedule::{is_due, AndAlso, Recurrence, Schedule, Weight};
 pub use schema::{SchemaError, ValueSchema};
 pub use timekeeping::{
     keepers_reading, keepers_said, Keeper, Reads, KEEPERS, WINDOW_BEAT_EVERY_SECONDS,

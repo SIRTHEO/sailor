@@ -20,6 +20,11 @@ pub enum Recurrence {
     EverySeconds { seconds: u64 },
     /// Once a day, from that local hour onwards.
     DailyAt { hour: u32, minute: u32 },
+    /// When something Sailor made has nobody left answering for it. The run
+    /// clears the state it woke on, so nothing wakes it again until something
+    /// is left behind: a clock fires on an empty machine and waits out its
+    /// period on a full one.
+    WhenSomethingIsLeftBehind,
 }
 
 /// What a run costs, as declared by whoever writes the flow. It decides nothing
@@ -48,13 +53,24 @@ pub struct Schedule {
     pub perimeter: Vec<String>,
 }
 
+/// What the world says, handed in beside the clock: read in here, a condition
+/// could only be tested by arranging the world, and such a test never gets written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct AndAlso {
+    /// Whether anything Sailor made has nobody answering for it now.
+    pub something_is_left_behind: bool,
+}
+
 /// Is the flow due now? `now` is an argument and not a clock read in here: a
 /// decision that reads the clock itself can only be tested by waiting, and a
-/// test that waits never gets written. A flow that never ran (`last_run` is
-/// `None`) is always due — a first run has no delay to wait out. `DailyAt` asks
-/// "did it already run today, after that hour?", judged on the local day, and
-/// not "have 24 hours passed": the two diverge every time a run slips.
-pub fn is_due(schedule: &Schedule, last_run: Option<i64>, now: i64) -> bool {
+/// test that waits never gets written. `DailyAt` asks "did it already run
+/// today, after that hour?", not "have 24 hours passed". A flow that never ran
+/// is due at once — except one woken by a state, which answers the world in
+/// every case: **a condition is not a first run.**
+pub fn is_due(schedule: &Schedule, last_run: Option<i64>, now: i64, and_also: AndAlso) -> bool {
+    if let Recurrence::WhenSomethingIsLeftBehind = schedule.recurrence {
+        return and_also.something_is_left_behind;
+    }
     let Some(last) = last_run else {
         return true;
     };
@@ -65,6 +81,7 @@ pub fn is_due(schedule: &Schedule, last_run: Option<i64>, now: i64) -> bool {
             let at = today + (hour as i64) * 3600 + (minute as i64) * 60;
             now >= at && last < at
         }
+        Recurrence::WhenSomethingIsLeftBehind => and_also.something_is_left_behind,
     }
 }
 
@@ -142,8 +159,8 @@ mod tests {
 
     #[test]
     fn a_flow_that_never_ran_is_due_at_once() {
-        assert!(is_due(&every(60), None, 1_000_000));
-        assert!(is_due(&daily(3, 0), None, 1_000_000));
+        assert!(is_due(&every(60), None, 1_000_000, AndAlso::default()));
+        assert!(is_due(&daily(3, 0), None, 1_000_000, AndAlso::default()));
     }
 
     /// Both sides of the interval: one second early no, on the second yes. The
@@ -152,9 +169,9 @@ mod tests {
     #[test]
     fn an_interval_is_due_only_once_the_seconds_have_passed() {
         let now = 1_000_000;
-        assert!(!is_due(&every(60), Some(now - 59), now));
-        assert!(is_due(&every(60), Some(now - 60), now));
-        assert!(is_due(&every(60), Some(now - 6000), now));
+        assert!(!is_due(&every(60), Some(now - 59), now, AndAlso::default()));
+        assert!(is_due(&every(60), Some(now - 60), now, AndAlso::default()));
+        assert!(is_due(&every(60), Some(now - 6000), now, AndAlso::default()));
     }
 
     /// A time of day asks "did it already run today?", not "have 24 hours
@@ -167,19 +184,41 @@ mod tests {
         let schedule = daily(3, 0);
 
         // Half past two: the hour has not arrived yet.
-        assert!(!is_due(&schedule, Some(midnight - 100), midnight + 9000));
+        assert!(!is_due(&schedule, Some(midnight - 100), midnight + 9000, AndAlso::default()));
         // Three sharp, and the last run was yesterday: due.
         assert!(is_due(
             &schedule,
             Some(midnight - 100),
-            three_in_the_morning
+            three_in_the_morning,
+            AndAlso::default()
         ));
         // Four, but it already ran at one past three: it does not repeat.
         assert!(!is_due(
             &schedule,
             Some(three_in_the_morning + 60),
-            midnight + 4 * 3600
+            midnight + 4 * 3600,
+            AndAlso::default()
         ));
+    }
+
+    /// **A CONDITION IS NOT A PERIOD, AND NOT A FIRST RUN EITHER.** Woken on
+    /// a state, the flow must be due exactly while that state holds: never on
+    /// an empty machine, however long since it last ran, and at once on a full
+    /// one, however recently.
+    #[test]
+    fn a_flow_woken_by_a_state_is_due_while_that_state_holds_and_never_otherwise() {
+        let by_state = Schedule {
+            recurrence: Recurrence::WhenSomethingIsLeftBehind,
+            weight: Weight::Light,
+            perimeter: Vec::new(),
+        };
+        let left_behind = AndAlso { something_is_left_behind: true };
+        let now = 1_800_000_000;
+
+        assert!(!is_due(&by_state, None, now, AndAlso::default()));
+        assert!(!is_due(&by_state, Some(now - 86_400), now, AndAlso::default()));
+        assert!(is_due(&by_state, Some(now - 1), now, left_behind));
+        assert!(is_due(&by_state, None, now, left_behind));
     }
 
     /// The on-disk shape is a contract with the window and with whoever writes

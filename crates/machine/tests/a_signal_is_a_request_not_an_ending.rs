@@ -414,3 +414,89 @@ fn the_compilers_are_counted_from_what_is_spare_not_from_the_cores() {
     assert_eq!(machine::how_many_compilers(&refused, 12), 12);
     assert!(matches!(machine::spare_in("nothing like vm_stat"), machine::Spare::CouldNotLook(_)));
 }
+
+/// **THE CONDITION A CYCLE WAKES ON MUST BE ONE THE RUN CLEARS.** Woken on
+/// something it cannot put back, a flow spins for ever; woken on nothing, it
+/// is a clock again. This names exactly what `sailor machine free` reclaims.
+#[test]
+fn a_machine_with_nobody_to_answer_for_anything_leaves_nothing_behind() {
+    let dir = scratch("left-behind");
+    let store = ledger::Ledger::open(&dir.0).expect("the store");
+    let mut alive = light("sleep 30");
+
+    written_born(&store, "p-alive", alive.id(), ledger::born_second_of(alive.id()));
+
+    assert_eq!(
+        machine::something_is_left_behind(&store),
+        Ok(false),
+        "a process still breathing was called something left behind"
+    );
+
+    let mut ghost = light("true");
+    let gone = ghost.id();
+    let _ = ghost.wait();
+    written_born(&store, "p-ghost", gone, Some(1));
+
+    assert_eq!(
+        machine::something_is_left_behind(&store),
+        Ok(true),
+        "a row still called running over a process that is gone is nobody's"
+    );
+    let _ = alive.kill();
+    let _ = alive.wait();
+}
+
+/// A build directory whose process is gone wakes the cycle only once its run
+/// has ended: while somebody may come back to it, there is nothing to clear.
+#[test]
+fn a_build_directory_wakes_the_cycle_when_its_process_and_its_run_are_both_over() {
+    let dir = scratch("left-behind-disk");
+    let store = ledger::Ledger::open(&dir.0).expect("the store");
+    store
+        .record_run(&a_run("still-going", None))
+        .expect("the open run");
+    store
+        .holding_taken(&ledger::holdings::Holding {
+            kind: machine::BUILD_DIRECTORY.to_owned(),
+            name: "/nowhere/target/measure".to_owned(),
+            held_by_pid: i32::MAX as u32 - 1,
+            held_by_born_at: Some(1),
+            for_run: Some("still-going".to_owned()),
+            taken_at: 1,
+            purpose: "a measurement".to_owned(),
+        })
+        .expect("the holding goes in");
+
+    assert_eq!(
+        machine::something_is_left_behind(&store),
+        Ok(false),
+        "a directory whose run is still open was called nobody's"
+    );
+
+    store
+        .record_run(&a_run("still-going", Some(now())))
+        .expect("the run ends");
+
+    assert_eq!(
+        machine::something_is_left_behind(&store),
+        Ok(true),
+        "the run ended and the directory still answered to somebody"
+    );
+}
+
+fn a_run(run_id: &str, ended_at: Option<i64>) -> ledger::RunRecord {
+    ledger::RunRecord {
+        run_id: run_id.to_owned(),
+        kind: "flow".to_owned(),
+        entity: "a-flow".to_owned(),
+        parent_run_id: None,
+        started_by: "the test".to_owned(),
+        status: "running".to_owned(),
+        total_cost_micros: 0,
+        error: None,
+        started_at: 1,
+        ended_at,
+        worktree: None,
+        stop_reason: None,
+    }
+}
