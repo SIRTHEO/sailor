@@ -929,11 +929,12 @@ printf '{"result":"the true answer","model":"modello-di-prova","total_cost_usd":
         let bin = fake_engine(&dir, "motore", WRAPS_ON_DEMAND);
         let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let budgets = dir.join("budgets.json");
-        // One priced call costs 18.30 $ and is checked before it is made: under
-        // a cap of 10 $ the first goes through, and fills the window.
+        // **THE ENGINE'S OWN FIGURE IS WHAT THE WINDOW COUNTS**, as it is for a
+        // run: this one charges 0.50 $ and the price list works out 18.30 $. A
+        // cap of 0.25 $ lets the first through and finds the window full after.
         std::fs::write(
             &budgets,
-            r#"{"motore-di-prova": {"cap_micros": 10000000, "window_secs": 3600}}"#,
+            r#"{"motore-di-prova": {"cap_micros": 250000, "window_secs": 3600}}"#,
         )
         .expect("write the caps");
         let action = ExternalEngineAction::resolving_with(Declares {
@@ -953,7 +954,11 @@ printf '{"result":"the true answer","model":"modello-di-prova","total_cost_usd":
         })
         .expect_err("the second call finds the window full");
         assert_eq!(refused.class, "no_usable_engine");
-        assert!(refused.said.contains("over its budget: spent 18.3000 $ of 10.0000 $"), "{}", refused.said);
+        assert!(
+            refused.said.contains("over its budget: spent 0.5000 $ of 0.2500 $"),
+            "the window counted the price list's figure over the engine's own: {}",
+            refused.said
+        );
         assert_eq!(calls_in(&dir.join("deposito")).len(), 1, "the refusal spent nothing");
 
         // The control: a cap declared for some other engine does not bind this one.

@@ -1906,7 +1906,9 @@ impl Ledger {
         // open when the call started, so an attempt after it never wins.
         let mut statement = connection.prepare(
             "WITH ranked AS (
-                 SELECT m.call_id, m.started_at, m.cost_micros, m.actual_model,
+                 SELECT m.call_id, m.started_at,
+                        COALESCE(m.declared_cost_micros, m.cost_micros) AS cost_micros,
+                        m.actual_model,
                         m.error_type, s.input_digest, s.input, s.outcome,
                         ROW_NUMBER() OVER (
                             PARTITION BY m.call_id
@@ -1969,10 +1971,11 @@ impl Ledger {
     pub fn spent_by_cli_since(&self, cli: &str, since: i64) -> Result<Spend, LedgerError> {
         let connection = self.lock()?;
         let (micros, calls, calls_without_cost, dearest_micros) = connection.query_row(
-            "SELECT COALESCE(SUM(cost_micros), 0),
+            "SELECT COALESCE(SUM(COALESCE(declared_cost_micros, cost_micros)), 0),
                     COUNT(*),
-                    COALESCE(SUM(CASE WHEN cost_micros IS NULL THEN 1 ELSE 0 END), 0),
-                    MAX(cost_micros)
+                    COALESCE(SUM(CASE WHEN declared_cost_micros IS NULL
+                                       AND cost_micros IS NULL THEN 1 ELSE 0 END), 0),
+                    MAX(COALESCE(declared_cost_micros, cost_micros))
              FROM model_calls WHERE cli = ?1 AND started_at >= ?2",
             params![cli, since],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),

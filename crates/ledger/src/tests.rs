@@ -2517,6 +2517,33 @@ fn an_engines_spend_on_a_window_leaves_out_the_others_and_the_older() {
     assert!(spend.is_complete());
 }
 
+/// **THE ENGINE'S OWN FIGURE COUNTS HERE TOO.** A run's spend reads
+/// `declared_cost_micros` first; the window a ceiling compares itself to read
+/// `cost_micros` alone, so a call the engine priced itself was counted as one
+/// nobody priced -- and the ceiling let a run through on money already spent.
+#[test]
+fn a_window_counts_what_the_engine_said_it_charged() {
+    let directory = TestDirectory::new("declared-window");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    let mut declared = call_in_run("dichiarata", "run-1", None);
+    declared.cli = "this-engine".to_owned();
+    declared.started_at = 1_000;
+    declared.declared_cost_micros = Some(700);
+    let mut worked_out = call_in_run("calcolata", "run-1", Some(7));
+    worked_out.cli = "this-engine".to_owned();
+    worked_out.started_at = 1_000;
+    for call in [&declared, &worked_out] {
+        ledger.record_model_call(call).expect("record the call");
+    }
+
+    let spend = ledger.spent_by_cli_since("this-engine", 900).expect("read the spend");
+
+    assert_eq!(spend.micros, 707, "the engine's own figure was thrown away: {spend:?}");
+    assert_eq!(spend.calls, 2, "{spend:?}");
+    assert!(spend.is_complete(), "a call the engine priced is not a call nobody priced");
+    assert_eq!(spend.dearest_micros, Some(700), "{spend:?}");
+}
+
 /// A run that called no engine spent zero **and** hides nothing unknown: both
 /// together, or "zero" would stay ambiguous.
 #[test]
@@ -3479,6 +3506,31 @@ fn a_repeat_of_a_successful_call_would_have_been_answered() {
     assert_eq!(tally.served, 1, "{tally:?}");
     assert_eq!(tally.served_micros, 70, "{tally:?}");
     assert_eq!(tally.spent_micros, 100, "{tally:?}");
+}
+
+/// The engine's own figure counts in the repeats too: a call it priced itself
+/// was worth zero both in the spend and in the saving.
+#[test]
+fn a_repeat_the_engine_priced_itself_is_counted_as_saved() {
+    let directory = TestDirectory::new("declared-repeat");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    for run in ["run-a", "run-b"] {
+        engine_call(&ledger, run, asking("count the crates"), "m", Outcome::Went, None);
+        let mut call = call_with(&format!("{run}-call"), Some(10), None);
+        call.run_id = run.to_owned();
+        call.step_id = Some("ask".to_owned());
+        call.actual_model = "m".to_owned();
+        call.started_at = 100 + run.len() as i64;
+        call.declared_cost_micros = Some(40);
+        ledger.record_model_call(&call).expect("re-record with the engine's figure");
+    }
+
+    let tally = ledger.repeated_engine_calls().expect("count the repeats");
+
+    assert_eq!(tally.spent_micros, 80, "{tally:?}");
+    assert_eq!(tally.served, 1, "{tally:?}");
+    assert_eq!(tally.served_micros, 40, "a saving the engine priced was worth zero: {tally:?}");
+    assert_eq!(tally.calls_without_a_cost, 0, "{tally:?}");
 }
 
 /// **A CAP OVER ONE RUN IS NOT A CAP.** What a subflow spends sits under the
