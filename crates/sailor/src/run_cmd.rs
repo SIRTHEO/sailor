@@ -5,6 +5,7 @@
 //! mechanism still unknown, it refuses: launching under the wrong identity is
 //! the worst fault this command could commit.
 
+use ledger::{EngineIdentity, Ledger, ModelCallRecord};
 use profiles::{
     build_environment, find_cli, store_io, symlink_swap, HomeMechanism, ProfileStore, SymlinkSwap,
 };
@@ -27,6 +28,9 @@ struct Launch {
     /// checks it **before** replacing the process; here it stays data, so this
     /// function touches no disk.
     expected_link: Option<SymlinkSwap>,
+    /// Which home this launch carries and how it was chosen, so the swap can be
+    /// written down before it happens.
+    identity: EngineIdentity,
 }
 
 fn resolve(
@@ -95,7 +99,61 @@ fn resolve_with(
         env,
         args: rest.to_vec(),
         expected_link,
+        identity: EngineIdentity::ProfileInForce {
+            cli_id: cli.id.clone(),
+            profile_name: profile.name.clone(),
+            home_dir: profile.home_dir.clone(),
+            endpoint: profile.endpoint.as_ref().map(|it| it.url.clone()),
+        },
     })
+}
+
+/// The run_id of an engine nobody started for a flow. A real id would tie the
+/// spend to a run that never existed; the empty string would be a run.
+pub const BY_HAND: &str = "by-hand";
+
+/// The invocation about to happen, written **before** the swap: past `exec`
+/// there is no process left to write anything down.
+fn the_invocation(launch: &Launch, cli_id: &str, pid: u32, now: i64) -> ModelCallRecord {
+    ModelCallRecord {
+        call_id: format!("{BY_HAND}:{cli_id}:{pid}:{now}"),
+        run_id: BY_HAND.to_owned(),
+        step_id: None,
+        purpose: "run_by_hand".to_owned(),
+        cli: cli_id.to_owned(),
+        // `sailor run` chooses no model: the engine picks its own, and this
+        // process is gone before it says which.
+        requested_model: String::new(),
+        actual_model: String::new(),
+        input_tokens: None,
+        output_tokens: None,
+        cached_tokens: None,
+        cache_write_tokens: None,
+        cache_write_long_tokens: None,
+        total_tokens: None,
+        turns: None,
+        // **A CALL WITHOUT A COST IS NOT A FREE CALL.** Nobody reports what an
+        // engine driven by hand spends, so the sum a budget reads is a floor
+        // and already says so. Writing a zero here would make it a lie.
+        cost_micros: None,
+        declared_cost_micros: None,
+        price_currency: None,
+        input_price_micros_per_million: None,
+        output_price_micros_per_million: None,
+        cached_price_micros_per_million: None,
+        cache_write_price_micros_per_million: None,
+        cache_write_long_price_micros_per_million: None,
+        engine_identity: launch.identity.clone(),
+        retry_chain: Vec::new(),
+        error_type: None,
+        started_at: now,
+        // The swap leaves nobody behind to write an ending.
+        ended_at: None,
+        session_id: None,
+        session_mode: None,
+        work_kind: None,
+        fell_back_from: Vec::new(),
+    }
 }
 
 /// The key itself is never in the store: the profile names the variable, the
@@ -171,6 +229,7 @@ pub fn run(args: &[String]) -> i32 {
             return 1;
         }
     }
+    write_down_the_invocation(&launch, cli_id);
     // `exec` replaces this process's image: on success the code below never
     // runs. It returns only to say the launch failed.
     let error = Command::new(&launch.executable)
@@ -188,6 +247,22 @@ pub fn run(args: &[String]) -> i32 {
         )
     );
     1
+}
+
+/// **THE LEDGER IS NOT A REASON TO REFUSE A LAUNCH.** An engine a person asked
+/// for starts whether or not the store opened; what is lost is the record, and
+/// that is not paid for with the person's work.
+fn write_down_the_invocation(launch: &Launch, cli_id: &str) {
+    let Some(directory) = ledger::default_directory() else {
+        return;
+    };
+    let Ok(store) = Ledger::open(&directory) else {
+        return;
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs() as i64);
+    let _ = store.record_model_call(&the_invocation(launch, cli_id, std::process::id(), now));
 }
 
 #[cfg(test)]
@@ -359,5 +434,90 @@ mod tests {
         assert!(link_points_at_the_active_profile(&expected).is_ok());
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod invocations {
+    use super::*;
+    use profiles::Profile;
+    use std::path::{Path, PathBuf};
+
+    fn a_store_with_a_profile() -> ProfileStore {
+        let mut store = ProfileStore::default();
+        store.profiles.push(Profile {
+            name: "quello-di-casa".to_owned(),
+            cli_id: "codex".to_owned(),
+            home_dir: PathBuf::from("/prova/codex/quello-di-casa"),
+            endpoint: None,
+        });
+        store
+            .active
+            .insert("codex".to_owned(), "quello-di-casa".to_owned());
+        store
+    }
+
+    fn a_scratch(label: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "sailor-run-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|since| since.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&path);
+        path
+    }
+
+    /// **AN ENGINE DRIVEN BY HAND SPENT NOTHING THE LEDGER COULD SEE.** Every
+    /// window of spend per engine read only what a flow had opened, so a person
+    /// working all afternoon in `sailor run codex` was, to the budget, an
+    /// engine nobody had used.
+    #[test]
+    fn an_engine_started_by_hand_appears_in_what_that_engine_has_been_asked_for() {
+        let root = a_scratch("by-hand");
+        let store = Ledger::open(&root).expect("a store opens");
+        let launch = resolve("codex", &a_store_with_a_profile(), &[], Path::new("/casa"))
+            .expect("the launch resolves");
+
+        let before = store.spent_by_cli_since("codex", 0).expect("read the window");
+        store
+            .record_model_call(&the_invocation(&launch, "codex", 4242, 1_700_000_000))
+            .expect("the invocation goes in");
+        let after = store.spent_by_cli_since("codex", 0).expect("read the window");
+
+        assert_eq!(before.calls, 0, "the window was not empty to begin with");
+        assert_eq!(after.calls, 1, "the engine a person started is in no window");
+        assert_eq!(
+            after.calls_without_cost, 1,
+            "an invocation nobody priced was counted as priced"
+        );
+        assert_eq!(after.micros, 0, "a cost was invented for a call nobody measured");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The row must say which home the swap carried: a launch under the wrong
+    /// identity is the worst fault this command can commit, and a row that does
+    /// not name the identity cannot show it happened.
+    #[test]
+    fn the_row_names_the_profile_the_swap_carried() {
+        let launch = resolve("codex", &a_store_with_a_profile(), &[], Path::new("/casa"))
+            .expect("the launch resolves");
+
+        let written = the_invocation(&launch, "codex", 4242, 1_700_000_000);
+
+        assert_eq!(
+            written.engine_identity,
+            EngineIdentity::ProfileInForce {
+                cli_id: "codex".to_owned(),
+                profile_name: "quello-di-casa".to_owned(),
+                home_dir: PathBuf::from("/prova/codex/quello-di-casa"),
+                endpoint: None,
+            },
+            "the row does not name the home the process started with"
+        );
+        assert_eq!(written.run_id, BY_HAND, "a run that never existed was named");
+        assert!(written.ended_at.is_none(), "an ending was written for a swap");
     }
 }
