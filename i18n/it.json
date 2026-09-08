@@ -497,6 +497,7 @@
   "cli.session.uninstall.taken_out": "tolto da {file}: {events}",
   "cli.session.uninstall.word_not_ours": "/{word} resta: {file} non è il file che scrive Sailor",
   "cli.session.rules": "Le regole di questo albero stanno in {files}: leggile prima di cambiare qualcosa qui.",
+  "cli.session.rules_gone": "Questo albero dichiara regole che non stanno dove dice: {files}. O si sono spostate, o la dichiarazione in sailor.json è vecchia.",
   "cli.session.uninstall.word_unreadable": "/{word} resta: {file} ({error})",
   "cli.session.uninstall.words_taken": "{words} tolte da {directory}",
   "cli.session.welcome": "Sei collegato a Sailor.\nterminale {tty} · albero {worktree}\nQuesto terminale è tracciato: Sailor sa che esisti, in che albero lavori e quando avrai bisogno di passare il testimone.\nPer staccarlo: /sailor-off",

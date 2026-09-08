@@ -2,6 +2,7 @@
   "name": "sailor",
   "rules": [
     "AGENTS.md",
+    "CLAUDE.md",
     "docs/decisions.md",
     "docs/faults-encountered.md"
   ],

@@ -88,6 +88,49 @@ pub fn find_root(from: &Path) -> Option<PathBuf> {
     None
 }
 
+/// The names a tree keeps its instructions under when it has declared none.
+/// **A CONVENTION, NOT ANY ONE PROJECT'S FILES.**
+pub const RULES_BY_CONVENTION: [&str; 2] = ["AGENTS.md", "CLAUDE.md"];
+
+/// A document whoever works here must read first: its path from the project
+/// root, whether the project named it or Sailor guessed it, and whether the
+/// file is where the name says.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rule {
+    pub name: String,
+    pub declared: bool,
+    pub there: bool,
+}
+
+/// What whoever works in `root` must read first: what the project declared, and
+/// the convention only when it declared nothing. **A GUESS THAT MISSES IS
+/// SILENT; A DECLARATION THAT MISSES IS NEWS.**
+pub fn rules_of(root: &Path) -> Vec<Rule> {
+    let declared = declaration_at(root).map(|it| it.rules).unwrap_or_default();
+    if !declared.is_empty() {
+        return declared
+            .into_iter()
+            .map(|name| {
+                let there = root.join(&name).is_file();
+                Rule {
+                    name,
+                    declared: true,
+                    there,
+                }
+            })
+            .collect();
+    }
+    RULES_BY_CONVENTION
+        .iter()
+        .filter(|name| root.join(name).is_file())
+        .map(|name| Rule {
+            name: (*name).to_owned(),
+            declared: false,
+            there: true,
+        })
+        .collect()
+}
+
 /// Reads a root's declaration.
 ///
 /// An empty or unreadable marker is not a broken project: `{}` is a legitimate
@@ -303,6 +346,64 @@ mod tests {
     fn put_marker(dir: &Path, text: &str) {
         fs::create_dir_all(dir).expect("directory");
         fs::write(dir.join(MARKER), text).expect("marker");
+    }
+
+    /// **WHAT THE PROJECT SAID BEATS WHAT SAILOR GUESSED.**
+    #[test]
+    fn a_declaration_replaces_the_convention_instead_of_joining_it() {
+        let root = scratch("declared-rules");
+        fs::write(root.join("AGENTS.md"), "convention").expect("a conventional one");
+        fs::write(root.join("CLAUDE.md"), "convention").expect("the other one");
+        fs::create_dir_all(root.join("docs")).expect("docs");
+        fs::write(root.join("docs/house.md"), "the house rules").expect("a declared one");
+        put_marker(&root, r#"{"rules": ["docs/house.md"]}"#);
+
+        let rules = rules_of(&root);
+
+        assert_eq!(
+            rules.iter().map(|it| it.name.as_str()).collect::<Vec<_>>(),
+            vec!["docs/house.md"],
+            "CLAUDE.md is on the disk and nobody declared it"
+        );
+        assert!(rules[0].declared && rules[0].there);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// **A DECLARATION THAT MISSES IS NEWS**, so it is not dropped.
+    #[test]
+    fn a_declared_rule_that_is_not_on_the_disk_comes_back_said_gone() {
+        let root = scratch("declared-gone");
+        fs::write(root.join("AGENTS.md"), "here").expect("one that is there");
+        put_marker(&root, r#"{"rules": ["AGENTS.md", "docs/moved-away.md"]}"#);
+
+        let rules = rules_of(&root);
+
+        assert_eq!(rules.len(), 2, "the missing one is not dropped");
+        assert!(rules[0].there, "AGENTS.md is there");
+        assert!(!rules[1].there, "docs/moved-away.md is not");
+        assert!(rules[1].declared, "and the project is the one that named it");
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// With no declaration the convention answers, and only where it lands.
+    #[test]
+    fn with_no_declaration_the_convention_answers_and_only_where_it_lands() {
+        let root = scratch("convention-only");
+        fs::write(root.join("CLAUDE.md"), "only this one").expect("one document");
+        put_marker(&root, "{}");
+
+        let rules = rules_of(&root);
+
+        assert_eq!(
+            rules.iter().map(|it| it.name.as_str()).collect::<Vec<_>>(),
+            vec!["CLAUDE.md"],
+            "AGENTS.md is not here and was only ever a guess"
+        );
+        assert!(!rules[0].declared, "nobody declared it");
+
+        let _ = fs::remove_dir_all(&root);
     }
 
     /// **SIX ON THE DISK, ZERO ON THE LIST**: a tree that declared itself

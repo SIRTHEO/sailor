@@ -18,19 +18,6 @@ fn now() -> i64 {
         .unwrap_or_default()
 }
 
-/// The documents worth declaring, when they are there.
-///
-/// **A LIST OF CANDIDATES, NOT A DISCOVERY.** Hunting for «every `.md` that
-/// looks like rules» would be guessing, and what this command writes is later
-/// read by somebody else as if it had been decided. Whatever is off the list is
-/// added to the file by hand, which is the right place for a decision.
-const RULE_CANDIDATES: [&str; 4] = [
-    "AGENTS.md",
-    "CLAUDE.md",
-    "docs/decisions.md",
-    "docs/faults-encountered.md",
-];
-
 pub fn run(args: &[String]) -> i32 {
     match dispatch(args) {
         Ok(message) => {
@@ -141,7 +128,11 @@ fn init(root: &Path, home: Option<&Path>) -> Result<String, String> {
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let rules: Vec<String> = RULE_CANDIDATES
+    // **THE CANDIDATES ARE A CONVENTION, NOT THIS TREE'S FILES.** Writing
+    // Sailor's own `docs/` into a stranger's marker declares documents that
+    // project has not got, and a declared rule reads as a decision somebody
+    // made. Anything past the convention is added here by hand, on purpose.
+    let rules: Vec<String> = flow::workspace::RULES_BY_CONVENTION
         .iter()
         .filter(|candidate| root.join(candidate).is_file())
         .map(|candidate| (*candidate).to_owned())
@@ -205,8 +196,10 @@ mod tests {
         dir
     }
 
-    /// The marker is born with the rules that really are there, and **with no
-    /// checks**: those are written by whoever knows what «tested» means here.
+    /// The marker is born with the rules that really are there, **with no
+    /// checks**, and **with nothing of Sailor's own**: `docs/decisions.md` in a
+    /// stranger's tree is whatever they put there, and declaring it reads to
+    /// the next person as a decision somebody made.
     #[test]
     fn init_writes_the_marker_with_the_rules_it_finds_and_no_checks() {
         let root = scratch("init");
@@ -217,7 +210,11 @@ mod tests {
         init(&root, None).expect("it writes");
 
         let declared = flow::workspace::declaration_at(&root).expect("it reads back");
-        assert_eq!(declared.rules, vec!["AGENTS.md", "docs/decisions.md"]);
+        assert_eq!(
+            declared.rules,
+            vec!["AGENTS.md"],
+            "docs/decisions.md is this project's document, not a convention"
+        );
         assert!(
             declared.checks.is_empty(),
             "guessing a check is deciding it for whoever works here"

@@ -1094,21 +1094,12 @@ fn open_terminal(request: &Request<'_>) -> Result<Report, String> {
     Ok(Report::spoken(described(&arrival)))
 }
 
-/// The names a tree keeps its instructions under.
-///
-/// **A CONVENTION, NOT THIS TREE'S FILES.** A list naming one project's own
-/// documents would hand every other tree an address it has not got. What each
-/// file says — including which others to read first — is the file's business.
-const RULES_OF_A_TREE: [&str; 2] = ["AGENTS.md", "CLAUDE.md"];
-
-/// The ones this tree really has. **Empty is an answer**: a tree with no
-/// written rules gets a greeting and no promise of a file that is not there.
-fn rules_in(worktree: &std::path::Path) -> Vec<String> {
-    RULES_OF_A_TREE
-        .iter()
-        .filter(|name| worktree.join(name).is_file())
-        .map(|name| (*name).to_owned())
-        .collect()
+/// The ones this tree really has, read from the project root and not from the
+/// folder the terminal sits in. **Empty is an answer**: a tree with no written
+/// rules gets a greeting and no promise of a file that is not there.
+fn rules_in(worktree: &std::path::Path) -> Vec<flow::workspace::Rule> {
+    let root = flow::workspace::find_root(worktree).unwrap_or_else(|| worktree.to_path_buf());
+    flow::workspace::rules_of(&root)
 }
 
 /// Who else the register holds open in this tree, for the greeting. Nothing at
@@ -1452,11 +1443,31 @@ fn welcome(
     // THE RULES OF THE TREE TRAVEL ON THE SAME CHANNEL AS THE GREETING, which
     // was already the only one that reaches whoever works here.
     let rules = rules_in(std::path::Path::new(&arrival.anchor.worktree));
-    if !rules.is_empty() {
+    let here: Vec<&str> = rules
+        .iter()
+        .filter(|rule| rule.there)
+        .map(|rule| rule.name.as_str())
+        .collect();
+    if !here.is_empty() {
         text.push('\n');
         text.push_str(&catalogue::say(
             "cli.session.rules",
-            &[("files", &rules.join(", "))],
+            &[("files", &here.join(", "))],
+        ));
+    }
+    // **A DECLARATION THAT MISSES IS NEWS.** The project still points whoever
+    // arrives at a document that is not there; said nowhere, the declaration
+    // stays wrong until somebody opens the file for another reason.
+    let gone: Vec<&str> = rules
+        .iter()
+        .filter(|rule| !rule.there)
+        .map(|rule| rule.name.as_str())
+        .collect();
+    if !gone.is_empty() {
+        text.push('\n');
+        text.push_str(&catalogue::say(
+            "cli.session.rules_gone",
+            &[("files", &gone.join(", "))],
         ));
     }
     if let Some(said) = store.and_then(|store| neighbours(arrival, store)) {
@@ -2778,6 +2789,78 @@ mod tests {
         assert!(
             !said.contains("how the work is done here"),
             "the welcome carries the whole text inside: {said}"
+        );
+    }
+
+    /// **THE DECLARATION WAS WRITTEN AND THIS CHANNEL DID NOT READ IT**: the
+    /// greeting answered from a list in Rust, so a project could declare its
+    /// rules and never see them handed to whoever arrives.
+    #[test]
+    fn the_welcome_hands_over_what_the_project_declared_not_a_list_in_rust() {
+        let scratch = Scratch::new("regole-dichiarate");
+        std::fs::create_dir_all(scratch.directory.join("docs")).expect("docs");
+        std::fs::write(scratch.directory.join("docs/house.md"), "the house rules\n")
+            .expect("a declared document");
+        for name in flow::workspace::RULES_BY_CONVENTION {
+            std::fs::write(scratch.directory.join(name), "a conventional one\n")
+                .expect("a conventional document");
+        }
+        std::fs::write(
+            scratch.directory.join(flow::workspace::MARKER),
+            r#"{"rules": ["docs/house.md"]}"#,
+        )
+        .expect("the project declares itself");
+
+        let said = welcome_of(&Arrival {
+            anchor: sessions::Anchor {
+                tty: "ttys004".to_owned(),
+                worktree: scratch.directory.display().to_string(),
+                ancestor: None,
+            },
+            session_id: None,
+            transcript_path: None,
+            at: 1_000,
+        });
+
+        assert!(
+            said.contains("docs/house.md"),
+            "the welcome does not name what the project declared: {said}"
+        );
+        for name in flow::workspace::RULES_BY_CONVENTION {
+            assert!(
+                !said.contains(name),
+                "the convention is still offered beside a declaration that answered: {said}"
+            );
+        }
+    }
+
+    /// A rule declared and gone is said, not dropped: a shorter list teaches
+    /// nobody that the declaration needs fixing.
+    #[test]
+    fn a_declared_rule_that_is_gone_is_reported_instead_of_hidden() {
+        let scratch = Scratch::new("regola-sparita");
+        std::fs::write(scratch.directory.join("AGENTS.md"), "here\n").expect("one that is there");
+        std::fs::write(
+            scratch.directory.join(flow::workspace::MARKER),
+            r#"{"rules": ["AGENTS.md", "docs/moved-away.md"]}"#,
+        )
+        .expect("the project declares two");
+
+        let said = welcome_of(&Arrival {
+            anchor: sessions::Anchor {
+                tty: "ttys004".to_owned(),
+                worktree: scratch.directory.display().to_string(),
+                ancestor: None,
+            },
+            session_id: None,
+            transcript_path: None,
+            at: 1_000,
+        });
+
+        assert!(said.contains("AGENTS.md"), "the one that is there is named: {said}");
+        assert!(
+            said.contains("docs/moved-away.md"),
+            "a declaration pointing at nothing passes in silence: {said}"
         );
     }
 
