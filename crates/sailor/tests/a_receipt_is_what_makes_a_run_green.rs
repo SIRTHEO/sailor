@@ -39,7 +39,7 @@ fn a_judge_that_proves_nothing_about_the_perimeter_is_unmeasured_and_stops_the_r
     assert_eq!(gate.unmeasured(), 1, "the run did not count the judge that proved no perimeter");
     assert_eq!(gate.green(), 0, "the green count rose on a judge that measured nothing");
     assert!(
-        !gate.lets_through(0),
+        !gate.lets_through(0, 0),
         "the gate let a run through on an exit code alone: {}",
         gate.closing_line()
     );
@@ -58,7 +58,7 @@ fn the_same_run_with_a_receipt_is_green_and_goes_through() {
 
     assert_eq!(gate.green(), 1);
     assert_eq!(gate.unmeasured(), 0);
-    assert!(gate.lets_through(0), "{}", gate.closing_line());
+    assert!(gate.lets_through(0, 0), "{}", gate.closing_line());
     assert!(gate.closing_line().contains("every seed holds"), "{}", gate.closing_line());
 }
 

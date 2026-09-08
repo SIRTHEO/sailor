@@ -1577,23 +1577,6 @@ mod tests {
     // on a deleted target: test data telling of a vanished world breaks nothing,
     // and that is exactly why it rots.
     #[test]
-    /// **A RELEASE BUILT FROM HEAD WHILE THE TREE IS DIRTY SHIPS WORK NOBODY
-    /// LOOKED AT.** It used to print a note and go on, so a person who had just
-    /// edited a file installed a binary without it and had been told, in a line
-    /// above the one they read.
-    #[test]
-    fn releasing_over_uncommitted_work_asks_to_be_told_so_outright() {
-        let plain = parse_options(&a(&["sailor"])).expect("a target alone parses");
-        let anyway = parse_options(&a(&["sailor", "--even-if-dirty"])).expect("the flag parses");
-
-        assert!(!plain.even_if_dirty, "the refusal is the default");
-        assert!(anyway.even_if_dirty);
-
-        assert!(dirty_stops_here(1, plain.even_if_dirty), "one uncommitted file is enough");
-        assert!(!dirty_stops_here(1, anyway.even_if_dirty), "and the word said outright passes it");
-        assert!(!dirty_stops_here(0, plain.even_if_dirty), "a clean tree is never in the way");
-    }
-
     fn dry_run_and_skip_tests_are_read_as_flags() {
         let options = parse_options(&a(&["sailor", "--dry-run", "--skip-tests"])).unwrap();
         assert_eq!(options.target_name, "sailor");
@@ -1611,5 +1594,22 @@ mod tests {
     #[test]
     fn an_unknown_option_is_refused() {
         assert!(parse_options(&a(&["sailor", "--turbo"])).is_err());
+    }
+
+    /// **A RELEASE BUILT FROM HEAD WHILE THE TREE IS DIRTY SHIPS WORK NOBODY
+    /// LOOKED AT.** It used to print a note and go on, so a person who had just
+    /// edited a file installed a binary without it and had been told, in a line
+    /// above the one they read.
+    #[test]
+    fn releasing_over_uncommitted_work_asks_to_be_told_so_outright() {
+        let plain = parse_options(&a(&["sailor"])).expect("a target alone parses");
+        let anyway = parse_options(&a(&["sailor", "--even-if-dirty"])).expect("the flag parses");
+
+        assert!(!plain.even_if_dirty, "the refusal is the default");
+        assert!(anyway.even_if_dirty);
+
+        assert!(dirty_stops_here(1, plain.even_if_dirty), "one uncommitted file is enough");
+        assert!(!dirty_stops_here(1, anyway.even_if_dirty), "and the word said outright passes it");
+        assert!(!dirty_stops_here(0, plain.even_if_dirty), "a clean tree is never in the way");
     }
 }
