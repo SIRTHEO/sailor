@@ -111,13 +111,7 @@ export function howLong(seconds: number): string {
   return `${days} d ${hours % 24} h`;
 }
 
-/**
- * What to say about the process holding an open step.
- *
- * «gone» and «unknown» are not the same news: the first is a step nothing will
- * ever close, the second is a step the ledger recorded without a pid, and only
- * the first is a reason to step in.
- */
+/** «gone» is a reason to step in; «unknown» is not. */
 export function holderWord(holder: "alive" | "gone" | "unknown"): string {
   return holder === "gone" ? "nobody there" : "holder unknown";
 }

@@ -733,12 +733,7 @@ pub(crate) struct OpenStep {
     pub holder: Holder,
 }
 
-/// Who holds an open step, as far as the machine will say.
-///
-/// A step with no close is «in flight» to the ledger and nothing more. Whether
-/// anything is still running it is a second question, and one the store cannot
-/// answer — `processes_left_running` keeps the same two apart, and `open_runs`
-/// was asking only the first.
+/// Whether anything is still running the step, which the store cannot answer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Holder {

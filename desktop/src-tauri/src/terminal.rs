@@ -379,10 +379,8 @@ pub(crate) fn terminal_close(id: String) -> Result<(), String> {
     client()?.close(&id)
 }
 
-/// `None` when no host was ever started, which is honestly no terminals. Any
-/// other refusal is a host that is there and will not talk, and answering that
-/// with an empty list would print «no terminal is open» over a question nobody
-/// answered.
+/// `None` when no host was ever started; any other refusal is an error, not an
+/// empty list.
 fn listed_by_host(client: &Client) -> Result<Option<Vec<terminal::Summary>>, String> {
     if let Err(why) = client.hello() {
         if why.kind() == std::io::ErrorKind::NotFound {
