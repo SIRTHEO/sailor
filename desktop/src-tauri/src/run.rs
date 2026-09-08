@@ -729,6 +729,31 @@ pub(crate) struct OpenStep {
     /// Which attempt: `2` on an open step means the first one fell.
     pub attempt: u32,
     pub open_for_secs: i64,
+    /// Whether the process that took this step is still there.
+    pub holder: Holder,
+}
+
+/// Who holds an open step, as far as the machine will say.
+///
+/// A step with no close is «in flight» to the ledger and nothing more. Whether
+/// anything is still running it is a second question, and one the store cannot
+/// answer — `processes_left_running` keeps the same two apart, and `open_runs`
+/// was asking only the first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum Holder {
+    Alive,
+    Gone,
+    /// No pid was written with the step, so nothing is claimed about it.
+    Unknown,
+}
+
+fn holder_of(pid: Option<u32>) -> Holder {
+    match pid {
+        None => Holder::Unknown,
+        Some(pid) if ledger::pid_is_alive(pid) => Holder::Alive,
+        Some(_) => Holder::Gone,
+    }
 }
 
 /// An open run, whoever started it.
@@ -852,6 +877,7 @@ pub(crate) fn open_runs(runs: State<'_, Arc<Runs>>) -> Result<Vec<OpenRun>, Stri
                         step_id: step.step_id,
                         attempt: step.attempt,
                         open_for_secs: now - step.started_at,
+                        holder: holder_of(step.held_by_pid),
                     })
                     .collect()
             })
@@ -1397,6 +1423,24 @@ fn nanos() -> u128 {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn an_open_step_says_whether_its_holder_is_still_there() {
+        assert_eq!(holder_of(Some(std::process::id())), Holder::Alive);
+        assert_eq!(holder_of(None), Holder::Unknown, "no pid claims nothing");
+    }
+
+    /// A pid the ledger wrote and the machine no longer has: the run keeps the
+    /// step open for ever, and «open» was being drawn as «at work».
+    #[test]
+    fn a_step_whose_process_is_gone_is_not_at_work() {
+        let departed = std::process::Command::new("true")
+            .spawn()
+            .and_then(|mut child| child.wait().map(|_| child.id()))
+            .expect("a process that ends at once");
+
+        assert_eq!(holder_of(Some(departed)), Holder::Gone);
+    }
 
     fn flow_with(steps: Value, inputs: Value) -> FlowFile {
         serde_json::from_value(json!({
