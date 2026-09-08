@@ -35,7 +35,7 @@ const COMMENT_LINES_NOT_IN_ENGLISH: usize = 1;
 /// Downwards only; a crate under 100 is where the sweep stops.
 const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
     ("actions", 265),
-    ("catalogue", 262),
+    ("catalogue", 250),
     ("desktop", 245),
     ("faults", 180),
     ("flow", 201),

@@ -51,7 +51,12 @@ fn walk(dir: &Path, found: &mut Vec<PathBuf>) {
 /// invents is not a class the engine can report, and counting it would make the
 /// seed rise for work that changes nothing a user sees.
 fn every_source() -> Vec<PathBuf> {
-    let root = root();
+    every_source_under(&root())
+}
+
+/// The same reading, of whatever tree it is pointed at, so the verdict can be
+/// put to a tree with a violation planted in it.
+fn every_source_under(root: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
     let Ok(crates) = std::fs::read_dir(root.join("crates")) else {
         panic!("the crates directory is where this test looks and it is not there");
@@ -82,9 +87,13 @@ fn classes_reported(text: &str) -> Vec<Option<String>> {
 }
 
 fn measured() -> (Vec<String>, usize) {
+    measured_under(&root())
+}
+
+fn measured_under(root: &Path) -> (Vec<String>, usize) {
     let mut classes = Vec::new();
     let mut unreadable = 0;
-    for file in every_source() {
+    for file in every_source_under(root) {
         let Ok(text) = std::fs::read_to_string(&file) else {
             continue;
         };
@@ -165,15 +174,18 @@ fn every_source_file_git_tracks_is_one_the_scan_opened() {
 /// **NO SEED HERE, BECAUSE THE DEBT IS PAID.** It stood at 38 for as long as it
 /// took to write the entries; a class arriving without one is now a defect and
 /// not a backlog, and gets refused as one.
+/// The classes that reach the window with no sentence behind them.
+fn mute_among(classes: &[String]) -> Vec<&String> {
+    classes
+        .iter()
+        .filter(|class| catalogue::look("en", &format!("{FAILURE_PREFIX}{class}"), &[]).is_none())
+        .collect()
+}
+
 #[test]
 fn every_failure_the_engine_reports_has_a_sentence() {
     let (classes, _) = measured();
-    let mute: Vec<&String> = classes
-        .iter()
-        .filter(|class| {
-            catalogue::look("en", &format!("{FAILURE_PREFIX}{class}"), &[]).is_none()
-        })
-        .collect();
+    let mute = mute_among(&classes);
 
     assert!(
         mute.is_empty(),
@@ -218,5 +230,44 @@ fn the_scans_blind_spot_does_not_grow() {
         CLASSES_THE_SCAN_CANNOT_READ_TODAY.saturating_sub(unreadable) == HOW_STALE_A_SEED_MAY_BE,
         "the seed says {CLASSES_THE_SCAN_CANNOT_READ_TODAY} and the tree holds \
          {unreadable}: lower it"
+    );
+}
+
+/// **THE VERDICT HAS ONLY EVER SEEN A TREE WITH NOTHING WRONG IN IT.** A mute
+/// class and a class the scan cannot read are both planted in a throwaway tree
+/// under the temporary directory, and the same two verdicts are asked of it.
+#[test]
+fn a_mute_class_planted_in_a_throwaway_tree_is_found() {
+    let root = std::env::temp_dir().join(format!(
+        "catalogue-planted-class-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    let src = root.join("crates/sample/src");
+    std::fs::create_dir_all(&src).expect("a throwaway crate directory");
+    std::fs::write(
+        src.join("lib.rs"),
+        "fn fall(reason: &str) -> ActionError {\n    \
+         ActionError::new(\"a_class_nobody_wrote_a_sentence_for\", reason)\n}\n\
+         fn fall_again(class: &str) -> ActionError {\n    \
+         ActionError::new(class, \"read off something outside this repository\")\n}\n",
+    )
+    .expect("the planted source writes");
+
+    let (classes, unreadable) = measured_under(&root);
+    let mute = mute_among(&classes);
+    let named: Vec<String> = mute.into_iter().cloned().collect();
+    std::fs::remove_dir_all(&root).expect("the throwaway tree goes");
+
+    assert_eq!(
+        named,
+        vec!["a_class_nobody_wrote_a_sentence_for".to_owned()],
+        "a class with no sentence was written into a source and the verdict did \
+         not name it: whoever hit it would read the bare class name"
+    );
+    assert_eq!(
+        unreadable, 1,
+        "a failure built from a variable class was written into a source and the \
+         blind-spot count did not rise, so the blind spot could grow unseen"
     );
 }
