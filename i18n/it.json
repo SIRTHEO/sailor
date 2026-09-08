@@ -609,6 +609,7 @@
   "run.failure.invalid_reference": "il riferimento è scritto male — non si è nemmeno cercato nulla",
   "run.failure.invalid_subflow": "il flusso c'è, ma non si è potuto leggere — non è il nome a essere sbagliato",
   "run.failure.invalid_subflow_call": "la chiamata del passo a un altro flusso non è nella forma attesa",
+  "run.failure.ledger_unreadable": "il registro non si è lasciato leggere per questo",
   "run.failure.listening_not_built": "questa sorgente di innesco non sa ancora ascoltare",
   "run.failure.mandate_not_taken": "il mandato è stato letto ma non si è potuto rimuovere, e così non è stato consegnato",
   "run.failure.no_compensation": "questo tipo di passo dichiara di saper disfare il proprio effetto, e non ne è capace",

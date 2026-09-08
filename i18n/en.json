@@ -609,6 +609,7 @@
   "run.failure.invalid_reference": "the reference is written wrong — nothing was even looked up",
   "run.failure.invalid_subflow": "the flow is there, but it could not be read — the name is not what is wrong",
   "run.failure.invalid_subflow_call": "the step's call to another flow is not in the expected shape",
+  "run.failure.ledger_unreadable": "the ledger could not be read for this",
   "run.failure.listening_not_built": "this trigger source cannot listen yet",
   "run.failure.mandate_not_taken": "the mandate was read but could not be taken away, so it was not handed on",
   "run.failure.no_compensation": "this kind of step claims it can undo its own effect, and it cannot",
