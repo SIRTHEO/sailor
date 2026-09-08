@@ -31,7 +31,17 @@
       "runs_measured": 0,
       "words_it_sends": 0
     },
+    "one-agent-on-one-task": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 48
+    },
     "passa-il-testimone": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
+    },
+    "put-the-crew-to-work": {
       "tokens_a_run": 0,
       "runs_measured": 0,
       "words_it_sends": 0

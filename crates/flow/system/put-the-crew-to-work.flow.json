@@ -1,19 +1,20 @@
 {
   "id": "put-the-crew-to-work",
-  "description": "ORGANISES THE WORK AND STARTS ONE AGENT PER ASSIGNMENT, EACH UNDER ITS OWN ACCOUNT. WHAT TO LOOK AT HERE. (1) THE CREW IS DECLARED IN THE TRIGGER, NOT IN THE GRAPH: to run a different crew you edit `crew` and nothing else — one entry per agent, naming its task and the home that holds that account's credentials. A graph that named the agents would need editing to add one, and a flow you must rewrite to reuse is a script with extra steps. (2) THE ASSIGNMENTS ARE CHECKED BEFORE ANY ARE STARTED. Half a crew running while the other half is refused is the worst of both: the check below reads every entry and stops the run naming the bad one, before a token is spent. (3) EACH AGENT IS ITS OWN RUN. `for_each` gives every assignment a child run with its own record, its own cap and its own verdict, so one agent that breaks does not take the others with it and the ledger can say which did what. (4) NOTHING ROTATES BY ITSELF. Which account carries which task is written down by a person; Sailor reads those credentials and never renews them. Choosing an account by remaining quota is a different flow and a different decision.",
+  "description": "ORGANISES THE WORK AND STARTS ONE AGENT PER ASSIGNMENT, EACH UNDER ITS OWN ACCOUNT. WHAT TO LOOK AT HERE. (1) THE CREW IS DECLARED IN THE INPUTS, NOT IN THE GRAPH: to run a different crew you edit «crew» and nothing else — one entry per agent, naming its task and the home that holds that account's credentials. A graph that named the agents would need editing to add one, and a flow you must rewrite to reuse is a script with extra steps. (2) THE ASSIGNMENTS ARE CHECKED BEFORE ANY ARE STARTED. Half a crew running while the other half is refused is the worst of both, so the check reads every entry and stops the run naming the bad one, before a token is spent. (3) THE LIST THAT RUNS IS THE LIST THAT WAS CHECKED. «the_crew» takes its items from the check's own answer, not from the file again: read twice, the second reading is the one nobody verified. (4) EACH AGENT IS ITS OWN RUN. `for_each` gives every assignment a child run with its own record, its own cap and its own verdict, so one agent that breaks does not take the others with it and the ledger can say which did what. (5) NOTHING ROTATES BY ITSELF. Which account carries which task is written down by a person; Sailor reads those credentials and never renews them. Choosing an account by remaining quota is a different flow and a different decision.",
   "inputs": {
     "trigger": {
+      "source": "manual",
       "text": "the crew",
       "who": ""
     },
-    "tree": "",
-    "crew": [
-      {
-        "task": "say in one line what this tree is for, and stop",
-        "home_var": "CLAUDE_CONFIG_DIR",
-        "home": "/replace/with/an/account/home"
-      }
-    ]
+    "every_assignment_is_whole": {
+      "crew": [
+        {
+          "task": "say in one line what this tree is for, and stop",
+          "home": "/replace/with/an/account/home"
+        }
+      ]
+    }
   },
   "wall_secs": 5400,
   "spend_cap_micros": 6000000,
@@ -76,19 +77,25 @@
         "when": null,
         "phase": "before spending",
         "with": {
-          "command": "set -eu\n# **HALF A CREW IS THE WORST OUTCOME.** Read every entry first and refuse the\n# whole run naming the bad one, rather than start the good ones and discover\n# the rest one paid call at a time.\nprintf '%s' \"$CREW\" | python3 -c '\nimport json,sys\ncrew = json.load(sys.stdin)\nif not isinstance(crew, list) or not crew:\n    sys.exit(\"the crew is empty: there is nobody to put to work\")\nfor at, one in enumerate(crew):\n    for named in (\"task\", \"home_var\", \"home\"):\n        if not str(one.get(named, \"\")).strip():\n            sys.exit(f\"assignment {at} names no {named}\")\nprint(json.dumps({\"assignments\": len(crew)}))\n'\n",
+          "command": "set -eu\n# **HALF A CREW IS THE WORST OUTCOME.** Read every entry first and refuse the\n# whole run naming the bad one, rather than start the good ones and discover\n# the rest one paid call at a time.\nprintf '%s' \"$CREW\" | python3 -c '\nimport json,sys\ncrew = json.load(sys.stdin)\nif not isinstance(crew, list) or not crew:\n    sys.exit(\"the crew is empty: there is nobody to put to work\")\nfor at, one in enumerate(crew):\n    for named in (\"task\", \"home\"):\n        if not str(one.get(named, \"\")).strip():\n            sys.exit(f\"assignment {at} names no {named}\")\nprint(json.dumps({\"crew\": crew, \"assignments\": len(crew)}))\n'\n",
           "env": {
-            "CREW": "/crew"
+            "CREW": {
+              "$json": "/crew"
+            }
           },
           "timeout_secs": 60,
           "answer_shape": {
             "type": "object",
             "properties": {
+              "crew": {
+                "type": "any"
+              },
               "assignments": {
                 "type": "number"
               }
             },
             "required": [
+              "crew",
               "assignments"
             ],
             "allow_extra": false
@@ -109,11 +116,15 @@
         "output_schema": {
           "type": "object",
           "properties": {
+            "crew": {
+              "type": "any"
+            },
             "assignments": {
               "type": "number"
             }
           },
           "required": [
+            "crew",
             "assignments"
           ],
           "allow_extra": false
@@ -130,9 +141,8 @@
         "phase": "the work",
         "with": {
           "flow": "one-agent-on-one-task",
-          "items": "/crew",
-          "inputs": {
-            "tree": "/tree"
+          "items": {
+            "$from": "/crew"
           }
         },
         "input_schema": {
@@ -150,7 +160,10 @@
         "output_schema": {
           "type": "object",
           "properties": {
-            "ran": {
+            "items": {
+              "type": "any"
+            },
+            "runs": {
               "type": "any"
             }
           },
