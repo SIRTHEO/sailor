@@ -497,6 +497,42 @@ mod tests {
         }
     }
 
+    /// The three nodes of the deposit that write, likewise: named without a
+    /// ledger, refusing to run without one.
+    ///
+    /// Hidden instead, they made a shipped flow that names them uncheckable —
+    /// `flow check` opens no store and called `remember-in-the-graph` broken.
+    #[test]
+    fn without_a_ledger_the_deposit_that_writes_is_named_and_refuses_to_run() {
+        let registry = registry_in(House::empty(), None, None);
+        let shared = flow::SharedState::new();
+        for (name, asked) in [
+            (
+                actions::graph_memory::MEMORY_WRITE_ACTION,
+                serde_json::json!({
+                    "what": "node", "workspace_id": "w", "node_id": "n",
+                    "kind": "decision", "title": "t", "written_by": "chi"
+                }),
+            ),
+            (
+                actions::presence::WORK_CLAIM_ACTION,
+                serde_json::json!({"agent": "chi", "repository": "r"}),
+            ),
+            (
+                actions::presence::WORK_RELEASE_ACTION,
+                serde_json::json!({"agent": "chi"}),
+            ),
+        ] {
+            let step = registry
+                .get(name)
+                .unwrap_or_else(|| panic!("«{name}» is registered even without a ledger"));
+            let refused = step
+                .execute(&asked, &shared)
+                .expect_err("without a ledger it must not run");
+            assert_eq!(refused.class, "no_store", "«{name}»: {}", refused.said);
+        }
+    }
+
     /// `subflow` is there without a ledger, and refuses to run.
     ///
     /// The two halves belong together. It must **be there**, or `flow check` —

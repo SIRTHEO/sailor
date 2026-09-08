@@ -28,9 +28,17 @@ pub const EDGES_COLLECTION: &str = "graph-edges";
 /// «nothing is known».
 pub fn register_graph_memory(registry: &mut flow::ActionRegistry, ledger: Option<Ledger>) {
     registry.register(MEMORY_QUERY_ACTION, MemoryQueryAction::new(ledger.clone()));
-    if let Some(ledger) = ledger {
-        registry.register(MEMORY_WRITE_ACTION, MemoryWriteAction::new(ledger));
-    }
+    registry.register(MEMORY_WRITE_ACTION, MemoryWriteAction::new(ledger));
+}
+
+/// The store, or the refusal saying what cannot be done without one.
+fn deposit<'a>(ledger: &'a Option<Ledger>, without: &str) -> Result<&'a Ledger, ActionError> {
+    ledger.as_ref().ok_or_else(|| {
+        ActionError::new(
+            "no_store",
+            format!("I cannot tell where the store lives, so {without}"),
+        )
+    })
 }
 
 fn now() -> i64 {
@@ -85,11 +93,11 @@ enum WriteSpec {
 }
 
 pub struct MemoryWriteAction {
-    ledger: Ledger,
+    ledger: Option<Ledger>,
 }
 
 impl MemoryWriteAction {
-    pub fn new(ledger: Ledger) -> Self {
+    pub fn new(ledger: Option<Ledger>) -> Self {
         Self { ledger }
     }
 
@@ -101,8 +109,8 @@ impl MemoryWriteAction {
     /// race; this action does not check for one itself.
     fn write_node(&self, spec: NodeSpec) -> Result<ActionOutcome, ActionError> {
         let at = spec.at.unwrap_or_else(now);
-        let existing = self
-            .ledger
+        let ledger = deposit(&self.ledger, "the node would be remembered nowhere")?;
+        let existing = ledger
             .records_in(NODES_COLLECTION)
             .map_err(|error| ActionError::new("store_unreadable", error.to_string()))?;
         // The current revision of this node in this workspace, if it has one:
@@ -118,7 +126,7 @@ impl MemoryWriteAction {
         if let Some(previous) = current {
             let mut superseded_value = previous.value.clone();
             superseded_value["superseded_by"] = json!(new_key);
-            self.ledger
+            ledger
                 .put_record(&StoreRecord {
                     collection: NODES_COLLECTION.to_owned(),
                     key: previous.key.clone(),
@@ -129,7 +137,7 @@ impl MemoryWriteAction {
                 .map_err(|error| ActionError::new("store_refused", error.to_string()))?;
         }
 
-        self.ledger
+        ledger
             .put_record(&StoreRecord {
                 collection: NODES_COLLECTION.to_owned(),
                 key: new_key.clone(),
@@ -158,7 +166,8 @@ impl MemoryWriteAction {
     fn write_edge(&self, spec: EdgeSpec) -> Result<ActionOutcome, ActionError> {
         let at = spec.at.unwrap_or_else(now);
         let key = edge_key(&spec.workspace_id, &spec.from, &spec.to, &spec.kind);
-        self.ledger
+        let ledger = deposit(&self.ledger, "the edge would be remembered nowhere")?;
+        ledger
             .put_record(&StoreRecord {
                 collection: EDGES_COLLECTION.to_owned(),
                 key: key.clone(),
@@ -316,7 +325,7 @@ mod tests {
     #[test]
     fn the_first_write_of_a_node_is_revision_one() {
         let (ledger, _guard) = store();
-        let action = MemoryWriteAction::new(ledger);
+        let action = MemoryWriteAction::new(Some(ledger));
         let shared = SharedState::new();
 
         let answer = went(
@@ -334,7 +343,7 @@ mod tests {
     #[test]
     fn writing_a_node_again_supersedes_the_old_revision_instead_of_erasing_it() {
         let (ledger, _guard) = store();
-        let write = MemoryWriteAction::new(ledger.clone());
+        let write = MemoryWriteAction::new(Some(ledger.clone()));
         let query = MemoryQueryAction::new(Some(ledger));
         let shared = SharedState::new();
 
@@ -369,7 +378,7 @@ mod tests {
     #[test]
     fn a_query_never_crosses_into_another_workspace_by_itself() {
         let (ledger, _guard) = store();
-        let write = MemoryWriteAction::new(ledger.clone());
+        let write = MemoryWriteAction::new(Some(ledger.clone()));
         let query = MemoryQueryAction::new(Some(ledger));
         let shared = SharedState::new();
 
@@ -395,7 +404,7 @@ mod tests {
     #[test]
     fn asking_about_a_node_returns_the_edges_that_reach_it_even_across_workspaces() {
         let (ledger, _guard) = store();
-        let write = MemoryWriteAction::new(ledger.clone());
+        let write = MemoryWriteAction::new(Some(ledger.clone()));
         let query = MemoryQueryAction::new(Some(ledger));
         let shared = SharedState::new();
 
@@ -445,7 +454,7 @@ mod tests {
     #[test]
     fn a_kind_filter_narrows_the_nodes_returned() {
         let (ledger, _guard) = store();
-        let write = MemoryWriteAction::new(ledger.clone());
+        let write = MemoryWriteAction::new(Some(ledger.clone()));
         let query = MemoryQueryAction::new(Some(ledger));
         let shared = SharedState::new();
 

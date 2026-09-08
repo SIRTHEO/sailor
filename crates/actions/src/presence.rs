@@ -31,10 +31,18 @@ pub const DEFAULT_LEASE_SECONDS: i64 = 900;
 /// is the fault this module is written against.
 pub fn register_presence(registry: &mut flow::ActionRegistry, ledger: Option<Ledger>) {
     registry.register(WORK_SURVEY_ACTION, WorkSurveyAction::new(ledger.clone()));
-    if let Some(ledger) = ledger {
-        registry.register(WORK_CLAIM_ACTION, WorkClaimAction::new(ledger.clone()));
-        registry.register(WORK_RELEASE_ACTION, WorkReleaseAction::new(ledger));
-    }
+    registry.register(WORK_CLAIM_ACTION, WorkClaimAction::new(ledger.clone()));
+    registry.register(WORK_RELEASE_ACTION, WorkReleaseAction::new(ledger));
+}
+
+/// The store, or the refusal saying what cannot be done without one.
+fn deposit<'a>(ledger: &'a Option<Ledger>, without: &str) -> Result<&'a Ledger, ActionError> {
+    ledger.as_ref().ok_or_else(|| {
+        ActionError::new(
+            "no_store",
+            format!("I cannot tell where the store lives, so {without}"),
+        )
+    })
 }
 
 fn now() -> i64 {
@@ -271,11 +279,11 @@ fn overlap_between(mine: &ClaimSpec, theirs: &Value) -> Option<Overlap> {
 }
 
 pub struct WorkClaimAction {
-    ledger: Ledger,
+    ledger: Option<Ledger>,
 }
 
 impl WorkClaimAction {
-    pub fn new(ledger: Ledger) -> Self {
+    pub fn new(ledger: Option<Ledger>) -> Self {
         Self { ledger }
     }
 }
@@ -309,12 +317,15 @@ impl Action for WorkClaimAction {
         // visible. Writing first, whoever arrives second always sees the first,
         // and at worst — the same fraction of a second — they see each other,
         // which is the error on the right side.
-        self.ledger
+        let ledger = deposit(
+            &self.ledger,
+            "a claim written nowhere would let two agents work on the same thing",
+        )?;
+        ledger
             .put_record(&record)
             .map_err(|error| ActionError::new("store_refused", error.to_string()))?;
 
-        let others = self
-            .ledger
+        let others = ledger
             .records_in(CLAIMS_COLLECTION)
             .map_err(|error| ActionError::new("store_unreadable", error.to_string()))?;
         let mut collisions: Vec<Value> = Vec::new();
@@ -390,11 +401,11 @@ impl Action for WorkClaimAction {
 }
 
 pub struct WorkReleaseAction {
-    ledger: Ledger,
+    ledger: Option<Ledger>,
 }
 
 impl WorkReleaseAction {
-    pub fn new(ledger: Ledger) -> Self {
+    pub fn new(ledger: Option<Ledger>) -> Self {
         Self { ledger }
     }
 }
@@ -406,7 +417,8 @@ impl Action for WorkReleaseAction {
         let pid = spec.pid.unwrap_or_else(std::process::id);
         let at = spec.at.unwrap_or_else(now);
         let key = claim_key(&spec.agent, &pid.to_string());
-        let released = release_claim(&self.ledger, &key, at)
+        let ledger = deposit(&self.ledger, "there is no claim of yours to let go")?;
+        let released = release_claim(ledger, &key, at)
             .map_err(|error| ActionError::new("store_refused", error.to_string()))?;
         if !released {
             return Ok(ActionOutcome::Went(json!({ "released": false })));
@@ -558,7 +570,7 @@ mod tests {
     fn a_second_agent_in_the_same_workdir_learns_about_the_first() {
         let (ledger, _guard) = store();
         let shared = SharedState::new();
-        let action = WorkClaimAction::new(ledger);
+        let action = WorkClaimAction::new(Some(ledger));
 
         action
             .execute(
@@ -590,7 +602,7 @@ mod tests {
     fn an_expired_claim_is_not_a_collision() {
         let (ledger, _guard) = store();
         let shared = SharedState::new();
-        let action = WorkClaimAction::new(ledger);
+        let action = WorkClaimAction::new(Some(ledger));
 
         action
             .execute(
@@ -678,7 +690,7 @@ mod tests {
     fn a_renewal_never_erases_another_agents_claim() {
         let (ledger, _guard) = store();
         let shared = SharedState::new();
-        let action = WorkClaimAction::new(ledger.clone());
+        let action = WorkClaimAction::new(Some(ledger.clone()));
         let survey = WorkSurveyAction::new(Some(ledger));
 
         action
@@ -715,7 +727,7 @@ mod tests {
     fn different_worktrees_of_one_repository_see_each_other_as_a_lesser_kind() {
         let (ledger, _guard) = store();
         let shared = SharedState::new();
-        let action = WorkClaimAction::new(ledger);
+        let action = WorkClaimAction::new(Some(ledger));
 
         action
             .execute(
@@ -743,7 +755,7 @@ mod tests {
     fn disjoint_declared_paths_in_one_workdir_are_a_lesser_kind() {
         let (ledger, _guard) = store();
         let shared = SharedState::new();
-        let action = WorkClaimAction::new(ledger);
+        let action = WorkClaimAction::new(Some(ledger));
 
         action
             .execute(
@@ -794,7 +806,7 @@ mod tests {
     fn a_text_prefix_that_is_not_a_path_prefix_is_not_a_collision() {
         let (ledger, _guard) = store();
         let shared = SharedState::new();
-        let action = WorkClaimAction::new(ledger);
+        let action = WorkClaimAction::new(Some(ledger));
 
         action
             .execute(
@@ -823,8 +835,8 @@ mod tests {
     fn a_release_stops_holding_at_once_and_stays_distinguishable_from_an_expiry() {
         let (ledger, _guard) = store();
         let shared = SharedState::new();
-        let action = WorkClaimAction::new(ledger.clone());
-        let release = WorkReleaseAction::new(ledger.clone());
+        let action = WorkClaimAction::new(Some(ledger.clone()));
+        let release = WorkReleaseAction::new(Some(ledger.clone()));
         let survey = WorkSurveyAction::new(Some(ledger));
 
         action
@@ -879,7 +891,7 @@ mod tests {
     fn refuse_when_shared_stops_the_second_and_names_the_first() {
         let (ledger, _guard) = store();
         let shared = SharedState::new();
-        let action = WorkClaimAction::new(ledger);
+        let action = WorkClaimAction::new(Some(ledger));
 
         action
             .execute(
@@ -908,7 +920,7 @@ mod tests {
     fn refuse_when_shared_ignores_a_mere_shared_repository() {
         let (ledger, _guard) = store();
         let shared = SharedState::new();
-        let action = WorkClaimAction::new(ledger);
+        let action = WorkClaimAction::new(Some(ledger));
 
         action
             .execute(
@@ -932,7 +944,7 @@ mod tests {
     fn a_survey_separates_the_living_from_the_gone_and_says_why() {
         let (ledger, _guard) = store();
         let shared = SharedState::new();
-        let action = WorkClaimAction::new(ledger.clone());
+        let action = WorkClaimAction::new(Some(ledger.clone()));
         let survey = WorkSurveyAction::new(Some(ledger));
 
         action

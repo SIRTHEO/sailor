@@ -83,6 +83,21 @@ pub(super) fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) 
 /// closes. Not here: the tools no descriptor declares, which take a detector.
 pub fn refusals_of(flow: &FlowFile, registry: &ActionRegistry) -> Vec<String> {
     let mut refused = Vec::new();
+    // First, because nothing else matters about a flow that cannot start: an
+    // action nobody registers is broken on every machine, not only on this one.
+    let unregistered = missing_actions(&flow.graph, registry);
+    if !unregistered.is_empty() {
+        refused.push(catalogue::say(
+            "cli.flow.names_unregistered_actions",
+            &[
+                ("flow", &flow.id),
+                (
+                    "actions",
+                    &unregistered.into_iter().collect::<Vec<_>>().join(", "),
+                ),
+            ],
+        ));
+    }
     // A reference inside an executed field stops before the run: afterwards it
     // is shell text and no longer tells itself apart from what the flow wrote.
     let mounted: Vec<String> = outside_text_in_command(flow)
@@ -813,6 +828,51 @@ mod tests {
             report.contains("root: prompt"),
             "and say in which step and which field: {report}"
         );
+    }
+
+    /// **A FLOW THAT CANNOT START IS NOT A FLOW THAT CHECKS OUT.** The report
+    /// named the unregistered actions and returned green, so the cheap gate
+    /// said yes to what `flow run` refuses a second later.
+    #[test]
+    fn a_flow_naming_an_action_nobody_registers_is_refused_by_the_check() {
+        let json = r#"{
+            "id": "prova", "description": "flusso di prova",
+            "graph": {"steps": [{
+                "id": "unico", "deps": [], "action": "nessuno_la_registra",
+                "max_attempts": 1, "when": null,
+                "input_schema": {"type": "any"}, "output_schema": {"type": "any"}
+            }]},
+            "inputs": {}
+        }"#;
+        let flow: FlowFile = serde_json::from_str(json).expect("it loads");
+        let registry = registry_in(House::empty(), None, None);
+
+        let refused = refusals_of(&flow, &registry);
+
+        assert!(
+            refused
+                .iter()
+                .any(|said| said.contains("nessuno_la_registra")),
+            "the check passed a flow the run refuses: {refused:?}"
+        );
+        assert!(
+            refusals_of(&a_flow_of_known_actions(), &registry).is_empty(),
+            "a flow of registered actions is refused for nothing"
+        );
+    }
+
+    fn a_flow_of_known_actions() -> FlowFile {
+        let json = r#"{
+            "id": "prova", "description": "flusso di prova",
+            "graph": {"steps": [{
+                "id": "unico", "deps": [], "action": "for_each", "max_attempts": 1,
+                "when": null, "input_schema": {"type": "any"},
+                "output_schema": {"type": "any"},
+                "with": {"flow": "foglia", "items": [1, 2]}
+            }]},
+            "inputs": {}
+        }"#;
+        serde_json::from_str(json).expect("it loads")
     }
 
     /// A `for_each` step is a step like the others to the check: listed with

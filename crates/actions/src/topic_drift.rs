@@ -203,7 +203,7 @@ mod tests {
     #[test]
     fn matching_ones_own_graph_is_on_topic() {
         let (ledger, _guard) = store();
-        let write = MemoryWriteAction::new(ledger.clone());
+        let write = MemoryWriteAction::new(Some(ledger.clone()));
         write
             .execute(
                 &node("acme-products", "pricing", "pricing model", "flat fee decision"),
@@ -222,7 +222,7 @@ mod tests {
     #[test]
     fn a_weaker_match_elsewhere_does_not_override_a_stronger_match_at_home() {
         let (ledger, _guard) = store();
-        let write = MemoryWriteAction::new(ledger.clone());
+        let write = MemoryWriteAction::new(Some(ledger.clone()));
         write
             .execute(
                 &node("acme-products", "pricing", "acme pricing model", "flat fee decision for acme"),
@@ -244,7 +244,7 @@ mod tests {
     #[test]
     fn matching_another_workspace_better_is_a_divergence() {
         let (ledger, _guard) = store();
-        let write = MemoryWriteAction::new(ledger.clone());
+        let write = MemoryWriteAction::new(Some(ledger.clone()));
         write
             .execute(&node("acme-products", "pricing", "pricing model", "flat fee decision"), &SharedState::new())
             .expect("products");
@@ -264,7 +264,7 @@ mod tests {
     #[test]
     fn a_superseded_node_does_not_count_toward_its_workspace() {
         let (ledger, _guard) = store();
-        let write = MemoryWriteAction::new(ledger.clone());
+        let write = MemoryWriteAction::new(Some(ledger.clone()));
         write
             .execute(&node("acme-products", "pricing", "pricing model", "flat fee decision"), &SharedState::new())
             .expect("first revision");
