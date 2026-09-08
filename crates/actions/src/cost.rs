@@ -929,9 +929,8 @@ printf '{"result":"the true answer","model":"modello-di-prova","total_cost_usd":
         let bin = fake_engine(&dir, "motore", WRAPS_ON_DEMAND);
         let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
         let budgets = dir.join("budgets.json");
-        // **THE ENGINE'S OWN FIGURE IS WHAT THE WINDOW COUNTS**, as it is for a
-        // run: this one charges 0.50 $ and the price list works out 18.30 $. A
-        // cap of 0.25 $ lets the first through and finds the window full after.
+        // The engine charges 0.50 $ where the price list works out 18.30 $, and
+        // its own figure is what the window counts: 0.25 $ fills after one.
         std::fs::write(
             &budgets,
             r#"{"motore-di-prova": {"cap_micros": 250000, "window_secs": 3600}}"#,
@@ -954,11 +953,8 @@ printf '{"result":"the true answer","model":"modello-di-prova","total_cost_usd":
         })
         .expect_err("the second call finds the window full");
         assert_eq!(refused.class, "no_usable_engine");
-        assert!(
-            refused.said.contains("over its budget: spent 0.5000 $ of 0.2500 $"),
-            "the window counted the price list's figure over the engine's own: {}",
-            refused.said
-        );
+        let over = "over its budget: spent 0.5000 $ of 0.2500 $";
+        assert!(refused.said.contains(over), "not the engine's own figure: {}", refused.said);
         assert_eq!(calls_in(&dir.join("deposito")).len(), 1, "the refusal spent nothing");
 
         // The control: a cap declared for some other engine does not bind this one.

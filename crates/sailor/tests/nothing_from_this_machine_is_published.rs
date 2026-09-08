@@ -74,6 +74,28 @@ fn repo_root() -> PathBuf {
         .to_owned()
 }
 
+/// Why there is nothing published to read here, when there is nothing.
+///
+/// **FAULT 100, THE OTHER WAY ROUND.** Outside the top of a repository the
+/// perimeter is empty, and a check that finds no leak in no file is green
+/// having read nothing — which is how a tree laid out by `git archive`, the
+/// one the ratchet and the release measure, passed every check below.
+fn nothing_published_in(root: &Path) -> Option<String> {
+    if !workspace::is_the_top_of_its_repository(root) {
+        return Some(
+            "this tree is not the top of a repository, so nothing in it is published".to_owned(),
+        );
+    }
+    published_files_under(root)
+        .is_empty()
+        .then(|| "git tracks no file carrying words here".to_owned())
+}
+
+/// The same, of the tree this was compiled from.
+fn nothing_published_here() -> Option<String> {
+    nothing_published_in(&repo_root())
+}
+
 /// Every place a forbidden string appears, as `path:line`.
 fn occurrences_of(needle: &str) -> Vec<String> {
     occurrences_under(&repo_root(), needle)
@@ -104,6 +126,10 @@ fn occurrences_under(root: &Path, needle: &str) -> Vec<String> {
 /// knows about itself, so no list is needed and every contributor is covered.
 #[test]
 fn no_path_from_the_machine_this_runs_on_is_written_down() {
+    if let Some(why) = nothing_published_here() {
+        workspace::measured_nothing(&why);
+        return;
+    }
     let Ok(home) = std::env::var("HOME") else {
         return;
     };
@@ -129,6 +155,10 @@ fn no_path_from_the_machine_this_runs_on_is_written_down() {
 /// still comes off the machine — git says where the tree is, no name is typed.
 #[test]
 fn the_repository_does_not_name_its_own_place_on_this_machine() {
+    if let Some(why) = nothing_published_here() {
+        workspace::measured_nothing(&why);
+        return;
+    }
     let Ok(home) = std::env::var("HOME") else {
         return;
     };
@@ -174,6 +204,10 @@ fn main_worktree() -> Option<PathBuf> {
 /// so this is armed on the machine that could leak them and quiet elsewhere.
 #[test]
 fn the_names_this_machine_declares_private_appear_nowhere() {
+    if let Some(why) = nothing_published_here() {
+        workspace::measured_nothing(&why);
+        return;
+    }
     // Where the list is and what counts as a name are read from
     // `toolbox::privacy`, the same place the command that writes a fault reads
     // them: two readers of one list drift, and the drift shows up as a gate
@@ -254,6 +288,10 @@ fn nothing_git_tracks_goes_unread() {
 /// tests above would go green for ever while the repository leaked.
 #[test]
 fn the_check_can_still_see_the_files_it_reads() {
+    if let Some(why) = nothing_published_here() {
+        workspace::measured_nothing(&why);
+        return;
+    }
     let files = published_files();
     workspace::measured(files.len(), "published files opened");
     assert!(
@@ -395,6 +433,10 @@ fn a_tree_outside_a_repository_makes_the_judge_declare_it_measured_nothing() {
         published_files_under(&plain).is_empty(),
         "with no perimeter to read the reader must open nothing: it opened files \
          and the planted leak would be judged against a list that is not this tree's"
+    );
+    assert!(
+        nothing_published_in(&plain).is_some(),
+        "the checks would run over no file at all and call the tree clean"
     );
 
     let _ = std::fs::remove_dir_all(&plain);
