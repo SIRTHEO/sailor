@@ -7,9 +7,10 @@
 
 use crate::Form;
 use ledger::Ledger;
+use std::path::Path;
 use machine::{
-    left_running, on_the_port, stop_the_ones_nobody_wants, what_weighs, OnThePort, Teardown,
-    TheLoad, DEV_PORT,
+    build_directories_left, left_running, on_the_port, stop_the_ones_nobody_wants, what_weighs,
+    LeftBehind, OnThePort, Teardown, TheLoad, DEV_PORT,
 };
 
 pub const USAGE: &[Form] = &[
@@ -124,7 +125,60 @@ fn reading() -> Result<String, String> {
     }
     said.push('\n');
     said.push_str(&about_the_load(&store)?);
+    if let Some(word) = about_the_disk() {
+        said.push('\n');
+        said.push_str(&word);
+    }
     Ok(said)
+}
+
+/// **A BUILD DIRECTORY IS SPACE NOBODY OWNS.** Whoever pointed cargo at one
+/// walked away from it; the disk filled to 97% under twenty-two of them, and
+/// the gesture that frees this machine did not know they existed.
+fn about_the_disk() -> Option<String> {
+    about_the_disk_in(&workspace::root().ok()?, now())
+}
+
+fn about_the_disk_in(root: &Path, now: i64) -> Option<String> {
+    let left = build_directories_left(root, now);
+    if left.is_empty() {
+        return None;
+    }
+    let held: u64 = left.iter().map(|one| one.bytes).sum();
+    let mut said = catalogue::say(
+        "cli.machine.build_directories",
+        &[
+            ("count", &left.len().to_string()),
+            ("gigabytes", &gigabytes(held)),
+        ],
+    );
+    for one in left.iter().take(ENOUGH_TO_SEE_THE_TROUBLE) {
+        said.push('\n');
+        said.push_str(&catalogue::say(
+            "cli.machine.build_directory",
+            &[
+                ("path", &one.path.display().to_string()),
+                ("gigabytes", &gigabytes(one.bytes)),
+                ("hours", &(one.idle_secs / AN_HOUR).to_string()),
+            ],
+        ));
+    }
+    Some(said)
+}
+
+/// How many of the heaviest build directories are worth naming.
+const ENOUGH_TO_SEE_THE_TROUBLE: usize = 6;
+
+const AN_HOUR: i64 = 3_600;
+
+/// **HOW LONG BEFORE ONE IS NOBODY'S.** A cargo at work writes in its build
+/// directory constantly, so an hour of silence is nobody compiling there. It
+/// is declared, not guessed at each call: whoever raises it is saying they are
+/// willing to interrupt a longer build.
+const IDLE_BEFORE_IT_IS_NOBODYS: i64 = AN_HOUR;
+
+fn gigabytes(bytes: u64) -> String {
+    format!("{:.1}", bytes as f64 / 1_073_741_824.0)
 }
 
 /// **«0 OF 0» ON A MACHINE THAT IS GRINDING.** The rows above are Sailor's own,
@@ -216,7 +270,49 @@ fn free() -> Result<String, String> {
             ),
         });
     }
+    if let Some(word) = free_the_disk() {
+        said.push('\n');
+        said.push_str(&word);
+    }
     Ok(said)
+}
+
+/// The build directories nobody is compiling in, taken away.
+///
+/// Only the ones still and quiet: one being written to is left where it is and
+/// named in the reading, the same rule the processes above follow.
+fn free_the_disk() -> Option<String> {
+    free_the_disk_in(&workspace::root().ok()?, now())
+}
+
+fn free_the_disk_in(root: &Path, now: i64) -> Option<String> {
+    let idle: Vec<LeftBehind> = build_directories_left(root, now)
+        .into_iter()
+        .filter(|one| one.idle_secs >= IDLE_BEFORE_IT_IS_NOBODYS)
+        .collect();
+    if idle.is_empty() {
+        return None;
+    }
+    let mut taken = 0u64;
+    let mut said = String::new();
+    for one in &idle {
+        if std::fs::remove_dir_all(&one.path).is_err() {
+            continue;
+        }
+        taken += one.bytes;
+        said.push('\n');
+        said.push_str(&catalogue::say(
+            "cli.machine.build_directory_taken",
+            &[
+                ("path", &one.path.display().to_string()),
+                ("gigabytes", &gigabytes(one.bytes)),
+            ],
+        ));
+    }
+    Some(format!(
+        "{}{said}",
+        catalogue::say("cli.machine.disk_freed", &[("gigabytes", &gigabytes(taken))])
+    ))
 }
 
 fn now() -> i64 {
@@ -321,5 +417,75 @@ mod tests {
         assert!(done.is_empty(), "a pid that was already gone was signalled: {done:?}");
         assert!(standing(&store).expect("after").is_empty(), "the row is still called running");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+    /// Dates a directory and its `debug` back, so it reads as one nobody has
+    /// compiled in for a long time.
+    fn aged(path: &Path) {
+        for at in [path.join("debug"), path.to_path_buf()] {
+            let done = std::process::Command::new("touch")
+                .args(["-t", "202001010000"])
+                .arg(&at)
+                .status();
+            assert!(done.is_ok_and(|it| it.success()), "the fixture could not be dated back");
+        }
+    }
+
+    /// A build directory of cargo's, made by hand, with the tag cargo writes.
+    fn a_build_directory(root: &Path, name: &str, bytes: usize) {
+        let path = root.join("target").join(name);
+        std::fs::create_dir_all(path.join("debug")).expect("a build directory");
+        std::fs::write(
+            path.join("CACHEDIR.TAG"),
+            "Signature: 8a477f597d28d172789f06886806bc55\n",
+        )
+        .expect("the tag cargo writes");
+        std::fs::write(path.join("debug").join("artefact"), "x".repeat(bytes)).expect("an artefact");
+    }
+
+    /// **THE DISK IS PART OF THE MACHINE.** The reading named processes, load
+    /// and the port, and said nothing about twenty-two build directories that
+    /// had filled the disk to 97%: a gesture that frees half a machine.
+    #[test]
+    fn the_reading_names_the_build_directories_nobody_owns() {
+        let root = scratch("build-dirs");
+        a_build_directory(&root, "una", 4_096);
+        // The tree's ordinary work carries no tag of its own: cargo writes it
+        // in the directory it was pointed at, and `target/debug` is not one.
+        std::fs::create_dir_all(root.join("target").join("debug")).expect("the ordinary work");
+
+        let said = about_the_disk_in(&root, 1_700_000_000).expect("there is one to name");
+
+        assert!(said.contains("una"), "the build directory is not named: {said}");
+        assert!(
+            !said.contains("target/debug:"),
+            "the tree's own work was offered up as a leftover: {said}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// **ONE BEING WRITTEN TO IS NOBODY'S TO TAKE.** A cargo at work touches
+    /// its build directory constantly, so the still ones are the free ones and
+    /// the busy one is left where it is.
+    #[test]
+    fn freeing_takes_the_still_build_directories_and_leaves_the_busy_one() {
+        let root = scratch("free-dirs");
+        a_build_directory(&root, "ferma", 4_096);
+        a_build_directory(&root, "al-lavoro", 4_096);
+
+        // «ferma» is dated back to a day nobody was compiling; «al-lavoro» was
+        // written a moment ago, which is what a cargo at work looks like.
+        aged(&root.join("target").join("ferma"));
+        let said = free_the_disk_in(&root, now()).expect("there is one to take");
+
+        assert!(said.contains("ferma"), "the still one was not taken: {said}");
+        assert!(
+            !root.join("target").join("ferma").exists(),
+            "it was named as taken and is still on the disk"
+        );
+        assert!(
+            root.join("target").join("al-lavoro").exists(),
+            "a build directory somebody is compiling in was taken away: {said}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

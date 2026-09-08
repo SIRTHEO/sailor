@@ -813,7 +813,7 @@ mod tests {
         let said = |root: &Path| -> String {
             let out = Command::new("cargo")
                 .current_dir(root)
-                .args(["test", "--quiet", "--test", "reads", "--", "--nocapture"])
+                .args(["test", "--quiet", "--jobs", "1", "--test", "reads", "--", "--nocapture"])
                 .output()
                 .expect("cargo runs");
             String::from_utf8_lossy(&out.stdout).to_string()

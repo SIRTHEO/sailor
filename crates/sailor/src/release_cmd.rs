@@ -43,6 +43,19 @@ impl Drop for TemporaryTree {
     }
 }
 
+/// As many compilers as the memory holds, which is not the core count.
+///
+/// **THE MACHINE IS SHARED BETWEEN SESSIONS.** The ratchet has asked this since
+/// it was written and the release never did: it is the heaviest thing here --
+/// it clones HEAD and builds it whole -- and it was the one taking every core.
+fn compilers_that_fit() -> String {
+    machine::how_many_compilers(
+        &machine::spare_memory(),
+        std::thread::available_parallelism().map_or(1, |cores| cores.get()),
+    )
+    .to_string()
+}
+
 pub fn run(args: &[String]) -> i32 {
     let options = match parse_options(args) {
         Ok(options) => options,
@@ -206,7 +219,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     builder
         .current_dir(&cloned_rust)
         .env("CARGO_TARGET_DIR", &build_target)
-        .args(["build", "--release", "--bin", selected.bin])
+        .args(["build", "--release", "--jobs", &compilers_that_fit(), "--bin", selected.bin])
         .arg("--manifest-path")
         .arg(&cloned_manifest);
     for feature in selected.features {
@@ -303,7 +316,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
             // ones after it do not fail: they never start. A release that reads
             // "the suite is red" would name one binary while ten more were
             // never attempted, and whoever repairs that one releases blind.
-            .args(["test", "--release", "--no-fail-fast"])
+            .args(["test", "--release", "--no-fail-fast", "--jobs", &compilers_that_fit()])
             .arg("--manifest-path")
             .arg(repository.join(manifest_rel))
             .args(["--", "--nocapture"])

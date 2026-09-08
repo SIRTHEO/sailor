@@ -62,6 +62,7 @@ fn linter(root: &Path, build_directory: Option<OsString>, manifest: &Path) -> Co
     command
         .current_dir(root)
         .arg("clippy")
+        .args(["--jobs", &compilers_that_fit()])
         .arg("--manifest-path")
         .arg(manifest);
     if let Some(directory) = build_directory {
@@ -127,6 +128,14 @@ fn warnings_per_crate(root: &Path) -> Result<BTreeMap<String, usize>, String> {
 }
 
 /// One linter run over the manifest it is handed. Not finishing is an error.
+fn compilers_that_fit() -> String {
+    machine::how_many_compilers(
+        &machine::spare_memory(),
+        std::thread::available_parallelism().map_or(1, |cores| cores.get()),
+    )
+    .to_string()
+}
+
 fn linted(root: &Path, manifest: &Path, over: &[&str]) -> Result<String, String> {
     let said = linter(root, callers_build_directory(), manifest)
         .args(over)

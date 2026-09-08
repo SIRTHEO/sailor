@@ -861,6 +861,10 @@
   "cli.machine.could_not_look_at_the_port": "port {port}: this machine would not let us look ({why}), so whether anything holds it is unknown — and unknown is not free",
   "cli.machine.load": "the machine carries a load of {one} now, {five} over five minutes, {fifteen} over fifteen. The heaviest on it:",
   "cli.machine.weighs": "  {megabytes} MB  pid {pid}  {command}",
+  "cli.machine.build_directories": "{count} build directories nobody owns, holding {gigabytes} GB. Whoever pointed cargo at one walked away from it; `sailor machine free` takes away the ones nobody is compiling in:",
+  "cli.machine.build_directory": "  {path}: {gigabytes} GB, untouched for {hours} h",
+  "cli.machine.build_directory_taken": "  took away {path}: {gigabytes} GB",
+  "cli.machine.disk_freed": "{gigabytes} GB of build directories taken away",
   "cli.machine.could_not_look": "this machine would not say what is running on it ({why}), so the rows above are sailor's own and nothing else — which is not the same as nothing else being there",
   "cli.machine.weighs_ours": "  {megabytes} MB  pid {pid}  {command}  — sailor lit this one"
 }

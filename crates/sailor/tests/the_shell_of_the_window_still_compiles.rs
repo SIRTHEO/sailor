@@ -72,7 +72,10 @@ fn compiler(root: &Path, offline: bool, build_directory: Option<OsString>) -> Co
         .arg("test")
         .arg("--manifest-path")
         .arg(root.join(SHELL_MANIFEST))
-        .args(["--locked", "--no-fail-fast", "--message-format=short"]);
+        .args(["--locked", "--no-fail-fast", "--message-format=short"])
+        // As many compilers as the memory holds: this machine is shared, and a
+        // gate that takes every core is a gate that gets killed for memory.
+        .args(["--jobs", &compilers_that_fit()]);
     if offline {
         command.arg("--offline");
     }
@@ -80,6 +83,14 @@ fn compiler(root: &Path, offline: bool, build_directory: Option<OsString>) -> Co
         command.env("CARGO_TARGET_DIR", directory);
     }
     command
+}
+
+fn compilers_that_fit() -> String {
+    machine::how_many_compilers(
+        &machine::spare_memory(),
+        std::thread::available_parallelism().map_or(1, |cores| cores.get()),
+    )
+    .to_string()
 }
 
 fn first_line_with(text: &str, marker: &str) -> Option<String> {

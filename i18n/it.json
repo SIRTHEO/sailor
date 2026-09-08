@@ -861,6 +861,10 @@
   "cli.ratchet.another_gate": "un altro cancello sta già misurando questo albero: condividono una sola copia di HEAD e se la stenderebbero addosso a metà misura, che fa diventare rosso un giudice sano. Aspetta che finisca, o misura un altro checkout",
   "cli.machine.load": "la macchina porta un carico di {one} adesso, {five} su cinque minuti, {fifteen} su quindici. I più pesanti:",
   "cli.machine.weighs": "  {megabytes} MB  pid {pid}  {command}",
+  "cli.machine.build_directories": "{count} cartelle di compilazione che non sono di nessuno, per {gigabytes} GB. Chi ci ha puntato cargo se n'è andato; `sailor machine free` toglie quelle in cui nessuno sta compilando:",
+  "cli.machine.build_directory": "  {path}: {gigabytes} GB, ferma da {hours} h",
+  "cli.machine.build_directory_taken": "  tolta {path}: {gigabytes} GB",
+  "cli.machine.disk_freed": "{gigabytes} GB di cartelle di compilazione tolte",
   "cli.machine.could_not_look": "questa macchina non ha voluto dire cosa ci gira ({why}), quindi le righe sopra sono solo quelle di sailor — che non vuol dire che non ci sia altro",
   "cli.machine.weighs_ours": "  {megabytes} MB  pid {pid}  {command}  — questo l'ha acceso sailor"
 }
