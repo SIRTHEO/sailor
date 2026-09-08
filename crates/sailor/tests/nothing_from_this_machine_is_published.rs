@@ -7,61 +7,49 @@
 
 use std::path::{Path, PathBuf};
 
-/// The suffixes a reader can open and read words in.
+/// What carries no words at all, and so hides nothing. Everything else git
+/// tracks is read.
 ///
-/// **`.html` WAS MISSING AND `design/` WENT UNREAD.** The directory was walked
-/// and every file in it dropped, so four design pages — three of them naming
-/// the author's own tree — were invisible while the walker reported over a
-/// hundred files scanned. A list of what to read is a list of what to skip.
-const READ_AS_TEXT: &[&str] = &[
-    ".rs", ".ts", ".tsx", ".css", ".js", ".mjs", ".md", ".json", ".toml", ".yml", ".yaml",
-    ".html",
+/// **THIS LIST REPLACED TWO ALLOWLISTS**, one of suffixes and one of places.
+/// Both skipped in silence: `.html` was missing and all of `design/` went
+/// unread while the walker reported over a hundred files, and 42 tracked files
+/// — `CLAUDE.md`, `sailor.json`, `tauri.conf.json` among them — sat outside
+/// every named place. A leak there was published and the judge stayed green.
+/// `.svg` is deliberately absent: it is text, and a path written into one is
+/// published like any other.
+const CARRIES_NO_WORDS: &[&str] = &[
+    ".png", ".jpg", ".jpeg", ".gif", ".ico", ".woff", ".woff2", ".ttf", ".pdf",
 ];
 
-/// The places a reader of the published repository looks in.
-const SCANNED_PLACES: &[&str] = &[
-    "crates",
-    "desktop/src",
-    "desktop/src-tauri/src",
-    "desktop/scripts",
-    "docs",
-    "design",
-    "flows",
-    "i18n",
-    ".github",
-];
+/// Itself excluded: every needle it names would otherwise be its own hit.
+const ITSELF: &str = "nothing_from_this_machine_is_published.rs";
 
-/// Everything a reader of the published repository can open.
+/// Everything a reader of the published repository can open: what git tracks,
+/// minus what carries no words.
 ///
 /// **AND ONLY WHAT IS PUBLISHED**: a file git does not track is nobody's but
 /// its author's, and accusing the sketches somebody keeps beside their work is
-/// a red they cannot answer. Where git cannot say, the walk stands as it is —
-/// the direction that accuses more, never less.
+/// a red they cannot answer.
 fn published_files() -> Vec<PathBuf> {
     published_files_under(&repo_root())
 }
 
-/// The same walk, of whatever tree it is pointed at, so the reader can be put to
-/// a tree with a leak planted in it.
+/// The same reading, of whatever tree it is pointed at, so the reader can be
+/// put to a tree with a leak planted in it. Empty where git cannot answer: the
+/// callers declare that as measuring nothing rather than as a clean tree.
 fn published_files_under(root: &Path) -> Vec<PathBuf> {
-    let mut found = Vec::new();
-    for place in SCANNED_PLACES {
-        walk(&root.join(place), &mut found);
-    }
-    for file in ["AGENTS.md", "README.md", "Cargo.toml"] {
-        let path = root.join(file);
-        if path.is_file() {
-            found.push(path);
-        }
-    }
     let Some(tracked) = tracked_paths(root) else {
-        return found;
+        return Vec::new();
     };
-    found.retain(|path| {
-        path.strip_prefix(root)
-            .is_ok_and(|inside| tracked.contains(inside))
-    });
-    found
+    tracked
+        .into_iter()
+        .filter(|inside| {
+            let name = inside.to_string_lossy();
+            !CARRIES_NO_WORDS.iter().any(|suffix| name.ends_with(suffix)) && !name.ends_with(ITSELF)
+        })
+        .map(|inside| root.join(inside))
+        .filter(|path| path.is_file())
+        .collect()
 }
 
 /// What git tracks under this root, or `None` where git cannot answer.
@@ -89,29 +77,6 @@ fn repo_root() -> PathBuf {
         .and_then(Path::parent)
         .expect("the crate sits two levels under the root")
         .to_owned()
-}
-
-fn walk(dir: &Path, found: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if path.is_dir() {
-            if !matches!(name.as_str(), "target" | ".git" | "node_modules" | "dist") {
-                walk(&path, found);
-            }
-        } else if !name.ends_with("-lock.json")
-            // Itself excluded, or every needle it names would be its own hit.
-            && name != "nothing_from_this_machine_is_published.rs"
-            && READ_AS_TEXT
-                .iter()
-                .any(|suffix| name.ends_with(suffix))
-        {
-            found.push(path);
-        }
-    }
 }
 
 /// Every place a forbidden string appears, as `path:line`.
@@ -250,12 +215,12 @@ fn the_names_this_machine_declares_private_appear_nowhere() {
 }
 
 /// **A COUNT IS NOT A COVERAGE.** «More than a hundred files» stayed true while
-/// every `.html` in `design/` was dropped on the floor. Asked against what git
-/// tracks in the same places, the hole names itself: whatever is not obviously
-/// binary must either be read or be given a reason, and a new text format shows
-/// up as red instead of as silence.
+/// every `.html` in `design/` was dropped on the floor, and stayed true again
+/// while 42 tracked files sat outside every scanned place. The perimeter is now
+/// what git tracks, so this asks the one question that is left: is anything
+/// tracked, carrying words, that the reader never opens?
 #[test]
-fn nothing_git_tracks_in_those_places_goes_unread() {
+fn nothing_git_tracks_goes_unread() {
     let root = repo_root();
     // Fault 100: outside the top of a repository the oracle is empty, not
     // clean — the answer names the files of whatever repository sits above.
@@ -263,51 +228,28 @@ fn nothing_git_tracks_in_those_places_goes_unread() {
         workspace::measured_nothing("this tree is not the top of a repository, so the list of tracked files this check compares against is empty");
         return;
     }
+    let Some(tracked) = tracked_paths(&root) else {
+        workspace::measured_nothing("git would not list the tracked files, so there is no perimeter to read");
+        return;
+    };
     let seen: std::collections::BTreeSet<PathBuf> = published_files().into_iter().collect();
-    let out = std::process::Command::new("git")
-        .args(["ls-files", "-z"])
-        .current_dir(&root)
-        .output()
-        .expect("git ls-files");
-    assert!(out.status.success(), "git could not list the tracked files");
-    let listed = String::from_utf8_lossy(&out.stdout).split('\0').filter(|p| !p.is_empty()).count();
-    workspace::measured_against(seen.len(), "files opened", listed, "paths git tracks");
+    workspace::measured_against(seen.len(), "files opened", tracked.len(), "paths git tracks");
 
-    // Only what carries no words at all. `.svg` is deliberately absent: it is
-    // text, and a path written into one would be published like any other.
-    let binary = [
-        ".png", ".jpg", ".jpeg", ".gif", ".ico", ".woff", ".woff2", ".ttf", ".pdf",
-    ];
-    let mut unread = Vec::new();
-    for entry in String::from_utf8_lossy(&out.stdout).split('\0') {
-        // On a directory boundary: plain `starts_with` makes `desktop/src-tauri`
-        // look like a file inside `desktop/src`, and the gap it reports is not
-        // real.
-        let inside = SCANNED_PLACES.iter().any(|place| {
-            entry
-                .strip_prefix(*place)
-                .is_some_and(|r| r.starts_with('/'))
-        });
-        if entry.is_empty() || !inside {
-            continue;
-        }
-        if binary.iter().any(|suffix| entry.ends_with(suffix))
-            // Excluded from the walk on purpose: every needle it names would
-            // otherwise be its own hit.
-            || entry.ends_with("nothing_from_this_machine_is_published.rs")
-        {
-            continue;
-        }
-        if !seen.contains(&root.join(entry)) {
-            unread.push(entry.to_owned());
-        }
-    }
+    let unread: Vec<String> = tracked
+        .iter()
+        .map(|inside| inside.to_string_lossy().into_owned())
+        .filter(|name| {
+            !CARRIES_NO_WORDS.iter().any(|suffix| name.ends_with(suffix))
+                && !name.ends_with(ITSELF)
+                && !seen.contains(&root.join(name))
+        })
+        .collect();
 
     assert!(
         unread.is_empty(),
-        "git tracks {} file(s) in the scanned places that the walker never \
-         opens, so nothing in them can ever be found: {:?}. Add the suffix to \
-         READ_AS_TEXT, or say here why it is not read",
+        "git tracks {} file(s) carrying words that the reader never opens, so \
+         nothing in them can ever be found: {:?}. Read them, or name the suffix \
+         in CARRIES_NO_WORDS and say here why it holds no words",
         unread.len(),
         unread
     );
@@ -383,5 +325,49 @@ fn a_home_path_planted_in_a_throwaway_repository_is_found() {
         "a home path was written into a tracked page and the reader did not \
          name it there, and there alone: the sketch git does not track is its \
          author's and must not be accused"
+    );
+}
+
+/// **THE HOLE THIS PERIMETER CLOSED.** The reader used to look only inside a
+/// hand-written list of directories, and 42 tracked files sat outside every one
+/// of them: a leak in `sailor.json` or `CLAUDE.md` was published and the judge
+/// stayed green. So one is planted where no such list would have reached.
+#[test]
+fn a_home_path_planted_outside_every_named_place_is_found() {
+    let invented_home = "/Users/a-name-nobody-here-has";
+    let root = std::env::temp_dir().join(format!(
+        "sailor-planted-leak-at-the-root-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("a throwaway repository directory");
+    std::fs::write(
+        root.join("harbour.json"),
+        format!("{{\"moorings\": \"{invented_home}/personal/sailor\"}}\n"),
+    )
+    .expect("the planted descriptor writes");
+    let started = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&root)
+        .args(["init", "-q"])
+        .status()
+        .expect("git starts a throwaway repository");
+    assert!(started.success(), "the throwaway repository was not started");
+    let added = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&root)
+        .args(["add", "--", "harbour.json"])
+        .status()
+        .expect("git tracks the planted descriptor");
+    assert!(added.success(), "the planted descriptor was not tracked");
+
+    let hits = occurrences_under(&root, invented_home);
+    std::fs::remove_dir_all(&root).expect("the throwaway repository goes");
+
+    assert_eq!(
+        hits,
+        vec!["harbour.json:1".to_owned()],
+        "a home path was written into a tracked file at the top of the tree, \
+         where no list of directories reaches, and the reader did not find it"
     );
 }
