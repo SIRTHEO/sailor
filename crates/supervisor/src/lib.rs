@@ -278,6 +278,22 @@ pub fn who_holds(port: u16) -> Option<String> {
     }
 }
 
+/// The row of a process really holding the port, if there is one.
+///
+/// **FAULT 4.** A row saying «running» over a number somebody else holds now
+/// would stop the start with a name that means nothing, so the row is settled
+/// against the kernel before it is believed.
+pub fn who_the_ledger_says_holds(
+    store: &ledger::Ledger,
+    port: u16,
+) -> Option<ledger::ProcessRecord> {
+    store
+        .process_holding_port(port)
+        .ok()
+        .flatten()
+        .filter(ledger::the_same_process_as)
+}
+
 /// Now, in seconds since the epoch.
 pub fn now() -> i64 {
     std::time::SystemTime::now()

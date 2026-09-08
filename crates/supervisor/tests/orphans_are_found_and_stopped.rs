@@ -286,3 +286,47 @@ fn the_dev_port_matches_the_tauri_config() {
          scrive la porta {DEV_PORT}"
     );
 }
+
+/// **A ROW OVER A NUMBER SOMEBODY ELSE HOLDS NOW STOPS NOTHING.** The start
+/// refuses when the ledger names a live holder of the port; naming one that
+/// died and whose number came round would refuse for ever, on a name that
+/// belongs to a stranger.
+#[test]
+fn the_port_is_held_only_by_the_process_the_row_actually_names() {
+    let directory = TestDirectory::new("porta-tenuta");
+    let store = ledger::Ledger::open(&directory.0).expect("the store");
+    let mine = std::process::id();
+    let born = ledger::born_second_of(mine).expect("this machine says when a process was born");
+
+    written_holding(&store, "p-mio", mine, Some(born));
+    assert_eq!(
+        supervisor::who_the_ledger_says_holds(&store, DEV_PORT)
+            .map(|holder| holder.process_id),
+        Some("p-mio".to_owned()),
+        "the process the row names is right here"
+    );
+
+    written_holding(&store, "p-mio", mine, Some(born - 1));
+    assert!(
+        supervisor::who_the_ledger_says_holds(&store, DEV_PORT).is_none(),
+        "the same number under another second is not the holder the row named"
+    );
+}
+
+fn written_holding(store: &ledger::Ledger, process_id: &str, pid: u32, born_at: Option<i64>) {
+    store
+        .record_process_started(&ledger::ProcessRecord {
+            process_id: process_id.to_owned(),
+            pid,
+            command: "npm".to_owned(),
+            args: vec!["run".to_owned(), "dev".to_owned()],
+            working_directory: "/somewhere".to_owned(),
+            port: Some(DEV_PORT),
+            purpose: "live".to_owned(),
+            started_by: "the test".to_owned(),
+            run_id: None,
+            started_at: supervisor::now(),
+            born_at,
+        })
+        .expect("write the start");
+}

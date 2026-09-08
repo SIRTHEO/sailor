@@ -174,15 +174,13 @@ fn run_live(root: &Path, supervisor: &Supervisor, at_once: bool) {
         // **THIS IS FAULT 4, CAUGHT BEFORE IT HURTS.** The start used to fail
         // with a port-taken error and nobody knew whose the port was. Now the
         // ledger knows, and says so here.
-        if let Ok(Some(holder)) = store.process_holding_port(DEV_PORT) {
-            if ledger::pid_is_alive(holder.pid) {
-                eprintln!(
-                    "port {DEV_PORT} is held by {} (pid {}), lit by {} in {}.\n\
-                     Stop it with `sailor-live --stop`, or use it as it stands.",
-                    holder.process_id, holder.pid, holder.started_by, holder.working_directory
-                );
-                std::process::exit(3);
-            }
+        if let Some(holder) = supervisor::who_the_ledger_says_holds(store, DEV_PORT) {
+            eprintln!(
+                "port {DEV_PORT} is held by {} (pid {}), lit by {} in {}.\n\
+                 Stop it with `sailor-live --stop`, or use it as it stands.",
+                holder.process_id, holder.pid, holder.started_by, holder.working_directory
+            );
+            std::process::exit(3);
         }
     }
 
