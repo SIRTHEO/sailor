@@ -1,7 +1,7 @@
-//! The shell of the window still compiles. It declares a workspace of its
-//! own, so the workspace battery never builds a line of it, and a crate it
-//! depends on can grow a field and leave it red on the trunk with every
-//! other judge green.
+//! The shell of the window still compiles, **and its own tests run**. It
+//! declares a workspace of its own, so the workspace battery never builds a
+//! line of it, and a crate it depends on can grow a field and leave it red on
+//! the trunk with every other judge green.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -12,6 +12,9 @@ const SHELL_MANIFEST: &str = "desktop/src-tauri/Cargo.toml";
 
 /// What cargo says when the lock no longer describes the manifests it locks.
 const THE_LOCK_NEEDS_WRITING: &str = "because --locked was passed";
+
+/// What cargo says when the manifest is not where it was told to look.
+const THE_SHELL_IS_NOT_THERE: &str = "does not exist";
 
 /// What cargo says when it cannot reach what it builds with. None of these is
 /// the shell's own code, and a judge that goes red for a tool it does not own
@@ -29,9 +32,16 @@ const NOTHING_TO_BUILD_WITH: &[&str] = &[
 
 #[derive(Debug, PartialEq, Eq)]
 enum Verdict {
-    Compiles,
+    /// It built, and every test inside it passed. The number is how many ran:
+    /// a shell whose tests all vanished builds just as green.
+    Ran(usize),
     /// The first line the compiler wrote.
     Broken(String),
+    /// It built and a test inside it did not pass.
+    TestsFailed(String),
+    /// There is no shell where the judge looks, which is not a shell that
+    /// fails to compile.
+    NoShellHere(String),
     /// The lock is behind the crates the shell depends on.
     LockIsStale(String),
     /// Cargo could not run, or could not reach what it builds with.
@@ -52,16 +62,17 @@ fn callers_build_directory() -> Option<OsString> {
     std::env::var_os("CARGO_TARGET_DIR")
 }
 
-/// Every target of the shell, its tests included: the shell's own tests live
-/// inside its sources, and a plain check would compile none of them.
+/// **RUN, NOT CHECKED.** The shell's own tests live inside its sources, and a
+/// check compiles them without running one: sixty-four of them counted in the
+/// battery seed and executed by nobody.
 fn compiler(root: &Path, offline: bool, build_directory: Option<OsString>) -> Command {
     let mut command = Command::new("cargo");
     command
         .current_dir(root)
-        .arg("check")
+        .arg("test")
         .arg("--manifest-path")
         .arg(root.join(SHELL_MANIFEST))
-        .args(["--locked", "--all-targets", "--message-format=short"]);
+        .args(["--locked", "--no-fail-fast", "--message-format=short"]);
     if offline {
         command.arg("--offline");
     }
@@ -93,12 +104,24 @@ fn tail(text: &str) -> String {
     lines[lines.len().saturating_sub(5)..].join("; ")
 }
 
-/// What one run of the compiler says. The order is the order the run stops in:
-/// a stale lock stops it before a line is compiled, and a fetch it cannot make
-/// stops it before that.
+/// How many tests the run reports having passed, over every binary it ran.
+fn tests_passed(text: &str) -> usize {
+    text.lines()
+        .filter_map(|line| line.trim().strip_prefix("test result: ok. "))
+        .filter_map(|rest| rest.split(' ').next())
+        .filter_map(|count| count.parse::<usize>().ok())
+        .sum()
+}
+
+/// What one run says. The order is the order the run stops in: a shell that is
+/// not there stops it before anything, a stale lock before a line is compiled,
+/// and a fetch it cannot make before that.
 fn verdict_of(succeeded: bool, text: &str) -> Verdict {
     if succeeded {
-        return Verdict::Compiles;
+        return Verdict::Ran(tests_passed(text));
+    }
+    if let Some(said) = first_line_with(text, THE_SHELL_IS_NOT_THERE) {
+        return Verdict::NoShellHere(said);
     }
     if let Some(said) = first_line_with(text, THE_LOCK_NEEDS_WRITING) {
         return Verdict::LockIsStale(said);
@@ -106,6 +129,11 @@ fn verdict_of(succeeded: bool, text: &str) -> Verdict {
     if let Some(marker) = NOTHING_TO_BUILD_WITH.iter().find(|marker| text.contains(**marker)) {
         let said = first_line_with(text, marker).unwrap_or_else(|| (*marker).to_owned());
         return Verdict::NothingMeasured(said);
+    }
+    if let Some(failed) = first_line_with(text, "test result: FAILED") {
+        return Verdict::TestsFailed(
+            first_line_with(text, "panicked at").unwrap_or(failed),
+        );
     }
     match first_error(text) {
         Some(said) => Verdict::Broken(said),
@@ -158,13 +186,30 @@ fn crates_the_shell_links(root: &Path) -> usize {
 fn the_shell_compiles_against_the_crates_it_is_built_from() {
     let root = root();
     match measured(&root) {
-        Verdict::Compiles => workspace::measured(
-            crates_the_shell_links(&root),
-            "workspace crates the shell links, compiled through its manifest",
-        ),
+        Verdict::Ran(passed) => {
+            workspace::measured_against(
+                passed,
+                "tests of the shell run through its own manifest",
+                crates_the_shell_links(&root),
+                "workspace crates the shell links",
+            );
+            assert!(
+                passed > 0,
+                "the shell built and not one test ran: the battery counts them, \
+                 so a shell whose tests all vanished must not read as green"
+            );
+        }
         Verdict::Broken(first) => panic!(
             "the shell does not compile, and no workspace test builds it. \
              The compiler's first word:\n      {first}"
+        ),
+        Verdict::TestsFailed(said) => panic!(
+            "the shell compiles and a test of its own does not pass. \
+             Run `cargo test --manifest-path {SHELL_MANIFEST}`. It said:\n      {said}"
+        ),
+        Verdict::NoShellHere(said) => panic!(
+            "there is no shell at {SHELL_MANIFEST}: that is not a shell that fails to \
+             compile, it is one nobody can build. Cargo said:\n      {said}"
         ),
         Verdict::LockIsStale(said) => panic!(
             "{SHELL_MANIFEST} locks crates that have moved: run `cargo check --manifest-path \
@@ -203,7 +248,11 @@ fn the_check_tells_a_broken_shell_from_a_missing_tool() {
     let empty = "error: no matching package named `a_crate` found\n\
                  location searched: crates.io index\n";
     assert!(matches!(verdict_of(false, empty), Verdict::NothingMeasured(_)), "{empty}");
-    assert_eq!(verdict_of(true, "    Finished `dev` profile"), Verdict::Compiles);
+    assert_eq!(
+        verdict_of(true, "    Finished `test` profile\ntest result: ok. 64 passed; 0 failed;"),
+        Verdict::Ran(64),
+        "a green run carries how many tests ran, not only that it was green"
+    );
 
     let root = root();
     assert!(root.join(SHELL_MANIFEST).is_file(), "the manifest is where the judge looks for it");
@@ -221,6 +270,30 @@ fn the_check_tells_a_broken_shell_from_a_missing_tool() {
         first.get_envs().all(|(key, _)| key != "CARGO_TARGET_DIR"),
         "and nothing is invented when the caller named none"
     );
+}
+
+/// **A TEST THAT FAILS IS NOT A SHELL THAT DOES NOT COMPILE**, and a shell
+/// that is not there is neither. Both used to arrive as `Broken`, under a
+/// sentence telling the reader to go and look at code that compiles.
+#[test]
+fn a_failing_test_and_a_missing_shell_are_told_apart_from_a_broken_one() {
+    let failed = "running 64 tests\n\
+        test run::tests::a_step_is_at_work ... FAILED\n\
+        thread 'run::tests::a_step_is_at_work' panicked at src/run.rs:12:5:\n\
+        test result: FAILED. 63 passed; 1 failed;\n\
+        error: test failed, to rerun pass `--bin sailor-desktop`\n";
+    let Verdict::TestsFailed(said) = verdict_of(false, failed) else {
+        panic!("a test that fails read as something else: {:?}", verdict_of(false, failed));
+    };
+    assert!(said.contains("panicked at"), "and it carries where: {said}");
+
+    let absent = "error: manifest path `/x/desktop/src-tauri/Cargo.toml` does not exist\n";
+    assert!(
+        matches!(verdict_of(false, absent), Verdict::NoShellHere(_)),
+        "a shell that is not there read as one that does not compile: {:?}",
+        verdict_of(false, absent)
+    );
+    assert_eq!(tests_passed("test result: ok. 3 passed;\ntest result: ok. 4 passed;"), 7);
 }
 
 /// A shell of its own under the temporary directory, with the source it is
@@ -263,7 +336,11 @@ fn a_type_error_planted_in_a_throwaway_shell_is_found_by_the_compiler() {
     let _ = std::fs::remove_dir_all(&root);
 
     let sound = a_shell("sound", "fn main() {\n    let held: u8 = 1;\n    let _ = held;\n}\n");
-    assert_eq!(measured(&sound), Verdict::Compiles, "the control: a sound shell must compile");
+    assert_eq!(
+        measured(&sound),
+        Verdict::Ran(0),
+        "the control: a sound shell must build and run what it holds"
+    );
     let _ = std::fs::remove_dir_all(&sound);
 }
 

@@ -102,18 +102,19 @@ fn await_host(client: Client, mut host: Child, deadline: Instant) -> Result<Clie
             Ok((protocol, pid)) => return checked(client, protocol, pid),
             Err(error) => {
                 if let Ok(Some(status)) = host.try_wait() {
-                    let mut said = String::new();
-                    if let Some(mut stderr) = host.stderr.take() {
-                        let _ = stderr.read_to_string(&mut said);
-                    }
-                    return Err(format!(
-                        "`sailor terminal host` ended at once ({status}): {}. If the sailor \
-                         in service predates the host, reinstall it from these sources, or \
-                         point SAILOR_BIN at one that has it",
-                        said.trim()
-                    ));
+                    return Err(ended_at_once(&status.to_string(), &complaint_of(&mut host)));
                 }
                 if Instant::now() >= deadline {
+                    // **THE DEADLINE IS NOT A VERDICT ON THE HOST.** On a loaded
+                    // machine the complaint can still be unread when the time is
+                    // up, and «it did not answer» sends a person to the wrong
+                    // thing — the very fault this function was written for.
+                    let _ = host.kill();
+                    let status = host.wait().map(|status| status.to_string());
+                    let said = complaint_of(&mut host);
+                    if !said.is_empty() {
+                        return Err(ended_at_once(status.as_deref().unwrap_or("killed"), &said));
+                    }
                     return Err(format!(
                         "the terminal host was started and did not answer within {} seconds: {error}",
                         HOST_STARTS_WITHIN.as_secs()
@@ -123,6 +124,36 @@ fn await_host(client: Client, mut host: Child, deadline: Instant) -> Result<Clie
             }
         }
     }
+}
+
+/// What the host has said so far.
+///
+/// **WHAT IS THERE, NOT EVERYTHING THERE WILL EVER BE.** A grandchild inherits
+/// the pipe and keeps it open: reading to its end waited on that one, thirty
+/// seconds measured, with the window holding still for all of them.
+fn complaint_of(host: &mut Child) -> String {
+    let Some(mut stderr) = host.stderr.take() else {
+        return String::new();
+    };
+    let (sent, heard) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut buffer = [0u8; 8192];
+        let read = stderr.read(&mut buffer).unwrap_or(0);
+        let _ = sent.send(String::from_utf8_lossy(&buffer[..read]).into_owned());
+    });
+    heard
+        .recv_timeout(Duration::from_millis(500))
+        .unwrap_or_default()
+        .trim()
+        .to_owned()
+}
+
+fn ended_at_once(status: &str, said: &str) -> String {
+    format!(
+        "`sailor terminal host` ended at once ({status}): {said}. If the sailor in service \
+         predates the host, reinstall it from these sources, or point SAILOR_BIN at one \
+         that has it"
+    )
 }
 
 /// A host from another build answers with another number, and is refused by
@@ -547,6 +578,52 @@ mod tests {
         assert!(
             refused.contains("is not a form of this command") && refused.contains("SAILOR_BIN"),
             "{refused}"
+        );
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// **A DEADLINE THAT HAS PASSED IS NOT A HOST THAT SAID NOTHING.** Under
+    /// load the complaint can still be unread when the time is up, and «it did
+    /// not answer» sends a person to look at the wrong thing.
+    #[test]
+    fn a_host_that_complained_is_heard_even_after_the_time_is_up() {
+        let scratch =
+            std::env::temp_dir().join(format!("sailor-late-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&scratch);
+        std::fs::create_dir_all(&scratch).expect("scratch");
+        let fake = scratch.join("sailor");
+        std::fs::write(
+            &fake,
+            "#!/bin/sh\necho 'sailor terminal: «host» is not a form of this command' >&2\n\
+             sleep 30\n",
+        )
+        .expect("write the fake sailor");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755))
+                .expect("make it runnable");
+        }
+
+        let host = start_host(&fake, &scratch).expect("the fake starts");
+        // Long enough for the host to complain even under load, and far short of
+        // its thirty seconds of life: alive with something to say is the shape a
+        // loaded machine puts a healthy reader in.
+        let asked_at = Instant::now();
+        let refused = await_host(
+            Client::in_store(&scratch),
+            host,
+            Instant::now() + Duration::from_secs(2),
+        )
+        .expect_err("a host that never answers is not a client");
+        assert!(
+            refused.contains("is not a form of this command"),
+            "the complaint was there to read and was not read: {refused}"
+        );
+        assert!(
+            asked_at.elapsed() < Duration::from_secs(10),
+            "the answer waited on the sleeping grandchild instead of on the pipe: {:?}",
+            asked_at.elapsed()
         );
         let _ = std::fs::remove_dir_all(&scratch);
     }
