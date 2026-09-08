@@ -125,8 +125,8 @@ describe("the first screen: what is happening right now", () => {
         state: "working",
         open_steps: 3,
         open_now: [
-          { step_id: "implementa", attempt: 1, open_for_secs: 412 },
-          { step_id: "prove", attempt: 2, open_for_secs: 31 },
+          { step_id: "implementa", attempt: 1, open_for_secs: 412, holder: "alive" as const },
+          { step_id: "prove", attempt: 2, open_for_secs: 31, holder: "alive" as const },
         ],
         since: 0,
         started_here: false,

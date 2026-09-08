@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { groupRuns, howLong } from "./Now";
+import { groupRuns, holderWord, howLong } from "./Now";
 import type { OpenRun } from "./engine";
 
 /**
@@ -76,5 +76,13 @@ describe("groupRuns", () => {
       run({ run_id: "newer", state: "waiting", since: 900 }),
     ];
     expect(groupRuns(runs).waiting.map((entry) => entry.run_id)).toEqual(["older", "newer"]);
+  });
+});
+
+describe("holderWord", () => {
+  test("it keeps «nobody there» apart from «holder unknown»", () => {
+    expect(holderWord("gone")).toBe("nobody there");
+    expect(holderWord("unknown")).toBe("holder unknown");
+    expect(holderWord("gone")).not.toBe(holderWord("unknown"));
   });
 });

@@ -112,6 +112,17 @@ export function howLong(seconds: number): string {
 }
 
 /**
+ * What to say about the process holding an open step.
+ *
+ * «gone» and «unknown» are not the same news: the first is a step nothing will
+ * ever close, the second is a step the ledger recorded without a pid, and only
+ * the first is a reason to step in.
+ */
+export function holderWord(holder: "alive" | "gone" | "unknown"): string {
+  return holder === "gone" ? "nobody there" : "holder unknown";
+}
+
+/**
  * The runs split into the two groups, each oldest first.
  *
  * The order inside a group already comes from the engine; here they are merely
@@ -245,6 +256,7 @@ export function RunGroup({ title, note, runs, now, onOpen }: GroupProps) {
                       {step.step_id}
                       {step.attempt > 1 && <b>attempt {step.attempt}</b>}
                       <i>{howLong(step.open_for_secs)}</i>
+                      {step.holder !== "alive" && <u>{holderWord(step.holder)}</u>}
                     </span>
                   ))
                 )}

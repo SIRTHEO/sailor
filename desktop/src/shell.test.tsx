@@ -158,7 +158,7 @@ describe("the bar's three facts", () => {
     entity: "relay",
     state: "working" as const,
     open_steps: 1,
-    open_now: [{ step_id: "write-the-baton", attempt: 1, open_for_secs: 30 }],
+    open_now: [{ step_id: "write-the-baton", attempt: 1, open_for_secs: 30, holder: "alive" as const }],
     since: 1000,
     started_here: true,
     steps_done: 3,

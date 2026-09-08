@@ -299,7 +299,13 @@ export interface OpenRun {
   state: "working" | "waiting";
   open_steps: number;
   /** **Which** steps are open, and for how long. Empty for a waiting run. */
-  open_now: Array<{ step_id: string; attempt: number; open_for_secs: number }>;
+  open_now: Array<{
+    step_id: string;
+    attempt: number;
+    open_for_secs: number;
+    /** «gone» is a step still open whose process is not there any more. */
+    holder: "alive" | "gone" | "unknown";
+  }>;
   /** Since when this state has lasted, in seconds from the epoch. */
   since: number;
   /** True if this window is the one that started it. */
