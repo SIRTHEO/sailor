@@ -1,16 +1,9 @@
-//! `unused_actions`: which registered actions no flow — system or the
-//! project's own — ever names. Static only, and deliberately so: a step
-//! behind a `when` that never fires is still *named*, so it does not appear
-//! here. That is a different fault, with a different cure, and conflating
-//! the two would hide one behind the other.
+//! `unused_actions`: which registered actions no flow ever names. Static on
+//! purpose — a step behind a `when` that never fires is still *named*, and
+//! that is `dormant_steps`' question, with a different cure.
 //!
-//! **A FLOW THAT FAILS TO PARSE IS NOT A FLOW THAT NAMES NOTHING.** Reading
-//! it and refusing are two different answers; treating a refusal as an empty
-//! answer is the fault this tree already has a name for elsewhere
-//! (`CouldNotLook`). The count below says how many flows it could actually
-//! read, so a reader can tell a real audit from one taken on a smaller
-//! world than it thinks.
-
+//! **A FLOW THAT FAILS TO PARSE IS NOT A FLOW THAT NAMES NOTHING**, so the
+//! count below says how many it could read: a refusal is not an empty answer.
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies};
 use serde_json::{json, Value};
 use std::collections::BTreeSet;

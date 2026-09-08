@@ -885,17 +885,13 @@ pub struct StepOutcome {
 }
 
 /// Whether a step ever got past its own `when`, across every run its flow has
-/// closed: `Skipped` is the outcome the engine gives a step whose condition
-/// never held, before an action is ever reached — every other outcome means
-/// the action itself ran at least once. Referenced by a flow and unresolved
-/// are two different faults; conflating them hides one behind the other.
+/// closed. `Skipped` is what the engine writes for a step whose condition never
+/// held, before an action is reached; every other outcome means it ran once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StepReach {
-    /// No closed attempt on record at all — silence, not evidence: the flow
-    /// may simply not have run yet.
+    /// No closed attempt on record — silence, not evidence.
     NeverClosed,
-    /// Every closed attempt was `Skipped`: reached, gated, and never once let
-    /// through.
+    /// Every closed attempt was `Skipped`: gated, never once let through.
     AlwaysSkipped,
     ReachedAtLeastOnce,
 }
@@ -1942,10 +1938,9 @@ impl Ledger {
         }))
     }
 
-    /// Whether this flow has ever been run at all, over every run on record.
-    /// **A flow nobody has launched and a flow whose step never closes are
-    /// two different faults.** Without this, every step of a never-run flow
-    /// reads as its own dormant step — the same fact, said once per step.
+    /// Whether this flow has ever been run at all. **A flow nobody launched
+    /// and a flow whose step never closes are two different faults**: without
+    /// this, every step of a never-run flow reads as its own dormant step.
     pub fn flow_ever_ran(&self, entity: &str) -> Result<bool, LedgerError> {
         let connection = self.lock()?;
         Ok(connection.query_row(
@@ -1955,9 +1950,8 @@ impl Ledger {
         )?)
     }
 
-    /// [`StepReach`] for one step of one flow, over every run on record —
-    /// not a window, because a step skipped in the last ten runs and reached
-    /// once three months ago is reached, not dormant.
+    /// [`StepReach`] for one step of one flow, over every run on record — not
+    /// a window: skipped lately and reached once long ago is reached.
     pub fn step_reach(&self, entity: &str, step_id: &str) -> Result<StepReach, LedgerError> {
         let connection = self.lock()?;
         let mut statement = connection.prepare(

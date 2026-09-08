@@ -125,15 +125,13 @@ pub fn default_registry(
 ///
 /// **Line order matters.** `actions::register_default` registers an external
 /// engine that cannot resolve a tool by id; a line below *replaces* it with one
-/// that can. Swap them and you get a registry that compiles, runs, and fails
-/// every step naming a tool instead of a binary.
+/// that can. Swapped, the registry compiles and fails every step naming a tool.
 ///
-/// **The ledger is optional, and the difference is declared.** Running passes
-/// one and gets the spend rows; a static check has none and must not — opening
-/// a store to check a graph would create files for a question that touches
-/// nothing. A node that needs one is registered anyway and refuses to run, so
-/// `flow check` can say the step names a real action; the one that *reads*
-/// history answers "no run recorded", which is an answer rather than a failure.
+/// **The ledger is optional, and the difference is declared:** a static check
+/// has none and must not — opening a store to check a graph would create files
+/// for a question that touches nothing. A node that needs one is registered
+/// anyway and refuses to run, so `flow check` can still say the step names a
+/// real action.
 pub fn registry_in(
     house: House,
     ledger: Option<Ledger>,
@@ -228,8 +226,8 @@ pub fn registry_in(
     // reason declared above `subflow`. Running without a store refuses instead:
     // a step that writes into nothing is worse than a step that stops.
     actions::store::register_store(&mut registry, ledger.clone());
-    // The other half of "which capability is a body with nobody home": this
-    // one reads the ledger, so it needs one — same reasoning as `subflow`.
+    // The other half of "which capability is a body with nobody home", and it
+    // reads the ledger, so it needs one — the reasoning of `subflow`.
     actions::dormant_steps::register_dormant_steps(&mut registry, flows.clone(), ledger);
     // Last: the list it hands out is everything above.
     actions::draft::register_draft(&mut registry, flows.clone());
@@ -261,13 +259,10 @@ mod tests {
         assert!(empty.tools.declares("claude-code"));
     }
 
-    /// **`unused_actions` IS CORRECT ONLY BECAUSE IT IS REGISTERED LAST** —
-    /// nothing enforces that order. An action registered after it would
-    /// silently vanish from the audited list, and the count would drop
-    /// without anybody having removed anything: a false green. This test is
-    /// the guard: the list `unused_actions` captured must always match the
-    /// registry's own count, or this fails loudly instead of the audit
-    /// quietly seeing less than it claims to.
+    /// **`unused_actions` IS CORRECT ONLY BECAUSE IT IS REGISTERED LAST**, and
+    /// nothing enforces that order: one registered after it would vanish from
+    /// the audited list and the count would drop with nothing removed — a
+    /// false green. This is the guard, and it fails loudly instead.
     #[test]
     fn unused_actions_audits_the_whole_registry_not_a_stale_slice_of_it() {
         let registry = registry_in(House::empty(), None, None);

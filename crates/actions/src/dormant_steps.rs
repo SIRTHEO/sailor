@@ -1,30 +1,9 @@
-//! `dormant_steps`: the other half of `unused_actions`. That one answers
-//! "never named by any flow"; this one answers "named, but the step behind
-//! its own `when` has never once let the action run" — a different fault,
-//! found only by reading the ledger, not the flow files.
+//! `dormant_steps`: named by a flow, but the step behind its own `when` has
+//! never once let the action run — read from the ledger, not the flow files.
+//! Three answers, never merged: never run at all, always skipped, reached.
 //!
-//! **A FLOW NEVER LAUNCHED AND A FLOW WHOSE STEP NEVER CLOSES ARE TWO
-//! DIFFERENT FACTS**, and this action used to say the first one once per
-//! step, which is the same fault this file's own header warns against
-//! conflating. A flow with four steps that has never run once said "four
-//! dormant steps" — one fact, told four times, drowning the flows that
-//! actually run but have one step that never does. `flow_ever_ran` is asked
-//! first, per flow, and a never-run flow is named once in `never_run`; only
-//! a flow that HAS run gets its steps checked for `always_skipped` or
-//! `never_closed`.
-//!
-//! **WHAT THIS DOES NOT ANSWER.** A run closed by a person testing something
-//! by hand counts the same as one an ordinary gesture started — a command
-//! typed, a scheduled trigger, a heartbeat, a window. The very first render of
-//! this action's own real numbers came from a throwaway flow launched by hand
-//! from a terminal to see the output: by this action's own count that run
-//! would read as the flow being alive, when it measured someone trying it,
-//! not the product being used. `orphans_are_found_and_stopped` stayed green
-//! the same way, exercised only by a test; `sailor inventory` already names
-//! 31 of 59 skills unreachable by any gesture a person makes. Telling
-//! "reached" from "reached only by a test or by hand" is a different, larger
-//! piece of work; this action does not attempt it.
-
+//! **WHAT IT DOES NOT ANSWER:** a run somebody started by hand to try the flow
+//! counts as an ordinary one, so a flow read as alive may only have been tried.
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies};
 use ledger::{Ledger, StepReach};
 use serde_json::{json, Value};

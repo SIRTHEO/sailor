@@ -182,12 +182,8 @@ const ACTION_KIND: Record<string, StepKind> = {
   memory_list: "deposit",
   memory_replace: "deposit",
   action_list: "deposit",
-  // The graph a flow deposits nodes and edges into, and reads them back
-  // from: the same family as the store readings and writes above.
   memory_query: "deposit",
   memory_write: "deposit",
-  // Reads the same graph for a divergence and only ever answers; it draws
-  // as a deposit reading, the same as `work_survey`.
   topic_drift: "deposit",
   // Writes a flow file where the person's flows live: a gesture on the world.
   flow_draft: "gesture",

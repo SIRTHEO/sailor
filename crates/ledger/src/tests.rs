@@ -265,9 +265,8 @@ fn stopped_and_skipped_outcomes_round_trip_through_the_operational_column() {
     }
 }
 
-/// A run of `entity`, with `compile` closed under `outcome` — the minimum a
-/// [`StepReach`] query needs: a `runs` row to join against, since a step with
-/// no run behind it is not a run this flow ever made.
+/// A run of `entity` with `compile` closed under `outcome`: the minimum a
+/// [`StepReach`] query needs is a `runs` row to join against.
 fn a_run_reaching(ledger: &Ledger, run_id: &str, entity: &str, outcome: Outcome) {
     ledger
         .record_run(&RunRecord {
@@ -295,10 +294,8 @@ fn a_run_reaching(ledger: &Ledger, run_id: &str, entity: &str, outcome: Outcome)
         .expect("close the step");
 }
 
-/// **REACHED, GATED, OR NEVER RUN AT ALL ARE THREE DIFFERENT ANSWERS.** A step
-/// skipped every time is not the same fault as a step no run has ever closed,
-/// and a step reached even once is not dormant at all — mixing any two of the
-/// three would misname a cure.
+/// **REACHED, GATED, AND NEVER RUN ARE THREE DIFFERENT ANSWERS**, and mixing
+/// any two of them would misname the cure.
 #[test]
 fn step_reach_tells_gated_from_dormant_from_never_run() {
     let directory = TestDirectory::new("reach");
@@ -322,9 +319,8 @@ fn step_reach_tells_gated_from_dormant_from_never_run() {
     );
 }
 
-/// **A FLOW NEVER LAUNCHED AND A FLOW WHOSE STEP NEVER CLOSES ARE TWO
-/// DIFFERENT FACTS**, and `flow_ever_ran` answers the first without needing
-/// to ask about any one step.
+/// **A FLOW NEVER LAUNCHED AND ONE WHOSE STEP NEVER CLOSES ARE TWO DIFFERENT
+/// FACTS**, and `flow_ever_ran` answers the first without asking about a step.
 #[test]
 fn flow_ever_ran_answers_at_the_flow_not_the_step() {
     let directory = TestDirectory::new("ever-ran");
