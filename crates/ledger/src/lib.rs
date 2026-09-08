@@ -1942,6 +1942,19 @@ impl Ledger {
         }))
     }
 
+    /// Whether this flow has ever been run at all, over every run on record.
+    /// **A flow nobody has launched and a flow whose step never closes are
+    /// two different faults.** Without this, every step of a never-run flow
+    /// reads as its own dormant step — the same fact, said once per step.
+    pub fn flow_ever_ran(&self, entity: &str) -> Result<bool, LedgerError> {
+        let connection = self.lock()?;
+        Ok(connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM runs WHERE entity = ?1)",
+            params![entity],
+            |row| row.get(0),
+        )?)
+    }
+
     /// [`StepReach`] for one step of one flow, over every run on record —
     /// not a window, because a step skipped in the last ten runs and reached
     /// once three months ago is reached, not dormant.

@@ -322,6 +322,19 @@ fn step_reach_tells_gated_from_dormant_from_never_run() {
     );
 }
 
+/// **A FLOW NEVER LAUNCHED AND A FLOW WHOSE STEP NEVER CLOSES ARE TWO
+/// DIFFERENT FACTS**, and `flow_ever_ran` answers the first without needing
+/// to ask about any one step.
+#[test]
+fn flow_ever_ran_answers_at_the_flow_not_the_step() {
+    let directory = TestDirectory::new("ever-ran");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    a_run_reaching(&ledger, "run-1", "launched-flow", Outcome::Skipped);
+
+    assert!(ledger.flow_ever_ran("launched-flow").expect("query"));
+    assert!(!ledger.flow_ever_ran("never-launched-flow").expect("query"));
+}
+
 #[test]
 fn two_processes_using_ledger_api_serialize_writers() {
     let directory = TestDirectory::new("concurrency");

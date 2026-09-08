@@ -258,6 +258,28 @@ mod tests {
         assert!(empty.tools.declares("claude-code"));
     }
 
+    /// **`unused_actions` IS CORRECT ONLY BECAUSE IT IS REGISTERED LAST** —
+    /// nothing enforces that order. An action registered after it would
+    /// silently vanish from the audited list, and the count would drop
+    /// without anybody having removed anything: a false green. This test is
+    /// the guard: the list `unused_actions` captured must always match the
+    /// registry's own count, or this fails loudly instead of the audit
+    /// quietly seeing less than it claims to.
+    #[test]
+    fn unused_actions_audits_the_whole_registry_not_a_stale_slice_of_it() {
+        let registry = registry_in(House::empty(), None, None);
+        let live_count = registry.names().len();
+        let audit = registry
+            .get(actions::unused_actions::UNUSED_ACTIONS_ACTION)
+            .expect("unused_actions is registered")
+            .execute(&serde_json::json!({}), &flow::SharedState::default())
+            .expect("a static count does not fail");
+        let flow::ActionOutcome::Went(said) = audit else {
+            panic!("{audit:?}")
+        };
+        assert_eq!(said["registered"], live_count, "{said:?}");
+    }
+
     #[test]
     fn the_registry_carries_every_action_a_shipped_flow_can_name() {
         let registry = registry_in(House::empty(), None, None);
