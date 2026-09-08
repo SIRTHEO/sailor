@@ -224,9 +224,12 @@ impl Runs {
 /// character. The tail of an incomplete one is held until the rest arrives, so
 /// an accented letter never reaches the window as a replacement mark; past four
 /// bytes it is not a split character, and goes out as it is.
+/// What a step says, handed on as it is said: the step, which pipe, the words.
+type Emit = Arc<dyn Fn(&str, Pipe, String) + Send + Sync>;
+
 struct StepText {
     step: String,
-    emit: Arc<dyn Fn(&str, Pipe, String) + Send + Sync>,
+    emit: Emit,
     /// One per pipe: stdout and stderr are drained by two threads, and a single
     /// buffer would splice one's tail onto the other's head.
     tails: Mutex<(Vec<u8>, Vec<u8>)>,
@@ -270,7 +273,7 @@ fn take_whole_characters(buffer: &mut Vec<u8>) -> String {
 
 /// Hands each step somewhere to put what it says while it runs.
 struct LiveText {
-    emit: Arc<dyn Fn(&str, Pipe, String) + Send + Sync>,
+    emit: Emit,
 }
 
 impl StepSinks for LiveText {
@@ -617,7 +620,7 @@ pub(crate) fn start(
     // the commands would freeze the interface for the whole run — half an
     // hour, on flows that call an agent.
     std::thread::spawn(move || {
-        let mut store = WatchedStore {
+        let store = WatchedStore {
             inner: ledger.clone(),
             app: app.clone(),
             runs: handle.clone(),
@@ -633,13 +636,8 @@ pub(crate) fn start(
         let mut request =
             registry::execution_request(Some(&ledger), &flow, &run_id, root.as_deref(), started_at);
         request.root_inputs = inputs;
-        let result = InProcessExecutor.execute(
-            &flow.graph,
-            request,
-            &mut store,
-            &registry,
-            &SystemClock,
-        );
+        let result =
+            InProcessExecutor.execute(&flow.graph, request, &store, &registry, &SystemClock);
 
         let ended_at = now_secs();
         let (status, error) = match &result {
@@ -1639,8 +1637,11 @@ mod tests {
         })
     }
 
+    /// What the window received: the pipe and the words, in order.
+    type Heard = Arc<Mutex<Vec<(String, String)>>>;
+
     /// Collects what a step says, the way the window would receive it.
-    fn heard(step: &str) -> (Arc<dyn LiveSink>, Arc<Mutex<Vec<(String, String)>>>) {
+    fn heard(step: &str) -> (Arc<dyn LiveSink>, Heard) {
         let said: Arc<Mutex<Vec<(String, String)>>> = Arc::new(Mutex::new(Vec::new()));
         let sinks = LiveText {
             emit: Arc::new({

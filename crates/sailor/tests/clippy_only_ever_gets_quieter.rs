@@ -13,6 +13,7 @@ use std::process::Command;
 const WARNINGS_TODAY: &[(&str, usize)] = &[
     ("actions", 0),
     ("catalogue", 0),
+    ("desktop", 0),
     ("faults", 0),
     ("flow", 0),
     ("inventory", 0),
@@ -56,13 +57,13 @@ fn callers_build_directory() -> Option<OsString> {
     std::env::var_os("CARGO_TARGET_DIR")
 }
 
-fn linter(root: &Path, build_directory: Option<OsString>) -> Command {
+fn linter(root: &Path, build_directory: Option<OsString>, manifest: &Path) -> Command {
     let mut command = Command::new("cargo");
     command
         .current_dir(root)
         .arg("clippy")
         .arg("--manifest-path")
-        .arg(root.join("Cargo.toml"));
+        .arg(manifest);
     if let Some(directory) = build_directory {
         command.env("CARGO_TARGET_DIR", directory);
     }
@@ -71,7 +72,10 @@ fn linter(root: &Path, build_directory: Option<OsString>) -> Command {
 
 /// The name and version of the linter, or nothing when it is not installed.
 fn linter_version(root: &Path) -> Option<String> {
-    let said = linter(root, callers_build_directory()).arg("--version").output().ok()?;
+    let said = linter(root, callers_build_directory(), &root.join("Cargo.toml"))
+        .arg("--version")
+        .output()
+        .ok()?;
     version_in(said.status.success(), &String::from_utf8_lossy(&said.stdout))
 }
 
@@ -85,8 +89,16 @@ fn version_in(answered: bool, said: &str) -> Option<String> {
     Some(format!("{} {}", words.next()?, words.next()?))
 }
 
-/// Every crate under `crates/`, so a crate that warns nowhere still has a row
-/// and its first warning is a rise, not a missing name.
+/// The window's shell, and the name its warnings are counted under.
+///
+/// **IT IS A WORKSPACE OF ITS OWN, SO `--workspace` NEVER REACHED IT.** 22
+/// files and 6.530 lines had never been linted once; the first run found six
+/// warnings.
+const THE_SHELL: (&str, &str) = ("desktop", "desktop/src-tauri/Cargo.toml");
+
+/// Every crate under `crates/`, and the shell where there is one, so a crate
+/// that warns nowhere still has a row and its first warning is a rise, not a
+/// missing name.
 fn crates_of(root: &Path) -> Vec<String> {
     let mut names: Vec<String> = std::fs::read_dir(root.join("crates"))
         .map(|entries| {
@@ -97,6 +109,9 @@ fn crates_of(root: &Path) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default();
+    if root.join(THE_SHELL.1).is_file() {
+        names.push(THE_SHELL.0.to_owned());
+    }
     names.sort();
     names
 }
@@ -104,8 +119,23 @@ fn crates_of(root: &Path) -> Vec<String> {
 /// The linter's whole say over the workspace, counted per crate. A run that
 /// does not finish is an error, not a zero.
 fn warnings_per_crate(root: &Path) -> Result<BTreeMap<String, usize>, String> {
-    let said = linter(root, callers_build_directory())
-        .args(["--workspace", "--all-targets", "--message-format=short"])
+    let mut counts = counted_over(root, &linted(root, &root.join("Cargo.toml"), &["--workspace"])?);
+    let shell = root.join(THE_SHELL.1);
+    if shell.is_file() {
+        // Its paths come out relative to its own manifest, so they cannot be
+        // read back to a crate name: the whole run counts under one.
+        let said = linted(root, &shell, &[])?;
+        counts.insert(THE_SHELL.0.to_owned(), warned_crates(&said).len());
+    }
+    Ok(counts)
+}
+
+/// One linter run over the manifest it is handed. A run that does not finish
+/// is an error, not a zero.
+fn linted(root: &Path, manifest: &Path, over: &[&str]) -> Result<String, String> {
+    let said = linter(root, callers_build_directory(), manifest)
+        .args(over)
+        .args(["--all-targets", "--message-format=short"])
         .output()
         .map_err(|error| format!("cargo clippy: {error}"))?;
     let text = format!(
@@ -118,7 +148,7 @@ fn warnings_per_crate(root: &Path) -> Result<BTreeMap<String, usize>, String> {
         let tail = lines.len().saturating_sub(20);
         return Err(format!("the linter did not finish:\n{}", lines[tail..].join("\n")));
     }
-    Ok(counted_over(root, &text))
+    Ok(text)
 }
 
 /// One linter run counted against the crates of one tree, taken apart from
@@ -277,14 +307,19 @@ warning: unused manifest key: package.something
     let root = root();
     let mut named: Vec<&str> = WARNINGS_TODAY.iter().map(|(name, _)| *name).collect();
     named.sort();
-    assert_eq!(named, crates_of(&root), "the table names every crate under crates/, once");
-    let with = linter(&root, Some(OsString::from("somewhere")));
+    assert_eq!(
+        named,
+        crates_of(&root),
+        "the table names every crate under crates/ and the shell, once"
+    );
+    let manifest = root.join("Cargo.toml");
+    let with = linter(&root, Some(OsString::from("somewhere")), &manifest);
     assert!(
         with.get_envs().any(|(key, value)| key == "CARGO_TARGET_DIR" && value == Some("somewhere".as_ref())),
         "the caller's build directory is handed on"
     );
     assert!(
-        linter(&root, None).get_envs().all(|(key, _)| key != "CARGO_TARGET_DIR"),
+        linter(&root, None, &manifest).get_envs().all(|(key, _)| key != "CARGO_TARGET_DIR"),
         "and nothing is invented when the caller named none"
     );
 }

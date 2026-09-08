@@ -543,8 +543,7 @@ mod tests {
             host,
             Instant::now() + Duration::from_secs(5),
         )
-        .err()
-        .expect("a host that ended is not a client");
+        .expect_err("a host that ended is not a client");
         assert!(
             refused.contains("is not a form of this command") && refused.contains("SAILOR_BIN"),
             "{refused}"

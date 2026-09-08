@@ -4,7 +4,7 @@
 //! two copies would answer differently about which branch a tree is on, and
 //! `remove` acts on that answer.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// A tree, plus what the window needs to open a terminal on it.
 #[derive(serde::Serialize)]
@@ -22,12 +22,12 @@ fn repo() -> Result<PathBuf, String> {
     workspace::root()
 }
 
-fn seen(trees: Vec<workspace::Worktree>, here: &PathBuf) -> Vec<Tree> {
+fn seen(trees: Vec<workspace::Worktree>, here: &Path) -> Vec<Tree> {
     trees
         .into_iter()
         .map(|tree| Tree {
             name: tree.name().to_owned(),
-            current: PathBuf::from(&tree.path) == *here,
+            current: Path::new(&tree.path) == here,
             path: tree.path,
             branch: tree.branch,
             locked: tree.locked,
