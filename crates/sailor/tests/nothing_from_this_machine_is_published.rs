@@ -38,7 +38,12 @@ const SCANNED_PLACES: &[&str] = &[
 /// a red they cannot answer. Where git cannot say, the walk stands as it is —
 /// the direction that accuses more, never less.
 fn published_files() -> Vec<PathBuf> {
-    let root = repo_root();
+    published_files_under(&repo_root())
+}
+
+/// The same walk, of whatever tree it is pointed at, so the reader can be put to
+/// a tree with a leak planted in it.
+fn published_files_under(root: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
     for place in SCANNED_PLACES {
         walk(&root.join(place), &mut found);
@@ -49,11 +54,11 @@ fn published_files() -> Vec<PathBuf> {
             found.push(path);
         }
     }
-    let Some(tracked) = tracked_paths(&root) else {
+    let Some(tracked) = tracked_paths(root) else {
         return found;
     };
     found.retain(|path| {
-        path.strip_prefix(&root)
+        path.strip_prefix(root)
             .is_ok_and(|inside| tracked.contains(inside))
     });
     found
@@ -111,10 +116,13 @@ fn walk(dir: &Path, found: &mut Vec<PathBuf>) {
 
 /// Every place a forbidden string appears, as `path:line`.
 fn occurrences_of(needle: &str) -> Vec<String> {
+    occurrences_under(&repo_root(), needle)
+}
+
+fn occurrences_under(root: &Path, needle: &str) -> Vec<String> {
     let lowered = needle.to_lowercase();
-    let root = repo_root();
     let mut hits = Vec::new();
-    for path in published_files() {
+    for path in published_files_under(root) {
         let Ok(text) = std::fs::read_to_string(&path) else {
             continue;
         };
@@ -122,7 +130,7 @@ fn occurrences_of(needle: &str) -> Vec<String> {
             // The rule is asked of `toolbox::privacy`, never copied: two
             // readers of one list drift.
             if toolbox::privacy::names_at(&line.to_lowercase(), &lowered).is_some() {
-                let shown = path.strip_prefix(&root).unwrap_or(&path);
+                let shown = path.strip_prefix(root).unwrap_or(&path);
                 hits.push(format!("{}:{}", shown.display(), number + 1));
             }
         }
@@ -323,5 +331,57 @@ fn the_check_can_still_see_the_files_it_reads() {
     assert!(
         occurrences_of("nessun-testo-simile-esiste-in-questo-albero").is_empty(),
         "a string known to be absent was found: the reader says yes to everything"
+    );
+}
+
+/// **A CLEAN TREE CANNOT SAY THE READER WOULD CATCH A LEAK.** So one is planted:
+/// a throwaway repository under the temporary directory carries an invented home
+/// path inside a `design/*.html` — the very suffix whose absence once made that
+/// whole directory invisible — and the reader is asked for it. Untracked, the
+/// same words are nobody's business, and that half is asked too.
+#[test]
+fn a_home_path_planted_in_a_throwaway_repository_is_found() {
+    let invented_home = "/Users/a-name-nobody-here-has";
+    let root = std::env::temp_dir().join(format!(
+        "sailor-planted-leak-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("design")).expect("a throwaway design directory");
+    std::fs::create_dir_all(root.join("crates/sample/src")).expect("a throwaway crate directory");
+    std::fs::write(
+        root.join("design/preview.html"),
+        format!("<p>open {invented_home}/personal/sailor/design</p>\n"),
+    )
+    .expect("the planted page writes");
+    std::fs::write(
+        root.join("crates/sample/src/sketch.rs"),
+        format!("// {invented_home}/personal/notes\n"),
+    )
+    .expect("the untracked sketch writes");
+    let started = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&root)
+        .args(["init", "-q"])
+        .status()
+        .expect("git starts a throwaway repository");
+    assert!(started.success(), "the throwaway repository was not started");
+    let added = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&root)
+        .args(["add", "--", "design/preview.html"])
+        .status()
+        .expect("git tracks the planted page");
+    assert!(added.success(), "the planted page was not tracked");
+
+    let hits = occurrences_under(&root, invented_home);
+    std::fs::remove_dir_all(&root).expect("the throwaway repository goes");
+
+    assert_eq!(
+        hits,
+        vec!["design/preview.html:1".to_owned()],
+        "a home path was written into a tracked page and the reader did not \
+         name it there, and there alone: the sketch git does not track is its \
+         author's and must not be accused"
     );
 }
