@@ -240,10 +240,9 @@ pub fn verdict_of(passed: bool, said: &str) -> Verdict {
 const NO_RECEIPT_TODAY: usize = 0;
 
 /// How many judges may answer «I measured nothing» and still let a run
-/// through. **It can only fall.** Until this seed reaches zero the gate admits
-/// exactly the judges that cannot yet measure their own perimeter — and admits
-/// them by number, not by name, so a ninth one cannot slip in behind them.
-const UNMEASURED_TODAY: usize = 8;
+/// through. **It can only fall**, and it is at the floor: the eight that can
+/// give that answer were each run against this tree and all eight measured.
+const UNMEASURED_TODAY: usize = 0;
 
 /// The tally of the run, kept apart so a green count never absorbs the others.
 #[derive(Debug, Default, PartialEq, Eq)]
