@@ -42,6 +42,7 @@ fn collecting_step(store: &str) -> Step {
 
 fn request() -> ExecutionRequest {
     ExecutionRequest {
+        holder: None,
         run_id: "handover".to_owned(),
         root_inputs: BTreeMap::new(),
         gates: Vec::new(),

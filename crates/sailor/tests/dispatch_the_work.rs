@@ -173,6 +173,7 @@ fn run_with(
         json!(project.0.to_string_lossy()),
     );
     let request = ExecutionRequest {
+        holder: None,
         run_id: "prova".to_owned(),
         root_inputs: inputs
             .iter()

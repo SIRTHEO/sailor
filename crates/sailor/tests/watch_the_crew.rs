@@ -115,6 +115,7 @@ fn registry(scratch: &Scratch, ledger: &Ledger) -> ActionRegistry {
 fn run(scratch: &Scratch, ledger: &Ledger, graph: &Graph) -> (Execution, InMemoryRecordStore) {
     let store = InMemoryRecordStore::default();
     let request = ExecutionRequest {
+        holder: None,
         run_id: "guardia".to_owned(),
         root_inputs: flow_file().inputs.clone(),
         gates: Vec::new(),

@@ -8,9 +8,9 @@ use crate::for_each::FOR_EACH_ACTION;
 use crate::system::{self, FlowSource};
 use crate::{
     Action, ActionError, ActionOutcome, ActionRegistry, Clock, Execution, ExecutionRequest,
-    Executor, FlowFile, Graph, InProcessExecutor, Outcome, RecordStore, RunStops, SharedState,
-    StepRecord, StepSpecies, SystemClock, CURRENT_CAP, CURRENT_RUN, CURRENT_STEP, CURRENT_WALL,
-    WORKSPACE_ROOT,
+    Executor, FlowFile, Graph, HolderIdentity, InProcessExecutor, Outcome, RecordStore, RunStops,
+    SharedState, StepRecord, StepSpecies, SystemClock, CURRENT_CAP, CURRENT_HOLDER, CURRENT_RUN,
+    CURRENT_STEP, CURRENT_WALL, WORKSPACE_ROOT,
 };
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -125,6 +125,7 @@ pub(crate) struct Caller {
     /// it: it is the earlier of this and the child's own.
     pub wall_deadline_at: Option<i64>,
     pub root: Option<Value>,
+    pub holder: Option<HolderIdentity>,
 }
 
 /// The flow a step asked for, and where it was found.
@@ -223,6 +224,9 @@ pub(crate) fn prepare(
             cap,
             wall_deadline_at: shared.get(CURRENT_WALL).and_then(Value::as_i64),
             root: shared.get(WORKSPACE_ROOT).cloned(),
+            holder: shared
+                .get(CURRENT_HOLDER)
+                .and_then(|said| serde_json::from_value(said.clone()).ok()),
         },
         located: Located {
             name: flow_name.to_owned(),
@@ -291,6 +295,7 @@ pub(crate) fn run_child(
                 max_turns: None,
                 turns_taken: None,
             },
+            holder: caller.holder.clone(),
         },
         store,
         actions.as_ref(),

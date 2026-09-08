@@ -68,6 +68,7 @@ fn registry() -> ActionRegistry {
 
 fn request(root_inputs: BTreeMap<String, Value>) -> ExecutionRequest {
     ExecutionRequest {
+        holder: None,
         run_id: "run".to_owned(),
         root_inputs,
         gates: Vec::new(),

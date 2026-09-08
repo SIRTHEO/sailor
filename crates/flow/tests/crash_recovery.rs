@@ -377,6 +377,7 @@ fn the_engine_records_the_holder_and_the_species_when_it_opens_a_step() {
         .execute(
             &graph,
             flow::ExecutionRequest {
+                holder: None,
                 run_id: "opened-run".to_owned(),
                 root_inputs: BTreeMap::new(),
                 gates: vec![],

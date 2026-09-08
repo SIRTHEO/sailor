@@ -227,6 +227,7 @@ fn run(bench: &Arc<Bench>, graph: Graph, root_inputs: Value) -> Execution {
         .execute(
             &graph,
             ExecutionRequest {
+                holder: None,
                 run_id: "corsa-del-padre".to_owned(),
                 root_inputs,
                 gates: Vec::new(),

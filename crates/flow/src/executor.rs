@@ -1,4 +1,4 @@
-use crate::record::{digest_input, truncate_said, Ran, Refusal, Why};
+use crate::record::{HolderIdentity, Ran, Refusal, Why, digest_input, truncate_said};
 use crate::reference;
 use crate::{AttemptRelation, Graph, Outcome, SchemaError, Step, StepRecord, StepSpecies};
 use serde_json::Value;
@@ -47,6 +47,10 @@ pub const WORKSPACE_ROOT: &str = "workspace.root";
 /// decision is taken — inside the action. The flow never declares it, or a data
 /// file able to write here would raise its own cap.
 pub const CURRENT_CAP: &str = "flow.cap_micros";
+
+/// The key under which the executor writes the holder of the process, for the
+/// action that starts another run: a child is held by whoever holds the parent.
+pub const CURRENT_HOLDER: &str = "flow.holder";
 
 /// When this run's wall falls, for the action that starts another run: a child
 /// must not outlive it. Absent means no wall was declared, as with the cap.
@@ -718,6 +722,9 @@ pub struct ExecutionRequest {
     /// What may close this run before its last step. One field rather than
     /// three: they are checked together, at one point.
     pub stops: RunStops,
+    /// Who this process is, written beside every step it opens. Handed over
+    /// rather than asked for: `flow` cannot depend on the ledger that knows it.
+    pub holder: Option<HolderIdentity>,
 }
 
 /// What closes a run short, as the launcher declares it.
@@ -1057,6 +1064,7 @@ impl Executor for InProcessExecutor {
                         );
                         started.attempt_relation = attempt_relation(&records, &started);
                         started.held_by_pid = Some(std::process::id());
+                        started.held_by = request.holder.clone();
                         started.species = actions.get(&step.action).map(|action| action.species());
                         store.append_started(started)?;
                         store.close(
@@ -1108,6 +1116,7 @@ impl Executor for InProcessExecutor {
                 // executor: the pid is written BEFORE the effect, with the
                 // intent, or it is of no use to a resume.
                 started.held_by_pid = Some(std::process::id());
+                started.held_by = request.holder.clone();
                 started.species = action.map(|action| action.species());
                 started.why = why;
                 store.append_started(started)?;
@@ -1126,6 +1135,11 @@ impl Executor for InProcessExecutor {
                 CURRENT_RUN.to_owned(),
                 Value::String(request.run_id.clone()),
             );
+            if let Some(holder) = &request.holder {
+                if let Ok(said) = serde_json::to_value(holder) {
+                    request.shared.insert(CURRENT_HOLDER.to_owned(), said);
+                }
+            }
             // The cap goes in beside the run, and only if there is one: the
             // absent key is "no cap declared", which is not `Some(0)`. Without
             // this line a child flow would run uncapped under a capped parent.
@@ -2219,6 +2233,7 @@ mod tests {
         let mut actions = ActionRegistry::default();
         actions.register("who-am-i", WhoAmI(seen.clone()));
         let request = ExecutionRequest {
+            holder: None,
             run_id: "run".to_owned(),
             root_inputs: BTreeMap::new(),
             gates: vec![],
@@ -2269,6 +2284,7 @@ mod tests {
         let mut roots = BTreeMap::new();
         roots.insert("typed".to_owned(), json!("not a number"));
         let request = ExecutionRequest {
+            holder: None,
             run_id: "run".to_owned(),
             root_inputs: roots,
             gates: vec![],
@@ -2341,6 +2357,7 @@ mod tests {
         let mut roots = BTreeMap::new();
         roots.insert("broke".to_owned(), json!({"break": true}));
         let request = ExecutionRequest {
+            holder: None,
             run_id: "run".to_owned(),
             root_inputs: roots,
             gates: vec![],
@@ -2414,6 +2431,7 @@ mod tests {
         let mut actions = ActionRegistry::default();
         actions.register("echo", Echo);
         let request = ExecutionRequest {
+            holder: None,
             run_id: "run".to_owned(),
             root_inputs: BTreeMap::new(),
             gates: vec![],
@@ -2457,6 +2475,7 @@ mod tests {
         let mut actions = ActionRegistry::default();
         actions.register("echo", Echo);
         let request = ExecutionRequest {
+            holder: None,
             run_id: "run".to_owned(),
             root_inputs: [("root".to_owned(), json!({"value": "said is not data"}))]
                 .into_iter()
@@ -2496,6 +2515,7 @@ mod tests {
         let mut actions = ActionRegistry::default();
         actions.register("echo", Echo);
         let request = ExecutionRequest {
+            holder: None,
             run_id: "run".to_owned(),
             root_inputs: [(
                 "panel".to_owned(),
@@ -2540,6 +2560,7 @@ mod tests {
             .execute(
                 &graph,
                 ExecutionRequest {
+                    holder: None,
                     run_id: "run".to_owned(),
                     root_inputs: BTreeMap::new(),
                     gates: vec![],
@@ -2590,6 +2611,7 @@ mod tests {
             .execute(
                 &graph,
                 ExecutionRequest {
+                    holder: None,
                     run_id: "run".to_owned(),
                     root_inputs: [("root".to_owned(), json!({"take_skipped": false}))]
                         .into_iter()
@@ -2632,6 +2654,7 @@ mod tests {
             .execute(
                 &graph,
                 ExecutionRequest {
+                    holder: None,
                     run_id: "run".to_owned(),
                     root_inputs: [(
                         "root".to_owned(),
@@ -2676,6 +2699,7 @@ mod tests {
         actions.register("echo", Echo);
         actions.register("flaky", FailOnce(count));
         let request = ExecutionRequest {
+            holder: None,
             run_id: "run".to_owned(),
             root_inputs: [("first".to_owned(), json!("input"))].into_iter().collect(),
             gates: vec![],
@@ -2730,6 +2754,7 @@ mod tests {
             .execute(
                 &graph,
                 ExecutionRequest {
+                    holder: None,
                     run_id: "run".to_owned(),
                     root_inputs: [("work".to_owned(), input)].into_iter().collect(),
                     gates: vec!["network".to_owned(), "filesystem".to_owned()],
@@ -2808,6 +2833,7 @@ mod tests {
             .execute(
                 &graph,
                 ExecutionRequest {
+                    holder: None,
                     run_id: "run".to_owned(),
                     root_inputs: [("plan".to_owned(), json!({"stdin": THE_QUESTION}))]
                         .into_iter()
@@ -2964,6 +2990,7 @@ mod tests {
         let mut actions = ActionRegistry::default();
         actions.register("action", FailOnce(Arc::clone(&count)));
         let request = ExecutionRequest {
+            holder: None,
             run_id: "run".to_owned(),
             root_inputs: [(
                 "conditional".to_owned(),
@@ -3006,6 +3033,7 @@ mod tests {
         let mut actions = ActionRegistry::default();
         actions.register("action", FailOnce(Arc::clone(&count)));
         let request = ExecutionRequest {
+            holder: None,
             run_id: "run".to_owned(),
             root_inputs: [(
                 "conditional".to_owned(),
@@ -3123,6 +3151,7 @@ mod tests {
 
     fn a_request(run_id: &str) -> ExecutionRequest {
         ExecutionRequest {
+            holder: None,
             run_id: run_id.to_owned(),
             root_inputs: BTreeMap::new(),
             gates: vec![],

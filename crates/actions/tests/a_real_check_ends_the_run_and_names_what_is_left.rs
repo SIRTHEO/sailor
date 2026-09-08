@@ -124,6 +124,7 @@ fn run_for(work: &Path, command: &str, seconds: u64) -> Ending {
         .execute(
             &graph,
             ExecutionRequest {
+                holder: None,
                 run_id: "run".to_owned(),
                 root_inputs: [("mandate".to_owned(), json!({"mandate": MANDATE}))]
                     .into_iter()
@@ -298,6 +299,7 @@ fn a_check_that_cannot_run_at_all_is_not_a_pass() {
         .execute(
             &graph,
             ExecutionRequest {
+                holder: None,
                 run_id: "run".to_owned(),
                 root_inputs: BTreeMap::new(),
                 gates: Vec::new(),

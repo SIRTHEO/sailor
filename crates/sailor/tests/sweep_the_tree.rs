@@ -60,6 +60,7 @@ impl Clock for Tick {
 fn run(graph: &Graph, trigger: Value) -> (Execution, InMemoryRecordStore) {
     let store = InMemoryRecordStore::default();
     let request = ExecutionRequest {
+        holder: None,
         run_id: "sweep".to_owned(),
         root_inputs: [("trigger".to_owned(), trigger)].into_iter().collect(),
         gates: Vec::new(),

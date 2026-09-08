@@ -89,6 +89,7 @@ fn what_the_action_saw(graph: &Graph, root_inputs: BTreeMap<String, Value>) -> V
         .execute(
             graph,
             flow::ExecutionRequest {
+                holder: None,
                 run_id: "run".to_owned(),
                 root_inputs,
                 gates: vec![],
@@ -251,6 +252,7 @@ fn run_and_read(graph: &Graph, guard_says: &str) -> (Vec<Decision>, Vec<flow::St
         .execute(
             graph,
             flow::ExecutionRequest {
+                holder: None,
                 run_id: "run".to_owned(),
                 root_inputs,
                 gates: vec![],
@@ -302,6 +304,7 @@ fn a_pointer_that_finds_nothing_breaks_that_step_and_only_that_one() {
         .execute(
             &graph,
             flow::ExecutionRequest {
+                holder: None,
                 run_id: "run".to_owned(),
                 root_inputs,
                 gates: vec![],

@@ -159,6 +159,7 @@ fn run_with_cap(cap: Option<i64>, price_micros: i64) -> (flow::Execution, usize)
         .execute(
             &two_in_a_row(),
             ExecutionRequest {
+                holder: None,
                 run_id: "run".to_owned(),
                 root_inputs: Default::default(),
                 gates: vec![],
@@ -273,6 +274,7 @@ fn what_the_cap_does_not_know_is_declared() {
         .execute(
             &graph,
             ExecutionRequest {
+                holder: None,
                 run_id: "run".to_owned(),
                 root_inputs: Default::default(),
                 gates: vec![],
@@ -331,6 +333,7 @@ fn the_front_narrows_as_the_money_runs_out() {
         .execute(
             &graph,
             ExecutionRequest {
+                holder: None,
                 run_id: "run".to_owned(),
                 root_inputs: Default::default(),
                 gates: vec![],
@@ -382,6 +385,7 @@ fn a_step_that_spends_nothing_takes_no_room_from_a_paid_one() {
         .execute(
             &graph,
             ExecutionRequest {
+                holder: None,
                 run_id: "run".to_owned(),
                 root_inputs: Default::default(),
                 gates: vec![],
@@ -459,6 +463,7 @@ fn the_step_that_ran_is_closed_in_the_store() {
         .execute(
             &two_in_a_row(),
             ExecutionRequest {
+                holder: None,
                 run_id: "run".to_owned(),
                 root_inputs: Default::default(),
                 gates: vec![],

@@ -123,6 +123,7 @@ fn a_key_decided_by_the_step_before_reaches_the_real_store() {
         .execute(
             &graph,
             ExecutionRequest {
+                holder: None,
                 run_id: "corsa-del-testimone".to_owned(),
                 root_inputs: BTreeMap::new(),
                 gates: vec![],

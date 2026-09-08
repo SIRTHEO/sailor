@@ -84,6 +84,7 @@ fn run(graph: &Graph, trigger: Value) -> (Execution, InMemoryRecordStore) {
     let scratch = Scratch::new();
     let store = InMemoryRecordStore::default();
     let request = ExecutionRequest {
+        holder: None,
         run_id: "written".to_owned(),
         root_inputs: [("trigger".to_owned(), trigger)].into_iter().collect(),
         gates: Vec::new(),

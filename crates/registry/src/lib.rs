@@ -50,6 +50,9 @@ pub fn execution_request(
         shared,
         // The cap is the flow's and travels with the run: the launcher only carries it.
         spend_cap_micros: flow.spend_cap_micros,
+        // Asked here because `flow` cannot depend on the ledger, and every
+        // launcher goes through this one constructor.
+        holder: Some(ledger::this_process_holds()),
         stops: RunStops {
             // The start is asked for and not read off the clock: a resume
             // reading it here would grant itself the whole wall again.
@@ -368,6 +371,70 @@ mod tests {
                 .and_then(|root| root.as_str()),
             Some("/una/radice"),
             "the root must reach the action without the action asking for it"
+        );
+    }
+
+    /// A step opened through the launcher is recognised as held by this
+    /// process, and stops being held when the number belongs to another one.
+    ///
+    /// The two halves are one fact: the pid alone answers `Uncertain`, which
+    /// is why a row must carry the second the holder was born.
+    #[test]
+    fn a_step_this_process_opened_is_held_by_it_and_by_nobody_else() {
+        use flow::{Action, ActionError, ActionOutcome, Executor};
+
+        struct Nothing;
+        impl Action for Nothing {
+            fn execute(
+                &self,
+                _input: &serde_json::Value,
+                _shared: &flow::SharedState,
+            ) -> Result<ActionOutcome, ActionError> {
+                Ok(ActionOutcome::Went(serde_json::Value::Null))
+            }
+        }
+
+        let json = r#"{
+            "id": "prova", "description": "un passo solo",
+            "graph": {"steps": [{
+                "id": "unico", "deps": [], "action": "niente", "max_attempts": 1,
+                "when": null, "input_schema": {"type": "any"},
+                "output_schema": {"type": "any"}
+            }]},
+            "inputs": {}
+        }"#;
+        let flow: FlowFile = serde_json::from_str(json).expect("loading the flow");
+        let mut registry = ActionRegistry::default();
+        registry.register("niente", Nothing);
+        let store = flow::InMemoryRecordStore::default();
+        flow::InProcessExecutor
+            .execute(
+                &flow.graph,
+                execution_request(None, &flow, "corsa-1", None, 0),
+                &store,
+                &registry,
+                &flow::SystemClock,
+            )
+            .expect("the run goes");
+
+        let mut record = flow::RecordStore::records(&store, "corsa-1")
+            .expect("read the steps")
+            .into_iter()
+            .next()
+            .expect("the step is there");
+        assert_eq!(
+            ledger::still_held(&record),
+            ledger::StillHeld::Held,
+            "the row this process opened must be its own: {record:?}"
+        );
+
+        let held = record.held_by.as_mut().expect("the row names its holder");
+        held.invocation = "un-altro-processo".to_owned();
+        held.born_at = Some(1);
+        assert_ne!(
+            ledger::still_held(&record),
+            ledger::StillHeld::Held,
+            "a number born at another second is not this process"
         );
     }
 

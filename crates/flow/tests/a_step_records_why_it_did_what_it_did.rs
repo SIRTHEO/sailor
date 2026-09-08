@@ -55,6 +55,7 @@ fn one_step(when: Condition) -> Graph {
 
 fn run_with(graph: &Graph, input: Value) -> Vec<StepRecord> {
     let request = ExecutionRequest {
+        holder: None,
         run_id: "run".to_owned(),
         root_inputs: [("the-step".to_owned(), input)].into_iter().collect(),
         gates: vec![],

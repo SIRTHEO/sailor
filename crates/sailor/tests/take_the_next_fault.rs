@@ -90,6 +90,7 @@ impl Clock for Tick {
 fn run(scratch: &Scratch, graph: &Graph) -> (Execution, InMemoryRecordStore) {
     let store = InMemoryRecordStore::default();
     let request = ExecutionRequest {
+        holder: None,
         run_id: "taken".to_owned(),
         root_inputs: shipped().inputs.into_iter().collect(),
         gates: Vec::new(),

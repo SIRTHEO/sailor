@@ -196,6 +196,7 @@ fn run_on_a_real_ledger(label: &str, cap: Option<i64>, price_micros: i64) -> How
         .execute(
             &two_in_a_row(),
             ExecutionRequest {
+                holder: None,
                 run_id: run_id.clone(),
                 root_inputs: Default::default(),
                 gates: vec![],

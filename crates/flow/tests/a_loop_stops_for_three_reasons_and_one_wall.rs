@@ -52,6 +52,7 @@ fn step(id: &str, deps: &[&str]) -> Step {
 
 fn request(stops: RunStops) -> ExecutionRequest {
     ExecutionRequest {
+        holder: None,
         run_id: "run".to_owned(),
         root_inputs: BTreeMap::new(),
         gates: Vec::new(),

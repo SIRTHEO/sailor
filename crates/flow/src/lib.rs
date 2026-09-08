@@ -25,7 +25,8 @@ pub use executor::{
     EffectStatus, Execution, ExecutionRequest, Executor, FlowError, InMemoryRecordStore,
     InProcessExecutor, ProcessProbe, Reconciliation, ReconciliationRequest, RecordStore, Recovery,
     RedoEvidence, RunStops, SharedState, Spend, SpendStop, StepInput, StopReason, SystemClock,
-    AFTER_REFUSAL, AT_ONCE, CURRENT_CAP, CURRENT_RUN, CURRENT_STEP, CURRENT_WALL,
+    AFTER_REFUSAL, AT_ONCE, CURRENT_CAP, CURRENT_HOLDER, CURRENT_RUN, CURRENT_STEP,
+    CURRENT_WALL,
     WALL_REMAINING_SECS, WORKDIR_FIELD, WORKSPACE_ROOT,
 };
 pub use file::{CapKind, FlowFile};

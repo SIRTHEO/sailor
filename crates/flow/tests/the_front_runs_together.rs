@@ -110,6 +110,7 @@ fn run_front(count: usize, expected: usize) -> (Vec<Decision>, Vec<String>, Vec<
     let graph = Graph::new(steps).expect("valid graph");
     let store = InMemoryRecordStore::default();
     let request = flow::ExecutionRequest {
+        holder: None,
         run_id: "run".to_owned(),
         root_inputs: Default::default(),
         gates: vec![],

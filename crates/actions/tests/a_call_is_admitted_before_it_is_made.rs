@@ -300,6 +300,7 @@ fn a_model_the_price_list_cannot_price_stops_the_run_and_the_store_says_why() {
             .execute(
                 &graph,
                 ExecutionRequest {
+                    holder: None,
                     run_id: "la-corsa".to_owned(),
                     root_inputs: [("uno".to_owned(), asked.clone())].into_iter().collect(),
                     gates: Vec::new(),

@@ -9,8 +9,8 @@ use flow::subflow::{RunNote, SubflowAction, SubflowHost, SUBFLOW_ACTION};
 use flow::system::FlowSource;
 use flow::{
     Action, ActionError, ActionOutcome, ActionRegistry, Decision, Execution, ExecutionRequest,
-    Executor, FlowFile, Graph, InMemoryRecordStore, InProcessExecutor, Outcome, RecordStore,
-    SharedState, Step, SystemClock, ValueSchema,
+    Executor, FlowFile, Graph, Holder, HolderIdentity, InMemoryRecordStore, InProcessExecutor,
+    Outcome, RecordStore, SharedState, Step, SystemClock, ValueSchema,
 };
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -236,6 +236,17 @@ const A_ROOT: &str = "/una/radice";
 
 /// Runs a one-step graph that calls `calls`.
 fn run_calling(bench: &Arc<Bench>, calls: &str, inputs: Value, cap: Option<i64>) -> Execution {
+    run_calling_held(bench, calls, inputs, cap, None)
+}
+
+/// The same, for a process that says who it is.
+fn run_calling_held(
+    bench: &Arc<Bench>,
+    calls: &str,
+    inputs: Value,
+    cap: Option<i64>,
+    holder: Option<HolderIdentity>,
+) -> Execution {
     let graph = Graph::new(vec![calling_step("chiamata", calls, inputs)]).expect("valid graph");
     let registry = bench.registry();
     let mut shared = SharedState::new();
@@ -245,6 +256,7 @@ fn run_calling(bench: &Arc<Bench>, calls: &str, inputs: Value, cap: Option<i64>)
         .execute(
             &graph,
             ExecutionRequest {
+                holder,
                 run_id: "corsa-del-padre".to_owned(),
                 root_inputs: Default::default(),
                 gates: Vec::new(),
@@ -456,6 +468,7 @@ fn a_parent_without_a_root_hands_the_child_none() {
         .execute(
             &graph,
             ExecutionRequest {
+                holder: None,
                 run_id: "corsa-senza-radice".to_owned(),
                 root_inputs: Default::default(),
                 gates: Vec::new(),
@@ -615,4 +628,56 @@ fn a_field_the_step_does_not_know_is_named() {
     assert!(step
         .unknown_fields(&json!({ "flow": "foglia", "inputs": {} }))
         .is_empty());
+}
+
+/// A number alone belongs to whoever holds it now: the row must say which
+/// process opened the step, and the child's rows must say the same one.
+#[test]
+fn every_row_a_run_opens_names_the_process_that_holds_it() {
+    let scratch = Scratch::new("holder");
+    scratch.put(LEAF);
+    let bench = Bench::new(scratch.place());
+    let whoever = HolderIdentity {
+        born_at: Some(1_700_000_000),
+        invocation: "una-corsa-sola".to_owned(),
+    };
+
+    run_calling_held(&bench, "foglia", json!({}), None, Some(whoever.clone()));
+
+    let record = parent_step(&bench);
+    assert_eq!(
+        record.holder(),
+        Holder::Named {
+            pid: std::process::id(),
+            identity: &whoever
+        },
+        "the parent step names its holder, not only a number"
+    );
+    let child = record.output.expect("the step has an output")["run_id"]
+        .as_str()
+        .expect("the child has a run")
+        .to_owned();
+    for row in bench.store.records(&child).expect("read the child") {
+        assert_eq!(
+            row.held_by.as_ref(),
+            Some(&whoever),
+            "the child inherits the holder of the process that opened it: {row:?}"
+        );
+    }
+}
+
+/// A launcher that hands no identity still writes the number, and the row says
+/// so: `ANumberAlone` is what every row written before identity existed carries.
+#[test]
+fn a_run_that_says_nothing_of_itself_leaves_the_number_alone() {
+    let scratch = Scratch::new("nameless");
+    scratch.put(LEAF);
+    let bench = Bench::new(scratch.place());
+
+    run_calling(&bench, "foglia", json!({}), None);
+
+    assert_eq!(
+        parent_step(&bench).holder(),
+        Holder::ANumberAlone(std::process::id())
+    );
 }

@@ -59,6 +59,7 @@ fn run(flow: &FlowFile) -> (Execution, Vec<flow::StepRecord>) {
     let store = InMemoryRecordStore::default();
     let run_id = format!("prova-{}", flow.id);
     let request = ExecutionRequest {
+        holder: None,
         run_id: run_id.clone(),
         root_inputs: flow.inputs.clone().into_iter().collect(),
         gates: Vec::new(),
@@ -321,6 +322,7 @@ fn the_consultation_runs_and_the_store_gets_the_entry_it_demands() {
     let store = InMemoryRecordStore::default();
     let run_id = format!("consulto-{}", std::process::id());
     let request = ExecutionRequest {
+        holder: None,
         run_id: run_id.clone(),
         root_inputs: flow.inputs.clone().into_iter().collect(),
         gates: Vec::new(),
@@ -772,6 +774,7 @@ fn run_with_ledger(
     );
     let registry = registry::registry_in(registry::House::empty(), Some(ledger.clone()), None);
     let request = ExecutionRequest {
+        holder: None,
         run_id: run_id.clone(),
         root_inputs,
         gates: Vec::new(),

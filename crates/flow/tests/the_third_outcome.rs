@@ -46,6 +46,7 @@ fn step(id: &str, action: &str, max_attempts: u32) -> Step {
 
 fn request(run_id: &str) -> ExecutionRequest {
     ExecutionRequest {
+        holder: None,
         run_id: run_id.to_owned(),
         root_inputs: BTreeMap::new(),
         gates: Vec::new(),
