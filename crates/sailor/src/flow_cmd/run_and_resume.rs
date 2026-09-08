@@ -849,9 +849,8 @@ mod tests {
         assert_eq!(header.status, "complete", "the resume updates the status");
     }
 
-    /// A step whose action nobody registers has no effect anybody can inspect:
-    /// reconciliation parks it on a person, and a parked step never becomes
-    /// ready again. The resume must refuse it the way the first run does.
+    /// A parked step never becomes ready again, so the resume must refuse the
+    /// way the first run does.
     #[test]
     fn resuming_a_run_whose_action_nobody_registers_is_refused_and_not_parked() {
         let home = TestDirectory::new();

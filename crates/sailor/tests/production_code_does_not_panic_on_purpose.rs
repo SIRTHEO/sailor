@@ -7,6 +7,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use workspace::ratchet::{weigh, Weighed};
 
 /// The calls that abort instead of returning. `assert!` is not among them: an
 /// assertion states an invariant, and another judge reads its prose.
@@ -45,10 +46,6 @@ const PANICS_TODAY: &[(&str, usize)] = &[
     ("ui", 0),
     ("workspace", 0),
 ];
-
-/// How far a seed may sit above what the tree holds. Zero: a seed is a number
-/// in a file, and a merge taking the older side raises it with no conflict.
-const HOW_STALE_A_SEED_MAY_BE: usize = 0;
 
 const MARKS_A_TEST: &str = "#[cfg(test)]";
 
@@ -372,15 +369,16 @@ fn no_crate_panics_on_purpose_more_than_today() {
     let seeded: BTreeMap<&str, usize> = PANICS_TODAY.iter().copied().collect();
     let mut complaints = Vec::new();
     for (name, howmany) in &found.per_crate {
-        let seed = seeded.get(name.as_str()).copied();
-        if !seed.is_some_and(|seed| *howmany <= seed) {
-            complaints.push(format!(
-                "crate «{name}» holds {howmany} calls that panic on purpose against a seed of {seed:?}: return an error instead, or the table is stale"
-            ));
-        } else if !seed.is_some_and(|seed| seed <= howmany + HOW_STALE_A_SEED_MAY_BE) {
-            complaints.push(format!(
-                "crate «{name}» is seeded at {seed:?} and holds {howmany}: lower the seed to {howmany}"
-            ));
+        match seeded.get(name.as_str()).map(|seed| weigh(*seed, *howmany)) {
+            None => complaints.push(format!("crate «{name}» is in no seed of the table")),
+            Some(Weighed::TreeIsAbove(more)) => complaints.push(format!(
+                "crate «{name}» holds {howmany} calls that panic on purpose, {more} more than \
+                 its seed: return an error instead, or the table is stale"
+            )),
+            Some(Weighed::TreeIsBelow(apart)) => complaints.push(format!(
+                "crate «{name}» is seeded {apart} above the {howmany} it holds: write {howmany}"
+            )),
+            Some(Weighed::Holds) => {}
         }
     }
     assert!(

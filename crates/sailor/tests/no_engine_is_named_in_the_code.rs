@@ -4,6 +4,7 @@
 //! the window alike — and both counts may only fall.
 
 use std::path::{Path, PathBuf};
+use workspace::ratchet::{weigh, Weighed};
 
 /// Re-measured exactly when it falls, never raised.
 const NAMED_TODAY: usize = 5;
@@ -234,16 +235,19 @@ fn no_new_engine_name_enters_the_code() {
         .iter()
         .map(|(count, file)| format!("{count:>4}  {}", file.display()))
         .collect();
-    assert!(
-        total <= NAMED_TODAY,
-        "engine names in the code: {total} (the seed is {NAMED_TODAY}). Move the name into a descriptor.\n{}",
-        where_they_are.join("\n")
-    );
-    assert_eq!(
-        total, NAMED_TODAY,
-        "the seed says {NAMED_TODAY}, the tree holds {total}: somebody pruned without re-measuring; write {total}\n{}",
-        where_they_are.join("\n")
-    );
+    match weigh(NAMED_TODAY, total) {
+        Weighed::TreeIsAbove(more) => panic!(
+            "engine names in the code: {total} ({more} more than the seed's {NAMED_TODAY}). \
+             Move the name into a descriptor.\n{}",
+            where_they_are.join("\n")
+        ),
+        Weighed::TreeIsBelow(apart) => panic!(
+            "the seed says {NAMED_TODAY} and the tree holds {total}, {apart} apart: somebody \
+             pruned without re-measuring; write {total}\n{}",
+            where_they_are.join("\n")
+        ),
+        Weighed::Holds => {}
+    }
 }
 
 #[test]
@@ -262,11 +266,18 @@ fn no_identifier_is_named_after_an_engine() {
         .iter()
         .map(|(count, file)| format!("{count:>4}  {}", file.display()))
         .collect();
-    assert_eq!(
-        total, NAMED_IDENTIFIERS_TODAY,
-        "identifiers named after an engine: {total} (the seed is {NAMED_IDENTIFIERS_TODAY}). \
-         A reader per provider is the road model independence forbids: the shape belongs in a \
-         descriptor.\n{}",
-        where_they_are.join("\n")
-    );
+    match weigh(NAMED_IDENTIFIERS_TODAY, total) {
+        Weighed::TreeIsAbove(more) => panic!(
+            "identifiers named after an engine: {total} ({more} more than the seed's \
+             {NAMED_IDENTIFIERS_TODAY}). A reader per provider is the road model independence \
+             forbids: the shape belongs in a descriptor.\n{}",
+            where_they_are.join("\n")
+        ),
+        Weighed::TreeIsBelow(apart) => panic!(
+            "the seed says {NAMED_IDENTIFIERS_TODAY} and the tree holds {total}, {apart} \
+             apart: write {total}\n{}",
+            where_they_are.join("\n")
+        ),
+        Weighed::Holds => {}
+    }
 }

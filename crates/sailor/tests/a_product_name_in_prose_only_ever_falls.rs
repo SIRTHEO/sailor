@@ -6,6 +6,7 @@
 //! count only falls. A new mention is red until somebody reads it.
 
 use std::path::{Path, PathBuf};
+use workspace::ratchet::{weigh, Weighed};
 
 /// Measured on a clean `HEAD` — `git archive HEAD | tar -x` — and never on the
 /// working tree: several sessions write in this checkout, and a seed taken
@@ -120,14 +121,16 @@ fn the_check_can_still_see_what_it_counts() {
     );
 }
 
-/// A seed far above the floor is a seed nobody re-measured, and it buys silence
-/// for work nobody did. Twelve is the width of one cleanup.
+/// A seed above the floor is a seed nobody re-measured, and it buys silence
+/// for work nobody did: the room it may leave is the room every sibling
+/// ratchet leaves, which is none.
 #[test]
-fn the_seed_stays_close_to_what_the_tree_holds() {
+fn the_seed_says_what_the_tree_holds() {
     let total: usize = mentions().iter().map(|(_, here)| here).sum();
-    assert!(
-        MENTIONS_IN_PROSE_TODAY <= total + 12,
-        "the seed says {MENTIONS_IN_PROSE_TODAY} and the tree holds {total}: \
-         lower the seed to what was measured, so the next mention is caught"
-    );
+    if let Weighed::TreeIsBelow(apart) = weigh(MENTIONS_IN_PROSE_TODAY, total) {
+        panic!(
+            "the seed says {MENTIONS_IN_PROSE_TODAY} and the tree holds {total}, {apart} apart: \
+             write MENTIONS_IN_PROSE_TODAY = {total}, so the next mention is caught"
+        );
+    }
 }

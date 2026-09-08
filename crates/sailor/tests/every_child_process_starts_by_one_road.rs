@@ -4,6 +4,7 @@
 //! places that start a child elsewhere are counted, and the count only falls.
 
 use std::path::{Path, PathBuf};
+use workspace::ratchet::{weigh, Weighed};
 
 /// The shapes that leave a live child behind. `.spawn()` takes no argument
 /// on a `Command`, std or tokio, while every thread or task spawn takes a
@@ -26,10 +27,6 @@ const THE_ONE_ROAD: &str = "crates/supervisor/src/child.rs";
 /// `ledger`, `models`, `sailor` and `terminal`, sources and their in-source
 /// test modules alike.
 const ROADS_TODAY: usize = 12;
-
-/// How far the seed may sit above the tree. Zero: a seed nobody re-measured
-/// lets the next road open in silence.
-const HOW_STALE_A_SEED_MAY_BE: usize = 0;
 
 const WHERE_CODE_IS_WRITTEN: &str = "crates";
 const SOURCE_TREE: &str = "src";
@@ -313,15 +310,17 @@ fn listed(root: &Path, roads: &[Road]) -> String {
 fn no_child_starts_by_a_road_that_was_not_open_today() {
     let root = root();
     let roads = measure(&root);
-    assert!(
-        roads.len() <= ROADS_TODAY,
-        "{} roads start a child outside {THE_ONE_ROAD}, the seed says {}. A child started \
-         there is never written to the `processes` table, so nothing can stop or resume it: \
-         route the call through `supervisor::child::Process::start`. Open today:{}",
-        roads.len(),
-        ROADS_TODAY,
-        listed(&root, &roads)
-    );
+    if let Weighed::TreeIsAbove(more) = weigh(ROADS_TODAY, roads.len()) {
+        panic!(
+            "{} roads start a child outside {THE_ONE_ROAD}, {more} more than the seed's {}. \
+             A child started there is never written to the `processes` table, so nothing can \
+             stop or resume it: route the call through `supervisor::child::Process::start`. \
+             Open today:{}",
+            roads.len(),
+            ROADS_TODAY,
+            listed(&root, &roads)
+        );
+    }
 }
 
 /// The other side of the ratchet: a seed above the tree lets the next road
@@ -330,14 +329,16 @@ fn no_child_starts_by_a_road_that_was_not_open_today() {
 fn a_seed_that_no_longer_describes_the_tree_is_a_seed_nobody_re_measured() {
     let root = root();
     let roads = measure(&root);
-    assert!(
-        ROADS_TODAY <= roads.len() + HOW_STALE_A_SEED_MAY_BE,
-        "the seed says {} roads, the tree holds {}: lower ROADS_TODAY to {}. Open today:{}",
-        ROADS_TODAY,
-        roads.len(),
-        roads.len(),
-        listed(&root, &roads)
-    );
+    if let Weighed::TreeIsBelow(apart) = weigh(ROADS_TODAY, roads.len()) {
+        panic!(
+            "the seed says {} roads and the tree holds {}, {apart} apart: write \
+             ROADS_TODAY = {}. Open today:{}",
+            ROADS_TODAY,
+            roads.len(),
+            roads.len(),
+            listed(&root, &roads)
+        );
+    }
 }
 
 struct Scratch(PathBuf);

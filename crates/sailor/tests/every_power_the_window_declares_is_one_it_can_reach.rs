@@ -4,6 +4,7 @@
 //! the beat behind it recorded, every minute, a schedule shown to nobody.
 
 use std::path::{Path, PathBuf};
+use workspace::ratchet::{weigh, Weighed};
 
 /// Re-measured exactly when it falls, never raised.
 const UNREACHED_TODAY: usize = 0;
@@ -79,11 +80,19 @@ fn no_power_is_declared_and_left_unreachable() {
         .iter()
         .filter(|name| !written.contains(&format!("\"{name}\"")))
         .collect();
-    assert_eq!(
-        unreached.len(),
-        UNREACHED_TODAY,
-        "{} of {} commands are declared and never asked for: {unreached:?}",
-        unreached.len(),
-        list.len()
-    );
+    match weigh(UNREACHED_TODAY, unreached.len()) {
+        Weighed::TreeIsAbove(more) => panic!(
+            "{} of {} commands are declared and never asked for, {more} more than the seed's \
+             {UNREACHED_TODAY}: {unreached:?}",
+            unreached.len(),
+            list.len()
+        ),
+        Weighed::TreeIsBelow(apart) => panic!(
+            "the seed says {UNREACHED_TODAY} and the window leaves {} unreached, {apart} \
+             apart: write {}",
+            unreached.len(),
+            unreached.len()
+        ),
+        Weighed::Holds => {}
+    }
 }

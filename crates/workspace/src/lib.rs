@@ -4,6 +4,7 @@
 //! answer differently about which branch a tree is on, and `remove` acts on it.
 
 pub mod branches;
+pub mod ratchet;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

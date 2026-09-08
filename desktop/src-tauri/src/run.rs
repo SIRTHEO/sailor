@@ -218,15 +218,15 @@ impl Runs {
 
 // ── the text of a running step ──────────────────────────────────────────
 
+/// What a step says, handed on as it is said: the step, which pipe, the words.
+type Emit = Arc<dyn Fn(&str, Pipe, String) + Send + Sync>;
+
 /// One step's bytes on their way to the window.
 ///
 /// A pipe breaks wherever it happens to break — sometimes halfway through a
 /// character. The tail of an incomplete one is held until the rest arrives, so
 /// an accented letter never reaches the window as a replacement mark; past four
 /// bytes it is not a split character, and goes out as it is.
-/// What a step says, handed on as it is said: the step, which pipe, the words.
-type Emit = Arc<dyn Fn(&str, Pipe, String) + Send + Sync>;
-
 struct StepText {
     step: String,
     emit: Emit,

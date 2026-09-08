@@ -323,10 +323,8 @@ fn a_home_path_planted_in_a_throwaway_repository_is_found() {
     );
 }
 
-/// **THE HOLE THIS PERIMETER CLOSED.** The reader used to look only inside a
-/// hand-written list of directories, and 42 tracked files sat outside every one
-/// of them: a leak in `sailor.json` or `CLAUDE.md` was published and the judge
-/// stayed green. So one is planted where no such list would have reached.
+/// A list of directories reaches nothing at the top of the tree, and 42 tracked
+/// files sat there.
 #[test]
 fn a_home_path_planted_outside_every_named_place_is_found() {
     let invented_home = "/Users/a-name-nobody-here-has";

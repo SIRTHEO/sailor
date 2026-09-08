@@ -499,9 +499,7 @@ fn grafting(
         },
     )?;
 
-    // Exit zero on a total failure let a script that grafts the hooks believe
-    // they are in. The lines the walk did say are kept: they are the answer to
-    // «which command line refused and why».
+    // The lines the walk did say are kept: they answer «which one refused».
     if !grafted_any {
         said.push(catalogue::say("cli.session.nothing_grafted", &[]));
         return Err(said.join("\n"));
@@ -2598,10 +2596,8 @@ mod tests {
         );
     }
 
-    /// **A NAME NOBODY ANSWERS TO USED TO GRAFT NOTHING, QUIETLY, AND EXIT
-    /// ZERO.** `--tool claude` is the natural way to write `claude-code`: every
-    /// line was skipped, the report said to read the lines above, and there
-    /// were none. Whoever ran it believed the hooks were in.
+    /// `--tool claude` is the natural way to write `claude-code`, and it used
+    /// to skip every line and exit zero.
     #[test]
     fn a_command_line_nobody_answers_to_is_refused_and_names_the_ones_there_are() {
         let tool = a_line_that_writes_toml();

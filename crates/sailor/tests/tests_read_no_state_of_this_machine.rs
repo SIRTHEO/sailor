@@ -6,6 +6,7 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use workspace::ratchet::{weigh, Weighed};
 
 /// The doors, as they are written in code. Each consults the process
 /// environment or a path derived from it; every one has a parameterised form
@@ -65,10 +66,6 @@ const ONE_LINE_PER_DOOR: &[&str] = &[
 /// `crates/ui/src/gather.rs`, which declares where the ledger is and then asks
 /// both roads for it: handing it a path would compare a value with itself.
 const DOORS_TODAY: usize = 5;
-
-/// How far the seed may sit above the tree. Zero: a seed nobody re-measured
-/// lets the next door open in silence.
-const HOW_STALE_A_SEED_MAY_BE: usize = 0;
 
 /// Where test code is written: the crates, and the window's shell.
 const WHERE_CODE_IS_WRITTEN: &[&str] = &["crates", "desktop/src-tauri"];
@@ -380,15 +377,16 @@ fn listed(root: &Path, doors: &[Door]) -> String {
 fn no_test_opens_a_door_to_this_machine_that_was_not_open_today() {
     let root = root();
     let doors = measure(&root);
-    assert!(
-        doors.len() <= DOORS_TODAY,
-        "{} doors to this machine are open in test code, the seed says {}. A test that \
-         reads the machine turns red after a cleanup with the code unchanged: hand it a \
-         scratch, a `House::under`, or a `Machine::bare` instead. Open today:{}",
-        doors.len(),
-        DOORS_TODAY,
-        listed(&root, &doors)
-    );
+    if let Weighed::TreeIsAbove(more) = weigh(DOORS_TODAY, doors.len()) {
+        panic!(
+            "{} doors to this machine are open in test code, {more} more than the seed's {}. \
+             A test that reads the machine turns red after a cleanup with the code unchanged: \
+             hand it a scratch, a `House::under`, or a `Machine::bare` instead. Open today:{}",
+            doors.len(),
+            DOORS_TODAY,
+            listed(&root, &doors)
+        );
+    }
 }
 
 /// The other side of the ratchet: a seed above the tree lets the next door
@@ -397,14 +395,16 @@ fn no_test_opens_a_door_to_this_machine_that_was_not_open_today() {
 fn a_seed_that_no_longer_describes_the_tree_is_a_seed_nobody_re_measured() {
     let root = root();
     let doors = measure(&root);
-    assert!(
-        DOORS_TODAY <= doors.len() + HOW_STALE_A_SEED_MAY_BE,
-        "the seed says {} doors, the tree holds {}: lower DOORS_TODAY to {}. Open today:{}",
-        DOORS_TODAY,
-        doors.len(),
-        doors.len(),
-        listed(&root, &doors)
-    );
+    if let Weighed::TreeIsBelow(apart) = weigh(DOORS_TODAY, doors.len()) {
+        panic!(
+            "the seed says {} doors and the tree holds {}, {apart} apart: write \
+             DOORS_TODAY = {}. Open today:{}",
+            DOORS_TODAY,
+            doors.len(),
+            doors.len(),
+            listed(&root, &doors)
+        );
+    }
 }
 
 struct Scratch(PathBuf);

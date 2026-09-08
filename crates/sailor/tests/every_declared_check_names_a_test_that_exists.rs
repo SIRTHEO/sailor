@@ -7,15 +7,12 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use workspace::ratchet::{weigh, Weighed};
 
 /// Sections that declare a check and name no test, as counted today.
 /// Downwards only: each is a rule still waiting for what makes it red, and
 /// the red message lists them by file and line so somebody can write it.
 const PROSE_ONLY_CHECKS_TODAY: usize = 1;
-
-/// How far the seed may sit above what the docs hold. Zero: a seed nobody
-/// re-measured buys silence for work nobody did.
-const HOW_STALE_A_SEED_MAY_BE: usize = 0;
 
 /// A heading opening with one of these declares the check of its page.
 const HEADINGS_THAT_DECLARE_A_CHECK: &[&str] = &[
@@ -520,25 +517,28 @@ fn every_test_a_document_names_exists_in_the_tree() {
 #[test]
 fn the_checks_declared_in_prose_only_ever_fall() {
     let prose_only = prose_only(&declared_in_the_docs(&root()));
-    assert!(
-        prose_only.len() <= PROSE_ONLY_CHECKS_TODAY,
-        "sections that declare a check without naming a test: {} (the seed is \
-         {PROSE_ONLY_CHECKS_TODAY}). A check written in prose never fails: name \
-         the test that makes the rule red, and write it if it does not exist. \
-         The seed does not rise.\n  {}",
-        prose_only.len(),
-        prose_only.join("\n  ")
-    );
+    if let Weighed::TreeIsAbove(more) = weigh(PROSE_ONLY_CHECKS_TODAY, prose_only.len()) {
+        panic!(
+            "sections that declare a check without naming a test: {} ({more} more than the \
+             seed's {PROSE_ONLY_CHECKS_TODAY}). A check written in prose never fails: name \
+             the test that makes the rule red, and write it if it does not exist. \
+             The seed does not rise.\n  {}",
+            prose_only.len(),
+            prose_only.join("\n  ")
+        );
+    }
 }
 
 #[test]
 fn a_seed_that_no_longer_describes_the_docs_is_a_seed_nobody_re_measured() {
     let measured = prose_only(&declared_in_the_docs(&root())).len();
-    assert!(
-        PROSE_ONLY_CHECKS_TODAY <= measured + HOW_STALE_A_SEED_MAY_BE,
-        "the seed says {PROSE_ONLY_CHECKS_TODAY} and the docs hold {measured}: \
-         lower the seed to what was measured, so the next prose-only check is caught"
-    );
+    if let Weighed::TreeIsBelow(apart) = weigh(PROSE_ONLY_CHECKS_TODAY, measured) {
+        panic!(
+            "the seed says {PROSE_ONLY_CHECKS_TODAY} and the docs hold {measured}, {apart} \
+             apart: write PROSE_ONLY_CHECKS_TODAY = {measured}, so the next prose-only check \
+             is caught"
+        );
+    }
 }
 
 /// A count that stopped counting reads as agreement. No single form carries

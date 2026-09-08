@@ -1,7 +1,5 @@
-//! A release built from HEAD over an uncommitted tree ships work nobody sees.
-//! The refusal is only worth its sentence if it lands before the clone, the
-//! build and the install: this judge runs the real binary against a throwaway
-//! repository and looks at what it left behind.
+//! The refusal on uncommitted work is only worth its sentence if it lands
+//! before the clone, the build and the install.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};

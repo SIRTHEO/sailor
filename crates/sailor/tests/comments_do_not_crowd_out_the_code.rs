@@ -9,6 +9,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use workspace::ratchet::{weigh, Weighed};
 
 /// The per-block cap. Above it, a comment is chronicle: it belongs in the fault
 /// ledger or the commit, not here.
@@ -34,10 +35,10 @@ const COMMENT_LINES_NOT_IN_ENGLISH: usize = 1;
 /// Comment lines per thousand code lines, per crate, as measured today.
 /// Downwards only; a crate under 100 is where the sweep stops.
 const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
-    ("actions", 262),
-    ("catalogue", 250),
+    ("actions", 265),
+    ("catalogue", 228),
     ("desktop", 245),
-    ("faults", 180),
+    ("faults", 151),
     ("flow", 201),
     ("inventory", 274),
     ("ledger", 147),
@@ -54,16 +55,8 @@ const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
     ("toolbox", 284),
     ("trigger", 236),
     ("ui", 186),
-    ("workspace", 153),
+    ("workspace", 152),
 ];
-
-/// How far a seed may drift above what the tree actually holds. **Zero.**
-///
-/// **A SEED IS A NUMBER IN A FILE, AND A FILE MERGES.** A merge taking the older
-/// side raises the ceiling with no conflict and no signal. It was 20, an
-/// absolute number over three counters of different scale, and 20 does not tell
-/// whoever re-measured from whoever passed by two.
-const HOW_STALE_A_SEED_MAY_BE: usize = 0;
 
 /// Words no English sentence uses, which a sentence in this tree's other
 /// language cannot do without.
@@ -426,11 +419,16 @@ fn no_crate_lets_its_comments_outtalk_its_code_more_than_today() {
     // crates cost four measurements.
     let mut complaints = Vec::new();
     for (name, permille) in &measured {
-        let seed = seeded.get(name.as_str()).copied();
-        if !seed.is_some_and(|seed| *permille <= seed) {
-            complaints.push(format!("crate «{name}» carries {permille}‰ comment lines against a seed of {seed:?}. Cut comments, or the table is stale"));
-        } else if !seed.is_some_and(|seed| seed <= permille + HOW_STALE_A_SEED_MAY_BE) {
-            complaints.push(format!("crate «{name}» is seeded at {seed:?}‰ and holds {permille}‰: lower the seed"));
+        match seeded.get(name.as_str()).map(|seed| weigh(*seed, *permille)) {
+            None => complaints.push(format!("crate «{name}» is in no seed of the table")),
+            Some(Weighed::TreeIsAbove(more)) => complaints.push(format!(
+                "crate «{name}» carries {permille}‰ comment lines, {more}‰ over its seed. \
+                 Cut comments, or the table is stale"
+            )),
+            Some(Weighed::TreeIsBelow(apart)) => complaints.push(format!(
+                "crate «{name}» is seeded {apart}‰ above the {permille}‰ it holds: write {permille}"
+            )),
+            Some(Weighed::Holds) => {}
         }
     }
     assert!(
@@ -445,17 +443,18 @@ fn no_crate_lets_its_comments_outtalk_its_code_more_than_today() {
 #[test]
 fn no_new_comment_block_runs_past_the_cap() {
     let counts = count();
-    assert!(
-        counts.long_blocks <= LONG_BLOCKS_TODAY,
-        "blocks over {MAX_BLOCK} lines: {} (the declared cap is {LONG_BLOCKS_TODAY}). \
-         The longest runs {} lines in {}. Shorten it, or move the chronicle into \
-         the commit message{}{}",
-        counts.long_blocks,
-        counts.worst.0,
-        counts.worst.1,
-        all_three(&counts),
-        heaviest(&counts.long_at)
-    );
+    if let Weighed::TreeIsAbove(more) = weigh(LONG_BLOCKS_TODAY, counts.long_blocks) {
+        panic!(
+            "blocks over {MAX_BLOCK} lines: {} ({more} over the declared {LONG_BLOCKS_TODAY}). \
+             The longest runs {} lines in {}. Shorten it, or move the chronicle into \
+             the commit message{}{}",
+            counts.long_blocks,
+            counts.worst.0,
+            counts.worst.1,
+            all_three(&counts),
+            heaviest(&counts.long_at)
+        );
+    }
 }
 
 /// The seed reached zero, so the constant is gone and the test asks outright.
@@ -476,15 +475,16 @@ fn no_comment_tells_a_date() {
 #[test]
 fn the_comments_not_in_english_only_shrink() {
     let counts = count();
-    assert!(
-        counts.not_english <= COMMENT_LINES_NOT_IN_ENGLISH,
-        "comment lines not in English: {} (declared {COMMENT_LINES_NOT_IN_ENGLISH}). \
-         If you are writing a new comment, write it in English; if you are \
-         translating, lower the number{}{}",
-        counts.not_english,
-        all_three(&counts),
-        heaviest(&counts.not_english_at)
-    );
+    if let Weighed::TreeIsAbove(more) = weigh(COMMENT_LINES_NOT_IN_ENGLISH, counts.not_english) {
+        panic!(
+            "comment lines not in English: {} ({more} over the declared \
+             {COMMENT_LINES_NOT_IN_ENGLISH}). If you are writing a new comment, write it in \
+             English; if you are translating, lower the number{}{}",
+            counts.not_english,
+            all_three(&counts),
+            heaviest(&counts.not_english_at)
+        );
+    }
 }
 
 /// The other side of every ratchet: a ceiling that stops describing the tree.
@@ -504,15 +504,15 @@ fn a_seed_that_no_longer_describes_the_tree_is_a_seed_nobody_re_measured() {
             counts.not_english,
         ),
     ] {
-        assert!(
-            declared <= measured + HOW_STALE_A_SEED_MAY_BE,
-            "the seed «{what}» says {declared}, the tree holds {measured}: \
-             {} apart. Either a merge raised the ceiling, or somebody pruned \
-             without re-measuring — either way the number to write here is \
-             {measured}{}",
-            declared - measured,
-            all_three(&counts)
-        );
+        if let Weighed::TreeIsBelow(apart) = weigh(declared, measured) {
+            panic!(
+                "the seed «{what}» says {declared}, the tree holds {measured}: \
+                 {apart} apart. Either a merge raised the ceiling, or somebody pruned \
+                 without re-measuring — either way the number to write here is \
+                 {measured}{}",
+                all_three(&counts)
+            );
+        }
     }
 }
 

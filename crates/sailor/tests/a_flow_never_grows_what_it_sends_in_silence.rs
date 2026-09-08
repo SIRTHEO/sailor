@@ -8,11 +8,7 @@
 use sailor::flow_cmd::seeds::{flows_in, read_seeds, words_it_sends, Seed, SEED_FILE};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-
-/// How far a seed may sit from the flow it describes. **Zero.** A seed is a
-/// number in a file, and a file merges: a merge keeping the older side would
-/// take a re-measured seed back off with no conflict and no signal.
-const HOW_STALE_A_SEED_MAY_BE: usize = 0;
+use workspace::ratchet::{weigh, Weighed};
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -110,15 +106,15 @@ fn no_flow_sends_more_to_an_engine_than_its_seed_was_measured_on() {
         let Some(sends) = measured.sends.get(flow) else {
             continue;
         };
-        assert!(
-            *sends <= seed.words_it_sends,
-            "«{flow}» now hands {sends} characters to engines, and its seed was measured on \
-             {}: {} more went in. What one run costs was measured on the smaller flow and no \
-             longer describes this one. {}",
-            seed.words_it_sends,
-            sends - seed.words_it_sends,
-            how_to_repair(flow, *sends)
-        );
+        if let Weighed::TreeIsAbove(more) = weigh(seed.words_it_sends, *sends) {
+            panic!(
+                "«{flow}» now hands {sends} characters to engines, and its seed was measured \
+                 on {}: {more} more went in. What one run costs was measured on the smaller \
+                 flow and no longer describes this one. {}",
+                seed.words_it_sends,
+                how_to_repair(flow, *sends)
+            );
+        }
     }
 }
 
@@ -132,15 +128,15 @@ fn a_seed_that_no_longer_describes_the_flow_is_a_seed_nobody_re_measured() {
         let Some(sends) = measured.sends.get(flow) else {
             continue;
         };
-        assert!(
-            seed.words_it_sends <= sends + HOW_STALE_A_SEED_MAY_BE,
-            "the seed of «{flow}» was measured on {} characters of prose, the flow now hands \
-             {sends}: {} apart. Either a merge took a re-measure back off, or somebody \
-             shortened the flow without re-measuring. {}",
-            seed.words_it_sends,
-            seed.words_it_sends - sends,
-            how_to_repair(flow, *sends)
-        );
+        if let Weighed::TreeIsBelow(apart) = weigh(seed.words_it_sends, *sends) {
+            panic!(
+                "the seed of «{flow}» was measured on {} characters of prose, the flow now \
+                 hands {sends}: {apart} apart. Either a merge took a re-measure back off, or \
+                 somebody shortened the flow without re-measuring. {}",
+                seed.words_it_sends,
+                how_to_repair(flow, *sends)
+            );
+        }
     }
 }
 

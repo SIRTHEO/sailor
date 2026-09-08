@@ -2,6 +2,7 @@
 //! seeded, and the number may only fall.
 
 use std::path::{Path, PathBuf};
+use workspace::ratchet::{weigh, Weighed};
 
 const LINES_OUT_OF_SCALE: usize = 2_000;
 
@@ -50,16 +51,19 @@ fn no_more_files_run_past_the_scale_than_today() {
         .collect();
     over.sort_by_key(|entry| std::cmp::Reverse(entry.0));
     let listed: Vec<String> = over.iter().map(|(n, p)| format!("{n} {}", p.display())).collect();
-    assert!(
-        over.len() <= OUT_OF_SCALE_TODAY,
-        "files over {LINES_OUT_OF_SCALE} lines: {} (the seed is {OUT_OF_SCALE_TODAY}). Split by responsibility:\n{}",
-        over.len(),
-        listed.join("\n")
-    );
-    assert_eq!(
-        over.len(),
-        OUT_OF_SCALE_TODAY,
-        "fewer files over the scale than the seed says: lower OUT_OF_SCALE_TODAY to {}",
-        over.len()
-    );
+    match weigh(OUT_OF_SCALE_TODAY, over.len()) {
+        Weighed::TreeIsAbove(more) => panic!(
+            "files over {LINES_OUT_OF_SCALE} lines: {} ({more} more than the seed's \
+             {OUT_OF_SCALE_TODAY}). Split by responsibility:\n{}",
+            over.len(),
+            listed.join("\n")
+        ),
+        Weighed::TreeIsBelow(apart) => panic!(
+            "the seed says {OUT_OF_SCALE_TODAY} and the tree holds {}, {apart} apart: write \
+             OUT_OF_SCALE_TODAY = {}",
+            over.len(),
+            over.len()
+        ),
+        Weighed::Holds => {}
+    }
 }

@@ -89,16 +89,12 @@ fn version_in(answered: bool, said: &str) -> Option<String> {
     Some(format!("{} {}", words.next()?, words.next()?))
 }
 
-/// The window's shell, and the name its warnings are counted under.
-///
-/// **IT IS A WORKSPACE OF ITS OWN, SO `--workspace` NEVER REACHED IT.** 22
-/// files and 6.530 lines had never been linted once; the first run found six
-/// warnings.
+/// The window's shell, and the name its warnings are counted under. It is a
+/// workspace of its own, so `--workspace` at the root never reached it.
 const THE_SHELL: (&str, &str) = ("desktop", "desktop/src-tauri/Cargo.toml");
 
-/// Every crate under `crates/`, and the shell where there is one, so a crate
-/// that warns nowhere still has a row and its first warning is a rise, not a
-/// missing name.
+/// Every crate under `crates/`, and the shell, so a crate that warns nowhere
+/// still has a row and its first warning is a rise, not a missing name.
 fn crates_of(root: &Path) -> Vec<String> {
     let mut names: Vec<String> = std::fs::read_dir(root.join("crates"))
         .map(|entries| {
@@ -130,8 +126,7 @@ fn warnings_per_crate(root: &Path) -> Result<BTreeMap<String, usize>, String> {
     Ok(counts)
 }
 
-/// One linter run over the manifest it is handed. A run that does not finish
-/// is an error, not a zero.
+/// One linter run over the manifest it is handed. Not finishing is an error.
 fn linted(root: &Path, manifest: &Path, over: &[&str]) -> Result<String, String> {
     let said = linter(root, callers_build_directory(), manifest)
         .args(over)

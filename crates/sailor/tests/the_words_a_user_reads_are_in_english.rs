@@ -5,6 +5,7 @@
 //! improves only what it can see. This counts the other half.
 
 use std::path::{Path, PathBuf};
+use workspace::ratchet::{weigh, Weighed};
 
 /// How many string literals still carry the other language.
 ///
@@ -12,10 +13,6 @@ use std::path::{Path, PathBuf};
 /// elsewhere: re-measure, raise to the measured number, and say so in the
 /// commit. Raising it because it went red is disarming it.
 const SENTENCES_NOT_IN_ENGLISH: usize = 0;
-
-/// How far the seed may sit above the tree. **Zero**, for the reason the
-/// sibling ratchets give: a seed is a number in a file, and a file merges.
-const HOW_STALE_A_SEED_MAY_BE: usize = 0;
 
 /// Words no English sentence uses. The same list the comment judge carries,
 /// because the two count the same language in two places.
@@ -156,35 +153,30 @@ fn count_in(root: &Path) -> Found {
     Found { count, walked, worst }
 }
 
-/// **THE SEED IS A KNOB, NOT A LITERAL**, and clippy cannot know that: at zero
-/// it reads `count <= 0` as a comparison against the minimum of a `usize` and
-/// refuses to compile. Widening both sides keeps the two assertions written as
-/// every sibling ratchet writes them, so raising the seed one day changes a
-/// number and nothing else.
 #[test]
 fn the_sentences_the_product_says_only_ever_get_more_english() {
-    let declared = SENTENCES_NOT_IN_ENGLISH as i64;
-    let stale = HOW_STALE_A_SEED_MAY_BE as i64;
     let found = count_in(&root());
-    let measured = found.count as i64;
     workspace::measured_against(
         found.walked,
         "sources the product speaks from",
         WHERE_THE_PRODUCT_SPEAKS.len(),
         "trees it was pointed at",
     );
-    assert!(
-        measured <= declared,
-        "sentences not in English: {} (declared {SENTENCES_NOT_IN_ENGLISH}). \
-         Write the new one in English; if you are translating, lower the number.\n{}",
-        found.count,
-        found.worst.join("\n")
-    );
-    assert!(
-        declared <= measured + stale,
-        "the seed says {SENTENCES_NOT_IN_ENGLISH}, the tree holds {}: write the measured number",
-        found.count
-    );
+    match weigh(SENTENCES_NOT_IN_ENGLISH, found.count) {
+        Weighed::TreeIsAbove(more) => panic!(
+            "sentences not in English: {} ({more} more than the declared \
+             {SENTENCES_NOT_IN_ENGLISH}). Write the new one in English; if you are \
+             translating, lower the number.\n{}",
+            found.count,
+            found.worst.join("\n")
+        ),
+        Weighed::TreeIsBelow(apart) => panic!(
+            "the seed says {SENTENCES_NOT_IN_ENGLISH} and the tree holds {}, {apart} apart: \
+             write the measured number",
+            found.count
+        ),
+        Weighed::Holds => {}
+    }
 }
 
 /// Whoever measures gets measured: a counter that stopped seeing would let the
