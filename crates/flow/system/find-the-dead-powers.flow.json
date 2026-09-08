@@ -1,6 +1,6 @@
 {
   "id": "find-the-dead-powers",
-  "description": "THE TWO ACTIONS THAT NAME DEAD POWERS WERE, UNTIL THIS FLOW EXISTED, DEAD POWERS THEMSELVES: no command, no window, no other flow ever called `unused_actions` or `dormant_steps` — sailor-8a's own finding, verifying them. This flow is the ordinary gesture that reaches them. It runs both, hands the two reports to a person, and starts nothing on its own — the same shape as `notice-a-divergence`: propose, never execute. `unused_actions` answers from the flow files alone (never named by any shipped or project flow); `dormant_steps` answers from the ledger (named, but every closed run of that step was `Skipped`, or the flow itself has never run at all — three different states, never collapsed into one number).",
+  "description": "THE TWO ACTIONS THAT NAME DEAD POWERS WERE, UNTIL THIS FLOW EXISTED, DEAD POWERS THEMSELVES: no command, no window, no other flow ever called `unused_actions` or `dormant_steps` — found while verifying them. This flow is the ordinary gesture that reaches them. It runs both, hands the two reports to a person, and starts nothing on its own — the same shape as `notice-a-divergence`: propose, never execute. `unused_actions` answers from the flow files alone (never named by any shipped or project flow); `dormant_steps` answers from the ledger (named, but every closed run of that step was `Skipped`, or the flow itself has never run at all — three different states, never collapsed into one number).",
   "graph": {
     "steps": [
       {
@@ -20,7 +20,9 @@
       },
       {
         "id": "never_named",
-        "deps": ["trigger"],
+        "deps": [
+          "trigger"
+        ],
         "action": "unused_actions",
         "max_attempts": 1,
         "with": {},
@@ -33,7 +35,9 @@
       },
       {
         "id": "never_reached",
-        "deps": ["trigger"],
+        "deps": [
+          "trigger"
+        ],
         "action": "dormant_steps",
         "max_attempts": 1,
         "with": {},
@@ -46,16 +50,23 @@
       },
       {
         "id": "propose",
-        "deps": ["never_named", "never_reached"],
+        "deps": [
+          "never_named",
+          "never_reached"
+        ],
         "action": "handed_to_agent",
         "max_attempts": 1,
         "with": {
           "mandate": {
             "$join": [
               "Two reports on Sailor's own dead powers.\n\nNEVER NAMED BY ANY FLOW (static, from the flow files):\n",
-              { "$json": "/never_named" },
+              {
+                "$json": "/never_named"
+              },
               "\n\nNAMED, BUT NEVER REALLY REACHED (from the ledger — never run at all, always skipped by its own condition, or reached at least once):\n",
-              { "$json": "/never_reached" },
+              {
+                "$json": "/never_reached"
+              },
               "\n\nNeither list is a verdict on its own: a name here may be a recent flow nobody has had occasion to run yet, not a mistake. Read before acting."
             ]
           },
@@ -75,10 +86,17 @@
         "input_schema": {
           "type": "object",
           "properties": {
-            "holder": { "type": "string" },
-            "handoff_timeout_secs": { "type": "number" }
+            "holder": {
+              "type": "string"
+            },
+            "handoff_timeout_secs": {
+              "type": "number"
+            }
           },
-          "required": ["holder", "handoff_timeout_secs"],
+          "required": [
+            "holder",
+            "handoff_timeout_secs"
+          ],
           "allow_extra": true
         },
         "output_schema": {
