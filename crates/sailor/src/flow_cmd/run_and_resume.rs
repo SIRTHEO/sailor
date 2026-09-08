@@ -148,6 +148,22 @@ pub fn resume_run_with(
         Some(ledger.clone()),
         Some(Arc::new(TerminalWatcher::new()) as Arc<dyn actions::StepSinks>),
     );
+    // Reconciliation reads an unregistered action as an unknown effect and
+    // parks every open step on a person who has nothing to decide. The first
+    // run refuses this flow; so does the resume.
+    let missing = missing_actions(&flow.graph, &registry);
+    if !missing.is_empty() {
+        return Err(catalogue::say(
+            "cli.flow.names_unregistered_actions",
+            &[
+                ("flow", &flow.id),
+                (
+                    "actions",
+                    &missing.into_iter().collect::<Vec<_>>().join(", "),
+                ),
+            ],
+        ));
+    }
     // **THE START INSTANT IS THE OLD ONE, NOT THE HOUR OF THE RESUME.** The
     // header is rewritten whole on every update: the resume hour here would make
     // the run look started when it was resumed. `last_started_at` depends on it —
@@ -831,6 +847,77 @@ mod tests {
              as started in the morning"
         );
         assert_eq!(header.status, "complete", "the resume updates the status");
+    }
+
+    /// A step whose action nobody registers has no effect anybody can inspect:
+    /// reconciliation parks it on a person, and a parked step never becomes
+    /// ready again. The resume must refuse it the way the first run does.
+    #[test]
+    fn resuming_a_run_whose_action_nobody_registers_is_refused_and_not_parked() {
+        let home = TestDirectory::new();
+        let flow_file: FlowFile = serde_json::from_str(
+            r#"{
+                "id": "ripresa-senza-azione",
+                "description": "un passo che nomina un'azione che nessuno registra",
+                "graph": {"steps": [{
+                    "id": "issa-la-vela",
+                    "deps": [],
+                    "input_schema": {"type": "any"},
+                    "output_schema": {"type": "any"},
+                    "when": null,
+                    "action": "hoist_the_mainsail",
+                    "max_attempts": 3
+                }]},
+                "inputs": {}
+            }"#,
+        )
+        .expect("the scratch flow is valid");
+
+        let ledger = Ledger::open(&home.0).expect("the ledger opens");
+        ledger
+            .record_run(&ledger::RunRecord {
+                run_id: "corsa-orfana".to_owned(),
+                kind: "flow".to_owned(),
+                entity: "ripresa-senza-azione".to_owned(),
+                parent_run_id: None,
+                started_by: "prova".to_owned(),
+                status: "waiting".to_owned(),
+                total_cost_micros: 0,
+                error: None,
+                started_at: 1_000,
+                ended_at: None,
+                worktree: None,
+                stop_reason: None,
+            })
+            .expect("recording the run");
+        ledger
+            .append_step_started(&StepRecord::started(
+                "corsa-orfana",
+                "issa-la-vela",
+                1,
+                1,
+                vec![],
+                serde_json::json!({}),
+                vec![],
+                1_100,
+            ))
+            .expect("opening the step");
+
+        let refusal = resume_run_in(&ledger, &flow_file, "corsa-orfana")
+            .expect_err("the resume refuses a flow naming an action nobody registers");
+        assert!(
+            refusal.contains("hoist_the_mainsail"),
+            "the refusal must name the action: {refusal}"
+        );
+
+        let records = ledger
+            .records("corsa-orfana")
+            .expect("the records read back");
+        assert!(
+            records[0].outcome.is_none(),
+            "the step was closed instead of left alone: {:?}",
+            records[0].outcome
+        );
     }
 
     // ── the report the run before it left ────────────────────────────
