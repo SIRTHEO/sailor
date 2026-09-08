@@ -4,7 +4,7 @@
 //! back, because that is where a tree can be misread into the wrong branch or
 //! the wrong name — and a wrong name is what `remove` acts on.
 
-use sailor::worktree_cmd::{render, render_open, sweep};
+use sailor::worktree_cmd::{render, render_open, still_the_opener, sweep};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use workspace::{name_for, parse_worktrees, tree_path, OpenTree, OpenTrees};
@@ -120,7 +120,12 @@ fn a_tree_kept_from_a_step_is_listed_with_its_run_and_counted() {
 }
 
 fn an_entry(path: &str, opened_at: i64, pid: u32) -> OpenTree {
+    born_entry(path, opened_at, pid, None)
+}
+
+fn born_entry(path: &str, opened_at: i64, pid: u32, opened_by_born_at: Option<i64>) -> OpenTree {
     OpenTree {
+        opened_by_born_at,
         path: path.to_owned(),
         repo: "/somewhere/project".to_owned(),
         run: "corsa-7".to_owned(),
@@ -139,7 +144,7 @@ fn the_open_trees_say_who_asked_and_whether_that_one_is_still_running() {
         an_entry("/somewhere/project-worktrees/corsa-7/verifica", 4_600, 22),
     ];
 
-    let shown = render_open(&held, 11_800, |pid| pid == 22);
+    let shown = render_open(&held, 11_800, |tree| tree.opened_by_pid == 22);
     let first = shown.lines().next().expect("the first tree");
     let second = shown.lines().nth(1).expect("the second tree");
 
@@ -148,6 +153,30 @@ fn the_open_trees_say_who_asked_and_whether_that_one_is_still_running() {
     assert!(first.contains("gone"), "a dead opener passed for a live one: {first}");
     assert!(second.contains("still running"), "{second}");
     assert_eq!(render_open(&[], 0, |_| true), "Sailor has no tree open: nothing it cut is still standing.");
+}
+
+/// **THE NUMBER IS TAKEN, THE TREE IS STILL NOBODY'S.** A row saying when its
+/// opener was born reads a reused number for what it is; without that second
+/// the listing can only say whether the number is taken, and says so of a row
+/// nobody is behind any more.
+#[test]
+fn a_tree_whose_opener_was_born_at_another_second_is_shown_as_gone() {
+    let mine = std::process::id();
+    let born = ledger::born_second_of(mine).expect("this machine says when a process was born");
+    let held = [
+        born_entry("/somewhere/project-worktrees/corsa-7/mio", 1_000, mine, Some(born)),
+        born_entry("/somewhere/project-worktrees/corsa-7/altrui", 1_000, mine, Some(born - 1)),
+    ];
+
+    let shown = render_open(&held, 11_800, still_the_opener);
+
+    let first = shown.lines().next().expect("the first tree");
+    let second = shown.lines().nth(1).expect("the second tree");
+    assert!(first.contains("still running"), "this very process holds it: {first}");
+    assert!(
+        second.contains("gone"),
+        "the same number under another second passed for the opener: {second}"
+    );
 }
 
 /// **THE ONE THAT MATTERS, THROUGH THE GESTURE A PERSON TYPES.** The sweep

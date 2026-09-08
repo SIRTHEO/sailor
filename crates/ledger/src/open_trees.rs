@@ -77,6 +77,7 @@ mod tests {
 
     fn an_entry(path: &str) -> OpenTree {
         OpenTree {
+            opened_by_born_at: None,
             path: path.to_owned(),
             repo: "/nowhere/project".to_owned(),
             run: "run-9".to_owned(),

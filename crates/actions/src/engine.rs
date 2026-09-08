@@ -230,7 +230,13 @@ fn tree_of_its_own(
         ));
     };
     let repo = PathBuf::from(&root);
-    workspace::tree_for(&repo, &run, &step, &register)
+    workspace::tree_for(
+        &repo,
+        &run,
+        &step,
+        &register,
+        ledger::born_second_of(std::process::id()),
+    )
         .map(|at| {
             Some(OwnTree {
                 repo,

@@ -161,6 +161,9 @@ pub struct OpenTree {
     pub step: String,
     pub opened_by_pid: u32,
     pub opened_at: i64,
+    /// Handed in: this crate talks to git, not to the kernel. `None` is unasked.
+    #[serde(default)]
+    pub opened_by_born_at: Option<i64>,
 }
 
 /// Where the trees Sailor cuts are written down. A trait, so this crate keeps
@@ -188,6 +191,7 @@ pub fn tree_for(
     run: &str,
     step: &str,
     register: &dyn OpenTrees,
+    opened_by_born_at: Option<i64>,
 ) -> Result<PathBuf, String> {
     let path = tree_path(repo, &format!("{}/{}", safe(run), safe(step)));
     let opened = OpenTree {
@@ -197,6 +201,7 @@ pub fn tree_for(
         step: step.to_owned(),
         opened_by_pid: std::process::id(),
         opened_at: now(),
+        opened_by_born_at,
     };
     if path.exists() {
         register.tree_opened(&opened)?;
@@ -573,8 +578,8 @@ mod tests {
     fn a_tree_holding_work_is_kept_and_a_clean_one_is_taken_down() {
         let (scratch, repo) = a_repository("closing");
         let page = APage::default();
-        let clean = tree_for(&repo, "run-1", "clean", &page).expect("a tree");
-        let dirty = tree_for(&repo, "run-1", "dirty", &page).expect("a tree");
+        let clean = tree_for(&repo, "run-1", "clean", &page, None).expect("a tree");
+        let dirty = tree_for(&repo, "run-1", "dirty", &page, None).expect("a tree");
         std::fs::write(dirty.join("left-behind"), "half a thought\n").expect("work left");
 
         let went = close_tree(&repo, &clean, &page);
@@ -610,7 +615,7 @@ mod tests {
     fn a_tree_holding_a_commit_no_branch_has_is_kept() {
         let (scratch, repo) = a_repository("committed");
         let page = APage::default();
-        let tree = tree_for(&repo, "run-2", "committed", &page).expect("a tree");
+        let tree = tree_for(&repo, "run-2", "committed", &page, None).expect("a tree");
         std::fs::write(tree.join("answer"), "the engine's work\n").expect("work");
         assert!(run_git(&tree, &["add", "answer"]).status.success());
         assert!(run_git(&tree, &["commit", "-q", "-m", "what it found"]).status.success());
@@ -633,7 +638,7 @@ mod tests {
         let (scratch, repo) = a_repository("written-down");
         let page = APage::default();
 
-        let tree = tree_for(&repo, "run-4", "asks", &page).expect("a tree");
+        let tree = tree_for(&repo, "run-4", "asks", &page, Some(1_700_000_000)).expect("a tree");
         let open = page.trees_left_open().expect("the page reads back");
         let closed = close_tree(&repo, &tree, &page);
         let after = page.trees_left_open().expect("the page reads back");
@@ -644,6 +649,11 @@ mod tests {
         assert_eq!(open[0].run, "run-4");
         assert_eq!(open[0].step, "asks");
         assert_eq!(open[0].opened_by_pid, std::process::id());
+        assert_eq!(
+            open[0].opened_by_born_at,
+            Some(1_700_000_000),
+            "the second the opener was born is written down, or a reused number              reads as the opener for ever"
+        );
         assert!(open[0].opened_at > 0, "the tree was opened at no time");
         assert_eq!(closed, Closing::TakenDown);
         assert!(after.is_empty(), "a tree taken down is still on the page: {after:?}");
@@ -654,7 +664,7 @@ mod tests {
     fn a_tree_the_register_refuses_is_never_left_standing() {
         let (scratch, repo) = a_repository("unwritten");
 
-        let refused = tree_for(&repo, "run-5", "unwritten", &ARefusal).expect_err("no page, no tree");
+        let refused = tree_for(&repo, "run-5", "unwritten", &ARefusal, None).expect_err("no page, no tree");
         let listed = String::from_utf8_lossy(&run_git(&repo, &["worktree", "list"]).stdout)
             .into_owned();
         let standing = tree_path(&repo, "run-5/unwritten").exists();
@@ -679,6 +689,7 @@ mod tests {
         assert!(run_git(&ahead, &["commit", "-q", "-m", "not in the trunk"]).status.success());
         for tree in [&merged, &ahead] {
             page.tree_opened(&OpenTree {
+                opened_by_born_at: None,
                 path: tree.to_string_lossy().into_owned(),
                 repo: repo.to_string_lossy().into_owned(),
                 run: "by-hand".to_owned(),
@@ -711,7 +722,7 @@ mod tests {
     fn a_tree_already_gone_leaves_the_page() {
         let (scratch, repo) = a_repository("gone");
         let page = APage::default();
-        let tree = tree_for(&repo, "run-6", "gone", &page).expect("a tree");
+        let tree = tree_for(&repo, "run-6", "gone", &page, None).expect("a tree");
         std::fs::remove_dir_all(&tree).expect("somebody removed it by hand");
 
         let closing = close_if_the_trunk_holds_it(&repo, &tree, &page);

@@ -86,7 +86,7 @@ fn dispatch(args: &[String]) -> Result<String, String> {
         [command] if command == "open" => {
             let store = a_store()?;
             let held = store.trees_left_open()?;
-            Ok(render_open(&held, now(), ledger::pid_is_alive))
+            Ok(render_open(&held, now(), still_the_opener))
         }
         [command, word] if command == "close" && word == MERGED => sweep(&repo, &a_store()?),
         [command, word] if command == "close" && word.starts_with("--") => Err(catalogue::say(
@@ -110,17 +110,27 @@ fn now() -> i64 {
         .map_or(0, |since| since.as_secs() as i64)
 }
 
+/// Whether the process that cut a tree is still the one holding its number.
+/// A row that says when its opener was born is settled exactly; an older one
+/// can only be asked whether the number is taken.
+pub fn still_the_opener(tree: &OpenTree) -> bool {
+    match tree.opened_by_born_at {
+        Some(born) => ledger::born_second_of(tree.opened_by_pid) == Some(born),
+        None => ledger::pid_is_alive(tree.opened_by_pid),
+    }
+}
+
 /// The trees Sailor wrote down and never took back off the page.
 ///
-/// The opener's pid is asked whether it is still there, because that is what
+/// The opener is asked whether it is still there, because that is what
 /// separates a tree somebody is working in from disk nobody will ever claim.
-pub fn render_open(held: &[OpenTree], now: i64, alive: impl Fn(u32) -> bool) -> String {
+pub fn render_open(held: &[OpenTree], now: i64, alive: impl Fn(&OpenTree) -> bool) -> String {
     if held.is_empty() {
         return catalogue::say("cli.worktree.none_open", &[]);
     }
     held.iter()
         .map(|tree| {
-            let state = if alive(tree.opened_by_pid) {
+            let state = if alive(tree) {
                 "cli.worktree.opener_alive"
             } else {
                 "cli.worktree.opener_gone"
