@@ -453,6 +453,8 @@
   "cli.session.ledger_did_not_open": "the ledger did not open ({why}), so this greeting cannot say whether anything is waiting: that is «I could not look», not «nothing is open».",
   "cli.session.not_announced": "you were not announced to the other agents ({why}), so the crew survey will not show this terminal: it will read as an empty tree, not as a terminal that could not speak.",
   "cli.session.others_in_this_tree": "{count} other terminal(s) are open in this tree, by the register: {who}. Uncommitted work here may be theirs, and a measurement taken over the working tree measures theirs too — so read what a clean HEAD says before seeding any ratchet, and before calling the tree green. The register does not know what is alive: a terminal killed without closing stays in this list.",
+  "cli.session.others_alive": "{count} other terminal(s) are alive in this tree: {who}. Uncommitted work here may be theirs, and a measurement taken over the working tree measures theirs too — so read what a clean HEAD says before seeding any ratchet, and before calling the tree green.",
+  "cli.session.others_stale": "{count} further row(s) of the register name this tree and hold nobody: those terminals are gone and their rows were never closed. Nothing there is running, and nothing there will resume.",
   "cli.session.runs_to_ask_again": "{count} run(s) stopped on a step that answered «not yet»: {which}. They come back only when somebody runs them again: `sailor flow resume {first}`.",
   "cli.session.runs_waiting_for_a_person": "{count} run(s) of the ledger are waiting for a person to take them up: {which}. Nothing takes them on its own — `sailor flow resume {first}` does.",
   "cli.session.root_not_an_object": "{file}: the root is not an object",

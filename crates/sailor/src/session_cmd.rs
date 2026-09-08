@@ -1122,14 +1122,66 @@ fn neighbours(arrival: &Arrival, store: &Sessions) -> Option<String> {
     if others.is_empty() {
         return None;
     }
-    let who: Vec<String> = others.iter().map(|row| named(row, here)).collect();
-    Some(catalogue::say(
-        "cli.session.others_in_this_tree",
-        &[
-            ("count", &who.len().to_string()),
-            ("who", &who.join(", ")),
-        ],
-    ))
+    let abandoned = sessions::census::Census::of(&sessions::census::LocalMachine).abandoned(&rows);
+    who_is_here(&others, &abandoned, here)
+}
+
+/// The sentence itself, apart from the machine that answered: which of the
+/// rows still hold somebody, and how many are only rows.
+///
+/// **A ROW THAT HOLDS NOBODY IS NOT A NEIGHBOUR**, and it is not silence
+/// either — it is counted and said, because a reader who is told nothing goes
+/// looking for a terminal that is not there.
+fn who_is_here(
+    others: &[&sessions::TerminalRow],
+    abandoned: &sessions::census::Abandoned,
+    here: &str,
+) -> Option<String> {
+    let mut alive = Vec::new();
+    let mut stale = 0usize;
+    let mut unknown = false;
+    for row in others {
+        match standing_of(row, abandoned) {
+            Standing::NobodyThere => stale += 1,
+            Standing::Unknown => {
+                unknown = true;
+                alive.push(named(row, here));
+            }
+            Standing::Open | Standing::Closed => alive.push(named(row, here)),
+        }
+    }
+    // **THE OLD SENTENCE DECLARED WHAT IT COULD NOT ANSWER, AND THAT STAYS
+    // TRUE WHEN THE MACHINE WOULD NOT SAY.** Answering for a census we were
+    // refused would turn a limit we can state into a claim we cannot.
+    if unknown {
+        return Some(catalogue::say(
+            "cli.session.others_in_this_tree",
+            &[
+                ("count", &alive.len().to_string()),
+                ("who", &alive.join(", ")),
+            ],
+        ));
+    }
+    let mut said = Vec::new();
+    if !alive.is_empty() {
+        said.push(catalogue::say(
+            "cli.session.others_alive",
+            &[
+                ("count", &alive.len().to_string()),
+                ("who", &alive.join(", ")),
+            ],
+        ));
+    }
+    if stale > 0 {
+        said.push(catalogue::say(
+            "cli.session.others_stale",
+            &[("count", &stale.to_string())],
+        ));
+    }
+    if said.is_empty() {
+        return None;
+    }
+    Some(said.join(" "))
 }
 
 /// A neighbour by name, and **where they are when it is not where you are**:
@@ -3002,6 +3054,65 @@ mod tests {
         // A closed row claims nothing of the machine, so a refusal does not
         // make it doubtful.
         assert_eq!(standing_of(&a_row("ttys013", Some(9)), &refused), Standing::Closed);
+    }
+
+    /// **THE GREETING NAMES THE LIVING AND COUNTS THE REST.** A row nobody
+    /// holds announced as a neighbour sends the reader to look for a terminal
+    /// that is not there, and makes a tree read as shared when it is not.
+    #[test]
+    fn a_neighbour_nobody_holds_is_counted_apart_from_the_ones_who_are_there() {
+        let seen = sessions::census::Abandoned::Seen {
+            ttys: vec!["ttys013".to_owned(), "ttys018".to_owned()],
+        };
+        let (five, thirteen, eighteen) =
+            (a_row("ttys005", None), a_row("ttys013", None), a_row("ttys018", None));
+        let others = [&five, &thirteen, &eighteen];
+
+        let said = who_is_here(&others, &seen, "/somewhere").expect("something to say");
+
+        assert!(said.contains("ttys005"), "the living one is named: {said}");
+        assert!(!said.contains("ttys013"), "a row nobody holds is not a neighbour: {said}");
+        assert!(!said.contains("ttys018"), "{said}");
+        assert!(said.contains('2'), "and the rest are counted: {said}");
+    }
+
+    /// **A TREE WHOSE ONLY OTHER ROWS ARE STALE IS NOT A SHARED TREE.** The
+    /// count still gets said: silence would read as «nobody was ever here»,
+    /// which is a different fact and leads somewhere else.
+    #[test]
+    fn a_tree_where_every_other_row_is_stale_says_so_and_names_nobody() {
+        let seen = sessions::census::Abandoned::Seen {
+            ttys: vec!["ttys013".to_owned()],
+        };
+
+        let said = who_is_here(&[&a_row("ttys013", None)], &seen, "/somewhere")
+            .expect("a stale row is still worth a sentence");
+
+        assert!(!said.contains("ttys013"), "{said}");
+        assert!(said.contains('1'), "{said}");
+    }
+
+    /// **A CENSUS WE WERE REFUSED KEEPS THE OLDER, WEAKER SENTENCE** — the one
+    /// that says the register does not know who is alive. Splitting the rows
+    /// on an answer nobody gave would turn a stated limit into a false claim.
+    #[test]
+    fn a_refused_census_still_names_every_row_and_declares_it_cannot_tell() {
+        let refused = sessions::census::Abandoned::CouldNotLook {
+            refusal: sessions::census::Refusal {
+                tool: "ps".to_owned(),
+                reason: "not permitted".to_owned(),
+            },
+        };
+        let (five, thirteen) = (a_row("ttys005", None), a_row("ttys013", None));
+        let others = [&five, &thirteen];
+
+        let said = who_is_here(&others, &refused, "/somewhere").expect("something to say");
+
+        assert!(said.contains("ttys005") && said.contains("ttys013"), "{said}");
+        assert!(
+            said.contains("does not know") || said.contains("non sa"),
+            "the limit is still declared: {said}"
+        );
     }
 
     /// An arrival in a throwaway tree: these cases are about the ledger's half
