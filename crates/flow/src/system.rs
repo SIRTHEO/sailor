@@ -139,6 +139,57 @@ pub const FLOWS: &[(&str, &str)] = &[
     ),
 ];
 
+/// What the catalogue answers for a name it does not ship.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PastName {
+    /// The shipped flow doing that work today.
+    CarriedOnBy(&'static str),
+    /// It existed, and nothing carries it: an answer, not a missing flow.
+    NothingCarriesIt,
+}
+
+/// Names the ledger keeps runs under and no file answers to any more.
+///
+/// **READ ONLY WHERE NOTHING ELSE ANSWERS**, so no entry shadows a flow of
+/// somebody's own. A successor is written only where `git log
+/// --diff-filter=R` recorded the rename and the steps match: a plausible
+/// pair is a guess, and it sends whoever asks to the wrong flow.
+pub const PAST_NAMES: &[(&str, PastName)] = &[
+    ("accendi-la-macchina", PastName::NothingCarriesIt),
+    ("allinea-con-develop", PastName::NothingCarriesIt),
+    ("c-e-una-via-per-notion", PastName::NothingCarriesIt),
+    ("che-cosa-gira", PastName::NothingCarriesIt),
+    ("che-sappiamo-di-noi", PastName::NothingCarriesIt),
+    ("il-giro-di-prova", PastName::NothingCarriesIt),
+    ("mandato-corrente", PastName::NothingCarriesIt),
+    ("migrazione-a-sailor", PastName::CarriedOnBy("migrate-to-sailor")),
+    ("passa-il-testimone", PastName::NothingCarriesIt),
+    ("prova-dei-turni", PastName::NothingCarriesIt),
+    ("prova-rapporto", PastName::NothingCarriesIt),
+    ("prova-research-usa-e-getta", PastName::NothingCarriesIt),
+    ("prova-scorre", PastName::NothingCarriesIt),
+    ("qualcuno-ha-spinto-su-develop", PastName::NothingCarriesIt),
+    ("rotto", PastName::NothingCarriesIt),
+    ("route-a-breakage-mutant", PastName::NothingCarriesIt),
+    ("smista-il-lavoro", PastName::CarriedOnBy("dispatch-the-work")),
+    ("spegni-la-macchina", PastName::NothingCarriesIt),
+    (
+        "strumenti-di-questa-macchina",
+        PastName::CarriedOnBy("what-this-machine-has"),
+    ),
+    ("try-dormant-steps", PastName::NothingCarriesIt),
+    ("try-unused-actions", PastName::NothingCarriesIt),
+];
+
+/// What became of a name, for whoever asks the catalogue about one it does not
+/// hold. `None` is a name this product never carried.
+pub fn past_name(name: &str) -> Option<PastName> {
+    PAST_NAMES
+        .iter()
+        .find(|(past, _)| *past == name)
+        .map(|(_, became)| *became)
+}
+
 /// A place where flows are looked for, with the name a reader sees.
 ///
 /// `dir` for the system source is [`PLACE`]: not a folder, and the only way to

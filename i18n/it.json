@@ -124,6 +124,8 @@
   "cli.flow.never_run": "mai girato",
   "cli.flow.never_run_here": "il flusso {flow} non ha mai girato su questa macchina",
   "cli.flow.no_flow_by_that_name": "nessun flusso si chiama {flow}; quelli in vista sono: {names}",
+  "cli.flow.that_name_is_carried_on": "«{flow}» è come si chiamava «{now}» prima della rinomina: le corse sotto il vecchio nome restano nel registro, e il lavoro lo porta avanti «{now}»",
+  "cli.flow.that_name_is_past": "«{flow}» è esistito e oggi non lo porta più nessuno: il registro conserva le sue corse, e nessun flusso viene spedito con quel nome",
   "cli.flow.no_run_is_waiting": "nessuna corsa aspetta qualcuno",
   "cli.flow.no_schedule_by_hand_only": "nessun innesco: parte solo a mano",
   "cli.flow.no_schedule_starts_by_hand": "{none} — parte solo quando qualcuno lo chiede",

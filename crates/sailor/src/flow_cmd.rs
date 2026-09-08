@@ -118,6 +118,17 @@ fn one_flow(sources: &[FlowSource], name: &str) -> Result<(FlowFile, &'static st
             &[("flow", name), ("origin", origin), ("reason", reason)],
         )),
         None => {
+            if let Some(became) = flow::system::past_name(name) {
+                return Err(match became {
+                    flow::system::PastName::CarriedOnBy(now) => catalogue::say(
+                        "cli.flow.that_name_is_carried_on",
+                        &[("flow", name), ("now", now)],
+                    ),
+                    flow::system::PastName::NothingCarriesIt => {
+                        catalogue::say("cli.flow.that_name_is_past", &[("flow", name)])
+                    }
+                });
+            }
             let names: Vec<&str> = known.iter().map(|(name, _, _)| name.as_str()).collect();
             let in_sight = match names.is_empty() {
                 true => catalogue::say("cli.flow.none_in_sight", &[]),
@@ -548,6 +559,33 @@ mod tests {
         assert!(
             one_flow(&sources, "buono").is_ok(),
             "the real flow does open"
+        );
+    }
+
+    /// A NAME THE LEDGER HOLDS IS ANSWERED, NOT LISTED AGAINST. Offering the
+    /// names in sight to somebody who typed the old name of a flow reads as a
+    /// typo, while the runs under that name are in the ledger.
+    #[test]
+    fn a_name_the_catalogue_no_longer_ships_is_answered_for() {
+        let directory = TestDirectory::new();
+        let sources = [FlowSource {
+            origin: "di prova",
+            dir: directory.0.clone(),
+        }];
+
+        let renamed = one_flow(&sources, "smista-il-lavoro").expect_err("it ships under its name");
+        assert_eq!(
+            catalogue::say(
+                "cli.flow.that_name_is_carried_on",
+                &[("flow", "smista-il-lavoro"), ("now", "dispatch-the-work")]
+            ),
+            renamed
+        );
+
+        let gone = one_flow(&sources, "che-cosa-gira").expect_err("nothing carries it");
+        assert_eq!(
+            catalogue::say("cli.flow.that_name_is_past", &[("flow", "che-cosa-gira")]),
+            gone
         );
     }
 

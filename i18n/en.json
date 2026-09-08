@@ -124,6 +124,8 @@
   "cli.flow.never_run": "never run",
   "cli.flow.never_run_here": "flow {flow} has never run on this machine",
   "cli.flow.no_flow_by_that_name": "no flow is called {flow}; the ones in sight are: {names}",
+  "cli.flow.that_name_is_carried_on": "«{flow}» is what «{now}» was called before it was renamed: the runs under the old name stay in the ledger, and the work is carried on by «{now}»",
+  "cli.flow.that_name_is_past": "«{flow}» existed and nothing carries it today: the ledger keeps its runs, and no flow ships under that name",
   "cli.flow.no_run_is_waiting": "no run is waiting for anybody",
   "cli.flow.no_schedule_by_hand_only": "no schedule: it starts by hand only",
   "cli.flow.no_schedule_starts_by_hand": "{none} — it starts only when somebody asks",
