@@ -362,8 +362,11 @@ that found it, not to whoever was holding it**. «Caught by
 can go to; «caught by the second reviewer» is an anecdote. When no such thing
 exists, the finding stands on its own evidence, with no author at all.
 
-This rule does not reach the ledger, the notes or the fault register. Those are
-ours, they record who did what on purpose, and that is exactly their job.
+**The story is not deleted, it is addressed elsewhere.** The ledger, `sailor
+notes` and the fault register record who did what on purpose, and that is their
+job. Sending it there is deliberately a rule about destination and not about
+wording: deciding which internal detail is harmless is a judgement call, and a
+judgement call made a hundred times comes out wrong at least once.
 
 ## How it is reported
 

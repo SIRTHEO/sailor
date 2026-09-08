@@ -100,9 +100,18 @@ refactor(profiles): the engines a profile can be made of are a file, not Rust
 
 - **One self-standing piece per commit.** A commit is a thing that holds up on
   its own, not a save point: if the subject needs an "and", it is two commits.
-- **The body carries the why.** The what is in the diff. The story of how it
-  went — the dates, the earlier shape, what you tried first — belongs here,
-  where it keeps the real author and the real date, and not in a comment.
+- **The body carries the why, and only the why.** The what is in the diff. The
+  technical necessity belongs here: the constraint that forced the shape, what
+  else it touches, what it deliberately does not do. Not in a comment — a
+  comment is read by whoever is in the code, this by whoever is not.
+- **The story of how it went has a different address.** Who worked on it, who
+  reviewed whom, which engine was asked, what was tried first: that is the
+  ledger, `sailor notes`, and the fault register, which record it on purpose
+  and keep the real author and the real date. It is not that the names are
+  wrong and could be struck out — an anonymous account of who reviewed whom
+  still carries the internal organisation, and a reader who was not here can
+  use none of it. **Sending the story elsewhere is the rule, because it needs
+  no judgement about which internal detail is acceptable.**
 - No tooling attribution trailers.
 
 ## Comments
