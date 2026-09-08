@@ -2,7 +2,7 @@
 //! own words and the gate decides from them. Not a judge itself — it opens no
 //! source, it drives the gate — so it carries no seed and no receipt.
 
-use sailor::ratchet_cmd::{verdict_of, Gate, Handed, Verdict};
+use sailor::ratchet_cmd::{judges_in, verdict_of, Gate, Handed, Verdict};
 
 /// The element the perimeter must contain: a judge that walked can count it.
 const SENTINEL: &str = "the sentinel this perimeter demands";
@@ -146,5 +146,55 @@ fn the_tree_laid_over_is_the_top_of_a_repository_that_tracks_it() {
     let listed = String::from_utf8_lossy(&tracked.stdout);
     assert!(listed.contains("crates/one.rs"), "what HEAD held is not tracked here: {listed}");
     assert!(listed.contains("crates/two.rs"), "what was laid over is not tracked here: {listed}");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A tree with one test file planted in each of the places a judge could live.
+fn a_tree_of_judges(label: &str) -> std::path::PathBuf {
+    let root = std::env::temp_dir().join(format!("sailor-judges-{label}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let names = "reads the sources through env!(\"CARGO_MANIFEST_DIR\")";
+    let another_road = "reads the sources through include_str!(\"../descriptors/default.json\")";
+    for (at, body) in [
+        ("crates/a_crate/tests/a_judge.rs", names),
+        ("crates/a_crate/tests/a_judge_by_another_road.rs", another_road),
+        ("desktop/src-tauri/tests/a_judge_of_the_shell.rs", names),
+    ] {
+        let path = root.join(at);
+        std::fs::create_dir_all(path.parent().expect("a tests directory")).expect("a scratch");
+        std::fs::write(&path, format!("// {body}\n")).expect("a test file");
+    }
+    root
+}
+
+/// **WHAT THE GATE NEVER ASKS, NO RECEIPT CAN COVER.** The finder is put to a
+/// tree with a judge planted in each of the three places one could live, and it
+/// comes back with one. The two misses are its declared limit: `crates/` is the
+/// only place it opens, `CARGO_MANIFEST_DIR` the only road it recognises. If
+/// either goes red the finder reaches further, and this says so — deliberately.
+#[test]
+fn the_finder_reaches_one_of_the_three_places_a_judge_can_live() {
+    let root = a_tree_of_judges("planted");
+    let found = judges_in(&root);
+
+    let named: Vec<&str> = found.iter().map(|judge| judge.test.as_str()).collect();
+    assert!(
+        named.contains(&"a_judge"),
+        "the planted judge under crates/ was not found, so nothing below measures anything"
+    );
+    assert!(found.iter().any(|judge| judge.package == "a_crate"), "{found:?}");
+
+    assert!(
+        !named.contains(&"a_judge_of_the_shell"),
+        "the finder now reaches desktop/src-tauri: it opens only <root>/crates, and the \
+         shell is a workspace of its own with sources of its own"
+    );
+    assert!(
+        !named.contains(&"a_judge_by_another_road"),
+        "the finder now recognises a judge that reads the sources without naming \
+         CARGO_MANIFEST_DIR: include_str! and current_dir() are the other two roads"
+    );
+    assert_eq!(named.len(), 1, "one of the three, and no more: {named:?}");
+
     let _ = std::fs::remove_dir_all(&root);
 }
