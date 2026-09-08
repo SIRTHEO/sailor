@@ -371,19 +371,12 @@ pub fn hold(run_id: &str, micros: i64) -> Held {
     Held::against(&mut held, run_id, micros)
 }
 
-/// Admits the next call and holds its reserve **without letting go of the lock
-/// in between**.
+/// Admits the next call and holds its reserve **under one lock**: taken three
+/// times, two reserves of 0.40 both passed a cap of 0.60.
 ///
-/// Reading the reserves, deciding, and holding used to take the lock three
-/// times. Measured with a barrier between the second and the third: two calls
-/// of 0.40 both admitted against a cap of 0.60, about one round in a hundred.
-/// The window is widest on a run's first front, where nothing is in flight yet
-/// and four calls may open at once.
-///
-/// **THE OTHER HALF OF THIS HOLE IS NOT CLOSED HERE.** These reserves live in
-/// one process. Two `sailor flow run` share the ledger and not this map, so
-/// their reserves do not see each other at all, with no timing needed: the cure
-/// is a reservation the store holds, and the store is not this file.
+/// **THE OTHER HALF OF THE HOLE IS OPEN**: these reserves live in one process,
+/// so two `sailor flow run` do not see each other's at all. That cure is a
+/// reservation the store holds.
 pub fn admit_and_hold(
     cap_micros: i64,
     spent: &flow::Spend,
@@ -619,19 +612,16 @@ mod under_way {
         flow::Spend::default()
     }
 
-    /// **TWO CALLS THAT BOTH FIT ALONE MUST NOT BOTH PASS.** Measured before
-    /// this: reading the reserves, deciding and holding took the lock three
-    /// times, and with a barrier between the last two, two reserves of 0.40
-    /// were both admitted against a cap of 0.60 in about one round of a
-    /// hundred. Here they start together two hundred times.
+    /// **TWO CALLS THAT BOTH FIT ALONE MUST NOT BOTH PASS.** They start
+    /// together two hundred times.
     #[test]
     fn two_reserves_at_once_cannot_pass_the_cap() {
         for round in 0..200 {
             let run = format!("corsa-{round}");
             let gate = Arc::new(Barrier::new(2));
             // **THE GUARDS ARE KEPT ALIVE**: dropping one gives its room back,
-            // and the second call would then be admitted honestly. Written as
-            // `is_ok()`, this judge went red against a cure that works.
+            // and `is_ok()` drops it at once — this judge went red against a
+            // cure that works.
             let taken: Vec<bool> = std::thread::scope(|scope| {
                 let each = |gate: Arc<Barrier>, run: String| {
                     scope.spawn(move || {
