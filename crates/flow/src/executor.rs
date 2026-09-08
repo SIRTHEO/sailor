@@ -131,6 +131,35 @@ pub enum ActionOutcome {
     NotYet(String),
 }
 
+/// Why redoing a step after an effect nobody could inspect is safe. `Repeatable`
+/// is the promise, this is the proof, and twenty-eight actions had none.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RedoEvidence {
+    /// Nothing outside the run is touched.
+    TouchesNothing,
+    /// The effect is addressed, so doing it twice is doing it once.
+    SameOperation(String),
+    None,
+}
+
+/// What may be done with a step whose effect nobody could inspect.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Recovery {
+    Retry,
+    Undo,
+    Person,
+}
+
+/// **A PROMISE WITHOUT EVIDENCE LANDS ON A PERSON.**
+pub fn recovery_from(species: StepSpecies, evidence: &RedoEvidence) -> Recovery {
+    match (species, evidence) {
+        (StepSpecies::Repeatable, RedoEvidence::None) => Recovery::Person,
+        (StepSpecies::Repeatable, _) => Recovery::Retry,
+        (StepSpecies::Compensable, _) => Recovery::Undo,
+        (StepSpecies::HandToHuman, _) => Recovery::Person,
+    }
+}
+
 pub trait Action: Send + Sync {
     fn execute(&self, input: &Value, shared: &SharedState) -> Result<ActionOutcome, ActionError>;
 
@@ -181,6 +210,12 @@ pub trait Action: Send + Sync {
         _shared: &SharedState,
     ) -> Result<EffectStatus, ActionError> {
         Ok(EffectStatus::Unknown("effect_not_inspectable".to_owned()))
+    }
+
+    /// The evidence that redoing this action changes nothing the world has
+    /// already seen. `species` is the promise; this is what backs it.
+    fn redo_evidence(&self, _record: &StepRecord) -> RedoEvidence {
+        RedoEvidence::None
     }
 
     /// Whether redoing this action is safe. Not answering hands it to a person:
@@ -807,8 +842,11 @@ impl InProcessExecutor {
                 // waiting step never becomes ready again (`decision_from`), so
                 // a resume saw the interrupted step and never relaunched it.
                 Ok(EffectStatus::Unknown(reason)) => {
-                    match species_for(record, action) {
-                        StepSpecies::Repeatable => (
+                    let evidence = action
+                        .map(|action| action.redo_evidence(record))
+                        .unwrap_or(RedoEvidence::None);
+                    match recovery_from(species_for(record, action), &evidence) {
+                        Recovery::Retry => (
                             closed(
                                 Outcome::Broke,
                                 None,
@@ -818,7 +856,7 @@ impl InProcessExecutor {
                             ),
                             &mut report.closed_as_broke,
                         ),
-                        StepSpecies::Compensable => {
+                        Recovery::Undo => {
                             let compensation = action.map_or_else(
                                 || {
                                     Err(ActionError::new(
@@ -857,7 +895,7 @@ impl InProcessExecutor {
                                 ),
                             }
                         }
-                        StepSpecies::HandToHuman => (
+                        Recovery::Person => (
                             closed(
                                 Outcome::Waiting,
                                 None,

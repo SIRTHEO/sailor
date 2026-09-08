@@ -104,6 +104,10 @@ impl Action for TerminalSurveyAction {
     fn species(&self) -> StepSpecies {
         StepSpecies::Repeatable
     }
+
+    fn redo_evidence(&self, _record: &flow::StepRecord) -> flow::RedoEvidence {
+        flow::RedoEvidence::TouchesNothing
+    }
 }
 
 /// Why a terminal no longer counts among those working, `None` while it does.

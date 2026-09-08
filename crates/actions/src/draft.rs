@@ -39,6 +39,10 @@ impl Action for ActionListAction {
     fn species(&self) -> StepSpecies {
         StepSpecies::Repeatable
     }
+
+    fn redo_evidence(&self, _record: &flow::StepRecord) -> flow::RedoEvidence {
+        flow::RedoEvidence::TouchesNothing
+    }
 }
 
 /// The flow, as an object or as its JSON text. Text is how a flow travels
@@ -105,6 +109,10 @@ impl Action for FlowDraftAction {
 
     fn species(&self) -> StepSpecies {
         StepSpecies::Repeatable
+    }
+
+    fn redo_evidence(&self, _record: &flow::StepRecord) -> flow::RedoEvidence {
+        flow::RedoEvidence::TouchesNothing
     }
 }
 

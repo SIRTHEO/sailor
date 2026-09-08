@@ -150,6 +150,10 @@ impl Action for ShellCheckAction {
         StepSpecies::Repeatable
     }
 
+    fn redo_evidence(&self, _record: &flow::StepRecord) -> flow::RedoEvidence {
+        flow::RedoEvidence::TouchesNothing
+    }
+
     /// It writes a verdict, so a flow may hang `decides_done` on it.
     fn is_a_check(&self) -> bool {
         true

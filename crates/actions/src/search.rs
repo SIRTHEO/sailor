@@ -138,6 +138,10 @@ impl Action for FlowSearchAction {
     fn species(&self) -> StepSpecies {
         StepSpecies::Repeatable
     }
+
+    fn redo_evidence(&self, _record: &flow::StepRecord) -> flow::RedoEvidence {
+        flow::RedoEvidence::TouchesNothing
+    }
 }
 
 /// The runs, steps, events and store entries of the ledger, and the faults of
@@ -181,6 +185,10 @@ impl Action for LedgerSearchAction {
 
     fn species(&self) -> StepSpecies {
         StepSpecies::Repeatable
+    }
+
+    fn redo_evidence(&self, _record: &flow::StepRecord) -> flow::RedoEvidence {
+        flow::RedoEvidence::TouchesNothing
     }
 }
 

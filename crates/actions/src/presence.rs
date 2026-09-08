@@ -383,6 +383,10 @@ impl Action for WorkClaimAction {
     fn species(&self) -> StepSpecies {
         StepSpecies::Repeatable
     }
+
+    fn redo_evidence(&self, _record: &flow::StepRecord) -> flow::RedoEvidence {
+        flow::RedoEvidence::TouchesNothing
+    }
 }
 
 pub struct WorkReleaseAction {
@@ -412,6 +416,10 @@ impl Action for WorkReleaseAction {
 
     fn species(&self) -> StepSpecies {
         StepSpecies::Repeatable
+    }
+
+    fn redo_evidence(&self, _record: &flow::StepRecord) -> flow::RedoEvidence {
+        flow::RedoEvidence::TouchesNothing
     }
 }
 
@@ -488,6 +496,10 @@ impl Action for WorkSurveyAction {
 
     fn species(&self) -> StepSpecies {
         StepSpecies::Repeatable
+    }
+
+    fn redo_evidence(&self, _record: &flow::StepRecord) -> flow::RedoEvidence {
+        flow::RedoEvidence::TouchesNothing
     }
 }
 

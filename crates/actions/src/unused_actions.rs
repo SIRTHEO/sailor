@@ -84,6 +84,10 @@ impl Action for UnusedActionsAction {
     fn species(&self) -> StepSpecies {
         StepSpecies::Repeatable
     }
+
+    fn redo_evidence(&self, _record: &flow::StepRecord) -> flow::RedoEvidence {
+        flow::RedoEvidence::TouchesNothing
+    }
 }
 
 #[cfg(test)]

@@ -110,6 +110,23 @@ impl Action for Opaque {
     }
 }
 
+/// Repeatable, and able to say why: it touches nothing outside the run.
+struct OpaqueThatTouchesNothing;
+
+impl Action for OpaqueThatTouchesNothing {
+    fn execute(&self, _input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
+        Ok(ActionOutcome::Went(json!({})))
+    }
+
+    fn species(&self) -> StepSpecies {
+        StepSpecies::Repeatable
+    }
+
+    fn redo_evidence(&self, _record: &StepRecord) -> flow::RedoEvidence {
+        flow::RedoEvidence::TouchesNothing
+    }
+}
+
 /// Compensable and genuinely able to undo: it counts how often it has.
 struct UndoesItsEffect(Arc<AtomicUsize>);
 
@@ -190,15 +207,14 @@ fn failure_class(store: &InMemoryRecordStore, run_id: &str) -> Option<String> {
 }
 
 /// The pair that proves the point: the same interrupted step, the same
-/// uninspectable effect, the opposite outcome — decided only by what the action
-/// declares about itself. Without species the first case ended up "waiting"
-/// like the second, and a waiting step never becomes ready again.
+/// uninspectable effect, the opposite outcome — decided by what the action can
+/// say about itself, and the promise alone is no longer enough.
 #[test]
 fn an_opaque_repeatable_step_is_reopened_instead_of_waiting_for_a_person() {
     let (report, decision, store) = reconcile_opaque(
         "repeatable-run",
         interrupted_step("repeatable-run", None),
-        Opaque(StepSpecies::Repeatable),
+        OpaqueThatTouchesNothing,
     );
     assert_eq!(report.closed_as_broke, vec!["opaque"]);
     assert!(report.closed_as_waiting.is_empty());
@@ -208,6 +224,24 @@ fn an_opaque_repeatable_step_is_reopened_instead_of_waiting_for_a_person() {
         failure_class(&store, "repeatable-run").as_deref(),
         Some("repeatable_after_unknown_effect")
     );
+}
+
+/// **A PROMISE NOBODY BACKS LANDS ON A PERSON.** `Repeatable` was taken at its
+/// word and the step relaunched, whatever the action had already done to the
+/// world. It now reopens only where the action can say why redoing is safe.
+#[test]
+fn a_repeatable_step_with_nothing_behind_the_promise_waits_for_a_person() {
+    let (report, decision, _) = reconcile_opaque(
+        "unbacked-run",
+        interrupted_step("unbacked-run", None),
+        Opaque(StepSpecies::Repeatable),
+    );
+    assert_eq!(report.closed_as_waiting, vec!["opaque"]);
+    assert!(
+        report.closed_as_broke.is_empty(),
+        "it was put back among the ready on a promise nothing backs: {report:?}"
+    );
+    assert_eq!(decision, Decision::Waiting(vec!["opaque".to_owned()]));
 }
 
 #[test]
@@ -277,7 +311,7 @@ fn a_step_held_by_a_living_process_is_left_alone() {
     let graph = opaque_graph();
     let mut store = InMemoryRecordStore::from_records(vec![alive]);
     let mut actions = ActionRegistry::default();
-    actions.register("opaque", Opaque(StepSpecies::Repeatable));
+    actions.register("opaque", OpaqueThatTouchesNothing);
     let report = InProcessExecutor
         .reconcile(ReconciliationRequest {
             graph: &graph,
@@ -338,7 +372,7 @@ fn the_engine_records_the_holder_and_the_species_when_it_opens_a_step() {
     let graph = opaque_graph();
     let store = InMemoryRecordStore::from_records(vec![]);
     let mut actions = ActionRegistry::default();
-    actions.register("opaque", Opaque(StepSpecies::Repeatable));
+    actions.register("opaque", OpaqueThatTouchesNothing);
     InProcessExecutor
         .execute(
             &graph,

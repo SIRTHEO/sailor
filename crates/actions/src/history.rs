@@ -510,6 +510,10 @@ impl Action for HistoryAskAction {
         // It reads and nothing more: relaunching it touches nothing of the world.
         StepSpecies::Repeatable
     }
+
+    fn redo_evidence(&self, _record: &flow::StepRecord) -> flow::RedoEvidence {
+        flow::RedoEvidence::TouchesNothing
+    }
 }
 
 #[cfg(test)]
