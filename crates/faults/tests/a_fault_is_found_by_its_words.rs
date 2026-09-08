@@ -25,6 +25,7 @@ fn draft(what: &str, how: &str, prevent: &str, status: &str) -> Draft {
         how_it_showed: how.to_owned(),
         what_would_prevent: prevent.to_owned(),
         status: status.to_owned(),
+        standing: None,
     }
 }
 

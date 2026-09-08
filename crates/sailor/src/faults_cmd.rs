@@ -162,6 +162,19 @@ fn list(
             ("total", &all.len().to_string()),
         ],
     ));
+    // Unclassified rows are neither open nor closed, and silence about them is
+    // the subtraction that reassures.
+    let unknown = all
+        .iter()
+        .filter(|f| f.standing == faults::Standing::Unknown)
+        .count();
+    if unknown > 0 {
+        out.push('\n');
+        out.push_str(&catalogue::say(
+            "cli.faults.standing_unknown",
+            &[("count", &unknown.to_string())],
+        ));
+    }
     Ok(out)
 }
 
@@ -263,15 +276,17 @@ fn reworded(store: &Faults, loose: &[String], raw: &str) -> Result<String, Strin
         return Err(catalogue::say("cli.faults.no_prevention", &[]));
     }
     what_the_repository_could_not_publish(raw)?;
-    let standing = store.get(number).map_err(|error| error.to_string())?;
+    let already = store.get(number).map_err(|error| error.to_string())?;
     store
         .restore(&Fault {
             number,
-            happened_on: standing.happened_on,
+            happened_on: already.happened_on,
+            happened: already.happened,
             what_happened: said.what_happened,
             how_it_showed: said.how_it_showed,
             what_would_prevent: said.what_would_prevent,
-            status: standing.status,
+            status: already.status,
+            standing: already.standing,
         })
         .map_err(|error| error.to_string())?;
     Ok(catalogue::say(
@@ -484,6 +499,7 @@ mod tests {
             how_it_showed: "the attach refused".to_owned(),
             what_would_prevent: "an identity the caller can supply".to_owned(),
             status: "**open**".to_owned(),
+            standing: None,
         }
     }
 
@@ -556,6 +572,7 @@ mod tests {
                 how_it_showed: "reading it".to_owned(),
                 what_would_prevent: "a check that reads it back".to_owned(),
                 status: "**open**".to_owned(),
+                standing: None,
             })
             .expect("recording");
         let written = dir.join("table.md");
@@ -608,6 +625,7 @@ mod tests {
                 how_it_showed: "by running it".to_owned(),
                 what_would_prevent: "this test".to_owned(),
                 status: "**open**".to_owned(),
+                standing: None,
             })
             .expect("recording");
 

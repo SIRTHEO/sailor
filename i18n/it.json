@@ -253,6 +253,7 @@
   "cli.faults.reworded": "guasto {number}: le parole sono riscritte; numero, data e stato restano come erano",
   "cli.faults.same_number_other_text": "{numbers} hanno lo stesso numero e testo diverso. La tabella è il registro, quindi importare fa concordare il deposito - ma importare una copia più vecchia riscrive testo nuovo con testo vecchio, e dopo non lo dice nessuno",
   "cli.faults.shape_of_a_fault": "un difetto si scrive come JSON con happened_on, what_happened, how_it_showed, what_would_prevent e status: {error}",
+  "cli.faults.standing_unknown": "{count} non dicono né aperto né chiuso e nessuno li ha classificati: qui vengono contati invece di sparire dal conto",
   "cli.faults.still_open_out_of": "{open} ancora aperti su {total}, contati adesso e non ricopiati",
   "cli.faults.text_replaced": "{numbers} esistevano già e il loro testo è stato sostituito da quello di questo file. Se questa copia è più vecchia del deposito, è stato un passo indietro",
   "cli.faults.they_agree": "il deposito e {file} dicono la stessa cosa: {count} difetti",

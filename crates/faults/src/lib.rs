@@ -2,8 +2,8 @@
 //!
 //! The store assigns the number, so two branches cannot pick the same one.
 //!
-//! Status stays prose, not an enum: the nuance says which half of the cure is
-//! done. [`Fault::still_open`] reads it.
+//! Standing and date are a validated vocabulary in columns of their own; the
+//! prose whoever wrote them stays beside, untouched.
 
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
@@ -14,7 +14,7 @@ pub const FAULTS_FILE: &str = "faults.db";
 
 /// The shape this code expects. Independent of the ledger's projections, for
 /// the reason written in `Cargo.toml`.
-const FAULTS_SCHEMA_VERSION: i64 = 1;
+const FAULTS_SCHEMA_VERSION: i64 = 2;
 
 pub enum FaultError {
     Database(rusqlite::Error),
@@ -22,6 +22,7 @@ pub enum FaultError {
     UnsupportedSchema(i64),
     Unknown(i64),
     CannotCrossTheTable(String),
+    NotInTheVocabulary { column: String, found: String },
 }
 
 /// **`.expect()` PRINTS THE `Debug`, NOT THE `Display`.** With a derived one,
@@ -45,6 +46,12 @@ impl std::fmt::Display for FaultError {
             ),
             FaultError::Unknown(number) => write!(f, "fault {number} does not exist"),
             FaultError::CannotCrossTheTable(what) => write!(f, "{what}"),
+            FaultError::NotInTheVocabulary { column, found } => write!(
+                f,
+                "the «{column}» column holds «{found}», which is not one of the \
+                 words this column is allowed: a value nobody taught this must \
+                 be refused, never read as the reassuring one"
+            ),
         }
     }
 }
@@ -59,17 +66,27 @@ impl From<rusqlite::Error> for FaultError {
 
 /// A real fault. An entry without `what_would_prevent` is not finished: that
 /// column is what separates this from a diary.
+///
+/// `happened_on` and `status` are the prose as somebody wrote it; `happened`
+/// and `standing` are the same two facts in a vocabulary a machine can count.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Fault {
     pub number: i64,
     pub happened_on: String,
+    #[serde(default)]
+    pub happened: Happening,
     pub what_happened: String,
     pub how_it_showed: String,
     pub what_would_prevent: String,
     pub status: String,
+    #[serde(default)]
+    pub standing: Standing,
 }
 
 /// A fault to record: everything except the number, which is not chosen.
+///
+/// `standing` left out means «read it from the prose», which is what every
+/// caller did before the column existed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Draft {
     pub happened_on: String,
@@ -77,21 +94,34 @@ pub struct Draft {
     pub how_it_showed: String,
     pub what_would_prevent: String,
     pub status: String,
+    #[serde(default)]
+    pub standing: Option<Standing>,
 }
 
-/// Where a fault stands, **with a fourth answer for prose nobody taught this**.
+/// Where a fault stands, **with a fourth answer for what nobody classified**.
 ///
 /// A predicate answering yes or no gives «not open» to a status it does not
 /// recognise, which is the same answer it gives to a closed one — and the total
-/// drops in the direction that reassures. The fourth answer exists so that an
-/// unread status is a refusal instead of a quiet subtraction.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// drops in the direction that reassures.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Standing {
     Open,
+    #[serde(rename = "closed-in-part")]
     PartlyClosed,
     Closed,
-    Unrecognised,
+    #[default]
+    Unknown,
 }
+
+/// The whole vocabulary. A fifth variant breaks the length here and the match
+/// in [`Standing::word`], so it cannot arrive without a word of its own.
+pub const EVERY_STANDING: [Standing; 4] = [
+    Standing::Open,
+    Standing::PartlyClosed,
+    Standing::Closed,
+    Standing::Unknown,
+];
 
 impl Standing {
     /// Closed in part counts as open: a middle state says which half is done,
@@ -100,11 +130,134 @@ impl Standing {
     pub fn still_open(self) -> bool {
         matches!(self, Standing::Open | Standing::PartlyClosed)
     }
+
+    pub fn word(self) -> &'static str {
+        match self {
+            Standing::Open => "open",
+            Standing::PartlyClosed => "closed-in-part",
+            Standing::Closed => "closed",
+            Standing::Unknown => "unknown",
+        }
+    }
+
+    /// A word outside the vocabulary is an error, not a fifth reading: the
+    /// column is written by this code and a stranger in it means a broken store.
+    pub fn from_word(word: &str) -> Result<Standing, FaultError> {
+        EVERY_STANDING
+            .into_iter()
+            .find(|standing| standing.word() == word)
+            .ok_or_else(|| FaultError::NotInTheVocabulary {
+                column: "standing".to_owned(),
+                found: word.to_owned(),
+            })
+    }
+}
+
+/// When a fault happened, **with the missing year said out loud**.
+///
+/// The register was written half in `dd/mm` and half in `yyyy-mm-dd`: the year
+/// of the first half is not recorded anywhere, so it is not guessed here.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(tag = "reading", rename_all = "kebab-case")]
+pub enum Happening {
+    #[serde(rename = "day")]
+    On { year: i32, month: u32, day: u32 },
+    #[serde(rename = "day-and-month")]
+    DayAndMonth { month: u32, day: u32 },
+    #[default]
+    Unknown,
+}
+
+const DAY: &str = "day";
+const DAY_AND_MONTH: &str = "day-and-month";
+const UNKNOWN_DAY: &str = "unknown";
+
+impl Happening {
+    pub fn reading(self) -> &'static str {
+        match self {
+            Happening::On { .. } => DAY,
+            Happening::DayAndMonth { .. } => DAY_AND_MONTH,
+            Happening::Unknown => UNKNOWN_DAY,
+        }
+    }
+
+    /// One format. The year-less form is ISO 8601's own truncated shape, so the
+    /// gap is visible in the value and not only in the reading beside it.
+    pub fn value(self) -> String {
+        match self {
+            Happening::On { year, month, day } => format!("{year:04}-{month:02}-{day:02}"),
+            Happening::DayAndMonth { month, day } => format!("--{month:02}-{day:02}"),
+            Happening::Unknown => String::new(),
+        }
+    }
+
+    /// Reads the prose the register holds: `yyyy-mm-dd` and `dd/mm`, and
+    /// nothing else becomes a date by force.
+    pub fn read(prose: &str) -> Happening {
+        let said = prose.trim();
+        let number = |text: &str, digits: usize| -> Option<u32> {
+            (text.len() == digits && text.bytes().all(|b| b.is_ascii_digit()))
+                .then(|| text.parse().ok())
+                .flatten()
+        };
+        let parts: Vec<&str> = said.split('-').collect();
+        if let [year, month, day] = parts[..] {
+            if let (Some(year), Some(month), Some(day)) = (
+                number(year, 4).map(|year| year as i32),
+                number(month, 2),
+                number(day, 2),
+            ) {
+                if a_real_day(month, day) {
+                    return Happening::On { year, month, day };
+                }
+            }
+        }
+        let parts: Vec<&str> = said.split('/').collect();
+        if let [day, month] = parts[..] {
+            if let (Some(day), Some(month)) = (number(day, 2), number(month, 2)) {
+                if a_real_day(month, day) {
+                    return Happening::DayAndMonth { month, day };
+                }
+            }
+        }
+        Happening::Unknown
+    }
+
+    pub fn from_columns(reading: &str, value: &str) -> Result<Happening, FaultError> {
+        let refuse = || FaultError::NotInTheVocabulary {
+            column: "happened_on_reading".to_owned(),
+            found: reading.to_owned(),
+        };
+        let read = match reading {
+            DAY => Happening::read(value),
+            DAY_AND_MONTH => Happening::read(&value.replacen("--", "0000-", 1)).flatten_the_year(),
+            UNKNOWN_DAY => Happening::Unknown,
+            _ => return Err(refuse()),
+        };
+        if read.reading() != reading {
+            return Err(FaultError::NotInTheVocabulary {
+                column: "happened_on_value".to_owned(),
+                found: value.to_owned(),
+            });
+        }
+        Ok(read)
+    }
+
+    fn flatten_the_year(self) -> Happening {
+        match self {
+            Happening::On { month, day, .. } => Happening::DayAndMonth { month, day },
+            other => other,
+        }
+    }
+}
+
+fn a_real_day(month: u32, day: u32) -> bool {
+    (1..=12).contains(&month) && (1..=31).contains(&day)
 }
 
 /// The words the register writes in that column, in the language the register
 /// is written in. Data and not a match, so translating them is one edit and a
-/// half-translated row comes out `Unrecognised` instead of vanishing.
+/// half-translated row comes out `Unknown` instead of vanishing.
 const OPEN: &str = "**open**";
 const PARTLY_CLOSED: &str = "**closed in part**";
 const CLOSED: &str = "**closed**";
@@ -124,21 +277,15 @@ pub fn standing_of(status: &str) -> Standing {
     } else if said.starts_with(CLOSED) {
         Standing::Closed
     } else {
-        Standing::Unrecognised
+        Standing::Unknown
     }
 }
 
 impl Fault {
-    /// Read from the start of the prose: the nuance after it must not move the
-    /// row.
-    pub fn standing(&self) -> Standing {
-        standing_of(&self.status)
-    }
-
-    /// An unrecognised status is **not** quietly closed: it is refused at the
-    /// door, so it can never reach this question.
+    /// An unclassified status is **not** quietly closed: it is refused at the
+    /// door unless somebody declared it unknown on purpose.
     pub fn still_open(&self) -> bool {
-        self.standing().still_open()
+        self.standing.still_open()
     }
 
     fn cells(&self) -> [&str; 6] {
@@ -162,7 +309,7 @@ impl Fault {
 /// moved in the direction that reassures. Refused here, a half-translated or
 /// newly-worded status is a red line instead of a quiet subtraction.
 fn a_status_the_count_can_read(status: &str) -> Result<(), FaultError> {
-    if standing_of(status) != Standing::Unrecognised {
+    if standing_of(status) != Standing::Unknown {
         return Ok(());
     }
     Err(FaultError::CannotCrossTheTable(format!(
@@ -219,6 +366,63 @@ fn why_a_reader_was_refused(path: &Path, error: rusqlite::Error) -> FaultError {
 pub struct Faults {
     connection: Connection,
     path: PathBuf,
+    /// A store written before the vocabulary existed still opens read-only,
+    /// where nothing may be migrated: its rows are read from the prose.
+    the_reading_columns: bool,
+}
+
+const THE_READING_COLUMNS: [&str; 3] = ["standing", "happened_on_reading", "happened_on_value"];
+
+fn the_reading_columns_are_there(connection: &Connection) -> Result<bool, FaultError> {
+    let mut statement = connection.prepare("PRAGMA table_info(faults)")?;
+    let names = statement.query_map([], |row| row.get::<_, String>(1))?;
+    let mut found = 0;
+    for name in names {
+        if THE_READING_COLUMNS.contains(&name?.as_str()) {
+            found += 1;
+        }
+    }
+    Ok(found == THE_READING_COLUMNS.len())
+}
+
+/// Adds the vocabulary columns and fills them from the prose already there.
+///
+/// The prose is not touched: it is the only record of what somebody meant, and
+/// a reading that turns out wrong must be correctable against the source.
+fn teach_the_store_the_vocabulary(connection: &Connection) -> Result<(), FaultError> {
+    if the_reading_columns_are_there(connection)? {
+        return Ok(());
+    }
+    connection.execute_batch(
+        "ALTER TABLE faults ADD COLUMN standing TEXT NOT NULL DEFAULT 'unknown';
+         ALTER TABLE faults ADD COLUMN happened_on_reading TEXT NOT NULL DEFAULT 'unknown';
+         ALTER TABLE faults ADD COLUMN happened_on_value TEXT NOT NULL DEFAULT '';",
+    )?;
+    let already: Vec<(i64, String, String)> = {
+        let mut statement =
+            connection.prepare("SELECT number, happened_on, status FROM faults")?;
+        let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        out
+    };
+    for (number, happened_on, status) in already {
+        let happened = Happening::read(&happened_on);
+        connection.execute(
+            "UPDATE faults
+                SET standing = ?2, happened_on_reading = ?3, happened_on_value = ?4
+              WHERE number = ?1",
+            params![
+                number,
+                standing_of(&status).word(),
+                happened.reading(),
+                happened.value(),
+            ],
+        )?;
+    }
+    Ok(())
 }
 
 impl Faults {
@@ -248,7 +452,12 @@ impl Faults {
         if version > FAULTS_SCHEMA_VERSION {
             return Err(FaultError::UnsupportedSchema(version));
         }
-        Ok(Faults { connection, path })
+        let the_reading_columns = the_reading_columns_are_there(&connection)?;
+        Ok(Faults {
+            connection,
+            path,
+            the_reading_columns,
+        })
     }
 
     pub fn open(path: impl AsRef<Path>) -> Result<Self, FaultError> {
@@ -275,8 +484,13 @@ impl Faults {
                  status TEXT NOT NULL
              );",
         )?;
+        teach_the_store_the_vocabulary(&connection)?;
         connection.pragma_update(None, "user_version", FAULTS_SCHEMA_VERSION)?;
-        Ok(Faults { connection, path })
+        Ok(Faults {
+            connection,
+            path,
+            the_reading_columns: true,
+        })
     }
 
     pub fn path(&self) -> &Path {
@@ -297,13 +511,21 @@ impl Faults {
             ("what would have prevented it", &draft.what_would_prevent),
             ("status", &draft.status),
         ])?;
-        a_status_the_count_can_read(&draft.status)?;
+        let standing = match draft.standing {
+            Some(declared) => declared,
+            None => {
+                a_status_the_count_can_read(&draft.status)?;
+                standing_of(&draft.status)
+            }
+        };
+        let happened = Happening::read(&draft.happened_on);
         self.connection.execute(
             "INSERT INTO faults
-                 (number, happened_on, what_happened, how_it_showed, what_would_prevent, status)
+                 (number, happened_on, what_happened, how_it_showed, what_would_prevent,
+                  status, standing, happened_on_reading, happened_on_value)
              VALUES (
                  (SELECT COALESCE(MAX(number), 0) + 1 FROM faults),
-                 ?1, ?2, ?3, ?4, ?5
+                 ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8
              )",
             params![
                 draft.happened_on,
@@ -311,6 +533,9 @@ impl Faults {
                 draft.how_it_showed,
                 draft.what_would_prevent,
                 draft.status,
+                standing.word(),
+                happened.reading(),
+                happened.value(),
             ],
         )?;
         let number = self.connection.last_insert_rowid();
@@ -329,10 +554,12 @@ impl Faults {
             ("status", &fault.status),
         ])?;
         a_status_the_count_can_read(&fault.status)?;
+        let happened = Happening::read(&fault.happened_on);
         self.connection.execute(
             "INSERT OR REPLACE INTO faults
-                 (number, happened_on, what_happened, how_it_showed, what_would_prevent, status)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                 (number, happened_on, what_happened, how_it_showed, what_would_prevent,
+                  status, standing, happened_on_reading, happened_on_value)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 fault.number,
                 fault.happened_on,
@@ -340,6 +567,9 @@ impl Faults {
                 fault.how_it_showed,
                 fault.what_would_prevent,
                 fault.status,
+                standing_of(&fault.status).word(),
+                happened.reading(),
+                happened.value(),
             ],
         )?;
         Ok(())
@@ -353,25 +583,61 @@ impl Faults {
     }
 
     pub fn all(&self) -> Result<Vec<Fault>, FaultError> {
-        let mut statement = self.connection.prepare(
-            "SELECT number, happened_on, what_happened, how_it_showed, what_would_prevent, status
-             FROM faults ORDER BY number",
-        )?;
+        let columns = if self.the_reading_columns {
+            "standing, happened_on_reading, happened_on_value"
+        } else {
+            "'', '', ''"
+        };
+        let mut statement = self.connection.prepare(&format!(
+            "SELECT number, happened_on, what_happened, how_it_showed, what_would_prevent,
+                    status, {columns}
+             FROM faults ORDER BY number"
+        ))?;
         let rows = statement.query_map([], |row| {
-            Ok(Fault {
-                number: row.get(0)?,
-                happened_on: row.get(1)?,
-                what_happened: row.get(2)?,
-                how_it_showed: row.get(3)?,
-                what_would_prevent: row.get(4)?,
-                status: row.get(5)?,
-            })
+            Ok((
+                Fault {
+                    number: row.get(0)?,
+                    happened_on: row.get(1)?,
+                    happened: Happening::Unknown,
+                    what_happened: row.get(2)?,
+                    how_it_showed: row.get(3)?,
+                    what_would_prevent: row.get(4)?,
+                    status: row.get(5)?,
+                    standing: Standing::Unknown,
+                },
+                row.get::<_, String>(6)?,
+                row.get::<_, String>(7)?,
+                row.get::<_, String>(8)?,
+            ))
         })?;
         let mut out = Vec::new();
         for row in rows {
-            out.push(row?);
+            let (mut fault, standing, reading, value) = row?;
+            if self.the_reading_columns {
+                fault.standing = Standing::from_word(&standing)?;
+                fault.happened = Happening::from_columns(&reading, &value)?;
+            } else {
+                fault.standing = standing_of(&fault.status);
+                fault.happened = Happening::read(&fault.happened_on);
+            }
+            out.push(fault);
         }
         Ok(out)
+    }
+
+    /// How many rows sit in each word of the vocabulary, unknown included.
+    ///
+    /// Open-against-closed is only contable when the third answer is counted
+    /// too: without it the unread rows leave the tally the reassuring way.
+    pub fn tally(&self) -> Result<std::collections::BTreeMap<Standing, usize>, FaultError> {
+        let mut counted = std::collections::BTreeMap::new();
+        for standing in EVERY_STANDING {
+            counted.insert(standing, 0);
+        }
+        for fault in self.all()? {
+            *counted.entry(fault.standing).or_default() += 1;
+        }
+        Ok(counted)
     }
 
     /// Changes a fault's status.
@@ -383,8 +649,8 @@ impl Faults {
         nothing_that_breaks_a_row(&[("status", status)])?;
         a_status_the_count_can_read(status)?;
         let touched = self.connection.execute(
-            "UPDATE faults SET status = ?2 WHERE number = ?1",
-            params![number, status],
+            "UPDATE faults SET status = ?2, standing = ?3 WHERE number = ?1",
+            params![number, status, standing_of(status).word()],
         )?;
         if touched == 0 {
             return Err(FaultError::Unknown(number));
@@ -443,13 +709,17 @@ pub fn parse(markdown: &str) -> Vec<Fault> {
                 return None;
             }
             let number: i64 = cells[0].trim().parse().ok()?;
+            let happened_on = as_prose(cells[1]);
+            let status = as_prose(cells[5]);
             Some(Fault {
                 number,
-                happened_on: as_prose(cells[1]),
+                happened: Happening::read(&happened_on),
+                happened_on,
                 what_happened: as_prose(cells[2]),
                 how_it_showed: as_prose(cells[3]),
                 what_would_prevent: as_prose(cells[4]),
-                status: as_prose(cells[5]),
+                standing: standing_of(&status),
+                status,
             })
         })
         .collect()

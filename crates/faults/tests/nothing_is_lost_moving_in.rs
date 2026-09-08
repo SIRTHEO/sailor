@@ -24,11 +24,18 @@ fn scratch(label: &str) -> PathBuf {
 /// The fault table as written. **No documents at all is nothing to measure;
 /// documents without this one is the table lost, which is the defect.**
 fn table() -> Option<String> {
-    let documents = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(|crates| crates.parent())
-        .expect("the crate lives in <root>/crates/faults")
-        .join("docs");
+    table_in(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|crates| crates.parent())
+            .expect("the crate lives in <root>/crates/faults")
+            .join("docs"),
+    )
+}
+
+/// The same reading, of whatever documents it is pointed at, so the verdicts
+/// below can be put to a table with a defect planted in it.
+fn table_in(documents: &std::path::Path) -> Option<String> {
     let Ok(text) = std::fs::read_to_string(documents.join("faults-encountered.md")) else {
         assert!(
             !documents.is_dir(),
@@ -43,40 +50,26 @@ fn table() -> Option<String> {
     Some(text)
 }
 
-/// Nothing is lost coming in. The real rows, brought in and written back, must
-/// come out identical — not equivalent: identical, because a cell's nuance is
-/// the information.
-#[test]
-fn every_row_survives_the_move_word_for_word() {
-    let Some(source) = table() else {
-        return;
-    };
-    let read = faults::parse(&source);
-    assert!(
-        read.len() > 40,
-        "the table emptied under the migration's feet: {} rows",
-        read.len()
-    );
-
-    let store = Faults::open(scratch("round-trip")).expect("opening");
+/// Every row of one table that does not come back out of one store the way it
+/// went in. Empty is the migration losing nothing.
+///
+/// Compared by number, not by position: the file's order is a reader's choice,
+/// not data, so pairing rows positionally would call an identical row "changed"
+/// for sitting two lines lower.
+fn what_the_crossing_changes(source: &str, store: &Faults) -> Vec<String> {
+    let read = faults::parse(source);
+    let mut lost = Vec::new();
     for fault in &read {
-        store
-            .restore(fault)
-            .expect("putting the row back with its number");
+        if store.restore(fault).is_err() {
+            lost.push(format!("fault {} would not go back in with its number", fault.number));
+        }
     }
 
     let back = store.all().expect("reading back");
-    assert_eq!(
-        back.len(),
-        read.len(),
-        "{} rows went in and {} came out",
-        read.len(),
-        back.len()
-    );
+    if back.len() != read.len() {
+        lost.push(format!("{} rows went in and {} came out", read.len(), back.len()));
+    }
 
-    // Compared by number, not by position: the file's order is a reader's
-    // choice, not data, so pairing rows positionally would call an identical
-    // row "changed" for sitting two lines lower.
     let rewritten = faults::render(&back);
     let mut by_number: std::collections::BTreeMap<i64, &str> = std::collections::BTreeMap::new();
     for line in rewritten.lines() {
@@ -98,16 +91,60 @@ fn every_row_survives_the_move_word_for_word() {
         else {
             continue;
         };
-        let now = by_number
-            .get(&number)
-            .unwrap_or_else(|| panic!("fault {number} did not come out of the store"));
-        assert_eq!(
-            &line, now,
-            "fault {number} changed while crossing the store"
-        );
+        match by_number.get(&number) {
+            None => lost.push(format!("fault {number} did not come out of the store")),
+            Some(now) if *now != line => {
+                lost.push(format!("fault {number} changed while crossing the store"))
+            }
+            Some(_) => {}
+        }
         seen += 1;
     }
-    assert_eq!(seen, read.len(), "not every row was compared");
+    if seen != read.len() {
+        lost.push(format!("{seen} rows were compared and the table holds {}", read.len()));
+    }
+    lost
+}
+
+/// Every row that says nothing about what would have stopped it: that column
+/// is the line between this register and a diary.
+fn rows_that_are_a_diary(read: &[Fault]) -> Vec<i64> {
+    read.iter()
+        .filter(|fault| {
+            fault.what_would_prevent.is_empty()
+                || fault.what_happened.is_empty()
+                || fault.how_it_showed.is_empty()
+                || fault.status.is_empty()
+        })
+        .map(|fault| fault.number)
+        .collect()
+}
+
+/// What the numbers coming in are, once sorted: `1..=N` or something else.
+fn the_numbers_of(read: &[Fault]) -> Vec<i64> {
+    let mut numbers: Vec<i64> = read.iter().map(|fault| fault.number).collect();
+    numbers.sort_unstable();
+    numbers
+}
+
+/// Nothing is lost coming in. The real rows, brought in and written back, must
+/// come out identical — not equivalent: identical, because a cell's nuance is
+/// the information.
+#[test]
+fn every_row_survives_the_move_word_for_word() {
+    let Some(source) = table() else {
+        return;
+    };
+    let read = faults::parse(&source);
+    assert!(
+        read.len() > 40,
+        "the table emptied under the migration's feet: {} rows",
+        read.len()
+    );
+
+    let store = Faults::open(scratch("round-trip")).expect("opening");
+    let lost = what_the_crossing_changes(&source, &store);
+    assert!(lost.is_empty(), "{}", lost.join("; "));
 }
 
 /// A cell the table cannot hold must be refused, not written and lost.
@@ -123,6 +160,7 @@ fn a_cell_the_table_cannot_hold_is_refused_at_the_door() {
         how_it_showed: "by rendering it".to_owned(),
         what_would_prevent: "this test".to_owned(),
         status: "**open**".to_owned(),
+        standing: None,
     });
 
     let Err(said) = refused else {
@@ -147,17 +185,17 @@ fn a_cell_the_table_cannot_hold_is_refused_at_the_door() {
 fn a_status_nobody_taught_this_is_refused_and_never_counted_as_closed() {
     assert_eq!(
         faults::standing_of("closed on the first, with a mutant"),
-        faults::Standing::Unrecognised,
+        faults::Standing::Unknown,
         "a status that never wrote the marker must read as unrecognised, never as closed"
     );
     assert_eq!(
         faults::standing_of("**chiuso** il 02/09"),
-        faults::Standing::Unrecognised,
+        faults::Standing::Unknown,
         "a marker in the language the register left behind must be refused, not silently closed"
     );
     assert_eq!(
         faults::standing_of("**reopened** on 02/09"),
-        faults::Standing::Unrecognised,
+        faults::Standing::Unknown,
         "a nuance nobody taught this must be refused, not silently closed"
     );
 
@@ -168,6 +206,7 @@ fn a_status_nobody_taught_this_is_refused_and_never_counted_as_closed() {
         how_it_showed: "by running it".to_owned(),
         what_would_prevent: "this test".to_owned(),
         status: "half done, half not".to_owned(),
+        standing: None,
     });
     assert!(
         refused.is_err(),
@@ -199,6 +238,7 @@ fn no_door_into_the_store_takes_a_cell_the_table_cannot_hold() {
         how_it_showed: "by running it".to_owned(),
         what_would_prevent: "this test".to_owned(),
         status: "**open**".to_owned(),
+        standing: None,
     };
     let written = store.record(&sound).expect("a sound row goes in");
 
@@ -222,7 +262,9 @@ fn no_door_into_the_store_takes_a_cell_the_table_cannot_hold() {
             .restore(&Fault {
                 number: 99,
                 status: broken.to_owned(),
+                standing: faults::Standing::Unknown,
                 happened_on: sound.happened_on.clone(),
+                happened: faults::Happening::read(&sound.happened_on),
                 what_happened: sound.what_happened.clone(),
                 how_it_showed: sound.how_it_showed.clone(),
                 what_would_prevent: sound.what_would_prevent.clone(),
@@ -262,10 +304,12 @@ fn a_newline_in_a_cell_makes_the_row_vanish_on_the_way_back() {
     let broken = Fault {
         number: 60,
         happened_on: "01/09".to_owned(),
+        happened: faults::Happening::DayAndMonth { month: 9, day: 1 },
         what_happened: "a story\nover two lines".to_owned(),
         how_it_showed: "by rendering it".to_owned(),
         what_would_prevent: "refusing it at the door".to_owned(),
         status: "**open**".to_owned(),
+        standing: faults::Standing::Open,
     };
 
     let back = faults::parse(&faults::render(&[broken]));
@@ -292,6 +336,7 @@ fn the_store_hands_out_the_number_and_never_the_same_one_twice() {
         how_it_showed: "by running it".to_owned(),
         what_would_prevent: "a test that is born red".to_owned(),
         status: "**open**".to_owned(),
+        standing: None,
     };
 
     let first = store.record(&draft("the first")).expect("recording");
@@ -328,6 +373,7 @@ fn a_half_closed_fault_still_counts_as_open() {
                 how_it_showed: "by running it".to_owned(),
                 what_would_prevent: "a test".to_owned(),
                 status: status.to_owned(),
+                standing: None,
             })
             .expect("recording");
     }
@@ -382,21 +428,12 @@ fn a_row_without_the_check_that_would_have_stopped_it_is_not_finished() {
     let Some(source) = table() else {
         return;
     };
-    let read = faults::parse(&source);
-    for fault in &read {
-        assert!(
-            !fault.what_would_prevent.is_empty(),
-            "fault {} does not say what would prevent it",
-            fault.number
-        );
-        assert!(!fault.what_happened.is_empty(), "{} is empty", fault.number);
-        assert!(
-            !fault.how_it_showed.is_empty(),
-            "{} does not say how it showed",
-            fault.number
-        );
-        assert!(!fault.status.is_empty(), "{} has no status", fault.number);
-    }
+    let unfinished = rows_that_are_a_diary(&faults::parse(&source));
+    assert!(
+        unfinished.is_empty(),
+        "these faults do not say what would have prevented them, or leave another \
+         column empty: {unfinished:?}"
+    );
 }
 
 /// No twin numbers and no gaps among those coming in: the migration keeps them,
@@ -406,14 +443,119 @@ fn the_numbers_that_come_in_have_no_gaps_and_no_twins() {
     let Some(source) = table() else {
         return;
     };
-    let read: Vec<Fault> = faults::parse(&source);
-    let mut numbers: Vec<i64> = read.iter().map(|f| f.number).collect();
-    numbers.sort_unstable();
-    let mut expected: Vec<i64> = (1..=numbers.len() as i64).collect();
-    expected.sort_unstable();
+    let numbers = the_numbers_of(&faults::parse(&source));
     assert_eq!(
-        numbers, expected,
+        numbers,
+        (1..=numbers.len() as i64).collect::<Vec<i64>>(),
         "the numbers coming in are not 1..N without gaps: the migration would \
          carry a defect in instead of leaving it out"
+    );
+}
+
+/// A table of its own under the temporary directory, holding the rows it is
+/// handed.
+fn a_table(label: &str, rows: &str) -> PathBuf {
+    let documents = std::env::temp_dir().join(format!(
+        "faults-planted-{label}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|since| since.as_nanos())
+            .unwrap_or(0)
+    ));
+    let _ = std::fs::remove_dir_all(&documents);
+    std::fs::create_dir_all(&documents).expect("a scratch documents directory");
+    std::fs::write(
+        documents.join("faults-encountered.md"),
+        format!(
+            "# The faults\n\n| # | when | what happened | how it showed | what would prevent it | status |\n| --- | --- | --- | --- | --- | --- |\n{rows}"
+        ),
+    )
+    .expect("a table");
+    documents
+}
+
+/// One row of the table, written the way the register writes it.
+fn a_row(number: i64, prevention: &str) -> String {
+    format!("| {number} | 01/09 | something went wrong | by running it | {prevention} | **open** |\n")
+}
+
+/// **A SOUND TABLE IS NOT A WORKING CHECK.** The three verdicts above have only
+/// ever been asked about the register of this repository, which holds nothing
+/// to refuse, so none of them had ever named a row. Here three tables of their
+/// own are built under the temporary directory, one defect planted in each, and
+/// the same three verdicts are asked of them.
+#[test]
+fn a_defect_planted_in_a_throwaway_table_is_found_by_every_verdict() {
+    let sound = format!("{}{}", a_row(1, "this test"), a_row(2, "this test"));
+
+    let held = a_table("sound", &sound);
+    let source = table_in(&held).expect("the planted table is read");
+    let store = Faults::open(scratch("planted-sound")).expect("opening");
+    assert!(
+        what_the_crossing_changes(&source, &store).is_empty(),
+        "the control: a sound table must cross the store unchanged"
+    );
+    assert!(rows_that_are_a_diary(&faults::parse(&source)).is_empty());
+    assert_eq!(the_numbers_of(&faults::parse(&source)), vec![1, 2]);
+    let _ = std::fs::remove_dir_all(&held);
+
+    // A cell padded with spaces is read trimmed and written back trimmed: the
+    // row that comes out is not the row that went in, word for word.
+    let padded = a_table(
+        "padded",
+        &format!("{}| 2 | 01/09 | something went wrong | by running it |  this test  | **open** |\n", a_row(1, "this test")),
+    );
+    let source = table_in(&padded).expect("the planted table is read");
+    let store = Faults::open(scratch("planted-padded")).expect("opening");
+    let changed = what_the_crossing_changes(&source, &store);
+    assert!(
+        changed.iter().any(|said| said.contains("fault 2 changed while crossing the store")),
+        "the row that does not survive the crossing was not named: {changed:?}"
+    );
+    let _ = std::fs::remove_dir_all(&padded);
+
+    // A row that says nothing about what would have stopped it is a diary
+    // entry, and the column being empty is how it looks.
+    let diary = a_table("diary", &format!("{}{}", a_row(1, "this test"), a_row(2, "")));
+    let source = table_in(&diary).expect("the planted table is read");
+    assert_eq!(
+        rows_that_are_a_diary(&faults::parse(&source)),
+        vec![2],
+        "the row with no prevention in it was not named"
+    );
+    let _ = std::fs::remove_dir_all(&diary);
+
+    // And a gap in the numbers is a row the migration would carry in wrong.
+    let gap = a_table("gap", &format!("{}{}", a_row(1, "this test"), a_row(3, "this test")));
+    let source = table_in(&gap).expect("the planted table is read");
+    let numbers = the_numbers_of(&faults::parse(&source));
+    assert_eq!(numbers, vec![1, 3]);
+    assert_ne!(
+        numbers,
+        (1..=numbers.len() as i64).collect::<Vec<i64>>(),
+        "a gap in the numbers read as 1..N"
+    );
+    let _ = std::fs::remove_dir_all(&gap);
+}
+
+/// **THE JUDGE MUST BE ABLE TO SAY IT DID NOT MEASURE.** A tree carrying no
+/// documents carries no table, and that is not a table with nothing wrong in
+/// it: every verdict above would pass over an empty string.
+#[test]
+fn a_tree_with_no_documents_makes_the_judge_declare_it_measured_nothing() {
+    let nowhere = std::env::temp_dir().join(format!(
+        "faults-no-documents-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|since| since.as_nanos())
+            .unwrap_or(0)
+    ));
+    let _ = std::fs::remove_dir_all(&nowhere);
+
+    assert!(
+        table_in(&nowhere).is_none(),
+        "with no documents to read the judge must hand back nothing, never an empty table"
     );
 }

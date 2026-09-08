@@ -253,6 +253,7 @@
   "cli.faults.reworded": "fault {number}: the words are rewritten; the number, the date and the standing are as they were",
   "cli.faults.same_number_other_text": "{numbers} have the same number and different text. The table is the register, so importing makes the store agree - but importing an older checkout overwrites newer text with older, and nothing says so afterwards",
   "cli.faults.shape_of_a_fault": "a fault is written as JSON with happened_on, what_happened, how_it_showed, what_would_prevent and status: {error}",
+  "cli.faults.standing_unknown": "{count} say neither open nor closed and nobody has classified them: they are counted here rather than left out of the tally",
   "cli.faults.still_open_out_of": "{open} still open out of {total}, counted now and not copied",
   "cli.faults.text_replaced": "{numbers} already existed and their text was replaced by this file's. If this checkout is older than the store, that was a step back",
   "cli.faults.they_agree": "the store and {file} say the same thing: {count} faults",

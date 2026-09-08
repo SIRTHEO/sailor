@@ -271,3 +271,43 @@ fn a_mute_class_planted_in_a_throwaway_tree_is_found() {
          blind-spot count did not rise, so the blind spot could grow unseen"
     );
 }
+
+/// **THE JUDGE MUST BE ABLE TO SAY IT DID NOT MEASURE.** The coverage above is
+/// checked against what git tracks, and outside a repository that list is not
+/// short: it is absent. A source with a reported class in it is planted so an
+/// empty answer cannot pass for a covered tree — fault 100.
+#[test]
+fn a_tree_outside_a_repository_makes_the_coverage_declare_it_measured_nothing() {
+    let plain = std::env::temp_dir()
+        .join(format!("catalogue-uncovered-{}-{}", std::process::id(), line!()));
+    let _ = std::fs::remove_dir_all(&plain);
+    let sources = plain.join("crates").join("a_crate").join("src");
+    std::fs::create_dir_all(&sources).expect("a scratch");
+    std::fs::write(sources.join("lib.rs"), "// a source no repository tracks\n")
+        .expect("a source");
+
+    assert!(
+        !workspace::is_the_top_of_its_repository(&plain),
+        "the road this judge takes to declare it measured nothing is closed"
+    );
+    assert_eq!(
+        every_source_under(&plain).len(),
+        1,
+        "the walker did find the planted source, so the coverage would have had \
+         something to compare — and nothing to compare it against"
+    );
+
+    let listed = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&plain)
+        .args(["ls-files", "--", "crates/*/src/*.rs"])
+        .output()
+        .expect("git runs");
+    assert!(
+        !listed.status.success(),
+        "git listed a directory that is no repository, and an empty oracle read \
+         as a covered tree is what fault 100 was"
+    );
+
+    let _ = std::fs::remove_dir_all(&plain);
+}

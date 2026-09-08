@@ -10,10 +10,12 @@ fn a_fault(number: i64, what: &str) -> Fault {
     Fault {
         number,
         happened_on: "03/09".to_owned(),
+        happened: faults::Happening::DayAndMonth { month: 9, day: 3 },
         what_happened: what.to_owned(),
         how_it_showed: "reading it".to_owned(),
         what_would_prevent: "a check".to_owned(),
         status: "**open**".to_owned(),
+        standing: faults::Standing::Open,
     }
 }
 

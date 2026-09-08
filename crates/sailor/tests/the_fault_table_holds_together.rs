@@ -187,7 +187,7 @@ fn no_row_carries_more_columns_than_the_header_does() {
 fn every_row_says_where_it_stands_in_words_the_count_can_read() {
     let unread: Vec<usize> = faults()
         .iter()
-        .filter(|fault| fault.standing == faults::Standing::Unrecognised)
+        .filter(|fault| fault.standing == faults::Standing::Unknown)
         .map(|fault| fault.number)
         .collect();
 
@@ -231,7 +231,7 @@ fn a_marker_translated_halfway_leaves_the_count_instead_of_lowering_it() {
 
     let unread: Vec<usize> = rows
         .iter()
-        .filter(|fault| fault.standing == faults::Standing::Unrecognised)
+        .filter(|fault| fault.standing == faults::Standing::Unknown)
         .map(|fault| fault.number)
         .collect();
 
@@ -244,7 +244,7 @@ fn a_marker_translated_halfway_leaves_the_count_instead_of_lowering_it() {
     );
     assert_eq!(
         faults::standing_of("**aperto** and the rest of the sentence"),
-        faults::Standing::Unrecognised,
+        faults::Standing::Unknown,
         "the same holds for a marker left behind by the translation"
     );
 }

@@ -289,6 +289,7 @@ mod tests {
                 how_it_showed: "in a test".to_owned(),
                 what_would_prevent: "a door".to_owned(),
                 status: "**open**".to_owned(),
+                standing: None,
             })
             .expect("a fault");
         let ids: Vec<String> = search_the_ledger_and_the_faults(&ledger, Some(&faults_store), "quokka")

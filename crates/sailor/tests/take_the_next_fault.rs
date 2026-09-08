@@ -138,6 +138,7 @@ fn an_open_fault(scratch: &Scratch) -> faults::Fault {
             what_would_prevent: "a test that a missing price list refuses instead of pricing at zero"
                 .to_owned(),
             status: "**open**".to_owned(),
+            standing: None,
         })
         .expect("the fault is recorded")
 }
