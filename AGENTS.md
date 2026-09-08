@@ -343,6 +343,28 @@ The verdict on a piece of work goes to a context that did not produce it. If you
 wrote the correction yourself, it is not you who declares it good: you report
 what you wrote, how you proved it, and what remains uncertain.
 
+## What leaves this tree carries no scaffolding
+
+A commit message and a request to merge are **not addressed to us**. They are
+read by strangers, for years, on a public repository, and they are the only
+part of the work most people will ever see. They say what changed and why, in
+the terms of the code and the product.
+
+They do not name the sessions, the agents, the models or how the work was
+divided among them; they do not say who reviewed whom; they do not name the
+person whose decision it was. «A second opinion from codex», «Theo's decision»,
+«found by <a session's codename>» are the shape to avoid — a real request does
+not carry them, and a reader who was not here cannot use them.
+
+The positive form is also the more useful one: **credit a finding to the thing
+that found it, not to whoever was holding it**. «Caught by
+`no_shipped_flow_names_a_skill_it_does_not_declare`» is an address the reader
+can go to; «caught by the second reviewer» is an anecdote. When no such thing
+exists, the finding stands on its own evidence, with no author at all.
+
+This rule does not reach the ledger, the notes or the fault register. Those are
+ours, they record who did what on purpose, and that is exactly their job.
+
 ## How it is reported
 
 Short sentences, one idea per sentence, active verb. **The result first**, the
