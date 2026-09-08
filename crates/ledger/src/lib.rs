@@ -21,6 +21,7 @@ use tracing::field::{Field, Visit};
 use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
 
+pub mod holdings;
 pub mod identity;
 pub mod open_trees;
 pub mod search;
