@@ -247,6 +247,7 @@ mod tests {
 
     fn started(process_id: &str, run_id: Option<&str>) -> ProcessRecord {
         ProcessRecord {
+            born_at: None,
             process_id: process_id.to_owned(),
             // A pid nothing on this machine holds: the reading must say «gone»
             // without the answer depending on who else is running.

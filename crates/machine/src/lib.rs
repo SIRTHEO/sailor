@@ -23,7 +23,7 @@ pub fn left_running(store: &ledger::Ledger) -> Result<Vec<LeftRunning>, ledger::
             // **THE ROW NAMES A PROCESS, NOT A NUMBER.** Numbers come round:
             // asked only whether one is taken, an old row answers for whoever
             // holds it now, and the sweep puts out somebody else's work.
-            still_alive: ledger::the_same_process(record.pid, record.started_at),
+            still_alive: ledger::the_same_process_as(&record),
             record,
         })
         .collect())
@@ -156,7 +156,7 @@ pub fn on_the_port(
     port: u16,
 ) -> Result<OnThePort, ledger::LedgerError> {
     if let Some(record) = store.process_holding_port(port)? {
-        if ledger::the_same_process(record.pid, record.started_at) {
+        if ledger::the_same_process_as(&record) {
             return Ok(OnThePort::Ours(Box::new(record)));
         }
     }

@@ -103,7 +103,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// `PROJECTION_MIGRATIONS`, and the tests hold the two against each other. A
 /// column once landed in the migration without this going up, so an existing
 /// store never migrated and every read died on the missing column.
-const PROJECTION_SCHEMA_VERSION: i64 = 17;
+const PROJECTION_SCHEMA_VERSION: i64 = 18;
 
 /// One change to the projections, and the version that introduced it.
 enum ProjectionChange {
@@ -221,6 +221,13 @@ const PROJECTION_MIGRATIONS: &[(i64, ProjectionChange)] = &[
         ProjectionChange::AddColumns {
             table: "steps",
             columns: &[("held_by", "TEXT")],
+        },
+    ),
+    (
+        18,
+        ProjectionChange::AddColumns {
+            table: "processes",
+            columns: &[("born_at", "INTEGER")],
         },
     ),
 ];
@@ -645,6 +652,10 @@ pub struct ProcessRecord {
     /// The run it belongs to, if it belongs to one.
     pub run_id: Option<String>,
     pub started_at: i64,
+    /// The second the kernel says that pid was born. Absent is a machine that
+    /// would not say, or a row written before this was asked.
+    #[serde(default)]
+    pub born_at: Option<i64>,
 }
 
 /// The close of a registered process. Separate from the start because it
@@ -713,6 +724,28 @@ pub fn who_holds_the_pid(pid: u32) -> WhoHoldsThePid {
 }
 
 pub const A_RECORD_IS_NEVER_THIS_LATE: i64 = 120;
+
+/// The second the kernel says a pid was born, for whoever writes down a
+/// process it has just started. `None` is a machine that would not say.
+pub fn born_second_of(pid: u32) -> Option<i64> {
+    born_at(pid)
+}
+
+/// Whether the process a row names is the one holding that number now.
+///
+/// Exact where the row says when its process was born; where it does not —
+/// every row written before that was asked — the old tolerance stands, which
+/// is why the two are not one function.
+pub fn the_same_process_as(record: &ProcessRecord) -> bool {
+    let Some(born) = record.born_at else {
+        return the_same_process(record.pid, record.started_at);
+    };
+    match who_holds_the_pid(record.pid) {
+        WhoHoldsThePid::Nobody => false,
+        WhoHoldsThePid::AliveButUnsaid => true,
+        WhoHoldsThePid::Since(second) => second == born,
+    }
+}
 
 /// Whether the pid alive now is the one the row named. A machine that will
 /// not say answers `true`: a refusal is not evidence.
@@ -2627,7 +2660,8 @@ fn create_projection_tables(connection: &Connection) -> Result<(), LedgerError> 
              run_id TEXT,
              started_at INTEGER NOT NULL,
              ended_at INTEGER,
-             exit_code INTEGER
+             exit_code INTEGER,
+             born_at INTEGER
          );
          CREATE TABLE IF NOT EXISTS projection_watermark (
              singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
@@ -3047,14 +3081,14 @@ fn project_process_started(
     transaction.execute(
         "INSERT INTO processes
          (process_id, pid, command, args, working_directory, port, purpose,
-          started_by, run_id, started_at, ended_at, exit_code)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, NULL, NULL)
+          started_by, run_id, started_at, ended_at, exit_code, born_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, NULL, NULL, ?11)
          ON CONFLICT(process_id) DO UPDATE SET
           pid=excluded.pid, command=excluded.command, args=excluded.args,
           working_directory=excluded.working_directory, port=excluded.port,
           purpose=excluded.purpose, started_by=excluded.started_by,
           run_id=excluded.run_id, started_at=excluded.started_at,
-          ended_at=NULL, exit_code=NULL",
+          ended_at=NULL, exit_code=NULL, born_at=excluded.born_at",
         params![
             record.process_id,
             record.pid,
@@ -3066,6 +3100,7 @@ fn project_process_started(
             record.started_by,
             record.run_id,
             record.started_at,
+            record.born_at,
         ],
     )?;
     Ok(())
@@ -3103,11 +3138,12 @@ fn read_process_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProcessRecord> 
         started_by: row.get(7)?,
         run_id: row.get(8)?,
         started_at: row.get(9)?,
+        born_at: row.get(10)?,
     })
 }
 
 const PROCESS_COLUMNS: &str = "process_id, pid, command, args, working_directory, port, \
-                               purpose, started_by, run_id, started_at";
+                               purpose, started_by, run_id, started_at, born_at";
 
 /// One entry, one value: the latest write replaces the previous one.
 ///

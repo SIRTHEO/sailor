@@ -106,6 +106,7 @@ impl Process {
                 started_by: process.spec.started_by.clone(),
                 run_id: None,
                 started_at: now(),
+                born_at: ledger::born_second_of(process.child.id()),
             };
             if let Err(error) = store.record_process_started(&record) {
                 Self::signal_the_whole_group(process.child.id());

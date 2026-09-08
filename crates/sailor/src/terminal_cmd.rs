@@ -215,6 +215,7 @@ fn host(args: &[String]) -> Result<i32, String> {
             started_by: "sailor terminal host".to_owned(),
             run_id: None,
             started_at: tally::now(),
+            born_at: ledger::born_second_of(std::process::id()),
         };
         ledger.record_process_started(&record).ok().map(|_| ledger)
     });

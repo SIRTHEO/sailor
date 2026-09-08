@@ -7,7 +7,9 @@
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use machine::{left_running, stop_the_ones_nobody_wants, Teardown};
+use machine::{
+    close_the_ones_that_stopped_breathing, left_running, stop_the_ones_nobody_wants, Teardown,
+};
 
 struct Scratch(PathBuf);
 
@@ -55,6 +57,24 @@ fn written(store: &ledger::Ledger, process_id: &str, pid: u32, run_id: Option<&s
     written_as_of(store, process_id, pid, run_id, now());
 }
 
+fn written_born(store: &ledger::Ledger, process_id: &str, pid: u32, born_at: Option<i64>) {
+    store
+        .record_process_started(&ledger::ProcessRecord {
+            born_at,
+            process_id: process_id.to_owned(),
+            pid,
+            command: "sh".to_owned(),
+            args: vec!["-c".to_owned()],
+            working_directory: "/somewhere".to_owned(),
+            port: None,
+            purpose: "a-test".to_owned(),
+            started_by: "the test".to_owned(),
+            run_id: None,
+            started_at: now(),
+        })
+        .expect("write the start");
+}
+
 fn written_as_of(
     store: &ledger::Ledger,
     process_id: &str,
@@ -64,6 +84,7 @@ fn written_as_of(
 ) {
     store
         .record_process_started(&ledger::ProcessRecord {
+            born_at: None,
             process_id: process_id.to_owned(),
             pid,
             command: "sh".to_owned(),
@@ -152,6 +173,40 @@ fn a_process_that_leaves_has_its_row_closed() {
         "a process that left was not confirmed: {done:?}"
     );
     assert!(left_running(&store).expect("read").is_empty(), "its row is still called running");
+}
+
+/// **A NUMBER COMES ROUND, A BIRTH SECOND DOES NOT.** A row naming a pid that
+/// is alive but was born at another second names a process that is gone, and
+/// the sweep must close its row instead of signalling whoever holds it now.
+#[test]
+fn a_row_whose_process_was_born_at_another_second_is_not_that_process() {
+    let dir = scratch("rinato");
+    let store = ledger::Ledger::open(&dir.0).expect("the store");
+    let mut alive = light("sleep 30");
+    let pid = alive.id();
+    let truly = ledger::born_second_of(pid);
+
+    written_born(&store, "p-mio", pid, truly);
+    written_born(&store, "p-di-un-altro", pid, Some(1));
+
+    let seen = left_running(&store).expect("read");
+    let held = |process_id: &str| {
+        seen.iter()
+            .find(|item| item.record.process_id == process_id)
+            .map(|item| item.still_alive)
+    };
+    assert_eq!(held("p-mio"), Some(true), "this is the process the row named");
+    assert_eq!(
+        held("p-di-un-altro"),
+        Some(false),
+        "the same number, another second: the process the row named is gone"
+    );
+
+    let closed = close_the_ones_that_stopped_breathing(&store, now()).expect("the sweep answers");
+    assert_eq!(closed, 1, "only the row nobody holds any more is closed");
+    assert!(ledger::pid_is_alive(pid), "and nothing was signalled");
+    let _ = alive.kill();
+    let _ = alive.wait();
 }
 
 /// What somebody still wants is never touched, whatever the sweep is for.
@@ -265,6 +320,7 @@ fn a_port_says_which_of_the_four_things_is_true_about_it() {
     let mut ours = light("sleep 30");
     store
         .record_process_started(&ledger::ProcessRecord {
+            born_at: None,
             process_id: "p-port".to_owned(),
             pid: ours.id(),
             command: "npx".to_owned(),

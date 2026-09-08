@@ -164,6 +164,7 @@ fn sample_all(ledger: &Ledger) {
         .expect("record the entry");
     ledger
         .record_process_started(&ProcessRecord {
+            born_at: None,
             process_id: "live".to_owned(),
             pid: 4242,
             command: "sailor".to_owned(),
@@ -2828,6 +2829,7 @@ fn a_migrated_ledger_ends_up_shaped_exactly_like_a_fresh_one() {
 
 fn spawned(process_id: &str, port: Option<u16>) -> ProcessRecord {
     ProcessRecord {
+        born_at: None,
         process_id: process_id.to_owned(),
         pid: 4242,
         command: "npm".to_owned(),
