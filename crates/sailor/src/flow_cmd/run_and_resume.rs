@@ -79,20 +79,21 @@ fn put_mandate(flow: &mut FlowFile, text: &str) -> Result<(), String> {
     }
 }
 
-/// What holds a handed step: **a deadline written in the record**, not a process.
-/// **IT ASKS THE OPERATING SYSTEM NOTHING, AND THE BAN HAS A NUMBER.** Fault 12:
-/// inside the perimeter `pgrep` answers empty *without an error*, and a watch
-/// said «no flows running» while two ran. An agent in a terminal is no child of
-/// this process; the question is «has the time it gave itself passed?». A record
-/// with a pid is held, always: *I cannot see* is not *it is dead*.
+/// What holds a handed step: the row's own holder first, then **a deadline
+/// written in the record**. Fault 12 banned asking `pgrep`, which answers empty
+/// inside the perimeter without an error; a row naming the second its holder was
+/// born is asked of the kernel instead, and only a holder the kernel denies is
+/// let go. A number alone stays held: *I cannot see* is not *it is dead*.
 struct HandoffLease {
     now: i64,
 }
 
 impl flow::ProcessProbe for HandoffLease {
     fn is_running(&self, record: &flow::StepRecord) -> Result<bool, flow::FlowError> {
-        if record.held_by_pid.is_some() {
-            return Ok(true);
+        match ledger::still_held(record) {
+            ledger::StillHeld::Held | ledger::StillHeld::Uncertain => return Ok(true),
+            ledger::StillHeld::Released => return Ok(false),
+            ledger::StillHeld::Nobody => {}
         }
         let Some(limit) = record
             .input
@@ -685,6 +686,31 @@ mod tests {
                 .is_running(&a_handed_record(1, None, None))
                 .expect("the probe answers"),
             "with no readable deadline the ambiguity is kept"
+        );
+    }
+
+    /// A holder the kernel denies lets the step go; a number alone does not.
+    ///
+    /// The row born in another epoch names a process that either is not there
+    /// or is not the one that opened the step: both are «released».
+    #[test]
+    fn a_holder_the_kernel_denies_is_not_holding_anything() {
+        let probe = HandoffLease { now: 1_000_000 };
+        let mut denied = a_handed_record(1, Some(1), Some(std::process::id()));
+        denied.held_by = Some(flow::HolderIdentity {
+            born_at: Some(1),
+            invocation: "una-corsa-che-non-c-e-piu".to_owned(),
+        });
+        assert!(
+            !probe.is_running(&denied).expect("the probe answers"),
+            "the number is this process, the second of birth is not: nobody holds it"
+        );
+
+        let mut mine = denied.clone();
+        mine.held_by = Some(ledger::this_process_holds());
+        assert!(
+            probe.is_running(&mine).expect("the probe answers"),
+            "this very process holds it"
         );
     }
 

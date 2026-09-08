@@ -324,13 +324,10 @@ pub fn close_step_in(
             )
         })?;
 
-    // **ONLY WHAT `sailor step open` OPENED IS CLOSED.** A record with a pid was
-    // opened by the in-process executor, and that process is running right now:
-    // closing it from here pulls the step out from under it, and its own close
-    // will fail with «already closed» — a run broken by a gesture made in another
-    // terminal. A handed step carries no pid, so the rule separates the two cases
-    // exactly, with nothing to guess.
-    if open.held_by_pid.is_some() {
+    // **ONLY WHAT `sailor step open` OPENED IS CLOSED.** Closing a step another
+    // process holds pulls it out from under it; a holder the kernel denies holds
+    // nothing, and its step would otherwise stay open for ever.
+    if open.held_by_pid.is_some() && ledger::still_held(open) != ledger::StillHeld::Released {
         return Err(catalogue::say(
             "cli.step.held_by_the_engine",
             &[
@@ -1232,6 +1229,55 @@ mod tests {
                 .iter()
                 .any(|found| found.attempt == 2 && found.outcome.is_none()),
             "the engine's attempt stays open: closing it would break the running run"
+        );
+    }
+
+    /// A crash leaves a row open with a number in it; the process behind that
+    /// number is gone, and the step must still be closable by hand.
+    #[test]
+    fn a_step_whose_holder_the_kernel_denies_can_be_closed_by_hand() {
+        let directory = TestDirectory::new("tenuto-da-nessuno");
+        let ledger = a_handed_run(&directory, "implementa", vec![]);
+        let mut record = StepRecord::started(
+            "run-1",
+            "implementa",
+            2,
+            2,
+            vec![],
+            handed_input("implementa"),
+            vec![],
+            200,
+        );
+        record.held_by_pid = Some(std::process::id());
+        record.held_by = Some(flow::HolderIdentity {
+            born_at: Some(1),
+            invocation: "una-corsa-finita-male".to_owned(),
+        });
+        ledger
+            .append_step_started(&record)
+            .expect("the engine opens it");
+
+        let left = directory.0.join("lasciato.json");
+        std::fs::write(&left, r#"{"done": true}"#).expect("writing the output");
+        close_step_in(
+            &ledger,
+            &a_flow(),
+            &options(&[
+                ("run", "run-1"),
+                ("step", "implementa"),
+                ("as", "chi"),
+                ("outcome", "went"),
+                ("output-file", left.to_str().expect("a readable path")),
+            ]),
+        )
+        .expect("nobody holds it any more");
+        assert!(
+            ledger
+                .steps("run-1")
+                .expect("reading the steps back")
+                .iter()
+                .all(|found| found.outcome.is_some() || found.attempt != 2),
+            "the abandoned attempt is closed"
         );
     }
 
