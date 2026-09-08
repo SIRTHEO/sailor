@@ -46,8 +46,18 @@ fn table_in(documents: &std::path::Path) -> Option<String> {
         workspace::measured_nothing("this tree carries no documents, so it carries no table");
         return None;
     };
-    workspace::measured(text.lines().count(), "lines of the fault table read");
+    workspace::measured_against(
+        faults_in(&text),
+        "faults read from the table and carried across",
+        text.lines().count(),
+        "lines the file holds",
+    );
     Some(text)
+}
+
+/// What the judge actually walks: the file holds twice as many lines.
+fn faults_in(text: &str) -> usize {
+    faults::parse(text).len()
 }
 
 /// Every row of one table that does not come back out of one store the way it
@@ -537,6 +547,20 @@ fn a_defect_planted_in_a_throwaway_table_is_found_by_every_verdict() {
         "a gap in the numbers read as 1..N"
     );
     let _ = std::fs::remove_dir_all(&gap);
+}
+
+/// **THE RECEIPT COUNTS WHAT WAS WALKED**, not the lines around it.
+#[test]
+fn the_receipt_counts_the_faults_and_not_the_lines_of_the_file() {
+    let three = a_table("counted", &format!("{}{}{}", a_row(1, "a"), a_row(2, "b"), a_row(3, "c")));
+    let source = table_in(&three).expect("the planted table is read");
+
+    assert_eq!(faults_in(&source), 3, "three rows went in");
+    assert!(
+        source.lines().count() > 3,
+        "the file holds heading and rule as well, which is why the two numbers differ"
+    );
+    let _ = std::fs::remove_dir_all(&three);
 }
 
 /// **THE JUDGE MUST BE ABLE TO SAY IT DID NOT MEASURE.** A tree carrying no
