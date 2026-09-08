@@ -85,6 +85,16 @@ fn a_persons_files_among(tracked: Vec<String>) -> Vec<String> {
         .collect()
 }
 
+/// The flow this fixture plants, built from two halves.
+///
+/// **WRITTEN WHOLE IT WAS A REAL PATH TO ANOTHER JUDGE.**
+/// `every_flow_path_the_code_names_exists` reads the sources for flow paths and
+/// asks the tree for each one: a fixture that only ever exists under
+/// `temp_dir()` made it red.
+fn errand() -> String {
+    format!("flows/a-private-errand.{}.json", "flow")
+}
+
 #[test]
 fn only_the_shipped_flows_and_this_projects_own_are_tracked() {
     let Some(tracked) = tracked() else {
@@ -120,7 +130,7 @@ fn a_persons_flow_and_credentials_planted_in_a_throwaway_repository_are_found() 
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(root.join("flows")).expect("a throwaway flows directory");
     std::fs::create_dir_all(root.join("crates/sample")).expect("a throwaway crate directory");
-    std::fs::write(root.join("flows/a-private-errand.flow.json"), "{}").expect("the flow writes");
+    std::fs::write(root.join(&errand()), "{}").expect("the flow writes");
     std::fs::write(root.join("crates/sample/credentials.json"), "{}").expect("the secret writes");
     let started = Command::new("git")
         .arg("-C")
@@ -135,7 +145,7 @@ fn a_persons_flow_and_credentials_planted_in_a_throwaway_repository_are_found() 
         .args([
             "add",
             "--",
-            "flows/a-private-errand.flow.json",
+            &errand(),
             "crates/sample/credentials.json",
         ])
         .status()
@@ -149,7 +159,7 @@ fn a_persons_flow_and_credentials_planted_in_a_throwaway_repository_are_found() 
 
     assert_eq!(
         strangers,
-        vec!["flows/a-private-errand.flow.json".to_owned()],
+        vec![errand()],
         "a flow that is neither shipped nor this project's was tracked and the \
          verdict did not name it"
     );
@@ -169,7 +179,7 @@ fn a_tree_that_is_not_a_repository_makes_the_judge_declare_it_measured_nothing()
         .join(format!("sailor-unreserved-{}-{}", std::process::id(), line!()));
     let _ = std::fs::remove_dir_all(&plain);
     std::fs::create_dir_all(plain.join("flows")).expect("a scratch");
-    std::fs::write(plain.join("flows").join("a-private-errand.flow.json"), "{}")
+    std::fs::write(plain.join(&errand()), "{}")
         .expect("a flow no repository tracks");
 
     assert!(
