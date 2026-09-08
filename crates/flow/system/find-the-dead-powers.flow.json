@@ -1,0 +1,98 @@
+{
+  "id": "find-the-dead-powers",
+  "description": "THE TWO ACTIONS THAT NAME DEAD POWERS WERE, UNTIL THIS FLOW EXISTED, DEAD POWERS THEMSELVES: no command, no window, no other flow ever called `unused_actions` or `dormant_steps` — sailor-8a's own finding, verifying them. This flow is the ordinary gesture that reaches them. It runs both, hands the two reports to a person, and starts nothing on its own — the same shape as `notice-a-divergence`: propose, never execute. `unused_actions` answers from the flow files alone (never named by any shipped or project flow); `dormant_steps` answers from the ledger (named, but every closed run of that step was `Skipped`, or the flow itself has never run at all — three different states, never collapsed into one number).",
+  "graph": {
+    "steps": [
+      {
+        "id": "trigger",
+        "deps": [],
+        "action": "trigger",
+        "max_attempts": 1,
+        "with": {
+          "source": "manual"
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
+        "id": "never_named",
+        "deps": ["trigger"],
+        "action": "unused_actions",
+        "max_attempts": 1,
+        "with": {},
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
+        "id": "never_reached",
+        "deps": ["trigger"],
+        "action": "dormant_steps",
+        "max_attempts": 1,
+        "with": {},
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
+        "id": "propose",
+        "deps": ["never_named", "never_reached"],
+        "action": "handed_to_agent",
+        "max_attempts": 1,
+        "with": {
+          "mandate": {
+            "$join": [
+              "Two reports on Sailor's own dead powers.\n\nNEVER NAMED BY ANY FLOW (static, from the flow files):\n",
+              { "$json": "/never_named" },
+              "\n\nNAMED, BUT NEVER REALLY REACHED (from the ledger — never run at all, always skipped by its own condition, or reached at least once):\n",
+              { "$json": "/never_reached" },
+              "\n\nNeither list is a verdict on its own: a name here may be a recent flow nobody has had occasion to run yet, not a mistake. Read before acting."
+            ]
+          },
+          "holder": "whoever is watching",
+          "handoff_timeout_secs": 86400,
+          "options": [
+            {
+              "label": "acknowledged",
+              "facts": "read; nothing in either list needs a change right now"
+            },
+            {
+              "label": "acted",
+              "facts": "at least one name in either list led to a fault, a flow change, or a fix"
+            }
+          ]
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "holder": { "type": "string" },
+            "handoff_timeout_secs": { "type": "number" }
+          },
+          "required": ["holder", "handoff_timeout_secs"],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "allow_extra": true
+        }
+      }
+    ]
+  },
+  "inputs": {
+    "trigger": {
+      "source": "manual"
+    }
+  }
+}

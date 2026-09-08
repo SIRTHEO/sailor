@@ -119,6 +119,12 @@ pub const FLOWS: &[(&str, &str)] = &[
         "take-the-next-fault",
         include_str!("../system/take-the-next-fault.flow.json"),
     ),
+    // The ordinary gesture that reaches the two actions naming everything
+    // else's dead powers — without this flow, they were their own example.
+    (
+        "find-the-dead-powers",
+        include_str!("../system/find-the-dead-powers.flow.json"),
+    ),
 ];
 
 /// A place where flows are looked for, with the name a reader sees.
