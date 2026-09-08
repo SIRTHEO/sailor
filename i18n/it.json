@@ -449,6 +449,7 @@
   "cli.session.no_process_has_a_terminal": "nessun processo ha un terminale, e chiedere si poteva",
   "cli.session.no_terminal_anywhere": "non c'è modo di sapere su quale terminale gira questo processo: nessuno dei suoi tre descrittori è un tty, e nemmeno un processo sopra di lui nella catena ne ha uno. Dillo con --tty <nome>",
   "cli.session.no_typed_words": "{tool}: nessuna parola che un utente digita, quindi il benvenuto non ne promette",
+  "cli.session.no_such_command_line": "nessuna riga di comando si chiama «{tool}»; Sailor conosce queste: {known}",
   "cli.session.nothing_grafted": "non è stato innestato niente da nessuna parte. È un'affermazione, non un silenzio: leggi le righe sopra per sapere quale riga di comando ha rifiutato e perché",
   "cli.session.ledger_did_not_open": "il deposito non si è aperto ({why}), quindi questo saluto non può dire se c'è qualcosa in attesa: è «non ho potuto guardare», non «non c'è niente».",
   "cli.session.not_announced": "non sei stato annunciato agli altri agenti ({why}), quindi il censimento della ciurma non mostrerà questo terminale: si leggerà come un albero vuoto, non come un terminale che non ha potuto parlare.",

@@ -449,6 +449,7 @@
   "cli.session.no_process_has_a_terminal": "no process has a terminal, and asking was possible",
   "cli.session.no_terminal_anywhere": "there is no telling which terminal this process runs on: none of its three descriptors is a tty, and no process above it on the parent chain has one either. Say it with --tty <name>",
   "cli.session.no_typed_words": "{tool}: no words a user types, so the welcome promises none",
+  "cli.session.no_such_command_line": "no command line is called «{tool}»; Sailor knows these: {known}",
   "cli.session.nothing_grafted": "nothing was grafted anywhere. That is a statement, not a silence: read the lines above for which command line refused and why",
   "cli.session.ledger_did_not_open": "the ledger did not open ({why}), so this greeting cannot say whether anything is waiting: that is «I could not look», not «nothing is open».",
   "cli.session.not_announced": "you were not announced to the other agents ({why}), so the crew survey will not show this terminal: it will read as an empty tree, not as a terminal that could not speak.",

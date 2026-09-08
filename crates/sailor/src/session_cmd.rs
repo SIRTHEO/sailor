@@ -358,6 +358,20 @@ fn each_command_line(
         return Err(catalogue::say("cli.session.settings_without_tool", &[]));
     }
 
+    if let Some(wanted) = only {
+        let known: Vec<&str> = catalog
+            .descriptors
+            .iter()
+            .map(|loaded| loaded.descriptor.id.as_str())
+            .collect();
+        if !known.contains(&wanted.as_str()) {
+            return Err(catalogue::say(
+                "cli.session.no_such_command_line",
+                &[("tool", wanted), ("known", &known.join(", "))],
+            ));
+        }
+    }
+
     let mut worked_anywhere = false;
     for loaded in &catalog.descriptors {
         let tool = &loaded.descriptor;
@@ -485,8 +499,12 @@ fn grafting(
         },
     )?;
 
+    // Exit zero on a total failure let a script that grafts the hooks believe
+    // they are in. The lines the walk did say are kept: they are the answer to
+    // «which command line refused and why».
     if !grafted_any {
         said.push(catalogue::say("cli.session.nothing_grafted", &[]));
+        return Err(said.join("\n"));
     }
     Ok(Report::spoken(said.join("\n")))
 }
@@ -2577,6 +2595,47 @@ mod tests {
                 .expect("reading it back")
                 .contains("[[hooks.SessionStart]]"),
             "the report said grafted and the file has nothing in it"
+        );
+    }
+
+    /// **A NAME NOBODY ANSWERS TO USED TO GRAFT NOTHING, QUIETLY, AND EXIT
+    /// ZERO.** `--tool claude` is the natural way to write `claude-code`: every
+    /// line was skipped, the report said to read the lines above, and there
+    /// were none. Whoever ran it believed the hooks were in.
+    #[test]
+    fn a_command_line_nobody_answers_to_is_refused_and_names_the_ones_there_are() {
+        let tool = a_line_that_writes_toml();
+        let catalog = toolbox::descriptor::Catalog {
+            descriptors: vec![toolbox::descriptor::Loaded {
+                descriptor: tool.clone(),
+                source: "the check".to_owned(),
+            }],
+            ..Default::default()
+        };
+        let options = BTreeMap::from([("tool".to_owned(), "a-line-nobody-ships".to_owned())]);
+        let payload = Payload::parse("{}").expect("an empty payload");
+        let request = Request {
+            verb: "install",
+            options: &options,
+            payload: &payload,
+            raw: "",
+            store: None,
+            deposit: None,
+            census: &one_terminal(),
+            tty: "",
+            at: 1_000,
+        };
+
+        let refused = grafting(&request, &catalog, &a_machine_saying(None))
+            .expect_err("a name no command line answers to stops the graft");
+
+        assert!(
+            refused.contains("a-line-nobody-ships"),
+            "the refusal must name what was asked for: {refused}"
+        );
+        assert!(
+            refused.contains(&tool.id),
+            "the refusal must name the lines there are: {refused}"
         );
     }
 
