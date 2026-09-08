@@ -326,11 +326,15 @@ impl StepRecord {
     }
 }
 
+/// The text a digest is taken over. Whoever keeps a body next to its digest
+/// keeps these bytes, or the two can disagree while both look right.
+pub fn canonical_text(value: &Value) -> String {
+    serde_json::to_string(&canonical_value(value))
+        .expect("serializing a serde_json::Value in memory cannot fail")
+}
+
 pub fn digest_input(value: &Value) -> String {
-    let canonical = canonical_value(value);
-    let bytes = serde_json::to_vec(&canonical)
-        .expect("serializing a serde_json::Value in memory cannot fail");
-    let digest = Sha256::digest(bytes);
+    let digest = Sha256::digest(canonical_text(value).as_bytes());
     format!("{digest:x}")
 }
 

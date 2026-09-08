@@ -8,7 +8,7 @@
 use std::path::Path;
 
 use flow::{Decision, Execution, FlowFile, SpendStop, StopReason};
-use ledger::{Ledger, RunRecord};
+use ledger::{FlowDefinitionRecord, Ledger, RunRecord};
 
 /// How a run ended, and whether the process that launched it may exit zero.
 ///
@@ -212,6 +212,7 @@ fn write_run(
             stop_reason: reason.map(|reason| reason.as_text().to_owned()),
         })
         .map_err(|error| format!("cannot record run {}: {error}", run.run_id))?;
+    record_what_it_executed(ledger, flow, run.run_id, run.started_at)?;
     // The line is left here rather than beside each launcher, so the window and
     // the command line leave the same one. Only a closed run has a line, and
     // only a flow that says it looks after itself.
@@ -230,6 +231,25 @@ fn write_run(
             })?;
     }
     Ok(())
+}
+
+/// Keeps the resolved definition beside the run.
+///
+/// **HERE AND NOT AT THE LAUNCHER**, for the reason this file exists: a
+/// snapshot taken by each launcher would be taken by some of them only.
+/// `execution_request` reads `root_inputs`, the cap and the stops off this same
+/// value, so it is what the executor got — not the file as it stands now.
+fn record_what_it_executed(
+    ledger: &Ledger,
+    flow: &FlowFile,
+    run_id: &str,
+    recorded_at: i64,
+) -> Result<(), String> {
+    let definition = FlowDefinitionRecord::of_flow(run_id, flow, recorded_at)
+        .map_err(|error| format!("cannot serialise the flow of run {run_id}: {error}"))?;
+    ledger
+        .record_flow_definition(&definition)
+        .map_err(|error| format!("cannot record the flow of run {run_id}: {error}"))
 }
 
 /// The commit a tree stands on, or nothing where there is no tree to ask and no

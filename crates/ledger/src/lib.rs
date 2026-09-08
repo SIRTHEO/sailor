@@ -302,6 +302,57 @@ pub struct RunRecord {
     pub stop_reason: Option<String>,
 }
 
+/// The resolved flow definition one run executed, kept whole.
+///
+/// **THE NAME OF A FLOW IS NOT ITS DEFINITION.** A run recorded only `entity`,
+/// and a renamed or deleted file leaves that name pointing at nothing, or at
+/// something else. `digest` is taken over the bytes in `body`, so a definition
+/// kept beside its hash cannot disagree with it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FlowDefinitionRecord {
+    pub run_id: String,
+    pub digest: String,
+    pub body: String,
+    pub recorded_at: i64,
+}
+
+impl FlowDefinitionRecord {
+    pub fn of(run_id: &str, definition: &Value, recorded_at: i64) -> Self {
+        Self {
+            run_id: run_id.to_owned(),
+            digest: flow::digest_input(definition),
+            body: flow::canonical_text(definition),
+            recorded_at,
+        }
+    }
+
+    pub fn of_flow(
+        run_id: &str,
+        flow: &flow::FlowFile,
+        recorded_at: i64,
+    ) -> Result<Self, LedgerError> {
+        Ok(Self::of(run_id, &serde_json::to_value(flow)?, recorded_at))
+    }
+
+    pub fn definition(&self) -> Result<Value, LedgerError> {
+        serde_json::from_str(&self.body).map_err(LedgerError::from)
+    }
+}
+
+/// What is known of the flow a run executed.
+///
+/// `Unknown` is an answer, not a gap: the run predates the snapshot, and no
+/// reading of `entity` can reconstruct what it ran. Making the caller name that
+/// case is the whole point — an empty list would let it pass for "a run with no
+/// steps", which is a different and false thing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RunFlow {
+    Unknown,
+    /// Oldest first. More than one means a resume found the file changed, and
+    /// both are true of that run.
+    Recorded(Vec<FlowDefinitionRecord>),
+}
+
 /// An entry seen by an inventory scan.
 ///
 /// The fields are plain text: the store does **not** depend on the crate that
@@ -921,6 +972,7 @@ pub struct SaidExcerpt {
 #[serde(tag = "type", content = "record", rename_all = "snake_case")]
 enum StoredEvent {
     RunRecorded(RunRecord),
+    FlowDefinitionRecorded(FlowDefinitionRecord),
     StepStarted(StepRecord),
     StepClosed(StepRecord),
     ModelCallRecorded(ModelCallRecord),
@@ -1047,6 +1099,84 @@ impl Ledger {
 
     pub fn record_run(&self, record: &RunRecord) -> Result<(), LedgerError> {
         self.write_event(StoredEvent::RunRecorded(record.clone()))
+    }
+
+    /// Keeps the definition a run executed.
+    ///
+    /// **THE SAME DIGEST TWICE WRITES NO EVENT.** A run's header is written at
+    /// least twice and a definition weighs tens of kilobytes: appending it each
+    /// time would grow the log by the size of the flow for nothing.
+    pub fn record_flow_definition(&self, record: &FlowDefinitionRecord) -> Result<(), LedgerError> {
+        if self.holds_definition(&record.run_id, &record.digest)? {
+            return Ok(());
+        }
+        self.write_event(StoredEvent::FlowDefinitionRecorded(record.clone()))
+    }
+
+    pub fn events_of_kind(&self, kind: &str) -> Result<i64, LedgerError> {
+        let connection = self.lock()?;
+        let count = connection.query_row(
+            "SELECT COUNT(*) FROM events.events WHERE kind = ?1",
+            params![kind],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    fn holds_definition(&self, run_id: &str, digest: &str) -> Result<bool, LedgerError> {
+        let connection = self.lock()?;
+        let held = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM flow_definitions WHERE run_id = ?1 AND digest = ?2)",
+            params![run_id, digest],
+            |row| row.get(0),
+        )?;
+        Ok(held)
+    }
+
+    pub fn flow_of_run(&self, run_id: &str) -> Result<RunFlow, LedgerError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT run_id, digest, body, recorded_at FROM flow_definitions
+             WHERE run_id = ?1 ORDER BY recorded_at, digest",
+        )?;
+        let found = statement
+            .query_map(params![run_id], |row| {
+                Ok(FlowDefinitionRecord {
+                    run_id: row.get(0)?,
+                    digest: row.get(1)?,
+                    body: row.get(2)?,
+                    recorded_at: row.get(3)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        if found.is_empty() {
+            return Ok(RunFlow::Unknown);
+        }
+        Ok(RunFlow::Recorded(found))
+    }
+
+    /// How many recorded runs cannot say what they executed. The number a
+    /// migration may only lower, and never by inventing a definition.
+    pub fn runs_of_unknown_flow(&self) -> Result<i64, LedgerError> {
+        let connection = self.lock()?;
+        let count = connection.query_row(
+            "SELECT COUNT(*) FROM runs
+             WHERE run_id NOT IN (SELECT run_id FROM flow_definitions)",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    /// Reads one projection whole, for the proof that a replay rebuilds it.
+    pub fn dump_projection(&self, table: &str) -> Result<Value, LedgerError> {
+        let connection = self.lock()?;
+        if !PROJECTIONS.contains(&table) {
+            return Err(LedgerError::InvalidRecord(format!(
+                "{table} is not a projection"
+            )));
+        }
+        dump_table(&connection, table)
     }
 
     pub fn record_model_call(&self, record: &ModelCallRecord) -> Result<(), LedgerError> {
@@ -2302,6 +2432,18 @@ fn create_projection_tables(connection: &Connection) -> Result<(), LedgerError> 
              worktree TEXT,
              stop_reason TEXT
          );
+         -- Born complete, so an existing store gets it from this
+         -- `IF NOT EXISTS` and `PROJECTION_SCHEMA_VERSION` does not move: there
+         -- are no columns to add to a table that did not exist before, and a
+         -- version bump would lock every reader out of a store until somebody
+         -- who may write it happened to open it.
+         CREATE TABLE IF NOT EXISTS flow_definitions (
+             run_id TEXT NOT NULL,
+             digest TEXT NOT NULL,
+             body TEXT NOT NULL,
+             recorded_at INTEGER NOT NULL,
+             PRIMARY KEY (run_id, digest)
+         );
          CREATE TABLE IF NOT EXISTS steps (
              run_id TEXT NOT NULL,
              step_id TEXT NOT NULL,
@@ -2422,6 +2564,10 @@ fn create_projection_tables(connection: &Connection) -> Result<(), LedgerError> 
 fn create_projection_indexes(connection: &Connection) -> Result<(), LedgerError> {
     connection.execute_batch(
         "CREATE INDEX IF NOT EXISTS runs_started_idx ON runs(started_at DESC);
+         -- The point of a content hash: every run that executed *these* bytes,
+         -- whatever the file was called at the time or is called now.
+         CREATE INDEX IF NOT EXISTS flow_definitions_digest_idx
+             ON flow_definitions(digest, recorded_at);
          CREATE UNIQUE INDEX IF NOT EXISTS steps_epoch_idx
              ON steps(run_id, step_id, epoch);
          CREATE INDEX IF NOT EXISTS steps_failure_idx
@@ -2570,13 +2716,26 @@ fn initialize_projection_watermark(connection: &Connection) -> Result<(), Ledger
     Ok(())
 }
 
+/// Every table `project_event` writes.
+///
+/// **ONE LIST, BECAUSE ITS READERS DISAGREED.** The rebuild dropped four tables
+/// and replayed onto the other three, and the dump that proves a replay looked
+/// at those same four. A table missing from here is a table no proof covers.
+pub const PROJECTIONS: &[&str] = &[
+    "runs",
+    "flow_definitions",
+    "steps",
+    "model_calls",
+    "snapshots",
+    "inventory_items",
+    "store",
+    "processes",
+];
+
 fn drop_projection_schema(transaction: &Transaction<'_>) -> Result<(), LedgerError> {
-    transaction.execute_batch(
-        "DROP TABLE IF EXISTS snapshots;
-         DROP TABLE IF EXISTS model_calls;
-         DROP TABLE IF EXISTS steps;
-         DROP TABLE IF EXISTS runs;",
-    )?;
+    for table in PROJECTIONS {
+        transaction.execute(&format!("DROP TABLE IF EXISTS {table}"), [])?;
+    }
     Ok(())
 }
 
@@ -2707,6 +2866,14 @@ fn event_metadata(event: &StoredEvent) -> EventMetadata<'_> {
             None,
             Some(record.started_at),
         ),
+        StoredEvent::FlowDefinitionRecorded(record) => (
+            "flow_definition_recorded",
+            Some(&record.run_id),
+            None,
+            None,
+            None,
+            Some(record.recorded_at),
+        ),
         StoredEvent::StepStarted(record) => (
             "step_started",
             Some(&record.run_id),
@@ -2778,6 +2945,7 @@ fn event_metadata(event: &StoredEvent) -> EventMetadata<'_> {
 fn project_event(transaction: &Transaction<'_>, event: &StoredEvent) -> Result<(), LedgerError> {
     match event {
         StoredEvent::RunRecorded(record) => project_run(transaction, record),
+        StoredEvent::FlowDefinitionRecorded(record) => project_flow_definition(transaction, record),
         StoredEvent::StepStarted(record) => project_step(transaction, record, false),
         StoredEvent::StepClosed(record) => project_step(transaction, record, true),
         StoredEvent::ModelCallRecorded(record) => project_model_call(transaction, record),
@@ -2955,6 +3123,26 @@ fn project_run(transaction: &Transaction<'_>, record: &RunRecord) -> Result<(), 
             record.ended_at,
             record.worktree,
             record.stop_reason,
+        ],
+    )?;
+    Ok(())
+}
+
+/// The first snapshot under a digest wins: re-recording the same definition on
+/// a resume must not move the date it was first seen.
+fn project_flow_definition(
+    transaction: &Transaction<'_>,
+    record: &FlowDefinitionRecord,
+) -> Result<(), LedgerError> {
+    transaction.execute(
+        "INSERT INTO flow_definitions (run_id, digest, body, recorded_at)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(run_id, digest) DO NOTHING",
+        params![
+            record.run_id,
+            record.digest,
+            record.body,
+            record.recorded_at
         ],
     )?;
     Ok(())
@@ -3435,7 +3623,11 @@ fn dump_table(connection: &Connection, table: &str) -> Result<Value, LedgerError
         // The two born later sit at the end, where a positional reader that
         // predates them simply finds no cell.
         "runs" => "run_id,kind,entity,parent_run_id,started_by,status,total_cost_micros,error,started_at,ended_at,worktree,stop_reason",
-        "steps" => "run_id,step_id,attempt,epoch,deps,input_digest,input,gates,attempt_relation,started_at,outcome,output,said,failure_class,ended_at,bytes_seen,bytes_discarded,held_by_pid,species,checkpointed,refusal,ran",
+        "steps" => "run_id,step_id,attempt,epoch,deps,input_digest,input,gates,attempt_relation,started_at,outcome,output,said,failure_class,ended_at,bytes_seen,bytes_discarded,held_by_pid,species,checkpointed,refusal,ran,why",
+        "flow_definitions" => "run_id,digest,body,recorded_at",
+        "inventory_items" => "kind,name,path,origin,reach,reason,first_seen,last_seen,gone_at",
+        "store" => "collection,key,value,written_by,written_at",
+        "processes" => "process_id,pid,command,args,working_directory,port,purpose,started_by,run_id,started_at,ended_at,exit_code",
         // The two columns born with `relax_model_calls` sit at the end, and that is not
         // untidiness: readers of this dump go by position, and slotting them in
         // the middle would shift every index downstream without anything
@@ -3447,8 +3639,12 @@ fn dump_table(connection: &Connection, table: &str) -> Result<Value, LedgerError
     let order = match table {
         "runs" => "run_id",
         "steps" => "run_id,step_id,attempt",
+        "flow_definitions" => "run_id,digest",
         "model_calls" => "call_id",
         "snapshots" => "snapshot_id",
+        "inventory_items" => "kind,name,path",
+        "store" => "collection,key",
+        "processes" => "process_id",
         _ => unreachable!(),
     };
     let sql = format!("SELECT json_array({columns}) FROM {table} ORDER BY {order}");

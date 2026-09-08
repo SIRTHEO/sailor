@@ -133,6 +133,77 @@ fn sample_all(ledger: &Ledger) {
             created_at: 119,
         })
         .expect("record the snapshot");
+    ledger
+        .record_flow_definition(&FlowDefinitionRecord::of(
+            "run-1",
+            &a_resolved_definition(),
+            89,
+        ))
+        .expect("record the definition");
+    ledger
+        .record_inventory(&InventoryScan {
+            taken_at: 95,
+            items: vec![InventoryItem {
+                kind: "flow".to_owned(),
+                name: "repository".to_owned(),
+                origin: "shipped".to_owned(),
+                path: "/a-tree/flows/repository".to_owned(),
+                reach: "active".to_owned(),
+                reason: None,
+            }],
+        })
+        .expect("record the scan");
+    ledger
+        .put_record(&StoreRecord {
+            collection: "mandate".to_owned(),
+            key: "current".to_owned(),
+            value: json!({"say": "finish the ledger"}),
+            written_by: "run-1".to_owned(),
+            written_at: 96,
+        })
+        .expect("record the entry");
+    ledger
+        .record_process_started(&ProcessRecord {
+            process_id: "live".to_owned(),
+            pid: 4242,
+            command: "sailor".to_owned(),
+            args: vec!["live".to_owned()],
+            working_directory: "/tree".to_owned(),
+            port: Some(5183),
+            purpose: "live".to_owned(),
+            started_by: "person".to_owned(),
+            run_id: Some("run-1".to_owned()),
+            started_at: 97,
+        })
+        .expect("record the process");
+    ledger
+        .record_process_ended(&ProcessEndRecord {
+            process_id: "live".to_owned(),
+            exit_code: Some(0),
+            ended_at: 118,
+        })
+        .expect("close the process");
+}
+
+fn a_resolved_definition() -> Value {
+    json!({
+        "id": "repository",
+        "description": "tidy the repository",
+        "graph": {"steps": [{"id": "compile", "action": "shell", "deps": []}]},
+        "inputs": {"tree": "/tree"},
+    })
+}
+
+fn every_projection(ledger: &Ledger) -> Vec<(String, Value)> {
+    PROJECTIONS
+        .iter()
+        .map(|table| {
+            (
+                (*table).to_owned(),
+                ledger.dump_projection(table).expect("dump a projection"),
+            )
+        })
+        .collect()
 }
 
 #[test]
@@ -3576,6 +3647,256 @@ fn every_column_a_migration_adds_exists_in_a_fresh_store_under_its_version() {
             }
         }
     }
+}
+
+/// A run keeps the definition it executed, and the digest is over the bytes
+/// kept — not over something else that resembles them.
+#[test]
+fn a_run_keeps_the_definition_it_executed() {
+    let directory = TestDirectory::new("flow-kept");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    let definition = a_resolved_definition();
+    ledger
+        .record_flow_definition(&FlowDefinitionRecord::of("run-1", &definition, 89))
+        .expect("record the definition");
+
+    let RunFlow::Recorded(kept) = ledger.flow_of_run("run-1").expect("read it back") else {
+        panic!("the definition just written read back as unknown");
+    };
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept[0].definition().expect("parse the body"), definition);
+    assert_eq!(
+        kept[0].digest,
+        flow::digest_input(&kept[0].definition().unwrap())
+    );
+    assert_eq!(kept[0].recorded_at, 89);
+}
+
+/// **THE NAME OF THE FLOW IS NOT THE ANSWER.** A run whose definition nobody
+/// took says so; it does not hand back an empty graph, and nothing here goes
+/// looking for a file called `entity` to fill the hole with.
+#[test]
+fn a_run_with_no_snapshot_says_unknown_and_invents_nothing() {
+    let directory = TestDirectory::new("flow-unknown");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    ledger
+        .record_run(&RunRecord {
+            run_id: "run-old".to_owned(),
+            kind: "flow".to_owned(),
+            entity: "a-flow-that-no-longer-exists".to_owned(),
+            parent_run_id: None,
+            started_by: "person".to_owned(),
+            status: "complete".to_owned(),
+            total_cost_micros: 0,
+            error: None,
+            started_at: 10,
+            ended_at: Some(20),
+            worktree: None,
+            stop_reason: None,
+        })
+        .expect("record the run");
+
+    assert_eq!(
+        ledger.flow_of_run("run-old").expect("ask about the flow"),
+        RunFlow::Unknown
+    );
+    assert_eq!(ledger.runs_of_unknown_flow().expect("count them"), 1);
+}
+
+/// A resume records the same bytes again and the store keeps one row with the
+/// first date; a resume under a changed file keeps both, because both are true
+/// of that run.
+#[test]
+fn recording_the_same_definition_twice_keeps_one_row_and_the_first_date() {
+    let directory = TestDirectory::new("flow-again");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    let definition = a_resolved_definition();
+    ledger
+        .record_flow_definition(&FlowDefinitionRecord::of("run-1", &definition, 89))
+        .expect("record it");
+    ledger
+        .record_flow_definition(&FlowDefinitionRecord::of("run-1", &definition, 200))
+        .expect("record it again");
+
+    let RunFlow::Recorded(kept) = ledger.flow_of_run("run-1").expect("read back") else {
+        panic!("unknown after two writes");
+    };
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept[0].recorded_at, 89);
+
+    let mut changed = definition.clone();
+    changed["inputs"]["tree"] = json!("/another-tree");
+    ledger
+        .record_flow_definition(&FlowDefinitionRecord::of("run-1", &changed, 300))
+        .expect("record the changed file");
+    let RunFlow::Recorded(kept) = ledger.flow_of_run("run-1").expect("read back") else {
+        panic!("unknown after three writes");
+    };
+    assert_eq!(kept.len(), 2, "a changed definition was thrown away");
+}
+
+/// Key order does not make a different flow: the digest is taken over the
+/// canonical text, and the body kept is that same text.
+#[test]
+fn the_same_definition_written_in_another_order_has_the_same_digest() {
+    let one = json!({"id": "f", "inputs": {"b": 2, "a": 1}});
+    let other = json!({"inputs": {"a": 1, "b": 2}, "id": "f"});
+    let first = FlowDefinitionRecord::of("run-1", &one, 1);
+    let second = FlowDefinitionRecord::of("run-1", &other, 1);
+    assert_eq!(first.digest, second.digest);
+    assert_eq!(first.body, second.body);
+}
+
+/// The store as it stood before the definitions were kept: the schema of today
+/// minus the one table this change adds. Written that way and not transcribed,
+/// so a column moving elsewhere cannot make this test describe a shape that
+/// never existed.
+fn a_store_without_definitions(directory: &Path, with_a_broken_event: bool) {
+    let mut connection = Connection::open(directory.join(STATE_FILE)).expect("open state");
+    connection
+        .execute(
+            "ATTACH DATABASE ?1 AS events",
+            [directory.join(EVENTS_FILE).to_string_lossy().as_ref()],
+        )
+        .expect("attach");
+    let transaction = immediate(&mut connection).expect("transaction");
+    create_event_schema(&transaction).expect("event schema");
+    create_projection_tables(&transaction).expect("projection tables");
+    transaction
+        .execute("DROP TABLE flow_definitions", [])
+        .expect("go back to before the definitions");
+    initialize_projection_watermark(&transaction).expect("watermark");
+    // Rows with no event behind them: a migration that rebuilt instead of
+    // preserving would lose exactly these, and nothing else would show it.
+    transaction
+        .execute(
+            "INSERT INTO runs (run_id, kind, entity, parent_run_id, started_by, status,
+                               total_cost_micros, error, started_at, ended_at, worktree,
+                               stop_reason)
+             VALUES ('run-before', 'flow', 'a-flow-that-no-longer-exists', NULL, 'person',
+                     'complete', 42, NULL, 10, 20, '/tree', NULL)",
+            [],
+        )
+        .expect("an older run");
+    transaction
+        .execute(
+            "INSERT INTO steps (run_id, step_id, attempt, epoch, deps, input_digest, input,
+                                gates, started_at, checkpointed)
+             VALUES ('run-before', 'compile', 1, '00000000000000000007', '[]', 'digest',
+                     'null', '[]', 11, 1)",
+            [],
+        )
+        .expect("an older step");
+    if with_a_broken_event {
+        transaction
+            .execute(
+                "INSERT INTO events.events (seq, kind, run_id, payload)
+                 VALUES (1, 'run_recorded', 'run-before', 'this is not json')",
+                [],
+            )
+            .expect("a payload no reader can take");
+    }
+    transaction
+        .pragma_update(None, "user_version", 1)
+        .expect("an older version");
+    transaction.commit().expect("commit the older store");
+}
+
+fn read_back(directory: &Path) -> (i64, bool, i64) {
+    let connection = Connection::open(directory.join(STATE_FILE)).expect("reopen state");
+    let version: i64 = connection
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .expect("version");
+    let has_definitions: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'flow_definitions'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("look for the table");
+    let runs: i64 = connection
+        .query_row("SELECT COUNT(*) FROM runs", [], |row| row.get(0))
+        .expect("count the runs");
+    (version, has_definitions == 1, runs)
+}
+
+/// Migrating a store that predates the definitions loses nothing and invents
+/// nothing: the older rows are all still there, and every one of them answers
+/// «unknown» about what it executed.
+#[test]
+fn migrating_a_store_without_definitions_loses_nothing_and_guesses_nothing() {
+    let directory = TestDirectory::new("flow-migration");
+    a_store_without_definitions(&directory.0, false);
+
+    let ledger = Ledger::open(&directory.0).expect("open and migrate");
+    let (version, has_definitions, runs) = read_back(&directory.0);
+    assert_eq!(version, PROJECTION_SCHEMA_VERSION);
+    assert!(has_definitions, "the migration did not create the table");
+    assert_eq!(runs, 1, "the older run was lost by the migration");
+    assert_eq!(
+        ledger
+            .steps("run-before")
+            .expect("read the older step")
+            .len(),
+        1,
+        "the older step was lost by the migration"
+    );
+    assert_eq!(
+        ledger.flow_of_run("run-before").expect("ask"),
+        RunFlow::Unknown
+    );
+    assert_eq!(ledger.runs_of_unknown_flow().expect("count"), 1);
+}
+
+/// **A MIGRATION THAT CANNOT FINISH LEAVES NOTHING BEHIND IT.** The phases run
+/// in one transaction, so a store that fails halfway comes back at the version
+/// it had, without the table the migration was creating, and with every row it
+/// started from.
+#[test]
+fn a_migration_that_fails_halfway_leaves_the_store_as_it_was() {
+    let directory = TestDirectory::new("flow-migration-broken");
+    a_store_without_definitions(&directory.0, true);
+
+    let refused = Ledger::open(&directory.0);
+    assert!(
+        refused.is_err(),
+        "an unreadable event did not stop the migration"
+    );
+    let (version, has_definitions, runs) = read_back(&directory.0);
+    assert_eq!(version, 1, "the version moved on a migration that failed");
+    assert!(
+        !has_definitions,
+        "the table survived a migration that failed: the store is half-migrated"
+    );
+    assert_eq!(runs, 1, "a failed migration took the older rows with it");
+}
+
+/// **EVERY PROJECTION, NOT THE FOUR SOMEBODY REMEMBERED.** Three of them used
+/// to be replayed on top of themselves and compared by nothing at all.
+#[test]
+fn replaying_the_log_rebuilds_every_projection_row_for_row() {
+    let directory = TestDirectory::new("flow-replay");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    sample_all(&ledger);
+    let expected = every_projection(&ledger);
+    for (table, rows) in &expected {
+        assert!(
+            !rows.as_array().expect("an array").is_empty(),
+            "the projection {table} has no rows, so rebuilding it proves nothing"
+        );
+    }
+
+    // The control: a replay that drops one kind of event must come out
+    // different, or the comparison above is comparing nothing.
+    rebuild_skipping(&ledger, Some("flow_definition_recorded")).expect("the broken rebuild");
+    assert_ne!(
+        every_projection(&ledger),
+        expected,
+        "dropping the definitions changed no projection"
+    );
+
+    ledger.rebuild_projections().expect("rebuild from the log");
+    assert_eq!(every_projection(&ledger), expected);
 }
 
 /// **A REFUSAL TO ANSWER IS NOT A BIRTH TIME.** Read anyway it dates the
