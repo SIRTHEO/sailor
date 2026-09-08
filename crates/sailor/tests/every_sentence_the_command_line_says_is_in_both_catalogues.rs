@@ -187,3 +187,35 @@ fn every_command_says_what_it_does_in_every_language() {
     }
     assert!(missing.is_empty(), "{missing:#?}");
 }
+
+/// **A KEY WRITTEN TWICE THROWS ONE OF THE TWO SENTENCES AWAY.** `serde_json`
+/// keeps the later and drops the earlier without a word, so a rewritten line
+/// can sit above the line that actually ships and read as if it were in force.
+/// Found by a round-trip that silently collapsed `it.json` from 858 lines to
+/// 857 keys — nothing measured it, so nothing said it.
+///
+/// **WHAT THIS DOES NOT ANSWER:** whether the surviving sentence is the right
+/// one of the two. It measures that a choice was made silently, not which.
+#[test]
+fn no_catalogue_writes_the_same_key_twice() {
+    let mut doubled = Vec::new();
+    for (language, text) in catalogue::LANGUAGES {
+        let written = text
+            .lines()
+            .filter_map(|line| line.strip_prefix("  \""))
+            .filter_map(|rest| rest.split_once("\":"))
+            .map(|(key, _)| key)
+            .count();
+        let kept = catalogue::entries(language)
+            .expect("a catalogue that parses")
+            .len();
+        if written != kept {
+            doubled.push(format!(
+                "{language} writes {written} keys and keeps {kept}: \
+                 {} sentence(s) are overwritten where they stand",
+                written - kept
+            ));
+        }
+    }
+    assert!(doubled.is_empty(), "{doubled:#?}");
+}
