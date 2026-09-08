@@ -11,7 +11,7 @@ use std::process::Command;
 
 
 pub const USAGE: &[crate::Form] = &[crate::Form {
-    form: "sailor ratchet [--only <judge>]...",
+    form: "sailor ratchet [--only <judge>]... [--as-committed]",
     says_key: "cli.ratchet.says",
 }];
 
@@ -21,14 +21,14 @@ pub const USAGE: &[crate::Form] = &[crate::Form {
 const READS_THE_SOURCES: &str = "CARGO_MANIFEST_DIR";
 
 pub fn run(args: &[String]) -> i32 {
-    let only = match parse_options(args) {
-        Ok(only) => only,
+    let asked = match parse_options(args) {
+        Ok(asked) => asked,
         Err(message) => {
             eprintln!("sailor ratchet: {message}");
             return 2;
         }
     };
-    match measured(&only) {
+    match measured(&asked) {
         Ok(true) => 0,
         Ok(false) => 1,
         Err(message) => {
@@ -41,16 +41,17 @@ pub fn run(args: &[String]) -> i32 {
 /// Which judges were asked for. **A LIST, BECAUSE THE OPTION IS REPEATABLE**:
 /// held in one slot, a second `--only` overwrote the first and the run
 /// measured one judge while saying nothing about the other.
-fn parse_options(args: &[String]) -> Result<Vec<String>, String> {
-    let mut only = Vec::new();
+fn parse_options(args: &[String]) -> Result<Asked, String> {
+    let mut asked = Asked::default();
     let mut rest = args.iter();
     while let Some(word) = rest.next() {
         match word.as_str() {
             "--only" => {
-                only.push(rest.next().cloned().ok_or_else(|| {
+                asked.only.push(rest.next().cloned().ok_or_else(|| {
                     catalogue::say("cli.option_wants_a_value", &[("option", "--only")])
                 })?)
             }
+            "--as-committed" => asked.as_committed = true,
             other => {
                 return Err(catalogue::say(
                     "cli.ratchet.unknown_option",
@@ -59,7 +60,20 @@ fn parse_options(args: &[String]) -> Result<Vec<String>, String> {
             }
         }
     }
-    Ok(only)
+    Ok(asked)
+}
+
+/// What the run was asked for.
+///
+/// **`as_committed` EXISTS BECAUSE THE GATE WEIGHED A TREE NOBODY HAS.** The
+/// changes of the working tree are laid over the archive whether they are the
+/// caller's or another session's — 35 files laid over, 33 of them a
+/// neighbour's, measured on this machine. A release must be able to ask for the
+/// commit it distributes and nothing else.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Asked {
+    pub only: Vec<String>,
+    pub as_committed: bool,
 }
 
 /// The first asked-for name no judge answers to, if there is one.
@@ -353,7 +367,11 @@ pub struct Overlay {
 
 /// A clean copy of HEAD with this tree's changes laid over it, tracked by a
 /// repository of its own.
-pub fn clean_tree_with_changes(root: &Path, into: &Path) -> Result<Overlay, String> {
+pub fn clean_tree_with_changes(
+    root: &Path,
+    into: &Path,
+    lay_the_changes_over: bool,
+) -> Result<Overlay, String> {
     // **THE TREE IS UPDATED, NOT REMADE.** Deleting and re-extracting gave every
     // file of twenty crates a new modification time, so cargo rebuilt all of it
     // on every run: a gate took forty minutes, was therefore run rarely, and
@@ -362,7 +380,11 @@ pub fn clean_tree_with_changes(root: &Path, into: &Path) -> Result<Overlay, Stri
     let _ = std::fs::remove_dir_all(&next);
     std::fs::create_dir_all(&next).map_err(|error| format!("{}: {error}", next.display()))?;
     lay_out_head(root, &next)?;
-    let moved = lay_over_the_changes(root, &next)?;
+    let moved = if lay_the_changes_over {
+        lay_over_the_changes(root, &next)?
+    } else {
+        Overlay::default()
+    };
     bring_across(&next, into)?;
     let _ = std::fs::remove_dir_all(&next);
     tracked_by_a_repository_of_its_own(into)?;
@@ -585,12 +607,16 @@ fn only_gate_in(root: &Path) -> Result<OneGateAtATime, String> {
     Ok(OneGateAtATime(file))
 }
 
-fn measured(only: &[String]) -> Result<bool, String> {
+fn measured(asked: &Asked) -> Result<bool, String> {
+    let only = &asked.only;
     let root = root_to_measure()?;
     let _only_one = only_gate_in(&root)?;
     let clean = root.join("target").join("ratchet-tree");
-    let moved = clean_tree_with_changes(&root, &clean)?;
-    let judges: Vec<Judge> = judges_in(&root)
+    let moved = clean_tree_with_changes(&root, &clean, !asked.as_committed)?;
+    // **THE LIST COMES FROM THE TREE THAT IS WEIGHED**, not from the one beside
+    // it: read from the working tree, who gets weighed was decided by one tree
+    // and the seeds by another.
+    let judges: Vec<Judge> = judges_in(&clean)
         .into_iter()
         .filter(|judge| only.is_empty() || only.iter().any(|name| &judge.test == name))
         .collect();
@@ -827,7 +853,7 @@ mod tests {
     fn a_file_untouched_by_a_commit_keeps_its_modification_time() {
         let (root, tree) =
             a_repository_holding("unchanged", &[("kept.md", "one\n"), ("other.md", "two\n")]);
-        clean_tree_with_changes(&root, &tree).expect("the first lay-out");
+        clean_tree_with_changes(&root, &tree, true).expect("the first lay-out");
         let laid = std::fs::metadata(tree.join("kept.md")).expect("read").modified().expect("mtime");
 
         // A commit that says nothing about `kept.md`, a second later, so the
@@ -836,7 +862,7 @@ mod tests {
         std::fs::write(root.join("other.md"), "three\n").expect("touch the other one");
         git(&root, &["add", "other.md"]);
         git(&root, &["commit", "--quiet", "-m", "the other one moves"]);
-        clean_tree_with_changes(&root, &tree).expect("the second lay-out");
+        clean_tree_with_changes(&root, &tree, true).expect("the second lay-out");
 
         let again = std::fs::metadata(tree.join("kept.md")).expect("read").modified().expect("mtime");
         assert_eq!(
@@ -852,12 +878,12 @@ mod tests {
     #[test]
     fn a_file_that_changed_is_written_again() {
         let (root, tree) = a_repository_holding("changed", &[("kept.md", "one\n")]);
-        clean_tree_with_changes(&root, &tree).expect("the first lay-out");
+        clean_tree_with_changes(&root, &tree, true).expect("the first lay-out");
         let laid = std::fs::metadata(tree.join("kept.md")).expect("read").modified().expect("mtime");
 
         std::thread::sleep(std::time::Duration::from_millis(1100));
         std::fs::write(root.join("kept.md"), "two\n").expect("change it in the working tree");
-        clean_tree_with_changes(&root, &tree).expect("the second lay-out");
+        clean_tree_with_changes(&root, &tree, true).expect("the second lay-out");
 
         assert_eq!(std::fs::read_to_string(tree.join("kept.md")).expect("read"), "two\n");
         let again = std::fs::metadata(tree.join("kept.md")).expect("read").modified().expect("mtime");
@@ -872,12 +898,12 @@ mod tests {
     fn a_file_that_left_the_sources_leaves_the_measured_tree() {
         let (root, tree) =
             a_repository_holding("gone", &[("kept.md", "one\n"), ("old/going.md", "two\n")]);
-        clean_tree_with_changes(&root, &tree).expect("the first lay-out");
+        clean_tree_with_changes(&root, &tree, true).expect("the first lay-out");
         assert!(tree.join("old/going.md").exists(), "the fixture never had it");
 
         git(&root, &["rm", "--quiet", "old/going.md"]);
         git(&root, &["commit", "--quiet", "-m", "it goes"]);
-        clean_tree_with_changes(&root, &tree).expect("the second lay-out");
+        clean_tree_with_changes(&root, &tree, true).expect("the second lay-out");
 
         assert!(
             !tree.join("old/going.md").exists(),
@@ -902,7 +928,7 @@ mod tests {
         git(&root, &["rm", "--quiet", "staged.md"]);
         std::fs::remove_file(root.join("unstaged.md")).expect("the removal");
 
-        let moved = clean_tree_with_changes(&root, &measured).expect("the overlay");
+        let moved = clean_tree_with_changes(&root, &measured, true).expect("the overlay");
         let standing: Vec<&str> = ["kept.md", "staged.md", "unstaged.md"]
             .into_iter()
             .filter(|name| measured.join(name).exists())
@@ -921,11 +947,49 @@ mod tests {
             a_repository_holding("emptied", &[("notes/only.md", "one\n"), ("kept.md", "kept\n")]);
         git(&root, &["rm", "--quiet", "notes/only.md"]);
 
-        clean_tree_with_changes(&root, &measured).expect("the overlay");
+        clean_tree_with_changes(&root, &measured, true).expect("the overlay");
         let standing = measured.join("notes").exists();
         let _ = std::fs::remove_dir_all(measured.parent().expect("the scratch"));
 
         assert!(!standing, "the emptied directory stayed in the measured tree");
+    }
+
+    /// **THE RELEASE MUST BE ABLE TO WEIGH THE COMMIT IT SHIPS.** The overlay
+    /// takes whatever the working tree holds, and in a shared checkout most of
+    /// that belongs to somebody else: measured here, 35 files laid over and 33
+    /// of them a neighbour's. Asked as committed, the tree is HEAD and nothing
+    /// else.
+    #[test]
+    fn asked_as_committed_the_measured_tree_is_head_and_nothing_else() {
+        let (root, measured) = a_repository_holding(
+            "as-committed",
+            &[("kept.md", "committed\n")],
+        );
+        std::fs::write(root.join("kept.md"), "not committed\n").expect("the change");
+        std::fs::write(root.join("stranger.md"), "somebody else's\n").expect("the stranger");
+
+        let moved = clean_tree_with_changes(&root, &measured, false).expect("the lay-out");
+        let held = std::fs::read_to_string(measured.join("kept.md")).expect("the file");
+        let stranger = measured.join("stranger.md").exists();
+        let _ = std::fs::remove_dir_all(measured.parent().expect("the scratch"));
+
+        assert_eq!(moved, Overlay::default(), "nothing was laid over and nothing taken away");
+        assert_eq!(held, "committed\n", "the working tree's version reached the measured tree");
+        assert!(!stranger, "a file nobody committed reached the measured tree");
+    }
+
+    /// The option is read, and it is not the default: a gate that weighed HEAD
+    /// alone by surprise would tell whoever is working that their own change is
+    /// green when it was never looked at.
+    #[test]
+    fn weighing_the_commit_alone_is_asked_for_in_as_many_words() {
+        let asked = |args: &[&str]| {
+            parse_options(&args.iter().map(|word| (*word).to_owned()).collect::<Vec<_>>())
+                .expect("the options parse")
+        };
+        assert!(!asked(&[]).as_committed, "the overlay is what a person gets by default");
+        assert!(asked(&["--as-committed"]).as_committed);
+        assert!(asked(&["--only", "one", "--as-committed"]).as_committed);
     }
 
     /// **THE COUNT IS WHAT A PERSON READS BEFORE TRUSTING THE VERDICT**, so it
@@ -938,7 +1002,7 @@ mod tests {
         git(&root, &["rm", "--quiet", "gone.md"]);
         std::fs::write(root.join("kept.md"), "changed\n").expect("the change");
 
-        let moved = clean_tree_with_changes(&root, &measured).expect("the overlay");
+        let moved = clean_tree_with_changes(&root, &measured, true).expect("the overlay");
         let _ = std::fs::remove_dir_all(measured.parent().expect("the scratch"));
 
         assert_eq!(moved, Overlay { laid_over: 1, taken_away: 1 });
@@ -1052,8 +1116,11 @@ mod tests {
         let asked = |args: &[&str]| {
             parse_options(&args.iter().map(|word| (*word).to_owned()).collect::<Vec<_>>())
         };
-        assert_eq!(asked(&["--only", "one", "--only", "two"]), Ok(vec!["one".to_owned(), "two".to_owned()]));
-        assert_eq!(asked(&[]), Ok(Vec::new()), "asking for none is asking for all");
+        assert_eq!(
+            asked(&["--only", "one", "--only", "two"]).map(|it| it.only),
+            Ok(vec!["one".to_owned(), "two".to_owned()])
+        );
+        assert_eq!(asked(&[]).map(|it| it.only), Ok(Vec::new()), "asking for none is asking for all");
     }
 
     /// A name matching no judge is a typo, and a typo must not read as a run

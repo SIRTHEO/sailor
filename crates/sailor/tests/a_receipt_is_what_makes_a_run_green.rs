@@ -127,7 +127,7 @@ fn the_tree_laid_over_is_the_top_of_a_repository_that_tracks_it() {
         .expect("a change");
     let into = root.join("target").join("ratchet-tree");
 
-    let moved = sailor::ratchet_cmd::clean_tree_with_changes(&root, &into).expect("the tree");
+    let moved = sailor::ratchet_cmd::clean_tree_with_changes(&root, &into, true).expect("the tree");
     assert_eq!(moved.laid_over, 1, "the untracked change was not laid over");
     assert!(
         workspace::is_the_top_of_its_repository(&into),
