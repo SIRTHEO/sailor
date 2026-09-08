@@ -1,57 +1,9 @@
-//! The node a flow asks **how it went** with, the times before.
+//! The node a flow asks **how it went** with. Surface `gate`, no powers.
 //!
-//! **SURFACE: `gate`. POWERS CLAIMED: none.** It does not read the world, does
-//! not touch it, does not write to the deposit of its own: it offers a mandate
-//! and waits. Declared here because the four surfaces do not exist in the code
-//! yet, and a new action that stays quiet while the criterion is being written
-//! becomes the first unwritten exception.
-//!
-//! **WHY IT EXISTS.** The deposit has always recorded how every step of every
-//! run ended, with which failure class and how long it took, and no flow could
-//! read it back. The three `store` nodes do not serve: they read a keyed
-//! archive — the facts a flow decided to remember — not what happened to it.
-//! Without it a flow runs the same steps the same way however the last twenty
-//! went: a system that repeats instead of one that accumulates experience.
-//!
-//! **IT IS ASKED IN NAMED QUESTIONS, NOT IN SQL**, for two measured reasons.
-//! SQL would tie every flow file to the shape of today's `steps` table, which
-//! has already gained columns; with four named questions the schema can change
-//! and the flows stay valid, because the SQL lives where the schema lives. And
-//! a closed question **has no arbitrary projection**: there is no syntax for
-//! «give me that column», so the secret is not defended by a blacklist somebody
-//! forgets to update but by the absence of a way to ask.
-//!
-//! The price is declared: an unforeseen question needs a new variant in Rust,
-//! not a line in a data file — the same choice `reference.rs` made for
-//! references, three closed forms instead of a language, and for the same
-//! reason.
-//!
-//! **WHAT COMES OUT AND WHAT DOES NOT.** Always the structural facts and the
-//! measures — step, run, flow, outcome, failure class, attempt, instants,
-//! durations, counts, bytes. Never `input` and `output`, the typed data channel
-//! where prompts, environments and model answers travel: returning them would
-//! put arbitrary structured values back into a step's input, the gap
-//! `reference.rs` declares open for `store_read` and which does not widen. The
-//! ban is structural — the types returned on this path have no such fields.
-//!
-//! **ONLY IF ASKED**: `said`, with `include_said: true`, admitted on `last_run`
-//! alone, on that run's broken steps only, at most [`SAID_MAX_STEPS`] steps and
-//! [`SAID_MAX_BYTES`] bytes each, with `said_truncated` declaring the cut.
-//! `record.rs` describes it as raw text for a person when something goes wrong,
-//! not as data to decide on: reachable, because without it a diagnosis cannot
-//! be made, and narrow, because none of the four questions needs it.
-//!
-//! **AN EMPTY DEPOSIT IS AN ANSWER, NOT A FAULT.** The envelope always carries
-//! `deposit`: `absent`, `empty` or `present`. The key `answer` exists **only**
-//! in the last case and never appears set to `null`, and the reason is in the
-//! engine: `Condition::PointerExists` leans on `Value::pointer`, which answers
-//! `Some` on a `null` — so `answer: null` would fire the «I have an answer»
-//! branch on a freshly installed machine, the very case to be told apart.
-//!
-//! Omitting the key separates «I do not know» from «zero», and `PointerEquals`
-//! on `/deposit` separates an absent deposit from an empty one. Inside
-//! `answer`, no faults is the number zero. In none of the three cases does the
-//! step fail: as with `store_read`, a first run is not born red.
+//! Asked in named questions and not in SQL, so no flow file depends on the
+//! shape of the `steps` table and there is no syntax for arbitrary projection.
+//! `input` and `output` never come out, and the ban is structural: the types
+//! returned here have no such fields. `said` is the one exception, bounded.
 
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies};
 use ledger::{Ledger, StepDurations};

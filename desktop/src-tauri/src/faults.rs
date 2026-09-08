@@ -34,11 +34,11 @@ pub(crate) struct Register {
 }
 
 fn standing(fault: &::faults::Fault) -> &'static str {
-    match fault.standing() {
+    match fault.standing {
         ::faults::Standing::Open => "open",
         ::faults::Standing::PartlyClosed => "partly closed",
         ::faults::Standing::Closed => "closed",
-        ::faults::Standing::Unrecognised => "unrecognised",
+        ::faults::Standing::Unknown => "unknown",
     }
 }
 
@@ -79,51 +79,31 @@ pub(crate) fn fault_status(number: i64, status: String) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    /// **A STATUS NOBODY TAUGHT THIS MUST NOT READ AS CLOSED.** The register is
-    /// prose written by people; the day somebody writes a status in another
-    /// wording, the count of what is still open must refuse it rather than
-    /// quietly subtract it.
+    /// **A STANDING THE REGISTER COULD NOT CLASSIFY MUST NOT READ AS CLOSED.**
+    /// The vocabulary is validated in the register now, so this reader only
+    /// puts a word on it — but «unknown» and «closed» are the two the window
+    /// must never merge: one asks a person to look, the other says nobody has to.
     #[test]
-    fn prose_the_register_does_not_know_is_refused_not_closed() {
-        let unknown = ::faults::Fault {
+    fn every_standing_the_register_holds_gets_a_word_of_its_own() {
+        let with = |standing| ::faults::Fault {
             number: 1,
             happened_on: "2026-09-02".to_owned(),
+            happened: ::faults::Happening::default(),
             what_happened: "x".to_owned(),
             how_it_showed: "y".to_owned(),
             what_would_prevent: "z".to_owned(),
-            status: "mezzo sistemato, credo".to_owned(),
+            status: "whatever the prose says".to_owned(),
+            standing,
         };
-        assert_eq!(super::standing(&unknown), "unrecognised");
+        let said: Vec<&str> = ::faults::EVERY_STANDING
+            .iter()
+            .map(|standing| super::standing(&with(*standing)))
+            .collect();
 
-        // THE CONTROL: the words it does know still read as themselves, or the
-        // check above would hold on a function that answers one thing always.
-        let closed = ::faults::Fault {
-            status: "**closed**".to_owned(),
-            ..unknown.clone()
-        };
-        let open = ::faults::Fault {
-            status: "**open**".to_owned(),
-            ..unknown.clone()
-        };
-        let half = ::faults::Fault {
-            status: "**closed in part**".to_owned(),
-            ..unknown.clone()
-        };
-        assert_eq!(
-            [
-                super::standing(&closed),
-                super::standing(&open),
-                super::standing(&half)
-            ],
-            ["closed", "open", "partly closed"],
-        );
-        // The register was translated and this reader was not, so it answered
-        // «unrecognised» to every fault the store held. The wording it used to
-        // know is the sharpest control there is: still refused, never closed.
-        let was_known = ::faults::Fault {
-            status: "**chiuso**".to_owned(),
-            ..unknown.clone()
-        };
-        assert_eq!(super::standing(&was_known), "unrecognised");
+        assert_eq!(said, ["open", "partly closed", "closed", "unknown"]);
+        let mut apart = said.clone();
+        apart.sort_unstable();
+        apart.dedup();
+        assert_eq!(apart.len(), said.len(), "two standings share one word");
     }
 }
