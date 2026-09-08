@@ -146,7 +146,7 @@ mod tests {
         let dir = scratch("mixed");
         write_flow(&dir, "gated-flow");
         write_flow(&dir, "untouched-flow");
-        let ledger = Ledger::open(&dir.join("ledger")).expect("open the ledger");
+        let ledger = Ledger::open(dir.join("ledger")).expect("open the ledger");
         ledger
             .record_run(&ledger::RunRecord {
                 run_id: "run-1".to_owned(),
@@ -241,7 +241,7 @@ mod tests {
     fn a_step_inside_a_running_flow_that_never_closes_is_never_closed_not_never_run() {
         let dir = scratch("running-with-a-gap");
         write_flow(&dir, "partly-live-flow");
-        let ledger = Ledger::open(&dir.join("ledger")).expect("open the ledger");
+        let ledger = Ledger::open(dir.join("ledger")).expect("open the ledger");
         ledger
             .record_run(&ledger::RunRecord {
                 run_id: "run-1".to_owned(),
