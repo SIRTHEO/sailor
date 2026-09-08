@@ -417,7 +417,7 @@
   "cli.release.tests_skipped": "== PROVE SALTATE (--skip-tests): questo rilascio NON è stato provato ==",
   "cli.release.the_name_finds_another_one": "ATTENZIONE: chi digita «{name}» esegue ancora {first}, che non è la copia appena messa in servizio.\n   Tutto ciò che cerca il nome — finestra compresa — continua a eseguire quella, quindi questo rilascio non è finito: sostituiscila con {path}, o metti quella cartella davanti nel percorso di ricerca.",
   "cli.release.the_name_finds_nothing": "nota: «{name}» non è in nessun percorso di ricerca, quindi chi lo cerca non troverà ciò che è appena stato messo in servizio",
-  "cli.release.uncommitted_stay_out": "nota: {count} file non committati sotto {parts} restano fuori dal servizio, per costruzione",
+  "cli.release.uncommitted_stay_out": "{count} file non committati sotto {parts} resterebbero fuori dal servizio: questo rilascio si costruisce da HEAD, quindi il lavoro che hai davanti non è quello che spedisci. Committalo, oppure di' `--even-if-dirty` per rilasciare HEAD com'è",
   "cli.release.unknown_target": "bersaglio sconosciuto «{target}»; i bersagli disponibili sono: {targets}",
   "cli.release.wait_secs_not_a_number": "non è un numero per --wait-secs: «{value}»",
   "cli.release.what_goes_in": "== cosa entra in servizio ==",

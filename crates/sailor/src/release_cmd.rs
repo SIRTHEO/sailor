@@ -21,7 +21,16 @@ struct Options {
     target_name: String,
     dry_run: bool,
     skip_tests: bool,
+    /// Release from HEAD while the tree carries uncommitted work, having been
+    /// told what stays behind.
+    even_if_dirty: bool,
     wait_secs: u64,
+}
+
+/// Whether uncommitted work stops this release. The release builds from HEAD,
+/// so the answer is yes unless the person said otherwise in as many words.
+fn dirty_stops_here(dirty_count: usize, even_if_dirty: bool) -> bool {
+    dirty_count > 0 && !even_if_dirty
 }
 
 struct TemporaryTree {
@@ -80,7 +89,7 @@ pub fn run(args: &[String]) -> i32 {
 /// `release::TARGETS`, and whoever types a wrong name hears it from
 /// `target_names()` with today's table rather than an older one.
 pub const USAGE: &[crate::Form] = &[crate::Form {
-    form: "sailor release <target> [--dry-run] [--skip-tests] [--wait-secs N]",
+    form: "sailor release <target> [--dry-run] [--skip-tests] [--even-if-dirty] [--wait-secs N]",
     says_key: "",
 }];
 
@@ -98,11 +107,13 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
 
     let mut dry_run = false;
     let mut skip_tests = false;
+    let mut even_if_dirty = false;
     let mut wait_secs = 600;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--dry-run" => dry_run = true,
             "--skip-tests" => skip_tests = true,
+            "--even-if-dirty" => even_if_dirty = true,
             "--wait-secs" => {
                 let value = args.next().ok_or_else(|| {
                     catalogue::say("cli.option_wants_a_value", &[("option", "--wait-secs")])
@@ -118,6 +129,7 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
         target_name,
         dry_run,
         skip_tests,
+        even_if_dirty,
         wait_secs,
     })
 }
@@ -147,16 +159,17 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     let dirty = git_output(&root, &ask)?;
     let dirty_count = String::from_utf8_lossy(&dirty.stdout).lines().count();
     if dirty_count > 0 {
-        println!(
-            "{}",
-            catalogue::say(
-                "cli.release.uncommitted_stay_out",
-                &[
-                    ("count", &dirty_count.to_string()),
-                    ("parts", &parts.join(", ")),
-                ],
-            )
+        let said = catalogue::say(
+            "cli.release.uncommitted_stay_out",
+            &[
+                ("count", &dirty_count.to_string()),
+                ("parts", &parts.join(", ")),
+            ],
         );
+        if dirty_stops_here(dirty_count, options.even_if_dirty) {
+            return Err(said);
+        }
+        println!("{said}");
     }
 
     let temporary = make_temporary_tree()?;
@@ -1564,6 +1577,23 @@ mod tests {
     // on a deleted target: test data telling of a vanished world breaks nothing,
     // and that is exactly why it rots.
     #[test]
+    /// **A RELEASE BUILT FROM HEAD WHILE THE TREE IS DIRTY SHIPS WORK NOBODY
+    /// LOOKED AT.** It used to print a note and go on, so a person who had just
+    /// edited a file installed a binary without it and had been told, in a line
+    /// above the one they read.
+    #[test]
+    fn releasing_over_uncommitted_work_asks_to_be_told_so_outright() {
+        let plain = parse_options(&a(&["sailor"])).expect("a target alone parses");
+        let anyway = parse_options(&a(&["sailor", "--even-if-dirty"])).expect("the flag parses");
+
+        assert!(!plain.even_if_dirty, "the refusal is the default");
+        assert!(anyway.even_if_dirty);
+
+        assert!(dirty_stops_here(1, plain.even_if_dirty), "one uncommitted file is enough");
+        assert!(!dirty_stops_here(1, anyway.even_if_dirty), "and the word said outright passes it");
+        assert!(!dirty_stops_here(0, plain.even_if_dirty), "a clean tree is never in the way");
+    }
+
     fn dry_run_and_skip_tests_are_read_as_flags() {
         let options = parse_options(&a(&["sailor", "--dry-run", "--skip-tests"])).unwrap();
         assert_eq!(options.target_name, "sailor");
