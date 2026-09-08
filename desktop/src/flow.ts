@@ -182,6 +182,8 @@ const ACTION_KIND: Record<string, StepKind> = {
   memory_list: "deposit",
   memory_replace: "deposit",
   action_list: "deposit",
+  dormant_steps: "deposit",
+  unused_actions: "deposit",
   memory_query: "deposit",
   memory_write: "deposit",
   topic_drift: "deposit",

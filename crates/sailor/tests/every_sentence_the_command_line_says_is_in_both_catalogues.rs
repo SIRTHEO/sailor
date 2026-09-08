@@ -197,8 +197,7 @@ fn no_catalogue_writes_the_same_key_twice() {
         let written = text
             .lines()
             .filter_map(|line| line.strip_prefix("  \""))
-            .filter_map(|rest| rest.split_once("\":"))
-            .map(|(key, _)| key)
+            .filter(|rest| rest.contains("\":"))
             .count();
         let kept = catalogue::entries(language)
             .expect("a catalogue that parses")
