@@ -84,7 +84,10 @@ fn standing(store: &Ledger) -> Result<Vec<Standing>, String> {
 }
 
 fn reading() -> Result<String, String> {
-    let store = open_ledger()?;
+    let store = match open_ledger() {
+        Ok(store) => store,
+        Err(why) => return Ok(without_the_store(&why, about_the_disk())),
+    };
     let rows = standing(&store)?;
     let mut said = String::new();
     for row in &rows {
@@ -130,6 +133,16 @@ fn reading() -> Result<String, String> {
         said.push_str(&word);
     }
     Ok(said)
+}
+
+/// What is still true of the machine when the store will not open.
+fn without_the_store(why: &str, disk: Option<String>) -> String {
+    let mut said = catalogue::say("cli.machine.no_store", &[("why", why)]);
+    if let Some(word) = disk {
+        said.push('\n');
+        said.push_str(&word);
+    }
+    said
 }
 
 /// **A BUILD DIRECTORY IS SPACE NOBODY OWNS.** Whoever pointed cargo at one
@@ -237,7 +250,10 @@ fn about_the_port(store: &Ledger) -> Result<Option<String>, String> {
 /// stopped: a run still open means somebody may be using it, and no run at all
 /// means nobody wrote down who wanted it, which is not the same as nobody.
 fn free() -> Result<String, String> {
-    let store = open_ledger()?;
+    let store = match open_ledger() {
+        Ok(store) => store,
+        Err(why) => return Ok(without_the_store(&why, free_the_disk())),
+    };
     let done = stop_the_ones_nobody_wants(&store, now(), &|record| {
         let Some(run) = record.run_id.as_deref() else {
             // Left alone, and named in the reading instead.
@@ -487,5 +503,21 @@ mod tests {
             "a build directory somebody is compiling in was taken away: {said}"
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+    #[test]
+    fn a_store_that_will_not_open_still_leaves_the_machine_readable() {
+        let said = without_the_store(
+            "sqlite: unable to open database file",
+            Some("16 build directories nobody owns".to_owned()),
+        );
+
+        assert!(
+            said.contains("unable to open database file"),
+            "the reason the store gave is not carried out: {said}"
+        );
+        assert!(
+            said.contains("16 build directories nobody owns"),
+            "what the store does not own is dropped with it: {said}"
+        );
     }
 }

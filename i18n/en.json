@@ -704,6 +704,7 @@
   "cli.machine.alive": "alive",
   "cli.machine.gone": "gone",
   "cli.machine.run_is_over": ", and its run is over",
+  "cli.machine.no_store": "the store will not open, so nothing can be said about what Sailor lit: {why}",
   "cli.machine.row": "{pid}  {breath}  {purpose}{tail}",
   "cli.machine.standing": "{running} of {total} still there",
   "cli.machine.somebody_on_the_port": "port {port} is held by something sailor never lit: what did not pass through sailor is what sailor cannot free, so this one is yours to stop",

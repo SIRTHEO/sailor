@@ -704,6 +704,7 @@
   "cli.machine.alive": "vivo",
   "cli.machine.gone": "finito",
   "cli.machine.run_is_over": ", e la sua corsa è finita",
+  "cli.machine.no_store": "il deposito non si apre, quindi non si può dire niente di ciò che Sailor ha acceso: {why}",
   "cli.machine.row": "{pid}  {breath}  {purpose}{tail}",
   "cli.machine.standing": "{running} su {total} respirano ancora",
   "cli.machine.somebody_on_the_port": "la porta {port} è tenuta da qualcosa che sailor non ha acceso: ciò che non è passato da sailor è ciò che sailor non può liberare, quindi questa tocca a te fermarla",
