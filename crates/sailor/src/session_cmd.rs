@@ -1580,11 +1580,80 @@ fn attach_terminal(request: &Request<'_>) -> Result<Report, String> {
     }))
 }
 
+/// What a row's standing really is, once the machine has been asked.
+/// **«OPEN» IS NOT «SOMEBODY IS THERE»**: a terminal killed without closing
+/// keeps its row for ever, and whoever reads this list to decide anything
+/// about a session must tell the two apart. Until now only the window could —
+/// `Census::abandoned` was there and no command on the line invoked it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Standing {
+    Open,
+    NobodyThere,
+    Closed,
+    /// The machine would not say. **Unknown is not «somebody is there»**, and
+    /// it is not «nobody» either.
+    Unknown,
+}
+
+pub(crate) fn standing_of(
+    row: &sessions::store::TerminalRow,
+    abandoned: &sessions::census::Abandoned,
+) -> Standing {
+    if !row.is_open() {
+        return Standing::Closed;
+    }
+    match abandoned {
+        sessions::census::Abandoned::CouldNotLook { .. } => Standing::Unknown,
+        sessions::census::Abandoned::Seen { ttys } => {
+            if ttys.iter().any(|tty| tty == &row.tty) {
+                Standing::NobodyThere
+            } else {
+                Standing::Open
+            }
+        }
+    }
+}
+
+fn word_for(standing: Standing) -> String {
+    catalogue::say(
+        match standing {
+            Standing::Open => "cli.session.row_open",
+            Standing::NobodyThere => "cli.session.row_nobody_there",
+            Standing::Closed => "cli.session.row_closed",
+            Standing::Unknown => "cli.session.row_standing_unknown",
+        },
+        &[],
+    )
+}
+
 fn list_terminals(request: &Request<'_>) -> Result<Report, String> {
     let store = request.store()?;
     let rows = store.terminals().map_err(|error| error.to_string())?;
+    let abandoned =
+        sessions::census::Census::of(&sessions::census::LocalMachine).abandoned(&rows);
     if request.options.contains_key("json") {
-        let text = serde_json::to_string_pretty(&rows).map_err(|error| error.to_string())?;
+        let said: Vec<serde_json::Value> = rows
+            .iter()
+            .map(|row| {
+                let mut value = serde_json::to_value(row).unwrap_or(serde_json::Value::Null);
+                if let Some(fields) = value.as_object_mut() {
+                    fields.insert(
+                        "standing".to_owned(),
+                        serde_json::Value::String(
+                            match standing_of(row, &abandoned) {
+                                Standing::Open => "open",
+                                Standing::NobodyThere => "nobody_there",
+                                Standing::Closed => "closed",
+                                Standing::Unknown => "unknown",
+                            }
+                            .to_owned(),
+                        ),
+                    );
+                }
+                value
+            })
+            .collect();
+        let text = serde_json::to_string_pretty(&said).map_err(|error| error.to_string())?;
         return Ok(Report::spoken(text));
     }
     if rows.is_empty() {
@@ -1593,23 +1662,26 @@ fn list_terminals(request: &Request<'_>) -> Result<Report, String> {
             &[],
         )));
     }
-    let open = catalogue::say("cli.session.row_open", &[]);
-    let closed = catalogue::say("cli.session.row_closed", &[]);
     let detached = catalogue::say("cli.session.row_detached", &[]);
     let attached = catalogue::say("cli.session.row_attached", &[]);
     let events = catalogue::say("cli.session.row_events", &[]);
     let mut text = String::new();
+    let mut nobody = 0;
     for row in &rows {
         let howmany = store
             .events_on(&row.tty)
             .map(|found| found.len())
             .unwrap_or_default();
+        let standing = standing_of(row, &abandoned);
+        if standing == Standing::NobodyThere {
+            nobody += 1;
+        }
         let _ = writeln!(
             text,
-            "{:<10} {:<14} {:<8} {:<11} {events}={:<4} {} {}",
+            "{:<10} {:<14} {:<13} {:<11} {events}={:<4} {} {}",
             row.tty,
             row.ancestor.as_deref().unwrap_or("?"),
-            if row.is_open() { &open } else { &closed },
+            word_for(standing),
             if row.is_detached() {
                 &detached
             } else {
@@ -1619,6 +1691,25 @@ fn list_terminals(request: &Request<'_>) -> Result<Report, String> {
             row.session_id.as_deref().unwrap_or("-"),
             row.worktree,
         );
+    }
+    // A word in a column teaches nothing on its own: what the reading means is
+    // said once, below, where somebody about to act on it will read it.
+    match &abandoned {
+        sessions::census::Abandoned::CouldNotLook { refusal } => {
+            text.push('\n');
+            text.push_str(&catalogue::say(
+                "cli.session.could_not_look_at_terminals",
+                &[("why", &refusal.to_string())],
+            ));
+        }
+        sessions::census::Abandoned::Seen { .. } if nobody > 0 => {
+            text.push('\n');
+            text.push_str(&catalogue::say(
+                "cli.session.rows_hold_nobody",
+                &[("count", &nobody.to_string())],
+            ));
+        }
+        sessions::census::Abandoned::Seen { .. } => {}
     }
     Ok(Report::spoken(text.trim_end().to_owned()))
 }
@@ -2862,6 +2953,55 @@ mod tests {
             said.contains("docs/moved-away.md"),
             "a declaration pointing at nothing passes in silence: {said}"
         );
+    }
+
+    fn a_row(tty: &str, closed_at: Option<i64>) -> sessions::store::TerminalRow {
+        sessions::store::TerminalRow {
+            tty: tty.to_owned(),
+            worktree: "/somewhere".to_owned(),
+            ancestor: None,
+            session_id: None,
+            transcript_path: None,
+            opened_at: 1,
+            closed_at,
+            detached_at: None,
+        }
+    }
+
+    /// **«OPEN» IS NOT «SOMEBODY IS THERE».** A terminal killed without closing
+    /// keeps its row for ever, and a reader deciding anything about a session
+    /// — up to sending it a signal — must be able to tell the two apart.
+    #[test]
+    fn a_row_the_register_calls_open_and_no_process_backs_is_told_apart() {
+        let seen = sessions::census::Abandoned::Seen {
+            ttys: vec!["ttys013".to_owned()],
+        };
+
+        assert_eq!(standing_of(&a_row("ttys013", None), &seen), Standing::NobodyThere);
+        assert_eq!(standing_of(&a_row("ttys004", None), &seen), Standing::Open);
+        assert_eq!(standing_of(&a_row("ttys013", Some(9)), &seen), Standing::Closed);
+    }
+
+    /// **UNKNOWN IS NEITHER.** Read as «open» a refusal invents a session that
+    /// may be gone; read as «nobody there» it invites stopping one that is
+    /// working. The machine that would not answer says so instead.
+    #[test]
+    fn a_machine_that_would_not_be_asked_leaves_every_standing_unknown() {
+        let refused = sessions::census::Abandoned::CouldNotLook {
+            refusal: sessions::census::Refusal {
+                tool: "ps".to_owned(),
+                reason: "not permitted".to_owned(),
+            },
+        };
+
+        let standing = standing_of(&a_row("ttys013", None), &refused);
+
+        assert_eq!(standing, Standing::Unknown);
+        assert_ne!(standing, Standing::Open);
+        assert_ne!(standing, Standing::NobodyThere);
+        // A closed row claims nothing of the machine, so a refusal does not
+        // make it doubtful.
+        assert_eq!(standing_of(&a_row("ttys013", Some(9)), &refused), Standing::Closed);
     }
 
     /// An arrival in a throwaway tree: these cases are about the ledger's half
