@@ -130,7 +130,7 @@ fn a_persons_flow_and_credentials_planted_in_a_throwaway_repository_are_found() 
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(root.join("flows")).expect("a throwaway flows directory");
     std::fs::create_dir_all(root.join("crates/sample")).expect("a throwaway crate directory");
-    std::fs::write(root.join(&errand()), "{}").expect("the flow writes");
+    std::fs::write(root.join(errand()), "{}").expect("the flow writes");
     std::fs::write(root.join("crates/sample/credentials.json"), "{}").expect("the secret writes");
     let started = Command::new("git")
         .arg("-C")
@@ -179,7 +179,7 @@ fn a_tree_that_is_not_a_repository_makes_the_judge_declare_it_measured_nothing()
         .join(format!("sailor-unreserved-{}-{}", std::process::id(), line!()));
     let _ = std::fs::remove_dir_all(&plain);
     std::fs::create_dir_all(plain.join("flows")).expect("a scratch");
-    std::fs::write(plain.join(&errand()), "{}")
+    std::fs::write(plain.join(errand()), "{}")
         .expect("a flow no repository tracks");
 
     assert!(
