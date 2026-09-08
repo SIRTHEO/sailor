@@ -159,3 +159,25 @@ fn a_persons_flow_and_credentials_planted_in_a_throwaway_repository_are_found() 
         "a credentials file was tracked and the verdict did not name it"
     );
 }
+
+/// **THE JUDGE MUST BE ABLE TO SAY IT DID NOT MEASURE.** A directory that is
+/// not the top of a repository tracks nothing, and nothing tracked is not
+/// «nothing reserved is tracked»: it is no reading at all — fault 100.
+#[test]
+fn a_tree_that_is_not_a_repository_makes_the_judge_declare_it_measured_nothing() {
+    let plain = std::env::temp_dir()
+        .join(format!("sailor-unreserved-{}-{}", std::process::id(), line!()));
+    let _ = std::fs::remove_dir_all(&plain);
+    std::fs::create_dir_all(plain.join("flows")).expect("a scratch");
+    std::fs::write(plain.join("flows").join("a-private-errand.flow.json"), "{}")
+        .expect("a flow no repository tracks");
+
+    assert!(
+        tracked_at(&plain).is_none(),
+        "outside a repository the judge must hand back nothing, never an empty \
+         list: an empty list reads as a tree with nothing to refuse, and this \
+         one carries a flow that would be refused"
+    );
+
+    let _ = std::fs::remove_dir_all(&plain);
+}

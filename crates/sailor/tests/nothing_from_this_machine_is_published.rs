@@ -7,14 +7,9 @@
 
 use std::path::{Path, PathBuf};
 
-/// What carries no words at all, and so hides nothing. Everything else git
-/// tracks is read.
+/// What carries no words at all. Everything else git tracks is read: a list of
+/// suffixes and a list of places both skipped in silence.
 ///
-/// **THIS LIST REPLACED TWO ALLOWLISTS**, one of suffixes and one of places.
-/// Both skipped in silence: `.html` was missing and all of `design/` went
-/// unread while the walker reported over a hundred files, and 42 tracked files
-/// — `CLAUDE.md`, `sailor.json`, `tauri.conf.json` among them — sat outside
-/// every named place. A leak there was published and the judge stayed green.
 /// `.svg` is deliberately absent: it is text, and a path written into one is
 /// published like any other.
 const CARRIES_NO_WORDS: &[&str] = &[
@@ -370,4 +365,39 @@ fn a_home_path_planted_outside_every_named_place_is_found() {
         "a home path was written into a tracked file at the top of the tree, \
          where no list of directories reaches, and the reader did not find it"
     );
+}
+
+/// **THE JUDGE MUST BE ABLE TO SAY IT DID NOT MEASURE.** Both roads to that
+/// answer are asked here of a directory built for the purpose: it is not the
+/// top of a repository, and git will not list it. A leak is put in it so an
+/// empty answer cannot be mistaken for a clean tree — fault 100.
+#[test]
+fn a_tree_outside_a_repository_makes_the_judge_declare_it_measured_nothing() {
+    let plain =
+        std::env::temp_dir().join(format!("sailor-unpublished-{}-{}", std::process::id(), line!()));
+    let _ = std::fs::remove_dir_all(&plain);
+    std::fs::create_dir_all(plain.join("design")).expect("a scratch");
+    std::fs::write(
+        plain.join("design").join("a-sketch.html"),
+        "<!-- /Users/somebody/personal/sailor -->\n",
+    )
+    .expect("a leak no repository tracks");
+
+    assert!(
+        !workspace::is_the_top_of_its_repository(&plain),
+        "the road this judge takes to declare it measured nothing is closed"
+    );
+    assert_eq!(
+        tracked_paths(&plain),
+        None,
+        "git listed a directory that is no repository, so the perimeter would be \
+         read as empty instead of unreadable"
+    );
+    assert!(
+        published_files_under(&plain).is_empty(),
+        "with no perimeter to read the reader must open nothing: it opened files \
+         and the planted leak would be judged against a list that is not this tree's"
+    );
+
+    let _ = std::fs::remove_dir_all(&plain);
 }

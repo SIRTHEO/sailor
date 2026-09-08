@@ -136,3 +136,32 @@ fn a_workshop_flow_planted_in_a_throwaway_flows_directory_is_found() {
          did not name it: the check would let the workshop ship"
     );
 }
+
+/// **THE JUDGE MUST BE ABLE TO SAY IT DID NOT MEASURE.** A `flows/` that is not
+/// there, and one that is there with nothing in it, both leave the verdict with
+/// no name to give — which reads exactly like a repository shipping no workshop
+/// flow. The two are told apart on the judge's own words, and this asks for the
+/// state that makes it say so.
+#[test]
+fn a_flows_directory_with_nothing_in_it_makes_the_judge_declare_it_measured_nothing() {
+    let root =
+        std::env::temp_dir().join(format!("sailor-no-flows-{}-{}", std::process::id(), line!()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("flows")).expect("a scratch");
+
+    assert!(
+        flow_files(&root.join("flows")).is_empty(),
+        "an empty flows/ read as holding a flow"
+    );
+    assert!(
+        flow_files(&root.join("nowhere")).is_empty(),
+        "a flows/ that is not there is the same nothing"
+    );
+    assert!(
+        flows_the_product_does_not_hand_out(&root.join("flows")).is_empty(),
+        "with no flow to read the verdict names nobody, and a run that took that \
+         for a clean tree would pass a repository whose flows/ had been deleted"
+    );
+
+    let _ = std::fs::remove_dir_all(&root);
+}
