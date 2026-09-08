@@ -1,58 +1,18 @@
 //! The node with which a step questions an MCP server, and the check that
 //! comes first.
-//!
-//! **WHY IT EXISTS.** The `da-fare` note called it «the missing link»: Sailor
-//! *recognises* MCP servers — the detector has the `mcp_server` family — but
-//! none of the nine registered actions could talk to one. A flow that wanted
-//! to ask SocratiCode «what would this change touch» had to leave the graph
-//! and become a script, which is exactly what this house does not do.
-//!
-//! **WHAT IS IN THE CODE AND WHAT IS NOT.** Only what touches the world:
-//! opening a process, saying the words of the handshake, reading the lines it
-//! answers. Which server, which tool, which arguments and which preliminary
-//! checks are **step data** — not one constant names SocratiCode, and this
-//! file's tests run against a fake server built in a temporary directory.
-//!
-//! **THE HANDSHAKE IS NOT AN OFFER, AND THAT IS THE MAIN DISTINCTION.**
-//! Measured: `claude mcp list` declared `socraticode: ✔ Connected` while the
-//! session questioning it did not have that tool at all. A node that trusts
-//! that signal works on an index that is not there without noticing. Here
-//! Sailor opens the server itself and asks it `tools/list`: «it answers» and
-//! «it offers the tool I need» stay two separate facts, with two separate
-//! words — `unreachable` and `tool_not_offered` — and the message of the
-//! second says why they are not the same thing.
-//!
-//! **STANDARD INPUT STAYS OPEN UNTIL THE ANSWER ARRIVES.** Not a matter of
-//! style: measured against `npx -y socraticode`, writing every request and
-//! closing standard input straight away — what `run_with_timeout_and_stdin`,
-//! the primitive already there, does — brings back **only** the answer to
-//! `initialize`, and the `tools/call` requests stay without answer and
-//! without error. The server dies on EOF before it has finished. That is why
-//! this file has a dialogue of its own instead of reusing that primitive:
-//! there standard input closes by contract.
-//!
-//! **FOUR OUTCOMES, NOT ONE.** «The server is not there», «the server is
-//! there but does not offer this tool», «a preliminary check says no», «a
-//! preliminary check could not look» are four different facts, and the fifth
-//! is «the tool answered that it does not know». Confusing them is the fault
-//! this house calls *«it is not there» is not always a measurement*: where
-//! looking was not possible the answer is «I could not look», with the reason.
-//!
-//! **AND `could_not_look` OUTRANKS `check_failed`.** If one check is blind
-//! and another is negative, the overall outcome is the blindness. Saying
-//! `check_failed` would assert «I looked at everything and one thing was
-//! wrong», and that sentence cannot be spoken when one of the looks never
-//! happened: an unknown can hide anything, including worse.
-//!
-//! **THE CHECK CANNOT BE SKIPPED, AND THE CODE ENFORCES IT.** A step declares
-//! `project_root` — the directory it claims to speak about — and at least one
-//! check must tie the server's answer to that directory, that is, have
-//! `project_root` inside its own `proves`. One that does not have it does not
-//! start: `no_preflight`. An indexed project is not every project, and an
-//! index that is right for another directory answers confidently about code
-//! that does not exist here. Whoever questions a server that knows nothing of
-//! directories declares it in writing with `checks_waived_because`, and that
-//! sentence stays in the output.
+
+//! **STANDARD INPUT STAYS OPEN UNTIL THE ANSWER ARRIVES.** Measured against
+//! a real server: closing it after writing, as `run_with_timeout_and_stdin`
+//! does by contract, brings back only the answer to `initialize` and leaves
+//! every `tools/call` without answer and without error. Hence a dialogue of
+//! its own instead of that primitive.
+
+//! **`could_not_look` OUTRANKS `check_failed`.** «I looked at everything and
+//! one thing was wrong» cannot be said when one of the looks never happened.
+
+//! **A HANDSHAKE IS NOT AN OFFER.** Measured: a command line declared a
+//! server connected while the session questioning it did not have the tool at
+//! all. `unreachable` and `tool_not_offered` stay two facts.
 
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies};
 use serde::Deserialize;
