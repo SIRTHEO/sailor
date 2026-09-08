@@ -337,6 +337,33 @@ faults of this machine, and answers questions no reading of the code can — how
 many times a step has failed, which fault has already been written, what
 yesterday's run learned.
 
+## When there is no clear answer, prior art is asked before a design is invented
+
+A problem without an obvious cure is not an invitation to invent one. Two
+questions come first, and they are asked of tools, not of memory:
+
+- **Has it been solved and published?** The `neuroarxiv` skill reads arXiv for
+  the shape of the problem and comes back with the paths already taken, the
+  failure modes already known, and citations. It is the question to ask before
+  writing an algorithm, a protocol, or a rule that coordinates two processes.
+- **How does a real project do it?** The `advise-project-approach` skill studies
+  comparables: the systems that already ship this, and which trade-off each one
+  took. A named system that has run for years is evidence; a plausible design is
+  not.
+
+The trigger is written so it cannot be argued away: **whenever the cure is not
+already implied by the measurement**, both are asked before the first line of
+design.
+
+**One strong reading is not a substitute.** Consulting a single model yields one
+opinion, not the set of paths already walked — and an opinion arrives with no
+way to tell a well-trodden road from a guess. This tree has already mistaken the
+one for the other.
+
+**The limit is declared**: neither answers whether *this* tree should do the
+thing. They bound the space of known answers. The choice, the measurement and
+the proof stay here.
+
 ## Whoever creates does not judge
 
 The verdict on a piece of work goes to a context that did not produce it. If you
