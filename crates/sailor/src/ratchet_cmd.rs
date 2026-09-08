@@ -239,6 +239,12 @@ pub fn verdict_of(passed: bool, said: &str) -> Verdict {
 /// is called clean while it stands above zero.
 const NO_RECEIPT_TODAY: usize = 0;
 
+/// How many judges may answer «I measured nothing» and still let a run
+/// through. **It can only fall.** Until this seed reaches zero the gate admits
+/// exactly the judges that cannot yet measure their own perimeter — and admits
+/// them by number, not by name, so a ninth one cannot slip in behind them.
+const UNMEASURED_TODAY: usize = 8;
+
 /// The tally of the run, kept apart so a green count never absorbs the others.
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Verdicts {
@@ -323,10 +329,12 @@ impl Gate {
     }
 
     /// A red stops the run, and so does a judge that proved no perimeter.
-    /// `silent_allowed` is the declared debt, passed at the call rather than
-    /// hidden here: a run weighed on its own terms is asked for zero.
-    pub fn lets_through(&self, silent_allowed: usize) -> bool {
-        self.counted.red == 0 && self.counted.no_receipt <= silent_allowed
+    /// The two debts are declared at the call rather than hidden here: a run
+    /// weighed on its own terms is asked for zero of both.
+    pub fn lets_through(&self, silent_allowed: usize, unmeasured_allowed: usize) -> bool {
+        self.counted.red == 0
+            && self.counted.no_receipt <= silent_allowed
+            && self.counted.not_measured <= unmeasured_allowed
     }
 
     /// The seed sits above what this run holds, so the debt can be paid now.
@@ -671,7 +679,7 @@ fn measured(only: &[String]) -> Result<bool, String> {
             )
         );
     }
-    Ok(gate.lets_through(NO_RECEIPT_TODAY))
+    Ok(gate.lets_through(NO_RECEIPT_TODAY, UNMEASURED_TODAY))
 }
 
 /// The lines of a red judge worth reading: what the judge said, and the
@@ -958,6 +966,19 @@ mod tests {
         assert!(blind.closing_line().contains("41 green"), "{}", blind.closing_line());
         assert!(fallen.closing_line().contains("a seed does not hold"), "{}", fallen.closing_line());
         assert!(fallen.closing_line().contains("3 not measured"), "{}", fallen.closing_line());
+    }
+
+    /// **THE GATE STOPS ON A JUDGE THAT MEASURED NOTHING, NOT ONLY THE PRINT.**
+    /// The closing line has always refused the word «clean» here; the gate let
+    /// the run through anyway, so a perimeter nobody walked shipped as green.
+    #[test]
+    fn a_judge_that_measured_nothing_stops_the_run_once_the_debt_is_spent() {
+        let over = Gate { counted: Verdicts { green: 40, red: 0, not_measured: 3, no_receipt: 0 } };
+        let at = Gate { counted: Verdicts { green: 42, red: 0, not_measured: 2, no_receipt: 0 } };
+
+        assert!(!over.lets_through(0, 2), "three blind judges against a debt of two");
+        assert!(at.lets_through(0, 2), "the declared debt is admitted, and only that");
+        assert!(!at.lets_through(0, 1), "and it falls by being lowered, like every seed");
     }
 
     /// **A RUN WITH A SILENT JUDGE IN IT IS NOT A CLEAN RUN EITHER.** The count
