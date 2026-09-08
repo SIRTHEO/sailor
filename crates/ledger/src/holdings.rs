@@ -66,17 +66,21 @@ pub fn whose(holding: &Holding, run_is_open: RunIsOpen) -> Whose {
     }
 }
 
+/// The one place this is decided: a pid alone is not an owner, because numbers
+/// are handed on and a recycled one would inherit somebody else's work.
+pub fn the_process_that_took_it_is_still_there(pid: u32, born_at: Option<i64>) -> bool {
+    match (born_at, who_holds_the_pid(pid)) {
+        (_, WhoHoldsThePid::Nobody) => false,
+        (None, _) | (_, WhoHoldsThePid::AliveButUnsaid) => true,
+        (Some(born), WhoHoldsThePid::Since(second)) => second == born,
+    }
+}
+
 fn who_still_holds_it(holding: &Holding) -> Whose {
-    match (holding.held_by_born_at, who_holds_the_pid(holding.held_by_pid)) {
-        (_, WhoHoldsThePid::Nobody) => Whose::Nobody,
-        (None, _) | (_, WhoHoldsThePid::AliveButUnsaid) => Whose::TheProcessThatTookIt,
-        (Some(born), WhoHoldsThePid::Since(second)) => {
-            if second == born {
-                Whose::TheProcessThatTookIt
-            } else {
-                Whose::Nobody
-            }
-        }
+    if the_process_that_took_it_is_still_there(holding.held_by_pid, holding.held_by_born_at) {
+        Whose::TheProcessThatTookIt
+    } else {
+        Whose::Nobody
     }
 }
 

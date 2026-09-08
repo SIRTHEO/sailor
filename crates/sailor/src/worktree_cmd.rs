@@ -111,13 +111,11 @@ fn now() -> i64 {
 }
 
 /// Whether the process that cut a tree is still the one holding its number.
-/// A row that says when its opener was born is settled exactly; an older one
-/// can only be asked whether the number is taken.
 pub fn still_the_opener(tree: &OpenTree) -> bool {
-    match tree.opened_by_born_at {
-        Some(born) => ledger::born_second_of(tree.opened_by_pid) == Some(born),
-        None => ledger::pid_is_alive(tree.opened_by_pid),
-    }
+    ledger::holdings::the_process_that_took_it_is_still_there(
+        tree.opened_by_pid,
+        tree.opened_by_born_at,
+    )
 }
 
 /// The trees Sailor wrote down and never took back off the page.
