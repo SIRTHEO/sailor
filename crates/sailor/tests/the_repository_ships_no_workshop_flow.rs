@@ -45,6 +45,21 @@ fn flow_files(directory: &Path) -> BTreeSet<String> {
         .collect()
 }
 
+/// The flows a `flows/` directory holds that the product does not hand out.
+///
+/// Takes the directory rather than reading the repository's own, so the verdict
+/// can be put to a tree with a violation planted in it.
+fn flows_the_product_does_not_hand_out(directory: &Path) -> Vec<String> {
+    let allowed: BTreeSet<String> = TEMPLATES_THE_PRODUCT_HANDS_OUT
+        .iter()
+        .map(|name| (*name).to_owned())
+        .collect();
+    flow_files(directory)
+        .difference(&allowed)
+        .cloned()
+        .collect()
+}
+
 /// Nothing of ours ships in `flows/`.
 ///
 /// Born red with nine: the development cycle, the publishing flow, the research
@@ -63,12 +78,8 @@ fn the_repository_ships_no_flow_of_ours() {
         TEMPLATES_THE_PRODUCT_HANDS_OUT.len(),
         "templates the product hands out",
     );
-    let allowed: BTreeSet<String> = TEMPLATES_THE_PRODUCT_HANDS_OUT
-        .iter()
-        .map(|name| (*name).to_owned())
-        .collect();
 
-    let ours: Vec<&String> = here.difference(&allowed).collect();
+    let ours = flows_the_product_does_not_hand_out(&repository().join("flows"));
 
     assert!(
         ours.is_empty(),
@@ -94,4 +105,34 @@ fn every_template_named_is_really_there() {
              no «flows/{name}.flow.json»"
         );
     }
+}
+
+/// **THE JUDGE PASSES TODAY BECAUSE THE TREE IS CLEAN, AND THAT PROVES
+/// NOTHING.** A verdict that has never seen a violation cannot say it would
+/// recognise one. So a throwaway `flows/` is built with a workshop flow beside
+/// a template, and the same verdict is asked for it.
+#[test]
+fn a_workshop_flow_planted_in_a_throwaway_flows_directory_is_found() {
+    let directory = std::env::temp_dir().join(format!(
+        "sailor-planted-workshop-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).expect("a throwaway flows directory");
+    for name in TEMPLATES_THE_PRODUCT_HANDS_OUT {
+        std::fs::write(directory.join(format!("{name}.flow.json")), "{}")
+            .expect("the template writes");
+    }
+    std::fs::write(directory.join("nightly-workshop-cycle.flow.json"), "{}")
+        .expect("the planted flow writes");
+
+    let ours = flows_the_product_does_not_hand_out(&directory);
+    std::fs::remove_dir_all(&directory).expect("the throwaway directory goes");
+
+    assert_eq!(
+        ours,
+        vec!["nightly-workshop-cycle".to_owned()],
+        "a flow the product does not hand out sat in «flows/» and the verdict \
+         did not name it: the check would let the workshop ship"
+    );
 }
