@@ -87,14 +87,21 @@ impl Clock for Tick {
     }
 }
 
+/// The round works in the scratch tree, as a real one works in the checkout:
+/// the engine writes there, and the warrant reads there.
 fn run(scratch: &Scratch, graph: &Graph) -> (Execution, InMemoryRecordStore) {
     let store = InMemoryRecordStore::default();
+    let mut shared = SharedState::new();
+    shared.insert(
+        flow::WORKSPACE_ROOT.to_owned(),
+        scratch.0.display().to_string().into(),
+    );
     let request = ExecutionRequest {
         holder: None,
         run_id: "taken".to_owned(),
         root_inputs: shipped().inputs.into_iter().collect(),
         gates: Vec::new(),
-        shared: SharedState::new(),
+        shared,
         spend_cap_micros: None,
         stops: flow::RunStops::default(),
     };
@@ -110,6 +117,7 @@ fn answering() -> String {
         "reproduced": true,
         "fixed": true,
         "test": "a_missing_price_list_refuses_instead_of_pricing_at_zero, in the pricing crate",
+        "check": THE_CHECK,
         "changed": "the reader of the price list refuses an empty file",
         "left_open": ""
     })
@@ -202,9 +210,18 @@ fn the_mandate_carries_the_fault_and_asks_for_a_red_test_and_an_honest_answer() 
     let with = repair.with.as_ref().expect("with");
     assert_eq!(with["data"], json!("private"), "the code repaired is not public text");
     let required = with["answer_shape"]["required"].as_array().expect("required fields");
-    for field in ["reproduced", "fixed", "test", "left_open"] {
+    for field in ["reproduced", "fixed", "test", "check", "left_open"] {
         assert!(required.iter().any(|name| name == field), "«{field}» is not asked for");
     }
+    let warrant = flow.graph.step("warrant").expect("the warrant step");
+    let with = warrant.with.as_ref().expect("with");
+    assert_eq!(
+        with["env"]["CHECK"],
+        json!({"$from": "/answer/check"}),
+        "the check the engine named reaches the warrant"
+    );
+    let command = with["command"].as_str().expect("the warrant is a shell line");
+    assert!(command.contains("sh -c \"$CHECK\""), "and the warrant runs it on the tree:\n{command}");
 }
 
 /// **WITH NOTHING OPEN THE ENGINE IS NEVER STARTED.** The register is empty,
@@ -264,6 +281,7 @@ fn answering_with_a_rule() -> String {
         "reproduced": true,
         "fixed": true,
         "test": "a_missing_price_list_refuses_instead_of_pricing_at_zero, in the pricing crate",
+        "check": THE_CHECK,
         "changed": "the reader of the price list refuses an empty file",
         "left_open": "",
         "learnt": "a reader that cannot read answers «I do not know», never a zero"
@@ -272,6 +290,19 @@ fn answering_with_a_rule() -> String {
 }
 
 fn graph_answering_with(said: String) -> Graph {
+    graph_producing(said, A_RESULT_THE_CHECK_ACCEPTS)
+}
+
+/// What the engine leaves on the tree, and the check that reads it there:
+/// the whole round is proved by this line and not by the answer.
+const THE_RESULT: &str = "repaired.txt";
+const THE_CHECK: &str = "grep -q 'refuses an empty file' repaired.txt";
+const A_RESULT_THE_CHECK_ACCEPTS: &str = "the reader refuses an empty file";
+const A_RESULT_THE_CHECK_REJECTS: &str = "the reader prices an empty file at zero";
+
+/// The engine replaced by a shell that writes `produced` on the tree and
+/// prints `said` as its answer; nothing else in the graph is touched.
+fn graph_producing(said: String, produced: &str) -> Graph {
     let mut steps: Vec<Step> = shipped().graph.steps().to_vec();
     for step in &mut steps {
         if step.id == "repair" {
@@ -279,10 +310,109 @@ fn graph_answering_with(said: String) -> Graph {
             // A command line written by hand carries the model in itself, and a
             // step declaring both is refused.
             with.as_object_mut().expect("the values are a map").remove("model");
-            with["args"] = json!(["-c", "cat > /dev/null; printf '%s' \"$1\"", "engine", said]);
+            with["args"] = json!([
+                "-c",
+                format!("cat > /dev/null; printf '%s' \"$2\" > {THE_RESULT}; printf '%s' \"$1\""),
+                "engine",
+                said,
+                produced
+            ]);
         }
     }
     Graph::new(steps).expect("the graph stays valid")
+}
+
+/// The check as a person would run it from the root of the tree.
+fn the_check_on(scratch: &Scratch) -> bool {
+    std::process::Command::new("sh")
+        .args(["-c", THE_CHECK])
+        .current_dir(&scratch.0)
+        .status()
+        .expect("the shell runs")
+        .success()
+}
+
+// ── the round is proved on the tree, not by the answer ──────────────
+
+/// **A RESULT THE CHECK REJECTS DOES NOT CLOSE THE ROUND.** The engine says
+/// «fixed» and leaves a result the check named is red on; the answer is not
+/// the proof, the tree is, and a round whose check is red stays open.
+#[test]
+fn a_result_the_check_rejects_does_not_close_the_round() {
+    let scratch = Scratch::new();
+    let _fault = an_open_fault(&scratch);
+    let (execution, store) = run(
+        &scratch,
+        &graph_producing(answering(), A_RESULT_THE_CHECK_REJECTS),
+    );
+
+    assert!(!the_check_on(&scratch), "the fixture's result is red on the tree");
+    let records = store.all();
+    let repair = records
+        .iter()
+        .find(|record| record.step_id == "repair")
+        .expect("the engine step was opened");
+    assert_eq!(repair.outcome, Some(Outcome::Went), "{:?}", repair.failure_class);
+    let warrant = records
+        .iter()
+        .find(|record| record.step_id == "warrant")
+        .expect("the warrant was asked");
+    assert_eq!(
+        warrant.outcome,
+        Some(Outcome::Broke),
+        "the check is red on the tree and the warrant passed on the answer's word: {:?}",
+        warrant.failure_class
+    );
+    assert!(
+        !matches!(execution.decisions.last(), Some(Decision::Complete)),
+        "the round closed on a red check: {:?}",
+        execution.decisions.last()
+    );
+}
+
+/// **AND A ROUND THAT NAMES NO CHECK IS A ROUND NOBODY CAN SEE GREEN.** An
+/// empty command exits zero for every result there is; it is refused before
+/// it runs.
+#[test]
+fn a_round_that_names_no_check_stays_open() {
+    let scratch = Scratch::new();
+    let _fault = an_open_fault(&scratch);
+    let said = answering().replace(THE_CHECK, "");
+    let (execution, store) = run(&scratch, &graph_producing(said, A_RESULT_THE_CHECK_ACCEPTS));
+
+    let warrant = store
+        .all()
+        .into_iter()
+        .find(|record| record.step_id == "warrant")
+        .expect("the warrant was asked");
+    assert_eq!(warrant.outcome, Some(Outcome::Broke), "{:?}", warrant.failure_class);
+    assert!(
+        !matches!(execution.decisions.last(), Some(Decision::Complete)),
+        "{:?}",
+        execution.decisions.last()
+    );
+}
+
+/// The control: the same engine, a result the check accepts, and the round
+/// closes — so the refusal above is the check at work and not the fixture.
+#[test]
+fn a_result_the_check_accepts_closes_the_round() {
+    let scratch = Scratch::new();
+    let _fault = an_open_fault(&scratch);
+    let (execution, store) = run(&scratch, &graph_answering());
+
+    assert!(the_check_on(&scratch), "the fixture's result is green on the tree");
+    let warrant = store
+        .all()
+        .into_iter()
+        .find(|record| record.step_id == "warrant")
+        .expect("the warrant was asked");
+    assert_eq!(warrant.outcome, Some(Outcome::Went), "{:?}", warrant.failure_class);
+    assert!(
+        matches!(execution.decisions.last(), Some(Decision::Complete)),
+        "{:?}",
+        execution.decisions.last()
+    );
 }
 
 /// **A ROUND LEAVES A RULE, NOT ITS OWN SUMMARY.** The rule is written in the
@@ -340,6 +470,7 @@ fn answering_with_a_rule_it_did_not_earn() -> String {
         "reproduced": false,
         "fixed": false,
         "test": "none: the check could not be written",
+        "check": "",
         "changed": "nothing",
         "left_open": "the whole fault",
         "learnt": "a reader that cannot read answers «I do not know», never a zero"

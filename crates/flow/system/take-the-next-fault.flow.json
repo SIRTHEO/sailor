@@ -134,6 +134,9 @@
               "test": {
                 "type": "string"
               },
+              "check": {
+                "type": "string"
+              },
               "changed": {
                 "type": "string"
               },
@@ -148,6 +151,7 @@
               "reproduced",
               "fixed",
               "test",
+              "check",
               "changed",
               "left_open"
             ],
@@ -183,7 +187,7 @@
               {
                 "$json": "/remaining"
               },
-              "\n\n=== WHAT TO DO ===\nFirst reproduce it: «what would prevent it» names the check, and the test is that check written down. Run it and see it red on the tree as it is. A test that is green before the change proves nothing and is not a reproduction. Then change the code — the smallest honest change — until that test is green, and run the tests of every crate you touched. Comments in English, at most six lines a block, no dates; no product or vendor name in code, comments or flow files; every sentence a person reads goes through the catalogue in i18n/, in both languages. Do not touch the register and do not rewrite the fault: a person closes it after reading your work.\n\n=== HOW YOUR ANSWER MUST LOOK ===\nSay only what you measured. «reproduced» is true only if you saw the test red before the change. «fixed» is true only if the same test is green after it and nothing else went red. «test» names the test and its file. «changed» says in a few lines what you changed and why. «left_open» says what stays open — a test you could not write, a check you could not run, a doubt about the cure — and is empty only when nothing does. A fix declared done without the evidence is worse than a fault left open.\n«learnt» is the one field you leave out unless you have earned it: write it only if the test went red and then green AND the rule you drew from it holds beyond this fault — one sentence a person can apply somewhere else, naming the condition that makes it apply. A rule with no evidence is worse than no rule, and this one is kept and read to whoever takes the next fault. If you have none, do not write the field at all.\nAnswer with one JSON object and nothing else: no preamble, no greeting, no reasoning outside the fields. It must match exactly this shape, where «properties» are the fields, «required» the mandatory ones and «allow_extra: false» means no others are accepted:\n",
+              "\n\n=== WHAT TO DO ===\nFirst reproduce it: «what would prevent it» names the check, and the test is that check written down. Run it and see it red on the tree as it is. A test that is green before the change proves nothing and is not a reproduction. Then change the code — the smallest honest change — until that test is green, and run the tests of every crate you touched. Comments in English, at most six lines a block, no dates; no product or vendor name in code, comments or flow files; every sentence a person reads goes through the catalogue in i18n/, in both languages. Do not touch the register and do not rewrite the fault: a person closes it after reading your work.\n\n=== HOW YOUR ANSWER MUST LOOK ===\nSay only what you measured. «reproduced» is true only if you saw the test red before the change. «fixed» is true only if the same test is green after it and nothing else went red. «test» names the test and its file. «check» is the command Sailor runs from the root of the tree to see that test for itself — the cargo line that runs exactly it, exiting zero only when it is green — and the round closes only if it does: an answer is not the proof, the tree is. «changed» says in a few lines what you changed and why. «left_open» says what stays open — a test you could not write, a check you could not run, a doubt about the cure — and is empty only when nothing does. A fix declared done without the evidence is worse than a fault left open.\n«learnt» is the one field you leave out unless you have earned it: write it only if the test went red and then green AND the rule you drew from it holds beyond this fault — one sentence a person can apply somewhere else, naming the condition that makes it apply. A rule with no evidence is worse than no rule, and this one is kept and read to whoever takes the next fault. If you have none, do not write the field at all.\nAnswer with one JSON object and nothing else: no preamble, no greeting, no reasoning outside the fields. It must match exactly this shape, where «properties» are the fields, «required» the mandatory ones and «allow_extra: false» means no others are accepted:\n",
               {
                 "$json": "/answer_shape"
               }
@@ -231,6 +235,9 @@
                 "test": {
                   "type": "string"
                 },
+                "check": {
+                  "type": "string"
+                },
                 "changed": {
                   "type": "string"
                 },
@@ -245,6 +252,7 @@
                 "reproduced",
                 "fixed",
                 "test",
+                "check",
                 "changed",
                 "left_open"
               ],
@@ -276,16 +284,19 @@
           "type": "any"
         },
         "with": {
-          "command": "set -eu\n# The two words the whole round rests on, read by Sailor and not by the\n# engine that wrote them: a repair that reproduced nothing repaired\n# nothing, and a rule drawn from it would be read as an instruction.\n[ \"$REPRODUCED\" = true ] || { echo \"the fault was never seen red: nothing here was reproduced\" >&2; exit 1; }\n[ \"$FIXED\" = true ] || { echo \"the fault is not closed: the test is not green after the change\" >&2; exit 1; }",
+          "command": "set -eu\n# The two words the whole round rests on, read by Sailor and not by the\n# engine that wrote them: a repair that reproduced nothing repaired\n# nothing, and a rule drawn from it would be read as an instruction.\n[ \"$REPRODUCED\" = true ] || { echo \"the fault was never seen red: nothing here was reproduced\" >&2; exit 1; }\n[ \"$FIXED\" = true ] || { echo \"the fault is not closed: the test is not green after the change\" >&2; exit 1; }\n# Then the tree, not the answer: the check the engine named runs here.\n[ -n \"$CHECK\" ] || { echo \"no check was named: nothing here can be seen green\" >&2; exit 1; }\nsh -c \"$CHECK\" || { echo \"the check the engine named is red on the tree: the fault is not closed\" >&2; exit 1; }",
           "env": {
             "REPRODUCED": {
               "$json": "/answer/reproduced"
             },
             "FIXED": {
               "$json": "/answer/fixed"
+            },
+            "CHECK": {
+              "$from": "/answer/check"
             }
           },
-          "timeout_secs": 60
+          "timeout_secs": 1800
         }
       },
       {
