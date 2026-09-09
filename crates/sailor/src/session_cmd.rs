@@ -141,7 +141,10 @@ fn dispatch(args: &[String]) -> Result<Report, String> {
             "{}\n{}",
             catalogue::say(
                 "cli.not_a_form_of_this_command",
-                &[("verb", verb), ("forms", &crate::verbs_of(USAGE).join(", "))],
+                &[
+                    ("verb", verb),
+                    ("forms", &crate::verbs_of(USAGE).join(", "))
+                ],
             ),
             usage_text()
         ));
@@ -193,10 +196,19 @@ fn dispatch(args: &[String]) -> Result<Report, String> {
     };
 
     // The same list, for the other store: only whoever announces opens it.
-    let deposit = if NEEDS_THE_DEPOSIT.contains(&verb) {
-        deposit()?
+    // **A LEDGER THAT WOULD NOT OPEN IS CARRIED, NOT PROPAGATED.** The `?` that
+    // stood here failed the hook, and a hook that exits badly disturbs whoever
+    // is working — the principle at the head of this module. The refusal is kept
+    // so whoever prints can say it.
+    let opened = if NEEDS_THE_DEPOSIT.contains(&verb) {
+        deposit(options.get("ledger").map(String::as_str))
     } else {
-        None
+        Ok(None)
+    };
+    let deposit = match &opened {
+        Ok(Some(open)) => TheDeposit::Open(open),
+        Ok(None) => TheDeposit::NobodyNeedsItHere,
+        Err(why) => TheDeposit::WouldNotOpen(why),
     };
 
     // Here, and only here, the machine is looked at: an event has arrived.
@@ -208,7 +220,7 @@ fn dispatch(args: &[String]) -> Result<Report, String> {
         payload: &payload,
         raw: &raw,
         store: store.as_ref(),
-        deposit: deposit.as_ref(),
+        deposit: &deposit,
         census: &census,
         tty: &tty,
         at: now(),
@@ -232,14 +244,27 @@ struct Request<'a> {
     /// open. While it was mandatory, the one form that exists in order not to
     /// lie died before it could speak.
     store: Option<&'a Sessions>,
-    /// The ledger the terminal announces itself in. **`None` is «nobody needs
-    /// it here»**, as for [`Request::store`]: a form that does not announce
-    /// must not open it, and a test must be able to walk the whole road
-    /// without writing into the machine's own home.
-    deposit: Option<&'a ledger::Ledger>,
+    deposit: &'a TheDeposit<'a>,
     census: &'a Census,
     tty: &'a str,
     at: i64,
+}
+
+/// The ledger the terminal announces itself in, and what came of asking for it.
+///
+/// **A LEDGER THAT WOULD NOT OPEN IS NOT AN ABSENT ONE**, and the two were one
+/// value until a store one version ahead of the binary made every hook exit 1
+/// on every prompt. Collapsing them the other way would be no better: the
+/// announcement would be skipped in silence, and the survey would show the
+/// terminal as nobody with nothing said. Three states, so the refusal can be
+/// carried to whoever prints, and the hook can still exit 0 — the principle at
+/// the head of this module.
+enum TheDeposit<'a> {
+    /// This form does not announce, so nothing was opened.
+    NobodyNeedsItHere,
+    Open(&'a ledger::Ledger),
+    /// Why it would not open, in the words the store used.
+    WouldNotOpen(&'a str),
 }
 
 impl<'a> Request<'a> {
@@ -1107,7 +1132,10 @@ fn open_terminal(request: &Request<'_>) -> Result<Report, String> {
         return Ok(Report::spoken(welcome(
             &arrival,
             Some(store),
-            &still_open(&started(request, &arrival)),
+            &still_open(
+                &started(request, &arrival),
+                request.options.get("ledger").map(String::as_str),
+            ),
             &announced,
         )));
     }
@@ -1219,7 +1247,13 @@ fn named(row: &sessions::TerminalRow, here: &str) -> String {
 /// where git says nothing: outside a repository, or with no git to ask.
 fn repository_holding(path: &str) -> Option<String> {
     let said = std::process::Command::new("git")
-        .args(["-C", path, "rev-parse", "--path-format=absolute", "--git-common-dir"])
+        .args([
+            "-C",
+            path,
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-common-dir",
+        ])
         .output()
         .ok()?;
     if !said.status.success() {
@@ -1270,7 +1304,8 @@ fn started(request: &Request<'_>, arrival: &Arrival) -> Started<'static> {
         .and_then(|id| profiles::find_cli(id).ok());
     let profile_home = engine.and_then(|engine| {
         let store = profiles::store_io::load_store().ok()?;
-        crate::memory_cmd::active_profile(&store, &engine.id).map(|profile| profile.home_dir.clone())
+        crate::memory_cmd::active_profile(&store, &engine.id)
+            .map(|profile| profile.home_dir.clone())
     });
     Started {
         engine,
@@ -1308,7 +1343,11 @@ const PAGE_OPENING_LINES: usize = 3;
 fn page_on_disk(home: Option<&std::path::Path>) -> Option<PageOnDisk> {
     let path = actions::memory::page_path(home?);
     let text = std::fs::read_to_string(&path).ok()?;
-    let opening = text.lines().take(PAGE_OPENING_LINES).collect::<Vec<_>>().join("\n");
+    let opening = text
+        .lines()
+        .take(PAGE_OPENING_LINES)
+        .collect::<Vec<_>>()
+        .join("\n");
     Some(PageOnDisk { path, opening })
 }
 
@@ -1327,7 +1366,9 @@ fn still_open_in(
     let tree = workspace::tree_around(&started.worktree).map(|tree| tree.display().to_string());
     Ok(StillOpen {
         waiting: deposit.waiting_runs().map_err(|error| error.to_string())?,
-        ask_again: deposit.runs_to_ask_again().map_err(|error| error.to_string())?,
+        ask_again: deposit
+            .runs_to_ask_again()
+            .map_err(|error| error.to_string())?,
         remembered: actions::memory::seen_from(
             actions::memory::remembered(deposit, now).map_err(|error| error.to_string())?,
             tree.as_deref(),
@@ -1337,11 +1378,21 @@ fn still_open_in(
     })
 }
 
-/// This machine's ledger. `Ok(None)` where there is no home to look in, which
-/// is not the same as a home holding nothing.
-fn deposit() -> Result<Option<ledger::Ledger>, String> {
-    let Some(directory) = ledger::default_directory() else {
-        return Ok(None);
+/// This machine's ledger, or the one `--ledger` names. `Ok(None)` where there
+/// is no home to look in, which is not the same as a home holding nothing.
+///
+/// **`--ledger` IS THE TWIN OF `--store`, AND EXISTS FOR THE SAME REASON**: the
+/// road from the command line down to a ledger that will not open has to be
+/// walkable without the machine's own home in it. Without it the only way to
+/// move this store was the environment, which is shared by the whole process
+/// and races every other case in the battery.
+fn deposit(declared: Option<&str>) -> Result<Option<ledger::Ledger>, String> {
+    let directory = match declared {
+        Some(declared) => PathBuf::from(declared),
+        None => match ledger::default_directory() {
+            Some(directory) => directory,
+            None => return Ok(None),
+        },
     };
     if !directory.exists() {
         return Ok(None);
@@ -1352,9 +1403,11 @@ fn deposit() -> Result<Option<ledger::Ledger>, String> {
 }
 
 /// The same, from this machine's home.
-fn still_open(started: &Started<'_>) -> Result<Option<StillOpen>, String> {
-    match deposit()? {
-        Some(deposit) => still_open_in(&deposit, ledger::sailor_home().as_deref(), started).map(Some),
+fn still_open(started: &Started<'_>, declared: Option<&str>) -> Result<Option<StillOpen>, String> {
+    match deposit(declared)? {
+        Some(deposit) => {
+            still_open_in(&deposit, ledger::sailor_home().as_deref(), started).map(Some)
+        }
         None => Ok(None),
     }
 }
@@ -1396,8 +1449,12 @@ fn branch_of(path: &str) -> Option<String> {
 /// one at every keystroke, and not by the name of the command line, which
 /// changes under the same terminal.
 fn announce(request: &Request<'_>, arrival: &Arrival, state: &str) -> Result<(), String> {
-    let Some(deposit) = request.deposit else {
-        return Ok(());
+    let deposit = match request.deposit {
+        // Nobody asked for a ledger here, so nothing was refused and there is
+        // nothing to report: silence is the true answer.
+        TheDeposit::NobodyNeedsItHere => return Ok(()),
+        TheDeposit::WouldNotOpen(why) => return Err((*why).to_owned()),
+        TheDeposit::Open(deposit) => deposit,
     };
     let workdir = arrival.anchor.worktree.clone();
     let record = actions::presence::claim_record(&actions::presence::Claim {
@@ -1416,13 +1473,19 @@ fn announce(request: &Request<'_>, arrival: &Arrival, state: &str) -> Result<(),
         conversation: arrival.session_id.clone(),
         state: state.to_owned(),
     });
-    deposit.put_record(&record).map_err(|error| error.to_string())
+    deposit
+        .put_record(&record)
+        .map_err(|error| error.to_string())
 }
 
 /// The other end: the terminal closes, and stops holding anything.
 fn stop_announcing(request: &Request<'_>, arrival: &Arrival) -> Result<(), String> {
-    let Some(deposit) = request.deposit else {
-        return Ok(());
+    let deposit = match request.deposit {
+        TheDeposit::NobodyNeedsItHere => return Ok(()),
+        // A terminal that cannot stop announcing keeps its claim until the
+        // lease runs out: worth saying, never worth failing the hook for.
+        TheDeposit::WouldNotOpen(why) => return Err((*why).to_owned()),
+        TheDeposit::Open(deposit) => deposit,
     };
     let key = actions::presence::terminal_claim_key(&arrival.anchor.tty);
     actions::presence::release_claim(deposit, &key, request.at)
@@ -1484,7 +1547,11 @@ fn what_is_still_open(found: &StillOpen) -> Option<String> {
         ));
     }
     if let Some(unseen) = &found.page_unseen {
-        let files: Vec<String> = unseen.files.iter().map(|file| file.display().to_string()).collect();
+        let files: Vec<String> = unseen
+            .files
+            .iter()
+            .map(|file| file.display().to_string())
+            .collect();
         lines.push(catalogue::say(
             "cli.session.page_unseen",
             &[("engine", &unseen.engine), ("files", &files.join(", "))],
@@ -1596,11 +1663,34 @@ fn record_event(request: &Request<'_>) -> Result<Report, String> {
         .map_err(|error| error.to_string())?;
     // The announcement is renewed here and nowhere else: a lease that only the
     // opening renewed would expire on a terminal that has been working all day.
-    let _ = announce(request, &arrival, "working");
-    Ok(Report::spoken(catalogue::say(
-        "cli.session.event_on_terminal",
-        &[("event", &happened.name), ("tty", &happened.tty)],
+    let announced = announce(request, &arrival, "working");
+    Ok(Report::spoken(also_saying(
+        catalogue::say(
+            "cli.session.event_on_terminal",
+            &[("event", &happened.name), ("tty", &happened.tty)],
+        ),
+        announced,
     )))
+}
+
+/// The sentence, plus whatever the announcement could not do.
+///
+/// **SAID, NOT RETURNED AS AN ERROR.** The work asked for is already done — the
+/// row is in the other store — and failing the hook over the announcement would
+/// stop the person working over a line nobody was waiting for. Silence would be
+/// worse than either: the crew survey then reads this terminal as an empty tree,
+/// which is not what happened.
+///
+/// One function and three callers, because the same fact told three times is the
+/// one that starts drifting.
+fn also_saying(said: String, announced: Result<(), String>) -> String {
+    match announced {
+        Ok(()) => said,
+        Err(why) => format!(
+            "{said}\n{}",
+            catalogue::say("cli.session.not_announced", &[("why", &why)])
+        ),
+    }
 }
 
 fn close_terminal(request: &Request<'_>) -> Result<Report, String> {
@@ -1611,13 +1701,16 @@ fn close_terminal(request: &Request<'_>) -> Result<Report, String> {
     store
         .record_event(&event_named(request, "close"))
         .map_err(|error| error.to_string())?;
-    let _ = stop_announcing(request, &arrival_of(request));
+    let stopped = stop_announcing(request, &arrival_of(request));
     let key = if closed {
         "cli.session.closed"
     } else {
         "cli.session.had_no_open_row"
     };
-    Ok(Report::spoken(catalogue::say(key, &[("tty", request.tty)])))
+    Ok(Report::spoken(also_saying(
+        catalogue::say(key, &[("tty", request.tty)]),
+        stopped,
+    )))
 }
 
 fn detach_terminal(request: &Request<'_>) -> Result<Report, String> {
@@ -1630,10 +1723,10 @@ fn detach_terminal(request: &Request<'_>) -> Result<Report, String> {
         .map_err(|error| error.to_string())?;
     // **DETACHED MEANS DETACHED HERE TOO**: a terminal that asked not to be
     // followed must not stay announced to the others until its lease runs out.
-    let _ = stop_announcing(request, &arrival_of(request));
-    Ok(Report::spoken(catalogue::say(
-        "cli.session.detached",
-        &[("tty", request.tty)],
+    let stopped = stop_announcing(request, &arrival_of(request));
+    Ok(Report::spoken(also_saying(
+        catalogue::say("cli.session.detached", &[("tty", request.tty)]),
+        stopped,
     )))
 }
 
@@ -1701,8 +1794,7 @@ fn word_for(standing: Standing) -> String {
 fn list_terminals(request: &Request<'_>) -> Result<Report, String> {
     let store = request.store()?;
     let rows = store.terminals().map_err(|error| error.to_string())?;
-    let abandoned =
-        sessions::census::Census::of(&sessions::census::LocalMachine).abandoned(&rows);
+    let abandoned = sessions::census::Census::of(&sessions::census::LocalMachine).abandoned(&rows);
     if request.options.contains_key("json") {
         let said: Vec<serde_json::Value> = rows
             .iter()
@@ -1985,7 +2077,14 @@ mod tests {
         census: &Census,
         options: &BTreeMap<String, String>,
     ) -> Result<Report, String> {
-        asking(verb, raw, store, None, census, options)
+        asking(
+            verb,
+            raw,
+            store,
+            &TheDeposit::NobodyNeedsItHere,
+            census,
+            options,
+        )
     }
 
     /// The same, announcing into a ledger of the test's own: **no case writes
@@ -1995,7 +2094,7 @@ mod tests {
         verb: &str,
         raw: &str,
         store: &Sessions,
-        deposit: Option<&ledger::Ledger>,
+        deposit: &TheDeposit<'_>,
         census: &Census,
         options: &BTreeMap<String, String>,
     ) -> Result<Report, String> {
@@ -2053,6 +2152,122 @@ mod tests {
                 "«session {form}» answered without saying anything"
             );
         }
+    }
+
+    /// **A LEDGER THAT WILL NOT OPEN MUST NOT FAIL THE HOOK, NOR PASS IN
+    /// SILENCE.** A store one version ahead of the binary made every prompt
+    /// exit 1; turning the refusal into «nobody needs it» would instead skip
+    /// the announcement with nothing said, and the crew survey would read this
+    /// terminal as an empty tree.
+    ///
+    /// *Mutant runs*: putting `deposit()?` back in `dispatch` turns this red on
+    /// the recording; mapping the error to `NobodyNeedsItHere` turns it red on
+    /// the sentence.
+    #[test]
+    fn a_ledger_that_will_not_open_is_said_and_does_not_fail_the_event() {
+        let scratch = Scratch::new("deposito-che-non-apre");
+        let store = scratch.store();
+
+        // The payload a hook really sends: without `hook_event_name` the event
+        // is stored under the fallback name, and the assertion below would be
+        // reading for a row this fixture never asked to write.
+        let payload = r#"{"session_id":"una-conversazione","cwd":"/un-albero","hook_event_name":"UserPromptSubmit"}"#;
+        let refused = TheDeposit::WouldNotOpen("unsupported projection schema version 99");
+
+        let report = asking(
+            "event",
+            payload,
+            &store,
+            &refused,
+            &one_terminal(),
+            &named_line(),
+        )
+        .expect("a ledger that will not open does not fail the hook");
+
+        assert!(
+            report
+                .message
+                .contains("unsupported projection schema version 99"),
+            "the refusal is not named, so nobody can act on it: {}",
+            report.message
+        );
+        assert_eq!(report.code, 0, "the hook disturbs whoever is working");
+        assert!(
+            store
+                .events_on("ttys004")
+                .expect("reading the register back")
+                .iter()
+                .any(|event| event.name == "UserPromptSubmit"),
+            "the event was not recorded: the announcement is what failed, not the recording"
+        );
+    }
+
+    /// The same rule, walked from the command line down: **this one goes
+    /// through `dispatch`**, which is where the ledger is opened and where the
+    /// two ways of getting it wrong live. The case above drives `act` with the
+    /// state already in hand, so it cannot see either.
+    ///
+    /// *Mutant runs*: propagating the error out of `dispatch` turns this red
+    /// because the hook dies; mapping it to `NobodyNeedsItHere` turns it red
+    /// because the refusal goes unsaid.
+    #[test]
+    fn the_command_line_survives_a_ledger_that_will_not_open_and_says_so() {
+        let scratch = Scratch::new("deposito-inapribile-da-riga");
+        // A **directory** where `state.db` is expected: SQLite will not open it,
+        // and the failure is of the same kind as the real one — a store a
+        // version ahead of the binary — without fabricating any.
+        let ledger_home = scratch.directory.join("deposito");
+        std::fs::create_dir_all(ledger_home.join("state.db")).expect("the scratch directory");
+        let store = scratch.directory.join("sessioni.db");
+
+        // `close` and not `event`: both open the ledger, and only `event` reads
+        // standard input — which under the battery is nobody's, so the case
+        // would hang instead of failing.
+        let words: Vec<String> = vec![
+            "close".to_owned(),
+            "--store".to_owned(),
+            store.display().to_string(),
+            "--ledger".to_owned(),
+            ledger_home.display().to_string(),
+            "--tty".to_owned(),
+            "ttys004".to_owned(),
+        ];
+        let report = dispatch(&words).unwrap_or_else(|error| {
+            panic!("a ledger that will not open must not fail the hook: {error}")
+        });
+
+        assert_eq!(report.code, 0, "the hook disturbs whoever is working");
+        assert!(
+            report.message.contains("not announced")
+                || report.message.contains("non sei stato annunciato"),
+            "the refusal passed in silence, and the survey will read this \
+             terminal as an empty tree: {}",
+            report.message
+        );
+    }
+
+    /// The other half of the same rule: a form nobody asked to announce says
+    /// nothing about a ledger, because nothing was refused.
+    #[test]
+    fn a_ledger_nobody_needed_is_not_reported_as_refused() {
+        let scratch = Scratch::new("deposito-non-chiesto");
+        let store = scratch.store();
+
+        let report = ask(
+            "event",
+            r#"{"session_id":"una-conversazione","cwd":"/un-albero"}"#,
+            &store,
+            &one_terminal(),
+            &named_line(),
+        )
+        .expect("the event goes through");
+
+        assert!(
+            !report.message.contains("not announced")
+                && !report.message.contains("non sei stato annunciato"),
+            "silence about a ledger nobody opened was read as a refusal: {}",
+            report.message
+        );
     }
 
     /// Another product's hooks, already installed, exactly as they sit in
@@ -2189,10 +2404,11 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(&settings).expect("reading it back"))
                 .expect("it stays valid JSON");
 
-        assert_eq!(after["model"], "opusplan", "the graft does not touch the rest");
-        let stops = after["hooks"]["Stop"]
-            .as_array()
-            .expect("Stop is an array");
+        assert_eq!(
+            after["model"], "opusplan",
+            "the graft does not touch the rest"
+        );
+        let stops = after["hooks"]["Stop"].as_array().expect("Stop is an array");
         assert_eq!(
             stops.len(),
             2,
@@ -2250,7 +2466,7 @@ mod tests {
             "open",
             r#"{"session_id":"una-conversazione","cwd":"/un-albero"}"#,
             &store,
-            Some(&deposit),
+            &TheDeposit::Open(&deposit),
             &one_terminal(),
             &named_line(),
         )
@@ -2261,7 +2477,10 @@ mod tests {
         assert_eq!(claims[0]["workdir"], serde_json::json!("/un-albero"));
         assert_eq!(claims[0]["state"], serde_json::json!("working"));
         assert!(
-            claims[0]["agent"].as_str().unwrap_or_default().contains("unmotore"),
+            claims[0]["agent"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("unmotore"),
             "the announcement does not say which command line: {claims:?}"
         );
         // The shared words, so that exporting this later costs nobody a
@@ -2281,10 +2500,18 @@ mod tests {
         let store = scratch.store();
         let deposit = ledger::Ledger::open(scratch.directory.join("deposito")).expect("the ledger");
         let payload = r#"{"session_id":"una-conversazione","cwd":"/un-albero"}"#;
+        let announcing = TheDeposit::Open(&deposit);
 
         for verb in ["open", "event", "event"] {
-            asking(verb, payload, &store, Some(&deposit), &one_terminal(), &named_line())
-                .expect("the moment goes through");
+            asking(
+                verb,
+                payload,
+                &store,
+                &announcing,
+                &one_terminal(),
+                &named_line(),
+            )
+            .expect("the moment goes through");
         }
 
         let keys: Vec<String> = deposit
@@ -2311,15 +2538,33 @@ mod tests {
         let store = scratch.store();
         let deposit = ledger::Ledger::open(scratch.directory.join("deposito")).expect("the ledger");
         let payload = r#"{"session_id":"una-conversazione","cwd":"/un-albero"}"#;
-        asking("open", payload, &store, Some(&deposit), &one_terminal(), &named_line())
-            .expect("the opening succeeds");
+        let announcing = TheDeposit::Open(&deposit);
+        asking(
+            "open",
+            payload,
+            &store,
+            &announcing,
+            &one_terminal(),
+            &named_line(),
+        )
+        .expect("the opening succeeds");
 
-        asking("close", payload, &store, Some(&deposit), &one_terminal(), &named_line())
-            .expect("la chiusura riesce");
+        asking(
+            "close",
+            payload,
+            &store,
+            &announcing,
+            &one_terminal(),
+            &named_line(),
+        )
+        .expect("la chiusura riesce");
 
         let claims = claims_in(&deposit);
         assert_eq!(claims.len(), 1, "{claims:?}");
-        assert!(!claims[0]["released_at"].is_null(), "it stays announced: {claims:?}");
+        assert!(
+            !claims[0]["released_at"].is_null(),
+            "it stays announced: {claims:?}"
+        );
     }
 
     /// **A TERMINAL THAT ASKED NOT TO BE FOLLOWED IS NOT LEFT ANNOUNCED.** The
@@ -2331,15 +2576,33 @@ mod tests {
         let store = scratch.store();
         let deposit = ledger::Ledger::open(scratch.directory.join("deposito")).expect("the ledger");
         let payload = r#"{"session_id":"una-conversazione","cwd":"/un-albero"}"#;
-        asking("open", payload, &store, Some(&deposit), &one_terminal(), &named_line())
-            .expect("the opening succeeds");
+        let announcing = TheDeposit::Open(&deposit);
+        asking(
+            "open",
+            payload,
+            &store,
+            &announcing,
+            &one_terminal(),
+            &named_line(),
+        )
+        .expect("the opening succeeds");
 
-        asking("detach", payload, &store, Some(&deposit), &one_terminal(), &named_line())
-            .expect("the detach succeeds");
+        asking(
+            "detach",
+            payload,
+            &store,
+            &announcing,
+            &one_terminal(),
+            &named_line(),
+        )
+        .expect("the detach succeeds");
 
         let claims = claims_in(&deposit);
         assert_eq!(claims.len(), 1, "{claims:?}");
-        assert!(!claims[0]["released_at"].is_null(), "it stays announced: {claims:?}");
+        assert!(
+            !claims[0]["released_at"].is_null(),
+            "it stays announced: {claims:?}"
+        );
     }
 
     /// **THE SAME TERMINAL UNDER A NEW NAME IS THE SAME ROW.** The graft learns
@@ -2354,15 +2617,33 @@ mod tests {
         let deposit = ledger::Ledger::open(scratch.directory.join("deposito")).expect("the ledger");
         let payload = r#"{"session_id":"una-conversazione","cwd":"/un-albero"}"#;
 
-        asking("open", payload, &store, Some(&deposit), &one_terminal(), &no_options())
-            .expect("first with no name");
-        asking("event", payload, &store, Some(&deposit), &one_terminal(), &named_line())
-            .expect("then with the name");
+        let announcing = TheDeposit::Open(&deposit);
+        asking(
+            "open",
+            payload,
+            &store,
+            &announcing,
+            &one_terminal(),
+            &no_options(),
+        )
+        .expect("first with no name");
+        asking(
+            "event",
+            payload,
+            &store,
+            &announcing,
+            &one_terminal(),
+            &named_line(),
+        )
+        .expect("then with the name");
 
         let claims = claims_in(&deposit);
         assert_eq!(claims.len(), 1, "{claims:?}");
         assert!(
-            claims[0]["agent"].as_str().unwrap_or_default().contains("unmotore"),
+            claims[0]["agent"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("unmotore"),
             "the announcement stayed on the old name: {claims:?}"
         );
     }
@@ -2374,7 +2655,10 @@ mod tests {
     fn a_graft_of_ours_that_is_out_of_date_is_replaced() {
         let scratch = Scratch::new("innesto-vecchio");
         let settings = scratch.directory.join("settings.json");
-        let binary = std::env::current_exe().expect("where I am").display().to_string();
+        let binary = std::env::current_exe()
+            .expect("where I am")
+            .display()
+            .to_string();
         let (event, verb) = as_one_line_names_them()[0];
         std::fs::write(
             &settings,
@@ -2395,7 +2679,11 @@ mod tests {
         let root: serde_json::Value = serde_json::from_str(&written).expect("it is JSON");
         let list = root["hooks"][event].as_array().expect("the event's list");
 
-        assert_eq!(list.len(), 1, "the old graft stayed beside the new one: {written}");
+        assert_eq!(
+            list.len(),
+            1,
+            "the old graft stayed beside the new one: {written}"
+        );
         // THE ONE ENTRY OF THIS EVENT: a search over the whole file would find
         // the other moments' fresh lines and call the stale one repaired.
         let only = serde_json::to_string(&list[0]).expect("a single row");
@@ -2572,7 +2860,7 @@ mod tests {
             payload: &payload,
             raw: "",
             store: None,
-            deposit: None,
+            deposit: &TheDeposit::NobodyNeedsItHere,
             census: &one_terminal(),
             tty: "",
             at: 1_000,
@@ -2620,7 +2908,7 @@ mod tests {
             payload: &payload,
             raw: "",
             store: None,
-            deposit: None,
+            deposit: &TheDeposit::NobodyNeedsItHere,
             census: &one_terminal(),
             tty: "",
             at: 1_000,
@@ -2705,7 +2993,7 @@ mod tests {
             payload: &payload,
             raw: "",
             store: None,
-            deposit: None,
+            deposit: &TheDeposit::NobodyNeedsItHere,
             census: &one_terminal(),
             tty: "",
             at: 1_000,
@@ -2745,7 +3033,10 @@ mod tests {
         installed(&settings, &as_one_line_names_them(), "unmotore")
             .expect("the graft succeeds even on a file that was not there");
 
-        let binary = std::env::current_exe().expect("where I am").display().to_string();
+        let binary = std::env::current_exe()
+            .expect("where I am")
+            .display()
+            .to_string();
         let written = std::fs::read_to_string(&settings).expect("reading it back");
         let ours = written.replace(&binary, "<the binary>");
         assert!(
@@ -2789,7 +3080,10 @@ mod tests {
             page_unseen: None,
         };
         let said = what_is_still_open(&found).expect("something to say");
-        assert!(said.contains("«the trunk»") && said.contains("«the home»"), "{said}");
+        assert!(
+            said.contains("«the trunk»") && said.contains("«the home»"),
+            "{said}"
+        );
         assert!(said.contains('2'), "the count: {said}");
     }
 
@@ -2822,7 +3116,8 @@ mod tests {
             tree: tree.map(str::to_owned),
         };
         actions::memory::remember(&ledger, memory("of this tree", Some(&real))).expect("kept");
-        actions::memory::remember(&ledger, memory("of another", Some("/elsewhere/other"))).expect("kept");
+        actions::memory::remember(&ledger, memory("of another", Some("/elsewhere/other")))
+            .expect("kept");
         actions::memory::remember(&ledger, memory("everywhere", None)).expect("kept");
         let started_in = |worktree: &std::path::Path| Started {
             engine: None,
@@ -2833,12 +3128,21 @@ mod tests {
 
         let here = still_open_in(&ledger, None, &started_in(&deep)).expect("open");
         let outside = still_open_in(&ledger, None, &started_in(&scratch.directory)).expect("open");
-        let labels = |found: &StillOpen| found.remembered.iter().map(|m| m.label.clone()).collect::<Vec<_>>();
+        let labels = |found: &StillOpen| {
+            found
+                .remembered
+                .iter()
+                .map(|m| m.label.clone())
+                .collect::<Vec<_>>()
+        };
         let said = what_is_still_open(&here).expect("something to say");
 
         assert_eq!(labels(&here), vec!["everywhere", "of this tree"]);
         assert_eq!(labels(&outside), vec!["everywhere"]);
-        assert!(said.contains("2 ") && !said.contains("of another"), "{said}");
+        assert!(
+            said.contains("2 ") && !said.contains("of another"),
+            "{said}"
+        );
     }
 
     /// The page's address and its first lines travel in the greeting **only
@@ -2871,10 +3175,22 @@ mod tests {
         .expect("something to say");
 
         assert!(absent.is_none(), "a page was found where none was written");
-        assert!(quiet.is_none(), "the greeting speaks of a page it has not got: {quiet:?}");
-        assert!(said.contains(&path.display().to_string()), "the path is not named: {said}");
-        assert!(said.contains("**three**") && !said.contains("**four**"), "the opening is not the first three lines: {said}");
-        assert!(page_on_disk(None).is_none(), "a page with no home to look in");
+        assert!(
+            quiet.is_none(),
+            "the greeting speaks of a page it has not got: {quiet:?}"
+        );
+        assert!(
+            said.contains(&path.display().to_string()),
+            "the path is not named: {said}"
+        );
+        assert!(
+            said.contains("**three**") && !said.contains("**four**"),
+            "the opening is not the first three lines: {said}"
+        );
+        assert!(
+            page_on_disk(None).is_none(),
+            "a page with no home to look in"
+        );
     }
 
     /// **THE GREETING NAMES THE FILE THE ENGINE READS WHEN IT DOES NOT NAME
@@ -2912,7 +3228,11 @@ mod tests {
         }
         let rules = worktree.join("RULES.md");
 
-        let unseen = page_unseen(&started_in(Some(&table[0]), &worktree, &someone), Some(&page)).expect("an engine that does not see the page");
+        let unseen = page_unseen(
+            &started_in(Some(&table[0]), &worktree, &someone),
+            Some(&page),
+        )
+        .expect("an engine that does not see the page");
         assert_eq!(unseen.files, vec![rules.clone()]);
         let said = what_is_still_open(&StillOpen {
             waiting: Vec::new(),
@@ -2922,18 +3242,32 @@ mod tests {
             page_unseen: Some(unseen),
         })
         .expect("something to say");
-        assert!(said.contains(&rules.display().to_string()), "the file is not named: {said}");
+        assert!(
+            said.contains(&rules.display().to_string()),
+            "the file is not named: {said}"
+        );
 
         std::fs::write(&rules, format!("read {} first", page_path.display())).expect("rules");
         assert!(
-            page_unseen(&started_in(Some(&table[0]), &worktree, &someone), Some(&page)).is_none(),
+            page_unseen(
+                &started_in(Some(&table[0]), &worktree, &someone),
+                Some(&page)
+            )
+            .is_none(),
             "the file names the page, and the engine is still called blind"
         );
         assert!(
-            page_unseen(&started_in(Some(&table[1]), &worktree, &someone), Some(&page)).is_none(),
+            page_unseen(
+                &started_in(Some(&table[1]), &worktree, &someone),
+                Some(&page)
+            )
+            .is_none(),
             "an engine nobody looked into is called blind"
         );
-        assert!(page_unseen(&started_in(None, &worktree, &someone), Some(&page)).is_none(), "a terminal that named no engine");
+        assert!(
+            page_unseen(&started_in(None, &worktree, &someone), Some(&page)).is_none(),
+            "a terminal that named no engine"
+        );
         std::fs::remove_file(&rules).expect("removed");
         assert!(
             page_unseen(&started_in(Some(&table[0]), &worktree, &someone), None).is_none(),
@@ -2970,8 +3304,11 @@ mod tests {
     #[test]
     fn the_welcome_hands_over_the_rules_the_tree_really_has() {
         let scratch = Scratch::new("regole-dell-albero");
-        std::fs::write(scratch.directory.join("AGENTS.md"), "how the work is done here\n")
-            .expect("the rules are written");
+        std::fs::write(
+            scratch.directory.join("AGENTS.md"),
+            "how the work is done here\n",
+        )
+        .expect("the rules are written");
 
         let said = welcome_of(&Arrival {
             anchor: sessions::Anchor {
@@ -2984,7 +3321,10 @@ mod tests {
             at: 1_000,
         });
 
-        assert!(said.contains("AGENTS.md"), "the welcome does not name the rules: {said}");
+        assert!(
+            said.contains("AGENTS.md"),
+            "the welcome does not name the rules: {said}"
+        );
         // A NAME AND NOT THE FILE: what it says is the file's business, and a
         // tree's instructions in the context of every session are paid at every
         // single start.
@@ -3059,7 +3399,10 @@ mod tests {
             at: 1_000,
         });
 
-        assert!(said.contains("AGENTS.md"), "the one that is there is named: {said}");
+        assert!(
+            said.contains("AGENTS.md"),
+            "the one that is there is named: {said}"
+        );
         assert!(
             said.contains("docs/moved-away.md"),
             "a declaration pointing at nothing passes in silence: {said}"
@@ -3088,9 +3431,15 @@ mod tests {
             ttys: vec!["ttys013".to_owned()],
         };
 
-        assert_eq!(standing_of(&a_row("ttys013", None), &seen), Standing::NobodyThere);
+        assert_eq!(
+            standing_of(&a_row("ttys013", None), &seen),
+            Standing::NobodyThere
+        );
         assert_eq!(standing_of(&a_row("ttys004", None), &seen), Standing::Open);
-        assert_eq!(standing_of(&a_row("ttys013", Some(9)), &seen), Standing::Closed);
+        assert_eq!(
+            standing_of(&a_row("ttys013", Some(9)), &seen),
+            Standing::Closed
+        );
     }
 
     /// **UNKNOWN IS NEITHER.** Read as «open» a refusal invents a session that
@@ -3112,7 +3461,10 @@ mod tests {
         assert_ne!(standing, Standing::NobodyThere);
         // A closed row claims nothing of the machine, so a refusal does not
         // make it doubtful.
-        assert_eq!(standing_of(&a_row("ttys013", Some(9)), &refused), Standing::Closed);
+        assert_eq!(
+            standing_of(&a_row("ttys013", Some(9)), &refused),
+            Standing::Closed
+        );
     }
 
     /// **THE GREETING NAMES THE LIVING AND COUNTS THE REST.** A row nobody
@@ -3123,14 +3475,20 @@ mod tests {
         let seen = sessions::census::Abandoned::Seen {
             ttys: vec!["ttys013".to_owned(), "ttys018".to_owned()],
         };
-        let (five, thirteen, eighteen) =
-            (a_row("ttys005", None), a_row("ttys013", None), a_row("ttys018", None));
+        let (five, thirteen, eighteen) = (
+            a_row("ttys005", None),
+            a_row("ttys013", None),
+            a_row("ttys018", None),
+        );
         let others = [&five, &thirteen, &eighteen];
 
         let said = who_is_here(&others, &seen, "/somewhere").expect("something to say");
 
         assert!(said.contains("ttys005"), "the living one is named: {said}");
-        assert!(!said.contains("ttys013"), "a row nobody holds is not a neighbour: {said}");
+        assert!(
+            !said.contains("ttys013"),
+            "a row nobody holds is not a neighbour: {said}"
+        );
         assert!(!said.contains("ttys018"), "{said}");
         assert!(said.contains('2'), "and the rest are counted: {said}");
     }
@@ -3167,7 +3525,10 @@ mod tests {
 
         let said = who_is_here(&others, &refused, "/somewhere").expect("something to say");
 
-        assert!(said.contains("ttys005") && said.contains("ttys013"), "{said}");
+        assert!(
+            said.contains("ttys005") && said.contains("ttys013"),
+            "{said}"
+        );
         assert!(
             said.contains("does not know") || said.contains("non sa"),
             "the limit is still declared: {said}"
@@ -3214,7 +3575,10 @@ mod tests {
 
         let said = welcome(&arriving_in(&scratch), None, &open, &Ok(()));
 
-        assert!(said.contains("un-flusso-1788423534"), "it does not name the run: {said}");
+        assert!(
+            said.contains("un-flusso-1788423534"),
+            "it does not name the run: {said}"
+        );
         assert!(
             said.contains("sailor flow resume un-flusso-1788423534"),
             "it does not say how to take it up: {said}"
@@ -3263,10 +3627,17 @@ mod tests {
         })
         .expect("the two lists together get said");
         assert_eq!(both.lines().count(), 2, "{both}");
-        assert_eq!(both, format!("{waiting_line}\n{again_line}",
-            waiting_line = waiting.replace("una-corsa-1", "in-attesa-1"),
-            again_line = again.replace("una-corsa-1", "non-ancora-1").replace("un-flusso", "un-altro")),
-            "{both}");
+        assert_eq!(
+            both,
+            format!(
+                "{waiting_line}\n{again_line}",
+                waiting_line = waiting.replace("una-corsa-1", "in-attesa-1"),
+                again_line = again
+                    .replace("una-corsa-1", "non-ancora-1")
+                    .replace("un-flusso", "un-altro")
+            ),
+            "{both}"
+        );
     }
 
     /// **A GREETING THAT REPORTS EMPTINESS EVERY TIME TEACHES NOBODY TO READ
@@ -3294,10 +3665,21 @@ mod tests {
         let arrival = arriving_in(&scratch);
 
         let quiet = welcome(&arrival, None, &Ok(None), &Ok(()));
-        let blind = welcome(&arrival, None, &Err("the file belongs to somebody else".to_owned()), &Ok(()));
+        let blind = welcome(
+            &arrival,
+            None,
+            &Err("the file belongs to somebody else".to_owned()),
+            &Ok(()),
+        );
 
-        assert_ne!(quiet, blind, "an unreadable ledger greets like an empty one");
-        assert!(blind.contains("the file belongs to somebody else"), "without the reason: {blind}");
+        assert_ne!(
+            quiet, blind,
+            "an unreadable ledger greets like an empty one"
+        );
+        assert!(
+            blind.contains("the file belongs to somebody else"),
+            "without the reason: {blind}"
+        );
     }
 
     /// The reading itself, against a real ledger: the two words the store keeps
@@ -3339,11 +3721,19 @@ mod tests {
         let found = still_open_in(&deposit, None, &nobody).expect("reading the two lists");
 
         assert_eq!(
-            found.waiting.iter().map(|run| run.run_id.as_str()).collect::<Vec<_>>(),
+            found
+                .waiting
+                .iter()
+                .map(|run| run.run_id.as_str())
+                .collect::<Vec<_>>(),
             vec!["in-attesa-1"]
         );
         assert_eq!(
-            found.ask_again.iter().map(|run| run.run_id.as_str()).collect::<Vec<_>>(),
+            found
+                .ask_again
+                .iter()
+                .map(|run| run.run_id.as_str())
+                .collect::<Vec<_>>(),
             vec!["non-ancora-1"]
         );
     }
@@ -3365,8 +3755,14 @@ mod tests {
             at: 1_000,
         });
 
-        assert!(!said.contains("AGENTS.md"), "it promises a file that is not there: {said}");
-        assert!(said.contains("ttys004"), "and the welcome disappears altogether: {said}");
+        assert!(
+            !said.contains("AGENTS.md"),
+            "it promises a file that is not there: {said}"
+        );
+        assert!(
+            said.contains("ttys004"),
+            "and the welcome disappears altogether: {said}"
+        );
     }
 
     /// **THE WELCOME PROMISES ONLY WORDS THAT EXIST.** It says «to detach it:
@@ -3389,7 +3785,7 @@ mod tests {
             payload: &Payload::parse("{}").expect("payload vuoto"),
             raw: "",
             store: None,
-            deposit: None,
+            deposit: &TheDeposit::NobodyNeedsItHere,
             census: &one_terminal(),
             tty: "",
             at: 1_000,
@@ -3445,7 +3841,7 @@ mod tests {
             payload: &Payload::parse("{}").expect("the empty payload"),
             raw: "",
             store: None,
-            deposit: None,
+            deposit: &TheDeposit::NobodyNeedsItHere,
             census: &one_terminal(),
             tty: "",
             at: 1_000,
@@ -3685,7 +4081,7 @@ mod tests {
             payload: &Payload::parse("{}").expect("payload vuoto"),
             raw: "",
             store: None,
-            deposit: None,
+            deposit: &TheDeposit::NobodyNeedsItHere,
             census: &refused,
             tty: "",
             at: 1_000,
@@ -3716,12 +4112,18 @@ mod tests {
         .expect("recording it");
         assert_eq!(report.code, 0);
 
-        let row = store.terminal("ttys004").expect("reading it").expect("it is there");
+        let row = store
+            .terminal("ttys004")
+            .expect("reading it")
+            .expect("it is there");
         assert_eq!(row.worktree, "/work/sailor");
         assert_eq!(row.ancestor.as_deref(), Some("Whatever"));
         assert_eq!(row.session_id.as_deref(), Some("abc"));
         let events = store.events_on("ttys004").expect("the events");
-        assert_eq!(events[0].name, "SessionStart", "the name comes from the payload");
+        assert_eq!(
+            events[0].name, "SessionStart",
+            "the name comes from the payload"
+        );
         assert!(
             events[0]
                 .payload
@@ -3776,7 +4178,9 @@ mod tests {
         }
         assert!(looked_at >= 2, "the log beside the store was not looked at");
         assert!(
-            events.iter().all(|event| !format!("{event:?}").contains(canary)),
+            events
+                .iter()
+                .all(|event| !format!("{event:?}").contains(canary)),
             "the secret is in what an export reads back"
         );
     }
@@ -3788,7 +4192,10 @@ mod tests {
         let scratch = Scratch::new("empty-payload");
         let store = scratch.store();
         ask("open", "{}", &store, &one_terminal(), &no_options()).expect("recording it");
-        let row = store.terminal("ttys004").expect("reading it").expect("it is there");
+        let row = store
+            .terminal("ttys004")
+            .expect("reading it")
+            .expect("it is there");
         assert_eq!(row.session_id, None);
         assert!(
             !row.worktree.is_empty(),
@@ -3815,7 +4222,10 @@ mod tests {
         )
         .expect("a refused census must not fail the registration");
         assert_eq!(report.code, 0);
-        let row = store.terminal("ttys004").expect("reading it").expect("it is there");
+        let row = store
+            .terminal("ttys004")
+            .expect("reading it")
+            .expect("it is there");
         assert_eq!(
             row.ancestor, None,
             "an ancestor that could not be read stays unknown, not invented"
@@ -3828,7 +4238,8 @@ mod tests {
     fn the_census_says_it_does_not_know_and_says_it_with_its_own_code() {
         let scratch = Scratch::new("refused-census");
         let store = scratch.store();
-        let report = ask("census", "", &store, &refused(), &no_options()).expect("taking the census");
+        let report =
+            ask("census", "", &store, &refused(), &no_options()).expect("taking the census");
         assert_eq!(report.code, REFUSED);
         assert!(
             report.message.contains("I DO NOT KNOW"),
