@@ -1751,6 +1751,20 @@ fn word_for(standing: Standing) -> String {
     )
 }
 
+/// An open terminal whose last word was a `Stop` this long ago is at rest:
+/// finished or merely waiting for a prompt, which the register cannot tell.
+const AT_REST_FOR_LONG_SECS: i64 = 3600;
+
+fn since_words(secs: i64) -> String {
+    let secs = secs.max(0);
+    let (days, hours, minutes) = (secs / 86_400, (secs % 86_400) / 3600, (secs % 3600) / 60);
+    match (days, hours) {
+        (0, 0) => format!("{minutes}m"),
+        (0, _) => format!("{hours}h {minutes:02}m"),
+        _ => format!("{days}d {hours}h"),
+    }
+}
+
 fn list_terminals(request: &Request<'_>) -> Result<Report, String> {
     let store = request.store()?;
     let rows = store.terminals().map_err(|error| error.to_string())?;
@@ -1791,18 +1805,35 @@ fn list_terminals(request: &Request<'_>) -> Result<Report, String> {
     let events = catalogue::say("cli.session.row_events", &[]);
     let mut text = String::new();
     let mut nobody = 0;
+    let mut at_rest_for_long = 0;
     for row in &rows {
-        let howmany = store
-            .events_on(&row.tty)
-            .map(|found| found.len())
-            .unwrap_or_default();
+        let found = store.events_on(&row.tty).unwrap_or_default();
+        let howmany = found.len();
         let standing = standing_of(row, &abandoned);
         if standing == Standing::NobodyThere {
             nobody += 1;
         }
+        let last = found.iter().max_by_key(|event| event.occurred_at);
+        let rest = match (standing, last) {
+            (Standing::Closed | Standing::NobodyThere, _) | (_, None) => String::new(),
+            (_, Some(event)) => {
+                let secs = request.at - event.occurred_at;
+                if event.name == "Stop" && secs >= AT_REST_FOR_LONG_SECS {
+                    at_rest_for_long += 1;
+                }
+                catalogue::say(
+                    if event.name == "Stop" {
+                        "cli.session.row_at_rest"
+                    } else {
+                        "cli.session.row_last_event"
+                    },
+                    &[("for", &since_words(secs)), ("event", &event.name)],
+                )
+            }
+        };
         let _ = writeln!(
             text,
-            "{:<10} {:<14} {:<13} {:<11} {events}={:<4} {} {}",
+            "{:<10} {:<14} {:<13} {:<11} {events}={:<4} {} {} {rest}",
             row.tty,
             row.ancestor.as_deref().unwrap_or("?"),
             word_for(standing),
@@ -1815,6 +1846,14 @@ fn list_terminals(request: &Request<'_>) -> Result<Report, String> {
             row.session_id.as_deref().unwrap_or("-"),
             row.worktree,
         );
+    }
+    if at_rest_for_long > 0 {
+        text.push('\n');
+        text.push_str(&catalogue::say(
+            "cli.session.at_rest_for_long",
+            &[("count", &at_rest_for_long.to_string())],
+        ));
+        text.push('\n');
     }
     // A word in a column teaches nothing on its own: what the reading means is
     // said once, below, where somebody about to act on it will read it.
@@ -4261,6 +4300,50 @@ mod tests {
     /// of all. Demanding a tty makes them fail wherever the output is captured —
     /// every script, every hook, every test — and the message sends the reader
     /// after an option instead of the defect.
+    #[test]
+    fn the_list_says_how_long_an_open_terminal_has_been_at_rest() {
+        let scratch = Scratch::new("at-rest");
+        let store = scratch.store();
+        ask(
+            "open",
+            r#"{"session_id":"abc","cwd":"/here"}"#,
+            &store,
+            &one_terminal(),
+            &no_options(),
+        )
+        .expect("opening it");
+        ask(
+            "event",
+            r#"{"session_id":"abc","cwd":"/here","hook_event_name":"Stop"}"#,
+            &store,
+            &one_terminal(),
+            &no_options(),
+        )
+        .expect("the agent stopped");
+        let payload = Payload::parse("{}").expect("an empty payload parses");
+        let two_hours_later = act(&Request {
+            verb: "list",
+            options: &no_options(),
+            payload: &payload,
+            raw: "{}",
+            store: Some(&store),
+            deposit: &TheDeposit::NobodyNeedsItHere,
+            census: &one_terminal(),
+            tty: "ttys004",
+            at: 1_000 + 2 * 3600 + 5 * 60,
+        })
+        .expect("listing");
+        let said = catalogue::say(
+            "cli.session.row_at_rest",
+            &[("for", "2h 05m"), ("event", "Stop")],
+        );
+        assert!(two_hours_later.message.contains(&said), "{}", two_hours_later.message);
+        let summary = catalogue::say("cli.session.at_rest_for_long", &[("count", "1")]);
+        assert!(two_hours_later.message.contains(&summary), "{}", two_hours_later.message);
+        assert_eq!(since_words(59), "0m");
+        assert_eq!(since_words(90_000), "1d 1h");
+    }
+
     #[test]
     fn asking_what_is_tracked_does_not_need_a_terminal_of_its_own() {
         let scratch = Scratch::new("no-tty");
