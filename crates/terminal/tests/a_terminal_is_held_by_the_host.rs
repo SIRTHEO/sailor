@@ -27,16 +27,30 @@ fn host_in(directory: &Path) -> Client {
     .with_mailroom(inbox::mailroom(directory));
     let host = Arc::new(Host::new(terminals));
     let address = host::address_in(directory);
+    // **WHAT THE HOST SAID IS KEPT, NOT DROPPED.** Discarded, a perimeter that
+    // refuses the socket reads exactly like a host that answers wrongly.
+    let complaint: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let heard = Arc::clone(&complaint);
     std::thread::spawn(move || {
-        let _ = host::serve(host, &address);
+        if let Err(why) = host::serve(host, &address) {
+            *heard.lock().expect("nobody poisons this") = Some(why.to_string());
+        }
     });
     let client = Client::in_store(directory);
     let deadline = Instant::now() + PATIENCE;
     while client.hello().is_err() {
-        assert!(Instant::now() < deadline, "the host never answered");
+        assert!(Instant::now() < deadline, "{}", why_it_never_answered(&complaint));
         std::thread::sleep(Duration::from_millis(20));
     }
     client
+}
+
+/// Why no host came, in its own words where it left any.
+fn why_it_never_answered(complaint: &Arc<Mutex<Option<String>>>) -> String {
+    match complaint.lock().expect("nobody poisons this").as_deref() {
+        Some(said) => format!("the host could not start, and said so: {said}"),
+        None => "the host never answered, and left no word of why".to_owned(),
+    }
 }
 
 /// `/bin/sh` and not the person's shell: a configured shell prints banners

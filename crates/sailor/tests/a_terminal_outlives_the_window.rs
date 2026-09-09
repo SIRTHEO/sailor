@@ -37,21 +37,49 @@ impl Drop for Host {
 
 /// The real host, in a process of its own, keeping its files under `store`.
 fn host_under(store: &Path) -> (Host, Client) {
-    let child = Command::new(env!("CARGO_BIN_EXE_sailor"))
+    // **STDERR IS KEPT, NOT SENT TO THE NULL DEVICE.** Thrown away, a perimeter
+    // that refuses the host's socket reads as a host that answers wrongly.
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sailor"))
         .args(["terminal", "host", "--store"])
         .arg(store)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .expect("start sailor terminal host");
     let client = Client::in_store(store);
     let deadline = Instant::now() + PATIENCE;
     while client.hello().is_err() {
-        assert!(Instant::now() < deadline, "the host never answered");
+        if Instant::now() >= deadline {
+            let said = complaint_of(&mut child);
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("{said}");
+        }
         std::thread::sleep(Duration::from_millis(20));
     }
     (Host(child), client)
+}
+
+/// What the host complained of, read with a deadline of its own: a process
+/// that died wrote its reason and closed, one still alive writes nothing and
+/// must not hold the test here.
+fn complaint_of(child: &mut Child) -> String {
+    let Some(mut stderr) = child.stderr.take() else {
+        return "the host never answered, and left no word of why".to_owned();
+    };
+    let (sent, heard) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut buffer = [0u8; 8192];
+        let read = std::io::Read::read(&mut stderr, &mut buffer).unwrap_or(0);
+        let _ = sent.send(String::from_utf8_lossy(&buffer[..read]).into_owned());
+    });
+    match heard.recv_timeout(Duration::from_millis(500)) {
+        Ok(said) if !said.trim().is_empty() => {
+            format!("the host could not start, and said so: {}", said.trim())
+        }
+        _ => "the host never answered, and left no word of why".to_owned(),
+    }
 }
 
 fn backlog_text(client: &Client, id: &str) -> String {
