@@ -36,6 +36,7 @@ use cost::cost_of;
 use create_and_delete::{delete_flow, new_flow};
 use edit::edit_flow;
 use relocate::relocate_flow;
+pub(crate) use run_and_resume::record_run;
 use run_and_resume::{resume_run, run_flow};
 
 pub use run_and_resume::{resume_run_in, resume_run_with};

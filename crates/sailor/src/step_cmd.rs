@@ -1,9 +1,9 @@
 //! `sailor step`: taking on and closing a step a flow handed to an agent that is
 //! already alive.
 //!
-//! **TWO COMMANDS AND NOT ONE, BECAUSE THEY DO TWO DIFFERENT THINGS.** `open`
-//! declares someone takes the work; `close` declares how it went. In between is
-//! the real work, which Sailor does not run and must not: that is the handoff.
+//! **FOUR VERBS.** `open` takes the work on and `close` says how it went; the
+//! work in between is not Sailor's to run. `approve` and `reject` are a
+//! person's verdict in one gesture, and a rejection stops the run.
 //!
 //! **THE FIRST WEAKNESS, DECLARED RATHER THAN HIDDEN: `--as <who>` IS A NAME
 //! CHOSEN BY WHOEVER WRITES IT.** The refusal below applies «the author does not
@@ -37,6 +37,8 @@ fn dispatch(args: &[String]) -> Result<String, String> {
     match args.first().map(String::as_str) {
         Some("open") => open_step(&flags(&args[1..])?),
         Some("close") => close_step(&flags(&args[1..])?),
+        Some("approve") => decide_step(&flags(&args[1..])?, Verdict::Approved),
+        Some("reject") => decide_step(&flags(&args[1..])?, Verdict::Rejected),
         _ => Err(usage()),
     }
 }
@@ -50,6 +52,14 @@ pub const USAGE: &[Form] = &[
     Form {
         form: "sailor step close --run <run> --step <step> --as <who> --outcome <went|broke> [--output-file <file>] [--turns <n>] [--said <text>]",
         says_key: "",
+    },
+    Form {
+        form: "sailor step approve --run <run> --step <step> --as <who> [--why <text>] [--output-file <file>] [--turns <n>]",
+        says_key: "cli.step.form.approve",
+    },
+    Form {
+        form: "sailor step reject --run <run> --step <step> --as <who> --why <text>",
+        says_key: "cli.step.form.reject",
     },
 ];
 
@@ -300,10 +310,36 @@ pub fn close_step_in(
     flow: &FlowFile,
     found: &BTreeMap<String, String>,
 ) -> Result<String, String> {
+    let closing = Closing {
+        outcome: declared_outcome(found)?,
+        verdict: None,
+        why: None,
+    };
+    close_in(ledger, flow, found, closing)
+}
+
+/// How a step is being closed: the outcome the store keeps, and the verdict a
+/// person declared when the close is one of theirs.
+///
+/// `close` and the two decisions share every refusal — the author who would
+/// judge, the process still holding the step, the output the schema rejects —
+/// and a second copy of that body would let one of the three drift silently.
+struct Closing<'a> {
+    outcome: Outcome,
+    verdict: Option<Verdict>,
+    why: Option<&'a str>,
+}
+
+fn close_in(
+    ledger: &Ledger,
+    flow: &FlowFile,
+    found: &BTreeMap<String, String>,
+    closing: Closing<'_>,
+) -> Result<String, String> {
     let run_id = required(found, "run")?;
     let step_id = required(found, "step")?;
     let holder = required(found, "as")?;
-    let outcome = declared_outcome(found)?;
+    let outcome = closing.outcome;
 
     let records = ledger.steps(run_id).map_err(|error| {
         catalogue::say(
@@ -407,9 +443,17 @@ pub fn close_step_in(
             Completion {
                 outcome,
                 output,
-                said: found.get("said").cloned(),
-                failure_class: match outcome {
-                    Outcome::Broke => Some("handed_back".to_owned()),
+                said: closing
+                    .why
+                    .map(str::to_owned)
+                    .or_else(|| found.get("said").cloned()),
+                failure_class: match (outcome, closing.verdict) {
+                    // A rejected step did not break: somebody read it and
+                    // refused it, and the two are counted apart.
+                    (Outcome::Broke, Some(Verdict::Rejected)) => {
+                        Some(REJECTED_BY_A_PERSON.to_owned())
+                    }
+                    (Outcome::Broke, _) => Some("handed_back".to_owned()),
                     _ => None,
                 },
                 refusal: None,
@@ -427,12 +471,28 @@ pub fn close_step_in(
         })?;
 
     // Who closed it stays written: `open` rereads it on the step depending on
-    // this one, to refuse a judge who is also the author.
+    // this one, to refuse a judge who is also the author. **The decision goes in
+    // the same entry**, never a second one: two rows about one gesture come
+    // apart, and the reader has no way to tell which of them lied.
+    let mut written = serde_json::Map::new();
+    written.insert(
+        "outcome".to_owned(),
+        Value::String(format!("{outcome:?}").to_lowercase()),
+    );
+    if let Some(verdict) = closing.verdict {
+        written.insert(
+            "decision".to_owned(),
+            Value::String(verdict.as_text().to_owned()),
+        );
+    }
+    if let Some(why) = closing.why {
+        written.insert("why".to_owned(), Value::String(why.to_owned()));
+    }
     ledger
         .put_record(&StoreRecord {
             collection: HOLDER_COLLECTION.to_owned(),
             key: holder_key(run_id, step_id),
-            value: serde_json::json!({"outcome": format!("{outcome:?}").to_lowercase()}),
+            value: Value::Object(written),
             written_by: holder.to_owned(),
             written_at: now,
         })
@@ -443,23 +503,26 @@ pub fn close_step_in(
             )
         })?;
 
-    let mut report = catalogue::say(
-        "cli.step.closed",
-        &[
-            ("step_id", step_id),
-            ("holder", holder),
-            (
-                "outcome",
-                &catalogue::say(
-                    match outcome {
-                        Outcome::Went => "cli.step.outcome.went",
-                        _ => "cli.step.outcome.broke",
-                    },
-                    &[],
+    let mut report = match closing.verdict {
+        Some(verdict) => the_decision_read_back(verdict, run_id, step_id, holder, closing.why),
+        None => catalogue::say(
+            "cli.step.closed",
+            &[
+                ("step_id", step_id),
+                ("holder", holder),
+                (
+                    "outcome",
+                    &catalogue::say(
+                        match outcome {
+                            Outcome::Went => "cli.step.outcome.went",
+                            _ => "cli.step.outcome.broke",
+                        },
+                        &[],
+                    ),
                 ),
-            ),
-        ],
-    );
+            ],
+        ),
+    };
 
     if let Some(turns) = found.get("turns") {
         let turns: u64 = turns
@@ -474,6 +537,19 @@ pub fn close_step_in(
                 &[("turns", &turns.to_string())]
             )
         );
+    }
+
+    // A rejection is the end of the run, so there is nothing to say about what
+    // comes next: what it owes the reader is that nothing does, and why.
+    if closing.verdict == Some(Verdict::Rejected) {
+        let why = closing.why.unwrap_or_default();
+        stop_the_run(ledger, flow, run_id, step_id, holder, why, now)?;
+        let _ = write!(
+            report,
+            "\n{}",
+            catalogue::say("cli.step.run_stopped_by_the_rejection", &[])
+        );
+        return Ok(report);
     }
 
     // **WHAT IS READY NOW, AND THE LINE TO RESUME.** Whoever closes a step by
@@ -611,6 +687,192 @@ fn write_self_declared_turns(
                 &[("error", &error.to_string())],
             )
         })
+}
+
+// ── deciding ─────────────────────────────────────────────────────────────
+
+/// The failure class a rejected step carries, apart from the one a step that
+/// was simply handed back gets.
+const REJECTED_BY_A_PERSON: &str = "rejected_by_a_person";
+
+/// What a person declared about a step that was waiting for them.
+///
+/// **NOT A SECOND SPELLING OF `--outcome`.** `close --outcome went` says the
+/// work was done; `approve` says somebody looked at it and let it through, and
+/// the store keeps the two apart — an approval nobody can tell from a close is
+/// indistinguishable from a step nobody read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Verdict {
+    Approved,
+    Rejected,
+}
+
+impl Verdict {
+    /// The outcome the store keeps for this verdict.
+    ///
+    /// A rejection is `Broke` and not `Stopped`: `Stopped` is the engine's word
+    /// for a step the store holds still, and a person declaring it would leave
+    /// the run in a state no resume knows how to unblock. What says the run
+    /// ended by a person's hand is the halt request, not the step's outcome.
+    fn outcome(self) -> Outcome {
+        match self {
+            Self::Approved => Outcome::Went,
+            Self::Rejected => Outcome::Broke,
+        }
+    }
+
+    /// The word the store keeps beside who wrote it.
+    fn as_text(self) -> &'static str {
+        match self {
+            Self::Approved => "approved",
+            Self::Rejected => "rejected",
+        }
+    }
+}
+
+/// Approves or rejects a step that is waiting for a person.
+fn decide_step(found: &BTreeMap<String, String>, verdict: Verdict) -> Result<String, String> {
+    // The reason is demanded **before** the store is opened, like the outcome
+    // of `close`: a line that cannot be honoured must not cost an open file.
+    let _ = reason_for(found, verdict)?;
+    let ledger = open_ledger()?;
+    let run_id = required(found, "run")?;
+    let flow = flow_of_run(&ledger, run_id)?;
+    decide_step_in(&ledger, &flow, found, verdict)
+}
+
+/// Why the decision went that way. **A REJECTION HAS TO SAY IT**: read back a
+/// week later, a refusal with no reason is a step nobody can act on and a run
+/// nobody can restart in good conscience.
+fn reason_for(found: &BTreeMap<String, String>, verdict: Verdict) -> Result<Option<&str>, String> {
+    let given = found
+        .get("why")
+        .map(String::as_str)
+        .filter(|why| !why.trim().is_empty());
+    match (verdict, given) {
+        (Verdict::Rejected, None) => Err(catalogue::say("cli.step.rejection_wants_a_reason", &[])),
+        (_, given) => Ok(given),
+    }
+}
+
+/// The body of a decision, with the store and the flow declared, not derived.
+///
+/// **TAKING IT ON IS PART OF DECIDING.** A step still waiting is opened here
+/// through `open_step_in`, so a decision is one gesture and not two — and every
+/// refusal that gesture carries, the author who would judge above all, is the
+/// same code and not a copy of it.
+pub fn decide_step_in(
+    ledger: &Ledger,
+    flow: &FlowFile,
+    found: &BTreeMap<String, String>,
+    verdict: Verdict,
+) -> Result<String, String> {
+    let why = reason_for(found, verdict)?;
+    let run_id = required(found, "run")?;
+    let step_id = required(found, "step")?;
+    let records = ledger.steps(run_id).map_err(|error| {
+        catalogue::say(
+            "cli.step.cannot_read_run",
+            &[("run_id", run_id), ("error", &error.to_string())],
+        )
+    })?;
+    if last_attempt(&records, step_id)
+        .is_some_and(|latest| latest.outcome == Some(Outcome::Waiting))
+    {
+        open_step_in(ledger, found)?;
+    }
+    close_in(
+        ledger,
+        flow,
+        found,
+        Closing {
+            outcome: verdict.outcome(),
+            verdict: Some(verdict),
+            why,
+        },
+    )
+}
+
+/// The decision as whoever typed it reads it back.
+fn the_decision_read_back(
+    verdict: Verdict,
+    run_id: &str,
+    step_id: &str,
+    holder: &str,
+    why: Option<&str>,
+) -> String {
+    match verdict {
+        Verdict::Rejected => catalogue::say(
+            "cli.step.rejected",
+            &[
+                ("step_id", step_id),
+                ("holder", holder),
+                ("run_id", run_id),
+                ("why", why.unwrap_or_default()),
+            ],
+        ),
+        Verdict::Approved => {
+            let mut said = catalogue::say(
+                "cli.step.approved",
+                &[("step_id", step_id), ("holder", holder), ("run_id", run_id)],
+            );
+            if let Some(why) = why {
+                let _ = write!(
+                    said,
+                    "\n{}",
+                    catalogue::say("cli.step.approved_because", &[("why", why)])
+                );
+            }
+            said
+        }
+    }
+}
+
+/// Closes the run a rejection ended: a request the engine reads, and a header
+/// a person reads without running anything.
+///
+/// **BOTH, AND NEITHER ALONE.** With the request only the run reads `waiting`,
+/// still out for a decision that was made; with the header only, the next
+/// resume opens the fronts the rejection meant to stop.
+fn stop_the_run(
+    ledger: &Ledger,
+    flow: &FlowFile,
+    run_id: &str,
+    step_id: &str,
+    holder: &str,
+    why: &str,
+    now: i64,
+) -> Result<(), String> {
+    ledger
+        .request_halt(run_id, why, holder, now)
+        .map_err(|error| {
+            catalogue::say(
+                "cli.step.cannot_ask_the_run_to_stop",
+                &[("run_id", run_id), ("error", &error.to_string())],
+            )
+        })?;
+    let header = ledger
+        .run_header(run_id)
+        .map_err(|error| {
+            catalogue::say(
+                "cli.step.cannot_read_run",
+                &[("run_id", run_id), ("error", &error.to_string())],
+            )
+        })?
+        .ok_or_else(|| catalogue::say("cli.step.no_such_run", &[("run_id", run_id)]))?;
+    crate::flow_cmd::record_run(
+        ledger,
+        flow,
+        run_id,
+        "stopped",
+        header.started_at,
+        Some(now),
+        Some(catalogue::say(
+            "cli.step.run_rejected_by",
+            &[("holder", holder), ("step_id", step_id), ("why", why)],
+        )),
+        Some(flow::StopReason::ByHand),
+    )
 }
 
 // ── the common tools ─────────────────────────────────────────────────────
@@ -1367,5 +1629,313 @@ mod tests {
         assert!(next.contains("raccogli-il-mandato"), "{next}");
         assert!(next.contains("30 s"), "{next}");
         assert!(next.contains("sailor flow resume run-1"), "{next}");
+    }
+
+    /// What the store kept about who decided a step, if anybody did.
+    fn what_was_decided(ledger: &Ledger, step_id: &str) -> Value {
+        ledger
+            .read_record(HOLDER_COLLECTION, &holder_key("run-1", step_id))
+            .expect("the store answers")
+            .expect("somebody closed the step")
+            .value
+    }
+
+    fn last_record(ledger: &Ledger, step_id: &str) -> StepRecord {
+        let records = ledger.steps("run-1").expect("reading the steps back");
+        last_attempt(&records, step_id)
+            .expect("the step has an attempt")
+            .clone()
+    }
+
+    /// **A DECISION IS ONE GESTURE.** A step still waiting is taken on and let
+    /// through in the same command: asking a person to `open` before they may
+    /// approve is ceremony, and the taking-on is implied by the deciding.
+    #[test]
+    fn approving_a_waiting_step_takes_it_on_and_lets_it_through() {
+        let directory = TestDirectory::new("approva");
+        let ledger = a_handed_run(&directory, "verdetto", vec![]);
+
+        let report = decide_step_in(
+            &ledger,
+            &a_flow(),
+            &options(&[
+                ("run", "run-1"),
+                ("step", "verdetto"),
+                ("as", "chi-giudica"),
+                ("why", "the output matches what was asked for"),
+            ]),
+            Verdict::Approved,
+        )
+        .expect("the step is approved");
+
+        assert!(report.contains("chi-giudica"), "{report}");
+        assert!(
+            report.contains("the output matches what was asked for"),
+            "an approval says why when a reason was given: {report}"
+        );
+        let closed = last_record(&ledger, "verdetto");
+        assert_eq!(closed.outcome, Some(Outcome::Went));
+        assert_eq!(
+            closed.attempt, 2,
+            "the waiting attempt was taken on, not overwritten"
+        );
+    }
+
+    /// **AN APPROVAL THAT LEAVES NO TRACE IS A STEP NOBODY READ.** Who, when,
+    /// what — and the reason when one was given — go into the same entry the
+    /// close already writes.
+    #[test]
+    fn an_approval_is_told_apart_from_a_close_that_says_nothing() {
+        let directory = TestDirectory::new("traccia");
+        let ledger = a_handed_run(&directory, "verdetto", vec![]);
+        decide_step_in(
+            &ledger,
+            &a_flow(),
+            &options(&[
+                ("run", "run-1"),
+                ("step", "verdetto"),
+                ("as", "chi-giudica"),
+                ("why", "measured on the tree, not declared"),
+            ]),
+            Verdict::Approved,
+        )
+        .expect("the step is approved");
+
+        let decided = what_was_decided(&ledger, "verdetto");
+        assert_eq!(
+            decided.get("decision").and_then(Value::as_str),
+            Some("approved")
+        );
+        assert_eq!(
+            decided.get("why").and_then(Value::as_str),
+            Some("measured on the tree, not declared")
+        );
+        let written = ledger
+            .read_record(HOLDER_COLLECTION, &holder_key("run-1", "verdetto"))
+            .expect("the store answers")
+            .expect("somebody closed the step");
+        assert_eq!(written.written_by, "chi-giudica", "who decided it");
+        assert!(written.written_at > 0, "when they decided it");
+    }
+
+    /// The control that makes the one above mean something: a plain close says
+    /// nothing about a decision, so an approval is not a rename of it.
+    #[test]
+    fn a_plain_close_declares_no_decision() {
+        let directory = TestDirectory::new("chiusura-semplice");
+        let ledger = a_handed_run(&directory, "verdetto", vec![]);
+        open_step_in(
+            &ledger,
+            &options(&[
+                ("run", "run-1"),
+                ("step", "verdetto"),
+                ("as", "chi-giudica"),
+            ]),
+        )
+        .expect("the step is taken on");
+        close_step_in(
+            &ledger,
+            &a_flow(),
+            &options(&[
+                ("run", "run-1"),
+                ("step", "verdetto"),
+                ("as", "chi-giudica"),
+                ("outcome", "went"),
+            ]),
+        )
+        .expect("the step is closed");
+
+        assert_eq!(
+            what_was_decided(&ledger, "verdetto").get("decision"),
+            None,
+            "a close is not a verdict, and the store must not read as if it were"
+        );
+    }
+
+    /// **A REFUSAL WITH NO REASON CANNOT BE READ BACK**, and it is refused
+    /// before anything is written: a half-rejected step would be worse than
+    /// none.
+    #[test]
+    fn a_rejection_with_no_reason_is_refused_and_writes_nothing() {
+        let directory = TestDirectory::new("rifiuto-muto");
+        let ledger = a_handed_run(&directory, "verdetto", vec![]);
+        let error = decide_step_in(
+            &ledger,
+            &a_flow(),
+            &options(&[
+                ("run", "run-1"),
+                ("step", "verdetto"),
+                ("as", "chi-giudica"),
+                ("why", "   "),
+            ]),
+            Verdict::Rejected,
+        )
+        .expect_err("a rejection with no reason does not go through");
+        assert!(error.contains("--why"), "{error}");
+        assert_eq!(
+            last_record(&ledger, "verdetto").outcome,
+            Some(Outcome::Waiting),
+            "the step is still waiting: nothing was written"
+        );
+    }
+
+    /// Who decided, when, what, and why: the four a rejection owes whoever
+    /// reads the run afterwards.
+    #[test]
+    fn a_rejection_writes_who_decided_what_and_why() {
+        let directory = TestDirectory::new("rifiuto");
+        let ledger = a_handed_run(&directory, "verdetto", vec![]);
+        decide_step_in(
+            &ledger,
+            &a_flow(),
+            &options(&[
+                ("run", "run-1"),
+                ("step", "verdetto"),
+                ("as", "chi-giudica"),
+                (
+                    "why",
+                    "the brief asked for a measurement and got an opinion",
+                ),
+            ]),
+            Verdict::Rejected,
+        )
+        .expect("the step is rejected");
+
+        let decided = what_was_decided(&ledger, "verdetto");
+        assert_eq!(
+            decided.get("decision").and_then(Value::as_str),
+            Some("rejected")
+        );
+        assert_eq!(
+            decided.get("why").and_then(Value::as_str),
+            Some("the brief asked for a measurement and got an opinion")
+        );
+        let closed = last_record(&ledger, "verdetto");
+        assert_eq!(closed.outcome, Some(Outcome::Broke));
+        assert_eq!(
+            closed.failure_class.as_deref(),
+            Some(REJECTED_BY_A_PERSON),
+            "a rejected step is counted apart from one that was handed back"
+        );
+        assert_eq!(
+            closed.said.as_deref(),
+            Some("the brief asked for a measurement and got an opinion"),
+            "the reason is on the step as well, where whoever reads the run finds it"
+        );
+    }
+
+    /// **A REJECTION CLOSES THE RUN, IT DOES NOT LEAVE IT HANGING.** The
+    /// request stops the next resume from opening a front; the header says so
+    /// to whoever only looks.
+    #[test]
+    fn a_rejection_stops_the_run_and_the_run_says_why() {
+        let directory = TestDirectory::new("rifiuto-ferma");
+        let ledger = a_handed_run(&directory, "verdetto", vec![]);
+        decide_step_in(
+            &ledger,
+            &a_flow(),
+            &options(&[
+                ("run", "run-1"),
+                ("step", "verdetto"),
+                ("as", "chi-giudica"),
+                ("why", "it names a machine that is not the reader's"),
+            ]),
+            Verdict::Rejected,
+        )
+        .expect("the step is rejected");
+
+        assert_eq!(
+            ledger
+                .why_the_halt_was_asked("run-1")
+                .expect("the store answers"),
+            Some((
+                "chi-giudica".to_owned(),
+                "it names a machine that is not the reader's".to_owned()
+            ))
+        );
+        let header = ledger
+            .run_header("run-1")
+            .expect("the store answers")
+            .expect("the run has a header");
+        assert_eq!(header.status, "stopped");
+        assert_eq!(header.stop_reason.as_deref(), Some("by_hand"));
+        assert_eq!(
+            header.started_at, 100,
+            "the run started when it started: a rejection is not a new beginning"
+        );
+        let error = header.error.unwrap_or_default();
+        assert!(error.contains("chi-giudica"), "{error}");
+        assert!(
+            error.contains("it names a machine that is not the reader's"),
+            "{error}"
+        );
+    }
+
+    /// The control for the one above: an approval leaves the run open, so
+    /// "stopped" is the rejection's doing and not something every decision does.
+    #[test]
+    fn an_approval_leaves_the_run_where_it_was() {
+        let directory = TestDirectory::new("approva-non-ferma");
+        let ledger = a_handed_run(&directory, "verdetto", vec![]);
+        decide_step_in(
+            &ledger,
+            &a_flow(),
+            &options(&[
+                ("run", "run-1"),
+                ("step", "verdetto"),
+                ("as", "chi-giudica"),
+            ]),
+            Verdict::Approved,
+        )
+        .expect("the step is approved");
+
+        assert_eq!(
+            ledger.halt_request("run-1").expect("the store answers"),
+            None,
+            "an approval asks nothing to stop"
+        );
+        let header = ledger
+            .run_header("run-1")
+            .expect("the store answers")
+            .expect("the run has a header");
+        assert_eq!(header.status, "waiting", "the header was not rewritten");
+    }
+
+    /// **THE AUTHOR DOES NOT JUDGE, AND DECIDING IS JUDGING.** The refusal is
+    /// not re-implemented here: it is the one `open` already applies, reached
+    /// because a decision takes the step on.
+    #[test]
+    fn the_author_of_the_work_cannot_approve_it() {
+        let directory = TestDirectory::new("autore-approva");
+        let ledger = a_handed_run(&directory, "implementa", vec![]);
+        let produced = directory.0.join("uscita.json");
+        std::fs::write(&produced, r#"{"verdict": "done"}"#).expect("writing the output");
+        decide_step_in(
+            &ledger,
+            &a_flow(),
+            &options(&[
+                ("run", "run-1"),
+                ("step", "implementa"),
+                ("as", "chi-lavora"),
+                ("output-file", &produced.display().to_string()),
+            ]),
+            Verdict::Approved,
+        )
+        .expect("the work is closed by whoever did it");
+        hand_over(&ledger, "verdetto", vec!["implementa".to_owned()]);
+
+        let error = decide_step_in(
+            &ledger,
+            &a_flow(),
+            &options(&[
+                ("run", "run-1"),
+                ("step", "verdetto"),
+                ("as", "chi-lavora"),
+                ("why", "looks fine to me"),
+            ]),
+            Verdict::Approved,
+        )
+        .expect_err("whoever wrote the work does not approve it");
+        assert!(error.contains("implementa"), "{error}");
     }
 }
