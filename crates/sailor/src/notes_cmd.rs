@@ -267,8 +267,26 @@ fn remove(ledger: &Ledger, loose: &[String]) -> Result<Written, String> {
 
 /// The note under a slug, or the refusal that names the slug nobody wrote.
 fn held(ledger: &Ledger, slug: &str) -> Result<Note, String> {
-    notes::read(ledger, tree_here().as_deref(), slug)
+    let tree = tree_here();
+    let note = notes::read(ledger, tree.as_deref(), slug)
         .map_err(|error| error.to_string())?
         .filter(Note::kept)
-        .ok_or_else(|| catalogue::say("cli.notes.no_such_note", &[("slug", slug)]))
+        .ok_or_else(|| catalogue::say("cli.notes.no_such_note", &[("slug", slug)]))?;
+    if let Some((key, at)) = notes::newer_elsewhere(ledger, tree.as_deref(), slug)
+        .map_err(|error| error.to_string())?
+    {
+        eprintln!(
+            "sailor notes: {}",
+            catalogue::say(
+                "cli.notes.newer_elsewhere",
+                &[
+                    ("slug", slug),
+                    ("key", &key),
+                    ("at", &notes::instant(at)),
+                    ("mine", &notes::instant(note.imported_at)),
+                ],
+            )
+        );
+    }
+    Ok(note)
 }

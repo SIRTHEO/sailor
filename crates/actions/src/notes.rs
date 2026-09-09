@@ -134,6 +134,36 @@ pub fn read(ledger: &Ledger, tree: Option<&str>, slug: &str) -> Result<Option<No
 }
 
 /// The address a note actually answers from, which may be the legacy one.
+/// The same slug held under the other address — the home's when the tree's
+/// answers, the tree's otherwise — when that body was imported later than the
+/// one [`read`] returns. `None` when there is no such body, or it is older.
+pub fn newer_elsewhere(
+    ledger: &Ledger,
+    tree: Option<&str>,
+    slug: &str,
+) -> Result<Option<(String, i64)>, LedgerError> {
+    let scoped = note_key(tree, slug);
+    if scoped == slug {
+        return Ok(None);
+    }
+    let (answering, other) = if ledger.read_record(NOTES_COLLECTION, &scoped)?.is_some() {
+        (scoped, slug.to_owned())
+    } else {
+        (slug.to_owned(), scoped)
+    };
+    let at = |key: &str| -> Result<Option<i64>, LedgerError> {
+        Ok(ledger
+            .read_record(NOTES_COLLECTION, key)?
+            .and_then(|record| serde_json::from_value::<Note>(record.value).ok())
+            .filter(Note::kept)
+            .map(|note| note.imported_at))
+    };
+    Ok(match (at(&answering)?, at(&other)?) {
+        (Some(mine), Some(theirs)) if theirs > mine => Some((other, theirs)),
+        _ => None,
+    })
+}
+
 fn key_that_answers(ledger: &Ledger, tree: Option<&str>, slug: &str) -> Result<String, LedgerError> {
     let scoped = note_key(tree, slug);
     if ledger.read_record(NOTES_COLLECTION, &scoped)?.is_some() {
@@ -241,6 +271,31 @@ mod tests {
 
     /// **THE BARE SLUG IS THE MIGRATION**: older notes must stay reachable, or
     /// they vanish from every tree at once and nobody is told.
+    /// The tree's copy answers, and a newer body under the home's key is
+    /// named rather than hidden: the first instruction of every session read
+    /// «da-fare» in this tree for a day while a newer one sat beside it.
+    #[test]
+    fn a_newer_body_of_the_same_slug_under_the_other_address_is_named() {
+        let dir = scratch("newer-elsewhere");
+        let ledger = Ledger::open(&dir).expect("a ledger");
+        let mut here = note("da-fare", "the tree's copy", 100);
+        here.tree = Some("/a-tree".to_owned());
+        import(&ledger, here).expect("the tree's copy");
+        import(&ledger, note("da-fare", "the home's, newer", 200)).expect("the home's");
+
+        let named = newer_elsewhere(&ledger, Some("/a-tree"), "da-fare").expect("read");
+        assert_eq!(named, Some(("da-fare".to_owned(), 200)));
+        assert_eq!(
+            read(&ledger, Some("/a-tree"), "da-fare").expect("read").map(|note| note.text),
+            Some("the tree's copy".to_owned()),
+            "what answers does not change: the tree's copy still answers"
+        );
+
+        import(&ledger, note("da-fare", "the home's, older", 50)).expect("an older home copy");
+        assert_eq!(newer_elsewhere(&ledger, Some("/a-tree"), "da-fare").expect("read"), None);
+        assert_eq!(newer_elsewhere(&ledger, None, "da-fare").expect("read"), None);
+    }
+
     #[test]
     fn a_note_written_before_the_tree_entered_the_address_is_still_found() {
         let dir = scratch("legacy");

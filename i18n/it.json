@@ -835,6 +835,7 @@
   "cli.notes.written": "l'appunto «{slug}» è scritto in {file}: {bytes} byte, il file com'era entrato",
   "cli.notes.removed": "l'appunto «{slug}» è fuori; quello che risponde il deposito non porta più il suo testo",
   "cli.notes.no_such_note": "nessun appunto è tenuto sotto «{slug}»; «sailor notes list» dice quali ci sono",
+  "cli.notes.newer_elsewhere": "«{slug}» è tenuta anche sotto «{key}», importata il {at}, dopo questo corpo del {mine}: stai leggendo la più vecchia delle due",
   "cli.notes.no_slug": "{file}: dal suo nome non esce nessuno slug, e un appunto senza indirizzo lo trova solo chi sa già dov'è",
   "cli.notes.not_text": "{file}: questo non è testo che un appunto possa tenere, quindi non è entrato niente invece di entrare qualcosa di sbagliato",
   "cli.notes.usage_import": "uso: sailor notes import <file.md>",
