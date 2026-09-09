@@ -14,7 +14,9 @@ it **writes down what actually happened** — so a run can be reviewed, compared
 and repeated instead of recounted.
 
 > **Status: under construction, and used every day by the people writing it.**
-> Interfaces change. What is here works and is tested; what is missing is
+> Interfaces change. Tests cover individual contracts; a completed flow does
+> not by itself prove that its result meets the user's acceptance criteria.
+> Known defects are
 > written down in `docs/faults-encountered.md`, open defects included. What
 > would make it *finished* is written down too, as a termination condition
 > Sailor keeps in its own store: `sailor search termination condition` finds it.
@@ -34,6 +36,28 @@ how much of their window is left; a flow that splits a mandate across two
 engines and has a third judge them; a ledger row for every call, with tokens,
 cost, identity and the kind of work; and a desktop window that shows all of it
 and opens terminals that know which engine runs in them.
+
+Quota and cost coverage depend on each engine's descriptor and the data it
+returns. Missing measurements remain unknown. A spending threshold is a
+guaranteed ceiling only when the engine can enforce the bound on each call.
+The local rewrite flow needs a configured local runner and hands back a
+proposal for verification; it does not apply the proposal automatically.
+
+## What completion means
+
+A completed flow has finished according to its graph. That may mean it read
+the machine, produced a proposal, or accepted an engine's structured answer.
+It does not establish that a code change works. A task needs an executable
+acceptance check of its actual result whose failure blocks completion.
+The executor's `decides_done` flag permits early success when a check passes;
+it does not require that check to pass before ordinary graph completion.
+The shipped flows do not currently declare it.
+
+Project rules can be delivered to an agent, but delivery does not enforce
+filesystem or network restrictions. Process-boundary enforcement remains
+unfinished. A handed step also uses a declared holder name, not an
+authenticated identity. These limits matter before entrusting a flow with
+unattended work.
 
 ## What it does, concretely
 
@@ -138,7 +162,7 @@ icon in the Dock.
 
 ## How it is built
 
-Nineteen Rust crates in one workspace, with the boundaries placed where the
+Rust crates in one workspace, with the boundaries placed where the
 responsibilities divide rather than where it was convenient:
 
 | | |
@@ -151,6 +175,7 @@ responsibilities divide rather than where it was convenient:
 | `profiles` | the credential homes, one per command line |
 | `registry` · `trigger` · `release` | the action registry, triggers, releases |
 | `inventory` · `sessions` · `supervisor` · `terminal` | the machine: what exists, what runs, what is live |
+| `machine` | resource ownership and reclamation |
 | `workspace` · `relay` | the tree being worked in, and handing a live agent the baton |
 | `catalogue` · `faults` | the sentences a person reads, and the fault ledger |
 | `ui` · `sailor` | the shared view and the command line |
