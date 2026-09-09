@@ -427,6 +427,14 @@ fn reads_args(answer: &str, carried: Value) -> Value {
     ])
 }
 
+/// A fake command line in place of the engine's own. The model goes with it: a
+/// line written by hand already says which model to ask for, and a step
+/// declaring both is refused.
+fn answering_with(with: &mut Value, args: Value) {
+    with.as_object_mut().expect("the step carries a map of values").remove("model");
+    with["args"] = args;
+}
+
 /// Replaces the arguments of the steps that call an engine, leaving all the rest
 /// of the file as it is: the references, the demanded shapes, the schemas, the
 /// edges and the trigger are the ones that will run.
@@ -448,15 +456,16 @@ fn chain_with(verdict: &str, engine_a_args: Option<Value>) -> Graph {
             continue;
         };
         match step.id.as_str() {
-            "dispatch" => with["args"] = reads_stdin(&dispatched),
-            "engine_a" => {
-                with["args"] = engine_a_args.clone().unwrap_or_else(|| reads_stdin(&found))
-            }
+            "dispatch" => answering_with(with, reads_stdin(&dispatched)),
+            "engine_a" => answering_with(
+                with,
+                engine_a_args.clone().unwrap_or_else(|| reads_stdin(&found)),
+            ),
             "engine_b" => {
-                let carried = with["args"][3].clone();
-                with["args"] = reads_args(&found, carried);
+                let carried = with["stdin"].clone();
+                answering_with(with, reads_args(&found, carried));
             }
-            "verify" => with["args"] = reads_stdin(&judged),
+            "verify" => answering_with(with, reads_stdin(&judged)),
             _ => {}
         }
     }
@@ -480,8 +489,8 @@ fn a_dispatch_without_a_why_per_choice_fails_the_shape() {
         let mut steps: Vec<Step> = flow.graph.steps().to_vec();
         for step in &mut steps {
             if step.id == "dispatch" {
-                step.with.as_mut().expect("the step carries its values")["args"] =
-                    reads_stdin(&answer.to_string());
+                let with = step.with.as_mut().expect("the step carries its values");
+                answering_with(with, reads_stdin(&answer.to_string()));
             }
         }
         let graph = Graph::new(steps).expect("the graph stays valid");
@@ -798,7 +807,7 @@ fn the_declared_reference_puts_the_dispatch_answer_on_the_engines_input() {
     engine.deps.clear();
     let answer = json!({"findings": [], "total": 0}).to_string();
     let with = engine.with.as_mut().expect("il passo porta i suoi valori");
-    with["args"] = reads_stdin(&answer);
+    answering_with(with, reads_stdin(&answer));
     let mut input = with.clone();
     input["status"] = json!("ok");
     input["answer"] = json!({

@@ -4,22 +4,22 @@
     "consolidate-memories": {
       "tokens_a_run": 0,
       "runs_measured": 0,
-      "words_it_sends": 3916
+      "words_it_sends": 4002
     },
     "consult-a-strong-model": {
       "tokens_a_run": 0,
       "runs_measured": 0,
-      "words_it_sends": 1169
+      "words_it_sends": 1199
     },
     "dispatch-the-work": {
       "tokens_a_run": 130894,
       "runs_measured": 4,
-      "words_it_sends": 3878
+      "words_it_sends": 3951
     },
     "draft-a-flow": {
       "tokens_a_run": 105816,
       "runs_measured": 4,
-      "words_it_sends": 9130
+      "words_it_sends": 9212
     },
     "find-the-dead-powers": {
       "tokens_a_run": 0,
@@ -74,7 +74,7 @@
     "take-the-next-fault": {
       "tokens_a_run": 0,
       "runs_measured": 0,
-      "words_it_sends": 2548
+      "words_it_sends": 2589
     },
     "watch-the-crew": {
       "tokens_a_run": 0,
@@ -89,7 +89,7 @@
     "write-down-what-broke": {
       "tokens_a_run": 0,
       "runs_measured": 0,
-      "words_it_sends": 1639
+      "words_it_sends": 1682
     }
   }
 }

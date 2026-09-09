@@ -19,8 +19,10 @@ use flow::{
     ExecutionRequest, Executor, FlowError, FlowFile, InMemoryRecordStore, InProcessExecutor,
     Outcome, RecordStore, SharedState, StepSpecies,
 };
+use sailor::flow_cmd::seeds::flows_in;
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 /// The registry the product builds, not one rebuilt here: rebuilt, it held
@@ -218,6 +220,94 @@ fn a_model_a_shipped_flow_names_reaches_the_command_line_of_that_engine() {
     assert!(
         asked > 0,
         "nessun flusso spedito nomina un modello: la prova non ha guardato niente"
+    );
+}
+
+/// The options a shipped descriptor says this engine's model is named after,
+/// and `None` for one that cannot be told a model at all: `git` and `ollama`
+/// carry theirs in the arguments, and asking them for a `model` is a repair
+/// that would be refused.
+fn how_a_model_is_named_to(catalog: &toolbox::Catalog, engine: &str) -> Option<Vec<String>> {
+    catalog
+        .descriptors
+        .iter()
+        .find(|loaded| loaded.descriptor.id == engine)
+        .and_then(|loaded| loaded.descriptor.model_option())
+}
+
+/// **THE CONVERSE, AND THE RULE: A STEP THAT NAMES NO MODEL IS NOT A STEP WITH
+/// A DEFAULT ONE.** Whoever answers picks it, and it changes underneath: two
+/// runs of the same flow a month apart ask two models at two prices, and the
+/// ledger keeps `requested_model` empty on both, with nothing to tell them
+/// apart. `sailor flow check` says it of the flow in front of it; this says it
+/// of everything the repository ships, from both homes of a flow file.
+#[test]
+fn no_shipped_flow_asks_an_engine_without_naming_its_model() {
+    let catalog = toolbox::Catalog::load(&[toolbox::Source::Builtin]);
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("the crate sits two levels under the root")
+        .to_path_buf();
+    let flows = flows_in(&root);
+    let mut asked = 0usize;
+    let mut unnamed: Vec<String> = Vec::new();
+    for (name, path) in &flows {
+        let text = std::fs::read_to_string(path).expect("a flow file of this tree reads");
+        let flow: FlowFile = serde_json::from_str(&text).expect("a flow file of this tree parses");
+        for step in flow.graph.steps() {
+            if step.action != actions::EXTERNAL_ENGINE_ACTION {
+                continue;
+            }
+            let Some(with) = step.with.as_ref() else {
+                continue;
+            };
+            let named = actions::models_named_in(with);
+            // A step writing its own command line is refused a `model` field:
+            // the model it asks for is a flag on that line or nowhere.
+            let by_hand = with
+                .get("args")
+                .and_then(Value::as_array)
+                .filter(|args| !args.is_empty());
+            for engine in actions::engines_named_in(with) {
+                let Some(option) = how_a_model_is_named_to(&catalog, &engine) else {
+                    continue;
+                };
+                asked += 1;
+                let told = match by_hand {
+                    Some(args) => args
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .any(|written| option.iter().any(|flag| flag == written)),
+                    None => named.contains_key(&engine),
+                };
+                if told {
+                    continue;
+                }
+                let repair = match by_hand {
+                    Some(_) => format!("«{}» on the command line the step writes", option.join(" ")),
+                    None => "a `model` for it in the step".to_owned(),
+                };
+                unnamed.push(format!("\n  {name} → {} ({engine}): write {repair}", step.id));
+            }
+        }
+    }
+    workspace::measured_against(
+        asked,
+        "engines a shipped step could be told a model of",
+        flows.len(),
+        "flow files read",
+    );
+    assert!(
+        asked > 0,
+        "no engine step was read, and a judge that reads nothing says nothing"
+    );
+    assert!(
+        unnamed.is_empty(),
+        "{} engines of the shipped flows run on whatever model answers that day, and the \
+         ledger cannot tell two runs of the same flow apart:{}",
+        unnamed.len(),
+        unnamed.concat()
     );
 }
 

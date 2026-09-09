@@ -118,14 +118,7 @@ fn answering() -> String {
 
 /// The graph with the engine's answer replaced, and nothing else touched.
 fn graph_answering() -> Graph {
-    let mut steps: Vec<Step> = shipped().graph.steps().to_vec();
-    for step in &mut steps {
-        if step.id == "repair" {
-            let with = step.with.as_mut().expect("the engine step carries its values");
-            with["args"] = json!(["-c", "cat > /dev/null; printf '%s' \"$1\"", "engine", answering()]);
-        }
-    }
-    Graph::new(steps).expect("the graph stays valid")
+    graph_answering_with(answering())
 }
 
 fn an_open_fault(scratch: &Scratch) -> faults::Fault {
@@ -283,6 +276,9 @@ fn graph_answering_with(said: String) -> Graph {
     for step in &mut steps {
         if step.id == "repair" {
             let with = step.with.as_mut().expect("the engine step carries its values");
+            // A command line written by hand carries the model in itself, and a
+            // step declaring both is refused.
+            with.as_object_mut().expect("the values are a map").remove("model");
             with["args"] = json!(["-c", "cat > /dev/null; printf '%s' \"$1\"", "engine", said]);
         }
     }

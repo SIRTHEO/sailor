@@ -125,6 +125,11 @@
             "codex",
             "agy"
           ],
+          "model": {
+            "claude-code": "claude-sonnet-5",
+            "codex": "gpt-6-astra",
+            "agy": "claude-sonnet-4-6"
+          },
           "kind": "writing",
           "data": "private",
           "answer_shape": {

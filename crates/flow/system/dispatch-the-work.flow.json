@@ -77,6 +77,11 @@
             "agy",
             "codex"
           ],
+          "model": {
+            "claude-code": "claude-opus-5",
+            "agy": "claude-sonnet-4-6",
+            "codex": "gpt-6-astra"
+          },
           "answer_shape": {
             "type": "object",
             "properties": {
@@ -186,11 +191,9 @@
         "when": null,
         "with": {
           "tool": "codex",
-          "args": [
-            "exec",
-            "--sandbox",
-            "read-only"
-          ],
+          "model": {
+            "codex": "gpt-6-astra"
+          },
           "answer_shape": {
             "type": "object",
             "properties": {
@@ -288,24 +291,9 @@
         "when": null,
         "with": {
           "tool": "agy",
-          "args": [
-            "--mode",
-            "plan",
-            "--print",
-            {
-              "$join": [
-                "Sei uno dei due motori di un flusso Sailor. L'incarico qui sotto è tuo: un altro motore sta girando adesso in parallelo su un altro territorio, e non vi vedete. Non scrivere, non spostare e non cancellare niente: solo letture, ricerche e conteggi.",
-                "\n\nCOME DEVE ESSERE LA TUA RISPOSTA\nRispondi con un oggetto JSON e nient'altro: niente premesse, niente saluti, niente ragionamento fuori dai campi. Deve rispettare esattamente questa forma, dove «properties» sono i campi, «required» quelli obbligatori e «allow_extra: false» vuol dire che non ne accetto altri:\n",
-                {
-                  "$json": "/answer_shape"
-                },
-                "\n\nOgni voce che trovi è una riga di «findings», e «total» è quante ne hai trovate.\n\nIL TUO INCARICO\n\n",
-                {
-                  "$from": "/answer/second_engine"
-                }
-              ]
-            }
-          ],
+          "model": {
+            "agy": "claude-sonnet-4-6"
+          },
           "answer_shape": {
             "type": "object",
             "properties": {
@@ -324,6 +312,19 @@
               "total"
             ],
             "allow_extra": false
+          },
+          "stdin": {
+            "$join": [
+              "Sei uno dei due motori di un flusso Sailor. L'incarico qui sotto è tuo: un altro motore sta girando adesso in parallelo su un altro territorio, e non vi vedete. Non scrivere, non spostare e non cancellare niente: solo letture, ricerche e conteggi.",
+              "\n\nCOME DEVE ESSERE LA TUA RISPOSTA\nRispondi con un oggetto JSON e nient'altro: niente premesse, niente saluti, niente ragionamento fuori dai campi. Deve rispettare esattamente questa forma, dove «properties» sono i campi, «required» quelli obbligatori e «allow_extra: false» vuol dire che non ne accetto altri:\n",
+              {
+                "$json": "/answer_shape"
+              },
+              "\n\nOgni voce che trovi è una riga di «findings», e «total» è quante ne hai trovate.\n\nIL TUO INCARICO\n\n",
+              {
+                "$from": "/answer/second_engine"
+              }
+            ]
           },
           "tree": "own",
           "timeout_secs": 1800
@@ -396,6 +397,11 @@
             "agy",
             "codex"
           ],
+          "model": {
+            "claude-code": "claude-sonnet-5",
+            "agy": "claude-sonnet-4-6",
+            "codex": "gpt-6-astra"
+          },
           "answer_shape": {
             "type": "object",
             "properties": {
