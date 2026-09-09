@@ -358,13 +358,19 @@ fn a_result_the_check_rejects_does_not_close_the_round() {
         .find(|record| record.step_id == "warrant")
         .expect("the warrant was asked");
     assert_eq!(
+        warrant.input["workdir"],
+        json!(scratch.0.display().to_string()),
+        "the check runs in the tree the engine worked in"
+    );
+    assert_eq!(
         warrant.outcome,
         Some(Outcome::Broke),
         "the check is red on the tree and the warrant passed on the answer's word: {:?}",
         warrant.failure_class
     );
-    assert!(
-        !matches!(execution.decisions.last(), Some(Decision::Complete)),
+    assert_eq!(
+        flow::run_status(&execution),
+        ("failed", false),
         "the round closed on a red check: {:?}",
         execution.decisions.last()
     );
@@ -408,11 +414,7 @@ fn a_result_the_check_accepts_closes_the_round() {
         .find(|record| record.step_id == "warrant")
         .expect("the warrant was asked");
     assert_eq!(warrant.outcome, Some(Outcome::Went), "{:?}", warrant.failure_class);
-    assert!(
-        matches!(execution.decisions.last(), Some(Decision::Complete)),
-        "{:?}",
-        execution.decisions.last()
-    );
+    assert_eq!(flow::run_status(&execution), ("complete", true), "{:?}", execution.decisions.last());
 }
 
 /// **A ROUND LEAVES A RULE, NOT ITS OWN SUMMARY.** The rule is written in the
