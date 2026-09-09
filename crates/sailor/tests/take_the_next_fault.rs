@@ -90,6 +90,16 @@ impl Clock for Tick {
 /// The round works in the scratch tree, as a real one works in the checkout:
 /// the engine writes there, and the warrant reads there.
 fn run(scratch: &Scratch, graph: &Graph) -> (Execution, InMemoryRecordStore) {
+    run_accepting(scratch, graph, THE_CHECK)
+}
+
+/// The acceptance enters as the trigger's text, the one input a launch sets:
+/// it is fixed here, before the engine starts, and the engine never sees it as
+/// a field it may answer.
+fn run_accepting(scratch: &Scratch, graph: &Graph, check: &str) -> (Execution, InMemoryRecordStore) {
+    let mut root_inputs: std::collections::BTreeMap<String, serde_json::Value> =
+        shipped().inputs.into_iter().collect();
+    root_inputs.get_mut("trigger").expect("the trigger's input")["text"] = json!(check);
     let store = InMemoryRecordStore::default();
     let mut shared = SharedState::new();
     shared.insert(
@@ -99,7 +109,7 @@ fn run(scratch: &Scratch, graph: &Graph) -> (Execution, InMemoryRecordStore) {
     let request = ExecutionRequest {
         holder: None,
         run_id: "taken".to_owned(),
-        root_inputs: shipped().inputs.into_iter().collect(),
+        root_inputs,
         gates: Vec::new(),
         shared,
         spend_cap_micros: None,
@@ -117,7 +127,6 @@ fn answering() -> String {
         "reproduced": true,
         "fixed": true,
         "test": "a_missing_price_list_refuses_instead_of_pricing_at_zero, in the pricing crate",
-        "check": THE_CHECK,
         "changed": "the reader of the price list refuses an empty file",
         "left_open": ""
     })
@@ -145,8 +154,9 @@ fn an_open_fault(scratch: &Scratch) -> faults::Fault {
         .expect("the fault is recorded")
 }
 
-/// **THE READING COMES FIRST, AND THE ENGINE WAITS ON IT ALONE**: one
-/// dependency, so its pointers are bare, and the condition reads `/open`.
+/// **THE READING COMES FIRST, AND THE ENGINE WAITS ON IT AND ON THE
+/// ACCEPTANCE**: the fault it repairs, and the command that will judge it,
+/// fixed by whoever launched; the condition reads the reading's `/next/open`.
 #[test]
 fn the_fault_is_read_then_handed_to_the_engine_only_when_one_is_open() {
     let flow = shipped();
@@ -161,20 +171,28 @@ fn the_fault_is_read_then_handed_to_the_engine_only_when_one_is_open() {
         vec![
             ("trigger", "trigger"),
             ("next", "fault_next"),
+            ("acceptance", "shell_check"),
             ("repair", "external_engine"),
             ("warrant", "shell_check"),
             ("learn", "remember"),
         ]
     );
     let repair = flow.graph.step("repair").expect("the engine step");
-    assert_eq!(repair.deps, vec!["next"]);
+    assert_eq!(repair.deps, vec!["trigger", "next", "acceptance"]);
     assert_eq!(
         repair.when,
         Some(Condition::PointerEquals {
-            pointer: "/open".to_owned(),
+            pointer: "/next/open".to_owned(),
             value: json!(true),
         }),
-        "the condition is on the reading's own field, bare, because the step has one dependency"
+        "the condition is on the reading's own field"
+    );
+    let acceptance = flow.graph.step("acceptance").expect("the acceptance step");
+    assert_eq!(acceptance.deps, vec!["trigger"], "the acceptance is read from the launch alone");
+    assert_eq!(
+        acceptance.with.as_ref().expect("with")["env"]["CHECK"],
+        json!({"$from": "/text"}),
+        "one dependency, so the pointer is bare"
     );
 }
 
@@ -199,10 +217,16 @@ fn every_action_the_flow_names_is_registered() {
 fn the_mandate_carries_the_fault_and_asks_for_a_red_test_and_an_honest_answer() {
     let flow = shipped();
     let stdin = repair_stdin(&flow);
-    for pointer in ["/what_happened", "/how_it_showed", "/what_would_prevent", "/happened_on"] {
+    for pointer in [
+        "/next/what_happened",
+        "/next/how_it_showed",
+        "/next/what_would_prevent",
+        "/next/happened_on",
+        "/trigger/text",
+    ] {
         assert!(stdin.contains(&format!("\"$from\":\"{pointer}\"")), "{pointer} is carried in");
     }
-    assert!(stdin.contains("\"$json\":\"/number\""), "the number travels as JSON, not as text");
+    assert!(stdin.contains("\"$json\":\"/next/number\""), "the number travels as JSON, not as text");
     assert!(stdin.contains("/answer_shape"), "the answer's shape is carried in");
     assert!(stdin.contains("see it red on the tree as it is"), "a red test comes before the fix");
     assert!(stdin.contains("Say only what you measured"), "the answer is what was measured");
@@ -210,15 +234,20 @@ fn the_mandate_carries_the_fault_and_asks_for_a_red_test_and_an_honest_answer() 
     let with = repair.with.as_ref().expect("with");
     assert_eq!(with["data"], json!("private"), "the code repaired is not public text");
     let required = with["answer_shape"]["required"].as_array().expect("required fields");
-    for field in ["reproduced", "fixed", "test", "check", "left_open"] {
+    for field in ["reproduced", "fixed", "test", "left_open"] {
         assert!(required.iter().any(|name| name == field), "«{field}» is not asked for");
     }
+    assert!(
+        with["answer_shape"]["properties"].get("check").is_none(),
+        "the answer has no field in which to name the command that judges it"
+    );
     let warrant = flow.graph.step("warrant").expect("the warrant step");
+    assert_eq!(warrant.deps, vec!["trigger", "repair"]);
     let with = warrant.with.as_ref().expect("with");
     assert_eq!(
         with["env"]["CHECK"],
-        json!({"$from": "/answer/check"}),
-        "the check the engine named reaches the warrant"
+        json!({"$from": "/trigger/text"}),
+        "the check that reaches the warrant is the launch's, not the answer's"
     );
     let command = with["command"].as_str().expect("the warrant is a shell line");
     assert!(command.contains("sh -c \"$CHECK\""), "and the warrant runs it on the tree:\n{command}");
@@ -281,7 +310,6 @@ fn answering_with_a_rule() -> String {
         "reproduced": true,
         "fixed": true,
         "test": "a_missing_price_list_refuses_instead_of_pricing_at_zero, in the pricing crate",
-        "check": THE_CHECK,
         "changed": "the reader of the price list refuses an empty file",
         "left_open": "",
         "learnt": "a reader that cannot read answers «I do not know», never a zero"
@@ -376,22 +404,35 @@ fn a_result_the_check_rejects_does_not_close_the_round() {
     );
 }
 
-/// **AND A ROUND THAT NAMES NO CHECK IS A ROUND NOBODY CAN SEE GREEN.** An
-/// empty command exits zero for every result there is; it is refused before
-/// it runs.
+/// **AND A ROUND LAUNCHED WITHOUT AN ACCEPTANCE STARTS NO ENGINE.** An empty
+/// command exits zero for every result there is; it is refused before any
+/// engine is called, naming what to launch with.
 #[test]
-fn a_round_that_names_no_check_stays_open() {
+fn a_round_launched_without_an_acceptance_starts_no_engine() {
     let scratch = Scratch::new();
     let _fault = an_open_fault(&scratch);
-    let said = answering().replace(THE_CHECK, "");
-    let (execution, store) = run(&scratch, &graph_producing(said, A_RESULT_THE_CHECK_ACCEPTS));
+    let (execution, store) = run_accepting(
+        &scratch,
+        &graph_producing(answering(), A_RESULT_THE_CHECK_ACCEPTS),
+        "",
+    );
 
-    let warrant = store
-        .all()
-        .into_iter()
-        .find(|record| record.step_id == "warrant")
-        .expect("the warrant was asked");
-    assert_eq!(warrant.outcome, Some(Outcome::Broke), "{:?}", warrant.failure_class);
+    let records = store.all();
+    let acceptance = records
+        .iter()
+        .find(|record| record.step_id == "acceptance")
+        .expect("the acceptance was asked");
+    assert_eq!(acceptance.outcome, Some(Outcome::Broke), "{:?}", acceptance.failure_class);
+    let said = serde_json::to_string(&acceptance).expect("a record serialises");
+    assert!(said.contains("sailor flow run take-the-next-fault"), "it says what to launch with: {said}");
+    assert!(
+        records.iter().all(|record| record.step_id != "repair"),
+        "an engine was started with nothing to see it green"
+    );
+    assert!(
+        !std::path::Path::new(&scratch.0).join(THE_RESULT).exists(),
+        "and nothing was written on the tree"
+    );
     assert!(
         !matches!(execution.decisions.last(), Some(Decision::Complete)),
         "{:?}",
@@ -415,6 +456,52 @@ fn a_result_the_check_accepts_closes_the_round() {
         .expect("the warrant was asked");
     assert_eq!(warrant.outcome, Some(Outcome::Went), "{:?}", warrant.failure_class);
     assert_eq!(flow::run_status(&execution), ("complete", true), "{:?}", execution.decisions.last());
+}
+
+/// The engine names `true` as the test that proves its work: a command it
+/// chose, green on every tree there is.
+fn answering_with_its_own_check() -> String {
+    answering().replace(
+        "a_missing_price_list_refuses_instead_of_pricing_at_zero, in the pricing crate",
+        "true",
+    )
+}
+
+/// **THE ENGINE DOES NOT CHOOSE THE COMMAND THAT JUDGES IT.** The acceptance
+/// is fixed before the repair starts, by whoever launched; a result that
+/// check rejects stays open whatever command the answer names.
+#[test]
+fn a_check_the_engine_names_does_not_replace_the_acceptance() {
+    let scratch = Scratch::new();
+    let _fault = an_open_fault(&scratch);
+    let (execution, store) = run(
+        &scratch,
+        &graph_producing(answering_with_its_own_check(), A_RESULT_THE_CHECK_REJECTS),
+    );
+
+    assert!(!the_check_on(&scratch), "the fixture's result is red on the tree");
+    let records = store.all();
+    let warrant = records
+        .iter()
+        .find(|record| record.step_id == "warrant")
+        .expect("the warrant was asked");
+    assert_eq!(
+        warrant.outcome,
+        Some(Outcome::Broke),
+        "the acceptance is red on the tree and the warrant passed on a command the engine chose: {:?}",
+        warrant.failure_class
+    );
+    assert_eq!(
+        flow::run_status(&execution),
+        ("failed", false),
+        "the round closed on a check the engine chose: {:?}",
+        execution.decisions.last()
+    );
+    assert_eq!(
+        warrant.input["env"]["CHECK"],
+        json!(THE_CHECK),
+        "the warrant runs the check that was fixed before the repair, not the one the answer names"
+    );
 }
 
 /// **A ROUND LEAVES A RULE, NOT ITS OWN SUMMARY.** The rule is written in the
@@ -472,7 +559,6 @@ fn answering_with_a_rule_it_did_not_earn() -> String {
         "reproduced": false,
         "fixed": false,
         "test": "none: the check could not be written",
-        "check": "",
         "changed": "nothing",
         "left_open": "the whole fault",
         "learnt": "a reader that cannot read answers «I do not know», never a zero"

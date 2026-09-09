@@ -1,6 +1,6 @@
 {
   "id": "take-the-next-fault",
-  "description": "DEVELOPMENT TAKES ITS NEXT MANDATE FROM THE REGISTER, NOT FROM A PERSON. One reading, no engine: the oldest fault still open, whole. One engine call, kind «implementation», and only when a fault came back: it reads the fault as its whole mandate, reproduces it with a test that is red on the tree as it is, changes the code until the test is green, and answers with what it measured — reproduced or not, fixed or not, which test, what changed, what stays open. When nothing is open the engine is never started: a condition on the reading decides, not the engine. Nothing here closes the fault: a person reads the answer and closes it in the register.",
+  "description": "DEVELOPMENT TAKES ITS NEXT MANDATE FROM THE REGISTER, NOT FROM A PERSON. One reading, no engine: the oldest fault still open, whole. One engine call, kind «implementation», and only when a fault came back: it reads the fault as its whole mandate, reproduces it with a test that is red on the tree as it is, changes the code until the test is green, and answers with what it measured — reproduced or not, fixed or not, which test, what changed, what stays open. When nothing is open the engine is never started: a condition on the reading decides, not the engine. The command that judges the repair is given at launch, in the trigger's text, and never by the engine: the warrant runs it from the root of the tree and the round closes only if it exits zero. Nothing here closes the fault: a person reads the answer and closes it in the register.",
   "graph": {
     "steps": [
       {
@@ -98,15 +98,44 @@
         }
       },
       {
+        "id": "acceptance",
+        "deps": [
+          "trigger"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -eu\n# The command that will judge the repair, fixed by whoever launched and\n# never by the engine: an empty one exits zero for every result there is.\n[ -n \"$CHECK\" ] || { echo \"no acceptance was given: launch with the command that runs the test from the root of the tree, exiting zero only when green, as sailor flow run take-the-next-fault \\\"cargo test -p <crate> --test <file>\\\"\" >&2; exit 1; }",
+          "env": {
+            "CHECK": {
+              "$from": "/text"
+            }
+          },
+          "timeout_secs": 30
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
         "id": "repair",
         "deps": [
-          "next"
+          "trigger",
+          "next",
+          "acceptance"
         ],
         "action": "external_engine",
         "max_attempts": 1,
         "when": {
           "kind": "pointer_equals",
-          "pointer": "/open",
+          "pointer": "/next/open",
           "value": true
         },
         "with": {
@@ -134,9 +163,6 @@
               "test": {
                 "type": "string"
               },
-              "check": {
-                "type": "string"
-              },
               "changed": {
                 "type": "string"
               },
@@ -151,7 +177,6 @@
               "reproduced",
               "fixed",
               "test",
-              "check",
               "changed",
               "left_open"
             ],
@@ -161,33 +186,37 @@
             "$join": [
               "You take the next open fault of this project and close it in the code. The fault below is the oldest still open in the register, and it is your whole mandate: do not pick another, do not widen it. Read AGENTS.md at the root of the tree before touching anything — it says how this tree is written and how work is proven — and stay inside its rules.\n\n=== THE FAULT ===\nnumber: ",
               {
-                "$json": "/number"
+                "$json": "/next/number"
               },
               "\nwritten on: ",
               {
-                "$from": "/happened_on"
+                "$from": "/next/happened_on"
               },
               "\nwhat happened: ",
               {
-                "$from": "/what_happened"
+                "$from": "/next/what_happened"
               },
               "\nhow it showed: ",
               {
-                "$from": "/how_it_showed"
+                "$from": "/next/how_it_showed"
               },
               "\nwhat would prevent it: ",
               {
-                "$from": "/what_would_prevent"
+                "$from": "/next/what_would_prevent"
               },
               "\nwhere it stands: ",
               {
-                "$from": "/status"
+                "$from": "/next/status"
               },
               "\nstill open in the register, this one included: ",
               {
-                "$json": "/remaining"
+                "$json": "/next/remaining"
               },
-              "\n\n=== WHAT TO DO ===\nFirst reproduce it: «what would prevent it» names the check, and the test is that check written down. Run it and see it red on the tree as it is. A test that is green before the change proves nothing and is not a reproduction. Then change the code — the smallest honest change — until that test is green, and run the tests of every crate you touched. Comments in English, at most six lines a block, no dates; no product or vendor name in code, comments or flow files; every sentence a person reads goes through the catalogue in i18n/, in both languages. Do not touch the register and do not rewrite the fault: a person closes it after reading your work.\n\n=== HOW YOUR ANSWER MUST LOOK ===\nSay only what you measured. «reproduced» is true only if you saw the test red before the change. «fixed» is true only if the same test is green after it and nothing else went red. «test» names the test and its file. «check» is the command Sailor runs from the root of the tree to see that test for itself — the cargo line that runs exactly it, exiting zero only when it is green — and the round closes only if it does: an answer is not the proof, the tree is. «changed» says in a few lines what you changed and why. «left_open» says what stays open — a test you could not write, a check you could not run, a doubt about the cure — and is empty only when nothing does. A fix declared done without the evidence is worse than a fault left open.\n«learnt» is the one field you leave out unless you have earned it: write it only if the test went red and then green AND the rule you drew from it holds beyond this fault — one sentence a person can apply somewhere else, naming the condition that makes it apply. A rule with no evidence is worse than no rule, and this one is kept and read to whoever takes the next fault. If you have none, do not write the field at all.\nAnswer with one JSON object and nothing else: no preamble, no greeting, no reasoning outside the fields. It must match exactly this shape, where «properties» are the fields, «required» the mandatory ones and «allow_extra: false» means no others are accepted:\n",
+              "\n\n=== WHAT WILL JUDGE YOUR WORK ===\nWhen you are done, Sailor runs this command from the root of the tree, and the round closes only if it exits zero; it was fixed before you started, and nothing you answer changes it:\n",
+              {
+                "$from": "/trigger/text"
+              },
+              "\n\n=== WHAT TO DO ===\nFirst reproduce it: «what would prevent it» names the check, and the test is that check written down. Run it and see it red on the tree as it is. A test that is green before the change proves nothing and is not a reproduction. Then change the code — the smallest honest change — until that test is green, and run the tests of every crate you touched. Comments in English, at most six lines a block, no dates; no product or vendor name in code, comments or flow files; every sentence a person reads goes through the catalogue in i18n/, in both languages. Do not touch the register and do not rewrite the fault: a person closes it after reading your work.\n\n=== HOW YOUR ANSWER MUST LOOK ===\nSay only what you measured. «reproduced» is true only if you saw the test red before the change. «fixed» is true only if the same test is green after it and nothing else went red. «test» names the test and its file. «changed» says in a few lines what you changed and why. «left_open» says what stays open — a test you could not write, a check you could not run, a doubt about the cure — and is empty only when nothing does. A fix declared done without the evidence is worse than a fault left open.\n«learnt» is the one field you leave out unless you have earned it: write it only if the test went red and then green AND the rule you drew from it holds beyond this fault — one sentence a person can apply somewhere else, naming the condition that makes it apply. A rule with no evidence is worse than no rule, and this one is kept and read to whoever takes the next fault. If you have none, do not write the field at all.\nAnswer with one JSON object and nothing else: no preamble, no greeting, no reasoning outside the fields. It must match exactly this shape, where «properties» are the fields, «required» the mandatory ones and «allow_extra: false» means no others are accepted:\n",
               {
                 "$json": "/answer_shape"
               }
@@ -235,9 +264,6 @@
                 "test": {
                   "type": "string"
                 },
-                "check": {
-                  "type": "string"
-                },
                 "changed": {
                   "type": "string"
                 },
@@ -252,7 +278,6 @@
                 "reproduced",
                 "fixed",
                 "test",
-                "check",
                 "changed",
                 "left_open"
               ],
@@ -269,6 +294,7 @@
       {
         "id": "warrant",
         "deps": [
+          "trigger",
           "repair"
         ],
         "when": null,
@@ -284,16 +310,16 @@
           "type": "any"
         },
         "with": {
-          "command": "set -eu\n# The two words the whole round rests on, read by Sailor and not by the\n# engine that wrote them: a repair that reproduced nothing repaired\n# nothing, and a rule drawn from it would be read as an instruction.\n[ \"$REPRODUCED\" = true ] || { echo \"the fault was never seen red: nothing here was reproduced\" >&2; exit 1; }\n[ \"$FIXED\" = true ] || { echo \"the fault is not closed: the test is not green after the change\" >&2; exit 1; }\n# Then the tree, not the answer: the check the engine named runs here.\n[ -n \"$CHECK\" ] || { echo \"no check was named: nothing here can be seen green\" >&2; exit 1; }\nsh -c \"$CHECK\" || { echo \"the check the engine named is red on the tree: the fault is not closed\" >&2; exit 1; }",
+          "command": "set -eu\n# The two words the whole round rests on, read by Sailor and not by the\n# engine that wrote them: a repair that reproduced nothing repaired\n# nothing, and a rule drawn from it would be read as an instruction.\n[ \"$REPRODUCED\" = true ] || { echo \"the fault was never seen red: nothing here was reproduced\" >&2; exit 1; }\n[ \"$FIXED\" = true ] || { echo \"the fault is not closed: the test is not green after the change\" >&2; exit 1; }\n# Then the tree, not the answer: the acceptance fixed at launch runs here.\nsh -c \"$CHECK\" || { echo \"the acceptance is red on the tree: the fault is not closed\" >&2; exit 1; }",
           "env": {
             "REPRODUCED": {
-              "$json": "/answer/reproduced"
+              "$json": "/repair/answer/reproduced"
             },
             "FIXED": {
-              "$json": "/answer/fixed"
+              "$json": "/repair/answer/fixed"
             },
             "CHECK": {
-              "$from": "/answer/check"
+              "$from": "/trigger/text"
             }
           },
           "timeout_secs": 1800
