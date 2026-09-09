@@ -122,6 +122,9 @@ fn graph_answering(already: bool) -> Graph {
     for step in &mut steps {
         let Some(with) = step.with.as_mut() else { continue };
         if step.id == "write_it" {
+            // A command line written by hand carries the model in itself, and a
+            // step declaring both is refused.
+            with.as_object_mut().expect("the values are a map").remove("model");
             with["args"] = prints(&written_up(already));
         }
     }

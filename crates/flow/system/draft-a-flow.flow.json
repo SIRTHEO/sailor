@@ -90,6 +90,11 @@
             "codex",
             "agy"
           ],
+          "model": {
+            "claude-code": "claude-opus-5",
+            "codex": "gpt-6-astra",
+            "agy": "claude-sonnet-4-6"
+          },
           "kind": "writing",
           "data": "public",
           "answer_shape": {
