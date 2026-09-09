@@ -217,6 +217,12 @@ pub struct StepRecord {
     /// written before the field, and such a record is uncertain, never alive.
     #[serde(default)]
     pub held_by: Option<HolderIdentity>,
+    /// The name whoever took a handed step declared at `sailor step open --as`.
+    /// A claim, not a credential, and the only thing the store keeps about a
+    /// holder no process stands for. Absent on a record written before the
+    /// field, and such a record names nobody rather than naming a stranger.
+    #[serde(default)]
+    pub taken_on_by: Option<String>,
     /// The step's species, frozen at open: it says whether redoing it is safe.
     /// `None` is a record written before species existed, and counts as
     /// `HandToHuman` — never as `Repeatable`.
@@ -346,6 +352,7 @@ impl StepRecord {
             attempt_relation: None,
             held_by_pid: None,
             held_by: None,
+            taken_on_by: None,
             species: None,
             started_at,
             outcome: None,

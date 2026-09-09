@@ -112,7 +112,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// `PROJECTION_MIGRATIONS`, and the tests hold the two against each other. A
 /// column once landed in the migration without this going up, so an existing
 /// store never migrated and every read died on the missing column.
-const PROJECTION_SCHEMA_VERSION: i64 = 18;
+const PROJECTION_SCHEMA_VERSION: i64 = 19;
 
 /// One change to the projections, and the version that introduced it.
 enum ProjectionChange {
@@ -237,6 +237,13 @@ const PROJECTION_MIGRATIONS: &[(i64, ProjectionChange)] = &[
         ProjectionChange::AddColumns {
             table: "processes",
             columns: &[("born_at", "INTEGER")],
+        },
+    ),
+    (
+        19,
+        ProjectionChange::AddColumns {
+            table: "steps",
+            columns: &[("taken_on_by", "TEXT")],
         },
     ),
 ];
@@ -770,7 +777,8 @@ impl Ledger {
             "SELECT run_id, step_id, attempt, epoch, deps, input_digest, input,
                     gates, attempt_relation, started_at, outcome, output, said,
                     failure_class, ended_at, bytes_seen, bytes_discarded,
-                    held_by_pid, species, refusal, ran, why, held_by
+                    held_by_pid, species, refusal, ran, why, held_by,
+                    taken_on_by
              FROM steps WHERE run_id = ?1 ORDER BY started_at, step_id, attempt",
         )?;
         let records = statement
@@ -1853,6 +1861,7 @@ fn create_projection_tables(connection: &Connection) -> Result<(), LedgerError> 
              ran TEXT,
              why TEXT,
              held_by TEXT,
+             taken_on_by TEXT,
              PRIMARY KEY (run_id, step_id, attempt)
          );
          CREATE TABLE IF NOT EXISTS model_calls (
@@ -2546,9 +2555,9 @@ fn project_step(
          (run_id, step_id, attempt, epoch, deps, input_digest, input, gates,
           attempt_relation, started_at, outcome, output, said, failure_class,
           ended_at, bytes_seen, bytes_discarded, held_by_pid, species,
-          checkpointed, refusal, ran, why, held_by)
+          checkpointed, refusal, ran, why, held_by, taken_on_by)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                 ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)
+                 ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)
          ON CONFLICT(run_id, step_id, attempt) DO UPDATE SET
           epoch=excluded.epoch, deps=excluded.deps,
           input_digest=excluded.input_digest, input=excluded.input,
@@ -2559,7 +2568,8 @@ fn project_step(
           bytes_seen=excluded.bytes_seen, bytes_discarded=excluded.bytes_discarded,
           held_by_pid=excluded.held_by_pid, species=excluded.species,
           checkpointed=excluded.checkpointed, refusal=excluded.refusal,
-          ran=excluded.ran, why=excluded.why, held_by=excluded.held_by",
+          ran=excluded.ran, why=excluded.why, held_by=excluded.held_by,
+          taken_on_by=excluded.taken_on_by",
         params![
             record.run_id,
             record.step_id,
@@ -2605,6 +2615,7 @@ fn project_step(
                 .as_ref()
                 .map(serde_json::to_string)
                 .transpose()?,
+            record.taken_on_by,
         ],
     )?;
     Ok(())
@@ -2811,7 +2822,8 @@ fn read_step(
             "SELECT run_id, step_id, attempt, epoch, deps, input_digest, input,
                     gates, attempt_relation, started_at, outcome, output, said,
                     failure_class, ended_at, bytes_seen, bytes_discarded,
-                    held_by_pid, species, refusal, ran, why, held_by
+                    held_by_pid, species, refusal, ran, why, held_by,
+                    taken_on_by
              FROM steps
              WHERE run_id = ?1 AND step_id = ?2 AND attempt = ?3 AND epoch = ?4",
             params![run_id, step_id, attempt, padded_u64(epoch)],
@@ -2893,6 +2905,7 @@ fn step_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StepRecord> {
             .as_deref()
             .map(|value| json_column(value, 22))
             .transpose()?,
+        taken_on_by: row.get(23)?,
         species: species.as_deref().map(parse_species).transpose()?,
     })
 }

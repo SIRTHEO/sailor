@@ -190,6 +190,11 @@ pub fn open_step_in(ledger: &Ledger, found: &BTreeMap<String, String>) -> Result
     // would read that pid as dead and close the handoff under the agent at work.
     // What holds a handed step is a deadline in the record, not a process.
     started.held_by_pid = None;
+    // **WHO TOOK IT ON IS WRITTEN HERE, NOT ONLY AT CLOSE.** Until this line the
+    // store learnt the name in `HOLDER_COLLECTION` when the step was closed, so
+    // between open and close nothing said who was working: no other terminal
+    // could ask, and `close` could not tell one taker from another.
+    started.taken_on_by = Some(holder.to_owned());
     // The species stays as frozen at the handoff: an action rewritten in the
     // meantime must not change the verdict on a step already offered.
     started.species = latest.species;
@@ -266,6 +271,36 @@ fn refuse_the_author_as_judge(
         }
     }
     Ok(())
+}
+
+/// **A CLOSE LANDS ON THE ATTEMPT ITS AUTHOR OPENED, OR ON NONE.** `close_in`
+/// takes the newest open record, and a handed step is held by a deadline: once
+/// that deadline puts the step back among the ready and somebody else takes it
+/// on, the first taker's close would land on the second taker's attempt and
+/// write a result into work still being done.
+///
+/// A record with no name was written before the field. It passes: refusing
+/// every step opened before this code would stop live work to punish an old
+/// row, and the field is written at every open from now on.
+fn refuse_a_stranger_to_this_attempt(
+    run_id: &str,
+    step_id: &str,
+    holder: &str,
+    open: &StepRecord,
+) -> Result<(), String> {
+    match open.taken_on_by.as_deref() {
+        Some(taker) if taker != holder => Err(catalogue::say(
+            "cli.step.taken_on_by_somebody_else",
+            &[
+                ("step_id", step_id),
+                ("run_id", run_id),
+                ("taker", taker),
+                ("holder", holder),
+                ("attempt", &open.attempt.to_string()),
+            ],
+        )),
+        _ => Ok(()),
+    }
 }
 
 // ── closing ──────────────────────────────────────────────────────────────
@@ -373,6 +408,8 @@ fn close_in(
             ],
         ));
     }
+
+    refuse_a_stranger_to_this_attempt(run_id, step_id, holder, open)?;
 
     // The refusal matters most here: the close is the gesture that writes a
     // verdict, and a verdict on one's own work is worth nothing.
@@ -1267,6 +1304,15 @@ mod tests {
         let ledger = a_handed_run(&directory, "implementa", vec![]);
         hand_over(&ledger, "verdetto", vec!["implementa".to_owned()]);
 
+        // The judgement is taken on **first**, while nobody has closed the
+        // dependency yet and the author does not exist: this is the order in
+        // which the close-side refusal is the only one left standing.
+        open_step_in(
+            &ledger,
+            &options(&[("run", "run-1"), ("step", "verdetto"), ("as", "autore")]),
+        )
+        .expect("nobody has authored anything yet");
+
         // «autore» does the work and closes it.
         open_step_in(
             &ledger,
@@ -1288,21 +1334,9 @@ mod tests {
         )
         .expect("the author closes their own work");
 
-        // And now it tries to judge itself. Opening is already impossible.
-        let refused = open_step_in(
-            &ledger,
-            &options(&[("run", "run-1"), ("step", "verdetto"), ("as", "autore")]),
-        )
-        .expect_err("the author does not open the step that judges them");
-        assert!(refused.contains("does not judge"), "{refused}");
-
-        // Nor closing, entering under any name: the close is the gesture that
-        // counts, and the one a door left open would allow.
-        open_step_in(
-            &ledger,
-            &options(&[("run", "run-1"), ("step", "verdetto"), ("as", "un-terzo")]),
-        )
-        .expect("a third party takes the judgement");
+        // And now it tries to judge itself, closing the attempt it really holds:
+        // the close is the gesture that counts, and the one a door left open at
+        // open time would allow.
         let good = directory.0.join("verdetto.json");
         std::fs::write(&good, r#"{"verdict": "va bene"}"#).expect("writing the output");
         let refused = close_step_in(
@@ -1317,6 +1351,33 @@ mod tests {
             ]),
         )
         .expect_err("the author does not close the step that judges them");
+        assert!(refused.contains("does not judge"), "{refused}");
+
+        // Handed back by its deadline, it cannot be taken on again either.
+        ledger
+            .close_step(
+                "run-1",
+                "verdetto",
+                2,
+                2,
+                Completion {
+                    outcome: Outcome::Waiting,
+                    output: None,
+                    said: None,
+                    failure_class: None,
+                    refusal: None,
+                    ran: None,
+                    ended_at: 400,
+                    bytes_seen: None,
+                    bytes_discarded: None,
+                },
+            )
+            .expect("the deadline hands it back");
+        let refused = open_step_in(
+            &ledger,
+            &options(&[("run", "run-1"), ("step", "verdetto"), ("as", "autore")]),
+        )
+        .expect_err("the author does not open the step that judges them");
         assert!(refused.contains("does not judge"), "{refused}");
     }
 
@@ -1491,6 +1552,65 @@ mod tests {
                 .iter()
                 .any(|found| found.attempt == 2 && found.outcome.is_none()),
             "the engine's attempt stays open: closing it would break the running run"
+        );
+    }
+
+    /// The deadline gave the step back and somebody else took it on. The first
+    /// taker, still at work, must not close the second one's attempt.
+    #[test]
+    fn the_taker_whose_handover_expired_does_not_close_the_next_takers_attempt() {
+        let directory = TestDirectory::new("due-prese-in-carico");
+        let ledger = a_handed_run(&directory, "implementa", vec![]);
+        open_step_in(
+            &ledger,
+            &options(&[("run", "run-1"), ("step", "implementa"), ("as", "alice")]),
+        )
+        .expect("alice takes it on");
+        ledger
+            .close_step(
+                "run-1",
+                "implementa",
+                2,
+                2,
+                Completion {
+                    outcome: Outcome::Waiting,
+                    output: None,
+                    said: Some("la scadenza lo rimette fra i pronti".to_owned()),
+                    failure_class: None,
+                    refusal: None,
+                    ran: None,
+                    ended_at: 300,
+                    bytes_seen: None,
+                    bytes_discarded: None,
+                },
+            )
+            .expect("the deadline hands it back");
+        open_step_in(
+            &ledger,
+            &options(&[("run", "run-1"), ("step", "implementa"), ("as", "bob")]),
+        )
+        .expect("bob takes it on");
+
+        let error = close_step_in(
+            &ledger,
+            &a_flow(),
+            &options(&[
+                ("run", "run-1"),
+                ("step", "implementa"),
+                ("as", "alice"),
+                ("outcome", "went"),
+            ]),
+        )
+        .expect_err("alice does not close bob's attempt");
+        assert!(error.contains("bob"), "{error}");
+        assert!(
+            ledger
+                .steps("run-1")
+                .expect("reading the steps back")
+                .iter()
+                .any(|found| found.taken_on_by.as_deref() == Some("bob")
+                    && found.outcome.is_none()),
+            "bob's attempt stays open: he is still working on it"
         );
     }
 

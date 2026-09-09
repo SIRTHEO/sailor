@@ -556,6 +556,7 @@
   "cli.step.output_breaks_the_schema": "the declared output does not meet step {step_id}'s schema: {error}. The step was not closed — a malformed output accepted here would kill the run later on, and the blame would fall on another step",
   "cli.step.run_declares_no_flow": "run {run_id} does not declare which flow it comes from: without it there is no telling which graph to load",
   "cli.step.self_declared_turns": "{turns} self-declared turns, at no cost: they join the calls the total does not know about, and from now on this run's spend is an «at least»",
+  "cli.step.taken_on_by_somebody_else": "attempt {attempt} of step {step_id} was taken on by «{taker}», not by «{holder}»: closing it would write your result into work somebody else is still doing. If the handover came back to you, take it on again with sailor step open --run {run_id} --step {step_id} --as {holder}.",
   "cli.step.taken_on": "step {step_id} taken on by «{holder}» — run {run_id}, attempt {attempt}\n── brief ──\n{mandate}\n──\nwhen you are done: sailor step close --run {run_id} --step {step_id} --as {holder} --outcome went [--output-file <file>] [--turns <n>]",
   "cli.step.not_yet": "not yet: {steps}. Ready again in {seconds} s. Ask again with: sailor flow resume {run_id}",
   "cli.step.waiting_for_someone": "waiting for someone: {steps}. Take the work with: sailor step open --run {run_id} --step <step> --as <who>",

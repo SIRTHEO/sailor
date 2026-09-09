@@ -556,6 +556,7 @@
   "cli.step.output_breaks_the_schema": "l'uscita dichiarata non rispetta lo schema del passo {step_id}: {error}. Il passo non è stato chiuso — un'uscita malformata accettata qui ucciderebbe la corsa più avanti, e la colpa cadrebbe su un altro passo",
   "cli.step.run_declares_no_flow": "la corsa {run_id} non dichiara da quale flusso viene: senza non so quale grafo caricare",
   "cli.step.self_declared_turns": "{turns} turni autodichiarati, senza costo: entrano fra le chiamate che il totale non conosce, e da adesso la spesa di questa corsa è un «almeno»",
+  "cli.step.taken_on_by_somebody_else": "il tentativo {attempt} del passo {step_id} è stato preso in carico da «{taker}», non da «{holder}»: chiuderlo scriverebbe il tuo risultato dentro un lavoro che qualcun altro sta ancora facendo. Se la consegna è tornata a te, riprendila con sailor step open --run {run_id} --step {step_id} --as {holder}.",
   "cli.step.taken_on": "passo {step_id} preso in carico da «{holder}» — corsa {run_id}, tentativo {attempt}\n── mandato ──\n{mandate}\n──\nquando hai finito: sailor step close --run {run_id} --step {step_id} --as {holder} --outcome went [--output-file <file>] [--turns <n>]",
   "cli.step.not_yet": "non ancora: {steps}. Torna pronto fra {seconds} s. Richiedilo con: sailor flow resume {run_id}",
   "cli.step.waiting_for_someone": "in attesa di qualcuno: {steps}. Prendi il lavoro con: sailor step open --run {run_id} --step <passo> --as <chi>",
