@@ -1816,7 +1816,7 @@ fn options_of(args: &[String]) -> Result<BTreeMap<String, String>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::listing::{since_words, word_for};
+    use super::listing::since_words;
     use super::*;
     use sessions::census::{Inhabitant, Refusal, Terminal};
     use sessions::SESSIONS_FILE;
