@@ -314,7 +314,7 @@
       "ask": {
         "args": ["exec", "--sandbox", "read-only"],
         "prompt": "stdin",
-        "unusable_when": ["401 unauthorized", "missing bearer", "quota", "insufficient_quota"],
+        "unusable_when": ["401 unauthorized", "missing bearer", "quota", "insufficient_quota", "is not supported when using codex with a chatgpt account"],
         "exhausted_when": ["quota", "insufficient_quota"],
         "cooldown_secs": 1800,
         "refuses_without_prompt": ["no prompt provided via stdin"]

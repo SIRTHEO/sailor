@@ -24,6 +24,13 @@ const SEEN: &[(&str, &str)] = &[
 ];
 
 /// Only what the product ships, with nothing of this machine around it.
+/// Lines that make an engine unusable for the question without spending a
+/// quota: the chain must move on, and nothing must read them as exhaustion.
+const REFUSED: &[(&str, &str)] = &[(
+    "codex",
+    "ERROR: {\"type\":\"error\",\"status\":400,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"The 'gpt-6-astra' model is not supported when using Codex with a ChatGPT account.\"}}",
+)];
+
 fn shipped_only() -> Tools {
     Tools::new(
         Catalog::load(&[Source::Builtin]),
@@ -68,6 +75,26 @@ fn every_refusal_seen_on_a_machine_is_declared_by_the_engine_that_said_it() {
 
 /// Saying "I cannot work" is not saying "my quota ran out", and the two lead to
 /// different rows and different waits. A spent quota must reach its own class.
+#[test]
+fn a_model_the_account_may_not_ask_for_moves_the_chain_on_without_a_spent_quota() {
+    let tools = shipped_only();
+    for (engine, line) in REFUSED {
+        let recipe = tools
+            .ask_recipe(engine)
+            .unwrap_or_else(|| panic!("«{engine}» declares how a question is put to it"));
+        let verdict = probe_dry_run(&Said(line), "/nowhere", &recipe);
+        assert!(
+            matches!(verdict, ProbeVerdict::CannotWork { .. }),
+            "«{engine}» said «{line}» and its descriptor did not know: {verdict:?}"
+        );
+        let lowered = line.to_lowercase();
+        assert!(
+            !recipe.exhausted_when.iter().any(|word| lowered.contains(&word.to_lowercase())),
+            "«{engine}» said «{line}», which is not a spent quota and must not be classed as one"
+        );
+    }
+}
+
 #[test]
 fn a_spent_quota_reaches_the_class_of_a_spent_quota() {
     let tools = shipped_only();
