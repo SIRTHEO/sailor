@@ -174,7 +174,11 @@ pub(crate) fn record_the_call(
     // The engine states each model's tokens apart, this row prices the one the
     // engine put first, and the rest go to a price of their own that no line of
     // this row can carry. Unknown, never a third of the truth: see fault 121.
-    let cost_micros = reading.counts_the_whole_call().then_some(priced).flatten();
+    let cost_micros = if answered_nothing(spent.error_type, &reading) {
+        Some(0)
+    } else {
+        reading.counts_the_whole_call().then_some(priced).flatten()
+    };
     let sequence = CALLS_SO_FAR.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let written = ModelCallRecord {
         call_id: format!(
@@ -228,6 +232,21 @@ pub(crate) fn record_the_call(
         session_mode: spent.session_mode,
     };
     let _ = record.ledger.record_model_call(&written);
+}
+
+/// A call the engine refused before generating anything — a spent quota, a
+/// model this account may not ask for, a binary that would not start — with
+/// no token or cost figure to its name. It spent nothing, and is counted as
+/// nothing rather than left unknown: one unknown call makes every later
+/// admission under a cap impossible.
+fn answered_nothing(error_type: Option<&'static str>, reading: &Reading) -> bool {
+    matches!(
+        error_type,
+        Some("quota_exhausted" | "exhausted" | "spawn_failed")
+    ) && reading.input_tokens.is_none()
+        && reading.output_tokens.is_none()
+        && reading.total_tokens.is_none()
+        && reading.declared_cost.is_none()
 }
 
 #[cfg(test)]

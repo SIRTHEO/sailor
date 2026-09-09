@@ -136,6 +136,38 @@ impl ToolResolver for OneEngine {
 /// The price list lives in a file and the tests must not read the home of
 /// whoever runs them. One list serves both tests, so the process variable is
 /// written once and never contended.
+const A_REFUSAL_FOR_THIS_ACCOUNT: &str = r#"cat > /dev/null
+echo "ERROR: The 'gpt-6-astra' model is not supported when using Codex with a ChatGPT account." >&2
+exit 1"#;
+
+/// Two engines the step names in order: one that refuses the question for
+/// this account before generating anything, one that answers.
+struct RefuserThenAnswerer {
+    refuser: String,
+    answerer: String,
+}
+
+impl ToolResolver for RefuserThenAnswerer {
+    fn resolve(&self, id: &str) -> Result<String, String> {
+        match id {
+            "rifiuta" => Ok(self.refuser.clone()),
+            "risponde" => Ok(self.answerer.clone()),
+            other => Err(format!("«{other}» is not on this machine")),
+        }
+    }
+    fn ask_recipe(&self, _id: &str) -> Option<AskRecipe> {
+        let mut recipe = declaring_recipe();
+        recipe.unusable_when = vec!["is not supported when using codex with a chatgpt account".to_owned()];
+        Some(recipe)
+    }
+    fn spend_ceiling_option(&self, id: &str) -> Option<CeilingOption> {
+        (id == "risponde").then(|| CeilingOption {
+            args: vec!["--max-budget-usd".to_owned()],
+            unit: UNIT_CURRENCY.to_owned(),
+        })
+    }
+}
+
 fn with_the_price_list<T>(path: &Path, body: impl FnOnce() -> T) -> T {
     static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _held = ONE_AT_A_TIME
@@ -374,4 +406,37 @@ impl ToolResolver for OnlyOneCanBeAsked {
     fn ask_recipe(&self, id: &str) -> Option<AskRecipe> {
         (id == "motore-di-prova").then(declaring_recipe)
     }
+}
+
+/// A refusal that generated nothing is a call that cost nothing, and the
+/// ledger says so: measured on consult-a-strong-model-1788956629992879000,
+/// where codex's 400 for this account left one call without a cost, and the
+/// admission of the next engine under the cap became impossible to compute.
+#[test]
+fn a_refusal_that_answered_nothing_leaves_the_cap_countable_for_the_next_engine() {
+    let dir = Scratch::new("refusal-costs-nothing");
+    let prices = dir.0.join("pricing.json");
+    fs::write(&prices, PRICE_LIST).expect("the fake price list is written");
+    let action = ExternalEngineAction::resolving_with(RefuserThenAnswerer {
+        refuser: fake_engine(&dir.0, "rifiuta", A_REFUSAL_FOR_THIS_ACCOUNT),
+        answerer: fake_engine(&dir.0, "risponde", A_SMALL_CALL),
+    })
+    .recording_to(Some(Ledger::open(dir.0.join("deposito")).expect("a scratch ledger")))
+    .budgeted_by(None);
+    let input = json!({"tool": ["rifiuta", "risponde"], "stdin": "ciao", "timeout_secs": 10});
+
+    with_the_price_list(&prices, || {
+        action
+            .execute(&input, &capped("passo-1", 5_000_000))
+            .expect("the refusal spent nothing, so the next engine is admitted");
+    });
+
+    let ledger = Ledger::open(dir.0.join("deposito")).expect("the ledger reopens");
+    let dump = ledger.projection_dump().expect("it says what it holds");
+    let calls = ui::parse::parse_model_calls(&dump);
+    assert_eq!(calls.len(), 2, "both engines leave a row: {calls:?}");
+    let refused = calls.iter().find(|call| call.cli == "rifiuta").expect("the refusal's row");
+    assert_eq!(refused.cost_micros, Some(0), "a refusal that answered nothing cost nothing");
+    let spent = ledger.spent_in_run("la-corsa").expect("the run's spend");
+    assert!(spent.is_complete(), "no call is left without a cost: {spent:?}");
 }
