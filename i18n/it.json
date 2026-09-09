@@ -481,6 +481,7 @@
   "cli.session.none_checked_in": "nessun terminale si è ancora annunciato",
   "cli.session.nothing_to_graft": "{tool}: dichiara un file di ganci e nessun nome di evento, quindi non c'è niente da innestarci dentro",
   "cli.session.row_attached": "attaccato",
+  "cli.session.closed_the_gone": "{count} riga/e che nessuno teneva chiusa/e, il terminale essendo sparito quando questo ha parlato: {ttys}",
   "cli.session.at_rest_for_long": "{count} terminale/i aperto/i a riposo da più di un'ora: una sessione finita è identica a una che aspetta un prompt, e solo chi la tiene può dire quale",
   "cli.session.row_last_event": "al lavoro, «{event}» {for} fa",
   "cli.session.row_at_rest": "a riposo da {for}, dal suo «{event}»",

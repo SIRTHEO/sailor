@@ -1630,13 +1630,53 @@ fn record_event(request: &Request<'_>) -> Result<Report, String> {
     // The announcement is renewed here and nowhere else: a lease that only the
     // opening renewed would expire on a terminal that has been working all day.
     let announced = announce(request, &arrival, "working");
-    Ok(Report::spoken(also_saying(
-        catalogue::say(
-            "cli.session.event_on_terminal",
-            &[("event", &happened.name), ("tty", &happened.tty)],
-        ),
-        announced,
-    )))
+    let gone = close_the_gone(request, store)?;
+    let mut said = catalogue::say(
+        "cli.session.event_on_terminal",
+        &[("event", &happened.name), ("tty", &happened.tty)],
+    );
+    if !gone.is_empty() {
+        said.push('\n');
+        said.push_str(&catalogue::say(
+            "cli.session.closed_the_gone",
+            &[("count", &gone.len().to_string()), ("ttys", &gone.join(", "))],
+        ));
+    }
+    Ok(Report::spoken(also_saying(said, announced)))
+}
+
+/// The rows still open whose terminal the census no longer sees: closed here,
+/// with an event that names who noticed, because the census is taken when an
+/// event arrives and at no other moment. Only the register is written; the
+/// deposit's announcement belongs to whoever held the terminal.
+fn close_the_gone(request: &Request<'_>, store: &Sessions) -> Result<Vec<String>, String> {
+    let rows = store.terminals().map_err(|error| error.to_string())?;
+    let sessions::census::Abandoned::Seen { ttys } = request.census.abandoned(&rows) else {
+        return Ok(Vec::new());
+    };
+    let mut closed = Vec::new();
+    for row in rows.iter().filter(|row| ttys.contains(&row.tty)) {
+        if !store
+            .close_terminal(&row.tty, request.at)
+            .map_err(|error| error.to_string())?
+        {
+            continue;
+        }
+        store
+            .record_event(&TerminalEvent {
+                tty: row.tty.clone(),
+                session_id: row.session_id.clone(),
+                worktree: Some(row.worktree.clone()),
+                ancestor: row.ancestor.clone(),
+                name: "gone".to_owned(),
+                transcript_path: row.transcript_path.clone(),
+                occurred_at: request.at,
+                payload: Some(format!("{{\"noticed_by\":\"{}\"}}", request.tty)),
+            })
+            .map_err(|error| error.to_string())?;
+        closed.push(row.tty.clone());
+    }
+    Ok(closed)
 }
 
 /// The sentence, plus whatever the announcement could not do: said, not
@@ -4342,6 +4382,70 @@ mod tests {
         assert!(two_hours_later.message.contains(&summary), "{}", two_hours_later.message);
         assert_eq!(since_words(59), "0m");
         assert_eq!(since_words(90_000), "1d 1h");
+    }
+
+    /// A row nobody holds is closed the next time any terminal speaks, with an
+    /// event that says who noticed: the register stops listing as open a
+    /// session whose end nothing recorded.
+    #[test]
+    fn a_row_nobody_holds_is_closed_when_the_next_event_arrives() {
+        let scratch = Scratch::new("gone");
+        let store = scratch.store();
+        let two = Census::Terminals(vec![
+            Terminal {
+                tty: "ttys004".to_owned(),
+                ancestor: Some("Whatever".to_owned()),
+                inhabitants: vec![],
+            },
+            Terminal {
+                tty: "ttys009".to_owned(),
+                ancestor: Some("Whatever".to_owned()),
+                inhabitants: vec![],
+            },
+        ]);
+        let payload = Payload::parse(r#"{"session_id":"xyz","cwd":"/there"}"#).expect("parses");
+        act(&Request {
+            verb: "open",
+            options: &no_options(),
+            payload: &payload,
+            raw: "{}",
+            store: Some(&store),
+            deposit: &TheDeposit::NobodyNeedsItHere,
+            census: &two,
+            tty: "ttys009",
+            at: 900,
+        })
+        .expect("the other terminal checks in");
+        ask("open", r#"{"session_id":"abc","cwd":"/here"}"#, &store, &two, &no_options())
+            .expect("this one too");
+
+        // ttys009 leaves without a word; the census of the next event no longer sees it.
+        let report = ask(
+            "event",
+            r#"{"session_id":"abc","cwd":"/here","hook_event_name":"Stop"}"#,
+            &store,
+            &one_terminal(),
+            &no_options(),
+        )
+        .expect("an event on the terminal that stayed");
+        let said = catalogue::say(
+            "cli.session.closed_the_gone",
+            &[("count", "1"), ("ttys", "ttys009")],
+        );
+        assert!(report.message.contains(&said), "{}", report.message);
+        let rows = store.terminals().expect("the rows");
+        let gone = rows.iter().find(|row| row.tty == "ttys009").expect("still on record");
+        assert!(!gone.is_open(), "closed, not deleted: {gone:?}");
+        assert!(
+            rows.iter().find(|row| row.tty == "ttys004").expect("ours").is_open(),
+            "the terminal that spoke stays open"
+        );
+        let events = store.events_on("ttys009").expect("its events");
+        assert!(
+            events.iter().any(|event| event.name == "gone"
+                && event.payload.as_deref() == Some(r#"{"noticed_by":"ttys004"}"#)),
+            "the closing names who noticed: {events:?}"
+        );
     }
 
     #[test]
