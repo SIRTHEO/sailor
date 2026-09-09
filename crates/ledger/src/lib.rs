@@ -338,22 +338,30 @@ struct TraceRecord {
 /// **«ATTEMPT TO WRITE A READONLY DATABASE» IS NOT A REASON FOR A READER**: a
 /// WAL store wants a file beside it even to be read.
 fn why_a_reader_was_refused(directory: &Path, error: rusqlite::Error) -> LedgerError {
-    let beside = directory.join(".readable-check");
-    if std::fs::write(&beside, b"").is_err() {
+    if !may_write_beside(directory) {
         return LedgerError::InvalidRecord(format!(
             "{}: this reader may not write the directory, and a WAL store wants a file \
              beside it even to be read",
             directory.display()
         ));
     }
-    let _ = std::fs::remove_file(&beside);
     LedgerError::from(error)
+}
+
+fn may_write_beside(directory: &Path) -> bool {
+    let beside = directory.join(".readable-check");
+    let may = std::fs::write(&beside, b"").is_ok();
+    let _ = std::fs::remove_file(&beside);
+    may
 }
 
 #[derive(Clone)]
 pub struct Ledger {
     connection: Arc<Mutex<Connection>>,
     directory: Arc<PathBuf>,
+    /// Opened as the file stands on disk, with the WAL left unread: what a
+    /// writer has not checkpointed yet is not in this reading.
+    as_of_checkpoint: bool,
 }
 
 impl Ledger {
@@ -402,28 +410,43 @@ impl Ledger {
         Ok(Self {
             connection: Arc::new(Mutex::new(connection)),
             directory: Arc::new(directory.to_path_buf()),
+            as_of_checkpoint: false,
         })
     }
 
     /// The same store, opened **without asking to write it**: nothing created,
     /// no pragma set, no migration run.
+    ///
+    /// A WAL store wants a file beside it even to be read. Where the directory
+    /// refuses one, the files are read as they stand and
+    /// [`Self::reads_as_of_the_last_checkpoint`] says so.
     pub fn open_for_reading(directory: impl AsRef<Path>) -> Result<Self, LedgerError> {
         let directory = directory.as_ref();
         let state_path = directory.join(STATE_FILE);
         let events_path = directory.join(EVENTS_FILE);
-        let opened = || -> Result<(Connection, i64), rusqlite::Error> {
+        let opened = |as_of_checkpoint: bool| -> Result<(Connection, i64), rusqlite::Error> {
+            let immutable = if as_of_checkpoint { "&immutable=1" } else { "" };
             let read_only = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI;
-            let connection = Connection::open_with_flags(&state_path, read_only)?;
+            let connection = Connection::open_with_flags(
+                format!("file:{}?mode=ro{immutable}", state_path.to_string_lossy()),
+                read_only,
+            )?;
             connection.busy_timeout(BUSY_TIMEOUT)?;
             connection.execute(
                 "ATTACH DATABASE ?1 AS events",
-                [format!("file:{}?mode=ro", events_path.to_string_lossy())],
+                [format!("file:{}?mode=ro{immutable}", events_path.to_string_lossy())],
             )?;
             let version = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
             Ok((connection, version))
         };
-        let (connection, version) =
-            opened().map_err(|error| why_a_reader_was_refused(directory, error))?;
+        let (connection, version, as_of_checkpoint) = match opened(false) {
+            Ok((connection, version)) => (connection, version, false),
+            Err(error) if may_write_beside(directory) => return Err(error.into()),
+            Err(error) => match opened(true) {
+                Ok((connection, version)) => (connection, version, true),
+                Err(_) => return Err(why_a_reader_was_refused(directory, error)),
+            },
+        };
         if version < PROJECTION_SCHEMA_VERSION {
             return Err(LedgerError::InvalidRecord(format!(
                 "this store is at projection schema version {version} and this code expects \
@@ -433,7 +456,14 @@ impl Ledger {
         Ok(Self {
             connection: Arc::new(Mutex::new(connection)),
             directory: Arc::new(directory.to_path_buf()),
+            as_of_checkpoint,
         })
+    }
+
+    /// True when the store was read as its files stand, with the WAL left
+    /// unread: a line a writer has not checkpointed yet is missing here.
+    pub fn reads_as_of_the_last_checkpoint(&self) -> bool {
+        self.as_of_checkpoint
     }
 
     pub fn directory(&self) -> &Path {

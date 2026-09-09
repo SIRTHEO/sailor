@@ -46,6 +46,9 @@ fn report(sources: &[FlowSource], ledger_dir: &std::path::Path, query: &str) -> 
     }
     match Ledger::open_for_reading(ledger_dir) {
         Ok(ledger) => {
+            if ledger.reads_as_of_the_last_checkpoint() {
+                eprintln!("sailor search: {}", catalogue::say("cli.store.read_as_of_the_last_checkpoint", &[]));
+            }
             let faults_store = ledger_dir.join(faults::FAULTS_FILE);
             let hits = actions::search::search_the_ledger_and_the_faults(&ledger, Some(&faults_store), query)?;
             lines.push(catalogue::say(

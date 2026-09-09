@@ -35,9 +35,12 @@ fn make_writable(path: &Path) -> std::io::Result<()> {
 }
 
 /// **THE MEASURE IS THE DIRECTORY, NOT THE FILE**: taking its write bit off is
-/// what a sandbox does to a reader.
+/// what a sandbox does to a reader. A WAL store wants a file beside it even to
+/// be read, and a directory that refuses one used to refuse the reader with it:
+/// now the files are read as they stand, and the reading says it left the WAL
+/// unread.
 #[test]
-fn a_store_whose_file_beside_it_cannot_be_made_says_which_half_refused() {
+fn a_directory_that_refuses_a_file_beside_the_store_is_still_read_and_says_so() {
     let scratch = Scratch::new("read-only");
     let directory = scratch.0.join("ledger");
     {
@@ -46,22 +49,27 @@ fn a_store_whose_file_beside_it_cannot_be_made_says_which_half_refused() {
     }
     permissions(&directory, 0o555).expect("the directory refuses writes from here on");
 
-    let refused = ledger::Ledger::open(&directory);
     assert!(
-        refused.is_err(),
+        ledger::Ledger::open(&directory).is_err(),
         "the read-write open must refuse here, or this test proves nothing"
     );
 
-    // **WHAT IS CLOSED, AND WHAT IS NOT.** The reader no longer asks for the
-    // right to write, which the next test measures; it still cannot conjure
-    // the file a WAL store wants beside it. That half says so by name.
-    let said = ledger::Ledger::open_for_reading(&directory)
-        .err()
-        .map(|error| error.to_string())
-        .unwrap_or_default();
+    let reading = ledger::Ledger::open_for_reading(&directory)
+        .expect("a reader is let in where nothing may be written");
     assert!(
-        said.contains("may not write the directory"),
-        "the refusal must name the perimeter, not the store: {said}"
+        reading.reads_as_of_the_last_checkpoint(),
+        "a reading that left the WAL unread must say so"
+    );
+    let held = reading
+        .records_in("una-collezione")
+        .expect("the entries come back");
+    assert_eq!(held.len(), 1, "what was checkpointed is read back: {held:?}");
+
+    make_writable(&directory).expect("the directory takes writes again");
+    let reading = ledger::Ledger::open_for_reading(&directory).expect("a reader is let in");
+    assert!(
+        !reading.reads_as_of_the_last_checkpoint(),
+        "where a file beside the store may be made, the WAL is read and nothing is left out"
     );
 }
 

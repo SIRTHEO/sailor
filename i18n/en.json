@@ -753,6 +753,7 @@
   "cli.command.search": "finds what Sailor keeps that mentions the words: flows, and the ledger's recent runs, steps and store",
   "cli.search.says": "searches the words in every flow, in the ledger's recent runs, steps, events and store entries, and in the fault register, best first",
   "cli.search.no_words": "a search needs a word; usage: {usage}",
+  "cli.store.read_as_of_the_last_checkpoint": "the store's folder refuses a file beside it, so the store was read as its files stand: a line a writer has not checkpointed yet is not in this answer",
   "cli.search.flows_found": "flows: {count} mention «{query}»",
   "cli.search.ledger_found": "ledger and faults: {count} run(s), step(s), event(s), store entr(ies) or fault(s) mention «{query}»",
   "cli.search.ledger_closed": "ledger: could not be opened, so nothing of it was searched ({error})",

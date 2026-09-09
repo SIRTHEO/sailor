@@ -88,6 +88,8 @@ fn page_options(options: &[String]) -> Result<PageAsked, String> {
     Ok(asked)
 }
 
+const K_READ_AS_OF_CHECKPOINT: &str = "cli.store.read_as_of_the_last_checkpoint";
+
 fn write_or_print(asked: &PageAsked) -> i32 {
     // The page is read out of the store and written beside it: nothing here
     // records anything, so nothing here asks for the right to.
@@ -98,6 +100,9 @@ fn write_or_print(asked: &PageAsked) -> i32 {
             return 1;
         }
     };
+    if ledger.reads_as_of_the_last_checkpoint() {
+        eprintln!("sailor memory: {}", catalogue::say(K_READ_AS_OF_CHECKPOINT, &[]));
+    }
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)

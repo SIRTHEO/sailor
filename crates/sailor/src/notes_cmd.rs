@@ -127,6 +127,9 @@ fn dispatch(args: &[String]) -> Result<Written, String> {
         _ => Ledger::open_for_reading(&directory),
     };
     let ledger = opened.map_err(|error| format!("{}: {error}", directory.display()))?;
+    if ledger.reads_as_of_the_last_checkpoint() {
+        eprintln!("sailor notes: {}", catalogue::say("cli.store.read_as_of_the_last_checkpoint", &[]));
+    }
 
     match verb {
         "import" => import(&ledger, &loose),
