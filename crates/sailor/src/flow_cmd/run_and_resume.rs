@@ -566,7 +566,7 @@ fn execution_status(execution: &Execution) -> (&'static str, bool) {
 /// by hand into a field the window shows: repairing one of the two would give
 /// two different totals for the same run, depending on who had launched it.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn record_run(
+pub(crate) fn record_run(
     ledger: &Ledger,
     flow: &FlowFile,
     run_id: &str,
