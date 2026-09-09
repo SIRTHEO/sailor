@@ -11,11 +11,11 @@ function ask<T>(command: string, args?: Record<string, unknown>): Promise<T> {
 }
 
 /**
- * **FOUR ANSWERS, AND THE FOURTH IS THE POINT.** `unrecognised` is prose the
+ * **FOUR ANSWERS, AND THE FOURTH IS THE POINT.** `unknown` is prose the
  * register was never taught: refusing it keeps a fault from being subtracted
  * from the open count by a wording nobody meant to change anything with.
  */
-export type Standing = "open" | "partly closed" | "closed" | "unrecognised";
+export type Standing = "open" | "partly closed" | "closed" | "unknown";
 
 export interface Entry {
   number: number;
@@ -43,7 +43,7 @@ export function setStatus(number: number, status: string): Promise<void> {
 }
 
 /** The prose the register writes, so the window offers exactly those words. */
-export const STATUS_WORDS: Record<Exclude<Standing, "unrecognised">, string> = {
+export const STATUS_WORDS: Record<Exclude<Standing, "unknown">, string> = {
   open: "**aperto**",
   "partly closed": "**chiuso in parte**",
   closed: "**chiuso**",

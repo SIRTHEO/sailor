@@ -25,7 +25,7 @@ const BOOK = {
       status: "**chiuso**", standing: "closed" },
     { number: 41, happened_on: "2026-09-01", what_happened: "a design element the engine did not support",
       how_it_showed: "a mockup that could not be built", what_would_prevent: "",
-      status: "mezzo sistemato, credo", standing: "unrecognised" },
+      status: "mezzo sistemato, credo", standing: "unknown" },
   ],
 };
 

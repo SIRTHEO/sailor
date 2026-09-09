@@ -36,7 +36,7 @@ describe("the register contract", () => {
     for (const standing of arms) {
       expect(ts, `«${standing}» is not in the window's Standing union`).toContain(`"${standing}"`);
     }
-    // Three, not four: `unrecognised` is a reading, never a status to write —
+    // Three, not four: `unknown` is a reading, never a status to write —
     // offering it as a button would let somebody set a fault to «I do not
     // understand this», which is not a thing anybody means.
     expect(Object.keys(STATUS_WORDS).sort()).toEqual(["closed", "open", "partly closed"]);

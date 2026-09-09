@@ -49,7 +49,7 @@ export function FaultsScreen({ native }: { native: boolean }) {
   }
 
   const shown: Entry[] = openOnly
-    // `unrecognised` is kept in the open view on purpose: it is not closed, and
+    // `unknown` is kept in the open view on purpose: it is not closed, and
     // hiding it would be the quiet subtraction the fourth answer exists against.
     ? ask.seen.entries.filter((entry) => entry.standing !== "closed")
     : ask.seen.entries;
@@ -95,8 +95,8 @@ export function FaultsScreen({ native }: { native: boolean }) {
               <dt>status</dt>
               <dd>
                 {/* The register writes its own words; a person reads the standing. */}
-                {entry.standing === "unrecognised" ? entry.status : entry.standing}
-                {entry.standing === "unrecognised" && (
+                {entry.standing === "unknown" ? entry.status : entry.standing}
+                {entry.standing === "unknown" && (
                   // NOT A FAULT OF THE FAULT: the register did not understand
                   // the wording, and saying so is what keeps it from being
                   // counted as closed by accident.
