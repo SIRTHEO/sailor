@@ -132,6 +132,11 @@ pub(crate) fn how_it_exited(code: Option<i32>) -> String {
 /// getting through is worse than a red.
 fn json_body(said: &str) -> &str {
     let trimmed = said.trim();
+    // Whole and valid, it is read whole: a fence inside one of its strings
+    // is text, not a wrapper.
+    if serde_json::from_str::<serde::de::IgnoredAny>(trimmed).is_ok() {
+        return trimmed;
+    }
     let Some(open) = trimmed.find("```") else {
         return trimmed;
     };
@@ -263,6 +268,27 @@ mod tests {
         .expect("a shape");
         let whole = json!({"id": "a-draft", "graph": {"steps": []}});
         assert_eq!(pruned(&shape, whole.clone()), whole);
+    }
+
+    /// **A FENCE INSIDE A STRING IS NOT A WRAPPER.** A check that read a
+    /// document into one JSON field carried the document's code fences with
+    /// it, and the reader kept only what stood between the first fence and
+    /// the next line break: the closing brace of the object.
+    #[test]
+    fn a_whole_json_answer_carrying_a_fence_in_a_string_is_read_whole() {
+        let shape: ValueSchema = serde_json::from_value(json!({
+            "type": "object", "properties": {"brief": {"type": "string"}},
+            "required": ["brief"], "allow_extra": false
+        }))
+        .expect("a shape");
+        let said = serde_json::to_string_pretty(&json!({
+            "brief": "rules:\n```\ncargo test\n```\nand more"
+        }))
+        .expect("printed over several lines, as a tool prints it");
+
+        let read = shaped_answer(&shape, &said).expect("the answer is whole JSON");
+
+        assert_eq!(read["brief"], json!("rules:\n```\ncargo test\n```\nand more"));
     }
 
     /// **THE EXCERPT SHOWS WHERE IT BROKE, NOT WHERE IT BEGAN.** In fault 103
