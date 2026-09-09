@@ -126,13 +126,11 @@
         "with": {
           "tool": [
             "codex",
-            "claude-code",
-            "agy"
+            "claude-code"
           ],
           "model": {
             "codex": "gpt-6-astra",
-            "claude-code": "claude-opus-5",
-            "agy": "claude-sonnet-4-6"
+            "claude-code": "claude-fable-5-1"
           },
           "answer_shape": {
             "type": "object",
