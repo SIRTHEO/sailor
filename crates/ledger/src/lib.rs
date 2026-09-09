@@ -22,6 +22,7 @@ use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
 
 pub mod answers;
+pub mod halts;
 pub mod holdings;
 pub mod identity;
 pub mod records;
@@ -1635,6 +1636,15 @@ impl RecordStore for Ledger {
     /// the children too: what a subflow spends is spent by the run that asked.
     fn spent(&self, run_id: &str) -> Result<Spend, flow::FlowError> {
         self.spent_in_run_and_below(run_id)
+            .map_err(|error| flow::FlowError::Store(error.to_string()))
+    }
+
+    /// The store keeps the requests, so it answers for real. The trait's
+    /// default is `false`, and a store that kept one while answering `false`
+    /// would leave the run going with nobody able to see why it did not stop.
+    fn halt_requested(&self, run_id: &str) -> Result<bool, flow::FlowError> {
+        self.halt_request(run_id)
+            .map(|found| found.is_some())
             .map_err(|error| flow::FlowError::Store(error.to_string()))
     }
 }
