@@ -4255,23 +4255,15 @@ tr[data-followable]:hover {
   color: var(--muted);
 }
 
-.pane__moved {
-  font-size: var(--text-micro);
-  color: var(--muted);
-}
-
 .pane__who {
   font-family: var(--font-data);
   font-size: var(--text-micro);
   white-space: nowrap;
 }
 
+/* Only ever drawn at the ceiling, so it has one look and it is the loud one. */
 .pane__tokens {
   font-size: var(--text-micro);
-  color: var(--muted);
-}
-
-.pane__tokens[data-past] {
   color: var(--danger);
   font-weight: 600;
 }
@@ -4858,7 +4850,6 @@ tr[data-followable]:hover {
   border-top: 1px solid var(--line);
 }
 
-.pane__root,
 .pane__id {
   font-family: var(--font-data);
   font-size: var(--text-micro);

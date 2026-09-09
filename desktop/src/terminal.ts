@@ -603,6 +603,16 @@ export function progressOf(liveness: Liveness, spokeAt: number | null, now: numb
 }
 
 /**
+ * Whether the estimate has become something to decide about. Under the
+ * ceiling it is a reading, and a reading kept permanently on screen takes the
+ * room the three facts need; at the ceiling the relay hands on, and that is a
+ * decision.
+ */
+export function ceilingReached(estimated: number, ceiling: number | null): boolean {
+  return ceiling !== null && estimated >= ceiling;
+}
+
+/**
  * **THE FOCUSED ONE FIRST, AND NOTHING ELSE MOVES.** Output and state are not
  * arguments, so no arrival can reorder what somebody is looking at.
  */
