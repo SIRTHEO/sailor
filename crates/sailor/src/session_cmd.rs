@@ -1,26 +1,9 @@
-//! `sailor session`: **the one door** into terminal tracking.
-//!
-//! **THE PRINCIPLE.** Sailor does not walk into the terminal: the agent — or
-//! the shell — announces itself. A hook sends its payload on standard input and
-//! this command records it. There is no other way in, and no product-specific
-//! code: **it reads no program's environment variable and names no terminal.**
-//!
-//! **THE ANCHOR IS `(tty, tree, progenitor)`.** The tty from our own descriptor
-//! or from the first ancestor that has one, the tree from the payload, the
-//! progenitor from the census — and the progenitor **is a label**: it is
-//! printed and recorded, no condition reads it. `no_product_name_decides_anything`
-//! holds the iron rule: a product's name may appear in a label, never in a
-//! condition.
-//!
-//! **THE CENSUS IS TRIGGERED, NOT ON A CLOCK.** The machine is looked at when
-//! an event arrives and at no other moment: in here there is no timer, no loop
-//! and no waiting.
-//!
-//! **A REFUSED CENSUS DOES NOT FAIL A RECORDING.** A hook that exits badly is a
-//! hook that disturbs whoever is working: if we were not allowed to look at the
-//! machine the progenitor stays unknown and the row is written all the same.
-//! Only `sailor session census` is made to exit 3 by a refusal, because it is
-//! the only one whose answer *is* the census.
+//! `sailor session`: **the one door** into terminal tracking. The agent or
+//! the shell announces itself on standard input; this command records it and
+//! reads no program's environment variable. The anchor is `(tty, tree,
+//! progenitor)`, and the progenitor is a label no condition reads. The census
+//! runs when an event arrives, never on a clock, and a refused census does not
+//! fail a recording: only `sailor session census` exits 3 on a refusal.
 
 use crate::Form;
 use sessions::census::{Census, LocalMachine};
@@ -252,13 +235,8 @@ struct Request<'a> {
 
 /// The ledger the terminal announces itself in, and what came of asking for it.
 ///
-/// **A LEDGER THAT WOULD NOT OPEN IS NOT AN ABSENT ONE**, and the two were one
-/// value until a store one version ahead of the binary made every hook exit 1
-/// on every prompt. Collapsing them the other way would be no better: the
-/// announcement would be skipped in silence, and the survey would show the
-/// terminal as nobody with nothing said. Three states, so the refusal can be
-/// carried to whoever prints, and the hook can still exit 0 — the principle at
-/// the head of this module.
+/// A ledger that would not open is not an absent one: the refusal is carried
+/// to whoever prints, and the hook still exits 0.
 enum TheDeposit<'a> {
     /// This form does not announce, so nothing was opened.
     NobodyNeedsItHere,
@@ -288,17 +266,9 @@ impl<'a> Request<'a> {
     }
 }
 
-/// The forms that really do read the ledger.
-///
-/// **A LIST OF WHO NEEDS IT, NOT OF THE EXCEPTIONS**, and the difference shows
-/// on the form added tomorrow: a list of exceptions lets it through in silence,
-/// this one does not. `dispatch` once opened `sessions.db` before knowing
-/// which form had been asked for, so `census` — which never touches the
-/// ledger — died with the file's error **in place of its own answer**, and its
-/// answer is precisely "I do not know".
-///
-/// Watched by `a_form_that_never_reads_the_store_survives_a_store_that_will_not_open`,
-/// which runs on **every** form not listed here.
+/// The forms that really do read the ledger: a list of who needs it, not of
+/// the exceptions, so a form added tomorrow is not let through in silence.
+/// Watched by `a_form_that_never_reads_the_store_survives_a_store_that_will_not_open`.
 const NEEDS_THE_STORE: &[&str] = &["open", "event", "close", "list", "detach", "attach"];
 
 /// The forms that announce this terminal to the other agents, or stop.
@@ -1380,12 +1350,8 @@ fn still_open_in(
 
 /// This machine's ledger, or the one `--ledger` names. `Ok(None)` where there
 /// is no home to look in, which is not the same as a home holding nothing.
-///
-/// **`--ledger` IS THE TWIN OF `--store`, AND EXISTS FOR THE SAME REASON**: the
-/// road from the command line down to a ledger that will not open has to be
-/// walkable without the machine's own home in it. Without it the only way to
-/// move this store was the environment, which is shared by the whole process
-/// and races every other case in the battery.
+/// `--ledger` is the twin of `--store`: the road down to a ledger that will
+/// not open must be walkable without the machine's own home in it.
 fn deposit(declared: Option<&str>) -> Result<Option<ledger::Ledger>, String> {
     let directory = match declared {
         Some(declared) => PathBuf::from(declared),
@@ -1673,16 +1639,10 @@ fn record_event(request: &Request<'_>) -> Result<Report, String> {
     )))
 }
 
-/// The sentence, plus whatever the announcement could not do.
-///
-/// **SAID, NOT RETURNED AS AN ERROR.** The work asked for is already done — the
-/// row is in the other store — and failing the hook over the announcement would
-/// stop the person working over a line nobody was waiting for. Silence would be
-/// worse than either: the crew survey then reads this terminal as an empty tree,
-/// which is not what happened.
-///
-/// One function and three callers, because the same fact told three times is the
-/// one that starts drifting.
+/// The sentence, plus whatever the announcement could not do: said, not
+/// returned as an error, because the row is already in the other store and
+/// failing the hook would stop the person working. One function and three
+/// callers, so the same fact is not told three times.
 fn also_saying(said: String, announced: Result<(), String>) -> String {
     match announced {
         Ok(()) => said,
@@ -2154,15 +2114,10 @@ mod tests {
         }
     }
 
-    /// **A LEDGER THAT WILL NOT OPEN MUST NOT FAIL THE HOOK, NOR PASS IN
-    /// SILENCE.** A store one version ahead of the binary made every prompt
-    /// exit 1; turning the refusal into «nobody needs it» would instead skip
-    /// the announcement with nothing said, and the crew survey would read this
-    /// terminal as an empty tree.
-    ///
-    /// *Mutant runs*: putting `deposit()?` back in `dispatch` turns this red on
-    /// the recording; mapping the error to `NobodyNeedsItHere` turns it red on
-    /// the sentence.
+    /// A ledger that will not open must not fail the hook, nor pass in
+    /// silence. Mutants: `deposit()?` back in `dispatch` turns this red on the
+    /// recording; mapping the error to `NobodyNeedsItHere` turns it red on the
+    /// sentence.
     #[test]
     fn a_ledger_that_will_not_open_is_said_and_does_not_fail_the_event() {
         let scratch = Scratch::new("deposito-che-non-apre");
@@ -2202,14 +2157,10 @@ mod tests {
         );
     }
 
-    /// The same rule, walked from the command line down: **this one goes
-    /// through `dispatch`**, which is where the ledger is opened and where the
-    /// two ways of getting it wrong live. The case above drives `act` with the
-    /// state already in hand, so it cannot see either.
-    ///
-    /// *Mutant runs*: propagating the error out of `dispatch` turns this red
-    /// because the hook dies; mapping it to `NobodyNeedsItHere` turns it red
-    /// because the refusal goes unsaid.
+    /// The same rule, walked from the command line down through `dispatch`,
+    /// where the ledger is opened. Mutants: propagating the error out of
+    /// `dispatch` kills the hook; mapping it to `NobodyNeedsItHere` leaves the
+    /// refusal unsaid.
     #[test]
     fn the_command_line_survives_a_ledger_that_will_not_open_and_says_so() {
         let scratch = Scratch::new("deposito-inapribile-da-riga");

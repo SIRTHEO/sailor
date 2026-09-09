@@ -10,10 +10,8 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// The map every `Action::execute` receives, keyed by a prefix that says who
-/// owns the datum. `flow.` is the executor's: it rewrites those keys at every
-/// step, so a flow that writes one sees its value overwritten. `workspace.` is
-/// written by whoever launches, before the run starts, and holds for the whole
-/// run. Two prefixes, so a reader can tell the two owners apart.
+/// owns the datum: `flow.` is rewritten by the executor at every step,
+/// `workspace.` is written by whoever launches and holds for the whole run.
 pub type SharedState = BTreeMap<String, Value>;
 
 /// The step about to start, written before every `Action::execute`.
@@ -1213,10 +1211,8 @@ impl Executor for InProcessExecutor {
     }
 }
 
-/// The *ceiling* on how many steps run together; under a cap the number comes
-/// from [`how_many_fit`]. Not a technical limit — engine quotas and the
-/// watcher's patience bind first. Public because `for_each` opens its children
-/// under the same ceiling: one width for the machine, declared once.
+/// The ceiling on how many steps run together; under a cap the number comes
+/// from [`how_many_fit`]. `for_each` opens its children under the same one.
 pub const AT_ONCE: usize = 4;
 
 /// How many steps can be opened at once with this remainder.
@@ -1562,10 +1558,8 @@ fn species_for(record: &StepRecord, action: Option<&dyn Action>) -> StepSpecies 
         .unwrap_or(StepSpecies::HandToHuman)
 }
 
-/// The smallest gap the engine can tell from "now": its clock counts whole
-/// seconds. Not a policy — the policy is `Step::ask_again_after_secs`, and this
-/// is what stands in for it when a step declares none, so that "not yet" cannot
-/// mean "again immediately" and spin the executor on one step.
+/// What stands in for `Step::ask_again_after_secs` when a step declares none,
+/// so that "not yet" cannot mean "again immediately".
 const NEXT_INVOCATION_AT_THE_EARLIEST: i64 = 1;
 
 /// When a closed record may be tried again. A record with no closing instant
