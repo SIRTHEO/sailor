@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Ran, Refusal, RunEvent, RunSnapshot, Why } from "./engine";
 import { t as translate, tryT } from "./i18n";
+import { figureOf, figureWords } from "./figure";
 import { totalsArePartial, type RunUsage, type TokenTotals } from "./flow";
 import { StepRefusal } from "./StepRefusal";
 import { StepRan } from "./StepRan";
@@ -428,10 +429,9 @@ export function byModel(usage: Pick<RunUsage, "tokens_by_model">): Array<{
     .sort((a, b) => b.totals.cost_micros - a.totals.cost_micros || a.model.localeCompare(b.model));
 }
 
-/** The same three cases as the run's own total, so the parts read like the sum. */
+/** The same shapes as the run's own total, so the parts read like the sum. */
 function priceOf(totals: TokenTotals): string {
-  if (totals.calls_without_cost >= totals.calls) return "price unknown";
-  return totals.calls_without_cost > 0 ? `at least ${money(totals.cost_micros)}` : money(totals.cost_micros);
+  return figureWords(figureOf(totals.cost_micros, totals.calls_without_cost), money);
 }
 
 export function Spend({ usage }: { usage: RunUsage }) {

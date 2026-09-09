@@ -1489,6 +1489,15 @@ button.is-primary {
   color: var(--danger);
 }
 
+/* THE WHOLE EXPRESSION IS THE NUMBER. The mark standing for what nobody
+   measured is set in the face and size of the digits: made smaller it becomes
+   a footnote, and a footnote does not correct the figure it hangs off. */
+.figure {
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* WHAT WAS NOT MEASURED SITS ON THE SAME LINE AS THE NUMBERS, not in a
    footnote: separating it would let an incomplete figure read as a
    complete one. */

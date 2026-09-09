@@ -57,9 +57,9 @@ describe("which engines answered", () => {
     );
     const none = rows.find((row) => row.model === "a");
     const some = rows.find((row) => row.model === "b");
-    expect(none?.price, "no price at all must never print as $0").toBe("price unknown");
-    expect(some?.price, "a total missing one call's price is a floor, not the figure").toContain(
-      "at least",
+    expect(none?.price, "no price at all must never print as $0").toBe("cost ?");
+    expect(some?.price, "a total missing one call's price is a floor, not the figure").toBe(
+      "at least $0.5000 + ?",
     );
   });
 

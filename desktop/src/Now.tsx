@@ -15,6 +15,7 @@
 import { Fragment } from "react";
 import { useAsk, useClock } from "./ask";
 import { openRuns, todaySummary, type DaySummary, type OpenRun } from "./engine";
+import { figureOf, figureWords } from "./figure";
 import { Handed } from "./Handed";
 
 /** How often the list is asked of the ledger again. */
@@ -42,10 +43,10 @@ function money(micros: number): string {
  * and does not count the prompt cache, and someone at Arize says of Phoenix
  * that «the cost is computed correctly in the database, but hard to work out
  * from the UI». A number shown with authority and wrong is worse than an absent
- * number. Here, if some call carried no tokens or price, the figure reads
- * beside the number of calls that do not make it up.
+ * number. Here the calls that declared no price take their place inside the
+ * figure, and the ones that declared no tokens are said beneath the count.
  */
-function Today({ summary }: { summary: DaySummary }) {
+export function Today({ summary }: { summary: DaySummary }) {
   if (!summary.ledger_present) {
     return (
       <p className="now__mute">
@@ -78,14 +79,20 @@ function Today({ summary }: { summary: DaySummary }) {
         <b>{count(seen)}</b> token
       </span>
       <span className="today__cell">
-        <b>{money(summary.cost_micros)}</b>
+        <b
+          className="figure"
+          title={
+            summary.unpriced > 0
+              ? `${count(summary.unpriced)} calls declared no price: the mark stands where they would have counted`
+              : undefined
+          }
+        >
+          {figureWords(figureOf(summary.cost_micros, summary.unpriced), money)}
+        </b>
       </span>
-      {(summary.unmeasured > 0 || summary.unpriced > 0) && (
+      {summary.unmeasured > 0 && (
         <span className="today__caveat" data-gravity="warn">
-          {summary.unmeasured > 0 && `${count(summary.unmeasured)} calls without tokens`}
-          {summary.unmeasured > 0 && summary.unpriced > 0 && " · "}
-          {summary.unpriced > 0 && `${count(summary.unpriced)} without a price`}
-          {" — the figures above do not contain them"}
+          {count(summary.unmeasured)} calls without tokens — the count above does not contain them
         </span>
       )}
     </section>
