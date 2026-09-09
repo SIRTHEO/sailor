@@ -661,8 +661,6 @@ describe("the terminals screen", () => {
       expect(shown()).toHaveLength(2);
       expect(shown()[0].getAttribute("data-focus")).toBe("true");
       expect(shown()[0].querySelector(".pane__device")?.textContent).toBe("ttys004");
-      // The estimate travels in the row and is read on the pane, as an estimate.
-      expect(shown()[0].querySelector(".pane__tokens")?.textContent).toBe("≈ 62k tokens");
 
       // Pressing the other tab brings that pane first and large; the first
       // pane does not disappear, it moves beside.
@@ -700,9 +698,10 @@ describe("the terminals screen", () => {
       // A TAB SAYS WHICH SESSION IT IS: the tty, not a guessed title.
       expect(screen.getByRole("tab", { name: /ttys004/ })).toBeTruthy();
       expect(screen.getByRole("tab", { name: /ttys009/ })).toBeTruthy();
-      // And the pane on screen says it too, with what it has moved so far.
-      expect(document.querySelector(".pane:not([hidden]) .pane__device")?.textContent).toBe("ttys004");
-      expect(document.querySelector(".pane:not([hidden]) .pane__moved")?.textContent).toBe("2 KB moved");
+      // And the pane on screen says it too, with the tree it stands in behind it.
+      const device = document.querySelector(".pane:not([hidden]) .pane__device");
+      expect(device?.textContent).toBe("ttys004");
+      expect(device?.getAttribute("title")).toBe("/work/sailor");
       expect(measure(20)).toEqual([]);
     } finally {
       shell.stop();
@@ -1504,6 +1503,37 @@ describe("the three signals in the panes' borders", () => {
         shell.emit("terminal_closed", { id: "t1", status: "exited with 0" });
       });
       expect(order(), "a change of state reordered the panes").toEqual(["ttys004", "ttys009"]);
+    } finally {
+      shell.stop();
+    }
+  });
+
+  /**
+   * **A QUOTA IS NOT A FACT THAT STAYS ON SCREEN.** Under the ceiling it is a
+   * reading, and it took room from the three that must be recognised without
+   * reading. **THE MUTANT:** draw `.pane__tokens` whatever the estimate is.
+   */
+  test("the estimate is absent under the ceiling and present at it", async () => {
+    const shell = pretendShell({ terminal_list: TWO });
+    try {
+      const { rerender } = render(
+        <div className="app">
+          <Terminals native ceiling={100_000} />
+        </div>,
+      );
+      await screen.findByRole("tab", { name: /packages/ });
+      expect(panes().map((pane) => pane.querySelector(".pane__tokens"))).toEqual([null, null]);
+
+      // The lower of the two is still short of it, so only one pane speaks.
+      rerender(
+        <div className="app">
+          <Terminals native ceiling={61_000} />
+        </div>,
+      );
+      const said = panes().map((pane) => pane.querySelector(".pane__tokens")?.textContent ?? null);
+      expect(said).toEqual(["≈ 62k of 61k tokens", null]);
+      // The bytes it is fitted from stay reachable, off the permanent strip.
+      expect(panes()[0].querySelector(".pane__tokens")?.getAttribute("title")).toBe("2 KB moved");
     } finally {
       shell.stop();
     }

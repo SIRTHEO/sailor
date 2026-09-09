@@ -279,7 +279,8 @@ describe("the bar's three facts", () => {
       tokens_by_model: {},
     };
     expect(spendWords(summary)).toBe("$0.34 today");
-    expect(spendWords({ ...summary, unpriced: 3 })).toBe("$0.34 today (a floor)");
+    expect(spendWords({ ...summary, unpriced: 3 })).toBe("at least $0.34 + ? today");
+    expect(spendWords({ ...summary, cost_micros: 0, unpriced: 3 })).toBe("cost ? today");
     expect(spendWords({ ...summary, ledger_present: false })).toBe("no ledger yet");
     expect(spendWords(null)).toBe("");
   });

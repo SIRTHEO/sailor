@@ -17,6 +17,7 @@ import {
   type LiveStatus,
   type OpenRun,
 } from "./engine";
+import { figureOf, figureWords } from "./figure";
 import { rows as profileRows, type Row as ProfileRow } from "./profiles";
 
 /**
@@ -137,8 +138,7 @@ export function liveWords(runs: OpenRun[], now: number): { live: boolean; word: 
 export function spendWords(summary: DaySummary | null): string {
   if (summary === null) return "";
   if (!summary.ledger_present) return "no ledger yet";
-  const floor = summary.unpriced > 0 ? " (a floor)" : "";
-  return `${money(summary.cost_micros)} today${floor}`;
+  return `${figureWords(figureOf(summary.cost_micros, summary.unpriced), money)} today`;
 }
 
 interface LiveChipProps {

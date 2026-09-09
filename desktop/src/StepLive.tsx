@@ -6,8 +6,9 @@
 import { useContext, useMemo, useState } from "react";
 import type { RunSnapshot } from "./engine";
 import type { Graph, Step } from "./flow";
+import { figureOf, figureWords } from "./figure";
 import { panesFromEvents } from "./RunConsole";
-import { formatCost, formatTokens, usageIsPartial } from "./stepusage";
+import { formatCost, formatTokens } from "./stepusage";
 import { StepUsageContext } from "./StepNode";
 import { mandateOf, neighboursOf } from "./stepfacts";
 
@@ -59,7 +60,8 @@ export function StepLive({ step, graph, run, now }: StepLiveProps) {
         {usage && (
           <span className="steplive__spend">
             {formatTokens(usage.inputTokens + usage.outputTokens)} tokens · {usage.calls} calls
-            {usage.costMicros !== null && ` · ${formatCost(usage.costMicros)}${usageIsPartial(usage) ? " at least" : ""}`}
+            {usage.costMicros !== null &&
+              ` · ${figureWords(figureOf(usage.costMicros, usage.callsWithoutCost), formatCost)}`}
           </span>
         )}
       </header>

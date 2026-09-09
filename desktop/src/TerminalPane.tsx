@@ -22,6 +22,7 @@ import {
   BORN_ROWS,
   asTyped,
   attentionOf,
+  ceilingReached,
   fieldGesture,
   keyBytes,
   keyStroke,
@@ -317,8 +318,9 @@ export function TerminalPane({
             {whoLabel(summary, known)}
           </span>
         </span>
-        <span className="pane__device">{summary.device}</span>
-        <span className="pane__root">{summary.workspaceRoot}</span>
+        <span className="pane__device" title={summary.workspaceRoot}>
+          {summary.device}
+        </span>
         {/* The word sits beside the colour: prohibition 5. */}
         {liveness.state === "alive" && speaking && <span className="speaks" aria-hidden="true" />}
         <span className="pane__state" data-state={liveness.state}>
@@ -328,20 +330,14 @@ export function TerminalPane({
         {liveness.state === "closed" && liveness.status !== null && (
           <span className="pane__why">{liveness.status}</span>
         )}
-        <span className="pane__moved">{movedLabel(summary.moved)}</span>
-        {/* The number the relay compares to its ceiling, next to the bytes it
-            is made from: an estimate, and marked as one. */}
-        <span
-          className="pane__tokens"
-          data-past={ceiling !== null && summary.estimatedTokens >= ceiling ? "true" : undefined}
-          title={
-            ceiling === null
-              ? "an estimate from the bytes moved; no loaded flow declares a ceiling"
-              : "an estimate from the bytes moved, against the ceiling the relay flow declares for whichever terminal it is asked to measure"
-          }
-        >
-          {tokensLabel(summary.estimatedTokens, ceiling)}
-        </span>
+        {/* A QUOTA IS NOT ONE OF THE THREE FACTS. It appears at the ceiling,
+            where the relay hands on and somebody has to decide; below it the
+            room belongs to where this agent is and what it is doing. */}
+        {ceilingReached(summary.estimatedTokens, ceiling) && (
+          <span className="pane__tokens" data-past="true" title={movedLabel(summary.moved)}>
+            {tokensLabel(summary.estimatedTokens, ceiling)}
+          </span>
+        )}
         <span className="pane__id">{summary.id}</span>
         {/* THE STATE AND THE GESTURE ARE TWO THINGS. One label on a button does
             not say whether it names how things are now or what happens on

@@ -4,6 +4,7 @@ import { stepCountLabel, type Step, type StepKind, type StepRun, type StepState 
 import { nodeId, type PortShape, type StepPort, type StepPorts } from "./layout";
 import { MODEL_KEY, TOOL_KEY, useTool, useToolsAreKnown } from "./tools";
 import { ToolMark } from "./ToolMark";
+import { figureOf, figureUnits } from "./figure";
 import { formatCost, formatTokens, usageIsPartial, type StepUsage } from "./stepusage";
 import { group, t } from "./i18n";
 
@@ -591,7 +592,7 @@ export function StepNode({ data, selected }: NodeProps) {
           <span className="step-node__cell">
             <span className="step-node__cell-label">cost</span>
             {/* A cost nobody declared is a dash, never a zero: zero would read
-                as «it ran for free». A partial one says so with a plus. */}
+                as «it ran for free». */}
             <span
               className="step-node__cell-value"
               title={
@@ -605,7 +606,7 @@ export function StepNode({ data, selected }: NodeProps) {
               }
             >
               {usage?.costMicros != null
-                ? `${formatCost(usage.costMicros)}${usageIsPartial(usage) ? " +" : ""}`
+                ? figureUnits(figureOf(usage.costMicros, usage.callsWithoutCost), formatCost)
                 : "—"}
             </span>
           </span>

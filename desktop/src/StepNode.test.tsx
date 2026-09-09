@@ -247,6 +247,21 @@ describe("the node and the engine that runs it", () => {
     expect(cell?.getAttribute("title")).toContain("none of this step's calls");
     expect(screen.queryByText(/0\.0000/)).toBeNull();
   });
+
+  test("A COST MISSING ONE CALL'S PRICE CARRIES THE MARK, not a bare number", () => {
+    mountNode(
+      {},
+      new Map(),
+      new Map([
+        [
+          "sviluppa-sailor::implementa",
+          usageOf({ costMicros: 128_500, calls: 3, callsWithoutCost: 1 }),
+        ],
+      ]),
+    );
+    const cell = document.querySelector(".step-node__bench .step-node__cell:last-child .step-node__cell-value");
+    expect(cell?.textContent).toBe("at least $0.1285 + ?");
+  });
 });
 
 /**
