@@ -59,14 +59,18 @@ fn no_assent_opens_the_file_that_grants_or_the_code_that_applies() {
     fs::create_dir_all(&home).expect("Sailor's home");
     fs::write(
         home.join(actions::apply::THE_ASSENT_FILE),
-        json!({"may_touch": ["crates/", "autocura.json"]}).to_string(),
+        json!({"may_touch": ["crates/", actions::apply::THE_ASSENT_FILE]}).to_string(),
     )
     .expect("an assent that names everything");
 
-    let asked_for_the_grant = a_patch_for("autocura.json", "{}", "{\"may_touch\": [\"/\"]}");
+    let asked_for_the_grant =
+        a_patch_for(actions::apply::THE_ASSENT_FILE, "{}", "{\"may_touch\": [\"/\"]}");
     let refused = actions::apply::apply(&repo, &asked_for_the_grant, Some(&home))
         .expect_err("the file that grants is behind the wall");
-    assert!(refused.contains("autocura.json") && refused.contains("wall"), "{refused}");
+    assert!(
+        refused.contains(actions::apply::THE_ASSENT_FILE) && refused.contains("wall"),
+        "{refused}"
+    );
 
     let asked_for_the_applier =
         a_patch_for("crates/actions/src/apply.rs", "the wall", "no wall at all");
@@ -87,9 +91,13 @@ fn no_assent_opens_the_file_that_grants_or_the_code_that_applies() {
     );
 
     // **THE WAY ROUND THE WALL IS A NAME, NOT A DOOR.** Judged as text,
-    // `crates/../autocura.json` reads as a path under `crates/`, which the
+    // `crates/../patch-assent.json` reads as a path under `crates/`, which the
     // assent names, and lands on the file the wall exists to hold.
-    let walked_up = a_patch_for("crates/../autocura.json", "{}", "{\"may_touch\": [\"/\"]}");
+    let walked_up = a_patch_for(
+        &format!("crates/../{}", actions::apply::THE_ASSENT_FILE),
+        "{}",
+        "{\"may_touch\": [\"/\"]}",
+    );
     let refused = actions::apply::apply(&repo, &walked_up, Some(&home))
         .expect_err("a path that walks up is not judged where it lands");
     assert!(refused.contains("plain path"), "{refused}");

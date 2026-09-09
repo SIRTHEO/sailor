@@ -17,7 +17,7 @@ pub const APPLY_PATCH_ACTION: &str = "apply_patch";
 
 /// The file that says what a patch may touch, under Sailor's home and outside
 /// any source tree.
-pub const THE_ASSENT_FILE: &str = "autocura.json";
+pub const THE_ASSENT_FILE: &str = "patch-assent.json";
 
 /// What no assent can open: the file that grants, the module that applies, and
 /// the test that defends the two. Compiled, so widening it takes a compiler.
@@ -81,7 +81,7 @@ pub fn behind_the_wall(path: &str) -> bool {
 
 /// A path a patch may be judged on at all: relative, and made of plain names.
 ///
-/// **`..` IS THE WHOLE POINT.** `crates/../autocura.json` names the file the
+/// **`..` IS THE WHOLE POINT.** `crates/../patch-assent.json` names the file the
 /// wall exists to hold, and reads as a path under `crates/` to anyone
 /// comparing text. Judged as text, both lists answer the wrong question.
 fn is_a_plain_relative_path(path: &str) -> bool {
