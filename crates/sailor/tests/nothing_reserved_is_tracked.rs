@@ -4,9 +4,9 @@
 
 use std::process::Command;
 
-/// The flows that ship with the product, and this project's own.
-/// This project's own flows, which are not shipped inside the binary.
-const THIS_PROJECTS_OWN: &[&str] = &["flows/passa-il-testimone.flow.json"];
+/// This project's own flows, which are not shipped inside the binary. Empty
+/// since the handover became two flows the product ships.
+const THIS_PROJECTS_OWN: &[&str] = &[];
 
 /// What may be tracked: the shipped flows, **asked of the product** instead of
 /// copied here. A hand list beside `flow::system::FLOWS` is the same list

@@ -33,19 +33,6 @@ fn went(outcome: ActionOutcome) -> Value {
     }
 }
 
-/// **AND IT REFUSES `Waiting`, WHICH IS THE POINT.** From here the two look
-/// alike — both say "I did nothing" — and behave opposite: one comes back
-/// ready, the other parks for good. That was fault 62.
-fn not_yet(outcome: ActionOutcome) -> String {
-    match outcome {
-        ActionOutcome::NotYet(reason) => reason,
-        ActionOutcome::Waiting(reason) => {
-            panic!("a step nobody handed over must say «not yet», not «waiting»: {reason}")
-        }
-        ActionOutcome::Went(value) => panic!("expected it to postpone, it ran: {value}"),
-    }
-}
-
 #[test]
 fn all_four_nodes_are_registered() {
     let registry = registry();

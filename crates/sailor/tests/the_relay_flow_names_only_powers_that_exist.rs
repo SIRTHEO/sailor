@@ -1,131 +1,110 @@
-//! The relay as a sequence: that it loads, that every power it names is
-//! registered, and that under the ceiling it does nothing and says so.
+//! The relay as a sequence: that its two shipped flows load, that every power
+//! they name is registered, and that the destructive one cannot fire alone.
 //!
-//! The file is read at test time and not at compile time. With `include_str!`
-//! a deleted flow does not fail a test, it fails the whole crate's build, and
-//! whoever hits it sees a broken crate instead of a missing flow.
+//! The files are read at test time and not at compile time: with `include_str!`
+//! a deleted flow fails the whole crate's build, and whoever hits it sees a
+//! broken crate instead of a missing flow.
 
 use flow::{FlowFile, Graph};
 use serde_json::Value;
-use std::path::PathBuf;
 
-const FLOW_ID: &str = "passa-il-testimone";
+/// The one that asks, and the one that empties.
+const THE_TWO: &[&str] = &["ask-for-a-mandate", "empty-a-session-that-handed-on"];
 
-fn flow_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(|up| up.parent())
-        .expect("the crate sits two levels under the root")
-        .join("flows")
-        .join(format!("{FLOW_ID}.flow.json"))
+fn flow_text(id: &str) -> String {
+    flow::system::FLOWS
+        .iter()
+        .find(|(name, _)| *name == id)
+        .map(|(_, text)| (*text).to_owned())
+        .unwrap_or_else(|| panic!("«{id}» is not a flow this binary ships"))
 }
 
-fn flow_text() -> String {
-    let path = flow_path();
-    std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
+fn parsed(id: &str) -> Value {
+    serde_json::from_str(&flow_text(id)).expect("the flow is JSON")
 }
 
-fn parsed() -> Value {
-    serde_json::from_str(&flow_text()).expect("the flow is JSON")
-}
-
-fn step(named: &str) -> Value {
-    parsed()["graph"]["steps"]
+fn step(id: &str, named: &str) -> Value {
+    parsed(id)["graph"]["steps"]
         .as_array()
         .expect("the flow has steps")
         .iter()
         .find(|step| step["id"] == named)
-        .unwrap_or_else(|| panic!("«{named}» is not a step of this flow"))
+        .unwrap_or_else(|| panic!("«{named}» is not a step of «{id}»"))
         .clone()
 }
 
 #[test]
-fn the_flow_loads_and_its_graph_holds_together() {
-    let file: FlowFile = serde_json::from_str(&flow_text()).expect("the flow file loads");
-    assert_eq!(file.id, FLOW_ID);
-    let graph: Graph = serde_json::from_value(parsed()["graph"].clone())
-        .expect("a graph with a cycle would not load");
-    assert_eq!(graph.steps().len(), 6, "the relay is six steps");
+fn both_flows_load_and_their_graphs_hold_together() {
+    for id in THE_TWO {
+        let file: FlowFile = serde_json::from_str(&flow_text(id)).expect("the flow file loads");
+        assert_eq!(&file.id, id);
+        let graph: Graph = serde_json::from_value(parsed(id)["graph"].clone())
+            .expect("a graph with a cycle would not load");
+        assert!(!graph.steps().is_empty(), "«{id}» has no steps");
+    }
 }
 
 #[test]
-fn every_power_the_flow_names_is_registered() {
+fn every_power_the_flows_name_is_registered() {
     let registry = registry::registry_in(registry::House::empty(), None, None);
-    let steps = parsed();
-    let steps = steps["graph"]["steps"].as_array().expect("steps");
-    for step in steps {
-        let named = step["action"].as_str().expect("a step names an action");
-        assert!(
-            registry.get(named).is_some(),
-            "«{named}» is named by the flow and registered nowhere"
-        );
-    }
-    workspace::measured(steps.len(), "steps of the relay flow looked up in the registry");
-}
-
-/// The most expensive fault of the old relay was invisible declining: it handed
-/// over 31 times out of 2,834 chances and nobody knew. Here the decision is one
-/// `when`, on a step the whole chain hangs from, so a run under the ceiling
-/// leaves the measurement deposited and touches nothing.
-#[test]
-fn under_the_ceiling_the_whole_chain_is_skipped_by_one_condition() {
-    let asking = step("chiedi-il-mandato");
-    assert_eq!(asking["when"]["kind"], "pointer_equals");
-    assert_eq!(asking["when"]["pointer"], "/past_the_ceiling");
-    assert_eq!(asking["when"]["value"], Value::Bool(true));
-    assert_eq!(
-        asking["deps"].as_array().map(Vec::len),
-        Some(1),
-        "the condition must sit on the one step the rest hangs from"
-    );
-}
-
-/// The ceiling is a decision about a budget. Inside the node it could not be
-/// argued with; in the step it is one number anybody can change.
-#[test]
-fn the_ceiling_is_written_in_the_step_and_not_hidden_in_a_node() {
-    assert!(
-        step("misura")["with"]["ceiling"]
-            .as_u64()
-            .is_some_and(|n| n > 0),
-        "the measuring step must declare its own ceiling"
-    );
-}
-
-/// Nothing here names a product except the one place a product fact belongs:
-/// the descriptor id of the command line to be emptied.
-#[test]
-fn the_only_product_named_is_the_descriptor_to_ask() {
-    let text = flow_text().to_lowercase();
-    let emptying = step("azzera");
-    assert!(
-        emptying["with"]["cli"].as_str().is_some(),
-        "the emptying step must name which descriptor to ask"
-    );
-    for step in parsed()["graph"]["steps"].as_array().expect("steps") {
-        if step["id"] == "azzera" {
-            continue;
+    let mut looked_up = 0;
+    for id in THE_TWO {
+        let flow = parsed(id);
+        for step in flow["graph"]["steps"].as_array().expect("steps") {
+            let named = step["action"].as_str().expect("a step names an action");
+            assert!(
+                registry.get(named).is_some(),
+                "«{named}» is named by «{id}» and registered nowhere"
+            );
+            looked_up += 1;
         }
-        let written = serde_json::to_string(&step["with"]).expect("a with serialises");
-        assert!(
-            !written.to_lowercase().contains("claude"),
-            "«{}» names a product outside the descriptor it should ask: {written}",
-            step["id"]
-        );
     }
-    assert!(
-        !text.contains("/clear"),
-        "the line that empties a context belongs in the descriptor, never in the flow"
+    workspace::measured(
+        looked_up,
+        "steps of the relay flows looked up in the registry",
     );
 }
 
-/// Whoever measures gets measured: with the mandate taken before it was asked
-/// for, a leftover from the previous handover would be handed on as this one's.
+/// **NEITHER FLOW NAMES A PRODUCT.** What empties a session and what a free one
+/// looks like are facts about one command line, and both are read from the
+/// mandate and the descriptor rather than written here.
 #[test]
-fn the_mandate_taken_must_be_newer_than_the_moment_it_was_asked_for() {
-    let taking = step("raccogli-il-mandato");
-    assert_eq!(
-        taking["with"]["not_before"]["$from"], "/at",
-        "the floor must come from the step that asked, or a stale mandate passes for fresh"
+fn neither_flow_names_a_product_nor_the_line_that_empties_one() {
+    for id in THE_TWO {
+        let text = flow_text(id).to_lowercase();
+        assert!(
+            !text.contains("claude"),
+            "«{id}» names a product: the name belongs in a descriptor"
+        );
+        assert!(
+            !text.contains("/clear"),
+            "«{id}» writes the line that empties a context, which belongs in the descriptor"
+        );
+    }
+}
+
+/// **THE DESTRUCTIVE STEP HANGS FROM THE READING.** A terminal that handed
+/// nothing on has written nothing down, so emptying it throws the work away.
+#[test]
+fn nothing_is_emptied_that_did_not_hand_a_mandate_on_first() {
+    let emptying = step("empty-a-session-that-handed-on", "empty");
+    let deps = emptying["deps"].as_array().expect("the step declares deps");
+    assert!(
+        deps.iter().any(|dep| dep == "handed_on"),
+        "the emptying step must hang from the one that reads the handover: {deps:?}"
     );
+    assert_eq!(
+        emptying["with"]["cli"]["$from"], "/handed_on/engine",
+        "which command line to empty comes from the mandate, not from this file"
+    );
+}
+
+/// The threshold is a decision about a budget. Inside the node it could not be
+/// argued with; in the flow it is one condition anybody can read.
+#[test]
+fn the_ask_stands_on_one_condition_anybody_can_read() {
+    let ask = step("ask-for-a-mandate", "ask");
+    assert_eq!(ask["when"]["kind"], "pointer_equals");
+    assert_eq!(ask["when"]["pointer"], "/measure/state");
+    assert_eq!(ask["when"]["value"], Value::String("oblige".to_owned()));
 }

@@ -30,8 +30,8 @@ round. You do not build inside what has to disappear.
 - **A flow is a data file; the nodes are actions registered in Rust.** No
   interpreter inside Sailor. The format is `{ id, description, graph, inputs }`:
   `graph` is what `flow::Graph` already loads and validates, `inputs` becomes
-  the `root_inputs` of the request. The first example:
-  `flows/passa-il-testimone.flow.json`.
+  the `root_inputs` of the request. The examples the product ships live in
+  `crates/flow/system/`.
 - **The name of the action is in the graph, the code is not** (`graph.rs`, above
   the `action` field). A new step is a Rust action registered in
   `crates/actions`, never a script.

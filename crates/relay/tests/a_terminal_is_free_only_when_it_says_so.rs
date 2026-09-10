@@ -54,8 +54,7 @@ impl Scratch {
         self.painted_by(tty, std::process::id(), bytes)
     }
 
-    /// The same, painted by a named process: a hold that is gone leaves a
-    /// screen behind, and the reading must not answer from it.
+    /// The same, painted by a named process.
     fn painted_by(&self, tty: &str, by: u32, bytes: &[u8]) -> &Self {
         terminal::screen::write(&terminal::screen::address_in(&self.0, tty), by, bytes)
             .expect("the screen is written");
@@ -98,9 +97,14 @@ fn a_declaration() -> Value {
     })
 }
 
+/// **AND IT REFUSES `Waiting`**: the two look alike from here and behave
+/// opposite — one comes back ready, the other parks for good (fault 62).
 fn not_yet(outcome: &Result<ActionOutcome, flow::ActionError>) -> String {
     match outcome {
         Ok(ActionOutcome::NotYet(why)) => why.clone(),
+        Ok(ActionOutcome::Waiting(why)) => {
+            panic!("a step nobody handed over must say «not yet», not «waiting»: {why}")
+        }
         other => panic!("it should have said not yet: {other:?}"),
     }
 }
