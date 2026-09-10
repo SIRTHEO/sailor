@@ -714,6 +714,10 @@ pub struct Descriptor {
     /// session, and a wrong line typed into one cannot be taken back.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reset_context: Option<ResetContext>,
+    /// Variables a session of this line must not inherit when Sailor hosts it.
+    /// Absent takes nothing away.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub not_inherited: Vec<String>,
     /// How this line is grafted so that it reports a session's moments.
     ///
     /// Absent means it is not grafted and Sailor says so. Never a nearest

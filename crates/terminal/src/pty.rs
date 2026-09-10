@@ -134,6 +134,7 @@ impl Pty {
         args: &[&OsStr],
         size: Size,
         environment: &[(String, String)],
+        not_inherited: &[String],
     ) -> Result<Pty, PtyError> {
         let leader = open_leader()?;
         let follower_name = follower_name(&leader)?;
@@ -159,6 +160,9 @@ impl Pty {
         command.stderr(Stdio::from(
             follower.try_clone().map_err(PtyError::FollowerNotReady)?,
         ));
+        for name in not_inherited {
+            command.env_remove(name);
+        }
         for (name, value) in environment {
             command.env(name, value);
         }

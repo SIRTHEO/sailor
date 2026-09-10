@@ -41,6 +41,9 @@ pub struct Opening {
     pub size: Size,
     /// Variables added to the inherited ones.
     pub environment: Vec<(String, String)>,
+    /// Variables taken away before the program starts, as the descriptor of
+    /// the command line being started declares them.
+    pub not_inherited: Vec<String>,
     /// The profile the program runs under, as whoever opens knows it; `None`
     /// when no profile applies to that program.
     pub profile: Option<String>,
@@ -53,6 +56,7 @@ impl Default for Opening {
             args: Vec::new(),
             size: Size::default(),
             profile: None,
+            not_inherited: Vec::new(),
             environment: vec![
                 // Without `TERM` a program does not know what kind of terminal
                 // it faces and behaves as if it had none at all: no colours,
@@ -304,6 +308,7 @@ impl Terminals {
             &args,
             opening.size,
             &opening.environment,
+            &opening.not_inherited,
         )?;
         let mut reader = pty.reader()?;
         let id = format!(

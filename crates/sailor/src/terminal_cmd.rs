@@ -23,7 +23,7 @@ use terminal::Workspace;
 
 pub const USAGE: &[Form] = &[
     Form {
-        form: "sailor terminal run [--store <dir>] -- <cli> [args...]",
+        form: "sailor terminal run [--cli <id>] [--store <dir>] -- <cli> [args...]",
         says_key: "cli.terminal.form.run",
     },
     Form {
@@ -122,8 +122,15 @@ fn hold(args: &[String]) -> Result<i32, String> {
         eprintln!("sailor terminal: {why}");
     }
     let inner = Arc::new(
-        Pty::open(&workspace, OsStr::new(program), &rest, size, &opening.environment)
-            .map_err(|error| error.to_string())?,
+        Pty::open(
+            &workspace,
+            OsStr::new(program),
+            &rest,
+            size,
+            &opening.environment,
+            &what_this_line_must_not_inherit(&options),
+        )
+        .map_err(|error| error.to_string())?,
     );
 
     // The letterbox is named after the terminal the program inside sees, not
@@ -158,6 +165,25 @@ fn hold(args: &[String]) -> Result<i32, String> {
     let _ = std::fs::remove_file(mailroom(&options)?.join(format!("{tty}.seen")));
     showing.map_err(|error| error.to_string())?;
     Ok(exit_code_of(&inner))
+}
+
+/// What the command line named by `--cli` says it must not inherit.
+///
+/// **A HOSTED SESSION INHERITS THE ENVIRONMENT OF WHOEVER STARTED THE HOST**,
+/// and a variable of it saying «you are somebody's child» made a session write
+/// no record at all. Which variable that is belongs to the line, so it is read
+/// from its descriptor and never written here.
+fn what_this_line_must_not_inherit(options: &[(String, String)]) -> Vec<String> {
+    let Some((_, cli)) = options.iter().find(|(name, _)| name == "cli") else {
+        return Vec::new();
+    };
+    let machine = toolbox::Machine::current();
+    toolbox::Catalog::load(&toolbox::default_sources(&machine))
+        .live()
+        .into_iter()
+        .find(|loaded| &loaded.descriptor.id == cli)
+        .map(|loaded| loaded.descriptor.not_inherited.clone())
+        .unwrap_or_default()
 }
 
 /// What a terminal of this command opens with. **THE WINDOW DID THIS AND THE

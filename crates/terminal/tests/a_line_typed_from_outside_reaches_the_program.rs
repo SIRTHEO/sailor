@@ -65,6 +65,7 @@ fn what_is_left_in_the_letterbox_is_typed_into_the_program() {
             &[],
             Size::default(),
             &[],
+            &[],
         )
         .expect("open a pseudo-terminal with cat inside"),
     );
@@ -102,6 +103,7 @@ fn a_program_nobody_typed_into_shows_nothing() {
             OsStr::new("/bin/cat"),
             &[],
             Size::default(),
+            &[],
             &[],
         )
         .expect("open a pseudo-terminal with cat inside"),

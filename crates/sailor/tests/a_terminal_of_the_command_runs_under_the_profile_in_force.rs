@@ -61,6 +61,7 @@ fn the_engine_inside_is_given_the_home_the_active_profile_names() {
                 "PROFILES_STATE_PATH".to_owned(),
                 store.display().to_string(),
             )],
+            &[],
         )
         .expect("open a terminal with sailor terminal inside"),
     );

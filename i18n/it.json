@@ -296,7 +296,7 @@
   "cli.session.form.install": "innesta ogni riga di comando che dichiara come, e nomina quelle che non lo dichiarano",
   "cli.session.form.uninstall": "toglie l'innesto, e nomina ciò che non ha potuto togliere e perché",
   "cli.session.common_options": "opzioni comuni: --tty <nome> per dire il terminale invece di dedurlo,\n                --store <file> per scrivere altrove che accanto al registro",
-  "cli.terminal.form.run": "esegue una riga di comando in un terminale di Sailor",
+  "cli.terminal.form.run": "esegue una riga di comando in un terminale di Sailor; --cli ne nomina il descrittore, così ciò che quella riga dichiara di non dover ereditare viene tolto",
   "cli.terminal.form.press": "batte una riga in un terminale che Sailor tiene",
   "cli.terminal.form.reset": "svuota una sessione in corso come dice il suo descrittore",
   "cli.terminal.form.mandate": "lascia il lavoro a chi viene dopo",

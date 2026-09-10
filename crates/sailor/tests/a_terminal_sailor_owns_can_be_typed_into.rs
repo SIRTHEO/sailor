@@ -82,6 +82,7 @@ fn holding(directory: &Path, program: &str) -> Arc<Pty> {
             &arguments,
             Size::default(),
             &[],
+            &[],
         )
         .expect("open a terminal with sailor terminal inside"),
     )

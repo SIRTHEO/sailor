@@ -186,6 +186,7 @@
   "tools": [
     {
       "id": "claude-code",
+      "not_inherited": ["CLAUDE_CODE_CHILD_SESSION"],
       "login": {
         "args": ["auth", "login"],
         "interactive": true,
