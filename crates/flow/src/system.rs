@@ -142,6 +142,12 @@ pub const FLOWS: &[(&str, &str)] = &[
         "ask-for-a-mandate",
         include_str!("../system/ask-for-a-mandate.flow.json"),
     ),
+    // And the second, the only destructive one: it empties a session that has
+    // handed on, and only once nobody is being waited for in there.
+    (
+        "empty-a-session-that-handed-on",
+        include_str!("../system/empty-a-session-that-handed-on.flow.json"),
+    ),
 ];
 
 /// What the catalogue answers for a name it does not ship.

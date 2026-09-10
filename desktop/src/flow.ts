@@ -205,6 +205,7 @@ const ACTION_KIND: Record<string, StepKind> = {
   // and write the store, like every other deposit node.
   mandate_deposit: "deposit",
   mandate_resume: "deposit",
+  mandate_waiting: "check",
   type_into_terminal: "gesture",
   empty_terminal: "gesture",
   take_mandate: "human",

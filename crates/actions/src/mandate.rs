@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 
 pub const MANDATE_DEPOSIT_ACTION: &str = "mandate_deposit";
 pub const MANDATE_RESUME_ACTION: &str = "mandate_resume";
+pub const MANDATE_WAITING_ACTION: &str = "mandate_waiting";
 
 const DEPOSIT_FIELDS: &[&str] = &[
     "tree",
@@ -30,9 +31,12 @@ const DEPOSIT_FIELDS: &[&str] = &[
 
 const RESUME_FIELDS: &[&str] = &["tree", "tty", "session", "store"];
 
+const WAITING_FIELDS: &[&str] = &["tty", "store"];
+
 pub fn register_mandate(registry: &mut flow::ActionRegistry) {
     registry.register(MANDATE_DEPOSIT_ACTION, DepositAction);
     registry.register(MANDATE_RESUME_ACTION, ResumeAction);
+    registry.register(MANDATE_WAITING_ACTION, WaitingAction);
 }
 
 #[derive(Debug, Deserialize)]
@@ -54,6 +58,13 @@ struct DepositSpec {
     /// The half only the session knows. Its shape is refused here, where its
     /// author is still alive to be asked again.
     work: Work,
+    #[serde(default)]
+    store: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct WaitingSpec {
+    tty: String,
     #[serde(default)]
     store: Option<String>,
 }
@@ -209,6 +220,49 @@ impl Action for ResumeAction {
 
     fn unknown_fields(&self, declared: &Value) -> Vec<String> {
         unknown_of(declared, RESUME_FIELDS)
+    }
+
+    fn species(&self) -> StepSpecies {
+        StepSpecies::Repeatable
+    }
+}
+
+/// Whether a handover is on disk for one terminal and nobody has taken it.
+///
+/// **NOTHING DESTRUCTIVE STANDS ON A SILENCE.** It is what a flow asks before
+/// emptying a session: a terminal with no mandate waiting has handed nothing
+/// on, and emptying it would throw away work its author never wrote down.
+struct WaitingAction;
+
+impl Action for WaitingAction {
+    fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
+        let spec: WaitingSpec = read_input(input)?;
+        let root = store_root(&spec.store)?;
+        let path = mandate::address_in(&root, &spec.tty);
+        let Some(held) = mandate::read(&path) else {
+            return Ok(ActionOutcome::NotYet(format!(
+                "{}: no mandate has been deposited for this terminal",
+                spec.tty
+            )));
+        };
+        if let Some(taken) = &held.taken {
+            return Ok(ActionOutcome::NotYet(format!(
+                "{}: the mandate here was taken by «{}», so this session handed nothing on",
+                spec.tty, taken.by
+            )));
+        }
+        Ok(ActionOutcome::Went(json!({
+            "tty": spec.tty,
+            // The line that wrote it, so whoever empties the session reads the
+            // name of the product from the handover and not from a flow file.
+            "engine": held.written.engine,
+            "session": held.written.session,
+            "at": held.written.at,
+        })))
+    }
+
+    fn unknown_fields(&self, declared: &Value) -> Vec<String> {
+        unknown_of(declared, WAITING_FIELDS)
     }
 
     fn species(&self) -> StepSpecies {

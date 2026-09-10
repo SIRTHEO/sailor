@@ -4,7 +4,7 @@
 //! the tree has moved under it, handed on with the difference beside it
 //! instead of a refusal nobody can act on.
 
-use actions::mandate::{MANDATE_DEPOSIT_ACTION, MANDATE_RESUME_ACTION};
+use actions::mandate::{MANDATE_DEPOSIT_ACTION, MANDATE_RESUME_ACTION, MANDATE_WAITING_ACTION};
 use flow::{ActionOutcome, SharedState};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -317,4 +317,57 @@ fn the_four_fields_of_a_constraint_are_all_required() {
             "«{field}»: {refusal:?}"
         );
     }
+}
+
+fn waiting(scratch: &Scratch) -> Result<ActionOutcome, flow::ActionError> {
+    run(
+        MANDATE_WAITING_ACTION,
+        json!({"tty": "ttys001", "store": scratch.store()}),
+    )
+}
+
+fn not_yet(outcome: Result<ActionOutcome, flow::ActionError>) -> String {
+    match outcome.expect("the step does not break") {
+        ActionOutcome::NotYet(why) => why,
+        other => panic!("it should have said not yet: {other:?}"),
+    }
+}
+
+/// **NOTHING DESTRUCTIVE STANDS ON A SILENCE.** A terminal with no handover on
+/// disk has written nothing down, and emptying it would throw the work away.
+#[test]
+fn a_terminal_that_handed_nothing_on_is_not_ready_to_be_emptied() {
+    let scratch = Scratch::new("nothing-waiting");
+
+    let why = not_yet(waiting(&scratch));
+
+    assert!(why.contains("no mandate has been deposited"), "{why}");
+}
+
+/// And a handover already taken belongs to a session that has come and gone.
+#[test]
+fn a_handover_already_taken_is_not_one_waiting() {
+    let scratch = Scratch::new("already-taken");
+    deposit(&scratch, work()).expect("the deposit goes");
+    resume(&scratch, "the-successor").expect("the successor takes it");
+
+    let why = not_yet(waiting(&scratch));
+
+    assert!(why.contains("the-successor"), "{why}");
+}
+
+/// The handover names the command line that wrote it, so whoever empties the
+/// session reads the product's name from the mandate and not from a flow file.
+#[test]
+fn a_handover_waiting_names_the_line_that_wrote_it() {
+    let scratch = Scratch::new("waiting");
+    deposit(&scratch, work()).expect("the deposit goes");
+
+    let answer = match waiting(&scratch).expect("the step does not break") {
+        ActionOutcome::Went(value) => value,
+        other => panic!("it did not go: {other:?}"),
+    };
+
+    assert_eq!(answer["engine"], json!("a-command-line"), "{answer}");
+    assert_eq!(answer["session"], json!("the-predecessor"), "{answer}");
 }

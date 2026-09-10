@@ -1,0 +1,156 @@
+{
+  "id": "empty-a-session-that-handed-on",
+  "description": "THE OTHER HALF OF THE HANDOVER, AND THE ONLY DESTRUCTIVE THING THE RELAY DOES. When a session of this machine finishes a turn, this flow asks one question of the store: has the terminal that just spoke left a mandate nobody has taken? If it has not, the flow ends green with nothing done — a terminal that handed nothing on has written nothing down, and emptying it would throw the work away. If it has, the session is emptied by the line that command line's own descriptor declares, and only once the reading says nobody is being waited for in there: the screen has stood still for as long as the line declares, its prompt is painted, and none of the marks that mean a person is being asked something is on it. In every other case the answer is «not yet» and nothing is typed. The name of the command line is read from the mandate itself, so no product is named in this file. The mandate the successor then reads arrives with the greeting of its own session.",
+  "inputs": {},
+  "graph": {
+    "steps": [
+      {
+        "id": "trigger",
+        "deps": [],
+        "action": "trigger",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "source": "session-event",
+          "on": {
+            "event": "Stop"
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "on": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "allow_extra": true
+            }
+          },
+          "required": [
+            "source"
+          ],
+          "allow_extra": false
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "carried": {
+              "type": "object",
+              "properties": {
+                "event": {
+                  "type": "any"
+                },
+                "tree": {
+                  "type": "any"
+                },
+                "tty": {
+                  "type": "any"
+                },
+                "session": {
+                  "type": "any"
+                },
+                "transcript": {
+                  "type": "any"
+                }
+              },
+              "required": [],
+              "allow_extra": true
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "handed_on",
+        "deps": [
+          "trigger"
+        ],
+        "action": "mandate_waiting",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tty": {
+            "$from": "/carried/tty"
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "tty": {
+              "type": "string"
+            },
+            "engine": {
+              "type": "string"
+            },
+            "session": {
+              "type": "string"
+            },
+            "at": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "tty",
+            "engine"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "empty",
+        "deps": [
+          "trigger",
+          "handed_on"
+        ],
+        "action": "empty_terminal",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tty": {
+            "$from": "/handed_on/tty"
+          },
+          "cli": {
+            "$from": "/handed_on/engine"
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "tty": {
+              "type": "string"
+            },
+            "typed": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "allow_extra": true
+        }
+      }
+    ]
+  }
+}
