@@ -119,7 +119,10 @@ pub fn list(repo: &Path) -> Result<Vec<Worktree>, String> {
 
 /// Local refs only: a remote-tracking name is somebody else's choice.
 pub fn branch_names(repo: &Path) -> Result<Vec<String>, String> {
-    let listed = git(repo, &["for-each-ref", "--format=%(refname:short)", "refs/heads"])?;
+    let listed = git(
+        repo,
+        &["for-each-ref", "--format=%(refname:short)", "refs/heads"],
+    )?;
     Ok(listed
         .lines()
         .map(str::trim)
@@ -208,7 +211,8 @@ pub fn tree_for(
         return Ok(path);
     }
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|error| format!("{}: {error}", parent.display()))?;
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("{}: {error}", parent.display()))?;
     }
     let target = path.to_string_lossy().into_owned();
     git(repo, &["worktree", "add", "--detach", &target, "HEAD"])?;
@@ -222,7 +226,13 @@ pub fn tree_for(
 /// A run id becomes a directory name: a separator would cut the tree elsewhere.
 fn safe(name: &str) -> String {
     name.chars()
-        .map(|letter| if letter.is_ascii_alphanumeric() || letter == '-' || letter == '_' { letter } else { '-' })
+        .map(|letter| {
+            if letter.is_ascii_alphanumeric() || letter == '-' || letter == '_' {
+                letter
+            } else {
+                '-'
+            }
+        })
         .collect()
 }
 
@@ -405,7 +415,10 @@ pub fn parse_status(porcelain: &str) -> Vec<ChangedFile> {
 /// `git add` has still changed the tree. With no commit yet there is no `HEAD`,
 /// and the plain diff is what git can answer.
 pub fn changes(root: &Path) -> Result<Changes, String> {
-    let status = git(root, &["status", "--porcelain", "-z", "--untracked-files=all"])?;
+    let status = git(
+        root,
+        &["status", "--porcelain", "-z", "--untracked-files=all"],
+    )?;
     let diff = match git(root, &["diff", "HEAD"]) {
         Ok(text) => text,
         Err(_) => git(root, &["diff"])?,
@@ -415,6 +428,49 @@ pub fn changes(root: &Path) -> Result<Changes, String> {
         files: parse_status(&status),
         diff,
     })
+}
+
+/// Where a tree stands right now: the branch, the commit, and a digest of
+/// everything not committed.
+///
+/// Read here and never asked of an agent. What a session claims about the tree
+/// it worked in is the half a successor must not have to trust.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Standing {
+    pub branch: String,
+    pub head: String,
+    /// The uncommitted set, as one line per path with its two letters of
+    /// status. A digest of this is what a mandate carries.
+    pub uncommitted: String,
+}
+
+/// An unreadable tree stands empty, and empty never matches a recorded
+/// standing: a mandate written about a tree nobody can read is stale.
+pub fn standing(root: &Path) -> Standing {
+    let porcelain =
+        git(root, &["status", "--porcelain", "--untracked-files=all"]).unwrap_or_default();
+    let mut lines: Vec<&str> = porcelain.lines().map(str::trim_end).collect();
+    lines.sort_unstable();
+    Standing {
+        branch: git(root, &["rev-parse", "--abbrev-ref", "HEAD"])
+            .map(|name| name.trim().to_owned())
+            .unwrap_or_default(),
+        head: git(root, &["rev-parse", "HEAD"])
+            .map(|commit| commit.trim().to_owned())
+            .unwrap_or_default(),
+        uncommitted: lines.join("\n"),
+    }
+}
+
+/// What landed between a commit and the head now, one line per file.
+///
+/// The successor of a stale mandate gets this instead of a refusal: the work
+/// is still the work, and what moved under it is a fact it can read.
+pub fn what_moved_since(root: &Path, commit: &str) -> String {
+    if commit.is_empty() {
+        return String::new();
+    }
+    git(root, &["diff", "--name-status", &format!("{commit}..HEAD")]).unwrap_or_default()
 }
 
 /// The repository the current directory belongs to.
@@ -497,14 +553,20 @@ mod tests {
 
     impl OpenTrees for APage {
         fn tree_opened(&self, tree: &OpenTree) -> Result<(), String> {
-            let mut held = self.0.lock().map_err(|_| "the page is poisoned".to_owned())?;
+            let mut held = self
+                .0
+                .lock()
+                .map_err(|_| "the page is poisoned".to_owned())?;
             held.retain(|known| known.path != tree.path);
             held.push(tree.clone());
             Ok(())
         }
 
         fn tree_closed(&self, path: &str) -> Result<(), String> {
-            let mut held = self.0.lock().map_err(|_| "the page is poisoned".to_owned())?;
+            let mut held = self
+                .0
+                .lock()
+                .map_err(|_| "the page is poisoned".to_owned())?;
             held.retain(|known| known.path != path);
             Ok(())
         }
@@ -533,10 +595,8 @@ mod tests {
 
     /// A scratch place of this test's own, never a directory of this machine.
     fn a_scratch(label: &str) -> PathBuf {
-        let path = std::env::temp_dir().join(format!(
-            "sailor-workspace-{label}-{}",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("sailor-workspace-{label}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&path);
         std::fs::create_dir_all(&path).expect("a scratch");
         path
@@ -568,7 +628,9 @@ mod tests {
         }
         std::fs::write(repo.join("README"), "a tree to cut from\n").expect("a file");
         assert!(run_git(&repo, &["add", "README"]).status.success());
-        assert!(run_git(&repo, &["commit", "-q", "-m", "the first"]).status.success());
+        assert!(run_git(&repo, &["commit", "-q", "-m", "the first"])
+            .status
+            .success());
         (scratch, repo)
     }
 
@@ -586,8 +648,8 @@ mod tests {
         let stayed = close_tree(&repo, &dirty, &page);
         let clean_is_gone = !clean.exists();
         let work_is_there = dirty.join("left-behind").exists();
-        let listed = String::from_utf8_lossy(&run_git(&repo, &["worktree", "list"]).stdout)
-            .into_owned();
+        let listed =
+            String::from_utf8_lossy(&run_git(&repo, &["worktree", "list"]).stdout).into_owned();
         let dirty = dirty.to_string_lossy().into_owned();
         let _ = std::fs::remove_dir_all(&scratch);
 
@@ -606,7 +668,10 @@ mod tests {
     fn taking_a_tree_down_never_forces_it() {
         let source = include_str!("lib.rs");
         let overriding = format!("--{}", "force");
-        assert!(!source.contains(&overriding), "the refusal can be overridden");
+        assert!(
+            !source.contains(&overriding),
+            "the refusal can be overridden"
+        );
     }
 
     /// No branch holds a commit made inside a detached tree, so taking the
@@ -618,7 +683,9 @@ mod tests {
         let tree = tree_for(&repo, "run-2", "committed", &page, None).expect("a tree");
         std::fs::write(tree.join("answer"), "the engine's work\n").expect("work");
         assert!(run_git(&tree, &["add", "answer"]).status.success());
-        assert!(run_git(&tree, &["commit", "-q", "-m", "what it found"]).status.success());
+        assert!(run_git(&tree, &["commit", "-q", "-m", "what it found"])
+            .status
+            .success());
 
         let stayed = close_tree(&repo, &tree, &page);
         let there = tree.join("answer").exists();
@@ -656,7 +723,10 @@ mod tests {
         );
         assert!(open[0].opened_at > 0, "the tree was opened at no time");
         assert_eq!(closed, Closing::TakenDown);
-        assert!(after.is_empty(), "a tree taken down is still on the page: {after:?}");
+        assert!(
+            after.is_empty(),
+            "a tree taken down is still on the page: {after:?}"
+        );
     }
 
     /// A tree nobody wrote down is the fault itself: the cut is undone.
@@ -664,14 +734,18 @@ mod tests {
     fn a_tree_the_register_refuses_is_never_left_standing() {
         let (scratch, repo) = a_repository("unwritten");
 
-        let refused = tree_for(&repo, "run-5", "unwritten", &ARefusal, None).expect_err("no page, no tree");
-        let listed = String::from_utf8_lossy(&run_git(&repo, &["worktree", "list"]).stdout)
-            .into_owned();
+        let refused =
+            tree_for(&repo, "run-5", "unwritten", &ARefusal, None).expect_err("no page, no tree");
+        let listed =
+            String::from_utf8_lossy(&run_git(&repo, &["worktree", "list"]).stdout).into_owned();
         let standing = tree_path(&repo, "run-5/unwritten").exists();
         let _ = std::fs::remove_dir_all(&scratch);
 
         assert!(!refused.is_empty(), "the refusal said nothing");
-        assert!(!standing, "the tree is on disk with nobody holding its address");
+        assert!(
+            !standing,
+            "the tree is on disk with nobody holding its address"
+        );
         assert!(!listed.contains("run-5"), "git still holds it:\n{listed}");
     }
 
@@ -680,13 +754,17 @@ mod tests {
     #[test]
     fn a_sweep_never_closes_a_tree_whose_work_the_trunk_has_not_got() {
         let (scratch, repo) = a_repository("sweeping");
-        assert!(run_git(&repo, &["branch", "-M", branches::TRUNK]).status.success());
+        assert!(run_git(&repo, &["branch", "-M", branches::TRUNK])
+            .status
+            .success());
         let page = APage::default();
         let merged = create(&repo, "work/gia-dentro", None).expect("a tree on a merged branch");
         let ahead = create(&repo, "work/ancora-fuori", None).expect("a tree on its own branch");
         std::fs::write(ahead.join("answer"), "a night of work\n").expect("work");
         assert!(run_git(&ahead, &["add", "answer"]).status.success());
-        assert!(run_git(&ahead, &["commit", "-q", "-m", "not in the trunk"]).status.success());
+        assert!(run_git(&ahead, &["commit", "-q", "-m", "not in the trunk"])
+            .status
+            .success());
         for tree in [&merged, &ahead] {
             page.tree_opened(&OpenTree {
                 opened_by_born_at: None,
@@ -714,7 +792,10 @@ mod tests {
         );
         assert!(work_is_there, "the work was lost");
         assert_eq!(still_open.len(), 1, "{still_open:?}");
-        assert!(still_open[0].path.ends_with("ancora-fuori"), "{still_open:?}");
+        assert!(
+            still_open[0].path.ends_with("ancora-fuori"),
+            "{still_open:?}"
+        );
     }
 
     /// A tree removed by hand leaves the page, or the sweep keeps naming it.
@@ -763,12 +844,18 @@ mod tests {
     /// a directory outside every checkout names nothing.
     #[test]
     fn the_tree_around_a_directory_is_its_checkout_and_none_outside_one() {
-        let scratch = std::env::temp_dir().join(format!("sailor-workspace-tree-{}", std::process::id()));
+        let scratch =
+            std::env::temp_dir().join(format!("sailor-workspace-tree-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&scratch);
         let repo = scratch.join("a-checkout");
         let inside = repo.join("crates").join("deep");
         std::fs::create_dir_all(&inside).expect("scratch");
-        let init = Command::new("git").arg("-C").arg(&repo).args(["init", "--quiet"]).status().expect("git");
+        let init = Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["init", "--quiet"])
+            .status()
+            .expect("git");
         assert!(init.success());
         let outside = scratch.join("nowhere");
         std::fs::create_dir_all(&outside).expect("scratch");
@@ -785,12 +872,18 @@ mod tests {
     /// **FAULT 100.** A directory inside a repository answers like the top.
     #[test]
     fn only_the_top_of_a_repository_says_it_is_tracked_from_here() {
-        let scratch = std::env::temp_dir().join(format!("sailor-workspace-top-{}", std::process::id()));
+        let scratch =
+            std::env::temp_dir().join(format!("sailor-workspace-top-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&scratch);
         let repo = scratch.join("a-checkout");
         let under = repo.join("target").join("unpacked");
         std::fs::create_dir_all(&under).expect("scratch");
-        let init = Command::new("git").arg("-C").arg(&repo).args(["init", "--quiet"]).status().expect("git");
+        let init = Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["init", "--quiet"])
+            .status()
+            .expect("git");
         assert!(init.success());
 
         let top = is_the_top_of_its_repository(&repo);
@@ -799,7 +892,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&scratch);
 
         assert!(top, "the checkout is the top of itself");
-        assert!(!inside, "a tree unpacked under target/ is not the top of the repository around it");
+        assert!(
+            !inside,
+            "a tree unpacked under target/ is not the top of the repository around it"
+        );
         assert!(!outside, "no repository, no top");
     }
 }

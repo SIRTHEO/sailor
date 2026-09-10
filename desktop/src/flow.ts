@@ -200,6 +200,10 @@ const ACTION_KIND: Record<string, StepKind> = {
   // How full a session's own context is, read from what its command line
   // writes. A reading a `when` compares against a threshold: the same family.
   measure_session: "check",
+  // The mandate a session leaves and the one its successor takes. Both read
+  // and write the store, like every other deposit node.
+  mandate_deposit: "deposit",
+  mandate_resume: "deposit",
   type_into_terminal: "gesture",
   empty_terminal: "gesture",
   take_mandate: "human",

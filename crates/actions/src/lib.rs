@@ -26,13 +26,14 @@
 pub mod apply;
 pub mod budget;
 pub mod cooldown;
-pub mod faults;
-pub mod handoff;
-pub mod history;
-pub mod mcp;
 pub mod dormant_steps;
 pub mod draft;
+pub mod faults;
 pub mod graph_memory;
+pub mod handoff;
+pub mod history;
+pub mod mandate;
+pub mod mcp;
 pub mod memory;
 pub mod notes;
 pub mod presence;
@@ -71,21 +72,18 @@ pub use engine::ExternalEngineAction;
 pub use equipment::{equipment_for, equipment_with_keys, equipment_with_keys_and_disk, Equipment};
 pub use probe::{
     judge_dry_run, judge_login_status, probe_dry_run, probe_dry_run_with, probe_login_status,
-    DryProbe, DryRun,
-    EngineProbe, LoginProbe, LoginRecipe, LoginVerdict, ProbeVerdict, RealDryProbe,
-    DRY_PROBE_TIMEOUT,
+    DryProbe, DryRun, EngineProbe, LoginProbe, LoginRecipe, LoginVerdict, ProbeVerdict,
+    RealDryProbe, DRY_PROBE_TIMEOUT,
 };
 pub use process::{
     invoke_external_engine, invoke_external_engine_watched, invoke_external_engine_watched_until,
-    run_shell_check,
-    run_shell_check_watched, run_with_timeout, run_with_timeout_and_stdin,
+    run_shell_check, run_shell_check_watched, run_with_timeout, run_with_timeout_and_stdin,
     run_with_timeout_and_stdin_watched, run_with_timeout_watched, CheckInvocation, CheckResult,
     EngineInvocation, EngineResult, LiveSink, Pipe, RunOutcome, StepSinks,
 };
 pub use recipe::{
     command_line, command_line_naming_model, command_line_with, AskRecipe, PromptVia,
-    SessionRecipe, ToolResolver,
-    UsageRecipe, SESSION_PLACEHOLDER,
+    SessionRecipe, ToolResolver, UsageRecipe, SESSION_PLACEHOLDER,
 };
 pub use shell::ShellCheckAction;
 pub use spec::{

@@ -14,6 +14,7 @@
 
 pub mod census;
 pub mod fullness;
+pub mod mandate;
 pub mod store;
 pub mod tty;
 

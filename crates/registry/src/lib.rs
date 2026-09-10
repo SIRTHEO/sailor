@@ -194,6 +194,7 @@ pub fn registry_in(
     // The terminals Sailor follows: only the path is taken here.
     actions::terminals::register_terminals(&mut registry, in_store(sessions::SESSIONS_FILE));
     actions::session_fill::register_measure(&mut registry);
+    actions::mandate::register_mandate(&mut registry);
     // A flow that runs another one. Registered **even without a ledger**, for
     // the reason declared above: `flow check` must be able to say a `subflow`
     // step names a real action without opening anything. Running without one
