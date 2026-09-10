@@ -38,6 +38,7 @@ pub mod notes;
 pub mod presence;
 pub mod reserve;
 pub mod search;
+pub mod session_fill;
 pub mod store;
 pub mod terminals;
 pub mod topic_drift;
