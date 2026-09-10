@@ -1,9 +1,9 @@
-//! The nodes a relay is composed of: measure a session, type into it, empty
-//! it, and take what it left behind.
+//! The nodes a relay is composed of: measure a session, read whether anybody
+//! is being waited for in it, type into it, empty it, and take what it left.
 //!
-//! Four powers over the world, and no sequence. The order in which they run is
-//! a flow file, because a relay written as one function is 1,400 lines whose
-//! every refusal disappears, and the refusals are the part nobody could see.
+//! Powers over the world, and no sequence: the order they run in is a flow
+//! file, because a relay written as one function is 1,400 lines whose every
+//! refusal disappears, and the refusals are the part nobody could see.
 
 use flow::{Action, ActionError, ActionOutcome, SharedState};
 use serde::Deserialize;
@@ -25,10 +25,8 @@ pub fn register_relay(registry: &mut flow::ActionRegistry) {
     registry.register(WAIT_FREE_ACTION, WaitFreeAction);
 }
 
-/// Where the terminals' files live for this step.
-///
-/// Declarable so a run can be pointed somewhere else, and defaulted to the
-/// store so the ordinary case says nothing.
+/// Where the terminals' files live for this step: declarable so a run can be
+/// pointed elsewhere, and defaulted so the ordinary case says nothing.
 fn store_root(declared: &Option<String>) -> Result<PathBuf, ActionError> {
     match declared {
         Some(written) => Ok(PathBuf::from(written)),
@@ -59,11 +57,9 @@ fn unknown_of(declared: &Value, known: &[&str]) -> Vec<String> {
 #[derive(Debug, Deserialize)]
 struct MeasureSpec {
     tty: String,
-    /// The budget past which this session counts as full.
-    ///
-    /// Required, and with no value written here. What counts as too full is a
-    /// decision, and one taken inside a node could not be argued with by the
-    /// flow that uses it.
+    /// The budget past which this session counts as full. Required, and with no
+    /// value written here: what counts as too full is a decision, and one taken
+    /// inside a node could not be argued with by the flow that uses it.
     ceiling: u64,
     #[serde(default)]
     store: Option<String>,
@@ -231,11 +227,9 @@ pub fn reset_line_of(catalog: &toolbox::Catalog, cli: &str) -> Result<String, Ac
 #[derive(Debug, Deserialize)]
 struct TakeSpec {
     tty: String,
-    /// A mandate older than this is somebody else's leftover.
-    ///
-    /// The same terminal hands over many times. Without this, a beat would
-    /// read the mandate of the previous handover and send the successor back
-    /// to work already done.
+    /// A mandate older than this is somebody else's leftover: the same terminal
+    /// hands over many times, and a beat would otherwise send the successor
+    /// back to work already done.
     #[serde(default)]
     not_before: Option<i64>,
     #[serde(default)]
@@ -346,6 +340,12 @@ fn freedom_now(
             "{tty}: nothing has been painted for this terminal, so there is nothing to read"
         )));
     };
+    // A screen outlives its terminal, and what it leaves is still (fault 156).
+    if !painted.is_still_held() {
+        return Ok(Freedom::NotYet(format!(
+            "{tty}: whoever painted this screen is gone, so it says nothing about now"
+        )));
+    }
     let still = terminal::screen::still_for(&where_it_is).unwrap_or_default();
     if still.as_secs() < free_when.and_still_for_seconds {
         return Ok(Freedom::NotYet(format!(
@@ -355,7 +355,7 @@ fn freedom_now(
             free_when.and_still_for_seconds
         )));
     }
-    let seen = terminal::screen::as_a_person_sees_it(&painted);
+    let seen = terminal::screen::as_a_person_sees_it(&painted.bytes);
     if let Some(held) = free_when
         .and_none_of_these
         .iter()

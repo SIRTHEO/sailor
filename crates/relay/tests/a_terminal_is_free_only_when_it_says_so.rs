@@ -51,7 +51,13 @@ impl Scratch {
     }
 
     fn painted(&self, tty: &str, bytes: &[u8]) -> &Self {
-        terminal::screen::write(&terminal::screen::address_in(&self.0, tty), bytes)
+        self.painted_by(tty, std::process::id(), bytes)
+    }
+
+    /// The same, painted by a named process: a hold that is gone leaves a
+    /// screen behind, and the reading must not answer from it.
+    fn painted_by(&self, tty: &str, by: u32, bytes: &[u8]) -> &Self {
+        terminal::screen::write(&terminal::screen::address_in(&self.0, tty), by, bytes)
             .expect("the screen is written");
         self
     }
@@ -231,4 +237,26 @@ fn a_line_whose_freedom_nobody_measured_is_never_emptied() {
         .expect_err("it refuses rather than guess");
 
     assert_eq!(refusal.class, "freedom_not_declared", "{refusal:?}");
+}
+
+/// **A SCREEN OUTLIVES THE TERMINAL IT BELONGED TO** (fault 156). Killed with a
+/// signal, a hold leaves a file that is perfectly still and shows a prompt,
+/// which is exactly what this reading would otherwise call free.
+#[test]
+fn a_screen_whose_painter_is_gone_says_nothing_about_now() {
+    let scratch = Scratch::new("orphaned");
+    let gone = std::process::Command::new("/usr/bin/true")
+        .spawn()
+        .expect("a process to outlive");
+    let by = gone.id();
+    let mut gone = gone;
+    gone.wait()
+        .expect("it is reaped, so its number is nobody's");
+    scratch
+        .declaring(a_declaration())
+        .painted_by("ttys010", by, "│ > ".as_bytes());
+
+    let why = not_yet(&scratch.asked("ttys010"));
+
+    assert!(why.contains("is gone"), "{why}");
 }

@@ -50,23 +50,48 @@ pub fn address_in(store: &Path, tty: &str) -> PathBuf {
     crate::inbox::mailroom(store).join(format!("{tty}.screen"))
 }
 
-/// Writes it so a reader never sees half of it.
-pub fn write(path: &Path, bytes: &[u8]) -> io::Result<()> {
+/// A screen, and the process that painted it. **A SCREEN OUTLIVES ITS
+/// TERMINAL**: killed with a signal, a hold leaves behind a file that is still
+/// and shows a prompt, so the painter travels with the paint (fault 156).
+pub struct Painted {
+    pub by: u32,
+    pub bytes: Vec<u8>,
+}
+
+impl Painted {
+    /// Whether whoever painted this is still running. A number given to
+    /// somebody else since is the one way this is wrong, and it is wrong
+    /// towards holding a terminal back.
+    pub fn is_still_held(&self) -> bool {
+        self.by != 0 && unsafe { libc::kill(self.by as libc::pid_t, 0) } == 0
+    }
+}
+
+/// Writes it so a reader never sees half of it, the painter on the first line.
+pub fn write(path: &Path, by: u32, bytes: &[u8]) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
+    let mut whole = format!("{by}\n").into_bytes();
+    whole.extend_from_slice(bytes);
     let beside = path.with_extension("screen.writing");
-    std::fs::write(&beside, bytes)?;
+    std::fs::write(&beside, &whole)?;
     std::fs::rename(&beside, path)
 }
 
-/// What is on the screen, or nothing when there is no file.
+/// What is on the screen and who painted it, or nothing when there is no file.
 ///
 /// Nothing, and never an empty screen: a terminal nobody wrote a screen for is
 /// one nothing can be said about, and «nothing painted» is the answer that
 /// would let a reset be typed into a session waiting for a person.
-pub fn read(path: &Path) -> Option<Vec<u8>> {
-    std::fs::read(path).ok()
+pub fn read(path: &Path) -> Option<Painted> {
+    let whole = std::fs::read(path).ok()?;
+    let end = whole.iter().position(|byte| *byte == b'\n')?;
+    let by = std::str::from_utf8(&whole[..end]).ok()?.parse().ok()?;
+    Some(Painted {
+        by,
+        bytes: whole[end + 1..].to_vec(),
+    })
 }
 
 /// How long the screen has stood still, or nothing when there is no file. The
@@ -132,23 +157,24 @@ const A_BEAT: Duration = Duration::from_millis(200);
 pub fn recorded_into(screen: Arc<Screen>, path: PathBuf) -> Recording {
     let running = Arc::new(AtomicBool::new(true));
     let going = Arc::clone(&running);
+    let by = std::process::id();
     let writing = std::thread::spawn(move || {
         let mut last = Vec::new();
         while going.load(Ordering::Relaxed) {
-            last = kept(&path, &screen, last);
+            last = kept(&path, by, &screen, last);
             std::thread::sleep(A_BEAT);
         }
-        kept(&path, &screen, last);
+        kept(&path, by, &screen, last);
     });
     Recording { running, writing }
 }
 
-fn kept(path: &Path, screen: &Screen, last: Vec<u8>) -> Vec<u8> {
+fn kept(path: &Path, by: u32, screen: &Screen, last: Vec<u8>) -> Vec<u8> {
     let now = screen.taken();
     if now == last {
         return last;
     }
-    let _ = write(path, &now);
+    let _ = write(path, by, &now);
     now
 }
 
@@ -201,6 +227,6 @@ mod tests {
     /// keeps a reset out of a session waiting for a person.
     #[test]
     fn a_screen_that_was_never_written_is_nothing_and_not_empty() {
-        assert_eq!(read(Path::new("/nowhere/at/all.screen")), None);
+        assert!(read(Path::new("/nowhere/at/all.screen")).is_none());
     }
 }
