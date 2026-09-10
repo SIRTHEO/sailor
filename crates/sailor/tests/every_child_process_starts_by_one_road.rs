@@ -245,7 +245,14 @@ fn roads_in(path: &Path, text: &str) -> Result<Vec<Road>, Blind> {
 }
 
 fn read_or_blind(path: &Path) -> Result<Vec<Road>, String> {
-    let text = std::fs::read_to_string(path).map_err(|error| format!("{} cannot be read: {error}", path.display()))?;
+    // **A FILE BEING REPLACED IS NOT A FILE THAT CANNOT BE READ** (fault 155).
+    // The suite runs in parallel over the tree it measures, so a read can land
+    // between a write and its rename. Asked twice, a real refusal still says so.
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(_) => std::fs::read_to_string(path)
+            .map_err(|error| format!("{} cannot be read twice over: {error}", path.display()))?,
+    };
     roads_in(path, &text).map_err(|blind| {
         format!(
             "{}:{} opens {} that never closes: the reader would blank the rest of the file",
@@ -282,10 +289,17 @@ fn measure(root: &Path) -> Vec<Road> {
         }
         match read_or_blind(path) {
             Ok(roads) => found.extend(roads),
-            Err(why) => blind.push(format!("\n  {why}")),
+            Err(why) => blind.push(why),
         }
     }
-    assert!(blind.is_empty(), "the reader went blind on {} sources:{}", blind.len(), blind.concat());
+    // One line, because the suite's other threads panic onto the same stream
+    // and the name of the file was lost between them twice (fault 155).
+    assert!(
+        blind.is_empty(),
+        "the reader went blind on {} sources: {}",
+        blind.len(),
+        blind.join(" — ")
+    );
     workspace::measured_against(
         sources.len(),
         "sources read for roads that start a child",
