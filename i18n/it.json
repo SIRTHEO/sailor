@@ -1,6 +1,7 @@
 {
   "cli.arc.no_binary_of_my_own": "Non so quale binario sono, quindi non posso avviare una corsa: {error}",
   "cli.arc.no_directory_of_my_own": "Non so in quale cartella mi trovo, quindi una corsa avviata qui lavorerebbe da nessuna parte: {error}",
+  "cli.session.the_mandate_is_waiting": "**Un mandato è depositato per questo terminale e nessuno l'ha preso.** Chi viene dopo di te lo legge prima di ogni altra cosa; niente è stato azzerato, e niente lo sarà.",
   "run.failure.mandate_already_taken": "questo mandato è già stato preso da un'altra sessione",
   "run.failure.mandate_incomplete": "il mandato lascia un campo vuoto, e chi potrebbe riempirlo è ancora qui",
   "run.failure.mandate_not_written": "il mandato non ha potuto essere scritto dove aspetta",

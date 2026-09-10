@@ -1681,12 +1681,16 @@ fn the_ask_of(ledger: &ledger::Ledger, store: &std::path::Path, tty: &str) -> Op
     if asked.value.get("state").and_then(serde_json::Value::as_str) != Some(OBLIGE) {
         return None;
     }
-    // Answered, it stops being asked: the mandate on disk is the answer, and
-    // one written after the request was made is this request's answer.
-    let answered = sessions::mandate::read(&sessions::mandate::address_in(store, tty))
-        .is_some_and(|left| left.written.at >= asked.written_at);
-    if answered {
-        return None;
+    // **A MANDATE NOBODY HAS TAKEN IS AN ANSWER, NOT A GAP.** The session goes
+    // on filling and the run writes a fresher request each time: asking again
+    // for what is already on disk teaches whoever reads it to stop reading.
+    match sessions::mandate::read(&sessions::mandate::address_in(store, tty)) {
+        Some(left) if left.taken.is_none() => {
+            return Some(catalogue::say("cli.session.the_mandate_is_waiting", &[]));
+        }
+        // Taken, and asked for again since: the successor filled up in its turn.
+        Some(left) if left.written.at >= asked.written_at => return None,
+        _ => {}
     }
     let tokens = asked
         .value
@@ -1987,11 +1991,31 @@ mod tests {
         mandate.written.tty = "ttys001".to_owned();
         mandate.written.at = 101;
         sessions::mandate::deposit(&directory, &mandate).expect("the mandate is deposited");
-        assert_eq!(
-            the_ask_of(&ledger, &directory, "ttys001"),
-            None,
-            "answered, it stops being asked"
+        let waiting = the_ask_of(&ledger, &directory, "ttys001").expect("it says what stands now");
+        assert!(
+            !waiting.contains("260000"),
+            "deposited, it is no longer asked for: {waiting}"
         );
+
+        // **AND A REQUEST FRESHER THAN A MANDATE ALREADY TAKEN ASKS AGAIN**:
+        // that is the successor, which filled up in its turn.
+        sessions::mandate::consume(
+            &sessions::mandate::address_in(&directory, "ttys001"),
+            "the-successor",
+            102,
+        )
+        .expect("the successor takes it");
+        ledger
+            .put_record(&ledger::StoreRecord {
+                collection: ASKS.to_owned(),
+                key: "ttys001".to_owned(),
+                value: serde_json::json!({"state": OBLIGE, "tokens": 300_000u64}),
+                written_by: "a-later-run".to_owned(),
+                written_at: 200,
+            })
+            .expect("the later ask is written");
+        let again = the_ask_of(&ledger, &directory, "ttys001").expect("it is asked again");
+        assert!(again.contains("300000"), "{again}");
         let _ = std::fs::remove_dir_all(&directory);
     }
 
