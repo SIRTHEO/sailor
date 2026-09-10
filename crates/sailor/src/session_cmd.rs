@@ -1669,7 +1669,9 @@ fn the_ask_still_standing(request: &Request<'_>, tty: &str) -> Option<String> {
     let TheDeposit::Open(ledger) = request.deposit else {
         return None;
     };
-    the_ask_of(ledger, &ledger::default_directory()?, tty)
+    // The same store the ask was read from, so a run pointed elsewhere is
+    // answered by the mandate that belongs to it.
+    the_ask_of(ledger, &ledger.directory().to_path_buf(), tty)
 }
 
 /// The same question with everything it reads named, so it can be answered
