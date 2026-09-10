@@ -426,7 +426,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sessions",
- "supervisor",
  "terminal",
  "toolbox",
  "trigger",

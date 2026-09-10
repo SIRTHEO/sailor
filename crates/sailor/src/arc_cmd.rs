@@ -155,9 +155,9 @@ pub fn launch_detached(flow: &str, delivery: &str) -> Result<String, String> {
         )
     })?;
     let ledger = ledger::default_directory().and_then(|dir| ledger::Ledger::open(&dir).ok());
-    let supervisor = supervisor::Supervisor::over(ledger);
-    let started = supervisor.start(supervisor::child::Spec {
-        process_id: format!("session-event-{flow}-{}", supervisor::now()),
+    let supervisor = machine::Supervisor::over(ledger);
+    let started = supervisor.start(machine::child::Spec {
+        process_id: format!("session-event-{flow}-{}", machine::now()),
         command: binary.display().to_string(),
         args: vec![
             "flow".to_owned(),

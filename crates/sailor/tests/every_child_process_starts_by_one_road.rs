@@ -21,7 +21,7 @@ const ONE_LINE_PER_ROAD: &[&str] = &[
 ];
 
 /// The file that holds `Process::start`: the road every other one should be.
-const THE_ONE_ROAD: &str = "crates/supervisor/src/child.rs";
+const THE_ONE_ROAD: &str = "crates/machine/src/child.rs";
 
 /// Roads open outside the one road today, downwards only: in `actions`,
 /// `ledger`, `models`, `sailor` and `terminal`, sources and their in-source

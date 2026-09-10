@@ -7,6 +7,17 @@ use ledger::holdings::Whose;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+pub mod child;
+
+pub use child::{Spec, StartToken, Supervisor};
+
+/// Now, in seconds since the epoch.
+pub fn now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs() as i64)
+}
+
 /// A process the ledger calls running, and what the system says about it.
 #[derive(Debug, Clone)]
 pub struct LeftRunning {

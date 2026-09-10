@@ -1,6 +1,9 @@
 {
   "cli.arc.no_binary_of_my_own": "Non so quale binario sono, quindi non posso avviare una corsa: {error}",
   "cli.arc.no_directory_of_my_own": "Non so in quale cartella mi trovo, quindi una corsa avviata qui lavorerebbe da nessuna parte: {error}",
+  "run.failure.mandate_already_taken": "questo mandato è già stato preso da un'altra sessione",
+  "run.failure.mandate_incomplete": "il mandato lascia un campo vuoto, e chi potrebbe riempirlo è ancora qui",
+  "run.failure.mandate_not_written": "il mandato non ha potuto essere scritto dove aspetta",
   "window.session.attention": "Lavoro che richiede attenzione",
   "window.session.show": "Mostra la corsa, i rifiuti, il costo e la quota",
   "window.session.hide": "Nascondi la corsa, i rifiuti, il costo e la quota",

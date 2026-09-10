@@ -7,62 +7,21 @@
 
 use std::path::{Path, PathBuf};
 
-use ledger::Ledger;
 use serde::{Deserialize, Serialize};
 
 pub mod child;
 
-/// The supervisor's leave to start a long-lived process, and the ledger the
-/// start is written in: one value, so neither travels without the other. Only
-/// `Supervisor` issues it, and a forged one is a type error, not a fault to find:
-/// ```compile_fail
-/// let forged = supervisor::StartToken { store: None };
-/// ```
-pub struct StartToken {
-    store: Option<Ledger>,
-}
+pub use machine::{now, StartToken, Supervisor};
 
-impl StartToken {
-    pub fn ledger(&self) -> Option<&Ledger> {
-        self.store.as_ref()
-    }
-}
-
-/// **THE ONE PLACE A LONG PROCESS IS STARTED FROM.** It owns the ledger of
-/// started processes and is the only issuer of the token `child::Process::start`
-/// takes, so a spawn that never met the supervisor does not compile (fault 4).
-pub struct Supervisor {
-    token: StartToken,
-}
-
-impl Supervisor {
-    /// Over `None` nothing is recorded: whoever runs without a ledger is told
-    /// so where the supervisor starts, and an orphan of theirs has no owner.
-    pub fn over(store: Option<Ledger>) -> Self {
-        Self {
-            token: StartToken { store },
-        }
-    }
-
-    pub fn ledger(&self) -> Option<&Ledger> {
-        self.token.ledger()
-    }
-
-    pub fn token(&self) -> &StartToken {
-        &self.token
-    }
-
-    /// Starts `spec` under this supervisor's token, recorded in its ledger.
-    pub fn start(&self, spec: child::Spec) -> Result<child::Process, String> {
-        child::Process::start(spec, &self.token)
-    }
-}
-
-/// Something running that can be stopped. **A trait and not a process**: the
-/// rule this crate defends is one line of sequence, and a line of sequence is
-/// proved without lighting anything.
+/// The trait the live mode swaps things through: a trait and not a process.
 pub trait Running {
     fn stop(&mut self) -> Result<(), String>;
+}
+
+impl Running for machine::child::Process {
+    fn stop(&mut self) -> Result<(), String> {
+        self.stop_now()
+    }
 }
 
 /// How the build went.
@@ -292,16 +251,11 @@ pub fn who_the_ledger_says_holds(
         .filter(ledger::the_same_process_as)
 }
 
-/// Now, in seconds since the epoch.
-pub fn now() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_secs() as i64)
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ledger::Ledger;
     use crate::child::Spec;
 
     struct Scratch(PathBuf);
