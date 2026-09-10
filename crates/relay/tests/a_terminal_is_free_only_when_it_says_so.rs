@@ -34,6 +34,7 @@ impl Scratch {
             "id": "a-command-line",
             "family": "ai_cli",
             "detect": {"command": "a-command-line"},
+            "reset_context": {"line": "/empty"},
         });
         if !free_when.is_null() {
             line["free_when"] = free_when;
@@ -56,10 +57,19 @@ impl Scratch {
     }
 
     fn asked(&self, tty: &str) -> Result<ActionOutcome, flow::ActionError> {
+        self.asking(relay::WAIT_FREE_ACTION, tty)
+    }
+
+    /// The same question, asked of the node that would type the emptying line.
+    fn told_to_empty(&self, tty: &str) -> Result<ActionOutcome, flow::ActionError> {
+        self.asking(relay::EMPTY_TERMINAL_ACTION, tty)
+    }
+
+    fn asking(&self, action: &str, tty: &str) -> Result<ActionOutcome, flow::ActionError> {
         let mut registry = flow::ActionRegistry::default();
         relay::register_relay(&mut registry);
         registry
-            .get(relay::WAIT_FREE_ACTION)
+            .get(action)
             .expect("the action is registered")
             .execute(
                 &json!({"tty": tty, "cli": "a-command-line", "store": self.0.display().to_string()}),
@@ -192,4 +202,33 @@ fn a_screen_still_being_painted_is_a_session_at_work() {
     let why = not_yet(&scratch.asked("ttys007"));
 
     assert!(why.contains("session at work"), "{why}");
+}
+
+/// **THE NODE THAT TYPES ASKS THE READING ITSELF.** A flow that forgot the
+/// step before it would otherwise empty a session holding a question, and there
+/// is no taking that back.
+#[test]
+fn nothing_is_typed_into_a_terminal_that_is_not_free() {
+    let scratch = Scratch::new("guarded");
+    scratch
+        .declaring(a_declaration())
+        .painted("ttys008", "Do you want to make this edit?\n│ > ".as_bytes());
+
+    let why = not_yet(&scratch.told_to_empty("ttys008"));
+
+    assert!(why.contains("Do you want"), "{why}");
+}
+
+/// A command line whose freedom nobody measured is never emptied, even where
+/// what empties it is declared: the two facts are measured apart.
+#[test]
+fn a_line_whose_freedom_nobody_measured_is_never_emptied() {
+    let scratch = Scratch::new("unmeasured");
+    scratch.declaring(Value::Null).painted("ttys009", b"| > ");
+
+    let refusal = scratch
+        .told_to_empty("ttys009")
+        .expect_err("it refuses rather than guess");
+
+    assert_eq!(refusal.class, "freedom_not_declared", "{refusal:?}");
 }

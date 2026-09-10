@@ -9,7 +9,7 @@ use flow::{Action, ActionError, ActionOutcome, SharedState};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub const MEASURE_TERMINAL_ACTION: &str = "measure_terminal";
 pub const TYPE_INTO_TERMINAL_ACTION: &str = "type_into_terminal";
@@ -178,6 +178,11 @@ impl Action for EmptyTerminalAction {
         let machine = toolbox::Machine::current();
         let catalog = toolbox::Catalog::load(&toolbox::default_sources(&machine));
         let line = reset_line_of(&catalog, &spec.cli)?;
+        // Asked here and not left to whoever wrote the flow: a forgotten step
+        // would empty a session holding a person's question.
+        if let Freedom::NotYet(why) = freedom_now(&catalog, &root, &spec.tty, &spec.cli)? {
+            return Ok(ActionOutcome::NotYet(why));
+        }
         typed_into(&root, &spec.tty, &line)?;
         Ok(ActionOutcome::Went(json!({
             "tty": spec.tty,
@@ -191,10 +196,8 @@ impl Action for EmptyTerminalAction {
     }
 }
 
-/// What empties a session of this command line, or the refusal.
-///
-/// Never a line written here. What empties a context is a fact about one
-/// product, and a product's fact inside a node makes the relay work for that
+/// What empties a session of this command line, or the refusal. Never a line
+/// written here: a product's fact inside a node makes the relay work for that
 /// one and misfire silently on every other.
 pub fn reset_line_of(catalog: &toolbox::Catalog, cli: &str) -> Result<String, ActionError> {
     let known = catalog
@@ -297,9 +300,7 @@ struct FreeSpec {
 /// Waits until nobody is being waited for in a terminal Sailor holds.
 ///
 /// **IT ANSWERS «NOT YET», NEVER «WAITING».** A step in a person's hands does
-/// not come back (fault 62); one that says not yet returns to the ready set and
-/// the run ends green with nothing done, which is the direction this must fail
-/// in.
+/// not come back (fault 62); one that says not yet returns to the ready set.
 struct WaitFreeAction;
 
 impl Action for WaitFreeAction {
@@ -308,52 +309,15 @@ impl Action for WaitFreeAction {
         let root = store_root(&spec.store)?;
         let machine = toolbox::Machine::current();
         let catalog = toolbox::Catalog::load(&toolbox::default_sources(&machine));
-        let free_when = freedom_of(&catalog, &spec.cli)?;
-        let Some(painted) = terminal::screen::read(&terminal::screen::address_in(&root, &spec.tty))
-        else {
-            return Ok(ActionOutcome::NotYet(format!(
-                "{}: nothing has been painted for this terminal, so there is nothing to read",
-                spec.tty
-            )));
-        };
-        let still = terminal::screen::still_for(&terminal::screen::address_in(&root, &spec.tty))
-            .unwrap_or_default();
-        if still.as_secs() < free_when.and_still_for_seconds {
-            return Ok(ActionOutcome::NotYet(format!(
-                "{}: the screen was painted {}s ago and stands still for {}s when nobody is being \
-                 waited for, so this is a session at work",
-                spec.tty,
-                still.as_secs(),
-                free_when.and_still_for_seconds
-            )));
+        match freedom_now(&catalog, &root, &spec.tty, &spec.cli)? {
+            Freedom::NotYet(why) => Ok(ActionOutcome::NotYet(why)),
+            Freedom::Free { prompt } => Ok(ActionOutcome::Went(json!({
+                "tty": spec.tty,
+                "cli": spec.cli,
+                "free": true,
+                "prompt": prompt,
+            }))),
         }
-        let seen = terminal::screen::as_a_person_sees_it(&painted);
-        if let Some(held) = free_when
-            .and_none_of_these
-            .iter()
-            .find(|mark| seen.contains(mark.as_str()))
-        {
-            return Ok(ActionOutcome::NotYet(format!(
-                "{}: «{held}» is on the screen, so somebody is being waited for",
-                spec.tty
-            )));
-        }
-        let Some(prompt) = free_when
-            .the_prompt_shows
-            .iter()
-            .find(|mark| seen.contains(mark.as_str()))
-        else {
-            return Ok(ActionOutcome::NotYet(format!(
-                "{}: the prompt is not painted, and a quiet screen is not a free one",
-                spec.tty
-            )));
-        };
-        Ok(ActionOutcome::Went(json!({
-            "tty": spec.tty,
-            "cli": spec.cli,
-            "free": true,
-            "prompt": prompt,
-        })))
     }
 
     fn unknown_fields(&self, declared: &Value) -> Vec<String> {
@@ -361,10 +325,63 @@ impl Action for WaitFreeAction {
     }
 }
 
+enum Freedom {
+    Free { prompt: String },
+    NotYet(String),
+}
+
+/// One terminal's screen, read against what its command line declares.
+/// **NOT YET IN EVERY CASE BUT ONE**: only a still screen showing the prompt
+/// and none of the marks lets go of it.
+fn freedom_now(
+    catalog: &toolbox::Catalog,
+    root: &Path,
+    tty: &str,
+    cli: &str,
+) -> Result<Freedom, ActionError> {
+    let free_when = freedom_of(catalog, cli)?;
+    let where_it_is = terminal::screen::address_in(root, tty);
+    let Some(painted) = terminal::screen::read(&where_it_is) else {
+        return Ok(Freedom::NotYet(format!(
+            "{tty}: nothing has been painted for this terminal, so there is nothing to read"
+        )));
+    };
+    let still = terminal::screen::still_for(&where_it_is).unwrap_or_default();
+    if still.as_secs() < free_when.and_still_for_seconds {
+        return Ok(Freedom::NotYet(format!(
+            "{tty}: the screen was painted {}s ago and stands still for {}s when nobody is being \
+             waited for, so this is a session at work",
+            still.as_secs(),
+            free_when.and_still_for_seconds
+        )));
+    }
+    let seen = terminal::screen::as_a_person_sees_it(&painted);
+    if let Some(held) = free_when
+        .and_none_of_these
+        .iter()
+        .find(|mark| seen.contains(mark.as_str()))
+    {
+        return Ok(Freedom::NotYet(format!(
+            "{tty}: «{held}» is on the screen, so somebody is being waited for"
+        )));
+    }
+    match free_when
+        .the_prompt_shows
+        .iter()
+        .find(|mark| seen.contains(mark.as_str()))
+    {
+        Some(prompt) => Ok(Freedom::Free {
+            prompt: prompt.clone(),
+        }),
+        None => Ok(Freedom::NotYet(format!(
+            "{tty}: the prompt is not painted, and a quiet screen is not a free one"
+        ))),
+    }
+}
+
 /// What this command line says a free session of it looks like, or the refusal.
-///
-/// Never a mark written here. A prompt is a fact about one product, and one
-/// guessed in this crate would call a session free on every other.
+/// Never a mark written here: one guessed would call a session free on every
+/// other product.
 fn freedom_of(
     catalog: &toolbox::Catalog,
     cli: &str,
