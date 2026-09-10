@@ -553,6 +553,19 @@ pub struct ResetContext {
     pub extra: BTreeMap<String, Value>,
 }
 
+/// What is painted when nobody is waiting on a session of this line.
+/// **SILENCE IS NOT FREEDOM**: absent means nobody measured it, never «free».
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct FreeWhen {
+    pub the_prompt_shows: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub and_none_of_these: Vec<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub note: String,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
 /// The moment a session begins: the one whose answer reaches the agent.
 pub const SESSION_START: &str = "session_start";
 
@@ -714,6 +727,9 @@ pub struct Descriptor {
     /// session, and a wrong line typed into one cannot be taken back.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reset_context: Option<ResetContext>,
+    /// Absent means nobody measured it, and then nothing is typed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub free_when: Option<FreeWhen>,
     /// Variables a session of this line must not inherit when Sailor hosts it.
     /// Absent takes nothing away.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -761,6 +777,9 @@ impl Descriptor {
         }
         if let Some(login) = &self.login_status {
             found.extend(login.extra.keys().map(|key| format!("login_status.{key}")));
+        }
+        if let Some(free) = &self.free_when {
+            found.extend(free.extra.keys().map(|key| format!("free_when.{key}")));
         }
         if let Some(reset) = &self.reset_context {
             found.extend(reset.extra.keys().map(|key| format!("reset_context.{key}")));

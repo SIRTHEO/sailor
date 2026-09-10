@@ -197,6 +197,7 @@ const ACTION_KIND: Record<string, StepKind> = {
   // gesture; taking the mandate waits for whoever is alive in there to write
   // it, which is the same family as handing work to them.
   measure_terminal: "check",
+  wait_free: "check",
   // How full a session's own context is, read from what its command line
   // writes. A reading a `when` compares against a threshold: the same family.
   measure_session: "check",

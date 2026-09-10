@@ -15,12 +15,14 @@ pub const MEASURE_TERMINAL_ACTION: &str = "measure_terminal";
 pub const TYPE_INTO_TERMINAL_ACTION: &str = "type_into_terminal";
 pub const EMPTY_TERMINAL_ACTION: &str = "empty_terminal";
 pub const TAKE_MANDATE_ACTION: &str = "take_mandate";
+pub const WAIT_FREE_ACTION: &str = "wait_free";
 
 pub fn register_relay(registry: &mut flow::ActionRegistry) {
     registry.register(MEASURE_TERMINAL_ACTION, MeasureTerminalAction);
     registry.register(TYPE_INTO_TERMINAL_ACTION, TypeIntoTerminalAction);
     registry.register(EMPTY_TERMINAL_ACTION, EmptyTerminalAction);
     registry.register(TAKE_MANDATE_ACTION, TakeMandateAction);
+    registry.register(WAIT_FREE_ACTION, WaitFreeAction);
 }
 
 /// Where the terminals' files live for this step.
@@ -276,4 +278,105 @@ impl Action for TakeMandateAction {
     fn unknown_fields(&self, declared: &Value) -> Vec<String> {
         unknown_of(declared, &["tty", "not_before", "store"])
     }
+}
+
+/// **SURFACE: reading. POWERS CLAIMED: reading one file of the store.**
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+struct FreeSpec {
+    tty: String,
+    /// Which command line is running in there, by descriptor id. What counts
+    /// as a painted prompt is a fact about one product, never about terminals.
+    cli: String,
+    #[serde(default)]
+    store: Option<String>,
+    #[serde(flatten)]
+    extra: BTreeMap<String, Value>,
+}
+
+/// Waits until nobody is being waited for in a terminal Sailor holds.
+///
+/// **IT ANSWERS «NOT YET», NEVER «WAITING».** A step in a person's hands does
+/// not come back (fault 62); one that says not yet returns to the ready set and
+/// the run ends green with nothing done, which is the direction this must fail
+/// in.
+struct WaitFreeAction;
+
+impl Action for WaitFreeAction {
+    fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
+        let spec: FreeSpec = read_input(input)?;
+        let root = store_root(&spec.store)?;
+        let machine = toolbox::Machine::current();
+        let catalog = toolbox::Catalog::load(&toolbox::default_sources(&machine));
+        let free_when = freedom_of(&catalog, &spec.cli)?;
+        let Some(painted) = terminal::screen::read(&terminal::screen::address_in(&root, &spec.tty))
+        else {
+            return Ok(ActionOutcome::NotYet(format!(
+                "{}: nothing has been painted for this terminal, so there is nothing to read",
+                spec.tty
+            )));
+        };
+        let seen = terminal::screen::as_a_person_sees_it(&painted);
+        if let Some(held) = free_when
+            .and_none_of_these
+            .iter()
+            .find(|mark| seen.contains(mark.as_str()))
+        {
+            return Ok(ActionOutcome::NotYet(format!(
+                "{}: «{held}» is on the screen, so somebody is being waited for",
+                spec.tty
+            )));
+        }
+        let Some(prompt) = free_when
+            .the_prompt_shows
+            .iter()
+            .find(|mark| seen.contains(mark.as_str()))
+        else {
+            return Ok(ActionOutcome::NotYet(format!(
+                "{}: the prompt is not painted, and a quiet screen is not a free one",
+                spec.tty
+            )));
+        };
+        Ok(ActionOutcome::Went(json!({
+            "tty": spec.tty,
+            "cli": spec.cli,
+            "free": true,
+            "prompt": prompt,
+        })))
+    }
+
+    fn unknown_fields(&self, declared: &Value) -> Vec<String> {
+        unknown_of(declared, &["tty", "cli", "store"])
+    }
+}
+
+/// What this command line says a free session of it looks like, or the refusal.
+///
+/// Never a mark written here. A prompt is a fact about one product, and one
+/// guessed in this crate would call a session free on every other.
+fn freedom_of(
+    catalog: &toolbox::Catalog,
+    cli: &str,
+) -> Result<toolbox::descriptor::FreeWhen, ActionError> {
+    let known = catalog
+        .live()
+        .into_iter()
+        .find(|loaded| loaded.descriptor.id == cli)
+        .ok_or_else(|| {
+            ActionError::new(
+                "unknown_command_line",
+                format!("«{cli}»: no descriptor of that name is loaded"),
+            )
+        })?;
+    known.descriptor.free_when.clone().ok_or_else(|| {
+        ActionError::new(
+            "freedom_not_declared",
+            format!(
+                "«{cli}» does not declare how a session of it shows that nobody is waiting on it. \
+                 Nobody has measured it, which is not the same as it being impossible: add \
+                 `free_when` to its descriptor rather than typing into a session that may be \
+                 holding a question"
+            ),
+        )
+    })
 }

@@ -154,15 +154,22 @@ fn hold(args: &[String]) -> Result<i32, String> {
 
     let counted = tally::Counters::new();
     let counting = counted.recorded_into(mailroom(&options)?.join(format!("{tty}.seen")));
+    let screen = Arc::new(terminal::screen::Screen::new());
+    let painting = terminal::screen::recorded_into(
+        Arc::clone(&screen),
+        terminal::screen::address_in(&store_root(&options)?, &tty),
+    );
 
     typing_reaches(&inner, letterbox, Arc::clone(&counted.typed));
     keystrokes_reach(&inner, Arc::clone(&counted.typed));
-    let showing = show_output(&inner, Arc::clone(&counted.shown));
+    let showing = show_output(&inner, Arc::clone(&counted.shown), screen);
 
+    painting.stop();
     counting.stop();
     drop(restore);
     let _ = std::fs::remove_file(&address);
     let _ = std::fs::remove_file(mailroom(&options)?.join(format!("{tty}.seen")));
+    let _ = std::fs::remove_file(terminal::screen::address_in(&store_root(&options)?, &tty));
     showing.map_err(|error| error.to_string())?;
     Ok(exit_code_of(&inner))
 }
@@ -288,11 +295,15 @@ fn keystrokes_reach(inner: &Arc<Pty>, typed: Arc<AtomicU64>) {
 }
 
 /// The output, on the thread that stays: when it ends, the program inside has.
-fn show_output(inner: &Arc<Pty>, shown: Arc<AtomicU64>) -> io::Result<()> {
+fn show_output(
+    inner: &Arc<Pty>,
+    shown: Arc<AtomicU64>,
+    screen: Arc<terminal::screen::Screen>,
+) -> io::Result<()> {
     let from = inner
         .reader()
         .map_err(|error| io::Error::other(error.to_string()))?;
-    let into = bridge::Counted::new(unsafe { File::from_raw_fd(libc::dup(1)) }, shown);
+    let into = bridge::Counted::keeping(unsafe { File::from_raw_fd(libc::dup(1)) }, shown, screen);
     bridge::pump(from, into, || follow_the_window(inner))
 }
 

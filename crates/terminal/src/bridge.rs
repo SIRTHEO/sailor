@@ -118,11 +118,31 @@ fn as_io(error: PtyError) -> io::Error {
 pub struct Counted<W> {
     inner: W,
     seen: Arc<AtomicU64>,
+    /// The tail of what went past, for whoever must know what is painted and
+    /// not only how much crossed. Absent where nobody asked to keep it.
+    kept: Option<Arc<crate::screen::Screen>>,
 }
 
 impl<W: Write> Counted<W> {
     pub fn new(inner: W, seen: Arc<AtomicU64>) -> Counted<W> {
-        Counted { inner, seen }
+        Counted {
+            inner,
+            seen,
+            kept: None,
+        }
+    }
+
+    /// The same, keeping the last screenful as it goes past.
+    pub fn keeping(
+        inner: W,
+        seen: Arc<AtomicU64>,
+        screen: Arc<crate::screen::Screen>,
+    ) -> Counted<W> {
+        Counted {
+            inner,
+            seen,
+            kept: Some(screen),
+        }
     }
 }
 
@@ -130,6 +150,9 @@ impl<W: Write> Write for Counted<W> {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         let written = self.inner.write(bytes)?;
         self.seen.fetch_add(written as u64, Ordering::Relaxed);
+        if let Some(screen) = &self.kept {
+            screen.push(&bytes[..written]);
+        }
         Ok(written)
     }
 
