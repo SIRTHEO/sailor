@@ -41,6 +41,60 @@ pub enum Kind {
     /// The clock is the source: nothing outside speaks, time passes. What it
     /// must declare is in `Periodic`, and it declares it or does not load.
     Periodic,
+    /// A session of this machine said something happened. The signal arrives
+    /// with the run, like a manual one, and what is listened to is not a file
+    /// but `sailor session event`, which every command line already calls.
+    SessionEvent,
+}
+
+/// What a flow asks of a session event before it will start.
+///
+/// **THE PHRASE IS MATCHED ON WHAT A PERSON TYPED AND ON NOTHING ELSE.** A
+/// flow an agent can start by writing its phrase has no brake left.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct On {
+    /// The event's name, as the session announced it.
+    pub event: String,
+    /// Words the person's own prompt must hold. Absent: any prompt will do.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phrase: Option<String>,
+    /// The tree it must have happened in. Absent: any tree.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tree: Option<String>,
+}
+
+/// One session event, as the evaluator reads it back.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Happened {
+    pub event: String,
+    pub tree: String,
+    pub tty: String,
+    pub session: String,
+    /// What the person typed, and only that. A `None` here is an event that
+    /// carried no human prompt at all.
+    pub prompt: Option<String>,
+}
+
+/// Why a flow was not started for an event, or nothing when it should be.
+///
+/// **ONE REASON, NAMED.** A guard that will not say which condition refused
+/// cannot be told from a broken one.
+pub fn deferral(on: &On, happened: &Happened) -> Option<&'static str> {
+    if on.event != happened.event {
+        return Some("another event");
+    }
+    if on.tree.as_ref().is_some_and(|tree| tree != &happened.tree) {
+        return Some("another tree");
+    }
+    let Some(phrase) = &on.phrase else {
+        return None;
+    };
+    match &happened.prompt {
+        None => Some("no prompt of a person"),
+        Some(said) if said.to_lowercase().contains(&phrase.to_lowercase()) => None,
+        Some(_) => Some("the phrase is not in the prompt"),
+    }
 }
 
 /// What a periodic source does with the runs that went by while it slept.
@@ -334,6 +388,10 @@ fn coherent(descriptor: &TriggerDescriptor) -> Result<(), String> {
             "a periodic trigger hears nothing: the clock is its source, so it cannot declare where to listen"
                 .to_string(),
         ),
+        (Kind::SessionEvent, true) => return Err(
+            "a session event arrives with the run: there is no file to watch, so it cannot declare where to listen"
+                .to_string(),
+        ),
         _ => {}
     }
     match (descriptor.kind, descriptor.periodic.as_ref()) {
@@ -347,7 +405,7 @@ fn coherent(descriptor: &TriggerDescriptor) -> Result<(), String> {
              `disabled` instead"
                 .to_string(),
         ),
-        (Kind::Manual | Kind::Terminal, Some(_)) => Err(
+        (Kind::Manual | Kind::Terminal | Kind::SessionEvent, Some(_)) => Err(
             "only a periodic trigger declares `periodic`: this one is fired by something else"
                 .to_string(),
         ),

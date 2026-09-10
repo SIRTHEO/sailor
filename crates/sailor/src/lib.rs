@@ -24,23 +24,24 @@
 //! update it. It lives in `COMMANDS`, `print_usage` prints it, and the window
 //! shows it by reading it from there.
 
+pub mod arc_cmd;
 pub mod board_cmd;
 pub mod faults_cmd;
 pub mod flow_cmd;
 pub mod inventory_cmd;
+pub mod machine_cmd;
 pub mod memory_cmd;
 pub mod models_cmd;
 pub mod notes_cmd;
 pub mod profiles_cmd;
 pub mod publish_cmd;
-pub mod machine_cmd;
 pub mod ratchet_cmd;
 pub mod release_cmd;
+pub mod remaining_cmd;
 pub mod remember_cmd;
 pub mod repeats_cmd;
-pub mod search_cmd;
-pub mod remaining_cmd;
 pub mod run_cmd;
+pub mod search_cmd;
 pub mod session_cmd;
 pub mod step_cmd;
 pub mod terminal_cmd;
@@ -415,7 +416,10 @@ mod tests {
         assert_eq!(verbs_of(FORMS), vec!["list", "add"]);
         assert!(is_a_form(FORMS, "list"));
         assert!(is_a_form(FORMS, "add"));
-        assert!(!is_a_form(FORMS, "thing"), "the command's own name is not a verb");
+        assert!(
+            !is_a_form(FORMS, "thing"),
+            "the command's own name is not a verb"
+        );
         assert!(!is_a_form(FORMS, "sailor"));
         assert!(!is_a_form(FORMS, "[--open]"), "an option is not a verb");
         assert!(!is_a_form(FORMS, "sweep"));

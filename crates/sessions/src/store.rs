@@ -25,7 +25,7 @@ pub const SESSIONS_FILE: &str = "sessions.db";
 /// The shape this code expects, **independent of the ledger's projection
 /// version**. Raise it together with the columns: fault 24 came from a constant
 /// left behind by the migration that should have moved it.
-const SESSIONS_SCHEMA_VERSION: i64 = 1;
+const SESSIONS_SCHEMA_VERSION: i64 = 2;
 
 pub enum SessionError {
     Sqlite(rusqlite::Error),
@@ -127,12 +127,31 @@ pub fn others_in_the_tree<'a>(
     let ours = repository_of(here);
     rows.iter()
         .filter(|row| row.is_open() && row.tty != mine)
-        .filter(|row| match (ours.as_deref(), repository_of(&row.worktree)) {
-            (Some(ours), Some(theirs)) => ours == theirs,
-            _ => row.worktree == here,
-        })
+        .filter(
+            |row| match (ours.as_deref(), repository_of(&row.worktree)) {
+                (Some(ours), Some(theirs)) => ours == theirs,
+                _ => row.worktree == here,
+            },
+        )
         .collect()
 }
+
+/// What one flow was judged to deserve for one event: started, held back with
+/// the single reason that held it, or broken on the way.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Verdict {
+    pub event_id: i64,
+    pub flow: String,
+    pub verdict: String,
+    pub why: Option<String>,
+    pub run_id: Option<String>,
+    pub decided_at: i64,
+}
+
+/// The three words a verdict is written with.
+pub const DEFERRED: &str = "deferred";
+pub const ACTED: &str = "acted";
+pub const BROKE: &str = "broke";
 
 /// Something that happened on a terminal, appended and never rewritten. This is
 /// the queue the succession of sessions on one tty is reconstructed from.
@@ -213,7 +232,18 @@ impl Sessions {
              CREATE INDEX IF NOT EXISTS terminal_events_by_terminal
                  ON terminal_events (tty, id);
              CREATE INDEX IF NOT EXISTS terminal_events_by_session
-                 ON terminal_events (session_id, id);",
+                 ON terminal_events (session_id, id);
+             CREATE TABLE IF NOT EXISTS event_verdicts (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 event_id INTEGER NOT NULL,
+                 flow TEXT NOT NULL,
+                 verdict TEXT NOT NULL,
+                 why TEXT,
+                 run_id TEXT,
+                 decided_at INTEGER NOT NULL
+             );
+             CREATE UNIQUE INDEX IF NOT EXISTS event_verdicts_once
+                 ON event_verdicts (event_id, flow);",
         )?;
         if version < SESSIONS_SCHEMA_VERSION {
             connection.pragma_update(None, "user_version", SESSIONS_SCHEMA_VERSION)?;
@@ -293,7 +323,9 @@ impl Sessions {
         Ok(())
     }
 
-    pub fn record_event(&self, event: &TerminalEvent) -> Result<(), SessionError> {
+    /// Writes the event and gives back the number it was filed under, so
+    /// whatever starts because of it can point at the fact that started it.
+    pub fn record_event(&self, event: &TerminalEvent) -> Result<i64, SessionError> {
         self.connection.execute(
             "INSERT INTO terminal_events
                  (tty, session_id, worktree, ancestor, name, transcript_path, occurred_at, payload)
@@ -309,7 +341,60 @@ impl Sessions {
                 event.payload,
             ],
         )?;
-        Ok(())
+        Ok(self.connection.last_insert_rowid())
+    }
+
+    /// What one flow was judged to deserve for one event.
+    ///
+    /// **EVERY EVALUATION LEAVES A ROW, THE REFUSALS INCLUDED.** A guard that
+    /// declines in silence cannot be told from one that is broken: the relay
+    /// this replaces declined 2,803 times out of 2,834 and left no trace.
+    pub fn record_verdict(&self, verdict: &Verdict) -> Result<bool, SessionError> {
+        let written = self.connection.execute(
+            "INSERT OR IGNORE INTO event_verdicts
+                 (event_id, flow, verdict, why, run_id, decided_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                verdict.event_id,
+                verdict.flow,
+                verdict.verdict,
+                verdict.why,
+                verdict.run_id,
+                verdict.decided_at,
+            ],
+        )?;
+        Ok(written > 0)
+    }
+
+    /// Whether this event has already been judged for this flow. **The same
+    /// event replayed starts nothing a second time**: a hook called twice by a
+    /// command line that retries would otherwise run the work twice.
+    pub fn already_judged(&self, event_id: i64, flow: &str) -> Result<bool, SessionError> {
+        let count: i64 = self.connection.query_row(
+            "SELECT COUNT(*) FROM event_verdicts WHERE event_id = ?1 AND flow = ?2",
+            params![event_id, flow],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
+    /// Every verdict written for one event, newest last.
+    pub fn verdicts_for(&self, event_id: i64) -> Result<Vec<Verdict>, SessionError> {
+        let mut statement = self.connection.prepare(
+            "SELECT event_id, flow, verdict, why, run_id, decided_at
+             FROM event_verdicts WHERE event_id = ?1 ORDER BY id",
+        )?;
+        let rows = statement.query_map(params![event_id], |row| {
+            Ok(Verdict {
+                event_id: row.get(0)?,
+                flow: row.get(1)?,
+                verdict: row.get(2)?,
+                why: row.get(3)?,
+                run_id: row.get(4)?,
+                decided_at: row.get(5)?,
+            })
+        })?;
+        Ok(rows.filter_map(Result::ok).collect())
     }
 
     /// Closes the open row on a tty. Returns `false` when there was none: a

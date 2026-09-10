@@ -259,7 +259,7 @@ fn an_event_from_an_unannounced_terminal_still_lands() {
 fn the_sessions_have_their_own_file_and_their_own_version() {
     let scratch = Scratch::new("version");
     let store = scratch.store();
-    assert_eq!(store.schema_version().expect("the version"), 1);
+    assert_eq!(store.schema_version().expect("the version"), 2);
     assert!(store.path().ends_with(SESSIONS_FILE));
     assert!(
         !scratch.directory.join("state.db").exists(),

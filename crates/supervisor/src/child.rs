@@ -122,6 +122,16 @@ impl Process {
         Ok(process)
     }
 
+    /// Lets it run on after whoever started it has gone.
+    ///
+    /// **THE ROW STAYS, THE PROCESS STAYS.** Dropping a `Process` stops it, so
+    /// a hook that starts a run would kill it on the way out. The ledger holds
+    /// the row already: a process let go is still one Sailor can account for.
+    pub fn let_it_go(mut self) -> u32 {
+        self.stopped = true;
+        self.child.id()
+    }
+
     pub fn pid(&self) -> u32 {
         self.child.id()
     }

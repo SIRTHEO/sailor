@@ -1627,9 +1627,10 @@ fn record_event(request: &Request<'_>) -> Result<Report, String> {
         .remember_terminal(&arrival)
         .map_err(|error| error.to_string())?;
     let happened = event_named(request, "event");
-    store
+    let event_id = store
         .record_event(&happened)
         .map_err(|error| error.to_string())?;
+    let started = what_this_event_starts(request, store, event_id, &happened);
     // The announcement is renewed here and nowhere else: a lease that only the
     // opening renewed would expire on a terminal that has been working all day.
     let announced = announce(request, &arrival, "working");
@@ -1642,10 +1643,78 @@ fn record_event(request: &Request<'_>) -> Result<Report, String> {
         said.push('\n');
         said.push_str(&catalogue::say(
             "cli.session.closed_the_gone",
-            &[("count", &gone.len().to_string()), ("ttys", &gone.join(", "))],
+            &[
+                ("count", &gone.len().to_string()),
+                ("ttys", &gone.join(", ")),
+            ],
         ));
     }
+    if !started.is_empty() {
+        said.push('\n');
+        said.push_str(&started);
+    }
     Ok(Report::spoken(also_saying(said, announced)))
+}
+
+/// The flows this event starts, judged and started before the hook returns.
+///
+/// **NOTHING IS WAITED FOR.** Every run is let go the instant it is lit: a
+/// person's prompt is waiting on this call, and a hook that waits for a flow
+/// is a hook that stops the work it was meant to help.
+fn what_this_event_starts(
+    request: &Request<'_>,
+    store: &Sessions,
+    event_id: i64,
+    happened: &TerminalEvent,
+) -> String {
+    let asked = crate::arc_cmd::Happened {
+        event: happened.name.clone(),
+        tree: happened.worktree.clone().unwrap_or_default(),
+        tty: happened.tty.clone(),
+        session: happened.session_id.clone().unwrap_or_default(),
+        prompt: what_a_person_typed(request.raw),
+    };
+    let verdicts = crate::arc_cmd::evaluate(
+        store,
+        event_id,
+        &asked,
+        &ui::gather::flow_sources(),
+        request.at,
+        &mut crate::arc_cmd::launch_detached,
+    );
+    let acted: Vec<&sessions::Verdict> = verdicts
+        .iter()
+        .filter(|row| row.verdict != sessions::DEFERRED)
+        .collect();
+    if acted.is_empty() {
+        return String::new();
+    }
+    acted
+        .iter()
+        .map(|row| {
+            format!(
+                "{}\t{}\t{}",
+                row.flow,
+                row.verdict,
+                row.why.clone().unwrap_or_default()
+            )
+        })
+        .collect::<Vec<String>>()
+        .join("\n")
+}
+
+/// What the person typed, read from the payload and never written down.
+///
+/// A prompt is a body: it is matched here, in memory, and goes no further —
+/// not into the store, not into an argument list, not into the record of the
+/// child a match starts.
+fn what_a_person_typed(raw: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(raw).ok()?;
+    value
+        .get("prompt")
+        .and_then(serde_json::Value::as_str)
+        .filter(|typed| !typed.trim().is_empty())
+        .map(str::to_owned)
 }
 
 fn close_terminal(request: &Request<'_>) -> Result<Report, String> {
@@ -4161,9 +4230,17 @@ mod tests {
             "cli.session.row_at_rest",
             &[("for", "2h 05m"), ("event", "Stop")],
         );
-        assert!(two_hours_later.message.contains(&said), "{}", two_hours_later.message);
+        assert!(
+            two_hours_later.message.contains(&said),
+            "{}",
+            two_hours_later.message
+        );
         let summary = catalogue::say("cli.session.at_rest_for_long", &[("count", "1")]);
-        assert!(two_hours_later.message.contains(&summary), "{}", two_hours_later.message);
+        assert!(
+            two_hours_later.message.contains(&summary),
+            "{}",
+            two_hours_later.message
+        );
         assert_eq!(since_words(59), "0m");
         assert_eq!(since_words(90_000), "1d 1h");
     }
@@ -4200,8 +4277,14 @@ mod tests {
             at: 900,
         })
         .expect("the other terminal checks in");
-        ask("open", r#"{"session_id":"abc","cwd":"/here"}"#, &store, &two, &no_options())
-            .expect("this one too");
+        ask(
+            "open",
+            r#"{"session_id":"abc","cwd":"/here"}"#,
+            &store,
+            &two,
+            &no_options(),
+        )
+        .expect("this one too");
 
         // ttys009 leaves without a word; the census of the next event no longer sees it.
         let report = ask(
@@ -4218,10 +4301,16 @@ mod tests {
         );
         assert!(report.message.contains(&said), "{}", report.message);
         let rows = store.terminals().expect("the rows");
-        let gone = rows.iter().find(|row| row.tty == "ttys009").expect("still on record");
+        let gone = rows
+            .iter()
+            .find(|row| row.tty == "ttys009")
+            .expect("still on record");
         assert!(!gone.is_open(), "closed, not deleted: {gone:?}");
         assert!(
-            rows.iter().find(|row| row.tty == "ttys004").expect("ours").is_open(),
+            rows.iter()
+                .find(|row| row.tty == "ttys004")
+                .expect("ours")
+                .is_open(),
             "the terminal that spoke stays open"
         );
         let events = store.events_on("ttys009").expect("its events");

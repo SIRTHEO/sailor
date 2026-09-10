@@ -6,10 +6,10 @@
 use std::path::{Path, PathBuf};
 
 /// Every `.rs` directly under a package's `tests/`, the window's shell included.
-const TEST_BINARIES_TODAY: usize = 147;
+const TEST_BINARIES_TODAY: usize = 149;
 
 /// Every `#[test]` in the tree, the window's shell included.
-const TEST_FUNCTIONS_TODAY: usize = 2086;
+const TEST_FUNCTIONS_TODAY: usize = 2100;
 
 /// Every `.flow.json` in `flows/` and among the shipped ones.
 const FLOW_FILES_TODAY: usize = 18;
@@ -191,10 +191,30 @@ fn the_battery_here() -> Battery {
 /// Each count beside its seed and the name of the constant to rewrite.
 fn all_four(battery: &Battery) -> [(&'static str, &'static str, usize, usize); 4] {
     [
-        ("test binaries", "TEST_BINARIES_TODAY", TEST_BINARIES_TODAY, battery.binaries),
-        ("test functions", "TEST_FUNCTIONS_TODAY", TEST_FUNCTIONS_TODAY, battery.functions),
-        ("flow files", "FLOW_FILES_TODAY", FLOW_FILES_TODAY, battery.flows),
-        ("window tests", "WINDOW_TESTS_TODAY", WINDOW_TESTS_TODAY, battery.window),
+        (
+            "test binaries",
+            "TEST_BINARIES_TODAY",
+            TEST_BINARIES_TODAY,
+            battery.binaries,
+        ),
+        (
+            "test functions",
+            "TEST_FUNCTIONS_TODAY",
+            TEST_FUNCTIONS_TODAY,
+            battery.functions,
+        ),
+        (
+            "flow files",
+            "FLOW_FILES_TODAY",
+            FLOW_FILES_TODAY,
+            battery.flows,
+        ),
+        (
+            "window tests",
+            "WINDOW_TESTS_TODAY",
+            WINDOW_TESTS_TODAY,
+            battery.window,
+        ),
     ]
 }
 
@@ -307,14 +327,26 @@ fn the_counters_can_still_see_what_they_count() {
         std::fs::create_dir_all(&directory).expect("the scratch tree");
     }
     let write = |path: PathBuf, text: &str| std::fs::write(&path, text).expect("write");
-    write(package.join("tests").join("first.rs"), "#[test] fn a() {}\n");
-    write(package.join("tests").join("second.rs"), "  #[test]\nfn b() {}\n");
-    write(package.join("tests").join("nested").join("mod.rs"), "#[test] fn shared() {}\n");
+    write(
+        package.join("tests").join("first.rs"),
+        "#[test] fn a() {}\n",
+    );
+    write(
+        package.join("tests").join("second.rs"),
+        "  #[test]\nfn b() {}\n",
+    );
+    write(
+        package.join("tests").join("nested").join("mod.rs"),
+        "#[test] fn shared() {}\n",
+    );
     write(
         package.join("src").join("lib.rs"),
         "fn code() {}\n// #[test] in a comment is not one\n#[test]\nfn c() {}\n    #[test]\n    fn d() {}\nconst MARK: &str = \"#[test]\";\n",
     );
-    write(package.join("target").join("built.rs"), "#[test] fn never() {}\n");
+    write(
+        package.join("target").join("built.rs"),
+        "#[test] fn never() {}\n",
+    );
     write(shell.join("tests").join("window.rs"), "#[test] fn e() {}\n");
     write(shell.join("src").join("main.rs"), "#[test]\nfn f() {}\n");
     write(scratch.join("flows").join("own.flow.json"), "{}");
@@ -322,10 +354,22 @@ fn the_counters_can_still_see_what_they_count() {
     write(shipped.join("shipped.flow.json"), "{}");
     write(shipped.join("shipped.md"), "");
     let window = scratch.join("desktop").join("src");
-    write(window.join("a.test.tsx"), "test(\"one\", () => {});\n  test(\"two\", () => {});\n");
-    write(window.join("b.test.ts"), "// test( in a comment is not one\nconst M = \"test(\";\ntest(\"three\", () => {});\n");
-    write(window.join("c.tsx"), "test(\"not a test file\", () => {});\n");
-    write(window.join("node_modules").join("d.test.ts"), "test(\"vendored\", () => {});\n");
+    write(
+        window.join("a.test.tsx"),
+        "test(\"one\", () => {});\n  test(\"two\", () => {});\n",
+    );
+    write(
+        window.join("b.test.ts"),
+        "// test( in a comment is not one\nconst M = \"test(\";\ntest(\"three\", () => {});\n",
+    );
+    write(
+        window.join("c.tsx"),
+        "test(\"not a test file\", () => {});\n",
+    );
+    write(
+        window.join("node_modules").join("d.test.ts"),
+        "test(\"vendored\", () => {});\n",
+    );
 
     let battery = measure(&scratch);
     let binaries = test_binaries(&scratch);
@@ -341,7 +385,10 @@ fn the_counters_can_still_see_what_they_count() {
         7,
         "the marks opening a line, in any file but the built ones, and never in a comment or a string"
     );
-    assert_eq!(battery.flows, 2, "one of this project's own and one shipped, no markdown");
+    assert_eq!(
+        battery.flows, 2,
+        "one of this project's own and one shipped, no markdown"
+    );
     assert_eq!(
         battery.window,
         3,

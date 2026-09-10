@@ -46,4 +46,8 @@ terminal = { path = "../terminal" }
 # bridge reads its own standard input instead of the buffered wrapper.
 libc = "0.2"
 serde = { workspace = true }
+# The one road a child process starts by. A run started because a session said
+# something happened has to outlive the hook that started it, and letting it go
+# is a gesture of that road, not a second road beside it.
+supervisor = { path = "../supervisor" }
 serde_json = { workspace = true }

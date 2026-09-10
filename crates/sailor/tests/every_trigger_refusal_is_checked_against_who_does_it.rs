@@ -39,6 +39,14 @@ const SHAPES: &[Shape] = &[
             "kind": "appended_lines", "files": ["~/pane.jsonl"], "text_pointer": ["text"]}}"#,
         input: "{}",
     },
+    // The fourth shape carries the signal with it, like the manual one: the
+    // event is a fact of the store before anything starts, so nothing here is
+    // refused, and there is no claim about the tree to age.
+    Shape {
+        kind: "session_event",
+        descriptor: r#"{"id": "a-session-spoke", "kind": "session_event"}"#,
+        input: r#"{"text": "{\"event\": \"Stop\"}"}"#,
+    },
     Shape {
         kind: "periodic",
         descriptor: r#"{"id": "every-hour", "kind": "periodic", "periodic": {
@@ -184,7 +192,10 @@ fn shipped_code_outside_trigger(root: &Path) -> Vec<(PathBuf, String)> {
             Some((path, shipped))
         })
         .collect();
-    let signs: usize = CLAIMS.iter().map(|claim| claim.signs_somebody_does_it.len()).sum();
+    let signs: usize = CLAIMS
+        .iter()
+        .map(|claim| claim.signs_somebody_does_it.len())
+        .sum();
     workspace::measured_against(
         read.len(),
         "shipped sources read outside the trigger crate",
@@ -298,7 +309,11 @@ fn a_refusal_that_names_a_keeper_finds_the_keeper_in_the_tree() {
     let root = root();
     let refused = refusals();
     for claim in CLAIMS {
-        for keeper in claim.kept_instead.into_iter().flat_map(flow::keepers_reading) {
+        for keeper in claim
+            .kept_instead
+            .into_iter()
+            .flat_map(flow::keepers_reading)
+        {
             let text =
                 std::fs::read_to_string(root.join(keeper.lives_in)).unwrap_or_else(|error| {
                     panic!(
@@ -403,7 +418,10 @@ fn a_periodic_trigger_in_a_tree_with_a_beat_is_not_refused_as_if_nobody_kept_the
         );
         beats += 1;
     }
-    assert!(beats >= 2, "the census lost a keeper of the flow's schedule");
+    assert!(
+        beats >= 2,
+        "the census lost a keeper of the flow's schedule"
+    );
     let periodic = SHAPES
         .iter()
         .find(|shape| shape.kind == "periodic")

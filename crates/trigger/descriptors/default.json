@@ -39,6 +39,12 @@
       "note": "Somebody presses and it starts, carrying a text. This is the launch button's source: the signal arrives together with the run, so there is nothing to wait for."
     },
     {
+      "id": "session-event",
+      "kind": "session_event",
+      "label": "A session says something happened",
+      "note": "Every command line Sailor grafts already calls `sailor session event` when a person submits a prompt, when a turn ends, and when a context is about to be compacted. That call is the source: after it has written its row it looks for the flows declaring this trigger, and starts them detached. What a flow asks of the event — its name, a phrase in the person's own prompt, the tree — is written in the trigger step's `on`, not here, because two flows watch the same call for different reasons."
+    },
+    {
       "id": "sailor-terminal",
       "kind": "terminal",
       "label": "Sailor's own terminal",

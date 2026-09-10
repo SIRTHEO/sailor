@@ -5,7 +5,9 @@
 //! returns the signal in the shape the steps downstream read. It executes
 //! nothing and touches nothing in the world.
 
-use crate::{default_sources, Catalog, Kind, Listen, MissedRun, Signal, Source, TriggerDescriptor};
+use crate::{
+    default_sources, Catalog, Kind, Listen, MissedRun, On, Signal, Source, TriggerDescriptor,
+};
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies};
 use serde::Deserialize;
 use serde_json::Value;
@@ -34,6 +36,12 @@ struct TriggerSpec {
     /// The last closed run's report, put here by whoever launches.
     #[serde(default)]
     previous_report: Option<serde_json::Value>,
+    /// What this flow asks of a session event before it will start. Read by
+    /// whoever evaluates the event, not by this step: by the time the step
+    /// runs, the match has already been made.
+    #[serde(default)]
+    #[allow(dead_code)]
+    on: Option<On>,
     /// Descriptor files or directories to use beyond the usual ones.
     #[serde(default)]
     descriptor_paths: Vec<String>,
@@ -91,7 +99,10 @@ impl Action for TriggerAction {
         };
         let descriptor = &loaded.descriptor;
         match descriptor.kind {
-            Kind::Manual => {
+            // The two that carry the signal with them. A session event has
+            // already happened by the time anything starts: there is nothing
+            // left to wait for, and the launcher puts the delivery in hand.
+            Kind::Manual | Kind::SessionEvent => {
                 let text = spec.text.ok_or_else(|| {
                     ActionError::new(
                         "empty_signal",
@@ -106,7 +117,11 @@ impl Action for TriggerAction {
                     who: spec.who.unwrap_or_default(),
                     where_from: spec.where_from.unwrap_or_default(),
                     source: descriptor.id.clone(),
-                    kind: "manual".to_owned(),
+                    kind: match descriptor.kind {
+                        Kind::SessionEvent => "session_event",
+                        _ => "manual",
+                    }
+                    .to_owned(),
                     previous_report: spec.previous_report,
                 };
                 Ok(ActionOutcome::Went(
@@ -380,7 +395,8 @@ mod tests {
     /// reads it to build what is built, and hides that the way is a move.
     #[test]
     fn the_clock_that_is_kept_is_named_next_to_the_one_that_is_not() {
-        let dir = std::env::temp_dir().join(format!("sailor-orologio-tenuto-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("sailor-orologio-tenuto-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("creating the test directory");
         let file = dir.join("miei.json");
         std::fs::write(
@@ -403,10 +419,18 @@ mod tests {
         assert!(error.said.contains("flow tick"), "{}", error.said);
         // And the hole that keeper leaves, which is the half a reader would
         // otherwise discover on the first morning the window was closed.
-        assert!(error.said.contains("while the window is open"), "{}", error.said);
+        assert!(
+            error.said.contains("while the window is open"),
+            "{}",
+            error.said
+        );
         // And what the keeper would not honour, so the move is made with open
         // eyes rather than discovered on the first missed hour.
-        assert!(error.said.contains("once_for_all_of_them"), "{}", error.said);
+        assert!(
+            error.said.contains("once_for_all_of_them"),
+            "{}",
+            error.said
+        );
         assert!(error.said.contains("not 3"), "{}", error.said);
         let _ = std::fs::remove_dir_all(&dir);
     }

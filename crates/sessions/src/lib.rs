@@ -21,7 +21,7 @@ pub mod tty;
 pub use census::{Census, Inhabitant, LocalMachine, Machine, Refusal, Terminal};
 pub use store::{
     others_in_the_tree, Anchor, Arrival, SessionError, Sessions, TerminalEvent, TerminalRow,
-    SESSIONS_FILE,
+    Verdict, ACTED, BROKE, DEFERRED, SESSIONS_FILE,
 };
 
 use serde::Deserialize;

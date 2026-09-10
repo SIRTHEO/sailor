@@ -48,9 +48,9 @@ const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
     ("registry", 286),
     ("relay", 154),
     ("release", 426),
-    ("sailor", 181),
-    ("sessions", 238),
-    ("supervisor", 267),
+    ("sailor", 171),
+    ("sessions", 237),
+    ("supervisor", 265),
     ("terminal", 281),
     ("toolbox", 283),
     ("trigger", 236),
@@ -111,7 +111,10 @@ fn sources() -> Vec<PathBuf> {
     }
     for named in NAMED_ONE_BY_ONE {
         let path = root.join(named);
-        assert!(path.is_file(), "«{named}» is named here and is not there: it moved, or the list is stale");
+        assert!(
+            path.is_file(),
+            "«{named}» is named here and is not there: it moved, or the list is stale"
+        );
         found.push(path);
     }
     found
@@ -372,7 +375,9 @@ fn permille_per_crate() -> BTreeMap<String, usize> {
     let mut code: BTreeMap<String, usize> = BTreeMap::new();
     for path in sources() {
         let relative = path.strip_prefix(root).unwrap_or(&path);
-        let mut parts = relative.components().map(|part| part.as_os_str().to_string_lossy().into_owned());
+        let mut parts = relative
+            .components()
+            .map(|part| part.as_os_str().to_string_lossy().into_owned());
         let crate_name = match parts.next().as_deref() {
             Some("crates") => parts.next().unwrap_or_default(),
             Some("desktop") => "desktop".to_owned(),
@@ -413,13 +418,19 @@ fn no_crate_lets_its_comments_outtalk_its_code_more_than_today() {
         measured.len(),
         "crates the ratio is seeded for",
     );
-    let table: Vec<String> = measured.iter().map(|(name, permille)| format!("    (\"{name}\", {permille}),")).collect();
+    let table: Vec<String> = measured
+        .iter()
+        .map(|(name, permille)| format!("    (\"{name}\", {permille}),"))
+        .collect();
     let seeded: BTreeMap<&str, usize> = COMMENT_PERMILLE_TODAY.iter().copied().collect();
     // Every crate's complaint at once: said one at a time, a night of four
     // crates cost four measurements.
     let mut complaints = Vec::new();
     for (name, permille) in &measured {
-        match seeded.get(name.as_str()).map(|seed| weigh(*seed, *permille)) {
+        match seeded
+            .get(name.as_str())
+            .map(|seed| weigh(*seed, *permille))
+        {
             None => complaints.push(format!("crate «{name}» is in no seed of the table")),
             Some(Weighed::TreeIsAbove(more)) => complaints.push(format!(
                 "crate «{name}» carries {permille}‰ comment lines, {more}‰ over its seed. \
@@ -437,7 +448,12 @@ fn no_crate_lets_its_comments_outtalk_its_code_more_than_today() {
         complaints.join("; "),
         table.join("\n")
     );
-    assert_eq!(seeded.len(), measured.len(), "the table names crates the tree lacks, or lacks some; measured now:\n{}", table.join("\n"));
+    assert_eq!(
+        seeded.len(),
+        measured.len(),
+        "the table names crates the tree lacks, or lacks some; measured now:\n{}",
+        table.join("\n")
+    );
 }
 
 #[test]
@@ -619,7 +635,9 @@ fn the_check_can_still_see_what_it_counts() {
     );
     // The tree holds none any more, so the counter proves itself on a line it
     // is handed: asking the tree would make the check pass by being empty.
-    assert!(cites_a_date("// written on 06/09/2026, which git already knows"));
+    assert!(cites_a_date(
+        "// written on 06/09/2026, which git already knows"
+    ));
     assert!(!cites_a_date("// version 1.89 of the compiler, not a date"));
     assert!(is_not_english("// perché questo non basta"));
     assert!(
