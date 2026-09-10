@@ -288,6 +288,12 @@
         "line": "/clear",
         "note": "Typed into a session that is already running, not passed at launch. Established from the command list this command line publishes to its own sessions, NOT by running it and watching the context empty: the effect is on a live session, and measuring it means having one to spend. What is measured is that the line reaches the program — the conduit is provable without knowing what the line means. Whoever gets a chance to watch a real session empty should say so here and take this sentence out."
       },
+      "free_when": {
+        "the_prompt_shows": ["\u276f\u00a0"],
+        "and_none_of_these": ["Esc to cancel", "Do you want"],
+        "and_still_for_seconds": 3,
+        "note": "Measured on 10/09/2026 against version 2.1.267, held by `sailor terminal run` in a real pseudo-terminal, by reading the screen file the hold keeps. THREE STATES WERE SEEN. Idle: the screen stops changing altogether \u2014 twenty-nine seconds without a single byte \u2014 and what it last painted ends with the prompt, an upward chevron followed by a NON-BREAKING space, which is the mark declared here. At work: it repaints about once a second, spinner and token count, so stillness alone tells the two apart and no mark has to. Waiting for a person: a selection dialog was opened with `/model`, the screen stood still, and its last line read \u00abEnter to set as default \u00b7 s to use this session only \u00b7 Esc to cancel\u00bb. That footer is the measured mark. \u00abDo you want\u00bb is NOT measured \u2014 the dialog that asks to run a tool could not be raised without spending a person's quota \u2014 and it is declared anyway because a mark in this list can only hold a terminal back, never free one: being wrong here costs a wait. THE KNOWN HOLE: what is kept is the tail of the bytes and not a rendered screen, so a prompt painted before the current state is still in it. Stillness is what keeps that from mattering \u2014 a session at work never stands still \u2014 and the dialogs are caught by their own marks. Whoever renders the screen properly should take this paragraph out. AND THE READER IS BLIND FOR ONE BEAT: what a session painted in the last fifth of a second is not on disk yet, so a terminal that started moving an instant ago still reads as still."
+      },
       "session_hooks": {
         "file": { "below_home": ".claude/settings.json", "format": "json", "key": ["hooks"] },
         "events": { "session_start": "SessionStart", "alive": "Stop", "asked": "UserPromptSubmit", "compacting": "PreCompact" },

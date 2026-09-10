@@ -78,6 +78,7 @@ fn a_declaration() -> Value {
     json!({
         "the_prompt_shows": ["│ >"],
         "and_none_of_these": ["Do you want", "❯ 1."],
+        "and_still_for_seconds": 0,
     })
 }
 
@@ -175,4 +176,20 @@ fn a_command_line_that_declares_nothing_refuses_instead_of_guessing() {
         .expect_err("it refuses rather than guess");
 
     assert_eq!(refusal.class, "freedom_not_declared", "{refusal:?}");
+}
+
+/// **A SESSION AT WORK REPAINTS.** What is written under a spinner is the state
+/// before it, so a screen that moved a moment ago says nothing about now.
+#[test]
+fn a_screen_still_being_painted_is_a_session_at_work() {
+    let scratch = Scratch::new("working");
+    let mut declared = a_declaration();
+    declared["and_still_for_seconds"] = json!(3600);
+    scratch
+        .declaring(declared)
+        .painted("ttys007", "│ > ".as_bytes());
+
+    let why = not_yet(&scratch.asked("ttys007"));
+
+    assert!(why.contains("session at work"), "{why}");
 }

@@ -9,6 +9,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime};
 
 /// How much is kept: a screenful and a little more, which is where a prompt
 /// and any question above it live. Everything older is scrollback.
@@ -68,6 +69,18 @@ pub fn read(path: &Path) -> Option<Vec<u8>> {
     std::fs::read(path).ok()
 }
 
+/// How long the screen has stood still, or nothing when there is no file. The
+/// recorder writes only what changed, so this is the last paint: a session at
+/// work never stands still.
+pub fn still_for(path: &Path) -> Option<Duration> {
+    let changed = std::fs::metadata(path).and_then(|of| of.modified()).ok()?;
+    Some(
+        SystemTime::now()
+            .duration_since(changed)
+            .unwrap_or_default(),
+    )
+}
+
 /// What a person would see, with the terminal's own control sequences taken
 /// out: a mark split by a colour code is a mark nobody would find.
 pub fn as_a_person_sees_it(bytes: &[u8]) -> String {
@@ -111,6 +124,10 @@ pub fn as_a_person_sees_it(bytes: &[u8]) -> String {
     plain
 }
 
+/// How often the kept screen is compared with the file, and **how blind the
+/// reader is**: what was painted since the last beat is not on disk yet.
+const A_BEAT: Duration = Duration::from_millis(200);
+
 /// Keeps the screen on disk while the session runs.
 pub fn recorded_into(screen: Arc<Screen>, path: PathBuf) -> Recording {
     let running = Arc::new(AtomicBool::new(true));
@@ -119,7 +136,7 @@ pub fn recorded_into(screen: Arc<Screen>, path: PathBuf) -> Recording {
         let mut last = Vec::new();
         while going.load(Ordering::Relaxed) {
             last = kept(&path, &screen, last);
-            std::thread::sleep(std::time::Duration::from_millis(500));
+            std::thread::sleep(A_BEAT);
         }
         kept(&path, &screen, last);
     });

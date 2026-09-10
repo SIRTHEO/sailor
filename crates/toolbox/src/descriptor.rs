@@ -560,6 +560,8 @@ pub struct FreeWhen {
     pub the_prompt_shows: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub and_none_of_these: Vec<String>,
+    /// How long the screen must have stood still: a session at work repaints.
+    pub and_still_for_seconds: u64,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub note: String,
     #[serde(flatten)]

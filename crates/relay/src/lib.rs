@@ -316,6 +316,17 @@ impl Action for WaitFreeAction {
                 spec.tty
             )));
         };
+        let still = terminal::screen::still_for(&terminal::screen::address_in(&root, &spec.tty))
+            .unwrap_or_default();
+        if still.as_secs() < free_when.and_still_for_seconds {
+            return Ok(ActionOutcome::NotYet(format!(
+                "{}: the screen was painted {}s ago and stands still for {}s when nobody is being \
+                 waited for, so this is a session at work",
+                spec.tty,
+                still.as_secs(),
+                free_when.and_still_for_seconds
+            )));
+        }
         let seen = terminal::screen::as_a_person_sees_it(&painted);
         if let Some(held) = free_when
             .and_none_of_these
