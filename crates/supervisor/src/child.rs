@@ -30,6 +30,9 @@ pub struct Spec {
     /// «whatever the parent has»**, which a development server and the window
     /// both want; it also means a profile never arrives by accident.
     pub environment: Vec<(String, String)>,
+    /// Whether it writes on the terminal of whoever lit it: **a child that
+    /// outlives its parent lands its lines in somebody else's work.**
+    pub speaks: bool,
 }
 
 /// A process lit by Sailor, that knows it is one.
@@ -82,6 +85,9 @@ impl Process {
             .current_dir(&spec.working_directory)
             .envs(spec.environment.iter().map(|(name, value)| (name, value)))
             .stdin(Stdio::null());
+        if !spec.speaks {
+            command.stdout(Stdio::null()).stderr(Stdio::null());
+        }
         Self::in_its_own_group(&mut command);
         let child = command
             .spawn()

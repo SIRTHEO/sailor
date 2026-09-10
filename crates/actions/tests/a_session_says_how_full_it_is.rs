@@ -260,3 +260,46 @@ fn the_thresholds_are_tokens_and_not_a_share_of_a_window() {
     assert_eq!(actions::session_fill::WARN_TOKENS, 150_000);
     assert_eq!(actions::session_fill::OBLIGE_TOKENS, 250_000);
 }
+
+/// **A RECORD OF HUNDREDS OF MEGABYTES IS ASKED ABOUT ONCE A TURN.** Only its
+/// end is read, and the first line inside the cap is dropped because it is cut
+/// in the middle: read whole it would be a record saying nothing.
+#[test]
+fn only_the_end_of_a_long_record_is_read_and_no_half_line_with_it() {
+    let scratch = Scratch::new("tail");
+    let mut text = String::new();
+    for filler in 0..40_000 {
+        text.push_str(&answered(filler % 97, 0, 0));
+        text.push('\n');
+    }
+    text.push_str(&answered(7_000, 200_000, 0));
+    let path = scratch.holding("long.jsonl", &text);
+
+    let answer = measured(json!({"transcript": path.clone()}));
+
+    assert_eq!(
+        answer["tokens"],
+        json!(207_000),
+        "the last answer, whole: {answer}"
+    );
+    assert_eq!(answer["state"], json!("warn"));
+
+    let tail = actions::session_fill::tail_of(&path, 4_000).expect("the end is readable");
+    assert!(
+        tail.len() < 4_000,
+        "the cut line is dropped, so the tail is shorter than the cap"
+    );
+    assert_eq!(
+        from_transcript(&tail)
+            .expect("the tail holds answers")
+            .tokens,
+        207_000,
+        "and the fill is the same read from the end alone"
+    );
+    for line in tail.lines() {
+        assert!(
+            serde_json::from_str::<Value>(line).is_ok(),
+            "no half line survives: «{line}»"
+        );
+    }
+}

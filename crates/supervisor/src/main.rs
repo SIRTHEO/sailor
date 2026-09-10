@@ -122,10 +122,17 @@ fn stop_left_running(store: Option<&ledger::Ledger>) {
         Ok(done) => {
             for one in done {
                 match one {
-                    supervisor::Teardown::Gone { process_id, pid, .. } => {
+                    supervisor::Teardown::Gone {
+                        process_id, pid, ..
+                    } => {
                         println!("stopped {process_id} (pid {pid})")
                     }
-                    supervisor::Teardown::StillThere { process_id, pid, why, .. } => {
+                    supervisor::Teardown::StillThere {
+                        process_id,
+                        pid,
+                        why,
+                        ..
+                    } => {
                         eprintln!("{process_id} (pid {pid}) could not be stopped: {why}")
                     }
                 }
@@ -211,13 +218,11 @@ fn run_live(root: &Path, supervisor: &Supervisor, at_once: bool) {
         // The environment of whoever typed `sailor-live`, which is what a
         // development server and the window both want.
         environment: Vec::new(),
+        speaks: true,
     });
     let _vite = match vite {
         Ok(process) => {
-            println!(
-                "development page: pid {} on port {DEV_PORT}",
-                process.pid()
-            );
+            println!("development page: pid {} on port {DEV_PORT}", process.pid());
             Some(process)
         }
         Err(error) => {
@@ -285,7 +290,12 @@ fn run_live(root: &Path, supervisor: &Supervisor, at_once: bool) {
             Turn::Build => {
                 seen = changed;
                 println!("something changed: rebuilding without touching the window.");
-                publish(&status_path, LiveState::Building, String::new(), running_since);
+                publish(
+                    &status_path,
+                    LiveState::Building,
+                    String::new(),
+                    running_since,
+                );
                 match cargo_build(&manifest, Some(1)) {
                     supervisor::BuildOutcome::Succeeded => {
                         waiting = true;
@@ -305,7 +315,12 @@ fn run_live(root: &Path, supervisor: &Supervisor, at_once: bool) {
             Turn::Swap => {
                 asked = false;
                 waiting = false;
-                publish(&status_path, LiveState::Building, String::new(), running_since);
+                publish(
+                    &status_path,
+                    LiveState::Building,
+                    String::new(),
+                    running_since,
+                );
                 let outcome = rebuild_then_swap(
                     &mut window,
                     || supervisor::BuildOutcome::Succeeded,
@@ -315,7 +330,12 @@ fn run_live(root: &Path, supervisor: &Supervisor, at_once: bool) {
                     Rebuild::Replaced => {
                         running_since = Some(now());
                         println!("window replaced.");
-                        publish(&status_path, LiveState::Running, String::new(), running_since);
+                        publish(
+                            &status_path,
+                            LiveState::Running,
+                            String::new(),
+                            running_since,
+                        );
                     }
                     Rebuild::KeptRunning { message } | Rebuild::StartFailed { message } => {
                         eprintln!("built, but it does not start again: {message}");
@@ -361,6 +381,7 @@ fn start_window(
         // The environment of whoever typed `sailor-live`, which is what a
         // development server and the window both want.
         environment: Vec::new(),
+        speaks: true,
     })
 }
 

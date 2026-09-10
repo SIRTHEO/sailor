@@ -1,6 +1,11 @@
 {
   "margin_percent": 25,
   "flows": {
+    "ask-for-a-mandate": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
+    },
     "consolidate-memories": {
       "tokens_a_run": 0,
       "runs_measured": 0,

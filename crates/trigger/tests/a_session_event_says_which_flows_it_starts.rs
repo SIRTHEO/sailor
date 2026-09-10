@@ -10,6 +10,7 @@ fn happened() -> Happened {
         tty: "ttys001".to_owned(),
         session: "a-session".to_owned(),
         prompt: Some("carry on with the relay".to_owned()),
+        transcript: None,
     }
 }
 

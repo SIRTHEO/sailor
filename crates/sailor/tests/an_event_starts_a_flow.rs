@@ -75,6 +75,7 @@ fn happened() -> Happened {
         tty: "ttys001".to_owned(),
         session: "a-session".to_owned(),
         prompt: Some("carry on".to_owned()),
+        transcript: Some("/a/tree/.transcript.jsonl".to_owned()),
     }
 }
 

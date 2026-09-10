@@ -1653,8 +1653,53 @@ fn record_event(request: &Request<'_>) -> Result<Report, String> {
         said.push('\n');
         said.push_str(&started);
     }
+    if let Some(asked) = the_ask_still_standing(request, &happened.tty) {
+        said.push('\n');
+        said.push_str(&asked);
+    }
     Ok(Report::spoken(also_saying(said, announced)))
 }
+
+/// The request for a mandate, while it is still unanswered.
+///
+/// Written by a run that measured this session out of band, and read here by a
+/// keyed lookup: measuring on every hook would read a transcript of hundreds of
+/// megabytes in front of a person waiting to type.
+fn the_ask_still_standing(request: &Request<'_>, tty: &str) -> Option<String> {
+    let TheDeposit::Open(ledger) = request.deposit else {
+        return None;
+    };
+    the_ask_of(ledger, &ledger::default_directory()?, tty)
+}
+
+/// The same question with everything it reads named, so it can be answered
+/// about a store this machine does not keep.
+fn the_ask_of(ledger: &ledger::Ledger, store: &std::path::Path, tty: &str) -> Option<String> {
+    let asked = ledger.read_record(ASKS, tty).ok().flatten()?;
+    if asked.value.get("state").and_then(serde_json::Value::as_str) != Some(OBLIGE) {
+        return None;
+    }
+    // Answered, it stops being asked: the mandate on disk is the answer, and
+    // one written after the request was made is this request's answer.
+    let answered = sessions::mandate::read(&sessions::mandate::address_in(store, tty))
+        .is_some_and(|left| left.written.at >= asked.written_at);
+    if answered {
+        return None;
+    }
+    let tokens = asked
+        .value
+        .get("tokens")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or_default();
+    Some(catalogue::say(
+        "cli.session.the_mandate_is_asked_for",
+        &[("tokens", &tokens.to_string())],
+    ))
+}
+
+/// Where a run leaves the request, and the standing that makes one.
+const ASKS: &str = "mandate_asks";
+const OBLIGE: &str = "oblige";
 
 /// The flows this event starts, judged and started before the hook returns.
 ///
@@ -1673,6 +1718,7 @@ fn what_this_event_starts(
         tty: happened.tty.clone(),
         session: happened.session_id.clone().unwrap_or_default(),
         prompt: what_a_person_typed(request.raw),
+        transcript: happened.transcript_path.clone(),
     };
     let verdicts = crate::arc_cmd::evaluate(
         store,
@@ -1908,6 +1954,65 @@ mod tests {
             3,
             "every moment but the first is an event: {paired:?}"
         );
+    }
+
+    /// **THE ASK STANDS UNTIL IT IS ANSWERED, AND THE ANSWER IS THE MANDATE.**
+    /// A request repeated after the mandate was written is a request nobody can
+    /// satisfy: whoever reads it has already done the thing.
+    #[test]
+    fn the_ask_stands_until_a_mandate_answers_it() {
+        let directory = std::env::temp_dir().join(format!("sailor-ask-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("a directory of this test's own");
+        let ledger = ledger::Ledger::open(&directory).expect("a store of this test's own");
+        ledger
+            .put_record(&ledger::StoreRecord {
+                collection: ASKS.to_owned(),
+                key: "ttys001".to_owned(),
+                value: serde_json::json!({"state": OBLIGE, "tokens": 260_000u64}),
+                written_by: "a-run".to_owned(),
+                written_at: 100,
+            })
+            .expect("the ask is written");
+
+        let asked = the_ask_of(&ledger, &directory, "ttys001");
+        assert!(
+            asked.is_some_and(|said| said.contains("260000")),
+            "unanswered, it is asked"
+        );
+
+        let mut mandate = sessions::mandate::Mandate::default();
+        mandate.written.tty = "ttys001".to_owned();
+        mandate.written.at = 101;
+        sessions::mandate::deposit(&directory, &mandate).expect("the mandate is deposited");
+        assert_eq!(
+            the_ask_of(&ledger, &directory, "ttys001"),
+            None,
+            "answered, it stops being asked"
+        );
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// A standing below the one that obliges is not asked about at all.
+    #[test]
+    fn a_session_that_is_only_filling_up_is_asked_nothing() {
+        let directory =
+            std::env::temp_dir().join(format!("sailor-ask-below-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("a directory of this test's own");
+        let ledger = ledger::Ledger::open(&directory).expect("a store of this test's own");
+        ledger
+            .put_record(&ledger::StoreRecord {
+                collection: ASKS.to_owned(),
+                key: "ttys002".to_owned(),
+                value: serde_json::json!({"state": "warn", "tokens": 160_000u64}),
+                written_by: "a-run".to_owned(),
+                written_at: 100,
+            })
+            .expect("the ask is written");
+
+        assert_eq!(the_ask_of(&ledger, &directory, "ttys002"), None);
+        let _ = std::fs::remove_dir_all(&directory);
     }
 
     struct Scratch {

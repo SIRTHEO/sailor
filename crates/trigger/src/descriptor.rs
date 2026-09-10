@@ -41,46 +41,50 @@ pub enum Kind {
     /// The clock is the source: nothing outside speaks, time passes. What it
     /// must declare is in `Periodic`, and it declares it or does not load.
     Periodic,
-    /// A session of this machine said something happened. The signal arrives
-    /// with the run, like a manual one, and what is listened to is not a file
-    /// but `sailor session event`, which every command line already calls.
+    /// A session said something happened. The signal arrives with the run,
+    /// like a manual one, and what is listened to is not a file but the call
+    /// `sailor session event`, which every command line already makes.
     SessionEvent,
 }
 
-/// What a flow asks of a session event before it will start.
-///
-/// **THE PHRASE IS MATCHED ON WHAT A PERSON TYPED AND ON NOTHING ELSE.** A
-/// flow an agent can start by writing its phrase has no brake left.
+/// What a flow asks of a session event before it will start. **THE PHRASE IS
+/// MATCHED ON WHAT A PERSON TYPED**: a flow an agent starts by writing its
+/// phrase has no brake left.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct On {
     /// The event's name, as the session announced it.
     pub event: String,
-    /// Words the person's own prompt must hold. Absent: any prompt will do.
+    /// Words the person's own prompt must hold. Absent: any prompt.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phrase: Option<String>,
-    /// The tree it must have happened in. Absent: any tree.
+    /// The tree it happened in. Absent: any tree.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tree: Option<String>,
 }
 
-/// One session event, as the evaluator reads it back.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Happened {
     pub event: String,
     pub tree: String,
     pub tty: String,
     pub session: String,
-    /// What the person typed, and only that. A `None` here is an event that
-    /// carried no human prompt at all.
+    /// What the person typed, and only that. `None` is an event that carried
+    /// no human prompt at all.
     pub prompt: Option<String>,
+    /// Where this session's record of itself is kept. A path, not a body: it
+    /// is what lets a flow measure the session without holding it.
+    pub transcript: Option<String>,
 }
 
-/// Why a flow was not started for an event, or nothing when it should be.
-///
-/// **ONE REASON, NAMED.** A guard that will not say which condition refused
-/// cannot be told from a broken one.
+/// Why a flow was not started, or nothing when it should be. **ONE REASON,
+/// NAMED**: a guard that will not say which condition refused cannot be told
+/// from a broken one.
 pub fn deferral(on: &On, happened: &Happened) -> Option<&'static str> {
+    // A flow that names no event would start on every event of every tree.
+    if on.event.is_empty() {
+        return Some("the trigger says nothing about which event");
+    }
     if on.event != happened.event {
         return Some("another event");
     }

@@ -1,4 +1,6 @@
 {
+  "cli.arc.no_binary_of_my_own": "I cannot tell which binary I am, so I cannot start a run of my own: {error}",
+  "cli.arc.no_directory_of_my_own": "I cannot tell which directory I am in, so a run started here would work nowhere: {error}",
   "window.session.attention": "Work needing attention",
   "window.session.show": "Show the run, the refusals, the cost and the quota",
   "window.session.hide": "Hide the run, the refusals, the cost and the quota",
@@ -464,6 +466,7 @@
   "cli.session.runs_to_ask_again": "{count} run(s) stopped on a step that answered «not yet»: {which}. They come back only when somebody runs them again: `sailor flow resume {first}`.",
   "cli.session.runs_waiting_for_a_person": "{count} run(s) of the ledger are waiting for a person to take them up: {which}. Nothing takes them on its own — `sailor flow resume {first}` does.",
   "cli.session.root_not_an_object": "{file}: the root is not an object",
+  "cli.session.the_mandate_is_asked_for": "**This context is full ({tokens} tokens).** Before going on, write down for whoever comes after you what the work is, what is done, and the one next thing: measured on this machine, an edit above 300k tokens fails for a reason of memory nine times as often as one below 64k. Nothing has been reset, and nothing will be.",
   "cli.session.word_body": "Run `sailor session {verb}` and report in one line what it answered. Do nothing else.",
   "cli.session.word_off": "Detach this terminal from Sailor: it stops being tracked, and so do the sessions opened here afterwards.",
   "cli.session.word_on": "Attach this terminal to Sailor again, if it had been detached.",

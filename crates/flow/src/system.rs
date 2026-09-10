@@ -137,6 +137,11 @@ pub const FLOWS: &[(&str, &str)] = &[
         "notice-a-divergence",
         include_str!("../system/notice-a-divergence.flow.json"),
     ),
+    // The relay's first subscriber: it asks, and asks for nothing else.
+    (
+        "ask-for-a-mandate",
+        include_str!("../system/ask-for-a-mandate.flow.json"),
+    ),
 ];
 
 /// What the catalogue answers for a name it does not ship.

@@ -223,8 +223,6 @@ pub struct LiveStatus {
 /// What the file is called, under Sailor's home.
 pub const STATUS_FILE: &str = "live-status.json";
 
-
-
 impl LiveStatus {
     /// Where the status file is, given Sailor's home.
     pub fn path_in(home: &Path) -> PathBuf {
@@ -339,6 +337,7 @@ mod tests {
                 purpose: "a test".to_owned(),
                 started_by: "a test".to_owned(),
                 environment: Vec::new(),
+                speaks: true,
             },
             supervisor.token(),
         )

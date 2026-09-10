@@ -1,0 +1,172 @@
+{
+  "id": "ask-for-a-mandate",
+  "description": "THE RELAY ASKS, AND ASKS FOR NOTHING ELSE. When a session of this machine finishes a turn, this flow reads how full that session's context has become \u2014 from the record the command line already writes about itself, never by holding the terminal \u2014 and, past the point where the work measurably starts to rot, leaves one request where the next hook will read it: write the mandate for whoever comes after you. Nothing is typed into any terminal, nothing is reset, no tree is written. The measurement it acts on: over 3,414 sessions of this machine an edit refused because the file does not say what the agent believed rises from 0.22% of attempts below 64k tokens to 1.98% above 300k, while the window after a reset is measurably no worse than any other. So the cost is in not handing over, and the ask is the cheapest half of handing over.",
+  "inputs": {},
+  "graph": {
+    "steps": [
+      {
+        "id": "trigger",
+        "deps": [],
+        "action": "trigger",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "source": "session-event",
+          "on": {
+            "event": "Stop"
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "on": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "allow_extra": true
+            }
+          },
+          "required": [
+            "source"
+          ],
+          "allow_extra": false
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "carried": {
+              "type": "object",
+              "properties": {
+                "event": {
+                  "type": "any"
+                },
+                "tree": {
+                  "type": "any"
+                },
+                "tty": {
+                  "type": "any"
+                },
+                "session": {
+                  "type": "any"
+                },
+                "transcript": {
+                  "type": "any"
+                }
+              },
+              "required": [],
+              "allow_extra": true
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "measure",
+        "deps": [
+          "trigger"
+        ],
+        "action": "measure_session",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "transcript": {
+            "$from": "/carried/transcript"
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string"
+            },
+            "tokens": {
+              "type": "number"
+            },
+            "source": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "state"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "ask",
+        "deps": [
+          "trigger",
+          "measure"
+        ],
+        "action": "store_write",
+        "max_attempts": 1,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/measure/state",
+          "value": "oblige"
+        },
+        "with": {
+          "collection": "mandate_asks",
+          "key": {
+            "$from": "/trigger/carried/tty"
+          },
+          "value": {
+            "state": {
+              "$from": "/measure/state"
+            },
+            "tokens": {
+              "$from": "/measure/tokens"
+            },
+            "session": {
+              "$from": "/trigger/carried/session"
+            },
+            "tree": {
+              "$from": "/trigger/carried/tree"
+            }
+          },
+          "written_by": "ask-for-a-mandate"
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "collection": {
+              "type": "string"
+            },
+            "written_by": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "collection",
+            "written_by"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "allow_extra": true
+        }
+      }
+    ]
+  }
+}

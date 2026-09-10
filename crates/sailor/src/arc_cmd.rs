@@ -72,18 +72,6 @@ pub fn evaluate(
 ) -> Vec<Verdict> {
     let mut written = Vec::new();
     for (flow, on) in watchers(sources) {
-        if on.event.is_empty() {
-            written.push(note(
-                store,
-                event_id,
-                &flow,
-                DEFERRED,
-                Some("the trigger says nothing about which event"),
-                None,
-                at,
-            ));
-            continue;
-        }
         if let Some(why) = deferral(&on, happened) {
             written.push(note(store, event_id, &flow, DEFERRED, Some(why), None, at));
             continue;
@@ -122,6 +110,7 @@ fn delivery(happened: &Happened) -> String {
         "tree": happened.tree,
         "tty": happened.tty,
         "session": happened.session,
+        "transcript": happened.transcript,
     })
     .to_string()
 }
@@ -153,10 +142,18 @@ fn note(
 /// says so is finished with it: a run started because a session spoke must
 /// outlive the hook that started it, and dropping the handle would stop it.
 pub fn launch_detached(flow: &str, delivery: &str) -> Result<String, String> {
-    let binary = std::env::current_exe()
-        .map_err(|error| format!("I cannot tell which binary I am: {error}"))?;
-    let here =
-        std::env::current_dir().map_err(|error| format!("I cannot tell where I am: {error}"))?;
+    let binary = std::env::current_exe().map_err(|error| {
+        catalogue::say(
+            "cli.arc.no_binary_of_my_own",
+            &[("error", &error.to_string())],
+        )
+    })?;
+    let here = std::env::current_dir().map_err(|error| {
+        catalogue::say(
+            "cli.arc.no_directory_of_my_own",
+            &[("error", &error.to_string())],
+        )
+    })?;
     let ledger = ledger::default_directory().and_then(|dir| ledger::Ledger::open(&dir).ok());
     let supervisor = supervisor::Supervisor::over(ledger);
     let started = supervisor.start(supervisor::child::Spec {
@@ -173,6 +170,9 @@ pub fn launch_detached(flow: &str, delivery: &str) -> Result<String, String> {
         purpose: format!("a session event starts «{flow}»"),
         started_by: "sailor session event".to_owned(),
         environment: Vec::new(),
+        // It outlives this call: its lines would land in the middle of
+        // somebody else's work, minutes after the hook that lit it ended.
+        speaks: false,
     })?;
     Ok(format!("started as pid {}", started.let_it_go()))
 }

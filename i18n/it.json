@@ -1,4 +1,6 @@
 {
+  "cli.arc.no_binary_of_my_own": "Non so quale binario sono, quindi non posso avviare una corsa: {error}",
+  "cli.arc.no_directory_of_my_own": "Non so in quale cartella mi trovo, quindi una corsa avviata qui lavorerebbe da nessuna parte: {error}",
   "window.session.attention": "Lavoro che richiede attenzione",
   "window.session.show": "Mostra la corsa, i rifiuti, il costo e la quota",
   "window.session.hide": "Nascondi la corsa, i rifiuti, il costo e la quota",
@@ -464,6 +466,7 @@
   "cli.session.runs_to_ask_again": "{count} corse si sono fermate su un passo che ha risposto «non ancora»: {which}. Tornano solo se qualcuno le rilancia: `sailor flow resume {first}`.",
   "cli.session.runs_waiting_for_a_person": "il deposito tiene {count} corse in attesa che qualcuno le prenda in mano: {which}. Nessuno le prende da solo — lo fa `sailor flow resume {first}`.",
   "cli.session.root_not_an_object": "{file}: la radice non è un oggetto",
+  "cli.session.the_mandate_is_asked_for": "**Questo contesto è pieno ({tokens} gettoni).** Prima di proseguire, scrivi per chi viene dopo di te qual è il lavoro, cosa è fatto e l'unica cosa successiva: misurato su questa macchina, una modifica sopra 300k gettoni fallisce per una ragione di memoria nove volte più spesso di una sotto 64k. Niente è stato azzerato, e niente lo sarà.",
   "cli.session.word_body": "Esegui `sailor session {verb}` e riferisci in una riga cosa ha risposto. Non fare altro.",
   "cli.session.word_off": "Stacca questo terminale da Sailor: smette di essere tracciato, e con lui le sessioni aperte qui da adesso in poi.",
   "cli.session.word_on": "Riattacca questo terminale a Sailor, se era stato staccato.",

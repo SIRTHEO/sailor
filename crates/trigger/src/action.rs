@@ -112,6 +112,9 @@ impl Action for TriggerAction {
                         ),
                     )
                 })?;
+                let carried = matches!(descriptor.kind, Kind::SessionEvent)
+                    .then(|| serde_json::from_str(&text).ok())
+                    .flatten();
                 let signal = Signal {
                     text,
                     who: spec.who.unwrap_or_default(),
@@ -123,6 +126,7 @@ impl Action for TriggerAction {
                     }
                     .to_owned(),
                     previous_report: spec.previous_report,
+                    carried,
                 };
                 Ok(ActionOutcome::Went(
                     serde_json::to_value(signal)

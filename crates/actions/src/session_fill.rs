@@ -119,23 +119,54 @@ fn read_in_order(spec: &MeasureSpec) -> (&'static str, Option<Reading>) {
     if let Some(path) = &spec.transcript {
         return (
             "transcript",
-            std::fs::read_to_string(path)
-                .ok()
-                .and_then(|text| from_transcript(&text)),
+            the_last_of(path).and_then(|text| from_transcript(&text)),
         );
     }
     if let Some(path) = &spec.rollout {
         return (
             "rollout",
-            std::fs::read_to_string(path)
-                .ok()
-                .and_then(|text| from_rollout(&text)),
+            the_last_of(path).and_then(|text| from_rollout(&text)),
         );
     }
     match spec.bytes {
         Some(bytes) => ("bytes", Some(from_bytes(bytes))),
         None => ("none", None),
     }
+}
+
+/// How much of a record is read from its end.
+///
+/// **A SESSION'S RECORD REACHES HUNDREDS OF MEGABYTES**, and this is asked once
+/// a turn on a machine that stays on for years. The fill is the last answer's
+/// prompt, which is at the end. What the cap costs is `misses`, then counted
+/// over the last stretch: a floor, in the direction that invents nothing.
+const A_TAIL_WE_READ: u64 = 32 * 1024 * 1024;
+
+fn the_last_of(path: &str) -> Option<String> {
+    tail_of(path, A_TAIL_WE_READ)
+}
+
+/// The end of a file, from the first whole line inside the cap, an argument so
+/// a test reaches the second branch without writing tens of megabytes.
+pub fn tail_of(path: &str, cap: u64) -> Option<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path).ok()?;
+    let whole = file.metadata().ok()?.len();
+    if whole <= cap {
+        let mut text = String::new();
+        file.read_to_string(&mut text).ok()?;
+        return Some(text);
+    }
+    file.seek(SeekFrom::Start(whole - cap)).ok()?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).ok()?;
+    let text = String::from_utf8_lossy(&bytes).into_owned();
+    // The first line is cut in the middle and is not a record: dropping it is
+    // what keeps a half-line from being read as a session that says nothing.
+    Some(match text.find('\n') {
+        Some(at) => text[at + 1..].to_owned(),
+        None => String::new(),
+    })
 }
 
 fn standing(tokens: u64, warn: u64, oblige: u64) -> &'static str {

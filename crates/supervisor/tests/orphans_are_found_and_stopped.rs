@@ -117,6 +117,7 @@ fn sleeper(process_id: &str, port: Option<u16>) -> Spec {
         purpose: "live".to_owned(),
         started_by: "una prova".to_owned(),
         environment: Vec::new(),
+        speaks: true,
     }
 }
 
@@ -300,8 +301,7 @@ fn the_port_is_held_only_by_the_process_the_row_actually_names() {
 
     written_holding(&store, "p-mio", mine, Some(born));
     assert_eq!(
-        supervisor::who_the_ledger_says_holds(&store, DEV_PORT)
-            .map(|holder| holder.process_id),
+        supervisor::who_the_ledger_says_holds(&store, DEV_PORT).map(|holder| holder.process_id),
         Some("p-mio".to_owned()),
         "the process the row names is right here"
     );

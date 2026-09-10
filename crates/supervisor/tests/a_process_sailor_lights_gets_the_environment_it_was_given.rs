@@ -43,13 +43,17 @@ fn what_the_child_received(dir: &TestDirectory, environment: Vec<(String, String
             command: "/bin/sh".to_owned(),
             args: vec![
                 "-c".to_owned(),
-                format!("printf '%s' \"${{A_DECLARED_HOME:-niente}}\" > {}", written.display()),
+                format!(
+                    "printf '%s' \"${{A_DECLARED_HOME:-niente}}\" > {}",
+                    written.display()
+                ),
             ],
             working_directory: dir.0.clone(),
             port: None,
             purpose: "a test".to_owned(),
             started_by: "a test".to_owned(),
             environment,
+            speaks: true,
         })
         .expect("the process lights");
 

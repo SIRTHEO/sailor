@@ -53,6 +53,11 @@ pub struct Signal {
     /// rather than empty, or a first run reads as one that learnt nothing.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub previous_report: Option<serde_json::Value>,
+    /// The delivery read apart, for a source whose signal is a record: the
+    /// steps downstream name a field instead of parsing text, which no flow
+    /// can do.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub carried: Option<serde_json::Value>,
 }
 
 /// Where trigger descriptors are taken from.
