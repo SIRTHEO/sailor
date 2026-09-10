@@ -53,7 +53,7 @@ fn all_four_nodes_are_registered() {
         relay::MEASURE_TERMINAL_ACTION,
         relay::TYPE_INTO_TERMINAL_ACTION,
         relay::EMPTY_TERMINAL_ACTION,
-        relay::TAKE_MANDATE_ACTION,
+        relay::WAIT_FREE_ACTION,
     ] {
         assert!(registry.get(name).is_some(), "«{name}» is not registered");
     }
@@ -107,80 +107,6 @@ fn a_terminal_over_its_ceiling_says_so() {
     );
     assert_eq!(over["past_the_ceiling"], json!(true), "{over}");
     assert!(over["estimated_tokens"].as_u64().unwrap_or(0) > 0, "{over}");
-    let _ = std::fs::remove_dir_all(&directory);
-}
-
-/// Not yet, and neither failing nor waiting. No mandate yet is the ordinary
-/// state between asking for one and getting it: breaking there would turn a
-/// handover into a red run every time, and waiting would park it for good.
-#[test]
-fn no_mandate_left_yet_postpones_instead_of_breaking_or_parking() {
-    let directory = scratch("no-mandate");
-    let reason = not_yet(
-        run(
-            relay::TAKE_MANDATE_ACTION,
-            json!({"tty": "ttys004", "store": directory}),
-        )
-        .expect("not yet is not an error"),
-    );
-    assert!(reason.contains("ttys004"), "{reason}");
-    let _ = std::fs::remove_dir_all(&directory);
-}
-
-/// The same terminal hands over many times. A mandate from the previous
-/// handover read as this one's sends the successor back to finished work.
-#[test]
-fn a_mandate_older_than_this_handover_is_not_taken() {
-    let directory = scratch("stale");
-    terminal::mandate::write(
-        &terminal::mandate::address_in(&directory, "ttys004"),
-        &terminal::mandate::Mandate {
-            text: "work from the handover before".to_owned(),
-            at: 1_000,
-        },
-    )
-    .expect("leave an old mandate");
-
-    let reason = not_yet(
-        run(
-            relay::TAKE_MANDATE_ACTION,
-            json!({"tty": "ttys004", "not_before": 2_000, "store": directory}),
-        )
-        .expect("not yet is not an error"),
-    );
-    assert!(reason.contains("older"), "{reason}");
-    assert!(
-        terminal::mandate::read(&terminal::mandate::address_in(&directory, "ttys004")).is_some(),
-        "a mandate it refused to take must still be there"
-    );
-    let _ = std::fs::remove_dir_all(&directory);
-}
-
-#[test]
-fn a_mandate_taken_is_taken_away() {
-    let directory = scratch("taken");
-    terminal::mandate::write(
-        &terminal::mandate::address_in(&directory, "ttys004"),
-        &terminal::mandate::Mandate {
-            text: "carry the conduit on".to_owned(),
-            at: 3_000,
-        },
-    )
-    .expect("leave a mandate");
-
-    let said = went(
-        run(
-            relay::TAKE_MANDATE_ACTION,
-            json!({"tty": "ttys004", "not_before": 2_000, "store": directory}),
-        )
-        .expect("taking works"),
-    );
-    assert_eq!(said["mandate"], json!("carry the conduit on"));
-    assert_eq!(
-        terminal::mandate::read(&terminal::mandate::address_in(&directory, "ttys004")),
-        None,
-        "handed on twice is work done twice"
-    );
     let _ = std::fs::remove_dir_all(&directory);
 }
 

@@ -16,7 +16,6 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrder};
 use std::sync::Arc;
 use terminal::bridge::{self, Keys, RawMode};
 use terminal::inbox::{self, Inbox};
-use terminal::mandate;
 use terminal::pty::Pty;
 use terminal::tally;
 use terminal::Workspace;
@@ -449,21 +448,47 @@ fn leave_mandate(args: &[String], from: &mut impl std::io::Read) -> Result<i32, 
     if text.trim().is_empty() {
         return Err(catalogue::say("cli.terminal.nothing_to_hand_on", &[]));
     }
-
-    let path = mandate::address_in(&store_root(&options)?, &tty);
-    mandate::write(
-        &path,
-        &mandate::Mandate {
-            text,
-            at: sessions::now(),
-        },
-    )
-    .map_err(|error| error.to_string())?;
+    let written = deposited(&options, &tty, &text)?;
     println!(
         "{}",
-        catalogue::say("cli.terminal.mandate_left", &[("tty", &tty)])
+        catalogue::say(
+            "cli.terminal.mandate_left",
+            &[("tty", &tty), ("head", &written)]
+        )
     );
     Ok(0)
+}
+
+/// The same deposit a flow's node makes, from the shape a person typed in.
+///
+/// Whatever the session did not have to know is filled in here: which tree,
+/// which terminal, which store. Everything else is its own judgment, and a
+/// field left blank is refused while its author is still alive to be asked.
+fn deposited(options: &[(String, String)], tty: &str, text: &str) -> Result<String, String> {
+    let mut written: serde_json::Value = serde_json::from_str(text).map_err(|error| {
+        catalogue::say("cli.terminal.mandate_shape", &[("why", &error.to_string())])
+    })?;
+    let object = written
+        .as_object_mut()
+        .ok_or_else(|| catalogue::say("cli.terminal.mandate_shape", &[("why", "not an object")]))?;
+    object.insert("tty".to_owned(), serde_json::Value::String(tty.to_owned()));
+    object
+        .entry("tree")
+        .or_insert_with(|| serde_json::Value::String(here().display().to_string()));
+    if let Some(store) = options.iter().find(|(name, _)| name == "store") {
+        object.insert(
+            "store".to_owned(),
+            serde_json::Value::String(store.1.clone()),
+        );
+    }
+    let answer = actions::mandate::deposited(&written).map_err(|error| error.said)?;
+    Ok(answer["head"].as_str().unwrap_or_default().to_owned())
+}
+
+/// The tree this terminal works in.
+fn here() -> PathBuf {
+    let at = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    flow::workspace::find_root(&at).unwrap_or(at)
 }
 
 fn list(args: &[String]) -> Result<i32, String> {
@@ -621,8 +646,8 @@ mod tests {
     /// not inherit a line that belongs to a different one.
     #[test]
     fn a_command_line_nobody_measured_is_refused_and_told_where_to_say_it() {
-        let refusal = reset_line_of(&shipped(), "codex")
-            .expect_err("an undeclared command line must refuse");
+        let refusal =
+            reset_line_of(&shipped(), "codex").expect_err("an undeclared command line must refuse");
         assert!(refusal.contains("does not declare"), "{refusal}");
         assert!(
             refusal.contains("reset_context"),
@@ -641,22 +666,54 @@ mod tests {
         terminal::scratch::directory(&format!("cmd-{name}")).expect("a scratch directory")
     }
 
+    /// **A PARAGRAPH IS NOT A HANDOVER.** What a session leaves is the shape
+    /// its successor is owed, and a paragraph typed here used to be accepted
+    /// whole — with no goal, no next thing and nothing anybody could refuse.
     #[test]
-    fn a_mandate_left_is_a_mandate_the_next_beat_can_read() {
-        let directory = scratch("mandate");
+    fn a_paragraph_where_a_mandate_belongs_is_refused_by_shape() {
+        let directory = scratch("mandate-prose");
         let written = words(&[
             "--tty",
             "ttys004",
             "--store",
             directory.to_str().expect("a path"),
         ]);
-        let code = leave_mandate(&written, &mut "carry the conduit on".as_bytes())
-            .expect("leaving a mandate works");
-        assert_eq!(code, 0);
 
-        let found = mandate::read(&mandate::address_in(&directory, "ttys004"))
-            .expect("the mandate is there to be read");
-        assert_eq!(found.text, "carry the conduit on");
+        let refusal = leave_mandate(&written, &mut "carry the conduit on".as_bytes())
+            .expect_err("prose where a mandate belongs is refused");
+
+        assert!(refusal.contains("shape"), "{refusal}");
+        assert!(
+            sessions::mandate::read(&sessions::mandate::address_in(&directory, "ttys004"))
+                .is_none(),
+            "nothing is deposited"
+        );
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// And a mandate with a field left blank is refused here, where whoever
+    /// could fill it is still alive to be asked.
+    #[test]
+    fn a_mandate_with_a_field_left_blank_is_refused_where_its_author_is() {
+        let directory = scratch("mandate-blank");
+        let written = words(&[
+            "--tty",
+            "ttys004",
+            "--store",
+            directory.to_str().expect("a path"),
+        ]);
+        let short = serde_json::json!({
+            "tree": ".",
+            "session": "a-session",
+            "engine": "a-command-line",
+            "work": {"goal": "", "asked": "", "state": [], "next": ""}
+        })
+        .to_string();
+
+        let refusal =
+            leave_mandate(&written, &mut short.as_bytes()).expect_err("a blank field is refused");
+
+        assert!(refusal.contains("blank"), "{refusal}");
         let _ = std::fs::remove_dir_all(&directory);
     }
 
@@ -674,9 +731,9 @@ mod tests {
         let refusal = leave_mandate(&written, &mut "   \n".as_bytes())
             .expect_err("an empty mandate is refused");
         assert!(refusal.contains("nothing to hand on"), "{refusal}");
-        assert_eq!(
-            mandate::read(&mandate::address_in(&directory, "ttys004")),
-            None
+        assert!(
+            sessions::mandate::read(&sessions::mandate::address_in(&directory, "ttys004"))
+                .is_none()
         );
         let _ = std::fs::remove_dir_all(&directory);
     }

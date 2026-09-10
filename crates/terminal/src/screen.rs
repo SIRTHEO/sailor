@@ -1,5 +1,4 @@
-//! The last of what a terminal showed, kept where a process that is not this
-//! one can read it.
+//! The last of what a terminal showed, kept where another process can read it.
 //!
 //! **SILENCE IS NOT FREEDOM.** A byte count says a terminal is quiet, which is
 //! equally true of one waiting for an answer and one waiting for work: only

@@ -1,9 +1,7 @@
 //! The nodes a relay is composed of: measure a session, read whether anybody
-//! is being waited for in it, type into it, empty it, and take what it left.
-//!
-//! Powers over the world, and no sequence: the order they run in is a flow
-//! file, because a relay written as one function is 1,400 lines whose every
-//! refusal disappears, and the refusals are the part nobody could see.
+//! is being waited for in it, type into it, and empty it. The order they run
+//! in is a flow file, because a relay written as one function is 1,400 lines
+//! whose every refusal disappears.
 
 use flow::{Action, ActionError, ActionOutcome, SharedState};
 use serde::Deserialize;
@@ -14,14 +12,12 @@ use std::path::{Path, PathBuf};
 pub const MEASURE_TERMINAL_ACTION: &str = "measure_terminal";
 pub const TYPE_INTO_TERMINAL_ACTION: &str = "type_into_terminal";
 pub const EMPTY_TERMINAL_ACTION: &str = "empty_terminal";
-pub const TAKE_MANDATE_ACTION: &str = "take_mandate";
 pub const WAIT_FREE_ACTION: &str = "wait_free";
 
 pub fn register_relay(registry: &mut flow::ActionRegistry) {
     registry.register(MEASURE_TERMINAL_ACTION, MeasureTerminalAction);
     registry.register(TYPE_INTO_TERMINAL_ACTION, TypeIntoTerminalAction);
     registry.register(EMPTY_TERMINAL_ACTION, EmptyTerminalAction);
-    registry.register(TAKE_MANDATE_ACTION, TakeMandateAction);
     registry.register(WAIT_FREE_ACTION, WaitFreeAction);
 }
 
@@ -222,61 +218,6 @@ pub fn reset_line_of(catalog: &toolbox::Catalog, cli: &str) -> Result<String, Ac
         })
 }
 
-/// **SURFACE: reading. POWERS CLAIMED: reading one file, and removing it.**
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-struct TakeSpec {
-    tty: String,
-    /// A mandate older than this is somebody else's leftover: the same terminal
-    /// hands over many times, and a beat would otherwise send the successor
-    /// back to work already done.
-    #[serde(default)]
-    not_before: Option<i64>,
-    #[serde(default)]
-    store: Option<String>,
-    #[serde(flatten)]
-    extra: BTreeMap<String, Value>,
-}
-
-struct TakeMandateAction;
-
-impl Action for TakeMandateAction {
-    fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
-        let spec: TakeSpec = read_input(input)?;
-        let root = store_root(&spec.store)?;
-        let path = terminal::mandate::address_in(&root, &spec.tty);
-        // **NOT YET, NOT WAITING.** Both refusals here are the ordinary state
-        // between asking for a mandate and its being written: the agent is
-        // still typing. `Waiting` would say a person holds this step and park
-        // the relay for good, which is fault 62.
-        let Some(left) = terminal::mandate::read(&path) else {
-            return Ok(ActionOutcome::NotYet(format!(
-                "{}: no mandate has been left yet",
-                spec.tty
-            )));
-        };
-        if spec.not_before.is_some_and(|floor| left.at < floor) {
-            return Ok(ActionOutcome::NotYet(format!(
-                "{}: the only mandate here is older than this handover",
-                spec.tty
-            )));
-        }
-        // Taken and not merely read: left in place, the next beat would hand
-        // the same work on a second time.
-        terminal::mandate::taken(&path)
-            .map_err(|error| ActionError::new("mandate_not_taken", error.to_string()))?;
-        Ok(ActionOutcome::Went(json!({
-            "tty": spec.tty,
-            "mandate": left.text,
-            "written_at": left.at,
-        })))
-    }
-
-    fn unknown_fields(&self, declared: &Value) -> Vec<String> {
-        unknown_of(declared, &["tty", "not_before", "store"])
-    }
-}
-
 /// **SURFACE: reading. POWERS CLAIMED: reading one file of the store.**
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
@@ -292,9 +233,8 @@ struct FreeSpec {
 }
 
 /// Waits until nobody is being waited for in a terminal Sailor holds.
-///
-/// **IT ANSWERS «NOT YET», NEVER «WAITING».** A step in a person's hands does
-/// not come back (fault 62); one that says not yet returns to the ready set.
+/// **NOT YET, NEVER WAITING**: a step in a person's hands does not come back
+/// (fault 62), and one that says not yet returns to the ready set.
 struct WaitFreeAction;
 
 impl Action for WaitFreeAction {

@@ -208,7 +208,6 @@ const ACTION_KIND: Record<string, StepKind> = {
   mandate_waiting: "check",
   type_into_terminal: "gesture",
   empty_terminal: "gesture",
-  take_mandate: "human",
   // The only step that writes a proposal onto the tree. It draws as a gesture
   // on the world, which is what it is.
   apply_patch: "gesture",

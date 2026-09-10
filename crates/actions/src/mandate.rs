@@ -115,53 +115,7 @@ struct DepositAction;
 
 impl Action for DepositAction {
     fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
-        let spec: DepositSpec = read_input(input)?;
-        let root = store_root(&spec.store)?;
-        let tree = PathBuf::from(&spec.tree);
-        let (branch, head, uncommitted) = standing_of(&tree);
-        let mandate = Mandate {
-            written: Written {
-                tree: spec.tree,
-                tty: spec.tty,
-                session: spec.session,
-                engine: spec.engine,
-                model: spec.model,
-                tokens: spec.tokens,
-                at: sessions::now(),
-                branch,
-                head,
-                uncommitted,
-                reread: spec.reread,
-                transcript: spec.transcript,
-                alongside: spec.alongside,
-            },
-            work: spec.work,
-            taken: None,
-        };
-        let blank = mandate::blank_fields(&mandate);
-        if !blank.is_empty() {
-            return Err(ActionError::new(
-                "mandate_incomplete",
-                format!(
-                    "the mandate leaves {} field(s) blank, and whoever could fill them is still \
-                     here: {}",
-                    blank.len(),
-                    blank.join(", ")
-                ),
-            ));
-        }
-        let archived = mandate::deposit(&root, &mandate)
-            .map_err(|error| ActionError::new("mandate_not_written", error.to_string()))?;
-        Ok(ActionOutcome::Went(json!({
-            "tty": mandate.written.tty,
-            "session": mandate.written.session,
-            "at": mandate.written.at,
-            "branch": mandate.written.branch,
-            "head": mandate.written.head,
-            "tokens": mandate.written.tokens,
-            "reread": mandate.written.reread,
-            "archived": archived.map(|path| path.to_string_lossy().into_owned()),
-        })))
+        deposited(input).map(ActionOutcome::Went)
     }
 
     fn unknown_fields(&self, declared: &Value) -> Vec<String> {
@@ -171,6 +125,58 @@ impl Action for DepositAction {
     fn species(&self) -> StepSpecies {
         StepSpecies::Repeatable
     }
+}
+
+/// The deposit itself, so the command a person types and the node a flow runs
+/// are the same act: one shape, one refusal, one archive of what came before.
+pub fn deposited(input: &Value) -> Result<Value, ActionError> {
+    let spec: DepositSpec = read_input(input)?;
+    let root = store_root(&spec.store)?;
+    let tree = PathBuf::from(&spec.tree);
+    let (branch, head, uncommitted) = standing_of(&tree);
+    let mandate = Mandate {
+        written: Written {
+            tree: spec.tree,
+            tty: spec.tty,
+            session: spec.session,
+            engine: spec.engine,
+            model: spec.model,
+            tokens: spec.tokens,
+            at: sessions::now(),
+            branch,
+            head,
+            uncommitted,
+            reread: spec.reread,
+            transcript: spec.transcript,
+            alongside: spec.alongside,
+        },
+        work: spec.work,
+        taken: None,
+    };
+    let blank = mandate::blank_fields(&mandate);
+    if !blank.is_empty() {
+        return Err(ActionError::new(
+            "mandate_incomplete",
+            format!(
+                "the mandate leaves {} field(s) blank, and whoever could fill them is still \
+                     here: {}",
+                blank.len(),
+                blank.join(", ")
+            ),
+        ));
+    }
+    let archived = mandate::deposit(&root, &mandate)
+        .map_err(|error| ActionError::new("mandate_not_written", error.to_string()))?;
+    Ok(json!({
+        "tty": mandate.written.tty,
+        "session": mandate.written.session,
+        "at": mandate.written.at,
+        "branch": mandate.written.branch,
+        "head": mandate.written.head,
+        "tokens": mandate.written.tokens,
+        "reread": mandate.written.reread,
+        "archived": archived.map(|path| path.to_string_lossy().into_owned()),
+    }))
 }
 
 struct ResumeAction;
