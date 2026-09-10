@@ -259,7 +259,7 @@ fn an_event_from_an_unannounced_terminal_still_lands() {
 fn the_sessions_have_their_own_file_and_their_own_version() {
     let scratch = Scratch::new("version");
     let store = scratch.store();
-    assert_eq!(store.schema_version().expect("the version"), 2);
+    assert_eq!(store.schema_version().expect("the version"), 3);
     assert!(store.path().ends_with(SESSIONS_FILE));
     assert!(
         !scratch.directory.join("state.db").exists(),
@@ -287,4 +287,56 @@ fn a_file_from_a_newer_version_is_refused_by_name() {
         Err(other) => panic!("an unknown version must be named for what it is, not \"{other}\""),
         Ok(_) => panic!("an unknown version went through as if it were ours"),
     }
+}
+
+/// **A TERMINAL SOMEBODY ELSE OPENED IS REACHABLE ONLY THROUGH THEM**, so who
+/// keeps it is a fact the register carries, written every time a session
+/// arrives there: a terminal reopened by another keeper is not the one that was
+/// there before.
+#[test]
+fn who_keeps_a_terminal_is_written_and_read_back() {
+    let scratch = Scratch::new("kept");
+    let store = scratch.store();
+
+    assert!(
+        store
+            .keeper_of("ttys004")
+            .expect("the read works")
+            .is_none(),
+        "a terminal nobody has spoken for has no keeper"
+    );
+
+    store
+        .remember_keeper(&sessions::Kept {
+            tty: "ttys004".to_owned(),
+            keeper: "a-terminal-application".to_owned(),
+            handle: "pane-7".to_owned(),
+            named_by: "A_PANE_KEY".to_owned(),
+            seen_at: 1_000,
+        })
+        .expect("the keeper is written");
+
+    let found = store
+        .keeper_of("ttys004")
+        .expect("the read works")
+        .expect("it is there now");
+    assert_eq!(found.handle, "pane-7");
+    assert_eq!(found.named_by, "A_PANE_KEY");
+
+    store
+        .remember_keeper(&sessions::Kept {
+            tty: "ttys004".to_owned(),
+            keeper: "another-one".to_owned(),
+            handle: "pane-9".to_owned(),
+            named_by: "ANOTHER_KEY".to_owned(),
+            seen_at: 2_000,
+        })
+        .expect("the second keeper is written");
+
+    let now = store
+        .keeper_of("ttys004")
+        .expect("the read works")
+        .expect("it is there");
+    assert_eq!(now.keeper, "another-one", "the last arrival wins");
+    assert_eq!(now.handle, "pane-9");
 }

@@ -607,6 +607,19 @@
       "note": "It has an executable of its own and also declares itself as an MCP server: two probes, and one answering is enough."
     },
     {
+      "id": "orca",
+      "family": "tool",
+      "label": "Orca",
+      "detect": { "command": "orca" },
+      "version": { "args": ["--version"] },
+      "keeps_terminals": {
+        "known_by": ["ORCA_PANE_KEY", "ORCA_TAB_ID"],
+        "reads_the_screen": ["orca", "terminal", "read", "--terminal", "{handle}"],
+        "types_a_line": ["orca", "terminal", "send", "--terminal", "{handle}", "--text", "{line}", "--enter"],
+        "note": "Measured on 10/09/2026 by reading `orca --help` and the help of its terminal subcommands, and by reading the environment of a session Orca had opened. WHAT IS MEASURED: the command line is at /usr/local/bin/orca and publishes `terminal list`, `terminal read`, `terminal send --terminal <handle> --text <text> --enter` and `terminal wait --terminal <handle> --for exit|tui-idle`; a session Orca opened carries ORCA_PANE_KEY, ORCA_TAB_ID, ORCA_WORKTREE_ID and ORCA_WORKSPACE_ID in its own environment. WHAT IS NOT MEASURED: whether ORCA_PANE_KEY is the handle those commands want, because Orca was not running when this was written and `orca terminal list` could not be asked. One run of it against a live app settles that, and until it does nothing here types anything. AND THIS MATTERS: Orca's terminals outlive Orca, since the app was down while its sessions were alive, so this road exists only while the app is up. A keeper nobody can reach is not a terminal that is free."
+      }
+    },
+    {
       "id": "docker",
       "family": "tool",
       "label": "Docker",

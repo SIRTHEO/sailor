@@ -1096,6 +1096,11 @@ fn open_terminal(request: &Request<'_>) -> Result<Report, String> {
     store
         .open_terminal(&arrival)
         .map_err(|error| error.to_string())?;
+    // **A HOOK RUNS INSIDE THE SESSION**, so who keeps this terminal is read
+    // from the session's own variables and never guessed from outside.
+    if let Some(kept) = kept_by(&arrival.anchor.tty) {
+        let _ = store.remember_keeper(&kept);
+    }
     store
         .record_event(&event_named(request, "open"))
         .map_err(|error| error.to_string())?;
@@ -1629,6 +1634,45 @@ fn welcome(
     .to_string()
 }
 
+/// Whoever opened this terminal, read from the variables their descriptor says
+/// they leave in a session of theirs.
+///
+/// **NOTHING IS GUESSED.** A variable named in this crate would be one
+/// product's fact in the code; the descriptors say which, and a machine with
+/// none of them simply has no keeper.
+fn kept_by(tty: &str) -> Option<sessions::Kept> {
+    let machine = toolbox::Machine::current();
+    let catalog = toolbox::Catalog::load(&toolbox::default_sources(&machine));
+    kept_from(&catalog, &machine.env, tty)
+}
+
+/// The same reading with the environment named, so it can be put to a session
+/// this machine does not have.
+fn kept_from(
+    catalog: &toolbox::Catalog,
+    env: &std::collections::BTreeMap<String, String>,
+    tty: &str,
+) -> Option<sessions::Kept> {
+    for loaded in catalog.live() {
+        let Some(keeps) = &loaded.descriptor.keeps_terminals else {
+            continue;
+        };
+        for name in &keeps.known_by {
+            let Some(handle) = env.get(name).filter(|it| !it.is_empty()) else {
+                continue;
+            };
+            return Some(sessions::Kept {
+                tty: tty.to_owned(),
+                keeper: loaded.descriptor.id.clone(),
+                handle: handle.clone(),
+                named_by: name.clone(),
+                seen_at: sessions::now(),
+            });
+        }
+    }
+    None
+}
+
 /// The mandate the session before left for this terminal, taken as it is read.
 ///
 /// **THE GREETING IS THE DELIVERY.** It is the one channel whose text reaches
@@ -2009,6 +2053,48 @@ mod tests {
             3,
             "every moment but the first is an event: {paired:?}"
         );
+    }
+
+    fn shipped() -> toolbox::Catalog {
+        toolbox::Catalog::load(&[toolbox::Source::Builtin])
+    }
+
+    fn env_of(pairs: &[(&str, &str)]) -> std::collections::BTreeMap<String, String> {
+        pairs
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+            .collect()
+    }
+
+    /// **THE SESSION NAMES ITSELF TO WHOEVER KEEPS IT.** A hook runs inside the
+    /// session, so the name is read from its own variables; guessed from
+    /// outside it would be a guess about somebody else's terminal.
+    #[test]
+    fn a_session_opened_by_a_keeper_says_so_in_its_own_variables() {
+        let kept = kept_from(
+            &shipped(),
+            &env_of(&[("ORCA_PANE_KEY", "pane-7"), ("PATH", "/usr/bin")]),
+            "ttys004",
+        )
+        .expect("a session that carries the variable has a keeper");
+
+        assert_eq!(kept.keeper, "orca");
+        assert_eq!(kept.handle, "pane-7");
+        assert_eq!(kept.named_by, "ORCA_PANE_KEY");
+        assert_eq!(kept.tty, "ttys004");
+    }
+
+    /// An empty variable is not a handle: written that way it would name a
+    /// terminal nobody can reach, and a road that refuses is worth more.
+    #[test]
+    fn a_variable_that_is_there_and_empty_names_nobody() {
+        assert!(kept_from(&shipped(), &env_of(&[("ORCA_PANE_KEY", "")]), "ttys004").is_none());
+    }
+
+    /// A terminal nobody else opened has no keeper, and that is an answer.
+    #[test]
+    fn a_session_nobody_else_opened_has_no_keeper() {
+        assert!(kept_from(&shipped(), &env_of(&[("PATH", "/usr/bin")]), "ttys004").is_none());
     }
 
     /// **THE GREETING IS THE DELIVERY, AND IT IS TAKEN ONCE.** A handover read

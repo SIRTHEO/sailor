@@ -25,7 +25,7 @@ pub const SESSIONS_FILE: &str = "sessions.db";
 /// The shape this code expects, **independent of the ledger's projection
 /// version**. Raise it together with the columns: fault 24 came from a constant
 /// left behind by the migration that should have moved it.
-const SESSIONS_SCHEMA_VERSION: i64 = 2;
+const SESSIONS_SCHEMA_VERSION: i64 = 3;
 
 pub enum SessionError {
     Sqlite(rusqlite::Error),
@@ -153,6 +153,18 @@ pub const DEFERRED: &str = "deferred";
 pub const ACTED: &str = "acted";
 pub const BROKE: &str = "broke";
 
+/// A terminal somebody else opened, and the name it goes by to them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Kept {
+    pub tty: String,
+    /// The descriptor id of whoever keeps it.
+    pub keeper: String,
+    pub handle: String,
+    /// The variable the handle was read from, so a reader can check it.
+    pub named_by: String,
+    pub seen_at: i64,
+}
+
 /// Something that happened on a terminal, appended and never rewritten. This is
 /// the queue the succession of sessions on one tty is reconstructed from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -243,7 +255,14 @@ impl Sessions {
                  decided_at INTEGER NOT NULL
              );
              CREATE UNIQUE INDEX IF NOT EXISTS event_verdicts_once
-                 ON event_verdicts (event_id, flow);",
+                 ON event_verdicts (event_id, flow);
+             CREATE TABLE IF NOT EXISTS keepers (
+                 tty TEXT PRIMARY KEY,
+                 keeper TEXT NOT NULL,
+                 handle TEXT NOT NULL,
+                 named_by TEXT NOT NULL,
+                 seen_at INTEGER NOT NULL
+             );",
         )?;
         if version < SESSIONS_SCHEMA_VERSION {
             connection.pragma_update(None, "user_version", SESSIONS_SCHEMA_VERSION)?;
@@ -321,6 +340,50 @@ impl Sessions {
             ],
         )?;
         Ok(())
+    }
+
+    /// Who keeps this terminal, and under what name it is known to them.
+    ///
+    /// **A HOOK RUNS INSIDE THE SESSION**, so the name comes from the session's
+    /// own environment rather than from a guess made outside it. Written at
+    /// every arrival: a terminal reopened by another keeper is not the one that
+    /// was there before.
+    pub fn remember_keeper(&self, kept: &Kept) -> Result<(), SessionError> {
+        self.connection.execute(
+            "INSERT INTO keepers (tty, keeper, handle, named_by, seen_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(tty) DO UPDATE SET
+                 keeper = excluded.keeper,
+                 handle = excluded.handle,
+                 named_by = excluded.named_by,
+                 seen_at = excluded.seen_at",
+            rusqlite::params![
+                kept.tty,
+                kept.keeper,
+                kept.handle,
+                kept.named_by,
+                kept.seen_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Who keeps that terminal, or nothing where nobody has said.
+    pub fn keeper_of(&self, tty: &str) -> Result<Option<Kept>, SessionError> {
+        let mut asked = self
+            .connection
+            .prepare("SELECT tty, keeper, handle, named_by, seen_at FROM keepers WHERE tty = ?1")?;
+        let mut rows = asked.query([tty])?;
+        match rows.next()? {
+            Some(row) => Ok(Some(Kept {
+                tty: row.get(0)?,
+                keeper: row.get(1)?,
+                handle: row.get(2)?,
+                named_by: row.get(3)?,
+                seen_at: row.get(4)?,
+            })),
+            None => Ok(None),
+        }
     }
 
     /// Writes the event and gives back the number it was filed under, so

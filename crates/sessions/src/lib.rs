@@ -20,7 +20,7 @@ pub mod tty;
 
 pub use census::{Census, Inhabitant, LocalMachine, Machine, Refusal, Terminal};
 pub use store::{
-    others_in_the_tree, Anchor, Arrival, SessionError, Sessions, TerminalEvent, TerminalRow,
+    others_in_the_tree, Anchor, Arrival, Kept, SessionError, Sessions, TerminalEvent, TerminalRow,
     Verdict, ACTED, BROKE, DEFERRED, SESSIONS_FILE,
 };
 

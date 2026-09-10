@@ -553,6 +553,21 @@ pub struct ResetContext {
     pub extra: BTreeMap<String, Value>,
 }
 
+/// How another program is asked to type into the terminals it keeps. A session
+/// Sailor did not open belongs to whoever opened it, and the only way in is the
+/// door that owner declares. `{handle}` and `{line}` are filled in.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct KeepsTerminals {
+    /// Variables a kept session carries: the first one present names it.
+    pub known_by: Vec<String>,
+    pub reads_the_screen: Vec<String>,
+    pub types_a_line: Vec<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub note: String,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
 /// What is painted when nobody is waiting on a session of this line.
 /// **SILENCE IS NOT FREEDOM**: absent means nobody measured it, never «free».
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -732,6 +747,9 @@ pub struct Descriptor {
     /// Absent means nobody measured it, and then nothing is typed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub free_when: Option<FreeWhen>,
+    /// For a program that opens terminals of its own: how it is asked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keeps_terminals: Option<KeepsTerminals>,
     /// Variables a session of this line must not inherit when Sailor hosts it.
     /// Absent takes nothing away.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -782,6 +800,14 @@ impl Descriptor {
         }
         if let Some(free) = &self.free_when {
             found.extend(free.extra.keys().map(|key| format!("free_when.{key}")));
+        }
+        if let Some(keeps) = &self.keeps_terminals {
+            found.extend(
+                keeps
+                    .extra
+                    .keys()
+                    .map(|key| format!("keeps_terminals.{key}")),
+            );
         }
         if let Some(reset) = &self.reset_context {
             found.extend(reset.extra.keys().map(|key| format!("reset_context.{key}")));
