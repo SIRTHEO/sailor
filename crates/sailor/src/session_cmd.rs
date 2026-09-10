@@ -1110,6 +1110,7 @@ fn open_terminal(request: &Request<'_>) -> Result<Report, String> {
                 request.options.get("ledger").map(String::as_str),
             ),
             &announced,
+            handed_on(request, &arrival),
         )));
     }
     Ok(Report::spoken(described(&arrival)))
@@ -1540,6 +1541,7 @@ fn welcome(
     store: Option<&Sessions>,
     open: &Result<Option<StillOpen>, String>,
     announced: &Result<(), String>,
+    handed_on: Option<String>,
 ) -> String {
     let mut text = catalogue::say(
         "cli.session.welcome",
@@ -1611,6 +1613,13 @@ fn welcome(
             &[("why", why)],
         ));
     }
+    // **LAST, AND NOT FIRST.** What the session before left is the longest
+    // thing on this channel, and a greeting that opens with it buries the
+    // terminal's own name under somebody else's work.
+    if let Some(said) = handed_on {
+        text.push('\n');
+        text.push_str(&said);
+    }
     serde_json::json!({
         "hookSpecificOutput": {
             "hookEventName": "SessionStart",
@@ -1618,6 +1627,46 @@ fn welcome(
         }
     })
     .to_string()
+}
+
+/// The mandate the session before left for this terminal, taken as it is read.
+///
+/// **THE GREETING IS THE DELIVERY.** It is the one channel whose text reaches
+/// whoever is starting, so a mandate that arrived anywhere else would be a
+/// mandate nobody was handed. Taken here, and marked with the successor's own
+/// name: a second reading of the same handover would do the work twice.
+fn handed_on(request: &Request<'_>, arrival: &Arrival) -> Option<String> {
+    let TheDeposit::Open(ledger) = request.deposit else {
+        return None;
+    };
+    the_mandate_of(
+        ledger.directory(),
+        &arrival.anchor.tty,
+        &arrival.session_id.clone().unwrap_or_default(),
+    )
+}
+
+/// The same handover with everything it reads named, so it can be taken from a
+/// store this machine does not keep.
+fn the_mandate_of(store: &std::path::Path, tty: &str, session: &str) -> Option<String> {
+    let path = sessions::mandate::address_in(store, tty);
+    let left = sessions::mandate::read(&path)?;
+    if left.taken.is_some() {
+        return None;
+    }
+    if sessions::mandate::consume(&path, session, sessions::now()).is_err() {
+        return None;
+    }
+    Some(catalogue::say(
+        "cli.session.the_mandate_is_yours",
+        &[
+            ("goal", &left.work.goal),
+            ("asked", &left.work.asked),
+            ("next", &left.work.next),
+            ("never", &left.work.never.join(" · ")),
+            ("path", &path.display().to_string()),
+        ],
+    ))
 }
 
 fn record_event(request: &Request<'_>) -> Result<Report, String> {
@@ -1960,6 +2009,59 @@ mod tests {
             3,
             "every moment but the first is an event: {paired:?}"
         );
+    }
+
+    /// **THE GREETING IS THE DELIVERY, AND IT IS TAKEN ONCE.** A handover read
+    /// twice sends two sessions off to do the same work, and neither of them
+    /// can tell.
+    #[test]
+    fn a_mandate_left_for_this_terminal_arrives_with_the_greeting_and_only_once() {
+        let directory = std::env::temp_dir().join(format!("sailor-handed-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("a directory of this test's own");
+        let mut mandate = sessions::mandate::Mandate::default();
+        mandate.written.tty = "ttys001".to_owned();
+        mandate.written.at = 100;
+        mandate.work.goal = "carry the relay to the end".to_owned();
+        mandate.work.next = "read the screen of a held terminal".to_owned();
+        mandate.work.never = vec!["do not type into what nobody holds".to_owned()];
+        sessions::mandate::deposit(&directory, &mandate).expect("the mandate is deposited");
+
+        let handed =
+            the_mandate_of(&directory, "ttys001", "the-successor").expect("a mandate arrives");
+        assert!(handed.contains("carry the relay to the end"), "{handed}");
+        assert!(
+            handed.contains("read the screen of a held terminal"),
+            "{handed}"
+        );
+        assert!(
+            handed.contains("do not type into what nobody holds"),
+            "{handed}"
+        );
+
+        assert_eq!(
+            the_mandate_of(&directory, "ttys001", "another-successor"),
+            None,
+            "a mandate already taken is not handed on a second time"
+        );
+        let taken = sessions::mandate::read(&sessions::mandate::address_in(&directory, "ttys001"))
+            .expect("it is still on disk")
+            .taken
+            .expect("marked with whoever took it");
+        assert_eq!(taken.by, "the-successor");
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// A terminal nobody left anything for is greeted and told nothing.
+    #[test]
+    fn a_terminal_with_no_mandate_waiting_is_handed_nothing() {
+        let directory =
+            std::env::temp_dir().join(format!("sailor-unhanded-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("a directory of this test's own");
+
+        assert_eq!(the_mandate_of(&directory, "ttys009", "whoever"), None);
+        let _ = std::fs::remove_dir_all(&directory);
     }
 
     /// **THE ASK STANDS UNTIL IT IS ANSWERED, AND THE ANSWER IS THE MANDATE.**
@@ -3069,7 +3171,7 @@ mod tests {
     /// The greeting on its own, with no register to ask: these cases are about
     /// what the text says, and the neighbours have their own in `sessions`.
     fn welcome_of(arrival: &Arrival) -> String {
-        welcome(arrival, None, &Ok(None), &Ok(()))
+        welcome(arrival, None, &Ok(None), &Ok(()), None)
     }
 
     /// What Sailor remembers is said at the start, count and the latest labels:
@@ -3587,7 +3689,7 @@ mod tests {
             page_unseen: None,
         }));
 
-        let said = welcome(&arriving_in(&scratch), None, &open, &Ok(()));
+        let said = welcome(&arriving_in(&scratch), None, &open, &Ok(()), None);
 
         assert!(
             said.contains("un-flusso-1788423534"),
@@ -3678,12 +3780,13 @@ mod tests {
         let scratch = Scratch::new("deposito-cieco");
         let arrival = arriving_in(&scratch);
 
-        let quiet = welcome(&arrival, None, &Ok(None), &Ok(()));
+        let quiet = welcome(&arrival, None, &Ok(None), &Ok(()), None);
         let blind = welcome(
             &arrival,
             None,
             &Err("the file belongs to somebody else".to_owned()),
             &Ok(()),
+            None,
         );
 
         assert_ne!(
