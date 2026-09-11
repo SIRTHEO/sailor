@@ -14,6 +14,7 @@ export type Section =
   | "changes"
   | "sketch"
   | "terminals"
+  | "flowmap"
   | "memory"
   | "sailor";
 
@@ -56,6 +57,13 @@ export const PLACES: Place[] = [
     group: "work",
   },
   {
+    id: "flowmap",
+    name: "Which calls which",
+    glyph: "\u2442",
+    asks: "which flow calls which, and which call nothing at all",
+    group: "work",
+  },
+  {
     id: "memory",
     name: "Why",
     glyph: "\u25f7",
@@ -83,6 +91,7 @@ export const SECTIONS: Section[] = [
   "changes",
   "sketch",
   "terminals",
+  "flowmap",
   "memory",
   "sailor",
 ];
