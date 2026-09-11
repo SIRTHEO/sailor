@@ -1,10 +1,8 @@
 /**
  * **THE MAP READS THE FILES, NOT A LIST THE ENGINE HAS ALREADY SETTLED.**
  * `flows` hands over one flow per name, the clash resolved; the map needs both
- * copies in the order the engine reads them, or it cannot say that one file
- * overrides another. The field names are the contract written in
- * `src-tauri/src/flows.rs`, and `flowmapcontract.test.ts` holds the two sides
- * together.
+ * copies in the order the engine reads them. The field names are the contract
+ * in `src-tauri/src/flows.rs`, held to this file by `flowmapcontract.test.ts`.
  */
 import { invoker } from "./engine";
 import type { FlowFileOnDisk, FlowOrigin } from "./flowmapread";

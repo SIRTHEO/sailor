@@ -59,18 +59,14 @@ pub struct Schedule {
 pub struct AndAlso {
     /// Whether anything Sailor made has nobody answering for it now.
     pub something_is_left_behind: bool,
-    /// Whether a tree Sailor cut would come down if a sweep ran now.
-    ///
-    /// **A SECOND FIELD AND NOT A WIDER FIRST ONE.** The store answers for
-    /// processes and build directories, git answers for trees, and no crate
-    /// holds both: written as one field it would be computed twice, by two
-    /// callers, with two ideas of what counts.
+    /// Whether a tree Sailor cut would come down if a sweep ran now. **A
+    /// SECOND FIELD AND NOT A WIDER FIRST ONE**: the store answers for
+    /// processes, git answers for trees, and no crate holds both.
     pub a_tree_is_left_behind: bool,
 }
 
 impl AndAlso {
-    /// Either answer wakes a flow woken by a state: they are two leftovers,
-    /// not two halves of one.
+    /// Two leftovers, not two halves of one: either wakes the flow.
     fn anything_left_behind(self) -> bool {
         self.something_is_left_behind || self.a_tree_is_left_behind
     }
@@ -239,10 +235,8 @@ mod tests {
         assert!(is_due(&by_state, None, now, left_behind));
     }
 
-    /// **TWO THINGS ARE LEFT BEHIND, AND EITHER ONE WAKES IT.** A process the
-    /// ledger still calls running and a tree Sailor cut are two answers from
-    /// two different places — the store and git — and a machine that held only
-    /// orphan trees sat there with seven gigabytes out and nothing due.
+    /// **EITHER LEFTOVER WAKES IT.** A machine holding only orphan trees sat
+    /// with seven gigabytes out and nothing due.
     #[test]
     fn a_tree_left_behind_wakes_the_flow_on_its_own() {
         let by_state = Schedule {

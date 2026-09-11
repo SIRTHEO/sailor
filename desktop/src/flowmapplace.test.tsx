@@ -1,10 +1,8 @@
 // @vitest-environment jsdom
 /**
  * **A MAP NOBODY CAN OPEN IS A MAP NOBODY HAS.** The reading, the surface and
- * the shell command all existed and passed their own tests while no row led to
- * any of them: what this asks is the path a person actually walks — the group
- * of the flows that are the same everywhere, the row inside it, the place it
- * opens, and that the place says why it is empty when it cannot ask.
+ * the shell command each passed their own tests while no row led to any of
+ * them, so this asks for the path a person actually walks.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";

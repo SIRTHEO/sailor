@@ -289,28 +289,17 @@ pub fn close_if_the_trunk_holds_it(repo: &Path, tree: &Path, register: &dyn Open
     Swept::Closed(close_tree(repo, tree, register))
 }
 
-/// Whether a sweep run now would actually take a tree down.
-///
-/// **IT NAMES EXACTLY WHAT THE SWEEP PUTS BACK, AND NOTHING ELSE.** A flow
-/// woken by a state must be able to clear the state it woke on: counting a
-/// tree kept because the trunk has not got its work would wake that flow at
-/// every beat for ever, since no run of it could ever take that tree down.
-///
-/// The free question first and git only for what survives it: a register
-/// holding a directory that is gone is answered from the filesystem, and on a
-/// machine with no orphan trees this asks git nothing at all.
+/// **IT NAMES EXACTLY WHAT THE SWEEP PUTS BACK.** A tree the trunk has not got
+/// would wake a state-woken flow for ever: no run of it could take that down.
 pub fn a_tree_is_left_behind(register: &dyn OpenTrees) -> bool {
     let Ok(open) = register.trees_left_open() else {
-        // A register that will not open is not a machine with trees left on
-        // it: waking a sweep on a failed reading would spin on the failure.
         return false;
     };
     let standing: Vec<&OpenTree> = open
         .iter()
         .filter(|tree| Path::new(&tree.path).exists())
         .collect();
-    // A row whose directory is gone: the sweep clears it, so it counts, and
-    // it costs nothing to see.
+    // A row over a directory that is gone: cleared, and seen without git.
     if standing.len() < open.len() {
         return true;
     }
@@ -694,17 +683,11 @@ mod tests {
         assert!(listed.contains(&dirty), "{listed}");
     }
 
-    /// **THE CONDITION ANSWERS FOR WHAT THE SWEEP WOULD ACTUALLY TAKE DOWN.**
-    /// A tree carrying a commit the trunk has not got is one no run of the
-    /// sweep can clear, so counting it would wake that flow at every beat for
-    /// ever; a register still holding a directory that is gone is the cheap
-    /// half, and it counts, because the sweep clears that row.
+    /// **THE CONDITION ANSWERS FOR WHAT THE SWEEP WOULD ACTUALLY TAKE DOWN**,
+    /// and a commit the trunk has not got is what it must not answer for.
     #[test]
     fn only_a_tree_a_sweep_could_take_down_wakes_the_sweep() {
         let (scratch, repo) = a_repository("left-behind");
-        // The trunk is named, as the sweep's own test names it: `git init`
-        // leaves whatever branch this machine's git calls first, and the
-        // predicate asks after the trunk by name.
         assert!(run_git(&repo, &["branch", "-M", branches::TRUNK])
             .status
             .success());
@@ -740,9 +723,7 @@ mod tests {
         );
     }
 
-    /// A register that cannot be read at all. `ARefusal` will not take a
-    /// write and still lists cleanly, which would have let the test below
-    /// pass without ever meeting a failed reading.
+    /// `ARefusal` lists cleanly, so the test below would never meet a failure.
     struct AShutPage;
 
     impl OpenTrees for AShutPage {

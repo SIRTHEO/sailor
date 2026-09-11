@@ -1,10 +1,7 @@
 /**
- * The place that asks for the flow files and hands them to the map.
- *
- * **IT EXISTS SO THE READING TRAVELS WITH THE SURFACE.** Asked for from `App`,
- * the reader and the fetch land in the chunk that loads before anything is on
- * screen, and a map opened once a week costs every start of the window; behind
- * this one lazy door they arrive when somebody opens the place.
+ * **THE READING TRAVELS WITH THE SURFACE.** Asked for from `App`, the reader
+ * and the fetch land in the chunk that loads before anything is drawn, and a
+ * map opened once a week would cost every start of the window.
  */
 import { useEffect, useState } from "react";
 import { FlowMap, type FlowMapAsk } from "./FlowMap";

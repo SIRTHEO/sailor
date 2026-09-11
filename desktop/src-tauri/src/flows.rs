@@ -434,13 +434,9 @@ mod tests {
     }
 }
 
-/// One flow file as it reads on disk, for the map that derives the calls from
-/// the text rather than from a parsed flow.
-///
 /// **THE TEXT, AND NOT A FLOW REBUILT FROM ONE.** A flow that will not parse
-/// still belongs on the map — it is called by name, and its callers do not
-/// care whether it loads — and a rebuilt one would silently drop whatever the
-/// engine's own shape has no field for.
+/// still belongs on the map — it is called by name — and a rebuilt one drops
+/// whatever the engine's own shape has no field for.
 #[derive(serde::Serialize)]
 pub(crate) struct FlowText {
     /// As it reads on disk, `.flow.json` and all: the name the engine resolves
@@ -456,12 +452,10 @@ pub(crate) struct FlowText {
     unreadable: Option<String>,
 }
 
-/// Every flow file the engine would look at, in the order it looks.
-///
-/// **LEAST SPECIFIC FIRST, SHADOWS AND ALL.** `load_all_flows` settles a name
-/// clash before anybody sees it, so a map built on that could not say one file
-/// overrides another — and editing the copy that does not run is the fault the
-/// order exists to make visible.
+/// Every flow file the engine would look at, in the order it looks. **LEAST
+/// SPECIFIC FIRST, SHADOWS AND ALL**: `load_all_flows` settles a name clash
+/// before anybody sees it, and editing the copy that does not run is the fault
+/// the order exists to make visible.
 #[tauri::command]
 pub(crate) fn flow_texts() -> Vec<FlowText> {
     ui::gather::flow_sources()
