@@ -216,8 +216,9 @@ impl LiveStatus {
 }
 
 pub use machine::{
-    close_the_ones_that_stopped_breathing, left_running, stop_the_ones_nobody_wants, LeftRunning,
-    Teardown, DEV_PORT,
+    close_the_ones_that_stopped_breathing, group_of, left_running, listeners_nobody_answers_for,
+    stop_the_ones_nobody_wants, what_is_listening, LeftRunning, Listening, Teardown, WhatListens,
+    DEV_PORT,
 };
 
 /// Why the port cannot be taken, when somebody is on it.

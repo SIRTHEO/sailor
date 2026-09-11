@@ -222,6 +222,127 @@ fn try_to_bind(port: u16) -> OnThePort {
     OnThePort::Free
 }
 
+/// A socket somebody on this machine is listening on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Listening {
+    pub pid: u32,
+    pub command: String,
+    pub port: u16,
+    /// Bound to this machine alone — **the shape of a development server**,
+    /// and of both ports fault 4 turned up on. A daemon on every address is
+    /// the machine's business, not Sailor's.
+    pub only_here: bool,
+}
+
+/// Every listening socket of this machine, or why we could not look.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WhatListens {
+    Seen(Vec<Listening>),
+    /// **A REFUSAL IS NOT A QUIET MACHINE.** Read as an empty list it would
+    /// declare every held port free, which is fault 12 wearing this costume.
+    CouldNotLook(String),
+}
+
+/// What is listening here. **THE QUESTION `on_the_port` CANNOT ASK**: that one
+/// answers about a number already known, and the orphan of fault 4 held a port
+/// nobody had thought to name.
+pub fn what_is_listening() -> WhatListens {
+    match std::process::Command::new("lsof")
+        .args(["-nP", "-iTCP", "-sTCP:LISTEN", "-F", "cpn"])
+        .output()
+    {
+        Err(error) => WhatListens::CouldNotLook(format!("lsof: {error}")),
+        Ok(out) => {
+            let text = String::from_utf8_lossy(&out.stdout).into_owned();
+            let complaint = String::from_utf8_lossy(&out.stderr).trim().to_owned();
+            if text.trim().is_empty() && !complaint.is_empty() {
+                return WhatListens::CouldNotLook(complaint);
+            }
+            WhatListens::Seen(listening_in(&text))
+        }
+    }
+}
+
+/// **FIELDS, NOT COLUMNS.** A command name holds spaces and the column form
+/// truncates it, so the two would be read as one process with a short name.
+/// Each line is one letter and its value; a socket is complete at its address.
+pub fn listening_in(text: &str) -> Vec<Listening> {
+    let mut found: Vec<Listening> = Vec::new();
+    let (mut pid, mut command) = (0, String::new());
+    for line in text.lines() {
+        let mut letters = line.chars();
+        let (Some(letter), value) = (letters.next(), letters.as_str()) else {
+            continue;
+        };
+        match letter {
+            'p' => {
+                pid = value.parse().unwrap_or(0);
+                command.clear();
+            }
+            'c' => command = value.to_owned(),
+            'n' => {
+                let Some(port) = value.rsplit(':').next().and_then(|tail| tail.parse().ok()) else {
+                    continue;
+                };
+                let one = Listening {
+                    pid,
+                    command: command.clone(),
+                    port,
+                    only_here: bound_to_this_machine(value),
+                };
+                if pid != 0 && !found.contains(&one) {
+                    found.push(one);
+                }
+            }
+            _ => {}
+        }
+    }
+    found
+}
+
+fn bound_to_this_machine(address: &str) -> bool {
+    let Some((host, _)) = address.rsplit_once(':') else {
+        return false;
+    };
+    matches!(host.trim_matches(['[', ']']), "127.0.0.1" | "::1" | "localhost")
+}
+
+/// The listeners no row of Sailor's reaches: **the orphan of fault 4, named
+/// before it blocks somebody's start** instead of hunted for afterwards.
+pub fn listeners_nobody_answers_for(
+    store: &ledger::Ledger,
+    listening: &[Listening],
+) -> Result<Vec<Listening>, ledger::LedgerError> {
+    let ours: std::collections::BTreeSet<u32> = left_running(store)?
+        .into_iter()
+        .filter(|item| item.still_alive)
+        .map(|item| item.record.pid)
+        .collect();
+    Ok(listening
+        .iter()
+        .filter(|one| !a_row_reaches(&ours, one.pid))
+        .cloned()
+        .collect())
+}
+
+/// **A ROW REACHES ITS GROUP, NOT ITS NUMBER.** `Process::start` gives every
+/// start a group of its own and `stop` signals that group, so the server one
+/// of them lit is still Sailor's to put out.
+fn a_row_reaches(ours: &std::collections::BTreeSet<u32>, pid: u32) -> bool {
+    ours.contains(&pid) || group_of(pid).is_some_and(|group| ours.contains(&group))
+}
+
+/// The group a pid was started in. `None` where the machine will not say, and
+/// a refusal is never read as «a group of its own».
+pub fn group_of(pid: u32) -> Option<u32> {
+    if pid == 0 || pid > i32::MAX as u32 {
+        return None;
+    }
+    // SAFETY: the call reads an int and returns one, touching no memory of ours.
+    let group = unsafe { libc::getpgid(pid as libc::pid_t) };
+    (group > 0).then_some(group as u32)
+}
+
 /// One process weighing on the machine, Sailor's or not; `sailor_lit` is true
 /// when a row of Sailor's still calls this pid running.
 #[derive(Debug, Clone, PartialEq, Eq)]

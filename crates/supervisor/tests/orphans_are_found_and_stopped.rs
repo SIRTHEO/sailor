@@ -330,3 +330,103 @@ fn written_holding(store: &ledger::Ledger, process_id: &str, pid: u32, born_at: 
         })
         .expect("write the start");
 }
+
+/// **THE HALF OF FAULT 4 THAT WAS STILL MISSING: NOBODY EVER ASKED.**
+///
+/// The register only ever answered about the one port it knew. The orphan that
+/// reopened this fault held another, for twenty-two hours, and no reading of
+/// this machine could have named it: the question «what is listening here that
+/// no row of ours reaches» had no function to ask it of.
+#[test]
+fn a_port_held_by_nobody_the_store_names_is_declared() {
+    let directory = TestDirectory::new("porta-sconosciuta");
+    let store = ledger::Ledger::open(&directory.0).expect("the store");
+
+    let socket = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a port of our own");
+    let port = socket.local_addr().expect("the port it took").port();
+    let mine = std::process::id();
+
+    let seen = match supervisor::what_is_listening() {
+        supervisor::WhatListens::Seen(seen) => seen,
+        supervisor::WhatListens::CouldNotLook(why) => {
+            panic!("this machine would not say what listens on it: {why}")
+        }
+    };
+    let ours = seen
+        .iter()
+        .find(|one| one.pid == mine && one.port == port)
+        .expect("the port this test is holding right now is missing from the reading");
+    assert!(
+        ours.only_here,
+        "a socket bound to 127.0.0.1 is read as reachable from elsewhere"
+    );
+
+    let unanswered = supervisor::listeners_nobody_answers_for(&store, &seen).expect("the reading");
+    assert!(
+        unanswered.iter().any(|one| one.pid == mine && one.port == port),
+        "a store that never heard of this port answers for it all the same"
+    );
+
+    written_holding(&store, "p-questo", mine, ledger::born_second_of(mine));
+    let after = supervisor::listeners_nobody_answers_for(&store, &seen).expect("the reading again");
+    assert!(
+        !after.iter().any(|one| one.pid == mine),
+        "a row naming this very process still reads as a stranger"
+    );
+}
+
+/// **WHAT A ROW REACHES IS ITS GROUP, NOT ITS NUMBER.**
+///
+/// `Process::start` gives every start a group of its own and `stop` signals
+/// that group, so the server a started process lit is one Sailor can still put
+/// out. Read by pid alone, the development server would be declared an orphan
+/// on every live run, and an alarm that always fires stops being read.
+#[test]
+fn a_listener_inside_a_group_sailor_started_is_not_a_stranger() {
+    let directory = TestDirectory::new("nipote-in-ascolto");
+    let store = ledger::Ledger::open(&directory.0).expect("the store");
+    let supervisor = Supervisor::over(Some(
+        ledger::Ledger::open(&directory.0).expect("the store again"),
+    ));
+
+    let pidfile = directory.0.join("nipote.pid");
+    let mut parent = supervisor
+        .start(Spec {
+            command: "/bin/sh".to_owned(),
+            args: vec![
+                "-c".to_owned(),
+                format!("sleep 300 & echo $! > {}; wait", pidfile.display()),
+            ],
+            ..sleeper("chi-ha-acceso-il-server", None)
+        })
+        .expect("start the one that lights the server");
+    let grandchild = wait_for_pid(&pidfile);
+
+    assert_eq!(
+        supervisor::group_of(grandchild),
+        Some(parent.pid()),
+        "the start did not put its child in a group of its own"
+    );
+
+    let heard = |pid: u32| supervisor::Listening {
+        pid,
+        command: "sleep".to_owned(),
+        port: 65_000,
+        only_here: true,
+    };
+    assert!(
+        supervisor::listeners_nobody_answers_for(&store, &[heard(grandchild)])
+            .expect("the reading")
+            .is_empty(),
+        "the server of a process Sailor lit is declared an orphan"
+    );
+    assert_eq!(
+        supervisor::listeners_nobody_answers_for(&store, &[heard(1)])
+            .expect("the reading")
+            .len(),
+        1,
+        "a listener no row of ours reaches is passed over"
+    );
+
+    parent.stop().expect("stop the parent");
+}

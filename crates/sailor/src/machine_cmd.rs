@@ -135,6 +135,10 @@ fn reading() -> Result<String, String> {
         said.push('\n');
         said.push_str(&word);
     }
+    if let Some(word) = about_what_listens(&store)? {
+        said.push('\n');
+        said.push_str(&word);
+    }
     said.push('\n');
     said.push_str(&about_the_load(&store)?);
     if let Some(word) = about_the_disk(Some(&store)) {
@@ -324,6 +328,55 @@ fn about_the_port(store: &Ledger) -> Result<Option<String>, String> {
             &[("port", &DEV_PORT.to_string()), ("why", &why)],
         ))),
     }
+}
+
+/// **THE ONE PORT IT KNEW WAS NOT ENOUGH.** The orphan that reopened fault 4
+/// held a port nobody had thought to name, for twenty-two hours. Every port of
+/// this machine alone is compared against the store, and what no row reaches is
+/// said — a development server is bound here, a daemon of the machine is not.
+fn about_what_listens(store: &Ledger) -> Result<Option<String>, String> {
+    let seen = match machine::what_is_listening() {
+        machine::WhatListens::CouldNotLook(why) => {
+            return Ok(Some(catalogue::say(
+                "cli.machine.could_not_look_at_what_listens",
+                &[("why", &why)],
+            )))
+        }
+        machine::WhatListens::Seen(seen) => seen,
+    };
+    let here: Vec<machine::Listening> = seen.into_iter().filter(|one| one.only_here).collect();
+    let mut strangers =
+        machine::listeners_nobody_answers_for(store, &here).map_err(|error| error.to_string())?;
+    if strangers.is_empty() {
+        return Ok(None);
+    }
+    // **THE YOUNGEST FIRST, BECAUSE THE CAP HIDES THE REST.** The daemons of
+    // this machine have been listening since it was switched on and are not
+    // news; what just took a port is what somebody is hunting. Measured: named
+    // in the order the system lists them, the one port that mattered sat
+    // seventh and only the count knew it was there.
+    strangers.sort_by_key(|one| {
+        (
+            std::cmp::Reverse(ledger::born_second_of(one.pid)),
+            one.port,
+        )
+    });
+    let mut said = catalogue::say(
+        "cli.machine.no_row_reaches_these",
+        &[("count", &strangers.len().to_string())],
+    );
+    for one in strangers.iter().take(ENOUGH_TO_SEE_THE_TROUBLE) {
+        said.push('\n');
+        said.push_str(&catalogue::say(
+            "cli.machine.no_row_reaches",
+            &[
+                ("port", &one.port.to_string()),
+                ("pid", &one.pid.to_string()),
+                ("command", &one.command),
+            ],
+        ));
+    }
+    Ok(Some(said))
 }
 
 /// **A GESTURE THAT ONLY REPORTS IS NOT A GESTURE** — and one that acts where
