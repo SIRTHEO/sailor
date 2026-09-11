@@ -1,0 +1,25 @@
+
+ RUN  v4.1.11 /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789116836445668000--the_crew--3--1789116836493055000/the_agent/desktop
+
+ ❯ src/flowmapread.test.ts (0 test)
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/flowmapread.test.ts [ src/flowmapread.test.ts ]
+Error: Cannot find module './flowmapread' imported from /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789116836445668000--the_crew--3--1789116836493055000/the_agent/desktop/src/flowmapread.test.ts
+ ❯ src/flowmapread.test.ts:2:1
+      1| import { describe, expect, test } from "vitest";
+      2| import { readFlowMap, type FlowFileOnDisk } from "./flowmapread";
+       | ^
+      3|
+      4| function file(name: string, origin: "shipped" | "own", steps: unknown[…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  no tests
+   Start at  10:56:48
+   Duration  183ms (transform 23ms, setup 0ms, import 0ms, tests 0ms, environment 0ms)
+
+exit=1
