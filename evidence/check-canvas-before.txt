@@ -1,0 +1,8 @@
+
+> sailor-desktop@0.1.0 check:canvas
+> tsx scripts/check-canvas.ts
+
+--- starting vite ---
+Error: the product has no board to measure
+    at main (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789116836445668000--the_crew--2--1789116836493052000/the_agent/desktop/scripts/check-canvas.ts:93:25)
+EXIT=1

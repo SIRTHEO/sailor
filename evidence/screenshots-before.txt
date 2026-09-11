@@ -1,0 +1,22 @@
+
+> sailor-desktop@0.1.0 screenshots
+> tsx scripts/screenshots.ts
+
+--- starting vite ---
+  ✓ now-375
+  ✖ flows-canvas-375 — not reached: no place «board»: the product does not have it
+  ✖ flow-in-focus-375 — not reached: no place «board»: the product does not have it
+  ✖ step-selected-375 — not reached: no place «board»: the product does not have it
+  ✓ installed-375
+  ✓ history-375
+  ✓ now-1440
+  ✖ flows-canvas-1440 — not reached: no place «board»: the product does not have it
+  ✖ flow-in-focus-1440 — not reached: no place «board»: the product does not have it
+  ✖ step-selected-1440 — not reached: no place «board»: the product does not have it
+  ✓ installed-1440
+  ✓ history-1440
+
+--- /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789116836445668000--the_crew--2--1789116836493052000/the_agent/desktop/design/screenshots ---
+6 scenes missing: see missing.txt
+6 of them are not a declared gap: the capture is blind
+EXIT=1
