@@ -57,13 +57,6 @@ export const PLACES: Place[] = [
     group: "work",
   },
   {
-    id: "flowmap",
-    name: "Which calls which",
-    glyph: "\u2442",
-    asks: "which flow calls which, and which call nothing at all",
-    group: "work",
-  },
-  {
     id: "memory",
     name: "Why",
     glyph: "\u25f7",
@@ -163,10 +156,26 @@ export function namedByTheMachine(id: Section): boolean {
  */
 export const UNDER_A_TREE: Section[] = ["board", "changes", "sketch"];
 
+/**
+ * The places that belong to no tree and take no row in the strip: the strip is
+ * where you stand all day, and one of these is opened now and then. **A ROW IN
+ * THE STRIP AND A ROW IN THE COLUMN ARE THE SAME NAME WRITTEN TWICE**, which
+ * is what the charter calls the sign of a surface nobody decided.
+ */
+export const BESIDE_WHAT_THEY_ARE_ABOUT: Place[] = [
+  {
+    id: "flowmap",
+    name: "Which calls which",
+    glyph: "\u2442",
+    asks: "which flow calls which, and which call nothing at all",
+    group: "work",
+  },
+];
+
 /** **A PLACE OUTSIDE THE LIST IS STILL A PLACE**: built from the fixed list
  * alone, the palette left out the three used while working in a tree. */
 export function onItsOwnName(): Place[] {
-  return [...PLACES, ...UNDER_THE_TREE];
+  return [...PLACES, ...BESIDE_WHAT_THEY_ARE_ABOUT, ...UNDER_THE_TREE];
 }
 
 /** Out of `PLACES` because their answer changes with the tree: a fixed row
