@@ -161,7 +161,7 @@ fn init(root: &Path, home: Option<&Path>) -> Result<String, String> {
     })?;
     text.push('\n');
     std::fs::write(&marker, text)
-        .map_err(|error| format!("cannot write {}: {error}", marker.display()))?;
+        .map_err(|error| catalogue::say("cli.workspace.cannot_write", &[("path", &marker.display().to_string()), ("why", &error.to_string())]))?;
 
     // DECLARING A PROJECT PUTS IT ON THE LIST, or the marker exists and
     // `workspace list` cannot see it. **The house is an argument**: fetched
@@ -238,7 +238,7 @@ fn terminals_now(troubles: &mut Vec<String>) -> Vec<workspace::column::TerminalA
             })
             .collect(),
         Err(why) => {
-            troubles.push(format!("the terminals would not read: {why}"));
+            troubles.push(catalogue::say("cli.workspace.terminals_would_not_read", &[("why", &why.to_string())]));
             Vec::new()
         }
     }
@@ -248,7 +248,7 @@ fn terminals_now(troubles: &mut Vec<String>) -> Vec<workspace::column::TerminalA
 /// gives, counted by the directory each holder announced.
 fn boards_now(troubles: &mut Vec<String>) -> Vec<(String, usize)> {
     let board = ledger::default_directory()
-        .ok_or_else(|| "no house to read the board from".to_owned())
+        .ok_or_else(|| catalogue::say("cli.workspace.no_house", &[]))
         .and_then(|directory| {
             ledger::Ledger::open(&directory).map_err(|error| error.to_string())
         })
@@ -258,7 +258,7 @@ fn boards_now(troubles: &mut Vec<String>) -> Vec<(String, usize)> {
     let board = match board {
         Ok(board) => board,
         Err(why) => {
-            troubles.push(format!("the board would not read: {why}"));
+            troubles.push(catalogue::say("cli.workspace.board_would_not_read", &[("why", &why.to_string())]));
             return Vec::new();
         }
     };

@@ -4,6 +4,7 @@
  * current while its flows still belonged to the last one. `theColumn` is the
  * seam: fed from a stub until the backend reading lands.
  */
+import { invoker } from "./engine";
 import type { TerminalSummary } from "./terminal";
 import type { Project } from "./workspaces";
 
@@ -153,9 +154,12 @@ export function columnStub(): ColumnReading {
 }
 
 /**
- * The one call the column is fed from. The engine reading is not there yet, so
- * this answers the stub — and when it lands, the seam is this function alone.
+ * The one call the column is fed from: `left_column`, which answers all four
+ * of its questions at once. Outside the desktop shell there is no engine to
+ * ask, so the stub stands in — a drawn column beats an empty one in a browser.
  */
 export function theColumn(): Promise<ColumnReading> {
-  return Promise.resolve(columnStub());
+  const invoke = invoker();
+  if (!invoke) return Promise.resolve(columnStub());
+  return invoke<ColumnReading>("left_column");
 }

@@ -191,7 +191,7 @@ fn said_of_the_unasked(engines: &[String], catalog: &toolbox::Catalog) -> Vec<St
     engines
         .iter()
         .map(|engine| match written_off(catalog, engine) {
-            Some(why) => format!("{engine} · no quota to read: {why}"),
+            Some(why) => catalogue::say("cli.remaining.no_quota_to_read", &[("engine", engine), ("why", &why)]),
             None => catalogue::say("cli.remaining.no_channel_declared", &[("engine", engine)]),
         })
         .collect()
