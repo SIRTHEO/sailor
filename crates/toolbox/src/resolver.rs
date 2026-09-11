@@ -726,15 +726,4 @@ mod tests {
         assert_eq!(read.output_tokens, Some(5));
         assert_eq!(read.answer.as_deref(), Some("ok"));
     }
-
-    /// Reads a total with the given pattern, going through the same function the
-    /// engine will use.
-    fn models_read(pattern: &str, said: &str) -> Option<u64> {
-        let declared = actions::Declared {
-            read: actions::Shape::Text,
-            total_tokens: Some(actions::Pointer::Pattern(pattern.to_owned())),
-            ..actions::Declared::default()
-        };
-        actions::read_declared(said, &declared).total_tokens
-    }
 }
