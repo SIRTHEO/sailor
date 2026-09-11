@@ -337,3 +337,57 @@ fn a_name_the_host_already_holds_is_refused_by_name() {
     host.stop();
     let _ = std::fs::remove_dir_all(&store);
 }
+
+/// **THE SCREEN THAT OUTLIVES ITS TERMINAL CARRIES THE HOST'S PID.** A hold
+/// killed with a signal leaves a file that is still and shows a prompt, and
+/// only the painter on its first line tells it from a terminal somebody is
+/// working in. Once the pty belongs to the host, that painter is the host.
+#[test]
+fn a_terminal_the_host_holds_paints_a_screen_signed_with_the_host_s_own_pid() {
+    let store = scratch("screen");
+    let (mut host, client) = host_under(&store);
+    let (_, host_pid) = client.hello().expect("the host greets");
+    let opened = client
+        .open_named(
+            Some("the-painted-one"),
+            &store.to_string_lossy(),
+            Some("/bin/sh".to_owned()),
+            Vec::new(),
+            Vec::new(),
+            24,
+            80,
+            None,
+        )
+        .expect("open a shell through the host");
+    client
+        .submit("the-painted-one", "echo painted-$((6*7))")
+        .expect("print something");
+    until_shown(&client, "the-painted-one", "painted-42");
+
+    let where_it_is = terminal::screen::address_in(&store, &opened.device);
+    let deadline = Instant::now() + PATIENCE;
+    let painted = loop {
+        if let Some(painted) = terminal::screen::read(&where_it_is) {
+            if String::from_utf8_lossy(&painted.bytes).contains("painted-42") {
+                break painted;
+            }
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the terminal the host holds painted no screen at {}",
+            where_it_is.display()
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    assert_eq!(
+        painted.by, host_pid,
+        "the screen is signed by somebody other than the host that holds the pty"
+    );
+    assert!(
+        painted.is_still_held(),
+        "a screen signed by a living host reads as abandoned"
+    );
+
+    host.stop();
+    let _ = std::fs::remove_dir_all(&store);
+}
