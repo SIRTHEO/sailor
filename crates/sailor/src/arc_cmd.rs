@@ -174,5 +174,5 @@ pub fn launch_detached(flow: &str, delivery: &str) -> Result<String, String> {
         // somebody else's work, minutes after the hook that lit it ended.
         speaks: false,
     })?;
-    Ok(format!("started as pid {}", started.let_it_go()))
+    Ok(format!("started as pid {}", started.let_it_go()?))
 }
