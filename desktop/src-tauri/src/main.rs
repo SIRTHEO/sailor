@@ -178,6 +178,7 @@ fn main() {
             live::take_new_build,
             flows::save_flow,
             flows::delete_flow,
+            flows::flow_texts,
             tools::discover_tools,
             tools::tools_sweep,
             engines::engines,
