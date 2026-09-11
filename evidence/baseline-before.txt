@@ -1,0 +1,32 @@
+=== cargo test -p workspace ===
+test ratchet::tests::only_the_number_that_was_measured_holds ... ok
+test tests::a_step_tree_says_which_run_and_step_it_belongs_to ... ok
+test tests::taking_a_tree_down_never_forces_it ... ok
+test tests::the_tree_around_a_directory_is_its_checkout_and_none_outside_one ... ok
+test tests::only_the_top_of_a_repository_says_it_is_tracked_from_here ... ok
+test tests::a_tree_already_gone_leaves_the_page ... ok
+test tests::a_tree_sailor_cuts_is_one_sailor_knows_it_has_open ... ok
+test tests::a_tree_the_register_refuses_is_never_left_standing ... ok
+test tests::a_tree_holding_a_commit_no_branch_has_is_kept ... ok
+test tests::a_tree_holding_work_is_kept_and_a_clean_one_is_taken_down ... ok
+test tests::a_sweep_never_closes_a_tree_whose_work_the_trunk_has_not_got ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.79s
+
+     Running tests/the_diff_shown_is_gits_answer.rs (target/a2/debug/deps/the_diff_shown_is_gits_answer-262cd899a5af5b35)
+
+running 4 tests
+test a_rename_is_listed_under_its_new_name ... ok
+test a_clean_tree_has_nothing_to_show ... ok
+test a_path_with_a_space_or_an_accent_is_the_path_on_disk ... ok
+test the_diff_shown_is_what_git_diff_prints ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+   Doc-tests workspace
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+=== cargo test -p sailor (three judges) ===
