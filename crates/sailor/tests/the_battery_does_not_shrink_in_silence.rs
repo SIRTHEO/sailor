@@ -6,10 +6,10 @@
 use std::path::{Path, PathBuf};
 
 /// Every `.rs` directly under a package's `tests/`, the window's shell included.
-const TEST_BINARIES_TODAY: usize = 153;
+const TEST_BINARIES_TODAY: usize = 154;
 
 /// Every `#[test]` in the tree, the window's shell included.
-const TEST_FUNCTIONS_TODAY: usize = 2163;
+const TEST_FUNCTIONS_TODAY: usize = 2165;
 
 /// Every `.flow.json` in `flows/` and among the shipped ones.
 const FLOW_FILES_TODAY: usize = 19;

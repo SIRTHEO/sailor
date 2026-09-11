@@ -236,6 +236,29 @@ fn write_fault(app: &AppHandle, runs: &Arc<crate::run::Runs>, glance: &Glance, f
     }
 }
 
+/// **TWO LOOPS BEAT AND ONLY ONE OF THEM SWEPT.** The judgement is shared, in
+/// `sailor::flow_cmd::beat`, and the command line's tick was its only caller —
+/// so from the window the parked runs stayed. A woken run is resumed here and
+/// holds this thread: that is the beat being late, never the window.
+fn ask_the_parked_again(glance: &Glance, now: i64) {
+    let Some(ledger) = &glance.ledger else {
+        return;
+    };
+    let mut resume = |run_id: &str| {
+        let flow = sailor::step_cmd::flow_of_run(ledger, run_id)?;
+        sailor::flow_cmd::resume_run_in(ledger, &flow, run_id)
+    };
+    let (said, woken, let_go) =
+        sailor::flow_cmd::beat::ask_the_parked_again(&flow_sources(), ledger, now, &mut resume);
+    if woken == 0 && let_go == 0 {
+        return;
+    }
+    for line in said.lines() {
+        println!("beat\tparked\t{line}");
+    }
+    println!("beat\tparked\twoken {woken}, released {let_go}");
+}
+
 /// One beat, now. Returns nothing when another beat is judging this instant.
 pub fn once(app: &AppHandle) -> Option<Report> {
     let beat = app.state::<Arc<Beat>>().inner().clone();
@@ -283,6 +306,7 @@ pub fn once(app: &AppHandle) -> Option<Report> {
             for fault in &faults {
                 decisions.push(write_fault(app, &runs, &glance, fault, now));
             }
+                    ask_the_parked_again(&glance, now);
             decisions
         }
     };
