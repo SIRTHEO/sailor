@@ -1,15 +1,9 @@
-# Che cosa di Sailor NON finisce nell'indice semantico.
+# What git keeps but the semantic index should not carry: generated output and
+# desktop build artefacts. `.gitignore` already covers target/ and node_modules/.
 #
-# Il `.gitignore` copre gia' `target/` e `node_modules/`, e SocratiCode lo
-# rispetta. Qui stanno le cose che git tiene ma che nell'indice fanno solo
-# rumore: roba generata, e gli artefatti della finestra che nessuno cerca
-# leggendo una domanda in italiano.
-#
-# **QUELLO CHE NON C'E' QUI E' UNA SCELTA.** `docs/` resta indicizzato: sono i
-# quaderni dell'officina, ed e' roba che si vuole trovare. Se un giorno la
-# tabella dei guasti diventa dati nel deposito, questa riga andra' rivista —
-# perche' allora il markdown sara' una resa, e indicizzare una resa vuol dire
-# avere la stessa cosa due volte.
+# `docs/` is deliberately absent from this list — the workshop notebooks are
+# meant to be findable. Revisit that only if the fault table becomes data in the
+# store, because indexing a rendering would then hold the same thing twice.
 
 target/
 desktop/node_modules/
