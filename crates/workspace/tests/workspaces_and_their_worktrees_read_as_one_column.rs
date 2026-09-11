@@ -146,6 +146,7 @@ fn reading(yard: &Yard) -> column::Reading {
         standing_in: Some(&second),
         terminals: &terminals,
         boards: &boards,
+        troubles: &[],
     })
 }
 
@@ -278,5 +279,37 @@ fn outside_every_tree_is_a_place_the_reading_names() {
     assert_eq!(
         written[1]["place"], "outside_every_tree",
         "outside is a value, never a missing field: {written}"
+    );
+}
+
+#[test]
+fn what_would_not_read_is_said_and_never_drawn_as_an_empty_column() {
+    let yard = a_small_world();
+    let home = yard.root.join("home");
+    std::fs::write(home.join(flow::workspace::REGISTER), "not a register")
+        .expect("the register is spoilt");
+
+    let read = column::take(&Ground {
+        home: &home,
+        home_flows: &home.join("flows"),
+        standing_in: None,
+        terminals: &[],
+        boards: &[],
+        troubles: &["the terminals would not be read".to_owned()],
+    });
+
+    assert!(read.projects.is_empty());
+    assert_eq!(read.troubles.len(), 2, "{:?}", read.troubles);
+    assert!(
+        read.troubles
+            .iter()
+            .any(|why| why.contains("the terminals would not be read")),
+        "what the caller could not read is kept: {:?}",
+        read.troubles
+    );
+    assert!(
+        read.troubles.iter().any(|why| why.contains("register")),
+        "an unreadable register is not no projects: {:?}",
+        read.troubles
     );
 }

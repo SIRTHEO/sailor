@@ -1,0 +1,556 @@
+WORKSPACES
+  ! the terminals would not read: sqlite: unable to open database file
+  ! the board would not read: sqlite: attempt to write a readonly database
+▾ gyver-work
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+▾ sailor
+     sailor  main
+     dragonfish  matteodimattia/explore-dwarfstar-local-ai
+        ⌁ passa-il-testimone  6 steps
+     eelpout  matteodimattia/non-c-nessun-task
+WORKSPACES
+  ! the terminals would not read: sqlite: unable to open database file
+  ! the board would not read: sqlite: attempt to write a readonly database
+▾ gyver-work
+     work  main
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     44481938-0347-48f3-b8d0-c95a581d713f  harness/worker/44481938-0347-48f3-b8d0-c95a581d713f
+     bichir  match-290-max-distance
+     dottyback  check-socraticode-status-linear
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     eagleray  matteodimattia/chore-socraticode-session-review
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     halibut  matteodimattia/chore-verify-timeline-prs
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     hamlet  matteodimattia/suite-documents-tab-empty
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     logperch  chore-audit-branches-cross
+     nautilus  matteodimattia/recover-nautilus-session
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     pacu  matteodimattia/redesign-github-profile-readme
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     pyrosome  matteodimattia/analysis-timeline-consolidation
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     rorqual  matteodimattia/fix-candidates-tab-mockup
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     sargassum  chore-restart-socraticode-docker
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     wentletrap  matteodimattia/fix-suite-session-avatar
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+▾ gyver-work
+     work  main
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     44481938-0347-48f3-b8d0-c95a581d713f  harness/worker/44481938-0347-48f3-b8d0-c95a581d713f
+     bichir  match-290-max-distance
+     dottyback  check-socraticode-status-linear
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     eagleray  matteodimattia/chore-socraticode-session-review
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     halibut  matteodimattia/chore-verify-timeline-prs
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     hamlet  matteodimattia/suite-documents-tab-empty
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     logperch  chore-audit-branches-cross
+     nautilus  matteodimattia/recover-nautilus-session
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     pacu  matteodimattia/redesign-github-profile-readme
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     pyrosome  matteodimattia/analysis-timeline-consolidation
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     rorqual  matteodimattia/fix-candidates-tab-mockup
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     sargassum  chore-restart-socraticode-docker
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     wentletrap  matteodimattia/fix-suite-session-avatar
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+▾ sailor  gone
+▾ gyver-work
+     work  main
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     44481938-0347-48f3-b8d0-c95a581d713f  harness/worker/44481938-0347-48f3-b8d0-c95a581d713f
+     bichir  match-290-max-distance
+     dottyback  check-socraticode-status-linear
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     eagleray  matteodimattia/chore-socraticode-session-review
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     halibut  matteodimattia/chore-verify-timeline-prs
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     hamlet  matteodimattia/suite-documents-tab-empty
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     logperch  chore-audit-branches-cross
+     nautilus  matteodimattia/recover-nautilus-session
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     pacu  matteodimattia/redesign-github-profile-readme
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     pyrosome  matteodimattia/analysis-timeline-consolidation
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     rorqual  matteodimattia/fix-candidates-tab-mockup
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     sargassum  chore-restart-socraticode-docker
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     wentletrap  matteodimattia/fix-suite-session-avatar
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+▾ gyver-work  gone
+▾ gyver-work
+     work  main
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     44481938-0347-48f3-b8d0-c95a581d713f  harness/worker/44481938-0347-48f3-b8d0-c95a581d713f
+     bichir  match-290-max-distance
+     dottyback  check-socraticode-status-linear
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     eagleray  matteodimattia/chore-socraticode-session-review
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     halibut  matteodimattia/chore-verify-timeline-prs
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     hamlet  matteodimattia/suite-documents-tab-empty
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     logperch  chore-audit-branches-cross
+     nautilus  matteodimattia/recover-nautilus-session
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     pacu  matteodimattia/redesign-github-profile-readme
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     pyrosome  matteodimattia/analysis-timeline-consolidation
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     rorqual  matteodimattia/fix-candidates-tab-mockup
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     sargassum  chore-restart-socraticode-docker
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     wentletrap  matteodimattia/fix-suite-session-avatar
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+▾ gyver-work
+     work  main
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     44481938-0347-48f3-b8d0-c95a581d713f  harness/worker/44481938-0347-48f3-b8d0-c95a581d713f
+     bichir  match-290-max-distance
+     dottyback  check-socraticode-status-linear
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     eagleray  matteodimattia/chore-socraticode-session-review
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     halibut  matteodimattia/chore-verify-timeline-prs
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     hamlet  matteodimattia/suite-documents-tab-empty
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     logperch  chore-audit-branches-cross
+     nautilus  matteodimattia/recover-nautilus-session
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     pacu  matteodimattia/redesign-github-profile-readme
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     pyrosome  matteodimattia/analysis-timeline-consolidation
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     rorqual  matteodimattia/fix-candidates-tab-mockup
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     sargassum  chore-restart-socraticode-docker
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+     wentletrap  matteodimattia/fix-suite-session-avatar
+        ⌁ accendi-la-macchina  3 steps
+        ⌁ allinea-con-develop  5 steps
+        ⌁ c-e-una-via-per-notion  1 steps
+        ⌁ che-cosa-gira  2 steps
+        ⌁ il-giro-di-prova  5 steps
+        ⌁ qualcuno-ha-spinto-su-develop  2 steps
+        ⌁ spegni-la-macchina  1 steps
+▾ sailor
+     sailor  main
+     dragonfish  matteodimattia/explore-dwarfstar-local-ai
+        ⌁ passa-il-testimone  6 steps
+     eelpout  matteodimattia/non-c-nessun-task
+        ⌁ passa-il-testimone  6 steps
+     guitarfish  matteodimattia/explain-mlx-on-mac
+        ⌁ passa-il-testimone  6 steps
+     lobster  matteodimattia/explore-llmfit-model-install
+     threadfin  matteodimattia/invoke-astra-autodesign-paper
+        ⌁ passa-il-testimone  6 steps
+     whiting  matteodimattia/investigate-ui-missing-from
+        ⌁ passa-il-testimone  6 steps
+     consolidamento-guasti  work/consolidamento-guasti
+        ⌁ passa-il-testimone  6 steps
+     the_agent  (detached)
+     the_agent  (detached)
+     the_agent  (detached)
+     the_agent  (detached)
+     the_agent  (detached)
+   ▾ the_agent  (detached)  ●
+     the_agent  (detached)
+     agent-a2285ab34a4750a2c  worktree-agent-a2285ab34a4750a2c
+        ⌁ passa-il-testimone  6 steps
+     agent-acd3db41c66e1017f  worktree-agent-acd3db41c66e1017f
+        ⌁ passa-il-testimone  6 steps
+FLOWS EVERYWHERE
+   built in ⌁ ask-for-a-mandate  3 steps
+   built in ⌁ consolidate-memories  4 steps
+   built in ⌁ consult-a-strong-model  4 steps
+   built in ⌁ dispatch-the-work  6 steps
+   built in ⌁ draft-a-flow  4 steps
+   built in ⌁ empty-a-session-that-handed-on  3 steps
+   built in ⌁ find-the-dead-powers  4 steps
+   built in ⌁ free-the-machine  5 steps
+   built in ⌁ migrate-to-sailor  4 steps
+   built in ⌁ notice-a-divergence  4 steps
+   built in ⌁ one-agent-on-one-task  2 steps
+   built in ⌁ put-the-crew-to-work  3 steps
+   built in ⌁ recall-a-decision  4 steps
+   built in ⌁ remember-in-the-graph  5 steps
+   built in ⌁ sweep-the-tree  4 steps
+   built in ⌁ take-the-next-fault  6 steps
+   built in ⌁ watch-the-crew  5 steps
+   built in ⌁ what-this-machine-has  2 steps
+   built in ⌁ write-down-what-broke  5 steps
+   yours ⌁ ask-astra-for-a-prompt  4 steps
+   yours ⌁ ask-astra-then-follow  6 steps
+   yours ⌁ chiedi-all-indice  5 steps
+   yours ⌁ ciclo-di-lavoro  2 steps
+   yours ⌁ come-lo-risolvono-gli-altri  7 steps
+   yours ⌁ consult-astra  4 steps
+   yours ⌁ consult-fable  4 steps
+   yours ⌁ costruisci-una-pagina  7 steps
+   yours ⌁ decidi-la-direzione  6 steps
+   yours ⌁ delega-un-pezzo  3 steps
+   yours ⌁ empty-a-session-that-handed-on  1 steps
+   yours ⌁ esamina-la-repo  7 steps
+   yours ⌁ esamina-la-repo-ramificando  5 steps
+   yours ⌁ esamina-la-repo-riscoprendo  5 steps
+   yours ⌁ keep-the-index-fresh  4 steps
+   yours ⌁ la-squadra-sulla-finestra  3 steps
+   yours ⌁ misura-questa-sessione  2 steps
+   yours ⌁ porta-una-superficie-alla-carta  12 steps
+   yours ⌁ prova-della-vista  4 steps
+   yours ⌁ prova-deposito  1 steps
+   yours ⌁ prova-deposito-letterale  1 steps
+   yours ⌁ prova-innesco  2 steps
+   yours ⌁ pubblica  7 steps
+   yours ⌁ route-a-breakage  4 steps
+   yours ⌁ sistema-la-repo  9 steps
+   yours ⌁ smista-il-lavoro  6 steps
+   yours ⌁ sviluppa-sailor  13 steps
+   yours ⌁ traduci-documentazione-in-inglese  3 steps
+   yours ⌁ un-agente-su-un-compito  2 steps
+OUTSIDE EVERY WORKSPACE

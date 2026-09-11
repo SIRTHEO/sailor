@@ -1,0 +1,2 @@
+   Compiling sailor-desktop v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789118044083006000--the_crew--1--1789118044127948000/the_agent/desktop/src-tauri)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.00s

@@ -1,0 +1,58 @@
+{
+  "projects": [
+    {
+      "name": "gyver-work",
+      "root": "/Users/theo/orca/workspaces/work/pacu",
+      "standing": "here",
+      "trees": [
+        {
+          "name": "work",
+          "path": "/Users/theo/gyver/work",
+          "branch": "main",
+          "stood_in": false,
+          "standing": "here",
+          "board": 0,
+          "flows": [
+            {
+              "id": "accendi-la-macchina",
+              "steps": 3,
+              "origin": "this project"
+            }
+          ]
+        },
+        {
+          "name": "dottyback",
+          "path": "/Users/theo/orca/workspaces/work/dottyback",
+          "branch": "check-socraticode-status-linear",
+          "stood_in": false,
+          "standing": "here",
+          "board": 0,
+          "flows": [
+            {
+              "id": "accendi-la-macchina",
+              "steps": 3,
+              "origin": "this project"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "flows_everywhere": [
+    {
+      "id": "ask-for-a-mandate",
+      "steps": 3,
+      "origin": "built in"
+    },
+    {
+      "id": "consolidate-memories",
+      "steps": 4,
+      "origin": "built in"
+    }
+  ],
+  "terminals": [],
+  "troubles": [
+    "the terminals would not read: sqlite: unable to open database file",
+    "the board would not read: sqlite: attempt to write a readonly database"
+  ]
+}

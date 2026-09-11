@@ -1,0 +1,17 @@
+=== what one reading costs, on this machine, as it really is ===
+projects 8
+trees 87
+flows on trees 393
+flows of no checkout 48
+bytes of json 48283
+
+--- 20 runs of the whole command, process start included ---
+( for i in $(seq 20); do; ./target/a2/debug/sailor workspace column --json > )  0.13s user 0.12s system 3% cpu 6.449 total
+
+--- 20 runs of a command that reads nothing, for the process start alone ---
+( for i in $(seq 20); do; ./target/a2/debug/sailor version > /dev/null; done;   0.00s user 0.01s system 10% cpu 0.105 total
+--- the git share: one 'worktree list --porcelain' per project, 8 of them, 20 times ---
+( for i in $(seq 20); do; for r in $roots; do; git -C "$r" worktree list  >  )  0.01s user 0.01s system 7% cpu 0.320 total
+
+--- the same reading from a release build, 20 runs ---
+( for i in $(seq 20); do; ./target/a2/release/sailor workspace column --json )  0.06s user 0.07s system 3% cpu 3.353 total

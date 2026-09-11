@@ -17,6 +17,10 @@ pub struct Ground<'a> {
     pub terminals: &'a [TerminalAt],
     /// How many board entries stand at a path, tree by tree.
     pub boards: &'a [(String, usize)],
+    /// What the caller itself could not read. It travels in the reading
+    /// because a caller that answers with an empty list says «there is
+    /// nothing» when the truth is «I could not look».
+    pub troubles: &'a [String],
 }
 
 /// A terminal and the directory it was opened in, as its register holds it.
@@ -86,17 +90,21 @@ pub struct Reading {
     pub projects: Vec<Project>,
     pub flows_everywhere: Vec<FlowLine>,
     pub terminals: Vec<Terminal>,
-    /// Why the register of projects could not be read. An empty column and an
-    /// unreadable register are two different facts and are never one.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub trouble: Option<String>,
+    /// What would not read, the caller's own and this reading's. An empty
+    /// column and a column nobody could look at are two different facts and
+    /// are never one.
+    pub troubles: Vec<String>,
 }
 
 /// The whole column, in one pass.
 pub fn take(ground: &Ground) -> Reading {
-    let (known, trouble) = match flow::workspace::known_in(ground.home) {
-        Ok(known) => (known, None),
-        Err(why) => (Vec::new(), Some(why)),
+    let mut troubles = ground.troubles.to_vec();
+    let known = match flow::workspace::known_in(ground.home) {
+        Ok(known) => known,
+        Err(why) => {
+            troubles.push(why);
+            Vec::new()
+        }
     };
     let projects: Vec<Project> = known
         .iter()
@@ -106,7 +114,7 @@ pub fn take(ground: &Ground) -> Reading {
         terminals: terminals_of(ground, &projects),
         flows_everywhere: flows_of_no_checkout(ground.home_flows),
         projects,
-        trouble,
+        troubles,
     }
 }
 

@@ -1,0 +1,73 @@
+   Compiling sailor v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789118044083006000--the_crew--1--1789118044127948000/the_agent/crates/sailor)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.78s
+     Running tests/clippy_only_ever_gets_quieter.rs (target/a2/debug/deps/clippy_only_ever_gets_quieter-2aaa1df69beb37d4)
+
+running 4 tests
+test a_warning_planted_in_a_throwaway_tree_is_counted_and_complained_about ... ok
+test with_no_linter_to_answer_the_judge_declares_it_measured_nothing ... ok
+test the_check_can_still_see_what_it_counts ... ok
+test no_crate_warns_more_than_today ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.26s
+
+     Running tests/comments_do_not_crowd_out_the_code.rs (target/a2/debug/deps/comments_do_not_crowd_out_the_code-80f57e6a70e249ee)
+
+running 7 tests
+test the_files_named_one_by_one_are_inside_the_perimeter ... ok
+test no_crate_lets_its_comments_outtalk_its_code_more_than_today ... FAILED
+test the_check_can_still_see_what_it_counts ... ok
+test a_seed_that_no_longer_describes_the_tree_is_a_seed_nobody_re_measured ... ok
+test no_comment_tells_a_date ... ok
+test no_new_comment_block_runs_past_the_cap ... ok
+test the_comments_not_in_english_only_shrink ... ok
+
+failures:
+
+---- no_crate_lets_its_comments_outtalk_its_code_more_than_today stdout ----
+
+measured: 527 sources read line by line against 21 crates the ratio is seeded for
+
+thread 'no_crate_lets_its_comments_outtalk_its_code_more_than_today' (44075246) panicked at crates/sailor/tests/comments_do_not_crowd_out_the_code.rs:445:5:
+crate «workspace» is seeded 25‰ above the 127‰ it holds: write 127; measured now:
+    ("actions", 249),
+    ("catalogue", 239),
+    ("desktop", 245),
+    ("faults", 156),
+    ("flow", 199),
+    ("inventory", 274),
+    ("ledger", 145),
+    ("machine", 233),
+    ("models", 274),
+    ("profiles", 172),
+    ("registry", 286),
+    ("relay", 142),
+    ("release", 426),
+    ("sailor", 181),
+    ("sessions", 236),
+    ("supervisor", 249),
+    ("terminal", 275),
+    ("toolbox", 283),
+    ("trigger", 236),
+    ("ui", 186),
+    ("workspace", 127),
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    no_crate_lets_its_comments_outtalk_its_code_more_than_today
+
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s
+
+error: test failed, to rerun pass `-p sailor --test comments_do_not_crowd_out_the_code`
+     Running tests/files_do_not_grow_out_of_scale.rs (target/a2/debug/deps/files_do_not_grow_out_of_scale-bb090bb2777d4b55)
+
+running 4 tests
+test the_scale_tells_what_a_file_does_from_what_proves_it ... ok
+test no_more_walls_of_judges_than_today ... ok
+test no_more_files_run_past_the_scale_than_today ... ok
+test the_scale_can_still_see_the_files_it_weighs ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+error: 1 target failed:
+    `-p sailor --test comments_do_not_crowd_out_the_code`
