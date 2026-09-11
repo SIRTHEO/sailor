@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use ui::gather::FlowSource;
 
-mod beat;
+pub mod beat;
 mod cap_and_schedule;
 pub mod check;
 mod cost;

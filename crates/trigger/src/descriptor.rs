@@ -77,6 +77,8 @@ pub struct Happened {
     pub transcript: Option<String>,
 }
 
+pub const ALREADY_PARKED: &str = "a run of this flow is already parked for this terminal";
+
 /// Why a flow was not started, or nothing when it should be. **ONE REASON,
 /// NAMED**: a guard that will not say which condition refused cannot be told
 /// from a broken one.

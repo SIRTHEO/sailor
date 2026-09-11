@@ -66,6 +66,16 @@ impl ToolChoice {
     }
 }
 
+/// The engine and the account one entry of a chain names: `id`, or
+/// `id@account`. The split is on the **first** `@`, because an account is
+/// named by an address and an engine id carries none.
+pub fn engine_and_account(entry: &str) -> (&str, Option<&str>) {
+    match entry.split_once('@') {
+        Some((id, account)) if !id.is_empty() && !account.is_empty() => (id, Some(account)),
+        _ => (entry, None),
+    }
+}
+
 /// The engines a step's `with` names, in the order written. One name is a
 /// chain of one — the shape `ToolChoice` already accepts — and a `tool` of
 /// any other shape names none. Every reader of a flow's chains asks here, so
@@ -73,7 +83,13 @@ impl ToolChoice {
 pub fn engines_named_in(with: &Value) -> Vec<String> {
     with.get("tool")
         .and_then(|tool| serde_json::from_value::<ToolChoice>(tool.clone()).ok())
-        .map(|choice| choice.ids().to_vec())
+        .map(|choice| {
+            choice
+                .ids()
+                .iter()
+                .map(|entry| engine_and_account(entry).0.to_owned())
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -100,10 +116,17 @@ pub fn models_named_in(with: &Value) -> BTreeMap<String, String> {
 }
 
 /// The ceiling this step declares, in every unit an engine may take one in.
-pub(crate) fn ceiling_of(spec: &EngineSpec) -> crate::reserve::Declared {
-    crate::reserve::Declared {
+pub(crate) fn ceiling_of(spec: &EngineSpec, share_of_the_cap: Option<i64>) -> crate::reserve::Declared {
+    let declared = crate::reserve::Declared {
         max_spend_micros: spec.max_spend_micros,
         max_tokens: spec.max_tokens,
+    };
+    if !declared.is_empty() {
+        return declared;
+    }
+    crate::reserve::Declared {
+        max_spend_micros: share_of_the_cap.filter(|share| *share > 0),
+        max_tokens: None,
     }
 }
 
@@ -317,8 +340,50 @@ mod tests {
         ] {
             let spec: EngineSpec =
                 serde_json::from_value(with.clone()).expect("this `with` is whole");
-            assert_eq!(ceiling_declared_in(&with), ceiling_of(&spec));
+            assert_eq!(ceiling_declared_in(&with), ceiling_of(&spec, None));
         }
+    }
+
+    /// **A CHAIN ENTRY NAMES AN ENGINE, AND MAY NAME AN ACCOUNT WITH IT.** The
+    /// split is on the first `@`: an account is named by an address.
+    #[test]
+    fn a_chain_entry_splits_into_the_engine_and_the_account() {
+        assert_eq!(engine_and_account("claude-code"), ("claude-code", None));
+        assert_eq!(
+            engine_and_account("claude-code@lavoro@esempio.invalid"),
+            ("claude-code", Some("lavoro@esempio.invalid"))
+        );
+        assert_eq!(engine_and_account("@nobody"), ("@nobody", None));
+        assert_eq!(engine_and_account("claude-code@"), ("claude-code@", None));
+
+        let named = engines_named_in(&json!({"tool": ["codex@uno", "codex"]}));
+        assert_eq!(named, vec!["codex", "codex"], "a check reads the engine");
+    }
+
+    /// **THE REMAINDER FILLS A CEILING THE STEP LEFT EMPTY, NEVER ONE IT WROTE.**
+    #[test]
+    fn a_share_of_the_cap_is_a_ceiling_only_where_the_step_declared_none() {
+        let empty: EngineSpec =
+            serde_json::from_value(json!({"tool": "uno", "timeout_secs": 1})).expect("whole");
+        assert_eq!(
+            ceiling_of(&empty, Some(2_000_000)).max_spend_micros,
+            Some(2_000_000)
+        );
+        assert_eq!(
+            ceiling_of(&empty, Some(0)).max_spend_micros,
+            None,
+            "nothing left is not a ceiling of nothing"
+        );
+
+        let declared: EngineSpec = serde_json::from_value(
+            json!({"tool": "uno", "timeout_secs": 1, "max_spend_micros": 500_000}),
+        )
+        .expect("whole");
+        assert_eq!(
+            ceiling_of(&declared, Some(2_000_000)).max_spend_micros,
+            Some(500_000),
+            "the step's own ceiling is the authority"
+        );
     }
 
     /// **WHOEVER PRICES A RUN BEFORE IT RUNS READS THE STEP, NOT THE PAST.**
