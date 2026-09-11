@@ -9,7 +9,7 @@ use crate::candidates::{strengths_path, Candidate, Refused};
 use crate::cost::{
     current_price_list, now_secs, record_the_call, recording_for, Chain, Recording, Spent,
 };
-use crate::equipment::current_equipment_for;
+use crate::equipment::current_equipment_asking_for;
 use crate::process::{
     invoke_external_engine_watched_until, sink_for_step, EngineInvocation, EngineResult, LiveSink,
     Pipe, StepSinks,
@@ -359,7 +359,7 @@ fn compose(
     // the environment of whoever opened the terminal — reading the
     // neighbour's home, while `sailor run` took the same engine into its own.
     // The profile sits **under** `spec.env`: a variable written in the step wins.
-    let equipment = current_equipment_for(bin, &spec.env);
+    let equipment = current_equipment_asking_for(bin, &spec.env, candidate.account.as_deref());
     Prepared {
         invocation: EngineInvocation {
             bin: bin.clone(),
@@ -739,14 +739,17 @@ impl ExternalEngineAction {
         stdout: &str,
         stderr: &str,
     ) {
-        let (Some("quota_exhausted"), Some(secs), Some(id), Some(path)) =
+        let (Some("quota_exhausted"), Some(secs), Some(_), Some(path)) =
             (class, candidate.cooldown_secs, candidate.id.as_deref(), self.cooldowns.as_deref())
         else {
             return;
         };
+        // Set aside by engine **and account**: one account's spent quota says
+        // nothing about another's on the same command line.
+        let id = candidate.aside_key();
         // A list that cannot be written costs the next chain one knock: not
         // worth breaking this step over.
-        let _ = cooldown::set_aside(path, id, now, secs, &what_it_said(stdout, stderr));
+        let _ = cooldown::set_aside(path, &id, now, secs, &what_it_said(stdout, stderr));
     }
 
     /// Whether this call may be authorised under the cap the run declares.

@@ -609,6 +609,7 @@
   "cli.worktree.that_is_the_main_tree": "that is the repository itself, not a tree cut from it",
   "cli.worktree.that_is_where_you_are": "that is the tree this command is standing in",
   "engine.after_refusal": "Your last answer to this same question was refused — {why}. Answer it again in the shape asked for above, and send that alone.",
+  "engine.asked_profile_is_not_here": "this call asks for the profile «{profile}» of {cli}, and no profile of that name is on this machine: it is refused rather than run on whichever account happens to be active",
   "engine.profile_is_signed_out": "the profile «{profile}» of {cli} is signed out: its home {home} carries no credentials, and a call made from it would fail after being paid for",
   "engine.tree_kept_over_a_commit": "The tree {tree} stays: it sits on commit {commit}, and no branch of this repository holds that commit.",
   "engine.tree_kept_over_work": "The tree {tree} stays, because git would not take it down: {said}",

@@ -47,7 +47,28 @@ pub fn equipment_for(
     bin: &str,
     step_env: &BTreeMap<String, String>,
 ) -> Equipment {
-    equipment_with_keys(store, bin, step_env, &|variable| std::env::var(variable).ok())
+    equipment_asking_for(store, bin, step_env, None)
+}
+
+/// [`equipment_for`] for a call that names the account it wants.
+///
+/// **A NAME THAT RESOLVES TO NOTHING REFUSES THE CALL.** Falling back to the
+/// active profile would send the work to another person's quota under the name
+/// of the one asked for, which is fault 165 in a worse shape.
+pub fn equipment_asking_for(
+    store: &profiles::ProfileStore,
+    bin: &str,
+    step_env: &BTreeMap<String, String>,
+    asked: Option<&str>,
+) -> Equipment {
+    equipment_with_keys_and_disk(
+        store,
+        bin,
+        step_env,
+        &|variable| std::env::var(variable).ok(),
+        &|path| path.exists(),
+        asked,
+    )
 }
 
 /// [`equipment_for`] with the machine's key variables read through `key_of`,
@@ -58,7 +79,7 @@ pub fn equipment_with_keys(
     step_env: &BTreeMap<String, String>,
     key_of: &dyn Fn(&str) -> Option<String>,
 ) -> Equipment {
-    equipment_with_keys_and_disk(store, bin, step_env, key_of, &|path| path.exists())
+    equipment_with_keys_and_disk(store, bin, step_env, key_of, &|path| path.exists(), None)
 }
 
 /// [`equipment_with_keys`] with the machine's disk read through `there`, so a
@@ -69,6 +90,7 @@ pub fn equipment_with_keys_and_disk(
     step_env: &BTreeMap<String, String>,
     key_of: &dyn Fn(&str) -> Option<String>,
     there: &dyn Fn(&std::path::Path) -> bool,
+    asked: Option<&str>,
 ) -> Equipment {
     let Some(cli) = profiles::cli_for_executable(bin) else {
         // An arbitrary command — `sh`, a script — has no home to move, and
@@ -79,7 +101,7 @@ pub fn equipment_with_keys_and_disk(
             refused: None,
         };
     };
-    let named = store.active.get(&cli.id);
+    let named = asked.or_else(|| store.active.get(&cli.id).map(String::as_str));
     let resolved = named.and_then(|active| {
         store
             .profiles
@@ -87,7 +109,7 @@ pub fn equipment_with_keys_and_disk(
             // **STATE NAMING A VANISHED PROFILE INVENTS NO DIRECTORY.**
             // Composing the path from the name would give an empty home — one
             // with no credentials — wearing the air of an applied profile.
-            .find(|profile| profile.cli_id == cli.id && &profile.name == active)
+            .find(|profile| profile.cli_id == cli.id && profile.name == active)
     });
     let mut from_the_profile = resolved
         .map(|profile| profiles::build_environment(cli, &profile.home_dir, key_of))
@@ -102,7 +124,15 @@ pub fn equipment_with_keys_and_disk(
         Some(Err(why)) => Some(why),
         None => None,
     };
-    let refused = refused.or_else(|| resolved.and_then(|profile| signed_out(cli, profile, there)));
+    let refused = refused
+        .or_else(|| resolved.and_then(|profile| signed_out(cli, profile, there)))
+        .or_else(|| match (asked, resolved) {
+            (Some(name), None) => Some(catalogue::say(
+                "engine.asked_profile_is_not_here",
+                &[("profile", name), ("cli", &cli.display_name)],
+            )),
+            _ => None,
+        });
     // Profile first, step on top: a variable written in the step wins.
     let mut env = from_the_profile;
     env.extend(
@@ -112,7 +142,7 @@ pub fn equipment_with_keys_and_disk(
     );
     Equipment {
         env,
-        identity: identity_of(cli, named.map(String::as_str), resolved, step_env),
+        identity: identity_of(cli, named, resolved, step_env),
         refused,
     }
 }
@@ -227,6 +257,15 @@ fn why_it_stays_where_it_is(cli: &profiles::KnownCli) -> String {
 /// overlaid, which is how it always started. Stopping a step because a
 /// preferences file could not be read would punish a bystander.
 pub(crate) fn current_equipment_for(bin: &str, step_env: &BTreeMap<String, String>) -> Equipment {
+    current_equipment_asking_for(bin, step_env, None)
+}
+
+/// [`current_equipment_for`] for a call that names the account it wants.
+pub(crate) fn current_equipment_asking_for(
+    bin: &str,
+    step_env: &BTreeMap<String, String>,
+    asked: Option<&str>,
+) -> Equipment {
     let store = profiles::store_io::load_store().unwrap_or_default();
-    equipment_for(&store, bin, step_env)
+    equipment_asking_for(&store, bin, step_env, asked)
 }

@@ -366,6 +366,7 @@ mod resuming_instead_of_rediscovering {
 
     fn a_candidate_that_can_resume() -> Candidate {
         Candidate {
+            account: None,
             id: Some("motore".to_owned()),
             bin: "eco".to_owned(),
             args: vec!["ask".to_owned()],

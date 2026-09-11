@@ -3,7 +3,6 @@
 
 use crate::cost::now_secs;
 use crate::engine::ExternalEngineAction;
-use crate::equipment::current_equipment_for;
 use crate::recipe::{
     command_line_naming_model_and_ceiling, mentions_any, says_it_cannot_work, PromptVia,
     SessionRecipe, ToolResolver,
@@ -112,6 +111,7 @@ impl ExternalEngineAction {
             (Some(bin), None) => Ok((
                 vec![Candidate {
                     id: None,
+                    account: None,
                     bin: bin.to_owned(),
                     args: spec.args.clone(),
                     prompt: PromptVia::Stdin,
@@ -167,7 +167,12 @@ impl ExternalEngineAction {
                 let step_said_args = !spec.args.is_empty();
                 let mut usable = Vec::new();
                 let mut refused = Vec::new();
-                for id in &ids {
+                for entry in &ids {
+                    // `id@account` names the engine and the account it runs
+                    // on; a bare id runs on whichever is active. Fault 165.
+                    let (named_id, account) = crate::spec::engine_and_account(entry);
+                    let id = &named_id.to_owned();
+                    let account = account.map(str::to_owned);
                     let bin = match tools.resolve(id) {
                         Ok(bin) => bin,
                         Err(reason) => {
@@ -185,7 +190,7 @@ impl ExternalEngineAction {
                     if let Some(aside) = self
                         .cooldowns
                         .as_deref()
-                        .and_then(|path| cooldown::set_aside_until(path, id, now_secs()))
+                        .and_then(|path| cooldown::set_aside_until(path, entry, now_secs()))
                     {
                         refused.push(Refused {
                             id: id.clone(),
@@ -220,7 +225,9 @@ impl ExternalEngineAction {
                         });
                         continue;
                     }
-                    if let Some(why) = current_equipment_for(&bin, &spec.env).refused {
+                    if let Some(why) =
+                        crate::equipment::current_equipment_asking_for(&bin, &spec.env, account.as_deref()).refused
+                    {
                         refused.push(Refused {
                             id: id.clone(),
                             reason: why,
@@ -235,6 +242,7 @@ impl ExternalEngineAction {
                         let declared = tools.ask_recipe(id);
                         usable.push(Candidate {
                             id: Some(id.clone()),
+                            account: account.clone(),
                             bin,
                             args: spec.args.clone(),
                             prompt: PromptVia::Stdin,
@@ -310,6 +318,7 @@ impl ExternalEngineAction {
                     match tools.ask_recipe(id) {
                         Some(recipe) => usable.push(Candidate {
                             id: Some(id.clone()),
+                            account: account.clone(),
                             bin,
                             args: command_line_naming_model_and_ceiling(
                                 &recipe,
@@ -416,6 +425,8 @@ pub(crate) struct Candidate {
     pub(crate) can_be_asked: bool,
     /// Why this engine was moved to the front, when the fuel said so.
     pub(crate) why: Option<String>,
+    /// The account this call runs on, when the chain entry named one.
+    pub(crate) account: Option<String>,
     /// The ceiling written on this line, when one could be. `None` is what
     /// makes a run's cap a stop threshold rather than a cap.
     pub(crate) ceiling: Option<reserve::Ceiling>,
@@ -463,6 +474,16 @@ impl ExternalEngineAction {
 }
 
 impl Candidate {
+    /// How this call is named in the list of engines set aside: the engine
+    /// alone, or the engine on the account the entry named.
+    pub(crate) fn aside_key(&self) -> String {
+        let id = self.id.clone().unwrap_or_default();
+        match &self.account {
+            Some(account) => format!("{id}@{account}"),
+            None => id,
+        }
+    }
+
     fn says_it_cannot_work(&self, stdout: &str, stderr: &str) -> bool {
         says_it_cannot_work(&self.unusable_when, stdout)
             || says_it_cannot_work(&self.unusable_when, stderr)
