@@ -3,7 +3,7 @@ import { executionHistory, runUsage, stopRun, type Execution } from "./engine";
 import { Calls } from "./History";
 import { t } from "./i18n";
 import type { CommandLine } from "./profiles";
-import { quota, windowName } from "./quota";
+import { engineOf, quota, windowName } from "./quota";
 import { QuotaScreen } from "./QuotaScreen";
 import { costReading, panesFromEvents, RunConsole, type ConsoleMode } from "./RunConsole";
 import { recordedRun, useReading } from "./recordedWork";
@@ -20,7 +20,10 @@ export function SessionContext({ native, terminal, lines }: { native: boolean; t
   const runs = history.state === "asked" ? history.seen.filter((run) => run.worktree === terminal.workspaceRoot).sort((a, b) => b.started_at - a.started_at) : [];
   const selected = runs.find((run) => run.run_id === picked) ?? runs[0];
   const engine = lines.find((line) => line.executable === terminal.program || line.id === terminal.program)?.id ?? terminal.program;
-  const matching = windows.state === "asked" ? windows.seen.filter((one) => one.engine === engine || one.engine === terminal.program) : [];
+  // «engine · account» since the reading became per account.
+  const matching = windows.state === "asked"
+    ? windows.seen.windows.filter((one) => engineOf(one.engine) === engine || engineOf(one.engine) === terminal.program)
+    : [];
   const quotaText = windows.state === "mute" ? t("window.session.unreadable", { why: windows.why })
     : windows.state === "asking" ? t("window.session.asking")
     : matching.length === 0 ? t("window.session.quota_unknown", { engine })
@@ -46,7 +49,7 @@ export function SessionContext({ native, terminal, lines }: { native: boolean; t
     <button className="session-context__signal" type="button" aria-expanded={detail === "quota"} onClick={() => setDetail(detail === "quota" ? null : "quota")}>
       <strong>{t("window.session.quota")}</strong><span>{quotaText}</span>
     </button>
-    {detail === "quota" && <QuotaScreen native={native} now={Date.now() / 1000} readings={windows.state === "asked" ? { state: "asked", seen: matching } : windows} />}
+    {detail === "quota" && <QuotaScreen native={native} now={Date.now() / 1000} readings={windows.state === "asked" ? { state: "asked", seen: { windows: matching, unreachable: windows.seen.unreachable } } : windows} />}
   </aside>;
 }
 

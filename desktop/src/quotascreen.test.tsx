@@ -44,7 +44,7 @@ describe("the quota screen", () => {
   });
 
   test("EVERY WINDOW IS SHOWN, including one this version has no name for", async () => {
-    engine({ quota: WINDOWS });
+    engine({ quota: { windows: WINDOWS, unreachable: [] } });
     const { container } = render(<QuotaScreen native now={NOW} />);
 
     await waitFor(() => expect(screen.getByText("5 hours")).toBeTruthy());
@@ -66,7 +66,7 @@ describe("the quota screen", () => {
       core: {
         invoke: (command: string) => {
           asked.push(command);
-          return Promise.resolve(command === "quota" ? WINDOWS : undefined);
+          return Promise.resolve(command === "quota" ? { windows: WINDOWS, unreachable: [] } : undefined);
         },
       },
     };
@@ -74,5 +74,36 @@ describe("the quota screen", () => {
 
     await waitFor(() => expect(screen.getByText("5 hours")).toBeTruthy());
     expect(asked).toEqual(["quota"]);
+  });
+});
+
+/** **AN ACCOUNT THAT DID NOT ANSWER IS NOT ONE WITH ROOM.** The refusals were
+ * dropped unless every account failed, so five were silent while one answered. */
+describe("the accounts that did not answer", () => {
+  const SOME_ANSWERED = {
+    windows: WINDOWS,
+    unreachable: [
+      { account: "a-command-line · someone@example.test", why: "the engine refused: OAuth access token has expired. Re-authenticate to continue." },
+    ],
+  };
+
+  test("ONE ACCOUNT OUT IS SHOWN WHILE ANOTHER ANSWERS", async () => {
+    engine({ quota: SOME_ANSWERED });
+    const { container } = render(<QuotaScreen native now={NOW} />);
+
+    // Still not an error screen: what was read is drawn.
+    await waitFor(() => expect(container.textContent).toContain("61.4"));
+    expect(container.textContent, "the account that is out is not named").toContain(
+      "someone@example.test",
+    );
+    expect(container.textContent).toContain("Re-authenticate to continue");
+  });
+
+  test("EVERY ACCOUNT OUT IS A SCREENFUL OF THEM, not an empty quota", async () => {
+    engine({ quota: { windows: [], unreachable: SOME_ANSWERED.unreachable } });
+    const { container } = render(<QuotaScreen native now={NOW} />);
+
+    await waitFor(() => expect(container.textContent).toContain("someone@example.test"));
+    expect(container.textContent).not.toContain("no window at all");
   });
 });

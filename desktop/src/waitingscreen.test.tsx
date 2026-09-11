@@ -23,7 +23,7 @@ function answered(sources: Partial<Sources>): Sources {
     open: { state: "answered", value: [] },
     handed: { state: "answered", value: {} },
     history: { state: "answered", value: [] },
-    quota: { state: "answered", value: [] },
+    quota: { state: "answered", value: { windows: [], unreachable: [] } },
     terminals: { state: "answered", value: { answer: "seen", ttys: [] } },
     ...sources,
   };
@@ -220,7 +220,7 @@ describe("the order is the cost to the person", () => {
         sources={answered({
           // Handed last on purpose: an order nobody sorted is the order the
           // sources happened to arrive in.
-          quota: { state: "answered", value: [quotaWindow("claude", 0.97)] },
+          quota: { state: "answered", value: { windows: [quotaWindow("claude", 0.97)], unreachable: [] } },
           history: {
             state: "answered",
             value: [execution("r2", "failed", NOW - 3600, { steps_broke: 1, steps_went: 0 })],
@@ -345,7 +345,7 @@ describe("reading the engine for itself", () => {
             return Promise.resolve([handedStep("review", NOW - 600)]);
           }
           if (command === "execution_history") return Promise.resolve([]);
-          if (command === "quota") return Promise.resolve([]);
+          if (command === "quota") return Promise.resolve({ windows: [], unreachable: [] });
           if (command === "terminals_abandoned") return Promise.resolve({ answer: "seen", ttys: [] });
           return Promise.reject(new Error(`no ${command}`));
         },

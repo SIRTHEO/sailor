@@ -14,7 +14,7 @@ import {
   type HandedStep,
   type OpenRun,
 } from "./engine";
-import { quota, windowName, type Window as QuotaWindow } from "./quota";
+import { quota, windowName, type Quota, type Window as QuotaWindow } from "./quota";
 import { abandonedTerminals, type Abandoned } from "./terminal";
 
 /** The state a row carries. Drawn as a shape, and said as a word beside it. */
@@ -197,12 +197,26 @@ export function brokenDecisions(history: Execution[], since: number): Decision[]
   }));
 }
 
-/** The provider windows close enough to their limit to refuse the next run. */
+/** The windows near their limit, **and the accounts that did not answer**: one
+ * nobody can read answers nothing, which reads exactly like one with room. */
 export function quotaDecisions(
-  windows: QuotaWindow[],
+  read: Quota,
   now: number,
   near: number = NEAR_ITS_LIMIT,
 ): Decision[] {
+  const out: Decision[] = read.unreachable.map((one) => ({
+    id: `unreachable/${one.account}`,
+    state: "quota" as const,
+    question: `${one.account} did not answer, so nothing is known about its quota`,
+    context: one.why,
+    since: null,
+    runId: null,
+    stepId: null,
+  }));
+  return out.concat(near_the_limit(read.windows, now, near));
+}
+
+function near_the_limit(windows: QuotaWindow[], now: number, near: number): Decision[] {
   return windows
     .filter((one) => one.spent_fraction >= near)
     .map((one) => ({
@@ -262,7 +276,7 @@ export interface Sources {
   terminals: Asked<Abandoned>;
   handed: Asked<Record<string, HandedStep[]>>;
   history: Asked<Execution[]>;
-  quota: Asked<QuotaWindow[]>;
+  quota: Asked<Quota>;
 }
 
 /** How many there are, so «all of them are mute» is not a hand-kept number. */

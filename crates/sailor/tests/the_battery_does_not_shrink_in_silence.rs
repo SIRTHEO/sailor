@@ -18,7 +18,7 @@ const FLOW_FILES_TODAY: usize = 19;
 /// `#[test]`**, so counting that mark alone left 489 tests under no ratchet at
 /// all — fault 122, which is fault 52 in the half of the tree nobody taught the
 /// counter to see.
-const WINDOW_TESTS_TODAY: usize = 632;
+const WINDOW_TESTS_TODAY: usize = 634;
 
 /// How far a seed may sit from the tree, either way. **Zero.** A seed is a
 /// number in a file, and a file merges: a merge keeping the older side would

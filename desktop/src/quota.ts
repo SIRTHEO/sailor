@@ -56,9 +56,31 @@ export function catalogue(): Promise<Catalogue> {
   return ask<Catalogue>("models_catalogue");
 }
 
+/** **NOT AN ACCOUNT WITH ROOM.** Sailor never renews a token — that breaks the
+ * command line's own access — so it repeats what the engine said. */
+export interface Unreachable {
+  /** «engine · account», as the reading labels it. */
+  account: string;
+  why: string;
+}
+
+/**
+ * The engine a reading belongs to, out of its «engine · account» label: a match
+ * on the whole label finds nothing where it used to find every window.
+ */
+export function engineOf(label: string): string {
+  return label.split(" · ")[0];
+}
+
+/** What was read, and who did not answer: both, always. */
+export interface Quota {
+  windows: Window[];
+  unreachable: Unreachable[];
+}
+
 /** Costs nothing and calls no model. */
-export function quota(): Promise<Window[]> {
-  return ask<Window[]>("quota");
+export function quota(): Promise<Quota> {
+  return ask<Quota>("quota");
 }
 
 export function setModel(kind: string, model_id: string): Promise<void> {

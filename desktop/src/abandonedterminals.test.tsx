@@ -20,7 +20,7 @@ function sources(terminals: Sources["terminals"]): Sources {
     open: { state: "answered", value: [] },
     handed: { state: "answered", value: {} },
     history: { state: "answered", value: [] },
-    quota: { state: "answered", value: [] },
+    quota: { state: "answered", value: { windows: [], unreachable: [] } },
     terminals,
   };
 }
