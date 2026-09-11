@@ -1,0 +1,16 @@
+$ npm run check:bundle with every FlowMap file moved aside: the ceiling at HEAD, without me
+     2.43 kB  Demo-CaoVtBdf.js
+     0.59 kB  ask-CJCsSDn6.js
+     0.52 kB  quota-BuBBX5Aq.js
+
+  133.32 kB of woff2 across 2 subsets
+
+the bundle grew:
+  index-v-8ZIeb2.js is 775.66 kB against a ceiling of 748 kB. Move a section behind `React.lazy`, or say in the commit why the ceiling rises.
+exit=0
+
+NOTE: the `exit=0` above is `tail`'s, not the check's — the run was piped. The
+check's verdict is the line it printed, and it is the same line, on the same
+775.66 kB, as in check-bundle-after.txt where my files are in place. The
+ceiling was already exceeded at HEAD: this red is not mine and I did not touch
+the seed.

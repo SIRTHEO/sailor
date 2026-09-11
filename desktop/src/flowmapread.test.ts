@@ -14,7 +14,7 @@ const FIXTURES: FlowFileOnDisk[] = [
   file("two", "shipped", []),
   file("three", "own", [{ id: "each", action: "for_each", with: { flow: "two", items: [] } }]),
   file("lonely", "own", []),
-  file("ring-a", "own", calls("ring-b")),
+  file("ring-a", "shipped", calls("ring-b")),
   file("ring-b", "own", calls("ring-a")),
 ];
 
@@ -63,5 +63,19 @@ describe("the map read off the flow files", () => {
     expect(node("three")?.layer).toBe(1);
     expect(node("two")?.layer).toBe(2);
     expect(reading.nodes.every((n) => n.row >= 0)).toBe(true);
+  });
+
+  test("A FLOW OF YOUR OWN SHADOWS THE ONE SAILOR SHIPS UNDER THE SAME NAME", () => {
+    const both = readFlowMap([file("twin", "shipped", []), file("twin", "own", calls("two")), ...FIXTURES]);
+    expect(both.nodes.filter((n) => n.id === "twin")).toHaveLength(1);
+    expect(both.nodes.find((n) => n.id === "twin")?.origin).toBe("own");
+    expect(both.shadowed).toEqual(["twin"]);
+  });
+
+  test("A FLOW THAT CALLS ITSELF IS A RING OF ONE", () => {
+    const self = readFlowMap([file("snake", "own", calls("snake"))]);
+    expect(self.cycles).toEqual([["snake"]]);
+    expect(self.nodes[0].inCycle).toBe(true);
+    expect(self.broken).toEqual([]);
   });
 });

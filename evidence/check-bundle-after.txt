@@ -1,0 +1,54 @@
+$ npm run check:bundle
+
+> sailor-desktop@0.1.0 check:bundle
+> tsx scripts/check-bundle.ts
+
+vite v6.4.3 building for production...
+transforming...
+✓ 2200 modules transformed.
+rendering chunks...
+[plugin vite:reporter] 
+(!) /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--1--1789132222644031000/the_agent/desktop/src/running.ts is dynamically imported by /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--1--1789132222644031000/the_agent/desktop/src/RunningScreen.tsx but also statically imported by /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--1--1789132222644031000/the_agent/desktop/src/RunningScreen.tsx, dynamic import will not move module into another chunk.
+
+computing gzip size...
+dist/index.html                                           0.39 kB │ gzip:   0.27 kB
+dist/assets/inter-latin-wght-normal-Dx4kXJAl.woff2       48.26 kB
+dist/assets/inter-latin-ext-wght-normal-DO1Apj_S.woff2   85.07 kB
+dist/assets/xterm-DYP7pi_n.css                            4.15 kB │ gzip:   1.67 kB
+dist/assets/index-BPMH1U-u.css                          147.29 kB │ gzip:  23.85 kB
+dist/assets/quota-BNj9lwzb.js                             0.52 kB │ gzip:   0.34 kB
+dist/assets/ask-Bntfq1HQ.js                               0.59 kB │ gzip:   0.34 kB
+dist/assets/Demo-DCJcl6-j.js                              2.43 kB │ gzip:   1.19 kB
+dist/assets/ChangesScreen-Cn2rYZqM.js                     2.56 kB │ gzip:   1.09 kB
+dist/assets/Sketch-2jZKiL07.js                            4.02 kB │ gzip:   1.59 kB
+dist/assets/WaitingScreen-DcIq7shZ.js                     8.59 kB │ gzip:   3.25 kB
+dist/assets/Memory-Dc3FZdh6.js                           23.40 kB │ gzip:   6.76 kB
+dist/assets/TerminalsSection-D9mMp9HN.js                 35.45 kB │ gzip:  11.69 kB
+dist/assets/SailorScreen-BskuHIOC.js                     36.67 kB │ gzip:   9.61 kB
+dist/assets/xterm-2bzttWbK.js                           292.19 kB │ gzip:  72.37 kB
+dist/assets/index-Cz91vQDM.js                           775.67 kB │ gzip: 248.89 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 6.85s
+
+the chunks, heaviest first:
+   775.66 kB  index-Cz91vQDM.js
+   292.19 kB  xterm-2bzttWbK.js
+    36.66 kB  SailorScreen-BskuHIOC.js
+    35.45 kB  TerminalsSection-D9mMp9HN.js
+    23.39 kB  Memory-Dc3FZdh6.js
+     8.59 kB  WaitingScreen-DcIq7shZ.js
+     4.02 kB  Sketch-2jZKiL07.js
+     2.56 kB  ChangesScreen-Cn2rYZqM.js
+     2.43 kB  Demo-DCJcl6-j.js
+     0.59 kB  ask-Bntfq1HQ.js
+     0.52 kB  quota-BNj9lwzb.js
+
+  133.32 kB of woff2 across 2 subsets
+
+the bundle grew:
+  index-Cz91vQDM.js is 775.66 kB against a ceiling of 748 kB. Move a section behind `React.lazy`, or say in the commit why the ceiling rises.
+exit=1

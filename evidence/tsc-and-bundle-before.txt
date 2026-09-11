@@ -1,0 +1,39 @@
+$ npx tsc --noEmit
+src/flowmapread.test.ts(2,50): error TS2307: Cannot find module './flowmapread' or its corresponding type declarations.
+src/flowmapread.test.ts(23,52): error TS7006: Parameter 'n' implicitly has an 'any' type.
+src/flowmapread.test.ts(26,36): error TS7006: Parameter 'c' implicitly has an 'any' type.
+src/flowmapread.test.ts(28,38): error TS7006: Parameter 'c' implicitly has an 'any' type.
+src/flowmapread.test.ts(32,34): error TS7006: Parameter 'n' implicitly has an 'any' type.
+src/flowmapread.test.ts(32,54): error TS7006: Parameter 'n' implicitly has an 'any' type.
+src/flowmapread.test.ts(51,37): error TS7006: Parameter 'c' implicitly has an 'any' type.
+src/flowmapread.test.ts(52,37): error TS7006: Parameter 'c' implicitly has an 'any' type.
+src/flowmapread.test.ts(57,29): error TS7006: Parameter 'u' implicitly has an 'any' type.
+src/flowmapread.test.ts(65,33): error TS7006: Parameter 'n' implicitly has an 'any' type.
+exit=2
+
+$ npm run check:bundle
+
+> sailor-desktop@0.1.0 check:bundle
+> tsx scripts/check-bundle.ts
+
+node:net:1918
+      const error = new UVExceptionWithHostPort(rval, 'listen', address, port);
+                    ^
+
+Error: listen EPERM: operation not permitted /tmp/claude-501/tsx-501/86269.pipe
+    at Server.setupListenHandle [as _listen2] (node:net:1918:21)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2119:5)
+    at file:///Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--1--1789132222644031000/the_agent/desktop/node_modules/tsx/dist/cli.mjs:53:31472
+    at new Promise (<anonymous>)
+    at createIpcServer (file:///Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--1--1789132222644031000/the_agent/desktop/node_modules/tsx/dist/cli.mjs:53:31450)
+    at async file:///Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--1--1789132222644031000/the_agent/desktop/node_modules/tsx/dist/cli.mjs:55:542 {
+  code: 'EPERM',
+  errno: -1,
+  syscall: 'listen',
+  address: '/tmp/claude-501/tsx-501/86269.pipe',
+  port: -1
+}
+
+Node.js v22.22.3
+exit=1

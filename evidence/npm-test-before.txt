@@ -1,9 +1,10 @@
+$ npm test  (baseline in this worktree; flowmapread.test.ts is my gate, already written and failing)
 
 > sailor-desktop@0.1.0 test
 > vitest run
 
 
- RUN  v4.1.11 /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789116836445668000--the_crew--3--1789116836493055000/the_agent/desktop
+ RUN  v4.1.11 /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--1--1789132222644031000/the_agent/desktop
 
 Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
 Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
@@ -12,10 +13,25 @@ Not implemented: HTMLCanvasElement's getContext() method: without installing the
 Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
 Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
 Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+ ❯ src/flowmapread.test.ts (0 test)
 
- Test Files  79 passed (79)
-      Tests  597 passed (597)
-   Start at  10:55:59
-   Duration  22.48s (transform 11.98s, setup 0ms, import 38.56s, tests 78.86s, environment 66.84s)
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
 
-exit=0
+ FAIL  src/flowmapread.test.ts [ src/flowmapread.test.ts ]
+Error: Cannot find module './flowmapread' imported from /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--1--1789132222644031000/the_agent/desktop/src/flowmapread.test.ts
+ ❯ src/flowmapread.test.ts:2:1
+      1| import { describe, expect, test } from "vitest";
+      2| import { readFlowMap, type FlowFileOnDisk } from "./flowmapread";
+       | ^
+      3|
+      4| function file(name: string, origin: "shipped" | "own", steps: unknown[…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 81 passed (82)
+      Tests  604 passed (604)
+   Start at  15:11:41
+   Duration  29.38s (transform 15.64s, setup 0ms, import 51.57s, tests 106.80s, environment 84.29s)
+
+exit=1

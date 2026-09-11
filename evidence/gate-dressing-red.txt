@@ -1,0 +1,8 @@
+$ a deliberate typo put into FlowMap.tsx, to see the dressing gate catch it
+AssertionError: classes that compile to nothing: expected [ 'justify-strat' ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [

@@ -1,0 +1,20 @@
+$ the reader run over the real flow files of this machine, read only
+files read: 51  nodes: 47  shipped: 15  own: 32
+shadowed by one of your own: consolidate-memories, empty-a-session-that-handed-on, take-the-next-fault, write-down-what-broke
+unread files: none
+rings: none
+
+THE VERDICT THE SURFACE PRINTS: «No flow calls a flow that is not there. Every name a step hands to subflow or for_each has a file.»
+
+edges:
+  ciclo-di-lavoro -subflow-> smista-il-lavoro
+  ciclo-di-lavoro -subflow-> sviluppa-sailor
+  la-squadra-sulla-finestra -for_each-> un-agente-su-un-compito
+  put-the-crew-to-work -for_each-> one-agent-on-one-task
+  route-a-breakage -subflow-> sviluppa-sailor
+
+flows nothing calls (43 of 47):
+  ask-astra-for-a-prompt, ask-astra-then-follow, ask-for-a-mandate, chiedi-all-indice, ciclo-di-lavoro, come-lo-risolvono-gli-altri, consolidate-memories, consult-a-strong-model, consult-astra, consult-fable, costruisci-una-pagina, decidi-la-direzione, delega-un-pezzo, dispatch-the-work, draft-a-flow, empty-a-session-that-handed-on, esamina-la-repo, esamina-la-repo-ramificando, esamina-la-repo-riscoprendo, find-the-dead-powers, free-the-machine, keep-the-index-fresh, la-squadra-sulla-finestra, migrate-to-sailor, misura-questa-sessione, notice-a-divergence, porta-una-superficie-alla-carta, prova-della-vista, prova-deposito, prova-deposito-letterale, prova-innesco, pubblica, put-the-crew-to-work, recall-a-decision, remember-in-the-graph, route-a-breakage, sistema-la-repo, sweep-the-tree, take-the-next-fault, traduci-documentazione-in-inglese, watch-the-crew, what-this-machine-has, write-down-what-broke
+
+on their own — nothing calls them and they call nothing: 39
+exit=0
