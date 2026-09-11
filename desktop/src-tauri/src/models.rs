@@ -122,13 +122,13 @@ pub(crate) fn quota() -> Result<Vec<Window>, String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |since| since.as_secs() as i64);
-    // Every engine whose descriptor declares a channel, none named here. The
-    // error's own words say what to do — «the token has been revoked» is cured
-    // by authenticating again — so they travel whole; a channel that does not
-    // answer is never a quota of zero, which is the reassuring direction.
+    // Every engine whose descriptor declares a channel, none named here, and
+    // **once per account rather than once per command line**: three claude
+    // homes answer three different numbers. A channel that does not answer is
+    // never a quota of zero, and the error's own words travel whole.
     let machine = toolbox::Machine::current();
     let catalog = toolbox::Catalog::load(&toolbox::default_sources(&machine));
-    let readings = toolbox::quota::read_all(&catalog, &machine, now);
+    let readings = sailor::remaining_cmd::per_profile(&catalog, &machine, now);
     if readings.is_empty() {
         return Err("no engine on this machine declares a channel to read its quota from".to_owned());
     }

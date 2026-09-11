@@ -105,7 +105,7 @@ fn dispatch(args: &[String]) -> Result<String, String> {
 /// engine's usual home the answer is one account's under the engine's name, so
 /// the others look like they have none. Where a profile moves the home the
 /// reading follows it; where no profile names that engine, the usual home answers.
-fn per_profile(
+pub fn per_profile(
     catalog: &toolbox::Catalog,
     machine: &toolbox::Machine,
     now: i64,
