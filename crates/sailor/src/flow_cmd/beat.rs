@@ -166,7 +166,7 @@ pub(super) fn tick_flows(sources: &[FlowSource]) -> Result<String, String> {
 type Starter<'a> = &'a mut dyn FnMut(&str, Option<&str>) -> Result<String, String>;
 
 /// How the beat picks a parked run up again. Handed in for the same reason.
-type Resumer<'a> = &'a mut dyn FnMut(&str) -> Result<String, String>;
+pub type Resumer<'a> = &'a mut dyn FnMut(&str) -> Result<String, String>;
 
 fn tick_flows_with(
     sources: &[FlowSource],
@@ -267,7 +267,10 @@ fn tick_flows_with(
                 .map_err(|error| error.to_string())?;
         }
     }
-    let (parked_said, woken, let_go) = ask_the_parked_again(sources, &glance, now, resume);
+    let (parked_said, woken, let_go) = match &glance.ledger {
+        Some(ledger) => ask_the_parked_again(sources, ledger, now, resume),
+        None => (String::new(), 0, 0),
+    };
     report.push_str(&parked_said);
     let _ = write!(
         report,
@@ -291,15 +294,12 @@ fn tick_flows_with(
 /// Fifty-six of the fifty-seven parked on this machine belong to a flow that
 /// was switched off by hand after it emptied a live session: waking them would
 /// repeat that harm, and leaving them is the litter fault 163 is about.
-fn ask_the_parked_again(
+pub fn ask_the_parked_again(
     sources: &[FlowSource],
-    glance: &Glance,
+    ledger: &Ledger,
     now: i64,
     resume: Resumer<'_>,
 ) -> (String, usize, usize) {
-    let Some(ledger) = &glance.ledger else {
-        return (String::new(), 0, 0);
-    };
     let Ok(parked) = ledger.runs_to_ask_again() else {
         return (String::new(), 0, 0);
     };
