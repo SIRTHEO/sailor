@@ -1,6 +1,6 @@
 {
   "id": "free-the-machine",
-  "description": "HOW FULL THIS MACHINE IS, AND WHAT SAILOR CAN GIVE BACK. Readings and one mechanical gesture, no engine at all, so this costs nothing and can run at every beat: a sweep that costs a call is a sweep somebody switches off the first day. WHY IT EXISTS: the supervisor has known how to answer this since it was written — what was started and never seen end, whether each pid still breathes, who holds the development port — and for months nothing outside its own tests called any of it. The lesson kept being learned by hand: a window's development server left open across a long session took the machine to eleven per cent free memory and two million pageouts, and it was found by a person looking, not by Sailor. WHAT EACH STEP DOES. «how_full» reads the free pages and the pageouts, which is the one pair that says whether the machine is swapping rather than merely busy; it needs no privilege and no engine. «what_sailor_lit» asks `sailor machine`, which lists what Sailor started and never saw end, keeping two questions apart — whether the pid still breathes, and whether anybody still wants it. A process whose run has ended is a leftover even while it breathes, and asked only the first question a dev server outliving its run by three hours looks exactly like one somebody is using. «free_what_is_over» closes the rows of processes that stopped breathing, which the store cannot notice on its own: a process killed from outside writes no ending and stays «running» for ever, and a list full of ghosts is a list nobody reads. «the_word» puts the two side by side, because «is this machine in trouble» is answered by the comparison and not by either number alone. WHAT IT DOES NOT DO, AND WHY. It kills nothing that still breathes. Sailor stops what Sailor started, through the road it started it by; a process that never passed through Sailor is one Sailor cannot free, and reaching for a pid it never wrote down would be guessing with a signal. Those are named in the answer and left to a person — and the cure for the next one is to start it through Sailor, not to widen what this may kill. WHY IT IS NOT ON A CLOCK. This ran every 1800 seconds, which is not a lifecycle: on an empty machine it woke to say nothing forty-eight times a day, and on a full one it waited out the rest of its half-hour. It now wakes on the state it exists to clear -- a row sailor still calls running over a process that is gone, or a build directory whose process and whose run are both over -- and the run clears it, so the condition that woke it is gone and nothing wakes it again until something is left behind. A condition a run cannot clear would spin for ever: that is why this one names exactly what `sailor machine free` puts back, and nothing else.",
+  "description": "HOW FULL THIS MACHINE IS, AND WHAT SAILOR CAN GIVE BACK. Readings and one mechanical gesture, no engine at all, so this costs nothing and can run at every beat: a sweep that costs a call is a sweep somebody switches off the first day. WHY IT EXISTS: the supervisor has known how to answer this since it was written — what was started and never seen end, whether each pid still breathes, who holds the development port — and for months nothing outside its own tests called any of it. The lesson kept being learned by hand: a window's development server left open across a long session took the machine to eleven per cent free memory and two million pageouts, and it was found by a person looking, not by Sailor. WHAT EACH STEP DOES. «how_full» reads the free pages and the pageouts, which is the one pair that says whether the machine is swapping rather than merely busy; it needs no privilege and no engine. «what_sailor_lit» asks `sailor machine`, which lists what Sailor started and never saw end, keeping two questions apart — whether the pid still breathes, and whether anybody still wants it. A process whose run has ended is a leftover even while it breathes, and asked only the first question a dev server outliving its run by three hours looks exactly like one somebody is using. «free_what_is_over» closes the rows of processes that stopped breathing, which the store cannot notice on its own: a process killed from outside writes no ending and stays «running» for ever, and a list full of ghosts is a list nobody reads. «sweep_the_trees» takes down the trees Sailor cut whose work the trunk already holds, which is the other half of what it leaves behind and the half nobody was clearing: eleven of them stood for two days holding seven gigabytes, each one knowing which run and which step had cut it and that the process was gone. It decides on history and never on files — a tree carrying a commit the trunk has not got is named and left standing, because a tree kept is only named and a tree taken down is gone. «the_word» puts them side by side, because «is this machine in trouble» is answered by the comparison and not by any one number alone. WHAT IT DOES NOT DO, AND WHY. It kills nothing that still breathes. Sailor stops what Sailor started, through the road it started it by; a process that never passed through Sailor is one Sailor cannot free, and reaching for a pid it never wrote down would be guessing with a signal. Those are named in the answer and left to a person — and the cure for the next one is to start it through Sailor, not to widen what this may kill. WHY IT IS NOT ON A CLOCK. This ran every 1800 seconds, which is not a lifecycle: on an empty machine it woke to say nothing forty-eight times a day, and on a full one it waited out the rest of its half-hour. It now wakes on the state it exists to clear -- a row sailor still calls running over a process that is gone, or a build directory whose process and whose run are both over -- and the run clears it, so the condition that woke it is gone and nothing wakes it again until something is left behind. A condition a run cannot clear would spin for ever: that is why it names exactly what this run puts back, and nothing else — what `sailor machine free` closes, and the trees `sailor worktree close --merged` would actually take down. A tree the trunk has not got is deliberately outside the condition: counting it would wake this flow at every beat of every day, and no run of it could ever clear the reason.",
   "graph": {
     "steps": [
       {
@@ -192,16 +192,61 @@
         }
       },
       {
-        "id": "the_word",
+        "id": "sweep_the_trees",
         "deps": [
-          "how_full",
           "free_what_is_over"
         ],
         "action": "shell_check",
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "printf '{\\n  \"machine\": %s,\\n  \"freed\": %s\\n}\\n' \"$FULL\" \"$FREED\"",
+          "command": "sailor worktree close --merged | sed 's/\"/\\\\\"/g' | awk 'BEGIN{printf \"{\\\"said\\\": \\\"\"} {printf \"%s\\\\n\", $0} END{print \"\\\"}\"}'",
+          "timeout_secs": 120,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "said": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "said"
+            ],
+            "allow_extra": false
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "command",
+            "timeout_secs"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
+        "id": "the_word",
+        "deps": [
+          "how_full",
+          "free_what_is_over",
+          "sweep_the_trees"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "printf '{\\n  \"machine\": %s,\\n  \"freed\": %s,\\n  \"trees\": %s\\n}\\n' \"$FULL\" \"$FREED\" \"$TREES\"",
           "timeout_secs": 30,
           "answer_shape": {
             "type": "object",
@@ -211,11 +256,15 @@
               },
               "freed": {
                 "type": "any"
+              },
+              "trees": {
+                "type": "any"
               }
             },
             "required": [
               "machine",
-              "freed"
+              "freed",
+              "trees"
             ],
             "allow_extra": false
           },
@@ -225,6 +274,9 @@
             },
             "FREED": {
               "$json": "/free_what_is_over"
+            },
+            "TREES": {
+              "$json": "/sweep_the_trees"
             }
           }
         },

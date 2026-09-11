@@ -289,6 +289,36 @@ pub fn close_if_the_trunk_holds_it(repo: &Path, tree: &Path, register: &dyn Open
     Swept::Closed(close_tree(repo, tree, register))
 }
 
+/// Whether a sweep run now would actually take a tree down.
+///
+/// **IT NAMES EXACTLY WHAT THE SWEEP PUTS BACK, AND NOTHING ELSE.** A flow
+/// woken by a state must be able to clear the state it woke on: counting a
+/// tree kept because the trunk has not got its work would wake that flow at
+/// every beat for ever, since no run of it could ever take that tree down.
+///
+/// The free question first and git only for what survives it: a register
+/// holding a directory that is gone is answered from the filesystem, and on a
+/// machine with no orphan trees this asks git nothing at all.
+pub fn a_tree_is_left_behind(register: &dyn OpenTrees) -> bool {
+    let Ok(open) = register.trees_left_open() else {
+        // A register that will not open is not a machine with trees left on
+        // it: waking a sweep on a failed reading would spin on the failure.
+        return false;
+    };
+    let standing: Vec<&OpenTree> = open
+        .iter()
+        .filter(|tree| Path::new(&tree.path).exists())
+        .collect();
+    // A row whose directory is gone: the sweep clears it, so it counts, and
+    // it costs nothing to see.
+    if standing.len() < open.len() {
+        return true;
+    }
+    standing
+        .iter()
+        .any(|tree| the_trunk_already_holds(Path::new(&tree.repo), Path::new(&tree.path)))
+}
+
 fn take_down(repo: &Path, tree: &Path) -> Result<(), String> {
     let at = tree.to_string_lossy().into_owned();
     git(repo, &["worktree", "remove", &at])?;
@@ -662,6 +692,78 @@ mod tests {
         );
         assert!(work_is_there, "the work was lost");
         assert!(listed.contains(&dirty), "{listed}");
+    }
+
+    /// **THE CONDITION ANSWERS FOR WHAT THE SWEEP WOULD ACTUALLY TAKE DOWN.**
+    /// A tree carrying a commit the trunk has not got is one no run of the
+    /// sweep can clear, so counting it would wake that flow at every beat for
+    /// ever; a register still holding a directory that is gone is the cheap
+    /// half, and it counts, because the sweep clears that row.
+    #[test]
+    fn only_a_tree_a_sweep_could_take_down_wakes_the_sweep() {
+        let (scratch, repo) = a_repository("left-behind");
+        // The trunk is named, as the sweep's own test names it: `git init`
+        // leaves whatever branch this machine's git calls first, and the
+        // predicate asks after the trunk by name.
+        assert!(run_git(&repo, &["branch", "-M", branches::TRUNK])
+            .status
+            .success());
+        let page = APage::default();
+
+        let empty = a_tree_is_left_behind(&page);
+
+        let carrying = tree_for(&repo, "run-1", "carrying", &page, None).expect("a tree");
+        std::fs::write(carrying.join("only-here"), "a thought of its own
+").expect("work");
+        assert!(run_git(&carrying, &["add", "only-here"]).status.success());
+        assert!(run_git(&carrying, &["commit", "-q", "-m", "only here"])
+            .status
+            .success());
+        let only_unmerged_work = a_tree_is_left_behind(&page);
+
+        let held = tree_for(&repo, "run-1", "held", &page, None).expect("a tree");
+        let the_trunk_holds_one = a_tree_is_left_behind(&page);
+
+        std::fs::remove_dir_all(&held).expect("the directory goes");
+        let the_register_outlived_it = a_tree_is_left_behind(&page);
+        let _ = std::fs::remove_dir_all(&scratch);
+
+        assert!(!empty, "an empty register woke a sweep with nothing to do");
+        assert!(
+            !only_unmerged_work,
+            "a tree the trunk has not got woke a sweep that could never take it down"
+        );
+        assert!(the_trunk_holds_one, "a tree the trunk holds woke nothing");
+        assert!(
+            the_register_outlived_it,
+            "a row over a directory that is gone woke nothing"
+        );
+    }
+
+    /// A register that cannot be read at all. `ARefusal` will not take a
+    /// write and still lists cleanly, which would have let the test below
+    /// pass without ever meeting a failed reading.
+    struct AShutPage;
+
+    impl OpenTrees for AShutPage {
+        fn tree_opened(&self, _tree: &OpenTree) -> Result<(), String> {
+            Err("shut".to_owned())
+        }
+
+        fn tree_closed(&self, _path: &str) -> Result<(), String> {
+            Err("shut".to_owned())
+        }
+
+        fn trees_left_open(&self) -> Result<Vec<OpenTree>, String> {
+            Err("the page will not open".to_owned())
+        }
+    }
+
+    /// A register that will not open is not a machine with trees left on it:
+    /// waking on a failed reading spins on the failure and never clears it.
+    #[test]
+    fn a_register_that_will_not_open_wakes_nothing() {
+        assert!(!a_tree_is_left_behind(&AShutPage));
     }
 
     /// The refusal is the safety property: what overrides it is never written.
