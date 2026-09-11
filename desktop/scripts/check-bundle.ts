@@ -4,6 +4,7 @@
  * left behind — a gate reading yesterday's output measures nothing.
  */
 import { execFileSync } from "node:child_process";
+import { readdirSync, statSync } from "node:fs";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -42,7 +43,28 @@ function kb(value: number): string {
   return `${value.toFixed(2)} kB`;
 }
 
-execFileSync("npx", ["vite", "build"], { cwd: root, stdio: "inherit" });
+/**
+ * **THE HEAVIEST LANGUAGE, NOT THE DEFAULT ONE.** The window carries one
+ * catalogue, the one it was built to speak, so the ceiling measured on English
+ * — which is also the smallest — would say nothing about the build a person
+ * actually runs. Measured here: English 675 kB, Italian 758.
+ */
+function theHeaviestLanguage(): string {
+  const here = new URL("../../i18n/", import.meta.url);
+  const weighed = readdirSync(here)
+    .filter((name) => name.endsWith(".json"))
+    .map((name) => [name.replace(/\.json$/, ""), statSync(new URL(name, here)).size] as const)
+    .sort((one, other) => other[1] - one[1]);
+  return weighed[0]?.[0] ?? "";
+}
+
+const spoken = theHeaviestLanguage();
+console.log(`the build speaks «${spoken}», the heaviest catalogue there is`);
+execFileSync("npx", ["vite", "build"], {
+  cwd: root,
+  stdio: "inherit",
+  env: { ...process.env, SAILOR_LANG: spoken },
+});
 
 const chunks = assetsOf(".js");
 const fonts = assetsOf(".woff2");

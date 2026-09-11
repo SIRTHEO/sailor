@@ -1,15 +1,16 @@
-import en from "../../i18n/en.json";
-import it from "../../i18n/it.json";
+// Resolved by `theLanguageLayer` in `vite.config.ts`: one catalogue, the
+// language this build speaks with English already filled in underneath.
+import catalogue, { SPOKEN } from "virtual:language-layer";
 
 /**
- * **ENGLISH IS THE SOURCE, ITALIAN IS A LAYER ON TOP.** The other way round the
- * default rots first: a key born Italian would reach whoever publishes as a
- * sentence they cannot read, with nothing turning red. This way a key with no
- * Italian falls back to English, which is behaviour and not a hole.
+ * **ENGLISH IS THE SOURCE, EVERY OTHER LANGUAGE A LAYER ON TOP.** The other way
+ * round the default rots first: a key born Italian would reach whoever
+ * publishes as a sentence they cannot read, with nothing turning red.
  */
-export const CATALOGUES: Record<string, Record<string, string>> = { en, it };
-
 export const SOURCE_LANGUAGE = "en";
+
+/** What this build says, by the one language it says it in. */
+export const CATALOGUES: Record<string, Record<string, string>> = { [SPOKEN]: catalogue };
 
 /**
  * The language the window speaks. Comes from `SAILOR_LANG`, never from the
@@ -39,13 +40,13 @@ export function look(
   key: string,
   vars?: Record<string, string | number>,
 ): string | undefined {
-  const text = CATALOGUES[lang]?.[key] ?? CATALOGUES[SOURCE_LANGUAGE][key];
+  // A language this build does not speak is answered in the one it does: the
+  // window says one thing, and a key with no sentence is the only hole here.
+  const text = CATALOGUES[lang]?.[key] ?? catalogue[key];
   return text === undefined ? undefined : fill(text, vars);
 }
 
-const LANGUAGE = pickLanguage(
-  (import.meta as { env?: Record<string, string | undefined> }).env?.SAILOR_LANG,
-);
+const LANGUAGE = SPOKEN;
 
 /** What the window says for a key it declares itself. */
 export function t(key: string, vars?: Record<string, string | number>): string {
@@ -64,7 +65,7 @@ export function tryT(key: string, vars?: Record<string, string | number>): strin
 /** Every entry under a prefix, keyed by the last segment. */
 export function group(prefix: string): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const key of Object.keys(CATALOGUES[SOURCE_LANGUAGE])) {
+  for (const key of Object.keys(catalogue)) {
     if (key.startsWith(prefix)) out[key.slice(prefix.length)] = t(key);
   }
   return out;

@@ -1,9 +1,14 @@
 import { describe, expect, test } from "vitest";
 import { CATALOGUES, SOURCE_LANGUAGE, group, look, pickLanguage, t, tryT } from "./i18n";
 import { STATE_COLOR } from "./StepNode";
+// **THE FILES, NOT WHAT THIS BUILD CARRIES.** The window ships one language
+// layer, the one it was built to speak; whether the two files agree is a
+// question about the files, and it must be asked of every language there is.
+import enOnDisk from "../../i18n/en.json";
+import itOnDisk from "../../i18n/it.json";
 
-const en = CATALOGUES.en;
-const it = CATALOGUES.it;
+const en = enOnDisk as Record<string, string>;
+const it = itOnDisk as Record<string, string>;
 
 describe("the two catalogues are one catalogue", () => {
   /**
@@ -58,19 +63,31 @@ describe("the two catalogues are one catalogue", () => {
 });
 
 describe("what the window reads", () => {
-  test("A MISSING ITALIAN ENTRY FALLS BACK TO ENGLISH, never to the bare key", () => {
+  /**
+   * **A KEY THE LAYER HAS NOT GOT IS ANSWERED IN ENGLISH, NEVER BY ITS NAME.**
+   * Asked of whichever layer this build carries, and of one it does not: both
+   * must come back a sentence, because «run.failure.check_failed» on screen is
+   * the shape of the hole this rule exists to close.
+   */
+  test("A MISSING ENTRY FALLS BACK TO ENGLISH, never to the bare key", () => {
     const key = "run.failure.check_failed";
-    expect(look("it", key)).toBe(it[key]);
-    // The same key with no Italian: the answer is the English sentence, and it
-    // is a sentence, not «run.failure.check_failed» on screen.
     const orphaned = "window.step.state.went";
-    const saved = it[orphaned];
-    delete it[orphaned];
-    try {
-      expect(look("it", orphaned)).toBe(en[orphaned]);
-    } finally {
-      it[orphaned] = saved;
-    }
+    const spoken = pickLanguage(undefined);
+    const carried = CATALOGUES[spoken];
+
+    // A language this build does not speak is answered in the one it does.
+    expect(look("de", key)).toBe(carried[key]);
+    expect(look("de", orphaned)).toBe(carried[orphaned]);
+
+    // A key with no sentence at all comes back nothing, never its own name.
+    expect(look(spoken, "window.nothing.declares.this")).toBeUndefined();
+
+    // And every English key has an answer, whichever language shipped: the
+    // fallback is put together at build time, so a gap in a layer is filled
+    // before the window ever asks.
+    const unanswered = Object.keys(en).filter((one) => carried[one] === undefined);
+    expect(unanswered, `keys the built catalogue cannot answer: ${unanswered.slice(0, 5).join(", ")}`)
+      .toEqual([]);
   });
 
   test("a key neither language declares comes back undefined, not invented", () => {
@@ -79,22 +96,37 @@ describe("what the window reads", () => {
   });
 
   test("substitutions are filled by name, and an unknown name is left alone", () => {
-    en["test.only.greeting"] = "Add to «{name}», not to {other}";
+    // The catalogue this build carries, not the file on disk: the two are put
+    // together when the window is built and `t` reads the answer.
+    const spoken = CATALOGUES[pickLanguage(undefined)];
+    spoken["test.only.greeting"] = "Add to «{name}», not to {other}";
     try {
       expect(t("test.only.greeting", { name: "staffetta" })).toBe(
         "Add to «staffetta», not to {other}",
       );
     } finally {
-      delete en["test.only.greeting"];
+      delete spoken["test.only.greeting"];
     }
   });
 
+  /**
+   * **A BUILD DOES NOT CLAIM A LANGUAGE IT DOES NOT CARRY.** The layer is
+   * chosen when the window is built, so asking for one that did not ship must
+   * answer the source and not a name with no catalogue behind it.
+   */
   test("THE LANGUAGE FALLS BACK TO ENGLISH, not to the machine's locale", () => {
+    const carried = Object.keys(CATALOGUES).filter((one) => one !== SOURCE_LANGUAGE);
+
     expect(pickLanguage(undefined)).toBe(SOURCE_LANGUAGE);
     expect(pickLanguage("")).toBe(SOURCE_LANGUAGE);
     expect(pickLanguage("de")).toBe(SOURCE_LANGUAGE);
-    expect(pickLanguage("it")).toBe("it");
-    expect(pickLanguage("it-IT")).toBe("it");
+    for (const spoken of carried) {
+      expect(pickLanguage(spoken)).toBe(spoken);
+      expect(pickLanguage(`${spoken}-${spoken.toUpperCase()}`)).toBe(spoken);
+    }
+    // This build carries only the source, so a layer it did not ship is not a
+    // language it speaks — the case that used to be asserted the other way.
+    if (carried.length === 0) expect(pickLanguage("it")).toBe(SOURCE_LANGUAGE);
   });
 });
 
