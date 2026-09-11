@@ -299,13 +299,19 @@ pub fn a_tree_is_left_behind(register: &dyn OpenTrees) -> bool {
         .iter()
         .filter(|tree| Path::new(&tree.path).exists())
         .collect();
-    // A row over a directory that is gone: cleared, and seen without git.
     if standing.len() < open.len() {
         return true;
     }
-    standing
-        .iter()
-        .any(|tree| the_trunk_already_holds(Path::new(&tree.repo), Path::new(&tree.path)))
+    standing.iter().any(|tree| {
+        let at = Path::new(&tree.path);
+        the_trunk_already_holds(Path::new(&tree.repo), at) && nothing_is_uncommitted_in(at)
+    })
+}
+
+/// Git refuses a tree with untracked or modified files, and three such woke
+/// the sweep for ever (fault 166). Unreadable is «not clean»: it stays asleep.
+fn nothing_is_uncommitted_in(tree: &Path) -> bool {
+    git(tree, &["status", "--porcelain"]).is_ok_and(|said| said.trim().is_empty())
 }
 
 fn take_down(repo: &Path, tree: &Path) -> Result<(), String> {
@@ -683,8 +689,7 @@ mod tests {
         assert!(listed.contains(&dirty), "{listed}");
     }
 
-    /// **THE CONDITION ANSWERS FOR WHAT THE SWEEP WOULD ACTUALLY TAKE DOWN**,
-    /// and a commit the trunk has not got is what it must not answer for.
+    /// **FOR WHAT THE SWEEP WOULD TAKE DOWN**, never for what it may attempt.
     #[test]
     fn only_a_tree_a_sweep_could_take_down_wakes_the_sweep() {
         let (scratch, repo) = a_repository("left-behind");
@@ -705,6 +710,10 @@ mod tests {
         let only_unmerged_work = a_tree_is_left_behind(&page);
 
         let held = tree_for(&repo, "run-1", "held", &page, None).expect("a tree");
+        std::fs::write(held.join("a-scratch-file"), "not committed\n").expect("a file");
+        let git_would_refuse_it = a_tree_is_left_behind(&page);
+
+        std::fs::remove_file(held.join("a-scratch-file")).expect("the file goes");
         let the_trunk_holds_one = a_tree_is_left_behind(&page);
 
         std::fs::remove_dir_all(&held).expect("the directory goes");
@@ -715,6 +724,10 @@ mod tests {
         assert!(
             !only_unmerged_work,
             "a tree the trunk has not got woke a sweep that could never take it down"
+        );
+        assert!(
+            !git_would_refuse_it,
+            "a tree git would refuse woke a sweep that could never take it down"
         );
         assert!(the_trunk_holds_one, "a tree the trunk holds woke nothing");
         assert!(
