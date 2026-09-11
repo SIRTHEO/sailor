@@ -153,16 +153,27 @@ fn last_runs() -> LastRuns {
 /// exactly what it would have decided without the interruption — which is the
 /// one property a thing that runs forever has to have on a machine that sleeps.
 pub(super) fn tick_flows(sources: &[FlowSource]) -> Result<String, String> {
-    tick_flows_with(sources, last_runs(), &mut |name, mandate| {
-        run_flow(sources, name, mandate)
-    })
+    tick_flows_with(
+        sources,
+        last_runs(),
+        &mut |name, mandate| run_flow(sources, name, mandate),
+        &mut super::run_and_resume::resume_run,
+    )
 }
 
 /// How the beat starts a flow, given its name and a mandate. Handed in so a
 /// test can watch what the beat asks for without running anything.
 type Starter<'a> = &'a mut dyn FnMut(&str, Option<&str>) -> Result<String, String>;
 
-fn tick_flows_with(sources: &[FlowSource], last: LastRuns, start: Starter<'_>) -> Result<String, String> {
+/// How the beat picks a parked run up again. Handed in for the same reason.
+type Resumer<'a> = &'a mut dyn FnMut(&str) -> Result<String, String>;
+
+fn tick_flows_with(
+    sources: &[FlowSource],
+    last: LastRuns,
+    start: Starter<'_>,
+    resume: Resumer<'_>,
+) -> Result<String, String> {
     let known = known_flows(sources);
     if known.is_empty() {
         return Ok(nothing_found(sources));
@@ -256,8 +267,99 @@ fn tick_flows_with(sources: &[FlowSource], last: LastRuns, start: Starter<'_>) -
                 .map_err(|error| error.to_string())?;
         }
     }
-    let _ = write!(report, "{ran} run, {held} held");
+    let (parked_said, woken, let_go) = ask_the_parked_again(sources, &glance, now, resume);
+    report.push_str(&parked_said);
+    let _ = write!(
+        report,
+        "{}",
+        catalogue::say(
+            "cli.flow.beat_tally",
+            &[
+                ("ran", &ran.to_string()),
+                ("held", &held.to_string()),
+                ("woken", &woken.to_string()),
+                ("released", &let_go.to_string()),
+            ],
+        )
+    );
     Ok(report)
+}
+
+/// What the beat does with the runs parked on a step that answered «not yet».
+///
+/// **A RUN WHOSE FLOW NO LONGER STARTS BY ITSELF IS LET GO, NEVER WOKEN.**
+/// Fifty-six of the fifty-seven parked on this machine belong to a flow that
+/// was switched off by hand after it emptied a live session: waking them would
+/// repeat that harm, and leaving them is the litter fault 163 is about.
+fn ask_the_parked_again(
+    sources: &[FlowSource],
+    glance: &Glance,
+    now: i64,
+    resume: Resumer<'_>,
+) -> (String, usize, usize) {
+    let Some(ledger) = &glance.ledger else {
+        return (String::new(), 0, 0);
+    };
+    let Ok(parked) = ledger.runs_to_ask_again() else {
+        return (String::new(), 0, 0);
+    };
+    let by_itself = flows_that_start_by_themselves(sources);
+    let (mut said, mut woken, mut let_go) = (String::new(), 0, 0);
+    for run in parked {
+        if by_itself.contains(&run.entity) {
+            woken += 1;
+            let (word, how) = match resume(&run.run_id) {
+                Ok(answer) => ("woken", answer),
+                Err(complaint) => ("broke", complaint),
+            };
+            let _ = writeln!(
+                said,
+                "{}\t{word}\t{}",
+                run.entity,
+                how.lines().next().unwrap_or("")
+            );
+            continue;
+        }
+        let_go += 1;
+        let why = catalogue::say("cli.flow.parked_under_a_flow_that_waits_for_a_person", &[]);
+        let closed = close_the_parked_run(ledger, &run.run_id, &why, now);
+        let _ = writeln!(
+            said,
+            "{}\t{}\t{why}",
+            run.entity,
+            if closed { "released" } else { "parked" }
+        );
+    }
+    (said, woken, let_go)
+}
+
+/// The flows a parked run can be woken under: the ones that still start
+/// without a person — a schedule, or a session event they subscribe to.
+fn flows_that_start_by_themselves(sources: &[FlowSource]) -> BTreeSet<String> {
+    let mut found: BTreeSet<String> = crate::arc_cmd::watchers(sources)
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+    for (name, _, entry) in known_flows(sources) {
+        if entry.is_ok_and(|flow| flow.schedule.is_some()) {
+            found.insert(name);
+        }
+    }
+    found
+}
+
+/// Writes the parked run closed, with the reason where a person reads it.
+fn close_the_parked_run(ledger: &Ledger, run_id: &str, why: &str, now: i64) -> bool {
+    let Ok(Some(header)) = ledger.run_header(run_id) else {
+        return false;
+    };
+    let closed = ledger::RunRecord {
+        status: "stopped".to_owned(),
+        error: Some(why.to_owned()),
+        ended_at: Some(now),
+        ..header
+    };
+    ledger.record_run(&closed).is_ok()
 }
 
 pub(super) fn due_flows(sources: &[FlowSource]) -> Result<String, String> {
@@ -366,7 +468,12 @@ mod tests {
         // The last runs are handed in rather than read: a test that opens the
         // ledger of whoever runs it is fault 5, and here it would also decide
         // the answer.
-        let said = tick_flows_with(&sources, LastRuns::NothingHasRunYet, &mut never_starts)
+        let said = tick_flows_with(
+            &sources,
+            LastRuns::NothingHasRunYet,
+            &mut never_starts,
+            &mut never_resumes,
+        )
             .expect("a beat over one flow works");
         assert!(
             said.contains("senza-orario\thold\tno schedule"),
@@ -404,6 +511,7 @@ mod tests {
             &sources,
             LastRuns::CouldNotLook("unable to open database file".to_owned()),
             &mut never_starts,
+            &mut never_resumes,
         )
         .expect_err("a blind beat is not a beat that did nothing");
         assert!(
@@ -423,7 +531,12 @@ mod tests {
             last_started: BTreeMap::from([("ogni-minuto".to_owned(), now_secs().unwrap_or(0))]),
             ..Glance::default()
         };
-        let said = tick_flows_with(&sources, LastRuns::Read(just_ran), &mut never_starts)
+        let said = tick_flows_with(
+            &sources,
+            LastRuns::Read(just_ran),
+            &mut never_starts,
+            &mut never_resumes,
+        )
             .expect("a beat that could look works");
         assert!(said.contains("ogni-minuto\thold\tnot due"), "{said}");
         assert!(said.contains("0 run, 1 held"), "{said}");
@@ -434,6 +547,11 @@ mod tests {
     /// what the beat holds, and a start would be the defect.
     fn never_starts(name: &str, _: Option<&str>) -> Result<String, String> {
         panic!("the beat started {name}")
+    }
+
+    /// Nothing is parked in these tests, so a resume would be a surprise.
+    fn never_resumes(run_id: &str) -> Result<String, String> {
+        panic!("the beat resumed {run_id}")
     }
 
     fn a_closed_run(flow: &str, run_id: &str, status: &str, started_at: i64) -> ledger::RunRecord {
@@ -451,6 +569,85 @@ mod tests {
             worktree: None,
             stop_reason: None,
         }
+    }
+
+    /// A flow file whose only step is a trigger declaring `with`.
+    fn a_flow_file(at: &std::path::Path, id: &str, with: &str, schedule: &str) {
+        fs::write(
+            at.join(format!("{id}.flow.json")),
+            format!(
+                r#"{{"id":"{id}","description":"a fixture"{schedule},
+                "graph":{{"steps":[{{"id":"trigger","deps":[],"action":"trigger","max_attempts":1,
+                "when":null,"with":{with},
+                "input_schema":{{"type":"any"}},"output_schema":{{"type":"any"}}}}]}},"inputs":{{}}}}"#
+            ),
+        )
+        .expect("write a flow");
+    }
+
+    /// **A RUN PARKED UNDER A FLOW THAT ONLY STARTS BY HAND IS LET GO, NOT
+    /// WOKEN.** Fifty-six of the fifty-seven on this machine belong to a flow
+    /// switched off after it emptied a live session: waking those would repeat
+    /// the harm, and leaving them is the litter of fault 163. The other
+    /// direction is the control: a flow that still watches has its run woken.
+    #[test]
+    fn a_parked_run_is_woken_only_where_its_flow_still_starts_by_itself() {
+        let scratch = std::env::temp_dir().join(format!("sailor-parked-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&scratch);
+        fs::create_dir_all(&scratch).expect("create the test directory");
+        a_flow_file(&scratch, "by-hand", r#"{"source":"manual","text":"vai"}"#, "");
+        a_flow_file(
+            &scratch,
+            "watches",
+            r#"{"source":"session-event","on":{"event":"Stop"}}"#,
+            "",
+        );
+        let sources = vec![FlowSource {
+            origin: "prova",
+            dir: scratch.clone(),
+        }];
+        let now = now_secs().unwrap_or(0);
+        let ledger = Ledger::open(scratch.join("ledger")).expect("a scratch ledger");
+        for (flow, run) in [("by-hand", "by-hand-1"), ("watches", "watches-1")] {
+            ledger
+                .record_run(&a_closed_run(flow, run, "not_yet", now - 60))
+                .expect("a parked run");
+        }
+
+        let mut woken = Vec::new();
+        let said = tick_flows_with(
+            &sources,
+            LastRuns::Read(glance_at(&ledger).expect("a glance")),
+            &mut never_starts,
+            &mut |run_id| {
+                woken.push(run_id.to_owned());
+                Ok(format!("run {run_id} resumed"))
+            },
+        )
+        .expect("a beat over two parked runs works");
+
+        assert_eq!(woken, vec!["watches-1"], "only the watching one: {said}");
+        assert!(said.contains("1 woken, 1 released"), "{said}");
+        let closed = ledger
+            .run_header("by-hand-1")
+            .expect("the ledger reads")
+            .expect("the run is there");
+        assert_eq!(closed.status, "stopped", "the parked run was let go");
+        assert!(
+            closed.error.is_some_and(|why| why.contains("person")),
+            "and it says why, where a person reads it"
+        );
+        assert_eq!(
+            ledger
+                .run_header("watches-1")
+                .expect("the ledger reads")
+                .expect("the run is there")
+                .status,
+            "not_yet",
+            "the woken one was not closed behind the resume's back"
+        );
+        drop(ledger);
+        let _ = fs::remove_dir_all(&scratch);
     }
 
     /// **A FLOW THAT FAILS THREE TIMES IN A ROW WRITES A FAULT BY ITSELF.**
@@ -497,6 +694,7 @@ mod tests {
                 started.push((name.to_owned(), mandate.map(str::to_owned)));
                 Ok(format!("flow {name} complete; run {name}-77"))
             },
+            &mut never_resumes,
         )
         .expect("a beat over a failing flow works");
         assert_eq!(
@@ -521,6 +719,7 @@ mod tests {
             &sources,
             LastRuns::Read(glance_at(&ledger).expect("a glance")),
             &mut never_starts,
+            &mut never_resumes,
         )
         .expect("a beat after the fault works");
         assert!(said.contains("0 run, 1 held"), "{said}");
