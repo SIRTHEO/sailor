@@ -46,8 +46,8 @@ pub const WORKSPACE_ROOT: &str = "workspace.root";
 /// file able to write here would raise its own cap.
 pub const CURRENT_CAP: &str = "flow.cap_micros";
 
-/// How many paying steps opened in this wave, for the action that holds its
-/// call to a share of the remainder rather than to all of it.
+/// How many paying steps opened in this wave, for the action that shares the
+/// remainder of the cap between them.
 pub const CURRENT_FRONT: &str = "flow.front_paying";
 
 /// The key under which the executor writes the holder of the process, for the
@@ -1173,7 +1173,6 @@ impl Executor for InProcessExecutor {
             // (see `how_many_fit`); with no cap it stays what it always was.
             let mut failure: Option<FlowError> = None;
             for group in waves(&opened, at_once) {
-                // What is left of the cap is shared by this wave.
                 let paying = group.iter().filter(|work| work.may_spend()).count().max(1);
                 request
                     .shared
