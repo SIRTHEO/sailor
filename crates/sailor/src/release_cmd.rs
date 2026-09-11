@@ -1162,7 +1162,40 @@ fn push_the_trunk(root: &Path) -> Result<String, String> {
     }
 }
 
+/// **THE SUITE CANNOT ANSWER THIS AND NEVER COULD**: a release runs its tests
+/// on a `git archive` extract, which is no repository, so the judge guarding
+/// the public trunk declares «measured nothing». Asked here, of the real tree.
+fn what_must_not_be_published(root: &Path) -> Vec<String> {
+    let Some(list) = toolbox::privacy::where_the_names_are(
+        std::env::var("SAILOR_PRIVATE_NAMES").ok(),
+        std::env::var("HOME").ok(),
+    ) else {
+        return Vec::new();
+    };
+    let Ok(text) = fs::read_to_string(&list) else {
+        return Vec::new();
+    };
+    toolbox::privacy::where_names_are_tracked(root, &toolbox::privacy::names_in(&text))
+}
+
 fn say_whether_pushed(root: &Path) {
+    // **A NAME CANNOT BE UNPUBLISHED**: a forced push leaves the commit
+    // reachable by its number, so this refuses before, not reports after. The
+    // names never travel — scrollback goes anywhere.
+    let leaking = what_must_not_be_published(root);
+    if !leaking.is_empty() {
+        println!(
+            "   {}",
+            catalogue::say(
+                "cli.release.not_pushed_private",
+                &[
+                    ("count", &leaking.len().to_string()),
+                    ("places", &leaking.join(", ")),
+                ],
+            )
+        );
+        return;
+    }
     match push_the_trunk(root) {
         Ok(line) => println!("   {}", catalogue::say("cli.release.pushed", &[("line", &line)])),
         Err(line) => println!("   {}", catalogue::say("cli.release.not_pushed", &[("line", &line)])),

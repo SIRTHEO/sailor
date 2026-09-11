@@ -195,7 +195,7 @@ fn the_sweep_takes_down_the_merged_trees_and_names_the_ones_holding_work() {
     run_git(&ahead, &["commit", "-q", "-m", "not in the trunk"]);
     std::fs::write(dirty.join("half"), "half a thought\n").expect("work");
 
-    let said = sweep(&repo, &store as &dyn OpenTrees).expect("the sweep runs");
+    let said = sweep(&repo, &store as &dyn OpenTrees, &[]).expect("the sweep runs");
     let merged_is_gone = !merged.exists();
     let work_is_there = ahead.join("answer").exists() && dirty.join("half").exists();
     let _ = std::fs::remove_dir_all(&scratch);
@@ -223,13 +223,37 @@ fn the_sweep_clears_a_row_whose_tree_is_no_longer_on_disk() {
     run_git(&repo, &["worktree", "prune"]);
     let held_before = store.trees_left_open().expect("the rows").len();
 
-    let said = sweep(&repo, &store as &dyn OpenTrees).expect("the sweep runs");
+    let said = sweep(&repo, &store as &dyn OpenTrees, &[]).expect("the sweep runs");
     let held_after = store.trees_left_open().expect("the rows").len();
     let _ = std::fs::remove_dir_all(&scratch);
 
     assert_eq!(held_before, 1, "the row was never written: {said}");
     assert_eq!(held_after, 0, "the row over a gone directory was kept:\n{said}");
     assert!(said.contains("run-sparito"), "the row was cleared in silence:\n{said}");
+}
+
+/// **THE ONE THAT COST A SESSION ITS GROUND.** A tree whose work the trunk
+/// already holds and that git would take down without a word is kept, and
+/// named, while somebody is standing in it.
+#[test]
+fn a_merged_tree_somebody_is_working_in_is_kept_and_named() {
+    let scratch = a_scratch("occupied");
+    let repo = a_repository_in(&scratch);
+    let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
+    let busy = workspace::create(&repo, "work/qualcuno-dentro", None).expect("a merged tree");
+
+    let said = sweep(&repo, &store as &dyn OpenTrees, &[busy.clone()]).expect("the sweep runs");
+    let still_there = busy.exists();
+
+    // And with nobody in it the same tree goes, or the guard is a sweep that
+    // never sweeps.
+    let again = sweep(&repo, &store as &dyn OpenTrees, &[]).expect("the sweep runs");
+    let gone = !busy.exists();
+    let _ = std::fs::remove_dir_all(&scratch);
+
+    assert!(still_there, "a tree somebody was working in was taken down:\n{said}");
+    assert!(said.contains("qualcuno-dentro"), "it was kept in silence:\n{said}");
+    assert!(gone, "with nobody in it the tree was still kept:\n{again}");
 }
 
 fn a_scratch(label: &str) -> PathBuf {

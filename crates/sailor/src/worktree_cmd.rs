@@ -88,7 +88,14 @@ fn dispatch(args: &[String]) -> Result<String, String> {
             let held = store.trees_left_open()?;
             Ok(render_open(&held, now(), still_the_opener))
         }
-        [command, word] if command == "close" && word == MERGED => sweep(&repo, &a_store()?),
+        [command, word] if command == "close" && word == MERGED => {
+            // **NOBODY SWEEPS BLIND**: a store that will not answer is not
+            // a machine with nobody in it.
+            let Some(occupied) = who_is_standing() else {
+                return Err(catalogue::say("cli.worktree.cannot_ask_who_is_standing", &[]));
+            };
+            sweep(&repo, &a_store()?, &occupied)
+        }
         [command, word] if command == "close" && word.starts_with("--") => Err(catalogue::say(
             "cli.unknown_option",
             &[("option", word)],
@@ -163,15 +170,50 @@ pub fn close_one(repo: &Path, name: &str, store: &dyn OpenTrees) -> Result<Strin
     Ok(what_became_of_it(&at, close_if_the_trunk_holds_it(repo, &at, store)))
 }
 
+/// **HISTORY AND GIT CANNOT SEE A PERSON.** A clean tree whose work the trunk
+/// holds reads exactly like a finished one, and the sweep took down the tree a
+/// live session was working in (fault 167).
+pub fn occupied_trees(rows: impl Iterator<Item = (String, bool)>) -> Vec<PathBuf> {
+    rows.filter(|(at, open)| *open && !at.is_empty())
+        .map(|(at, _)| PathBuf::from(at))
+        .collect()
+}
+
+/// **A STORE THAT IS NOT THERE IS NOT ONE THAT WILL NOT OPEN**: a machine that
+/// never tracked a terminal has nobody standing anywhere, and refusing there
+/// would be a sweep that never sweeps.
+pub fn who_is_standing() -> Option<Vec<PathBuf>> {
+    let Ok(path) = sessions::Sessions::default_path() else {
+        return Some(Vec::new());
+    };
+    if !path.exists() {
+        return Some(Vec::new());
+    }
+    let rows = sessions::Sessions::open(path)
+        .ok()?
+        .terminals()
+        .ok()?;
+    Some(occupied_trees(rows.into_iter().map(|row| {
+        (row.worktree, row.closed_at.is_none())
+    })))
+}
+
 /// Every tree of this repository the trunk already holds. What it does not
 /// hold is named and stays: this is the gesture that must never lose work.
-pub fn sweep(repo: &Path, store: &dyn OpenTrees) -> Result<String, String> {
+/// `occupied` is handed in and never read in here: a condition read from the
+/// machine can only be tested by arranging the machine, and such a test never
+/// gets written. [`who_is_standing`] is what the command line hands it.
+pub fn sweep(repo: &Path, store: &dyn OpenTrees, occupied: &[PathBuf]) -> Result<String, String> {
     let trees = list(repo)?;
     let mut said: Vec<String> = Vec::new();
     let mut closed = 0usize;
     for tree in &trees {
         let at = PathBuf::from(&tree.path);
         if why_it_is_not_mine_to_close(&trees, &at).is_some() {
+            continue;
+        }
+        if let Some(line) = held_by_somebody(occupied, &at) {
+            said.push(line);
             continue;
         }
         let became = close_if_the_trunk_holds_it(repo, &at, store);
@@ -188,6 +230,10 @@ pub fn sweep(repo: &Path, store: &dyn OpenTrees) -> Result<String, String> {
         if trees.iter().any(|known| Path::new(&known.path) == at) {
             continue;
         }
+        if let Some(line) = held_by_somebody(occupied, &at) {
+            said.push(line);
+            continue;
+        }
         let became = close_if_the_trunk_holds_it(repo, &at, store);
         if matches!(became, Swept::Closed(Closing::TakenDown) | Swept::AlreadyGone) {
             closed += 1;
@@ -202,6 +248,20 @@ pub fn sweep(repo: &Path, store: &dyn OpenTrees) -> Result<String, String> {
         ],
     ));
     Ok(said.join("\n"))
+}
+
+/// **A TREE SOMEBODY IS IN IS KEPT AND NAMED**: a session at work is work.
+fn held_by_somebody(occupied: &[PathBuf], at: &Path) -> Option<String> {
+    let here = at.canonicalize().unwrap_or_else(|_| at.to_path_buf());
+    occupied
+        .iter()
+        .any(|taken| taken.canonicalize().unwrap_or_else(|_| taken.clone()) == here)
+        .then(|| {
+            catalogue::say(
+                "cli.worktree.somebody_is_in_it",
+                &[("tree", &at.to_string_lossy())],
+            )
+        })
 }
 
 /// The main tree and the one the command is standing in are never taken down:
