@@ -1,0 +1,28 @@
+$ cargo test -p sailor --test a_terminal_outlives_the_window --test a_terminal_sailor_owns_can_be_typed_into --test a_terminal_of_the_command_runs_under_the_profile_in_force
+   Compiling sailor v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789118044083006000--the_crew--0--1789118044127942000/the_agent/crates/sailor)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.39s
+     Running tests/a_terminal_of_the_command_runs_under_the_profile_in_force.rs (target/debug/deps/a_terminal_of_the_command_runs_under_the_profile_in_force-18cba77f23af5421)
+
+running 1 test
+test the_engine_inside_is_given_the_home_the_active_profile_names ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.82s
+
+     Running tests/a_terminal_outlives_the_window.rs (target/debug/deps/a_terminal_outlives_the_window-380cc53925e028e0)
+
+running 2 tests
+test a_shell_opened_through_the_host_survives_the_client_that_opened_it ... ok
+test a_terminal_closed_by_one_client_is_gone_for_the_next ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.41s
+
+     Running tests/a_terminal_sailor_owns_can_be_typed_into.rs (target/debug/deps/a_terminal_sailor_owns_can_be_typed_into-db74f0439f5d661f)
+
+running 3 tests
+test a_line_pressed_from_outside_reaches_the_program_the_command_started ... ok
+test the_round_trip_closes_and_leaves_nobody_running ... ok
+test without_a_knock_the_held_terminal_shows_nothing ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.38s
+
+EXIT=0

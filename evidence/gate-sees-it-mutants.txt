@@ -1,0 +1,7 @@
+=== MUTANT 1: the directory is the host's own, not the terminal's ===
+thread 'a_terminal_the_host_holds_is_found_by_its_name_with_what_it_printed_and_where_it_stands' (43960116) panicked at crates/sailor/tests/a_held_terminal_is_found_by_name_and_says_where_it_stands.rs:159:5:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 5.81s
+
+=== MUTANT 2: nobody is ever counted as following ===
+thread 'a_terminal_the_host_holds_is_found_by_its_name_with_what_it_printed_and_where_it_stands' (43963826) panicked at crates/sailor/tests/a_held_terminal_is_found_by_name_and_says_where_it_stands.rs:199:9:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 28.73s

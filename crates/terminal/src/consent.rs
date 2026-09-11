@@ -1,11 +1,9 @@
 //! Who may write into a terminal the host holds, and on what authority.
 //!
 //! A person at the keyboard is their own authority: typing is the consent.
-//! Everything else — a flow, a peer, a job that woke up — writes only where
-//! the terminal itself carries a consent naming who gave it and what it
-//! covers. An idle prompt is not consent and a deposited handover is not
-//! consent: both were read correctly on the day a flow typed into a working
-//! session, and neither was ever an answer to «may I».
+//! Everything else writes only where the terminal itself carries a consent
+//! naming who gave it and what it covers. An idle prompt is not consent and a
+//! deposited handover is not consent: neither is an answer to «may I».
 
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;

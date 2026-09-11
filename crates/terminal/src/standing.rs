@@ -1,10 +1,9 @@
 //! Where a process is standing: the directory it would resolve a relative
 //! path against, right now.
 //!
-//! It is asked of the process and not remembered from the opening, because a
-//! shell walks: the terminal a person left in one tree is handed back standing
-//! in another, and a window that shows the opening directory shows a place the
-//! person is no longer in.
+//! Asked of the process, not remembered from the opening, because a shell
+//! walks: a window showing the opening directory shows a place the person
+//! standing in that terminal has long left.
 
 use std::path::PathBuf;
 

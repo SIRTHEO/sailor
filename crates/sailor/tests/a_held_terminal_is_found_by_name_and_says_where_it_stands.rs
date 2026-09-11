@@ -2,13 +2,8 @@
 //! Sailor holds, everything that opened it goes away, it comes back, and the
 //! command is still running with its output since.
 //!
-//! Coming back means asking for a name the opener chose, not for a number this
-//! run of the window happened to assign. And the terminal must be able to say
-//! where it is standing, because a shell that has walked somewhere is not the
-//! same shell as one that never left: an agent's `cd` is state, and a window
-//! that loses it hands back a terminal the person no longer recognises.
-//!
-//! The host runs here as the real binary in a process of its own.
+//! Coming back means asking for a name the opener chose, not a number this run
+//! assigned; and a terminal that walked must say so, `cd` being state.
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};

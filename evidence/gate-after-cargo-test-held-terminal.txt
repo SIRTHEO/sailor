@@ -1,0 +1,16 @@
+$ cargo test -p sailor --test a_held_terminal_is_found_by_name_and_says_where_it_stands
+   Compiling relay v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789118044083006000--the_crew--0--1789118044127942000/the_agent/crates/relay)
+   Compiling registry v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789118044083006000--the_crew--0--1789118044127942000/the_agent/crates/registry)
+   Compiling sailor v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789118044083006000--the_crew--0--1789118044127942000/the_agent/crates/sailor)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.45s
+     Running tests/a_held_terminal_is_found_by_name_and_says_where_it_stands.rs (target/debug/deps/a_held_terminal_is_found_by_name_and_says_where_it_stands-b69859e5116438f6)
+
+running 4 tests
+test a_flow_that_no_consent_names_is_refused_and_the_refusal_says_what_was_missing ... ok
+test a_name_the_host_already_holds_is_refused_by_name ... ok
+test a_terminal_the_host_holds_is_found_by_its_name_with_what_it_printed_and_where_it_stands ... ok
+test a_terminal_the_host_holds_paints_a_screen_signed_with_the_host_s_own_pid ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.30s
+
+EXIT=0

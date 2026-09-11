@@ -1,35 +1,38 @@
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.14s
+$ cargo test -p terminal --no-fail-fast
+   Compiling terminal v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789118044083006000--the_crew--0--1789118044127942000/the_agent/crates/terminal)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.30s
      Running unittests src/lib.rs (target/debug/deps/terminal-e9de696be21a9719)
 
-running 26 tests
+running 27 tests
 test host::tests::a_backlog_keeps_the_tail_and_knows_where_it_starts ... ok
 test keeping::tests::keeping_the_bodies_takes_the_whole_sentence ... ok
-test scratch::tests::a_declared_root_is_used_and_an_empty_one_is_not ... ok
-test scratch::tests::a_denial_names_the_perimeter_and_an_ordinary_error_does_not ... ok
-test scratch::tests::a_root_that_refuses_is_an_error_carrying_the_refusal ... ok
-test screen::tests::a_screen_that_was_never_written_is_nothing_and_not_empty ... ok
+test host::tests::a_frame_comes_back_as_it_went ... ok
+test host::tests::requests_and_answers_are_tagged_lines ... ok
 test consent::tests::a_consent_that_records_nothing_is_refused ... ok
 test consent::tests::a_flow_is_refused_until_a_consent_names_it ... ok
-test host::tests::a_frame_comes_back_as_it_went ... ok
-test screen::tests::only_the_tail_is_kept ... ok
-test keeping::tests::a_payload_that_is_not_an_object_is_dropped_whole ... ok
 test keeping::tests::a_key_nobody_allowed_does_not_reach_the_disk ... ok
-test screen::tests::a_title_the_program_set_is_not_part_of_the_screen ... ok
+test keeping::tests::a_payload_that_is_not_an_object_is_dropped_whole ... ok
+test keeping::tests::asked_in_so_many_words_the_payload_arrives_whole ... ok
 test keeping::tests::an_allowed_name_holding_a_container_is_dropped_with_the_bodies ... ok
 test keeping::tests::what_a_person_typed_and_what_the_engine_answered_do_not_survive ... ok
-test host::tests::requests_and_answers_are_tagged_lines ... ok
-test keeping::tests::asked_in_so_many_words_the_payload_arrives_whole ... ok
+test scratch::tests::a_declared_root_is_used_and_an_empty_one_is_not ... ok
+test scratch::tests::a_denial_names_the_perimeter_and_an_ordinary_error_does_not ... ok
+test screen::tests::a_screen_that_was_never_written_is_nothing_and_not_empty ... ok
+test screen::tests::a_title_the_program_set_is_not_part_of_the_screen ... ok
+test screen::tests::only_the_tail_is_kept ... ok
 test screen::tests::the_control_sequences_come_out_before_anything_is_looked_for ... ok
-test tally::tests::the_count_sits_beside_the_letterbox ... ok
+test scratch::tests::a_root_that_refuses_is_an_error_carrying_the_refusal ... ok
 test tally::tests::a_count_that_is_not_there_is_not_a_count_of_zero ... ok
+test standing::tests::a_living_process_says_where_it_stands_and_a_dead_one_says_nothing ... ok
+test tally::tests::the_count_sits_beside_the_letterbox ... ok
 test tally::tests::a_file_that_makes_no_sense_is_not_a_count_of_zero ... ok
 test tally::tests::a_count_written_comes_back_the_same ... ok
-test tests::a_buffer_still_answers_after_a_thread_died_holding_it ... ok
-test session::tests::the_list_still_answers_after_a_thread_died_holding_it ... ok
 test tally::tests::writing_twice_leaves_no_half_file_behind ... ok
+test session::tests::the_list_still_answers_after_a_thread_died_holding_it ... ok
+test tests::a_buffer_still_answers_after_a_thread_died_holding_it ... ok
 test pty::tests::a_terminal_still_answers_after_a_thread_died_holding_its_locks ... ok
 
-test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
      Running tests/a_hosted_session_does_not_inherit_what_it_must_not.rs (target/debug/deps/a_hosted_session_does_not_inherit_what_it_must_not-5d792d12ff73c503)
 
@@ -37,7 +40,7 @@ running 2 tests
 test a_variable_the_line_declares_is_taken_away_before_the_program_starts ... ok
 test a_variable_nobody_took_away_reaches_the_hosted_program ... ok
 
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
 
      Running tests/a_letterbox_is_not_stolen_from_the_living.rs (target/debug/deps/a_letterbox_is_not_stolen_from_the_living-7ea627f2f63eb8df)
 
@@ -45,8 +48,8 @@ running 6 tests
 test an_address_too_long_to_reach_is_refused_by_name ... ok
 test the_address_of_a_terminal_is_its_tty ... ok
 test knocking_where_there_is_no_letterbox_fails ... ok
-test what_a_stranger_leaves_arrives ... ok
 test a_letterbox_nobody_answers_is_taken_over ... ok
+test what_a_stranger_leaves_arrives ... ok
 test a_letterbox_someone_is_answering_is_refused ... ok
 
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
@@ -58,7 +61,7 @@ test what_is_left_in_the_letterbox_is_typed_into_the_program ... ok
 test a_line_left_in_the_letterbox_reaches_a_terminal_born_through_the_engine ... ok
 test a_program_nobody_typed_into_shows_nothing ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.52s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.50s
 
      Running tests/a_routed_request_reaches_the_trigger.rs (target/debug/deps/a_routed_request_reaches_the_trigger-aa1a40631a34ed0a)
 
@@ -89,17 +92,17 @@ test the_estimate_in_the_row_is_the_one_the_relay_measures_with ... ok
 test a_workspace_that_is_not_there_is_refused_before_anything_starts ... ok
 test the_list_row_carries_the_names_the_window_reads ... ok
 test closing_a_terminal_stops_it_and_takes_it_off_the_list ... ok
-test a_plain_command_passes_and_says_why ... ok
-test the_list_says_which_terminals_are_open_and_where ... ok
-test the_output_is_told_which_terminal_it_belongs_to ... ok
 test a_terminal_runs_what_is_written_into_it ... ok
-test a_resize_is_seen_by_the_program_inside ... ok
-test the_device_in_the_list_is_the_one_the_program_inside_reports ... ok
 test a_terminal_starts_inside_its_workspace ... ok
+test the_device_in_the_list_is_the_one_the_program_inside_reports ... ok
+test a_resize_is_seen_by_the_program_inside ... ok
 test the_end_of_a_terminal_is_announced_with_how_it_ended ... ok
+test the_list_says_which_terminals_are_open_and_where ... ok
+test a_plain_command_passes_and_says_why ... ok
+test the_output_is_told_which_terminal_it_belongs_to ... ok
 test the_output_arrives_while_it_is_being_produced ... ok
 
-test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.06s
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.08s
 
      Running tests/the_enter_arrives_on_its_own.rs (target/debug/deps/the_enter_arrives_on_its_own-ece5251d5f9cc26a)
 
@@ -114,23 +117,23 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running tests/the_router_never_eats_a_command.rs (target/debug/deps/the_router_never_eats_a_command-b9b9eea5143c5a7b)
 
 running 17 tests
+test a_broken_rule_does_not_take_the_good_ones_with_it ... ok
+test a_marked_line_goes_to_the_flow_even_if_it_looks_like_a_command ... ok
+test a_doubt_about_the_machine_becomes_a_command_not_a_request ... ok
+test a_real_command_is_never_routed_when_it_has_shell_syntax ... ok
+test a_real_command_is_never_routed_when_it_is_a_shell_word ... ok
+test a_short_line_does_not_reach_a_rule_that_asks_for_a_long_one ... ok
+test a_request_that_is_not_a_command_goes_to_the_flow ... ok
+test a_real_command_is_never_routed_when_it_names_a_file ... ok
+test a_real_command_is_never_routed_when_its_first_word_is_runnable ... ok
+test a_word_rule_matches_words_and_not_pieces_of_them ... ok
 test a_disabled_rule_disappears ... ok
 test an_empty_line_is_not_a_request ... ok
-test a_word_rule_matches_words_and_not_pieces_of_them ... ok
-test a_doubt_about_the_machine_becomes_a_command_not_a_request ... ok
-test a_short_line_does_not_reach_a_rule_that_asks_for_a_long_one ... ok
-test a_real_command_is_never_routed_when_it_has_shell_syntax ... ok
-test a_broken_rule_does_not_take_the_good_ones_with_it ... ok
-test a_real_command_is_never_routed_when_it_names_a_file ... ok
-test a_real_command_is_never_routed_when_it_is_a_shell_word ... ok
-test a_marked_line_goes_to_the_flow_even_if_it_looks_like_a_command ... ok
-test a_request_that_is_not_a_command_goes_to_the_flow ... ok
-test a_real_command_is_never_routed_when_its_first_word_is_runnable ... ok
-test an_explicit_rule_whose_marker_could_start_a_command_is_refused ... ok
 test an_explicit_rule_that_is_not_a_marker_is_refused ... ok
+test an_explicit_rule_whose_marker_could_start_a_command_is_refused ... ok
 test the_last_rule_with_an_id_wins ... ok
-test with_no_rules_everything_is_a_command ... ok
 test the_shipped_rules_all_load_and_name_a_flow_that_exists ... ok
+test with_no_rules_everything_is_a_command ... ok
 
 test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 

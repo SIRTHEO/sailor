@@ -1,0 +1,139 @@
+$ cargo test -p sailor --test a_held_terminal_is_found_by_name_and_says_where_it_stands
+   Compiling sailor v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789118044083006000--the_crew--0--1789118044127942000/the_agent/crates/sailor)
+error[E0599]: no method named `open_named` found for struct `Client` in the current scope
+   --> crates/sailor/tests/a_held_terminal_is_found_by_name_and_says_where_it_stands.rs:106:10
+    |
+105 |       let opened = client
+    |  __________________-
+106 | |         .open_named(
+    | |         -^^^^^^^^^^ method not found in `Client`
+    | |_________|
+    |
+
+error[E0609]: no field `attached` on type `&terminal::Summary`
+   --> crates/sailor/tests/a_held_terminal_is_found_by_name_and_says_where_it_stands.rs:156:15
+    |
+156 |         found.attached, 0,
+    |               ^^^^^^^^ unknown field
+    |
+    = note: available fields are: `id`, `workspace_root`, `workspace_name`, `alive`, `process_id` ... and 5 others
+
+error[E0609]: no field `directory` on type `&terminal::Summary`
+   --> crates/sailor/tests/a_held_terminal_is_found_by_name_and_says_where_it_stands.rs:160:26
+    |
+160 |         Path::new(&found.directory).canonicalize().ok(),
+    |                          ^^^^^^^^^ unknown field
+    |
+    = note: available fields are: `id`, `workspace_root`, `workspace_name`, `alive`, `process_id` ... and 5 others
+
+error[E0609]: no field `attached` on type `terminal::Summary`
+   --> crates/sailor/tests/a_held_terminal_is_found_by_name_and_says_where_it_stands.rs:196:16
+    |
+196 |         if row.attached > 0 {
+    |                ^^^^^^^^ unknown field
+    |
+    = note: available fields are: `id`, `workspace_root`, `workspace_name`, `alive`, `process_id` ... and 5 others
+
+error[E0599]: no method named `open_named` found for struct `Client` in the current scope
+   --> crates/sailor/tests/a_held_terminal_is_found_by_name_and_says_where_it_stands.rs:218:10
+    |
+217 |       let opened = client
+    |  __________________-
+218 | |         .open_named(
+    | |         -^^^^^^^^^^ method not found in `Client`
+    | |_________|
+    |
+
+error[E0599]: no method named `submit_by` found for struct `Client` in the current scope
+   --> crates/sailor/tests/a_held_terminal_is_found_by_name_and_says_where_it_stands.rs:232:10
+    |
+231 |       let refused = client
+    |  ___________________-
+232 | |         .submit_by(
+    | |_________-^^^^^^^^^
+    |
+help: there is a method `submit` with a similar name, but with different arguments
+   --> crates/terminal/src/host.rs:626:5
+    |
+626 |     pub fn submit(&self, id: &str, line: &str) -> Result<Submitted, String> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0599]: no method named `press_by` found for struct `Client` in the current scope
+   --> crates/sailor/tests/a_held_terminal_is_found_by_name_and_says_where_it_stands.rs:252:10
+    |
+251 |       let also_refused = client
+    |  ________________________-
+252 | |         .press_by(
+    | |_________-^^^^^^^^
+    |
+help: there is a method `press` with a similar name, but with different arguments
+   --> crates/terminal/src/host.rs:636:5
+    |
+636 |     pub fn press(&self, id: &str, bytes: &[u8]) -> Result<(), String> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0599]: no method named `consent` found for struct `Client` in the current scope
+   --> crates/sailor/tests/a_held_terminal_is_found_by_name_and_says_where_it_stands.rs:268:10
+    |
+267 | /     client
+268 | |         .consent(
+    | |         -^^^^^^^ method not found in `Client`
+    | |_________|
+    |
+
+error[E0599]: no method named `submit_by` found for struct `Client` in the current scope
+   --> crates/sailor/tests/a_held_terminal_is_found_by_name_and_says_where_it_stands.rs:278:10
+    |
+277 | /     client
+278 | |         .submit_by(
+    | |_________-^^^^^^^^^
+    |
+help: there is a method `submit` with a similar name, but with different arguments
+   --> crates/terminal/src/host.rs:626:5
+    |
+626 |     pub fn submit(&self, id: &str, line: &str) -> Result<Submitted, String> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0599]: no method named `withdraw` found for struct `Client` in the current scope
+   --> crates/sailor/tests/a_held_terminal_is_found_by_name_and_says_where_it_stands.rs:287:10
+    |
+286 | /     client
+287 | |         .withdraw("the-working-one", "empty-a-session-that-handed-on")
+    | |         -^^^^^^^^ method not found in `Client`
+    | |_________|
+    |
+
+error[E0599]: no method named `submit_by` found for struct `Client` in the current scope
+   --> crates/sailor/tests/a_held_terminal_is_found_by_name_and_says_where_it_stands.rs:290:10
+    |
+289 |       let refused_again = client
+    |  _________________________-
+290 | |         .submit_by(
+    | |_________-^^^^^^^^^
+    |
+help: there is a method `submit` with a similar name, but with different arguments
+   --> crates/terminal/src/host.rs:626:5
+    |
+626 |     pub fn submit(&self, id: &str, line: &str) -> Result<Submitted, String> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0599]: no method named `consent` found for struct `Client` in the current scope
+   --> crates/sailor/tests/a_held_terminal_is_found_by_name_and_says_where_it_stands.rs:300:10
+    |
+299 |       let hollow = client
+    |  __________________-
+300 | |         .consent(
+    | |         -^^^^^^^ method not found in `Client`
+    | |_________|
+    |
+
+error[E0599]: no method named `open_named` found for struct `Client` in the current scope
+   --> crates/sailor/tests/a_held_terminal_is_found_by_name_and_says_where_it_stands.rs:322:16
+    |
+322 |         client.open_named(
+    |         -------^^^^^^^^^^ method not found in `Client`
+
+Some errors have detailed explanations: E0599, E0609.
+For more information about an error, try `rustc --explain E0599`.
+error: could not compile `sailor` (test "a_held_terminal_is_found_by_name_and_says_where_it_stands") due to 13 previous errors
+EXIT=101

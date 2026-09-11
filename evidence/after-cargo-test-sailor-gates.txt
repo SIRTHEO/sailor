@@ -1,0 +1,104 @@
+$ cargo test -p sailor --test files_do_not_grow_out_of_scale --test comments_do_not_crowd_out_the_code --test the_battery_does_not_shrink_in_silence --test clippy_only_ever_gets_quieter --no-fail-fast
+   Compiling sailor v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789118044083006000--the_crew--0--1789118044127942000/the_agent/crates/sailor)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.57s
+     Running tests/clippy_only_ever_gets_quieter.rs (target/debug/deps/clippy_only_ever_gets_quieter-21a54be6e75d1a7f)
+
+running 4 tests
+test with_no_linter_to_answer_the_judge_declares_it_measured_nothing ... ok
+test a_warning_planted_in_a_throwaway_tree_is_counted_and_complained_about ... ok
+test the_check_can_still_see_what_it_counts ... ok
+test no_crate_warns_more_than_today ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.68s
+
+     Running tests/comments_do_not_crowd_out_the_code.rs (target/debug/deps/comments_do_not_crowd_out_the_code-d139e6a60bfb735d)
+
+running 7 tests
+test the_files_named_one_by_one_are_inside_the_perimeter ... ok
+test no_crate_lets_its_comments_outtalk_its_code_more_than_today ... FAILED
+test the_check_can_still_see_what_it_counts ... ok
+test no_new_comment_block_runs_past_the_cap ... ok
+test the_comments_not_in_english_only_shrink ... ok
+test a_seed_that_no_longer_describes_the_tree_is_a_seed_nobody_re_measured ... ok
+test no_comment_tells_a_date ... ok
+
+failures:
+
+---- no_crate_lets_its_comments_outtalk_its_code_more_than_today stdout ----
+
+measured: 528 sources read line by line against 21 crates the ratio is seeded for
+
+thread 'no_crate_lets_its_comments_outtalk_its_code_more_than_today' (44158303) panicked at crates/sailor/tests/comments_do_not_crowd_out_the_code.rs:445:5:
+crate «sailor» is seeded 1‰ above the 180‰ it holds: write 180; crate «terminal» is seeded 9‰ above the 266‰ it holds: write 266; measured now:
+    ("actions", 249),
+    ("catalogue", 239),
+    ("desktop", 245),
+    ("faults", 156),
+    ("flow", 199),
+    ("inventory", 274),
+    ("ledger", 145),
+    ("machine", 233),
+    ("models", 274),
+    ("profiles", 172),
+    ("registry", 286),
+    ("relay", 142),
+    ("release", 426),
+    ("sailor", 180),
+    ("sessions", 236),
+    ("supervisor", 249),
+    ("terminal", 266),
+    ("toolbox", 283),
+    ("trigger", 236),
+    ("ui", 186),
+    ("workspace", 152),
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    no_crate_lets_its_comments_outtalk_its_code_more_than_today
+
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s
+
+error: test failed, to rerun pass `-p sailor --test comments_do_not_crowd_out_the_code`
+     Running tests/files_do_not_grow_out_of_scale.rs (target/debug/deps/files_do_not_grow_out_of_scale-30500ed9cf07061e)
+
+running 4 tests
+test the_scale_tells_what_a_file_does_from_what_proves_it ... ok
+test the_scale_can_still_see_the_files_it_weighs ... ok
+test no_more_files_run_past_the_scale_than_today ... ok
+test no_more_walls_of_judges_than_today ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/the_battery_does_not_shrink_in_silence.rs (target/debug/deps/the_battery_does_not_shrink_in_silence-5c1d70a32a8647b8)
+
+running 6 tests
+test no_flow_file_vanishes_without_a_word ... ok
+test no_test_function_vanishes_without_a_word ... ok
+test no_window_test_vanishes_without_a_word ... ok
+test a_seed_that_no_longer_describes_the_tree_is_a_seed_nobody_re_measured ... FAILED
+test the_counters_can_still_see_what_they_count ... ok
+test no_test_binary_vanishes_without_a_word ... ok
+
+failures:
+
+---- a_seed_that_no_longer_describes_the_tree_is_a_seed_nobody_re_measured stdout ----
+
+measured: 152 test binaries opened against 2131 test functions counted in them
+
+thread 'a_seed_that_no_longer_describes_the_tree_is_a_seed_nobody_re_measured' (44158364) panicked at crates/sailor/tests/the_battery_does_not_shrink_in_silence.rs:297:9:
+the seed «test binaries» says 151, the tree holds 152: 1 more than declared. Raise it in the commit that adds them and say what they are, TEST_BINARIES_TODAY = 152
+Measured right now, all four: 152 test binaries, 2131 test functions, 19 flow files, 597 window tests. When you re-measure one, rewrite them all.
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    a_seed_that_no_longer_describes_the_tree_is_a_seed_nobody_re_measured
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+error: test failed, to rerun pass `-p sailor --test the_battery_does_not_shrink_in_silence`
+error: 2 targets failed:
+    `-p sailor --test comments_do_not_crowd_out_the_code`
+    `-p sailor --test the_battery_does_not_shrink_in_silence`
+EXIT=101

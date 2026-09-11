@@ -1,0 +1,24 @@
+$ cargo test ... a_terminal_the_host_holds_paints_a_screen
+   Compiling sailor v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789118044083006000--the_crew--0--1789118044127942000/the_agent/crates/sailor)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.90s
+     Running tests/a_held_terminal_is_found_by_name_and_says_where_it_stands.rs (target/debug/deps/a_held_terminal_is_found_by_name_and_says_where_it_stands-b69859e5116438f6)
+
+running 1 test
+test a_terminal_the_host_holds_paints_a_screen_signed_with_the_host_s_own_pid ... FAILED
+
+failures:
+
+---- a_terminal_the_host_holds_paints_a_screen_signed_with_the_host_s_own_pid stdout ----
+
+thread 'a_terminal_the_host_holds_paints_a_screen_signed_with_the_host_s_own_pid' (44069806) panicked at crates/sailor/tests/a_held_terminal_is_found_by_name_and_says_where_it_stands.rs:375:9:
+the terminal the host holds painted no screen at /tmp/claude/srt/sr-byname-screen-12780/terminals/ttys005.screen
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    a_terminal_the_host_holds_paints_a_screen_signed_with_the_host_s_own_pid
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 21.09s
+
+error: test failed, to rerun pass `-p sailor --test a_held_terminal_is_found_by_name_and_says_where_it_stands`
+EXIT=101
