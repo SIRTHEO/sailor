@@ -1,1 +1,87 @@
     Blocking waiting for file lock on build directory
+   Compiling workspace v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789116836445668000--the_crew--1--1789116836493047000/the_agent/crates/workspace)
+error[E0432]: unresolved import `workspace::column`
+ --> crates/workspace/tests/workspaces_and_their_worktrees_read_as_one_column.rs:5:16
+  |
+5 | use workspace::column::{self, Ground, Standing, TerminalAt, Where};
+  |                ^^^^^^ could not find `column` in `workspace`
+
+error[E0433]: cannot find module or crate `serde_json` in this scope
+  --> crates/workspace/tests/workspaces_and_their_worktrees_read_as_one_column.rs:36:20
+   |
+36 |     let document = serde_json::json!({
+   |                    ^^^^^^^^^^ use of unresolved module or unlinked crate `serde_json`
+
+error[E0433]: cannot find module or crate `serde_json` in this scope
+  --> crates/workspace/tests/workspaces_and_their_worktrees_read_as_one_column.rs:33:13
+   |
+33 |             serde_json::json!({ "id": format!("step-{which}"), "action": "note", "inputs": {} })
+   |             ^^^^^^^^^^ use of unresolved module or unlinked crate `serde_json`
+
+error[E0433]: cannot find module or crate `flow` in this scope
+  --> crates/workspace/tests/workspaces_and_their_worktrees_read_as_one_column.rs:24:28
+   |
+24 |     std::fs::write(at.join(flow::workspace::MARKER), "{}").expect("the marker is written");
+   |                            ^^^^ use of unresolved module or unlinked crate `flow`
+   |
+   = help: if you wanted to use a crate named `flow`, use `cargo add flow` to add it to your `Cargo.toml`
+
+error[E0433]: cannot find module or crate `flow` in this scope
+   --> crates/workspace/tests/workspaces_and_their_worktrees_read_as_one_column.rs:102:31
+    |
+102 |     std::fs::write(gamma.join(flow::workspace::MARKER), "{}").expect("the marker is written");
+    |                               ^^^^ use of unresolved module or unlinked crate `flow`
+    |
+    = help: if you wanted to use a crate named `flow`, use `cargo add flow` to add it to your `Cargo.toml`
+
+error[E0433]: cannot find module or crate `flow` in this scope
+   --> crates/workspace/tests/workspaces_and_their_worktrees_read_as_one_column.rs:105:9
+    |
+105 |         flow::workspace::remember_in(&home, root, 100 + which as i64).expect("the register takes it");
+    |         ^^^^ use of unresolved module or unlinked crate `flow`
+    |
+    = help: if you wanted to use a crate named `flow`, use `cargo add flow` to add it to your `Cargo.toml`
+
+error[E0433]: cannot find module or crate `flow` in this scope
+   --> crates/workspace/tests/workspaces_and_their_worktrees_read_as_one_column.rs:217:39
+    |
+217 |         .filter(|flow| flow.origin == flow::system::YOUR_ORIGIN)
+    |                                       ^^^^ use of unresolved module or unlinked crate `flow`
+    |
+    = help: if you wanted to use a crate named `flow`, use `cargo add flow` to add it to your `Cargo.toml`
+
+error[E0433]: cannot find module or crate `flow` in this scope
+   --> crates/workspace/tests/workspaces_and_their_worktrees_read_as_one_column.rs:225:39
+    |
+225 |         .filter(|flow| flow.origin == flow::system::BUILTIN_ORIGIN)
+    |                                       ^^^^ use of unresolved module or unlinked crate `flow`
+    |
+    = help: if you wanted to use a crate named `flow`, use `cargo add flow` to add it to your `Cargo.toml`
+
+error[E0433]: cannot find module or crate `flow` in this scope
+   --> crates/workspace/tests/workspaces_and_their_worktrees_read_as_one_column.rs:227:26
+    |
+227 |     assert_eq!(built_in, flow::system::FLOWS.len());
+    |                          ^^^^ use of unresolved module or unlinked crate `flow`
+    |
+    = help: if you wanted to use a crate named `flow`, use `cargo add flow` to add it to your `Cargo.toml`
+
+error[E0433]: cannot find module or crate `serde_json` in this scope
+  --> crates/workspace/tests/workspaces_and_their_worktrees_read_as_one_column.rs:44:9
+   |
+44 |         serde_json::to_string(&document).expect("the flow serialises"),
+   |         ^^^^^^^^^^ use of unresolved module or unlinked crate `serde_json`
+   |
+   = help: if you wanted to use a crate named `serde_json`, use `cargo add serde_json` to add it to your `Cargo.toml`
+
+error[E0433]: cannot find module or crate `serde_json` in this scope
+   --> crates/workspace/tests/workspaces_and_their_worktrees_read_as_one_column.rs:261:19
+    |
+261 |     let written = serde_json::to_value(&read.terminals).expect("the reading serialises");
+    |                   ^^^^^^^^^^ use of unresolved module or unlinked crate `serde_json`
+    |
+    = help: if you wanted to use a crate named `serde_json`, use `cargo add serde_json` to add it to your `Cargo.toml`
+
+Some errors have detailed explanations: E0432, E0433.
+For more information about an error, try `rustc --explain E0432`.
+error: could not compile `workspace` (test "workspaces_and_their_worktrees_read_as_one_column") due to 11 previous errors

@@ -30,3 +30,46 @@ running 0 tests
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
 === cargo test -p sailor (three judges) ===
+    ("desktop", 245),
+    ("faults", 156),
+    ("flow", 199),
+    ("inventory", 274),
+    ("ledger", 145),
+    ("machine", 233),
+    ("models", 274),
+    ("profiles", 172),
+    ("registry", 286),
+    ("relay", 142),
+    ("release", 426),
+    ("sailor", 181),
+    ("sessions", 236),
+    ("supervisor", 249),
+    ("terminal", 275),
+    ("toolbox", 283),
+    ("trigger", 236),
+    ("ui", 186),
+    ("workspace", 125),
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    no_crate_lets_its_comments_outtalk_its_code_more_than_today
+
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s
+
+error: test failed, to rerun pass `-p sailor --test comments_do_not_crowd_out_the_code`
+     Running tests/files_do_not_grow_out_of_scale.rs (target/a2/debug/deps/files_do_not_grow_out_of_scale-30500ed9cf07061e)
+
+running 4 tests
+test the_scale_tells_what_a_file_does_from_what_proves_it ... ok
+test the_scale_can_still_see_the_files_it_weighs ... ok
+test no_more_walls_of_judges_than_today ... ok
+test no_more_files_run_past_the_scale_than_today ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+error: 1 target failed:
+    `-p sailor --test comments_do_not_crowd_out_the_code`
+=== cargo check desktop ===
+   Compiling sailor-desktop v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789116836445668000--the_crew--1--1789116836493047000/the_agent/desktop/src-tauri)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.11s
