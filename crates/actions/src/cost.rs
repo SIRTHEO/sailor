@@ -1299,12 +1299,9 @@ printf '{"result":"the true answer","model":"modello-di-prova","total_cost_usd":
         assert_eq!(calls_in(&dir.join("deposito-2"))[0].cli, "catena");
     }
 
-    /// **`prefer: as_written` MAKES THE STEP'S CHAIN THE WHOLE CHAIN.**
-    ///
-    /// Fault 161: a repair step named engines cloned for write access, and the
-    /// table's read-only ones for its kind were tried ahead of them; the run
-    /// spent a front and answered «no files changed». Both directions are here,
-    /// on one table and one pair of engines, because the claim is a difference.
+    /// Fault 161: a repair step's engines, cloned for write access, were never
+    /// reached — the table's read-only ones went first. Both directions here,
+    /// because the claim is a difference.
     #[test]
     fn a_step_preferring_its_chain_as_written_is_not_moved_by_the_table() {
         let dir = scratch("as-written");

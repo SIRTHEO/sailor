@@ -14,9 +14,7 @@ use crate::{budget, cooldown, reserve, Declared, EXTERNAL_ENGINE_ACTION};
 use flow::ActionError;
 use std::path::PathBuf;
 
-/// `prefer: fuel` — the engine whose window expires unused soonest goes first.
 const FUEL: &str = "fuel";
-/// `prefer: as_written` — the step's chain is the whole chain, table included.
 const AS_WRITTEN: &str = "as_written";
 
 impl ExternalEngineAction {
@@ -51,15 +49,11 @@ impl ExternalEngineAction {
         (ordered, preferred)
     }
 
-    /// The engines the strengths table puts ahead of this step's own chain.
-    /// Empty without a declared kind, without a row for it, and under
-    /// `prefer: as_written`.
-    ///
-    /// **A STEP CAN REFUSE THE TABLE, AND SOMETIMES MUST.** See fault 161: a
-    /// step naming engines cloned for write access had the shipped read-only
-    /// ones tried ahead of them, spent a front, and answered «no files
-    /// changed» — the table is the machine's policy for a kind of work, and a
-    /// step whose chain is the whole point of it says so with `as_written`.
+    /// The engines the strengths table puts ahead of this step's own chain:
+    /// none without a declared kind, without a row for it, or under
+    /// `prefer: as_written`, which is how a step whose chain is the point of
+    /// it — one naming engines cloned for write access — refuses the machine's
+    /// policy for its kind of work. Fault 161.
     fn preferred_for(&self, spec: &EngineSpec) -> Vec<String> {
         let Some(kind) = spec.kind.as_deref() else {
             return Vec::new();
