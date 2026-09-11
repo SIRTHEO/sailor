@@ -14,6 +14,9 @@ publish.workspace = true
 # `toolbox`, which needs `actions`. The cycle is a fact about the dependency
 # graph, not a preference, and a crate here is what it leaves room for.
 [dependencies]
+# For the one road a child process starts by, and the timeout around it: asking
+# a keeper to read or to type is running somebody else's command line.
+actions = { path = "../actions" }
 flow = { path = "../flow" }
 ledger = { path = "../ledger" }
 # The letterbox, the count and the mandate of a live terminal.

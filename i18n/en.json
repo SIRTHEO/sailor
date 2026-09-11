@@ -678,6 +678,7 @@
   "run.failure.tree_not_cut": "the step asked for a tree of its own and git could not cut it, so it was not run in the shared one",
   "run.failure.unjoinable_reference": "only text can be joined, and one of the pieces is not text",
   "run.failure.unknown_action": "the draft names an action the engine does not have",
+  "run.failure.keeper_did_not_answer": "the program that keeps that terminal did not answer, so nothing can be said about what is on its screen and nothing is typed into it",
   "run.failure.freedom_not_declared": "no measurement says what a free session of that command line looks like, so nothing is typed into it",
   "run.failure.unknown_command_line": "no descriptor is loaded for that command line — it may be missing, switched off, or broken",
   "run.failure.unknown_step": "the flow being resumed has no step by that name",

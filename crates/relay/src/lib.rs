@@ -3,6 +3,8 @@
 //! in is a flow file, because a relay written as one function is 1,400 lines
 //! whose every refusal disappears.
 
+pub mod keeper;
+
 use flow::{Action, ActionError, ActionOutcome, SharedState};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -136,15 +138,25 @@ impl Action for TypeIntoTerminalAction {
 /// How a line is typed is the letterbox's business, not this crate's.
 fn typed_into(root: &std::path::Path, tty: &str, line: &str) -> Result<(), ActionError> {
     let address = terminal::inbox::address_in(root, tty);
-    terminal::inbox::press_line(&address, line).map_err(|error| {
-        ActionError::new(
+    let Err(error) = terminal::inbox::press_line(&address, line) else {
+        return Ok(());
+    };
+    // **THE OTHER ROAD, AND ONLY THEN.** A terminal Sailor holds answers at its
+    // own letterbox; one somebody else opened answers to them, and asking them
+    // first would put a line through a stranger for a door we own.
+    let machine = toolbox::Machine::current();
+    let catalog = toolbox::Catalog::load(&toolbox::default_sources(&machine));
+    match keeper::of(&catalog, root, tty) {
+        Some(keeper) => keeper.types_a_line(line),
+        None => Err(ActionError::new(
             "terminal_not_held",
             format!(
-                "{}: Sailor is not holding this terminal ({error})",
+                "{}: Sailor is not holding this terminal and nobody has said who keeps it \
+                 ({error})",
                 address.display()
             ),
-        )
-    })
+        )),
+    }
 }
 
 /// **SURFACE: writing into a live session. POWERS CLAIMED: typing, and asking
@@ -274,28 +286,11 @@ fn freedom_now(
     cli: &str,
 ) -> Result<Freedom, ActionError> {
     let free_when = freedom_of(catalog, cli)?;
-    let where_it_is = terminal::screen::address_in(root, tty);
-    let Some(painted) = terminal::screen::read(&where_it_is) else {
-        return Ok(Freedom::NotYet(format!(
-            "{tty}: nothing has been painted for this terminal, so there is nothing to read"
-        )));
+    let painted = match painted_now(catalog, root, tty, free_when.and_still_for_seconds)? {
+        Painted::Bytes(bytes) => bytes,
+        Painted::NotYet(why) => return Ok(Freedom::NotYet(why)),
     };
-    // A screen outlives its terminal, and what it leaves is still (fault 156).
-    if !painted.is_still_held() {
-        return Ok(Freedom::NotYet(format!(
-            "{tty}: whoever painted this screen is gone, so it says nothing about now"
-        )));
-    }
-    let still = terminal::screen::still_for(&where_it_is).unwrap_or_default();
-    if still.as_secs() < free_when.and_still_for_seconds {
-        return Ok(Freedom::NotYet(format!(
-            "{tty}: the screen was painted {}s ago and stands still for {}s when nobody is being \
-             waited for, so this is a session at work",
-            still.as_secs(),
-            free_when.and_still_for_seconds
-        )));
-    }
-    let seen = terminal::screen::as_a_person_sees_it(&painted.bytes);
+    let seen = terminal::screen::as_a_person_sees_it(&painted);
     if let Some(held) = free_when
         .and_none_of_these
         .iter()
@@ -317,6 +312,57 @@ fn freedom_now(
             "{tty}: the prompt is not painted, and a quiet screen is not a free one"
         ))),
     }
+}
+
+/// What is on that terminal now, by whichever road there is to it.
+enum Painted {
+    Bytes(Vec<u8>),
+    NotYet(String),
+}
+
+/// The screen, and the proof that it has stood still for as long as declared.
+/// **TWO ROADS AND NO THIRD**: Sailor's own, where the file says when it last
+/// changed, and the keeper's, where the screen is asked for twice a stillness
+/// apart, because somebody else's terminal gives no file to date.
+fn painted_now(
+    catalog: &toolbox::Catalog,
+    root: &Path,
+    tty: &str,
+    still_for: u64,
+) -> Result<Painted, ActionError> {
+    let where_it_is = terminal::screen::address_in(root, tty);
+    if let Some(painted) = terminal::screen::read(&where_it_is) {
+        // A screen outlives its terminal, and what it leaves is still (fault 156).
+        if !painted.is_still_held() {
+            return Ok(Painted::NotYet(format!(
+                "{tty}: whoever painted this screen is gone, so it says nothing about now"
+            )));
+        }
+        let still = terminal::screen::still_for(&where_it_is).unwrap_or_default();
+        if still.as_secs() < still_for {
+            return Ok(Painted::NotYet(format!(
+                "{tty}: the screen was painted {}s ago and stands still for {still_for}s when \
+                 nobody is being waited for, so this is a session at work",
+                still.as_secs()
+            )));
+        }
+        return Ok(Painted::Bytes(painted.bytes));
+    }
+    let Some(keeper) = keeper::of(catalog, root, tty) else {
+        return Ok(Painted::NotYet(format!(
+            "{tty}: nothing has been painted for this terminal and nobody keeps it, so there is \
+             nothing to read"
+        )));
+    };
+    let first = keeper.reads_the_screen()?;
+    std::thread::sleep(std::time::Duration::from_secs(still_for));
+    let again = keeper.reads_the_screen()?;
+    if first != again {
+        return Ok(Painted::NotYet(format!(
+            "{tty}: the screen changed inside {still_for}s, so this is a session at work"
+        )));
+    }
+    Ok(Painted::Bytes(again))
 }
 
 /// What this command line says a free session of it looks like, or the refusal.
