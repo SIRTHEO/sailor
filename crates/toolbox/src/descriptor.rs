@@ -305,6 +305,9 @@ pub enum ReadAs {
     Json,
     /// The output is plain text.
     Text,
+    /// The output is one JSON object per line, and the last line carrying a
+    /// pointer answers it.
+    JsonLines,
 }
 
 /// The pipe an engine states its usage on.
@@ -524,8 +527,39 @@ pub struct Quota {
     /// Whole header lines, `name: value`, sent beside the bearer token.
     #[serde(default)]
     pub headers: Vec<String>,
+    /// Where the windows sit and what their fields are called; absent, the
+    /// root with `utilization` and `resets_at`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape: Option<QuotaShape>,
+    /// A command that prints the credentials, where they are not in a file.
+    ///
+    /// **A KEYRING IS NOT A FILE, AND SEVERAL ACCOUNTS LIVE IN ONE.** `{home}`
+    /// becomes the account's home and `{home_digest}` the first eight hex of
+    /// its sha256 — the two ways a keeper of secrets tells one home's entry
+    /// from another's. The words are the product's and belong here, in data.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub held_by: Vec<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub note: String,
+}
+
+/// The words one provider uses for the windows. Each field names a key.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct QuotaShape {
+    /// The keys down to the windows; empty is the root.
+    #[serde(default)]
+    pub windows_at: Vec<String>,
+    /// The key holding how much of a window is already gone.
+    pub used: String,
+    /// `percent` for 50 meaning half, `fraction` for 0.5.
+    #[serde(default)]
+    pub used_in: String,
+    #[serde(default)]
+    pub resets: String,
+    /// `text` for an instant written out, `epoch_seconds` for a number.
+    #[serde(default)]
+    pub resets_in: String,
 }
 
 /// The one line that installs a command line, and how it was established.
@@ -562,8 +596,29 @@ pub struct KeepsTerminals {
     pub known_by: Vec<String>,
     pub reads_the_screen: Vec<String>,
     pub types_a_line: Vec<String>,
+    /// What prints every terminal this program keeps. Absent where the name a
+    /// session carries is already the one its keeper wants.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lists_them: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub in_the_list: Option<InTheList>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub note: String,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
+/// Where the handle is in what a keeper prints, and how a session is matched to
+/// it. **A SESSION NAMES ITSELF ONE WAY AND ITS KEEPER ANOTHER**, and the join
+/// between the two is measured, never guessed.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct InTheList {
+    /// The keys to walk to reach the array of terminals.
+    pub at: Vec<String>,
+    /// The fields of an entry that, joined, make the name a session carries.
+    pub known_by: Vec<String>,
+    pub joined_by: String,
+    pub the_handle_is: String,
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
 }
@@ -808,6 +863,13 @@ impl Descriptor {
                     .keys()
                     .map(|key| format!("keeps_terminals.{key}")),
             );
+            if let Some(list) = &keeps.in_the_list {
+                found.extend(
+                    list.extra
+                        .keys()
+                        .map(|key| format!("keeps_terminals.in_the_list.{key}")),
+                );
+            }
         }
         if let Some(reset) = &self.reset_context {
             found.extend(reset.extra.keys().map(|key| format!("reset_context.{key}")));

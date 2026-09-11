@@ -195,10 +195,11 @@
       "quota": {
         "reader": "oauth_usage",
         "credentials": "~/.claude/.credentials.json",
+        "held_by": ["security", "find-generic-password", "-s", "Claude Code-credentials-{home_digest}", "-w"],
         "token_pointer": ["claudeAiOauth", "accessToken"],
         "url": "https://api.anthropic.com/api/oauth/usage",
         "headers": ["anthropic-beta: oauth-2025-04-20"],
-        "note": "measured with an HTTP 200: `utilization` as a percentage per window and `resets_at`; a beta, versioned channel that can stop answering with nothing here changing, so a missing reading is a reading that is not there, never a zero"
+        "note": "measured with an HTTP 200: `utilization` as a percentage per window and `resets_at`; a beta, versioned channel that can stop answering with nothing here changing, so a missing reading is a reading that is not there, never a zero WHERE THE CREDENTIAL REALLY IS, AND WHY THIS PATH IS THE EXCEPTION (measured and documented, 11/09/2026): on macOS the login is kept in the encrypted Keychain, and the file named here is written ONLY when the Keychain refuses the write — a locked keychain, an SSH session — which is also the ordinary place on Linux and Windows. CLAUDE_CONFIG_DIR moves this file with it AND keys the Keychain entry to that directory, so a session with another config directory reads another entry: that is how several accounts stand side by side, and it is also why this reader reaches only the account whose credential happens to sit in a file. Measured on this machine: three accounts signed in and answering as themselves, one file. A second reader that asks the Keychain for the entry keyed to the home is the missing half."
       },
       "install": {
         "line": "curl -fsSL https://claude.ai/install.sh | bash",
@@ -289,10 +290,10 @@
         "note": "Typed into a session that is already running, not passed at launch. Established from the command list this command line publishes to its own sessions, NOT by running it and watching the context empty: the effect is on a live session, and measuring it means having one to spend. What is measured is that the line reaches the program — the conduit is provable without knowing what the line means. Whoever gets a chance to watch a real session empty should say so here and take this sentence out."
       },
       "free_when": {
-        "the_prompt_shows": ["\u276f\u00a0"],
+        "the_prompt_shows": ["\u276f"],
         "and_none_of_these": ["Esc to cancel", "Do you want"],
         "and_still_for_seconds": 3,
-        "note": "Measured on 10/09/2026 against version 2.1.267, held by `sailor terminal run` in a real pseudo-terminal, by reading the screen file the hold keeps. THREE STATES WERE SEEN. Idle: the screen stops changing altogether \u2014 twenty-nine seconds without a single byte \u2014 and what it last painted ends with the prompt, an upward chevron followed by a NON-BREAKING space, which is the mark declared here. At work: it repaints about once a second, spinner and token count, so stillness alone tells the two apart and no mark has to. Waiting for a person: a selection dialog was opened with `/model`, the screen stood still, and its last line read \u00abEnter to set as default \u00b7 s to use this session only \u00b7 Esc to cancel\u00bb. That footer is the measured mark. \u00abDo you want\u00bb is NOT measured \u2014 the dialog that asks to run a tool could not be raised without spending a person's quota \u2014 and it is declared anyway because a mark in this list can only hold a terminal back, never free one: being wrong here costs a wait. THE KNOWN HOLE: what is kept is the tail of the bytes and not a rendered screen, so a prompt painted before the current state is still in it. Stillness is what keeps that from mattering \u2014 a session at work never stands still \u2014 and the dialogs are caught by their own marks. Whoever renders the screen properly should take this paragraph out. AND THE READER IS BLIND FOR ONE BEAT: what a session painted in the last fifth of a second is not on disk yet, so a terminal that started moving an instant ago still reads as still."
+        "note": "Measured on 10/09/2026 against version 2.1.267, held by `sailor terminal run` in a real pseudo-terminal, by reading the screen file the hold keeps. THREE STATES WERE SEEN. Idle: the screen stops changing altogether \u2014 twenty-nine seconds without a single byte \u2014 and what it last painted ends with the prompt, an upward chevron followed by a NON-BREAKING space, which is the mark declared here. At work: it repaints about once a second, spinner and token count, so stillness alone tells the two apart and no mark has to. Waiting for a person: a selection dialog was opened with `/model`, the screen stood still, and its last line read \u00abEnter to set as default \u00b7 s to use this session only \u00b7 Esc to cancel\u00bb. That footer is the measured mark. \u00abDo you want\u00bb is NOT measured \u2014 the dialog that asks to run a tool could not be raised without spending a person's quota \u2014 and it is declared anyway because a mark in this list can only hold a terminal back, never free one: being wrong here costs a wait. THE KNOWN HOLE: what is kept is the tail of the bytes and not a rendered screen, so a prompt painted before the current state is still in it. Stillness is what keeps that from mattering \u2014 a session at work never stands still \u2014 and the dialogs are caught by their own marks. Whoever renders the screen properly should take this paragraph out. AND THE READER IS BLIND FOR ONE BEAT: what a session painted in the last fifth of a second is not on disk yet, so a terminal that started moving an instant ago still reads as still. THE MARK WAS MADE LESS SPECIFIC ON 11/09/2026, AND HERE IS WHY: held by Sailor the prompt is a chevron followed by a NON-BREAKING space, but read through the program that keeps the terminal it is a chevron at the end of a rendered row, with no space at all. The two roads show different text for the same screen, so the mark is the chevron alone. What keeps that from freeing a session at work is the stillness, which both roads measure, and the marks below."
       },
       "session_hooks": {
         "file": { "below_home": ".claude/settings.json", "format": "json", "key": ["hooks"] },
@@ -305,6 +306,20 @@
     },
     {
       "id": "codex",
+      "quota": {
+        "reader": "oauth_usage",
+        "credentials": "~/.codex/auth.json",
+        "token_pointer": ["tokens", "access_token"],
+        "url": "https://chatgpt.com/backend-api/wham/usage",
+        "shape": {
+          "windows_at": ["rate_limit"],
+          "used": "used_percent",
+          "used_in": "percent",
+          "resets": "reset_at",
+          "resets_in": "epoch_seconds"
+        },
+        "note": "MEASURED 11/09/2026 with an HTTP 200, found by reading the paths in the binary: `/api/codex/usage` answers 403 and `/wham/usage` answers. Under `rate_limit` sit `primary_window` and `secondary_window`, each with `used_percent`, `limit_window_seconds` (18000 and 604800, so five hours and seven days) and `reset_at` in unix seconds. The body also carries the account's address and plan, which is how a profile's home is told from another's. The token is in the home's `auth.json` and is read there, never renewed. No beta header is needed, and no account header either: the bearer alone answered."
+      },
       "login": {
         "args": ["login"],
         "interactive": true,
@@ -327,8 +342,14 @@
         "refuses_without_prompt": ["no prompt provided via stdin"]
       },
       "usage": {
-        "read": "text",
-        "total_tokens": "tokens used\\s*\\n\\s*([\\d.,]+)"
+        "args": ["--json"],
+        "read": "json_lines",
+        "input_tokens": ["usage", "input_tokens"],
+        "output_tokens": ["usage", "output_tokens"],
+        "cached_tokens": ["usage", "cached_input_tokens"],
+        "cache_write_tokens": ["usage", "cache_write_input_tokens"],
+        "answer": ["item", "text"],
+        "note": "MEASURED 11/09/2026 BY RUNNING IT. `codex exec --json` prints one JSON object per line and the last carries everything: `{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":24894,\"cached_input_tokens\":11008,\"cache_write_input_tokens\":0,\"output_tokens\":5,\"reasoning_output_tokens\":0}}`. It used to be read as TEXT with one expression pecking «tokens used N» out of the rendered screen, so 65 calls went into the ledger with no input, no cache and no cost at all. THE ANSWER MOVES WITH IT: with `--json` the rendered text is gone, and the reply is the text of the last `item.completed`. That is the one soft spot here — an item is also completed for a tool call, so a run whose last act is not a message would take the wrong text. Measured on a run whose last item is the message, which is what `exec` does. NO `total_tokens`: this stream does not state one, and a sum of the others would count the cached input twice. `reasoning_output_tokens` has nowhere to go yet and is left unread rather than folded into the output count, which would make two different things one number."
       },
       "login_status": {
         "args": ["login", "status"],
@@ -363,7 +384,7 @@
         "native_spend_cap": false,
         "choose_model": { "args": ["--model"], "takes_value": true },
         "fallback_model": false,
-        "read_remaining_quota": false
+        "read_remaining_quota": {"note": "Not a flag: a channel, and it said `false` because nobody had found it. Measured 11/09/2026 by reading the paths in the binary: `https://chatgpt.com/backend-api/wham/usage` answers HTTP 200 to the bearer in the home's `auth.json` under `tokens.access_token`, with no other header. Under `rate_limit` sit `primary_window` and `secondary_window`, each with `used_percent` and `reset_at` in unix seconds, and `limit_window_seconds` says which is which: 18000 and 604800. The sibling path `/api/codex/usage` answers 403. It is the PERSON's quota over every session, never one run's. Read only, no cost."}
       },
       "session_hooks": {
         "file": { "root_var": "CODEX_HOME", "below_root": "config.toml", "below_home": ".codex/config.toml", "format": "toml", "key": ["hooks"] },
@@ -392,7 +413,13 @@
         "args": [],
         "args_before_prompt": ["--prompt"],
         "prompt": "last_arg",
-        "refuses_without_prompt": ["not enough arguments following: prompt"]
+        "refuses_without_prompt": ["not enough arguments following: prompt"],
+        "unusable_when": [
+          "IneligibleTierError",
+          "no longer supported for Gemini Code Assist for individuals",
+          "please migrate to the Antigravity suite of products",
+          "Please set an Auth method in your"
+        ]
       },
       "capabilities": {
         "ask_without_interaction": { "args": ["--prompt"], "takes_value": true, "note": "the short form is -p; the text goes in the option, not in a free argument" },
@@ -422,10 +449,17 @@
         "note": "ITS OWN NAMES FOR THREE OF THE FOUR, measured 01/09/2026: SessionStart keeps its name, UserPromptSubmit becomes BeforeAgent, Stop becomes AfterAgent, PreCompact becomes PreCompress. The handler has the same shape as everywhere else ({type: command, command, timeout}), which is why only the names are data here. Not guesswork: the vendor ships `gemini hooks migrate --from-claude`, the same table read the other way, and this block is what makes that translation unnecessary."
       },
       "config": ["~/.gemini/settings.json"],
-      "note": "The `capabilities` block is measured with `gemini --help`; the `ask` block on a real machine with gemini 0.57.0. The question goes IN AN ARGUMENT after `--prompt`, not on standard input: `-p/--prompt` is an option with a value, and the tool's documentation says that standard input text, when present, is APPENDED to it. `refuses_without_prompt` comes from the real line composed without the question — `gemini --prompt` exits 1 and prints «Not enough arguments following: prompt» — so it cost nothing and called no provider. TWO THINGS THAT ARE NOT HERE, AND ARE NOT OVERSIGHTS. (1) No `usage`: `--output-format json` wraps the answer, but where it puts the tokens was never measured, and declaring guessed pointers would leave the usage unknown while making the opposite look true. Without the block, gemini is invoked as it always was and its tokens stay unknown — which is the honest answer. (2) No `unusable_when`: how it declares itself exhausted has not been seen. So gemini CANNOT SIT IN THE MIDDLE OF A CHAIN: `Descriptor::cannot_be_a_fallback` says so, and the test `every_engine_that_is_not_last_in_a_chain_says_how_it_is_exhausted` goes red if anyone puts it there. That used to be the reason for not writing the `ask` block at all — that is, for leaving `ask_without_interaction` declared and unusable, which is a self-contradiction. NO `login_status` BLOCK, AND THIS IS WHAT WAS TRIED: `gemini --help` lists five subcommands — `mcp`, `extensions`, `skills`, `hooks`, `gemma` — plus the default query, and no options; across all 45 lines the words `auth`, `login`, `logout` and `credential` never appear. So there is no known way to ask it whether it is authenticated. That is not «it does not have one»: it is «I did not find it looking there», and the difference matters because the answer could live in a nested subcommand the top-level `--help` does not show — it happened with `codex exec fork`. Writing a guessed block here would be worse than the absence: one wrong word would declare an empty home authenticated, the very defect this block exists to close. A MERGE NOTE: the other branch, which wrote the paragraph above, opened this note with «No `ask` block» — true when written, false now: the `ask` was measured the same day on this branch, and the two sides were talking about the same field at two different moments. The measurement counts, not the absence."
+      "note": "The `capabilities` block is measured with `gemini --help`; the `ask` block on a real machine with gemini 0.57.0. The question goes IN AN ARGUMENT after `--prompt`, not on standard input: `-p/--prompt` is an option with a value, and the tool's documentation says that standard input text, when present, is APPENDED to it. `refuses_without_prompt` comes from the real line composed without the question — `gemini --prompt` exits 1 and prints «Not enough arguments following: prompt» — so it cost nothing and called no provider. TWO THINGS THAT ARE NOT HERE, AND ARE NOT OVERSIGHTS. (1) No `usage`: `--output-format json` wraps the answer, but where it puts the tokens was never measured, and declaring guessed pointers would leave the usage unknown while making the opposite look true. Without the block, gemini is invoked as it always was and its tokens stay unknown — which is the honest answer. (2) `unusable_when` IS MEASURED NOW, and it does not record an exhaustion: it records a RETIREMENT. Signed in on 11/09/2026 with a personal Google account, the sign-in completes and the client is then refused — «IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals. To continue using Gemini, please migrate to the Antigravity suite of products», tierId `free-tier`. The credentials are written to the home all the same, so a reader that only looked for a credentials file would call this authenticated. The fourth entry is the other refusal, the one that comes BEFORE any sign-in: with no `selectedAuthType` in the home's own `settings.json` it will not start at all. The road for Google's models on this machine is `agy`, measured answering on the same day. What is still NOT measured is how gemini says it has run out of QUOTA, which is a different sentence from these four. That used to be the reason for not writing the `ask` block at all — that is, for leaving `ask_without_interaction` declared and unusable, which is a self-contradiction. NO `login_status` BLOCK, AND THIS IS WHAT WAS TRIED: `gemini --help` lists five subcommands — `mcp`, `extensions`, `skills`, `hooks`, `gemma` — plus the default query, and no options; across all 45 lines the words `auth`, `login`, `logout` and `credential` never appear. So there is no known way to ask it whether it is authenticated. That is not «it does not have one»: it is «I did not find it looking there», and the difference matters because the answer could live in a nested subcommand the top-level `--help` does not show — it happened with `codex exec fork`. Writing a guessed block here would be worse than the absence: one wrong word would declare an empty home authenticated, the very defect this block exists to close. A MERGE NOTE: the other branch, which wrote the paragraph above, opened this note with «No `ask` block» — true when written, false now: the `ask` was measured the same day on this branch, and the two sides were talking about the same field at two different moments. The measurement counts, not the absence."
     },
     {
       "id": "agy",
+      "quota": {
+        "reader": "none",
+        "credentials": "",
+        "token_pointer": [],
+        "url": "",
+        "note": "MEASURED 11/09/2026, AND THIS IS WHY THERE IS NOTHING TO READ HERE. Antigravity does have a quota service: its binary names the methods `GetUserStatus` and `GetCredits` on `aicode.googleapis.com`, and a page `https://antigravity.google/g1-credits`. But both are gRPC over protobuf descriptors (`v1internal/credits_go_proto`, `v1beta1/usage_metadata_go_proto`), and the credential is inside `~/.gemini/antigravity-cli/jetski_state.pbtxt`, a binary protobuf with no readable token. The reader this Sailor has takes a token out of a JSON file, or from a keeper, and asks an address over HTTP: neither half fits. So the absence is declared, not searched for again. Whoever picks it up starts at those two method names."
+      },
       "login": {
         "args": [],
         "interactive": true,
@@ -470,6 +504,7 @@
         "fork_session": false,
         "isolate_from_user_config": false,
         "receive_equipment": { "args": ["--add-dir"], "takes_value": true, "note": "adds a directory to the workspace, repeatable: it is all that can be handed to it from outside" },
+        "read_remaining_quota": false,
         "native_spend_cap": false,
         "choose_model": { "args": ["--model"], "takes_value": true },
         "fallback_model": false
@@ -486,6 +521,13 @@
     },
     {
       "id": "ollama",
+      "quota": {
+        "reader": "none",
+        "credentials": "",
+        "token_pointer": [],
+        "url": "",
+        "note": "MEASURED 11/09/2026: there is no quota because there is no account. Ollama runs the model on this machine — no sign-in, no provider, no window that resets. What it can run out of is memory and disk, which `sailor machine` measures and a quota channel would not. Declared absent so the line stops reading as «nobody looked»."
+      },
       "install": {
         "line": "brew install ollama",
         "note": "measured: /opt/homebrew/bin/ollama links to ../Cellar/ollama/<version>/bin/ollama, the Homebrew formula"
@@ -497,6 +539,7 @@
       "config": ["~/.ollama"],
       "data_pact": "does_not_train",
       "capabilities": {
+        "read_remaining_quota": false,
         "ask_without_interaction": {
           "args": ["run"],
           "note": "`run <model>` with the prompt on stdin answers once and exits; without stdin it opens a conversation"
@@ -614,9 +657,16 @@
       "version": { "args": ["--version"] },
       "keeps_terminals": {
         "known_by": ["ORCA_PANE_KEY", "ORCA_TAB_ID"],
+        "lists_them": ["orca", "terminal", "list", "--json"],
+        "in_the_list": {
+          "at": ["result", "terminals"],
+          "known_by": ["tabId", "leafId"],
+          "joined_by": ":",
+          "the_handle_is": "handle"
+        },
         "reads_the_screen": ["orca", "terminal", "read", "--terminal", "{handle}"],
         "types_a_line": ["orca", "terminal", "send", "--terminal", "{handle}", "--text", "{line}", "--enter"],
-        "note": "Measured on 10/09/2026 by reading `orca --help` and the help of its terminal subcommands, and by reading the environment of a session Orca had opened. WHAT IS MEASURED: the command line is at /usr/local/bin/orca and publishes `terminal list`, `terminal read`, `terminal send --terminal <handle> --text <text> --enter` and `terminal wait --terminal <handle> --for exit|tui-idle`; a session Orca opened carries ORCA_PANE_KEY, ORCA_TAB_ID, ORCA_WORKTREE_ID and ORCA_WORKSPACE_ID in its own environment. WHAT IS NOT MEASURED: whether ORCA_PANE_KEY is the handle those commands want, because Orca was not running when this was written and `orca terminal list` could not be asked. One run of it against a live app settles that, and until it does nothing here types anything. AND THIS MATTERS: Orca's terminals outlive Orca, since the app was down while its sessions were alive, so this road exists only while the app is up. A keeper nobody can reach is not a terminal that is free."
+        "note": "Measured on 10 and 11/09/2026 against a live app. WHAT IS MEASURED: `orca terminal list --json` answers `{result:{terminals:[…]}}`, and each entry carries `handle` (of the form term_<uuid>), `tabId`, `leafId`, `ptyId`, `title` and a `preview`; `orca terminal read --terminal <handle>` prints the terminal's rendered rows; `orca terminal send --terminal <handle> --text <text> --enter` types; `orca terminal wait --terminal <handle> --for exit|tui-idle` blocks. THE JOIN, WHICH WAS THE OPEN QUESTION: a session Orca opened carries ORCA_PANE_KEY, and that is NOT the handle — it is `<tabId>:<leafId>`, and it matched exactly one entry of the list on this machine. So the handle is looked up, never assumed. AND THE HANDLE ROTATES: a terminal created in the trial was term_d2dcd331… at creation and term_2048eb5b… a moment later, same pane key, and the first handle answered «terminal_handle_stale». So the handle is looked up on every call and never kept. PROVED LIVE ON 11/09/2026: the reading matched a pane key to its handle, read the screen twice two seconds apart, found the prompt and answered free; the emptying step then typed its declared line and the line landed on that terminal's screen. WHAT IS NOT MEASURED: what the read prints while a dialog waits for a person. AND THIS MATTERS: Orca's terminals outlive Orca, so this road exists only while the app is up; a keeper nobody can reach is not a terminal that is free, and the reading refuses by name."
       }
     },
     {

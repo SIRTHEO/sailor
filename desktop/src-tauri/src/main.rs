@@ -217,6 +217,7 @@ fn main() {
             terminal::terminals_abandoned,
             terminal::terminal_backlog,
             workspaces::workspaces,
+            workspaces::left_column,
             workspaces::work_here,
             workspaces::workspace_declaration,
             profiles::profiles,

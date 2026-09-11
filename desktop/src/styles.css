@@ -808,9 +808,17 @@ button.is-primary {
   white-space: nowrap;
 }
 
+/* A GROUP OF THE COLUMN, UNDER THE HEADING THAT NAMES IT. */
+.world__part {
+  display: flex;
+  flex-direction: column;
+}
+
 .world__head {
+  margin: 0;
   font-family: var(--font-display);
   font-size: var(--text-micro);
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.09em;
   color: var(--muted);

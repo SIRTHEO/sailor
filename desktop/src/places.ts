@@ -181,7 +181,12 @@ export const UNDER_THE_TREE: Place[] = [
 ];
 
 /** **ONE LOOKUP, NOT TWO**: the fixed list alone left Board printing its own
- * id in the bar. */
+ * id in the bar, and left the capture calling the board a place the product
+ * does not have. */
+export function placeNamed(id: Section): Place | null {
+  return onItsOwnName().find((place) => place.id === id) ?? null;
+}
+
 export function nameOfPlace(id: Section): string {
-  return [...PLACES, ...UNDER_THE_TREE].find((place) => place.id === id)?.name ?? id;
+  return placeNamed(id)?.name ?? id;
 }

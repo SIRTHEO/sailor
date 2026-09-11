@@ -19,6 +19,9 @@ pub enum Shape {
     /// The output is text, and pointers are regular expressions with one
     /// capture group.
     Text,
+    /// The output is a stream of JSON objects, one per line, and each pointer
+    /// is answered by the LAST line that carries it.
+    JsonLines,
 }
 
 /// Whose consumption a reading states: this call's, or the session's so far.
@@ -209,6 +212,7 @@ pub fn read_declared(said: &str, declared: &Declared) -> Reading {
     match declared.read {
         Shape::Json => read_from_json(said, declared),
         Shape::Text => read_from_text(said, declared),
+        Shape::JsonLines => read_from_json_lines(said, declared),
     }
 }
 
@@ -274,6 +278,45 @@ fn read_from_json(said: &str, declared: &Declared) -> Reading {
         model: read_name(&body, declared.model.as_ref()),
         models_named: count_names(&body, declared.model.as_ref()),
         answer: walk(&body, declared.answer.as_ref()).and_then(as_text),
+    }
+}
+
+/// **A STREAM SAYS THE SAME THING SEVERAL TIMES, AND THE LAST IS TRUE.** Each
+/// pointer is answered by the latest line carrying it: never the first, which
+/// is one turn of many, and never the sum, which counts a running total once
+/// per line. A line that parses as nothing is skipped, not fatal.
+fn read_from_json_lines(said: &str, declared: &Declared) -> Reading {
+    let bodies: Vec<serde_json::Value> = said
+        .lines()
+        .filter_map(|line| serde_json::from_str(line.trim()).ok())
+        .collect();
+    let latest = |pointer: &Option<Pointer>| {
+        bodies
+            .iter()
+            .rev()
+            .find_map(|body| walk(body, pointer.as_ref()))
+    };
+    Reading {
+        input_tokens: latest(&declared.input_tokens).and_then(as_tokens),
+        output_tokens: latest(&declared.output_tokens).and_then(as_tokens),
+        cached_tokens: latest(&declared.cached_tokens).and_then(as_tokens),
+        cache_write_tokens: latest(&declared.cache_write_tokens).and_then(as_tokens),
+        cache_write_long_tokens: latest(&declared.cache_write_long_tokens).and_then(as_tokens),
+        total_tokens: latest(&declared.total_tokens).and_then(as_tokens),
+        turns: latest(&declared.turns).and_then(as_tokens),
+        declared_cost: latest(&declared.cost).and_then(as_money),
+        model: bodies
+            .iter()
+            .rev()
+            .find_map(|body| read_name(body, declared.model.as_ref())),
+        models_named: bodies
+            .iter()
+            .rev()
+            .find_map(|body| count_names(body, declared.model.as_ref())),
+        answer: bodies
+            .iter()
+            .rev()
+            .find_map(|body| walk(body, declared.answer.as_ref()).and_then(as_text)),
     }
 }
 
@@ -421,6 +464,38 @@ mod declared_tests {
         "cache_read_input_tokens": 98000
       }
     }"#;
+
+    /// **A STREAM SAYS IT SEVERAL TIMES AND THE LAST IS TRUE.** Read as one
+    /// JSON envelope a stream parses as nothing and every number is lost;
+    /// summed, a running total is counted once per line.
+    #[test]
+    fn a_stream_of_lines_is_answered_by_the_last_line_that_carries_each_pointer() {
+        let said = concat!(
+            "{\"type\":\"thread.started\"}\n",
+            "not json at all, a warning printed among the events\n",
+            "{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}\n",
+            "{\"item\":{\"text\":\"the answer\"}}\n",
+            "{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":24894,\"output_tokens\":5}}\n",
+        );
+        let declared = Declared {
+            read: Shape::JsonLines,
+            input_tokens: path(&["usage", "input_tokens"]),
+            output_tokens: path(&["usage", "output_tokens"]),
+            answer: path(&["item", "text"]),
+            ..wrapped_declaration()
+        };
+
+        let read = read_declared(said, &declared);
+
+        assert_eq!(read.input_tokens, Some(24894), "the last turn, not the first and not the sum");
+        assert_eq!(read.output_tokens, Some(5));
+        assert_eq!(read.answer.as_deref(), Some("the answer"));
+
+        // The same text read as one envelope is nothing at all, which is why
+        // the shape is declared and not sniffed.
+        let as_one = Declared { read: Shape::Json, ..declared };
+        assert_eq!(read_declared(said, &as_one).input_tokens, None);
+    }
 
     fn wrapped_declaration() -> Declared {
         Declared {

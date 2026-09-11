@@ -380,6 +380,7 @@ dependencies = [
 name = "relay"
 version = "0.1.0"
 dependencies = [
+ "actions",
  "flow",
  "ledger",
  "serde",
@@ -587,6 +588,7 @@ dependencies = [
  "models",
  "serde",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]
@@ -717,7 +719,9 @@ dependencies = [
 name = "workspace"
 version = "0.1.0"
 dependencies = [
+ "flow",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

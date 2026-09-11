@@ -131,6 +131,32 @@ pub fn unix_secs_of_rfc3339(text: &str) -> Option<i64> {
 }
 
 /// Days since 1970-01-01 of a proleptic Gregorian date (Howard Hinnant's).
+/// Unix seconds back to `2026-09-11T12:48:37Z`, the shape the other providers
+/// already say. **A NUMBER IS NOT A TIME TO A PERSON**: a provider that
+/// answers with an instant in seconds is understood here, once, so the line a
+/// person reads says the same thing whoever answered it.
+pub fn rfc3339_of_unix_secs(secs: i64) -> String {
+    let days = secs.div_euclid(86_400);
+    let rest = secs.rem_euclid(86_400);
+    let (year, month, day) = civil_from_days(days);
+    let (hour, minute, second) = (rest / 3600, (rest % 3600) / 60, rest % 60);
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
+}
+
+/// The inverse of [`days_from_civil`], by the same well-known arithmetic.
+fn civil_from_days(days: i64) -> (i64, u32, u32) {
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    (if month <= 2 { y + 1 } else { y }, month, day)
+}
+
 fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
     let y = if month <= 2 { year - 1 } else { year };
     let era = y.div_euclid(400);
@@ -144,6 +170,19 @@ fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **THE TWO DIRECTIONS MUST MEET**, or a provider answering in seconds
+    /// and one answering in text would disagree about the same instant.
+    #[test]
+    fn an_instant_in_seconds_comes_back_as_the_text_the_others_say() {
+        assert_eq!(rfc3339_of_unix_secs(0), "1970-01-01T00:00:00Z");
+        assert_eq!(rfc3339_of_unix_secs(1_789_130_917), "2026-09-11T12:48:37Z");
+
+        for secs in [0_i64, 1, 86_399, 951_782_400, 1_789_130_917, 4_102_444_800] {
+            let text = rfc3339_of_unix_secs(secs);
+            assert_eq!(unix_secs_of_rfc3339(&text), Some(secs), "{text}");
+        }
+    }
 
     fn fuel(engine: &str, left: f64, resets_in: Option<i64>) -> Fuel {
         Fuel {

@@ -22,6 +22,36 @@ pub struct OauthUsageChannel {
     pub url: String,
     /// Whole header lines, `name: value`.
     pub headers: Vec<String>,
+    /// A command that prints the credentials, when they are not in the file.
+    pub held_by: Vec<String>,
+    /// The words this provider uses for its windows.
+    pub shape: WindowWords,
+}
+
+/// What a provider calls the parts of its answer. The default below is one
+/// provider's, and only because it was the first measured.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WindowWords {
+    /// The keys down to the object holding the windows; empty is the root.
+    pub windows_at: Vec<String>,
+    pub used: String,
+    /// Whether `used` is out of a hundred or out of one.
+    pub used_in_percent: bool,
+    pub resets: String,
+    /// Whether `resets` is an instant written out or a count of seconds.
+    pub resets_in_seconds: bool,
+}
+
+impl Default for WindowWords {
+    fn default() -> Self {
+        WindowWords {
+            windows_at: Vec::new(),
+            used: "utilization".to_owned(),
+            used_in_percent: true,
+            resets: "resets_at".to_owned(),
+            resets_in_seconds: false,
+        }
+    }
 }
 
 /// How much of a quota window is already gone, and when that window resets.
@@ -168,10 +198,11 @@ pub fn from_oauth_usage(
     body: &str,
     engine: &str,
     observed_at: i64,
+    words: &WindowWords,
 ) -> Result<Vec<Remaining>, RemainingError> {
     let parsed: serde_json::Value =
         serde_json::from_str(body).map_err(|_| RemainingError::NotUnderstood)?;
-    let windows = parsed.as_object().ok_or(RemainingError::NotUnderstood)?;
+    let whole = parsed.as_object().ok_or(RemainingError::NotUnderstood)?;
 
     // **A REFUSAL IS RECOGNISED BEFORE THE WINDOWS ARE COUNTED**: this
     // provider's refusal is valid JSON with no `utilization` anywhere, so
@@ -179,7 +210,7 @@ pub fn from_oauth_usage(
     // **Look at `error.message`, not the envelope.** A revocation carries a
     // top-level `"type": "error"`, a rate limit does not: matching the envelope
     // let the rate limit through as that empty list, to an automated poller.
-    if let Some(said) = windows
+    if let Some(said) = whole
         .get("error")
         .and_then(|error| error.get("message"))
         .and_then(serde_json::Value::as_str)
@@ -187,13 +218,21 @@ pub fn from_oauth_usage(
         return Err(RemainingError::Refused(said.to_owned()));
     }
 
+    // **THE WINDOWS ARE WHERE THE DESCRIPTOR SAYS.** Read at the root, windows
+    // nested under a name of their own answer «nothing spent» for a full one.
+    let mut here = &parsed;
+    for key in &words.windows_at {
+        here = here.get(key).ok_or(RemainingError::NotUnderstood)?;
+    }
+    let windows = here.as_object().ok_or(RemainingError::NotUnderstood)?;
+
     let mut found = Vec::new();
     for (unit, window) in windows {
         let Some(fields) = window.as_object() else {
             continue;
         };
         let Some(percent) = fields
-            .get("utilization")
+            .get(&words.used)
             .and_then(serde_json::Value::as_f64)
         else {
             // **WHAT IS NOT A MEASURE DOES NOT BECOME A ZERO.** A null window,
@@ -207,11 +246,14 @@ pub fn from_oauth_usage(
             unit: unit.clone(),
             // The provider says `50.0` for half. See the note on
             // `used_fraction`: the unit changes here, once, in one place.
-            used_fraction: percent / 100.0,
-            resets_at: fields
-                .get("resets_at")
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned),
+            used_fraction: if words.used_in_percent { percent / 100.0 } else { percent },
+            resets_at: fields.get(&words.resets).and_then(|when| {
+                if words.resets_in_seconds {
+                    when.as_i64().map(crate::fuel::rfc3339_of_unix_secs)
+                } else {
+                    when.as_str().map(str::to_owned)
+                }
+            }),
             observed_at,
         });
     }
@@ -227,15 +269,41 @@ pub fn read_oauth_usage(
     channel: &OauthUsageChannel,
     observed_at: i64,
 ) -> Result<Vec<Remaining>, RemainingError> {
-    let path: &Path = &channel.credentials;
-    if !path.exists() {
-        return Err(RemainingError::NoCredentials(path.to_path_buf()));
-    }
-    let text = std::fs::read_to_string(path)
-        .map_err(|error| RemainingError::CredentialsUnreadable(error.to_string()))?;
+    let text = match channel.held_by.split_first() {
+        Some((program, arguments)) => held_by(program, arguments)?,
+        None => {
+            let path: &Path = &channel.credentials;
+            if !path.exists() {
+                return Err(RemainingError::NoCredentials(path.to_path_buf()));
+            }
+            std::fs::read_to_string(path)
+                .map_err(|error| RemainingError::CredentialsUnreadable(error.to_string()))?
+        }
+    };
     let token = Token::from_credentials_at(&text, &channel.token_pointer)?;
     let body = ask_curl(&token.curl_config(&channel.url, &channel.headers))?;
-    from_oauth_usage(&body, &channel.engine, observed_at)
+    from_oauth_usage(&body, &channel.engine, observed_at, &channel.shape)
+}
+
+/// What the keeper of secrets prints, or why it would not.
+///
+/// **IT IS ASKED, NEVER SEARCHED FOR.** The command comes whole from the
+/// descriptor with the home already put in, so this knows how to run a line
+/// and nothing about who keeps what.
+fn held_by(program: &str, arguments: &[String]) -> Result<String, RemainingError> {
+    let run = std::process::Command::new(program)
+        .args(arguments)
+        .output()
+        .map_err(|error| RemainingError::CredentialsUnreadable(format!("{program}: {error}")))?;
+    if !run.status.success() {
+        let said = String::from_utf8_lossy(&run.stderr);
+        return Err(RemainingError::CredentialsUnreadable(format!(
+            "«{program} {}» answered nothing: {}",
+            arguments.join(" "),
+            said.trim()
+        )));
+    }
+    Ok(String::from_utf8_lossy(&run.stdout).into_owned())
 }
 
 /// `curl` as a process, with the configuration on its stdin.
@@ -293,7 +361,37 @@ mod tests {
     }
 
     fn parse(body: &str, observed_at: i64) -> Result<Vec<Remaining>, RemainingError> {
-        from_oauth_usage(body, ENGINE, observed_at)
+        from_oauth_usage(body, ENGINE, observed_at, &WindowWords::default())
+    }
+
+    /// **A PROVIDER THAT NESTS ITS WINDOWS IS NOT ONE WITHOUT QUOTA.** Read at
+    /// the root it yields the empty list, for a window that is full.
+    #[test]
+    fn the_windows_are_read_where_the_descriptor_says_and_by_its_own_words() {
+        let body = r#"{"plan": "a-plan", "rate_limit": {
+            "primary_window": {"used_percent": 100, "reset_at": 1789130917},
+            "secondary_window": {"used_percent": 65, "reset_at": 1789546933}}}"#;
+        let words = WindowWords {
+            windows_at: vec!["rate_limit".to_owned()],
+            used: "used_percent".to_owned(),
+            used_in_percent: true,
+            resets: "reset_at".to_owned(),
+            resets_in_seconds: true,
+        };
+
+        assert_eq!(
+            from_oauth_usage(body, ENGINE, 7, &WindowWords::default()),
+            Ok(Vec::new()),
+            "read by another provider's words it looks empty, which is the danger"
+        );
+
+        let found = from_oauth_usage(body, ENGINE, 7, &words).expect("its own words");
+
+        assert_eq!(found.len(), 2);
+        assert_eq!(found[0].unit, "primary_window");
+        assert_eq!(found[0].used_fraction, 1.0);
+        assert_eq!(found[0].resets_at.as_deref(), Some("2026-09-11T12:48:37Z"));
+        assert_eq!(found[1].used_fraction, 0.65);
     }
 
     fn token_of(text: &str) -> Result<Token, RemainingError> {
@@ -524,8 +622,31 @@ mod tests {
             token_pointer: pointer(),
             url: URL.to_owned(),
             headers: vec![BETA.to_owned()],
+            held_by: Vec::new(),
+            shape: WindowWords::default(),
         };
         let refused = read_oauth_usage(&channel, 0).expect_err("there is nothing to read");
         assert!(matches!(refused, RemainingError::NoCredentials(_)));
+    }
+
+    /// A keeper that will not answer is a refusal that names the line it ran,
+    /// never a reading of nothing: the file beside it does not stand in.
+    #[test]
+    fn a_keeper_that_refuses_names_the_line_that_was_run() {
+        let channel = OauthUsageChannel {
+            engine: ENGINE.to_owned(),
+            credentials: PathBuf::from("/this/home/does/not/exist/.credentials.json"),
+            token_pointer: pointer(),
+            url: URL.to_owned(),
+            headers: vec![BETA.to_owned()],
+            held_by: vec!["false".to_owned(), "--for".to_owned(), "a-home".to_owned()],
+            shape: WindowWords::default(),
+        };
+
+        let refused = read_oauth_usage(&channel, 0).expect_err("the keeper says no");
+
+        let said = refused.to_string();
+        assert!(said.contains("false --for a-home"), "{said}");
+        assert!(!said.contains(".credentials.json"), "the file is not the story: {said}");
     }
 }
