@@ -34,6 +34,10 @@ use std::sync::{Arc, Mutex};
 /// later breaking the callers.
 #[derive(Debug, Clone)]
 pub struct Opening {
+    /// The name the opener chose for this terminal, when it chose one: what a
+    /// client asks for when it comes back, having forgotten every number this
+    /// run of the window assigned. `None` leaves the host to name it.
+    pub name: Option<String>,
     /// The program to start inside the terminal. Default: the launcher's own
     /// shell, read from `SHELL`.
     pub program: OsString,
@@ -52,6 +56,7 @@ pub struct Opening {
 impl Default for Opening {
     fn default() -> Opening {
         Opening {
+            name: None,
             program: std::env::var_os("SHELL").unwrap_or_else(|| OsString::from("/bin/sh")),
             args: Vec::new(),
             size: Size::default(),
@@ -171,6 +176,10 @@ impl Terminal {
             estimated_tokens: estimated_tokens(self.moved()),
             program: self.program.clone(),
             profile: self.profile.clone(),
+            directory: crate::standing::directory_of(self.process_id())
+                .map(|where_it_is| where_it_is.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            attached: 0,
         }
     }
 }
@@ -221,6 +230,14 @@ pub struct Summary {
     /// The profile it runs under, when one applied at opening.
     #[serde(default)]
     pub profile: Option<String>,
+    /// The directory the program inside is standing in **now**, asked of it
+    /// rather than remembered from the opening: a shell walks. Empty when it
+    /// can no longer be asked.
+    #[serde(default)]
+    pub directory: String,
+    /// How many clients are following this terminal's output right now.
+    #[serde(default)]
+    pub attached: usize,
 }
 
 /// The terminals opened by this process.
@@ -311,11 +328,14 @@ impl Terminals {
             &opening.not_inherited,
         )?;
         let mut reader = pty.reader()?;
-        let id = format!(
-            "{}-{}",
-            workspace.name,
-            self.next.fetch_add(1, Ordering::Relaxed)
-        );
+        let id = match opening.name.as_deref().map(str::trim).filter(|name| !name.is_empty()) {
+            Some(chosen) => chosen.to_owned(),
+            None => format!(
+                "{}-{}",
+                workspace.name,
+                self.next.fetch_add(1, Ordering::Relaxed)
+            ),
+        };
         let output = make_output(&id);
         let terminal = Arc::new(Terminal {
             id,
@@ -327,9 +347,12 @@ impl Terminals {
             program: program_name(&opening.program),
             profile: opening.profile.clone(),
         });
-        let registered = match &self.mailroom {
-            Some(mailroom) => Some(register(&terminal, mailroom)?),
-            None => None,
+        let (registered, painting) = match &self.mailroom {
+            Some(mailroom) => {
+                let (registered, screen) = register(&terminal, mailroom)?;
+                (Some(registered), Some(screen))
+            }
+            None => (None, None),
         };
         let draining = Arc::clone(&terminal);
         std::thread::spawn(move || {
@@ -345,6 +368,9 @@ impl Terminals {
                             .counters
                             .shown
                             .fetch_add(read as u64, Ordering::Relaxed);
+                        if let Some(painting) = &painting {
+                            painting.push(&buffer[..read]);
+                        }
                         output.chunk(&buffer[..read]);
                     }
                     // A signal which arrived during the read is not the end of
@@ -411,6 +437,8 @@ struct Registered {
     letterbox: inbox::Closer,
     recording: tally::Recording,
     seen: PathBuf,
+    painting: crate::screen::Recording,
+    painted: PathBuf,
 }
 
 impl Registered {
@@ -419,7 +447,9 @@ impl Registered {
     fn withdraw(self) {
         self.letterbox.close();
         self.recording.stop();
+        self.painting.stop();
         let _ = std::fs::remove_file(&self.seen);
+        let _ = std::fs::remove_file(&self.painted);
     }
 }
 
@@ -428,7 +458,10 @@ impl Registered {
 /// The letterbox is named after the terminal the program inside sees, which
 /// is the one the tracking store records: keying on anything else would leave
 /// whoever reads that store knocking at an address nobody holds.
-fn register(terminal: &Arc<Terminal>, mailroom: &std::path::Path) -> Result<Registered, PtyError> {
+fn register(
+    terminal: &Arc<Terminal>,
+    mailroom: &std::path::Path,
+) -> Result<(Registered, Arc<crate::screen::Screen>), PtyError> {
     let tty = terminal.tty();
     let letterbox = Inbox::open(mailroom.join(format!("{tty}.sock"))).map_err(|error| {
         let _ = terminal.close();
@@ -443,11 +476,19 @@ fn register(terminal: &Arc<Terminal>, mailroom: &std::path::Path) -> Result<Regi
     });
     let seen = mailroom.join(format!("{tty}.seen"));
     let recording = terminal.counters.recorded_into(seen.clone());
-    Ok(Registered {
-        letterbox: closer,
-        recording,
-        seen,
-    })
+    let screen = Arc::new(crate::screen::Screen::new());
+    let painted = mailroom.join(format!("{tty}.screen"));
+    let painting = crate::screen::recorded_into(Arc::clone(&screen), painted.clone());
+    Ok((
+        Registered {
+            letterbox: closer,
+            recording,
+            seen,
+            painting,
+            painted,
+        },
+        screen,
+    ))
 }
 
 /// How long to keep asking how it ended, once the output has ended.

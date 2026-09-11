@@ -398,6 +398,8 @@ fn the_list_row_carries_the_names_the_window_reads() {
         estimated_tokens: 60_477,
         program: "codex".to_owned(),
         profile: Some("prove".to_owned()),
+        directory: "/tmp/qui/altrove".to_owned(),
+        attached: 1,
     };
     let written = serde_json::to_value(&row).expect("la riga si serializza");
     let object = written.as_object().expect("è un oggetto");
@@ -407,7 +409,9 @@ fn the_list_row_carries_the_names_the_window_reads() {
         names,
         [
             "alive",
+            "attached",
             "device",
+            "directory",
             "estimatedTokens",
             "id",
             "moved",
