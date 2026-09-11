@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * THE COLUMN IS ONE READING, AND THE COLUMN SAYS WHERE ITS PARTS BEGIN.
  * Three groups of rows sat in the same nave under plain text: a person
@@ -5,12 +6,13 @@
  * a reader of the accessibility tree got one run-on string. The headings are
  * the hierarchy, so they are asserted as headings.
  */
-import { describe, expect, test } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, test } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
 import { World } from "./World";
 import { theColumn, EMPTY_COLUMN, type ColumnReading } from "./column";
 
 function paint(globalFlows?: React.ReactNode) {
+  cleanup();
   return render(
     <World
       native={false}
@@ -29,6 +31,8 @@ function paint(globalFlows?: React.ReactNode) {
     />,
   );
 }
+
+afterEach(cleanup);
 
 describe("the column names its own parts", () => {
   test("EACH GROUP OF THE COLUMN IS A HEADING, NOT A LINE OF TEXT", () => {

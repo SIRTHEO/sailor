@@ -25,7 +25,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type Page } from "playwright";
-import { MACHINE, PLACES, UNDER_A_TREE, type Section } from "../src/places";
+import { MACHINE, UNDER_A_TREE, placeNamed, type Section } from "../src/places";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -87,7 +87,7 @@ async function openByPalette(page: Page, label: string): Promise<void> {
  * column, and everywhere else only the palette names it.
  */
 async function openPlace(page: Page, id: Section): Promise<void> {
-  const place = PLACES.find((one) => one.id === id);
+  const place = placeNamed(id);
   if (!place) throw new Error(`no place «${id}»: the product does not have it`);
   if (!UNDER_A_TREE.includes(id)) {
     await openByPalette(page, place.name);

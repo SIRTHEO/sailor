@@ -102,11 +102,11 @@ function terminal(id: string, root: string, name: string, device: string): Termi
     alive: true,
     processId: 0,
     device,
-    bytes: 0,
+    moved: 0,
+    estimatedTokens: 0,
     program: "zsh",
-    startedAt: 0,
-    lastByteAt: 0,
-  } as TerminalSummary;
+    profile: null,
+  };
 }
 
 /**
