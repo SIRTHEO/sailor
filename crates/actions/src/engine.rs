@@ -782,6 +782,22 @@ impl ExternalEngineAction {
         })
     }
 
+    /// What this call may have of the run's remainder. **A CAP NOBODY WRITES
+    /// ON THE COMMAND LINE IS A STOP THRESHOLD**: fault 164. The remainder is
+    /// shared by the wave, never offered whole to each step in it.
+    fn share_of_the_cap(&self, shared: &SharedState) -> Option<i64> {
+        let cap = shared.get(flow::CURRENT_CAP)?.as_i64()?;
+        let run_id = shared.get(flow::CURRENT_RUN)?.as_str()?;
+        let spent = self.ledger.as_ref()?.spent_in_run(run_id).ok()?;
+        let front = shared
+            .get(flow::CURRENT_FRONT)
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or(1)
+            .max(1);
+        let left = cap - spent.micros - reserve::in_flight(run_id);
+        Some(left / front)
+    }
+
     /// The most this call can cost, as a reserve or as the reason there is none.
     ///
     /// The tariffs are those of the model this step asks of this engine. A step
@@ -882,7 +898,7 @@ impl Action for ExternalEngineAction {
         }
         // Before spending anything: if none of the engines asked for is usable
         // here, the step stops and says why for each of them.
-        let (candidates, refused) = self.candidates(&spec)?;
+        let (candidates, refused) = self.candidates(&spec, self.share_of_the_cap(shared))?;
         if candidates.is_empty() {
             // A single engine that cannot be found stays `tool_unavailable`
             // with the resolver's reason: the commonest case, and that message

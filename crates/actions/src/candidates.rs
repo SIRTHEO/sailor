@@ -92,7 +92,13 @@ impl ExternalEngineAction {
     ///
     /// It also returns the engines that **cannot** be used here, with the
     /// reason: if none is left, that reason is all the reader will have.
-    pub(crate) fn candidates(&self, spec: &EngineSpec) -> Result<(Vec<Candidate>, Vec<Refused>), ActionError> {
+    ///
+    /// A step that declares no ceiling of its own is held to `share_of_the_cap`.
+    pub(crate) fn candidates(
+        &self,
+        spec: &EngineSpec,
+        share_of_the_cap: Option<i64>,
+    ) -> Result<(Vec<Candidate>, Vec<Refused>), ActionError> {
         // Whoever wrote the options wrote which model in them: a second answer
         // to one question would want a precedence, as `bin` and `tool` would.
         if !spec.model.is_empty() && !spec.args.is_empty() {
@@ -299,7 +305,7 @@ impl ExternalEngineAction {
                     let held_to = tools.spend_ceiling_option(id);
                     let ceiling = held_to
                         .as_ref()
-                        .and_then(|option| reserve::ceiling_for(option, &ceiling_of(spec)));
+                        .and_then(|option| reserve::ceiling_for(option, &ceiling_of(spec, share_of_the_cap)));
                     let written = ceiling.as_ref().and_then(reserve::Ceiling::as_written);
                     match tools.ask_recipe(id) {
                         Some(recipe) => usable.push(Candidate {
@@ -318,7 +324,7 @@ impl ExternalEngineAction {
                             ceiling,
                             no_ceiling_because: reserve::why_no_ceiling(
                                 held_to.as_ref(),
-                                &ceiling_of(spec),
+                                &ceiling_of(spec, share_of_the_cap),
                             ),
                             prompt: recipe.prompt,
                             session: session_lines(&recipe, tools.session_recipe(id)),

@@ -100,10 +100,17 @@ pub fn models_named_in(with: &Value) -> BTreeMap<String, String> {
 }
 
 /// The ceiling this step declares, in every unit an engine may take one in.
-pub(crate) fn ceiling_of(spec: &EngineSpec) -> crate::reserve::Declared {
-    crate::reserve::Declared {
+pub(crate) fn ceiling_of(spec: &EngineSpec, share_of_the_cap: Option<i64>) -> crate::reserve::Declared {
+    let declared = crate::reserve::Declared {
         max_spend_micros: spec.max_spend_micros,
         max_tokens: spec.max_tokens,
+    };
+    if !declared.is_empty() {
+        return declared;
+    }
+    crate::reserve::Declared {
+        max_spend_micros: share_of_the_cap.filter(|share| *share > 0),
+        max_tokens: None,
     }
 }
 
@@ -317,8 +324,34 @@ mod tests {
         ] {
             let spec: EngineSpec =
                 serde_json::from_value(with.clone()).expect("this `with` is whole");
-            assert_eq!(ceiling_declared_in(&with), ceiling_of(&spec));
+            assert_eq!(ceiling_declared_in(&with), ceiling_of(&spec, None));
         }
+    }
+
+    /// **THE REMAINDER FILLS A CEILING THE STEP LEFT EMPTY, NEVER ONE IT WROTE.**
+    #[test]
+    fn a_share_of_the_cap_is_a_ceiling_only_where_the_step_declared_none() {
+        let empty: EngineSpec =
+            serde_json::from_value(json!({"tool": "uno", "timeout_secs": 1})).expect("whole");
+        assert_eq!(
+            ceiling_of(&empty, Some(2_000_000)).max_spend_micros,
+            Some(2_000_000)
+        );
+        assert_eq!(
+            ceiling_of(&empty, Some(0)).max_spend_micros,
+            None,
+            "nothing left is not a ceiling of nothing"
+        );
+
+        let declared: EngineSpec = serde_json::from_value(
+            json!({"tool": "uno", "timeout_secs": 1, "max_spend_micros": 500_000}),
+        )
+        .expect("whole");
+        assert_eq!(
+            ceiling_of(&declared, Some(2_000_000)).max_spend_micros,
+            Some(500_000),
+            "the step's own ceiling is the authority"
+        );
     }
 
     /// **WHOEVER PRICES A RUN BEFORE IT RUNS READS THE STEP, NOT THE PAST.**

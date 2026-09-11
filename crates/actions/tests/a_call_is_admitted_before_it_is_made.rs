@@ -243,6 +243,70 @@ fn a_call_whose_reserve_does_not_fit_the_remainder_never_starts() {
     );
 }
 
+/// The shared state of a wave of `paying` steps opening together.
+fn capped_front(step: &str, cap_micros: i64, paying: i64) -> SharedState {
+    let mut state = capped(step, cap_micros);
+    state.insert(flow::CURRENT_FRONT.to_owned(), json!(paying));
+    state
+}
+
+/// **A CAP THE RUN DECLARES REACHES THE COMMAND LINE.** A run capped at 6.00
+/// paid 6.54 for one call, because no step declares a ceiling and nothing else
+/// wrote one — fault 164. *Mutant run*: `share_of_the_cap` returning `None`
+/// leaves the line with no ceiling at all.
+#[test]
+fn a_step_that_declares_no_ceiling_is_held_to_what_is_left_of_the_cap() {
+    let dir = Scratch::new("quota-del-tetto");
+    let prices = dir.0.join("pricing.json");
+    fs::write(&prices, PRICE_LIST).expect("the fake price list is written");
+    let action = a_run(&dir.0, true, "deposito");
+    let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
+
+    with_the_price_list(&prices, || {
+        action
+            .execute(&input, &capped_front("passo-1", 1_000_000, 1))
+            .expect("the first call has the whole cap to itself");
+        let first = fs::read_to_string(dir.0.join("argv")).expect("the engine wrote its line");
+        assert!(
+            first.contains("--max-budget-usd") && first.contains("1.000000"),
+            "the whole remainder is the ceiling: {first}"
+        );
+
+        // The call above cost 0.30, so the next one is held to what is left.
+        action
+            .execute(&input, &capped_front("passo-2", 1_000_000, 1))
+            .expect("and the second to what is left of it");
+        let second = fs::read_to_string(dir.0.join("argv")).expect("the engine wrote its line");
+        assert!(
+            second.contains("0.700000"),
+            "the ceiling falls with the spend: {second}"
+        );
+    });
+}
+
+/// **WHAT IS LEFT IS SHARED BY THE WAVE.** Four steps each told they may spend
+/// all of it would hold four times the cap. *Mutant run*: ignore
+/// `CURRENT_FRONT` and the line reads 1.000000 instead of 0.250000.
+#[test]
+fn the_remainder_is_divided_among_the_paying_steps_of_the_wave() {
+    let dir = Scratch::new("quota-del-fronte");
+    let prices = dir.0.join("pricing.json");
+    fs::write(&prices, PRICE_LIST).expect("the fake price list is written");
+    let action = a_run(&dir.0, true, "deposito");
+    let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
+
+    with_the_price_list(&prices, || {
+        action
+            .execute(&input, &capped_front("passo-1", 1_000_000, 4))
+            .expect("a quarter of the cap is enough for this call");
+        let line = fs::read_to_string(dir.0.join("argv")).expect("the engine wrote its line");
+        assert!(
+            line.contains("0.250000"),
+            "a quarter of what is left, not all of it: {line}"
+        );
+    });
+}
+
 /// The other half, and the one that holds today: with nothing to reserve
 /// against, the same run is not suspended before the remainder is gone — and
 /// when it is, the refusal says the reserve could not be known instead of
