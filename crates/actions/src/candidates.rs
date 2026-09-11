@@ -14,28 +14,30 @@ use crate::{budget, cooldown, reserve, Declared, EXTERNAL_ENGINE_ACTION};
 use flow::ActionError;
 use std::path::PathBuf;
 
+/// `prefer: fuel` — the engine whose window expires unused soonest goes first.
+const FUEL: &str = "fuel";
+/// `prefer: as_written` — the step's chain is the whole chain, table included.
+const AS_WRITTEN: &str = "as_written";
+
 impl ExternalEngineAction {
     /// The chain for this step: the strengths table's engines for its kind
-    /// first, then the chain as the flow wrote it; a kind without a row, or
-    /// a step without a kind, is the chain as written. Then, under
-    /// `prefer: fuel`, the engine whose window expires unused soonest moves
-    /// to the front, with the why.
+    /// first, then the chain as the flow wrote it; a kind without a row, a step
+    /// without a kind, or `prefer: as_written`, is the chain as written. Then,
+    /// under `prefer: fuel`, the engine whose window expires unused soonest
+    /// moves to the front, with the why.
     fn ordered(
         &self,
         tools: &dyn ToolResolver,
         spec: &EngineSpec,
         chain: &[String],
     ) -> (Vec<String>, Option<models::fuel::Preference>) {
-        let mut ordered: Vec<String> = match spec.kind.as_deref() {
-            Some(kind) => self.strengths_table().first_for(kind).to_vec(),
-            None => Vec::new(),
-        };
+        let mut ordered: Vec<String> = self.preferred_for(spec);
         for id in chain {
             if !ordered.contains(id) {
                 ordered.push(id.clone());
             }
         }
-        if spec.prefer.as_deref() != Some("fuel") {
+        if spec.prefer.as_deref() != Some(FUEL) {
             return (ordered, None);
         }
         let fuels: Vec<models::fuel::Fuel> = ordered.iter().flat_map(|id| tools.fuel(id)).collect();
@@ -49,6 +51,25 @@ impl ExternalEngineAction {
         (ordered, preferred)
     }
 
+    /// The engines the strengths table puts ahead of this step's own chain.
+    /// Empty without a declared kind, without a row for it, and under
+    /// `prefer: as_written`.
+    ///
+    /// **A STEP CAN REFUSE THE TABLE, AND SOMETIMES MUST.** See fault 161: a
+    /// step naming engines cloned for write access had the shipped read-only
+    /// ones tried ahead of them, spent a front, and answered «no files
+    /// changed» — the table is the machine's policy for a kind of work, and a
+    /// step whose chain is the whole point of it says so with `as_written`.
+    fn preferred_for(&self, spec: &EngineSpec) -> Vec<String> {
+        let Some(kind) = spec.kind.as_deref() else {
+            return Vec::new();
+        };
+        if spec.prefer.as_deref() == Some(AS_WRITTEN) {
+            return Vec::new();
+        }
+        self.strengths_table().first_for(kind).to_vec()
+    }
+
     /// The engines the strengths table puts first for this step's kind that
     /// are not usable here: what the step falls back from. Empty without a
     /// declared kind, without a row for it, or when they are all usable.
@@ -56,14 +77,9 @@ impl ExternalEngineAction {
     /// **AN ABSENT ENGINE IS NOT A SILENT FAILURE**: without this the ledger
     /// cannot tell a step that never wanted the local engine from one denied it.
     pub(crate) fn fell_back_from(&self, spec: &EngineSpec, usable: &[Candidate]) -> Vec<String> {
-        let Some(kind) = spec.kind.as_deref() else {
-            return Vec::new();
-        };
-        self.strengths_table()
-            .first_for(kind)
-            .iter()
+        self.preferred_for(spec)
+            .into_iter()
             .filter(|first| !usable.iter().any(|one| one.id.as_deref() == Some(first.as_str())))
-            .cloned()
             .collect()
     }
 
@@ -130,10 +146,14 @@ impl ExternalEngineAction {
                         ),
                     ));
                 };
-                if let Some(other) = spec.prefer.as_deref().filter(|word| *word != "fuel") {
+                if let Some(other) = spec
+                    .prefer
+                    .as_deref()
+                    .filter(|word| *word != FUEL && *word != AS_WRITTEN)
+                {
                     return Err(ActionError::new(
                         "invalid_input",
-                        format!("`prefer` knows only «fuel», not «{other}»"),
+                        format!("`prefer` knows «{FUEL}» and «{AS_WRITTEN}», not «{other}»"),
                     ));
                 }
                 let (ids, preferred) = self.ordered(tools.as_ref(), spec, choice.ids());

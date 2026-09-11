@@ -150,6 +150,7 @@
             "agy": "claude-sonnet-4-6"
           },
           "kind": "implementation",
+          "prefer": "as_written",
           "data": "private",
           "answer_shape": {
             "type": "object",

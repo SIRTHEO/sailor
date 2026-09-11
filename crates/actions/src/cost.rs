@@ -1299,6 +1299,68 @@ printf '{"result":"the true answer","model":"modello-di-prova","total_cost_usd":
         assert_eq!(calls_in(&dir.join("deposito-2"))[0].cli, "catena");
     }
 
+    /// **`prefer: as_written` MAKES THE STEP'S CHAIN THE WHOLE CHAIN.**
+    ///
+    /// Fault 161: a repair step named engines cloned for write access, and the
+    /// table's read-only ones for its kind were tried ahead of them; the run
+    /// spent a front and answered «no files changed». Both directions are here,
+    /// on one table and one pair of engines, because the claim is a difference.
+    #[test]
+    fn a_step_preferring_its_chain_as_written_is_not_moved_by_the_table() {
+        let dir = scratch("as-written");
+        let local = fake_engine(&dir, "locale", WRAPS_ON_DEMAND);
+        let chained = fake_engine(&dir, "catena", WRAPS_ON_DEMAND);
+        let engines = || TwoEngines {
+            bins: [("locale", local.clone()), ("catena", chained.clone())].into_iter().collect(),
+        };
+        let table = dir.join("strengths.json");
+        std::fs::write(&table, r#"{"measured_on": "a test", "rows": {"mechanical": ["locale"]}}"#)
+            .expect("write the table");
+
+        let as_written = ExternalEngineAction::resolving_with(engines())
+            .recording_to(Some(Ledger::open(dir.join("deposito")).expect("open")))
+            .strong_by(Some(table.clone()));
+        let input = json!({
+            "tool": "catena", "kind": "mechanical", "prefer": "as_written",
+            "stdin": "ciao", "timeout_secs": 10
+        });
+        with_price_list(None, || as_written.execute(&input, &shared("corsa-1", "passo")))
+            .expect("the chain answers");
+        let calls = calls_in(&dir.join("deposito"));
+        assert_eq!(calls[0].cli, "catena", "the table must not move a step that refused it");
+        assert!(calls[0].fell_back_from.is_empty(), "it never wanted the table's engine");
+
+        // The control: the same table and the same engines without the word,
+        // where the table is still free to go first.
+        let moved = ExternalEngineAction::resolving_with(engines())
+            .recording_to(Some(Ledger::open(dir.join("deposito-2")).expect("open")))
+            .strong_by(Some(table));
+        let plain = json!({"tool": "catena", "kind": "mechanical", "stdin": "ciao", "timeout_secs": 10});
+        with_price_list(None, || moved.execute(&plain, &shared("corsa-2", "passo")))
+            .expect("the local engine answers");
+        assert_eq!(calls_in(&dir.join("deposito-2"))[0].cli, "locale");
+    }
+
+    /// A word `prefer` does not know stops the step before anything is spent,
+    /// and names both words it does know.
+    #[test]
+    fn prefer_names_the_words_it_knows_when_it_is_given_another() {
+        let dir = scratch("prefer-unknown");
+        let chained = fake_engine(&dir, "catena", WRAPS_ON_DEMAND);
+        let action = ExternalEngineAction::resolving_with(TwoEngines {
+            bins: [("catena", chained)].into_iter().collect(),
+        });
+        let input = json!({"tool": "catena", "prefer": "cheapest", "stdin": "ciao", "timeout_secs": 10});
+
+        let refused = action
+            .execute(&input, &shared("corsa", "passo"))
+            .expect_err("«cheapest» is not a word it knows");
+
+        assert_eq!(refused.class, "invalid_input");
+        assert!(refused.said.contains("as_written"), "{}", refused.said);
+        assert!(refused.said.contains("fuel"), "{}", refused.said);
+    }
+
     /// **A PREFERRED ENGINE THAT IS NOT HERE IS WRITTEN DOWN.**
     ///
     /// The step answers on the chain it already had, and the row of whoever
