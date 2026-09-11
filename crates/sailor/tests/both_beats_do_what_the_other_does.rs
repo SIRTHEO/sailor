@@ -37,6 +37,7 @@ const THE_PASS: &[(&str, &str)] = &[
 
 #[test]
 fn every_beat_asks_the_parked_runs_again_in_the_pass_it_makes() {
+    let mut walked = 0usize;
     for (at, signature) in THE_PASS {
         let pass = body_of(&read(at), signature);
 
@@ -47,7 +48,9 @@ fn every_beat_asks_the_parked_runs_again_in_the_pass_it_makes() {
             "{at}: the beat makes a pass and does not ask the parked runs again. \
              One loop sweeping and the other leaving them is how fifty-six ran up."
         );
+        walked += 1;
     }
+    workspace::measured(walked, "beats read, and each makes one pass");
 }
 
 /// The judgement is shared or it is two judgements: the window reaches into
