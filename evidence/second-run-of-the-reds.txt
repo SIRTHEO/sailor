@@ -1,0 +1,65 @@
+######## SECOND RUN: a_sentence_for_a_person_lives_in_the_catalogue
+binary: /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--2--1789132222644037000/the_agent/target/before/debug/deps/a_sentence_for_a_person_lives_in_the_catalogue-3fa1d46bbfdd18b3
+
+---- the_sentences_written_into_the_command_line_only_shrink stdout ----
+
+measured: 47 sources read for sentences written into the code
+
+thread 'the_sentences_written_into_the_command_line_only_shrink' (45836675) panicked at crates/sailor/tests/a_sentence_for_a_person_lives_in_the_catalogue.rs:329:5:
+sentences written into the code: 7 (the declared number is 3). A sentence written here is English for everyone for ever: give it a `cli.*` or `ui.*` key in i18n/en.json and i18n/it.json and ask the catalogue for it. Where they are, heaviest first:
+     3  crates/sailor/src/workspace_cmd.rs
+     1  crates/sailor/src/release_cmd.rs
+     1  crates/sailor/src/remaining_cmd.rs
+     1  crates/sailor/src/session_cmd.rs
+     1  crates/sailor/src/toml_graft.rs
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    the_sentences_written_into_the_command_line_only_shrink
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+######## SECOND RUN: every_power_the_window_declares_is_one_it_can_reach
+binary: /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--2--1789132222644037000/the_agent/target/before/debug/deps/every_power_the_window_declares_is_one_it_can_reach-ccba727bb57089dd
+running 2 tests
+test no_power_is_declared_and_left_unreachable ... FAILED
+test the_control_a_declaration_is_read_and_a_name_is_found_in_the_page ... ok
+
+failures:
+
+---- no_power_is_declared_and_left_unreachable stdout ----
+
+measured: 97 page sources read against 62 commands the shell declares
+
+thread 'no_power_is_declared_and_left_unreachable' (45836690) panicked at crates/sailor/tests/every_power_the_window_declares_is_one_it_can_reach.rs:84:39:
+1 of 62 commands are declared and never asked for, 1 more than the seed's 0: ["left_column"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    no_power_is_declared_and_left_unreachable
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+######## SECOND RUN: the_quota_reader_and_the_descriptor_name_the_same_engine
+binary: /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--2--1789132222644037000/the_agent/target/before/debug/deps/the_quota_reader_and_the_descriptor_name_the_same_engine-610d157051002462
+
+running 2 tests
+test an_engine_that_was_looked_at_and_cannot_says_so_instead_of_staying_silent ... ok
+test every_declared_channel_is_announced_and_every_announcement_has_its_channel ... FAILED
+
+failures:
+
+---- every_declared_channel_is_announced_and_every_announcement_has_its_channel stdout ----
+
+thread 'every_declared_channel_is_announced_and_every_announcement_has_its_channel' (45836722) panicked at crates/toolbox/tests/the_quota_reader_and_the_descriptor_name_the_same_engine.rs:36:33:
+«codex» declares a `quota` block and does not announce it
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    every_declared_channel_is_announced_and_every_announcement_has_its_channel
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

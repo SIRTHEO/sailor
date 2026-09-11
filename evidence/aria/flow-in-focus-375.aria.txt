@@ -1,0 +1,86 @@
+# flow-in-focus @ 375px — a flow in focus: its lane, its nodes and the cords between them — the geometry no accessibility tree carries
+
+- banner:
+  - text: Sailor
+  - navigation "where you are": Board ›relay
+  - button "⌘K Search or run a command"
+- navigation "the world":
+  - button "Waiting for you"
+  - button "the work 0"
+  - button "Why"
+  - button "the machine"
+  - text: "sample data: these flows are not on your disk"
+  - group "workspaces":
+    - heading "workspaces" [level=2]
+    - text: no home to read out here
+  - group "flows everywhere":
+    - heading "flows everywhere" [level=2]
+    - text: yours
+    - button "relay 7 steps"
+  - group "outside every workspace":
+    - heading "outside every workspace" [level=2]
+    - button "Board 2"
+    - text: this project
+    - button "prima-corsa 1 step"
+    - text: "notte unknown field `retries` at line 14 (did you mean `max_attempts`?)"
+    - button "+ New flow"
+- text: sample data relay 7 steps
+- textbox "description of the flow":
+  - /placeholder: what this flow is for
+  - text: Resets a full session and hands the work back to it, in place.
+- text: no run of this flow yet
+- button "more for this flow": ⋯
+- button "Save" [disabled]
+- button "Run"
+- main:
+  - application:
+    - img:
+      - group "Edge from relay::chain-brake to relay::pane-is-idle"
+    - img:
+      - group "Edge from relay::pane-is-idle to relay::prompt-is-empty"
+    - img:
+      - group "Edge from relay::prompt-is-empty to relay::write-the-baton"
+    - img:
+      - group "Edge from relay::write-the-baton to relay::send-clear"
+    - img:
+      - group "Edge from relay::send-clear to relay::signal-is-gone"
+    - img:
+      - group "Edge from relay::signal-is-gone to relay::send-the-start"
+    - img:
+      - group "Edge from trigger::relay to relay::chain-brake"
+    - group: relay 7 steps Resets a full session and hands the work back to it, in place.
+    - group: check went chain-brake
+    - group: check went pane-is-idle
+    - group: check went prompt-is-empty
+    - group: check went write-the-baton
+    - group: check went send-clear
+    - group: check went signal-is-gone
+    - group: check running send-the-start
+    - group:
+      - text: "trigger · by hand relay outside the shell: no engine to trigger"
+      - button "▶ Run" [disabled]
+    - img
+    - img
+    - button "Zoom In":
+      - img
+    - button "Zoom Out" [disabled]:
+      - img
+    - button "Fit View":
+      - img
+    - button "Toggle Interactivity":
+      - img
+    - img "Mini Map"
+    - link "React Flow attribution":
+      - /url: https://reactflow.dev/attribution
+      - text: React Flow
+  - toolbar "Add a step to relay":
+    - group "Where it starts":
+      - button "trigger"
+    - group "Who does the work instead of Sailor":
+      - button "agent"
+      - button "a person"
+      - button "subflow"
+    - group "What Sailor does itself":
+      - button "check"
+      - button "gesture"
+      - button "store"

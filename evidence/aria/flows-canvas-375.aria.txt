@@ -1,0 +1,68 @@
+# flows-canvas @ 375px — the flow canvas with its rail: THE surface of this product, drawn with JavaScript objects and never opened by whatever reads the stylesheet
+
+- banner:
+  - text: Sailor
+  - navigation "where you are": Board ›prima-corsa
+  - button "⌘K Search or run a command"
+- navigation "the world":
+  - button "Waiting for you"
+  - button "the work 0"
+  - button "Why"
+  - button "the machine"
+  - text: "sample data: these flows are not on your disk"
+  - group "workspaces":
+    - heading "workspaces" [level=2]
+    - text: no home to read out here
+  - group "flows everywhere":
+    - heading "flows everywhere" [level=2]
+    - text: yours
+    - button "relay 7 steps"
+  - group "outside every workspace":
+    - heading "outside every workspace" [level=2]
+    - button "Board 2"
+    - text: this project
+    - button "prima-corsa 1 step"
+    - text: "notte unknown field `retries` at line 14 (did you mean `max_attempts`?)"
+    - button "+ New flow"
+- text: sample data prima-corsa 1 steps
+- textbox "description of the flow":
+  - /placeholder: what this flow is for
+  - text: "The smallest flow there is: one check alone."
+- text: no run of this flow yet
+- button "more for this flow": ⋯
+- button "Save" [disabled]
+- button "Run"
+- main:
+  - application:
+    - img:
+      - group "Edge from trigger::prima-corsa to prima-corsa::working-tree-is-clean"
+    - group: "prima-corsa 1 step The smallest flow there is: one check alone."
+    - group: check not run yet working-tree-is-clean
+    - group:
+      - text: "trigger · by hand prima-corsa outside the shell: no engine to trigger"
+      - button "▶ Run" [disabled]
+    - img
+    - img
+    - button "Zoom In":
+      - img
+    - button "Zoom Out" [disabled]:
+      - img
+    - button "Fit View":
+      - img
+    - button "Toggle Interactivity":
+      - img
+    - img "Mini Map"
+    - link "React Flow attribution":
+      - /url: https://reactflow.dev/attribution
+      - text: React Flow
+  - toolbar "Add a step to prima-corsa":
+    - group "Where it starts":
+      - button "trigger"
+    - group "Who does the work instead of Sailor":
+      - button "agent"
+      - button "a person"
+      - button "subflow"
+    - group "What Sailor does itself":
+      - button "check"
+      - button "gesture"
+      - button "store"

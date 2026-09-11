@@ -1,0 +1,12 @@
+
+> sailor-desktop@0.1.0 check:canvas
+> tsx scripts/check-canvas.ts
+
+--- starting vite ---
+  ✓   375px  rail null · canvas  375 · panel null   nodes in view: 1/1   at the centre: canvas
+  ✓   760px  rail null · canvas  760 · panel null   nodes in view: 1/1   at the centre: canvas
+  ✓  1100px  rail null · canvas  860 · panel null   nodes in view: 1/1   at the centre: canvas
+  ✓  1440px  rail null · canvas 1200 · panel null   nodes in view: 1/1   at the centre: canvas
+
+✓ the canvas is there at every width, and frames what it holds.
+EXIT=0

@@ -1,0 +1,20 @@
+
+> sailor-desktop@0.1.0 screenshots
+> tsx scripts/screenshots.ts
+
+--- starting vite ---
+  ✓ now-375
+  ✓ flows-canvas-375
+  ✓ flow-in-focus-375
+  ✓ step-selected-375
+  ✓ installed-375
+  ✓ history-375
+  ✓ now-1440
+  ✓ flows-canvas-1440
+  ✓ flow-in-focus-1440
+  ✓ step-selected-1440
+  ✓ installed-1440
+  ✓ history-1440
+
+--- /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--2--1789132222644037000/the_agent/desktop/design/screenshots ---
+EXIT=0

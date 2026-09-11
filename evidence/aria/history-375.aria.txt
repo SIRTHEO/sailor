@@ -1,0 +1,33 @@
+# history @ 375px — the run history: the other dense view, and the one that ages worst
+
+- banner:
+  - text: Sailor
+  - navigation "where you are": Why ›Runs
+  - button "⌘K Search or run a command"
+- navigation "the world":
+  - button "Waiting for you"
+  - button "the work 0"
+  - button "Why"
+  - button "the machine"
+  - text: "sample data: these flows are not on your disk"
+  - group "workspaces":
+    - heading "workspaces" [level=2]
+    - text: no home to read out here
+  - group "flows everywhere":
+    - heading "flows everywhere" [level=2]
+    - text: yours
+    - button "relay 7 steps"
+  - group "outside every workspace":
+    - heading "outside every workspace" [level=2]
+    - button "Board 2"
+    - text: this project
+    - button "prima-corsa 1 step"
+    - text: "notte unknown field `retries` at line 14 (did you mean `max_attempts`?)"
+    - button "+ New flow"
+- complementary:
+  - button "Runs open now, and every one before"
+  - button "Spend and quota what it cost, what is left"
+  - button "Faults and what would have prevented each"
+  - button "Ledger the tables, as they are"
+- paragraph: "Cannot ask what is running: outside the shell: the engine reads the ledger"
+- paragraph: "Cannot read the history: outside the shell: the engine reads the history"

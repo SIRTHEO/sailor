@@ -1,0 +1,14 @@
+######## one sandbox-family red, run outside the sandbox
+binary: /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--2--1789132222644037000/the_agent/target/before/debug/deps/a_terminal_is_held_by_the_host-bf2b33591f5a758b
+
+running 7 tests
+test a_terminal_nobody_opened_is_refused_by_name ... ok
+test a_terminal_nobody_typed_into_shows_no_such_word ... ok
+test a_terminal_the_host_opened_has_a_letterbox_and_a_count_under_its_tty ... ok
+test arguments_cross_the_wire_as_arguments_and_not_as_part_of_the_name ... ok
+test the_device_the_list_carries_is_the_one_the_program_inside_reports ... ok
+test the_environment_given_at_opening_reaches_the_program_inside ... ok
+test what_was_printed_before_anyone_looked_is_served_to_whoever_attaches_late ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.08s
+
