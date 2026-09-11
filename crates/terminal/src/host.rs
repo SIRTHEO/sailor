@@ -6,6 +6,7 @@
 //! receives every chunk as it comes, framed in binary because the bytes of a
 //! terminal are not text.
 
+use crate::consent::{Consent, Given, Hand};
 use crate::inbox;
 use crate::session::{Opening, Summary, Terminals};
 use crate::{locked, Ending, Output, Routed, Workspace};
@@ -14,6 +15,7 @@ use std::collections::HashMap;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
@@ -38,6 +40,10 @@ pub fn address_in(store: &Path) -> PathBuf {
 pub enum Request {
     Hello,
     Open {
+        /// The name the opener chose, when it chose one: what a client asks
+        /// for when it comes back knowing nothing of this run.
+        #[serde(default)]
+        name: Option<String>,
         workspace_root: String,
         program: Option<String>,
         args: Vec<String>,
@@ -51,10 +57,24 @@ pub enum Request {
     Submit {
         id: String,
         line: String,
+        #[serde(default)]
+        hand: Hand,
     },
     Press {
         id: String,
         bytes: Vec<u8>,
+        #[serde(default)]
+        hand: Hand,
+    },
+    /// Records a consent on a terminal: from here on, that flow may write.
+    Consent {
+        id: String,
+        consent: Consent,
+    },
+    /// Takes a flow's consent back. Nothing given is given for ever.
+    Withdraw {
+        id: String,
+        flow: String,
     },
     Resize {
         id: String,
@@ -174,6 +194,11 @@ impl Backlog {
 /// ended, and who is listening right now.
 struct Relay {
     state: Mutex<RelayState>,
+    /// How many clients are following right now. Counted on attaching and on
+    /// letting go rather than read off the watcher list, because a watcher is
+    /// only taken off that list by a send which fails, and a quiet terminal
+    /// sends nothing for as long as it is quiet.
+    following: AtomicUsize,
 }
 
 struct RelayState {
@@ -190,6 +215,7 @@ impl Relay {
                 ended: None,
                 watchers: Vec::new(),
             }),
+            following: AtomicUsize::new(0),
         }
     }
 
@@ -199,14 +225,20 @@ impl Relay {
 
     /// From now on: the backlog is asked for apart, and the offsets are what
     /// let the two be joined without a gap or a repeat.
-    fn attach(&self) -> (Receiver<Frame>, Option<String>) {
+    fn attach(self: &Arc<Relay>) -> (Receiver<Frame>, Option<String>, Option<Watching>) {
         let (sender, receiver) = mpsc::channel();
         let mut state = self.lock();
         let ended = state.ended.clone();
-        if ended.is_none() {
-            state.watchers.push(sender);
+        if ended.is_some() {
+            return (receiver, ended, None);
         }
-        (receiver, ended)
+        state.watchers.push(sender);
+        self.following.fetch_add(1, Ordering::Relaxed);
+        (receiver, ended, Some(Watching(Arc::clone(self))))
+    }
+
+    fn watchers(&self) -> usize {
+        self.following.load(Ordering::Relaxed)
     }
 
     fn snapshot(&self) -> (u64, Vec<u8>, u64, Option<String>) {
@@ -217,6 +249,16 @@ impl Relay {
             state.backlog.end(),
             state.ended.clone(),
         )
+    }
+}
+
+/// One client's following, for as long as it holds this. Dropped when the
+/// connection serving it ends, whichever way it ends.
+struct Watching(Arc<Relay>);
+
+impl Drop for Watching {
+    fn drop(&mut self) {
+        self.0.following.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
@@ -250,6 +292,10 @@ impl Output for Relay {
 pub struct Host {
     terminals: Terminals,
     relays: Mutex<HashMap<String, Arc<Relay>>>,
+    /// **AUTHORITY TO WRITE IS A THING A TERMINAL CARRIES**, not a thing a
+    /// reader infers from a still screen. One record per terminal, kept here
+    /// because the host is what every write passes through.
+    consents: Mutex<HashMap<String, Arc<Given>>>,
 }
 
 impl Host {
@@ -257,6 +303,7 @@ impl Host {
         Host {
             terminals,
             relays: Mutex::new(HashMap::new()),
+            consents: Mutex::new(HashMap::new()),
         }
     }
 
@@ -266,6 +313,20 @@ impl Host {
 
     fn relay_of(&self, id: &str) -> Option<Arc<Relay>> {
         locked(&self.relays).get(id).cloned()
+    }
+
+    fn consents_of(&self, id: &str) -> Arc<Given> {
+        Arc::clone(
+            locked(&self.consents)
+                .entry(id.to_owned())
+                .or_insert_with(|| Arc::new(Given::new())),
+        )
+    }
+
+    /// Nothing when this hand may write into `id`; otherwise the refusal, in
+    /// words that name the flow and what it was missing.
+    fn refusal_to_write(&self, id: &str, hand: &Hand) -> Option<String> {
+        self.consents_of(id).refusal(id, hand)
     }
 
     fn unknown(&self, id: &str) -> String {
@@ -283,6 +344,7 @@ impl Host {
     #[allow(clippy::too_many_arguments)]
     fn open(
         &self,
+        name: Option<String>,
         workspace_root: &str,
         program: Option<String>,
         args: Vec<String>,
@@ -291,9 +353,16 @@ impl Host {
         columns: u16,
         profile: Option<String>,
     ) -> Result<Summary, String> {
+        let name = name.map(|name| name.trim().to_owned()).filter(|name| !name.is_empty());
+        if let Some(taken) = name.as_deref().filter(|name| self.terminals.find(name).is_some()) {
+            return Err(format!(
+                "a terminal called «{taken}» is already held: close it, or open under another name"
+            ));
+        }
         let workspace = Workspace::open(workspace_root)
             .map_err(|error| format!("the workspace «{workspace_root}» does not open: {error}"))?;
         let mut opening = Opening {
+            name,
             size: crate::Size { rows, columns },
             profile,
             ..Opening::default()
@@ -315,6 +384,19 @@ impl Host {
         Ok(opened.summary())
     }
 
+    /// What the host holds, each row carrying how many clients follow it: the
+    /// terminal itself cannot know, because the following happens here.
+    fn listed(&self) -> Vec<Summary> {
+        self.terminals
+            .list()
+            .into_iter()
+            .map(|mut row| {
+                row.attached = self.relay_of(&row.id).map_or(0, |relay| relay.watchers());
+                row
+            })
+            .collect()
+    }
+
     fn answer(&self, request: Request, mut stream: UnixStream) -> io::Result<()> {
         let answer = match request {
             Request::Hello => Answer::Hello {
@@ -322,6 +404,7 @@ impl Host {
                 pid: std::process::id(),
             },
             Request::Open {
+                name,
                 workspace_root,
                 program,
                 args,
@@ -329,11 +412,13 @@ impl Host {
                 rows,
                 columns,
                 profile,
-            } => match self.open(&workspace_root, program, args, environment, rows, columns, profile) {
+            } => match self.open(name, &workspace_root, program, args, environment, rows, columns, profile) {
                 Ok(summary) => Answer::Opened { summary },
                 Err(why) => Answer::Refused { why },
             },
-            Request::Submit { id, line } => match self.terminals.find(&id) {
+            Request::Submit { id, line, hand } => match self.refusal_to_write(&id, &hand) {
+                Some(why) => Answer::Refused { why },
+                None => match self.terminals.find(&id) {
                 None => Answer::Refused {
                     why: self.unknown(&id),
                 },
@@ -352,17 +437,39 @@ impl Host {
                         why: error.to_string(),
                     },
                 },
+                },
             },
-            Request::Press { id, bytes } => match self.terminals.find(&id) {
+            Request::Press { id, bytes, hand } => match self.refusal_to_write(&id, &hand) {
+                Some(why) => Answer::Refused { why },
+                None => match self.terminals.find(&id) {
+                    None => Answer::Refused {
+                        why: self.unknown(&id),
+                    },
+                    Some(terminal) => match terminal.press(&bytes) {
+                        Ok(()) => Answer::Done,
+                        Err(error) => Answer::Refused {
+                            why: error.to_string(),
+                        },
+                    },
+                },
+            },
+            Request::Consent { id, consent } => match self.terminals.find(&id) {
                 None => Answer::Refused {
                     why: self.unknown(&id),
                 },
-                Some(terminal) => match terminal.press(&bytes) {
+                Some(_) => match self.consents_of(&id).record(consent) {
                     Ok(()) => Answer::Done,
-                    Err(error) => Answer::Refused {
-                        why: error.to_string(),
-                    },
+                    Err(why) => Answer::Refused { why },
                 },
+            },
+            Request::Withdraw { id, flow } => match self.terminals.find(&id) {
+                None => Answer::Refused {
+                    why: self.unknown(&id),
+                },
+                Some(_) => {
+                    self.consents_of(&id).withdraw(&flow);
+                    Answer::Done
+                }
             },
             Request::Resize { id, rows, columns } => match self.terminals.find(&id) {
                 None => Answer::Refused {
@@ -381,6 +488,7 @@ impl Host {
                 },
                 Some(Ok(())) => {
                     locked(&self.relays).remove(&id);
+                    locked(&self.consents).remove(&id);
                     Answer::Done
                 }
                 Some(Err(error)) => Answer::Refused {
@@ -388,7 +496,7 @@ impl Host {
                 },
             },
             Request::List => Answer::Listed {
-                terminals: self.terminals.list(),
+                terminals: self.listed(),
             },
             Request::Backlog { id } => match self.relay_of(&id) {
                 None => Answer::Refused {
@@ -414,7 +522,7 @@ impl Host {
                     why: self.unknown(&id),
                 },
                 Some(relay) => {
-                    let (frames, ended) = relay.attach();
+                    let (frames, ended, watching) = relay.attach();
                     write_line(&mut stream, &Answer::Attached)?;
                     if let Some(status) = ended {
                         return write_frame(&mut stream, &Frame::Ended { status });
@@ -425,6 +533,7 @@ impl Host {
                     for frame in frames {
                         write_frame(&mut stream, &frame)?;
                     }
+                    drop(watching);
                     return Ok(());
                 }
             },
@@ -609,7 +718,34 @@ impl Client {
         columns: u16,
         profile: Option<String>,
     ) -> Result<Summary, String> {
+        self.open_named(
+            None,
+            workspace_root,
+            program,
+            args,
+            environment,
+            rows,
+            columns,
+            profile,
+        )
+    }
+
+    /// Opens under a name the caller chose, which is how it will ask for this
+    /// terminal again once everything it holds now is gone.
+    #[allow(clippy::too_many_arguments)]
+    pub fn open_named(
+        &self,
+        name: Option<&str>,
+        workspace_root: &str,
+        program: Option<String>,
+        args: Vec<String>,
+        environment: Vec<(String, String)>,
+        rows: u16,
+        columns: u16,
+        profile: Option<String>,
+    ) -> Result<Summary, String> {
         match self.ask(&Request::Open {
+            name: name.map(str::to_owned),
             workspace_root: workspace_root.to_owned(),
             program,
             args,
@@ -624,9 +760,16 @@ impl Client {
     }
 
     pub fn submit(&self, id: &str, line: &str) -> Result<Submitted, String> {
+        self.submit_by(id, line, &Hand::Person)
+    }
+
+    /// Submits on a named hand's behalf. A flow's is refused until a consent
+    /// recorded on that terminal names it.
+    pub fn submit_by(&self, id: &str, line: &str, hand: &Hand) -> Result<Submitted, String> {
         match self.ask(&Request::Submit {
             id: id.to_owned(),
             line: line.to_owned(),
+            hand: hand.clone(),
         })? {
             Answer::Submitted { submitted } => Ok(submitted),
             other => Err(format!("submitting answered with {other:?}")),
@@ -634,9 +777,29 @@ impl Client {
     }
 
     pub fn press(&self, id: &str, bytes: &[u8]) -> Result<(), String> {
+        self.press_by(id, bytes, &Hand::Person)
+    }
+
+    pub fn press_by(&self, id: &str, bytes: &[u8], hand: &Hand) -> Result<(), String> {
         self.done(&Request::Press {
             id: id.to_owned(),
             bytes: bytes.to_vec(),
+            hand: hand.clone(),
+        })
+    }
+
+    /// Records a consent on a terminal, or says what of it was missing.
+    pub fn consent(&self, id: &str, consent: &Consent) -> Result<(), String> {
+        self.done(&Request::Consent {
+            id: id.to_owned(),
+            consent: consent.clone(),
+        })
+    }
+
+    pub fn withdraw(&self, id: &str, flow: &str) -> Result<(), String> {
+        self.done(&Request::Withdraw {
+            id: id.to_owned(),
+            flow: flow.to_owned(),
         })
     }
 
@@ -782,6 +945,7 @@ mod tests {
         let request = serde_json::to_value(Request::Press {
             id: "x-1".to_owned(),
             bytes: vec![3],
+            hand: Hand::Person,
         })
         .expect("serialise");
         assert_eq!(request["op"], "press");

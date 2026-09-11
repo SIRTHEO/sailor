@@ -11,9 +11,12 @@ use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 
 /// Who is asking to write.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "hand", rename_all = "snake_case")]
 pub enum Hand {
+    /// A person at the keyboard: the typing is the consent, and there is
+    /// nothing further to record.
+    #[default]
     Person,
     Flow { flow: String, run: String },
 }

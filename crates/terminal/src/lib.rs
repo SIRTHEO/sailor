@@ -35,6 +35,7 @@ pub mod routing;
 pub mod scratch;
 pub mod screen;
 pub mod session;
+pub mod standing;
 pub mod tally;
 
 pub use pty::{Pty, PtyError, Size};

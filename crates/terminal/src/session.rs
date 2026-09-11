@@ -34,6 +34,10 @@ use std::sync::{Arc, Mutex};
 /// later breaking the callers.
 #[derive(Debug, Clone)]
 pub struct Opening {
+    /// The name the opener chose for this terminal, when it chose one: what a
+    /// client asks for when it comes back, having forgotten every number this
+    /// run of the window assigned. `None` leaves the host to name it.
+    pub name: Option<String>,
     /// The program to start inside the terminal. Default: the launcher's own
     /// shell, read from `SHELL`.
     pub program: OsString,
@@ -52,6 +56,7 @@ pub struct Opening {
 impl Default for Opening {
     fn default() -> Opening {
         Opening {
+            name: None,
             program: std::env::var_os("SHELL").unwrap_or_else(|| OsString::from("/bin/sh")),
             args: Vec::new(),
             size: Size::default(),
@@ -171,6 +176,10 @@ impl Terminal {
             estimated_tokens: estimated_tokens(self.moved()),
             program: self.program.clone(),
             profile: self.profile.clone(),
+            directory: crate::standing::directory_of(self.process_id())
+                .map(|where_it_is| where_it_is.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            attached: 0,
         }
     }
 }
@@ -221,6 +230,14 @@ pub struct Summary {
     /// The profile it runs under, when one applied at opening.
     #[serde(default)]
     pub profile: Option<String>,
+    /// The directory the program inside is standing in **now**, asked of it
+    /// rather than remembered from the opening: a shell walks. Empty when it
+    /// can no longer be asked.
+    #[serde(default)]
+    pub directory: String,
+    /// How many clients are following this terminal's output right now.
+    #[serde(default)]
+    pub attached: usize,
 }
 
 /// The terminals opened by this process.
@@ -311,11 +328,14 @@ impl Terminals {
             &opening.not_inherited,
         )?;
         let mut reader = pty.reader()?;
-        let id = format!(
-            "{}-{}",
-            workspace.name,
-            self.next.fetch_add(1, Ordering::Relaxed)
-        );
+        let id = match opening.name.as_deref().map(str::trim).filter(|name| !name.is_empty()) {
+            Some(chosen) => chosen.to_owned(),
+            None => format!(
+                "{}-{}",
+                workspace.name,
+                self.next.fetch_add(1, Ordering::Relaxed)
+            ),
+        };
         let output = make_output(&id);
         let terminal = Arc::new(Terminal {
             id,
