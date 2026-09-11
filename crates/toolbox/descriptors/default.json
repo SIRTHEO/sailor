@@ -447,6 +447,13 @@
     },
     {
       "id": "agy",
+      "quota": {
+        "reader": "none",
+        "credentials": "",
+        "token_pointer": [],
+        "url": "",
+        "note": "MEASURED 11/09/2026, AND THIS IS WHY THERE IS NOTHING TO READ HERE. Antigravity does have a quota service: its binary names the methods `GetUserStatus` and `GetCredits` on `aicode.googleapis.com`, and a page `https://antigravity.google/g1-credits`. But both are gRPC over protobuf descriptors (`v1internal/credits_go_proto`, `v1beta1/usage_metadata_go_proto`), and the credential is inside `~/.gemini/antigravity-cli/jetski_state.pbtxt`, a binary protobuf with no readable token. The reader this Sailor has takes a token out of a JSON file, or from a keeper, and asks an address over HTTP: neither half fits. So the absence is declared, not searched for again. Whoever picks it up starts at those two method names."
+      },
       "login": {
         "args": [],
         "interactive": true,
@@ -507,6 +514,13 @@
     },
     {
       "id": "ollama",
+      "quota": {
+        "reader": "none",
+        "credentials": "",
+        "token_pointer": [],
+        "url": "",
+        "note": "MEASURED 11/09/2026: there is no quota because there is no account. Ollama runs the model on this machine — no sign-in, no provider, no window that resets. What it can run out of is memory and disk, which `sailor machine` measures and a quota channel would not. Declared absent so the line stops reading as «nobody looked»."
+      },
       "install": {
         "line": "brew install ollama",
         "note": "measured: /opt/homebrew/bin/ollama links to ../Cellar/ollama/<version>/bin/ollama, the Homebrew formula"

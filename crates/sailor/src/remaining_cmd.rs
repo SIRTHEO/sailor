@@ -82,17 +82,17 @@ fn dispatch(args: &[String]) -> Result<String, String> {
         return Err(catalogue::say("cli.remaining.no_channel", &[]));
     }
     if found.is_empty() && refused.is_empty() {
-        return Err(said_of_the_unasked(&unasked).join("\n"));
+        return Err(said_of_the_unasked(&unasked, &catalog).join("\n"));
     }
     if found.is_empty() {
         return Err(refused
             .into_iter()
-            .chain(said_of_the_unasked(&unasked))
+            .chain(said_of_the_unasked(&unasked, &catalog))
             .collect::<Vec<_>>()
             .join("\n"));
     }
     let mut said = report(&found);
-    for line in refused.into_iter().chain(said_of_the_unasked(&unasked)) {
+    for line in refused.into_iter().chain(said_of_the_unasked(&unasked, &catalog)) {
         said.push('\n');
         said.push_str(&line);
     }
@@ -185,12 +185,25 @@ pub fn never_asked(present: &[String], asked: &[String]) -> Vec<String> {
     out
 }
 
-/// One line each, saying what is missing rather than what was measured.
-fn said_of_the_unasked(engines: &[String]) -> Vec<String> {
+/// One line each, saying what is missing rather than what was measured — or,
+/// where somebody looked and found nothing to read, what they found.
+fn said_of_the_unasked(engines: &[String], catalog: &toolbox::Catalog) -> Vec<String> {
     engines
         .iter()
-        .map(|engine| catalogue::say("cli.remaining.no_channel_declared", &[("engine", engine)]))
+        .map(|engine| match written_off(catalog, engine) {
+            Some(why) => format!("{engine} · no quota to read: {why}"),
+            None => catalogue::say("cli.remaining.no_channel_declared", &[("engine", engine)]),
+        })
         .collect()
+}
+
+/// What the descriptor says about the absence, when it says anything.
+fn written_off(catalog: &toolbox::Catalog, engine: &str) -> Option<String> {
+    catalog
+        .live()
+        .into_iter()
+        .find(|loaded| loaded.descriptor.id == engine)
+        .and_then(|loaded| toolbox::quota::declared_absent(&loaded.descriptor).map(str::to_owned))
 }
 
 /// One person's quotas, one per line.

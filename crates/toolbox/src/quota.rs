@@ -20,6 +20,9 @@ pub struct Reading {
 /// reason it cannot be; `None` when the descriptor declares none.
 pub fn channel_of(descriptor: &Descriptor, machine: &Machine) -> Option<Result<OauthUsageChannel, String>> {
     let quota = descriptor.quota.as_ref()?;
+    if quota.reader == "none" {
+        return None;
+    }
     Some(match quota.reader.as_str() {
         "oauth_usage" => Ok(OauthUsageChannel {
             engine: descriptor.id.clone(),
@@ -79,6 +82,14 @@ pub fn channel_in_home(
     }))
 }
 
+/// Why this engine has no reading, when somebody looked and wrote it down.
+/// **«NOBODY LOOKED» AND «NOTHING TO LOOK AT» ARE DIFFERENT ANSWERS**, and the
+/// note carries what the search found.
+pub fn declared_absent(descriptor: &Descriptor) -> Option<&str> {
+    let quota = descriptor.quota.as_ref()?;
+    (quota.reader == "none").then_some(quota.note.as_str())
+}
+
 /// The words this provider uses, or the ones the first measured channel used.
 fn words_of(quota: &crate::descriptor::Quota) -> models::remaining::WindowWords {
     let Some(said) = &quota.shape else {
@@ -95,8 +106,7 @@ fn words_of(quota: &crate::descriptor::Quota) -> models::remaining::WindowWords 
 }
 
 /// The keeper's command with the home put in: `{home}` whole, and
-/// `{home_digest}` the first eight hex of its sha256, which is how a keyring
-/// tells one home's entry from another's.
+/// `{home_digest}` the first eight hex of its sha256.
 fn spoken_for(said: &[String], home: &str) -> Vec<String> {
     if said.is_empty() {
         return Vec::new();
@@ -227,6 +237,24 @@ mod tests {
         // The digest is the first eight hex of the home's sha256, and it is
         // written out here so a changed rule fails here and not in the field.
         assert_eq!(one.held_by[2], "secrets-0005a260");
+    }
+
+    /// Only the second is a measurement, and a declared absence must not come
+    /// back as a channel that fails, which reads as a broken reading.
+    #[test]
+    fn an_absence_somebody_measured_is_not_a_channel_that_fails() {
+        let machine = Machine::bare(std::path::PathBuf::from(crate::probe::NOWHERE));
+        let looked = parsed(
+            r#"{"id": "y", "family": "ai_cli", "quota": {"reader": "none",
+                "credentials": "", "token_pointer": [], "url": "",
+                "note": "it runs here and has no account"}}"#,
+        );
+
+        assert!(channel_of(&looked, &machine).is_none(), "not a channel, and not a failure");
+        assert_eq!(declared_absent(&looked), Some("it runs here and has no account"));
+
+        let never = parsed(r#"{"id": "x", "family": "ai_cli"}"#);
+        assert_eq!(declared_absent(&never), None, "nobody looked is not an absence");
     }
 
     /// A descriptor whose credentials do not sit under the engine's own home
