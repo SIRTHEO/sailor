@@ -1,0 +1,8 @@
+ RUN  v4.1.11 /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789118044083006000--the_crew--2--1789118044127954000/the_agent/desktop
+
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  11:17:29
+   Duration  171ms (transform 43ms, setup 0ms, import 55ms, tests 2ms, environment 0ms)
+

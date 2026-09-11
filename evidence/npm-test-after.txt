@@ -1,0 +1,21 @@
+
+> sailor-desktop@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.11 /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789118044083006000--the_crew--2--1789118044127954000/the_agent/desktop
+
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+ Test Files  81 passed (81)
+      Tests  604 passed (604)
+   Start at  11:29:58
+   Duration  17.20s (transform 9.33s, setup 0ms, import 29.67s, tests 59.22s, environment 49.32s)
+
+EXIT=0

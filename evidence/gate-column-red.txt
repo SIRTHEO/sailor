@@ -1,0 +1,45 @@
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__head"[39m
+      [36m>[39m
+        [0moutside every workspace[0m
+      [36m</div>[39m
+      [36m<button[39m
+        [33mclass[39m=[32m"wsx__leaf"[39m
+        [33mtype[39m=[32m"button"[39m
+      [36m>[39m
+        [36m<span[39m
+          [33maria-hidden[39m=[32m"true"[39m
+          [33mclass[39m=[32m"world__glyph"[39m
+        [36m>[39m
+          [0m◈[0m
+        [36m</span>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"world__label"[39m
+        [36m>[39m
+          [0mBoard[0m
+        [36m</span>[39m
+      [36m</button>[39m
+    [36m</nav>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ Object.getElementError node_modules/@testing-library/dom/dist/config.js:37:19
+ ❯ node_modules/@testing-library/dom/dist/query-helpers.js:76:38
+ ❯ node_modules/@testing-library/dom/dist/query-helpers.js:52:17
+ ❯ node_modules/@testing-library/dom/dist/query-helpers.js:95:19
+ ❯ src/column.test.tsx:50:19
+     48|   test("THE LINKED GLOBAL FLOWS HAVE A SLOT, AND SOMEBODY ELSE FILLS I…
+     49|     paint(<p>the linked flows, everywhere</p>);
+     50|     expect(screen.getByText("the linked flows, everywhere")).toBeTruth…
+       |                   ^
+     51|   });
+     52| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 2 passed (5)
+   Start at  11:15:11
+   Duration  955ms (transform 95ms, setup 0ms, import 248ms, tests 110ms, environment 478ms)
+

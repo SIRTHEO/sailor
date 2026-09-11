@@ -16,7 +16,7 @@
   ✓ installed-1440
   ✓ history-1440
 
---- /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789116836445668000--the_crew--2--1789116836493052000/the_agent/desktop/design/screenshots ---
+--- /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789118044083006000--the_crew--2--1789118044127954000/the_agent/desktop/design/screenshots ---
 6 scenes missing: see missing.txt
 6 of them are not a declared gap: the capture is blind
 EXIT=1

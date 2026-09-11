@@ -3,7 +3,7 @@
 > vitest run
 
 
- RUN  v4.1.11 /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789116836445668000--the_crew--2--1789116836493052000/the_agent/desktop
+ RUN  v4.1.11 /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789118044083006000--the_crew--2--1789118044127954000/the_agent/desktop
 
 Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
 Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
@@ -12,10 +12,918 @@ Not implemented: HTMLCanvasElement's getContext() method: without installing the
 Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
 Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
 Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+ ❯ src/column.test.tsx (5 tests | 3 failed) 285ms
+     × EACH GROUP OF THE COLUMN IS A HEADING, NOT A LINE OF TEXT 198ms
+     × A GROUP IS NAMED BY ITS OWN HEADING 75ms
+     × THE LINKED GLOBAL FLOWS HAVE A SLOT, AND SOMEBODY ELSE FILLS IT 7ms
 
- Test Files  79 passed (79)
-      Tests  597 passed (597)
-   Start at  10:54:48
-   Duration  29.35s (transform 13.23s, setup 0ms, import 51.67s, tests 112.14s, environment 80.33s)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
 
-EXIT=0
+ FAIL  src/column.test.tsx > the column names its own parts > EACH GROUP OF THE COLUMN IS A HEADING, NOT A LINE OF TEXT
+TestingLibraryElementError: Unable to find an accessible element with the role "heading"
+
+Here are the accessible roles:
+
+  navigation:
+
+  Name "the world":
+  [36m<nav[39m
+    [33maria-label[39m=[32m"the world"[39m
+    [33mclass[39m=[32m"world"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  button:
+
+  Name "Waiting for you":
+  [36m<button[39m
+    [33mclass[39m=[32m"world__place"[39m
+    [33mdata-here[39m=[32m""[39m
+    [33mtitle[39m=[32m"what wants a decision from you, and what happened while you were away"[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "the work":
+  [36m<button[39m
+    [33mclass[39m=[32m"world__place"[39m
+    [33mtitle[39m=[32m"the command lines open now, and what they are costing"[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "Why":
+  [36m<button[39m
+    [33mclass[39m=[32m"world__place"[39m
+    [33mtitle[39m=[32m"why each thing was done as it was, what it cost, and the store under it"[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "the machine":
+  [36m<button[39m
+    [33mclass[39m=[32m"world__place"[39m
+    [33mtitle[39m=[32m"what is set up here, the same wherever you stand"[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "Board":
+  [36m<button[39m
+    [33mclass[39m=[32m"wsx__leaf"[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<nav[39m
+      [33maria-label[39m=[32m"the world"[39m
+      [33mclass[39m=[32m"world"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__places"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"world__place"[39m
+          [33mdata-here[39m=[32m""[39m
+          [33mtitle[39m=[32m"what wants a decision from you, and what happened while you were away"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"world__glyph"[39m
+          [36m>[39m
+            [0m◨[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"world__label"[39m
+          [36m>[39m
+            [0mWaiting for you[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"world__place"[39m
+          [33mtitle[39m=[32m"the command lines open now, and what they are costing"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"world__glyph"[39m
+          [36m>[39m
+            [0m▮[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"world__label"[39m
+          [36m>[39m
+            [0mthe work[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"world__place"[39m
+          [33mtitle[39m=[32m"why each thing was done as it was, what it cost, and the store under it"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"world__glyph"[39m
+          [36m>[39m
+            [0m◷[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"world__label"[39m
+          [36m>[39m
+            [0mWhy[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"world__place"[39m
+          [33mtitle[39m=[32m"what is set up here, the same wherever you stand"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"world__glyph"[39m
+          [36m>[39m
+            [0m⚓[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"world__label"[39m
+          [36m>[39m
+            [0mthe machine[0m
+          [36m</span>[39m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__sample"[39m
+      [36m>[39m
+        [0msample data: these flows are not on your disk[0m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__head"[39m
+      [36m>[39m
+        [0mworkspaces[0m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__mute"[39m
+      [36m>[39m
+        [0mno home to read out here[0m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__head"[39m
+      [36m>[39m
+        [0moutside every workspace[0m
+      [36m</div>[39m
+      [36m<button[39m
+        [33mclass[39m=[32m"wsx__leaf"[39m
+        [33mtype[39m=[32m"button"[39m
+      [36m>[39m
+        [36m<span[39m
+          [33maria-hidden[39m=[32m"true"[39m
+          [33mclass[39m=[32m"world__glyph"[39m
+        [36m>[39m
+          [0m◈[0m
+        [36m</span>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"world__label"[39m
+        [36m>[39m
+          [0mBoard[0m
+        [36m</span>[39m
+      [36m</button>[39m
+    [36m</nav>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ Object.getElementError node_modules/@testing-library/dom/dist/config.js:37:19
+ ❯ node_modules/@testing-library/dom/dist/query-helpers.js:76:38
+ ❯ node_modules/@testing-library/dom/dist/query-helpers.js:109:15
+ ❯ src/column.test.tsx:37:26
+     35|   test("EACH GROUP OF THE COLUMN IS A HEADING, NOT A LINE OF TEXT", ()…
+     36|     paint();
+     37|     const heads = screen.getAllByRole("heading").map((one) => one.text…
+       |                          ^
+     38|     expect(heads).toContain("workspaces");
+     39|     expect(heads).toContain("outside every workspace");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  src/column.test.tsx > the column names its own parts > A GROUP IS NAMED BY ITS OWN HEADING
+TestingLibraryElementError: Unable to find an accessible element with the role "group" and name "outside every workspace"
+
+Here are the accessible roles:
+
+  navigation:
+
+  Name "the world":
+  [36m<nav[39m
+    [33maria-label[39m=[32m"the world"[39m
+    [33mclass[39m=[32m"world"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  button:
+
+  Name "Waiting for you":
+  [36m<button[39m
+    [33mclass[39m=[32m"world__place"[39m
+    [33mdata-here[39m=[32m""[39m
+    [33mtitle[39m=[32m"what wants a decision from you, and what happened while you were away"[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "the work":
+  [36m<button[39m
+    [33mclass[39m=[32m"world__place"[39m
+    [33mtitle[39m=[32m"the command lines open now, and what they are costing"[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "Why":
+  [36m<button[39m
+    [33mclass[39m=[32m"world__place"[39m
+    [33mtitle[39m=[32m"why each thing was done as it was, what it cost, and the store under it"[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "the machine":
+  [36m<button[39m
+    [33mclass[39m=[32m"world__place"[39m
+    [33mtitle[39m=[32m"what is set up here, the same wherever you stand"[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "Board":
+  [36m<button[39m
+    [33mclass[39m=[32m"wsx__leaf"[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  --------------------------------------------------navigation:
+
+  Name "the world":
+  [36m<nav[39m
+    [33maria-label[39m=[32m"the world"[39m
+    [33mclass[39m=[32m"world"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  button:
+
+  Name "Waiting for you":
+  [36m<button[39m
+    [33mclass[39m=[32m"world__place"[39m
+    [33mdata-here[39m=[32m""[39m
+    [33mtitle[39m=[32m"what wants a decision from you, and what happened while you were away"[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "the work":
+  [36m<button[39m
+    [33mclass[39m=[32m"world__place"[39m
+    [33mtitle[39m=[32m"the command lines open now, and what they are costing"[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "Why":
+  [36m<button[39m
+    [33mclass[39m=[32m"world__place"[39m
+    [33mtitle[39m=[32m"why each thing was done as it was, what it cost, and the store under it"[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "the machine":
+  [36m<button[39m
+    [33mclass[39m=[32m"world__place"[39m
+    [33mtitle[39m=[32m"what is set up here, the same wherever you stand"[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "Board":
+  [36m<button[39m
+    [33mclass[39m=[32m"wsx__leaf"[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<nav[39m
+      [33maria-label[39m=[32m"the world"[39m
+      [33mclass[39m=[32m"world"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__places"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"world__place"[39m
+          [33mdata-here[39m=[32m""[39m
+          [33mtitle[39m=[32m"what wants a decision from you, and what happened while you were away"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"world__glyph"[39m
+          [36m>[39m
+            [0m◨[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"world__label"[39m
+          [36m>[39m
+            [0mWaiting for you[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"world__place"[39m
+          [33mtitle[39m=[32m"the command lines open now, and what they are costing"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"world__glyph"[39m
+          [36m>[39m
+            [0m▮[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"world__label"[39m
+          [36m>[39m
+            [0mthe work[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"world__place"[39m
+          [33mtitle[39m=[32m"why each thing was done as it was, what it cost, and the store under it"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"world__glyph"[39m
+          [36m>[39m
+            [0m◷[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"world__label"[39m
+          [36m>[39m
+            [0mWhy[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"world__place"[39m
+          [33mtitle[39m=[32m"what is set up here, the same wherever you stand"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"world__glyph"[39m
+          [36m>[39m
+            [0m⚓[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"world__label"[39m
+          [36m>[39m
+            [0mthe machine[0m
+          [36m</span>[39m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__sample"[39m
+      [36m>[39m
+        [0msample data: these flows are not on your disk[0m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__head"[39m
+      [36m>[39m
+        [0mworkspaces[0m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__mute"[39m
+      [36m>[39m
+        [0mno home to read out here[0m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__head"[39m
+      [36m>[39m
+        [0moutside every workspace[0m
+      [36m</div>[39m
+      [36m<button[39m
+        [33mclass[39m=[32m"wsx__leaf"[39m
+        [33mtype[39m=[32m"button"[39m
+      [36m>[39m
+        [36m<span[39m
+          [33maria-hidden[39m=[32m"true"[39m
+          [33mclass[39m=[32m"world__glyph"[39m
+        [36m>[39m
+          [0m◈[0m
+        [36m</span>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"world__label"[39m
+        [36m>[39m
+          [0mBoard[0m
+        [36m</span>[39m
+      [36m</button>[39m
+    [36m</nav>[39m
+  [36m</div>[39m
+  [36m<div>[39m
+    [36m<nav[39m
+      [33maria-label[39m=[32m"the world"[39m
+      [33mclass[39m=[32m"world"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__places"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"world__place"[39m
+          [33mdata-here[39m=[32m""[39m
+          [33mtitle[39m=[32m"what wants a decision from you, and what happened while you were away"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"world__glyph"[39m
+          [36m>[39m
+            [0m◨[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"world__label"[39m
+          [36m>[39m
+            [0mWaiting for you[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"world__place"[39m
+          [33mtitle[39m=[32m"the command lines open now, and what they are costing"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"world__glyph"[39m
+          [36m>[39m
+            [0m▮[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"world__label"[39m
+          [36m>[39m
+            [0mthe work[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"world__place"[39m
+          [33mtitle[39m=[32m"why each thing was done as it was, what it cost, and the store under it"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"world__glyph"[39m
+          [36m>[39m
+            [0m◷[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"world__label"[39m
+          [36m>[39m
+            [0mWhy[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"world__place"[39m
+          [33mtitle[39m=[32m"what is set up here, the same wherever you stand"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"world__glyph"[39m
+          [36m>[39m
+            [0m⚓[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"world__label"[39m
+          [36m>[39m
+            [0mthe machine[0m
+          [36m</span>[39m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__sample"[39m
+      [36m>[39m
+        [0msample data: these flows are not on your disk[0m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__head"[39m
+      [36m>[39m
+        [0mworkspaces[0m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__mute"[39m
+      [36m>[39m
+        [0mno home to read out here[0m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__head"[39m
+      [36m>[39m
+        [0moutside every workspace[0m
+      [36m</div>[39m
+      [36m<button[39m
+        [33mclass[39m=[32m"wsx__leaf"[39m
+        [33mtype[39m=[32m"button"[39m
+      [36m>[39m
+        [36m<span[39m
+          [33maria-hidden[39m=[32m"true"[39m
+          [33mclass[39m=[32m"world__glyph"[39m
+        [36m>[39m
+          [0m◈[0m
+        [36m</span>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"world__label"[39m
+        [36m>[39m
+          [0mBoard[0m
+        [36m</span>[39m
+      [36m</button>[39m
+    [36m</nav>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ Object.getElementError node_modules/@testing-library/dom/dist/config.js:37:19
+ ❯ node_modules/@testing-library/dom/dist/query-helpers.js:76:38
+ ❯ node_modules/@testing-library/dom/dist/query-helpers.js:52:17
+ ❯ node_modules/@testing-library/dom/dist/query-helpers.js:95:19
+ ❯ src/column.test.tsx:44:19
+     42|   test("A GROUP IS NAMED BY ITS OWN HEADING", () => {
+     43|     paint();
+     44|     expect(screen.getByRole("group", { name: "outside every workspace"…
+       |                   ^
+     45|     expect(screen.getByRole("group", { name: "workspaces" })).toBeTrut…
+     46|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  src/column.test.tsx > the column names its own parts > THE LINKED GLOBAL FLOWS HAVE A SLOT, AND SOMEBODY ELSE FILLS IT
+TestingLibraryElementError: Unable to find an element with the text: the linked flows, everywhere. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<nav[39m
+      [33maria-label[39m=[32m"the world"[39m
+      [33mclass[39m=[32m"world"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__places"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"world__place"[39m
+          [33mdata-here[39m=[32m""[39m
+          [33mtitle[39m=[32m"what wants a decision from you, and what happened while you were away"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"world__glyph"[39m
+          [36m>[39m
+            [0m◨[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"world__label"[39m
+          [36m>[39m
+            [0mWaiting for you[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"world__place"[39m
+          [33mtitle[39m=[32m"the command lines open now, and what they are costing"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"world__glyph"[39m
+          [36m>[39m
+            [0m▮[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"world__label"[39m
+          [36m>[39m
+            [0mthe work[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"world__place"[39m
+          [33mtitle[39m=[32m"why each thing was done as it was, what it cost, and the store under it"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"world__glyph"[39m
+          [36m>[39m
+            [0m◷[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"world__label"[39m
+          [36m>[39m
+            [0mWhy[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"world__place"[39m
+          [33mtitle[39m=[32m"what is set up here, the same wherever you stand"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"world__glyph"[39m
+          [36m>[39m
+            [0m⚓[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"world__label"[39m
+          [36m>[39m
+            [0mthe machine[0m
+          [36m</span>[39m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__sample"[39m
+      [36m>[39m
+        [0msample data: these flows are not on your disk[0m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__head"[39m
+      [36m>[39m
+        [0mworkspaces[0m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__mute"[39m
+      [36m>[39m
+        [0mno home to read out here[0m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__head"[39m
+      [36m>[39m
+        [0moutside every workspace[0m
+      [36m</div>[39m
+      [36m<button[39m
+        [33mclass[39m=[32m"wsx__leaf"[39m
+        [33mtype[39m=[32m"button"[39m
+      [36m>[39m
+        [36m<span[39m
+          [33maria-hidden[39m=[32m"true"[39m
+          [33mclass[39m=[32m"world__glyph"[39m
+        [36m>[39m
+          [0m◈[0m
+        [36m</span>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"world__label"[39m
+        [36m>[39m
+          [0mBoard[0m
+        [36m</span>[39m
+      [36m</button>[39m
+    [36m</nav>[39m
+  [36m</div>[39m
+  [36m<div>[39m
+    [36m<nav[39m
+      [33maria-label[39m=[32m"the world"[39m
+      [33mclass[39m=[32m"world"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__places"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"world__place"[39m
+          [33mdata-here[39m=[32m""[39m
+          [33mtitle[39m=[32m"what wants a decision from you, and what happened while you were away"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"world__glyph"[39m
+          [36m>[39m
+            [0m◨[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"world__label"[39m
+          [36m>[39m
+            [0mWaiting for you[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"world__place"[39m
+          [33mtitle[39m=[32m"the command lines open now, and what they are costing"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"world__glyph"[39m
+          [36m>[39m
+            [0m▮[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"world__label"[39m
+          [36m>[39m
+            [0mthe work[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"world__place"[39m
+          [33mtitle[39m=[32m"why each thing was done as it was, what it cost, and the store under it"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"world__glyph"[39m
+          [36m>[39m
+            [0m◷[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"world__label"[39m
+          [36m>[39m
+            [0mWhy[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"world__place"[39m
+          [33mtitle[39m=[32m"what is set up here, the same wherever you stand"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"world__glyph"[39m
+          [36m>[39m
+            [0m⚓[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"world__label"[39m
+          [36m>[39m
+            [0mthe machine[0m
+          [36m</span>[39m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__sample"[39m
+      [36m>[39m
+        [0msample data: these flows are not on your disk[0m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__head"[39m
+      [36m>[39m
+        [0mworkspaces[0m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__mute"[39m
+      [36m>[39m
+        [0mno home to read out here[0m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__head"[39m
+      [36m>[39m
+        [0moutside every workspace[0m
+      [36m</div>[39m
+      [36m<button[39m
+        [33mclass[39m=[32m"wsx__leaf"[39m
+        [33mtype[39m=[32m"button"[39m
+      [36m>[39m
+        [36m<span[39m
+          [33maria-hidden[39m=[32m"true"[39m
+          [33mclass[39m=[32m"world__glyph"[39m
+        [36m>[39m
+          [0m◈[0m
+        [36m</span>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"world__label"[39m
+        [36m>[39m
+          [0mBoard[0m
+        [36m</span>[39m
+      [36m</button>[39m
+    [36m</nav>[39m
+  [36m</div>[39m
+  [36m<div>[39m
+    [36m<nav[39m
+      [33maria-label[39m=[32m"the world"[39m
+      [33mclass[39m=[32m"world"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__places"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"world__place"[39m
+          [33mdata-here[39m=[32m""[39m
+          [33mtitle[39m=[32m"what wants a decision from you, and what happened while you were away"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"world__glyph"[39m
+          [36m>[39m
+            [0m◨[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"world__label"[39m
+          [36m>[39m
+            [0mWaiting for you[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"world__place"[39m
+          [33mtitle[39m=[32m"the command lines open now, and what they are costing"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"world__glyph"[39m
+          [36m>[39m
+            [0m▮[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"world__label"[39m
+          [36m>[39m
+            [0mthe work[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"world__place"[39m
+          [33mtitle[39m=[32m"why each thing was done as it was, what it cost, and the store under it"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"world__glyph"[39m
+          [36m>[39m
+            [0m◷[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"world__label"[39m
+          [36m>[39m
+            [0mWhy[0m
+          [36m</span>[39m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"world__place"[39m
+          [33mtitle[39m=[32m"what is set up here, the same wherever you stand"[39m
+          [33mtype[39m=[32m"button"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"world__glyph"[39m
+          [36m>[39m
+            [0m⚓[0m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"world__label"[39m
+          [36m>[39m
+            [0mthe machine[0m
+          [36m</span>[39m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__sample"[39m
+      [36m>[39m
+        [0msample data: these flows are not on your disk[0m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__head"[39m
+      [36m>[39m
+        [0mworkspaces[0m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__mute"[39m
+      [36m>[39m
+        [0mno home to read out here[0m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"world__head"[39m
+      [36m>[39m
+        [0moutside every workspace[0m
+      [36m</div>[39m
+      [36m<button[39m
+        [33mclass[39m=[32m"wsx__leaf"[39m
+        [33mtype[39m=[32m"button"[39m
+      [36m>[39m
+        [36m<span[39m
+          [33maria-hidden[39m=[32m"true"[39m
+          [33mclass[39m=[32m"world__glyph"[39m
+        [36m>[39m
+          [0m◈[0m
+        [36m</span>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"world__label"[39m
+        [36m>[39m
+          [0mBoard[0m
+        [36m</span>[39m
+      [36m</button>[39m
+    [36m</nav>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ Object.getElementError node_modules/@testing-library/dom/dist/config.js:37:19
+ ❯ node_modules/@testing-library/dom/dist/query-helpers.js:76:38
+ ❯ node_modules/@testing-library/dom/dist/query-helpers.js:52:17
+ ❯ node_modules/@testing-library/dom/dist/query-helpers.js:95:19
+ ❯ src/column.test.tsx:50:19
+     48|   test("THE LINKED GLOBAL FLOWS HAVE A SLOT, AND SOMEBODY ELSE FILLS I…
+     49|     paint(<p>the linked flows, everywhere</p>);
+     50|     expect(screen.getByText("the linked flows, everywhere")).toBeTruth…
+       |                   ^
+     51|   });
+     52| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed | 79 passed (80)
+      Tests  3 failed | 599 passed (602)
+   Start at  11:15:24
+   Duration  16.34s (transform 6.91s, setup 0ms, import 25.96s, tests 56.83s, environment 44.38s)
+
+EXIT=1

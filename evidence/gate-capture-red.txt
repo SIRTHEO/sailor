@@ -1,0 +1,25 @@
+  process.exitCode = 1;
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+"
+
+ ❯ src/capturereaches.test.ts:23:32
+     21|     for (const path of scripts) {
+     22|       const source = readFileSync(new URL(path, import.meta.url), "utf…
+     23|       expect(source, path).not.toMatch(/PLACES\s*\.\s*find/);
+       |                                ^
+     24|     }
+     25|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Start at  11:17:13
+   Duration  195ms (transform 54ms, setup 0ms, import 69ms, tests 4ms, environment 0ms)
+
