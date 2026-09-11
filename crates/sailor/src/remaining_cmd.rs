@@ -47,10 +47,14 @@ fn dispatch(args: &[String]) -> Result<String, String> {
     // channel that does not answer is a line saying so, never a zero.
     let machine = toolbox::Machine::current();
     let catalog = toolbox::Catalog::load(&toolbox::default_sources(&machine));
-    let readings = toolbox::quota::read_all(&catalog, &machine, now);
+    let readings = per_profile(&catalog, &machine, now);
+    // **AN ENGINE ASKED ONCE PER ACCOUNT WAS STILL ASKED.** The line carries
+    // the account beside the engine, and the list of the unasked is about
+    // engines: matched whole, every engine with profiles would read as one
+    // nobody looked at.
     let asked: Vec<String> = readings
         .iter()
-        .map(|reading| reading.engine.clone())
+        .map(|reading| engine_of(&reading.engine))
         .collect();
     let mut found = Vec::new();
     let mut refused = Vec::new();
@@ -93,6 +97,79 @@ fn dispatch(args: &[String]) -> Result<String, String> {
         said.push_str(&line);
     }
     Ok(said)
+}
+
+/// Every account, not only the one whose home the engine would use on its own.
+///
+/// **A QUOTA BELONGS TO AN ACCOUNT, AND A PERSON HOLDS SEVERAL.** Read at the
+/// engine's usual home the answer is one account's under the engine's name, so
+/// the others look like they have none. Where a profile moves the home the
+/// reading follows it; where no profile names that engine, the usual home answers.
+fn per_profile(
+    catalog: &toolbox::Catalog,
+    machine: &toolbox::Machine,
+    now: i64,
+) -> Vec<toolbox::quota::Reading> {
+    let store = profiles::store_io::load_store().unwrap_or_default();
+    let mut out = Vec::new();
+    for loaded in catalog.live() {
+        let descriptor = &loaded.descriptor;
+        if toolbox::quota::channel_of(descriptor, machine).is_none() {
+            continue;
+        }
+        let mut asked_for_one = false;
+        for profile in homes_for(&store, descriptor) {
+            asked_for_one = true;
+            if let Some(reading) = toolbox::quota::read_in_home(descriptor, machine, &profile.home_dir, now) {
+                let whose = format!("{} · {}", reading.engine, profile.name);
+                // **THE LINE SAYS WHOSE IT IS, MEASURED OR REFUSED ALIKE.** The
+                // window carries the engine's name from the channel, and three
+                // accounts of one engine printed under that name read as one
+                // account measured three times.
+                out.push(toolbox::quota::Reading {
+                    engine: whose.clone(),
+                    result: reading.result.map(|windows| {
+                        windows
+                            .into_iter()
+                            .map(|window| models::remaining::Remaining {
+                                engine: whose.clone(),
+                                ..window
+                            })
+                            .collect()
+                    }),
+                });
+            }
+        }
+        if !asked_for_one {
+            out.extend(toolbox::quota::read_one(descriptor, machine, now));
+        }
+    }
+    out
+}
+
+/// The profiles whose command line is the one this descriptor detects. **THE
+/// LINK IS THE EXECUTABLE, NEVER THE NAME**: the descriptors call it
+/// `claude-code` and the profiles call it `claude`, and matching on either
+/// name would hand one command line another one's accounts.
+fn homes_for<'a>(
+    store: &'a profiles::ProfileStore,
+    descriptor: &toolbox::Descriptor,
+) -> Vec<&'a profiles::Profile> {
+    let Some(detected) = descriptor.detect.as_ref().and_then(|probes| probes.as_slice().first()).and_then(|probe| probe.command.as_deref()) else {
+        return Vec::new();
+    };
+    store
+        .profiles
+        .iter()
+        .filter(|profile| {
+            profiles::find_cli(&profile.cli_id).is_ok_and(|cli| cli.executable == detected)
+        })
+        .collect()
+}
+
+/// The engine's own name, without the account the line names beside it.
+fn engine_of(said: &str) -> String {
+    said.split(" · ").next().unwrap_or(said).to_string()
 }
 
 /// The engines on this machine that nothing asked, in the order they were
