@@ -1,0 +1,470 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.47
+   Compiling version_check v0.9.5
+   Compiling serde_core v1.0.229
+   Compiling generic-array v0.14.7
+   Compiling memchr v2.8.3
+   Compiling typenum v1.20.1
+   Compiling zmij v1.0.23
+   Compiling syn v3.0.3
+   Compiling find-msvc-tools v0.1.11
+   Compiling serde_json v1.0.151
+   Compiling libc v0.2.189
+   Compiling hashbrown v0.17.1
+   Compiling shlex v2.0.1
+   Compiling equivalent v1.0.2
+   Compiling serde v1.0.229
+   Compiling indexmap v2.14.0
+   Compiling cc v1.4.4
+   Compiling serde_derive v1.0.229
+   Compiling pkg-config v0.3.34
+   Compiling itoa v1.0.18
+   Compiling vcpkg v0.2.15
+   Compiling once_cell v1.21.4
+   Compiling cfg-if v1.0.4
+   Compiling tracing-core v0.1.36
+   Compiling libsqlite3-sys v0.35.0
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling foldhash v0.1.5
+   Compiling hashbrown v0.15.5
+   Compiling cpufeatures v0.2.17
+   Compiling digest v0.10.7
+   Compiling syn v2.0.119
+   Compiling log v0.4.34
+   Compiling lazy_static v1.5.0
+   Compiling smallvec v1.15.2
+   Compiling sharded-slab v0.1.7
+   Compiling tracing-log v0.2.0
+   Compiling hashlink v0.10.0
+   Compiling sha2 v0.10.9
+   Compiling catalogue v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789116836445668000--the_crew--0--1789116836493044000/the_agent/crates/catalogue)
+   Compiling thread_local v1.1.10
+   Compiling fallible-streaming-iterator v0.1.9
+   Compiling pin-project-lite v0.2.17
+   Compiling nu-ansi-term v0.50.3
+   Compiling bitflags v2.13.1
+   Compiling fallible-iterator v0.3.0
+   Compiling tracing-subscriber v0.3.23
+   Compiling flow v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789116836445668000--the_crew--0--1789116836493044000/the_agent/crates/flow)
+   Compiling rusqlite v0.37.0
+   Compiling workspace v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789116836445668000--the_crew--0--1789116836493044000/the_agent/crates/workspace)
+   Compiling tracing-attributes v0.1.31
+   Compiling aho-corasick v1.1.5
+   Compiling tracing v0.1.44
+   Compiling regex-syntax v0.8.11
+   Compiling ledger v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789116836445668000--the_crew--0--1789116836493044000/the_agent/crates/ledger)
+   Compiling regex-automata v0.4.18
+   Compiling faults v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789116836445668000--the_crew--0--1789116836493044000/the_agent/crates/faults)
+   Compiling sessions v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789116836445668000--the_crew--0--1789116836493044000/the_agent/crates/sessions)
+   Compiling profiles v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789116836445668000--the_crew--0--1789116836493044000/the_agent/crates/profiles)
+   Compiling regex v1.13.1
+   Compiling models v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789116836445668000--the_crew--0--1789116836493044000/the_agent/crates/models)
+   Compiling inventory v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789116836445668000--the_crew--0--1789116836493044000/the_agent/crates/inventory)
+   Compiling actions v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789116836445668000--the_crew--0--1789116836493044000/the_agent/crates/actions)
+   Compiling toolbox v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789116836445668000--the_crew--0--1789116836493044000/the_agent/crates/toolbox)
+   Compiling trigger v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789116836445668000--the_crew--0--1789116836493044000/the_agent/crates/trigger)
+   Compiling terminal v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789116836445668000--the_crew--0--1789116836493044000/the_agent/crates/terminal)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 38.37s
+     Running unittests src/lib.rs (target/debug/deps/terminal-e9de696be21a9719)
+
+running 24 tests
+test host::tests::a_backlog_keeps_the_tail_and_knows_where_it_starts ... ok
+test keeping::tests::keeping_the_bodies_takes_the_whole_sentence ... ok
+test host::tests::a_frame_comes_back_as_it_went ... ok
+test scratch::tests::a_declared_root_is_used_and_an_empty_one_is_not ... ok
+test scratch::tests::a_denial_names_the_perimeter_and_an_ordinary_error_does_not ... ok
+test keeping::tests::a_payload_that_is_not_an_object_is_dropped_whole ... ok
+test keeping::tests::asked_in_so_many_words_the_payload_arrives_whole ... ok
+test keeping::tests::a_key_nobody_allowed_does_not_reach_the_disk ... ok
+test keeping::tests::an_allowed_name_holding_a_container_is_dropped_with_the_bodies ... ok
+test keeping::tests::what_a_person_typed_and_what_the_engine_answered_do_not_survive ... ok
+test host::tests::requests_and_answers_are_tagged_lines ... ok
+test scratch::tests::a_root_that_refuses_is_an_error_carrying_the_refusal ... ok
+test screen::tests::a_screen_that_was_never_written_is_nothing_and_not_empty ... ok
+test screen::tests::a_title_the_program_set_is_not_part_of_the_screen ... ok
+test screen::tests::only_the_tail_is_kept ... ok
+test screen::tests::the_control_sequences_come_out_before_anything_is_looked_for ... ok
+test tally::tests::the_count_sits_beside_the_letterbox ... ok
+test tally::tests::a_count_that_is_not_there_is_not_a_count_of_zero ... FAILED
+test tally::tests::a_count_written_comes_back_the_same ... FAILED
+test tally::tests::writing_twice_leaves_no_half_file_behind ... FAILED
+test session::tests::the_list_still_answers_after_a_thread_died_holding_it ... ok
+test tests::a_buffer_still_answers_after_a_thread_died_holding_it ... ok
+test tally::tests::a_file_that_makes_no_sense_is_not_a_count_of_zero ... FAILED
+test pty::tests::a_terminal_still_answers_after_a_thread_died_holding_its_locks ... ok
+
+failures:
+
+---- tally::tests::a_count_that_is_not_there_is_not_a_count_of_zero stdout ----
+
+thread 'tally::tests::a_count_that_is_not_there_is_not_a_count_of_zero' (43618715) panicked at crates/terminal/src/tally.rs:159:61:
+a scratch directory: Custom { kind: PermissionDenied, error: "could not make the scratch directory /tmp/sr-tally-absent-25300: the perimeter refused it, which is not a failure of what is being tested. These tests open unix sockets, an address may not reach 104 bytes, and the usual scratch path spends that budget before the socket is named — so they need a SHORT writable root. Set SAILOR_TEST_TMP to one." }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- tally::tests::a_count_written_comes_back_the_same stdout ----
+
+thread 'tally::tests::a_count_written_comes_back_the_same' (43618716) panicked at crates/terminal/src/tally.rs:159:61:
+a scratch directory: Custom { kind: PermissionDenied, error: "could not make the scratch directory /tmp/sr-tally-roundtrip-25300: the perimeter refused it, which is not a failure of what is being tested. These tests open unix sockets, an address may not reach 104 bytes, and the usual scratch path spends that budget before the socket is named — so they need a SHORT writable root. Set SAILOR_TEST_TMP to one." }
+
+---- tally::tests::writing_twice_leaves_no_half_file_behind stdout ----
+
+thread 'tally::tests::writing_twice_leaves_no_half_file_behind' (43618719) panicked at crates/terminal/src/tally.rs:159:61:
+a scratch directory: Custom { kind: PermissionDenied, error: "could not make the scratch directory /tmp/sr-tally-clean-25300: the perimeter refused it, which is not a failure of what is being tested. These tests open unix sockets, an address may not reach 104 bytes, and the usual scratch path spends that budget before the socket is named — so they need a SHORT writable root. Set SAILOR_TEST_TMP to one." }
+
+---- tally::tests::a_file_that_makes_no_sense_is_not_a_count_of_zero stdout ----
+
+thread 'tally::tests::a_file_that_makes_no_sense_is_not_a_count_of_zero' (43618717) panicked at crates/terminal/src/tally.rs:159:61:
+a scratch directory: Custom { kind: PermissionDenied, error: "could not make the scratch directory /tmp/sr-tally-nonsense-25300: the perimeter refused it, which is not a failure of what is being tested. These tests open unix sockets, an address may not reach 104 bytes, and the usual scratch path spends that budget before the socket is named — so they need a SHORT writable root. Set SAILOR_TEST_TMP to one." }
+
+
+failures:
+    tally::tests::a_count_that_is_not_there_is_not_a_count_of_zero
+    tally::tests::a_count_written_comes_back_the_same
+    tally::tests::a_file_that_makes_no_sense_is_not_a_count_of_zero
+    tally::tests::writing_twice_leaves_no_half_file_behind
+
+test result: FAILED. 20 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p terminal --lib`
+     Running tests/a_hosted_session_does_not_inherit_what_it_must_not.rs (target/debug/deps/a_hosted_session_does_not_inherit_what_it_must_not-5d792d12ff73c503)
+
+running 2 tests
+test a_variable_the_line_declares_is_taken_away_before_the_program_starts ... FAILED
+test a_variable_nobody_took_away_reaches_the_hosted_program ... FAILED
+
+failures:
+
+---- a_variable_the_line_declares_is_taken_away_before_the_program_starts stdout ----
+
+thread 'a_variable_the_line_declares_is_taken_away_before_the_program_starts' (43618994) panicked at crates/terminal/tests/a_hosted_session_does_not_inherit_what_it_must_not.rs:65:10:
+open a pseudo-terminal: the system gave no pseudo-terminal: the perimeter refused the call itself, which is not a failure of what is being tested, and which no short path cures — SAILOR_TEST_TMP will not help here: Operation not permitted (os error 1)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- a_variable_nobody_took_away_reaches_the_hosted_program stdout ----
+
+thread 'a_variable_nobody_took_away_reaches_the_hosted_program' (43618993) panicked at crates/terminal/tests/a_hosted_session_does_not_inherit_what_it_must_not.rs:65:10:
+open a pseudo-terminal: the system gave no pseudo-terminal: the perimeter refused the call itself, which is not a failure of what is being tested, and which no short path cures — SAILOR_TEST_TMP will not help here: Operation not permitted (os error 1)
+
+
+failures:
+    a_variable_nobody_took_away_reaches_the_hosted_program
+    a_variable_the_line_declares_is_taken_away_before_the_program_starts
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p terminal --test a_hosted_session_does_not_inherit_what_it_must_not`
+     Running tests/a_letterbox_is_not_stolen_from_the_living.rs (target/debug/deps/a_letterbox_is_not_stolen_from_the_living-7ea627f2f63eb8df)
+
+running 6 tests
+test the_address_of_a_terminal_is_its_tty ... ok
+test an_address_too_long_to_reach_is_refused_by_name ... ok
+test what_a_stranger_leaves_arrives ... FAILED
+test a_letterbox_someone_is_answering_is_refused ... FAILED
+test knocking_where_there_is_no_letterbox_fails ... FAILED
+test a_letterbox_nobody_answers_is_taken_over ... FAILED
+
+failures:
+
+---- what_a_stranger_leaves_arrives stdout ----
+
+thread 'what_a_stranger_leaves_arrives' (43619069) panicked at crates/terminal/tests/a_letterbox_is_not_stolen_from_the_living.rs:24:59:
+a scratch directory: Custom { kind: PermissionDenied, error: "could not make the scratch directory /tmp/sr-delivery-25401: the perimeter refused it, which is not a failure of what is being tested. These tests open unix sockets, an address may not reach 104 bytes, and the usual scratch path spends that budget before the socket is named — so they need a SHORT writable root. Set SAILOR_TEST_TMP to one." }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- a_letterbox_someone_is_answering_is_refused stdout ----
+
+thread 'a_letterbox_someone_is_answering_is_refused' (43619065) panicked at crates/terminal/tests/a_letterbox_is_not_stolen_from_the_living.rs:24:59:
+a scratch directory: Custom { kind: PermissionDenied, error: "could not make the scratch directory /tmp/sr-occupied-25401: the perimeter refused it, which is not a failure of what is being tested. These tests open unix sockets, an address may not reach 104 bytes, and the usual scratch path spends that budget before the socket is named — so they need a SHORT writable root. Set SAILOR_TEST_TMP to one." }
+
+---- knocking_where_there_is_no_letterbox_fails stdout ----
+
+thread 'knocking_where_there_is_no_letterbox_fails' (43619067) panicked at crates/terminal/tests/a_letterbox_is_not_stolen_from_the_living.rs:24:59:
+a scratch directory: Custom { kind: PermissionDenied, error: "could not make the scratch directory /tmp/sr-nowhere-25401: the perimeter refused it, which is not a failure of what is being tested. These tests open unix sockets, an address may not reach 104 bytes, and the usual scratch path spends that budget before the socket is named — so they need a SHORT writable root. Set SAILOR_TEST_TMP to one." }
+
+---- a_letterbox_nobody_answers_is_taken_over stdout ----
+
+thread 'a_letterbox_nobody_answers_is_taken_over' (43619064) panicked at crates/terminal/tests/a_letterbox_is_not_stolen_from_the_living.rs:24:59:
+a scratch directory: Custom { kind: PermissionDenied, error: "could not make the scratch directory /tmp/sr-stale-25401: the perimeter refused it, which is not a failure of what is being tested. These tests open unix sockets, an address may not reach 104 bytes, and the usual scratch path spends that budget before the socket is named — so they need a SHORT writable root. Set SAILOR_TEST_TMP to one." }
+
+
+failures:
+    a_letterbox_nobody_answers_is_taken_over
+    a_letterbox_someone_is_answering_is_refused
+    knocking_where_there_is_no_letterbox_fails
+    what_a_stranger_leaves_arrives
+
+test result: FAILED. 2 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p terminal --test a_letterbox_is_not_stolen_from_the_living`
+     Running tests/a_line_typed_from_outside_reaches_the_program.rs (target/debug/deps/a_line_typed_from_outside_reaches_the_program-4a1d6b9507880e24)
+
+running 3 tests
+test a_line_left_in_the_letterbox_reaches_a_terminal_born_through_the_engine ... FAILED
+test what_is_left_in_the_letterbox_is_typed_into_the_program ... FAILED
+test a_program_nobody_typed_into_shows_nothing ... FAILED
+
+failures:
+
+---- a_line_left_in_the_letterbox_reaches_a_terminal_born_through_the_engine stdout ----
+
+thread 'a_line_left_in_the_letterbox_reaches_a_terminal_born_through_the_engine' (43619157) panicked at crates/terminal/tests/a_line_typed_from_outside_reaches_the_program.rs:19:40:
+a scratch directory: Custom { kind: PermissionDenied, error: "could not make the scratch directory /tmp/sr-engine-born-25404: the perimeter refused it, which is not a failure of what is being tested. These tests open unix sockets, an address may not reach 104 bytes, and the usual scratch path spends that budget before the socket is named — so they need a SHORT writable root. Set SAILOR_TEST_TMP to one." }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- what_is_left_in_the_letterbox_is_typed_into_the_program stdout ----
+
+thread 'what_is_left_in_the_letterbox_is_typed_into_the_program' (43619159) panicked at crates/terminal/tests/a_line_typed_from_outside_reaches_the_program.rs:19:40:
+a scratch directory: Custom { kind: PermissionDenied, error: "could not make the scratch directory /tmp/sr-typed-25404: the perimeter refused it, which is not a failure of what is being tested. These tests open unix sockets, an address may not reach 104 bytes, and the usual scratch path spends that budget before the socket is named — so they need a SHORT writable root. Set SAILOR_TEST_TMP to one." }
+
+---- a_program_nobody_typed_into_shows_nothing stdout ----
+
+thread 'a_program_nobody_typed_into_shows_nothing' (43619158) panicked at crates/terminal/tests/a_line_typed_from_outside_reaches_the_program.rs:109:10:
+open a pseudo-terminal with cat inside: the system gave no pseudo-terminal: the perimeter refused the call itself, which is not a failure of what is being tested, and which no short path cures — SAILOR_TEST_TMP will not help here: Operation not permitted (os error 1)
+
+
+failures:
+    a_line_left_in_the_letterbox_reaches_a_terminal_born_through_the_engine
+    a_program_nobody_typed_into_shows_nothing
+    what_is_left_in_the_letterbox_is_typed_into_the_program
+
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p terminal --test a_line_typed_from_outside_reaches_the_program`
+     Running tests/a_routed_request_reaches_the_trigger.rs (target/debug/deps/a_routed_request_reaches_the_trigger-aa1a40631a34ed0a)
+
+running 3 tests
+test a_command_produces_no_signal_at_all ... ok
+test a_routed_request_becomes_the_signal_of_a_manual_trigger ... ok
+test the_flow_the_shipped_rules_name_starts_with_a_manual_trigger ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/a_terminal_is_held_by_the_host.rs (target/debug/deps/a_terminal_is_held_by_the_host-b5e0d572b997b240)
+
+running 7 tests
+test a_terminal_nobody_opened_is_refused_by_name ... FAILED
+test arguments_cross_the_wire_as_arguments_and_not_as_part_of_the_name ... FAILED
+test a_terminal_the_host_opened_has_a_letterbox_and_a_count_under_its_tty ... FAILED
+test a_terminal_nobody_typed_into_shows_no_such_word ... FAILED
+test the_device_the_list_carries_is_the_one_the_program_inside_reports ... FAILED
+test what_was_printed_before_anyone_looked_is_served_to_whoever_attaches_late ... FAILED
+test the_environment_given_at_opening_reaches_the_program_inside ... FAILED
+
+failures:
+
+---- a_terminal_nobody_opened_is_refused_by_name stdout ----
+
+thread 'a_terminal_nobody_opened_is_refused_by_name' (43619323) panicked at crates/terminal/tests/a_terminal_is_held_by_the_host.rs:19:59:
+a scratch directory: Custom { kind: PermissionDenied, error: "could not make the scratch directory /tmp/sr-host-unknown-25424: the perimeter refused it, which is not a failure of what is being tested. These tests open unix sockets, an address may not reach 104 bytes, and the usual scratch path spends that budget before the socket is named — so they need a SHORT writable root. Set SAILOR_TEST_TMP to one." }
+
+---- arguments_cross_the_wire_as_arguments_and_not_as_part_of_the_name stdout ----
+
+thread 'arguments_cross_the_wire_as_arguments_and_not_as_part_of_the_name' (43619326) panicked at crates/terminal/tests/a_terminal_is_held_by_the_host.rs:19:59:
+a scratch directory: Custom { kind: PermissionDenied, error: "could not make the scratch directory /tmp/sr-host-args-25424: the perimeter refused it, which is not a failure of what is being tested. These tests open unix sockets, an address may not reach 104 bytes, and the usual scratch path spends that budget before the socket is named — so they need a SHORT writable root. Set SAILOR_TEST_TMP to one." }
+
+---- a_terminal_the_host_opened_has_a_letterbox_and_a_count_under_its_tty stdout ----
+
+thread 'a_terminal_the_host_opened_has_a_letterbox_and_a_count_under_its_tty' (43619325) panicked at crates/terminal/tests/a_terminal_is_held_by_the_host.rs:19:59:
+a scratch directory: Custom { kind: PermissionDenied, error: "could not make the scratch directory /tmp/sr-host-letterbox-25424: the perimeter refused it, which is not a failure of what is being tested. These tests open unix sockets, an address may not reach 104 bytes, and the usual scratch path spends that budget before the socket is named — so they need a SHORT writable root. Set SAILOR_TEST_TMP to one." }
+
+---- a_terminal_nobody_typed_into_shows_no_such_word stdout ----
+
+thread 'a_terminal_nobody_typed_into_shows_no_such_word' (43619324) panicked at crates/terminal/tests/a_terminal_is_held_by_the_host.rs:19:59:
+a scratch directory: Custom { kind: PermissionDenied, error: "could not make the scratch directory /tmp/sr-host-quiet-25424: the perimeter refused it, which is not a failure of what is being tested. These tests open unix sockets, an address may not reach 104 bytes, and the usual scratch path spends that budget before the socket is named — so they need a SHORT writable root. Set SAILOR_TEST_TMP to one." }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- the_device_the_list_carries_is_the_one_the_program_inside_reports stdout ----
+
+thread 'the_device_the_list_carries_is_the_one_the_program_inside_reports' (43619327) panicked at crates/terminal/tests/a_terminal_is_held_by_the_host.rs:19:59:
+a scratch directory: Custom { kind: PermissionDenied, error: "could not make the scratch directory /tmp/sr-host-device-25424: the perimeter refused it, which is not a failure of what is being tested. These tests open unix sockets, an address may not reach 104 bytes, and the usual scratch path spends that budget before the socket is named — so they need a SHORT writable root. Set SAILOR_TEST_TMP to one." }
+
+---- what_was_printed_before_anyone_looked_is_served_to_whoever_attaches_late stdout ----
+
+thread 'what_was_printed_before_anyone_looked_is_served_to_whoever_attaches_late' (43619329) panicked at crates/terminal/tests/a_terminal_is_held_by_the_host.rs:19:59:
+a scratch directory: Custom { kind: PermissionDenied, error: "could not make the scratch directory /tmp/sr-host-late-25424: the perimeter refused it, which is not a failure of what is being tested. These tests open unix sockets, an address may not reach 104 bytes, and the usual scratch path spends that budget before the socket is named — so they need a SHORT writable root. Set SAILOR_TEST_TMP to one." }
+
+---- the_environment_given_at_opening_reaches_the_program_inside stdout ----
+
+thread 'the_environment_given_at_opening_reaches_the_program_inside' (43619328) panicked at crates/terminal/tests/a_terminal_is_held_by_the_host.rs:19:59:
+a scratch directory: Custom { kind: PermissionDenied, error: "could not make the scratch directory /tmp/sr-host-env-25424: the perimeter refused it, which is not a failure of what is being tested. These tests open unix sockets, an address may not reach 104 bytes, and the usual scratch path spends that budget before the socket is named — so they need a SHORT writable root. Set SAILOR_TEST_TMP to one." }
+
+
+failures:
+    a_terminal_nobody_opened_is_refused_by_name
+    a_terminal_nobody_typed_into_shows_no_such_word
+    a_terminal_the_host_opened_has_a_letterbox_and_a_count_under_its_tty
+    arguments_cross_the_wire_as_arguments_and_not_as_part_of_the_name
+    the_device_the_list_carries_is_the_one_the_program_inside_reports
+    the_environment_given_at_opening_reaches_the_program_inside
+    what_was_printed_before_anyone_looked_is_served_to_whoever_attaches_late
+
+test result: FAILED. 0 passed; 7 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p terminal --test a_terminal_is_held_by_the_host`
+     Running tests/a_terminal_lives_in_its_workspace.rs (target/debug/deps/a_terminal_lives_in_its_workspace-9a934dc972c7428a)
+
+running 13 tests
+test the_estimate_in_the_row_is_the_one_the_relay_measures_with ... ok
+test the_list_row_carries_the_names_the_window_reads ... ok
+test a_workspace_that_is_not_there_is_refused_before_anything_starts ... ok
+test closing_a_terminal_stops_it_and_takes_it_off_the_list ... FAILED
+test a_plain_command_passes_and_says_why ... FAILED
+test a_terminal_starts_inside_its_workspace ... FAILED
+test the_end_of_a_terminal_is_announced_with_how_it_ended ... FAILED
+test the_output_arrives_while_it_is_being_produced ... FAILED
+test the_device_in_the_list_is_the_one_the_program_inside_reports ... FAILED
+test the_output_is_told_which_terminal_it_belongs_to ... FAILED
+test a_terminal_runs_what_is_written_into_it ... FAILED
+test the_list_says_which_terminals_are_open_and_where ... FAILED
+test a_resize_is_seen_by_the_program_inside ... FAILED
+
+failures:
+
+---- closing_a_terminal_stops_it_and_takes_it_off_the_list stdout ----
+
+thread 'closing_a_terminal_stops_it_and_takes_it_off_the_list' (43619450) panicked at crates/terminal/tests/a_terminal_lives_in_its_workspace.rs:365:10:
+aprire: the system gave no pseudo-terminal: the perimeter refused the call itself, which is not a failure of what is being tested, and which no short path cures — SAILOR_TEST_TMP will not help here: Operation not permitted (os error 1)
+
+---- a_plain_command_passes_and_says_why stdout ----
+
+thread 'a_plain_command_passes_and_says_why' (43619445) panicked at crates/terminal/tests/a_terminal_lives_in_its_workspace.rs:512:10:
+aprire: the system gave no pseudo-terminal: the perimeter refused the call itself, which is not a failure of what is being tested, and which no short path cures — SAILOR_TEST_TMP will not help here: Operation not permitted (os error 1)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- a_terminal_starts_inside_its_workspace stdout ----
+
+thread 'a_terminal_starts_inside_its_workspace' (43619448) panicked at crates/terminal/tests/a_terminal_lives_in_its_workspace.rs:114:10:
+aprire uno pseudo-terminale: the system gave no pseudo-terminal: the perimeter refused the call itself, which is not a failure of what is being tested, and which no short path cures — SAILOR_TEST_TMP will not help here: Operation not permitted (os error 1)
+
+---- the_end_of_a_terminal_is_announced_with_how_it_ended stdout ----
+
+thread 'the_end_of_a_terminal_is_announced_with_how_it_ended' (43619452) panicked at crates/terminal/tests/a_terminal_lives_in_its_workspace.rs:183:10:
+aprire uno pseudo-terminale: the system gave no pseudo-terminal: the perimeter refused the call itself, which is not a failure of what is being tested, and which no short path cures — SAILOR_TEST_TMP will not help here: Operation not permitted (os error 1)
+
+---- the_output_arrives_while_it_is_being_produced stdout ----
+
+thread 'the_output_arrives_while_it_is_being_produced' (43619456) panicked at crates/terminal/tests/a_terminal_lives_in_its_workspace.rs:141:10:
+aprire uno pseudo-terminale: the system gave no pseudo-terminal: the perimeter refused the call itself, which is not a failure of what is being tested, and which no short path cures — SAILOR_TEST_TMP will not help here: Operation not permitted (os error 1)
+
+---- the_device_in_the_list_is_the_one_the_program_inside_reports stdout ----
+
+thread 'the_device_in_the_list_is_the_one_the_program_inside_reports' (43619451) panicked at crates/terminal/tests/a_terminal_lives_in_its_workspace.rs:469:10:
+aprire uno pseudo-terminale: the system gave no pseudo-terminal: the perimeter refused the call itself, which is not a failure of what is being tested, and which no short path cures — SAILOR_TEST_TMP will not help here: Operation not permitted (os error 1)
+
+---- the_output_is_told_which_terminal_it_belongs_to stdout ----
+
+thread 'the_output_is_told_which_terminal_it_belongs_to' (43619457) panicked at crates/terminal/tests/a_terminal_lives_in_its_workspace.rs:245:10:
+aprire uno pseudo-terminale: the system gave no pseudo-terminal: the perimeter refused the call itself, which is not a failure of what is being tested, and which no short path cures — SAILOR_TEST_TMP will not help here: Operation not permitted (os error 1)
+
+---- a_terminal_runs_what_is_written_into_it stdout ----
+
+thread 'a_terminal_runs_what_is_written_into_it' (43619447) panicked at crates/terminal/tests/a_terminal_lives_in_its_workspace.rs:88:10:
+aprire uno pseudo-terminale: the system gave no pseudo-terminal: the perimeter refused the call itself, which is not a failure of what is being tested, and which no short path cures — SAILOR_TEST_TMP will not help here: Operation not permitted (os error 1)
+
+---- the_list_says_which_terminals_are_open_and_where stdout ----
+
+thread 'the_list_says_which_terminals_are_open_and_where' (43619455) panicked at crates/terminal/tests/a_terminal_lives_in_its_workspace.rs:324:10:
+aprire il primo: the system gave no pseudo-terminal: the perimeter refused the call itself, which is not a failure of what is being tested, and which no short path cures — SAILOR_TEST_TMP will not help here: Operation not permitted (os error 1)
+
+---- a_resize_is_seen_by_the_program_inside stdout ----
+
+thread 'a_resize_is_seen_by_the_program_inside' (43619446) panicked at crates/terminal/tests/a_terminal_lives_in_its_workspace.rs:296:10:
+aprire uno pseudo-terminale: the system gave no pseudo-terminal: the perimeter refused the call itself, which is not a failure of what is being tested, and which no short path cures — SAILOR_TEST_TMP will not help here: Operation not permitted (os error 1)
+
+
+failures:
+    a_plain_command_passes_and_says_why
+    a_resize_is_seen_by_the_program_inside
+    a_terminal_runs_what_is_written_into_it
+    a_terminal_starts_inside_its_workspace
+    closing_a_terminal_stops_it_and_takes_it_off_the_list
+    the_device_in_the_list_is_the_one_the_program_inside_reports
+    the_end_of_a_terminal_is_announced_with_how_it_ended
+    the_list_says_which_terminals_are_open_and_where
+    the_output_arrives_while_it_is_being_produced
+    the_output_is_told_which_terminal_it_belongs_to
+
+test result: FAILED. 3 passed; 10 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p terminal --test a_terminal_lives_in_its_workspace`
+     Running tests/the_enter_arrives_on_its_own.rs (target/debug/deps/the_enter_arrives_on_its_own-ece5251d5f9cc26a)
+
+running 4 tests
+test an_empty_line_is_the_enter_by_itself ... FAILED
+test the_text_is_left_alone_before_the_enter_follows ... FAILED
+test the_enter_is_a_delivery_of_its_own ... FAILED
+test a_letterbox_nobody_typed_into_hands_over_nothing ... FAILED
+
+failures:
+
+---- an_empty_line_is_the_enter_by_itself stdout ----
+
+thread 'an_empty_line_is_the_enter_by_itself' (43619563) panicked at crates/terminal/tests/the_enter_arrives_on_its_own.rs:24:56:
+a scratch directory: Custom { kind: PermissionDenied, error: "could not make the scratch directory /tmp/sr-typed-line-empty-25429: the perimeter refused it, which is not a failure of what is being tested. These tests open unix sockets, an address may not reach 104 bytes, and the usual scratch path spends that budget before the socket is named — so they need a SHORT writable root. Set SAILOR_TEST_TMP to one." }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- the_text_is_left_alone_before_the_enter_follows stdout ----
+
+thread 'the_text_is_left_alone_before_the_enter_follows' (43619565) panicked at crates/terminal/tests/the_enter_arrives_on_its_own.rs:24:56:
+a scratch directory: Custom { kind: PermissionDenied, error: "could not make the scratch directory /tmp/sr-typed-line-gap-25429: the perimeter refused it, which is not a failure of what is being tested. These tests open unix sockets, an address may not reach 104 bytes, and the usual scratch path spends that budget before the socket is named — so they need a SHORT writable root. Set SAILOR_TEST_TMP to one." }
+
+---- the_enter_is_a_delivery_of_its_own stdout ----
+
+thread 'the_enter_is_a_delivery_of_its_own' (43619564) panicked at crates/terminal/tests/the_enter_arrives_on_its_own.rs:24:56:
+a scratch directory: Custom { kind: PermissionDenied, error: "could not make the scratch directory /tmp/sr-typed-line-25429: the perimeter refused it, which is not a failure of what is being tested. These tests open unix sockets, an address may not reach 104 bytes, and the usual scratch path spends that budget before the socket is named — so they need a SHORT writable root. Set SAILOR_TEST_TMP to one." }
+
+---- a_letterbox_nobody_typed_into_hands_over_nothing stdout ----
+
+thread 'a_letterbox_nobody_typed_into_hands_over_nothing' (43619562) panicked at crates/terminal/tests/the_enter_arrives_on_its_own.rs:107:58:
+a scratch directory: Custom { kind: PermissionDenied, error: "could not make the scratch directory /tmp/sr-typed-line-quiet-25429: the perimeter refused it, which is not a failure of what is being tested. These tests open unix sockets, an address may not reach 104 bytes, and the usual scratch path spends that budget before the socket is named — so they need a SHORT writable root. Set SAILOR_TEST_TMP to one." }
+
+
+failures:
+    a_letterbox_nobody_typed_into_hands_over_nothing
+    an_empty_line_is_the_enter_by_itself
+    the_enter_is_a_delivery_of_its_own
+    the_text_is_left_alone_before_the_enter_follows
+
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p terminal --test the_enter_arrives_on_its_own`
+     Running tests/the_router_never_eats_a_command.rs (target/debug/deps/the_router_never_eats_a_command-b9b9eea5143c5a7b)
+
+running 17 tests
+test a_disabled_rule_disappears ... ok
+test a_short_line_does_not_reach_a_rule_that_asks_for_a_long_one ... ok
+test a_real_command_is_never_routed_when_it_is_a_shell_word ... ok
+test a_real_command_is_never_routed_when_it_names_a_file ... ok
+test a_real_command_is_never_routed_when_its_first_word_is_runnable ... ok
+test a_request_that_is_not_a_command_goes_to_the_flow ... ok
+test a_word_rule_matches_words_and_not_pieces_of_them ... ok
+test an_empty_line_is_not_a_request ... ok
+test a_broken_rule_does_not_take_the_good_ones_with_it ... ok
+test a_doubt_about_the_machine_becomes_a_command_not_a_request ... ok
+test a_marked_line_goes_to_the_flow_even_if_it_looks_like_a_command ... ok
+test a_real_command_is_never_routed_when_it_has_shell_syntax ... ok
+test an_explicit_rule_that_is_not_a_marker_is_refused ... ok
+test an_explicit_rule_whose_marker_could_start_a_command_is_refused ... ok
+test the_last_rule_with_an_id_wins ... ok
+test with_no_rules_everything_is_a_command ... ok
+test the_shipped_rules_all_load_and_name_a_flow_that_exists ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests terminal
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: 7 targets failed:
+    `-p terminal --lib`
+    `-p terminal --test a_hosted_session_does_not_inherit_what_it_must_not`
+    `-p terminal --test a_letterbox_is_not_stolen_from_the_living`
+    `-p terminal --test a_line_typed_from_outside_reaches_the_program`
+    `-p terminal --test a_terminal_is_held_by_the_host`
+    `-p terminal --test a_terminal_lives_in_its_workspace`
+    `-p terminal --test the_enter_arrives_on_its_own`
+EXIT=101

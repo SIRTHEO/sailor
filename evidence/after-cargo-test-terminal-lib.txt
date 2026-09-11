@@ -1,0 +1,65 @@
+   Compiling terminal v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789116836445668000--the_crew--0--1789116836493044000/the_agent/crates/terminal)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.36s
+     Running unittests src/lib.rs (target/debug/deps/terminal-e9de696be21a9719)
+
+running 26 tests
+test host::tests::a_backlog_keeps_the_tail_and_knows_where_it_starts ... ok
+test keeping::tests::asked_in_so_many_words_the_payload_arrives_whole ... ok
+test keeping::tests::a_key_nobody_allowed_does_not_reach_the_disk ... ok
+test keeping::tests::a_payload_that_is_not_an_object_is_dropped_whole ... ok
+test host::tests::requests_and_answers_are_tagged_lines ... ok
+test host::tests::a_frame_comes_back_as_it_went ... ok
+test consent::tests::a_flow_is_refused_until_a_consent_names_it ... ok
+test keeping::tests::what_a_person_typed_and_what_the_engine_answered_do_not_survive ... ok
+test keeping::tests::keeping_the_bodies_takes_the_whole_sentence ... ok
+test consent::tests::a_consent_that_records_nothing_is_refused ... ok
+test keeping::tests::an_allowed_name_holding_a_container_is_dropped_with_the_bodies ... ok
+test scratch::tests::a_declared_root_is_used_and_an_empty_one_is_not ... ok
+test scratch::tests::a_denial_names_the_perimeter_and_an_ordinary_error_does_not ... ok
+test scratch::tests::a_root_that_refuses_is_an_error_carrying_the_refusal ... ok
+test screen::tests::a_screen_that_was_never_written_is_nothing_and_not_empty ... ok
+test screen::tests::a_title_the_program_set_is_not_part_of_the_screen ... ok
+test screen::tests::only_the_tail_is_kept ... ok
+test screen::tests::the_control_sequences_come_out_before_anything_is_looked_for ... ok
+test tally::tests::a_count_written_comes_back_the_same ... FAILED
+test tally::tests::the_count_sits_beside_the_letterbox ... ok
+test tally::tests::a_file_that_makes_no_sense_is_not_a_count_of_zero ... FAILED
+test tally::tests::a_count_that_is_not_there_is_not_a_count_of_zero ... FAILED
+test tally::tests::writing_twice_leaves_no_half_file_behind ... FAILED
+test session::tests::the_list_still_answers_after_a_thread_died_holding_it ... ok
+test tests::a_buffer_still_answers_after_a_thread_died_holding_it ... ok
+test pty::tests::a_terminal_still_answers_after_a_thread_died_holding_its_locks ... ok
+
+failures:
+
+---- tally::tests::a_count_written_comes_back_the_same stdout ----
+
+thread 'tally::tests::a_count_written_comes_back_the_same' (43652354) panicked at crates/terminal/src/tally.rs:159:61:
+a scratch directory: Custom { kind: PermissionDenied, error: "could not make the scratch directory /tmp/sr-tally-roundtrip-31183: the perimeter refused it, which is not a failure of what is being tested. These tests open unix sockets, an address may not reach 104 bytes, and the usual scratch path spends that budget before the socket is named — so they need a SHORT writable root. Set SAILOR_TEST_TMP to one." }
+
+---- tally::tests::a_file_that_makes_no_sense_is_not_a_count_of_zero stdout ----
+
+thread 'tally::tests::a_file_that_makes_no_sense_is_not_a_count_of_zero' (43652355) panicked at crates/terminal/src/tally.rs:159:61:
+a scratch directory: Custom { kind: PermissionDenied, error: "could not make the scratch directory /tmp/sr-tally-nonsense-31183: the perimeter refused it, which is not a failure of what is being tested. These tests open unix sockets, an address may not reach 104 bytes, and the usual scratch path spends that budget before the socket is named — so they need a SHORT writable root. Set SAILOR_TEST_TMP to one." }
+
+---- tally::tests::a_count_that_is_not_there_is_not_a_count_of_zero stdout ----
+
+thread 'tally::tests::a_count_that_is_not_there_is_not_a_count_of_zero' (43652353) panicked at crates/terminal/src/tally.rs:159:61:
+a scratch directory: Custom { kind: PermissionDenied, error: "could not make the scratch directory /tmp/sr-tally-absent-31183: the perimeter refused it, which is not a failure of what is being tested. These tests open unix sockets, an address may not reach 104 bytes, and the usual scratch path spends that budget before the socket is named — so they need a SHORT writable root. Set SAILOR_TEST_TMP to one." }
+
+---- tally::tests::writing_twice_leaves_no_half_file_behind stdout ----
+
+thread 'tally::tests::writing_twice_leaves_no_half_file_behind' (43652357) panicked at crates/terminal/src/tally.rs:159:61:
+a scratch directory: Custom { kind: PermissionDenied, error: "could not make the scratch directory /tmp/sr-tally-clean-31183: the perimeter refused it, which is not a failure of what is being tested. These tests open unix sockets, an address may not reach 104 bytes, and the usual scratch path spends that budget before the socket is named — so they need a SHORT writable root. Set SAILOR_TEST_TMP to one." }
+
+
+failures:
+    tally::tests::a_count_that_is_not_there_is_not_a_count_of_zero
+    tally::tests::a_count_written_comes_back_the_same
+    tally::tests::a_file_that_makes_no_sense_is_not_a_count_of_zero
+    tally::tests::writing_twice_leaves_no_half_file_behind
+
+test result: FAILED. 22 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p terminal --lib`
+EXIT=101
