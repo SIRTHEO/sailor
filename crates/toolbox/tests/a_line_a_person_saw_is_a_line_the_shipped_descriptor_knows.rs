@@ -21,6 +21,10 @@ const SEEN: &[(&str, &str)] = &[
         "claude-code",
         "You've hit your weekly limit \u{b7} resets 7am",
     ),
+    (
+        "codex",
+        "ERROR: You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 2:48 PM.",
+    ),
 ];
 
 /// Only what the product ships, with nothing of this machine around it.
