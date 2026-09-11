@@ -180,6 +180,20 @@ pub fn sweep(repo: &Path, store: &dyn OpenTrees) -> Result<String, String> {
         }
         said.push(what_became_of_it(&at, became));
     }
+    // **THE REGISTER IS SWEPT TOO, AND NOT ONLY GIT'S LIST.** A row whose tree
+    // was taken away behind git's back never appears above, so eleven of them
+    // stood for two days waking the flow that exists to clear them (fault 166).
+    for row in store.trees_left_open().unwrap_or_default() {
+        let at = PathBuf::from(&row.path);
+        if trees.iter().any(|known| Path::new(&known.path) == at) {
+            continue;
+        }
+        let became = close_if_the_trunk_holds_it(repo, &at, store);
+        if matches!(became, Swept::Closed(Closing::TakenDown) | Swept::AlreadyGone) {
+            closed += 1;
+        }
+        said.push(what_became_of_it(&at, became));
+    }
     said.push(catalogue::say(
         "cli.worktree.swept",
         &[
