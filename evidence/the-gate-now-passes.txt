@@ -1,0 +1,12 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s
+     Running tests/workspaces_and_their_worktrees_read_as_one_column.rs (target/a2/debug/deps/workspaces_and_their_worktrees_read_as_one_column-1c0d6b853cd03c63)
+
+running 5 tests
+test outside_every_tree_is_a_place_the_reading_names ... ok
+test a_tree_deleted_from_disk_is_drawn_and_is_not_an_error ... ok
+test a_project_holds_its_several_trees_and_says_which_one_is_stood_in ... ok
+test a_project_with_no_trees_left_is_an_ordinary_answer ... ok
+test the_flows_of_no_checkout_are_kept_apart_from_the_trees ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.74s
+

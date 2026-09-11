@@ -30,7 +30,18 @@ fn a_flow(dir: &Path, id: &str, steps: usize) {
     std::fs::create_dir_all(dir).expect("the flows directory is made");
     let steps: Vec<_> = (0..steps)
         .map(|which| {
-            serde_json::json!({ "id": format!("step-{which}"), "action": "note", "inputs": {} })
+            let anything =
+                serde_json::json!({ "type": "object", "properties": {}, "required": [], "allow_extra": true });
+            serde_json::json!({
+                "id": format!("step-{which}"),
+                "deps": [],
+                "action": "note",
+                "max_attempts": 1,
+                "when": null,
+                "with": {},
+                "input_schema": anything,
+                "output_schema": anything,
+            })
         })
         .collect();
     let document = serde_json::json!({
@@ -60,7 +71,12 @@ impl Drop for Yard {
 /// it, one project with no trees left, one terminal inside a tree and one
 /// outside every tree.
 fn a_small_world() -> Yard {
-    let root = std::env::temp_dir().join(format!("sailor-column-{}", std::process::id()));
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let root = std::env::temp_dir().join(format!(
+        "sailor-column-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
     let _ = std::fs::remove_dir_all(&root);
     let yard = Yard { root };
     let home = yard.root.join("home");
@@ -163,7 +179,7 @@ fn a_project_holds_its_several_trees_and_says_which_one_is_stood_in() {
         main.flows.iter().map(|flow| flow.id.as_str()).collect::<Vec<_>>(),
         vec!["an-alpha-flow"]
     );
-    assert_eq!(main.flows[0].steps, 7);
+    assert_eq!(main.flows[0].steps, 7, "{:?}", main.flows[0]);
 }
 
 #[test]

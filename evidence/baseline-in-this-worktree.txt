@@ -1,0 +1,27 @@
+=== in this worktree, at 7bde057c + the gate only ===
+=== cargo test -p sailor (three judges) ===
+test with_no_linter_to_answer_the_judge_declares_it_measured_nothing ... ok
+test a_warning_planted_in_a_throwaway_tree_is_counted_and_complained_about ... ok
+test the_check_can_still_see_what_it_counts ... ok
+test no_crate_warns_more_than_today ... FAILED
+thread 'no_crate_warns_more_than_today' (43851559) panicked at crates/sailor/tests/clippy_only_ever_gets_quieter.rs:217:66:
+error: could not compile `workspace` (test "workspaces_and_their_worktrees_read_as_one_column") due to 11 previous errors
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.48s
+error: test failed, to rerun pass `-p sailor --test clippy_only_ever_gets_quieter`
+test the_files_named_one_by_one_are_inside_the_perimeter ... ok
+test no_crate_lets_its_comments_outtalk_its_code_more_than_today ... FAILED
+test the_comments_not_in_english_only_shrink ... ok
+test no_comment_tells_a_date ... ok
+test no_new_comment_block_runs_past_the_cap ... ok
+test a_seed_that_no_longer_describes_the_tree_is_a_seed_nobody_re_measured ... ok
+test the_check_can_still_see_what_it_counts ... ok
+thread 'no_crate_lets_its_comments_outtalk_its_code_more_than_today' (43852214) panicked at crates/sailor/tests/comments_do_not_crowd_out_the_code.rs:445:5:
+crate «workspace» is seeded 27‰ above the 125‰ it holds: write 125; measured now:
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.58s
+error: test failed, to rerun pass `-p sailor --test comments_do_not_crowd_out_the_code`
+test the_scale_tells_what_a_file_does_from_what_proves_it ... ok
+test the_scale_can_still_see_the_files_it_weighs ... ok
+test no_more_walls_of_judges_than_today ... ok
+test no_more_files_run_past_the_scale_than_today ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+error: 2 targets failed:

@@ -9,4 +9,11 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+# The flows a tree owns and the ones it does not, and the register of
+# projects: the column has to draw both, and a second reader of those files
+# would answer differently from the one that runs them.
+flow = { path = "../flow" }
 serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
