@@ -562,8 +562,29 @@ pub struct KeepsTerminals {
     pub known_by: Vec<String>,
     pub reads_the_screen: Vec<String>,
     pub types_a_line: Vec<String>,
+    /// What prints every terminal this program keeps. Absent where the name a
+    /// session carries is already the one its keeper wants.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lists_them: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub in_the_list: Option<InTheList>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub note: String,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
+/// Where the handle is in what a keeper prints, and how a session is matched to
+/// it. **A SESSION NAMES ITSELF ONE WAY AND ITS KEEPER ANOTHER**, and the join
+/// between the two is measured, never guessed.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct InTheList {
+    /// The keys to walk to reach the array of terminals.
+    pub at: Vec<String>,
+    /// The fields of an entry that, joined, make the name a session carries.
+    pub known_by: Vec<String>,
+    pub joined_by: String,
+    pub the_handle_is: String,
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
 }
@@ -808,6 +829,13 @@ impl Descriptor {
                     .keys()
                     .map(|key| format!("keeps_terminals.{key}")),
             );
+            if let Some(list) = &keeps.in_the_list {
+                found.extend(
+                    list.extra
+                        .keys()
+                        .map(|key| format!("keeps_terminals.in_the_list.{key}")),
+                );
+            }
         }
         if let Some(reset) = &self.reset_context {
             found.extend(reset.extra.keys().map(|key| format!("reset_context.{key}")));

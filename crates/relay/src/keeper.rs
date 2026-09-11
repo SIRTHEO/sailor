@@ -5,9 +5,11 @@
 //! declares. This file knows how to knock and nothing about who answers.
 
 use flow::ActionError;
+use serde_json::Value;
 use std::path::Path;
+use std::sync::OnceLock;
 use std::time::Duration;
-use toolbox::descriptor::KeepsTerminals;
+use toolbox::descriptor::{InTheList, KeepsTerminals};
 
 /// How long a keeper has to answer before it counts as unreachable.
 const LONG_ENOUGH: Duration = Duration::from_secs(10);
@@ -15,8 +17,11 @@ const LONG_ENOUGH: Duration = Duration::from_secs(10);
 /// A terminal, whoever keeps it, and how they are asked about it.
 pub struct Keeper {
     pub id: String,
-    pub handle: String,
+    /// The name the session carries, which is not always the one its keeper's
+    /// own commands want.
+    pub named: String,
     keeps: KeepsTerminals,
+    handle: OnceLock<String>,
 }
 
 /// Who keeps that terminal, or nothing where nobody has said.
@@ -30,8 +35,9 @@ pub fn of(catalog: &toolbox::Catalog, root: &Path, tty: &str) -> Option<Keeper> 
     let keeps = known.descriptor.keeps_terminals.clone()?;
     Some(Keeper {
         id: kept.keeper,
-        handle: kept.handle,
+        named: kept.handle,
         keeps,
+        handle: OnceLock::new(),
     })
 }
 
@@ -46,21 +52,94 @@ impl Keeper {
         self.asked(&self.keeps.types_a_line, Some(line)).map(|_| ())
     }
 
+    /// The name this terminal goes by to its keeper's own commands.
+    ///
+    /// **MEASURED, NOT GUESSED.** Where the keeper declares a list, the name a
+    /// session carries is looked up in it; where it declares none, the two are
+    /// the same name and nothing is run.
+    fn handle(&self) -> Result<&str, ActionError> {
+        if let Some(found) = self.handle.get() {
+            return Ok(found);
+        }
+        let found = match (&self.keeps.lists_them, &self.keeps.in_the_list) {
+            (listing, Some(how)) if !listing.is_empty() => {
+                let printed = self.ran(&listing.clone(), None)?;
+                self.found_in(&printed, how)?
+            }
+            _ => self.named.clone(),
+        };
+        let _ = self.handle.set(found);
+        Ok(self.handle.get().map(String::as_str).unwrap_or_default())
+    }
+
+    /// The entry of the list this session is, and the handle it carries.
+    fn found_in(&self, printed: &[u8], how: &InTheList) -> Result<String, ActionError> {
+        let listed: Value = serde_json::from_slice(printed)
+            .map_err(|error| self.broke(&format!("printed a list nobody can read: {error}")))?;
+        let mut at = &listed;
+        for key in &how.at {
+            at = at
+                .get(key)
+                .ok_or_else(|| self.broke(&format!("printed a list with no «{key}» in it")))?;
+        }
+        let entries = at
+            .as_array()
+            .ok_or_else(|| self.broke("printed a list that is not a list"))?;
+        for entry in entries {
+            let named: Vec<String> = how
+                .known_by
+                .iter()
+                .map(|field| {
+                    entry
+                        .get(field)
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_owned()
+                })
+                .collect();
+            if named.join(&how.joined_by) != self.named {
+                continue;
+            }
+            return entry
+                .get(&how.the_handle_is)
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .ok_or_else(|| {
+                    self.broke(&format!(
+                        "knows this terminal and gives it no «{}»",
+                        how.the_handle_is
+                    ))
+                });
+        }
+        Err(self.broke(&format!(
+            "does not know a terminal called «{}» any more",
+            self.named
+        )))
+    }
+
     fn asked(&self, argv: &[String], line: Option<&str>) -> Result<Vec<u8>, ActionError> {
-        let mut filled = argv.iter().map(|word| {
-            word.replace("{handle}", &self.handle)
-                .replace("{line}", line.unwrap_or_default())
-        });
+        let handle = self.handle()?.to_owned();
+        self.ran(argv, Some((&handle, line.unwrap_or_default())))
+    }
+
+    fn ran(&self, argv: &[String], filling: Option<(&str, &str)>) -> Result<Vec<u8>, ActionError> {
+        let (handle, line) = filling.unwrap_or_default();
+        let mut filled = argv
+            .iter()
+            .map(|word| word.replace("{handle}", handle).replace("{line}", line));
         let Some(program) = filled.next() else {
             return Err(self.broke("declares a command with no name in it"));
         };
         let rest: Vec<String> = filled.collect();
+        // The whole command, because «it exited with 1» sends whoever reads it
+        // looking at the wrong one of the two this file runs.
+        let ran = format!("`{program} {}`", rest.join(" "));
         let mut command = std::process::Command::new(&program);
         command.args(&rest).stdin(std::process::Stdio::null());
         match actions::run_with_timeout(command, LONG_ENOUGH) {
             actions::RunOutcome::Finished { status, stdout, .. } if status.success() => Ok(stdout),
             actions::RunOutcome::Finished { status, stderr, .. } => Err(self.broke(&format!(
-                "`{program}` exited with {}: {}",
+                "{ran} exited with {}: {}",
                 status
                     .code()
                     .map(|code| code.to_string())
@@ -68,10 +147,10 @@ impl Keeper {
                 String::from_utf8_lossy(&stderr).trim()
             ))),
             actions::RunOutcome::TimedOut => {
-                Err(self.broke(&format!("`{program}` did not answer in time")))
+                Err(self.broke(&format!("{ran} did not answer in time")))
             }
             actions::RunOutcome::SpawnFailed(why) => {
-                Err(self.broke(&format!("`{program}` did not start: {why}")))
+                Err(self.broke(&format!("{ran} did not start: {why}")))
             }
         }
     }
