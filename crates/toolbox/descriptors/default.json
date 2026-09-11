@@ -378,7 +378,7 @@
         "native_spend_cap": false,
         "choose_model": { "args": ["--model"], "takes_value": true },
         "fallback_model": false,
-        "read_remaining_quota": false
+        "read_remaining_quota": {"note": "Not a flag: a channel, and it said `false` because nobody had found it. Measured 11/09/2026 by reading the paths in the binary: `https://chatgpt.com/backend-api/wham/usage` answers HTTP 200 to the bearer in the home's `auth.json` under `tokens.access_token`, with no other header. Under `rate_limit` sit `primary_window` and `secondary_window`, each with `used_percent` and `reset_at` in unix seconds, and `limit_window_seconds` says which is which: 18000 and 604800. The sibling path `/api/codex/usage` answers 403. It is the PERSON's quota over every session, never one run's. Read only, no cost."}
       },
       "session_hooks": {
         "file": { "root_var": "CODEX_HOME", "below_root": "config.toml", "below_home": ".codex/config.toml", "format": "toml", "key": ["hooks"] },
@@ -498,6 +498,7 @@
         "fork_session": false,
         "isolate_from_user_config": false,
         "receive_equipment": { "args": ["--add-dir"], "takes_value": true, "note": "adds a directory to the workspace, repeatable: it is all that can be handed to it from outside" },
+        "read_remaining_quota": false,
         "native_spend_cap": false,
         "choose_model": { "args": ["--model"], "takes_value": true },
         "fallback_model": false
@@ -532,6 +533,7 @@
       "config": ["~/.ollama"],
       "data_pact": "does_not_train",
       "capabilities": {
+        "read_remaining_quota": false,
         "ask_without_interaction": {
           "args": ["run"],
           "note": "`run <model>` with the prompt on stdin answers once and exits; without stdin it opens a conversation"
