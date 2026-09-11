@@ -719,7 +719,9 @@ dependencies = [
 name = "workspace"
 version = "0.1.0"
 dependencies = [
+ "flow",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
