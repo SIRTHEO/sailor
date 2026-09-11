@@ -41,6 +41,7 @@ pub mod reserve;
 pub mod search;
 pub mod session_fill;
 pub mod store;
+pub mod surface;
 pub mod terminals;
 pub mod topic_drift;
 pub mod unused_actions;

@@ -1,0 +1,103 @@
+   Compiling release v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/crates/release)
+   Compiling machine v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/crates/machine)
+   Compiling toolbox v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/crates/toolbox)
+   Compiling terminal v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/crates/terminal)
+   Compiling trigger v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/crates/trigger)
+   Compiling relay v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/crates/relay)
+   Compiling registry v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/crates/registry)
+   Compiling sailor v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/crates/sailor)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.86s
+     Running tests/clippy_only_ever_gets_quieter.rs (target/debug/deps/clippy_only_ever_gets_quieter-f8a4ad1c4202dd1d)
+
+running 4 tests
+test with_no_linter_to_answer_the_judge_declares_it_measured_nothing ... ok
+test a_warning_planted_in_a_throwaway_tree_is_counted_and_complained_about ... ok
+test the_check_can_still_see_what_it_counts ... ok
+test no_crate_warns_more_than_today has been running for over 60 seconds
+test no_crate_warns_more_than_today ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 129.68s
+
+     Running tests/comments_do_not_crowd_out_the_code.rs (target/debug/deps/comments_do_not_crowd_out_the_code-cf40b7f42d724bcb)
+
+running 7 tests
+test the_files_named_one_by_one_are_inside_the_perimeter ... ok
+test no_crate_lets_its_comments_outtalk_its_code_more_than_today ... ok
+test no_comment_tells_a_date ... ok
+test no_new_comment_block_runs_past_the_cap ... FAILED
+test a_seed_that_no_longer_describes_the_tree_is_a_seed_nobody_re_measured ... ok
+test the_comments_not_in_english_only_shrink ... ok
+test the_check_can_still_see_what_it_counts ... ok
+
+failures:
+
+---- no_new_comment_block_runs_past_the_cap stdout ----
+
+thread 'no_new_comment_block_runs_past_the_cap' (45807931) panicked at crates/sailor/tests/comments_do_not_crowd_out_the_code.rs:463:9:
+blocks over 6 lines: 414 (2 over the declared 412). The longest runs 42 lines in /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/crates/sailor/tests/references_are_resolved_in_one_place.rs. Shorten it, or move the chronicle into the commit message
+Measured right now, all three: 414 blocks over 6 lines, 0 comments citing a date, 1 comment lines not in English. When you re-measure one, rewrite them all.
+Where they are, heaviest first:
+     21  /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/desktop/src-tauri/src/run.rs
+     12  /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/crates/actions/src/cost.rs
+     12  /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/crates/actions/src/mcp.rs
+     11  /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/crates/actions/src/engine.rs
+     11  /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/crates/actions/src/process.rs
+     11  /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/crates/actions/src/recipe.rs
+     11  /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/desktop/src/engine.ts
+      9  /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/crates/actions/src/probe.rs
+      9  /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/crates/sailor/src/flow_cmd/check.rs
+      9  /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/crates/sailor/src/flow_cmd/cost.rs
+      9  /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/desktop/src/terminal.ts
+      7  /Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/crates/actions/src/candidates.rs
+  … and 127 more files
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    no_new_comment_block_runs_past_the_cap
+
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.68s
+
+error: test failed, to rerun pass `-p sailor --test comments_do_not_crowd_out_the_code`
+     Running tests/files_do_not_grow_out_of_scale.rs (target/debug/deps/files_do_not_grow_out_of_scale-b8fceaeb4afb413d)
+
+running 4 tests
+test the_scale_tells_what_a_file_does_from_what_proves_it ... ok
+test the_scale_can_still_see_the_files_it_weighs ... ok
+test no_more_walls_of_judges_than_today ... ok
+test no_more_files_run_past_the_scale_than_today ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/the_battery_does_not_shrink_in_silence.rs (target/debug/deps/the_battery_does_not_shrink_in_silence-09d00d60044fdf2a)
+
+running 6 tests
+test no_test_function_vanishes_without_a_word ... ok
+test no_flow_file_vanishes_without_a_word ... ok
+test a_seed_that_no_longer_describes_the_tree_is_a_seed_nobody_re_measured ... FAILED
+test no_test_binary_vanishes_without_a_word ... ok
+test no_window_test_vanishes_without_a_word ... ok
+test the_counters_can_still_see_what_they_count ... ok
+
+failures:
+
+---- a_seed_that_no_longer_describes_the_tree_is_a_seed_nobody_re_measured stdout ----
+
+measured: 154 test binaries opened against 2147 test functions counted in them
+
+thread 'a_seed_that_no_longer_describes_the_tree_is_a_seed_nobody_re_measured' (45808104) panicked at crates/sailor/tests/the_battery_does_not_shrink_in_silence.rs:297:9:
+the seed «test binaries» says 153, the tree holds 154: 1 more than declared. Raise it in the commit that adds them and say what they are, TEST_BINARIES_TODAY = 154
+Measured right now, all four: 154 test binaries, 2147 test functions, 19 flow files, 604 window tests. When you re-measure one, rewrite them all.
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    a_seed_that_no_longer_describes_the_tree_is_a_seed_nobody_re_measured
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+error: test failed, to rerun pass `-p sailor --test the_battery_does_not_shrink_in_silence`
+error: 2 targets failed:
+    `-p sailor --test comments_do_not_crowd_out_the_code`
+    `-p sailor --test the_battery_does_not_shrink_in_silence`
+exit=101

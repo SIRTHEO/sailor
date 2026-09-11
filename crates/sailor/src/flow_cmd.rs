@@ -8,6 +8,7 @@
 use crate::Form;
 use flow::{ActionRegistry, FlowFile, Graph};
 use ledger::Ledger;
+use registry::{registry_in, House};
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::path::PathBuf;
@@ -60,6 +61,10 @@ fn dispatch(args: &[String], sources: &[FlowSource]) -> Result<String, String> {
         [command, words @ ..] if command == "search" && !words.is_empty() => {
             search_flows(sources, &words.join(" "))
         }
+        [command] if command == "actions" => Ok(actions::surface::as_lines(
+            &registry_in(House::empty(), None, None),
+        )),
+        [command, name] if command == "actions" => one_action(name),
         [command] if command == "due" => due_flows(sources),
         [command] if command == "tick" => tick_flows(sources),
         [command, name] if command == "check" => check_flow(sources, name, true),
@@ -90,6 +95,19 @@ fn dispatch(args: &[String], sources: &[FlowSource]) -> Result<String, String> {
             crate::publish_cmd::publish_flows(sources, Some(remote))
         }
         _ => Err(usage()),
+    }
+}
+
+/// One action's surface, or the names to choose from.
+fn one_action(name: &str) -> Result<String, String> {
+    let registry = registry_in(House::empty(), None, None);
+    let declared = actions::surface::declared_for(name, &registry);
+    match declared.surface {
+        Some(_) => Ok(declared.as_lines()),
+        None => Err(format!(
+            "no action called «{name}». The ones there are: {}",
+            registry.names().join(", ")
+        )),
     }
 }
 
@@ -174,6 +192,10 @@ fn nothing_found(sources: &[FlowSource]) -> String {
 pub const USAGE: &[Form] = &[
     Form {
         form: "sailor flow list",
+        says_key: "",
+    },
+    Form {
+        form: "sailor flow actions [name]",
         says_key: "",
     },
     Form {

@@ -17,23 +17,35 @@ pub fn register_draft(registry: &mut flow::ActionRegistry, flows_dir: Option<Pat
     known.push(ACTION_LIST_ACTION.to_owned());
     known.push(FLOW_DRAFT_ACTION.to_owned());
     known.sort();
-    registry.register(ACTION_LIST_ACTION, ActionListAction::new(known.clone()));
+    let surface: Vec<Value> = known
+        .iter()
+        .map(|name| crate::surface::declared_for(name, registry).as_json())
+        .collect();
+    registry.register(
+        ACTION_LIST_ACTION,
+        ActionListAction::new(known.clone(), surface),
+    );
     registry.register(FLOW_DRAFT_ACTION, FlowDraftAction::new(flows_dir, known));
 }
 
 pub struct ActionListAction {
     names: Vec<String>,
+    surface: Vec<Value>,
 }
 
 impl ActionListAction {
-    pub fn new(names: Vec<String>) -> Self {
-        Self { names }
+    pub fn new(names: Vec<String>, surface: Vec<Value>) -> Self {
+        Self { names, surface }
     }
 }
 
 impl Action for ActionListAction {
+    /// `actions` stays what it was — a flow already reads it — and `surface`
+    /// is the same list said out loud, in the same order.
     fn execute(&self, _input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
-        Ok(ActionOutcome::Went(json!({ "actions": self.names })))
+        Ok(ActionOutcome::Went(
+            json!({ "actions": self.names, "surface": self.surface }),
+        ))
     }
 
     fn species(&self) -> StepSpecies {

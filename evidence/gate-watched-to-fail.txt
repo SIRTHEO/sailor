@@ -1,0 +1,34 @@
+    Blocking waiting for file lock on build directory
+   Compiling actions v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/crates/actions)
+   Compiling toolbox v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/crates/toolbox)
+   Compiling terminal v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/crates/terminal)
+   Compiling trigger v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/crates/trigger)
+   Compiling relay v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/crates/relay)
+   Compiling registry v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/crates/registry)
+   Compiling sailor v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/crates/sailor)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 01s
+     Running tests/every_action_declares_its_surface.rs (target/debug/deps/every_action_declares_its_surface-acf05478b1e1d7b3)
+
+running 3 tests
+test a_surface_says_something_the_name_does_not ... ok
+test no_surface_describes_an_action_that_is_not_registered ... ok
+test no_action_is_registered_without_a_surface ... FAILED
+
+failures:
+
+---- no_action_is_registered_without_a_surface stdout ----
+
+thread 'no_action_is_registered_without_a_surface' (45812359) panicked at crates/sailor/tests/every_action_declares_its_surface.rs:30:5:
+42 of 42 registered actions carry no surface, so whoever asks what Sailor can do gets a bare name: action_list, apply_patch, detect_tools, dormant_steps, empty_terminal, external_engine, fault_list, fault_next, fault_record, flow_draft, flow_search, for_each, handed_to_agent, history_ask, ledger_search, mandate_deposit, mandate_resume, mandate_waiting, mcp_ask, mcp_ready, measure_session, measure_terminal, memory_list, memory_query, memory_replace, memory_write, remember, shell_check, store_list, store_read, store_write, subflow, terminal_survey, tool_needs, topic_drift, trigger, type_into_terminal, unused_actions, wait_free, work_claim, work_release, work_survey. Declare each one in `actions::surface::SURFACES`
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    no_action_is_registered_without_a_surface
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p sailor --test every_action_declares_its_surface`
+error: 1 target failed:
+    `-p sailor --test every_action_declares_its_surface`
+exit=101

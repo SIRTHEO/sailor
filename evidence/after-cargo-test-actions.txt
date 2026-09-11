@@ -1,0 +1,41 @@
+   Compiling actions v0.1.0 (/Users/theo/personal/sailor-worktrees/la-squadra-sulla-finestra-1789132222557158000--the_crew--0--1789132222644024000/the_agent/crates/actions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.39s
+     Running unittests src/lib.rs (target/debug/deps/actions-aa56e94b4dcf41e5)
+
+running 262 tests
+test budget::tests::an_engine_under_its_cap_fits_and_one_at_it_does_not ... ok
+test answer::tests::an_object_shape_declaring_no_field_hands_the_whole_object_on ... ok
+test candidates::tests::a_step_cannot_declare_both_a_binary_and_a_tool ... ok
+test candidates::tests::a_tool_that_is_not_here_stops_the_step_with_the_resolvers_reason ... ok
+test candidates::tests::a_step_cannot_write_its_own_options_and_name_a_model ... ok
+test budget::tests::a_missing_file_declares_no_budget_and_a_broken_one_is_an_error ... ok
+test answer::tests::a_broken_answer_is_refused_with_the_text_around_the_break ... ok
+test answer::tests::a_whole_json_answer_carrying_a_fence_in_a_string_is_read_whole ... ok
+test candidates::tests::an_engine_without_a_recipe_is_set_aside_with_the_reason ... ok
+test candidates::tests::alone_it_says_why_instead_of_answering_from_a_model_nobody_chose ... ok
+test candidates::tests::options_written_in_the_step_win_over_the_recipe ... ok
+test candidates::tests::an_engine_that_cannot_be_told_a_model_is_set_aside_and_the_chain_goes_on ... ok
+test candidates::tests::a_named_model_lands_before_the_option_glued_to_the_question ... ok
+test candidates::tests::a_tool_id_becomes_the_executable_the_resolver_names ... ok
+test candidates::tests::the_external_engine_action_rejects_an_input_without_a_binary ... ok
+test candidates::tests::without_a_resolver_a_tool_step_says_how_to_repair_the_registry ... ok
+test candidates::tests::an_empty_mark_in_a_descriptor_does_not_make_everything_a_fallback ... ok
+test cooldown::tests::an_engine_is_aside_until_its_time_and_not_after ... ok
+test candidates::tests::an_ordinary_failure_does_not_walk_down_the_chain ... ok
+test candidates::tests::an_engine_that_declares_no_exhaustion_words_kills_the_chain ... ok
+test candidates::tests::a_chain_that_is_entirely_out_names_every_engine ... ok
+test candidates::tests::alone_an_engine_that_says_it_is_out_while_exiting_zero_does_not_pass_for_answered ... ok
+test candidates::tests::an_answer_in_shape_with_a_bad_exit_code_stops_the_step_instead_of_being_thrown_away ... ok
+test candidates::tests::the_descriptor_decides_where_the_question_goes ... ok
+test candidates::tests::an_engine_that_says_it_is_out_hands_the_work_to_the_next_one ... ok
+test candidates::tests::an_engine_that_says_it_is_out_while_exiting_zero_still_hands_the_work_over ... ok
+test cost::what_it_cost::a_hand_written_bin_is_not_a_model_call ... ok
+test cost::what_it_cost::a_call_across_two_models_leaves_the_price_list_figure_unknown ... ok
+test cost::what_it_cost::a_tool_that_cannot_be_asked_anything_is_not_a_model_call ... ok
+test cost::what_it_cost::a_profile_whose_endpoint_is_refused_holds_the_engine_back_before_spending ... ok
+test cost::what_it_cost::a_failed_call_still_writes_its_row_with_the_cause ... ok
+test cost::what_it_cost::a_declaring_engine_writes_a_row_with_true_tokens_and_a_cost_from_the_price_list ... ok
+test cost::what_it_cost::a_single_engine_that_truly_broke_is_still_reported_as_broken ... FAILED
+test cost::what_it_cost::a_tolerated_refusal_is_recorded_as_exhausted_whatever_the_exit_code ... FAILED
+test cost::what_it_cost::a_step_without_a_kind_keeps_its_chain_and_falls_back_from_nobody ... FAILED
+test cost::what_it_cost::a_spent_quota_is_its_own_class_and_sets_the_engine_aside ... FAILED
