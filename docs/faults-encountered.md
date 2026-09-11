@@ -189,7 +189,7 @@ from the types, not from the tests: by timing something, by opening the store,
 by taking a screenshot, by checking the weight of a directory. It is the reason
 a test that could not have come out differently is not a test.
 
-**Forty-one are still open** out of a hundred and fifty-six, and two of
+**Forty-six are still open** out of a hundred and sixty-one, and two of
 those (10 and 28) are the same thing seen from two sides: **the same truth
 written in several places, and no check that compares them** — two copies of a
 list of components, and the reference resolution that lived in twelve places
