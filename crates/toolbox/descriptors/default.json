@@ -342,8 +342,14 @@
         "refuses_without_prompt": ["no prompt provided via stdin"]
       },
       "usage": {
-        "read": "text",
-        "total_tokens": "tokens used\\s*\\n\\s*([\\d.,]+)"
+        "args": ["--json"],
+        "read": "json_lines",
+        "input_tokens": ["usage", "input_tokens"],
+        "output_tokens": ["usage", "output_tokens"],
+        "cached_tokens": ["usage", "cached_input_tokens"],
+        "cache_write_tokens": ["usage", "cache_write_input_tokens"],
+        "answer": ["item", "text"],
+        "note": "MEASURED 11/09/2026 BY RUNNING IT. `codex exec --json` prints one JSON object per line and the last carries everything: `{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":24894,\"cached_input_tokens\":11008,\"cache_write_input_tokens\":0,\"output_tokens\":5,\"reasoning_output_tokens\":0}}`. It used to be read as TEXT with one expression pecking «tokens used N» out of the rendered screen, so 65 calls went into the ledger with no input, no cache and no cost at all. THE ANSWER MOVES WITH IT: with `--json` the rendered text is gone, and the reply is the text of the last `item.completed`. That is the one soft spot here — an item is also completed for a tool call, so a run whose last act is not a message would take the wrong text. Measured on a run whose last item is the message, which is what `exec` does. NO `total_tokens`: this stream does not state one, and a sum of the others would count the cached input twice. `reasoning_output_tokens` has nowhere to go yet and is left unread rather than folded into the output count, which would make two different things one number."
       },
       "login_status": {
         "args": ["login", "status"],

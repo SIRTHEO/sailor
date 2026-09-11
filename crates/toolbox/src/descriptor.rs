@@ -305,6 +305,9 @@ pub enum ReadAs {
     Json,
     /// The output is plain text.
     Text,
+    /// The output is one JSON object per line, and the last line carrying a
+    /// pointer answers it.
+    JsonLines,
 }
 
 /// The pipe an engine states its usage on.

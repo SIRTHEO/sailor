@@ -363,6 +363,7 @@ fn usage_recipe(usage: &crate::descriptor::Usage) -> actions::UsageRecipe {
             read: match usage.read {
                 crate::descriptor::ReadAs::Json => actions::Shape::Json,
                 crate::descriptor::ReadAs::Text => actions::Shape::Text,
+                crate::descriptor::ReadAs::JsonLines => actions::Shape::JsonLines,
             },
             from: match usage.from {
                 crate::descriptor::ReadFrom::Stdout => models::usage::Heard::Stdout,
@@ -694,11 +695,11 @@ mod tests {
         assert_eq!(recipe.args, vec!["-p"], "the rest of the recipe is intact");
     }
 
-    /// The shipped `codex` descriptor reaches the recipe with its pattern and no
-    /// extra options: codex's command line does not change because it is now
-    /// being measured.
+    /// The shipped `codex` recipe reaches the engine asking for the stream, and
+    /// the stream really does answer: a pointer written badly would leave the
+    /// usage unknown for ever with nobody noticing.
     #[test]
-    fn the_shipped_codex_recipe_carries_its_pattern_and_adds_no_arguments() {
+    fn the_shipped_codex_recipe_asks_for_the_stream_and_reads_it() {
         let dir = temp_dir("codex-shipped");
         fake_executable(&dir, "codex");
         let catalog = Catalog::load(&[Source::Builtin]);
@@ -706,16 +707,24 @@ mod tests {
 
         let recipe = tools.ask_recipe("codex").expect("codex has a recipe");
         let usage = recipe.usage.expect("and declares how its usage is read");
-        assert!(usage.args.is_empty(), "no options added to codex");
-        assert_eq!(usage.declared.read, actions::Shape::Text);
-        let Some(actions::Pointer::Pattern(pattern)) = usage.declared.total_tokens else {
-            panic!("codex declares the total with a pattern")
-        };
-        // And the pattern really does recognise codex's output, not one that
-        // looks like it: written badly, the usage would stay unknown for ever
-        // with nobody noticing.
-        let read = models_read(&pattern, "stuff\ntokens used\n13.910\nmore");
-        assert_eq!(read, Some(13_910));
+        assert_eq!(usage.args, vec!["--json"], "the stream has to be asked for");
+        assert_eq!(usage.declared.read, actions::Shape::JsonLines);
+
+        // The lines codex really printed, measured by running it.
+        let said = concat!(
+            "{\"type\":\"thread.started\",\"thread_id\":\"01a09126\"}\n",
+            "{\"type\":\"turn.started\"}\n",
+            "{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"ok\"}}\n",
+            "{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":24894,\"cached_input_tokens\":11008,",
+            "\"cache_write_input_tokens\":0,\"output_tokens\":5,\"reasoning_output_tokens\":0}}\n",
+        );
+        let read = actions::read_declared(said, &usage.declared);
+
+        assert_eq!(read.input_tokens, Some(24_894));
+        assert_eq!(read.cached_tokens, Some(11_008));
+        assert_eq!(read.cache_write_tokens, Some(0));
+        assert_eq!(read.output_tokens, Some(5));
+        assert_eq!(read.answer.as_deref(), Some("ok"));
     }
 
     /// Reads a total with the given pattern, going through the same function the
