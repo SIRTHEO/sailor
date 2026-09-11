@@ -26,6 +26,7 @@
 //! inside the window would be an engine nobody can test without opening it.
 
 pub mod bridge;
+pub mod consent;
 pub mod host;
 pub mod inbox;
 pub mod keeping;
