@@ -306,6 +306,20 @@
     },
     {
       "id": "codex",
+      "quota": {
+        "reader": "oauth_usage",
+        "credentials": "~/.codex/auth.json",
+        "token_pointer": ["tokens", "access_token"],
+        "url": "https://chatgpt.com/backend-api/wham/usage",
+        "shape": {
+          "windows_at": ["rate_limit"],
+          "used": "used_percent",
+          "used_in": "percent",
+          "resets": "reset_at",
+          "resets_in": "epoch_seconds"
+        },
+        "note": "MEASURED 11/09/2026 with an HTTP 200, found by reading the paths in the binary: `/api/codex/usage` answers 403 and `/wham/usage` answers. Under `rate_limit` sit `primary_window` and `secondary_window`, each with `used_percent`, `limit_window_seconds` (18000 and 604800, so five hours and seven days) and `reset_at` in unix seconds. The body also carries the account's address and plan, which is how a profile's home is told from another's. The token is in the home's `auth.json` and is read there, never renewed. No beta header is needed, and no account header either: the bearer alone answered."
+      },
       "login": {
         "args": ["login"],
         "interactive": true,

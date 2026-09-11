@@ -28,6 +28,7 @@ pub fn channel_of(descriptor: &Descriptor, machine: &Machine) -> Option<Result<O
             url: quota.url.clone(),
             headers: quota.headers.clone(),
             held_by: spoken_for(&quota.held_by, &machine.expand(&quota.credentials)),
+            shape: words_of(quota),
         }),
         other => Err(format!(
             "descriptor «{}» declares a quota reader «{other}» this Sailor does not read",
@@ -76,6 +77,21 @@ pub fn channel_in_home(
         held_by: spoken_for(&quota.held_by, &home_of_the_account),
         ..channel
     }))
+}
+
+/// The words this provider uses, or the ones the first measured channel used.
+fn words_of(quota: &crate::descriptor::Quota) -> models::remaining::WindowWords {
+    let Some(said) = &quota.shape else {
+        return models::remaining::WindowWords::default();
+    };
+    let standing = models::remaining::WindowWords::default();
+    models::remaining::WindowWords {
+        windows_at: said.windows_at.clone(),
+        used: said.used.clone(),
+        used_in_percent: said.used_in != "fraction",
+        resets: if said.resets.is_empty() { standing.resets } else { said.resets.clone() },
+        resets_in_seconds: said.resets_in == "epoch_seconds",
+    }
 }
 
 /// The keeper's command with the home put in: `{home}` whole, and

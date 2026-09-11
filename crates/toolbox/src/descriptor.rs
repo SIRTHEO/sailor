@@ -524,6 +524,10 @@ pub struct Quota {
     /// Whole header lines, `name: value`, sent beside the bearer token.
     #[serde(default)]
     pub headers: Vec<String>,
+    /// Where the windows sit and what their fields are called; absent, the
+    /// root with `utilization` and `resets_at`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape: Option<QuotaShape>,
     /// A command that prints the credentials, where they are not in a file.
     ///
     /// **A KEYRING IS NOT A FILE, AND SEVERAL ACCOUNTS LIVE IN ONE.** `{home}`
@@ -534,6 +538,25 @@ pub struct Quota {
     pub held_by: Vec<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub note: String,
+}
+
+/// The words one provider uses for the windows. Each field names a key.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct QuotaShape {
+    /// The keys down to the windows; empty is the root.
+    #[serde(default)]
+    pub windows_at: Vec<String>,
+    /// The key holding how much of a window is already gone.
+    pub used: String,
+    /// `percent` for 50 meaning half, `fraction` for 0.5.
+    #[serde(default)]
+    pub used_in: String,
+    #[serde(default)]
+    pub resets: String,
+    /// `text` for an instant written out, `epoch_seconds` for a number.
+    #[serde(default)]
+    pub resets_in: String,
 }
 
 /// The one line that installs a command line, and how it was established.
