@@ -198,7 +198,7 @@
         "token_pointer": ["claudeAiOauth", "accessToken"],
         "url": "https://api.anthropic.com/api/oauth/usage",
         "headers": ["anthropic-beta: oauth-2025-04-20"],
-        "note": "measured with an HTTP 200: `utilization` as a percentage per window and `resets_at`; a beta, versioned channel that can stop answering with nothing here changing, so a missing reading is a reading that is not there, never a zero"
+        "note": "measured with an HTTP 200: `utilization` as a percentage per window and `resets_at`; a beta, versioned channel that can stop answering with nothing here changing, so a missing reading is a reading that is not there, never a zero WHERE THE CREDENTIAL REALLY IS, AND WHY THIS PATH IS THE EXCEPTION (measured and documented, 11/09/2026): on macOS the login is kept in the encrypted Keychain, and the file named here is written ONLY when the Keychain refuses the write — a locked keychain, an SSH session — which is also the ordinary place on Linux and Windows. CLAUDE_CONFIG_DIR moves this file with it AND keys the Keychain entry to that directory, so a session with another config directory reads another entry: that is how several accounts stand side by side, and it is also why this reader reaches only the account whose credential happens to sit in a file. Measured on this machine: three accounts signed in and answering as themselves, one file. A second reader that asks the Keychain for the entry keyed to the home is the missing half."
       },
       "install": {
         "line": "curl -fsSL https://claude.ai/install.sh | bash",
