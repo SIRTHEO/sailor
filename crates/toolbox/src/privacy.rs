@@ -104,6 +104,51 @@ pub fn declared_here(read: &dyn Fn(&Path) -> Option<String>) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Every place a declared private name appears among the files git tracks, as
+/// `path:line`. **THE NAME IS NEVER ECHOED**: what comes back is where. It
+/// lives here and not in a judge because a judge cannot guard a push — a
+/// release's suite runs on an extract that is no repository.
+pub fn where_names_are_tracked(root: &Path, names: &[String]) -> Vec<String> {
+    let mut hits = Vec::new();
+    for path in tracked_under(root) {
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let lowered = text.to_lowercase();
+        for name in names {
+            let needle = name.to_lowercase();
+            for (number, line) in lowered.lines().enumerate() {
+                if names_at(line, &needle).is_some() {
+                    let shown = path.strip_prefix(root).unwrap_or(&path);
+                    hits.push(format!("{}:{}", shown.display(), number + 1));
+                }
+            }
+        }
+    }
+    hits
+}
+
+/// The files git tracks under `root`. An empty list where git will not answer:
+/// the caller decides what that means, and a publisher must refuse.
+pub fn tracked_under(root: &Path) -> Vec<PathBuf> {
+    let Ok(out) = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["ls-files", "-z"])
+        .output()
+    else {
+        return Vec::new();
+    };
+    if !out.status.success() {
+        return Vec::new();
+    }
+    String::from_utf8_lossy(&out.stdout)
+        .split('\0')
+        .filter(|name| !name.is_empty())
+        .map(|name| root.join(name))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     /// Declared as private, a short name fired on a dozen ordinary words and on
@@ -211,47 +256,3 @@ mod tests {
     }
 }
 
-/// Every place a declared private name appears among the files git tracks, as
-/// `path:line`. **THE NAME IS NEVER ECHOED**: what comes back is where. It
-/// lives here and not in a judge because a judge cannot guard a push — a
-/// release's suite runs on an extract that is no repository.
-pub fn where_names_are_tracked(root: &Path, names: &[String]) -> Vec<String> {
-    let mut hits = Vec::new();
-    for path in tracked_under(root) {
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        let lowered = text.to_lowercase();
-        for name in names {
-            let needle = name.to_lowercase();
-            for (number, line) in lowered.lines().enumerate() {
-                if names_at(line, &needle).is_some() {
-                    let shown = path.strip_prefix(root).unwrap_or(&path);
-                    hits.push(format!("{}:{}", shown.display(), number + 1));
-                }
-            }
-        }
-    }
-    hits
-}
-
-/// The files git tracks under `root`. An empty list where git will not answer:
-/// the caller decides what that means, and a publisher must refuse.
-pub fn tracked_under(root: &Path) -> Vec<PathBuf> {
-    let Ok(out) = std::process::Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(["ls-files", "-z"])
-        .output()
-    else {
-        return Vec::new();
-    };
-    if !out.status.success() {
-        return Vec::new();
-    }
-    String::from_utf8_lossy(&out.stdout)
-        .split('\0')
-        .filter(|name| !name.is_empty())
-        .map(|name| root.join(name))
-        .collect()
-}

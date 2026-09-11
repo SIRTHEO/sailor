@@ -242,7 +242,7 @@ fn a_merged_tree_somebody_is_working_in_is_kept_and_named() {
     let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
     let busy = workspace::create(&repo, "work/qualcuno-dentro", None).expect("a merged tree");
 
-    let said = sweep(&repo, &store as &dyn OpenTrees, &[busy.clone()]).expect("the sweep runs");
+    let said = sweep(&repo, &store as &dyn OpenTrees, std::slice::from_ref(&busy)).expect("the sweep runs");
     let still_there = busy.exists();
 
     // And with nobody in it the same tree goes, or the guard is a sweep that
