@@ -27,6 +27,7 @@ pub fn channel_of(descriptor: &Descriptor, machine: &Machine) -> Option<Result<O
             token_pointer: quota.token_pointer.clone(),
             url: quota.url.clone(),
             headers: quota.headers.clone(),
+            held_by: spoken_for(&quota.held_by, &machine.expand(&quota.credentials)),
         }),
         other => Err(format!(
             "descriptor «{}» declares a quota reader «{other}» this Sailor does not read",
@@ -69,10 +70,32 @@ pub fn channel_in_home(
             descriptor.id, quota.credentials
         )));
     };
+    let home_of_the_account = home.to_string_lossy().into_owned();
     Some(channel_of(descriptor, machine)?.map(|channel| OauthUsageChannel {
         credentials: home.join(rest),
+        held_by: spoken_for(&quota.held_by, &home_of_the_account),
         ..channel
     }))
+}
+
+/// The keeper's command with the home put in: `{home}` whole, and
+/// `{home_digest}` the first eight hex of its sha256, which is how a keyring
+/// tells one home's entry from another's.
+fn spoken_for(said: &[String], home: &str) -> Vec<String> {
+    if said.is_empty() {
+        return Vec::new();
+    }
+    let digest = eight_of_sha256(home);
+    said.iter()
+        .map(|word| word.replace("{home}", home).replace("{home_digest}", &digest))
+        .collect()
+}
+
+/// The first eight hex letters of a home's sha256.
+fn eight_of_sha256(text: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let whole = Sha256::digest(text.as_bytes());
+    whole.iter().take(4).map(|byte| format!("{byte:02x}")).collect()
 }
 
 /// One engine's quota as the account signed in at `home` sees it.
@@ -160,6 +183,34 @@ mod tests {
         assert_eq!(moved.credentials, std::path::Path::new("/homes/second/creds.json"));
         assert_eq!(moved.url, usual.url);
         assert_eq!(moved.token_pointer, usual.token_pointer);
+    }
+
+    /// **THE DIGEST IS THE ONLY THING THAT TELLS TWO ACCOUNTS APART.** A
+    /// keyring holds one entry per home and names it by that home; the same
+    /// command for every account would hand three profiles one account's
+    /// remaining, and the numbers would look measured.
+    #[test]
+    fn the_keeper_is_asked_for_this_home_s_entry_and_no_other() {
+        let machine = Machine::bare(std::path::PathBuf::from("/a/person"));
+        let engine = parsed(
+            r#"{"id": "y", "family": "ai_cli", "quota": {"reader": "oauth_usage",
+                "credentials": "~/.engine/creds.json", "token_pointer": ["a"],
+                "url": "u", "held_by": ["ask", "-s", "secrets-{home_digest}", "--at", "{home}"]}}"#,
+        );
+
+        let one = channel_in_home(&engine, &machine, std::path::Path::new("/homes/first"))
+            .expect("declared")
+            .expect("known");
+        let other = channel_in_home(&engine, &machine, std::path::Path::new("/homes/second"))
+            .expect("declared")
+            .expect("known");
+
+        assert_eq!(one.held_by[0], "ask");
+        assert_eq!(one.held_by[4], "/homes/first");
+        assert_ne!(one.held_by[2], other.held_by[2], "two homes, two entries");
+        // The digest is the first eight hex of the home's sha256, and it is
+        // written out here so a changed rule fails here and not in the field.
+        assert_eq!(one.held_by[2], "secrets-0005a260");
     }
 
     /// A descriptor whose credentials do not sit under the engine's own home

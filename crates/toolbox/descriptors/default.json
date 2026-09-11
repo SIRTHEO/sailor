@@ -195,6 +195,7 @@
       "quota": {
         "reader": "oauth_usage",
         "credentials": "~/.claude/.credentials.json",
+        "held_by": ["security", "find-generic-password", "-s", "Claude Code-credentials-{home_digest}", "-w"],
         "token_pointer": ["claudeAiOauth", "accessToken"],
         "url": "https://api.anthropic.com/api/oauth/usage",
         "headers": ["anthropic-beta: oauth-2025-04-20"],

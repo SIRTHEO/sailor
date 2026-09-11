@@ -22,6 +22,8 @@ pub struct OauthUsageChannel {
     pub url: String,
     /// Whole header lines, `name: value`.
     pub headers: Vec<String>,
+    /// A command that prints the credentials, when they are not in the file.
+    pub held_by: Vec<String>,
 }
 
 /// How much of a quota window is already gone, and when that window resets.
@@ -227,15 +229,41 @@ pub fn read_oauth_usage(
     channel: &OauthUsageChannel,
     observed_at: i64,
 ) -> Result<Vec<Remaining>, RemainingError> {
-    let path: &Path = &channel.credentials;
-    if !path.exists() {
-        return Err(RemainingError::NoCredentials(path.to_path_buf()));
-    }
-    let text = std::fs::read_to_string(path)
-        .map_err(|error| RemainingError::CredentialsUnreadable(error.to_string()))?;
+    let text = match channel.held_by.split_first() {
+        Some((program, arguments)) => held_by(program, arguments)?,
+        None => {
+            let path: &Path = &channel.credentials;
+            if !path.exists() {
+                return Err(RemainingError::NoCredentials(path.to_path_buf()));
+            }
+            std::fs::read_to_string(path)
+                .map_err(|error| RemainingError::CredentialsUnreadable(error.to_string()))?
+        }
+    };
     let token = Token::from_credentials_at(&text, &channel.token_pointer)?;
     let body = ask_curl(&token.curl_config(&channel.url, &channel.headers))?;
     from_oauth_usage(&body, &channel.engine, observed_at)
+}
+
+/// What the keeper of secrets prints, or why it would not.
+///
+/// **IT IS ASKED, NEVER SEARCHED FOR.** The command comes whole from the
+/// descriptor with the home already put in, so this knows how to run a line
+/// and nothing about who keeps what.
+fn held_by(program: &str, arguments: &[String]) -> Result<String, RemainingError> {
+    let run = std::process::Command::new(program)
+        .args(arguments)
+        .output()
+        .map_err(|error| RemainingError::CredentialsUnreadable(format!("{program}: {error}")))?;
+    if !run.status.success() {
+        let said = String::from_utf8_lossy(&run.stderr);
+        return Err(RemainingError::CredentialsUnreadable(format!(
+            "«{program} {}» answered nothing: {}",
+            arguments.join(" "),
+            said.trim()
+        )));
+    }
+    Ok(String::from_utf8_lossy(&run.stdout).into_owned())
 }
 
 /// `curl` as a process, with the configuration on its stdin.
@@ -524,8 +552,29 @@ mod tests {
             token_pointer: pointer(),
             url: URL.to_owned(),
             headers: vec![BETA.to_owned()],
+            held_by: Vec::new(),
         };
         let refused = read_oauth_usage(&channel, 0).expect_err("there is nothing to read");
         assert!(matches!(refused, RemainingError::NoCredentials(_)));
+    }
+
+    /// A keeper that will not answer is a refusal that names the line it ran,
+    /// never a reading of nothing: the file beside it does not stand in.
+    #[test]
+    fn a_keeper_that_refuses_names_the_line_that_was_run() {
+        let channel = OauthUsageChannel {
+            engine: ENGINE.to_owned(),
+            credentials: PathBuf::from("/this/home/does/not/exist/.credentials.json"),
+            token_pointer: pointer(),
+            url: URL.to_owned(),
+            headers: vec![BETA.to_owned()],
+            held_by: vec!["false".to_owned(), "--for".to_owned(), "a-home".to_owned()],
+        };
+
+        let refused = read_oauth_usage(&channel, 0).expect_err("the keeper says no");
+
+        let said = refused.to_string();
+        assert!(said.contains("false --for a-home"), "{said}");
+        assert!(!said.contains(".credentials.json"), "the file is not the story: {said}");
     }
 }

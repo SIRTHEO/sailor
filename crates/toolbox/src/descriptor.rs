@@ -524,6 +524,14 @@ pub struct Quota {
     /// Whole header lines, `name: value`, sent beside the bearer token.
     #[serde(default)]
     pub headers: Vec<String>,
+    /// A command that prints the credentials, where they are not in a file.
+    ///
+    /// **A KEYRING IS NOT A FILE, AND SEVERAL ACCOUNTS LIVE IN ONE.** `{home}`
+    /// becomes the account's home and `{home_digest}` the first eight hex of
+    /// its sha256 — the two ways a keeper of secrets tells one home's entry
+    /// from another's. The words are the product's and belong here, in data.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub held_by: Vec<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub note: String,
 }

@@ -12,6 +12,8 @@ publish.workspace = true
 # which other tools exist on this machine. The list of what to look for is
 # data, the descriptors, and not code: no particular tool name appears here.
 [dependencies]
+# For the digest a keyring keys one home's entry by: eight hex of the path.
+sha2 = "0.10"
 # For `run_with_timeout`: asking a binary its version means running it, and a
 # binary that does not return must not stop a detection.
 actions = { path = "../actions" }
