@@ -1604,9 +1604,9 @@ mod tests {
     /// **A CAP THAT IS THERE CARRIES WHAT IT DOES NOT PROMISE.**
     ///
     /// A number alone reads as a guarantee on the spend. The three real limits
-    /// — the brake does not reach the engines, the first front is never braked,
-    /// costless calls stay out — must sit beside the number, not in a document
-    /// nobody opens while launching.
+    /// — it reaches only the engines that take a ceiling, the first front is
+    /// never braked, costless calls stay out — must sit beside the number, not
+    /// in a document nobody opens while launching.
     #[test]
     fn a_cap_in_the_report_declares_what_it_does_not_promise() {
         let json = flow_json("shell_check", "[]", "{}");
@@ -1615,7 +1615,7 @@ mod tests {
 
         let (report, _) = check_report(&flow, &registry_in(House::empty(), None, None), None, None);
 
-        assert!(report.contains("does not reach the engines"), "{report}");
+        assert!(report.contains("only the engines that take a ceiling"), "{report}");
         assert!(report.contains("first front"), "{report}");
         assert!(report.contains("stay out of the sum"), "{report}");
     }
