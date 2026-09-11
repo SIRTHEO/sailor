@@ -74,6 +74,9 @@ const TerminalsSection = lazy(() =>
 // A first-time visitor's entry point, not the operator's: nothing on the path
 // this window opens on every day needs it in the same chunk.
 const Demo = lazy(() => import("./Demo").then((module) => ({ default: module.Demo })));
+const FlowMapScreen = lazy(() =>
+  import("./FlowMapScreen").then((module) => ({ default: module.FlowMapScreen })),
+);
 
 /** What stands where a section will be: nothing. A section a few hundred
  *  milliseconds away does not need announcing, and a spinner that flashes is
@@ -1434,6 +1437,21 @@ export default function App() {
           setSelectedNode(null);
         }}
         onNewFlow={addFlow}
+        globalFlows={
+          /* THE GROUP IS ALREADY CALLED «FLOWS EVERYWHERE», so the row inside
+             it is not called that too: it says what the map answers. */
+          <button
+            type="button"
+            className="wsx__leaf"
+            data-here={place === "flowmap" || undefined}
+            onClick={() => setPlace("flowmap")}
+          >
+            <span className="world__glyph" aria-hidden="true">
+              ⑂
+            </span>
+            <span className="world__label">{nameOfPlace("flowmap")}</span>
+          </button>
+        }
       />
       <div className="stage">
 
@@ -1534,6 +1552,26 @@ export default function App() {
                 onDrafted={() => readFlows(() => true)}
               />
             </Suspense>
+          </div>
+        </div>
+      )}
+      {/* THE FLOWS THAT CALL EACH OTHER, AND THE ONES NOBODY CALLS. It stands
+          on its own and not under a tree: a flow of yours is the same wherever
+          you are, and a call that names a file nobody wrote is the one defect
+          only a whole-machine reading can find. */}
+      {place === "flowmap" && (
+        <div className="section" data-place="flowmap">
+          <div className="section__body">
+          <Suspense fallback={ARRIVING}>
+            <FlowMapScreen
+              native={NATIVE}
+              onOpen={(name) => {
+                setPlace("board");
+                setFocusName(name);
+                setSelectedNode(null);
+              }}
+            />
+          </Suspense>
           </div>
         </div>
       )}
@@ -1640,28 +1678,18 @@ export default function App() {
             <Background id="fine" gap={12} variant={BackgroundVariant.Lines} color="var(--grid-fine)" />
             <Background id="coarse" gap={96} variant={BackgroundVariant.Lines} color="var(--grid-coarse)" />
 
-            {/* CONTROLS MUST CONTROL SOMETHING, or they are not there. Four
-                buttons that zoom and frame nothing are the same «box you can see
-                that says nothing» for which the minimap below disappears: one
-                criterion, and it holds for both.
-
-                The graph paper stays: it is the canvas, not a control, and it is
-                what makes the space under the box read as a surface to fill. The
-                React Flow signature stays too, being a licence note —
-                `hideAttribution` is a paid option, and removing it is something
-                you buy, not a screen decision. */}
+            {/* CONTROLS MUST CONTROL SOMETHING, or they are not there: four
+                buttons that zoom and frame nothing are the same «box you can
+                see that says nothing» as the minimap below. The graph paper is
+                the canvas and not a control, so it stays; the React Flow
+                signature is a licence note, and removing it is a purchase. */}
             {flows.size > 0 && <Controls />}
 
-            {/* THE MINIMAP SAYS WHERE TO LOOK, not «there is stuff here». It was
-                a uniform grey block: now every step sits in it with the tint of
-                its own state, so a fault at the foot of an off-screen flow shows
-                without scrolling.
-
-                WITH ZERO FLOWS IT IS NOT THERE, for the same reason as the
-                toolbox: a map of nothing is a box you can see that says nothing,
-                and on the screen that teaches the first gesture anything mute is
-                a distraction. It is also the mitigation of the limit declared in
-                `unhappystates.test.tsx` — with nothing to mitigate, it is not needed. */}
+            {/* THE MINIMAP SAYS WHERE TO LOOK, not «there is stuff here»: every
+                step sits in it with the tint of its own state, so a fault at the
+                foot of an off-screen flow shows without scrolling. WITH ZERO
+                FLOWS IT IS NOT THERE — a map of nothing is a box that says
+                nothing, and it mitigates a limit that is not there to mitigate. */}
             {flows.size > 0 && (
               <MiniMap
                 pannable

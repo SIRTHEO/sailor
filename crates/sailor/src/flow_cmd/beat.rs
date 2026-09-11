@@ -98,6 +98,7 @@ fn glance_at(ledger: &Ledger) -> Result<Glance, ledger::LedgerError> {
         last_started: ledger.last_started_at()?,
         and_also: flow::AndAlso {
             something_is_left_behind: machine::something_is_left_behind(ledger).unwrap_or(false),
+            a_tree_is_left_behind: workspace::a_tree_is_left_behind(ledger),
         },
         streaks: ledger.failure_streaks(flow::FAILURES_THAT_MAKE_A_FAULT)?,
         faults_written: ledger.faults_written()?,

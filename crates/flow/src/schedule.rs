@@ -59,6 +59,17 @@ pub struct Schedule {
 pub struct AndAlso {
     /// Whether anything Sailor made has nobody answering for it now.
     pub something_is_left_behind: bool,
+    /// Whether a tree Sailor cut would come down if a sweep ran now. **A
+    /// SECOND FIELD AND NOT A WIDER FIRST ONE**: the store answers for
+    /// processes, git answers for trees, and no crate holds both.
+    pub a_tree_is_left_behind: bool,
+}
+
+impl AndAlso {
+    /// Two leftovers, not two halves of one: either wakes the flow.
+    fn anything_left_behind(self) -> bool {
+        self.something_is_left_behind || self.a_tree_is_left_behind
+    }
 }
 
 /// Is the flow due now? `now` is an argument and not a clock read in here: a
@@ -69,7 +80,7 @@ pub struct AndAlso {
 /// every case: **a condition is not a first run.**
 pub fn is_due(schedule: &Schedule, last_run: Option<i64>, now: i64, and_also: AndAlso) -> bool {
     if let Recurrence::WhenSomethingIsLeftBehind = schedule.recurrence {
-        return and_also.something_is_left_behind;
+        return and_also.anything_left_behind();
     }
     let Some(last) = last_run else {
         return true;
@@ -81,7 +92,7 @@ pub fn is_due(schedule: &Schedule, last_run: Option<i64>, now: i64, and_also: An
             let at = today + (hour as i64) * 3600 + (minute as i64) * 60;
             now >= at && last < at
         }
-        Recurrence::WhenSomethingIsLeftBehind => and_also.something_is_left_behind,
+        Recurrence::WhenSomethingIsLeftBehind => and_also.anything_left_behind(),
     }
 }
 
@@ -212,13 +223,41 @@ mod tests {
             weight: Weight::Light,
             perimeter: Vec::new(),
         };
-        let left_behind = AndAlso { something_is_left_behind: true };
+        let left_behind = AndAlso {
+            something_is_left_behind: true,
+            ..AndAlso::default()
+        };
         let now = 1_800_000_000;
 
         assert!(!is_due(&by_state, None, now, AndAlso::default()));
         assert!(!is_due(&by_state, Some(now - 86_400), now, AndAlso::default()));
         assert!(is_due(&by_state, Some(now - 1), now, left_behind));
         assert!(is_due(&by_state, None, now, left_behind));
+    }
+
+    /// **EITHER LEFTOVER WAKES IT.** A machine holding only orphan trees sat
+    /// with seven gigabytes out and nothing due.
+    #[test]
+    fn a_tree_left_behind_wakes_the_flow_on_its_own() {
+        let by_state = Schedule {
+            recurrence: Recurrence::WhenSomethingIsLeftBehind,
+            weight: Weight::Light,
+            perimeter: Vec::new(),
+        };
+        let now = 1_800_000_000;
+        let only_a_tree = AndAlso {
+            something_is_left_behind: false,
+            a_tree_is_left_behind: true,
+        };
+        let only_a_process = AndAlso {
+            something_is_left_behind: true,
+            a_tree_is_left_behind: false,
+        };
+
+        assert!(is_due(&by_state, Some(now - 1), now, only_a_tree));
+        assert!(is_due(&by_state, Some(now - 1), now, only_a_process));
+        // THE ABSURD CASE: neither, and it stays asleep however long it waits.
+        assert!(!is_due(&by_state, Some(now - 86_400), now, AndAlso::default()));
     }
 
     /// The on-disk shape is a contract with the window and with whoever writes

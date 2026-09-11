@@ -207,6 +207,31 @@ fn the_sweep_takes_down_the_merged_trees_and_names_the_ones_holding_work() {
     assert!(said.contains("1 taken down, 2 kept"), "{said}");
 }
 
+/// **A ROW OVER A DIRECTORY THAT IS GONE IS A LEFTOVER THE SWEEP MUST CLEAR.**
+/// The sweep walked git's list of trees, where such a row never appears, so
+/// eleven of them stood for two days and kept waking the flow that exists to
+/// clear them — fault 166, second face.
+#[test]
+fn the_sweep_clears_a_row_whose_tree_is_no_longer_on_disk() {
+    let scratch = a_scratch("stale-row");
+    let repo = a_repository_in(&scratch);
+    let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
+    let cut = workspace::tree_for(&repo, "run-sparito", "a_step", &store as &dyn OpenTrees, None)
+        .expect("a tree, written down as it is cut");
+    // Taken away behind git's back, which is what a killed crew agent leaves.
+    std::fs::remove_dir_all(&cut).expect("the directory goes");
+    run_git(&repo, &["worktree", "prune"]);
+    let held_before = store.trees_left_open().expect("the rows").len();
+
+    let said = sweep(&repo, &store as &dyn OpenTrees).expect("the sweep runs");
+    let held_after = store.trees_left_open().expect("the rows").len();
+    let _ = std::fs::remove_dir_all(&scratch);
+
+    assert_eq!(held_before, 1, "the row was never written: {said}");
+    assert_eq!(held_after, 0, "the row over a gone directory was kept:\n{said}");
+    assert!(said.contains("run-sparito"), "the row was cleared in silence:\n{said}");
+}
+
 fn a_scratch(label: &str) -> PathBuf {
     let path = std::env::temp_dir().join(format!("sailor-worktree-cmd-{label}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&path);

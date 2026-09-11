@@ -233,6 +233,13 @@ const SCENES: Scene[] = [
     },
   },
   {
+    name: "flow-map",
+    what: "which flow calls which: the one view that reads the whole machine at once. Outside the native shell there are no files to read, so what this captures is the state that says why — the one a person meets when the engine is not answering",
+    reach: async (page) => {
+      await openPlace(page, "flowmap");
+    },
+  },
+  {
     name: "history",
     what: "the run history: the other dense view, and the one that ages worst",
     reach: async (page) => {
