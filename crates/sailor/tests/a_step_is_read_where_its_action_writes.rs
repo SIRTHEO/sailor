@@ -97,6 +97,12 @@ fn a_step_that_writes_a_verdict_is_not_declared_as_its_answer() {
         "no step with a declared output was found among {} flows: this judge measures nothing",
         flows.len()
     );
+    workspace::measured_against(
+        flows.len(),
+        "shipped flows opened",
+        measured,
+        "steps that declare what they write",
+    );
     assert!(
         wrong.is_empty(),
         "a step declares an output its action never writes, so every run of it dies there:\n  {}",
