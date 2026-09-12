@@ -1,12 +1,9 @@
 //! A step's declared output is the shape its action really writes.
 //!
-//! **A CHECK WRITES A VERDICT, NOT ITS ANSWER.** `shell_check` and
-//! `external_engine` hand on
-//! `{status, answer, unresolved}`, so a step declaring the answer's own fields
-//! at the top asks for something no run will ever produce, and every run of
-//! that flow dies at that step. `flow check` cannot see it: it reads what a
-//! flow declares, never what an action returns, and answered «would a run
-//! start: yes» for two flows that could not take a single step.
+//! `shell_check` and `external_engine` hand on `{status, answer, unresolved}`,
+//! so a step declaring the answer's own fields at the top asks for something no
+//! run produces, and every run of that flow dies there. `flow check` cannot see
+//! it: it reads what a flow declares, never what an action returns.
 
 use std::path::{Path, PathBuf};
 use serde_json::Value;
