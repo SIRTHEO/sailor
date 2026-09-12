@@ -66,18 +66,31 @@
         "output_schema": {
           "type": "object",
           "properties": {
-            "task": {
+            "status": {
               "type": "string"
             },
-            "home": {
-              "type": "string"
+            "answer": {
+              "type": "object",
+              "properties": {
+                "task": {
+                  "type": "string"
+                },
+                "home": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "task",
+                "home"
+              ],
+              "allow_extra": false
             }
           },
           "required": [
-            "task",
-            "home"
+            "status",
+            "answer"
           ],
-          "allow_extra": false
+          "allow_extra": true
         }
       },
       {
@@ -93,11 +106,19 @@
           "tool": "claude-code",
           "tree": "own",
           "stdin": {
-            "$from": "/task"
+            "$join": [
+              {
+                "$from": "/answer/task"
+              },
+              "\n\nAnswer with one JSON object and nothing else: no preamble, no fence, no summary. Its shape is written here once, and this is the whole of it:\n",
+              {
+                "$json": "/answer_shape"
+              }
+            ]
           },
           "env": {
             "CLAUDE_CONFIG_DIR": {
-              "$from": "/home"
+              "$from": "/answer/home"
             }
           },
           "timeout_secs": 1500,
@@ -124,31 +145,53 @@
         "input_schema": {
           "type": "object",
           "properties": {
-            "task": {
-              "type": "string"
-            },
-            "home": {
-              "type": "string"
+            "answer": {
+              "type": "object",
+              "properties": {
+                "task": {
+                  "type": "string"
+                },
+                "home": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "task",
+                "home"
+              ],
+              "allow_extra": true
             }
           },
           "required": [
-            "task",
-            "home"
+            "answer"
           ],
           "allow_extra": true
         },
         "output_schema": {
           "type": "object",
           "properties": {
-            "did": {
+            "status": {
               "type": "string"
             },
-            "left_undone": {
-              "type": "string"
+            "answer": {
+              "type": "object",
+              "properties": {
+                "did": {
+                  "type": "string"
+                },
+                "left_undone": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "did"
+              ],
+              "allow_extra": true
             }
           },
           "required": [
-            "did"
+            "status",
+            "answer"
           ],
           "allow_extra": true
         }

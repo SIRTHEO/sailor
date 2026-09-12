@@ -116,18 +116,31 @@
         "output_schema": {
           "type": "object",
           "properties": {
-            "crew": {
-              "type": "any"
+            "status": {
+              "type": "string"
             },
-            "assignments": {
-              "type": "number"
+            "answer": {
+              "type": "object",
+              "properties": {
+                "crew": {
+                  "type": "any"
+                },
+                "assignments": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "crew",
+                "assignments"
+              ],
+              "allow_extra": false
             }
           },
           "required": [
-            "crew",
-            "assignments"
+            "status",
+            "answer"
           ],
-          "allow_extra": false
+          "allow_extra": true
         }
       },
       {
@@ -142,18 +155,27 @@
         "with": {
           "flow": "one-agent-on-one-task",
           "items": {
-            "$from": "/crew"
+            "$from": "/answer/crew"
           }
         },
         "input_schema": {
           "type": "object",
           "properties": {
-            "assignments": {
-              "type": "number"
+            "answer": {
+              "type": "object",
+              "properties": {
+                "assignments": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "assignments"
+              ],
+              "allow_extra": true
             }
           },
           "required": [
-            "assignments"
+            "answer"
           ],
           "allow_extra": true
         },
