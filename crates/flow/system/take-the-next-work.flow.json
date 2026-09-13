@@ -107,6 +107,7 @@
         "with": {
           "role": "CHEAP_WORKER",
           "tree": "own",
+          "repo": { "$from": "/select/records/0/value/workspace" },
           "keep_tree": true,
           "stdin": {
             "$join": [

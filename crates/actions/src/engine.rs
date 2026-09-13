@@ -269,8 +269,7 @@ fn tree_of_its_own(
         ));
     }
     let said = |key: &str| shared.get(key).and_then(Value::as_str).map(str::to_owned);
-    let (Some(root), Some(run), Some(step)) = (
-        said(flow::WORKSPACE_ROOT),
+    let (Some(run), Some(step)) = (
         said(flow::CURRENT_RUN),
         said(flow::CURRENT_STEP),
     ) else {
@@ -291,7 +290,36 @@ fn tree_of_its_own(
             ),
         ));
     };
-    let repo = PathBuf::from(&root);
+    let repo = match &spec.repo {
+        Some(path) => {
+            let p = PathBuf::from(path);
+            if !p.is_dir() {
+                return Err(ActionError::new(
+                    "invalid_input",
+                    format!("the declared `repo` is not a directory: {}", path),
+                ));
+            }
+            if !p.join(".git").exists() {
+                return Err(ActionError::new(
+                    "invalid_input",
+                    format!("the declared `repo` is not a git repository: {}", path),
+                ));
+            }
+            p
+        }
+        None => {
+            let Some(root) = said(flow::WORKSPACE_ROOT) else {
+                return Err(ActionError::new(
+                    "invalid_input",
+                    format!(
+                        "the step asks for a `{TREE}` of its own, and this run says neither which \
+                         project nor which run and step it is: there is no name to cut it under"
+                    ),
+                ));
+            };
+            PathBuf::from(root)
+        }
+    };
     workspace::tree_for(
         &repo,
         &run,
