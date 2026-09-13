@@ -471,9 +471,12 @@ pub(crate) fn terminal_backlog(id: String) -> Result<Backlog, String> {
 mod tests {
     use super::*;
 
+    /// Kept under `/tmp` directly, not `std::env::temp_dir()`: the socket this
+    /// scratch ends up holding (`<here>/terminals/host.sock`) must stay under
+    /// the 104-byte `sun_path` a unix socket allows, and `TMPDIR` alone can
+    /// already spend most of that on some machines.
     fn scratch(label: &str) -> PathBuf {
-        let directory = std::env::temp_dir()
-            .join(format!("sailor-host-{label}-{}", std::process::id()));
+        let directory = Path::new("/tmp").join(format!("sailor-h-{label}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("a scratch directory");
         directory
