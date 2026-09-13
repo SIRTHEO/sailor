@@ -201,6 +201,7 @@ fn main() {
             handoff::handed_steps,
             handoff::take_handed_step,
             handoff::close_handed_step,
+            handoff::run_glimpse,
             run::run_snapshot,
             run::known_runs,
             run::open_runs,
