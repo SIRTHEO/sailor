@@ -44,15 +44,23 @@ eleven mistakes above it closes.
 per run; independent review in a fresh context; the gate manifest as the one
 set of letters worker, reviewer and integration all run
 ([`gates.md`](gates.md)); `sailor ratchet` and the release preflight as
-judges over a proposed tree; the parked-row convention.
+judges over a proposed tree; the parked-row convention; a mandate's digest,
+computed before the worker is asked and written into the task's own record,
+checked against the first line of the worker's answer and parking the task
+without ever running the acceptance command when it does not match
+(`crates/sailor/tests/take_the_next_work.rs`:
+`a_worker_that_acknowledges_the_mandate_finishes_and_its_record_carries_the_digest`,
+`a_worker_that_never_acknowledges_the_mandate_is_parked_before_acceptance_ever_runs`);
+the policy file, read through one mechanical resolver — `sailor policy` — bound
+to the trunk's own commit rather than the working tree or the branch under
+review (`crates/sailor/tests/the_delivery_policy_is_read_from_the_trusted_trunk.rs`).
 
-**Not yet implemented:** a recorded mandate digest and worker acknowledgment;
-checkpoint commits pinned under run-owned refs with a process-boundary
-ownership check; the policy file below read by a flow instead of only by a
-person following this document; branch publication and the pull request as
-flow steps instead of coordinator-invoked actions; an acceptance journey
-bound to the freshly built candidate's own digest; idempotent, retried
-closure instead of a one-shot reconciliation.
+**Not yet implemented:** checkpoint commits pinned under run-owned refs with a
+process-boundary ownership check; the policy resolver invoked from a flow step
+rather than only the command line; branch publication and the pull request as
+flow steps instead of coordinator-invoked actions; an acceptance journey bound
+to the freshly built candidate's own digest; idempotent, retried closure
+instead of a one-shot reconciliation.
 
 No dates are attached to the above: this section says what is true now, not
 when the rest lands.
