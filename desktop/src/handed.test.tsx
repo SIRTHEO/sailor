@@ -155,15 +155,15 @@ describe("a step handed to a person", () => {
     const shell = pretendShell((command) => {
       if (command === "handed_steps") {
         if (state === "closed") return [];
-        return [{ ...REVIEW, taken_by: state === "taken" ? "theo" : null }];
+        return [{ ...REVIEW, taken_by: state === "taken" ? "someone" : null }];
       }
       if (command === "take_handed_step") {
         state = "taken";
-        return "step review opened by theo";
+        return "step review opened by someone";
       }
       if (command === "close_handed_step") {
         state = "closed";
-        return "step review closed by theo: went\nThe run is resuming.";
+        return "step review closed by someone: went\nThe run is resuming.";
       }
       throw new Error(`no ${command}`);
     });
@@ -173,7 +173,7 @@ describe("a step handed to a person", () => {
       expect(screen.getByRole("button", { name: "take it" })).toBeTruthy();
 
       fireEvent.click(screen.getByRole("button", { name: "take it" }));
-      await screen.findByText("taken by «theo»");
+      await screen.findByText("taken by «someone»");
       // Taken, not yet closed: the close buttons are still there to press.
       expect(screen.getByRole("button", { name: "close: it went" })).toBeTruthy();
       expect(screen.getByRole("button", { name: "close: it broke" })).toBeTruthy();
