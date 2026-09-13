@@ -160,16 +160,31 @@ struct Glance {
     streaks: Vec<FailureStreak>,
     faults_written: BTreeSet<String>,
     ledger: Option<ledger::Ledger>,
+    /// **THE DIRECTORY ITSELF, NOT THE FILE INSIDE IT.** `Ledger::open`
+    /// creates the directory it is given, unconditionally — right for a
+    /// person who typed a command, wrong for a beat nobody asked to run
+    /// anything who happens to wake up first. This is the beat's own answer
+    /// to «is there a store at all», asked without opening one into being.
+    directory_missing: bool,
 }
 
 /// A ledger that is not there yet means nothing has ever run, and then
 /// everything is due and nothing has failed.
 fn glance() -> Result<Glance, String> {
-    let dir = default_ledger_dir();
+    glance_in(&default_ledger_dir())
+}
+
+fn glance_in(dir: &std::path::Path) -> Result<Glance, String> {
+    if !dir.exists() {
+        return Ok(Glance {
+            directory_missing: true,
+            ..Glance::default()
+        });
+    }
     if !dir.join("state.db").exists() {
         return Ok(Glance::default());
     }
-    ledger::Ledger::open(&dir)
+    ledger::Ledger::open(dir)
         .and_then(|ledger| {
             Ok(Glance {
                 last_started: ledger.last_started_at()?,
@@ -181,6 +196,7 @@ fn glance() -> Result<Glance, String> {
                 streaks: ledger.failure_streaks(flow::FAILURES_THAT_MAKE_A_FAULT)?,
                 faults_written: ledger.faults_written()?,
                 ledger: Some(ledger),
+                directory_missing: false,
             })
         })
         .map_err(|error| format!("{}: {error}", dir.display()))
@@ -280,6 +296,20 @@ pub fn once(app: &AppHandle) -> Option<Report> {
                 },
             })
             .collect(),
+        Ok(glance) if glance.directory_missing => {
+            // **THE WINDOW NEVER CREATES A STORE.** `Ledger::open`'s own
+            // `create_dir_all` stays exactly as it is for the CLI, which a
+            // person ran on purpose; a beat nobody asked to run anything must
+            // not be the reason a ledger directory exists on this machine.
+            let why = catalogue::say("desktop.beat.ledger_directory_missing", &[]);
+            known
+                .iter()
+                .map(|(flow, _, _)| Decision {
+                    flow: flow.clone(),
+                    verdict: Verdict::Held { why: why.clone() },
+                })
+                .collect()
+        }
         Ok(glance) => {
             let running = runs.running_flows();
             let mut decisions: Vec<Decision> = judge(&known, &glance.last_started, &running, now, glance.and_also)
@@ -349,6 +379,30 @@ pub(crate) fn beat_report(beat: tauri::State<'_, Arc<Beat>>) -> Option<Report> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **THE WINDOW NEVER CREATES A STORE.** Fault: `Ledger::open`'s own
+    /// `create_dir_all` ran every time the beat glanced at a directory that
+    /// had gone missing out from under it, silently putting an empty one
+    /// back — a person watching that exact directory disappear (renamed
+    /// away, a disk unmounted) would see it reappear on its own, emptied.
+    #[test]
+    fn a_glance_over_a_missing_directory_creates_nothing_and_says_so() {
+        let dir = std::env::temp_dir().join(format!(
+            "sailor-beat-missing-{}-{}",
+            std::process::id(),
+            line!()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let glance = glance_in(&dir).expect("a missing directory still answers");
+
+        assert!(glance.directory_missing);
+        assert!(glance.ledger.is_none());
+        assert!(
+            !dir.exists(),
+            "glancing at a missing ledger directory must not create it"
+        );
+    }
 
     fn decided(flow: &str, verdict: Verdict) -> Decision {
         Decision {
