@@ -329,7 +329,7 @@ development flow. For whoever writes by hand, it does not.
 **Fault 177, open. Authenticated was a fact about the home, read as a fact
 about the account.** During a login the browser re-authorised the account it
 already had open, and nobody noticed: a profile's home carried its own
-`.claude.json` naming a different account than the one the profile was named
+identity file naming a different account than the one the profile was named
 for. `sailor profiles list` kept saying "authenticated" — true of the home —
 and `sailor remaining` read the same account's quota under two profile names,
 counting it twice. The cure is an identity reading of its own, per engine
