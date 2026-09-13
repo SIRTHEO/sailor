@@ -8,6 +8,7 @@ the real author and the real date.
 ## Try
 
 - [`walkthrough-a-queue-of-work.md`](walkthrough-a-queue-of-work.md) — a
+- [`acceptance-journey.md`](acceptance-journey.md) — the steps a person walks on the installed binary before a release is called done, and the record of every walk
   project's queue drained one task at a time, `take-the-next-work` run for
   real from a seeded fixture to a parked task and back to a person.
 
