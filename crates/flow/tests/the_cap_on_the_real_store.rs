@@ -96,6 +96,8 @@ fn a_call_that_cost(call_id: &str, run_id: &str, micros: i64) -> ModelCallRecord
         session_mode: None,
         work_kind: None,
         fell_back_from: Vec::new(),
+        role: None,
+        role_resolved_to: Vec::new(),
         purpose: "external_engine".to_owned(),
         cli: "test-engine".to_owned(),
         requested_model: String::new(),

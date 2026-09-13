@@ -918,5 +918,12 @@
   "cli.machine.holder_unsettled": "the store would not say whether its run has ended, and a refusal is not permission",
   "cli.machine.no_such_build_directory": "no build directory of sailor's here goes by {path}",
   "cli.machine.could_not_look": "this machine would not say what is running on it ({why}), so the rows above are sailor's own and nothing else — which is not the same as nothing else being there",
-  "cli.machine.weighs_ours": "  {megabytes} MB  pid {pid}  {command}  — sailor lit this one"
+  "cli.machine.weighs_ours": "  {megabytes} MB  pid {pid}  {command}  — sailor lit this one",
+  "cli.role.combined_with_tool": "role «{role}» cannot be combined with tool",
+  "cli.role.no_store": "role «{role}» cannot be resolved without the roles store",
+  "cli.role.read_error": "role «{role}» cannot be read: {error}",
+  "cli.role.missing": "role «{role}» has no row in roles",
+  "cli.role.invalid": "role «{role}» is invalid: {error}",
+  "cli.role.no_tools": "role «{role}» has no tools",
+  "cli.role.needs_object": "role «{role}» needs an object input"
 }

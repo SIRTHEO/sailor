@@ -918,5 +918,12 @@
   "cli.machine.holder_unsettled": "il deposito non ha detto se la sua corsa è finita, e un rifiuto non è un permesso",
   "cli.machine.no_such_build_directory": "nessuna cartella di compilazione di sailor si chiama {path}",
   "cli.machine.could_not_look": "questa macchina non ha voluto dire cosa ci gira ({why}), quindi le righe sopra sono solo quelle di sailor — che non vuol dire che non ci sia altro",
-  "cli.machine.weighs_ours": "  {megabytes} MB  pid {pid}  {command}  — questo l'ha acceso sailor"
+  "cli.machine.weighs_ours": "  {megabytes} MB  pid {pid}  {command}  — questo l'ha acceso sailor",
+  "cli.role.combined_with_tool": "il ruolo «{role}» non può essere combinato con tool",
+  "cli.role.no_store": "il ruolo «{role}» non può essere risolto senza il deposito dei ruoli",
+  "cli.role.read_error": "il ruolo «{role}» non si può leggere: {error}",
+  "cli.role.missing": "il ruolo «{role}» non ha nessuna riga in roles",
+  "cli.role.invalid": "il ruolo «{role}» non è valido: {error}",
+  "cli.role.no_tools": "il ruolo «{role}» non ha tool",
+  "cli.role.needs_object": "il ruolo «{role}» ha bisogno di un input oggetto"
 }

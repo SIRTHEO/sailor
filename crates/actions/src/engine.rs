@@ -44,19 +44,22 @@ pub fn resolve_role(input: &Value, ledger: Option<&Ledger>) -> Result<Value, Str
         return Ok(input.clone());
     };
     if input.get("tool").is_some() {
-        return Err(format!("role «{role}» cannot be combined with tool"));
+        return Err(catalogue::say("cli.role.combined_with_tool", &[("role", role)]));
     }
     let Some(ledger) = ledger else {
-        return Err(format!("role «{role}» cannot be resolved without the roles store"));
+        return Err(catalogue::say("cli.role.no_store", &[("role", role)]));
     };
     let record = ledger
         .read_record(ROLES_COLLECTION, role)
-        .map_err(|error| format!("role «{role}» cannot be read: {error}"))?
-        .ok_or_else(|| format!("role «{role}» has no row in roles"))?;
-    let role_value: Role = serde_json::from_value(record.value)
-        .map_err(|error| format!("role «{role}» is invalid: {error}"))?;
+        .map_err(|error| {
+            catalogue::say("cli.role.read_error", &[("role", role), ("error", &error.to_string())])
+        })?
+        .ok_or_else(|| catalogue::say("cli.role.missing", &[("role", role)]))?;
+    let role_value: Role = serde_json::from_value(record.value).map_err(|error| {
+        catalogue::say("cli.role.invalid", &[("role", role), ("error", &error.to_string())])
+    })?;
     if role_value.tools.is_empty() {
-        return Err(format!("role «{role}» has no tools"));
+        return Err(catalogue::say("cli.role.no_tools", &[("role", role)]));
     }
     let tools: Vec<Value> = role_value
         .tools
@@ -69,7 +72,7 @@ pub fn resolve_role(input: &Value, ledger: Option<&Ledger>) -> Result<Value, Str
     let mut resolved = input.clone();
     let object = resolved
         .as_object_mut()
-        .ok_or_else(|| format!("role «{role}» needs an object input"))?;
+        .ok_or_else(|| catalogue::say("cli.role.needs_object", &[("role", role)]))?;
     object.remove("role");
     object.insert("tool".to_owned(), Value::Array(tools));
     Ok(resolved)
@@ -925,8 +928,29 @@ impl Action for ExternalEngineAction {
         let written_shape = input.get("answer_shape").map(|shape| {
             serde_json::to_string(shape).expect("a value already in memory always reserialises")
         });
+        let role = input.get("role").and_then(Value::as_str).map(str::to_owned);
         let resolved = resolve_role(input, self.ledger.as_ref())
             .map_err(|error| ActionError::new("invalid_input", error))?;
+        // The chain a role resolved to, read off what `resolve_role` wrote in
+        // its place: the same array `spec.tool` deserialises from just below,
+        // kept apart so it can travel to the ledger even when the call fails
+        // before answering.
+        let role_resolved_to: Vec<String> = role
+            .as_ref()
+            .map(|_| {
+                resolved
+                    .get("tool")
+                    .and_then(Value::as_array)
+                    .map(|chain| {
+                        chain
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_owned)
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default();
         let mut spec: EngineSpec = serde_json::from_value(resolved)
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         check_tolerance(&spec.accept, &ENGINE_FAILURES)?;
@@ -982,6 +1006,8 @@ impl Action for ExternalEngineAction {
         let mut chain = Chain {
             tried_before: Vec::new(),
             fell_back_from: self.fell_back_from(&spec, &candidates),
+            role,
+            role_resolved_to,
         };
         let mut last_ran = None;
         for candidate in &candidates {

@@ -422,6 +422,8 @@ mod resuming_instead_of_rediscovering {
             work_kind: None,
             fell_back_from: Vec::new(),
             session_mode: Some(SessionMode::Opened),
+            role: None,
+            role_resolved_to: Vec::new(),
         }
     }
 
@@ -1164,5 +1166,67 @@ printf '{"result":"ok","usage":{"input_tokens":%s}}' "$((n * 1000))""#;
             charged_to_each_step("consumo-per-chiamata", Reports::PerCall),
             vec![Some(1_000), Some(2_000)]
         );
+    }
+
+    // ── which tools a role became, beside the call it paid for ──────────
+
+    /// **THE ROLE AND THE CHAIN IT BECAME TRAVEL WITH THE CALL, NOT ONLY WITH
+    /// THE CANDIDATE THAT ANSWERED.** `cli` already says which engine ran; a
+    /// role can resolve to several, and the row is the only place left, once
+    /// the roles store has moved on, that can still answer "which tools did
+    /// `reviewer` become in this run".
+    #[test]
+    fn a_role_resolved_for_a_call_is_written_beside_it() {
+        let dir = scratch("role-recorded");
+        let bin = fake_engine(&dir);
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
+        ledger
+            .put_record(&ledger::StoreRecord {
+                collection: "roles".to_owned(),
+                key: "reviewer".to_owned(),
+                value: json!({"tools": [TOOL]}),
+                written_by: "a person".to_owned(),
+                written_at: 0,
+            })
+            .expect("write the role");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            sessions: Some(knows_all_three()),
+        })
+        .recording_to(Some(ledger));
+
+        ran(
+            &action,
+            &json!({"role": "reviewer", "stdin": "guarda l'albero", "timeout_secs": 20}),
+            "corsa-13",
+            "recensisci",
+        );
+
+        let call = only_call(&dir.join("deposito"));
+        assert_eq!(call.role.as_deref(), Some("reviewer"));
+        assert_eq!(call.role_resolved_to, vec![TOOL.to_owned()]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **A STEP THAT NAMES A TOOL DIRECTLY CARRIES NO ROLE.** Without this, a
+    /// reader could not tell "no role was asked for" from "the role column
+    /// failed to write": the two must read differently.
+    #[test]
+    fn a_step_naming_a_tool_directly_records_no_role() {
+        let dir = scratch("no-role");
+        let bin = fake_engine(&dir);
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            sessions: Some(knows_all_three()),
+        })
+        .recording_to(Some(ledger));
+
+        ran(&action, &plain_step(), "corsa-14", "scopri");
+
+        let call = only_call(&dir.join("deposito"));
+        assert_eq!(call.role, None);
+        assert_eq!(call.role_resolved_to, Vec::<String>::new());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

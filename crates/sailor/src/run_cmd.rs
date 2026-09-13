@@ -153,6 +153,8 @@ fn the_invocation(launch: &Launch, cli_id: &str, pid: u32, now: i64) -> ModelCal
         session_mode: None,
         work_kind: None,
         fell_back_from: Vec::new(),
+        role: None,
+        role_resolved_to: Vec::new(),
     }
 }
 

@@ -92,6 +92,13 @@ pub(crate) fn now_secs() -> i64 {
 pub(crate) struct Chain {
     pub(crate) tried_before: Vec<String>,
     pub(crate) fell_back_from: Vec<String>,
+    /// The role the step asked for, when it asked for one; `None` for a step
+    /// that named a tool or chain of its own.
+    pub(crate) role: Option<String>,
+    /// The chain `role` resolved to, so the ledger can answer "which tools
+    /// did this role become" without depending on the roles store still
+    /// agreeing, later, with what it said at call time.
+    pub(crate) role_resolved_to: Vec<String>,
 }
 
 /// What is known of a call just finished, before it is priced.
@@ -230,6 +237,8 @@ pub(crate) fn record_the_call(
         session_id: spent.session_id,
         work_kind: spent.work_kind,
         session_mode: spent.session_mode,
+        role: chain.role.clone(),
+        role_resolved_to: chain.role_resolved_to.clone(),
     };
     let _ = record.ledger.record_model_call(&written);
 }

@@ -120,6 +120,8 @@ fn sample_all(ledger: &Ledger) {
             work_kind: None,
             fell_back_from: Vec::new(),
             session_mode: None,
+            role: None,
+            role_resolved_to: Vec::new(),
         })
         .expect("record the call");
     ledger
@@ -2143,6 +2145,8 @@ fn call_with(call_id: &str, tokens: Option<u64>, cost: Option<i64>) -> ModelCall
         work_kind: None,
         fell_back_from: Vec::new(),
         session_mode: None,
+        role: None,
+        role_resolved_to: Vec::new(),
     }
 }
 

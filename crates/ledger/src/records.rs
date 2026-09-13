@@ -236,6 +236,12 @@ pub struct ModelCallRecord {
     /// passes for proof.
     #[serde(default)]
     pub session_mode: Option<SessionMode>,
+    /// The role a step named, when it named one instead of a literal tool.
+    #[serde(default)]
+    pub role: Option<String>,
+    /// The chain [`Self::role`] resolved to at call time.
+    #[serde(default)]
+    pub role_resolved_to: Vec<String>,
 }
 
 /// How a call stood towards the session of its flow: three say the mechanism
