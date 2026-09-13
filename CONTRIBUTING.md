@@ -59,6 +59,10 @@ workspace, and the README explains how to run it.
 
 Every one of these has to be green on your branch before a change merges. Run
 the ones that apply to what you touched; a reviewer reruns the same ones.
+[`docs/gates.md`](docs/gates.md) is the one manifest a worker, a reviewer and
+integration all run by letter; the table below says the same commands with,
+for each, what to do when it is red, and is kept matching that manifest by
+hand.
 
 **Always:**
 
