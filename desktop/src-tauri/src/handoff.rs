@@ -24,11 +24,16 @@ pub(crate) struct Handed {
     /// it** instead of judging from wherever the window happens to stand.
     /// `None` is a real answer: a run started outside every workspace.
     pub worktree: Option<String>,
+    /// Who has taken it on, if anyone. `None` while it still only waits;
+    /// `Some` once a person has it open, and the row stays offered to them —
+    /// the close gesture must survive «take it», not disappear with it.
+    pub taken_by: Option<String>,
 }
 
 /// The handed steps among a run's records: the latest record of each step,
-/// kept only when its outcome is `Waiting`. An older attempt that waited and
-/// a newer one that went is a step nobody waits on any more.
+/// kept when its outcome is still `Waiting`, **or** when it has none yet and
+/// a person's name is on it — taken, not yet closed. An attempt open with
+/// nobody's name on it is the engine's own, not a person's to close here.
 pub(crate) fn handed_of(records: &[StepRecord]) -> Vec<Handed> {
     let mut latest: BTreeMap<&str, &StepRecord> = BTreeMap::new();
     for record in records {
@@ -41,13 +46,17 @@ pub(crate) fn handed_of(records: &[StepRecord]) -> Vec<Handed> {
     }
     latest
         .values()
-        .filter(|record| record.outcome == Some(Outcome::Waiting))
+        .filter(|record| {
+            record.outcome == Some(Outcome::Waiting)
+                || (record.outcome.is_none() && record.taken_on_by.is_some())
+        })
         .map(|record| Handed {
             step_id: record.step_id.clone(),
             holder: word_in(&record.input, "holder"),
             mandate: word_in(&record.input, "mandate"),
             since: record.ended_at.unwrap_or(record.started_at),
             worktree: None,
+            taken_by: record.taken_on_by.clone(),
         })
         .collect()
 }
@@ -191,5 +200,29 @@ mod tests {
         assert_eq!(handed[0].mandate, "read the diff and say");
         assert_eq!(handed[0].since, 140);
         assert!(handed_of(&[record("build", 1, None)]).is_empty());
+    }
+
+    /// **A TAKEN STEP KEEPS ITS ROW.** Fault: the moment «take it» opened the
+    /// next attempt, its outcome went to `None` and the old filter dropped the
+    /// row whole — the window that had just offered a close button showed
+    /// nothing to close. An attempt with nobody's name on it (the engine's
+    /// own, not a person's) still does not belong here.
+    #[test]
+    fn a_step_taken_by_a_person_stays_offered_until_it_closes() {
+        let mut taken = record("review", 2, None);
+        taken.taken_on_by = Some("mira".to_owned());
+        let records = vec![record("review", 1, Some(Outcome::Waiting)), taken];
+
+        let handed = handed_of(&records);
+        assert_eq!(handed.len(), 1, "{handed:?}");
+        assert_eq!(handed[0].step_id, "review");
+        assert_eq!(handed[0].taken_by.as_deref(), Some("mira"));
+
+        let mut engine_held = record("build", 1, None);
+        engine_held.held_by_pid = Some(4242);
+        assert!(
+            handed_of(&[engine_held]).is_empty(),
+            "an attempt open for the engine, nobody's name on it, is not a person's to close"
+        );
     }
 }

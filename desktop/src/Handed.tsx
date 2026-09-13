@@ -79,13 +79,17 @@ export function Handed({ runId, onChanged }: HandedProps) {
             <p className="handed__note">The step declares no mandate.</p>
           )}
           <div className="handed__acts">
-            <button
-              type="button"
-              disabled={busy !== null}
-              onClick={() => act(`${step.step_id}:take`, takeHandedStep(runId, step.step_id))}
-            >
-              {busy === `${step.step_id}:take` ? t("window.handed.taking") : "take it"}
-            </button>
+            {step.taken_by === null ? (
+              <button
+                type="button"
+                disabled={busy !== null}
+                onClick={() => act(`${step.step_id}:take`, takeHandedStep(runId, step.step_id))}
+              >
+                {busy === `${step.step_id}:take` ? t("window.handed.taking") : "take it"}
+              </button>
+            ) : (
+              <span className="handed__holder">taken by «{step.taken_by}»</span>
+            )}
             {/* The tree the run was born in, not the window's: a wrong-tree
                 bench is found out only at the first file read. */}
             {bench !== null && step.worktree !== null && (

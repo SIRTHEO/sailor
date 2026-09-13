@@ -241,6 +241,8 @@ export interface HandedStep {
   since: number;
   /** The tree the run was born in; `null` when it was born outside every one. */
   worktree: string | null;
+  /** Who has taken it on, if anyone; `null` while it still only waits. */
+  taken_by: string | null;
 }
 
 export async function handedSteps(runId: string): Promise<HandedStep[]> {
