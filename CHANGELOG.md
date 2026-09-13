@@ -14,6 +14,12 @@ with its real author and date, not copied here by hand:
 
 The first entry below is written when the first version is tagged, and from
 then on this file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+`git tag` names none yet: the statement above is accurate as of this commit,
+not aspirational.
+
+<!-- ## [VERSION — coordinator names it] - DATE — coordinator names it
+     The section below becomes this release's notes when the tag is cut;
+     nothing else is invented ahead of that. -->
 
 ## [Unreleased]
 
