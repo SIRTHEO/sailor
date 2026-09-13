@@ -398,11 +398,7 @@ impl LoginProbe for RealDryProbe {
     fn ask(&self, bin: &str, args: &[String], env: &BTreeMap<String, String>) -> DryRun {
         let mut command = Command::new(bin);
         command.args(args).env_clear();
-        // Cleared for privacy, then put back only what an ordinary launch
-        // never takes away in the first place: `sailor run` overlays a
-        // profile's declared variables onto the *whole* ambient environment,
-        // never a subtracted one. The declared `env` is laid over these, not
-        // under, so a descriptor that names `PATH` or `HOME` itself still wins.
+        // Keep only essentials after clearing the inherited environment for privacy.
         for name in profiles::AMBIENT_LAUNCH_ESSENTIALS {
             if let Ok(value) = std::env::var(name) {
                 command.env(name, value);
@@ -484,17 +480,9 @@ mod tests {
         }
     }
 
-    /// **MUTATION PROOF, THE OTHER DIRECTION.** The declared environment is not
-    /// what makes a profile private — clearing the rest is. An ambient variable
-    /// this test sets and nobody declared must not reach the probe, or the fix
-    /// this file exists for is undone the moment PATH and HOME come back.
     #[test]
     fn a_login_probe_does_not_receive_an_undeclared_ambient_variable() {
-        // SAFETY: `cargo test` runs this crate's tests in one process, but
-        // `RealDryProbe::ask` reads the name through `std::env::var` inside its
-        // own `Command`, in a forked child — the mutation this test guards
-        // against is a static `env_clear()` call, not a race with another test
-        // over this variable.
+        // SAFETY: This uniquely named variable is set only for this child-process probe.
         unsafe {
             std::env::set_var("SAILOR_TEST_UNDECLARED_AMBIENT", "must-not-leak");
         }
@@ -502,8 +490,7 @@ mod tests {
         let script = "printf 'PATH_SEEN=%s\\nDECLARED=%s\\nUNDECLARED=%s\\n' \
             \"${PATH:+yes}\" \"$DECLARED\" \"${SAILOR_TEST_UNDECLARED_AMBIENT:-absent}\"";
         let outcome = RealDryProbe.ask("/bin/sh", &["-c".to_owned(), script.to_owned()], &environment);
-        // SAFETY: same call as above, undone before any assertion can panic
-        // and leave it set for another test.
+        // SAFETY: Restore the process environment before an assertion can panic.
         unsafe {
             std::env::remove_var("SAILOR_TEST_UNDECLARED_AMBIENT");
         }

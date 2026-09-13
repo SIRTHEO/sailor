@@ -1403,11 +1403,7 @@ fn requirement_unmet(graph: &Graph, records: &[StepRecord]) -> Option<(String, U
         })
 }
 
-/// True when nothing the requirement guards ever happened: the step's own
-/// `when` judged false, or — recursively — every dependency between it and the
-/// root was itself waived the same way. Read off `Why::Condition`, not merely
-/// `Outcome::Skipped`, so a future way of producing a skip that is not a
-/// condition stays unmet here until proven otherwise.
+/// Conditions are the only skips the author explicitly chose; other skips stay unmet.
 fn waived_by_condition(graph: &Graph, step: &Step, records: &[StepRecord]) -> bool {
     match latest_for(step, records) {
         Some(record) => {
