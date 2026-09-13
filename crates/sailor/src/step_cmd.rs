@@ -692,6 +692,8 @@ fn write_self_declared_turns(
             session_mode: None,
             work_kind: None,
             fell_back_from: Vec::new(),
+            role: None,
+            role_resolved_to: Vec::new(),
             // The row's reason lives in `purpose`: whoever sums a run's calls
             // must be able to separate what the engine measured from what
             // someone declared about themselves.

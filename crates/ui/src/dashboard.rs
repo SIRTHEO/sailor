@@ -475,6 +475,8 @@ mod tests {
             work_kind: None,
             fell_back_from: Vec::new(),
             session_mode: None,
+            role: None,
+            role_resolved_to: Vec::new(),
         }
     }
 

@@ -112,7 +112,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// `PROJECTION_MIGRATIONS`, and the tests hold the two against each other. A
 /// column once landed in the migration without this going up, so an existing
 /// store never migrated and every read died on the missing column.
-const PROJECTION_SCHEMA_VERSION: i64 = 19;
+const PROJECTION_SCHEMA_VERSION: i64 = 20;
 
 /// One change to the projections, and the version that introduced it.
 enum ProjectionChange {
@@ -246,6 +246,13 @@ const PROJECTION_MIGRATIONS: &[(i64, ProjectionChange)] = &[
             columns: &[("taken_on_by", "TEXT")],
         },
     ),
+    (
+        20,
+        ProjectionChange::AddColumns {
+            table: "model_calls",
+            columns: &[("role", "TEXT"), ("role_resolved_to", "TEXT")],
+        },
+    ),
 ];
 
 pub enum LedgerError {
@@ -374,6 +381,8 @@ impl Ledger {
         let events_path = directory.join(EVENTS_FILE);
         let connection = Connection::open(state_path)?;
         connection.busy_timeout(BUSY_TIMEOUT)?;
+        #[cfg(any(test, feature = "test-hooks"))]
+        test_busy_handler(&connection)?;
         connection.pragma_update(None, "journal_mode", "WAL")?;
         connection.pragma_update(None, "synchronous", "FULL")?;
         connection.execute(
@@ -625,15 +634,37 @@ impl Ledger {
     /// Collection and key cannot be empty: they are the address, and an entry
     /// without an address is found only by whoever already knows where it is.
     pub fn put_record(&self, record: &StoreRecord) -> Result<(), LedgerError> {
-        if record.collection.trim().is_empty() {
-            return Err(LedgerError::InvalidRecord(
-                "record collection is empty".into(),
-            ));
-        }
-        if record.key.trim().is_empty() {
-            return Err(LedgerError::InvalidRecord("record key is empty".into()));
-        }
+        validate_store_record_address(record)?;
         self.write_event(StoredEvent::RecordWritten(record.clone()))
+    }
+
+    pub fn put_record_if_absent(
+        &self,
+        record: &StoreRecord,
+    ) -> Result<ConditionalWrite, LedgerError> {
+        validate_store_record_address(record)?;
+        let mut connection = self.lock()?;
+        let transaction = immediate(&mut connection)?;
+        apply_pending_events(&transaction)?;
+        let found = transaction
+            .query_row(
+                "SELECT collection, key, value, written_by, written_at
+                 FROM store WHERE collection = ?1 AND key = ?2",
+                params![record.collection, record.key],
+                read_store_row,
+            )
+            .optional()?;
+        #[cfg(any(test, feature = "test-hooks"))]
+        test_pause_after_absent_record_read(found.is_none());
+        if let Some(existing) = found {
+            transaction.commit()?;
+            apply_pending(&mut connection)?;
+            return Ok(ConditionalWrite::AlreadyPresent(existing));
+        }
+        append_event(&transaction, &StoredEvent::RecordWritten(record.clone()))?;
+        transaction.commit()?;
+        apply_pending(&mut connection)?;
+        Ok(ConditionalWrite::Inserted)
     }
 
     /// What an entry holds, if anybody wrote it.
@@ -1762,6 +1793,18 @@ fn immediate(connection: &mut Connection) -> Result<Transaction<'_>, LedgerError
     Ok(connection.transaction_with_behavior(TransactionBehavior::Immediate)?)
 }
 
+fn validate_store_record_address(record: &StoreRecord) -> Result<(), LedgerError> {
+    if record.collection.trim().is_empty() {
+        return Err(LedgerError::InvalidRecord(
+            "record collection is empty".into(),
+        ));
+    }
+    if record.key.trim().is_empty() {
+        return Err(LedgerError::InvalidRecord("record key is empty".into()));
+    }
+    Ok(())
+}
+
 fn apply_pending(connection: &mut Connection) -> Result<(), LedgerError> {
     let transaction = immediate(connection)?;
     apply_pending_events(&transaction)?;
@@ -1774,7 +1817,7 @@ fn test_pause_after_step_read() {
     let Some(marker) = std::env::var_os("LEDGER_TEST_STEP_READ_MARKER") else {
         return;
     };
-    std::fs::write(marker, b"ready").expect("write the test marker");
+    let _ = std::fs::write(marker, b"ready");
     let hold = std::env::var("LEDGER_TEST_STEP_READ_HOLD_MILLIS")
         .ok()
         .and_then(|value| value.parse().ok())
@@ -1784,6 +1827,38 @@ fn test_pause_after_step_read() {
 
 #[cfg(not(test))]
 fn test_pause_after_step_read() {}
+
+#[cfg(any(test, feature = "test-hooks"))]
+fn test_pause_after_absent_record_read(absent: bool) {
+    if !absent {
+        return;
+    }
+    let Some(marker) = std::env::var_os("LEDGER_TEST_ABSENT_RECORD_MARKER") else {
+        return;
+    };
+    let _ = std::fs::write(marker, b"ready");
+    let Some(release) = std::env::var_os("LEDGER_TEST_ABSENT_RECORD_RELEASE") else {
+        return;
+    };
+    while !Path::new(&release).exists() {
+        std::thread::yield_now();
+    }
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+fn test_busy_handler(connection: &Connection) -> Result<(), LedgerError> {
+    fn marked_busy(_attempt: i32) -> bool {
+        if let Some(marker) = std::env::var_os("LEDGER_TEST_BUSY_MARKER") {
+            let _ = std::fs::write(marker, b"busy");
+        }
+        std::thread::sleep(Duration::from_millis(1));
+        true
+    }
+    if std::env::var_os("LEDGER_TEST_BUSY_MARKER").is_some() {
+        connection.busy_handler(Some(marked_busy))?;
+    }
+    Ok(())
+}
 
 #[cfg(test)]
 fn test_crash_after_close_event() {
@@ -1925,7 +2000,9 @@ fn create_projection_tables(connection: &Connection) -> Result<(), LedgerError> 
              session_id TEXT,
              work_kind TEXT,
              fell_back_from TEXT,
-             session_mode TEXT
+             session_mode TEXT,
+             role TEXT,
+             role_resolved_to TEXT
          );
          CREATE TABLE IF NOT EXISTS snapshots (
              snapshot_id TEXT PRIMARY KEY,
@@ -2668,11 +2745,11 @@ fn project_model_call(
              declared_cost_micros, cache_write_tokens, cache_write_long_tokens,
              cache_write_price_micros_per_million,
              cache_write_long_price_micros_per_million, turns, session_id, work_kind,
-             fell_back_from, session_mode)
+             fell_back_from, session_mode, role, role_resolved_to)
          VALUES
          (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
           ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30,
-          ?31)
+          ?31, ?32, ?33)
          ON CONFLICT(call_id) DO UPDATE SET
           run_id=excluded.run_id, step_id=excluded.step_id,
           purpose=excluded.purpose, cli=excluded.cli,
@@ -2695,7 +2772,8 @@ fn project_model_call(
           turns=excluded.turns,
           session_id=excluded.session_id, work_kind=excluded.work_kind,
           fell_back_from=excluded.fell_back_from,
-          session_mode=excluded.session_mode",
+          session_mode=excluded.session_mode,
+          role=excluded.role, role_resolved_to=excluded.role_resolved_to",
         params![
             record.call_id,
             record.run_id,
@@ -2733,6 +2811,8 @@ fn project_model_call(
             record.work_kind,
             serde_json::to_string(&record.fell_back_from)?,
             record.session_mode.map(SessionMode::word),
+            record.role,
+            serde_json::to_string(&record.role_resolved_to)?,
         ],
     )?;
     Ok(())
@@ -3057,7 +3137,7 @@ fn parse_attempt_relation(value: &str) -> rusqlite::Result<AttemptRelation> {
 /// second copy inside `actions` while it existed: two copies getting it wrong
 /// together confirm each other, and no test sees it. This list is the anchor
 /// outside both — a moved column turns red here.
-pub const MODEL_CALL_DUMP_COLUMNS: &str = "call_id,run_id,step_id,purpose,cli,requested_model,actual_model,input_tokens,output_tokens,cached_tokens,cost_micros,price_currency,input_price_micros_per_million,output_price_micros_per_million,cached_price_micros_per_million,engine_identity,retry_chain,error_type,started_at,ended_at,total_tokens,declared_cost_micros,cache_write_tokens,cache_write_long_tokens,cache_write_price_micros_per_million,cache_write_long_price_micros_per_million,turns,session_id,work_kind,fell_back_from,session_mode";
+pub const MODEL_CALL_DUMP_COLUMNS: &str = "call_id,run_id,step_id,purpose,cli,requested_model,actual_model,input_tokens,output_tokens,cached_tokens,cost_micros,price_currency,input_price_micros_per_million,output_price_micros_per_million,cached_price_micros_per_million,engine_identity,retry_chain,error_type,started_at,ended_at,total_tokens,declared_cost_micros,cache_write_tokens,cache_write_long_tokens,cache_write_price_micros_per_million,cache_write_long_price_micros_per_million,turns,session_id,work_kind,fell_back_from,session_mode,role,role_resolved_to";
 
 fn dump_table(connection: &Connection, table: &str) -> Result<Value, LedgerError> {
     let columns = match table {
