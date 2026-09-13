@@ -671,3 +671,38 @@ export async function runUsage(runId: string): Promise<RunUsage | null> {
   if (!invoke) return null;
   return invoke<RunUsage | null>("run_usage", { runId });
 }
+
+export interface StripRun {
+  run_id: string;
+  entity: string;
+  state: "waiting" | "working" | "not_yet" | "holder_gone";
+  step: string | null;
+  elapsed_secs: number;
+  cap_micros: number | null;
+  spend_micros: number;
+  device: string | null;
+  holder_gone: boolean;
+}
+
+export interface StripAccount {
+  name: string;
+  cli_id: string;
+  monogram: string;
+  unavailable: boolean;
+  spent_fraction: number | null;
+  resets_at: string | null;
+  read_at: number | null;
+  unit: string | null;
+}
+
+export interface StripState {
+  runs: StripRun[];
+  accounts: StripAccount[];
+  ended_today: number;
+}
+
+export async function stripData(since?: number): Promise<StripState> {
+  const invoke = invoker();
+  if (!invoke) throw new Error("outside the native shell: no engine to ask");
+  return invoke<StripState>("strip", { since });
+}

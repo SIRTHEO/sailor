@@ -49,7 +49,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import type { TerminalSummary } from "./terminal";
-import { BeatChip, BuildChip, LiveChip, WhoChip } from "./Bar";
+import { BeatChip, BuildChip } from "./Bar";
+import { Strip } from "./Strip";
 import { MEMORY_TABS, type MemoryTab } from "./memorytabs";
 import { SAILOR_TABS, type SailorTab } from "./sailortabs";
 import { TERMINALS_TABS, type TerminalsTab } from "./terminalstabs";
@@ -1401,18 +1402,14 @@ export default function App() {
               <kbd className="topbar__kbd">⌘K</kbd>
               Search or run a command
             </button>
-            <LiveChip
+            <Strip
               native={NATIVE}
               now={now}
-              onOpen={(runId) => setWatching(runId)}
-              onSpend={() => {
-                setPlace("memory");
-                setMemoryTab("spend");
-              }}
+              onOpenRun={(runId) => setWatching(runId)}
+              onOpenAttention={() => setPlace("waiting")}
             />
             <BuildChip native={NATIVE} now={now} />
             <BeatChip native={NATIVE} now={now} />
-            <WhoChip native={NATIVE} />
           </>
         }
       />
