@@ -152,6 +152,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     let head_rev = git_text(&root, &["rev-parse", "HEAD"])?;
     let head_short = git_text(&root, &["rev-parse", "--short", "HEAD"])?;
     let tree_rev = git_text(&root, &["rev-parse", "HEAD^{tree}"])?;
+    let push = publication_preflight(&root)?;
     // The parts the target is made of, not `crates/` alone: the window is half
     // a page, and a stamp read over the engine only would name a commit that
     // changed nothing inside it.
@@ -194,7 +195,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         )
     );
     let repository = release_tree(&root)?;
-    command_success(
+    git_success(
         Command::new("git")
             .arg("-C")
             .arg(&repository)
@@ -383,7 +384,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
             // one a release lands on most days: «nothing to do» while an older
             // copy answers to the name is the whole fault, said reassuringly.
             let seen = say_what_the_name_finds(selected, &home.join(selected.safe_rel));
-            say_whether_pushed(&root);
+            say_whether_pushed(&root, &push);
             return Ok(release::ends_with(&seen));
         }
         return Ok(0);
@@ -430,7 +431,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
 
     write_stamp(&stamp, &source_rev, &head_short);
     let seen = say_what_the_name_finds(selected, &safe);
-    say_whether_pushed(&root);
+    say_whether_pushed(&root, &push);
 
     if let Some(service) = selected.service {
         // The service runs every 90 seconds: between the first check and this
@@ -518,18 +519,25 @@ fn root_under(
 }
 
 fn git_output(root: &Path, args: &[&str]) -> Result<Output, String> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(args)
+    let mut git = Command::new("git");
+    git.arg("-C").arg(root).args(args);
+    git_output_from(git)
+}
+
+fn git_output_from(mut git: Command) -> Result<Output, String> {
+    let output = git
         .output()
-        .map_err(|error| format!("cannot start git: {error}"))?;
+        .map_err(|_| catalogue::say("cli.release.git_command_failed", &[]))?;
     if output.status.success() {
         Ok(output)
     } else {
-        let detail = String::from_utf8_lossy(&output.stderr);
-        Err(format!("git {} failed: {}", args.join(" "), detail.trim()))
+        Err(git_failure_report(&output))
     }
+}
+
+fn git_failure_report(output: &Output) -> String {
+    let _raw_git_output = (&output.stdout, &output.stderr);
+    catalogue::say("cli.release.git_command_failed", &[])
 }
 
 fn git_text(root: &Path, args: &[&str]) -> Result<String, String> {
@@ -545,6 +553,15 @@ fn command_success(command: &mut Command, context: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!("{context} ({})", status_description(status)))
+    }
+}
+
+fn git_success(command: &mut Command, context: &str) -> Result<(), String> {
+    let output = command.output().map_err(|_| context.to_owned())?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!("{context} ({})", status_description(output.status)))
     }
 }
 
@@ -565,7 +582,7 @@ fn release_tree(root: &Path) -> Result<PathBuf, String> {
         vec!["checkout", "--quiet", "--force", "FETCH_HEAD"],
         vec!["clean", "-fdq"],
     ] {
-        command_success(
+        git_success(
             Command::new("git").arg("-C").arg(&tree).args(&args),
             &catalogue::say("cli.release.tree_not_brought_to_head", &[("step", args[0])]),
         )?;
@@ -619,16 +636,13 @@ fn clone_repository(root: &Path, repository: &Path) -> Result<(), String> {
     if second.status.success() {
         Ok(())
     } else {
-        let first_detail = String::from_utf8_lossy(&first.stderr);
-        let second_detail = String::from_utf8_lossy(&second.stderr);
-        Err(catalogue::say(
-            "cli.release.local_clone_failed",
-            &[
-                ("first", first_detail.trim()),
-                ("second", second_detail.trim()),
-            ],
-        ))
+        Err(local_clone_failure_report(&first, &second))
     }
+}
+
+fn local_clone_failure_report(first: &Output, second: &Output) -> String {
+    let _raw_git_output = (&first.stdout, &first.stderr, &second.stdout, &second.stderr);
+    catalogue::say("cli.release.local_clone_failed", &[])
 }
 
 fn status_description(status: ExitStatus) -> String {
@@ -917,33 +931,24 @@ fn print_changes(
             .arg(root)
             .args(["cat-file", "-e"])
             .arg(format!("{previous}^{{commit}}"))
-            .status()
+            .output()
             .map_err(|error| {
                 catalogue::say(
                     "cli.release.cannot_check_the_old_stamp",
                     &[("error", &error.to_string())],
                 )
             })?;
-        if exists.success() {
+        if exists.status.success() {
             let range = format!("{previous}..{head_rev}");
             let mut ask = vec!["log", "--oneline", &range, "--"];
             ask.extend(parts.iter().copied());
             let log = git_output(root, &ask)?;
-            print!("{}", String::from_utf8_lossy(&log.stdout));
             let mut ask = vec!["rev-list", "--count", &range, "--"];
             ask.extend(parts.iter().copied());
             let count = git_text(root, &ask)?;
             println!(
                 "   {}",
-                catalogue::say(
-                    "cli.release.commits_touching_the_parts",
-                    &[
-                        ("count", &count),
-                        ("from", short_revision(&previous)),
-                        ("to", head_short),
-                        ("parts", &parts.join(", ")),
-                    ],
-                )
+                release_history_report(&log, &count, &previous, head_short, parts)
             );
             return Ok(());
         }
@@ -957,6 +962,25 @@ fn print_changes(
         )
     );
     Ok(())
+}
+
+fn release_history_report(
+    log: &Output,
+    count: &str,
+    previous: &str,
+    head_short: &str,
+    parts: &[&str],
+) -> String {
+    let _raw_git_output = (&log.stdout, &log.stderr);
+    catalogue::say(
+        "cli.release.commits_touching_the_parts",
+        &[
+            ("count", count),
+            ("from", short_revision(previous)),
+            ("to", head_short),
+            ("parts", &parts.join(", ")),
+        ],
+    )
 }
 
 fn short_revision(revision: &str) -> &str {
@@ -1138,68 +1162,97 @@ const HELPER_FOR_THE_REMOTE: &str = "credential.https://github.com.helper";
 /// The trunk goes to the remote with every release: what is in service on
 /// this machine is what the remote holds. Refused, it is said, not hidden —
 /// the release stands, the remote is behind.
-fn push_the_trunk(root: &Path) -> Result<String, String> {
+struct PushAttempt {
+    succeeded: bool,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+fn push_the_trunk(root: &Path, plan: &toolbox::privacy::PushPlan) -> PushAttempt {
     let mut push = Command::new("git");
     push.arg("-C").arg(root);
     for argument in how_to_prove_who_we_are(root) {
         push.arg(argument);
     }
-    let pushed = push
-        .args(["push", "--porcelain"])
+    match push
+        .args(["push", "--porcelain", plan.remote()])
+        .arg(format!("{}:{}", plan.head(), plan.destination()))
         .output()
-        .map_err(|error| error.to_string())?;
-    let last_line = |bytes: &[u8]| {
-        String::from_utf8_lossy(bytes)
-            .lines()
-            .rfind(|line| !line.trim().is_empty())
-            .unwrap_or_default()
-            .to_string()
-    };
-    if pushed.status.success() {
-        Ok(last_line(&pushed.stdout))
-    } else {
-        Err(last_line(&pushed.stderr))
+    {
+        Ok(output) => PushAttempt {
+            succeeded: output.status.success(),
+            stdout: output.stdout,
+            stderr: output.stderr,
+        },
+        Err(_) => PushAttempt {
+            succeeded: false,
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        },
     }
 }
 
-/// **THE SUITE CANNOT ANSWER THIS AND NEVER COULD**: a release runs its tests
-/// on a `git archive` extract, which is no repository, so the judge guarding
-/// the public trunk declares «measured nothing». Asked here, of the real tree.
-fn what_must_not_be_published(root: &Path) -> Vec<String> {
-    let Some(list) = toolbox::privacy::where_the_names_are(
+/// Proves the push before making it: the destination, the outgoing commit
+/// range and the tracked sources it is made of. **THE SUITE CANNOT ANSWER THIS
+/// AND NEVER COULD**: a release runs its tests on a `git archive` extract,
+/// which is no repository, so the judge guarding the public trunk declares
+/// «measured nothing». Asked here, of the real tree.
+fn publication_preflight(root: &Path) -> Result<toolbox::privacy::PushPlan, String> {
+    publication_preflight_with(
+        root,
         std::env::var("SAILOR_PRIVATE_NAMES").ok(),
         std::env::var("HOME").ok(),
-    ) else {
-        return Vec::new();
-    };
-    let Ok(text) = fs::read_to_string(&list) else {
-        return Vec::new();
-    };
-    toolbox::privacy::where_names_are_tracked(root, &toolbox::privacy::names_in(&text))
+    )
 }
 
-fn say_whether_pushed(root: &Path) {
-    // **A NAME CANNOT BE UNPUBLISHED**: a forced push leaves the commit
-    // reachable by its number, so this refuses before, not reports after. The
-    // names never travel — scrollback goes anywhere.
-    let leaking = what_must_not_be_published(root);
-    if !leaking.is_empty() {
-        println!(
-            "   {}",
-            catalogue::say(
-                "cli.release.not_pushed_private",
-                &[
-                    ("count", &leaking.len().to_string()),
-                    ("places", &leaking.join(", ")),
-                ],
-            )
-        );
-        return;
+fn publication_preflight_with(
+    root: &Path,
+    declared_names: Option<String>,
+    home: Option<String>,
+) -> Result<toolbox::privacy::PushPlan, String> {
+    let (names, home) =
+        toolbox::privacy::required_input(declared_names, home).map_err(preflight_message)?;
+    let plan = toolbox::privacy::push_plan(root).map_err(preflight_message)?;
+    let private_metadata =
+        toolbox::privacy::outgoing_metadata_is_private(root, &plan, &names, &home, &[])
+            .map_err(preflight_message)?;
+    let private_sources = !toolbox::privacy::where_names_are_tracked(root, &names).is_empty();
+    let reserved_artifacts =
+        toolbox::privacy::tracked_reserved_artifacts(root).map_err(preflight_message)?;
+    if private_metadata || private_sources || !reserved_artifacts.is_empty() {
+        return Err(catalogue::say(
+            "cli.release.publication_preflight_refused",
+            &[],
+        ));
     }
-    match push_the_trunk(root) {
-        Ok(line) => println!("   {}", catalogue::say("cli.release.pushed", &[("line", &line)])),
-        Err(line) => println!("   {}", catalogue::say("cli.release.not_pushed", &[("line", &line)])),
+    Ok(plan)
+}
+
+fn preflight_message(why: toolbox::privacy::PublicationPreflight) -> String {
+    match why {
+        toolbox::privacy::PublicationPreflight::CannotProve => {
+            catalogue::say("cli.release.publication_preflight_failed", &[])
+        }
+        toolbox::privacy::PublicationPreflight::PrivateMaterial => {
+            catalogue::say("cli.release.publication_preflight_refused", &[])
+        }
     }
+}
+
+fn say_whether_pushed(root: &Path, plan: &toolbox::privacy::PushPlan) {
+    println!("   {}", push_report(&push_the_trunk(root, plan)));
+}
+
+fn push_report(attempt: &PushAttempt) -> String {
+    let _raw_git_output = (&attempt.stdout, &attempt.stderr);
+    catalogue::say(
+        if attempt.succeeded {
+            "cli.release.pushed"
+        } else {
+            "cli.release.not_pushed"
+        },
+        &[],
+    )
 }
 
 fn write_stamp(path: &Path, revision: &str, head_short: &str) {
@@ -1529,22 +1582,225 @@ mod tests {
         assert!(!other, "a tree with one more byte");
     }
 
-    /// A refused push is reported in git's own last line, not swallowed and not
-    /// fatal: the binary is already in service by then.
     #[test]
-    fn a_push_the_remote_refuses_is_said_in_gits_words() {
+    fn a_refused_push_does_not_report_gits_words() {
         let scratch = std::env::temp_dir().join(format!("sailor-no-remote-{}", std::process::id()));
         fs::create_dir_all(&scratch).expect("scratch");
+        let remote = scratch.join("remote.git");
         let git = |args: &[&str]| {
-            Command::new("git").arg("-C").arg(&scratch).args(args).output().expect("git")
+            Command::new("git")
+                .arg("-C")
+                .arg(&scratch)
+                .args(args)
+                .output()
+                .expect("git")
         };
         git(&["init", "--quiet"]);
+        git(&["config", "user.email", "test@example.invalid"]);
+        git(&["config", "user.name", "test"]);
+        fs::write(scratch.join("tracked.txt"), "first\n").expect("tracked file");
+        git(&["add", "tracked.txt"]);
+        git(&["commit", "--quiet", "-m", "first"]);
+        assert!(
+            Command::new("git")
+                .args(["init", "--bare", "--quiet"])
+                .arg(&remote)
+                .status()
+                .expect("git")
+                .success(),
+            "the remote is created"
+        );
+        git(&[
+            "remote",
+            "add",
+            "origin",
+            remote.to_str().expect("utf-8 path"),
+        ]);
+        git(&["push", "--quiet", "-u", "origin", "HEAD"]);
+        let plan = toolbox::privacy::push_plan(&scratch).expect("the destination is proven");
+        fs::remove_dir_all(&remote).expect("the remote disappears after the preflight");
 
-        let said = push_the_trunk(&scratch);
+        let pushed = push_the_trunk(&scratch, &plan);
         let _ = fs::remove_dir_all(&scratch);
 
-        let refused = said.expect_err("no remote to push to");
-        assert!(!refused.is_empty(), "git's line, not an empty one");
+        assert!(
+            !pushed.succeeded,
+            "a missing remote did not refuse the push"
+        );
+    }
+
+    fn repository_ready_to_publish(label: &str) -> (PathBuf, PathBuf, PathBuf) {
+        let scratch = std::env::temp_dir().join(format!(
+            "sailor-release-preflight-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|since| since.as_nanos())
+                .unwrap_or_default()
+        ));
+        let repository = scratch.join("repository");
+        let remote = scratch.join("remote.git");
+        fs::create_dir_all(&repository).expect("scratch repository");
+        let git = |args: &[&str]| {
+            let output = Command::new("git")
+                .arg("-C")
+                .arg(&repository)
+                .args(args)
+                .output()
+                .expect("git runs");
+            assert!(output.status.success(), "git {args:?}");
+        };
+        git(&["init", "--quiet"]);
+        git(&["config", "user.email", "test@example.invalid"]);
+        git(&["config", "user.name", "test"]);
+        fs::write(repository.join("tracked.txt"), "first\n").expect("first file");
+        git(&["add", "tracked.txt"]);
+        git(&["commit", "--quiet", "-m", "first"]);
+        assert!(
+            Command::new("git")
+                .args(["init", "--bare", "--quiet"])
+                .arg(&remote)
+                .status()
+                .expect("git runs")
+                .success(),
+            "the local remote is created"
+        );
+        git(&[
+            "remote",
+            "add",
+            "origin",
+            remote.to_str().expect("utf-8 path"),
+        ]);
+        git(&["push", "--quiet", "-u", "origin", "HEAD"]);
+        let private_names = scratch.join("private-names");
+        fs::write(&private_names, "").expect("privacy input");
+        (scratch, repository, private_names)
+    }
+
+    #[test]
+    fn a_tracked_reserved_artifact_is_refused_before_a_push() {
+        let (scratch, repository, private_names) = repository_ready_to_publish("reserved");
+        fs::write(repository.join("credentials.json"), "harmless\n").expect("reserved artifact");
+        let git = |args: &[&str]| {
+            let output = Command::new("git")
+                .arg("-C")
+                .arg(&repository)
+                .args(args)
+                .output()
+                .expect("git runs");
+            assert!(output.status.success(), "git {args:?}");
+            String::from_utf8_lossy(&output.stdout).trim().to_owned()
+        };
+        let remote_head = git(&["rev-parse", "@{u}"]);
+        git(&["add", "credentials.json"]);
+        git(&["commit", "--quiet", "-m", "harmless artifact"]);
+
+        let refused = publication_preflight_with(
+            &repository,
+            Some(private_names.display().to_string()),
+            Some("/home/tester".to_owned()),
+        );
+        let remote_after = git(&["rev-parse", "@{u}"]);
+        let _ = fs::remove_dir_all(&scratch);
+
+        assert!(
+            refused.is_err(),
+            "the reserved artifact was allowed to publish"
+        );
+        assert_eq!(
+            remote_after, remote_head,
+            "the refusal pushed before it answered"
+        );
+    }
+
+    #[test]
+    fn a_clean_repository_passes_the_publication_preflight() {
+        let (scratch, repository, private_names) = repository_ready_to_publish("clean");
+        fs::write(repository.join("tracked.txt"), "second\n").expect("ordinary change");
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(&repository)
+            .args(["add", "tracked.txt"])
+            .output()
+            .expect("git runs");
+        assert!(output.status.success(), "the ordinary change is staged");
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(&repository)
+            .args(["commit", "--quiet", "-m", "ordinary change"])
+            .output()
+            .expect("git runs");
+        assert!(output.status.success(), "the ordinary change is committed");
+
+        let preflight = publication_preflight_with(
+            &repository,
+            Some(private_names.display().to_string()),
+            Some("/home/tester".to_owned()),
+        );
+        let _ = fs::remove_dir_all(&scratch);
+
+        assert!(preflight.is_ok(), "a clean repository was refused");
+    }
+
+    const RAW_GIT_SENTINEL: &str =
+        concat!("GIT", "-", "SENTINEL", "-", "mylberry", "-", "DO", "-", "NOT", "-", "DISPLAY");
+
+    #[test]
+    fn a_raw_git_line_cannot_reach_the_release_report() {
+        let sentinel = RAW_GIT_SENTINEL;
+        let reported = push_report(&PushAttempt {
+            succeeded: false,
+            stdout: sentinel.as_bytes().to_vec(),
+            stderr: sentinel.as_bytes().to_vec(),
+        });
+
+        assert!(
+            !reported.contains(sentinel),
+            "the release report carried raw git output: {reported}"
+        );
+    }
+
+    fn fake_git_output(succeeds: bool) -> Output {
+        fake_git_command(succeeds)
+            .output()
+            .expect("the fake local Git runs")
+    }
+
+    fn fake_git_command(succeeds: bool) -> Command {
+        let ending = if succeeds { "" } else { "; exit 1" };
+        let script = format!("printf {RAW_GIT_SENTINEL}; printf {RAW_GIT_SENTINEL} >&2{ending}");
+        let mut command = Command::new("sh");
+        command.args(["-c", &script]);
+        command
+    }
+
+    #[test]
+    fn raw_git_output_never_reaches_a_release_error_or_history_report() {
+        let sentinel = RAW_GIT_SENTINEL;
+        let failed_git = fake_git_command(false);
+        let git_error = git_output_from(failed_git).expect_err("the fake Git fails");
+        let mut failed_checkout = fake_git_command(false);
+        let checkout_error = git_success(
+            &mut failed_checkout,
+            &catalogue::say("cli.release.checkout_failed", &[]),
+        )
+        .expect_err("the fake checkout fails");
+        let clone_error =
+            local_clone_failure_report(&fake_git_output(false), &fake_git_output(false));
+        let history = release_history_report(
+            &fake_git_output(true),
+            "2",
+            "1234567890abcdef",
+            "fedcba9",
+            &["crates/sailor"],
+        );
+
+        for report in [git_error, checkout_error, clone_error, history] {
+            assert!(
+                !report.contains(sentinel),
+                "a user-facing release report carried raw Git output: {report}"
+            );
+        }
     }
 
     /// The modules left by the last release are cleared before the tree's are
