@@ -301,6 +301,7 @@
         "when": null,
         "action": "shell_check",
         "max_attempts": 1,
+        "required": true,
         "input_schema": {
           "type": "object",
           "properties": {},
