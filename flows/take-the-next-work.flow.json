@@ -108,7 +108,7 @@
           "role": "CHEAP_WORKER",
           "tree": "own",
           "stdin": { "$from": "/select/records/0/value/title" },
-          "timeout_secs": 30
+          "timeout_secs": 600
         },
         "input_schema": { "type": "any" },
         "output_schema": { "type": "any" }
