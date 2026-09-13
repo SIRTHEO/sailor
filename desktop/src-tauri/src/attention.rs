@@ -2,7 +2,7 @@
 //!
 //! One single query answering: does anything want me, and where?
 //! Combines handed steps, capped runs, unreachable engine quotas, and dead terminals.
-//! Ranks: handed (0), cap_reached (1), engine_unreachable (2), terminal_dead (3).
+//! Ranks: unreadable (0), handed (1), cap_reached (2), engine_unreachable (3), terminal_dead (4).
 //! Links to a terminal if exactly one matches the run's worktree; otherwise links to the run.
 
 use ledger::Ledger;
@@ -57,11 +57,12 @@ pub(crate) fn link_for_run(
 
 fn kind_rank(kind: &str) -> u8 {
     match kind {
-        "handed" => 0,
-        "cap_reached" => 1,
-        "engine_unreachable" => 2,
-        "terminal_dead" => 3,
-        _ => 4,
+        "unreadable" => 0,
+        "handed" => 1,
+        "cap_reached" => 2,
+        "engine_unreachable" => 3,
+        "terminal_dead" => 4,
+        _ => 5,
     }
 }
 
@@ -79,6 +80,117 @@ pub(crate) fn rank_attention_rows(rows: &mut [AttentionRow]) {
             (None, None) => std::cmp::Ordering::Equal,
         }
     });
+}
+
+/// A missing directory is named as such, never conflated with `Ledger::open`'s
+/// own error for one that exists but will not open.
+fn open_ledger_for_attention(dir: &std::path::Path) -> Result<Ledger, String> {
+    if !dir.exists() {
+        return Err(catalogue::say("window.attention.unreadable_missing", &[]));
+    }
+    Ledger::open(dir).map_err(|error| error.to_string())
+}
+
+/// One row saying the store could not be read, in place of everything a
+/// readable one would have answered — never silence, and never invented.
+fn unreadable_row(dir: &std::path::Path, why: &str) -> AttentionRow {
+    AttentionRow {
+        kind: "unreadable".to_owned(),
+        run_id: None,
+        step_id: None,
+        tty: None,
+        status_word: catalogue::say("window.attention.unreadable_status", &[]),
+        reason: catalogue::say(
+            "window.attention.unreadable_reason",
+            &[("path", &dir.display().to_string()), ("why", why)],
+        ),
+        since: None,
+        link: None,
+    }
+}
+
+/// A store that will not open answers with exactly one row of its own,
+/// nothing invented beside it.
+fn ledger_rows(dir: &std::path::Path, open_terminals: &[(String, String)]) -> Vec<AttentionRow> {
+    let ledger = match open_ledger_for_attention(dir) {
+        Ok(ledger) => ledger,
+        Err(why) => return vec![unreadable_row(dir, &why)],
+    };
+
+    let mut rows = Vec::new();
+
+    if let Ok(waiting_runs) = ledger.waiting_runs() {
+        for waiting_run in waiting_runs {
+            let worktree = ledger
+                .run_header(&waiting_run.run_id)
+                .ok()
+                .flatten()
+                .and_then(|h| h.worktree);
+            if let Ok(steps) = ledger.steps(&waiting_run.run_id) {
+                let handed_steps = crate::handoff::handed_of(&steps);
+                for handed in handed_steps {
+                    let reason = if !handed.mandate.trim().is_empty() {
+                        handed.mandate.trim().lines().next().unwrap_or("").to_owned()
+                    } else {
+                        "reason unknown".to_owned()
+                    };
+                    let reason = if reason.is_empty() {
+                        "reason unknown".to_owned()
+                    } else {
+                        reason
+                    };
+                    let link = link_for_run(&waiting_run.run_id, worktree.as_deref(), open_terminals);
+                    rows.push(AttentionRow {
+                        kind: "handed".to_owned(),
+                        run_id: Some(waiting_run.run_id.clone()),
+                        step_id: Some(handed.step_id),
+                        tty: None,
+                        status_word: "waiting on you".to_owned(),
+                        reason,
+                        since: Some(handed.since),
+                        link: Some(link),
+                    });
+                }
+            }
+        }
+    }
+
+    if let Ok(answer) = ledger.browse(
+        "SELECT run_id, entity, started_at, ended_at, worktree, stop_reason, error FROM runs WHERE status = 'cap_reached' ORDER BY COALESCE(ended_at, started_at) DESC",
+        50,
+    ) {
+        for cells in answer.rows {
+            if let Some(run_id) = cells.first().and_then(|v| v.as_str()) {
+                let started_at = cells.get(2).and_then(|v| v.as_i64()).unwrap_or(0);
+                let ended_at = cells.get(3).and_then(|v| v.as_i64());
+                let worktree = cells.get(4).and_then(|v| v.as_str());
+                let stop_reason = cells.get(5).and_then(|v| v.as_str());
+                let error = cells.get(6).and_then(|v| v.as_str());
+
+                let reason = stop_reason
+                    .filter(|s| !s.trim().is_empty())
+                    .or_else(|| error.filter(|e| !e.trim().is_empty()))
+                    .unwrap_or("reason unknown")
+                    .to_owned();
+
+                let since = ended_at.or(Some(started_at));
+                let link = link_for_run(run_id, worktree, open_terminals);
+
+                rows.push(AttentionRow {
+                    kind: "cap_reached".to_owned(),
+                    run_id: Some(run_id.to_owned()),
+                    step_id: None,
+                    tty: None,
+                    status_word: "at its cap".to_owned(),
+                    reason,
+                    since,
+                    link: Some(link),
+                });
+            }
+        }
+    }
+
+    rows
 }
 
 pub(crate) fn collect_attention_queue() -> Result<Vec<AttentionRow>, String> {
@@ -118,81 +230,7 @@ pub(crate) fn collect_attention_queue() -> Result<Vec<AttentionRow>, String> {
         }
     }
 
-    let ledger_dir = default_ledger_dir();
-    if ledger_dir.exists() {
-        if let Ok(ledger) = Ledger::open(&ledger_dir) {
-            if let Ok(waiting_runs) = ledger.waiting_runs() {
-                for waiting_run in waiting_runs {
-                    let worktree = ledger
-                        .run_header(&waiting_run.run_id)
-                        .ok()
-                        .flatten()
-                        .and_then(|h| h.worktree);
-                    if let Ok(steps) = ledger.steps(&waiting_run.run_id) {
-                        let handed_steps = crate::handoff::handed_of(&steps);
-                        for handed in handed_steps {
-                            let reason = if !handed.mandate.trim().is_empty() {
-                                handed.mandate.trim().lines().next().unwrap_or("").to_owned()
-                            } else {
-                                "reason unknown".to_owned()
-                            };
-                            let reason = if reason.is_empty() {
-                                "reason unknown".to_owned()
-                            } else {
-                                reason
-                            };
-                            let link = link_for_run(&waiting_run.run_id, worktree.as_deref(), &open_terminals);
-                            rows.push(AttentionRow {
-                                kind: "handed".to_owned(),
-                                run_id: Some(waiting_run.run_id.clone()),
-                                step_id: Some(handed.step_id),
-                                tty: None,
-                                status_word: "waiting on you".to_owned(),
-                                reason,
-                                since: Some(handed.since),
-                                link: Some(link),
-                            });
-                        }
-                    }
-                }
-            }
-
-            if let Ok(answer) = ledger.browse(
-                "SELECT run_id, entity, started_at, ended_at, worktree, stop_reason, error FROM runs WHERE status = 'cap_reached' ORDER BY COALESCE(ended_at, started_at) DESC",
-                50,
-            ) {
-                for cells in answer.rows {
-                    if let Some(run_id) = cells.first().and_then(|v| v.as_str()) {
-                        let started_at = cells.get(2).and_then(|v| v.as_i64()).unwrap_or(0);
-                        let ended_at = cells.get(3).and_then(|v| v.as_i64());
-                        let worktree = cells.get(4).and_then(|v| v.as_str());
-                        let stop_reason = cells.get(5).and_then(|v| v.as_str());
-                        let error = cells.get(6).and_then(|v| v.as_str());
-
-                        let reason = stop_reason
-                            .filter(|s| !s.trim().is_empty())
-                            .or_else(|| error.filter(|e| !e.trim().is_empty()))
-                            .unwrap_or("reason unknown")
-                            .to_owned();
-
-                        let since = ended_at.or(Some(started_at));
-                        let link = link_for_run(run_id, worktree, &open_terminals);
-
-                        rows.push(AttentionRow {
-                            kind: "cap_reached".to_owned(),
-                            run_id: Some(run_id.to_owned()),
-                            step_id: None,
-                            tty: None,
-                            status_word: "at its cap".to_owned(),
-                            reason,
-                            since,
-                            link: Some(link),
-                        });
-                    }
-                }
-            }
-        }
-    }
+    rows.extend(ledger_rows(&default_ledger_dir(), &open_terminals));
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -232,6 +270,25 @@ pub(crate) fn attention_queue() -> Result<Vec<AttentionRow>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Fault: a missing directory looked exactly like an empty queue with no
+    /// else arm on `ledger_dir.exists()`.
+    #[test]
+    fn a_missing_directory_answers_with_one_unreadable_row_and_invents_nothing_else() {
+        let dir = std::env::temp_dir().join(format!(
+            "sailor-attention-missing-{}-{}",
+            std::process::id(),
+            line!()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let rows = ledger_rows(&dir, &[]);
+
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert_eq!(rows[0].kind, "unreadable");
+        assert!(rows[0].reason.contains(&dir.display().to_string()), "{}", rows[0].reason);
+        assert!(!dir.exists(), "reading the queue must not create the directory it found missing");
+    }
 
     #[test]
     fn two_terminals_on_one_worktree_link_is_run() {

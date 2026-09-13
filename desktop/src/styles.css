@@ -1141,6 +1141,11 @@ button.is-primary {
   padding: 0 var(--space-1);
   cursor: pointer;
   white-space: nowrap;
+  /* Bounded on purpose: an unbounded cell let a long flow name push past its
+     own slot and paint over the account chips beside it instead of yielding
+     to them. The name is the one field of unpredictable length; it is the
+     one asked to give way. */
+  max-width: 220px;
 }
 
 .strip__run_state {
@@ -1166,6 +1171,10 @@ button.is-primary {
 
 .strip__run_entity {
   color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .strip__run_step {

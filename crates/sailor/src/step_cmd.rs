@@ -985,9 +985,29 @@ pub fn flow_of_run(ledger: &Ledger, run_id: &str) -> Result<FlowFile, String> {
         )),
         None => Err(catalogue::say(
             "cli.step.flow_no_longer_found",
-            &[("flow", &header.entity), ("run_id", run_id)],
+            &[
+                ("flow", &header.entity),
+                ("run_id", run_id),
+                ("sources", &sources_named(&sources)),
+            ],
         )),
     }
+}
+
+/// Every place `flow_of_run` just searched, named for a person to check: the
+/// shipped flows are named once, never as the sentinel path they live under.
+fn sources_named(sources: &[ui::gather::FlowSource]) -> String {
+    sources
+        .iter()
+        .map(|source| {
+            if source.is_builtin() {
+                source.origin.to_owned()
+            } else {
+                format!("{} ({})", source.origin, source.dir.display())
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 pub(crate) fn open_ledger() -> Result<Ledger, String> {

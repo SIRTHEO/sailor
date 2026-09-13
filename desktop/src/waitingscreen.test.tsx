@@ -50,6 +50,7 @@ function handedStep(stepId: string, since: number): HandedStep {
     mandate: `answer about ${stepId}\nand a second line nobody puts in a row`,
     since,
     worktree: null,
+    taken_by: null,
   };
 }
 
@@ -113,6 +114,30 @@ describe("nothing waiting, and not being able to tell", () => {
     expect(screen.getByText("and nothing happened while you were away")).toBeTruthy();
     expect(document.querySelector(".waiting__blind")).toBeNull();
     expect(document.body.textContent).not.toContain("I cannot tell you");
+  });
+
+  test("A STORE THAT COULD NOT BE READ IS A SENTENCE, NOT A COUNT", () => {
+    // Fault: one `unreadable` row read as «1 thing waits for you» — a number
+    // standing in for a store the window could not open at all.
+    render(
+      <WaitingScreen
+        native
+        now={NOW}
+        since={AWAY}
+        sources={answered({})}
+        attention={[
+          {
+            kind: "unreadable",
+            status_word: "unreadable",
+            reason: "the store at /nowhere/ledger could not be read: no such file or directory",
+            since: null,
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText(/I cannot tell you what waits: the store could not be read/)).toBeTruthy();
+    expect(document.body.textContent).not.toContain("1 thing waits for you");
+    expect(screen.getByText(/\/nowhere\/ledger could not be read/)).toBeTruthy();
   });
 
   test("A SCREEN THAT COULD NOT ASK READS NOTHING LIKE AN EMPTY ONE", () => {
