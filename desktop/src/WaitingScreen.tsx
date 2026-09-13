@@ -8,6 +8,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { AttentionQueue } from "./AttentionQueue";
 import { attentionQueue, type AttentionRow } from "./attention";
+import { t } from "./i18n";
 import {
   AWAY_HOURS,
   HOW_MANY_SOURCES,
@@ -175,11 +176,17 @@ export function WaitingScreen({
 
   const activeAttention = attention ?? ownAttention;
   const count = activeAttention !== null ? activeAttention.length : decisions.length;
+  // **A STORE THAT COULD NOT BE READ IS NOT A COUNT.** Its one row would
+  // otherwise read as «1 thing waits for you» — a number, when what happened
+  // is that nothing could be told at all.
+  const unreadable = activeAttention?.some((row) => row.kind === "unreadable") ?? false;
 
   return (
     <div className="waiting">
       <header className="waiting__head">
-        <h2 className="waiting__title">{headingOf(count, blind.length > 0)}</h2>
+        <h2 className="waiting__title">
+          {unreadable ? t("window.attention.unreadable_heading") : headingOf(count, blind.length > 0)}
+        </h2>
         <p className="waiting__sub">{subOf(reports.length, history === null)}</p>
       </header>
 

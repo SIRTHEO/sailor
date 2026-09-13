@@ -1,6 +1,6 @@
 import { invoker } from "./engine";
 
-export type AttentionKind = "handed" | "cap_reached" | "engine_unreachable" | "terminal_dead";
+export type AttentionKind = "unreadable" | "handed" | "cap_reached" | "engine_unreachable" | "terminal_dead";
 
 export type AttentionLink =
   | { kind: "tty"; tty: string }
@@ -25,16 +25,18 @@ export async function attentionQueue(): Promise<AttentionRow[]> {
 
 export function kindRank(kind: string): number {
   switch (kind) {
-    case "handed":
+    case "unreadable":
       return 0;
-    case "cap_reached":
+    case "handed":
       return 1;
-    case "engine_unreachable":
+    case "cap_reached":
       return 2;
-    case "terminal_dead":
+    case "engine_unreachable":
       return 3;
-    default:
+    case "terminal_dead":
       return 4;
+    default:
+      return 5;
   }
 }
 
