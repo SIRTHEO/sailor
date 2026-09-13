@@ -4,22 +4,27 @@
 [![licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue.svg)](LICENSE)
 [![rust 1.89+](https://img.shields.io/badge/rust-1.89%2B-orange.svg)](https://www.rust-lang.org)
 
-Sailor makes the command-line agents you already have — Claude Code, Codex,
-Gemini CLI, anything else — work together inside **flows** you can read,
-measure and stop.
+For whoever runs more than one command-line agent — Claude Code, Codex, Gemini
+CLI — and is tired of each one having its own rules, its own memory and no
+record of what it actually did. Sailor gives them **one set of rules and one
+ledger**: it decides which engine to call, under which identity, how much it
+may spend, and it **writes down what actually happened**, so a run can be
+reviewed, compared and repeated instead of recounted.
 
-It is not another agent. It is the scaffolding around the ones you use: it
-decides which engine to call, under which identity, how much it may spend, and
-it **writes down what actually happened** — so a run can be reviewed, compared
-and repeated instead of recounted.
+One concrete outcome: point Sailor at a project, run one flow, and get back a
+queue of work items drained one at a time — each one either finished with a
+recorded result or handed back to you with the reason it stopped.
 
-> **Status: under construction, and used every day by the people writing it.**
-> Interfaces change. Tests cover individual contracts; a completed flow does
-> not by itself prove that its result meets the user's acceptance criteria.
-> Known defects are
-> written down in `docs/faults-encountered.md`, open defects included. What
-> would make it *finished* is written down too, as a termination condition
-> Sailor keeps in its own store: `sailor search termination condition` finds it.
+> **Status — what you can do tonight.** Run a queue of work through one
+> engine end to end (`take-the-next-work`), and watch a desktop window that
+> shows what is waiting and lets you close a step that was handed to a
+> person. **Not there yet:** filesystem and network restrictions on a handed
+> step are not enforced by Sailor itself, and a completed flow does not by
+> itself prove its result met your acceptance criteria — see
+> [`docs/completion-and-required-steps.md`](docs/completion-and-required-steps.md)
+> for what "completed" does and does not mean. Known defects are written down
+> in [`docs/faults-encountered.md`](docs/faults-encountered.md), open ones
+> included.
 
 ## Five minutes
 
@@ -42,26 +47,6 @@ returns. Missing measurements remain unknown. A spending threshold is a
 guaranteed ceiling only when the engine can enforce the bound on each call.
 The local rewrite flow needs a configured local runner and hands back a
 proposal for verification; it does not apply the proposal automatically.
-
-## What completion means
-
-A completed flow has finished according to its graph. That may mean it read
-the machine, produced a proposal, or accepted an engine's structured answer.
-It does not establish that a code change works. A task needs an executable
-acceptance check of its actual result whose failure blocks completion.
-A step may declare `required` instead: the run reaches `Complete` only if that
-step ran and its check passed, and every other outcome — broken, skipped,
-tolerated, or never reached — ends the run naming the step and why. Unlike
-`decides_done`, which permits an early success, `required` withholds an
-ordinary one. `dispatch-the-work`'s `verdict` declares it; `take-the-next-fault`'s
-`warrant` cannot — it has a genuine no-op path, when nothing is open, that a
-required step would read as never having run.
-
-Project rules can be delivered to an agent, but delivery does not enforce
-filesystem or network restrictions. Process-boundary enforcement remains
-unfinished. A handed step also uses a declared holder name, not an
-authenticated identity. These limits matter before entrusting a flow with
-unattended work.
 
 ## What it does, concretely
 
