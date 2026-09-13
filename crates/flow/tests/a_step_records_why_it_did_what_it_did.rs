@@ -44,6 +44,7 @@ fn bare() -> Step {
         phase: None,
         stops_when: None,
         decides_done: false,
+        required: false,
     }
 }
 

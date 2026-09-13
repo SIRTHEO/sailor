@@ -220,6 +220,7 @@ fn calling_step(id: &str, calls: &str, inputs: Value) -> Step {
         phase: None,
         stops_when: None,
         decides_done: false,
+        required: false,
     }
 }
 

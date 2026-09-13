@@ -47,6 +47,7 @@ fn step(id: &str, deps: &[&str]) -> Step {
         phase: None,
         stops_when: None,
         decides_done: false,
+        required: false,
     }
 }
 

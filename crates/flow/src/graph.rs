@@ -55,6 +55,14 @@ pub struct Step {
     /// decides**; what a pass is stays beside the action writing the verdict.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub decides_done: bool,
+    /// The run is done only if this step ran and its verdict passed.
+    ///
+    /// The other side of `decides_done`, which *permits* an early success where
+    /// this one *withholds* an ordinary one, and read the same way: `/status`
+    /// equal to `passed` and nothing else. A step that broke, was skipped, never
+    /// ran, or forgave its own failure leaves the run short of complete.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub required: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -610,6 +618,7 @@ mod tests {
             phase: None,
         stops_when: None,
         decides_done: false,
+        required: false,
         }
     }
 

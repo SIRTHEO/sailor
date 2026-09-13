@@ -128,6 +128,7 @@ fn step(id: &str, action: &str, deps: Vec<String>) -> Step {
         phase: None,
         stops_when: None,
         decides_done: false,
+        required: false,
         with: None,
     }
 }
