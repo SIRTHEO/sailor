@@ -597,19 +597,19 @@ mod tests {
         let cli = find_cli("claude").expect("claude is in the table");
         let probe = actions::RealDryProbe;
 
-        let named_after_matteo19 = dir.join("matteo19@example.com");
-        std::fs::create_dir_all(&named_after_matteo19).expect("the profile's home");
+        let named_after_someone = dir.join("someone@example.com");
+        std::fs::create_dir_all(&named_after_someone).expect("the profile's home");
         std::fs::write(
-            named_after_matteo19.join(".claude.json"),
-            r#"{"oauthAccount":{"emailAddress":"tools@example.com"}}"#,
+            named_after_someone.join(".claude.json"),
+            r#"{"oauthAccount":{"emailAddress":"somebody-else@example.com"}}"#,
         )
         .expect("the identity file");
 
         let (access, said) =
-            access_of(&tools, &probe, cli, &named_after_matteo19, "matteo19@example.com");
+            access_of(&tools, &probe, cli, &named_after_someone, "someone@example.com");
         assert_eq!(access, Access::Mismatched, "{said}");
-        assert!(said.contains("tools@example.com"), "{said}");
-        assert!(said.contains("matteo19@example.com"), "{said}");
+        assert!(said.contains("somebody-else@example.com"), "{said}");
+        assert!(said.contains("someone@example.com"), "{said}");
     }
 
     /// The same engine, the same «logged in», and a home whose file names the
@@ -620,15 +620,15 @@ mod tests {
         let cli = find_cli("claude").expect("claude is in the table");
         let probe = actions::RealDryProbe;
 
-        let home = dir.join("matteo19@example.com");
+        let home = dir.join("someone@example.com");
         std::fs::create_dir_all(&home).expect("the profile's home");
         std::fs::write(
             home.join(".claude.json"),
-            r#"{"oauthAccount":{"emailAddress":"matteo19@example.com"}}"#,
+            r#"{"oauthAccount":{"emailAddress":"someone@example.com"}}"#,
         )
         .expect("the identity file");
 
-        let (access, _said) = access_of(&tools, &probe, cli, &home, "matteo19@example.com");
+        let (access, _said) = access_of(&tools, &probe, cli, &home, "someone@example.com");
         assert_eq!(access, Access::Yes);
     }
 

@@ -856,10 +856,10 @@ mod tests {
         let cli = find_cli("claude").unwrap();
         let identity = identity_of_home(
             cli,
-            Path::new("/homes/claude/matteo19"),
-            &a_home_naming("tools@example.com"),
+            Path::new("/homes/claude/someone"),
+            &a_home_naming("somebody-else@example.com"),
         );
-        assert_eq!(identity, HomeIdentity::Answers("tools@example.com".to_owned()));
+        assert_eq!(identity, HomeIdentity::Answers("somebody-else@example.com".to_owned()));
     }
 
     #[test]

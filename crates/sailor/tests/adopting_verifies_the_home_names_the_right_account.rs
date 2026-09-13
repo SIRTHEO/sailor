@@ -25,18 +25,18 @@ fn a_home_naming_another_account_is_refused_and_a_matching_one_is_adopted() {
     std::fs::create_dir_all(&mismatched).expect("the home");
     std::fs::write(
         mismatched.join(".claude.json"),
-        r#"{"oauthAccount":{"emailAddress":"tools@example.com"}}"#,
+        r#"{"oauthAccount":{"emailAddress":"somebody-else@example.com"}}"#,
     )
     .expect("the identity file");
 
     let refused = sailor::profiles_cmd::adopt(
         "claude",
-        &"matteo19@example.com".to_owned(),
+        &"someone@example.com".to_owned(),
         Some(&mismatched),
     )
     .expect_err("a home naming another account is not adopted under this name");
-    assert!(refused.contains("tools@example.com"), "{refused}");
-    assert!(refused.contains("matteo19@example.com"), "{refused}");
+    assert!(refused.contains("somebody-else@example.com"), "{refused}");
+    assert!(refused.contains("someone@example.com"), "{refused}");
 
     let after_refusal = profiles::store_io::load_store_from(&store).expect("the store");
     assert!(
@@ -48,11 +48,11 @@ fn a_home_naming_another_account_is_refused_and_a_matching_one_is_adopted() {
     std::fs::create_dir_all(&matching).expect("the home");
     std::fs::write(
         matching.join(".claude.json"),
-        r#"{"oauthAccount":{"emailAddress":"matteo19@example.com"}}"#,
+        r#"{"oauthAccount":{"emailAddress":"someone@example.com"}}"#,
     )
     .expect("the identity file");
 
-    sailor::profiles_cmd::adopt("claude", &"matteo19@example.com".to_owned(), Some(&matching))
+    sailor::profiles_cmd::adopt("claude", &"someone@example.com".to_owned(), Some(&matching))
         .expect("a home naming the very account it is adopted under goes through");
     let after_adoption = profiles::store_io::load_store_from(&store).expect("the store");
     assert_eq!(after_adoption.profiles.len(), 1, "the matching home was not adopted");

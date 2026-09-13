@@ -415,28 +415,28 @@ mod tests {
                 .map(|since| since.as_nanos())
                 .unwrap_or(0)
         ));
-        let home = dir.join("matteo19@example.com");
+        let home = dir.join("someone@example.com");
         std::fs::create_dir_all(&home).unwrap();
         std::fs::write(
             home.join(".claude.json"),
-            r#"{"oauthAccount":{"emailAddress":"tools@example.com"}}"#,
+            r#"{"oauthAccount":{"emailAddress":"somebody-else@example.com"}}"#,
         )
         .unwrap();
 
         let mut store = ProfileStore::default();
         store.profiles.push(Profile {
-            name: "matteo19@example.com".to_owned(),
+            name: "someone@example.com".to_owned(),
             cli_id: "claude".to_owned(),
             home_dir: home,
             endpoint: None,
         });
         store
             .active
-            .insert("claude".to_owned(), "matteo19@example.com".to_owned());
+            .insert("claude".to_owned(), "someone@example.com".to_owned());
 
         let error = resolve("claude", &store, &[], Path::new("/casa")).unwrap_err();
-        assert!(error.contains("tools@example.com"), "{error}");
-        assert!(error.contains("matteo19@example.com"), "{error}");
+        assert!(error.contains("somebody-else@example.com"), "{error}");
+        assert!(error.contains("someone@example.com"), "{error}");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -453,24 +453,24 @@ mod tests {
                 .map(|since| since.as_nanos())
                 .unwrap_or(0)
         ));
-        let home = dir.join("matteo19@example.com");
+        let home = dir.join("someone@example.com");
         std::fs::create_dir_all(&home).unwrap();
         std::fs::write(
             home.join(".claude.json"),
-            r#"{"oauthAccount":{"emailAddress":"matteo19@example.com"}}"#,
+            r#"{"oauthAccount":{"emailAddress":"someone@example.com"}}"#,
         )
         .unwrap();
 
         let mut store = ProfileStore::default();
         store.profiles.push(Profile {
-            name: "matteo19@example.com".to_owned(),
+            name: "someone@example.com".to_owned(),
             cli_id: "claude".to_owned(),
             home_dir: home,
             endpoint: None,
         });
         store
             .active
-            .insert("claude".to_owned(), "matteo19@example.com".to_owned());
+            .insert("claude".to_owned(), "someone@example.com".to_owned());
 
         assert!(resolve("claude", &store, &[], Path::new("/casa")).is_ok());
 
