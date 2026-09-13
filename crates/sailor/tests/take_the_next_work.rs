@@ -41,6 +41,35 @@ impl ToolResolver for FakeCheapWorker {
     }
 }
 
+/// A worker that touches nothing: the tree `execute` cut comes back exactly as
+/// clean as it was cut, which is the case fault 182 broke.
+struct SilentCheapWorker;
+
+impl ToolResolver for SilentCheapWorker {
+    fn resolve(&self, _id: &str) -> Result<String, String> {
+        Ok("sh".to_owned())
+    }
+
+    fn ask_recipe(&self, _id: &str) -> Option<AskRecipe> {
+        Some(AskRecipe {
+            args: vec![
+                "-c".to_owned(),
+                "cat >/dev/null; printf 'did nothing'".to_owned(),
+                "worker".to_owned(),
+            ],
+            prompt: PromptVia::Stdin,
+            args_before_prompt: Vec::new(),
+            unusable_when: Vec::new(),
+            exhausted_when: Vec::new(),
+            cooldown_secs: None,
+            waits_for_a_person_when: Vec::new(),
+            silent_without_prompt: false,
+            refuses_without_prompt: Vec::new(),
+            usage: None,
+        })
+    }
+}
+
 fn flow_path() -> PathBuf {
     Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../flows/take-the-next-work.flow.json"))
         .to_path_buf()
@@ -77,7 +106,7 @@ fn make_fixtures() -> PathBuf {
     let fixtures = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/fixtures")).to_path_buf();
     // A just-`chmod +x`-ed script pays a one-time first-exec cost here; paying
     // it now keeps the flow's own acceptance timeout a measure of the check.
-    for project in ["alpha", "beta"] {
+    for project in ["alpha", "beta", "gamma"] {
         let _ = std::process::Command::new("sh")
             .arg("-c")
             .arg("./check.sh")
@@ -337,4 +366,95 @@ fn two_runners_racing_the_same_store_take_each_task_at_most_once() {
         assert_eq!(row[role_at], json!("CHEAP_WORKER"), "{row:?}");
         assert_ne!(row[resolved_at], Value::Null, "the tool the role resolved to is named: {row:?}");
     }
+}
+
+/// Fault 182: `execute` used to close its own tree the moment it returned,
+/// success included. A worker that leaves no artefact behind left the tree
+/// clean, so that close **succeeded** right there — and `acceptance`, reading
+/// the same tree afterwards, found no workdir left to run `./check.sh` in.
+/// The task's own check never ran; it was recorded as failing anyway.
+#[test]
+fn a_worker_that_leaves_the_tree_clean_still_gets_it_read_by_acceptance() {
+    let _fixtures_lock = FIXTURES_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let fixtures = make_fixtures();
+    let ledger = fresh_ledger("clean-tree");
+    ledger
+        .put_record(&StoreRecord {
+            collection: "roles".to_owned(),
+            key: "CHEAP_WORKER".to_owned(),
+            value: json!({"tools": ["claude-code"]}),
+            written_by: "test".to_owned(),
+            written_at: 0,
+        })
+        .expect("the role is written");
+    ledger
+        .put_record(&StoreRecord {
+            collection: "work-queue".to_owned(),
+            key: "gamma-top".to_owned(),
+            value: json!({
+                "project": "gamma",
+                "title": "the gamma task",
+                "priority": 100,
+                "state": "queued",
+                "attempts": 0,
+                "acceptance": "./check.sh",
+                "workspace": fixtures.join("gamma").to_string_lossy(),
+            }),
+            written_by: "test".to_owned(),
+            written_at: 0,
+        })
+        .expect("a queue record is written");
+
+    let mut registry = ActionRegistry::default();
+    actions::register_default(&mut registry);
+    trigger::register_default(&mut registry);
+    registry.register(
+        actions::EXTERNAL_ENGINE_ACTION,
+        actions::ExternalEngineAction::resolving_with(SilentCheapWorker)
+            .recording_to(Some(ledger.clone())),
+    );
+    actions::store::register_store(&mut registry, Some(ledger.clone()));
+    registry.register(
+        actions::handoff::HANDED_TO_AGENT_ACTION,
+        actions::handoff::HandoffAction::new(),
+    );
+
+    let graph = full_graph();
+    let store = InMemoryRecordStore::default();
+    let mut shared = SharedState::new();
+    shared.insert(
+        flow::WORKSPACE_ROOT.to_owned(),
+        json!(fixtures.join("gamma").to_string_lossy()),
+    );
+    let request = ExecutionRequest {
+        holder: None,
+        run_id: "clean-tree-1".to_owned(),
+        root_inputs: [("trigger".to_owned(), trigger_input("gamma"))]
+            .into_iter()
+            .collect(),
+        gates: Vec::new(),
+        shared,
+        spend_cap_micros: None,
+        stops: RunStops::default(),
+    };
+    let execution = InProcessExecutor
+        .execute(&graph, request, &store, &registry, &SystemClock)
+        .expect("the run executes without breaking the engine itself");
+
+    assert!(
+        matches!(execution.decisions.last(), Some(Decision::Complete)),
+        "{:?}",
+        execution.decisions
+    );
+
+    let gamma = ledger
+        .read_record("work-queue", "gamma-top")
+        .expect("work-queue reads")
+        .expect("gamma-top is still there");
+    assert_eq!(
+        gamma.value["state"], "done",
+        "the check ran in a tree that was still there, not one closed out from \
+         under it: {:?}",
+        gamma.value
+    );
 }
