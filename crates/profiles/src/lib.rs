@@ -512,8 +512,6 @@ pub fn profile_home_path(
     Ok(profiles_root.join(cli_id).join(profile_name))
 }
 
-// see fault 181: without USER, macOS keychain access denies claude's own
-// login probe even though the same home answers logged in under a shell.
 pub const AMBIENT_LAUNCH_ESSENTIALS: &[&str] = &["PATH", "HOME", "USER"];
 
 /// The environment to overlay to launch `cli` with its home at `profile_home`.
