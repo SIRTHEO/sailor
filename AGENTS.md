@@ -337,6 +337,15 @@ an evening, not of a job.
   for a day because the active access was not the owner, and every release said
   so honestly while nothing moved.
 
+**A work branch does not move backwards by accident.** The shared Git hook
+refuses rewrites of protected work branches unless `SAILOR_ALLOW_REWRITE=1` is
+declared for the one command that needs it. Its tracked source is
+`scripts/hooks/reference-transaction`; install it in a fresh clone with
+`cp scripts/hooks/reference-transaction "$(git rev-parse --git-path hooks/reference-transaction)"`.
+Every commit round ends with `scripts/push-work-branches.sh`, which pins each
+delivered tip and pushes only a privacy-proven branch. `scripts/holdings-check.sh`
+names a branch that has moved behind its newest pin.
+
 **The shape of the name has a judge, and the judge is pure.** There are three
 shapes and nothing else: `main`, the trunk; `work/<what-it-does>` with
 lowercase, digits and hyphens in the topic; `worktree-agent-<id>`, which is
