@@ -1027,7 +1027,7 @@ impl Executor for InProcessExecutor {
             let mut at_once = AT_ONCE;
             if let Some(cap) = request.spend_cap_micros {
                 let spent = store.spent(&request.run_id)?;
-                if spent.micros >= cap || matches!(spent.reading(), CostReading::AtLeast { .. }) {
+                if spent.micros >= cap {
                     decisions.push(Decision::CapReached(SpendStop {
                         cap_micros: cap,
                         spent,

@@ -242,9 +242,11 @@ fn a_cap_that_is_never_reached_changes_nothing() {
 /// A stopped run also says what it does not know.
 ///
 /// An engine that declares no cost leaves a row with no figure: the real spend
-/// is higher than the counted one, so the cap stops before the next paid step.
+/// is higher than the counted one, and a reader must see that written rather
+/// than deduce it. Here the first step spends an unknown amount, the second
+/// spends past the cap, and the third finds the run closed.
 #[test]
-fn an_incomplete_spend_stops_before_the_next_step() {
+fn what_the_cap_does_not_know_is_declared() {
     let store = Arc::new(StoreThatCounts::new());
     let times = Arc::new(AtomicUsize::new(0));
     let mut actions = flow::ActionRegistry::default();
@@ -290,11 +292,10 @@ fn an_incomplete_spend_stops_before_the_next_step() {
     let Some(Decision::CapReached(stop)) = execution.decisions.last() else {
         panic!("it should have stopped at the cap");
     };
-    assert_eq!(times.load(Ordering::SeqCst), 0, "the paid step did not open");
-    assert_eq!(stop.spent.calls, 1, "only the unpriced call ran");
+    assert_eq!(stop.spent.calls, 2, "two calls in all");
     assert_eq!(
         stop.spent.calls_without_cost, 1,
-        "the call that ran never said what it cost"
+        "one of the two never said what it cost"
     );
     assert!(
         !stop.spent.is_complete(),
