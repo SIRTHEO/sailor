@@ -549,6 +549,17 @@ mod tests {
         };
         publish_with_privacy(&dir, None, Some(privacy)).expect("a clean directory publishes");
 
+        // `publish_flows` reads its own privacy input from the environment, so
+        // this brings a declared list with fictitious names rather than lean
+        // on whatever home the test happens to run in.
+        let declared = dir.with_file_name(format!(
+            "{}-declared-private-names",
+            dir.file_name().and_then(|name| name.to_str()).unwrap_or("scratch")
+        ));
+        std::fs::write(&declared, "example-private-name\n").expect("the fictitious list is written");
+        let previous_declared = std::env::var("SAILOR_PRIVATE_NAMES").ok();
+        std::env::set_var("SAILOR_PRIVATE_NAMES", &declared);
+
         let sources = [FlowSource { origin: YOUR_ORIGIN, dir: dir.clone() }];
         let said = publish_flows(&sources, None).expect("the source that is yours publishes");
         assert!(said.contains("nothing") && said.contains(&dir.display().to_string()), "{said}");
@@ -556,6 +567,11 @@ mod tests {
         let refused = publish_flows(&builtin_only, None).expect_err("built in flows are not yours");
         assert!(refused.contains("built in"), "{refused}");
 
+        match previous_declared {
+            Some(value) => std::env::set_var("SAILOR_PRIVATE_NAMES", value),
+            None => std::env::remove_var("SAILOR_PRIVATE_NAMES"),
+        }
+        let _ = std::fs::remove_file(&declared);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
