@@ -27,6 +27,8 @@ export function TerminalsSection({
   onList,
   bench,
   onBenchClosed,
+  focusDevice,
+  onFocused,
 }: {
   native: boolean;
   now: number;
@@ -44,6 +46,9 @@ export function TerminalsSection({
   /** The terminal opened to work on a handed step, when one is. */
   bench?: Bench | null;
   onBenchClosed?: (answer: string) => void;
+  /** The tty a row elsewhere asked to be brought forward, by its device name. */
+  focusDevice?: string | null;
+  onFocused?: () => void;
 }) {
   return (
     <div className="section section--sessions" hidden={!shown}>
@@ -57,6 +62,8 @@ export function TerminalsSection({
           onList={onList}
           bench={bench}
           onBenchClosed={onBenchClosed}
+          focusDevice={focusDevice}
+          onFocused={onFocused}
         />
         {shown && tab === "projects" && <Projects native={native} now={now} onMoved={onProjectChanged} />}
         {shown && tab === "worktrees" && <Worktrees native={native} />}

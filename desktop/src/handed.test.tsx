@@ -84,6 +84,50 @@ describe("a step handed to a person", () => {
     }
   });
 
+  test("closing shows busy while the engine is asked, then the closed report, and a later error clears back to idle", async () => {
+    const deferred: Array<{ resolve: (answer: string) => void; reject: (error: Error) => void }> = [];
+    const shell = pretendShell((command) => {
+      if (command === "handed_steps") return [REVIEW];
+      if (command === "close_handed_step") {
+        return new Promise<string>((resolve, reject) => {
+          deferred.push({ resolve, reject });
+        });
+      }
+      throw new Error(`no ${command}`);
+    });
+    try {
+      render(<Handed runId="relay-1" />);
+      await screen.findByText("read the diff and say whether it holds");
+
+      // Idle: the ordinary label, and the button ready to press.
+      const wentButton = screen.getByRole("button", { name: "close: it went" }) as HTMLButtonElement;
+      expect(wentButton.disabled).toBe(false);
+
+      // Closing: the label changes and every act on this row is held back,
+      // because a second click mid-flight would open a second attempt on the
+      // same step.
+      fireEvent.click(wentButton);
+      await screen.findByRole("button", { name: "closing…" });
+      expect((screen.getByRole("button", { name: "closing…" }) as HTMLButtonElement).disabled).toBe(true);
+      expect((screen.getByRole("button", { name: "take it" }) as HTMLButtonElement).disabled).toBe(true);
+
+      // Closed: the report lands, and the row goes back to idle.
+      deferred[0]?.resolve("step review closed by mira: went\nThe run is resuming.");
+      await screen.findByText(/The run is resuming/);
+      expect((screen.getByRole("button", { name: "close: it went" }) as HTMLButtonElement).disabled).toBe(false);
+
+      // A later close that fails clears busy back to idle too, with the error
+      // read as the engine said it.
+      fireEvent.click(screen.getByRole("button", { name: "close: it went" }));
+      await screen.findByRole("button", { name: "closing…" });
+      deferred[1]?.reject(new Error("mira wrote «build», the step this one judges: refused"));
+      await screen.findByText(/the step this one judges: refused/);
+      expect((screen.getByRole("button", { name: "close: it went" }) as HTMLButtonElement).disabled).toBe(false);
+    } finally {
+      shell.stop();
+    }
+  });
+
   test("a refusal is shown as the engine said it, and nothing is marked done", async () => {
     const shell = pretendShell((command) => {
       if (command === "handed_steps") return [REVIEW];

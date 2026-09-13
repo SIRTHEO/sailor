@@ -61,6 +61,33 @@ fn open_ledger() -> Result<Ledger, String> {
     Ledger::open(&dir).map_err(|error| format!("cannot open the ledger {}: {error}", dir.display()))
 }
 
+/// A run as little as the window can say about one it did not start: enough
+/// to place a handed step in the run that carries it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct RunGlimpse {
+    pub run_id: String,
+    pub flow: String,
+    pub worktree: Option<String>,
+}
+
+/// Reads a run's header straight from the ledger, for the attention queue's
+/// row: a run the shell never started has no live console to open, and this
+/// is what is left to show instead — the same facts `handed_steps` already
+/// reads, without the events only a started run keeps in memory.
+#[tauri::command]
+pub(crate) fn run_glimpse(run_id: String) -> Result<RunGlimpse, String> {
+    let ledger = open_ledger()?;
+    let header = ledger
+        .run_header(&run_id)
+        .map_err(|error| format!("cannot read run {run_id}: {error}"))?
+        .ok_or_else(|| format!("no run called {run_id}"))?;
+    Ok(RunGlimpse {
+        run_id,
+        flow: header.entity,
+        worktree: header.worktree,
+    })
+}
+
 #[tauri::command]
 pub(crate) fn handed_steps(run_id: String) -> Result<Vec<Handed>, String> {
     let ledger = open_ledger()?;

@@ -268,6 +268,24 @@ export async function closeHandedStep(
   return invoke<string>("close_handed_step", { runId, stepId, outcome, said });
 }
 
+/**
+ * A run as little as the window can say about one it did not start.
+ * Mirrors `RunGlimpse` in `desktop/src-tauri/src/handoff.rs`.
+ */
+export interface RunGlimpse {
+  run_id: string;
+  flow: string;
+  worktree: string | null;
+}
+
+/** Reads a run's header straight from the ledger: what is left to show for a
+ * run this window's shell never started, and so cannot follow live. */
+export async function runGlimpse(runId: string): Promise<RunGlimpse> {
+  const invoke = invoker();
+  if (!invoke) throw new Error("outside the native shell: no ledger to read");
+  return invoke<RunGlimpse>("run_glimpse", { runId });
+}
+
 /** Everything a run has said so far, for whoever looks in now. */
 export async function runSnapshot(runId: string): Promise<RunSnapshot> {
   const invoke = invoker();
