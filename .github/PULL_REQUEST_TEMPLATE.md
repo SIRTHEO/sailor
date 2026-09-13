@@ -6,6 +6,12 @@
 your own words, and why this is the right repair. Link the issue or the fault
 number if there is one. -->
 
+## Scope
+
+<!-- What this touches: the crate(s) or `desktop/`, and which of CONTRIBUTING's
+"Every gate you may hit" apply beyond "Always" (a `.flow.json`, `crates/actions`,
+`crates/profiles`, `desktop/`, or none of those). -->
+
 ## How it was tested
 
 <!-- The commands you ran and their verdict. Say which test you saw go red when
@@ -16,3 +22,4 @@ cargo test --workspace --no-fail-fast
 ```
 
 - [ ] The ratchet is green on my `HEAD` (`cargo build -p sailor && ./target/debug/sailor ratchet`) — and if a seed moved, the commit says which and to what number.
+- [ ] Every applicable gate from CONTRIBUTING's "Every gate you may hit" ran, with its `test result:` line pasted below (not just "passed").
