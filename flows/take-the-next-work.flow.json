@@ -1,0 +1,246 @@
+{
+  "id": "take-the-next-work",
+  "description": "One project's queue, taken one task at a time. The trigger carries the project; the store picks its highest-priority queued task, whole. A conditional write claims it — the same key refuses a second writer, so two runners racing the same queue take it at most once. A cheap worker attempts it; the project's own acceptance command judges the result, required: the run has nothing to close on until that command has run and passed. What it decided is written back to the task's own record, and a task the cheap worker could not finish is hand off to a person instead of retried forever.",
+  "graph": {
+    "steps": [
+      {
+        "id": "trigger",
+        "deps": [],
+        "action": "trigger",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "source": "manual"
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "source": { "type": "string" },
+            "text": { "type": "string" }
+          },
+          "required": ["source", "text"],
+          "allow_extra": false
+        },
+        "output_schema": { "type": "any" }
+      },
+      {
+        "id": "select",
+        "deps": ["trigger"],
+        "action": "store_select",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "collection": "work-queue",
+          "where": {
+            "state": "queued",
+            "project": { "$from": "/text" }
+          },
+          "order_by": { "field": "priority", "direction": "desc" },
+          "limit": 1
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      },
+      {
+        "id": "queue_state",
+        "deps": ["select"],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -eu\nif [ \"$COUNT\" = \"0\" ]; then printf '{\"idle\": true}'; else printf '{\"idle\": false}'; fi",
+          "env": { "COUNT": { "$json": "/count" } },
+          "answer_shape": {
+            "type": "object",
+            "properties": { "idle": { "type": "boolean" } },
+            "required": ["idle"],
+            "allow_extra": false
+          },
+          "timeout_secs": 5
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" },
+        "stops_when": "/answer/idle"
+      },
+      {
+        "id": "claim",
+        "deps": ["select", "queue_state"],
+        "action": "store_write_if_absent",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "collection": "work-queue-claims",
+          "key": { "$join": [{ "$from": "/select/records/0/key" }, "/claim"] },
+          "value": { "$from": "/select/records/0/value" },
+          "written_by": "take-the-next-work"
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      },
+      {
+        "id": "claim_state",
+        "deps": ["claim"],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -eu\nif [ \"$WRITTEN\" != \"true\" ]; then printf '{\"lost\": true}'; else printf '{\"lost\": false}'; fi",
+          "env": { "WRITTEN": { "$json": "/written" } },
+          "answer_shape": {
+            "type": "object",
+            "properties": { "lost": { "type": "boolean" } },
+            "required": ["lost"],
+            "allow_extra": false
+          },
+          "timeout_secs": 5
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" },
+        "stops_when": "/answer/lost"
+      },
+      {
+        "id": "execute",
+        "deps": ["select", "claim_state"],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "role": "CHEAP_WORKER",
+          "tree": "own",
+          "stdin": { "$from": "/select/records/0/value/title" },
+          "timeout_secs": 30
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      },
+      {
+        "id": "worker_tree",
+        "deps": ["select", "execute"],
+        "action": "store_select",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "collection": "open-worktrees",
+          "where": {
+            "repo": { "$from": "/select/records/0/value/workspace" },
+            "step": "execute"
+          },
+          "order_by": { "field": "opened_at", "direction": "desc" },
+          "limit": 1
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      },
+      {
+        "id": "acceptance",
+        "deps": ["select", "worker_tree"],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "./check.sh",
+          "workdir": { "$from": "/worker_tree/records/0/value/path" },
+          "accept": ["failed"],
+          "timeout_secs": 30
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" },
+        "required": true
+      },
+      {
+        "id": "verdict_state",
+        "deps": ["select", "acceptance"],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -eu\nNEXT=$((ATTEMPTS + 1))\nif [ \"$STATUS\" = \"passed\" ]; then\n  printf '{\"next_state\":\"done\",\"attempts\":%s,\"reason\":\"\"}' \"$NEXT\"\nelif [ \"$NEXT\" -ge \"$MAX_ATTEMPTS\" ]; then\n  printf '{\"next_state\":\"parked\",\"attempts\":%s,\"reason\":\"the acceptance check did not pass\"}' \"$NEXT\"\nelse\n  printf '{\"next_state\":\"queued\",\"attempts\":%s,\"reason\":\"\"}' \"$NEXT\"\nfi",
+          "env": {
+            "ATTEMPTS": { "$json": "/select/records/0/value/attempts" },
+            "STATUS": { "$from": "/acceptance/status" },
+            "MAX_ATTEMPTS": "1"
+          },
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "next_state": { "type": "string" },
+              "attempts": { "type": "number" },
+              "reason": { "type": "string" }
+            },
+            "required": ["next_state", "attempts", "reason"],
+            "allow_extra": false
+          },
+          "timeout_secs": 5
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      },
+      {
+        "id": "record",
+        "deps": ["select", "verdict_state"],
+        "action": "store_write",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "collection": "work-queue",
+          "key": { "$from": "/select/records/0/key" },
+          "value": {
+            "project": { "$from": "/select/records/0/value/project" },
+            "title": { "$from": "/select/records/0/value/title" },
+            "priority": { "$from": "/select/records/0/value/priority" },
+            "acceptance": { "$from": "/select/records/0/value/acceptance" },
+            "workspace": { "$from": "/select/records/0/value/workspace" },
+            "state": { "$from": "/verdict_state/answer/next_state" },
+            "attempts": { "$from": "/verdict_state/answer/attempts" },
+            "reason": { "$from": "/verdict_state/answer/reason" }
+          },
+          "written_by": "take-the-next-work"
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      },
+      {
+        "id": "handoff",
+        "deps": ["select", "verdict_state", "record"],
+        "action": "handed_to_agent",
+        "max_attempts": 1,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/verdict_state/answer/next_state",
+          "value": "parked"
+        },
+        "with": {
+          "mandate": {
+            "$join": [
+              "the cheap worker could not finish \"",
+              { "$from": "/select/records/0/value/title" },
+              "\" and it was parked: ",
+              { "$from": "/verdict_state/answer/reason" }
+            ]
+          },
+          "holder": "person",
+          "handoff_timeout_secs": 3600,
+          "same_holder_ok": true,
+          "options": [
+            {
+              "label": "reword the task and put it back in the queue",
+              "facts": "the cheap worker's fixed attempt was not enough; a clearer or narrower task may be"
+            },
+            {
+              "label": "leave it parked",
+              "facts": "the task stays recorded as parked, out of the queue the flow drains"
+            }
+          ]
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      }
+    ]
+  },
+  "inputs": {
+    "trigger": {
+      "source": "manual",
+      "text": ""
+    }
+  }
+}

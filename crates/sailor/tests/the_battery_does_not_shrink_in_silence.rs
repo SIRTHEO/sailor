@@ -6,13 +6,13 @@
 use std::path::{Path, PathBuf};
 
 /// Every `.rs` directly under a package's `tests/`, the window's shell included.
-const TEST_BINARIES_TODAY: usize = 160;
+const TEST_BINARIES_TODAY: usize = 161;
 
 /// Every `#[test]` in the tree, the window's shell included.
-const TEST_FUNCTIONS_TODAY: usize = 2214;
+const TEST_FUNCTIONS_TODAY: usize = 2216;
 
 /// Every `.flow.json` in `flows/` and among the shipped ones.
-const FLOW_FILES_TODAY: usize = 19;
+const FLOW_FILES_TODAY: usize = 20;
 
 /// Every `test(` in the window's own battery. **THE WINDOW CARRIES NO
 /// `#[test]`**, so counting that mark alone left 489 tests under no ratchet at
