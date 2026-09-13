@@ -374,6 +374,8 @@ impl Ledger {
         let events_path = directory.join(EVENTS_FILE);
         let connection = Connection::open(state_path)?;
         connection.busy_timeout(BUSY_TIMEOUT)?;
+        #[cfg(any(test, feature = "test-hooks"))]
+        test_busy_handler(&connection)?;
         connection.pragma_update(None, "journal_mode", "WAL")?;
         connection.pragma_update(None, "synchronous", "FULL")?;
         connection.execute(
@@ -645,6 +647,8 @@ impl Ledger {
                 read_store_row,
             )
             .optional()?;
+        #[cfg(any(test, feature = "test-hooks"))]
+        test_pause_after_absent_record_read(found.is_none());
         if let Some(existing) = found {
             transaction.commit()?;
             apply_pending(&mut connection)?;
@@ -1806,7 +1810,7 @@ fn test_pause_after_step_read() {
     let Some(marker) = std::env::var_os("LEDGER_TEST_STEP_READ_MARKER") else {
         return;
     };
-    std::fs::write(marker, b"ready").expect("write the test marker");
+    let _ = std::fs::write(marker, b"ready");
     let hold = std::env::var("LEDGER_TEST_STEP_READ_HOLD_MILLIS")
         .ok()
         .and_then(|value| value.parse().ok())
@@ -1816,6 +1820,38 @@ fn test_pause_after_step_read() {
 
 #[cfg(not(test))]
 fn test_pause_after_step_read() {}
+
+#[cfg(any(test, feature = "test-hooks"))]
+fn test_pause_after_absent_record_read(absent: bool) {
+    if !absent {
+        return;
+    }
+    let Some(marker) = std::env::var_os("LEDGER_TEST_ABSENT_RECORD_MARKER") else {
+        return;
+    };
+    let _ = std::fs::write(marker, b"ready");
+    let Some(release) = std::env::var_os("LEDGER_TEST_ABSENT_RECORD_RELEASE") else {
+        return;
+    };
+    while !Path::new(&release).exists() {
+        std::thread::yield_now();
+    }
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+fn test_busy_handler(connection: &Connection) -> Result<(), LedgerError> {
+    fn marked_busy(_attempt: i32) -> bool {
+        if let Some(marker) = std::env::var_os("LEDGER_TEST_BUSY_MARKER") {
+            let _ = std::fs::write(marker, b"busy");
+        }
+        std::thread::sleep(Duration::from_millis(1));
+        true
+    }
+    if std::env::var_os("LEDGER_TEST_BUSY_MARKER").is_some() {
+        connection.busy_handler(Some(marked_busy))?;
+    }
+    Ok(())
+}
 
 #[cfg(test)]
 fn test_crash_after_close_event() {

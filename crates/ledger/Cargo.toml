@@ -8,6 +8,14 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[features]
+test-hooks = []
+
+[[test]]
+name = "a_conditional_write_has_only_one_winner"
+path = "tests/a_conditional_write_has_only_one_winner.rs"
+required-features = ["test-hooks"]
+
 [dependencies]
 flow = { path = "../flow" }
 # Only for `kill(pid, 0)`: asking whether **one** known pid still exists. Not a

@@ -34,13 +34,16 @@ fn conditional_write_helper() {
     };
     let root = PathBuf::from(root);
     let child = std::env::var("CONDITIONAL_WRITE_CHILD").expect("child number");
-    std::fs::write(root.join(format!("ready-{child}")), b"")
-        .expect("arrive at the barrier");
-    while !root.join("go").exists() {
-        std::thread::yield_now();
+    let ledger = Ledger::open(root.join("ledger")).expect("open the ledger");
+    if let Ok(marker) = std::env::var("CONDITIONAL_WRITE_READY_MARKER") {
+        std::fs::write(marker, b"ready").expect("the contender opened its ledger");
     }
-    let result = Ledger::open(root.join("ledger"))
-        .expect("open the ledger")
+    if let Ok(release) = std::env::var("CONDITIONAL_WRITE_RELEASE_MARKER") {
+        while !Path::new(&release).exists() {
+            std::thread::yield_now();
+        }
+    }
+    let result = ledger
         .put_record_if_absent(&record())
         .expect("conditionally write the record");
     let result = match result {
@@ -54,23 +57,27 @@ fn conditional_write_helper() {
 fn two_processes_contending_for_a_record_have_only_one_winner() {
     let scratch = Scratch::new();
     drop(Ledger::open(scratch.0.join("ledger")).expect("initialize the ledger"));
-    let mut children = (0..2)
-        .map(|child| {
-            let executable = std::env::current_exe().expect("the test executable");
-            let mut command = Command::new(executable);
-            command
-                .arg("--exact")
-                .arg("conditional_write_helper")
-                .arg("--nocapture")
-                .env("CONDITIONAL_WRITE_ROOT", &scratch.0)
-                .env("CONDITIONAL_WRITE_CHILD", child.to_string());
-            command.spawn().expect("start a competing process")
-        })
-        .collect::<Vec<_>>();
-    wait_for(&scratch.0, "ready-0");
-    wait_for(&scratch.0, "ready-1");
-    std::fs::write(scratch.0.join("go"), b"").expect("release both writers");
-    for child in &mut children {
+    let held_after_read = scratch.0.join("held-after-read");
+    let release = scratch.0.join("release-holder");
+    let busy = scratch.0.join("contender-busy");
+    let contender_release = scratch.0.join("release-contender");
+    let mut second = helper(&scratch.0, "1")
+        .env("LEDGER_TEST_BUSY_MARKER", &busy)
+        .env("CONDITIONAL_WRITE_READY_MARKER", scratch.0.join("contender-opened"))
+        .env("CONDITIONAL_WRITE_RELEASE_MARKER", &contender_release)
+        .spawn()
+        .expect("start the contending writer");
+    wait_for(&scratch.0, "contender-opened");
+    let mut first = helper(&scratch.0, "0")
+        .env("LEDGER_TEST_ABSENT_RECORD_MARKER", &held_after_read)
+        .env("LEDGER_TEST_ABSENT_RECORD_RELEASE", &release)
+        .spawn()
+        .expect("start the holding writer");
+    wait_for(&scratch.0, "held-after-read");
+    std::fs::write(&contender_release, b"").expect("start the contender's write");
+    wait_for(&scratch.0, "contender-busy");
+    std::fs::write(&release, b"").expect("release the holding writer");
+    for child in [&mut first, &mut second] {
         assert!(
             child
                 .wait()
@@ -110,6 +117,18 @@ fn two_processes_contending_for_a_record_have_only_one_winner() {
             .expect("write after reopening"),
         ConditionalWrite::AlreadyPresent(_)
     ));
+}
+
+fn helper(root: &Path, child: &str) -> Command {
+    let executable = std::env::current_exe().expect("the test executable");
+    let mut command = Command::new(executable);
+    command
+        .arg("--exact")
+        .arg("conditional_write_helper")
+        .arg("--nocapture")
+        .env("CONDITIONAL_WRITE_ROOT", root)
+        .env("CONDITIONAL_WRITE_CHILD", child);
+    command
 }
 
 fn record() -> StoreRecord {
