@@ -3,10 +3,13 @@
 //! it starts from is authenticated.
 
 use crate::equipment::current_equipment_for;
-use crate::process::{invoke_external_engine, EngineInvocation, EngineResult};
+use crate::process::{
+    invoke_external_engine, run_with_timeout, EngineInvocation, EngineResult, RunOutcome,
+};
 use crate::recipe::{command_line, mentions_any, says_it_cannot_work, AskRecipe, PromptVia};
 use crate::{read_scalar, Pointer};
 use std::collections::BTreeMap;
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
 // ── the dry trial of a command line ─────────────────────────────────────────
@@ -393,31 +396,22 @@ impl<T: DryProbe + LoginProbe> EngineProbe for T {}
 
 impl LoginProbe for RealDryProbe {
     fn ask(&self, bin: &str, args: &[String], env: &BTreeMap<String, String>) -> DryRun {
-        let result = invoke_external_engine(&EngineInvocation {
-            bin: bin.to_owned(),
-            args: args.to_vec(),
-            env: env.clone(),
-            workdir: None,
-            // **EMPTY, CLOSED STDIN, THAT IS `< /dev/null`.** An engine that
-            // started waiting on stdin would hang the check of all the others:
-            // the trap already paid for on `codex exec`, and one character
-            // avoids it.
-            stdin: Some(Vec::new()),
-            timeout: DRY_PROBE_TIMEOUT,
-        });
+        let mut command = Command::new(bin);
+        command
+            .args(args)
+            .env_clear()
+            .envs(env)
+            .stdin(Stdio::null());
+        let result = run_with_timeout(command, DRY_PROBE_TIMEOUT);
         match result {
-            EngineResult::Ok { stdout, stderr }
-            | EngineResult::ExitError { stdout, stderr, .. }
-            | EngineResult::WaitingForAPerson { stdout, stderr } => {
-                DryRun::Answered { stdout, stderr }
-            }
-            EngineResult::TimedOut => DryRun::NoAnswer {
-                why: format!(
-                    "no answer within {} seconds",
-                    DRY_PROBE_TIMEOUT.as_secs()
-                ),
+            RunOutcome::Finished { stdout, stderr, .. } => DryRun::Answered {
+                stdout: String::from_utf8_lossy(&stdout).into_owned(),
+                stderr: String::from_utf8_lossy(&stderr).into_owned(),
             },
-            EngineResult::SpawnFailed { reason } => DryRun::NoAnswer {
+            RunOutcome::TimedOut => DryRun::NoAnswer {
+                why: format!("no answer within {} seconds", DRY_PROBE_TIMEOUT.as_secs()),
+            },
+            RunOutcome::SpawnFailed(reason) => DryRun::NoAnswer {
                 why: format!("the process did not start: {reason}"),
             },
         }
@@ -444,5 +438,22 @@ pub fn probe_login_status(
     match probe.ask(bin, &recipe.args, env) {
         DryRun::Answered { stdout, stderr } => judge_login_status(recipe, &stdout, &stderr),
         DryRun::NoAnswer { why } => LoginVerdict::NoAnswer { why },
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_login_probe_receives_only_its_declared_environment() {
+        let environment = BTreeMap::from([("PROFILE_HOME".to_owned(), "isolated".to_owned())]);
+        let DryRun::Answered { stdout, stderr } =
+            RealDryProbe.ask("/usr/bin/env", &[], &environment)
+        else {
+            panic!("the local environment reader starts");
+        };
+        assert!(stderr.is_empty());
+        assert_eq!(stdout, "PROFILE_HOME=isolated\n");
     }
 }
