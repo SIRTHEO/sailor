@@ -108,6 +108,11 @@ pub enum Access {
     /// The profile exists and moves nothing: this command line has no known way
     /// to be sent elsewhere, so two profiles start it in the same place.
     HomeDoesNotMove,
+    /// The engine says the home is logged in, and its own file names an
+    /// account that is not the profile's: the login re-authorised whoever's
+    /// browser was already open, and nobody noticed. **NOT `Yes`**: the home
+    /// answers as somebody else.
+    Mismatched,
 }
 
 /// One profile, as both surfaces show it.
@@ -150,7 +155,7 @@ fn views_of(
             // A command line this table does not know has no home to move, so
             // there is no question to ask it.
             let (access, said) = match find_cli(&profile.cli_id) {
-                Ok(cli) => access_of(tools, probe, cli, &profile.home_dir),
+                Ok(cli) => access_of(tools, probe, cli, &profile.home_dir, &profile.name),
                 Err(reason) => (
                     Access::NotKnown,
                     catalogue::say(
@@ -185,6 +190,7 @@ fn access_of(
     probe: &dyn LoginProbe,
     cli: &KnownCli,
     home: &Path,
+    profile_name: &str,
 ) -> (Access, String) {
     let Some((tool, bin)) = tools.declared_as_executable(&cli.executable) else {
         return (
@@ -218,13 +224,22 @@ fn access_of(
         );
     }
     match actions::probe_login_status(probe, &bin, &env, &recipe) {
-        LoginVerdict::LoggedIn { said } => (
-            Access::Yes,
-            catalogue::say(
-                "cli.profiles.access.authenticated",
-                &[("said", &one_line(&said))],
+        LoginVerdict::LoggedIn { said } => match identity_of_home(cli, home) {
+            profiles::HomeIdentity::Answers(really) if really != profile_name => (
+                Access::Mismatched,
+                catalogue::say(
+                    "cli.profiles.access.mismatched",
+                    &[("home_answers_as", &really), ("profile_named", profile_name)],
+                ),
             ),
-        ),
+            _ => (
+                Access::Yes,
+                catalogue::say(
+                    "cli.profiles.access.authenticated",
+                    &[("said", &one_line(&said))],
+                ),
+            ),
+        },
         LoginVerdict::LoggedOut { said } => (
             Access::No,
             catalogue::say(
@@ -248,6 +263,12 @@ fn access_of(
             catalogue::say("cli.profiles.access.no_answer", &[("why", &why)]),
         ),
     }
+}
+
+/// What this home's own file says about the account it answers as, read off
+/// the real disk.
+fn identity_of_home(cli: &KnownCli, home: &Path) -> profiles::HomeIdentity {
+    profiles::identity_of_home(cli, home, &|path| std::fs::read_to_string(path).ok())
 }
 
 /// The engine's words on a single line: a list is read at a glance, and a
@@ -333,6 +354,21 @@ pub fn adopt(cli_id: &str, name: &String, path: Option<&Path>) -> Result<(), Str
             "cli.profiles.home_not_there",
             &[("path", &home.display().to_string())],
         ));
+    }
+    // **VERIFIED RIGHT AFTER THE LOGIN, NOT LEFT FOR SOMEBODY TO NOTICE
+    // LATER.** Adopting a home is naming it after an account; a home whose own
+    // file already names a different one is not "close enough" — it is the
+    // exact fault this table exists to catch, caught at the one moment
+    // refusing costs nothing, before a row is ever written for it.
+    if let profiles::HomeIdentity::Answers(really) =
+        identity_of_home(cli, &home)
+    {
+        if &really != name {
+            return Err(catalogue::say(
+                "cli.profiles.access.mismatched",
+                &[("home_answers_as", &really), ("profile_named", name)],
+            ));
+        }
     }
 
     let mut store = store_io::load_store()?;
@@ -512,6 +548,115 @@ mod tests {
         (dir, tools)
     }
 
+    /// A fake `claude` that answers `auth status` the way the real one does —
+    /// a JSON envelope on stdout with a boolean `loggedIn` — always yes, so
+    /// these tests are about the identity file, not the login question.
+    fn a_machine_with_a_fake_claude() -> (PathBuf, toolbox::Tools) {
+        static SERIAL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let serial = SERIAL.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let dir =
+            std::env::temp_dir().join(format!("prova-identita-{}-{serial}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("la cartella di prova");
+        let bin = dir.join("claude");
+        std::fs::write(
+            &bin,
+            "#!/bin/sh\necho '{\"loggedIn\": true}'\n",
+        )
+        .expect("writing the fake engine");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755))
+                .expect("the execute bit");
+        }
+        let file = dir.join("tools.json");
+        std::fs::write(
+            &file,
+            r#"{"tools":[{"id":"claude-code","family":"ai_cli","label":"claude",
+               "detect":{"command":"claude"},
+               "login_status":{"args":["auth","status"],"answer":["loggedIn"],
+               "logged_in_when":["true"],
+               "logged_out_when":["false"]}}]}"#,
+        )
+        .expect("scrivere i descrittori");
+        let tools = toolbox::Tools::new(
+            toolbox::Catalog::load(&[toolbox::Source::File(file)]),
+            toolbox::Machine {
+                path_dirs: vec![dir.clone()],
+                home: dir.clone(),
+                env: std::collections::BTreeMap::new(),
+                version_probes: false,
+            },
+        );
+        (dir, tools)
+    }
+
+    /// **THE FAULT THIS TEST HOLDS SHUT.** The Sailor profile
+    /// `claude · matteo19@example.com` had its home carry `.claude.json` with
+    /// `oauthAccount.emailAddress` naming somebody else: the login
+    /// re-authorised the account the browser already had open, and
+    /// `sailor profiles list` said «authenticated» — which is true of the
+    /// home, and false of the account the profile is named for.
+    ///
+    /// *Mutant run*: drop the identity check from the `LoggedIn` arm — this
+    /// test goes red, the two arms below it stay green.
+    #[test]
+    fn a_home_answering_as_another_account_is_mismatched_not_authenticated() {
+        let (dir, tools) = a_machine_with_a_fake_claude();
+        let cli = find_cli("claude").expect("claude is in the table");
+        let probe = actions::RealDryProbe;
+
+        let named_after_matteo19 = dir.join("matteo19@example.com");
+        std::fs::create_dir_all(&named_after_matteo19).expect("the profile's home");
+        std::fs::write(
+            named_after_matteo19.join(".claude.json"),
+            r#"{"oauthAccount":{"emailAddress":"tools@example.com"}}"#,
+        )
+        .expect("the identity file");
+
+        let (access, said) =
+            access_of(&tools, &probe, cli, &named_after_matteo19, "matteo19@example.com");
+        assert_eq!(access, Access::Mismatched, "{said}");
+        assert!(said.contains("tools@example.com"), "{said}");
+        assert!(said.contains("matteo19@example.com"), "{said}");
+    }
+
+    /// The same engine, the same «logged in», and a home whose file names the
+    /// very account the profile is for: still authenticated.
+    #[test]
+    fn a_home_answering_as_its_own_profile_stays_authenticated() {
+        let (dir, tools) = a_machine_with_a_fake_claude();
+        let cli = find_cli("claude").expect("claude is in the table");
+        let probe = actions::RealDryProbe;
+
+        let home = dir.join("matteo19@example.com");
+        std::fs::create_dir_all(&home).expect("the profile's home");
+        std::fs::write(
+            home.join(".claude.json"),
+            r#"{"oauthAccount":{"emailAddress":"matteo19@example.com"}}"#,
+        )
+        .expect("the identity file");
+
+        let (access, _said) = access_of(&tools, &probe, cli, &home, "matteo19@example.com");
+        assert_eq!(access, Access::Yes);
+    }
+
+    /// A home with no identity file at all cannot be told apart from its
+    /// profile: «cannot tell» stays a yes here, never a mismatch invented from
+    /// silence.
+    #[test]
+    fn a_home_with_no_identity_file_is_not_called_mismatched() {
+        let (dir, tools) = a_machine_with_a_fake_claude();
+        let cli = find_cli("claude").expect("claude is in the table");
+        let probe = actions::RealDryProbe;
+
+        let home = dir.join("senza-file-di-identita");
+        std::fs::create_dir_all(&home).expect("the profile's home");
+
+        let (access, _said) = access_of(&tools, &probe, cli, &home, "chiunque@example.com");
+        assert_eq!(access, Access::Yes);
+    }
+
     /// **THE PROFILE LIST SAYS WHETHER THEY ARE USABLE, AND ASKS THE ENGINE.**
     /// This machine's two `codex` profiles both pointed at folders with no
     /// credentials and looked identical to two full homes: the place a person
@@ -532,7 +677,7 @@ mod tests {
 
         let empty = dir.join("casa-vuota");
         std::fs::create_dir_all(&empty).expect("the home without credentials");
-        let said = access_of(&tools, &probe, cli, &empty).1;
+        let said = access_of(&tools, &probe, cli, &empty, "codex").1;
         assert!(
             said.contains("NOT AUTHENTICATED") && said.contains("Not logged in"),
             "a home without credentials has to show, in the engine's own words: {said}"
@@ -541,7 +686,7 @@ mod tests {
         let full = dir.join("casa-piena");
         std::fs::create_dir_all(&full).expect("the authenticated home");
         std::fs::write(full.join("auth.json"), "{}").expect("the credentials");
-        let said = access_of(&tools, &probe, cli, &full).1;
+        let said = access_of(&tools, &probe, cli, &full, "codex").1;
         assert!(
             said.starts_with("authenticated"),
             "a full home has to read as full: {said}"
@@ -624,7 +769,7 @@ mod tests {
         let empty = dir.join("casa-vuota");
         std::fs::create_dir_all(&empty).expect("the home without credentials");
 
-        let said = access_of(&tools, &probe, cli, &empty).1;
+        let said = access_of(&tools, &probe, cli, &empty, "codex").1;
         // **THE VERDICT IS THE HEAD OF THE ROW, AND IS READ THERE.** The
         // explanation after it necessarily names the word «authenticated» — it
         // is saying nobody asked whether it is — so hunting for that across the

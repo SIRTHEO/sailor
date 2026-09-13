@@ -75,6 +75,26 @@ fn resolve_with(
             )
         })?;
 
+    // **REFUSED, NOT WARNED.** This command's own reason for being is written
+    // at the top of the file: launching under the wrong identity is the worst
+    // fault it could commit. A profile named after an account whose home
+    // answers as somebody else is exactly that fault, already committed once
+    // in silence — the login re-authorised whoever's browser was already
+    // open, and `sailor profiles list` kept saying "authenticated" because
+    // that was true of the home and nobody had asked whether it was true of
+    // the account. A warning here would print past the person on their way
+    // out the door; a refusal is the one gesture that stops the spend.
+    if let profiles::HomeIdentity::Answers(really) =
+        profiles::identity_of_home(cli, &profile.home_dir, &|path| std::fs::read_to_string(path).ok())
+    {
+        if really != profile.name {
+            return Err(catalogue::say(
+                "cli.profiles.access.mismatched",
+                &[("home_answers_as", &really), ("profile_named", &profile.name)],
+            ));
+        }
+    }
+
     // The link mechanism goes through no variable: the launch's identity depends
     // **only** on where a link on disk points. If the state says «X is active»
     // but the link still points at Y, the command line starts with Y's
@@ -384,6 +404,82 @@ mod tests {
             .insert("antigravity".to_owned(), "prova".to_owned());
         let error = resolve("antigravity", &store, &[], Path::new("/casa")).unwrap_err();
         assert!(error.contains("is not known yet"), "{error}");
+    }
+
+    /// **THE WORST FAULT THIS COMMAND COULD COMMIT, REFUSED BEFORE THE SWAP.**
+    /// A profile named after an account whose home's own file names another
+    /// one: `sailor run` must not hand the person somebody else's credentials
+    /// because the login re-authorised the wrong browser tab.
+    #[test]
+    fn a_home_answering_as_another_account_stops_the_launch() {
+        let dir = std::env::temp_dir().join(format!(
+            "sailor-run-identity-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|since| since.as_nanos())
+                .unwrap_or(0)
+        ));
+        let home = dir.join("matteo19@example.com");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(
+            home.join(".claude.json"),
+            r#"{"oauthAccount":{"emailAddress":"tools@example.com"}}"#,
+        )
+        .unwrap();
+
+        let mut store = ProfileStore::default();
+        store.profiles.push(Profile {
+            name: "matteo19@example.com".to_owned(),
+            cli_id: "claude".to_owned(),
+            home_dir: home,
+            endpoint: None,
+        });
+        store
+            .active
+            .insert("claude".to_owned(), "matteo19@example.com".to_owned());
+
+        let error = resolve("claude", &store, &[], Path::new("/casa")).unwrap_err();
+        assert!(error.contains("tools@example.com"), "{error}");
+        assert!(error.contains("matteo19@example.com"), "{error}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The same shape, and the file names the very account the profile is
+    /// for: the launch proceeds.
+    #[test]
+    fn a_home_answering_as_its_own_profile_is_not_stopped() {
+        let dir = std::env::temp_dir().join(format!(
+            "sailor-run-identity-ok-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|since| since.as_nanos())
+                .unwrap_or(0)
+        ));
+        let home = dir.join("matteo19@example.com");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(
+            home.join(".claude.json"),
+            r#"{"oauthAccount":{"emailAddress":"matteo19@example.com"}}"#,
+        )
+        .unwrap();
+
+        let mut store = ProfileStore::default();
+        store.profiles.push(Profile {
+            name: "matteo19@example.com".to_owned(),
+            cli_id: "claude".to_owned(),
+            home_dir: home,
+            endpoint: None,
+        });
+        store
+            .active
+            .insert("claude".to_owned(), "matteo19@example.com".to_owned());
+
+        assert!(resolve("claude", &store, &[], Path::new("/casa")).is_ok());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
