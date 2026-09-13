@@ -397,11 +397,18 @@ impl<T: DryProbe + LoginProbe> EngineProbe for T {}
 impl LoginProbe for RealDryProbe {
     fn ask(&self, bin: &str, args: &[String], env: &BTreeMap<String, String>) -> DryRun {
         let mut command = Command::new(bin);
-        command
-            .args(args)
-            .env_clear()
-            .envs(env)
-            .stdin(Stdio::null());
+        command.args(args).env_clear();
+        // Cleared for privacy, then put back only what an ordinary launch
+        // never takes away in the first place: `sailor run` overlays a
+        // profile's declared variables onto the *whole* ambient environment,
+        // never a subtracted one. The declared `env` is laid over these, not
+        // under, so a descriptor that names `PATH` or `HOME` itself still wins.
+        for name in profiles::AMBIENT_LAUNCH_ESSENTIALS {
+            if let Ok(value) = std::env::var(name) {
+                command.env(name, value);
+            }
+        }
+        command.envs(env).stdin(Stdio::null());
         let result = run_with_timeout(command, DRY_PROBE_TIMEOUT);
         match result {
             RunOutcome::Finished { stdout, stderr, .. } => DryRun::Answered {
@@ -447,7 +454,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_login_probe_receives_only_its_declared_environment() {
+    fn a_login_probe_keeps_path_and_home_beside_its_declared_environment() {
         let environment = BTreeMap::from([("PROFILE_HOME".to_owned(), "isolated".to_owned())]);
         let DryRun::Answered { stdout, stderr } =
             RealDryProbe.ask("/usr/bin/env", &[], &environment)
@@ -455,6 +462,63 @@ mod tests {
             panic!("the local environment reader starts");
         };
         assert!(stderr.is_empty());
-        assert_eq!(stdout, "PROFILE_HOME=isolated\n");
+        assert!(
+            stdout.contains("PROFILE_HOME=isolated\n"),
+            "the declared variable did not reach the probe: {stdout}"
+        );
+        if let Ok(path) = std::env::var("PATH") {
+            assert!(
+                stdout.contains(&format!("PATH={path}\n")),
+                "PATH did not reach the probe unchanged: {stdout}"
+            );
+        }
+        // Nothing beside the two essentials and what was declared: a probe
+        // that kept more would be back to reading this machine's credentials.
+        let allowed = ["PROFILE_HOME", "PATH", "HOME"];
+        for line in stdout.lines() {
+            let name = line.split('=').next().unwrap_or_default();
+            assert!(
+                allowed.contains(&name),
+                "an ambient variable beyond PATH and HOME reached the probe: {name}"
+            );
+        }
+    }
+
+    /// **MUTATION PROOF, THE OTHER DIRECTION.** The declared environment is not
+    /// what makes a profile private — clearing the rest is. An ambient variable
+    /// this test sets and nobody declared must not reach the probe, or the fix
+    /// this file exists for is undone the moment PATH and HOME come back.
+    #[test]
+    fn a_login_probe_does_not_receive_an_undeclared_ambient_variable() {
+        // SAFETY: `cargo test` runs this crate's tests in one process, but
+        // `RealDryProbe::ask` reads the name through `std::env::var` inside its
+        // own `Command`, in a forked child — the mutation this test guards
+        // against is a static `env_clear()` call, not a race with another test
+        // over this variable.
+        unsafe {
+            std::env::set_var("SAILOR_TEST_UNDECLARED_AMBIENT", "must-not-leak");
+        }
+        let environment = BTreeMap::from([("DECLARED".to_owned(), "handed-to-it".to_owned())]);
+        let script = "printf 'PATH_SEEN=%s\\nDECLARED=%s\\nUNDECLARED=%s\\n' \
+            \"${PATH:+yes}\" \"$DECLARED\" \"${SAILOR_TEST_UNDECLARED_AMBIENT:-absent}\"";
+        let outcome = RealDryProbe.ask("/bin/sh", &["-c".to_owned(), script.to_owned()], &environment);
+        // SAFETY: same call as above, undone before any assertion can panic
+        // and leave it set for another test.
+        unsafe {
+            std::env::remove_var("SAILOR_TEST_UNDECLARED_AMBIENT");
+        }
+        let DryRun::Answered { stdout, stderr } = outcome else {
+            panic!("the shell starts");
+        };
+        assert!(stderr.is_empty(), "{stderr}");
+        assert!(stdout.contains("PATH_SEEN=yes\n"), "PATH did not reach the probe: {stdout}");
+        assert!(
+            stdout.contains("DECLARED=handed-to-it\n"),
+            "the declared variable did not reach the probe: {stdout}"
+        );
+        assert!(
+            stdout.contains("UNDECLARED=absent\n"),
+            "an undeclared ambient variable reached the probe: {stdout}"
+        );
     }
 }
