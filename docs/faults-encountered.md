@@ -196,6 +196,7 @@ finished.
 | 174 | 2026-09-13 | **A worker deleted a guard test and nobody noticed until a cold reading.** The test `the_release_refuses_the_push_before_making_it` in `crates/sailor/tests/no_push_publishes_a_private_name.rs` was removed during the night's privacy rework of `release_cmd.rs`. That guard test held the refusal before the push, and its removal weakened the project's defenses. | Discovered during a cold reading of the diff. Nobody noticed earlier because the build remained green, as deleting a test removes the check entirely without turning anything red. W1 is asked whether anything replaces it. | The reviewer's checklist item "tests deleted or weakened" should be checked. | **open** |
 | 175 | 2026-09-13 | **Formatting noise was most of a night's diff.** 41 out of 64 modified `.rs` files were byte-identical to `rustfmt(HEAD)`, meaning the worker formatted the entire files rather than just their own changes. This obscures the actual diff and creates merge conflicts. | Seen in the diff by the coordinator. 41 files had to be reverted on 13/09 ~10:50. It happened because the agent ran `cargo fmt` without scoping it. | The rule "never cargo fmt a whole file" has now been added in every worker mandate. | **closed** |
 | 176 | 2026-09-13 | **The disk filled to 143 MiB free with five worktrees building at once.** Building multiple worktrees simultaneously exhausted the machine's disk space, bringing free space down to 143 MiB. | Discovered when builds began failing due to lack of space on 13/09. Around 90 GiB of throw-away target directories had to be removed by hand to recover. | A gate before a build that refuses to start under N GiB free, and one target directory per worktree (never per task), to prevent unchecked disk growth. | **closed** |
+| 180 | 2026-09-13 | **A profile's home re-authorised the account a browser already had open during login, and `sailor profiles list` kept saying "authenticated" — true of the home, not of the account the profile is named for.** `sailor remaining` then read the same account's quota under two profile names. | Measured at 13:05: a profile named after one account carried a home whose own identity file named `oauthAccount.emailAddress` as a different one. | An identity reading per engine, off the home's own file rather than asked of the engine: `a_home_answering_as_another_account_is_mismatched_not_authenticated` in `crates/sailor/src/profiles_cmd.rs`, and the launch refusal in `crates/sailor/src/run_cmd.rs`. | **open** |
 
 ## What this table says, read all at once
 
@@ -204,7 +205,7 @@ from the types, not from the tests: by timing something, by opening the store,
 by taking a screenshot, by checking the weight of a directory. It is the reason
 a test that could not have come out differently is not a test.
 
-**Fifty-three are still open** out of a hundred and seventy-six, and two of
+**Fifty-four are still open** out of a hundred and seventy-seven, and two of
 those (10 and 28) are the same thing seen from two sides: **the same truth
 written in several places, and no check that compares them** — two copies of a
 list of components, and the reference resolution that lived in twelve places
@@ -325,18 +326,3 @@ twenty minutes later. It is the proof that a lesson written down is worth
 nothing without the moment when somebody goes and reads it. For flows that
 moment now exists, and it is `docs/decisions.md`, read at three points of the
 development flow. For whoever writes by hand, it does not.
-
-**Fault 177, open. Authenticated was a fact about the home, read as a fact
-about the account.** During a login the browser re-authorised the account it
-already had open, and nobody noticed: a profile's home carried its own
-identity file naming a different account than the one the profile was named
-for. `sailor profiles list` kept saying "authenticated" — true of the home —
-and `sailor remaining` read the same account's quota under two profile names,
-counting it twice. The cure is an identity reading of its own, per engine
-adapter, off the home's own file rather than asked of the engine: a profile
-named after an account whose home answers as another is `mismatched`, never
-`authenticated`. Held shut by
-`a_home_answering_as_another_account_is_mismatched_not_authenticated` in
-`crates/sailor/src/profiles_cmd.rs` and
-`a_home_answering_as_another_account_stops_the_launch` in
-`crates/sailor/src/run_cmd.rs`.
