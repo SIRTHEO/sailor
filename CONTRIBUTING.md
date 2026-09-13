@@ -160,6 +160,29 @@ refactor(profiles): the engines a profile can be made of are a file, not Rust
   no judgement about which internal detail is acceptable.**
 - No tooling attribution trailers.
 
+## What must never be public
+
+This repository is public and permanent: a name once pushed cannot be
+unpublished, force-push included — see `no_push_publishes_a_private_name`
+above. The release preflight refuses, and a commit must never carry:
+
+- **Private names and personal paths** — a person's handle or email, an
+  absolute path from somebody's home directory, an internal repository or
+  employer name.
+- **A person's own flows and working habits** — a workshop flow built for one
+  person's machine, as opposed to what the product ships from `flow::system`.
+- **Reserved artefacts** — profile homes, credential files, anything under a
+  path this project's own judges (`nothing_reserved_is_tracked`, `no_engine_is_named_in_the_code`)
+  already refuse to see tracked.
+- **Credentials of any kind** — tokens, keys, session data, credential-bearing
+  configuration, and an unsanitized export or log copied out of the store.
+
+**Not covered yet:** sensitive data folded inside a generated *attachment* —
+a screenshot, a database fixture, an archive, a packaged desktop resource —
+which the text- and name-based checks above do not open and cannot see
+inside. If what you are committing is binary or generated, look at what is
+inside it yourself before it goes in; no judge does that for you today.
+
 ## Comments
 
 - **English**, like the rest of the tree.
