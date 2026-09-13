@@ -41,9 +41,9 @@ export interface CommandLine {
 /**
  * What the engine says about one profile's home. `not known` is nobody looked,
  * and is neither a yes nor a no; `home does not move` says the profile is real
- * but changes nothing.
+ * but changes nothing; `mismatched` is logged in as somebody else.
  */
-export type Access = "yes" | "no" | "not known" | "home does not move";
+export type Access = "yes" | "no" | "not known" | "home does not move" | "mismatched";
 
 export interface Row {
   cli_id: string;
