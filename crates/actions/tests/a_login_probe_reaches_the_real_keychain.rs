@@ -1,18 +1,6 @@
-//! Fault 181: `env_clear` before `claude auth status` kept only `PATH` and
-//! `HOME`, and macOS's keychain would not answer without the session's own
-//! identity — every home came back `NOT AUTHENTICATED`, including the ones a
-//! worker was running under at that moment.
-//!
-//! **WHY THIS RUNS THE REAL ENGINE INSTEAD OF A RECORDED ANSWER.** The unit
-//! tests in `the_engine_says_whether_the_home_is_authenticated.rs` prove the
-//! *reading* of an answer already in hand; they cannot prove that the probe's
-//! own environment still reaches the keychain, because they never build one.
-//! Only a real `claude auth status`, launched the way the probe launches it,
-//! can fail the way this fault failed.
-//!
-//! **SKIPPED, NOT SILENT, WITHOUT A HOME.** CI has no logged-in Claude home,
-//! and a hard failure there would tell nobody anything about this bug. Set
-//! `SAILOR_TEST_CLAUDE_HOME` to a real, authenticated home to run it for real.
+//! See fault 181. The unit tests beside this one judge an answer already in
+//! hand; this runs the real probe, so only it can fail the way that fault did.
+//! Skipped, not silent, without `SAILOR_TEST_CLAUDE_HOME`: CI has no login.
 
 use actions::{probe_login_status, LoginRecipe, LoginVerdict, RealDryProbe};
 use models::usage::Pointer;
