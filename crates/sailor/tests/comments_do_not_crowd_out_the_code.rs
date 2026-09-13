@@ -37,7 +37,7 @@ const COMMENT_LINES_NOT_IN_ENGLISH: usize = 1;
 const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
     ("actions", 243),
     ("catalogue", 239),
-    ("desktop", 233),
+    ("desktop", 232),
     ("faults", 156),
     ("flow", 198),
     ("inventory", 274),
@@ -48,7 +48,7 @@ const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
     ("registry", 285),
     ("relay", 142),
     ("release", 426),
-    ("sailor", 177),
+    ("sailor", 176),
     ("sessions", 236),
     ("supervisor", 243),
     ("terminal", 266),
