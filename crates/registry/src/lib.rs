@@ -307,6 +307,7 @@ mod tests {
             actions::memory::MEMORY_LIST_ACTION,
             actions::memory::MEMORY_REPLACE_ACTION,
             actions::store::STORE_WRITE_IF_ABSENT_ACTION,
+            actions::store::STORE_SELECT_ACTION,
         ] {
             assert!(
                 registry.get(wanted).is_some(),

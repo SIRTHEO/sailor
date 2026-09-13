@@ -174,6 +174,7 @@ const ACTION_KIND: Record<string, StepKind> = {
   store_write: "deposit",
   store_write_if_absent: "deposit",
   store_list: "deposit",
+  store_select: "deposit",
   work_claim: "deposit",
   work_release: "deposit",
   work_survey: "deposit",
