@@ -70,29 +70,21 @@ matching entry in `open-worktrees`.
 ## 3. Declare the worker
 
 The seed points `CHEAP_WORKER` at `claude-code`. Tell which engine is usable
-on your machine with `sailor_bin profiles list`; this tree's own homes today
-show all three readings that matter:
+on your machine with `sailor_bin profiles list`. However many rows print,
+you need one that is both authenticated and able to write files — every row
+you see reads as one of three words:
 
-- **unverified** — logged in, but the engine names no account to check
-  against the profile: `* codex ... -> /Users/theo/.codex — access:
-  authenticated, identity unverified («Logged in using ChatGPT»): this
-  engine declares no file naming the account its home answers as`
-- **unauthenticated** — `claude tech@gyver.work -> /Users/theo/.claude —
-  access: NOT AUTHENTICATED («false»)`
-- **authenticated** — logged in under the profile's own name; no home on
-  this machine reaches it today, so there is nothing real to paste. Its
-  deterministic proof is
-  `a_home_answering_as_its_own_profile_stays_authenticated` in
-  `crates/sailor/src/profiles_cmd.rs`.
+- **authenticated** — logged in under the profile's own name.
+- **authenticated, identity unverified** — logged in, but the engine names
+  no account to check against the profile.
+- **not authenticated**.
 
-You need exactly one engine in the **authenticated** state that also
-*writes files* when it runs. As of today that rules out both engines this
-machine has logged in: `codex`'s shipped recipe runs `exec --sandbox
-read-only`, and `claude-code`'s default permission mode refuses to write
-non-interactively — both stop before `acceptance` gets anything to check,
-unless the engine's descriptor recipe declares the flag that grants the
-write (`--sandbox workspace-write` / `--permission-mode acceptEdits`), which
-is a decision for whoever owns that descriptor.
+Today codex's shipped recipe runs `exec --sandbox read-only`, and
+claude-code's default permission mode refuses to write non-interactively —
+so even a row reading authenticated stops before `acceptance` gets anything
+to check, unless the engine's descriptor recipe declares the flag that
+grants the write (`--sandbox workspace-write` / `--permission-mode
+acceptEdits`), a decision for whoever owns that descriptor.
 
 If the engine the seed picked is not your authenticated one, `CHEAP_WORKER`
 is a plain ledger row, rewritten directly — there is no `sailor store`
@@ -121,9 +113,6 @@ authenticated homes (asked of the engine, without spending): codex (profile «co
 missing actions: none
 ```
 
-No missing actions, no cycles: the graph and the credentials are sound
-before a single call is placed.
-
 ## 5. Run it for `alpha` and for `beta`
 
 ```
@@ -143,9 +132,8 @@ sailor flow: flow take-the-next-work ended with status failed; run take-the-next
 `select` takes the top queued task, `claim` writes it under a key a second
 runner's write would refuse, and `execute` hands the task's title, alone, to
 the engine on stdin. Both runs above end `failed` at `execute`, for the
-reason step 3 already named. `acceptance`, `verdict_state` and `handoff`
-never run — the graph refuses to call a task closed before its acceptance
-command has passed. An engine actually allowed to write in its own worktree
+reason step 3 already named; `acceptance`, `verdict_state` and `handoff`
+never run. An engine actually allowed to write in its own worktree
 (checked once, outside Sailor: `claude -p --permission-mode acceptEdits`
 created the file in seconds) is what turns `alpha` into `complete`. Each
 run's own last line prints its real run id (`take-the-next-work-<id>`, a
@@ -153,15 +141,21 @@ nanosecond timestamp) — that id is what `sailor step approve --run <id>
 --step <step> --as <your own name>` takes, once a run actually reaches a
 step handed to a person.
 
-The deterministic proof that the graph itself does the right thing —
+The project's own fixture-backed test stands in for the live case above —
 `alpha` reaching `complete`, `beta` never able to, because its check names a
-file the worker is never told to write — is the project's own fixture-backed
-test, standing in for the live case above:
+file the worker is never told to write:
 
 ```
 $ cargo test -q -j 1 -p sailor --test take_the_next_work --no-fail-fast
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```
+
+Green here on an idle machine. Under load — a worktree a previous run left
+behind, an acceptance that timed out — it has failed, once with
+`two_runners_racing_the_same_store_take_each_task_at_most_once` panicking and
+its own cleanup unable to remove two worktrees because they "contain
+modified or untracked files". That is a known, registered condition, not a
+mistake in how you ran it; rerun with `-j 1` against a clean checkout.
 
 A task reaching `verdict_state` with `next_state: parked` is written back
 with its `reason`, and `handoff` hands it to a person — never retried on its
