@@ -66,6 +66,10 @@ interface TerminalsProps {
   bench?: Bench | null;
   /** Told when the step the bench was for has been closed, and how it answered. */
   onBenchClosed?: (answer: string) => void;
+  /** The tty a row elsewhere asked to be brought forward, by its device name. */
+  focusDevice?: string | null;
+  /** Told once the asked tty has been brought forward, so the request does not fire again. */
+  onFocused?: () => void;
 }
 
 /**
@@ -158,6 +162,8 @@ export function Terminals({
   onList,
   bench = null,
   onBenchClosed,
+  focusDevice = null,
+  onFocused,
 }: TerminalsProps) {
   const outside = "outside the desktop shell: pseudo-terminals are the engine's to open";
   const { asked, again } = useAsk<TerminalSummary[]>(native, listTerminals, REFRESH_MS, outside);
@@ -339,6 +345,19 @@ export function Terminals({
     window.addEventListener("keydown", listen);
     return () => window.removeEventListener("keydown", listen);
   }, [native, shown, open, known, root]);
+
+  // **THE ROW NAMES A TTY, THE TAB LIVES BY AN ID.** A row elsewhere reads the
+  // tty off `sailor terminal list`, the only address it has; here every pane
+  // is keyed by the id the shell handed out when the pty opened. This is
+  // the one place the two are matched.
+  useEffect(() => {
+    if (focusDevice === null) return;
+    const match = known.find((entry) => entry.device === focusDevice);
+    if (match) {
+      setHere(match.id);
+      onFocused?.();
+    }
+  }, [focusDevice, known, onFocused]);
 
   const visible = known.some((entry) => entry.id === here)
     ? here

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { useState } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { Terminal as Emulator } from "@xterm/xterm";
@@ -679,6 +680,31 @@ describe("the terminals screen", () => {
       const sent = shell.calls.find((call) => call.command === "terminal_submit");
       expect(sent?.args).toMatchObject({ line: "git status" });
       expect(line.value).toBe("");
+    } finally {
+      shell.stop();
+    }
+  });
+
+  test("A ROW ELSEWHERE NAMES A TTY, AND THE MATCHING TAB IS BROUGHT FORWARD", async () => {
+    const shell = pretendShell({ terminal_list: TWO });
+    function Host() {
+      const [focusDevice, setFocusDevice] = useState<string | null>("ttys009");
+      return (
+        <div className="app">
+          <Terminals native focusDevice={focusDevice} onFocused={() => setFocusDevice(null)} />
+        </div>
+      );
+    }
+    try {
+      render(<Host />);
+      await screen.findByRole("tab", { name: /ttys009/ });
+      // The tty the row named is the one on screen, not the one that would
+      // have come first on its own — the alive-first default this same
+      // fixture proves in the test above.
+      await waitFor(() => {
+        const shown = Array.from(document.querySelectorAll(".pane:not([hidden])"));
+        expect(shown[0]?.querySelector(".pane__device")?.textContent).toBe("ttys009");
+      });
     } finally {
       shell.stop();
     }

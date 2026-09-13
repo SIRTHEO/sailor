@@ -96,6 +96,7 @@ import { withStepWiredTo } from "./wiring";
 import { Toolbar } from "./Toolbar";
 import { RunContext, TriggerNode, triggerNodeId, type RunControls, type TriggerState } from "./TriggerNode";
 import { RunConsole, type ConsoleMode } from "./RunConsole";
+import { RunGlimpse } from "./RunGlimpse";
 import { StepHistory } from "./StepHistory";
 import { buildUnifiedLayout, nodeId, splitNodeId, wouldCycle } from "./layout";
 import { SAMPLE, SAMPLE_RUN } from "./sample";
@@ -321,6 +322,15 @@ export default function App() {
   // person left looking at the row they pressed, is a terminal nobody uses.
   const openBench = useCallback((asked: Bench) => {
     setBench(asked);
+    setTerminalsTab("live");
+    setPlace("terminals");
+  }, []);
+  /** A tty a row elsewhere asked brought forward: the attention queue's own
+   * gesture, mirroring `openBench` above for the same reason — asked from a
+   * row with nobody left looking at the screen it names is asked nowhere. */
+  const [focusTty, setFocusTty] = useState<string | null>(null);
+  const openTerminalByTty = useCallback((tty: string) => {
+    setFocusTty(tty);
     setTerminalsTab("live");
     setPlace("terminals");
   }, []);
@@ -1510,6 +1520,7 @@ export default function App() {
                 native={NATIVE}
                 now={Math.floor(Date.now() / 1000)}
                 onRun={(runId) => setWatching(runId)}
+                onTty={openTerminalByTty}
               />
             </Suspense>
           </div>
@@ -1606,6 +1617,8 @@ export default function App() {
         onList={setOpenTerminals}
         bench={bench}
         onBenchClosed={() => setBench(null)}
+        focusDevice={focusTty}
+        onFocused={() => setFocusTty(null)}
       />
       </Suspense>
 
@@ -1802,6 +1815,14 @@ export default function App() {
           onClose={() => setWatching(null)}
           onStop={() => stopRun(watched.run_id)}
         />
+      )}
+      {/* WATCHING A RUN THIS WINDOW NEVER STARTED: `run_snapshot` answers «not
+          known to this window», so there is no live console to draw — the
+          smallest view instead, read straight from the ledger. This is how
+          the attention queue's «open the run» reaches a run handed to a
+          person from another terminal or another flow. */}
+      {watching && !watched && (
+        <RunGlimpse runId={watching} onClose={() => setWatching(null)} />
       )}
       </StepUsageContext.Provider>
       </WireContext.Provider>

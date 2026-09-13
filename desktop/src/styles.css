@@ -3775,6 +3775,57 @@ tr[data-followable]:hover {
   border-bottom: 1px solid var(--line);
 }
 
+/* The smallest run view: a run this window never started, read from the
+   ledger instead of followed live. Shares the console's bar and truth line
+   on purpose — it is the same kind of thing, with less to say. */
+.glimpse {
+  flex-shrink: 0;
+  max-height: 60vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.glimpse__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  height: 40px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.glimpse__title {
+  font-weight: 600;
+  font-size: var(--text-body);
+}
+
+.glimpse__id {
+  font-size: var(--text-small);
+  color: var(--muted);
+}
+
+.glimpse__note {
+  padding: 6px 12px;
+  font-size: var(--text-small);
+  color: var(--muted);
+}
+
+.glimpse__facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 8px;
+  padding: 0 12px 8px;
+  font-size: var(--text-small);
+}
+
+.glimpse__facts dt {
+  color: var(--muted);
+}
+
 .console__title {
   font-weight: 600;
   font-size: var(--text-body);
