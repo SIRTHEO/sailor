@@ -242,7 +242,7 @@ fn the_mandate_carries_the_fault_and_asks_for_a_red_test_and_an_honest_answer() 
         "the answer has no field in which to name the command that judges it"
     );
     let warrant = flow.graph.step("warrant").expect("the warrant step");
-    assert_eq!(warrant.deps, vec!["trigger", "repair"]);
+    assert_eq!(warrant.deps, vec!["trigger", "next", "repair"]);
     let with = warrant.with.as_ref().expect("with");
     assert_eq!(
         with["env"]["CHECK"],
