@@ -4042,6 +4042,24 @@ fn replaying_the_log_rebuilds_every_projection_row_for_row() {
     assert_eq!(every_projection(&ledger), expected);
 }
 
+#[test]
+fn a_role_and_its_resolved_chain_survive_a_projection_rebuild() {
+    let directory = TestDirectory::new("role-chain-rebuild");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    let mut call = call_with("role-chain", Some(10), Some(1));
+    call.role = Some("reviewer".to_owned());
+    call.role_resolved_to = vec!["motore-di-prova".to_owned()];
+    ledger.record_model_call(&call).expect("record the role call");
+
+    ledger.rebuild_projections().expect("rebuild the projections");
+
+    let rows = ledger
+        .dump_projection("model_calls")
+        .expect("read the rebuilt calls");
+    assert_eq!(rows[0][31], json!("reviewer"));
+    assert_eq!(rows[0][32], json!(r#"["motore-di-prova"]"#));
+}
+
 /// **A REFUSAL TO ANSWER IS NOT A BIRTH TIME.** Read anyway it dates the
 /// process to 1970, and every stranger looks older than every row.
 #[test]
