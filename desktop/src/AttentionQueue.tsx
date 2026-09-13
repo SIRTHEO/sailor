@@ -1,6 +1,6 @@
 import { waitedFor } from "./waiting";
 import { t } from "./i18n";
-import { rankAttentionRows, type AttentionRow } from "./attention";
+import { type AttentionRow } from "./attention";
 
 export interface AttentionQueueProps {
   rows: AttentionRow[];
@@ -11,24 +11,23 @@ export interface AttentionQueueProps {
 
 export function AttentionQueue({ rows, now, onRun, onTty }: AttentionQueueProps) {
   if (rows.length === 0) return null;
-  const sorted = rankAttentionRows(rows);
 
   return (
     <section className="waiting__group">
       <h3 className="waiting__section">{t("window.attention.title")}</h3>
       <div>
-        {sorted.map((row, index) => {
+        {rows.map((row, index) => {
           const key = row.step_id
             ? `${row.run_id ?? "run"}/${row.step_id}`
             : row.run_id ?? (row.tty ? `terminal/${row.tty}` : `attention-${String(index)}`);
           const elapsed = row.since != null ? waitedFor(row.since, now) : "";
           const reason =
-            row.reason && row.reason.trim() !== "" ? row.reason : "reason unknown";
+            row.reason && row.reason.trim() !== "" ? row.reason : t("window.attention.reason_unknown");
           const statusWord =
             row.kind === "handed"
               ? row.status_word
               : row.status_word === "waiting on you"
-                ? "stopped"
+                ? t("window.attention.stopped")
                 : row.status_word;
 
           const link = row.link;

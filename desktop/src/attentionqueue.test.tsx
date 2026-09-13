@@ -62,7 +62,7 @@ describe("AttentionQueue", () => {
       "abandoned terminal",
     ]);
 
-    render(<AttentionQueue rows={rows} now={NOW} />);
+    render(<AttentionQueue rows={ranked} now={NOW} />);
     const renderedReasons = Array.from(document.querySelectorAll(".waiting__what")).map(
       (el) => el.textContent,
     );

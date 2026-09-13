@@ -10,6 +10,7 @@
   "window.attention.open_run": "Apri la corsa",
   "window.attention.open_terminal": "Apri terminale {tty}",
   "window.attention.reason_unknown": "motivo sconosciuto",
+  "window.attention.stopped": "fermo",
   "window.session.attention": "Lavoro che richiede attenzione",
   "window.session.show": "Mostra la corsa, i rifiuti, il costo e la quota",
   "window.session.hide": "Nascondi la corsa, i rifiuti, il costo e la quota",

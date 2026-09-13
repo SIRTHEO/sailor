@@ -10,6 +10,7 @@
   "window.attention.open_run": "Open the run",
   "window.attention.open_terminal": "Open terminal {tty}",
   "window.attention.reason_unknown": "reason unknown",
+  "window.attention.stopped": "stopped",
   "window.session.attention": "Work needing attention",
   "window.session.show": "Show the run, the refusals, the cost and the quota",
   "window.session.hide": "Hide the run, the refusals, the cost and the quota",
