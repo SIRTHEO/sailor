@@ -34,6 +34,7 @@ mod manual;
 mod models;
 mod profiles;
 mod run;
+mod strip;
 mod terminal;
 mod tools;
 mod workspaces;
@@ -236,7 +237,8 @@ fn main() {
             changes::workspace_changes,
             changes::open_in_editor,
             changes::who_opens_files,
-            attention::attention_queue
+            attention::attention_queue,
+            strip::strip
         ])
         .run(tauri::generate_context!())
         .expect("Sailor's window did not open");
