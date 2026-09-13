@@ -70,7 +70,7 @@
         "when": null,
         "with": {
           "collection": "work-queue-claims",
-          "key": { "$join": [{ "$from": "/select/records/0/key" }, "/claim"] },
+          "key": { "$join": [{ "$from": "/select/records/0/key" }, "-claim"] },
           "value": { "$from": "/select/records/0/value" },
           "written_by": "take-the-next-work"
         },
