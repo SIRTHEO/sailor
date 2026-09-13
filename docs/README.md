@@ -30,6 +30,9 @@ the real author and the real date.
 
 ## Operate
 
+- [`the-delivery-loop.md`](the-delivery-loop.md) — the ten steps from taking
+  work to closing it, the same from a terminal or as a recorded flow, and
+  which of them this tree already runs.
 - [`the-terminal-contract.md`](the-terminal-contract.md) — the seven commands
   the bridge exposes, the two events, and who owns which files. The Rust half
   and the React half are both written against this page; whoever finds it

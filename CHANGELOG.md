@@ -29,3 +29,4 @@ not aspirational.
 - A home's identity is read off its own file and turned into one verdict every surface acts on.
 - The desktop window shows account readings and handed-step state in the strip and the attention queue.
 - The walkthrough `docs/walkthrough-a-queue-of-work.md` takes a queue of work from a seeded fixture to a parked task, in five minutes.
+- The delivery loop from taking work to closing it is written down in `docs/the-delivery-loop.md`, with `.sailor/delivery-policy.json` setting this repository's merge, push and release to `auto`.

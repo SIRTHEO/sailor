@@ -269,6 +269,10 @@ Two consequences that are not optional:
   when a person names it, the same rule already written for a port Sailor did
   not open.
 
+[`docs/the-delivery-loop.md`](docs/the-delivery-loop.md) and
+`.sailor/delivery-policy.json` are the rule for an agent taking work through
+merge, push and release, exactly as they are for a person.
+
 ## Integration has one branch only
 
 Eleven of those 53 existed **only to merge** — `fusione-quattro`, `fusione-sei`,
