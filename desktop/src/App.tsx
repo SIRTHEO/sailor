@@ -35,6 +35,7 @@ import { MACHINE, MACHINE_GROUND, SECTIONS, TERMINALS_GROUND, nameOfPlace, onIts
 import { World, OF_THIS_TREE, type FlowGroup } from "./World";
 import { liveOf, newestPerFlow } from "./flowlive";
 import { amongThese, rememberWhere, stillThere, whereYouWere } from "./whereyouwere";
+import { attentionQueue } from "./attention";
 import type { Project } from "./workspaces";
 import {
   DropdownMenu,
@@ -304,6 +305,29 @@ export default function App() {
       ? amongThese(wasAt.current.place, SECTIONS, "waiting")
       : "waiting",
   );
+  /* **SOMETHING WAITING OUTRANKS WHERE YOU LEFT OFF.** The place kept across a
+     rebuild is a convenience for the ordinary case; it must not be the reason
+     a parked task sits unseen behind the board a person happened to close on
+     last. Asked once, at the very first beat: a later beat finding nothing new
+     must not keep pulling the window back here. */
+  const askedIfAnythingWaits = useRef(false);
+  useEffect(() => {
+    if (!NATIVE || askedIfAnythingWaits.current) return;
+    askedIfAnythingWaits.current = true;
+    let live = true;
+    attentionQueue().then(
+      (rows) => {
+        if (live && rows.length > 0) setPlace("waiting");
+      },
+      () => {
+        // Asked once, in good faith: a shell that cannot answer yet leaves
+        // the place exactly as the note above already decided it.
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
   const [memoryTab, setMemoryTab] = useState<MemoryTab>(() =>
     amongThese(wasAt.current.memoryTab, MEMORY_TABS.map((one) => one.id), "runs"),
   );
