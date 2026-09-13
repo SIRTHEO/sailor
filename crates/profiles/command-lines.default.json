@@ -45,7 +45,14 @@
     "`signed_in_when` names the files inside a home whose presence means somebody",
     "signed in there. Measured on this machine, never guessed. Absent means NOBODY",
     "ESTABLISHED IT, and no engine is ever refused for that: unknown is not signed",
-    "out. gemini and antigravity keep nothing under such a name, so neither declares one."
+    "out. gemini and antigravity keep nothing under such a name, so neither declares one.",
+    "",
+    "`identity` names the file inside a home, and the keys down to it, that say",
+    "WHICH ACCOUNT that home answers as — read off the disk, never asked of the",
+    "engine, because the file is what a launch actually reads. Absent means nobody",
+    "measured it yet for that engine: `identity_of_home` then answers «cannot",
+    "tell», never «matches». Measured for claude in `.claude.json` at the home's",
+    "own root, under `oauthAccount.emailAddress`."
   ],
   "command_lines": [
     {
@@ -58,6 +65,7 @@
       "home_note": "checked against the installed binary: the variable moves the whole directory, credentials and settings included.",
       "reads_instructions_from": ["~/.claude/CLAUDE.md", "CLAUDE.md"],
       "signed_in_when": [".credentials.json"],
+      "identity": { "file": ".claude.json", "pointer": ["oauthAccount", "emailAddress"] },
       "endpoint": {
         "url_var": "ANTHROPIC_BASE_URL",
         "key_var": "ANTHROPIC_API_KEY",

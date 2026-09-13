@@ -199,6 +199,7 @@ finished.
 | 177 | 2026-09-13 | **A guard test was deleted and nobody noticed until a cold reading.** `the_release_refuses_the_push_before_making_it` vanished during a privacy rework, so the ratchet's unchanged count of test functions hid a deletion paired with an addition. | A later cold reading found the missing guard and executed the stronger replacement, `a_tracked_reserved_artifact_is_refused_before_a_push`, on 13/09/2026. | The replacement refuses a tracked reserved artifact before a push; test-function counts alone cannot prove which guard survived. | **closed** |
 | 178 | 2026-09-13 | **A worker declared three real papers non-existent.** Its web tool failed silently and absence was reported as fact, although 2607.26520, 2606.06240, and 2608.12476 are published papers. | A second road, a web search on 13/09/2026, found all three papers. | A claim that something does not exist is a claim about the tool that looked; it is checked by a second road before repetition. | **closed** |
 | 179 | 2026-09-13 | **A fresh engine home answers three dialogs before it takes input.** OAuth chooses the account, then trust-this-folder and bypass-permissions block the terminal; a mandate typed before the idle prompt is lost without error. | Measured in a fresh home on 13/09/2026: the idle prompt follows all three dialogs, and the dialog cursor begins on “No, exit”. | The launcher should wait for the prompt or drive the dialogs. It is fixed when a mandate sent into a fresh home arrives. | **open** |
+| 180 | 2026-09-13 | **A profile's home re-authorised the account a browser already had open during login, and `sailor profiles list` kept saying "authenticated" — true of the home, not of the account the profile is named for.** `sailor remaining` then read the same account's quota under two profile names. | Measured at 13:05: a profile named after one account carried a home whose own identity file named `oauthAccount.emailAddress` as a different one. | An identity reading per engine, off the home's own file rather than asked of the engine: `a_home_answering_as_another_account_is_mismatched_not_authenticated` in `crates/sailor/src/profiles_cmd.rs`, and the launch refusal in `crates/sailor/src/run_cmd.rs`. A first cure still turned "nobody declared an identity file" into authenticated; `profiles::verdict_of` is now the one place `list`, `adopt` and `run` share, and `a_home_with_no_identity_file_is_unverified_not_authenticated_by_default` proves the third reading. | **closed** |
 
 ## What this table says, read all at once
 
@@ -207,7 +208,7 @@ from the types, not from the tests: by timing something, by opening the store,
 by taking a screenshot, by checking the weight of a directory. It is the reason
 a test that could not have come out differently is not a test.
 
-**Fifty-four are still open** out of a hundred and seventy-nine, and two of
+**Fifty-four are still open** out of a hundred and eighty, and two of
 those (10 and 28) are the same thing seen from two sides: **the same truth
 written in several places, and no check that compares them** — two copies of a
 list of components, and the reference resolution that lived in twelve places

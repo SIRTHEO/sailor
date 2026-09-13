@@ -58,6 +58,8 @@ fn access(state: sailor::profiles_cmd::Access) -> &'static str {
         sailor::profiles_cmd::Access::No => "no",
         sailor::profiles_cmd::Access::NotKnown => "not known",
         sailor::profiles_cmd::Access::HomeDoesNotMove => "home does not move",
+        sailor::profiles_cmd::Access::Mismatched => "mismatched",
+        sailor::profiles_cmd::Access::Unverified => "unverified",
     }
 }
 
