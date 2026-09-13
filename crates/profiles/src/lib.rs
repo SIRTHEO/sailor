@@ -57,6 +57,80 @@ pub struct KnownCli {
     pub reads_instructions_from: Vec<String>,
     /// Inside a home, the files whose presence means somebody signed in there.
     pub signed_in_when: Vec<String>,
+    /// Where, inside a home, this engine writes **which account it answers
+    /// as** — never asked of the engine, read off its own file: cheaper, and
+    /// the file is what a launch actually reads. `None` where nobody
+    /// established it: [`identity_of_home`] then answers «cannot tell», never
+    /// «matches».
+    pub identity_at: Option<IdentityFile>,
+}
+
+/// Where a home names the account it answers as: a file relative to the home,
+/// and the keys down to the value inside it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IdentityFile {
+    pub file: String,
+    pub pointer: Vec<String>,
+}
+
+/// What a home's own file says about the account it answers as.
+///
+/// **THREE OUTCOMES, NOT TWO.** «Nobody looked», «the file said nothing
+/// readable» and «it says X» are different facts, and only the third can be
+/// compared to a profile's name. Collapsing the first two into a silent
+/// «matches» is the fault this type exists to rule out.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HomeIdentity {
+    /// The file names this account.
+    Answers(String),
+    /// Nobody established the file for this engine, it is not there, or it
+    /// carries nothing readable at the declared pointer. Its own words say
+    /// which.
+    CannotTell(String),
+}
+
+/// Reads what a home's own file says about the account it answers as.
+/// **NEVER ASKS THE ENGINE**: the file is what a launch actually reads, and
+/// asking would cost a process start for a question the disk already answers.
+/// `read` is a seam so a test can hand it text without writing a real file.
+pub fn identity_of_home(
+    cli: &KnownCli,
+    home: &Path,
+    read: &dyn Fn(&Path) -> Option<String>,
+) -> HomeIdentity {
+    let Some(declared) = &cli.identity_at else {
+        return HomeIdentity::CannotTell(format!(
+            "{} declares no file naming the account its home answers as",
+            cli.display_name
+        ));
+    };
+    let path = home.join(&declared.file);
+    let Some(text) = read(&path) else {
+        return HomeIdentity::CannotTell(format!("{} is not there", path.display()));
+    };
+    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return HomeIdentity::CannotTell(format!("{} is not valid JSON", path.display()));
+    };
+    let mut at = &parsed;
+    for key in &declared.pointer {
+        let Some(next) = at.get(key) else {
+            return HomeIdentity::CannotTell(format!(
+                "{} carries no «{}»",
+                path.display(),
+                declared.pointer.join(".")
+            ));
+        };
+        at = next;
+    }
+    match at.as_str() {
+        Some(account) if !account.is_empty() => HomeIdentity::Answers(account.to_owned()),
+        _ => HomeIdentity::CannotTell(format!(
+            "{} carries no «{}»",
+            path.display(),
+            declared.pointer.join(".")
+        )),
+    }
 }
 
 /// Whether a home carries credentials. **UNKNOWN IS NOT SIGNED OUT**: nobody
@@ -224,6 +298,8 @@ struct DeclaredCli {
     reads_instructions_from: Vec<String>,
     #[serde(default)]
     signed_in_when: Vec<String>,
+    #[serde(default)]
+    identity: Option<IdentityFile>,
 }
 
 /// Exactly one field is written; neither means **no known way**.
@@ -276,6 +352,7 @@ impl From<DeclaredCli> for KnownCli {
             endpoint: declared.endpoint,
             reads_instructions_from: declared.reads_instructions_from,
             signed_in_when: declared.signed_in_when,
+            identity_at: declared.identity,
         }
     }
 }
@@ -650,6 +727,7 @@ mod tests {
             endpoint: None,
             reads_instructions_from: Vec::new(),
             signed_in_when: Vec::new(),
+            identity_at: None,
         };
         let env = build_environment(&cli, Path::new("/home/profiles/acme/work"), &|_| None);
         assert!(env.is_empty());
@@ -772,5 +850,45 @@ mod tests {
             assert!(!cli.id.is_empty());
             assert!(!cli.executable.is_empty());
         }
+    }
+
+    // ── which account a home answers as ────────────────────────────────
+
+    fn a_home_naming(email: &str) -> impl Fn(&Path) -> Option<String> + '_ {
+        move |path: &Path| {
+            path.ends_with(".claude.json")
+                .then(|| format!(r#"{{"oauthAccount":{{"emailAddress":"{email}"}}}}"#))
+        }
+    }
+
+    /// **THE FAULT THIS TEST HOLDS SHUT.** During the login the browser
+    /// re-authorised the account it already had open, and the home now names
+    /// somebody else: read off `.claude.json`, not asked of the engine.
+    #[test]
+    fn a_home_naming_another_account_is_read_as_that_account() {
+        let cli = find_cli("claude").unwrap();
+        let identity = identity_of_home(
+            cli,
+            Path::new("/homes/claude/matteo19"),
+            &a_home_naming("tools@example.com"),
+        );
+        assert_eq!(identity, HomeIdentity::Answers("tools@example.com".to_owned()));
+    }
+
+    #[test]
+    fn a_home_with_no_identity_file_cannot_be_told() {
+        let cli = find_cli("claude").unwrap();
+        let identity = identity_of_home(cli, Path::new("/homes/claude/vuota"), &|_| None);
+        assert!(matches!(identity, HomeIdentity::CannotTell(_)));
+    }
+
+    /// A command line that declares no identity file at all — every one but
+    /// `claude`, today — never claims a match: nobody looked.
+    #[test]
+    fn a_cli_with_no_identity_declared_cannot_be_told_even_with_a_file_there() {
+        let cli = find_cli("codex").unwrap();
+        let identity =
+            identity_of_home(cli, Path::new("/homes/codex/lavoro"), &a_home_naming("x@example.com"));
+        assert!(matches!(identity, HomeIdentity::CannotTell(_)));
     }
 }
