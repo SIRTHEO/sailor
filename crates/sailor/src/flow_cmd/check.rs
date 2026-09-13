@@ -34,7 +34,9 @@ pub(super) fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) 
         probe: &real,
         profiles: &profiles,
     };
-    let registry = default_registry(open_default_ledger(), None);
+    let ledger = open_default_ledger();
+    let flow = resolved_roles(&flow, ledger.as_ref())?;
+    let registry = default_registry(ledger, None);
     let (mut report, unknown) = check_report(
         &flow,
         &registry,
@@ -74,6 +76,33 @@ pub(super) fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) 
         "cli.flow.tools_no_descriptor_declares",
         &[("flow", &flow.id), ("tools", &unknown.join(", "))],
     ))
+}
+
+fn resolved_roles(flow: &FlowFile, ledger: Option<&ledger::Ledger>) -> Result<FlowFile, String> {
+    let mut value = serde_json::to_value(flow).map_err(|error| error.to_string())?;
+    if let Some(inputs) = value.pointer_mut("/inputs").and_then(Value::as_object_mut) {
+        for input in inputs.values_mut() {
+            if input.get("role").is_some() {
+                *input = actions::resolve_role(input, ledger)?;
+            }
+        }
+    }
+    let Some(steps) = value.pointer_mut("/graph/steps").and_then(Value::as_array_mut) else {
+        return Ok(flow.clone());
+    };
+    for step in steps {
+        let Some(with) = step.get("with").cloned() else {
+            continue;
+        };
+        if with.get("role").is_none() {
+            continue;
+        }
+        let resolved = actions::resolve_role(&with, ledger)?;
+        if let Some(object) = step.as_object_mut() {
+            object.insert("with".to_owned(), resolved);
+        }
+    }
+    serde_json::from_value(value).map_err(|error| error.to_string())
 }
 
 /// Every reason this flow is refused, in the order a reader meets them.
@@ -803,6 +832,20 @@ mod tests {
     use super::super::test_support::*;
     use super::*;
     use registry::{registry_in, House};
+
+    #[test]
+    fn a_role_missing_from_the_store_is_named_before_the_flow_runs() {
+        let json = flow_json("external_engine", "[]", r#"{"root":{"role":"reviewer"}}"#);
+        let flow: FlowFile = serde_json::from_str(&json).expect("it loads");
+        let directory = std::env::temp_dir().join(format!("sailor-check-role-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("create the scratch directory");
+        let ledger = ledger::Ledger::open(directory).expect("open the ledger");
+
+        let error = resolved_roles(&flow, Some(&ledger)).expect_err("the role has no row");
+
+        assert!(error.contains("role «reviewer» has no row"), "{error}");
+    }
 
     // ── the fields the action does not know ──────────────────────────
 

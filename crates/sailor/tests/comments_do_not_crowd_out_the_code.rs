@@ -35,7 +35,7 @@ const COMMENT_LINES_NOT_IN_ENGLISH: usize = 1;
 /// Comment lines per thousand code lines, per crate, as measured today.
 /// Downwards only; a crate under 100 is where the sweep stops.
 const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
-    ("actions", 247),
+    ("actions", 244),
     ("catalogue", 239),
     ("desktop", 243),
     ("faults", 156),
@@ -45,7 +45,7 @@ const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
     ("machine", 232),
     ("models", 269),
     ("profiles", 172),
-    ("registry", 286),
+    ("registry", 285),
     ("relay", 142),
     ("release", 426),
     ("sailor", 180),
