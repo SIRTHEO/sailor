@@ -78,7 +78,7 @@ pub(super) fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) 
     ))
 }
 
-fn resolved_roles(flow: &FlowFile, ledger: Option<&ledger::Ledger>) -> Result<FlowFile, String> {
+pub(super) fn resolved_roles(flow: &FlowFile, ledger: Option<&ledger::Ledger>) -> Result<FlowFile, String> {
     let mut value = serde_json::to_value(flow).map_err(|error| error.to_string())?;
     if let Some(inputs) = value.pointer_mut("/inputs").and_then(Value::as_object_mut) {
         for input in inputs.values_mut() {

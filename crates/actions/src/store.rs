@@ -542,7 +542,7 @@ mod tests {
     }
 
     #[test]
-    fn selecting_records_filters_orders_and_limits_them() {
+    fn store_select_filters_orders_and_limits_them() {
         let (ledger, _guard) = store();
         let write = StoreWriteAction::new(Some(ledger.clone()));
         for (key, state, priority) in [
@@ -583,7 +583,7 @@ mod tests {
     }
 
     #[test]
-    fn selecting_records_leaves_missing_order_fields_last() {
+    fn store_select_leaves_missing_order_fields_last() {
         let (ledger, _guard) = store();
         let write = StoreWriteAction::new(Some(ledger.clone()));
         for (key, value) in [("first", json!({"priority": 1})), ("missing", json!({}))] {
