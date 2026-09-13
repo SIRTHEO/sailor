@@ -107,7 +107,12 @@
         "with": {
           "role": "CHEAP_WORKER",
           "tree": "own",
-          "stdin": { "$from": "/select/records/0/value/title" },
+          "stdin": {
+            "$join": [
+              "Do the work below in this tree; do not run `sailor` yourself — the flow closes its own steps and reads the tree on its own. ",
+              { "$from": "/select/records/0/value/title" }
+            ]
+          },
           "timeout_secs": 600
         },
         "input_schema": { "type": "any" },
@@ -141,11 +146,29 @@
           "command": "./check.sh",
           "workdir": { "$from": "/worker_tree/records/0/value/path" },
           "accept": ["failed"],
-          "timeout_secs": 30
+          "timeout_secs": 90
         },
         "input_schema": { "type": "any" },
         "output_schema": { "type": "any" },
         "required": true
+      },
+      {
+        "id": "release_tree",
+        "deps": ["select", "worker_tree", "acceptance"],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "git -C \"$REPO\" worktree remove --force \"$PATH_TO_RELEASE\"",
+          "env": {
+            "REPO": { "$from": "/select/records/0/value/workspace" },
+            "PATH_TO_RELEASE": { "$from": "/worker_tree/records/0/value/path" }
+          },
+          "accept": ["failed"],
+          "timeout_secs": 30
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
       },
       {
         "id": "verdict_state",

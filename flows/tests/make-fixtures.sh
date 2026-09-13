@@ -28,6 +28,11 @@ test -f TASK_OK'
 make_project beta '#!/bin/sh
 test -f MARKER_THE_CHEAP_WORKER_NEVER_WRITES'
 
+# Passes unconditionally: a worker that leaves the tree exactly as it found it
+# must still have that tree standing when this runs.
+make_project gamma '#!/bin/sh
+true'
+
 echo "fixtures written under $fixtures"
 echo "seed their ledger with: cargo run -p sailor --example seed_take_the_next_work -- $fixtures"
 echo "check the flow against it with: SAILOR_LEDGER=$fixtures/store cargo run -p sailor -- flow check take-the-next-work"
