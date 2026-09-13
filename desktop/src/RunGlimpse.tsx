@@ -5,11 +5,12 @@ import { Handed } from "./Handed";
 import { t } from "./i18n";
 import { Spend } from "./RunConsole";
 
-/**
- * The smallest run view there is: for a run this window's shell never
- * started, `RunConsole` has no live console to show, so this reads the same
- * facts from the ledger instead. The act stays `Handed`'s, unchanged.
- */
+/** The smallest run view there is: for a run this window's shell never
+ * started, this reads the ledger instead of following a live console. */
+
+/** How long a stale «no run called …» stays readable before the view closes
+ * itself: long enough to read, short enough not to become a fixture. */
+export const GONE_MS = 10_000;
 
 type Ask =
   | { state: "asking" }
@@ -46,6 +47,12 @@ export function RunGlimpse({ runId, onClose, onChanged }: RunGlimpseProps) {
       alive = false;
     };
   }, [runId]);
+
+  useEffect(() => {
+    if (ask.state !== "mute" || !ask.why.includes("no run called ")) return;
+    const timer = setTimeout(onClose, GONE_MS);
+    return () => clearTimeout(timer);
+  }, [ask, onClose]);
 
   return (
     <section className="glimpse" aria-label="the run, as the ledger knows it">

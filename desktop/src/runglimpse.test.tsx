@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, test } from "vitest";
-import { RunGlimpse } from "./RunGlimpse";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { GONE_MS, RunGlimpse } from "./RunGlimpse";
 
 /**
  * **THE SMALLEST RUN VIEW, FOR A RUN THIS WINDOW NEVER STARTED.** Read from the
@@ -89,6 +89,26 @@ describe("the smallest run view", () => {
       await screen.findByText(/Cannot read this run: Error: no run called run-9/);
     } finally {
       shell.stop();
+    }
+  });
+
+  test("a run the ledger no longer has closes itself, not staying up forever", async () => {
+    vi.useFakeTimers();
+    const shell = pretendShell((command) => {
+      if (command === "run_glimpse") throw new Error("no run called run-9");
+      if (command === "run_usage") return null;
+      throw new Error(`no ${command}`);
+    });
+    let closed = 0;
+    try {
+      render(<RunGlimpse runId="run-9" onClose={() => (closed += 1)} />);
+      await vi.waitFor(() => screen.getByText(/Cannot read this run: Error: no run called run-9/));
+      expect(closed).toBe(0);
+      await vi.advanceTimersByTimeAsync(GONE_MS);
+      expect(closed).toBe(1);
+    } finally {
+      shell.stop();
+      vi.useRealTimers();
     }
   });
 
