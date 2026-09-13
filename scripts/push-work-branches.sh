@@ -27,9 +27,9 @@ git -C "$root" for-each-ref --format='%(refname:short)' refs/heads | while read 
         continue
     fi
     if [ "$branch" = main ]; then
-        git -C "$root" -c "credential.helper=$helper" push origin "$branch:refs/heads/$branch" || exit $?
+        git -C "$root" -c credential.helper= -c "credential.helper=$helper" push origin "$branch:refs/heads/$branch" || exit $?
     else
-        git -C "$root" -c "credential.helper=$helper" push --force-with-lease origin "$branch:refs/heads/$branch" || exit $?
+        git -C "$root" -c credential.helper= -c "credential.helper=$helper" push --force-with-lease origin "$branch:refs/heads/$branch" || exit $?
     fi
     echo "push[$branch]: pinned $short and pushed"
 done
