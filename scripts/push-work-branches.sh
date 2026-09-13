@@ -11,7 +11,7 @@ git -C "$root" for-each-ref --format='%(refname:short)' refs/heads | while read 
         main|matteodimattia/*|crew/*|work/*) ;;
         *) continue ;;
     esac
-    if [ "$branch" != main ] && ! git -C "$root" merge-base --is-ancestor main "$branch"; then
+    if [ "$branch" != main ] && ! git -C "$root" merge-base main "$branch" >/dev/null; then
         echo "push[$branch]: skipped because it has no merge base with main"
         continue
     fi
