@@ -27,9 +27,8 @@ export function Handed({ runId, onChanged }: HandedProps) {
   const [said, setSaid] = useState<Record<string, string>>({});
   const [report, setReport] = useState<string | null>(null);
   const [trouble, setTrouble] = useState<string | null>(null);
-  /** Which gesture is in flight, keyed `stepId:verb`; `null` when idle. Read
-   * back by the button it belongs to, so the other steps of the same run stay
-   * live while one of them is being closed. */
+  /** Gesture in flight, keyed `stepId:verb`, or `null`: read per button so the
+   * other steps of this run stay live while one of them closes. */
   const [busy, setBusy] = useState<string | null>(null);
 
   const read = useCallback(() => {
@@ -87,9 +86,8 @@ export function Handed({ runId, onChanged }: HandedProps) {
             >
               {busy === `${step.step_id}:take` ? t("window.handed.taking") : "take it"}
             </button>
-            {/* **THE TREE THE RUN WAS BORN IN, NOT THE ONE THE WINDOW STANDS
-                IN.** A bench in the wrong tree is found out at the first
-                command that reads a file, and by then a verdict was given. */}
+            {/* The tree the run was born in, not the window's: a wrong-tree
+                bench is found out only at the first file read. */}
             {bench !== null && step.worktree !== null && (
               <button
                 type="button"
