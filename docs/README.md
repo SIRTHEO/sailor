@@ -23,8 +23,8 @@ says, with the real author and the real date.
   if an orchestration calls for new code, a power is missing, not a flow.
   Declared and not yet in force — the page says so itself.
 - [`what-sailor-can-do.md`](what-sailor-can-do.md) — the census of the engine,
-  crate by crate: the nineteen crates, the twenty-three actions a step can run,
-  the forty-nine verbs of the command line, and how much of it has a door.
+  crate by crate: the twenty crates, the thirty-three actions a step can run,
+  the twenty-two commands and seventy verbs of the command line, and how much of it has a door.
 - [`the-window-that-shows-itself.md`](the-window-that-shows-itself.md) — why the
   window has four places and not eleven, what «not in the foreground» means, and
   what was on the screen when it was checked.

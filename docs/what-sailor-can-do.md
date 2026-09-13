@@ -43,13 +43,15 @@ thrown away; they are listed at the end.
 | `release` | 320 | putting into service a binary built from HEAD | **nobody** |
 | `workspace` | 162 | the worktrees of a repository | **window** |
 
-**Six crates out of nineteen have no door at all**: `toolbox`, `models`,
-`supervisor`, `profiles`, `relay`, `release`. That is 11,447 lines of engine
-nobody can ask for anywhere except by reading the code.
+**Six crates out of twenty have no door at all**: `toolbox`, `models`,
+`catalogue`, `faults`, `inventory`, `machine`. A door is a surface — CLI,
+window, webhook — that lets whoever looks read or command without compiling. The
+`catalogue` crate returns strings, but what shows them is `sailor::ui`; `faults`
+reads and writes the ledger, but what commands it is `crates/sailor/src/faults_cmd.rs`.
 
 ---
 
-## 2. The twenty-three actions a step can run
+## 2. The thirty-three actions a step can run
 
 Extracted from the `*_ACTION` constants. The window's box offers **seven
 families**, each with a single default action: the other sixteen are reachable
@@ -87,7 +89,7 @@ nothing that names them.
 
 ---
 
-## 3. The fourteen commands, and their forty-nine verbs
+## 3. The twenty-two commands, and their seventy verbs
 
 | command | verbs | in the window |
 |---|---|---|
