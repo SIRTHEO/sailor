@@ -113,6 +113,11 @@ pub enum Access {
     /// browser was already open, and nobody noticed. **NOT `Yes`**: the home
     /// answers as somebody else.
     Mismatched,
+    /// The engine says the home is logged in, but nobody can read which
+    /// account it answers as: a third reading, distinct from both of the
+    /// above. **NOT `Yes`**: a match is not the same thing as an absence of
+    /// proof. **NOT `Mismatched`**: nothing contradicts the profile's name.
+    Unverified,
 }
 
 /// One profile, as both surfaces show it.
@@ -224,22 +229,31 @@ fn access_of(
         );
     }
     match actions::probe_login_status(probe, &bin, &env, &recipe) {
-        LoginVerdict::LoggedIn { said } => match identity_of_home(cli, home) {
-            profiles::HomeIdentity::Answers(really) if really != profile_name => (
-                Access::Mismatched,
-                catalogue::say(
-                    "cli.profiles.access.mismatched",
-                    &[("home_answers_as", &really), ("profile_named", profile_name)],
+        LoginVerdict::LoggedIn { said } => {
+            match profiles::verdict_of(&identity_of_home(cli, home), profile_name) {
+                profiles::IdentityVerdict::Mismatched { home_answers_as } => (
+                    Access::Mismatched,
+                    catalogue::say(
+                        "cli.profiles.access.mismatched",
+                        &[("home_answers_as", &home_answers_as), ("profile_named", profile_name)],
+                    ),
                 ),
-            ),
-            _ => (
-                Access::Yes,
-                catalogue::say(
-                    "cli.profiles.access.authenticated",
-                    &[("said", &one_line(&said))],
+                profiles::IdentityVerdict::Verified => (
+                    Access::Yes,
+                    catalogue::say(
+                        "cli.profiles.access.authenticated",
+                        &[("said", &one_line(&said))],
+                    ),
                 ),
-            ),
-        },
+                profiles::IdentityVerdict::Unverified => (
+                    Access::Unverified,
+                    catalogue::say(
+                        "cli.profiles.access.unverified",
+                        &[("said", &one_line(&said))],
+                    ),
+                ),
+            }
+        }
         LoginVerdict::LoggedOut { said } => (
             Access::No,
             catalogue::say(
@@ -357,13 +371,13 @@ pub fn adopt(cli_id: &str, name: &String, path: Option<&Path>) -> Result<(), Str
     }
     // Verified right after the login, before any row is written: a home
     // whose own file already names a different account is refused here.
-    if let profiles::HomeIdentity::Answers(really) = identity_of_home(cli, &home) {
-        if &really != name {
-            return Err(catalogue::say(
-                "cli.profiles.access.mismatched",
-                &[("home_answers_as", &really), ("profile_named", name)],
-            ));
-        }
+    if let profiles::IdentityVerdict::Mismatched { home_answers_as } =
+        profiles::verdict_of(&identity_of_home(cli, &home), name)
+    {
+        return Err(catalogue::say(
+            "cli.profiles.access.mismatched",
+            &[("home_answers_as", &home_answers_as), ("profile_named", name)],
+        ));
     }
 
     let mut store = store_io::load_store()?;
@@ -586,6 +600,25 @@ mod tests {
         (dir, tools)
     }
 
+    /// A probe that answers «logged in» without spawning a process: these
+    /// tests are about the identity file next to the home, not about a login
+    /// command's own process, whose timeout gets flaky under load.
+    struct AlwaysLoggedIn;
+
+    impl actions::LoginProbe for AlwaysLoggedIn {
+        fn ask(
+            &self,
+            _bin: &str,
+            _args: &[String],
+            _env: &std::collections::BTreeMap<String, String>,
+        ) -> actions::DryRun {
+            actions::DryRun::Answered {
+                stdout: r#"{"loggedIn": true}"#.to_owned(),
+                stderr: String::new(),
+            }
+        }
+    }
+
     /// **THE FAULT THIS TEST HOLDS SHUT.** A home's own file named a
     /// different account than the profile: the login had re-authorised the
     /// account a browser already had open, and the list still said
@@ -595,7 +628,7 @@ mod tests {
     fn a_home_answering_as_another_account_is_mismatched_not_authenticated() {
         let (dir, tools) = a_machine_with_a_fake_claude();
         let cli = find_cli("claude").expect("claude is in the table");
-        let probe = actions::RealDryProbe;
+        let probe = AlwaysLoggedIn;
 
         let named_after_someone = dir.join("someone@example.com");
         std::fs::create_dir_all(&named_after_someone).expect("the profile's home");
@@ -618,7 +651,7 @@ mod tests {
     fn a_home_answering_as_its_own_profile_stays_authenticated() {
         let (dir, tools) = a_machine_with_a_fake_claude();
         let cli = find_cli("claude").expect("claude is in the table");
-        let probe = actions::RealDryProbe;
+        let probe = AlwaysLoggedIn;
 
         let home = dir.join("someone@example.com");
         std::fs::create_dir_all(&home).expect("the profile's home");
@@ -633,19 +666,19 @@ mod tests {
     }
 
     /// A home with no identity file at all cannot be told apart from its
-    /// profile: «cannot tell» stays a yes here, never a mismatch invented from
-    /// silence.
+    /// profile: «cannot tell» is a third reading, never a mismatch invented
+    /// from silence and never authenticated-by-default either.
     #[test]
-    fn a_home_with_no_identity_file_is_not_called_mismatched() {
+    fn a_home_with_no_identity_file_is_unverified_not_authenticated_by_default() {
         let (dir, tools) = a_machine_with_a_fake_claude();
         let cli = find_cli("claude").expect("claude is in the table");
-        let probe = actions::RealDryProbe;
+        let probe = AlwaysLoggedIn;
 
         let home = dir.join("senza-file-di-identita");
         std::fs::create_dir_all(&home).expect("the profile's home");
 
-        let (access, _said) = access_of(&tools, &probe, cli, &home, "chiunque@example.com");
-        assert_eq!(access, Access::Yes);
+        let (access, _said) = access_of(&tools, &probe, cli, &home, "someone@example.com");
+        assert_eq!(access, Access::Unverified);
     }
 
     /// **THE PROFILE LIST SAYS WHETHER THEY ARE USABLE, AND ASKS THE ENGINE.**
@@ -721,9 +754,11 @@ mod tests {
 
         let rows = views_of(&store, &tools, &probe, None);
         assert_eq!(rows.len(), 2, "both profiles have to reach the surface");
+        // `codex` declares no identity file: a logged-in home reads as
+        // unverified, never as `Yes` by default.
         assert_eq!(
             (rows[0].access, rows[1].access),
-            (Access::No, Access::Yes),
+            (Access::No, Access::Unverified),
             "the two homes differ and the verdicts have to differ with them: {} / {}",
             rows[0].said,
             rows[1].said,
