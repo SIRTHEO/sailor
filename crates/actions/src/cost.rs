@@ -896,6 +896,83 @@ printf '{"result":"the true answer","model":"modello-di-prova","total_cost_usd":
         assert!(set.said.contains("weekly limit"), "{set:?}");
     }
 
+    /// The word `exhausted_when` looks for, found inside a real answer, does
+    /// not undo the usage that answer already reported.
+    #[test]
+    fn a_call_that_answered_with_usage_keeps_its_cost_even_if_the_answer_says_the_word() {
+        let dir = scratch("answered-with-the-word");
+        let price_list = write_price_list(&dir);
+        let bin = fake_engine(
+            &dir,
+            "motore-che-risponde",
+            r#"cat > /dev/null
+printf '{"result":"the quota page in the tree explains the weekly limit","model":"modello-di-prova","usage":{"input_tokens":1000000,"output_tokens":1000000,"cache_read_input_tokens":1000000}}'"#,
+        );
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
+        let mut recipe = declaring_recipe();
+        recipe.exhausted_when = vec!["quota".to_owned()];
+        recipe.unusable_when = vec!["quota".to_owned()];
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            recipe: Some(recipe),
+        })
+        .recording_to(Some(ledger));
+        let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
+
+        let outcome = with_price_list(Some(&price_list), || {
+            action.execute(&input, &shared("corsa-risposta", "passo-1"))
+        })
+        .expect("a call that answered is not exhausted");
+        let ActionOutcome::Went(_) = outcome else {
+            panic!("an engine that answers is always Went")
+        };
+
+        let calls = calls_in(&dir.join("deposito"));
+        assert_eq!(calls.len(), 1);
+        assert_eq!(
+            calls[0].error_type, None,
+            "the word sat in a successful answer, not in a refusal"
+        );
+        assert_eq!(
+            calls[0].cost_micros,
+            Some(18_300_000),
+            "real usage was reported: the cost must not be zeroed by a \
+             misread refusal"
+        );
+    }
+
+    /// **THE TWIN: THE SAME WORD ON THE ERROR CHANNEL OF A FAILED CALL STILL
+    /// FIRES.** The classifier is narrowed to a call that answered, not
+    /// switched off: an exit code other than zero is still a failure, and
+    /// `stderr` is still read there.
+    #[test]
+    fn a_call_that_exits_in_error_saying_the_word_on_stderr_is_still_quota_exhausted() {
+        let dir = scratch("stderr-says-the-word");
+        let bin = fake_engine(
+            &dir,
+            "motore-a-secco-su-stderr",
+            "cat > /dev/null\necho \"you've hit your usage limit\" >&2\nexit 1",
+        );
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
+        let mut recipe = declaring_recipe();
+        recipe.exhausted_when = vec!["usage limit".to_owned()];
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            recipe: Some(recipe),
+        })
+        .recording_to(Some(ledger));
+        let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
+
+        let error = with_price_list(None, || {
+            action.execute(&input, &shared("corsa-secco-stderr", "passo-1"))
+        })
+        .expect_err("a non-zero exit with the declared word is still exhausted");
+
+        assert_eq!(error.class, "engine_exhausted");
+        let calls = calls_in(&dir.join("deposito"));
+        assert_eq!(calls[0].error_type.as_deref(), Some("quota_exhausted"));
+    }
+
     /// A spent quota is its own class, and the engine is set aside for the
     /// time its descriptor declares: the second step in the same window does
     /// not knock on it. Without `exhausted_when` the same output stays the

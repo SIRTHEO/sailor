@@ -37,14 +37,14 @@ struct Role {
 
 /// Replaces a role with the tool chain its owner wrote in the ledger.
 ///
-/// The role remains data until the boundary that needs executable tool ids;
-/// neither the flow nor Rust owns a provider choice.
+/// A `with` already carrying both is resolved, not miswritten: it is kept as
+/// is, so calling this a second time on the same `with` is safe.
 pub fn resolve_role(input: &Value, ledger: Option<&Ledger>) -> Result<Value, String> {
     let Some(role) = input.get("role").and_then(Value::as_str) else {
         return Ok(input.clone());
     };
     if input.get("tool").is_some() {
-        return Err(catalogue::say("cli.role.combined_with_tool", &[("role", role)]));
+        return Ok(input.clone());
     }
     let Some(ledger) = ledger else {
         return Err(catalogue::say("cli.role.no_store", &[("role", role)]));
@@ -73,7 +73,8 @@ pub fn resolve_role(input: &Value, ledger: Option<&Ledger>) -> Result<Value, Str
     let object = resolved
         .as_object_mut()
         .ok_or_else(|| catalogue::say("cli.role.needs_object", &[("role", role)]))?;
-    object.remove("role");
+    // `role` stays: the ledger's row needs it, and the guard above is what
+    // stops a second resolution, not a reason to strip it here.
     object.insert("tool".to_owned(), Value::Array(tools));
     Ok(resolved)
 }
@@ -562,8 +563,16 @@ impl ExternalEngineAction {
                 // prints those words while working, and would refuse itself.
                 let answered = reading.answer.clone().unwrap_or_else(|| stdout.clone());
                 let in_shape = shape.is_some_and(|shape| shaped_answer(shape, &answered).is_ok());
+                // **AN ENGINE THAT REPORTED USAGE HAS ANSWERED**, and only its
+                // error channel may still say it could not work. Fault 183.
+                let has_usage = reading.input_tokens.is_some()
+                    || reading.output_tokens.is_some()
+                    || reading.total_tokens.is_some()
+                    || reading.declared_cost.is_some();
                 let class = if in_shape {
                     None
+                } else if has_usage {
+                    candidate.declared_class_of_a_call_that_answered(&stderr)
                 } else {
                     candidate.declared_class(&stdout, &stderr)
                 };
@@ -1093,7 +1102,11 @@ mod tests {
         let resolved = resolve_role(&json!({"role":"reviewer"}), Some(&ledger))
             .expect("resolve the role");
 
-        assert_eq!(resolved, json!({"tool":["first@team","second@team"]}));
+        assert_eq!(
+            resolved,
+            json!({"role":"reviewer","tool":["first@team","second@team"]}),
+            "role stays beside tool: the ledger's row still needs it, see fault 184"
+        );
     }
 
     #[test]
