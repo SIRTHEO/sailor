@@ -907,29 +907,52 @@ mod tests {
         assert_eq!(identity, HomeIdentity::Answers("somebody-else@example.com".to_owned()));
     }
 
+    /// A fictitious engine, so the test proves the rule — an identity file
+    /// tried beside the home, not only inside it — without naming a real one.
+    fn fake_engine_with_an_identity_file() -> KnownCli {
+        KnownCli {
+            id: "acme".to_owned(),
+            display_name: "Acme Tool".to_owned(),
+            mark: "AC".to_owned(),
+            executable: "acme".to_owned(),
+            native_profiles: NativeProfiles::Unverified,
+            native_profiles_note: "a fixture".to_owned(),
+            home: HomeMechanism::Unknown,
+            home_note: "a fixture".to_owned(),
+            home_already_here: None,
+            endpoint: None,
+            reads_instructions_from: Vec::new(),
+            signed_in_when: Vec::new(),
+            identity_at: Some(IdentityFile {
+                file: vec![".acme.json".to_owned(), "../.acme.json".to_owned()],
+                pointer: vec!["oauthAccount".to_owned(), "emailAddress".to_owned()],
+            }),
+        }
+    }
+
     #[test]
     fn a_home_with_the_identity_file_beside_it_is_read() {
-        let cli = find_cli("claude").unwrap();
-        let home = Path::new("/homes/claude/someone/.claude");
-        let identity = identity_of_home(cli, home, &|path: &Path| {
+        let cli = fake_engine_with_an_identity_file();
+        let home = Path::new("/homes/acme/someone/.acme");
+        let identity = identity_of_home(&cli, home, &|path: &Path| {
             path.to_string_lossy()
-                .ends_with(".claude/../.claude.json")
+                .ends_with(".acme/../.acme.json")
                 .then(|| r#"{"oauthAccount":{"emailAddress":"someone@example.com"}}"#.to_owned())
         });
         assert_eq!(identity, HomeIdentity::Answers("someone@example.com".to_owned()));
     }
 
-    /// `~/.claude/.claude.json` exists but names no account on the real
-    /// machine; stopping the search there left the default home unverified.
+    /// The identity file inside the home exists but names no account; stopping
+    /// the search there left the default home unverified.
     #[test]
     fn a_stale_identity_file_inside_does_not_stop_the_search_beside_it() {
-        let cli = find_cli("claude").unwrap();
-        let home = Path::new("/homes/claude/someone/.claude");
-        let identity = identity_of_home(cli, home, &|path: &Path| {
+        let cli = fake_engine_with_an_identity_file();
+        let home = Path::new("/homes/acme/someone/.acme");
+        let identity = identity_of_home(&cli, home, &|path: &Path| {
             let text = path.to_string_lossy();
-            if text.ends_with(".claude/../.claude.json") {
+            if text.ends_with(".acme/../.acme.json") {
                 Some(r#"{"oauthAccount":{"emailAddress":"someone@example.com"}}"#.to_owned())
-            } else if text.ends_with(".claude.json") {
+            } else if text.ends_with(".acme.json") {
                 Some(r#"{"numStartups":1}"#.to_owned())
             } else {
                 None
