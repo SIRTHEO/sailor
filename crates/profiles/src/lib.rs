@@ -62,11 +62,12 @@ pub struct KnownCli {
     pub identity_at: Option<IdentityFile>,
 }
 
-/// A file relative to a home, and the keys down to the account inside it.
+/// A file naming the account, and the keys down to it. `file` lists candidate
+/// paths, tried in order until one carries the account.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IdentityFile {
-    pub file: String,
+    pub file: Vec<String>,
     pub pointer: Vec<String>,
 }
 
@@ -111,31 +112,38 @@ pub fn identity_of_home(
             cli.display_name
         ));
     };
-    let path = home.join(&declared.file);
-    let Some(text) = read(&path) else {
-        return HomeIdentity::CannotTell(format!("{} is not there", path.display()));
-    };
-    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) else {
+    let mut last_reason = String::new();
+    for candidate in &declared.file {
+        let path = home.join(candidate);
+        last_reason = match read(&path) {
+            Some(text) => match identity_at_path(&path, &text, &declared.pointer) {
+                answered @ HomeIdentity::Answers(_) => return answered,
+                HomeIdentity::CannotTell(reason) => reason,
+            },
+            None => format!("{} is not there", path.display()),
+        };
+    }
+    HomeIdentity::CannotTell(last_reason)
+}
+
+fn identity_at_path(path: &Path, text: &str, pointer: &[String]) -> HomeIdentity {
+    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(text) else {
         return HomeIdentity::CannotTell(format!("{} is not valid JSON", path.display()));
     };
     let mut at = &parsed;
-    for key in &declared.pointer {
+    for key in pointer {
         let Some(next) = at.get(key) else {
             return HomeIdentity::CannotTell(format!(
                 "{} carries no «{}»",
                 path.display(),
-                declared.pointer.join(".")
+                pointer.join(".")
             ));
         };
         at = next;
     }
     match at.as_str() {
         Some(account) if !account.is_empty() => HomeIdentity::Answers(account.to_owned()),
-        _ => HomeIdentity::CannotTell(format!(
-            "{} carries no «{}»",
-            path.display(),
-            declared.pointer.join(".")
-        )),
+        _ => HomeIdentity::CannotTell(format!("{} carries no «{}»", path.display(), pointer.join("."))),
     }
 }
 
@@ -881,6 +889,37 @@ mod tests {
             &a_home_naming("somebody-else@example.com"),
         );
         assert_eq!(identity, HomeIdentity::Answers("somebody-else@example.com".to_owned()));
+    }
+
+    #[test]
+    fn a_home_with_the_identity_file_beside_it_is_read() {
+        let cli = find_cli("claude").unwrap();
+        let home = Path::new("/homes/claude/someone/.claude");
+        let identity = identity_of_home(cli, home, &|path: &Path| {
+            path.to_string_lossy()
+                .ends_with(".claude/../.claude.json")
+                .then(|| r#"{"oauthAccount":{"emailAddress":"someone@example.com"}}"#.to_owned())
+        });
+        assert_eq!(identity, HomeIdentity::Answers("someone@example.com".to_owned()));
+    }
+
+    /// `~/.claude/.claude.json` exists but names no account on the real
+    /// machine; stopping the search there left the default home unverified.
+    #[test]
+    fn a_stale_identity_file_inside_does_not_stop_the_search_beside_it() {
+        let cli = find_cli("claude").unwrap();
+        let home = Path::new("/homes/claude/someone/.claude");
+        let identity = identity_of_home(cli, home, &|path: &Path| {
+            let text = path.to_string_lossy();
+            if text.ends_with(".claude/../.claude.json") {
+                Some(r#"{"oauthAccount":{"emailAddress":"someone@example.com"}}"#.to_owned())
+            } else if text.ends_with(".claude.json") {
+                Some(r#"{"numStartups":1}"#.to_owned())
+            } else {
+                None
+            }
+        });
+        assert_eq!(identity, HomeIdentity::Answers("someone@example.com".to_owned()));
     }
 
     #[test]

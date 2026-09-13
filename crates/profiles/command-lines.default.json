@@ -47,12 +47,18 @@
     "ESTABLISHED IT, and no engine is ever refused for that: unknown is not signed",
     "out. gemini and antigravity keep nothing under such a name, so neither declares one.",
     "",
-    "`identity` names the file inside a home, and the keys down to it, that say",
+    "`identity.file` lists candidate paths, relative to the home, that say",
     "WHICH ACCOUNT that home answers as — read off the disk, never asked of the",
-    "engine, because the file is what a launch actually reads. Absent means nobody",
+    "engine, because the file is what a launch actually reads. They are tried in",
+    "order and the first one that actually carries the account wins, so a stale",
+    "file left behind by another home shape does not stop the search: an engine",
+    "that keeps the file beside its home rather than inside it, for its own",
+    "default directory, is a second candidate here, not a rule the code knows",
+    "by name. Absent means nobody",
     "measured it yet for that engine: `identity_of_home` then answers «cannot",
-    "tell», never «matches». Measured for claude in `.claude.json` at the home's",
-    "own root, under `oauthAccount.emailAddress`."
+    "tell», never «matches». Measured for claude in `.claude.json`, inside a",
+    "`CLAUDE_CONFIG_DIR` home and beside the default `~/.claude` directory,",
+    "under `oauthAccount.emailAddress`."
   ],
   "command_lines": [
     {
@@ -65,7 +71,10 @@
       "home_note": "checked against the installed binary: the variable moves the whole directory, credentials and settings included.",
       "reads_instructions_from": ["~/.claude/CLAUDE.md", "CLAUDE.md"],
       "signed_in_when": [".credentials.json"],
-      "identity": { "file": ".claude.json", "pointer": ["oauthAccount", "emailAddress"] },
+      "identity": {
+        "file": [".claude.json", "../.claude.json"],
+        "pointer": ["oauthAccount", "emailAddress"]
+      },
       "endpoint": {
         "url_var": "ANTHROPIC_BASE_URL",
         "key_var": "ANTHROPIC_API_KEY",
