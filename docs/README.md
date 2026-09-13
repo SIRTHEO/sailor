@@ -1,41 +1,34 @@
 # What is here
 
-The documents a contributor needs: what each surface promises, the decisions
-that do not reopen, and the register of every fault found and how it was fixed.
-A document is named for what it says; when it was written is what `git log`
-says, with the real author and the real date.
+The documents a contributor needs, in the order a reader is likely to need
+them: try it, understand what it is, operate it, contribute to it. A document
+is named for what it says; when it was written is what `git log` says, with
+the real author and the real date.
 
-## The rules the work is judged by
+## Try
 
-- [`decisions.md`](decisions.md) — the memory of the choices. The permanent
-  constraints at the top are the yardstick every other decision is judged by; an
-  entry below binds somebody who was not in the room when it was taken. Read it
-  before repairing anything, or a road already discarded gets taken again.
-- [`faults-encountered.md`](faults-encountered.md) — every fault that really
-  happened, with how it came to light and **what would have stopped it**. The
-  table is generated from Sailor's own fault store by
-  `sailor faults render`, and `sailor faults check` compares the two.
+- [`walkthrough-a-queue-of-work.md`](walkthrough-a-queue-of-work.md) — a
+  project's queue drained one task at a time, `take-the-next-work` run for
+  real from a seeded fixture to a parked task and back to a person.
 
-## What the system is, and what it exposes
+## Understand
 
-- [`the-four-surfaces.md`](the-four-surfaces.md) — the four surfaces an action
-  can belong to (`sense`, `act`, `remember`, `gate`), and the rule that follows:
-  if an orchestration calls for new code, a power is missing, not a flow.
-  Declared and not yet in force — the page says so itself.
 - [`what-sailor-can-do.md`](what-sailor-can-do.md) — the census of the engine,
   crate by crate: the twenty crates, the thirty-three actions a step can run,
   the twenty-two commands and seventy verbs of the command line, and how much of it has a door.
 - [`the-window-that-shows-itself.md`](the-window-that-shows-itself.md) — why the
   window has four places and not eleven, what «not in the foreground» means, and
   what was on the screen when it was checked.
+- [`the-four-surfaces.md`](the-four-surfaces.md) — **proposal, not in force**:
+  the four surfaces an action could belong to (`sense`, `act`, `remember`,
+  `gate`), and the rule that would follow. The page says itself why nothing
+  builds against it yet.
+- [`decisions.md`](decisions.md) — the memory of the choices. The permanent
+  constraints at the top are the yardstick every other decision is judged by; an
+  entry below binds somebody who was not in the room when it was taken. Read it
+  before repairing anything, or a road already discarded gets taken again.
 
-## Following the queue end to end
-
-- [`walkthrough-a-queue-of-work.md`](walkthrough-a-queue-of-work.md) — a
-  project's queue drained one task at a time, `take-the-next-work` run for
-  real from a seeded fixture to a parked task and back to a person.
-
-## The contracts two halves are written against
+## Operate
 
 - [`the-terminal-contract.md`](the-terminal-contract.md) — the seven commands
   the bridge exposes, the two events, and who owns which files. The Rust half
@@ -45,9 +38,22 @@ says, with the real author and the real date.
   — how a child process gets the credentials of its own profile, why parallel
   command lines with different identities work by construction, and what is
   still missing.
-- [`time-is-the-last-choice.md`](time-is-the-last-choice.md) — the four levels
-  of a life cycle, cron being the fourth, and the five things to decide before a
-  time node gets written.
+- [`time-is-the-last-choice.md`](time-is-the-last-choice.md) — **proposal**:
+  the four levels of a life cycle, cron being the fourth, and the five things
+  to decide before a time node gets written. No periodic trigger exists yet.
+- [`completion-and-required-steps.md`](completion-and-required-steps.md) —
+  what a completed flow does and does not establish, what a `required` step
+  withholds that `decides_done` permits, and what process-boundary
+  enforcement is still missing.
+
+## Contribute
+
+- [`faults-encountered.md`](faults-encountered.md) — every fault that really
+  happened, with how it came to light and **what would have stopped it**. The
+  table is generated from Sailor's own fault store by
+  `sailor faults render`, and `sailor faults check` compares the two. See
+  [`../CONTRIBUTING.md`](../CONTRIBUTING.md) for why this table stays in
+  Italian while the rest of the tree does not.
 
 ## What is not here
 

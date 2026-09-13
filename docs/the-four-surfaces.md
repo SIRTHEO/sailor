@@ -1,5 +1,7 @@
 # The four surfaces: what Sailor exposes, and what gets composed instead
 
+**Proposal, declared and not in force** — no action carries a surface today; see «Why writing it down here is not enough» below.
+
 **31/08/2026.** Born from a question of the owner's — «which product nodes is the
 system missing?» — and from the wrong answer it got first: a list of holes. A
 list of holes ages in a week and does not say where to put the next thing. This

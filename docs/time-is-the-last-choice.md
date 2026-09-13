@@ -1,5 +1,7 @@
 # Time is the last choice: the four levels, applied to the life cycle of a branch
 
+**Proposal** — no periodic trigger exists yet; see «The check that makes this page red» below.
+
 **01/09/2026.** Born from a request of the owner's — *«if we need to, let us do the
 time nodes, timers, cron that fire on the dot every so often»* — and from the
 answer research gave instead of the one asked for.
