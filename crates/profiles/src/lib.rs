@@ -512,7 +512,7 @@ pub fn profile_home_path(
     Ok(profiles_root.join(cli_id).join(profile_name))
 }
 
-pub const AMBIENT_LAUNCH_ESSENTIALS: &[&str] = &["PATH", "HOME"];
+pub const AMBIENT_LAUNCH_ESSENTIALS: &[&str] = &["PATH", "HOME", "USER"];
 
 /// The environment to overlay to launch `cli` with its home at `profile_home`.
 /// Empty for a mechanism with no variable (see [`symlink_swap`]) and for a
