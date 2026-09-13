@@ -106,9 +106,8 @@
         "when": null,
         "with": {
           "role": "CHEAP_WORKER",
-          "model": { "claude-code": "claude-sonnet-5" },
           "workdir": { "$from": "/select/records/0/value/workspace" },
-          "args": ["-c", "echo done > TASK_OK"],
+          "stdin": { "$from": "/select/records/0/value/title" },
           "timeout_secs": 30
         },
         "input_schema": { "type": "any" },
