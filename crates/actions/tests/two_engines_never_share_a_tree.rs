@@ -10,6 +10,7 @@ use serde_json::json;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 struct TempDir(PathBuf);
 
@@ -95,6 +96,25 @@ fn an_engine_called(dir: &Path, name: &str, body: &str) -> String {
     path.to_string_lossy().into_owned()
 }
 
+/// What the person watching was told, kept so a test can read it back.
+#[derive(Clone, Default)]
+struct Overheard(Arc<Mutex<String>>);
+
+impl Overheard {
+    fn words(&self) -> String {
+        self.0.lock().expect("the words").clone()
+    }
+}
+
+impl actions::StepSinks for Overheard {
+    fn sink_for(&self, _step: &str) -> Arc<dyn actions::LiveSink> {
+        let heard = Arc::clone(&self.0);
+        Arc::new(move |_pipe: actions::Pipe, bytes: &[u8]| {
+            heard.lock().expect("the words").push_str(&String::from_utf8_lossy(bytes));
+        })
+    }
+}
+
 fn what_it_printed(outcome: &ActionOutcome) -> String {
     let ActionOutcome::Went(value) = outcome else {
         panic!("the step had to go: {outcome:?}");
@@ -163,31 +183,50 @@ fn each_step_asking_for_a_tree_of_its_own_gets_one_and_nobody_shares() {
     }
     assert!(first.ends_with("engine_a") && second.ends_with("engine_b"), "{first} / {second}");
 
-    // A step that answered leaves its tree standing, clean or not: whoever
-    // reads it next — `worker_tree`, `acceptance` — has not run yet, and a
-    // tree closed the moment `execute` returns is a tree closed out from
-    // under them. See fault 182.
+    // A step that answered and left nothing takes its tree with it: it is the
+    // pairing that bounds the disk, so it is measured on git and on the disk.
     let listed = what_git_has_cut(&repo);
     assert!(
-        listed.contains(&first) && listed.contains(&second),
-        "a step that answered had its tree taken down before anyone could read it:\n{listed}"
+        !listed.contains(&first) && !listed.contains(&second),
+        "git still holds the trees of two steps that left nothing:\n{listed}"
     );
     for stood in [&first, &second] {
-        assert!(Path::new(stood).exists(), "the tree is already gone: {stood}");
+        assert!(!Path::new(stood).exists(), "the tree is still on disk: {stood}");
     }
+    // And the register agrees with the disk: a tree that went is off the page.
     let open = workspace::OpenTrees::trees_left_open(&store).expect("the store reads back");
-    assert_eq!(open.len(), 2, "both trees are still on the page: {open:?}");
+    assert!(open.is_empty(), "the store still holds trees nobody has: {open:?}");
+}
 
-    // Releasing them is somebody else's gesture now — the flow's own
-    // `release_tree` step, once its readers are done — proved here by doing
-    // exactly that.
-    for stood in [&first, &second] {
-        assert_eq!(
-            workspace::close_tree(&repo, Path::new(stood), &store),
-            workspace::Closing::TakenDown,
-            "a clean tree force-released after the fact should just go: {stood}"
-        );
-    }
+/// A step declared with `keep_tree` leaves its tree standing after it
+/// answers, clean or not: whoever reads it next in the flow — `worker_tree`,
+/// `acceptance` — has not run yet, and a tree closed the moment `execute`
+/// returns is a tree closed out from under them. See fault 182.
+#[test]
+fn a_step_that_declares_keep_tree_leaves_it_standing_for_its_reader() {
+    let dir = TempDir::new();
+    let repo = a_repository_in(dir.path());
+    let reads = an_engine_that_reads_the_project(dir.path());
+    let store = a_store_in(dir.path());
+    let action = actions::ExternalEngineAction::new().recording_to(Some(store.clone()));
+    let asks_to_keep_it = json!({"bin": reads, "tree": "own", "keep_tree": true, "timeout_secs": 30});
+
+    let shared = shared_for(&repo, "corsa-5", "execute");
+    let kept = stood_in(&action.execute(&asks_to_keep_it, &shared).expect("the step had to go"));
+
+    let listed = what_git_has_cut(&repo);
+    assert!(listed.contains(&kept), "a declared tree was taken down before its reader ran:\n{listed}");
+    assert!(Path::new(&kept).exists(), "the tree is already gone: {kept}");
+    let open = workspace::OpenTrees::trees_left_open(&store).expect("the store reads back");
+    assert_eq!(open.len(), 1, "the kept tree is still on the page: {open:?}");
+
+    // Its reader is done: releasing it is the flow's own `release_tree` step,
+    // proved here by doing exactly what that step does.
+    assert_eq!(
+        workspace::close_tree(&repo, Path::new(&kept), &store),
+        workspace::Closing::TakenDown,
+        "a clean tree force-released after the fact should just go: {kept}"
+    );
 }
 
 fn what_git_has_cut(repo: &Path) -> String {
@@ -200,17 +239,19 @@ fn what_git_has_cut(repo: &Path) -> String {
     String::from_utf8_lossy(&listed.stdout).into_owned()
 }
 
-/// A step that answered never has its tree closed here, dirty or not (fault
-/// 182) — so the property this proves is no longer git's refusal, it is that
-/// the tree stays regardless, and the next attempt lands in it and finds the
-/// work.
+/// The refusal is the whole safety property: a step that left something not
+/// committed keeps its tree, the person is told which tree and why, and the
+/// next attempt lands in it and finds the work.
 #[test]
-fn a_step_that_leaves_work_keeps_its_tree_for_a_second_attempt() {
+fn a_step_that_leaves_work_keeps_its_tree_and_the_person_is_told() {
     let dir = TempDir::new();
     let repo = a_repository_in(dir.path());
     let bin = an_engine_that_leaves_work_behind(dir.path());
     let store = a_store_in(dir.path());
-    let action = actions::ExternalEngineAction::new().recording_to(Some(store.clone()));
+    let overheard = Overheard::default();
+    let action = actions::ExternalEngineAction::new()
+        .watched_by(Some(Arc::new(overheard.clone()) as Arc<dyn actions::StepSinks>))
+        .recording_to(Some(store.clone()));
     let asks_for_a_tree = json!({"bin": bin, "tree": "own", "timeout_secs": 30});
 
     let shared = shared_for(&repo, "corsa-3", "lascia");
@@ -226,6 +267,9 @@ fn a_step_that_leaves_work_keeps_its_tree_for_a_second_attempt() {
     assert_eq!(open[0].step, "lascia");
     assert!(Path::new(&kept).join("left-behind").exists(), "the work was lost: {kept}");
     assert!(what_git_has_cut(&repo).contains(&kept), "git no longer holds the tree");
+    let words = overheard.words();
+    assert!(words.contains(&kept), "the kept tree was never named:\n{words}");
+    assert!(words.contains("stays"), "nobody was told why it stays:\n{words}");
 
     // The next attempt finds what the one before it left.
     let shared = shared_for(&repo, "corsa-3", "lascia");

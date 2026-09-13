@@ -201,6 +201,13 @@ pub(crate) struct EngineSpec {
     /// twice, which the graph does not allow.
     #[serde(default)]
     pub(crate) tree: Option<String>,
+    /// A step read by a later step of the same flow declares so here: an
+    /// answered call then leaves the tree standing for that reader, and the
+    /// flow's own release step takes it down. Absent — the default — closes
+    /// the tree the moment the call answers, like any other own tree. See
+    /// fault 182.
+    #[serde(default)]
+    pub(crate) keep_tree: bool,
     /// The text of stdin, when the engine reads it from there instead of from
     /// an argument: JSON carries no raw bytes, so an engine wanting binary on
     /// stdin is not a case this action covers.

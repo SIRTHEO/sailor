@@ -188,10 +188,10 @@ impl ExternalEngineAction {
     }
 }
 
-/// The tree one step works in, taken down when the step itself never got to
-/// answer. A call that answered leaves it standing instead — `worker_tree`
-/// and `acceptance` still read it after `execute` returns — and the flow's
-/// own `release_tree` step takes it down once they are done. See fault 182.
+/// The tree one step works in, taken down when the step ends however it ends
+/// — unless the step declared `keep_tree`, in which case a call that
+/// answered leaves it standing for a later step to read, and release. See
+/// fault 182 and R-W18 point 1.
 struct OwnTree {
     repo: PathBuf,
     at: PathBuf,
@@ -1038,8 +1038,10 @@ impl Action for ExternalEngineAction {
             )?;
             match asked {
                 Asked::Answered(outcome) => {
-                    if let Some(tree) = &own_tree {
-                        tree.leave_open();
+                    if spec.keep_tree {
+                        if let Some(tree) = &own_tree {
+                            tree.leave_open();
+                        }
                     }
                     return Ok((outcome, Some(ran)));
                 }

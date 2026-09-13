@@ -107,6 +107,7 @@
         "with": {
           "role": "CHEAP_WORKER",
           "tree": "own",
+          "keep_tree": true,
           "stdin": {
             "$join": [
               "Do the work below in this tree; do not run `sailor` yourself — the flow closes its own steps and reads the tree on its own. ",
