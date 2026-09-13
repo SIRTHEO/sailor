@@ -79,6 +79,25 @@ pub enum HomeIdentity {
     CannotTell(String),
 }
 
+/// The one verdict `list`, `adopt` and `run` share, so a correction cannot
+/// make them disagree.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IdentityVerdict {
+    Verified,
+    Unverified,
+    Mismatched { home_answers_as: String },
+}
+
+pub fn verdict_of(identity: &HomeIdentity, profile_name: &str) -> IdentityVerdict {
+    match identity {
+        HomeIdentity::Answers(really) if really != profile_name => IdentityVerdict::Mismatched {
+            home_answers_as: really.clone(),
+        },
+        HomeIdentity::Answers(_) => IdentityVerdict::Verified,
+        HomeIdentity::CannotTell(_) => IdentityVerdict::Unverified,
+    }
+}
+
 /// Reads what a home's own file says, never asks the engine: the file is
 /// what a launch reads. `read` is a seam for a test to hand text with.
 pub fn identity_of_home(
