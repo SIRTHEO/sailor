@@ -106,7 +106,7 @@
         "when": null,
         "with": {
           "role": "CHEAP_WORKER",
-          "workdir": { "$from": "/select/records/0/value/workspace" },
+          "tree": "own",
           "stdin": { "$from": "/select/records/0/value/title" },
           "timeout_secs": 30
         },
@@ -114,14 +114,32 @@
         "output_schema": { "type": "any" }
       },
       {
-        "id": "acceptance",
+        "id": "worker_tree",
         "deps": ["select", "execute"],
+        "action": "store_select",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "collection": "open-worktrees",
+          "where": {
+            "repo": { "$from": "/select/records/0/value/workspace" },
+            "step": "execute"
+          },
+          "order_by": { "field": "opened_at", "direction": "desc" },
+          "limit": 1
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      },
+      {
+        "id": "acceptance",
+        "deps": ["select", "worker_tree"],
         "action": "shell_check",
         "max_attempts": 1,
         "when": null,
         "with": {
           "command": "./check.sh",
-          "workdir": { "$from": "/select/records/0/value/workspace" },
+          "workdir": { "$from": "/worker_tree/records/0/value/path" },
           "accept": ["failed"],
           "timeout_secs": 30
         },

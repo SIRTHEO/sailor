@@ -1,6 +1,5 @@
-//! `take-the-next-work` (`flows/take-the-next-work.flow.json`), run for real.
-//! `CHEAP_WORKER` resolves through `FakeCheapWorker`; no call is ever spent.
-//! A home flow, not a shipped one, so it is read off `flows/` at test time.
+//! `take-the-next-work`, run for real: `CHEAP_WORKER` resolves through
+//! `FakeCheapWorker`, no call spent. A home flow, read off `flows/` at test time.
 
 use actions::{AskRecipe, PromptVia, ToolResolver};
 use flow::{
@@ -12,10 +11,8 @@ use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Barrier};
 
-/// Resolves any tool id to `sh` and declares its own fake `ask` recipe, so
-/// the shipped `execute` step (`role` + `stdin`, no `args`) runs unmodified.
-/// A step-written `args`, as `dispatch_the_work.rs` uses, would work too but
-/// `record_the_call` never bills it as a model call, the same as `git`.
+/// Fakes `ask_recipe` instead of a step-written `args`: `record_the_call`
+/// never bills a hand-written `args` as a model call, the same as `git`.
 struct FakeCheapWorker;
 
 impl ToolResolver for FakeCheapWorker {
@@ -59,10 +56,8 @@ fn full_graph() -> Graph {
     Graph::new(flow_file().graph.steps().to_vec()).expect("the shipped graph stays valid")
 }
 
-/// `make-fixtures.sh` always rebuilds the one `target/fixtures` it names, and
-/// `cargo test` runs a binary's tests concurrently by default: one test's
-/// `rm -rf` deleted another's fixtures mid-run. Held for a whole test body,
-/// not just the `make_fixtures()` call.
+/// Guards `make-fixtures.sh`'s `rm -rf`: `cargo test` runs a binary's tests
+/// concurrently, so one test's rebuild deleted another's fixtures mid-run.
 static FIXTURES_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn make_fixtures() -> PathBuf {
@@ -80,9 +75,8 @@ fn make_fixtures() -> PathBuf {
         String::from_utf8_lossy(&output.stderr)
     );
     let fixtures = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/fixtures")).to_path_buf();
-    // A just-`chmod +x`-ed script pays a one-time first-exec cost on this
-    // machine (seconds, sometimes tens of them); paying it here keeps the
-    // flow's own acceptance timeout a measure of the check, not of that.
+    // A just-`chmod +x`-ed script pays a one-time first-exec cost here; paying
+    // it now keeps the flow's own acceptance timeout a measure of the check.
     for project in ["alpha", "beta"] {
         let _ = std::process::Command::new("sh")
             .arg("-c")
@@ -157,9 +151,20 @@ fn trigger_input(project: &str) -> Value {
     json!({"source": "manual", "text": project})
 }
 
-fn run_once(graph: &Graph, ledger: &Ledger, run_id: &str, project: &str) -> (Execution, InMemoryRecordStore) {
+fn run_once(
+    graph: &Graph,
+    ledger: &Ledger,
+    run_id: &str,
+    project: &str,
+    fixtures: &Path,
+) -> (Execution, InMemoryRecordStore) {
     let registry = registry_over(ledger);
     let store = InMemoryRecordStore::default();
+    let mut shared = SharedState::new();
+    shared.insert(
+        flow::WORKSPACE_ROOT.to_owned(),
+        json!(fixtures.join(project).to_string_lossy()),
+    );
     let request = ExecutionRequest {
         holder: None,
         run_id: run_id.to_owned(),
@@ -167,7 +172,7 @@ fn run_once(graph: &Graph, ledger: &Ledger, run_id: &str, project: &str) -> (Exe
             .into_iter()
             .collect(),
         gates: Vec::new(),
-        shared: SharedState::new(),
+        shared,
         spend_cap_micros: None,
         stops: RunStops::default(),
     };
@@ -181,11 +186,8 @@ fn ran_execute(store: &InMemoryRecordStore) -> bool {
     store.all().iter().any(|record| record.step_id == "execute")
 }
 
-/// **THE FAULT THE CLAIM STEP EXISTS TO CLOSE, MEASURED RED.** A real-thread
-/// version was flaky (scheduling let one runner finish before the other's
-/// `select` even started). This measures it directly: two `store_select`
-/// calls with nothing written between them see the identical unclaimed task,
-/// and two `store_write` calls under that key both succeed.
+/// The fault the claim step closes, measured directly: a real-thread version
+/// was flaky, since nothing kept one runner from finishing before the other started.
 #[test]
 fn without_a_claim_two_runners_can_both_declare_the_same_task_done() {
     let _fixtures_lock = FIXTURES_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -241,11 +243,8 @@ fn without_a_claim_two_runners_can_both_declare_the_same_task_done() {
     }
 }
 
-/// **THE PROOF THE CLAIM STEP CLOSES IT.** Four runners race the same store:
-/// two on `alpha`'s queue, two on `beta`'s. Exactly one claim survives per
-/// task, exactly one runner per project reaches `execute`, `alpha` ends
-/// `done`, `beta` ends `parked` with a reason, and the ledger names the role
-/// and the tool it resolved to for every call.
+/// The proof the claim step closes it: four runners race the same store, two
+/// per project, and each task is taken by exactly one.
 #[test]
 fn two_runners_racing_the_same_store_take_each_task_at_most_once() {
     let _fixtures_lock = FIXTURES_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -267,9 +266,10 @@ fn two_runners_racing_the_same_store_take_each_task_at_most_once() {
             let graph = Arc::clone(&graph);
             let ledger = ledger.clone();
             let barrier = Arc::clone(&barrier);
+            let fixtures = fixtures.clone();
             std::thread::spawn(move || {
                 barrier.wait();
-                run_once(&graph, &ledger, run_id, project)
+                run_once(&graph, &ledger, run_id, project, &fixtures)
             })
         })
         .collect();

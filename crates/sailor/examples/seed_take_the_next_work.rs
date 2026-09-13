@@ -2,6 +2,8 @@
 //! projects `flows/tests/make-fixtures.sh` writes: the `CHEAP_WORKER` role and
 //! the four `work-queue` records. Usage:
 //! `cargo run -p sailor --example seed_take_the_next_work -- FIXTURES_ROOT`.
+//! Point `sailor flow check` at the same store with
+//! `SAILOR_LEDGER=FIXTURES_ROOT/store`, which `ledger::default_directory` reads.
 
 use ledger::{Ledger, StoreRecord};
 use serde_json::json;

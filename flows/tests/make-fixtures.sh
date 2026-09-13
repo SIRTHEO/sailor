@@ -1,8 +1,6 @@
 #!/bin/sh
-# Builds the two throwaway projects `take-the-next-work` is checked against,
-# under target/fixtures (gitignored, remade on every call). alpha's check.sh
-# passes once TASK_OK exists; beta's looks for a file the cheap worker never
-# writes, so its task can never pass — the fixture the flow is meant to park.
+# Builds alpha (passes once TASK_OK exists) and beta (never passes: the
+# fixture the flow is meant to park) under target/fixtures, remade on every call.
 set -eu
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -32,3 +30,4 @@ test -f MARKER_THE_CHEAP_WORKER_NEVER_WRITES'
 
 echo "fixtures written under $fixtures"
 echo "seed their ledger with: cargo run -p sailor --example seed_take_the_next_work -- $fixtures"
+echo "check the flow against it with: SAILOR_LEDGER=$fixtures/store cargo run -p sailor -- flow check take-the-next-work"
