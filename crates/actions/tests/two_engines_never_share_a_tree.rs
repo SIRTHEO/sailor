@@ -198,10 +198,8 @@ fn each_step_asking_for_a_tree_of_its_own_gets_one_and_nobody_shares() {
     assert!(open.is_empty(), "the store still holds trees nobody has: {open:?}");
 }
 
-/// A step declared with `keep_tree` leaves its tree standing after it
-/// answers, clean or not: whoever reads it next in the flow — `worker_tree`,
-/// `acceptance` — has not run yet, and a tree closed the moment `execute`
-/// returns is a tree closed out from under them. See fault 182.
+/// A tree kept by declaration outlives the answer: its readers in the flow
+/// have not run yet when the step returns.
 #[test]
 fn a_step_that_declares_keep_tree_leaves_it_standing_for_its_reader() {
     let dir = TempDir::new();
