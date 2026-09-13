@@ -325,3 +325,18 @@ twenty minutes later. It is the proof that a lesson written down is worth
 nothing without the moment when somebody goes and reads it. For flows that
 moment now exists, and it is `docs/decisions.md`, read at three points of the
 development flow. For whoever writes by hand, it does not.
+
+**Fault 177, open. Authenticated was a fact about the home, read as a fact
+about the account.** During a login the browser re-authorised the account it
+already had open, and nobody noticed: a profile's home carried its own
+`.claude.json` naming a different account than the one the profile was named
+for. `sailor profiles list` kept saying "authenticated" — true of the home —
+and `sailor remaining` read the same account's quota under two profile names,
+counting it twice. The cure is an identity reading of its own, per engine
+adapter, off the home's own file rather than asked of the engine: a profile
+named after an account whose home answers as another is `mismatched`, never
+`authenticated`. Held shut by
+`a_home_answering_as_another_account_is_mismatched_not_authenticated` in
+`crates/sailor/src/profiles_cmd.rs` and
+`a_home_answering_as_another_account_stops_the_launch` in
+`crates/sailor/src/run_cmd.rs`.
