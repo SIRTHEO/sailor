@@ -29,6 +29,12 @@ says, with the real author and the real date.
   window has four places and not eleven, what «not in the foreground» means, and
   what was on the screen when it was checked.
 
+## Following the queue end to end
+
+- [`walkthrough-a-queue-of-work.md`](walkthrough-a-queue-of-work.md) — a
+  project's queue drained one task at a time, `take-the-next-work` run for
+  real from a seeded fixture to a parked task and back to a person.
+
 ## The contracts two halves are written against
 
 - [`the-terminal-contract.md`](the-terminal-contract.md) — the seven commands

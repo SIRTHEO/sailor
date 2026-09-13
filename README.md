@@ -153,7 +153,7 @@ icon in the Dock.
 |---|---|
 | `sailor flow list \| check \| run \| cost \| cap` | flows: which exist, whether they hold up, running them, what they cost, what cap they carry |
 | `sailor flow publish [remote]` | your own flows to a git repository of your own, refused if one carries a key |
-| `sailor step open \| close` | the steps a live agent takes charge of |
+| `sailor step open \| close \| approve \| reject` | the steps a live agent takes charge of, and the ones handed to a person |
 | `sailor run <cli>` | starts a command line with its profile's equipment |
 | `sailor profiles list \| create \| switch \| endpoint` | each engine's identities, whether they are authenticated, and another endpoint that speaks the engine's own protocol |
 | `sailor remaining` | how much quota is left, read from the provider rather than inferred |
