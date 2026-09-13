@@ -1,6 +1,6 @@
 {
   "id": "take-the-next-work",
-  "description": "One project's queue, taken one task at a time. The trigger carries the project; the store picks its highest-priority queued task, whole. A conditional write claims it — the same key refuses a second writer, so two runners racing the same queue take it at most once. A cheap worker attempts it; the project's own acceptance command judges the result, required: the run has nothing to close on until that command has run and passed. What it decided is written back to the task's own record, and a task the cheap worker could not finish is hand off to a person instead of retried forever.",
+  "description": "One project's queue, taken one task at a time. The trigger carries the project; the store picks its highest-priority queued task, whole. A conditional write claims it — the same key refuses a second writer, so two runners racing the same queue take it at most once. The mandate the worker is about to receive is digested and recorded before it is sent, and the worker's answer must open with that digest acknowledged, or the task is parked without ever running the acceptance command. A cheap worker attempts it; the project's own acceptance command judges the result, required: the run has nothing to close on until that command has run and passed. What it decided is written back to the task's own record, and a task the cheap worker could not finish is hand off to a person instead of retried forever.",
   "graph": {
     "steps": [
       {
@@ -99,8 +99,49 @@
         "stops_when": "/answer/lost"
       },
       {
+        "id": "mandate_digest",
+        "deps": ["select"],
+        "action": "digest",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "value": {
+            "$join": [
+              "Do the work below in this tree; do not run `sailor` yourself — the flow closes its own steps and reads the tree on its own. ",
+              { "$from": "/records/0/value/title" }
+            ]
+          }
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      },
+      {
+        "id": "mandate_recorded",
+        "deps": ["select", "claim_state", "mandate_digest"],
+        "action": "store_write",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "collection": "work-queue",
+          "key": { "$from": "/select/records/0/key" },
+          "value": {
+            "project": { "$from": "/select/records/0/value/project" },
+            "title": { "$from": "/select/records/0/value/title" },
+            "priority": { "$from": "/select/records/0/value/priority" },
+            "acceptance": { "$from": "/select/records/0/value/acceptance" },
+            "workspace": { "$from": "/select/records/0/value/workspace" },
+            "state": { "$from": "/select/records/0/value/state" },
+            "attempts": { "$from": "/select/records/0/value/attempts" },
+            "mandate_digest": { "$from": "/mandate_digest/digest" }
+          },
+          "written_by": "take-the-next-work"
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      },
+      {
         "id": "execute",
-        "deps": ["select", "claim_state"],
+        "deps": ["select", "claim_state", "mandate_digest", "mandate_recorded"],
         "action": "external_engine",
         "max_attempts": 1,
         "when": null,
@@ -111,11 +152,39 @@
           "keep_tree": true,
           "stdin": {
             "$join": [
+              "Mandate ",
+              { "$from": "/mandate_digest/digest" },
+              ": begin your answer with the line \"ack ",
+              { "$from": "/mandate_digest/digest" },
+              "\" followed by one sentence naming the acceptance command you must pass; then do the work.\n",
               "Do the work below in this tree; do not run `sailor` yourself — the flow closes its own steps and reads the tree on its own. ",
               { "$from": "/select/records/0/value/title" }
             ]
           },
           "timeout_secs": 600
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      },
+      {
+        "id": "ack_check",
+        "deps": ["execute", "mandate_digest"],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -eu\nFIRST_LINE=$(printf '%s\\n' \"$ANSWER\" | head -n 1)\nif [ \"$FIRST_LINE\" = \"ack $DIGEST\" ]; then printf '{\"acknowledged\": true}'; else printf '{\"acknowledged\": false}'; fi",
+          "env": {
+            "ANSWER": { "$from": "/execute/stdout" },
+            "DIGEST": { "$from": "/mandate_digest/digest" }
+          },
+          "answer_shape": {
+            "type": "object",
+            "properties": { "acknowledged": { "type": "boolean" } },
+            "required": ["acknowledged"],
+            "allow_extra": false
+          },
+          "timeout_secs": 5
         },
         "input_schema": { "type": "any" },
         "output_schema": { "type": "any" }
@@ -140,10 +209,14 @@
       },
       {
         "id": "acceptance",
-        "deps": ["select", "worker_tree"],
+        "deps": ["select", "worker_tree", "ack_check"],
         "action": "shell_check",
         "max_attempts": 1,
-        "when": null,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/ack_check/answer/acknowledged",
+          "value": true
+        },
         "with": {
           "command": "./check.sh",
           "workdir": { "$from": "/worker_tree/records/0/value/path" },
@@ -201,8 +274,38 @@
         "output_schema": { "type": "any" }
       },
       {
+        "id": "verdict_park_for_ack",
+        "deps": ["select", "ack_check"],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/ack_check/answer/acknowledged",
+          "value": false
+        },
+        "with": {
+          "command": "set -eu\nNEXT=$((ATTEMPTS + 1))\nprintf '{\"next_state\":\"parked\",\"attempts\":%s,\"reason\":\"the worker did not acknowledge the mandate\"}' \"$NEXT\"",
+          "env": {
+            "ATTEMPTS": { "$json": "/select/records/0/value/attempts" }
+          },
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "next_state": { "type": "string" },
+              "attempts": { "type": "number" },
+              "reason": { "type": "string" }
+            },
+            "required": ["next_state", "attempts", "reason"],
+            "allow_extra": false
+          },
+          "timeout_secs": 5
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      },
+      {
         "id": "record",
-        "deps": ["select", "verdict_state"],
+        "deps": ["select", "verdict_state", "mandate_digest"],
         "action": "store_write",
         "max_attempts": 1,
         "when": null,
@@ -217,7 +320,34 @@
             "workspace": { "$from": "/select/records/0/value/workspace" },
             "state": { "$from": "/verdict_state/answer/next_state" },
             "attempts": { "$from": "/verdict_state/answer/attempts" },
-            "reason": { "$from": "/verdict_state/answer/reason" }
+            "reason": { "$from": "/verdict_state/answer/reason" },
+            "mandate_digest": { "$from": "/mandate_digest/digest" },
+            "acknowledged": { "$from": "/mandate_digest/digest" }
+          },
+          "written_by": "take-the-next-work"
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      },
+      {
+        "id": "record_park_for_ack",
+        "deps": ["select", "verdict_park_for_ack", "mandate_digest"],
+        "action": "store_write",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "collection": "work-queue",
+          "key": { "$from": "/select/records/0/key" },
+          "value": {
+            "project": { "$from": "/select/records/0/value/project" },
+            "title": { "$from": "/select/records/0/value/title" },
+            "priority": { "$from": "/select/records/0/value/priority" },
+            "acceptance": { "$from": "/select/records/0/value/acceptance" },
+            "workspace": { "$from": "/select/records/0/value/workspace" },
+            "state": { "$from": "/verdict_park_for_ack/answer/next_state" },
+            "attempts": { "$from": "/verdict_park_for_ack/answer/attempts" },
+            "reason": { "$from": "/verdict_park_for_ack/answer/reason" },
+            "mandate_digest": { "$from": "/mandate_digest/digest" }
           },
           "written_by": "take-the-next-work"
         },
@@ -259,7 +389,45 @@
         },
         "input_schema": { "type": "any" },
         "output_schema": { "type": "any" }
+      },
+      {
+        "id": "handoff_for_ack",
+        "deps": ["select", "ack_check", "record_park_for_ack"],
+        "action": "handed_to_agent",
+        "max_attempts": 1,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/ack_check/answer/acknowledged",
+          "value": false
+        },
+        "with": {
+          "mandate": {
+            "$join": [
+              "the cheap worker did not acknowledge the mandate for \"",
+              { "$from": "/select/records/0/value/title" },
+              "\" and it was parked without the acceptance command ever running"
+            ]
+          },
+          "holder": "person",
+          "handoff_timeout_secs": 3600,
+          "same_holder_ok": true,
+          "options": [
+            {
+              "label": "reword the task and put it back in the queue",
+              "facts": "the cheap worker never opened its answer with the acknowledgment line; a clearer task may be"
+            },
+            {
+              "label": "leave it parked",
+              "facts": "the task stays recorded as parked, out of the queue the flow drains"
+            }
+          ]
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
       }
+    ],
+    "skippable_dependencies": [
+      { "step": "release_tree", "dependency": "acceptance" }
     ]
   },
   "inputs": {

@@ -5,12 +5,19 @@
 use actions::{AskRecipe, PromptVia, ToolResolver};
 use flow::{
     ActionRegistry, Decision, Execution, ExecutionRequest, Executor, Graph, InMemoryRecordStore,
-    InProcessExecutor, RunStops, SharedState, StopReason, SystemClock,
+    InProcessExecutor, Outcome, RunStops, SharedState, StopReason, SystemClock,
 };
 use ledger::{Ledger, StoreRecord};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Barrier};
+
+/// The mandate's stdin opens with `Mandate <digest>: …`; a worker of good
+/// faith echoes that digest back as `ack <digest>` before doing anything
+/// else. Shared by both fakes below, so the acknowledgment line is read the
+/// same way whether the worker then does the work or leaves the tree clean.
+const ACK_BACK: &str = "input=$(cat); \
+    digest=$(printf '%s' \"$input\" | head -n 1 | sed -E 's/^Mandate ([^:]+):.*/\\1/')";
 
 /// Fakes `ask_recipe` instead of a step-written `args`: `record_the_call`
 /// never bills a hand-written `args` as a model call, the same as `git`.
@@ -25,8 +32,10 @@ impl ToolResolver for FakeCheapWorker {
         Some(AskRecipe {
             args: vec![
                 "-c".to_owned(),
-                "input=$(cat); if [ -n \"$input\" ]; then touch TASK_OK; fi; printf 'attempted'"
-                    .to_owned(),
+                format!(
+                    "{ACK_BACK}; if [ -n \"$input\" ]; then touch TASK_OK; fi; \
+                     printf 'ack %s\\nattempted' \"$digest\""
+                ),
                 "worker".to_owned(),
             ],
             prompt: PromptVia::Stdin,
@@ -55,7 +64,7 @@ impl ToolResolver for SilentCheapWorker {
         Some(AskRecipe {
             args: vec![
                 "-c".to_owned(),
-                "cat >/dev/null; printf 'did nothing'".to_owned(),
+                format!("{ACK_BACK}; printf 'ack %s\\ndid nothing' \"$digest\""),
                 "worker".to_owned(),
             ],
             prompt: PromptVia::Stdin,
@@ -207,6 +216,45 @@ fn run_once(
 
 fn ran_execute(store: &InMemoryRecordStore) -> bool {
     store.all().iter().any(|record| record.step_id == "execute")
+}
+
+/// Whether a step of this id ever closed `Went`: the only outcome that means
+/// its command actually ran and answered, as opposed to being skipped by its
+/// own `when` or never reached at all.
+fn step_went(store: &InMemoryRecordStore, step_id: &str) -> bool {
+    store
+        .all()
+        .iter()
+        .any(|record| record.step_id == step_id && record.outcome == Some(Outcome::Went))
+}
+
+/// A worker that never opens its answer with the acknowledgment line: it
+/// answers plainly, the way a mandate misread would.
+struct UnacknowledgingWorker;
+
+impl ToolResolver for UnacknowledgingWorker {
+    fn resolve(&self, _id: &str) -> Result<String, String> {
+        Ok("sh".to_owned())
+    }
+
+    fn ask_recipe(&self, _id: &str) -> Option<AskRecipe> {
+        Some(AskRecipe {
+            args: vec![
+                "-c".to_owned(),
+                "cat >/dev/null; printf 'done'".to_owned(),
+                "worker".to_owned(),
+            ],
+            prompt: PromptVia::Stdin,
+            args_before_prompt: Vec::new(),
+            unusable_when: Vec::new(),
+            exhausted_when: Vec::new(),
+            cooldown_secs: None,
+            waits_for_a_person_when: Vec::new(),
+            silent_without_prompt: false,
+            refuses_without_prompt: Vec::new(),
+            usage: None,
+        })
+    }
 }
 
 /// The fault the claim step closes, measured directly: a real-thread version
@@ -555,5 +603,164 @@ fn a_step_with_a_tree_of_its_own_and_a_repo_cuts_from_that_repo() {
         "the tree on disk ({}) was cut from the right repository ({})",
         path,
         right_repo.display()
+    );
+}
+
+/// The digest computed before `execute` and the acknowledgment read from the
+/// worker's own answer are the same value, both landing in the task's record
+/// once the run completes.
+#[test]
+fn a_worker_that_acknowledges_the_mandate_finishes_and_its_record_carries_the_digest() {
+    let _fixtures_lock = FIXTURES_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let fixtures = make_fixtures();
+    let ledger = fresh_ledger("ack-ok");
+    ledger
+        .put_record(&StoreRecord {
+            collection: "roles".to_owned(),
+            key: "CHEAP_WORKER".to_owned(),
+            value: json!({"tools": ["claude-code"]}),
+            written_by: "test".to_owned(),
+            written_at: 0,
+        })
+        .expect("the role is written");
+    ledger
+        .put_record(&StoreRecord {
+            collection: "work-queue".to_owned(),
+            key: "gamma-ack".to_owned(),
+            value: json!({
+                "project": "gamma",
+                "title": "the gamma ack task",
+                "priority": 100,
+                "state": "queued",
+                "attempts": 0,
+                "acceptance": "./check.sh",
+                "workspace": fixtures.join("gamma").to_string_lossy(),
+            }),
+            written_by: "test".to_owned(),
+            written_at: 0,
+        })
+        .expect("a queue record is written");
+
+    let graph = full_graph();
+    let (execution, _store) = run_once(&graph, &ledger, "ack-ok-1", "gamma", &fixtures);
+
+    assert!(
+        matches!(execution.decisions.last(), Some(Decision::Complete)),
+        "{:?}",
+        execution.decisions
+    );
+
+    let task = ledger
+        .read_record("work-queue", "gamma-ack")
+        .expect("work-queue reads")
+        .expect("gamma-ack is still there");
+    assert_eq!(task.value["state"], "done", "{:?}", task.value);
+    let digest = task.value["mandate_digest"]
+        .as_str()
+        .expect("mandate_digest is a string");
+    assert!(!digest.is_empty(), "{:?}", task.value);
+    assert_eq!(
+        task.value["acknowledged"], task.value["mandate_digest"],
+        "the worker's acknowledgment matches the digest it was handed: {:?}",
+        task.value
+    );
+}
+
+/// The counterexample fault 182 already proved for a clean tree, proved again
+/// for an unacknowledged mandate: the acceptance command must never run once
+/// the worker's answer does not open with `ack <digest>`, and the task is
+/// parked instead.
+#[test]
+fn a_worker_that_never_acknowledges_the_mandate_is_parked_before_acceptance_ever_runs() {
+    let _fixtures_lock = FIXTURES_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let fixtures = make_fixtures();
+    let ledger = fresh_ledger("ack-missing");
+    ledger
+        .put_record(&StoreRecord {
+            collection: "roles".to_owned(),
+            key: "CHEAP_WORKER".to_owned(),
+            value: json!({"tools": ["claude-code"]}),
+            written_by: "test".to_owned(),
+            written_at: 0,
+        })
+        .expect("the role is written");
+    ledger
+        .put_record(&StoreRecord {
+            collection: "work-queue".to_owned(),
+            key: "gamma-no-ack".to_owned(),
+            value: json!({
+                "project": "gamma",
+                "title": "the gamma task nobody acknowledges",
+                "priority": 100,
+                "state": "queued",
+                "attempts": 0,
+                "acceptance": "./check.sh",
+                "workspace": fixtures.join("gamma").to_string_lossy(),
+            }),
+            written_by: "test".to_owned(),
+            written_at: 0,
+        })
+        .expect("a queue record is written");
+
+    let mut registry = ActionRegistry::default();
+    actions::register_default(&mut registry);
+    trigger::register_default(&mut registry);
+    registry.register(
+        actions::EXTERNAL_ENGINE_ACTION,
+        actions::ExternalEngineAction::resolving_with(UnacknowledgingWorker)
+            .recording_to(Some(ledger.clone())),
+    );
+    actions::store::register_store(&mut registry, Some(ledger.clone()));
+    registry.register(
+        actions::handoff::HANDED_TO_AGENT_ACTION,
+        actions::handoff::HandoffAction::new(),
+    );
+
+    let graph = full_graph();
+    let store = InMemoryRecordStore::default();
+    let mut shared = SharedState::new();
+    shared.insert(
+        flow::WORKSPACE_ROOT.to_owned(),
+        json!(fixtures.join("gamma").to_string_lossy()),
+    );
+    let request = ExecutionRequest {
+        holder: None,
+        run_id: "ack-missing-1".to_owned(),
+        root_inputs: [("trigger".to_owned(), trigger_input("gamma"))]
+            .into_iter()
+            .collect(),
+        gates: Vec::new(),
+        shared,
+        spend_cap_micros: None,
+        stops: RunStops::default(),
+    };
+    let execution = InProcessExecutor
+        .execute(&graph, request, &store, &registry, &SystemClock)
+        .expect("the run executes without breaking the engine itself");
+
+    assert!(
+        matches!(execution.decisions.last(), Some(Decision::Waiting(_))),
+        "a parked task waits on its handoff to a person: {:?}",
+        execution.decisions
+    );
+    assert!(
+        !step_went(&store, "acceptance"),
+        "the acceptance command must never run once the mandate goes unacknowledged"
+    );
+
+    let task = ledger
+        .read_record("work-queue", "gamma-no-ack")
+        .expect("work-queue reads")
+        .expect("gamma-no-ack is still there");
+    assert_eq!(task.value["state"], "parked", "{:?}", task.value);
+    assert_eq!(
+        task.value["reason"], "the worker did not acknowledge the mandate",
+        "{:?}",
+        task.value
+    );
+    assert!(
+        task.value.get("acknowledged").is_none(),
+        "an unacknowledged mandate never gets that field written: {:?}",
+        task.value
     );
 }
