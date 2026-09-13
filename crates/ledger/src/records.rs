@@ -330,6 +330,12 @@ pub struct StoreRecord {
     pub written_at: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConditionalWrite {
+    Inserted,
+    AlreadyPresent(StoreRecord),
+}
+
 /// A process Sailor started.
 ///
 /// **IN THE STORE AND NOT IN MEMORY.** An orphan process held a port and

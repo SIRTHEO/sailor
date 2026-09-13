@@ -17,13 +17,15 @@
 //! namespace is the flow's, the file is not.
 
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies};
-use ledger::{Ledger, StoreRecord};
+use ledger::{ConditionalWrite, Ledger, StoreRecord};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// The name `StoreWriteAction` registers under.
 pub const STORE_WRITE_ACTION: &str = "store_write";
+/// The name `StoreWriteIfAbsentAction` registers under.
+pub const STORE_WRITE_IF_ABSENT_ACTION: &str = "store_write_if_absent";
 /// The name `StoreReadAction` registers under.
 pub const STORE_READ_ACTION: &str = "store_read";
 /// The name `StoreListAction` registers under.
@@ -34,6 +36,10 @@ pub const STORE_LIST_ACTION: &str = "store_list";
 /// without a store the run refuses instead of pretending.
 pub fn register_store(registry: &mut flow::ActionRegistry, ledger: Option<Ledger>) {
     registry.register(STORE_WRITE_ACTION, StoreWriteAction::new(ledger.clone()));
+    registry.register(
+        STORE_WRITE_IF_ABSENT_ACTION,
+        StoreWriteIfAbsentAction::new(ledger.clone()),
+    );
     registry.register(STORE_READ_ACTION, StoreReadAction::new(ledger.clone()));
     registry.register(STORE_LIST_ACTION, StoreListAction::new(ledger));
 }
@@ -114,6 +120,51 @@ pub struct StoreWriteAction {
 impl StoreWriteAction {
     pub fn new(ledger: Option<Ledger>) -> Self {
         Self { ledger }
+    }
+}
+
+pub struct StoreWriteIfAbsentAction {
+    ledger: Option<Ledger>,
+}
+
+impl StoreWriteIfAbsentAction {
+    pub fn new(ledger: Option<Ledger>) -> Self {
+        Self { ledger }
+    }
+}
+
+impl Action for StoreWriteIfAbsentAction {
+    fn execute(&self, input: &Value, shared: &SharedState) -> Result<ActionOutcome, ActionError> {
+        let spec: WriteSpec = serde_json::from_value(input.clone())
+            .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
+        let key = match spec.key {
+            Some(key) => key,
+            None => key_of_this_run(shared)?,
+        };
+        let ledger = deposit(&self.ledger, "there is nowhere to put this entry")?;
+        let record = StoreRecord {
+            collection: spec.collection,
+            key,
+            value: spec.value,
+            written_by: spec.written_by,
+            written_at: spec.written_at.unwrap_or_else(now),
+        };
+        let written = matches!(
+            ledger
+                .put_record_if_absent(&record)
+                .map_err(|error| ActionError::new("store_refused", error.to_string()))?,
+            ConditionalWrite::Inserted
+        );
+        Ok(ActionOutcome::Went(json!({
+            "collection": record.collection,
+            "key": record.key,
+            "written_at": record.written_at,
+            "written": written,
+        })))
+    }
+
+    fn species(&self) -> StepSpecies {
+        StepSpecies::Repeatable
     }
 }
 
@@ -325,6 +376,38 @@ mod tests {
         assert_eq!(value["found"], json!(true));
         assert_eq!(value["value"], json!({"file": "2026-08-28-sailor.md"}));
         assert_eq!(value["written_by"], json!("the-current-mandate-flow"));
+    }
+
+    #[test]
+    fn the_registry_writes_once_when_the_key_is_absent() {
+        let (ledger, _guard) = store();
+        let mut registry = flow::ActionRegistry::default();
+        register_store(&mut registry, Some(ledger));
+        let action = registry
+            .get(STORE_WRITE_IF_ABSENT_ACTION)
+            .expect("the conditional store action is registered");
+        let input = json!({
+            "collection": "claims",
+            "key": "work-17",
+            "value": {"runner": "one"},
+            "written_by": "a-test",
+            "written_at": 1,
+        });
+
+        let ActionOutcome::Went(first) = action
+            .execute(&input, &SharedState::new())
+            .expect("the first conditional write")
+        else {
+            panic!("nothing waits here");
+        };
+        let ActionOutcome::Went(second) = action
+            .execute(&input, &SharedState::new())
+            .expect("the repeated conditional write")
+        else {
+            panic!("nothing waits here");
+        };
+        assert_eq!(first["written"], json!(true));
+        assert_eq!(second["written"], json!(false));
     }
 
     // **THE SYMPTOM OF FAULT 28 IS TESTED WHERE IT HAPPENS, NOT HERE.** A test

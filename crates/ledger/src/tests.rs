@@ -1475,6 +1475,37 @@ fn the_last_write_wins_and_the_record_stays_one() {
     assert_eq!(ledger.records_in("mandate").expect("collection").len(), 1);
 }
 
+#[test]
+fn a_conditional_record_write_appends_one_record_written_event() {
+    let directory = TestDirectory::new("conditional-record-write");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    let entry = record(
+        "supervision_observations",
+        "event-17",
+        json!({"status": "done"}),
+        17,
+    );
+
+    assert_eq!(
+        ledger
+            .put_record_if_absent(&entry)
+            .expect("first conditional write"),
+        ConditionalWrite::Inserted
+    );
+    assert!(matches!(
+        ledger
+            .put_record_if_absent(&entry)
+            .expect("repeated conditional write"),
+        ConditionalWrite::AlreadyPresent(_)
+    ));
+    assert_eq!(
+        ledger
+            .events_of_kind("record_written")
+            .expect("record-written count"),
+        1
+    );
+}
+
 /// An entry without an address is refused.
 ///
 /// It holds for the key as much as for the collection: whoever writes without

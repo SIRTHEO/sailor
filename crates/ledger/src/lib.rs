@@ -625,15 +625,35 @@ impl Ledger {
     /// Collection and key cannot be empty: they are the address, and an entry
     /// without an address is found only by whoever already knows where it is.
     pub fn put_record(&self, record: &StoreRecord) -> Result<(), LedgerError> {
-        if record.collection.trim().is_empty() {
-            return Err(LedgerError::InvalidRecord(
-                "record collection is empty".into(),
-            ));
-        }
-        if record.key.trim().is_empty() {
-            return Err(LedgerError::InvalidRecord("record key is empty".into()));
-        }
+        validate_store_record_address(record)?;
         self.write_event(StoredEvent::RecordWritten(record.clone()))
+    }
+
+    pub fn put_record_if_absent(
+        &self,
+        record: &StoreRecord,
+    ) -> Result<ConditionalWrite, LedgerError> {
+        validate_store_record_address(record)?;
+        let mut connection = self.lock()?;
+        let transaction = immediate(&mut connection)?;
+        apply_pending_events(&transaction)?;
+        let found = transaction
+            .query_row(
+                "SELECT collection, key, value, written_by, written_at
+                 FROM store WHERE collection = ?1 AND key = ?2",
+                params![record.collection, record.key],
+                read_store_row,
+            )
+            .optional()?;
+        if let Some(existing) = found {
+            transaction.commit()?;
+            apply_pending(&mut connection)?;
+            return Ok(ConditionalWrite::AlreadyPresent(existing));
+        }
+        append_event(&transaction, &StoredEvent::RecordWritten(record.clone()))?;
+        transaction.commit()?;
+        apply_pending(&mut connection)?;
+        Ok(ConditionalWrite::Inserted)
     }
 
     /// What an entry holds, if anybody wrote it.
@@ -1760,6 +1780,18 @@ impl Visit for JsonVisitor {
 
 fn immediate(connection: &mut Connection) -> Result<Transaction<'_>, LedgerError> {
     Ok(connection.transaction_with_behavior(TransactionBehavior::Immediate)?)
+}
+
+fn validate_store_record_address(record: &StoreRecord) -> Result<(), LedgerError> {
+    if record.collection.trim().is_empty() {
+        return Err(LedgerError::InvalidRecord(
+            "record collection is empty".into(),
+        ));
+    }
+    if record.key.trim().is_empty() {
+        return Err(LedgerError::InvalidRecord("record key is empty".into()));
+    }
+    Ok(())
 }
 
 fn apply_pending(connection: &mut Connection) -> Result<(), LedgerError> {
