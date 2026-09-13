@@ -7,8 +7,15 @@ full rules live in [`AGENTS.md`](AGENTS.md) and in `docs/decisions.md`.
 Everything committed here is in English — identifiers, comments, documents,
 commit messages, and every message a user of the tool can read. The Italian
 still in older comments is a measured debt, counted by a test whose number may
-only fall. Under `docs/` the one exception is the fault register, whose rows
-are generated from Sailor's own store and are translated nowhere.
+only fall.
+
+**The one declared exception is `docs/faults-encountered.md`.** Its rows are
+generated from Sailor's own store by whoever met the fault, in the language
+they wrote it in, and are translated nowhere: a translation would tear a row
+off the store that rewrites the table, and the next render would put the
+Italian back. This is not the English-only rule failing — it is the rule's one
+named, bounded exception, and no other document in this tree gets the same
+allowance.
 
 ## Build and test
 
@@ -47,6 +54,45 @@ measure, and do not repair a test that was never broken.
 
 The desktop window itself is `desktop/` (Tauri and React), outside the
 workspace, and the README explains how to run it.
+
+## Every gate you may hit
+
+Every one of these has to be green on your branch before a change merges. Run
+the ones that apply to what you touched; a reviewer reruns the same ones.
+
+**Always:**
+
+| gate | command | if it is red |
+|---|---|---|
+| the counted seeds hold | `cargo test -p sailor -j 1 --test the_battery_does_not_shrink_in_silence --test comments_do_not_crowd_out_the_code --test the_fault_table_holds_together` | a test or flow file appeared or vanished, or a comment block or fault row grew past its cap — write the new seed the judge states, in the same commit (see "The ratchet" below) |
+| everything a user reads is English | `cargo test -p sailor -j 1 --test the_words_a_user_reads_are_in_english --test a_product_name_in_prose_only_ever_falls --test identifiers_are_in_english` | translate the sentence, remove the product name from prose, or rename the identifier — a new Italian word for an identifier is one line added to the list, not an exception |
+| nothing private or workshop-only is tracked | `cargo test -p sailor -j 1 --test no_engine_is_named_in_the_code --test no_product_home_is_written_into_the_code --test nothing_reserved_is_tracked --test the_repository_ships_no_workshop_flow --test no_push_publishes_a_private_name` | move an engine's name into its descriptor, a product's home directory into data rather than a constant, and keep a personal flow out of `flows/` — a name once force-pushed cannot be unpublished, so this one is refused before the push, not fixed after |
+| clippy is clean | `cargo clippy -p <every crate you touched> --tests -j 1` | fix the lint; do not silence it with an attribute unless the comment says why |
+
+No tool signature in the commit range — the command has a pipe, so it does
+not fit the table above:
+
+```sh
+git log main..HEAD --format=%B | grep -E '^(Co-Authored-By|Claude-Session):'
+```
+
+Must print nothing. If it does, `git commit --amend` to drop the trailer.
+
+**When a `.flow.json` or a seed file changes:**
+
+```sh
+cargo test -p sailor -j 1 --test a_flow_never_grows_what_it_sends_in_silence --test every_flow_path_the_code_names_exists --test take_the_next_fault --test take_the_next_work
+cargo test -p flow -j 1
+```
+
+**When `crates/actions` or a brake changes:** `cargo test -p actions -j 1 --no-fail-fast` and `cargo test -p flow -j 1` — both suites, always both. A first-execution timeout on a fresh temp-file engine is rerun once and said aloud, not silently retried.
+
+**When `crates/profiles`, the login probe or a launch changes:** `cargo test -p profiles -j 1`, plus one real probe on a real home (the probe test's own name), pasted rather than skipped.
+
+**When `desktop/` changes:** `cd desktop && npm test` and `npx tsc --noEmit`, `cargo test --manifest-path desktop/src-tauri/Cargo.toml -j 1`, and — for anything a person would see on screen — a walkthrough of it against the fixture store, with screenshots.
+
+The full rules behind each of these, and the ones specific to an agent working
+unattended in this tree, live in [`AGENTS.md`](AGENTS.md).
 
 ## The ratchet, and it is the gate before every commit
 
