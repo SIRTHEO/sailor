@@ -69,20 +69,10 @@ pub(crate) fn compute_monograms(profiles: &[profiles::Profile]) -> Vec<String> {
         .map(|p| {
             let count = counts.entry(p.cli_id.clone()).or_insert(0);
             *count += 1;
-            let prefix = match p.cli_id.as_str() {
-                "claude" => "CL",
-                "codex" => "CX",
-                "antigravity" => "AG",
-                "gemini" => "GM",
-                other => {
-                    if other.len() >= 2 {
-                        &other[..2]
-                    } else {
-                        other
-                    }
-                }
-            };
-            format!("{}{}", prefix.to_uppercase(), count)
+            let mark = profiles::find_cli(&p.cli_id)
+                .map(|cli| cli.mark.clone())
+                .unwrap_or_else(|_| profiles::two_letter_mark(&p.cli_id));
+            format!("{mark}{count}")
         })
         .collect()
 }
@@ -334,6 +324,34 @@ pub(crate) fn strip(since: Option<i64>) -> Result<StripState, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn monograms_come_from_the_command_lines_mark_not_a_match() {
+        let profiles = vec![
+            profiles::Profile {
+                name: "one".to_string(),
+                cli_id: "claude".to_string(),
+                home_dir: std::path::PathBuf::new(),
+                endpoint: None,
+            },
+            profiles::Profile {
+                name: "two".to_string(),
+                cli_id: "claude".to_string(),
+                home_dir: std::path::PathBuf::new(),
+                endpoint: None,
+            },
+            profiles::Profile {
+                name: "three".to_string(),
+                cli_id: "an-unknown-engine".to_string(),
+                home_dir: std::path::PathBuf::new(),
+                endpoint: None,
+            },
+        ];
+
+        let monograms = compute_monograms(&profiles);
+
+        assert_eq!(monograms, vec!["CL1", "CL2", "AN1"]);
+    }
 
     #[test]
     fn strip_runs_ranked_waiting_then_working_then_holder_gone() {
