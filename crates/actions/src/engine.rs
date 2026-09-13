@@ -562,8 +562,16 @@ impl ExternalEngineAction {
                 // prints those words while working, and would refuse itself.
                 let answered = reading.answer.clone().unwrap_or_else(|| stdout.clone());
                 let in_shape = shape.is_some_and(|shape| shaped_answer(shape, &answered).is_ok());
+                // **AN ENGINE THAT REPORTED USAGE HAS ANSWERED**, and only its
+                // error channel may still say it could not work. Fault 182.
+                let has_usage = reading.input_tokens.is_some()
+                    || reading.output_tokens.is_some()
+                    || reading.total_tokens.is_some()
+                    || reading.declared_cost.is_some();
                 let class = if in_shape {
                     None
+                } else if has_usage {
+                    candidate.declared_class_of_a_call_that_answered(&stderr)
                 } else {
                     candidate.declared_class(&stdout, &stderr)
                 };

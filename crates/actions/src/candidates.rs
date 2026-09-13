@@ -498,6 +498,13 @@ impl Candidate {
         }
         self.says_it_cannot_work(stdout, stderr).then_some("exhausted")
     }
+
+    /// The class of a call that **exited zero and reported real usage**: it
+    /// answered, so only its error channel can still say it could not work —
+    /// never the body of the answer it just paid for. See fault 182.
+    pub(crate) fn declared_class_of_a_call_that_answered(&self, stderr: &str) -> Option<&'static str> {
+        self.declared_class("", stderr)
+    }
 }
 
 #[cfg(test)]
