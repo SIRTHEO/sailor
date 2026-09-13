@@ -365,6 +365,7 @@
   "cli.profiles.access.no_such_executable": "not known: «{executable}» is not on this machine, or no descriptor declares it",
   "cli.profiles.access.not_known_because": "not known ({reason})",
   "cli.profiles.access.not_authenticated": "NOT AUTHENTICATED («{said}»)",
+  "cli.profiles.access.mismatched": "MISMATCHED: this home answers as «{home_answers_as}»; the profile is named «{profile_named}»",
   "cli.profiles.access.recipe_by_halves": "not known: descriptor «{tool}» declares `login_status` by halves",
   "cli.profiles.access.unrecognised": "not known: it answered «{said}», which resembles neither of the two declared forms",
   "cli.profiles.already_exists": "profile {name} already exists for {id}",

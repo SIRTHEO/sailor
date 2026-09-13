@@ -365,6 +365,7 @@
   "cli.profiles.access.no_such_executable": "non lo so: «{executable}» non è su questa macchina, oppure nessun descrittore lo dichiara",
   "cli.profiles.access.not_known_because": "non lo so ({reason})",
   "cli.profiles.access.not_authenticated": "NON AUTENTICATO («{said}»)",
+  "cli.profiles.access.mismatched": "DISCORDANTE: questa casa risponde come «{home_answers_as}»; il profilo si chiama «{profile_named}»",
   "cli.profiles.access.recipe_by_halves": "non lo so: il descrittore «{tool}» dichiara `login_status` a metà",
   "cli.profiles.access.unrecognised": "non lo so: ha risposto «{said}», che non somiglia a nessuna delle due forme dichiarate",
   "cli.profiles.already_exists": "il profilo {name} esiste già per {id}",
