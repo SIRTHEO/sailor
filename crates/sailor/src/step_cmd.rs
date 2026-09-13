@@ -14,7 +14,7 @@
 
 use crate::Form;
 use actions::handoff::{holder_key, HOLDER_COLLECTION};
-use flow::{Completion, Decision, FlowFile, InProcessExecutor, Outcome, StepRecord};
+use flow::{Completion, Decision, FlowFile, InProcessExecutor, Outcome, StepRecord, Unmet};
 use ledger::{EngineIdentity, Ledger, ModelCallRecord, StoreRecord};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -646,6 +646,14 @@ fn what_comes_next(decision: &Decision, run_id: &str, now: i64) -> String {
             reason,
             not_started,
         } => registry::why_it_halted(*reason, not_started),
+        Decision::RequirementUnmet { step, reason } => catalogue::say(
+            match reason {
+                Unmet::DidNotPass => "cli.step.required_check_did_not_pass",
+                Unmet::Skipped => "cli.step.required_check_was_skipped",
+                Unmet::NeverRan => "cli.step.required_check_never_ran",
+            },
+            &[("step", step)],
+        ),
         Decision::Complete => catalogue::say("cli.step.run_complete", &[]),
     }
 }

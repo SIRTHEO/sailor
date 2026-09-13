@@ -73,6 +73,7 @@ fn step(id: &str, action: &str, deps: &[&str], with: Option<Value>) -> Step {
         phase: None,
         stops_when: None,
         decides_done: false,
+        required: false,
     }
 }
 

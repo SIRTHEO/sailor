@@ -67,6 +67,7 @@ fn graph_of_one_step() -> Graph {
         phase: None,
         stops_when: None,
         decides_done: false,
+        required: false,
     }])
     .expect("a valid graph")
 }
