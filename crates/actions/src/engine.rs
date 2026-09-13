@@ -37,14 +37,16 @@ struct Role {
 
 /// Replaces a role with the tool chain its owner wrote in the ledger.
 ///
-/// The role remains data until the boundary that needs executable tool ids;
-/// neither the flow nor Rust owns a provider choice.
+/// **IDEMPOTENT: A `with` CARRYING BOTH IS ALREADY RESOLVED, NOT MISWRITTEN.**
+/// `resolved_roles` calls this before a run starts and keeps `role` beside
+/// the `tool` it writes; called again here the same `with` is kept as is,
+/// once, instead of being looked up twice or refused. See fault 183.
 pub fn resolve_role(input: &Value, ledger: Option<&Ledger>) -> Result<Value, String> {
     let Some(role) = input.get("role").and_then(Value::as_str) else {
         return Ok(input.clone());
     };
     if input.get("tool").is_some() {
-        return Err(catalogue::say("cli.role.combined_with_tool", &[("role", role)]));
+        return Ok(input.clone());
     }
     let Some(ledger) = ledger else {
         return Err(catalogue::say("cli.role.no_store", &[("role", role)]));
@@ -73,7 +75,8 @@ pub fn resolve_role(input: &Value, ledger: Option<&Ledger>) -> Result<Value, Str
     let object = resolved
         .as_object_mut()
         .ok_or_else(|| catalogue::say("cli.role.needs_object", &[("role", role)]))?;
-    object.remove("role");
+    // `role` stays: the ledger's row needs it, and the guard above is what
+    // stops a second resolution, not a reason to strip it here.
     object.insert("tool".to_owned(), Value::Array(tools));
     Ok(resolved)
 }
@@ -1101,7 +1104,11 @@ mod tests {
         let resolved = resolve_role(&json!({"role":"reviewer"}), Some(&ledger))
             .expect("resolve the role");
 
-        assert_eq!(resolved, json!({"tool":["first@team","second@team"]}));
+        assert_eq!(
+            resolved,
+            json!({"role":"reviewer","tool":["first@team","second@team"]}),
+            "role stays beside tool: the ledger's row still needs it, see fault 183"
+        );
     }
 
     #[test]

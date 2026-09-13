@@ -164,6 +164,12 @@ pub(crate) struct EngineSpec {
     /// returns — or a **chain** of identifiers to try in order.
     #[serde(default)]
     pub(crate) tool: Option<ToolChoice>,
+    /// The role this step asked for, kept beside `tool` once `resolve_role`
+    /// writes it: read off the raw input at recording time, never off
+    /// `spec`, and declared here only so it is not flagged as a stray field.
+    #[allow(dead_code)]
+    #[serde(default)]
+    pub(crate) role: Option<String>,
     /// What the text of this step is: `private` never resolves to an engine
     /// whose data pact is `trains` or `unknown`. Absent is `public`.
     #[serde(default)]
