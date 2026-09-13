@@ -182,11 +182,25 @@ pub struct Published {
     pub pushed_to: Option<String>,
 }
 
+#[derive(Clone)]
+struct FlowPrivacy {
+    names: Vec<String>,
+    home: String,
+}
+
 /// Publishes the flows under `dir`: refuses when any carries a secret,
 /// otherwise initialises the repository if none, commits what changed, and
 /// pushes to `remote` when one is given. Creating the remote, private, is the
 /// person's gesture; nothing here talks to a forge.
 pub fn publish(dir: &Path, remote: Option<&str>) -> Result<Published, String> {
+    publish_with_privacy(dir, remote, None)
+}
+
+fn publish_with_privacy(
+    dir: &Path,
+    remote: Option<&str>,
+    supplied_privacy: Option<FlowPrivacy>,
+) -> Result<Published, String> {
     let secrets = secrets_under(dir)?;
     if let Some((path, secret)) = secrets.first() {
         return Err(catalogue::say(
@@ -198,6 +212,27 @@ pub fn publish(dir: &Path, remote: Option<&str>) -> Result<Published, String> {
                 ("why", &secret.why),
             ],
         ));
+    }
+    let privacy = match supplied_privacy {
+        Some(privacy) => privacy,
+        None => flow_privacy_input()?,
+    };
+    if flow_content_is_private(dir, &privacy)? {
+        return Err(catalogue::say("cli.flow.publish_refused_private_history", &[]));
+    }
+    let remembered = git(dir, &["remote", "get-url", "origin"]).ok();
+    match (remote, remembered.as_deref()) {
+        (Some(remote), Some(remembered)) if remote != remembered => {
+            return Err(catalogue::say("cli.flow.publish_destination_conflict", &[]));
+        }
+        (Some(_), None) => {
+            return Err(catalogue::say("cli.flow.publish_cannot_prove_privacy", &[]));
+        }
+        (_, Some(_)) => {
+            let message = catalogue::say("cli.flow.publish_commit_message", &[]);
+            flow_publication_preflight(dir, &privacy, &[message])?;
+        }
+        (None, None) => {}
     }
     let flows = flow_files(dir).len();
     if !dir.join(".git").exists() {
@@ -213,26 +248,78 @@ pub fn publish(dir: &Path, remote: Option<&str>) -> Result<Published, String> {
     };
     // A remote named once is remembered by git itself, so a later publication
     // needs no argument and no second place to declare it.
-    let remembered = git(dir, &["remote", "get-url", "origin"]).ok();
     let pushed_to = match (remote, remembered) {
-        (Some(remote), None) => {
-            git(dir, &["remote", "add", "origin", remote])?;
-            git(dir, &["push", "-q", "-u", "origin", "HEAD"])?;
-            Some(remote.to_owned())
-        }
-        (Some(remote), Some(remembered)) if remote != remembered => {
-            return Err(catalogue::say(
-                "cli.flow.publish_remote_already_named",
-                &[("remembered", &remembered), ("asked", remote)],
-            ));
-        }
         (_, Some(remembered)) => {
-            git(dir, &["push", "-q", "-u", "origin", "HEAD"])?;
+            let plan = flow_publication_preflight(dir, &privacy, &[])?;
+            push_flows(dir, &plan)?;
             Some(remembered)
         }
         (None, None) => None,
+        // Proven unreachable above: `(Some(_), None)` already returned. An
+        // error and not a panic anyway — the proof is in this function, not
+        // in the type, and a future edit that loosens it must not crash.
+        (Some(_), None) => return Err(catalogue::say("cli.flow.publish_cannot_prove_privacy", &[])),
     };
     Ok(Published { flows, committed, pushed_to })
+}
+
+fn flow_privacy_input() -> Result<FlowPrivacy, String> {
+    let (names, home) = toolbox::privacy::required_input(
+        std::env::var("SAILOR_PRIVATE_NAMES").ok(),
+        std::env::var("HOME").ok(),
+    )
+    .map_err(|_| catalogue::say("cli.flow.publish_cannot_prove_privacy", &[]))?;
+    Ok(FlowPrivacy { names, home })
+}
+
+fn flow_publication_preflight(
+    dir: &Path,
+    privacy: &FlowPrivacy,
+    planned_messages: &[String],
+) -> Result<toolbox::privacy::PushPlan, String> {
+    let plan = toolbox::privacy::push_plan(dir)
+        .map_err(|_| catalogue::say("cli.flow.publish_cannot_prove_privacy", &[]))?;
+    let private_metadata = toolbox::privacy::outgoing_metadata_is_private(
+        dir,
+        &plan,
+        &privacy.names,
+        &privacy.home,
+        planned_messages,
+    )
+    .map_err(|_| catalogue::say("cli.flow.publish_cannot_prove_privacy", &[]))?;
+    let private_content = flow_content_is_private(dir, privacy)?;
+    if private_metadata || private_content {
+        return Err(catalogue::say("cli.flow.publish_refused_private_history", &[]));
+    }
+    Ok(plan)
+}
+
+fn flow_content_is_private(dir: &Path, privacy: &FlowPrivacy) -> Result<bool, String> {
+    for path in flow_files(dir) {
+        let text = std::fs::read_to_string(path)
+            .map_err(|_| catalogue::say("cli.flow.publish_cannot_prove_privacy", &[]))?;
+        if !toolbox::privacy::what_cannot_be_published(&text, &privacy.names, Some(&privacy.home))
+            .is_empty()
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn push_flows(dir: &Path, plan: &toolbox::privacy::PushPlan) -> Result<(), String> {
+    let refspec = format!("{}:{}", plan.head(), plan.destination());
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["push", "-q", "-u", plan.remote(), &refspec])
+        .output()
+        .map_err(|_| catalogue::say("cli.flow.publish_push_refused", &[]))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(catalogue::say("cli.flow.publish_push_refused", &[]))
+    }
 }
 
 /// `sailor flow publish [remote]`: the flows of the source that is yours.
@@ -293,7 +380,7 @@ mod tests {
     }
 
     #[test]
-    fn publishing_refuses_a_directory_with_a_secret_and_commits_a_clean_one() {
+    fn local_and_remote_flow_publication_refuse_private_material_before_persisting() {
         // A scratch named after the process alone comes back on the next run
         // with the same number, and a leftover from before decides the verdict.
         let dir = std::env::temp_dir().join(format!(
@@ -305,6 +392,10 @@ mod tests {
                 .unwrap_or_default()
         ));
         std::fs::create_dir_all(&dir).expect("scratch");
+        let privacy = FlowPrivacy {
+            names: vec!["mylberry".to_owned()],
+            home: "/home/tester".to_owned(),
+        };
         std::fs::write(
             dir.join("leaky.flow.json"),
             flow_with_env(json!({"OPENROUTER_API_KEY": "sk-secret"})).to_string(),
@@ -314,20 +405,39 @@ mod tests {
         assert!(refused.contains("leaky.flow.json") && refused.contains("«ask»") && refused.contains("OPENROUTER_API_KEY"), "{refused}");
         assert!(!dir.join(".git").exists(), "nothing was initialised on a refusal");
 
+        let private_flow = json!({
+            "id": "x",
+            "graph": {"steps": []},
+            "inputs": {"note": "mylberry"}
+        });
+        std::fs::write(dir.join("leaky.flow.json"), private_flow.to_string()).expect("private flow");
+        let refused = publish_with_privacy(&dir, None, Some(privacy.clone()))
+            .expect_err("private content is refused before a local commit");
+        assert!(
+            !refused.contains("mylberry"),
+            "the refusal carries private content: {refused}"
+        );
+        assert!(
+            !dir.join(".git").exists(),
+            "the refusal initialised a local repository"
+        );
+
         std::fs::write(
             dir.join("leaky.flow.json"),
             flow_with_env(json!({"OPENROUTER_API_KEY": {"$env": "OPENROUTER_API_KEY"}})).to_string(),
         )
         .expect("rewrite");
-        let done = publish(&dir, None).expect("a clean directory publishes");
+        let done = publish_with_privacy(&dir, None, Some(privacy.clone()))
+            .expect("a clean directory publishes");
         assert_eq!(done, Published { flows: 1, committed: true, pushed_to: None });
-        let again = publish(&dir, None).expect("nothing new is fine");
+        let again = publish_with_privacy(&dir, None, Some(privacy.clone()))
+            .expect("nothing new is fine");
         assert!(!again.committed, "nothing changed, nothing committed");
 
-        let sources = [FlowSource { origin: YOUR_ORIGIN, dir: dir.clone() }];
         // Beside the flows and not under them: a repository inside the
         // directory being published would be added to it.
         let elsewhere = dir.with_extension("elsewhere.git");
+        let _ = std::fs::remove_dir_all(&elsewhere);
         assert!(
             std::process::Command::new("git")
                 .args(["init", "-q", "--bare"])
@@ -338,18 +448,114 @@ mod tests {
             "the bare repository this pushes into is the proof's own, not the network's"
         );
         let named = elsewhere.display().to_string();
-        let pushed = publish(&dir, Some(&named)).expect("a remote named once is pushed to");
-        assert_eq!(pushed.pushed_to.as_deref(), Some(named.as_str()));
-        let again = publish(&dir, None).expect("the remote is remembered, not asked for twice");
-        assert_eq!(again.pushed_to.as_deref(), Some(named.as_str()), "no argument, same place");
-        let other = publish(&dir, Some("/somewhere/else.git")).expect_err("a second place is refused");
-        assert!(other.contains(&named), "the refusal says where they already go: {other}");
+        let git = |args: &[&str]| {
+            let output = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&dir)
+                .args(args)
+                .output()
+                .expect("git runs");
+            assert!(output.status.success(), "git {args:?}");
+        };
+        git(&["remote", "add", "origin", &named]);
+        git(&["push", "--quiet", "-u", "origin", "HEAD"]);
+        let harmless_flow = json!({
+            "id": "x",
+            "graph": {"steps": []},
+            "inputs": {"note": "ordinary"}
+        });
+        std::fs::write(dir.join("leaky.flow.json"), harmless_flow.to_string()).expect("harmless change");
+        let pushed = publish_with_privacy(&dir, Some(&named), Some(privacy.clone()))
+            .expect("a configured local destination is published to");
+        assert!(pushed.committed && pushed.pushed_to.as_deref() == Some(named.as_str()));
+        let conflict = publish_with_privacy(&dir, Some("another-destination"), Some(privacy.clone()))
+            .expect_err("a conflicting destination is refused");
+        assert!(
+            !conflict.contains(&named) && !conflict.contains("another-destination"),
+            "the conflict names configured destinations: {conflict}"
+        );
 
+        let head = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&dir)
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .expect("git runs")
+            .stdout;
+        let private_flow = json!({
+            "id": "x",
+            "graph": {"steps": []},
+            "inputs": {"note": "mylberry"}
+        });
+        std::fs::write(dir.join("leaky.flow.json"), private_flow.to_string()).expect("private flow");
+        let refused = publish_with_privacy(&dir, Some(&named), Some(privacy.clone()))
+            .expect_err("proposed private flow is refused before a commit");
+        assert!(
+            !refused.contains("mylberry"),
+            "the refusal carries private content: {refused}"
+        );
+        assert!(
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&dir)
+                .args(["rev-parse", "HEAD"])
+                .output()
+                .expect("git runs")
+                .stdout
+                == head,
+            "the refusal committed the proposed private flow"
+        );
 
+        let metadata_flow = json!({
+            "id": "x",
+            "graph": {"steps": []},
+            "inputs": {"note": "second"}
+        });
+        std::fs::write(dir.join("leaky.flow.json"), metadata_flow.to_string()).expect("clean flow");
+        git(&["add", "leaky.flow.json"]);
+        git(&["commit", "--quiet", "-m", "mylberry"]);
+        let refused = match flow_publication_preflight(&dir, &privacy, &[]) {
+            Err(refused) => refused,
+            Ok(_) => panic!("a newly created private commit is refused before push"),
+        };
+        assert!(
+            !refused.contains("mylberry"),
+            "the metadata refusal carries private content: {refused}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&elsewhere);
+    }
+
+    #[test]
+    fn publish_flows_reads_the_source_that_is_yours() {
+        let dir = std::env::temp_dir().join(format!(
+            "sailor-publish-flows-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|since| since.as_nanos())
+                .unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&dir).expect("scratch");
+        std::fs::write(
+            dir.join("clean.flow.json"),
+            flow_with_env(json!({"OPENROUTER_API_KEY": {"$env": "OPENROUTER_API_KEY"}})).to_string(),
+        )
+        .expect("write");
+        let privacy = FlowPrivacy {
+            names: Vec::new(),
+            home: "/home/tester".to_owned(),
+        };
+        publish_with_privacy(&dir, None, Some(privacy)).expect("a clean directory publishes");
+
+        let sources = [FlowSource { origin: YOUR_ORIGIN, dir: dir.clone() }];
         let said = publish_flows(&sources, None).expect("the source that is yours publishes");
         assert!(said.contains("nothing") && said.contains(&dir.display().to_string()), "{said}");
         let builtin_only = [FlowSource::builtin()];
         let refused = publish_flows(&builtin_only, None).expect_err("built in flows are not yours");
         assert!(refused.contains("built in"), "{refused}");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

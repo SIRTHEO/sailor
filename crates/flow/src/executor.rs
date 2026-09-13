@@ -1384,8 +1384,14 @@ fn requirement_unmet(graph: &Graph, records: &[StepRecord]) -> Option<(String, U
         .iter()
         .filter(|step| step.required)
         .find_map(|step| {
-            let reason = match latest_for(step, records) {
-                Some(record) if verdict_passed(record) => return None,
+            let record = latest_for(step, records);
+            if record.is_some_and(verdict_passed) {
+                return None;
+            }
+            if waived_by_condition(graph, step, records) {
+                return None;
+            }
+            let reason = match record {
                 Some(record) => match record.outcome {
                     Some(Outcome::Skipped) => Unmet::Skipped,
                     None => Unmet::NeverRan,
@@ -1395,6 +1401,24 @@ fn requirement_unmet(graph: &Graph, records: &[StepRecord]) -> Option<(String, U
             };
             Some((step.id.clone(), reason))
         })
+}
+
+/// Conditions are the only skips the author explicitly chose; other skips stay unmet.
+fn waived_by_condition(graph: &Graph, step: &Step, records: &[StepRecord]) -> bool {
+    match latest_for(step, records) {
+        Some(record) => {
+            record.outcome == Some(Outcome::Skipped)
+                && matches!(&record.why, Some(Why::Condition(judgement)) if !judgement.held)
+        }
+        None => {
+            !step.deps.is_empty()
+                && step
+                    .deps
+                    .iter()
+                    .filter_map(|dependency| graph.step(dependency))
+                    .all(|dependency| waived_by_condition(graph, dependency, records))
+        }
+    }
 }
 
 /// Whether a step that declared `stops_when` has made its own pointer true.

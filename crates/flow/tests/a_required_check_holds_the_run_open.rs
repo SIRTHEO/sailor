@@ -169,10 +169,11 @@ fn a_required_check_a_passing_gate_left_unasked_holds_the_run_open() {
     assert_eq!(status.0, "failed", "{decisions:?}");
 }
 
-/// A required check its own `when` skipped. A step that did not run said
-/// nothing, and nothing is not a pass.
+/// A required check its own `when` judged false. The author wrote the
+/// condition guarding it, and nothing it guards happened: the requirement is
+/// waived, not unmet.
 #[test]
-fn a_required_check_its_condition_skipped_holds_the_run_open() {
+fn a_required_check_its_own_condition_ruled_out_completes_the_run() {
     let mut acceptance = step("acceptance", "verdict", &["work"]);
     acceptance.required = true;
     acceptance.when = Some(Condition::PointerEquals {
@@ -187,20 +188,18 @@ fn a_required_check_its_condition_skipped_holds_the_run_open() {
 
     assert_eq!(
         decisions.last(),
-        Some(&Decision::RequirementUnmet {
-            step: "acceptance".to_owned(),
-            reason: Unmet::Skipped,
-        }),
-        "a skipped acceptance closed the run as done: {decisions:?}"
+        Some(&Decision::Complete),
+        "a condition ruled out by its own author held the run open: {decisions:?}"
     );
-    assert_eq!(status, ("failed", false), "{decisions:?}");
+    assert_eq!(status, ("complete", true), "{decisions:?}");
 }
 
-/// A required check nothing ever opened, because the step before it skipped and
-/// took its dependency with it. No record at all is the quietest way of not
-/// passing, and the one no reading of the outcomes can see.
+/// A required check nothing ever opened, because the step before it was ruled
+/// out by its own condition and took its dependency with it. Nothing the
+/// requirement guards happened here either: waived the same way, one hop
+/// removed.
 #[test]
-fn a_required_check_left_unopened_holds_the_run_open() {
+fn a_required_check_left_unopened_by_an_upstream_condition_completes_the_run() {
     let mut work = step("work", "echo", &[]);
     work.when = Some(Condition::PointerEquals {
         pointer: "/ready".to_owned(),
@@ -216,11 +215,32 @@ fn a_required_check_left_unopened_holds_the_run_open() {
 
     assert_eq!(
         decisions.last(),
-        Some(&Decision::RequirementUnmet {
-            step: "acceptance".to_owned(),
-            reason: Unmet::NeverRan,
-        }),
-        "an acceptance nobody opened closed the run as done: {decisions:?}"
+        Some(&Decision::Complete),
+        "an acceptance left unopened by an upstream condition held the run open: {decisions:?}"
+    );
+    assert_eq!(status, ("complete", true), "{decisions:?}");
+}
+
+/// A required step never reached because what stood between it and the root
+/// genuinely broke — not a condition anybody wrote, an action that ran out of
+/// attempts. The run must not read this as waived: it ends on the broken step's
+/// own name, same as today, and never as complete.
+#[test]
+fn a_required_check_left_unopened_by_a_real_failure_does_not_complete_the_run() {
+    let mut gate = step("gate", "verdict", &[]);
+    gate.max_attempts = 1;
+    let mut acceptance = step("acceptance", "verdict", &["gate"]);
+    acceptance.required = true;
+    let graph = Graph::new(vec![gate, acceptance]).expect("a sane graph");
+    let roots = [("gate".to_owned(), json!({"say": "break"}))]
+        .into_iter()
+        .collect();
+    let (decisions, status) = run(&graph, request(roots));
+
+    assert_eq!(
+        decisions.last(),
+        Some(&Decision::Failed(vec!["gate".to_owned()])),
+        "a real failure upstream of a required step read as complete: {decisions:?}"
     );
     assert_eq!(status, ("failed", false), "{decisions:?}");
 }

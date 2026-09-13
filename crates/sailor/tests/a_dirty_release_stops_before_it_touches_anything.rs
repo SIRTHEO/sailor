@@ -35,8 +35,11 @@ fn git(repo: &Path, args: &[&str]) {
 
 /// A repository whose committed HEAD is clean and whose working tree is not,
 /// with the difference sitting inside the parts the `sailor` target is made of.
+/// A real remote and upstream branch: the publication preflight proves one
+/// before the dirty-work gate this file tests is ever reached.
 fn a_repository_with_work_left_out(at: &Path) -> PathBuf {
     let repo = at.join("sources");
+    let remote = at.join("remote.git");
     std::fs::create_dir_all(repo.join("crates/harbourmaster/src"))
         .expect("the sources directory is made");
     std::fs::write(repo.join("crates/harbourmaster/src/lib.rs"), "pub fn moored() {}\n")
@@ -46,6 +49,17 @@ fn a_repository_with_work_left_out(at: &Path) -> PathBuf {
     git(&repo, &["config", "user.name", "The Harbourmaster"]);
     git(&repo, &["add", "crates/harbourmaster/src/lib.rs"]);
     git(&repo, &["commit", "--quiet", "-m", "the first mooring"]);
+    assert!(
+        Command::new("git")
+            .args(["init", "-q", "--bare"])
+            .arg(&remote)
+            .status()
+            .expect("git runs")
+            .success(),
+        "the local remote is created"
+    );
+    git(&repo, &["remote", "add", "origin", remote.to_str().expect("utf-8 path")]);
+    git(&repo, &["push", "--quiet", "-u", "origin", "HEAD"]);
     std::fs::write(
         repo.join("crates/harbourmaster/src/lib.rs"),
         "pub fn moored() { unimplemented!() }\n",

@@ -296,12 +296,17 @@
         "id": "warrant",
         "deps": [
           "trigger",
+          "next",
           "repair"
         ],
-        "when": null,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/next/open",
+          "value": true
+        },
         "action": "shell_check",
-        "max_attempts": 1,
         "required": true,
+        "max_attempts": 1,
         "input_schema": {
           "type": "object",
           "properties": {},
@@ -383,7 +388,12 @@
         }
       }
     ],
-    "skippable_dependencies": []
+    "skippable_dependencies": [
+      {
+        "step": "warrant",
+        "dependency": "repair"
+      }
+    ]
   },
   "inputs": {
     "trigger": {

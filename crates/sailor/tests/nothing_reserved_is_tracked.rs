@@ -19,17 +19,6 @@ fn flows_that_may_be_tracked() -> Vec<String> {
         .collect()
 }
 
-/// File names that are a person's, wherever they sit.
-const NAMES_THAT_ARE_A_PERSONS: &[&str] = &[
-    ".credentials.json",
-    "credentials.json",
-    "auth.json",
-    "profili.json",
-    "cooldowns.json",
-    "budgets.json",
-    ".env",
-];
-
 /// The tracked files. `None` and not an empty list where there is nothing to
 /// ask: an empty list reads as «nothing reserved is tracked» — fault 100.
 fn tracked() -> Option<Vec<String>> {
@@ -58,7 +47,7 @@ fn tracked_at(root: &std::path::Path) -> Option<Vec<String>> {
     workspace::measured_against(
         paths.len(),
         "tracked paths read",
-        NAMES_THAT_ARE_A_PERSONS.len(),
+        toolbox::privacy::RESERVED_ARTIFACT_FILENAMES.len(),
         "names a file must never carry",
     );
     Some(paths)
@@ -80,7 +69,7 @@ fn a_persons_files_among(tracked: Vec<String>) -> Vec<String> {
         .into_iter()
         .filter(|path| {
             let name = path.rsplit('/').next().unwrap_or(path);
-            NAMES_THAT_ARE_A_PERSONS.contains(&name)
+            toolbox::privacy::RESERVED_ARTIFACT_FILENAMES.contains(&name)
         })
         .collect()
 }

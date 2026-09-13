@@ -53,8 +53,9 @@ A step may declare `required` instead: the run reaches `Complete` only if that
 step ran and its check passed, and every other outcome — broken, skipped,
 tolerated, or never reached — ends the run naming the step and why. Unlike
 `decides_done`, which permits an early success, `required` withholds an
-ordinary one. `take-the-next-fault`'s `warrant` and `dispatch-the-work`'s
-`verdict` declare it.
+ordinary one. `dispatch-the-work`'s `verdict` declares it; `take-the-next-fault`'s
+`warrant` cannot — it has a genuine no-op path, when nothing is open, that a
+required step would read as never having run.
 
 Project rules can be delivered to an agent, but delivery does not enforce
 filesystem or network restrictions. Process-boundary enforcement remains
