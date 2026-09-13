@@ -39,6 +39,8 @@ pub enum NativeProfiles {
 pub struct KnownCli {
     pub id: String,
     pub display_name: String,
+    /// Two letters for a crowded strip: declared, or `id` cut to two.
+    pub mark: String,
     pub executable: String,
     pub native_profiles: NativeProfiles,
     /// How the judgement above was reached: what the real command says, or why
@@ -297,6 +299,8 @@ struct DeclaredCli {
     id: String,
     #[serde(default)]
     display_name: String,
+    #[serde(default)]
+    mark: String,
     executable: String,
     #[serde(default)]
     native: String,
@@ -341,9 +345,15 @@ impl From<DeclaredCli> for KnownCli {
         } else {
             declared.display_name
         };
+        let mark = if declared.mark.trim().is_empty() {
+            two_letter_mark(&declared.id)
+        } else {
+            declared.mark.to_uppercase()
+        };
         KnownCli {
             id: declared.id,
             display_name,
+            mark,
             executable: declared.executable,
             // **A WORD NOBODY TAUGHT US IS «UNVERIFIED», NEVER «NO»**.
             native_profiles: match declared.native.as_str() {
@@ -369,6 +379,11 @@ impl From<DeclaredCli> for KnownCli {
             identity_at: declared.identity,
         }
     }
+}
+
+/// The fallback mark: `id` upper-cased, cut to two letters.
+pub fn two_letter_mark(id: &str) -> String {
+    id.to_uppercase().chars().take(2).collect()
 }
 
 /// The command line carrying this `id`, or a readable refusal. One place, so
@@ -732,6 +747,7 @@ mod tests {
         let cli = KnownCli {
             id: "una-casa".to_owned(),
             display_name: "Una Casa".to_owned(),
+            mark: "UC".to_owned(),
             executable: "unacasa".to_owned(),
             native_profiles: NativeProfiles::NotSupported,
             native_profiles_note: "a fixture".to_owned(),
@@ -891,29 +907,52 @@ mod tests {
         assert_eq!(identity, HomeIdentity::Answers("somebody-else@example.com".to_owned()));
     }
 
+    /// A fictitious engine, so the test proves the rule — an identity file
+    /// tried beside the home, not only inside it — without naming a real one.
+    fn fake_engine_with_an_identity_file() -> KnownCli {
+        KnownCli {
+            id: "acme".to_owned(),
+            display_name: "Acme Tool".to_owned(),
+            mark: "AC".to_owned(),
+            executable: "acme".to_owned(),
+            native_profiles: NativeProfiles::Unverified,
+            native_profiles_note: "a fixture".to_owned(),
+            home: HomeMechanism::Unknown,
+            home_note: "a fixture".to_owned(),
+            home_already_here: None,
+            endpoint: None,
+            reads_instructions_from: Vec::new(),
+            signed_in_when: Vec::new(),
+            identity_at: Some(IdentityFile {
+                file: vec![".acme.json".to_owned(), "../.acme.json".to_owned()],
+                pointer: vec!["oauthAccount".to_owned(), "emailAddress".to_owned()],
+            }),
+        }
+    }
+
     #[test]
     fn a_home_with_the_identity_file_beside_it_is_read() {
-        let cli = find_cli("claude").unwrap();
-        let home = Path::new("/homes/claude/someone/.claude");
-        let identity = identity_of_home(cli, home, &|path: &Path| {
+        let cli = fake_engine_with_an_identity_file();
+        let home = Path::new("/homes/acme/someone/.acme");
+        let identity = identity_of_home(&cli, home, &|path: &Path| {
             path.to_string_lossy()
-                .ends_with(".claude/../.claude.json")
+                .ends_with(".acme/../.acme.json")
                 .then(|| r#"{"oauthAccount":{"emailAddress":"someone@example.com"}}"#.to_owned())
         });
         assert_eq!(identity, HomeIdentity::Answers("someone@example.com".to_owned()));
     }
 
-    /// `~/.claude/.claude.json` exists but names no account on the real
-    /// machine; stopping the search there left the default home unverified.
+    /// The identity file inside the home exists but names no account; stopping
+    /// the search there left the default home unverified.
     #[test]
     fn a_stale_identity_file_inside_does_not_stop_the_search_beside_it() {
-        let cli = find_cli("claude").unwrap();
-        let home = Path::new("/homes/claude/someone/.claude");
-        let identity = identity_of_home(cli, home, &|path: &Path| {
+        let cli = fake_engine_with_an_identity_file();
+        let home = Path::new("/homes/acme/someone/.acme");
+        let identity = identity_of_home(&cli, home, &|path: &Path| {
             let text = path.to_string_lossy();
-            if text.ends_with(".claude/../.claude.json") {
+            if text.ends_with(".acme/../.acme.json") {
                 Some(r#"{"oauthAccount":{"emailAddress":"someone@example.com"}}"#.to_owned())
-            } else if text.ends_with(".claude.json") {
+            } else if text.ends_with(".acme.json") {
                 Some(r#"{"numStartups":1}"#.to_owned())
             } else {
                 None

@@ -1,11 +1,9 @@
 //! Seeds a scratch ledger for `take-the-next-work` against the fixture
 //! projects `flows/tests/make-fixtures.sh` writes: the `CHEAP_WORKER` role and
 //! the four `work-queue` records. Usage:
-//! `cargo run -p sailor --example seed_take_the_next_work -- FIXTURES_ROOT [CHEAP_WORKER_TOOL] [--role-only]`.
-//! `--role-only` writes just the role row, leaving the queue as a later run left it —
-//! for re-pointing `CHEAP_WORKER` at a different engine between two measured runs.
-//! Point `sailor flow check` at the same store with
-//! `SAILOR_LEDGER=FIXTURES_ROOT/store`, which `ledger::default_directory` reads.
+//! `cargo run -p sailor --example seed_take_the_next_work -- FIXTURES_ROOT [CHEAP_WORKER_TOOL] [--role-only]`
+//! (`--role-only` rewrites the role row alone, leaving the queue as a run left it).
+//! The store is `FIXTURES_ROOT/store`, the path `SAILOR_LEDGER` takes.
 
 use ledger::{Ledger, StoreRecord};
 use serde_json::json;

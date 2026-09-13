@@ -10,6 +10,9 @@
     "`credential_symlink`; absent means NO KNOWN WAY, which is not the same as",
     "«nobody looked» — `home_note` says which, and it is read by a person.",
     "",
+    "`mark` is the two letters a crowded strip shows for this engine. Absent",
+    "means the first two letters of `id`, upper-cased.",
+    "",
     "`executable` is what actually reads that home, and it is the honest link: a",
     "step naming a binary is matched on this and never on `id`, so a wrapper",
     "does not get handed somebody else's credentials.",
@@ -64,6 +67,7 @@
     {
       "id": "claude",
       "display_name": "Claude Code",
+      "mark": "CL",
       "executable": "claude",
       "native": "not supported",
       "native_note": "checked on 2.1.247: `auth` offers only login, logout and status, and `--help` names no profile or multi-account subcommand.",
@@ -84,6 +88,7 @@
     {
       "id": "codex",
       "display_name": "Codex",
+      "mark": "CX",
       "executable": "codex",
       "native": "supported",
       "native_note": "`-p/--profile` layers `<home>/<name>.config.toml` over the base configuration: config profiles, not separate credentials.",
@@ -100,6 +105,7 @@
     {
       "id": "gemini",
       "display_name": "Gemini CLI",
+      "mark": "GM",
       "executable": "gemini",
       "native": "not supported",
       "native_note": "no `--profile` in `--help`: only sessions (`--resume`, `--session-id`), not separate identities.",
@@ -110,6 +116,7 @@
     {
       "id": "antigravity",
       "display_name": "Antigravity",
+      "mark": "AG",
       "executable": "agy",
       "native": "unverified",
       "native_note": "`--help` and its subcommands name no profile option; nothing else was measured.",

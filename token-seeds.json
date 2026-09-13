@@ -6,11 +6,6 @@
       "runs_measured": 0,
       "words_it_sends": 0
     },
-    "empty-a-session-that-handed-on": {
-      "tokens_a_run": 0,
-      "runs_measured": 0,
-      "words_it_sends": 0
-    },
     "consolidate-memories": {
       "tokens_a_run": 0,
       "runs_measured": 0,
@@ -30,6 +25,11 @@
       "tokens_a_run": 105816,
       "runs_measured": 4,
       "words_it_sends": 9212
+    },
+    "empty-a-session-that-handed-on": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
     },
     "find-the-dead-powers": {
       "tokens_a_run": 0,
@@ -80,6 +80,11 @@
       "tokens_a_run": 0,
       "runs_measured": 0,
       "words_it_sends": 2828
+    },
+    "take-the-next-work": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
     },
     "watch-the-crew": {
       "tokens_a_run": 0,
