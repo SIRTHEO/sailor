@@ -213,6 +213,9 @@ const ACTION_KIND: Record<string, StepKind> = {
   // The only step that writes a proposal onto the tree. It draws as a gesture
   // on the world, which is what it is.
   apply_patch: "gesture",
+  // A hash of a value already in hand, touching neither store nor tree: the
+  // same family as a reading a `when` compares against.
+  digest: "check",
   subflow: "subflow",
   // The same flow once per element of a list: a subflow repeated, so it draws
   // in that family rather than inventing one.
