@@ -39,6 +39,8 @@ pub enum NativeProfiles {
 pub struct KnownCli {
     pub id: String,
     pub display_name: String,
+    /// Two letters for a crowded strip: declared, or `id` cut to two.
+    pub mark: String,
     pub executable: String,
     pub native_profiles: NativeProfiles,
     /// How the judgement above was reached: what the real command says, or why
@@ -297,6 +299,8 @@ struct DeclaredCli {
     id: String,
     #[serde(default)]
     display_name: String,
+    #[serde(default)]
+    mark: String,
     executable: String,
     #[serde(default)]
     native: String,
@@ -341,9 +345,15 @@ impl From<DeclaredCli> for KnownCli {
         } else {
             declared.display_name
         };
+        let mark = if declared.mark.trim().is_empty() {
+            two_letter_mark(&declared.id)
+        } else {
+            declared.mark.to_uppercase()
+        };
         KnownCli {
             id: declared.id,
             display_name,
+            mark,
             executable: declared.executable,
             // **A WORD NOBODY TAUGHT US IS «UNVERIFIED», NEVER «NO»**.
             native_profiles: match declared.native.as_str() {
@@ -369,6 +379,11 @@ impl From<DeclaredCli> for KnownCli {
             identity_at: declared.identity,
         }
     }
+}
+
+/// The fallback mark: `id` upper-cased, cut to two letters.
+pub fn two_letter_mark(id: &str) -> String {
+    id.to_uppercase().chars().take(2).collect()
 }
 
 /// The command line carrying this `id`, or a readable refusal. One place, so
@@ -732,6 +747,7 @@ mod tests {
         let cli = KnownCli {
             id: "una-casa".to_owned(),
             display_name: "Una Casa".to_owned(),
+            mark: "UC".to_owned(),
             executable: "unacasa".to_owned(),
             native_profiles: NativeProfiles::NotSupported,
             native_profiles_note: "a fixture".to_owned(),
