@@ -188,11 +188,10 @@ impl ExternalEngineAction {
     }
 }
 
-/// The tree one step works in, taken down when that step ends however it ends.
-///
-/// Closed on drop and not by a line at the bottom: an engine step leaves by a
-/// dozen paths, and a tree closed on one of them is a tree left open on the
-/// other eleven. See fault 89.
+/// The tree one step works in, taken down when the step itself never got to
+/// answer. A call that answered leaves it standing instead — `worker_tree`
+/// and `acceptance` still read it after `execute` returns — and the flow's
+/// own `release_tree` step takes it down once they are done. See fault 182.
 struct OwnTree {
     repo: PathBuf,
     at: PathBuf,
@@ -200,6 +199,7 @@ struct OwnTree {
     /// The register the tree was written into, so the same binding that takes
     /// it down takes it off the page. See fault 97.
     register: Ledger,
+    close_on_drop: std::cell::Cell<bool>,
 }
 
 impl OwnTree {
@@ -211,10 +211,19 @@ impl OwnTree {
             None => eprintln!("{sentence}"),
         }
     }
+
+    /// The call answered: somebody downstream still reads this tree, so
+    /// closing it here is not this step's to do.
+    fn leave_open(&self) {
+        self.close_on_drop.set(false);
+    }
 }
 
 impl Drop for OwnTree {
     fn drop(&mut self) {
+        if !self.close_on_drop.get() {
+            return;
+        }
         let at = self.at.to_string_lossy().into_owned();
         match workspace::close_tree(&self.repo, &self.at, &self.register) {
             workspace::Closing::TakenDown => {}
@@ -295,6 +304,7 @@ fn tree_of_its_own(
                 at,
                 live,
                 register,
+                close_on_drop: std::cell::Cell::new(true),
             })
         })
         .map_err(|why| ActionError::new("tree_not_cut", why))
@@ -1027,7 +1037,12 @@ impl Action for ExternalEngineAction {
                 &chain,
             )?;
             match asked {
-                Asked::Answered(outcome) => return Ok((outcome, Some(ran))),
+                Asked::Answered(outcome) => {
+                    if let Some(tree) = &own_tree {
+                        tree.leave_open();
+                    }
+                    return Ok((outcome, Some(ran)));
+                }
                 Asked::CannotWork(why) => {
                     last_ran = Some(ran);
                     set_aside.push(why);
