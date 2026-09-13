@@ -608,9 +608,9 @@ pub enum Decision {
     },
     /// The graph has nothing left to do and a step declared `required` has not
     /// passed. Apart from `Failed`, which says a step broke: here nothing need
-    /// have broken at all, and the reason is carried because the cure differs —
-    /// a verdict that said no is repaired in the work, a check nobody asked is
-    /// repaired in the graph.
+    /// have broken, and the reason is carried because the cure differs — a
+    /// verdict that said no is repaired in the work, a check nobody asked in
+    /// the graph.
     RequirementUnmet { step: String, reason: Unmet },
     Complete,
 }
@@ -734,9 +734,8 @@ pub fn run_status(execution: &Execution) -> (&'static str, bool) {
             ..
         }) => ("complete", true),
         Some(Decision::Halted { .. }) => ("stopped", false),
-        // Not "stopped": nobody has to come and finish this run. Its acceptance
-        // is red, and that is the one answer whoever launched it must not have
-        // to read a decision to find out.
+        // Not "stopped": nobody has to come and finish this run — its
+        // acceptance is red, and that is an answer, not an interruption.
         Some(Decision::RequirementUnmet { .. }) => ("failed", false),
         Some(Decision::Ready(_)) | Some(Decision::Running(_)) | None => ("incomplete", false),
     }
@@ -1376,11 +1375,9 @@ fn a_check_settled_it(graph: &Graph, records: &[StepRecord]) -> bool {
         })
 }
 
-/// The first step declared `required` that has not passed, and why.
-///
-/// Read on the step's latest attempt and on the same word `decides_done` reads:
-/// a requirement is about where the run stands now, not about whether some
-/// attempt of it once went green.
+/// The first step declared `required` that has not passed, and why. Read on the
+/// step's latest attempt: a requirement is about where the run stands now, not
+/// about whether some attempt of it once went green.
 fn requirement_unmet(graph: &Graph, records: &[StepRecord]) -> Option<(String, Unmet)> {
     graph
         .steps()

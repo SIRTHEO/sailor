@@ -1,9 +1,7 @@
 //! A run is not done while a step the flow declared `required` has not passed.
 //!
 //! `decides_done` **permits** an early success; `required` **withholds** an
-//! ordinary one. Both read the same word — `/status` equal to `passed` — and
-//! neither believes anything else: a check that broke, was skipped, was never
-//! reached, or forgave its own failure leaves the run short of complete.
+//! ordinary one. Both read `/status` equal to `passed` and believe nothing else.
 
 use flow::{
     Action, ActionError, ActionOutcome, ActionRegistry, Condition, Decision, ExecutionRequest,
