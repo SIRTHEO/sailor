@@ -75,15 +75,10 @@ fn resolve_with(
             )
         })?;
 
-    // **REFUSED, NOT WARNED.** This command's own reason for being is written
-    // at the top of the file: launching under the wrong identity is the worst
-    // fault it could commit. A profile named after an account whose home
-    // answers as somebody else is exactly that fault, already committed once
-    // in silence — the login re-authorised whoever's browser was already
-    // open, and `sailor profiles list` kept saying "authenticated" because
-    // that was true of the home and nobody had asked whether it was true of
-    // the account. A warning here would print past the person on their way
-    // out the door; a refusal is the one gesture that stops the spend.
+    // **REFUSED, NOT WARNED**, for the reason already written at the top of
+    // this file: launching under the wrong identity is the worst fault this
+    // command could commit, and a mismatch is exactly that fault. Past this
+    // point there is no reader left to print a warning to before `exec`.
     if let profiles::HomeIdentity::Answers(really) =
         profiles::identity_of_home(cli, &profile.home_dir, &|path| std::fs::read_to_string(path).ok())
     {

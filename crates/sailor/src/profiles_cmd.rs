@@ -360,9 +360,7 @@ pub fn adopt(cli_id: &str, name: &String, path: Option<&Path>) -> Result<(), Str
     // file already names a different one is not "close enough" — it is the
     // exact fault this table exists to catch, caught at the one moment
     // refusing costs nothing, before a row is ever written for it.
-    if let profiles::HomeIdentity::Answers(really) =
-        identity_of_home(cli, &home)
-    {
+    if let profiles::HomeIdentity::Answers(really) = identity_of_home(cli, &home) {
         if &really != name {
             return Err(catalogue::say(
                 "cli.profiles.access.mismatched",
