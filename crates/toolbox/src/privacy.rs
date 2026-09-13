@@ -7,6 +7,51 @@
 
 use std::path::{Path, PathBuf};
 
+/// A remote destination and the exact ref that a publication may update.
+///
+/// Its fields intentionally stay private: neither a remote URL nor a ref name
+/// belongs in a privacy refusal.
+#[derive(Clone, PartialEq, Eq)]
+pub struct PushPlan {
+    remote: String,
+    destination: String,
+    head: String,
+}
+
+impl PushPlan {
+    pub fn remote(&self) -> &str {
+        &self.remote
+    }
+
+    pub fn destination(&self) -> &str {
+        &self.destination
+    }
+
+    pub fn head(&self) -> &str {
+        &self.head
+    }
+}
+
+/// Why publication cannot proceed. The variants carry no private values, so a
+/// caller can report the refusal without turning the guard into a leak.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PublicationPreflight {
+    CannotProve,
+    PrivateMaterial,
+}
+
+/// Filenames that hold a person's credentials or local account state. Their
+/// contents do not make them safe to publish.
+pub const RESERVED_ARTIFACT_FILENAMES: &[&str] = &[
+    ".credentials.json",
+    "credentials.json",
+    "auth.json",
+    "profili.json",
+    "cooldowns.json",
+    "budgets.json",
+    ".env",
+];
+
 /// Where a machine keeps the names that must not be committed, below the home:
 /// one per line, `#` opens a comment. `SAILOR_PRIVATE_NAMES` names it outright.
 pub const PRIVATE_NAMES_BELOW_HOME: &str = "personal/.sailor-notes/private-names";
@@ -18,6 +63,90 @@ pub fn where_the_names_are(declared: Option<String>, home: Option<String>) -> Op
         return Some(PathBuf::from(path));
     }
     Some(PathBuf::from(home.filter(|value| !value.is_empty())?).join(PRIVATE_NAMES_BELOW_HOME))
+}
+
+/// Reads the privacy inputs a publisher needs. An absent or unreadable list is
+/// not an unarmed publisher: it is a publisher that cannot prove its guard.
+pub fn required_input(
+    declared: Option<String>,
+    home: Option<String>,
+) -> Result<(Vec<String>, String), PublicationPreflight> {
+    let home = home.filter(|value| !value.is_empty()).ok_or(PublicationPreflight::CannotProve)?;
+    let list = where_the_names_are(declared, Some(home.clone()))
+        .ok_or(PublicationPreflight::CannotProve)?;
+    let text = std::fs::read_to_string(list).map_err(|_| PublicationPreflight::CannotProve)?;
+    Ok((names_in(&text), home))
+}
+
+/// Proves the remote, destination ref and commit range a normal branch push
+/// would update. It accepts only a branch with a configured upstream, then
+/// callers push the recorded `HEAD` to that recorded ref instead of trusting a
+/// later configuration read.
+pub fn push_plan(root: &Path) -> Result<PushPlan, PublicationPreflight> {
+    let branch = git_text(root, &["symbolic-ref", "--quiet", "--short", "HEAD"])?;
+    let remote = git_text(root, &["config", "--get", &format!("branch.{branch}.remote")])?;
+    let destination = git_text(root, &["config", "--get", &format!("branch.{branch}.merge")])?;
+    if remote.is_empty()
+        || !destination.starts_with("refs/heads/")
+        || git_text(root, &["remote", "get-url", "--push", &remote])?.is_empty()
+    {
+        return Err(PublicationPreflight::CannotProve);
+    }
+
+    let remote_branch = destination.trim_start_matches("refs/heads/");
+    let tracked = format!("refs/remotes/{remote}/{remote_branch}");
+    git_text(root, &["rev-parse", "--verify", &tracked])?;
+    let head = git_text(root, &["rev-parse", "--verify", "HEAD"])?;
+    git_success(root, &["merge-base", "--is-ancestor", &tracked, &head])?;
+    Ok(PushPlan { remote, destination, head })
+}
+
+/// Refuses when the exact outgoing range, plus messages a caller is about to
+/// create, contains a declared private name or this machine's home path.
+pub fn outgoing_metadata_is_private(
+    root: &Path,
+    plan: &PushPlan,
+    names: &[String],
+    home: &str,
+    planned_messages: &[String],
+) -> Result<bool, PublicationPreflight> {
+    let remote_branch = plan.destination.trim_start_matches("refs/heads/");
+    let tracked = format!("refs/remotes/{}/{remote_branch}", plan.remote);
+    let range = format!("{tracked}..{}", plan.head);
+    let messages = git_text(root, &["log", "--format=%B%x1e", &range])?;
+    Ok(messages
+        .split('\u{1e}')
+        .chain(planned_messages.iter().map(String::as_str))
+        .any(|message| !what_cannot_be_published(message, names, Some(home)).is_empty()))
+}
+
+fn git_text(root: &Path, args: &[&str]) -> Result<String, PublicationPreflight> {
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(args)
+        .output()
+        .map_err(|_| PublicationPreflight::CannotProve)?;
+    if !output.status.success() {
+        return Err(PublicationPreflight::CannotProve);
+    }
+    String::from_utf8(output.stdout)
+        .map(|text| text.trim().to_owned())
+        .map_err(|_| PublicationPreflight::CannotProve)
+}
+
+fn git_success(root: &Path, args: &[&str]) -> Result<(), PublicationPreflight> {
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(args)
+        .output()
+        .map_err(|_| PublicationPreflight::CannotProve)?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(PublicationPreflight::CannotProve)
+    }
 }
 
 /// The names a list declares. Blank lines and `#` lines are not names.
@@ -128,6 +257,29 @@ pub fn where_names_are_tracked(root: &Path, names: &[String]) -> Vec<String> {
     hits
 }
 
+/// Tracked artifacts whose basename is reserved for credentials or a person's
+/// account state. A publisher cannot treat a failed Git reading as clean.
+pub fn tracked_reserved_artifacts(root: &Path) -> Result<Vec<String>, PublicationPreflight> {
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["ls-files", "-z"])
+        .output()
+        .map_err(|_| PublicationPreflight::CannotProve)?;
+    if !output.status.success() {
+        return Err(PublicationPreflight::CannotProve);
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .split('\0')
+        .filter(|path| !path.is_empty())
+        .filter(|path| {
+            let name = path.rsplit('/').next().unwrap_or(path);
+            RESERVED_ARTIFACT_FILENAMES.contains(&name)
+        })
+        .map(str::to_owned)
+        .collect())
+}
+
 /// The files git tracks under `root`. An empty list where git will not answer:
 /// the caller decides what that means, and a publisher must refuse.
 pub fn tracked_under(root: &Path) -> Vec<PathBuf> {
@@ -151,6 +303,9 @@ pub fn tracked_under(root: &Path) -> Vec<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+
     /// Declared as private, a short name fired on a dozen ordinary words and on
     /// an account handle — none of them the name. **The name here is invented**,
     /// and not for decoration: a test using a declared one would put it in the
@@ -253,6 +408,110 @@ mod tests {
     fn an_unarmed_machine_forbids_nothing() {
         assert!(what_cannot_be_published("anything at all", &[], None).is_empty());
         assert!(what_cannot_be_published("anything at all", &[String::new()], Some("")).is_empty());
+    }
+
+    fn git(root: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(args)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .output()
+            .expect("git runs");
+        assert!(output.status.success(), "git {args:?}");
+    }
+
+    fn repository_with_an_outgoing_commit(message: &str) -> (PathBuf, PathBuf) {
+        let scratch = std::env::temp_dir().join(format!(
+            "sailor-publication-preflight-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|since| since.as_nanos())
+                .unwrap_or_default()
+        ));
+        let remote = scratch.join("remote.git");
+        let repo = scratch.join("repo");
+        std::fs::create_dir_all(&repo).expect("scratch repository");
+        assert!(
+            Command::new("git")
+            .args(["init", "--bare", "--quiet"])
+            .arg(&remote)
+            .status()
+            .expect("git runs")
+            .success(),
+            "the local remote is created"
+        );
+        git(&repo, &["init", "--quiet"]);
+        git(&repo, &["config", "user.email", "test@example.invalid"]);
+        git(&repo, &["config", "user.name", "test"]);
+        std::fs::write(repo.join("tracked.txt"), "first\n").expect("first file");
+        git(&repo, &["add", "tracked.txt"]);
+        git(&repo, &["commit", "--quiet", "-m", "first"]);
+        git(&repo, &["remote", "add", "origin", remote.to_str().expect("utf-8 path")]);
+        git(&repo, &["push", "--quiet", "-u", "origin", "HEAD"]);
+        std::fs::write(repo.join("tracked.txt"), "second\n").expect("second file");
+        git(&repo, &["add", "tracked.txt"]);
+        git(&repo, &["commit", "--quiet", "-m", message]);
+        (scratch, repo)
+    }
+
+    #[test]
+    fn a_private_commit_message_in_the_exact_outgoing_range_is_refused() {
+        let (scratch, repo) = repository_with_an_outgoing_commit("a note about mylberry");
+        let plan = push_plan(&repo).expect("the remote range is proven");
+        let private = outgoing_metadata_is_private(
+            &repo,
+            &plan,
+            &["mylberry".to_owned()],
+            "/home/tester",
+            &[],
+        )
+        .expect("the metadata is readable");
+        let _ = std::fs::remove_dir_all(scratch);
+
+        assert!(private, "the outgoing commit message was not inspected");
+    }
+
+    #[test]
+    fn a_clean_outgoing_commit_message_is_not_refused() {
+        let (scratch, repo) = repository_with_an_outgoing_commit("a routine change");
+        let plan = push_plan(&repo).expect("the remote range is proven");
+        let private = outgoing_metadata_is_private(
+            &repo,
+            &plan,
+            &["mylberry".to_owned()],
+            "/home/tester",
+            &[],
+        )
+        .expect("the metadata is readable");
+        let _ = std::fs::remove_dir_all(scratch);
+
+        assert!(!private, "a clean outgoing commit was refused");
+    }
+
+    #[test]
+    fn an_unconfigured_destination_cannot_be_proven() {
+        let scratch = std::env::temp_dir().join(format!(
+            "sailor-publication-destination-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&scratch);
+        std::fs::create_dir_all(&scratch).expect("scratch repository");
+        git(&scratch, &["init", "--quiet"]);
+        let plan = push_plan(&scratch);
+        let _ = std::fs::remove_dir_all(&scratch);
+
+        assert!(matches!(plan, Err(PublicationPreflight::CannotProve)));
+    }
+
+    #[test]
+    fn an_absent_privacy_input_cannot_be_proven() {
+        assert_eq!(
+            required_input(None, None),
+            Err(PublicationPreflight::CannotProve)
+        );
     }
 }
 
