@@ -452,3 +452,108 @@ fn a_worker_that_leaves_the_tree_clean_still_gets_it_read_by_acceptance() {
         gamma.value
     );
 }
+
+#[test]
+fn a_step_with_a_tree_of_its_own_and_a_repo_cuts_from_that_repo() {
+    let _fixtures_lock = FIXTURES_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let fixtures = make_fixtures();
+    let ledger = fresh_ledger("repo-override");
+    
+    
+    let wrong_repo = fixtures.join("beta");
+    
+    
+    let right_repo = fixtures.join("alpha");
+
+    ledger
+        .put_record(&StoreRecord {
+            collection: "roles".to_owned(),
+            key: "CHEAP_WORKER".to_owned(),
+            value: json!({"tools": ["claude-code"]}),
+            written_by: "test".to_owned(),
+            written_at: 0,
+        })
+        .expect("the role is written");
+
+    ledger
+        .put_record(&StoreRecord {
+            collection: "work-queue".to_owned(),
+            key: "alpha-top".to_owned(),
+            value: json!({
+                "project": "alpha",
+                "title": "the alpha task",
+                "priority": 100,
+                "state": "queued",
+                "attempts": 0,
+                "acceptance": "./check.sh",
+                "workspace": right_repo.to_string_lossy(),
+            }),
+            written_by: "test".to_owned(),
+            written_at: 0,
+        })
+        .expect("a queue record is written");
+
+    let mut registry = ActionRegistry::default();
+    actions::register_default(&mut registry);
+    trigger::register_default(&mut registry);
+    registry.register(
+        actions::EXTERNAL_ENGINE_ACTION,
+        actions::ExternalEngineAction::resolving_with(FakeCheapWorker)
+            .recording_to(Some(ledger.clone())),
+    );
+    actions::store::register_store(&mut registry, Some(ledger.clone()));
+    registry.register(
+        actions::handoff::HANDED_TO_AGENT_ACTION,
+        actions::handoff::HandoffAction::new(),
+    );
+
+    let graph = full_graph();
+    let store = InMemoryRecordStore::default();
+    let mut shared = SharedState::new();
+    
+    
+    shared.insert(
+        flow::WORKSPACE_ROOT.to_owned(),
+        json!(wrong_repo.to_string_lossy()),
+    );
+    
+    let request = ExecutionRequest {
+        holder: None,
+        run_id: "repo-override-1".to_owned(),
+        root_inputs: [("trigger".to_owned(), trigger_input("alpha"))]
+            .into_iter()
+            .collect(),
+        gates: Vec::new(),
+        shared,
+        spend_cap_micros: None,
+        stops: RunStops::default(),
+    };
+    
+    let execution = InProcessExecutor
+        .execute(&graph, request, &store, &registry, &SystemClock)
+        .expect("the run executes");
+
+    assert!(
+        matches!(execution.decisions.last(), Some(Decision::Complete)),
+        "execution completed: {:?}", execution.decisions
+    );
+
+    
+    let trees = ledger.records_in("open-worktrees").expect("reads open-worktrees");
+    assert_eq!(trees.len(), 1, "one tree cut");
+    
+    let path = trees[0].value["path"].as_str().expect("path is a string");
+    let repo_in_record = trees[0].value["repo"].as_str().expect("repo is a string");
+    
+    assert_eq!(
+        repo_in_record,
+        right_repo.to_string_lossy(),
+        "the record names the right repository"
+    );
+    assert!(
+        path.starts_with(right_repo.to_string_lossy().as_ref()),
+        "the tree on disk ({}) was cut from the right repository ({})",
+        path,
+        right_repo.display()
+    );
+}

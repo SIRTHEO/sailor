@@ -207,6 +207,8 @@ pub(crate) struct EngineSpec {
     /// twice, which the graph does not allow.
     #[serde(default)]
     pub(crate) tree: Option<String>,
+    #[serde(default)]
+    pub(crate) repo: Option<String>,
     /// A step read by a later step of the same flow declares so here: an
     /// answered call then leaves the tree standing for that reader, and the
     /// flow's own release step takes it down. Absent — the default — closes
