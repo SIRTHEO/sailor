@@ -68,6 +68,15 @@ fn a_repository_with_work_left_out(at: &Path) -> PathBuf {
     repo
 }
 
+/// A declared list with fictitious names, so the privacy proof this gate's
+/// own preflight needs (`toolbox::privacy::where_the_names_are`) does not
+/// depend on a real home's `~/personal/.sailor-notes/private-names`.
+fn declared_private_names(home: &Path) -> PathBuf {
+    let list = home.join("declared-private-names");
+    std::fs::write(&list, "example-private-name\n").expect("the fictitious list is written");
+    list
+}
+
 fn release_in(repo: &Path, home: &Path, extra: &[&str]) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_sailor"));
     command
@@ -75,7 +84,9 @@ fn release_in(repo: &Path, home: &Path, extra: &[&str]) -> Output {
         .args(["release", "sailor"])
         .args(extra)
         .env("SAILOR_SOURCES", repo)
-        .env("SAILOR_HOME", home);
+        .env("SAILOR_HOME", home)
+        .env("SAILOR_PRIVATE_NAMES", declared_private_names(home))
+        .env("HOME", home);
     command.output().expect("the binary starts")
 }
 

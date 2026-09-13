@@ -362,11 +362,21 @@ fn lead_section(lines: &[&str], structural: &[bool], index: usize, from: usize) 
     (text, end)
 }
 
+/// A markdown table row: a table has no blank line between rows, so without
+/// this a whole table reads as one paragraph and a `--test` flag anywhere in
+/// it sweeps in every backticked word of every other row.
+fn is_a_table_row(line: &str) -> bool {
+    line.trim_start().starts_with('|')
+}
+
 /// The paragraph around a line: the run of lines with text on them that it
-/// sits in, bounded by headings and fences.
+/// sits in, bounded by headings, fences and table rows.
 fn paragraph_around(lines: &[&str], structural: &[bool], index: usize) -> (usize, usize) {
     let bounds = |at: usize| {
-        lines[at].trim().is_empty() || is_a_fence(lines[at]) || is_a_heading(lines, structural, at)
+        lines[at].trim().is_empty()
+            || is_a_fence(lines[at])
+            || is_a_heading(lines, structural, at)
+            || is_a_table_row(lines[at])
     };
     let mut start = index;
     while start > 0 && !bounds(start - 1) {
@@ -430,13 +440,23 @@ fn declared_in(file: &Path, text: &str) -> Vec<Declared> {
         }
     }
     for index in 0..lines.len() {
-        let with_the_next = lines[index..lines.len().min(index + 2)].join(" ");
+        // A table row never wraps a flag onto the next line — the next line
+        // is an unrelated row — so only ordinary prose looks ahead for one
+        // split by a line break, as a normal paragraph does.
+        let with_the_next = if is_a_table_row(lines[index]) {
+            lines[index].to_owned()
+        } else {
+            lines[index..lines.len().min(index + 2)].join(" ")
+        };
         if covered[index] || targets_in(&with_the_next).is_empty() {
             continue;
         }
         let (start, end) = paragraph_around(&lines, &structural, index);
         covered[start..end].fill(true);
-        declare(index, Form::Command, names_in(&lines[start..end].join(" ")));
+        // The flag names the test it runs; it does not also declare every
+        // other backticked word standing near it in the same paragraph.
+        let text = lines[start..end].join(" ");
+        declare(index, Form::Command, targets_in(&text).into_iter().map(Named::Target).collect());
     }
     found.sort_by_key(|declared| declared.line);
     found
@@ -715,6 +735,42 @@ fn each_form_of_declaration_is_recognised_with_each_shape_of_name() {
         missing(&declared, &tree).is_empty(),
         "{:?}",
         missing(&declared, &tree)
+    );
+}
+
+/// A table has no blank line between its rows, so a `--test` flag in one row
+/// must not sweep in a function name quoted in another, nor the other
+/// backticked words of its own row — and a row naming a test that truly does
+/// not exist must still be seen, or the judge has merely gone blind.
+#[test]
+fn a_table_row_is_its_own_paragraph_and_only_its_flag_names_a_test() {
+    let declared = fixture(
+        "| one | measured by `cargo test -p sailor --test a_real_target_exists`, \
+         also mentions `not_a_test_just_a_function` |\n\
+         | two | still open: `a_test_that_was_never_written` |\n",
+    );
+    let tree = tree_with(&[], &["crates/sailor/tests/a_real_target_exists.rs"]);
+    assert_eq!(
+        declared.len(),
+        1,
+        "the second row names no flag and declares nothing: {declared:?}"
+    );
+    assert_eq!(declared[0].form, Form::Command);
+    assert_eq!(
+        declared[0].names,
+        vec![Named::Target("a_real_target_exists".to_owned())],
+        "the flag's own target is declared, not the other word in its row"
+    );
+    assert!(missing(&declared, &tree).is_empty(), "{:?}", missing(&declared, &tree));
+
+    let with_a_flag_on_the_missing_row = fixture(
+        "| one | measured by `cargo test -p sailor --test a_real_target_exists` |\n\
+         | two | still open, run with `cargo test -p sailor --test a_test_that_was_never_written` |\n",
+    );
+    assert_eq!(
+        missing(&with_a_flag_on_the_missing_row, &tree),
+        vec!["docs/fixture.md:2: a_test_that_was_never_written".to_owned()],
+        "a row naming a test that does not exist is still caught, not gone blind"
     );
 }
 
