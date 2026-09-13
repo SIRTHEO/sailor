@@ -29,6 +29,7 @@ const ACCESS_WORD: Record<Access, string> = {
   "not known": "nobody could look",
   "home does not move": "changes nothing",
   mismatched: "logged in as somebody else",
+  unverified: "signed in, whose account is not known",
 };
 
 function mechanism(cli: CommandLine): string {
