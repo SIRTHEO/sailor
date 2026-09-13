@@ -82,9 +82,8 @@ pub(crate) fn rank_attention_rows(rows: &mut [AttentionRow]) {
     });
 }
 
-/// The ledger, opened for the attention queue alone: a directory that is not
-/// there is named as such, never conflated with `Ledger::open`'s own error for
-/// a directory that exists but will not open (permissions, a corrupt file).
+/// A missing directory is named as such, never conflated with `Ledger::open`'s
+/// own error for one that exists but will not open.
 fn open_ledger_for_attention(dir: &std::path::Path) -> Result<Ledger, String> {
     if !dir.exists() {
         return Err(catalogue::say("window.attention.unreadable_missing", &[]));
@@ -110,9 +109,8 @@ fn unreadable_row(dir: &std::path::Path, why: &str) -> AttentionRow {
     }
 }
 
-/// Everything the ledger itself answers for the queue: handed steps waiting
-/// on a person, and runs that reached their cap. A store that will not open
-/// answers with exactly one row of its own, and nothing invented beside it.
+/// A store that will not open answers with exactly one row of its own,
+/// nothing invented beside it.
 fn ledger_rows(dir: &std::path::Path, open_terminals: &[(String, String)]) -> Vec<AttentionRow> {
     let ledger = match open_ledger_for_attention(dir) {
         Ok(ledger) => ledger,
@@ -273,11 +271,8 @@ pub(crate) fn attention_queue() -> Result<Vec<AttentionRow>, String> {
 mod tests {
     use super::*;
 
-    /// **A DIRECTORY THAT IS NOT THERE IS A SENTENCE, NOT AN EMPTY LIST.**
-    /// Fault: `if ledger_dir.exists() { ... }` with no else arm made a queue
-    /// that could not be read look exactly like a queue with nothing in it —
-    /// a person watching it lose its one waiting row this way would think the
-    /// task had gone away, not that the store had.
+    /// Fault: a missing directory looked exactly like an empty queue with no
+    /// else arm on `ledger_dir.exists()`.
     #[test]
     fn a_missing_directory_answers_with_one_unreadable_row_and_invents_nothing_else() {
         let dir = std::env::temp_dir().join(format!(

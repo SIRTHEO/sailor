@@ -160,11 +160,8 @@ struct Glance {
     streaks: Vec<FailureStreak>,
     faults_written: BTreeSet<String>,
     ledger: Option<ledger::Ledger>,
-    /// **THE DIRECTORY ITSELF, NOT THE FILE INSIDE IT.** `Ledger::open`
-    /// creates the directory it is given, unconditionally — right for a
-    /// person who typed a command, wrong for a beat nobody asked to run
-    /// anything who happens to wake up first. This is the beat's own answer
-    /// to «is there a store at all», asked without opening one into being.
+    /// Whether a store exists at all, asked without `Ledger::open`'s own
+    /// unconditional `create_dir_all` opening one into being.
     directory_missing: bool,
 }
 
@@ -297,10 +294,8 @@ pub fn once(app: &AppHandle) -> Option<Report> {
             })
             .collect(),
         Ok(glance) if glance.directory_missing => {
-            // **THE WINDOW NEVER CREATES A STORE.** `Ledger::open`'s own
-            // `create_dir_all` stays exactly as it is for the CLI, which a
-            // person ran on purpose; a beat nobody asked to run anything must
-            // not be the reason a ledger directory exists on this machine.
+            // `Ledger::open`'s own `create_dir_all` stays for the CLI; a beat
+            // nobody asked to run must not create a ledger directory itself.
             let why = catalogue::say("desktop.beat.ledger_directory_missing", &[]);
             known
                 .iter()
@@ -380,11 +375,8 @@ pub(crate) fn beat_report(beat: tauri::State<'_, Arc<Beat>>) -> Option<Report> {
 mod tests {
     use super::*;
 
-    /// **THE WINDOW NEVER CREATES A STORE.** Fault: `Ledger::open`'s own
-    /// `create_dir_all` ran every time the beat glanced at a directory that
-    /// had gone missing out from under it, silently putting an empty one
-    /// back — a person watching that exact directory disappear (renamed
-    /// away, a disk unmounted) would see it reappear on its own, emptied.
+    /// Fault: the beat's own glance recreated a directory that had gone
+    /// missing, emptied, every time it looked.
     #[test]
     fn a_glance_over_a_missing_directory_creates_nothing_and_says_so() {
         let dir = std::env::temp_dir().join(format!(

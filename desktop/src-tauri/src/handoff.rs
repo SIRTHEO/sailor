@@ -24,16 +24,14 @@ pub(crate) struct Handed {
     /// it** instead of judging from wherever the window happens to stand.
     /// `None` is a real answer: a run started outside every workspace.
     pub worktree: Option<String>,
-    /// Who has taken it on, if anyone. `None` while it still only waits;
-    /// `Some` once a person has it open, and the row stays offered to them —
-    /// the close gesture must survive «take it», not disappear with it.
+    /// Who has taken it on, if anyone. The row stays offered to them once
+    /// taken — the close gesture must survive «take it».
     pub taken_by: Option<String>,
 }
 
 /// The handed steps among a run's records: the latest record of each step,
-/// kept when its outcome is still `Waiting`, **or** when it has none yet and
-/// a person's name is on it — taken, not yet closed. An attempt open with
-/// nobody's name on it is the engine's own, not a person's to close here.
+/// kept when its outcome is still `Waiting`, **or** taken and not yet closed.
+/// An attempt with nobody's name on it is the engine's own to close, not here.
 pub(crate) fn handed_of(records: &[StepRecord]) -> Vec<Handed> {
     let mut latest: BTreeMap<&str, &StepRecord> = BTreeMap::new();
     for record in records {
@@ -202,11 +200,8 @@ mod tests {
         assert!(handed_of(&[record("build", 1, None)]).is_empty());
     }
 
-    /// **A TAKEN STEP KEEPS ITS ROW.** Fault: the moment «take it» opened the
-    /// next attempt, its outcome went to `None` and the old filter dropped the
-    /// row whole — the window that had just offered a close button showed
-    /// nothing to close. An attempt with nobody's name on it (the engine's
-    /// own, not a person's) still does not belong here.
+    /// Fault: «take it» opened an attempt with `outcome: None`, and the old
+    /// filter dropped the row the close button had just offered.
     #[test]
     fn a_step_taken_by_a_person_stays_offered_until_it_closes() {
         let mut taken = record("review", 2, None);
