@@ -896,10 +896,8 @@ printf '{"result":"the true answer","model":"modello-di-prova","total_cost_usd":
         assert!(set.said.contains("weekly limit"), "{set:?}");
     }
 
-    /// **FAULT 182, THE PROOF.** A call that exits zero, answers in the
-    /// declared envelope, and reports real usage is a call that worked, even
-    /// when the answer itself happens to contain a word `exhausted_when`
-    /// looks for. The row must carry the cost it earned, and no `error_type`.
+    /// The word `exhausted_when` looks for, found inside a real answer, does
+    /// not undo the usage that answer already reported.
     #[test]
     fn a_call_that_answered_with_usage_keeps_its_cost_even_if_the_answer_says_the_word() {
         let dir = scratch("answered-with-the-word");

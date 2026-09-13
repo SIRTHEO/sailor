@@ -1,9 +1,6 @@
-//! **THE PATH THE IN-PROCESS TESTS NEVER WALK.** `sailor flow run` — the
-//! binary an operator actually types — resolves every step's `role` into a
-//! `tool` before the graph ever executes (`flow_cmd::check::resolved_roles`).
-//! An `InProcessExecutor` built by hand, as `take_the_next_work.rs` does,
-//! skips that pass entirely and never meets the fault it hid. This test runs
-//! the real binary, `env!("CARGO_BIN_EXE_sailor")`, so it does.
+//! `sailor flow run` resolves every step's `role` into a `tool` before the
+//! graph executes; an `InProcessExecutor` built by hand skips that pass, so
+//! only the real binary can prove what reaches the ledger.
 
 use serde_json::json;
 use std::path::PathBuf;
@@ -80,10 +77,6 @@ fn write_flow(dir: &std::path::Path) {
     .expect("write the test flow");
 }
 
-/// **THE PROOF.** `sailor flow run` against a fixture store with a fake
-/// engine under `roles/TEST_ROLE`: the row `model_calls` writes must name the
-/// role the step asked for and the tool it resolved to, not two empty
-/// columns. See fault 183.
 #[test]
 fn a_role_asked_of_the_real_binary_is_named_beside_what_it_resolved_to() {
     let dir = scratch("role-survives");

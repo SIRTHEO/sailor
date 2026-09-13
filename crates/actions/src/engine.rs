@@ -37,10 +37,8 @@ struct Role {
 
 /// Replaces a role with the tool chain its owner wrote in the ledger.
 ///
-/// **IDEMPOTENT: A `with` CARRYING BOTH IS ALREADY RESOLVED, NOT MISWRITTEN.**
-/// `resolved_roles` calls this before a run starts and keeps `role` beside
-/// the `tool` it writes; called again here the same `with` is kept as is,
-/// once, instead of being looked up twice or refused. See fault 183.
+/// A `with` already carrying both is resolved, not miswritten: it is kept as
+/// is, so calling this a second time on the same `with` is safe.
 pub fn resolve_role(input: &Value, ledger: Option<&Ledger>) -> Result<Value, String> {
     let Some(role) = input.get("role").and_then(Value::as_str) else {
         return Ok(input.clone());
@@ -566,7 +564,7 @@ impl ExternalEngineAction {
                 let answered = reading.answer.clone().unwrap_or_else(|| stdout.clone());
                 let in_shape = shape.is_some_and(|shape| shaped_answer(shape, &answered).is_ok());
                 // **AN ENGINE THAT REPORTED USAGE HAS ANSWERED**, and only its
-                // error channel may still say it could not work. Fault 182.
+                // error channel may still say it could not work. Fault 183.
                 let has_usage = reading.input_tokens.is_some()
                     || reading.output_tokens.is_some()
                     || reading.total_tokens.is_some()
@@ -1107,7 +1105,7 @@ mod tests {
         assert_eq!(
             resolved,
             json!({"role":"reviewer","tool":["first@team","second@team"]}),
-            "role stays beside tool: the ledger's row still needs it, see fault 183"
+            "role stays beside tool: the ledger's row still needs it, see fault 184"
         );
     }
 
