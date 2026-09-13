@@ -64,6 +64,12 @@ pub const FLOWS: &[(&str, &str)] = &[
         "migrate-to-sailor",
         include_str!("../system/migrate-to-sailor.flow.json"),
     ),
+    // A project's queue, drained one task at a time: the walkthrough presents
+    // it as a home flow of the product, not a project's own.
+    (
+        "take-the-next-work",
+        include_str!("../system/take-the-next-work.flow.json"),
+    ),
     // Shipped because the shipped rules name it: the routing rules in
     // `crates/terminal/descriptors/default.json` travel inside the binary and
     // send work here, so as a project flow the rule pointed at nothing on every

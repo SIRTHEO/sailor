@@ -98,13 +98,12 @@ sqlite3 "$SAILOR_REPO/target/fixtures/store/state.db" \
 
 ## 4. Check the flow before spending anything
 
-Run with `target/fixtures/alpha` as the working directory — `SAILOR_FLOWS`
-is needed there because the flow is declared by this repository, not by the
-fixture the worktree points at:
+Run with `target/fixtures/alpha` as the working directory. `take-the-next-work`
+is a flow the product ships, so no `SAILOR_FLOWS` is needed to find it:
 
 ```
 $ (cd "$SAILOR_REPO/target/fixtures/alpha" && \
-    SAILOR_FLOWS="$SAILOR_REPO/flows" SAILOR_LEDGER="$SAILOR_REPO/target/fixtures/store" \
+    SAILOR_LEDGER="$SAILOR_REPO/target/fixtures/store" \
     sailor_bin flow check take-the-next-work)
 ...
 tools asked for: codex
@@ -117,13 +116,13 @@ missing actions: none
 
 ```
 $ (cd "$SAILOR_REPO/target/fixtures/alpha" && \
-    SAILOR_FLOWS="$SAILOR_REPO/flows" SAILOR_LEDGER="$SAILOR_REPO/target/fixtures/store" \
+    SAILOR_LEDGER="$SAILOR_REPO/target/fixtures/store" \
     sailor_bin flow run take-the-next-work alpha)
 ...
 sailor flow: flow take-the-next-work ended with status failed; run take-the-next-work-<id>
 
 $ (cd "$SAILOR_REPO/target/fixtures/beta" && \
-    SAILOR_FLOWS="$SAILOR_REPO/flows" SAILOR_LEDGER="$SAILOR_REPO/target/fixtures/store" \
+    SAILOR_LEDGER="$SAILOR_REPO/target/fixtures/store" \
     sailor_bin flow run take-the-next-work beta)
 ...
 sailor flow: flow take-the-next-work ended with status failed; run take-the-next-work-<id>

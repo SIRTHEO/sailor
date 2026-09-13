@@ -1,10 +1,11 @@
 //! `take-the-next-work`, run for real: `CHEAP_WORKER` resolves through
-//! `FakeCheapWorker`, no call spent. A home flow, read off `flows/` at test time.
+//! `FakeCheapWorker`, no call spent. A shipped flow, read off the binary at
+//! test time, the same as a fresh install would find it.
 
 use actions::{AskRecipe, PromptVia, ToolResolver};
 use flow::{
-    ActionRegistry, Decision, Execution, ExecutionRequest, Executor, FlowFile, Graph,
-    InMemoryRecordStore, InProcessExecutor, RunStops, SharedState, StopReason, SystemClock,
+    ActionRegistry, Decision, Execution, ExecutionRequest, Executor, Graph, InMemoryRecordStore,
+    InProcessExecutor, RunStops, SharedState, StopReason, SystemClock,
 };
 use ledger::{Ledger, StoreRecord};
 use serde_json::{json, Value};
@@ -70,19 +71,12 @@ impl ToolResolver for SilentCheapWorker {
     }
 }
 
-fn flow_path() -> PathBuf {
-    Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../flows/take-the-next-work.flow.json"))
-        .to_path_buf()
-}
-
-fn flow_file() -> FlowFile {
-    let text = std::fs::read_to_string(flow_path())
-        .unwrap_or_else(|error| panic!("reading {}: {error}", flow_path().display()));
-    serde_json::from_str(&text).expect("the flow loads as a FlowFile")
-}
-
 fn full_graph() -> Graph {
-    Graph::new(flow_file().graph.steps().to_vec()).expect("the shipped graph stays valid")
+    let flow = flow::system::builtin_registry()
+        .remove("take-the-next-work")
+        .expect("the flow is shipped")
+        .expect("the shipped flow loads");
+    Graph::new(flow.graph.steps().to_vec()).expect("the shipped graph stays valid")
 }
 
 /// Guards `make-fixtures.sh`'s `rm -rf`: `cargo test` runs a binary's tests
