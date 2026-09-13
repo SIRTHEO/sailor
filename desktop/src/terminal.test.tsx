@@ -710,6 +710,28 @@ describe("the terminals screen", () => {
     }
   });
 
+  test("A ROW NAMES A TTY NO CURRENT TAB CARRIES, AND SAYS SO", async () => {
+    const shell = pretendShell({ terminal_list: TWO });
+    function Host() {
+      const [focusDevice, setFocusDevice] = useState<string | null>("ttys999");
+      return (
+        <div className="app">
+          <Terminals native focusDevice={focusDevice} onFocused={() => setFocusDevice(null)} />
+        </div>
+      );
+    }
+    try {
+      render(<Host />);
+      await screen.findByText("No open terminal carries ttys999.");
+      // The gesture is cleared either way, not left to fire again next render.
+      await waitFor(() => {
+        expect(document.querySelector('[data-focus="true"] .pane__device')?.textContent).toBe("ttys004");
+      });
+    } finally {
+      shell.stop();
+    }
+  });
+
   test("the list comes from `terminal_list`, and every tab carries its tty and its word", async () => {
     const shell = pretendShell({ terminal_list: TWO });
     try {

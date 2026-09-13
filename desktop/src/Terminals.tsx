@@ -189,6 +189,8 @@ export function Terminals({
   const [typed, setTyped] = useState("");
   const [program, setProgram] = useState("");
   const [trouble, setTrouble] = useState<string | null>(null);
+  /** The device a row asked for, once the known tabs turned out to have none. */
+  const [missingTty, setMissingTty] = useState<string | null>(null);
   /** Bytes arrived for a terminal with no pane: they would be lost output. */
   const [orphans, setOrphans] = useState(0);
   /** Whether what changed in the visible terminal's workspace is on screen. */
@@ -346,18 +348,15 @@ export function Terminals({
     return () => window.removeEventListener("keydown", listen);
   }, [native, shown, open, known, root]);
 
-  // **THE ROW NAMES A TTY, THE TAB LIVES BY AN ID.** A row elsewhere reads the
-  // tty off `sailor terminal list`, the only address it has; here every pane
-  // is keyed by the id the shell handed out when the pty opened. This is
-  // the one place the two are matched.
+  // A row names a tty; a pane is keyed by id. This is where the two are
+  // matched, and the only place a stale tty can be told apart from a live one.
   useEffect(() => {
-    if (focusDevice === null) return;
+    if (focusDevice === null || asked.state !== "answered") return;
     const match = known.find((entry) => entry.device === focusDevice);
-    if (match) {
-      setHere(match.id);
-      onFocused?.();
-    }
-  }, [focusDevice, known, onFocused]);
+    setMissingTty(match ? null : focusDevice);
+    if (match) setHere(match.id);
+    onFocused?.();
+  }, [focusDevice, known, onFocused, asked.state]);
 
   const visible = known.some((entry) => entry.id === here)
     ? here
@@ -482,6 +481,12 @@ export function Terminals({
       {trouble !== null && (
         <p className="terminals__trouble" data-gravity="danger">
           {trouble}
+        </p>
+      )}
+
+      {missingTty !== null && (
+        <p className="terminals__trouble" data-gravity="warn">
+          {t("window.terminals.tty_not_open", { tty: missingTty })}
         </p>
       )}
 
