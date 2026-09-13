@@ -306,6 +306,7 @@ mod tests {
             // The two ends of the consolidation a shipped flow runs once a day.
             actions::memory::MEMORY_LIST_ACTION,
             actions::memory::MEMORY_REPLACE_ACTION,
+            actions::store::STORE_WRITE_IF_ABSENT_ACTION,
         ] {
             assert!(
                 registry.get(wanted).is_some(),

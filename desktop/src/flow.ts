@@ -172,6 +172,7 @@ const ACTION_KIND: Record<string, StepKind> = {
   fault_record: "deposit",
   store_read: "deposit",
   store_write: "deposit",
+  store_write_if_absent: "deposit",
   store_list: "deposit",
   work_claim: "deposit",
   work_release: "deposit",
