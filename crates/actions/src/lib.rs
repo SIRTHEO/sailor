@@ -26,6 +26,7 @@
 pub mod apply;
 pub mod budget;
 pub mod cooldown;
+pub mod digest;
 pub mod dormant_steps;
 pub mod draft;
 pub mod faults;
@@ -114,6 +115,7 @@ pub fn register_default(registry: &mut flow::ActionRegistry) {
     registry.register(SHELL_CHECK_ACTION, ShellCheckAction::new());
     apply::register_apply_patch(registry);
     mcp::register_mcp(registry);
+    digest::register_digest(registry);
 }
 
 #[cfg(test)]

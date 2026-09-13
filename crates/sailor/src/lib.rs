@@ -33,6 +33,7 @@ pub mod machine_cmd;
 pub mod memory_cmd;
 pub mod models_cmd;
 pub mod notes_cmd;
+pub mod policy_cmd;
 pub mod profiles_cmd;
 pub mod publish_cmd;
 pub mod ratchet_cmd;
@@ -264,6 +265,12 @@ pub const COMMANDS: &[Command] = &[
         description_key: "cli.command.faults",
         usage: faults_cmd::USAGE,
         run: faults_cmd::run,
+    },
+    Command {
+        name: "policy",
+        description_key: "cli.command.policy",
+        usage: policy_cmd::USAGE,
+        run: policy_cmd::run,
     },
     Command {
         name: "session",
