@@ -355,11 +355,8 @@ pub fn adopt(cli_id: &str, name: &String, path: Option<&Path>) -> Result<(), Str
             &[("path", &home.display().to_string())],
         ));
     }
-    // **VERIFIED RIGHT AFTER THE LOGIN, NOT LEFT FOR SOMEBODY TO NOTICE
-    // LATER.** Adopting a home is naming it after an account; a home whose own
-    // file already names a different one is not "close enough" — it is the
-    // exact fault this table exists to catch, caught at the one moment
-    // refusing costs nothing, before a row is ever written for it.
+    // Verified right after the login, before any row is written: a home
+    // whose own file already names a different account is refused here.
     if let profiles::HomeIdentity::Answers(really) = identity_of_home(cli, &home) {
         if &really != name {
             return Err(catalogue::say(
@@ -589,15 +586,11 @@ mod tests {
         (dir, tools)
     }
 
-    /// **THE FAULT THIS TEST HOLDS SHUT.** The Sailor profile
-    /// `claude · matteo19@example.com` had its home carry `.claude.json` with
-    /// `oauthAccount.emailAddress` naming somebody else: the login
-    /// re-authorised the account the browser already had open, and
-    /// `sailor profiles list` said «authenticated» — which is true of the
-    /// home, and false of the account the profile is named for.
-    ///
-    /// *Mutant run*: drop the identity check from the `LoggedIn` arm — this
-    /// test goes red, the two arms below it stay green.
+    /// **THE FAULT THIS TEST HOLDS SHUT.** A home's own file named a
+    /// different account than the profile: the login had re-authorised the
+    /// account a browser already had open, and the list still said
+    /// «authenticated» — true of the home, false of the account.
+    /// *Mutant run*: drop the identity check from the `LoggedIn` arm.
     #[test]
     fn a_home_answering_as_another_account_is_mismatched_not_authenticated() {
         let (dir, tools) = a_machine_with_a_fake_claude();

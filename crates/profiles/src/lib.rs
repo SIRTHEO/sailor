@@ -57,16 +57,12 @@ pub struct KnownCli {
     pub reads_instructions_from: Vec<String>,
     /// Inside a home, the files whose presence means somebody signed in there.
     pub signed_in_when: Vec<String>,
-    /// Where, inside a home, this engine writes **which account it answers
-    /// as** — never asked of the engine, read off its own file: cheaper, and
-    /// the file is what a launch actually reads. `None` where nobody
-    /// established it: [`identity_of_home`] then answers «cannot tell», never
-    /// «matches».
+    /// Where, inside a home, this engine names the account it answers as.
+    /// `None` where nobody established it: never «matches» by default.
     pub identity_at: Option<IdentityFile>,
 }
 
-/// Where a home names the account it answers as: a file relative to the home,
-/// and the keys down to the value inside it.
+/// A file relative to a home, and the keys down to the account inside it.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IdentityFile {
@@ -74,26 +70,17 @@ pub struct IdentityFile {
     pub pointer: Vec<String>,
 }
 
-/// What a home's own file says about the account it answers as.
-///
-/// **THREE OUTCOMES, NOT TWO.** «Nobody looked», «the file said nothing
-/// readable» and «it says X» are different facts, and only the third can be
-/// compared to a profile's name. Collapsing the first two into a silent
-/// «matches» is the fault this type exists to rule out.
+/// What a home's own file says. **NOT A BOOL**: «nobody looked» is not «it matches».
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HomeIdentity {
     /// The file names this account.
     Answers(String),
-    /// Nobody established the file for this engine, it is not there, or it
-    /// carries nothing readable at the declared pointer. Its own words say
-    /// which.
+    /// Not declared, not there, or unreadable. Its own words say which.
     CannotTell(String),
 }
 
-/// Reads what a home's own file says about the account it answers as.
-/// **NEVER ASKS THE ENGINE**: the file is what a launch actually reads, and
-/// asking would cost a process start for a question the disk already answers.
-/// `read` is a seam so a test can hand it text without writing a real file.
+/// Reads what a home's own file says, never asks the engine: the file is
+/// what a launch reads. `read` is a seam for a test to hand text with.
 pub fn identity_of_home(
     cli: &KnownCli,
     home: &Path,
