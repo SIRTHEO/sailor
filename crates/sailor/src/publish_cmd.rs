@@ -255,7 +255,10 @@ fn publish_with_privacy(
             Some(remembered)
         }
         (None, None) => None,
-        (Some(_), None) => unreachable!("an unproven remote returns before git changes"),
+        // Proven unreachable above: `(Some(_), None)` already returned. An
+        // error and not a panic anyway — the proof is in this function, not
+        // in the type, and a future edit that loosens it must not crash.
+        (Some(_), None) => return Err(catalogue::say("cli.flow.publish_cannot_prove_privacy", &[])),
     };
     Ok(Published { flows, committed, pushed_to })
 }
