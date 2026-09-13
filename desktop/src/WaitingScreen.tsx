@@ -6,6 +6,8 @@
 // navigation, which whoever wires the window owns.
 
 import { useEffect, useState, type ReactNode } from "react";
+import { AttentionQueue } from "./AttentionQueue";
+import { attentionQueue, type AttentionRow } from "./attention";
 import {
   AWAY_HOURS,
   HOW_MANY_SOURCES,
@@ -93,22 +95,46 @@ export interface WaitingScreenProps {
   since?: number;
   /** Given by a test, or by whoever already holds the answers. */
   sources?: Sources;
+  /** Direct attention queue rows, or fetched if native and omitted */
+  attention?: AttentionRow[];
   /** Absent, the row draws no gesture rather than one that goes nowhere. */
   onRun?: (runId: string) => void;
   onQuota?: () => void;
+  onTty?: (tty: string) => void;
 }
 
-export function WaitingScreen({ native, now, since, sources, onRun, onQuota }: WaitingScreenProps) {
+export function WaitingScreen({
+  native,
+  now,
+  since,
+  sources,
+  attention,
+  onRun,
+  onQuota,
+  onTty,
+}: WaitingScreenProps) {
   const [own, setOwn] = useState<Sources | null>(null);
+  const [ownAttention, setOwnAttention] = useState<AttentionRow[] | null>(null);
   const from = since ?? now - AWAY_HOURS * 3600;
 
   useEffect(() => {
-    if (!native || sources !== undefined) return;
+    if (!native || (sources !== undefined && attention !== undefined)) return;
     let watching = true;
     const read = () => {
-      readSources().then((seen) => {
-        if (watching) setOwn(seen);
-      });
+      if (attention === undefined) {
+        attentionQueue()
+          .then((rows) => {
+            if (watching) setOwnAttention(rows);
+          })
+          .catch(() => {
+            // Attention query not available in legacy test mocks
+          });
+      }
+      if (sources === undefined) {
+        readSources().then((seen) => {
+          if (watching) setOwn(seen);
+        });
+      }
     };
     read();
     const tick = window.setInterval(read, REFRESH_MS);
@@ -116,7 +142,7 @@ export function WaitingScreen({ native, now, since, sources, onRun, onQuota }: W
       watching = false;
       window.clearInterval(tick);
     };
-  }, [native, sources !== undefined]);
+  }, [native, sources !== undefined, attention !== undefined]);
 
   const seen = sources ?? own;
   if (seen === null) {
@@ -147,10 +173,13 @@ export function WaitingScreen({ native, now, since, sources, onRun, onQuota }: W
   const reports = history === null ? [] : reportsFrom(history, from);
   const unknown = history === null ? [] : unknownStatuses(history, from);
 
+  const activeAttention = attention ?? ownAttention;
+  const count = activeAttention !== null ? activeAttention.length : decisions.length;
+
   return (
     <div className="waiting">
       <header className="waiting__head">
-        <h2 className="waiting__title">{headingOf(decisions.length, blind.length > 0)}</h2>
+        <h2 className="waiting__title">{headingOf(count, blind.length > 0)}</h2>
         <p className="waiting__sub">{subOf(reports.length, history === null)}</p>
       </header>
 
@@ -160,13 +189,19 @@ export function WaitingScreen({ native, now, since, sources, onRun, onQuota }: W
         </p>
       )}
 
-      {decisions.length > 0 && (
-        <section className="waiting__group">
-          <h3 className="waiting__section">Decide</h3>
-          {decisions.map((one) => (
-            <DecisionRow key={one.id} decision={one} now={now} onRun={onRun} onQuota={onQuota} />
-          ))}
-        </section>
+      {activeAttention !== null ? (
+        activeAttention.length > 0 && (
+          <AttentionQueue rows={activeAttention} now={now} onRun={onRun} onTty={onTty} />
+        )
+      ) : (
+        decisions.length > 0 && (
+          <section className="waiting__group">
+            <h3 className="waiting__section">Decide</h3>
+            {decisions.map((one) => (
+              <DecisionRow key={one.id} decision={one} now={now} onRun={onRun} onQuota={onQuota} />
+            ))}
+          </section>
+        )
       )}
 
       {reports.length > 0 && (

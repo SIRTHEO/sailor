@@ -16,6 +16,7 @@
 use serde::Serialize;
 use ui::gather::{flow_sources, load_all_flows};
 
+mod attention;
 mod beat;
 mod board;
 mod changes;
@@ -234,7 +235,8 @@ fn main() {
             worktree::worktree_remove,
             changes::workspace_changes,
             changes::open_in_editor,
-            changes::who_opens_files
+            changes::who_opens_files,
+            attention::attention_queue
         ])
         .run(tauri::generate_context!())
         .expect("Sailor's window did not open");
