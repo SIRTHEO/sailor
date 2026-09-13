@@ -120,6 +120,8 @@ fn sample_all(ledger: &Ledger) {
             work_kind: None,
             fell_back_from: Vec::new(),
             session_mode: None,
+            role: None,
+            role_resolved_to: Vec::new(),
         })
         .expect("record the call");
     ledger
@@ -1475,6 +1477,37 @@ fn the_last_write_wins_and_the_record_stays_one() {
     assert_eq!(ledger.records_in("mandate").expect("collection").len(), 1);
 }
 
+#[test]
+fn a_conditional_record_write_appends_one_record_written_event() {
+    let directory = TestDirectory::new("conditional-record-write");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    let entry = record(
+        "supervision_observations",
+        "event-17",
+        json!({"status": "done"}),
+        17,
+    );
+
+    assert_eq!(
+        ledger
+            .put_record_if_absent(&entry)
+            .expect("first conditional write"),
+        ConditionalWrite::Inserted
+    );
+    assert!(matches!(
+        ledger
+            .put_record_if_absent(&entry)
+            .expect("repeated conditional write"),
+        ConditionalWrite::AlreadyPresent(_)
+    ));
+    assert_eq!(
+        ledger
+            .events_of_kind("record_written")
+            .expect("record-written count"),
+        1
+    );
+}
+
 /// An entry without an address is refused.
 ///
 /// It holds for the key as much as for the collection: whoever writes without
@@ -2112,6 +2145,8 @@ fn call_with(call_id: &str, tokens: Option<u64>, cost: Option<i64>) -> ModelCall
         work_kind: None,
         fell_back_from: Vec::new(),
         session_mode: None,
+        role: None,
+        role_resolved_to: Vec::new(),
     }
 }
 
@@ -4005,6 +4040,24 @@ fn replaying_the_log_rebuilds_every_projection_row_for_row() {
 
     ledger.rebuild_projections().expect("rebuild from the log");
     assert_eq!(every_projection(&ledger), expected);
+}
+
+#[test]
+fn a_role_and_its_resolved_chain_survive_a_projection_rebuild() {
+    let directory = TestDirectory::new("role-chain-rebuild");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    let mut call = call_with("role-chain", Some(10), Some(1));
+    call.role = Some("reviewer".to_owned());
+    call.role_resolved_to = vec!["motore-di-prova".to_owned()];
+    ledger.record_model_call(&call).expect("record the role call");
+
+    ledger.rebuild_projections().expect("rebuild the projections");
+
+    let rows = ledger
+        .dump_projection("model_calls")
+        .expect("read the rebuilt calls");
+    assert_eq!(rows[0][31], json!("reviewer"));
+    assert_eq!(rows[0][32], json!(r#"["motore-di-prova"]"#));
 }
 
 /// **A REFUSAL TO ANSWER IS NOT A BIRTH TIME.** Read anyway it dates the

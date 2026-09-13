@@ -17,25 +17,34 @@
 //! namespace is the flow's, the file is not.
 
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies};
-use ledger::{Ledger, StoreRecord};
+use ledger::{ConditionalWrite, Ledger, StoreRecord};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::cmp::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// The name `StoreWriteAction` registers under.
 pub const STORE_WRITE_ACTION: &str = "store_write";
+/// The name `StoreWriteIfAbsentAction` registers under.
+pub const STORE_WRITE_IF_ABSENT_ACTION: &str = "store_write_if_absent";
 /// The name `StoreReadAction` registers under.
 pub const STORE_READ_ACTION: &str = "store_read";
 /// The name `StoreListAction` registers under.
 pub const STORE_LIST_ACTION: &str = "store_list";
+pub const STORE_SELECT_ACTION: &str = "store_select";
 
 /// Registers the three store nodes, **store or no store**: `flow check` must be
 /// able to say the step names a real action without opening anything, and
 /// without a store the run refuses instead of pretending.
 pub fn register_store(registry: &mut flow::ActionRegistry, ledger: Option<Ledger>) {
     registry.register(STORE_WRITE_ACTION, StoreWriteAction::new(ledger.clone()));
+    registry.register(
+        STORE_WRITE_IF_ABSENT_ACTION,
+        StoreWriteIfAbsentAction::new(ledger.clone()),
+    );
     registry.register(STORE_READ_ACTION, StoreReadAction::new(ledger.clone()));
-    registry.register(STORE_LIST_ACTION, StoreListAction::new(ledger));
+    registry.register(STORE_LIST_ACTION, StoreListAction::new(ledger.clone()));
+    registry.register(STORE_SELECT_ACTION, StoreSelectAction::new(ledger));
 }
 
 /// The store, or the refusal saying what cannot be done without one.
@@ -114,6 +123,51 @@ pub struct StoreWriteAction {
 impl StoreWriteAction {
     pub fn new(ledger: Option<Ledger>) -> Self {
         Self { ledger }
+    }
+}
+
+pub struct StoreWriteIfAbsentAction {
+    ledger: Option<Ledger>,
+}
+
+impl StoreWriteIfAbsentAction {
+    pub fn new(ledger: Option<Ledger>) -> Self {
+        Self { ledger }
+    }
+}
+
+impl Action for StoreWriteIfAbsentAction {
+    fn execute(&self, input: &Value, shared: &SharedState) -> Result<ActionOutcome, ActionError> {
+        let spec: WriteSpec = serde_json::from_value(input.clone())
+            .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
+        let key = match spec.key {
+            Some(key) => key,
+            None => key_of_this_run(shared)?,
+        };
+        let ledger = deposit(&self.ledger, "there is nowhere to put this entry")?;
+        let record = StoreRecord {
+            collection: spec.collection,
+            key,
+            value: spec.value,
+            written_by: spec.written_by,
+            written_at: spec.written_at.unwrap_or_else(now),
+        };
+        let written = matches!(
+            ledger
+                .put_record_if_absent(&record)
+                .map_err(|error| ActionError::new("store_refused", error.to_string()))?,
+            ConditionalWrite::Inserted
+        );
+        Ok(ActionOutcome::Went(json!({
+            "collection": record.collection,
+            "key": record.key,
+            "written_at": record.written_at,
+            "written": written,
+        })))
+    }
+
+    fn species(&self) -> StepSpecies {
+        StepSpecies::Repeatable
     }
 }
 
@@ -204,6 +258,134 @@ struct ListSpec {
     /// rebuilding in the store the problem the window was meant to shed.
     #[serde(default)]
     after: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SelectSpec {
+    collection: String,
+    #[serde(default, rename = "where")]
+    where_fields: std::collections::BTreeMap<String, Value>,
+    #[serde(default)]
+    order_by: Option<OrderBy>,
+    #[serde(default = "one")]
+    limit: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct OrderBy {
+    field: String,
+    direction: Direction,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Direction {
+    Asc,
+    Desc,
+}
+
+fn one() -> usize {
+    1
+}
+
+pub struct StoreSelectAction {
+    ledger: Option<Ledger>,
+}
+
+impl StoreSelectAction {
+    pub fn new(ledger: Option<Ledger>) -> Self {
+        Self { ledger }
+    }
+}
+
+impl Action for StoreSelectAction {
+    fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
+        let spec: SelectSpec = serde_json::from_value(input.clone())
+            .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
+        let mut records: Vec<_> = deposit(&self.ledger, "an empty selection would be a guess")?
+            .records_in(&spec.collection)
+            .map_err(|error| ActionError::new("store_unreadable", error.to_string()))?
+            .into_iter()
+            .filter(|record| {
+                spec.where_fields.iter().all(|(field, wanted)| {
+                    record.value.as_object().and_then(|fields| fields.get(field)) == Some(wanted)
+                })
+            })
+            .collect();
+        if let Some(order) = &spec.order_by {
+            records.sort_by(|left, right| compare_records(left, right, order));
+        }
+        let records: Vec<Value> = records
+            .into_iter()
+            .take(spec.limit)
+            .map(store_entry)
+            .collect();
+        Ok(ActionOutcome::Went(json!({"count": records.len(), "records": records})))
+    }
+
+    fn unknown_fields(&self, declared: &Value) -> Vec<String> {
+        declared
+            .as_object()
+            .map(|fields| {
+                fields
+                    .keys()
+                    .filter(|field| !["collection", "where", "order_by", "limit"].contains(&field.as_str()))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn species(&self) -> StepSpecies {
+        StepSpecies::Repeatable
+    }
+}
+
+fn compare_records(left: &StoreRecord, right: &StoreRecord, order: &OrderBy) -> Ordering {
+    let left_value = left.value.pointer(&format!("/{}", order.field));
+    let right_value = right.value.pointer(&format!("/{}", order.field));
+    match (left_value, right_value) {
+        (None, None) => Ordering::Equal,
+        (None, Some(_)) => Ordering::Greater,
+        (Some(_), None) => Ordering::Less,
+        (Some(Value::Number(left_value)), Some(Value::Number(right_value))) => {
+            let comparison = left_value
+            .as_f64()
+            .partial_cmp(&right_value.as_f64())
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| left.key.cmp(&right.key));
+            match order.direction {
+                Direction::Asc => comparison,
+                Direction::Desc => comparison.reverse(),
+            }
+        }
+        (Some(Value::String(left_value)), Some(Value::String(right_value))) => {
+            let comparison = left_value.cmp(right_value).then_with(|| left.key.cmp(&right.key));
+            match order.direction {
+                Direction::Asc => comparison,
+                Direction::Desc => comparison.reverse(),
+            }
+        }
+        (Some(left_value), Some(right_value)) => {
+            let comparison = left_value
+                .to_string()
+                .cmp(&right_value.to_string())
+                .then_with(|| left.key.cmp(&right.key));
+            match order.direction {
+                Direction::Asc => comparison,
+                Direction::Desc => comparison.reverse(),
+            }
+        }
+    }
+}
+
+fn store_entry(record: StoreRecord) -> Value {
+    json!({
+        "key": record.key,
+        "value": record.value,
+        "written_by": record.written_by,
+        "written_at": record.written_at,
+    })
 }
 
 /// Lists a collection's entries, oldest first.
@@ -325,6 +507,116 @@ mod tests {
         assert_eq!(value["found"], json!(true));
         assert_eq!(value["value"], json!({"file": "2026-08-28-sailor.md"}));
         assert_eq!(value["written_by"], json!("the-current-mandate-flow"));
+    }
+
+    #[test]
+    fn the_registry_writes_once_when_the_key_is_absent() {
+        let (ledger, _guard) = store();
+        let mut registry = flow::ActionRegistry::default();
+        register_store(&mut registry, Some(ledger));
+        let action = registry
+            .get(STORE_WRITE_IF_ABSENT_ACTION)
+            .expect("the conditional store action is registered");
+        let input = json!({
+            "collection": "claims",
+            "key": "work-17",
+            "value": {"runner": "one"},
+            "written_by": "a-test",
+            "written_at": 1,
+        });
+
+        let ActionOutcome::Went(first) = action
+            .execute(&input, &SharedState::new())
+            .expect("the first conditional write")
+        else {
+            panic!("nothing waits here");
+        };
+        let ActionOutcome::Went(second) = action
+            .execute(&input, &SharedState::new())
+            .expect("the repeated conditional write")
+        else {
+            panic!("nothing waits here");
+        };
+        assert_eq!(first["written"], json!(true));
+        assert_eq!(second["written"], json!(false));
+    }
+
+    #[test]
+    fn store_select_filters_orders_and_limits_them() {
+        let (ledger, _guard) = store();
+        let write = StoreWriteAction::new(Some(ledger.clone()));
+        for (key, state, priority) in [
+            ("one", "queued", 1),
+            ("two", "queued", 3),
+            ("three", "done", 9),
+            ("four", "queued", 2),
+        ] {
+            write
+                .execute(
+                    &json!({
+                        "collection": "work",
+                        "key": key,
+                        "value": {"state": state, "priority": priority},
+                        "written_by": "a-test",
+                        "written_at": 1,
+                    }),
+                    &SharedState::new(),
+                )
+                .expect("write the record");
+        }
+        let ActionOutcome::Went(selected) = StoreSelectAction::new(Some(ledger))
+            .execute(
+                &json!({
+                    "collection": "work",
+                    "where": {"state": "queued"},
+                    "order_by": {"field": "priority", "direction": "desc"},
+                    "limit": 1,
+                }),
+                &SharedState::new(),
+            )
+            .expect("select records")
+        else {
+            panic!("nothing waits here");
+        };
+        assert_eq!(selected["count"], json!(1));
+        assert_eq!(selected["records"][0]["key"], json!("two"));
+    }
+
+    #[test]
+    fn store_select_leaves_missing_order_fields_last() {
+        let (ledger, _guard) = store();
+        let write = StoreWriteAction::new(Some(ledger.clone()));
+        for (key, value) in [("first", json!({"priority": 1})), ("missing", json!({}))] {
+            write
+                .execute(
+                    &json!({
+                        "collection": "work",
+                        "key": key,
+                        "value": value,
+                        "written_by": "a-test",
+                    }),
+                    &SharedState::new(),
+                )
+                .expect("write the record");
+        }
+        let ActionOutcome::Went(selected) = StoreSelectAction::new(Some(ledger))
+            .execute(
+                &json!({
+                    "collection": "work",
+                    "order_by": {"field": "priority", "direction": "desc"},
+                    "limit": 2,
+                }),
+                &SharedState::new(),
+            )
+            .expect("select records")
+        else {
+            panic!("nothing waits here");
+        };
+        assert_eq!(selected["records"][1]["key"], json!("missing"));
+        assert_eq!(
+            StoreSelectAction::new(None).unknown_fields(&json!({"unknown": true})),
+            vec!["unknown"]
+        );
     }
 
     // **THE SYMPTOM OF FAULT 28 IS TESTED WHERE IT HAPPENS, NOT HERE.** A test

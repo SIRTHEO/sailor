@@ -20,11 +20,63 @@ use crate::spec::{EngineSpec, A_TREE_OF_ITS_OWN, TREE};
 use crate::{budget, cooldown, reserve, Reading};
 use flow::{Action, ActionError, ActionOutcome, Ran, SharedState, StepSpecies, ValueSchema};
 use ledger::{EngineIdentity, Ledger};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+
+const ROLES_COLLECTION: &str = "roles";
+
+#[derive(Deserialize)]
+struct Role {
+    tools: Vec<String>,
+    #[serde(default)]
+    account: Option<String>,
+}
+
+/// Replaces a role with the tool chain its owner wrote in the ledger.
+///
+/// The role remains data until the boundary that needs executable tool ids;
+/// neither the flow nor Rust owns a provider choice.
+pub fn resolve_role(input: &Value, ledger: Option<&Ledger>) -> Result<Value, String> {
+    let Some(role) = input.get("role").and_then(Value::as_str) else {
+        return Ok(input.clone());
+    };
+    if input.get("tool").is_some() {
+        return Err(catalogue::say("cli.role.combined_with_tool", &[("role", role)]));
+    }
+    let Some(ledger) = ledger else {
+        return Err(catalogue::say("cli.role.no_store", &[("role", role)]));
+    };
+    let record = ledger
+        .read_record(ROLES_COLLECTION, role)
+        .map_err(|error| {
+            catalogue::say("cli.role.read_error", &[("role", role), ("error", &error.to_string())])
+        })?
+        .ok_or_else(|| catalogue::say("cli.role.missing", &[("role", role)]))?;
+    let role_value: Role = serde_json::from_value(record.value).map_err(|error| {
+        catalogue::say("cli.role.invalid", &[("role", role), ("error", &error.to_string())])
+    })?;
+    if role_value.tools.is_empty() {
+        return Err(catalogue::say("cli.role.no_tools", &[("role", role)]));
+    }
+    let tools: Vec<Value> = role_value
+        .tools
+        .into_iter()
+        .map(|tool| match &role_value.account {
+            Some(account) => Value::String(format!("{tool}@{account}")),
+            None => Value::String(tool),
+        })
+        .collect();
+    let mut resolved = input.clone();
+    let object = resolved
+        .as_object_mut()
+        .ok_or_else(|| catalogue::say("cli.role.needs_object", &[("role", role)]))?;
+    object.remove("role");
+    object.insert("tool".to_owned(), Value::Array(tools));
+    Ok(resolved)
+}
 
 // ── the two actions registrable in a flow::ActionRegistry ───────────────
 
@@ -876,7 +928,30 @@ impl Action for ExternalEngineAction {
         let written_shape = input.get("answer_shape").map(|shape| {
             serde_json::to_string(shape).expect("a value already in memory always reserialises")
         });
-        let mut spec: EngineSpec = serde_json::from_value(input.clone())
+        let role = input.get("role").and_then(Value::as_str).map(str::to_owned);
+        let resolved = resolve_role(input, self.ledger.as_ref())
+            .map_err(|error| ActionError::new("invalid_input", error))?;
+        // The chain a role resolved to, read off what `resolve_role` wrote in
+        // its place: the same array `spec.tool` deserialises from just below,
+        // kept apart so it can travel to the ledger even when the call fails
+        // before answering.
+        let role_resolved_to: Vec<String> = role
+            .as_ref()
+            .map(|_| {
+                resolved
+                    .get("tool")
+                    .and_then(Value::as_array)
+                    .map(|chain| {
+                        chain
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_owned)
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default();
+        let mut spec: EngineSpec = serde_json::from_value(resolved)
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         check_tolerance(&spec.accept, &ENGINE_FAILURES)?;
         // Held until this step returns, and taken down then: the binding is
@@ -931,6 +1006,8 @@ impl Action for ExternalEngineAction {
         let mut chain = Chain {
             tried_before: Vec::new(),
             fell_back_from: self.fell_back_from(&spec, &candidates),
+            role,
+            role_resolved_to,
         };
         let mut last_ran = None;
         for candidate in &candidates {
@@ -992,6 +1069,42 @@ impl Action for ExternalEngineAction {
 mod tests {
     use super::*;
     use crate::tests::with_references_resolved;
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let directory = std::env::temp_dir().join(format!("sailor-engine-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("create the scratch directory");
+        directory
+    }
+
+    #[test]
+    fn a_role_becomes_its_users_tool_chain_and_account() {
+        let ledger = Ledger::open(scratch("role")).expect("open the ledger");
+        ledger
+            .put_record(&ledger::StoreRecord {
+                collection: ROLES_COLLECTION.to_owned(),
+                key: "reviewer".to_owned(),
+                value: json!({"tools":["first","second"],"account":"team"}),
+                written_by: "a person".to_owned(),
+                written_at: 0,
+            })
+            .expect("write the role");
+
+        let resolved = resolve_role(&json!({"role":"reviewer"}), Some(&ledger))
+            .expect("resolve the role");
+
+        assert_eq!(resolved, json!({"tool":["first@team","second@team"]}));
+    }
+
+    #[test]
+    fn a_role_without_a_row_refuses_by_name() {
+        let ledger = Ledger::open(scratch("missing-role")).expect("open the ledger");
+
+        let error = resolve_role(&json!({"role":"reviewer"}), Some(&ledger))
+            .expect_err("a missing role must stop the step");
+
+        assert!(error.contains("role «reviewer» has no row"), "{error}");
+    }
 
     /// WHOSE STEP THE TEXT IS: the action asks the factory for the recipient,
     /// naming the step `SharedState` hands it, and what it delivers is what

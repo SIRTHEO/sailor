@@ -387,15 +387,6 @@ pub(super) fn run_flow(sources: &[FlowSource], name: &str, mandate: Option<&str>
     if let Some(text) = mandate {
         put_mandate(&mut flow, text)?;
     }
-    // Before the store, before the run's header, before anything is spent: a
-    // flow that requires a guaranteed cap this machine cannot give it stops
-    // here rather than finding out from the bill.
-    if let Some(why) = super::check::why_a_run_here_would_not_start(&flow) {
-        return Err(why);
-    }
-    // THE STORE BEFORE THE REGISTRY, and it is no detail of ordering: the
-    // `store_write`/`store_read` nodes own it, so a registry built first would
-    // lack them and call two existing actions missing.
     let ledger_dir = default_ledger_dir()?;
     let ledger = Ledger::open(&ledger_dir).map_err(|error| {
         catalogue::say(
@@ -406,6 +397,16 @@ pub(super) fn run_flow(sources: &[FlowSource], name: &str, mandate: Option<&str>
             ],
         )
     })?;
+    flow = super::check::resolved_roles(&flow, Some(&ledger))?;
+    // Before the store, before the run's header, before anything is spent: a
+    // flow that requires a guaranteed cap this machine cannot give it stops
+    // here rather than finding out from the bill.
+    if let Some(why) = super::check::why_a_run_here_would_not_start(&flow) {
+        return Err(why);
+    }
+    // THE STORE BEFORE THE REGISTRY, and it is no detail of ordering: the
+    // `store_write`/`store_read` nodes own it, so a registry built first would
+    // lack them and call two existing actions missing.
     put_previous_report(&mut flow, &ledger)?;
     // THE WATCHER IS THE TERMINAL, and only here: `flow check` executes nothing
     // and has no text to show.
