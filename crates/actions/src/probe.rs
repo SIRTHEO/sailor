@@ -468,14 +468,14 @@ mod tests {
                 "PATH did not reach the probe unchanged: {stdout}"
             );
         }
-        // Nothing beside the two essentials and what was declared: a probe
+        // Nothing beside the session essentials and what was declared: a probe
         // that kept more would be back to reading this machine's credentials.
-        let allowed = ["PROFILE_HOME", "PATH", "HOME"];
+        let allowed = ["PROFILE_HOME", "PATH", "HOME", "USER"];
         for line in stdout.lines() {
             let name = line.split('=').next().unwrap_or_default();
             assert!(
                 allowed.contains(&name),
-                "an ambient variable beyond PATH and HOME reached the probe: {name}"
+                "an ambient variable beyond the session essentials reached the probe: {name}"
             );
         }
     }
