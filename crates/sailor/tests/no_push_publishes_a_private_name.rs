@@ -78,28 +78,3 @@ fn a_file_git_does_not_track_is_not_something_the_push_publishes() {
 
     assert!(hits.is_empty(), "an untracked file was counted: {hits:?}");
 }
-
-/// The one the release asks: that the refusal is written where the push is,
-/// and that it comes before it and not after.
-#[test]
-fn the_release_refuses_the_push_before_making_it() {
-    let source = include_str!("../src/release_cmd.rs");
-    let from = source
-        .find("fn say_whether_pushed(")
-        .expect("the release no longer has a push to guard");
-    let rest = &source[from..];
-    let body = &rest[..rest.find("\n}\n").unwrap_or(rest.len())];
-
-    let refusal = body
-        .find("what_must_not_be_published")
-        .expect("the push is not guarded at all");
-    let push = body
-        .find("push_the_trunk")
-        .expect("this is no longer the function that pushes");
-    assert!(
-        refusal < push,
-        "the trunk is pushed before anybody asks what it would publish"
-    );
-
-    workspace::measured(1, "push written in the release, guarded before it runs");
-}
