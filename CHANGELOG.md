@@ -16,3 +16,10 @@ The first entry below is written when the first version is tagged, and from
 then on this file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+
+- The queue flow, `take-the-next-work`, ships with the product's binary.
+- Engine roles resolved from the store are recorded on the CLI path, in the ledger's own row.
+- The login probe clears a home's environment but keeps `USER`.
+- A home's identity is read off its own file and turned into one verdict every surface acts on.
+- The desktop window shows account readings and handed-step state in the strip and the attention queue.
+- The walkthrough `docs/walkthrough-a-queue-of-work.md` takes a queue of work from a seeded fixture to a parked task, in five minutes.
