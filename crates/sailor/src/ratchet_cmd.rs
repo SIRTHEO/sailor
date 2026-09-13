@@ -842,9 +842,21 @@ mod tests {
         assert!(refused.is_err(), "a second gate was let in beside the first");
 
         // And released when the first ends, however it ends: a lock a crash
-        // leaves behind would shut the gate for good.
+        // leaves behind would shut the gate for good. A child another test is
+        // spawning at this instant inherits the descriptor until it execs, so
+        // the release is given a moment, not a single try.
         drop(held);
-        assert!(only_gate_in(&root).is_ok(), "the lock outlived the gate that took it");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let retaken = loop {
+            if only_gate_in(&root).is_ok() {
+                break true;
+            }
+            if std::time::Instant::now() > deadline {
+                break false;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        };
+        assert!(retaken, "the lock outlived the gate that took it");
         let _ = std::fs::remove_dir_all(&root);
     }
 
