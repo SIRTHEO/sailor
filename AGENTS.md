@@ -336,6 +336,16 @@ an evening, not of a job.
   configuration of this tree. On 2026-09-05 the remote stayed 179 commits behind
   for a day because the active access was not the owner, and every release said
   so honestly while nothing moved.
+- **A tree that is taken down retires its index identity, and the repository
+  says which index.** `sailor.indexServer` in the configuration of this tree
+  holds the command line that starts the index's MCP server, argv-shaped and
+  split on whitespace (`git config sailor.indexServer "npx -y socraticode"`).
+  Without it `sailor worktree close` and `remove` still take the tree down
+  and say the identity was not retired; a `git config` that fails reads as
+  «could not be read», never as «not declared». The sweep behind `close
+  --merged` deletes no index: it writes the identity down, and `sailor
+  worktree retire <identity>` is the gesture that retires it, judged against
+  the repository that left it behind.
 
 **A work branch does not move backwards by accident.** The shared Git hook
 refuses rewrites of protected work branches unless `SAILOR_ALLOW_REWRITE=1` is

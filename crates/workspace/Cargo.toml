@@ -14,6 +14,7 @@ publish.workspace = true
 # would answer differently from the one that runs them.
 flow = { path = "../flow" }
 serde = { workspace = true }
-
-[dev-dependencies]
 serde_json = { workspace = true }
+# The identity a code index keeps for a tree is a hash of its path, computed
+# here exactly as the index computes it, so closing a tree can name it.
+sha2 = "0.10"

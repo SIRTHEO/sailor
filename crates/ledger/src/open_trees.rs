@@ -7,15 +7,19 @@
 
 use crate::{Ledger, StoreRecord};
 use serde_json::Value;
-use workspace::{OpenTree, OpenTrees};
+use workspace::{IdentityLeftBehind, OpenTree, OpenTrees};
 
 /// The one name for this collection. Two spellings would be two registers, and
 /// the one anybody looks at would be the empty one — fault 12's shape.
 pub const OPEN_TREES: &str = "open-worktrees";
 
+/// The index identities a sweep left standing, keyed by identity.
+pub const IDENTITIES_LEFT_BEHIND: &str = "index-identities-left-behind";
+
 /// The field that closes an entry. A store whose truth is appended does not
 /// delete: the entry stays and stops counting as open.
 const CLOSED_AT: &str = "closed_at";
+const RETIRED_AT: &str = "retired_at";
 
 fn now() -> i64 {
     std::time::SystemTime::now()
@@ -59,6 +63,43 @@ impl OpenTrees for Ledger {
             .filter(|entry| entry.value.get(CLOSED_AT).is_none())
             .filter_map(|entry| serde_json::from_value(entry.value).ok())
             .collect())
+    }
+
+    fn identity_left_behind(&self, left: &IdentityLeftBehind) -> Result<(), String> {
+        let value = serde_json::to_value(left).map_err(|error| error.to_string())?;
+        self.put_record(&StoreRecord {
+            collection: IDENTITIES_LEFT_BEHIND.to_owned(),
+            key: left.identity.clone(),
+            value,
+            written_by: format!("pid {}", left.left_by_pid),
+            written_at: left.left_at,
+        })
+        .map_err(|error| error.to_string())
+    }
+
+    fn identities_left_behind(&self) -> Result<Vec<IdentityLeftBehind>, String> {
+        let held = self
+            .records_in(IDENTITIES_LEFT_BEHIND)
+            .map_err(|error| error.to_string())?;
+        Ok(held
+            .into_iter()
+            .filter(|entry| entry.value.get(RETIRED_AT).is_none())
+            .filter_map(|entry| serde_json::from_value(entry.value).ok())
+            .collect())
+    }
+
+    fn identity_retired(&self, identity: &str) -> Result<(), String> {
+        let Some(mut held) = self
+            .read_record(IDENTITIES_LEFT_BEHIND, identity)
+            .map_err(|error| error.to_string())?
+        else {
+            return Ok(());
+        };
+        if let Some(fields) = held.value.as_object_mut() {
+            fields.insert(RETIRED_AT.to_owned(), Value::from(now()));
+        }
+        held.written_at = now();
+        self.put_record(&held).map_err(|error| error.to_string())
     }
 }
 

@@ -55,6 +55,37 @@ pub fn something_is_left_behind(store: &ledger::Ledger) -> Result<bool, String> 
         .any(|holding| ledger::holdings::whose(holding, &run_is_open) == Whose::Nobody))
 }
 
+/// Every process of this machine with the directory it stands in. **A table
+/// that comes back empty is a refusal**: this very process is always in it.
+pub fn where_processes_stand() -> Result<Vec<(u32, std::path::PathBuf)>, String> {
+    let out = std::process::Command::new("lsof")
+        .args(["-w", "-d", "cwd", "-Fpn"])
+        .output()
+        .map_err(|error| format!("lsof: {error}"))?;
+    let found = standing_in(&String::from_utf8_lossy(&out.stdout));
+    if found.is_empty() {
+        return Err(format!(
+            "lsof listed no process: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(found)
+}
+
+/// Reads `lsof -F`: a `p` line opens a process, and an `n` line is its directory.
+pub fn standing_in(text: &str) -> Vec<(u32, std::path::PathBuf)> {
+    let mut found = Vec::new();
+    let mut pid = None;
+    for line in text.lines() {
+        if let Some(number) = line.strip_prefix('p') {
+            pid = number.parse().ok();
+        } else if let (Some(at), Some(pid)) = (line.strip_prefix('n'), pid) {
+            found.push((pid, std::path::PathBuf::from(at)));
+        }
+    }
+    found
+}
+
 pub fn left_running(store: &ledger::Ledger) -> Result<Vec<LeftRunning>, ledger::LedgerError> {
     Ok(store
         .processes_left_running()?
