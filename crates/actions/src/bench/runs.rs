@@ -28,7 +28,7 @@ fn unknown_among(declared: &Value, known: &[&str]) -> Vec<String> {
         .unwrap_or_default()
 }
 
-const TASKS_FIELDS: &[&str] = &["home", "set", "runs"];
+const TASKS_FIELDS: &[&str] = &["home", "set", "runs", "flow", "sailor"];
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
@@ -36,6 +36,10 @@ struct TasksSpec {
     home: Option<String>,
     set: Option<String>,
     runs: Option<u32>,
+    /// The flow under measurement and the binary that runs it, carried on
+    /// every item because a child run receives its item and nothing else.
+    flow: Option<String>,
+    sailor: Option<String>,
 }
 
 struct BenchTasksAction;
@@ -52,6 +56,8 @@ impl Action for BenchTasksAction {
         };
         let set = spec.set.unwrap_or_else(|| "stage-1".to_owned());
         let runs = spec.runs.unwrap_or(1).max(1);
+        let flow = spec.flow.unwrap_or_else(|| "sviluppa-sailor".to_owned());
+        let sailor = spec.sailor.unwrap_or_else(|| "sailor".to_owned());
         let tasks = Task::load_set(&home, &set)
             .map_err(|why| ActionError::new("bench_not_read", why))?;
         let mut items: Vec<Value> = Vec::new();
@@ -65,11 +71,15 @@ impl Action for BenchTasksAction {
                     "prompt": task.prompt,
                     "run_index": run_index,
                     "set": set,
+                    "flow": flow,
+                    "sailor": sailor,
                 }));
             }
         }
         Ok(ActionOutcome::Went(json!({
             "set": set,
+            "flow": flow,
+            "sailor": sailor,
             "tasks": tasks.len(),
             "runs_per_task": runs,
             "items": items,
@@ -240,7 +250,7 @@ mod tests {
         }
         let said = BenchTasksAction
             .execute(
-                &json!({"home": dir.display().to_string(), "set": "stage-1", "runs": 2}),
+                &json!({"home": dir.display().to_string(), "set": "stage-1", "runs": 2, "flow": "develop", "sailor": "/bin/sailor"}),
                 &SharedState::new(),
             )
             .unwrap();
@@ -255,6 +265,9 @@ mod tests {
         assert_eq!(items[0]["prompt"], "prompt of a");
         assert_eq!(items[0]["base_commit"], "base-a");
         assert!(items[0]["task_file"].as_str().unwrap().ends_with("stage-1/a.json"));
+        assert_eq!(items[3]["flow"], "develop");
+        assert_eq!(items[3]["sailor"], "/bin/sailor");
+        assert_eq!(said["flow"], "develop");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
