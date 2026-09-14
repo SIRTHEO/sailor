@@ -80,15 +80,8 @@ Traps already paid for:
 - **Everything is in English.** Identifiers, comments, documentation, commit
   messages, and every message a user of the tool can see. There is no inside
   language and no outside language: this repository is public, and what is
-  committed here is world-readable, permanently.
-
-  This is the rule the project was founded with, and it was lost. It lived in a
-  `CLAUDE.md` on an orphan branch with an unrelated history — one commit, never
-  published, unreachable from anything. The project then spent days
-  rediscovering it piece by piece. The branch is kept as the tag
-  `archivio-primo-abbozzo`; its rule is ADR-007 in `docs/decisions.md`.
-  It is the most expensive shape of the defect this project keeps chasing: not
-  a rule nobody interrogates, but **a rule nobody could read**.
+  committed here is world-readable, permanently. The rule is ADR-007 in
+  `docs/decisions.md`.
 
   Identifiers include function names, types, fields, options, **local
   variables**, **modules**, **constants**, **file and directory names**, **CSS
