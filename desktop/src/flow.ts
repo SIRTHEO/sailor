@@ -216,6 +216,9 @@ const ACTION_KIND: Record<string, StepKind> = {
   // A hash of a value already in hand, touching neither store nor tree: the
   // same family as a reading a `when` compares against.
   digest: "check",
+  // The deterministic judge of a change: a verdict a run closes on, so it
+  // draws with the checks.
+  judge_change: "check",
   subflow: "subflow",
   // The same flow once per element of a list: a subflow repeated, so it draws
   // in that family rather than inventing one.
