@@ -14,10 +14,12 @@ import {
   runsWhereTheWindowStands,
   standingContext,
   troublesOf,
+  unansweredOf,
   type FlowContext,
   type FlowRow,
   type FlowsAsk,
   type FlowsReading,
+  type Unanswered,
 } from "./flowsbyworkspace";
 import { t } from "./i18n";
 import { treeName } from "./workspacetrees";
@@ -42,13 +44,19 @@ const GROUP_WORDS: Record<string, string> = {
   "built in": "window.flows.group.built_in",
 };
 
+/** The keys of the two modes, as a map the catalogue judge can read. */
+const MODE_WORDS: Record<Mode, string> = {
+  here: "window.flows.mode.here",
+  all: "window.flows.mode.all",
+};
+
 /** Where a context stands, in the words a person scans for. */
 export function contextWords(context: FlowContext): string {
   if (context.root === null) return t("window.flows.outside");
   return t("window.flows.checkout", {
     workspace: context.workspace ?? treeName(context.root),
     tree: treeName(context.root),
-    branch: context.branch ?? t("window.flows.no_branch"),
+    branch: context.branch ?? t(context.branch_unread ? "window.flows.branch_unread" : "window.flows.no_branch"),
   });
 }
 
@@ -154,12 +162,28 @@ function Unreadable({ contexts }: { contexts: FlowContext[] }) {
   );
 }
 
+/** A source that did not answer, in the words of the catalogue. */
+function unansweredWords(one: Unanswered): string {
+  const refused = one.refused;
+  if (refused.kind === "timed_out") {
+    return t("window.flows.source_timed_out", { origin: one.origin, path: one.dir, seconds: refused.seconds });
+  }
+  if (refused.kind === "unreadable") {
+    return t("window.flows.source_unreadable", { origin: one.origin, path: one.dir, why: refused.why });
+  }
+  return t("window.flows.source_stopped", { origin: one.origin, path: one.dir });
+}
+
 /** A folder that refused the reading is said, never drawn as a folder with no flows. */
 function Troubles({ reading }: { reading: FlowsReading }) {
   const troubles = troublesOf(reading);
-  if (troubles.length === 0) return null;
+  const unanswered = unansweredOf(reading);
+  if (troubles.length === 0 && unanswered.length === 0) return null;
   return (
     <ul className="flows__troubles">
+      {unanswered.map((one) => (
+        <li key={`${one.origin}\n${one.dir}`}>{unansweredWords(one)}</li>
+      ))}
       {troubles.map((one) => (
         <li key={`${one.origin}\n${one.dir}`}>
           {t("window.flows.source_unreadable", { origin: one.origin, path: one.dir, why: one.why })}
@@ -190,7 +214,7 @@ export function FlowsView({ here: hereAsk, all: allAsk, onMode, onOpen, onRun }:
               onMode?.(one);
             }}
           >
-            {t(`window.flows.mode.${one}`)}
+            {t(MODE_WORDS[one])}
           </button>
         ))}
       </div>
@@ -333,7 +357,7 @@ export function FlowsView({ here: hereAsk, all: allAsk, onMode, onOpen, onRun }:
       {mode === "all" && reading.contexts.length === 0 && (
         <p className="flows__mute">{t("window.flows.no_workspace")}</p>
       )}
-      {!holdsAnyFlow(reading) && troublesOf(reading).length === 0 && (
+      {!holdsAnyFlow(reading) && troublesOf(reading).length === 0 && unansweredOf(reading).length === 0 && (
         <p className="flows__mute">{t("window.flows.no_flows")}</p>
       )}
       <div className="flows__body">

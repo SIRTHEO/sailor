@@ -128,4 +128,20 @@ describe("the Flows place through the native shell", () => {
     await waitFor(() => expect(screen.getByText(said)).toBeTruthy());
     expect(screen.queryByText(t("window.flows.no_flows"))).toBeNull();
   });
+  test("A SOURCE THAT DID NOT ANSWER IN TIME IS SAID, AND THE SHIPPED FLOWS STILL SHOW", async () => {
+    const stalled: FlowsReading = {
+      outside: {
+        ...outside(["a-shipped-flow"]),
+        unanswered: [{ origin: "yours", dir: HOME, refused: { kind: "timed_out", seconds: 5 } }],
+      },
+      contexts: [{ workspace: "a-workspace", root: PLAIN, branch: null, branch_unread: true, current: true, flows: [] }],
+    };
+    pretendNativeShell((command) => (command === "flows_here" ? stalled : undefined));
+    render(<FlowsScreen native />);
+    const said = t("window.flows.source_timed_out", { origin: "yours", path: HOME, seconds: 5 });
+    await waitFor(() => expect(screen.getByText(said)).toBeTruthy());
+    expect(screen.getByText("a-shipped-flow")).toBeTruthy();
+    expect(screen.getByText(new RegExp(t("window.flows.branch_unread")))).toBeTruthy();
+    expect(screen.queryByText(t("window.flows.no_flows"))).toBeNull();
+  });
 });

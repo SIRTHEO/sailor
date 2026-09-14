@@ -26,15 +26,25 @@ export interface SourceTrouble {
   why: string;
 }
 
+/** A source outside every checkout that did not answer, and was left out. */
+export interface Unanswered {
+  origin: string;
+  dir: string;
+  refused: Refusal;
+}
+
 /** One place flows are resolved from: a checkout, or outside every workspace. */
 export interface FlowContext {
   workspace: string | null;
   root: string | null;
   branch: string | null;
+  /** Git did not answer in time: no branch is known, which is not «no branch». */
+  branch_unread?: boolean;
   current: boolean;
   /** Only the names whose winner differs from outside every workspace. */
   flows: FlowRow[];
   troubles?: SourceTrouble[];
+  unanswered?: Unanswered[];
   refused?: Refusal;
 }
 
@@ -153,6 +163,11 @@ export function holdsAnyFlow(reading: FlowsReading): boolean {
 /** Every folder that refused the reading, outside and in each checkout. */
 export function troublesOf(reading: FlowsReading): SourceTrouble[] {
   return [reading.outside, ...reading.contexts].flatMap((context) => context.troubles ?? []);
+}
+
+/** Every source outside the checkouts that did not answer in time. */
+export function unansweredOf(reading: FlowsReading): Unanswered[] {
+  return [reading.outside, ...reading.contexts].flatMap((context) => context.unanswered ?? []);
 }
 
 /** Whether the chosen row is the file that runs where the window stands. */
