@@ -24,15 +24,15 @@ constraints and the choices that do not reopen — and
   a single command line. The command lines stay untouched: Sailor reads their
   configuration and migrates it.
 
-## How it is verified — the only oracle is `cargo`
+## How it is verified — for code, the only oracle is `cargo`
 
 **Never declare a thing done without evidence measured in the same turn.** And a
 measurement is worth something only if it could have come out otherwise: **break
 on purpose the thing you are proving** and watch the outcome change. If the
 check stays green when you remove the line you are claiming, the check checks
-nothing.
+nothing. For what a person sees, the rendered screen is the oracle (ADR-003).
 
-Traps already paid for on this machine:
+Traps already paid for:
 
 - **Never pipe `cargo test` into `grep` or `tail`**: the exit code becomes that
   of the last command, and a red battery passes for green. Write the output to a
@@ -41,43 +41,19 @@ Traps already paid for on this machine:
   `.gitignore` asks for `target-<something>` and it solved git's problem; the
   disk's problem it created. `cargo clean` empties **only** `target/`, so every
   `target-int`, `target-i18n`, and worse every `sailor-target-*` sibling of the
-  repo, stays there for ever and nobody sees it grow. On 2026-09-04 it was
-  **27 GB across four directories**, 3.9 GB of them in a `target-i18n` that no
-  file of the tree named. Call it `target/int`, `target/verifica`, as
+  repo, stays there for ever and nobody sees it grow. Call it `target/int`, `target/verifica`, as
   `release_cmd.rs:171` already does with `target/from-head`: one line of
   `.gitignore` covers it and `cargo clean` takes it back.
 - **Always `--no-fail-fast`, and it is not a detail of convenience.** Without
   it, `cargo test` stops at the **first red binary** and everything that comes
-  after **is not run** — it does not fail: it does not start. Measured on
-  2026-09-01 inside the perimeter, where the sandbox denies `openpty` and
-  `crates/terminal` always falls. The binaries that do not start are always the
-  same ones, the tail of the alphabet — `toolbox`, `trigger`, `ui` and seven
-  integration tests. Whoever types `cargo test` in there is looking at three
-  quarters of the tree believing they are looking at all of it.
-
-  **The figures of this paragraph were «36 out of 47» and they were out of
-  date.** Re-measured on 2026-09-04 with `--no-fail-fast` and the output on a
-  file: **108 binaries plus 19 doc-targets, 1,252 tests, 1,199 green, 53 red —
-  and all 53 of them are the sandbox** (43 for `mkdir /tmp/sr-*` denied, 11 for
-  `openpty` denied). **Zero truly red.** In CI on 2026-09-02: 109 binaries,
-  1,134 tests, 2 truly red. All 19 crates have tests. A number written here and
-  not re-measured is a false guard like the others: whoever reads «36 out of 47»
-  today concludes that a quarter of the tree is missing, and it is not.
-
-  That day cost a piece of work declared finished with a regression inside it:
-  the test that was falling was in `toolbox`, and the `grep FAILED` of whoever
-  went looking for it could not find it because that test had **never started**.
-  It is the same family as the line above — a green outcome that looked at
-  nothing — and it is recognised only by counting the binaries, not the tests.
+  after **is not run** — it does not fail: it does not start. A sandbox that
+  denies `openpty` makes `crates/terminal` fall, and whoever types `cargo test`
+  there is looking at part of the tree believing they are looking at all of it.
+  It is recognised only by counting the binaries, not the tests.
 - **The seeds of the ratchets are measured on a clean `HEAD`, not on the working
-  tree.** More than one session writes in this checkout, and another's
-  uncommitted files falsify every count: on 2026-09-04 I wrote seeds measured
-  with another session's uncommitted test in the tree — its Italian comments
-  raised one counter, its lines of code lowered a crate's ratio — and the seeds
-  described a tree that does not exist at `HEAD`. `sailor release`, which runs
-  the suite on a clone of `HEAD`, stopped without replacing anything, and that
-  is how it was seen. The right measurement is one command, and it costs a
-  minute:
+  tree.** Somebody else's uncommitted files falsify every count, and seeds
+  measured over them describe a tree that does not exist at `HEAD`. The right
+  measurement is one command, and it costs a minute:
 
   ```sh
   sailor ratchet                 # every judge that reads the sources
@@ -177,10 +153,11 @@ Traps already paid for on this machine:
   `work/innesto-toml`. The name says the job, not the day nor the gesture
   (`fusione`, `ricucito`, `sera` are not jobs).
 - **It is born from `main`, it returns into `main`, and it dies.** Once the
-  branch is merged, it is proved by content that it is superseded (below) and it
-  is deleted in the same gesture; the working copy is removed with `git worktree
-  remove`. A branch that survives its own merge is clutter somebody will have to
-  re-measure.
+  branch is merged, it is proved by content that it is superseded: merge it into
+  a throwaway copy of the trunk and check the tree does not change, and first
+  put through the same measurement a branch that must come out as carrying.
+  Deleting the branch is a separate decision, asked of whoever owns it, as
+  CONTRIBUTING says; the working copy is removed with `git worktree remove`.
 **The shape of the name has a judge, and the judge is pure.** There are three
 shapes and nothing else: `main`, the trunk; `work/<what-it-does>` with
 lowercase, digits and hyphens in the topic; `worktree-agent-<id>`, which is
@@ -222,9 +199,8 @@ that found it, not to whoever was holding it**. «Caught by
 can go to; «caught by the second reviewer» is an anecdote. When no such thing
 exists, the finding stands on its own evidence, with no author at all.
 
-**The story is not deleted, it is addressed elsewhere.** The ledger, `sailor
-notes` and the fault register record who did what on purpose, and that is their
-job. Sending it there is deliberately a rule about destination and not about
+**The story is not deleted, it is addressed elsewhere.** The project's own
+records keep who did what on purpose, and that is their job. Sending it there is deliberately a rule about destination and not about
 wording: deciding which internal detail is harmless is a judgement call, and a
 judgement call made a hundred times comes out wrong at least once.
 
