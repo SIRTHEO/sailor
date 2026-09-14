@@ -312,6 +312,9 @@ mod tests {
             actions::store::STORE_WRITE_IF_ABSENT_ACTION,
             actions::store::STORE_SELECT_ACTION,
             actions::bench::judge::JUDGE_CHANGE_ACTION,
+            actions::price_every_call::PRICE_EVERY_CALL_ACTION,
+            actions::bench::runs::BENCH_TASKS_ACTION,
+            actions::bench::runs::RUN_READING_ACTION,
         ] {
             assert!(
                 registry.get(wanted).is_some(),

@@ -61,6 +61,11 @@
       "runs_measured": 0,
       "words_it_sends": 0
     },
+    "measure-the-baseline": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
+    },
     "migrate-to-sailor": {
       "tokens_a_run": 0,
       "runs_measured": 0,
@@ -102,6 +107,11 @@
       "words_it_sends": 0
     },
     "review-a-pinned-commit": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
+    },
+    "run-one-bench-task": {
       "tokens_a_run": 0,
       "runs_measured": 0,
       "words_it_sends": 0

@@ -58,6 +58,16 @@ pub const FLOWS: &[(&str, &str)] = &[
         "price-every-call",
         include_str!("../system/price-every-call.flow.json"),
     ),
+    // The first number of the evaluation loop: the flow under measurement on
+    // every task of a frozen set, one child at a time, each judged and read.
+    (
+        "measure-the-baseline",
+        include_str!("../system/measure-the-baseline.flow.json"),
+    ),
+    (
+        "run-one-bench-task",
+        include_str!("../system/run-one-bench-task.flow.json"),
+    ),
     // A hard question taken to a strong model with the material already in
     // hand. The refusal of an empty brief is a step, not a comment: the same
     // engine on the same question spent its whole window exploring and

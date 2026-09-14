@@ -219,6 +219,11 @@ const ACTION_KIND: Record<string, StepKind> = {
   // The deterministic judge of a change: a verdict a run closes on, so it
   // draws with the checks.
   judge_change: "check",
+  // Readings of the ledger that write the figure back or lay a set out: the
+  // store's family, as history_ask is.
+  price_every_call: "deposit",
+  bench_tasks: "deposit",
+  run_reading: "deposit",
   subflow: "subflow",
   // The same flow once per element of a list: a subflow repeated, so it draws
   // in that family rather than inventing one.
