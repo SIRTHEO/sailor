@@ -47,7 +47,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\nprintf '%s' \"$TEXT\" | REQUIRED=\"$REQUIRED\" OPTIONAL=\"$OPTIONAL\" python3 -c '\nimport json, os, re, subprocess, sys\ntry:\n    asked = json.loads(sys.stdin.read())\nexcept ValueError as error:\n    sys.exit(\"the mandate is not one JSON object: %s\" % error)\nif not isinstance(asked, dict):\n    sys.exit(\"the mandate is not one JSON object\")\nrequired = os.environ[\"REQUIRED\"].split()\noptional = json.loads(os.environ[\"OPTIONAL\"])\nmissing = [key for key in required if not str(asked.get(key, \"\")).strip()]\nif missing:\n    sys.exit(\"the mandate does not name: \" + \", \".join(missing))\nunknown = sorted(set(asked) - set(required) - set(optional))\nif unknown:\n    sys.exit(\"the mandate names what this flow does not read: \" + \", \".join(unknown))\nout = {key: str(asked.get(key, default)) for key, default in optional.items()}\nout.update({key: str(asked[key]) for key in required})\nrepo = out[\"repo\"]\nif not os.path.isabs(repo) or subprocess.run([\"git\", \"-C\", repo, \"rev-parse\", \"--git-dir\"], capture_output=True).returncode != 0:\n    sys.exit(\"the repo is not an absolute path to a git tree: \" + repo)\nfor key in (\"branch\", \"base\"):\n    if key in out and not re.fullmatch(r\"[A-Za-z0-9][A-Za-z0-9._/-]*\", out[key]):\n        sys.exit(\"the %s is not a plain branch name: %s\" % (key, out[key]))\nfor key in (\"issue\",):\n    if key in out and not re.fullmatch(r\"[0-9]+\", out[key]):\n        sys.exit(\"the issue is not a number: \" + out[key])\nif \"version\" in out and not re.fullmatch(r\"[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?\", out[\"version\"]):\n    sys.exit(\"the version is not MAJOR.MINOR.PATCH: \" + out[\"version\"])\nif \"forge_repo\" in out and out[\"forge_repo\"] and not re.fullmatch(r\"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+\", out[\"forge_repo\"]):\n    sys.exit(\"the forge_repo is not owner/name: \" + out[\"forge_repo\"])\nprint(json.dumps(out))\n'\n",
+          "command": "set -eu\nprintf '%s' \"$TEXT\" | REQUIRED=\"$REQUIRED\" OPTIONAL=\"$OPTIONAL\" python3 -c '\nimport json, os, re, subprocess, sys\ntry:\n    asked = json.loads(sys.stdin.read())\nexcept ValueError as error:\n    sys.exit(\"the mandate is not one JSON object: %s\" % error)\nif not isinstance(asked, dict):\n    sys.exit(\"the mandate is not one JSON object\")\nrequired = os.environ[\"REQUIRED\"].split()\noptional = json.loads(os.environ[\"OPTIONAL\"])\nmissing = [key for key in required if not str(asked.get(key, \"\")).strip()]\nif missing:\n    sys.exit(\"the mandate does not name: \" + \", \".join(missing))\nunknown = sorted(set(asked) - set(required) - set(optional))\nif unknown:\n    sys.exit(\"the mandate names what this flow does not read: \" + \", \".join(unknown))\nout = {key: str(asked.get(key, default)) for key, default in optional.items()}\nout.update({key: str(asked[key]) for key in required})\nrepo = out[\"repo\"]\nif not os.path.isabs(repo) or subprocess.run([\"git\", \"-C\", repo, \"rev-parse\", \"--git-dir\"], capture_output=True).returncode != 0:\n    sys.exit(\"the repo is not an absolute path to a git tree: \" + repo)\nfor key in (\"branch\", \"base\"):\n    if key in out and not re.fullmatch(r\"[A-Za-z0-9][A-Za-z0-9._/-]*\", out[key]):\n        sys.exit(\"the %s is not a plain branch name: %s\" % (key, out[key]))\nfor key in (\"issue\",):\n    if key in out and out[key] and not re.fullmatch(r\"[0-9]+\", out[key]):\n        sys.exit(\"the issue is not a number: \" + out[key])\nif \"version\" in out and not re.fullmatch(r\"[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?\", out[\"version\"]):\n    sys.exit(\"the version is not MAJOR.MINOR.PATCH: \" + out[\"version\"])\nif \"forge_repo\" in out and out[\"forge_repo\"] and not re.fullmatch(r\"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+\", out[\"forge_repo\"]):\n    sys.exit(\"the forge_repo is not owner/name: \" + out[\"forge_repo\"])\nprint(json.dumps(out))\n'\n",
           "env": {
             "TEXT": {
               "$from": "/text"
@@ -97,7 +97,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\nforge_as=$(git -C \"$REPO\" config --get sailor.forgeAs) || { echo \"sailor.forgeAs is not declared on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\n[ -n \"$forge_as\" ] || { echo \"sailor.forgeAs is empty on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\ngh auth token --user \"$forge_as\" >/dev/null || { echo \"no forge token for the declared account $forge_as\" >&2; exit 1; }\n[ -z \"${FORGE_REPO:-}\" ] || export GH_REPO=\"$FORGE_REPO\"\n# An empty --user or an empty GH_TOKEN makes gh answer as the machine's active account.\nforge() {\n    who=$(git -C \"$REPO\" config --get sailor.forgeAs) && [ -n \"$who\" ] || { echo \"sailor.forgeAs vanished from this tree: refusing\" >&2; exit 1; }\n    GH_TOKEN=$(gh auth token --user \"$who\") && [ -n \"$GH_TOKEN\" ] || { echo \"no forge token for $who: refusing\" >&2; exit 1; }\n    GH_TOKEN=\"$GH_TOKEN\" gh \"$@\"\n}\nprintf '{\"login\":\"%s\"}' \"$forge_as\"\n",
+          "command": "set -eu\nforge_as=$(git -C \"$REPO\" config --get sailor.forgeAs) || { echo \"sailor.forgeAs is not declared on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\n[ -n \"$forge_as\" ] || { echo \"sailor.forgeAs is empty on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\nenv -u GH_TOKEN -u GITHUB_TOKEN gh auth token --user \"$forge_as\" >/dev/null || { echo \"no forge token for the declared account $forge_as\" >&2; exit 1; }\n[ -z \"${FORGE_REPO:-}\" ] || export GH_REPO=\"$FORGE_REPO\"\n# An empty --user or an empty GH_TOKEN makes gh answer as the machine's active account.\nforge() {\n    who=$(git -C \"$REPO\" config --get sailor.forgeAs) && [ -n \"$who\" ] || { echo \"sailor.forgeAs vanished from this tree: refusing\" >&2; exit 1; }\n    token=$(env -u GH_TOKEN -u GITHUB_TOKEN gh auth token --user \"$who\") && [ -n \"$token\" ] || { echo \"no forge token for $who: refusing\" >&2; exit 1; }\n    env -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN -u GITHUB_ENTERPRISE_TOKEN GH_TOKEN=\"$token\" gh \"$@\"\n}\nprintf '{\"login\":\"%s\"}' \"$forge_as\"\n",
           "env": {
             "REPO": {
               "$from": "/answer/repo"
@@ -134,7 +134,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\ngit -C \"$REPO\" fetch --quiet --tags origin\ncandidate=$(git -C \"$REPO\" rev-parse --verify \"refs/remotes/origin/$BASE^{commit}\")\nhead=$(git -C \"$REPO\" rev-parse HEAD)\n[ \"$head\" = \"$candidate\" ] || { echo \"the tree stands at $head, not the remote $BASE at $candidate: the release builds from HEAD, so it would build something else\" >&2; exit 1; }\n[ -z \"$(git -C \"$REPO\" status --porcelain --untracked-files=no)\" ] || { echo \"the tree carries uncommitted changes\" >&2; exit 1; }\ntag=\"v$VERSION\"\nif tagged=$(git -C \"$REPO\" rev-parse --verify --quiet \"refs/tags/$tag^{commit}\"); then\n    [ \"$tagged\" = \"$candidate\" ] || { echo \"$tag already names $tagged, not the candidate $candidate\" >&2; exit 1; }\nfi\nprevious=$(git -C \"$REPO\" describe --tags --abbrev=0 --match 'v*' \"$candidate^\" 2>/dev/null || true)\nprintf '{\"candidate\":\"%s\",\"tag\":\"%s\",\"previous_tag\":\"%s\"}' \"$candidate\" \"$tag\" \"$previous\"\n",
+          "command": "set -eu\ngit -C \"$REPO\" fetch --quiet --tags origin\ncandidate=$(git -C \"$REPO\" rev-parse --verify \"refs/remotes/origin/$BASE^{commit}\")\nhead=$(git -C \"$REPO\" rev-parse HEAD)\n[ \"$head\" = \"$candidate\" ] || { echo \"the tree stands at $head, not the remote $BASE at $candidate: the release builds from HEAD, so it would build something else\" >&2; exit 1; }\n[ -z \"$(git -C \"$REPO\" status --porcelain --untracked-files=no)\" ] || { echo \"the tree carries uncommitted changes\" >&2; exit 1; }\n# `sailor release` pushes HEAD to its branch's upstream with sailor.pushAs and sailor.pushSecretFrom,\n# or with the machine's credentials when either is missing: bind that push before it can happen.\n[ \"$(git -C \"$REPO\" symbolic-ref --quiet --short HEAD)\" = \"$BASE\" ] || { echo \"the tree is not on $BASE: the release's own push would go somewhere this flow did not gate\" >&2; exit 1; }\n[ \"$(git -C \"$REPO\" config --get \"branch.$BASE.remote\")\" = origin ] && [ \"$(git -C \"$REPO\" config --get \"branch.$BASE.merge\")\" = \"refs/heads/$BASE\" ] || { echo \"$BASE does not track origin/$BASE: the release's own push would go somewhere this flow did not gate\" >&2; exit 1; }\ncase \"$(git -C \"$REPO\" remote get-url origin)\" in\n    /*|file://*) ;;\n    https://*)\n        [ -n \"$(git -C \"$REPO\" config --get sailor.pushAs || true)\" ] && [ -n \"$(git -C \"$REPO\" config --get sailor.pushSecretFrom || true)\" ] || { echo \"sailor.pushAs or sailor.pushSecretFrom is missing or empty: sailor release would push with the machine's own credentials\" >&2; exit 1; } ;;\n    *) echo \"origin is not https or a local path: the release's own push cannot be bound to an account\" >&2; exit 1 ;;\nesac\ntag=\"v$VERSION\"\nif tagged=$(git -C \"$REPO\" rev-parse --verify --quiet \"refs/tags/$tag^{commit}\"); then\n    [ \"$tagged\" = \"$candidate\" ] || { echo \"$tag already names $tagged, not the candidate $candidate\" >&2; exit 1; }\nfi\nprevious=$(git -C \"$REPO\" describe --tags --abbrev=0 --match 'v*' \"$candidate^\" 2>/dev/null || true)\nprintf '{\"candidate\":\"%s\",\"tag\":\"%s\",\"previous_tag\":\"%s\"}' \"$candidate\" \"$tag\" \"$previous\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/answer/repo"
@@ -365,12 +365,63 @@
         }
       },
       {
-        "id": "build_and_install",
+        "id": "release_gate",
         "deps": [
           "the_request",
           "the_candidate",
           "policy",
           "release_authorized"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -eu\ncd \"$REPO\"\ntrusted_scan() {\n    git -C \"$REPO\" show \"main:scripts/privacy-scan.sh\" 2>/dev/null | cmp -s - \"$REPO/scripts/privacy-scan.sh\" || { echo \"scripts/privacy-scan.sh in this tree differs from the one the trusted trunk commits: the gate refuses to judge with it\" >&2; exit 2; }\n}\ntrusted_scan\npolicy_now=$(cd \"$REPO\" && sailor policy) || { echo \"the delivery policy could not be re-read from the trusted trunk\" >&2; exit 1; }\npolicy_was=$(printf '%s' \"$POLICY_READ\" | python3 -c 'import json,sys; p=json.load(sys.stdin); print(\"merge: %s\\npush: %s\\nrelease: %s\\n%s\" % (p[\"merge\"], p[\"push\"], p[\"release\"], p[\"read_from\"]))')\n[ \"$policy_now\" = \"$policy_was\" ] || { echo \"the delivery policy changed since it was read: the authorization in flight no longer holds; run the flow again\" >&2; exit 1; }\n[ \"$(git rev-parse HEAD)\" = \"$REF\" ] || { echo \"the tree moved off the candidate $REF before the release\" >&2; exit 1; }\nset +e\nif [ -n \"$SCAN_BASE\" ]; then \"$REPO/scripts/privacy-scan.sh\" \"$REF\" \"$SCAN_BASE\" >&2; else \"$REPO/scripts/privacy-scan.sh\" \"$REF\" >&2; fi\ncode=$?\nset -e\n[ \"$code\" -eq 0 ] || { echo \"publication gate: privacy-scan exited $code on $REF; nothing leaves\" >&2; exit \"$code\"; }\nprintf '{\"ref\":\"%s\",\"privacy_exit\":0}' \"$REF\"\n",
+          "env": {
+            "REPO": {
+              "$from": "/the_request/answer/repo"
+            },
+            "REF": {
+              "$from": "/the_candidate/answer/candidate"
+            },
+            "SCAN_BASE": {
+              "$from": "/the_candidate/answer/previous_tag"
+            },
+            "POLICY_READ": {
+              "$json": "/policy/answer"
+            }
+          },
+          "timeout_secs": 300,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "ref": {
+                "type": "string"
+              },
+              "privacy_exit": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "ref",
+              "privacy_exit"
+            ],
+            "allow_extra": false
+          }
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
+        "id": "build_and_install",
+        "deps": [
+          "the_request",
+          "the_candidate",
+          "release_gate"
         ],
         "action": "shell_check",
         "max_attempts": 1,
@@ -410,16 +461,20 @@
         "id": "installed",
         "deps": [
           "the_request",
+          "the_candidate",
           "build_and_install"
         ],
         "action": "shell_check",
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\nsaid=$(sailor version)\ncase \"$said \" in \"sailor $VERSION \"*) ;; *) echo \"the installed binary says «${said}», not sailor ${VERSION}\" >&2; exit 1 ;; esac\nprintf '{\"said\":\"%s\"}' \"$said\"\n",
+          "command": "set -eu\nhome=${SAILOR_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/sailor}\nstamp=$(awk 'NF && $1 !~ /^#/ { print $1; exit }' \"$home/state/sailor-binary-commit\" 2>/dev/null || true)\n[ \"$stamp\" = \"$CANDIDATE\" ] || { echo \"the release stamp names ${stamp:-nothing}, not the candidate $CANDIDATE: the binary in service was built from something else\" >&2; exit 1; }\n[ -r \"$home/bin/sailor\" ] || { echo \"no installed binary at the release's safe copy\" >&2; exit 1; }\ndigest=$(shasum -a 256 < \"$home/bin/sailor\" | awk '{ print $1 }')\nsaid=$(sailor version)\ncase \"$said \" in \"sailor $VERSION \"*) ;; *) echo \"the installed binary says «${said}», not sailor ${VERSION}\" >&2; exit 1 ;; esac\nprintf '{\"said\":\"%s\",\"commit\":\"%s\",\"binary_sha256\":\"%s\"}' \"$said\" \"$stamp\" \"$digest\"\n",
           "env": {
             "VERSION": {
               "$from": "/the_request/answer/version"
+            },
+            "CANDIDATE": {
+              "$from": "/the_candidate/answer/candidate"
             }
           },
           "timeout_secs": 30,
@@ -428,10 +483,18 @@
             "properties": {
               "said": {
                 "type": "string"
+              },
+              "commit": {
+                "type": "string"
+              },
+              "binary_sha256": {
+                "type": "string"
               }
             },
             "required": [
-              "said"
+              "said",
+              "commit",
+              "binary_sha256"
             ],
             "allow_extra": false
           }
@@ -462,9 +525,13 @@
               },
               "», built from ",
               {
-                "$from": "/the_candidate/answer/candidate"
+                "$from": "/installed/answer/commit"
               },
-              "), never on an older one. Record the walk outside this tree and add it to the journey's table only after the release is published: a commit to the trunk now moves it off the candidate and stops the release. Approve with an output file holding {\"commit\": the commit above, \"green\": true} only when every step is green; reject with the red steps otherwise. This step runs whatever the release policy says."
+              ", binary sha256 ",
+              {
+                "$from": "/installed/answer/binary_sha256"
+              },
+              "), never on an older one. Record the walk outside this tree and add it to the journey's table only after the release is published: a commit to the trunk now moves it off the candidate and stops the release. Approve with an output file holding {\"commit\": the commit above, \"binary_sha256\": the digest above, \"green\": true} only when every step is green; reject with the red steps otherwise. This step runs whatever the release policy says."
             ]
           },
           "holder": "person",
@@ -492,19 +559,23 @@
         "deps": [
           "the_request",
           "the_candidate",
+          "installed",
           "journey"
         ],
         "action": "shell_check",
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\nprintf '%s' \"$WALK\" | CANDIDATE=\"$CANDIDATE\" python3 -c '\nimport json, os, sys\nwalk = json.loads(sys.stdin.read())\nif not isinstance(walk, dict) or walk.get(\"commit\") != os.environ[\"CANDIDATE\"]:\n    sys.exit(\"the journey was not walked on the candidate %s\" % os.environ[\"CANDIDATE\"])\nif walk.get(\"green\") is not True:\n    sys.exit(\"the journey is not green\")\nprint(json.dumps({\"commit\": walk[\"commit\"], \"green\": True}))\n'\n",
+          "command": "set -eu\nprintf '%s' \"$WALK\" | CANDIDATE=\"$CANDIDATE\" DIGEST=\"$DIGEST\" python3 -c '\nimport json, os, sys\nwalk = json.loads(sys.stdin.read())\nif not isinstance(walk, dict) or walk.get(\"commit\") != os.environ[\"CANDIDATE\"]:\n    sys.exit(\"the journey was not walked on the candidate %s\" % os.environ[\"CANDIDATE\"])\nif walk.get(\"binary_sha256\") != os.environ[\"DIGEST\"]:\n    sys.exit(\"the journey was not walked on the binary with sha256 %s\" % os.environ[\"DIGEST\"])\nif walk.get(\"green\") is not True:\n    sys.exit(\"the journey is not green\")\nprint(json.dumps({\"commit\": walk[\"commit\"], \"binary_sha256\": walk[\"binary_sha256\"], \"green\": True}))\n'\n",
           "env": {
             "WALK": {
               "$json": "/journey"
             },
             "CANDIDATE": {
               "$from": "/the_candidate/answer/candidate"
+            },
+            "DIGEST": {
+              "$from": "/installed/answer/binary_sha256"
             }
           },
           "timeout_secs": 30,
@@ -514,12 +585,16 @@
               "commit": {
                 "type": "string"
               },
+              "binary_sha256": {
+                "type": "string"
+              },
               "green": {
                 "type": "boolean"
               }
             },
             "required": [
               "commit",
+              "binary_sha256",
               "green"
             ],
             "allow_extra": false
@@ -545,7 +620,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\ncd \"$REPO\"\ntrusted_scan() {\n    git -C \"$REPO\" show \"main:scripts/privacy-scan.sh\" 2>/dev/null | cmp -s - \"$REPO/scripts/privacy-scan.sh\" || { echo \"scripts/privacy-scan.sh in this tree differs from the one the trusted trunk commits: the gate refuses to judge with it\" >&2; exit 2; }\n}\ntrusted_scan\npolicy_now=$(cd \"$REPO\" && sailor policy) || { echo \"the delivery policy could not be re-read from the trusted trunk\" >&2; exit 1; }\npolicy_was=$(printf '%s' \"$POLICY_READ\" | python3 -c 'import json,sys; p=json.load(sys.stdin); print(\"merge: %s\\npush: %s\\nrelease: %s\\n%s\" % (p[\"merge\"], p[\"push\"], p[\"release\"], p[\"read_from\"]))')\n[ \"$policy_now\" = \"$policy_was\" ] || { echo \"the delivery policy changed since it was read: the authorization in flight no longer holds; run the flow again\" >&2; exit 1; }\ngit fetch --quiet origin\n[ \"$(git rev-parse \"refs/remotes/origin/$BASE\")\" = \"$REF\" ] || { echo \"the remote $BASE moved off the candidate $REF since it was built\" >&2; exit 1; }\nset +e\nif [ -n \"$SCAN_BASE\" ]; then \"$REPO/scripts/privacy-scan.sh\" \"$REF\" \"$SCAN_BASE\" >&2; else \"$REPO/scripts/privacy-scan.sh\" \"$REF\" >&2; fi\ncode=$?\nset -e\n[ \"$code\" -eq 0 ] || { echo \"publication gate: privacy-scan exited $code on $REF; nothing leaves\" >&2; exit \"$code\"; }\nprintf '{\"ref\":\"%s\",\"privacy_exit\":0}' \"$REF\"\n",
+          "command": "set -eu\ncd \"$REPO\"\ntrusted_scan() {\n    git -C \"$REPO\" show \"main:scripts/privacy-scan.sh\" 2>/dev/null | cmp -s - \"$REPO/scripts/privacy-scan.sh\" || { echo \"scripts/privacy-scan.sh in this tree differs from the one the trusted trunk commits: the gate refuses to judge with it\" >&2; exit 2; }\n}\ntrusted_scan\npolicy_now=$(cd \"$REPO\" && sailor policy) || { echo \"the delivery policy could not be re-read from the trusted trunk\" >&2; exit 1; }\npolicy_was=$(printf '%s' \"$POLICY_READ\" | python3 -c 'import json,sys; p=json.load(sys.stdin); print(\"merge: %s\\npush: %s\\nrelease: %s\\n%s\" % (p[\"merge\"], p[\"push\"], p[\"release\"], p[\"read_from\"]))')\n[ \"$policy_now\" = \"$policy_was\" ] || { echo \"the delivery policy changed since it was read: the authorization in flight no longer holds; run the flow again\" >&2; exit 1; }\nhome=${SAILOR_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/sailor}\nstamp=$(awk 'NF && $1 !~ /^#/ { print $1; exit }' \"$home/state/sailor-binary-commit\" 2>/dev/null || true)\n[ \"$stamp\" = \"$REF\" ] || { echo \"the release stamp names ${stamp:-nothing}, not the candidate $REF: the binary in service was built from something else\" >&2; exit 1; }\n[ -r \"$home/bin/sailor\" ] || { echo \"no installed binary at the release's safe copy\" >&2; exit 1; }\ndigest=$(shasum -a 256 < \"$home/bin/sailor\" | awk '{ print $1 }')\n[ \"$digest\" = \"$DIGEST\" ] || { echo \"the binary in service changed since the journey was walked on it\" >&2; exit 1; }\ngit fetch --quiet origin\n[ \"$(git rev-parse \"refs/remotes/origin/$BASE\")\" = \"$REF\" ] || { echo \"the remote $BASE moved off the candidate $REF since it was built\" >&2; exit 1; }\nset +e\nif [ -n \"$SCAN_BASE\" ]; then \"$REPO/scripts/privacy-scan.sh\" \"$REF\" \"$SCAN_BASE\" >&2; else \"$REPO/scripts/privacy-scan.sh\" \"$REF\" >&2; fi\ncode=$?\nset -e\n[ \"$code\" -eq 0 ] || { echo \"publication gate: privacy-scan exited $code on $REF; nothing leaves\" >&2; exit \"$code\"; }\nprintf '{\"ref\":\"%s\",\"privacy_exit\":0}' \"$REF\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/answer/repo"
@@ -561,6 +636,9 @@
             },
             "BASE": {
               "$from": "/the_request/answer/base"
+            },
+            "DIGEST": {
+              "$from": "/journey_green/answer/binary_sha256"
             }
           },
           "timeout_secs": 300,
@@ -648,7 +726,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\nurl=$(git -C \"$REPO\" remote get-url origin) || { echo \"the tree has no origin remote\" >&2; exit 1; }\nset -- -C \"$REPO\"\ncase \"$url\" in\n    /*|file://*) ;;\n    http://*|https://*)\n        push_as=$(git -C \"$REPO\" config --get sailor.pushAs) || { echo \"sailor.pushAs is not declared on this tree: refusing to push with the machine's own credentials\" >&2; exit 1; }\n        helper='!f() { printf \"%s\\\\n\" username=x-access-token; printf \"password=%s\\\\n\" \"$(gh auth token --user \"'\"$push_as\"'\")\"; }; f'\n        set -- -C \"$REPO\" -c credential.helper= -c \"credential.helper=$helper\" ;;\n    *) echo \"origin is $url: a push over it cannot be bound to sailor.pushAs, so this flow refuses it\" >&2; exit 1 ;;\nesac\nif ! git -C \"$REPO\" rev-parse --verify --quiet \"refs/tags/$TAG\" >/dev/null; then\n    git -C \"$REPO\" tag -a \"$TAG\" -m \"$TAG\" \"$CANDIDATE\"\nfi\ntagged=$(git -C \"$REPO\" rev-parse \"refs/tags/$TAG^{commit}\")\n[ \"$tagged\" = \"$CANDIDATE\" ] || { echo \"$TAG names $tagged, not $CANDIDATE\" >&2; exit 1; }\nobject=$(git -C \"$REPO\" rev-parse \"refs/tags/$TAG\")\nremote=$(git -C \"$REPO\" ls-remote origin \"refs/tags/$TAG\" | awk '{ print $1 }')\nif [ -z \"$remote\" ]; then\n    git \"$@\" push origin \"refs/tags/$TAG:refs/tags/$TAG\" >&2\n    remote=$(git -C \"$REPO\" ls-remote origin \"refs/tags/$TAG\" | awk '{ print $1 }')\nfi\n[ \"$remote\" = \"$object\" ] || { echo \"the remote $TAG reads ${remote:-nothing}, not $object\" >&2; exit 1; }\nprintf '{\"tag\":\"%s\",\"commit\":\"%s\"}' \"$TAG\" \"$tagged\"\n",
+          "command": "set -eu\nurl=$(git -C \"$REPO\" remote get-url origin) || { echo \"the tree has no origin remote\" >&2; exit 1; }\nset -- -C \"$REPO\"\ncase \"$url\" in\n    /*|file://*) ;;\n    http://*|https://*)\n        push_as=$(git -C \"$REPO\" config --get sailor.pushAs) || { echo \"sailor.pushAs is not declared on this tree: refusing to push with the machine's own credentials\" >&2; exit 1; }\n        [ -n \"$push_as\" ] || { echo \"sailor.pushAs is empty on this tree: refusing to push with the machine's own credentials\" >&2; exit 1; }\n        helper='!f() { printf \"%s\\\\n\" username=x-access-token; printf \"password=%s\\\\n\" \"$(env -u GH_TOKEN -u GITHUB_TOKEN gh auth token --user \"'\"$push_as\"'\")\"; }; f'\n        set -- -C \"$REPO\" -c credential.helper= -c \"credential.helper=$helper\" ;;\n    *) echo \"origin is $url: a push over it cannot be bound to sailor.pushAs, so this flow refuses it\" >&2; exit 1 ;;\nesac\nif ! git -C \"$REPO\" rev-parse --verify --quiet \"refs/tags/$TAG\" >/dev/null; then\n    git -C \"$REPO\" tag -a \"$TAG\" -m \"$TAG\" \"$CANDIDATE\"\nfi\ntagged=$(git -C \"$REPO\" rev-parse \"refs/tags/$TAG^{commit}\")\n[ \"$tagged\" = \"$CANDIDATE\" ] || { echo \"$TAG names $tagged, not $CANDIDATE\" >&2; exit 1; }\nobject=$(git -C \"$REPO\" rev-parse \"refs/tags/$TAG\")\nremote=$(git -C \"$REPO\" ls-remote origin \"refs/tags/$TAG\" | awk '{ print $1 }')\nif [ -z \"$remote\" ]; then\n    git \"$@\" push origin \"refs/tags/$TAG:refs/tags/$TAG\" >&2\n    remote=$(git -C \"$REPO\" ls-remote origin \"refs/tags/$TAG\" | awk '{ print $1 }')\nfi\n[ \"$remote\" = \"$object\" ] || { echo \"the remote $TAG reads ${remote:-nothing}, not $object\" >&2; exit 1; }\nprintf '{\"tag\":\"%s\",\"commit\":\"%s\"}' \"$TAG\" \"$tagged\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/answer/repo"
@@ -696,7 +774,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\ncd \"$REPO\"\nforge_as=$(git -C \"$REPO\" config --get sailor.forgeAs) || { echo \"sailor.forgeAs is not declared on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\n[ -n \"$forge_as\" ] || { echo \"sailor.forgeAs is empty on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\ngh auth token --user \"$forge_as\" >/dev/null || { echo \"no forge token for the declared account $forge_as\" >&2; exit 1; }\n[ -z \"${FORGE_REPO:-}\" ] || export GH_REPO=\"$FORGE_REPO\"\n# An empty --user or an empty GH_TOKEN makes gh answer as the machine's active account.\nforge() {\n    who=$(git -C \"$REPO\" config --get sailor.forgeAs) && [ -n \"$who\" ] || { echo \"sailor.forgeAs vanished from this tree: refusing\" >&2; exit 1; }\n    GH_TOKEN=$(gh auth token --user \"$who\") && [ -n \"$GH_TOKEN\" ] || { echo \"no forge token for $who: refusing\" >&2; exit 1; }\n    GH_TOKEN=\"$GH_TOKEN\" gh \"$@\"\n}\n[ \"$(shasum -a 256 < \"$TEXT_FILE\" | awk '{ print $1 }')\" = \"$TEXT_SHA\" ] || { echo \"$TEXT_FILE changed after the publication gate judged it: nothing leaves\" >&2; exit 1; }\nif ! forge release view \"$TAG\" --json tagName >/dev/null; then\n    forge release create \"$TAG\" --verify-tag --title \"$TAG\" --notes-file \"$TEXT_FILE\" >&2\nelif [ \"$(forge release view \"$TAG\" --json isDraft --jq .isDraft)\" = true ]; then\n    forge release edit \"$TAG\" --draft=false >&2\nfi\nseen=$(forge release view \"$TAG\" --json tagName,isDraft,url --jq '[.tagName, .isDraft, .url] | @tsv')\n[ \"$(printf '%s' \"$seen\" | cut -f1)\" = \"$TAG\" ] || { echo \"the host has no release for $TAG\" >&2; exit 1; }\n[ \"$(printf '%s' \"$seen\" | cut -f2)\" = false ] || { echo \"the release $TAG is still a draft\" >&2; exit 1; }\nprintf '{\"tag\":\"%s\",\"url\":\"%s\"}' \"$TAG\" \"$(printf '%s' \"$seen\" | cut -f3)\"\n",
+          "command": "set -eu\ncd \"$REPO\"\nforge_as=$(git -C \"$REPO\" config --get sailor.forgeAs) || { echo \"sailor.forgeAs is not declared on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\n[ -n \"$forge_as\" ] || { echo \"sailor.forgeAs is empty on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\nenv -u GH_TOKEN -u GITHUB_TOKEN gh auth token --user \"$forge_as\" >/dev/null || { echo \"no forge token for the declared account $forge_as\" >&2; exit 1; }\n[ -z \"${FORGE_REPO:-}\" ] || export GH_REPO=\"$FORGE_REPO\"\n# An empty --user or an empty GH_TOKEN makes gh answer as the machine's active account.\nforge() {\n    who=$(git -C \"$REPO\" config --get sailor.forgeAs) && [ -n \"$who\" ] || { echo \"sailor.forgeAs vanished from this tree: refusing\" >&2; exit 1; }\n    token=$(env -u GH_TOKEN -u GITHUB_TOKEN gh auth token --user \"$who\") && [ -n \"$token\" ] || { echo \"no forge token for $who: refusing\" >&2; exit 1; }\n    env -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN -u GITHUB_ENTERPRISE_TOKEN GH_TOKEN=\"$token\" gh \"$@\"\n}\n[ \"$(shasum -a 256 < \"$TEXT_FILE\" | awk '{ print $1 }')\" = \"$TEXT_SHA\" ] || { echo \"$TEXT_FILE changed after the publication gate judged it: nothing leaves\" >&2; exit 1; }\nif ! forge release view \"$TAG\" --json tagName >/dev/null; then\n    forge release create \"$TAG\" --verify-tag --title \"$TAG\" --notes-file \"$TEXT_FILE\" >&2\nelif [ \"$(forge release view \"$TAG\" --json isDraft --jq .isDraft)\" = true ]; then\n    forge release edit \"$TAG\" --draft=false >&2\nfi\nseen=$(forge release view \"$TAG\" --json tagName,isDraft,url --jq '[.tagName, .isDraft, .url] | @tsv')\n[ \"$(printf '%s' \"$seen\" | cut -f1)\" = \"$TAG\" ] || { echo \"the host has no release for $TAG\" >&2; exit 1; }\n[ \"$(printf '%s' \"$seen\" | cut -f2)\" = false ] || { echo \"the release $TAG is still a draft\" >&2; exit 1; }\nprintf '{\"tag\":\"%s\",\"url\":\"%s\"}' \"$TAG\" \"$(printf '%s' \"$seen\" | cut -f3)\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/answer/repo"
@@ -743,7 +821,7 @@
     ],
     "skippable_dependencies": [
       {
-        "step": "build_and_install",
+        "step": "release_gate",
         "dependency": "release_authorized"
       },
       {

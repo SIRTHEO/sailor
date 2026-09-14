@@ -47,7 +47,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\nprintf '%s' \"$TEXT\" | REQUIRED=\"$REQUIRED\" OPTIONAL=\"$OPTIONAL\" python3 -c '\nimport json, os, re, subprocess, sys\ntry:\n    asked = json.loads(sys.stdin.read())\nexcept ValueError as error:\n    sys.exit(\"the mandate is not one JSON object: %s\" % error)\nif not isinstance(asked, dict):\n    sys.exit(\"the mandate is not one JSON object\")\nrequired = os.environ[\"REQUIRED\"].split()\noptional = json.loads(os.environ[\"OPTIONAL\"])\nmissing = [key for key in required if not str(asked.get(key, \"\")).strip()]\nif missing:\n    sys.exit(\"the mandate does not name: \" + \", \".join(missing))\nunknown = sorted(set(asked) - set(required) - set(optional))\nif unknown:\n    sys.exit(\"the mandate names what this flow does not read: \" + \", \".join(unknown))\nout = {key: str(asked.get(key, default)) for key, default in optional.items()}\nout.update({key: str(asked[key]) for key in required})\nrepo = out[\"repo\"]\nif not os.path.isabs(repo) or subprocess.run([\"git\", \"-C\", repo, \"rev-parse\", \"--git-dir\"], capture_output=True).returncode != 0:\n    sys.exit(\"the repo is not an absolute path to a git tree: \" + repo)\nfor key in (\"branch\", \"base\"):\n    if key in out and not re.fullmatch(r\"[A-Za-z0-9][A-Za-z0-9._/-]*\", out[key]):\n        sys.exit(\"the %s is not a plain branch name: %s\" % (key, out[key]))\nfor key in (\"issue\",):\n    if key in out and not re.fullmatch(r\"[0-9]+\", out[key]):\n        sys.exit(\"the issue is not a number: \" + out[key])\nif \"version\" in out and not re.fullmatch(r\"[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?\", out[\"version\"]):\n    sys.exit(\"the version is not MAJOR.MINOR.PATCH: \" + out[\"version\"])\nif \"forge_repo\" in out and out[\"forge_repo\"] and not re.fullmatch(r\"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+\", out[\"forge_repo\"]):\n    sys.exit(\"the forge_repo is not owner/name: \" + out[\"forge_repo\"])\nprint(json.dumps(out))\n'\n",
+          "command": "set -eu\nprintf '%s' \"$TEXT\" | REQUIRED=\"$REQUIRED\" OPTIONAL=\"$OPTIONAL\" python3 -c '\nimport json, os, re, subprocess, sys\ntry:\n    asked = json.loads(sys.stdin.read())\nexcept ValueError as error:\n    sys.exit(\"the mandate is not one JSON object: %s\" % error)\nif not isinstance(asked, dict):\n    sys.exit(\"the mandate is not one JSON object\")\nrequired = os.environ[\"REQUIRED\"].split()\noptional = json.loads(os.environ[\"OPTIONAL\"])\nmissing = [key for key in required if not str(asked.get(key, \"\")).strip()]\nif missing:\n    sys.exit(\"the mandate does not name: \" + \", \".join(missing))\nunknown = sorted(set(asked) - set(required) - set(optional))\nif unknown:\n    sys.exit(\"the mandate names what this flow does not read: \" + \", \".join(unknown))\nout = {key: str(asked.get(key, default)) for key, default in optional.items()}\nout.update({key: str(asked[key]) for key in required})\nrepo = out[\"repo\"]\nif not os.path.isabs(repo) or subprocess.run([\"git\", \"-C\", repo, \"rev-parse\", \"--git-dir\"], capture_output=True).returncode != 0:\n    sys.exit(\"the repo is not an absolute path to a git tree: \" + repo)\nfor key in (\"branch\", \"base\"):\n    if key in out and not re.fullmatch(r\"[A-Za-z0-9][A-Za-z0-9._/-]*\", out[key]):\n        sys.exit(\"the %s is not a plain branch name: %s\" % (key, out[key]))\nfor key in (\"issue\",):\n    if key in out and out[key] and not re.fullmatch(r\"[0-9]+\", out[key]):\n        sys.exit(\"the issue is not a number: \" + out[key])\nif \"version\" in out and not re.fullmatch(r\"[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?\", out[\"version\"]):\n    sys.exit(\"the version is not MAJOR.MINOR.PATCH: \" + out[\"version\"])\nif \"forge_repo\" in out and out[\"forge_repo\"] and not re.fullmatch(r\"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+\", out[\"forge_repo\"]):\n    sys.exit(\"the forge_repo is not owner/name: \" + out[\"forge_repo\"])\nprint(json.dumps(out))\n'\n",
           "env": {
             "TEXT": {
               "$from": "/text"
@@ -238,7 +238,7 @@
               {
                 "$from": "/the_pin/answer/gates_digest"
               },
-              "). Close with sailor step approve and an output file holding one JSON object: {\"commit\": the commit above, \"verdict\": \"clean\" or \"findings\", \"findings\": [each finding as text], \"checked\": [each contract checked], \"uncertainty\": what you could not establish}. Reject only when the commit cannot be reviewed at all, saying why."
+              "), and confirm each applicable bullet of that manifest which names no command by copying its exact text into checked. Close with sailor step approve and an output file holding one JSON object: {\"commit\": the commit above, \"verdict\": \"clean\" or \"findings\", \"findings\": [each finding as text], \"checked\": [each contract checked], \"uncertainty\": what you could not establish}. Reject only when the commit cannot be reviewed at all, saying why."
             ]
           },
           "holder": "reviewer",
@@ -320,6 +320,7 @@
         "deps": [
           "the_request",
           "the_pin",
+          "review",
           "verdict_bound"
         ],
         "action": "store_write",
@@ -356,6 +357,9 @@
             },
             "findings": {
               "$from": "/verdict_bound/answer/findings"
+            },
+            "checked": {
+              "$from": "/review/checked"
             },
             "mandate_digest": {
               "$from": "/the_pin/answer/mandate_digest"
