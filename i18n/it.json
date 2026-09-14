@@ -26,6 +26,7 @@
   "window.run_glimpse.flow": "flusso",
   "window.run_glimpse.flow_unknown": "senza nome",
   "window.run_glimpse.worktree": "albero",
+  "window.run_glimpse.why": "Perché",
   "window.terminals.tty_not_open": "Nessun terminale aperto ha {tty}.",
   "window.strip.clear": "libero",
   "window.strip.ended_today": "{count} terminati oggi",

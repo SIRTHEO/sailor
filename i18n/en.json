@@ -26,6 +26,7 @@
   "window.run_glimpse.flow": "flow",
   "window.run_glimpse.flow_unknown": "unnamed",
   "window.run_glimpse.worktree": "tree",
+  "window.run_glimpse.why": "Why",
   "window.terminals.tty_not_open": "No open terminal carries {tty}.",
   "window.strip.clear": "clear",
   "window.strip.ended_today": "{count} ended today",

@@ -22,9 +22,13 @@ export interface RunGlimpseProps {
   onClose: () => void;
   /** Called after a gesture the engine accepted, so whoever lists runs reads again. */
   onChanged?: () => void;
+  /** Absent, no "Why" is offered: the second level this run's history lives
+   * at is reached from here, per the owner's 14/09 "tre voci" — it is not a
+   * place of its own any more. */
+  onWhy?: () => void;
 }
 
-export function RunGlimpse({ runId, onClose, onChanged }: RunGlimpseProps) {
+export function RunGlimpse({ runId, onClose, onChanged, onWhy }: RunGlimpseProps) {
   const [ask, setAsk] = useState<Ask>({ state: "asking" });
   const [usage, setUsage] = useState<RunUsage | null>(null);
 
@@ -87,6 +91,12 @@ export function RunGlimpse({ runId, onClose, onChanged }: RunGlimpseProps) {
       )}
 
       {usage && <Spend usage={usage} />}
+
+      {onWhy && (
+        <button type="button" className="glimpse__why" onClick={onWhy}>
+          {t("window.run_glimpse.why")}
+        </button>
+      )}
 
       <Handed runId={runId} onChanged={onChanged} />
     </section>
