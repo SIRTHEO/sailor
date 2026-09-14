@@ -245,4 +245,32 @@ describe("a row a source left out could replace", () => {
     const detail = screen.getByRole("complementary", { name: t("window.flows.detail.label") });
     expect(within(detail).queryByRole("button")).toBeNull();
   });
+  test("ITS CHAIN NEVER SAYS THE FALLBACK RUNS, in the tooltip, the expanded row or the detail", () => {
+    const runs = t("window.flow.chain_runs", { origin: "built in", path: SHIPPED });
+    const read = t("window.flows.chain_read_uncertain", { origin: "built in", path: SHIPPED });
+    const unread = t("window.flows.chain_unread", { origin: "yours", path: HOME });
+    const { container } = render(
+      <FlowsView here={{ state: "read", reading: uncertain() }} all={{ state: "read", reading: uncertain() }} onOpen={() => {}} onRun={() => {}} />,
+    );
+    const row = [...container.querySelectorAll("tr.flows__row")].find((one) => one.textContent?.startsWith("a-shipped-flow"));
+    const title = row?.querySelector(".flows__uncertain")?.getAttribute("title") ?? "";
+    expect(title).not.toContain(runs);
+    expect(title).toContain(read);
+    expect(title).toContain(unread);
+    fireEvent.click(row as HTMLElement);
+    const chain = screen.getByRole("complementary", { name: t("window.flows.detail.label") }).querySelector(".flows__chain")?.textContent ?? "";
+    expect(chain).not.toContain(runs);
+    expect(chain).toContain(read);
+    expect(chain).toContain(unread);
+
+    fireEvent.click(screen.getByRole("button", { name: t("window.flows.mode.all") }));
+    fireEvent.click(screen.getByRole("button", { name: t("window.flows.differs", { count: 3 }) }));
+    const expanded = [...container.querySelectorAll("tr")].filter((one) => one.querySelector(".flows__sub"));
+    for (const one of expanded.slice(0, 2)) {
+      const said = one.querySelector(".flows__uncertain")?.getAttribute("title") ?? "";
+      expect(said).not.toContain(runs);
+      expect(said).toContain(unread);
+    }
+    expect(container.textContent).not.toContain(runs);
+  });
 });

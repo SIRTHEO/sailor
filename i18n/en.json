@@ -812,6 +812,8 @@
   "window.flows.source_stopped": "{path} ({origin}) stopped before answering, so its flows are missing here",
   "window.flows.branch_unread": "branch not read in time",
   "window.flows.uncertain": "could not read {source} in time, so a flow there may replace this one",
+  "window.flows.chain_read_uncertain": "{origin}: {path} (read, but not known to run)",
+  "window.flows.chain_unread": "{origin}: {path} (not read in time, may replace the one above)",
   "window.place.flows.name": "Flows",
   "window.place.flows.asks": "what runs here, and is anything replacing it",
   "window.flows.unreadable": "The flows could not be read: {why}",

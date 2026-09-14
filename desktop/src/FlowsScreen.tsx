@@ -63,7 +63,14 @@ export function contextWords(context: FlowContext): string {
 
 /** The chain words, with «outside every workspace» where no directory was read. */
 export function chainOf(row: FlowRow): string {
-  return chainWords(row.resolved_in === null ? { ...row, resolved_in: t("window.flows.outside") } : row);
+  const chain = row.resolved_in === null ? { ...row, resolved_in: t("window.flows.outside") } : row;
+  if (!isUncertain(row)) return chainWords(chain);
+  // The candidate read is not known to run: a source above it did not answer.
+  return [
+    ...chainWords(chain).split("\n").slice(0, -1),
+    t("window.flows.chain_read_uncertain", { origin: row.winner.origin, path: row.winner.path }),
+    ...(row.uncertain_by ?? []).map((one) => t("window.flows.chain_unread", { origin: one.origin, path: one.dir })),
+  ].join("\n");
 }
 
 function Steps({ row }: { row: FlowRow }) {

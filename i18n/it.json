@@ -812,6 +812,8 @@
   "window.flows.source_stopped": "{path} ({origin}) si è fermato prima di rispondere, quindi qui mancano i suoi flussi",
   "window.flows.branch_unread": "ramo non letto in tempo",
   "window.flows.uncertain": "non è stato possibile leggere {source} in tempo, quindi un flusso lì potrebbe sostituire questo",
+  "window.flows.chain_read_uncertain": "{origin}: {path} (letto, ma non si sa se gira)",
+  "window.flows.chain_unread": "{origin}: {path} (non letto in tempo, potrebbe sostituire quello sopra)",
   "window.place.flows.name": "Flussi",
   "window.place.flows.asks": "cosa gira qui, e qualcosa lo sta sostituendo",
   "window.flows.unreadable": "Non è stato possibile leggere i flussi: {why}",
