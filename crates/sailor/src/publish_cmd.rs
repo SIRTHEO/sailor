@@ -15,7 +15,7 @@ pub struct Secret {
 }
 
 /// The shapes a key or token is known to take, wherever they sit.
-const TOKEN_PREFIXES: &[&str] = &["sk-", "ghp_", "gho_", "github_pat_", "xoxb-", "xoxp-", "AKIA", "AIza"];
+const TOKEN_PREFIXES: &[&str] = &["sk-", "ghp_", "gho_", "github_pat_", "xoxb-", "xoxp-", "AKIA", "AIza", "HRKU-"];
 
 /// The head of a private key in the armour every tool writes it in.
 const PEM_HEADER: &str = "-----BEGIN";
@@ -43,7 +43,12 @@ fn looks_like_a_token(value: &str) -> bool {
                 .any(|(at, _)| {
                     let rest = &word[at..];
                     TOKEN_PREFIXES.iter().any(|prefix| {
-                        rest.starts_with(prefix) && rest.len() >= prefix.len() + HOW_LONG_A_TOKEN_RUNS
+                        rest.strip_prefix(prefix).is_some_and(|body| {
+                            body.bytes()
+                                .take_while(|byte| byte.is_ascii_alphanumeric() || *byte == b'_' || *byte == b'-')
+                                .count()
+                                >= HOW_LONG_A_TOKEN_RUNS
+                        })
                     })
                 })
         })
@@ -479,6 +484,10 @@ mod tests {
         assert_eq!(secrets_in(&named)[0].key, "with.api_token");
         let harmless = json!({"id": "x", "graph": {"steps": [{"id": "s", "with": {"stdin": "count the keys of the map"}}]}});
         assert!(secrets_in(&harmless).is_empty());
+        let patterns = json!({"id": "x", "graph": {"steps": [{"id": "s", "with": {
+            "command": "grep -E 'sk-ant-[A-Za-z0-9_-]{24,}|github_pat_[A-Za-z0-9_]{30,}|github_pat_\\w+|ghp_\\w+|sk-ant-\\S+' flows"
+        }}]}});
+        assert!(secrets_in(&patterns).is_empty(), "{:?}", secrets_in(&patterns));
     }
 
     fn one_step(action: &str, with: Value) -> Value {
@@ -560,6 +569,7 @@ mod tests {
             "notes-ghp_abcdefghijklmnop",
             "-abcdefghijklmnopqrst",
             "qzvtkmxwrplbjhdnfgcsyaeoiuwmzxkq",
+            "HRKU-4594b794-0c94-416b-a374-bb33a025411f",
         ];
         let published: Vec<&str> = shaped_like_a_row_name
             .into_iter()
