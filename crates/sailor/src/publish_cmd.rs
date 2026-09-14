@@ -17,8 +17,28 @@ pub struct Secret {
 /// The shapes a key or token is known to take, wherever they sit.
 const TOKEN_PREFIXES: &[&str] = &["sk-", "ghp_", "gho_", "github_pat_", "xoxb-", "xoxp-", "AKIA", "AIza", "HRKU-"];
 
-/// The head of a private key in the armour every tool writes it in.
-const PEM_HEADER: &str = "-----BEGIN";
+/// The head of a private key in the armour every tool writes it in:
+/// `-----BEGIN `, upper-case words each followed by one space, `PRIVATE KEY-----`.
+const PEM_OPENING: &str = "-----BEGIN ";
+const PEM_PRIVATE_KEY_CLOSING: &str = "PRIVATE KEY-----";
+
+/// A whole header and no body, so a truncated key is still refused, while a
+/// pattern that only names the armour is not.
+fn holds_a_private_key_header(value: &str) -> bool {
+    value.match_indices(PEM_OPENING).any(|(at, _)| {
+        let mut rest = &value[at + PEM_OPENING.len()..];
+        loop {
+            if rest.starts_with(PEM_PRIVATE_KEY_CLOSING) {
+                return true;
+            }
+            let word = rest.bytes().take_while(u8::is_ascii_uppercase).count();
+            if word == 0 || rest.as_bytes().get(word) != Some(&b' ') {
+                return false;
+            }
+            rest = &rest[word + 1..];
+        }
+    })
+}
 
 /// How much must follow a prefix before a word is a key and not a word that
 /// begins the same way. Without it `task-force` reads as an `sk-` token.
@@ -30,7 +50,7 @@ const CREDENTIAL_WORDS: &[&str] = &["key", "token", "secret", "password", "passw
 /// A token anywhere in the text, not only at its start: a key pasted into a
 /// sentence a step sends is a key that has left the machine.
 fn looks_like_a_token(value: &str) -> bool {
-    if value.contains(PEM_HEADER) {
+    if holds_a_private_key_header(value) {
         return true;
     }
     value
@@ -488,6 +508,14 @@ mod tests {
             "command": "grep -E 'sk-ant-[A-Za-z0-9_-]{24,}|github_pat_[A-Za-z0-9_]{30,}|github_pat_\\w+|ghp_\\w+|sk-ant-\\S+' flows"
         }}]}});
         assert!(secrets_in(&patterns).is_empty(), "{:?}", secrets_in(&patterns));
+        let truncated_key = json!({"id": "x", "graph": {"steps": [{"id": "s", "with": {
+            "stdin": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA"
+        }}]}});
+        assert_eq!(secrets_in(&truncated_key).len(), 1, "{:?}", secrets_in(&truncated_key));
+        let header_patterns = json!({"id": "x", "graph": {"steps": [{"id": "s", "with": {
+            "command": "grep -E '-----BEGIN (RSA |EC )?PRIVATE KEY|-----BEGIN [A-Z ]+' flows"
+        }}]}});
+        assert!(secrets_in(&header_patterns).is_empty(), "{:?}", secrets_in(&header_patterns));
     }
 
     fn one_step(action: &str, with: Value) -> Value {
