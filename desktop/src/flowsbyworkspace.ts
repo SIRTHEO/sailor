@@ -13,6 +13,19 @@ export interface FlowRow extends FlowChain {
   broken?: string;
 }
 
+/** Why a checkout carries no rows: facts the window puts into words. */
+export type Refusal =
+  | { kind: "unreadable"; why: string }
+  | { kind: "timed_out"; seconds: number }
+  | { kind: "stopped" };
+
+/** A source folder that is there and refused the reading. */
+export interface SourceTrouble {
+  origin: string;
+  dir: string;
+  why: string;
+}
+
 /** One place flows are resolved from: a checkout, or outside every workspace. */
 export interface FlowContext {
   workspace: string | null;
@@ -21,7 +34,8 @@ export interface FlowContext {
   current: boolean;
   /** Only the names whose winner differs from outside every workspace. */
   flows: FlowRow[];
-  unreadable?: string;
+  troubles?: SourceTrouble[];
+  refused?: Refusal;
 }
 
 export interface FlowsReading {
@@ -35,10 +49,20 @@ export type FlowsAsk =
   | { state: "read"; reading: FlowsReading }
   | { state: "unreadable"; why: string };
 
-export function flowsByWorkspace(): Promise<FlowsReading> {
+function ask<T>(command: string): Promise<T> {
   const invoke = invoker();
   if (!invoke) return Promise.reject(new Error("outside the native shell: no disk to look at"));
-  return invoke<FlowsReading>("flows_by_workspace");
+  return invoke<T>(command);
+}
+
+/** Where the window stands, and outside every workspace: no other checkout. */
+export function flowsHere(): Promise<FlowsReading> {
+  return ask<FlowsReading>("flows_here");
+}
+
+/** Every known checkout, each within the shell's limit. */
+export function flowsByWorkspace(): Promise<FlowsReading> {
+  return ask<FlowsReading>("flows_by_workspace");
 }
 
 /** The origin a project's own flows carry, either way it was found. */
@@ -51,7 +75,7 @@ export function isProjectOrigin(origin: string): boolean {
  * rows outside every workspace that it does not decide itself.
  */
 export function resolvedIn(reading: FlowsReading, context: FlowContext): FlowRow[] {
-  if (context.unreadable !== undefined) return [];
+  if (context.refused !== undefined) return [];
   if (context === reading.outside) return [...context.flows].sort(byName);
   const own = new Set(context.flows.map((row) => row.name));
   const rest = reading.outside.flows.filter((row) => !own.has(row.name));
@@ -124,6 +148,11 @@ export function globalRows(reading: FlowsReading): GlobalRow[] {
 /** Whether anything resolves anywhere. */
 export function holdsAnyFlow(reading: FlowsReading): boolean {
   return reading.outside.flows.length > 0 || reading.contexts.some((one) => one.flows.length > 0);
+}
+
+/** Every folder that refused the reading, outside and in each checkout. */
+export function troublesOf(reading: FlowsReading): SourceTrouble[] {
+  return [reading.outside, ...reading.contexts].flatMap((context) => context.troubles ?? []);
 }
 
 /** Whether the chosen row is the file that runs where the window stands. */

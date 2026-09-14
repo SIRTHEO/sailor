@@ -59,19 +59,19 @@ function reading(): FlowsReading {
           ),
         ],
       },
-      { workspace: "a-workspace", root: GONE, branch: null, current: false, flows: [], unreadable: "No such file or directory" },
+      { workspace: "a-workspace", root: GONE, branch: null, current: false, flows: [], refused: { kind: "unreadable", why: "No such file or directory" } },
     ],
   };
 }
 
 describe("the flows of this checkout", () => {
   test("THE HEADING IS THE QUESTION THE PLACE ANSWERS", () => {
-    render(<FlowsView ask={{ state: "read", reading: reading() }} />);
+    render(<FlowsView here={{ state: "read", reading: reading() }} all={{ state: "read", reading: reading() }} />);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(t("window.flows.asks"));
   });
 
   test("groups by who owns the winner, and a replacing row wears the column's mark", () => {
-    const { container } = render(<FlowsView ask={{ state: "read", reading: reading() }} />);
+    const { container } = render(<FlowsView here={{ state: "read", reading: reading() }} all={{ state: "read", reading: reading() }} />);
     const groups = [...container.querySelectorAll(".flows__group")].map((one) => one.textContent);
     expect(groups).toEqual([t("window.flows.group.yours"), t("window.flows.group.built_in")]);
 
@@ -95,7 +95,7 @@ describe("the flows of this checkout", () => {
     const ran: string[] = [];
     render(
       <FlowsView
-        ask={{ state: "read", reading: reading() }}
+        here={{ state: "read", reading: reading() }} all={{ state: "read", reading: reading() }}
         onOpen={(name) => opened.push(name)}
         onRun={(name) => ran.push(name)}
       />,
@@ -112,7 +112,7 @@ describe("the flows of this checkout", () => {
 
 describe("the flows of every workspace", () => {
   test("A NAME TWO CHECKOUTS RESOLVE DIFFERENTLY EXPANDS INTO EACH WINNER", () => {
-    const { container } = render(<FlowsView ask={{ state: "read", reading: reading() }} />);
+    const { container } = render(<FlowsView here={{ state: "read", reading: reading() }} all={{ state: "read", reading: reading() }} />);
     fireEvent.click(screen.getByRole("button", { name: t("window.flows.mode.all") }));
 
     const expand = screen.getByRole("button", { name: t("window.flows.differs", { count: 3 }) });
@@ -136,7 +136,7 @@ describe("the flows of every workspace", () => {
     only.contexts[1].flows.push(
       row("a-project-flow", { origin: "this project", path: fileIn(`${OVERRIDING}/flows`, "a-project-flow") }, [], OVERRIDING, 6),
     );
-    const { container } = render(<FlowsView ask={{ state: "read", reading: only }} />);
+    const { container } = render(<FlowsView here={{ state: "read", reading: only }} all={{ state: "read", reading: only }} />);
     fireEvent.click(screen.getByRole("button", { name: t("window.flows.mode.all") }));
     const alone = [...container.querySelectorAll("tr")].find((one) => one.textContent?.startsWith("a-project-flow"));
     expect(alone?.textContent).toContain(t("window.flows.only_in", { context: "a-workspace · overriding · work/an-override" }));
@@ -151,7 +151,7 @@ describe("the flows of every workspace", () => {
   });
 
   test("a checkout that could not be read says so, with its reason", () => {
-    render(<FlowsView ask={{ state: "read", reading: reading() }} />);
+    render(<FlowsView here={{ state: "read", reading: reading() }} all={{ state: "read", reading: reading() }} />);
     fireEvent.click(screen.getByRole("button", { name: t("window.flows.mode.all") }));
     expect(
       screen.getByText(t("window.flows.context_unreadable", { root: GONE, why: "No such file or directory" })),
@@ -159,7 +159,7 @@ describe("the flows of every workspace", () => {
   });
 
   test("a file of another checkout offers no gesture that would act on this one", () => {
-    const { container } = render(<FlowsView ask={{ state: "read", reading: reading() }} onOpen={() => {}} onRun={() => {}} />);
+    const { container } = render(<FlowsView here={{ state: "read", reading: reading() }} all={{ state: "read", reading: reading() }} onOpen={() => {}} onRun={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: t("window.flows.mode.all") }));
     fireEvent.click(screen.getByRole("button", { name: t("window.flows.differs", { count: 3 }) }));
     const overriding = [...container.querySelectorAll("tr")].find((one) =>
@@ -174,7 +174,7 @@ describe("the flows of every workspace", () => {
 
 describe("the states are said, not drawn as nothing", () => {
   test("a reading the shell refused shows its reason", () => {
-    render(<FlowsView ask={{ state: "unreadable", why: "the register would not open" }} />);
+    render(<FlowsView here={{ state: "unreadable", why: "the register would not open" }} />);
     expect(screen.getByRole("alert").textContent).toBe(
       t("window.flows.unreadable", { why: "the register would not open" }),
     );
@@ -186,10 +186,12 @@ describe("the states are said, not drawn as nothing", () => {
       outside: { workspace: null, root: null, branch: null, current: false, flows: [] },
       contexts: [],
     };
-    render(<FlowsView ask={{ state: "read", reading: empty }} />);
+    render(<FlowsView here={{ state: "read", reading: empty }} all={{ state: "read", reading: empty }} />);
+    expect(screen.getByText(t("window.flows.outside"))).toBeTruthy();
+    expect(screen.queryByText(t("window.flows.no_workspace")), "standing outside is not «no workspace known»").toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: t("window.flows.mode.all") }));
     expect(screen.getByText(t("window.flows.no_workspace"))).toBeTruthy();
     expect(screen.getByText(t("window.flows.no_flows"))).toBeTruthy();
-    expect(screen.getByText(t("window.flows.outside"))).toBeTruthy();
   });
 
   test("outside the native shell the place says there is no disk to read", () => {

@@ -185,9 +185,9 @@ export const BESIDE_WHAT_THEY_ARE_ABOUT: Place[] = [
   },
   {
     id: "flows",
-    name: "Flows",
+    name: t("window.place.flows.name"),
     glyph: "\u2261",
-    asks: "what runs here, and is anything replacing it",
+    asks: t("window.place.flows.asks"),
     group: "work",
   },
 ];

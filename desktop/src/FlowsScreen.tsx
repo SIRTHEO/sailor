@@ -3,15 +3,17 @@
  * reading: the checkout the window stands in by default, every workspace on
  * request, and a name two checkouts resolve differently is never one row.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { chainWords, replacesWords } from "./flowchain";
 import {
   flowsByWorkspace,
+  flowsHere,
   globalRows,
   groupsHere,
   holdsAnyFlow,
   runsWhereTheWindowStands,
   standingContext,
+  troublesOf,
   type FlowContext,
   type FlowRow,
   type FlowsAsk,
@@ -21,13 +23,17 @@ import { t } from "./i18n";
 import { treeName } from "./workspacetrees";
 
 export interface FlowsViewProps {
-  ask: FlowsAsk;
+  /** Where the window stands, read when the place opens. */
+  here: FlowsAsk;
+  /** Every workspace, read only once the mode is chosen. */
+  all?: FlowsAsk;
+  onMode?: (mode: Mode) => void;
   /** Opens the flow on the board: only offered for the file that runs here. */
   onOpen?: (name: string) => void;
   onRun?: (name: string) => void;
 }
 
-type Mode = "here" | "all";
+export type Mode = "here" | "all";
 
 const GROUP_WORDS: Record<string, string> = {
   workspace: "window.flows.group.workspace",
@@ -126,21 +132,44 @@ function Detail({
   );
 }
 
+/** Why a checkout carries no rows, in the words of the catalogue. */
+export function refusalWords(context: FlowContext): string | null {
+  const root = context.root ?? t("window.flows.outside");
+  const refused = context.refused;
+  if (refused === undefined) return null;
+  if (refused.kind === "unreadable") return t("window.flows.context_unreadable", { root, why: refused.why });
+  if (refused.kind === "timed_out") return t("window.flows.context_timed_out", { root, seconds: refused.seconds });
+  return t("window.flows.context_stopped", { root });
+}
+
 function Unreadable({ contexts }: { contexts: FlowContext[] }) {
-  const refused = contexts.filter((one) => one.unreadable !== undefined);
+  const refused = contexts.filter((one) => one.refused !== undefined);
   if (refused.length === 0) return null;
   return (
     <ul className="flows__troubles">
       {refused.map((one) => (
-        <li key={one.root ?? ""}>
-          {t("window.flows.context_unreadable", { root: one.root ?? "", why: one.unreadable ?? "" })}
+        <li key={one.root ?? ""}>{refusalWords(one)}</li>
+      ))}
+    </ul>
+  );
+}
+
+/** A folder that refused the reading is said, never drawn as a folder with no flows. */
+function Troubles({ reading }: { reading: FlowsReading }) {
+  const troubles = troublesOf(reading);
+  if (troubles.length === 0) return null;
+  return (
+    <ul className="flows__troubles">
+      {troubles.map((one) => (
+        <li key={`${one.origin}\n${one.dir}`}>
+          {t("window.flows.source_unreadable", { origin: one.origin, path: one.dir, why: one.why })}
         </li>
       ))}
     </ul>
   );
 }
 
-export function FlowsView({ ask, onOpen, onRun }: FlowsViewProps) {
+export function FlowsView({ here: hereAsk, all: allAsk, onMode, onOpen, onRun }: FlowsViewProps) {
   const [mode, setMode] = useState<Mode>("here");
   const [chosen, setChosen] = useState<Chosen | null>(null);
   const [open, setOpen] = useState<Set<string>>(new Set());
@@ -158,6 +187,7 @@ export function FlowsView({ ask, onOpen, onRun }: FlowsViewProps) {
             onClick={() => {
               setMode(one);
               setChosen(null);
+              onMode?.(one);
             }}
           >
             {t(`window.flows.mode.${one}`)}
@@ -167,11 +197,12 @@ export function FlowsView({ ask, onOpen, onRun }: FlowsViewProps) {
     </>
   );
 
+  const ask: FlowsAsk = mode === "here" ? hereAsk : (allAsk ?? { state: "reading" });
   if (ask.state === "reading") {
     return (
       <div className="flows">
         {head}
-        <p className="flows__mute">{t("window.flows.reading")}</p>
+        <p className="flows__mute">{t(mode === "here" ? "window.flows.reading_here" : "window.flows.reading")}</p>
       </div>
     );
   }
@@ -223,7 +254,7 @@ export function FlowsView({ ask, onOpen, onRun }: FlowsViewProps) {
   const here = (
     <>
       <p className="flows__where">{contextWords(standing)}</p>
-      {standing.unreadable !== undefined ? (
+      {standing.refused !== undefined ? (
         <Unreadable contexts={[standing]} />
       ) : (
         <table className="flows__table">
@@ -298,8 +329,13 @@ export function FlowsView({ ask, onOpen, onRun }: FlowsViewProps) {
   return (
     <div className="flows">
       {head}
-      {reading.contexts.length === 0 && <p className="flows__mute">{t("window.flows.no_workspace")}</p>}
-      {!holdsAnyFlow(reading) && <p className="flows__mute">{t("window.flows.no_flows")}</p>}
+      <Troubles reading={reading} />
+      {mode === "all" && reading.contexts.length === 0 && (
+        <p className="flows__mute">{t("window.flows.no_workspace")}</p>
+      )}
+      {!holdsAnyFlow(reading) && troublesOf(reading).length === 0 && (
+        <p className="flows__mute">{t("window.flows.no_flows")}</p>
+      )}
       <div className="flows__body">
         <div className="flows__list">{mode === "here" ? here : all}</div>
         <Detail reading={reading} chosen={chosen} onOpen={onOpen} onRun={onRun} />
@@ -314,24 +350,51 @@ export interface FlowsScreenProps {
   onRun?: (name: string) => void;
 }
 
-/** Read on arrival: coming back to the place is what refreshes it. */
+/**
+ * **THE PLACE OPENS ON WHERE THE WINDOW STANDS**, and every workspace is read
+ * only when asked for. A newer question, or leaving the place, abandons the
+ * older answer: it arrives, and nothing listens.
+ */
 export function FlowsScreen({ native, onOpen, onRun }: FlowsScreenProps) {
-  const [ask, setAsk] = useState<FlowsAsk>(() =>
+  const [here, setHere] = useState<FlowsAsk>(() =>
     native ? { state: "reading" } : { state: "unreadable", why: t("window.flows.no_shell") },
   );
+  const [all, setAll] = useState<FlowsAsk | undefined>(undefined);
+  const asking = useRef(0);
+
   useEffect(() => {
     if (!native) return;
     let watching = true;
-    flowsByWorkspace()
+    flowsHere()
       .then((reading) => {
-        if (watching) setAsk({ state: "read", reading });
+        if (watching) setHere({ state: "read", reading });
       })
       .catch((error: unknown) => {
-        if (watching) setAsk({ state: "unreadable", why: String(error) });
+        if (watching) setHere({ state: "unreadable", why: String(error) });
       });
     return () => {
       watching = false;
+      asking.current += 1;
     };
   }, [native]);
-  return <FlowsView ask={ask} onOpen={onOpen} onRun={onRun} />;
+
+  function onMode(mode: Mode) {
+    asking.current += 1;
+    const question = asking.current;
+    if (mode !== "all") return;
+    if (!native) {
+      setAll({ state: "unreadable", why: t("window.flows.no_shell") });
+      return;
+    }
+    setAll({ state: "reading" });
+    flowsByWorkspace()
+      .then((reading) => {
+        if (asking.current === question) setAll({ state: "read", reading });
+      })
+      .catch((error: unknown) => {
+        if (asking.current === question) setAll({ state: "unreadable", why: String(error) });
+      });
+  }
+
+  return <FlowsView here={here} all={all} onMode={onMode} onOpen={onOpen} onRun={onRun} />;
 }

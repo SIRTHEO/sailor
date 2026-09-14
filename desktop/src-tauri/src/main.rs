@@ -183,6 +183,7 @@ fn main() {
             flows::delete_flow,
             flows::flow_texts,
             flows::flow_chains,
+            flows_by_workspace::flows_here,
             flows_by_workspace::flows_by_workspace,
             tools::discover_tools,
             tools::tools_sweep,
