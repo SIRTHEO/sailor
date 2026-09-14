@@ -36,9 +36,16 @@ fn looks_like_a_token(value: &str) -> bool {
     value
         .split(|letter: char| letter.is_whitespace() || "\"'=,;:()[]{}".contains(letter))
         .any(|word| {
-            TOKEN_PREFIXES.iter().any(|prefix| {
-                word.starts_with(prefix) && word.len() >= prefix.len() + HOW_LONG_A_TOKEN_RUNS
-            })
+            word.char_indices()
+                .filter(|&(at, _)| {
+                    word[..at].chars().next_back().is_none_or(|before| !before.is_ascii_alphanumeric())
+                })
+                .any(|(at, _)| {
+                    let rest = &word[at..];
+                    TOKEN_PREFIXES.iter().any(|prefix| {
+                        rest.starts_with(prefix) && rest.len() >= prefix.len() + HOW_LONG_A_TOKEN_RUNS
+                    })
+                })
         })
 }
 
@@ -126,17 +133,25 @@ fn looks_opaque(value: &str) -> bool {
         piece.len() >= HOW_LONG_AN_OPAQUE_PIECE_RUNS
             && !piece.bytes().all(|byte| byte.is_ascii_digit())
             && (bits_per_character(piece) >= HOW_RANDOM_AN_OPAQUE_PIECE_IS
-                || piece.len() >= 32 && piece.bytes().all(|byte| byte.is_ascii_hexdigit()))
+                || piece.bytes().all(|byte| byte.is_ascii_hexdigit()))
     };
     looks_like_base64(value) || value.split(|letter: char| !letter.is_ascii_alphanumeric()).any(an_opaque_piece)
 }
 
-/// Lowercase words and numeric run ids joined by `/`, `-` or `_`. An upper
-/// case letter, a digit inside a word, or a `=` makes it no longer one.
+/// The longest lowercase word a row name carries; a longer run is a token.
+const HOW_LONG_A_ROW_NAME_WORD_RUNS: usize = 20;
+
+/// Lowercase words of one to 20 letters, and numeric run ids,
+/// joined by single `/`, `-` or `_`. A word that is all hex from 16 letters is
+/// a key, not a word; a digit-only piece stays a run id at any length.
 fn reads_as_a_row_name(value: &str) -> bool {
     value.split(['/', '-', '_']).all(|piece| {
-        piece.bytes().all(|byte| byte.is_ascii_lowercase())
-            || piece.bytes().all(|byte| byte.is_ascii_digit())
+        let a_run_id = !piece.is_empty() && piece.bytes().all(|byte| byte.is_ascii_digit());
+        let a_word = !piece.is_empty()
+            && piece.len() <= HOW_LONG_A_ROW_NAME_WORD_RUNS
+            && piece.bytes().all(|byte| byte.is_ascii_lowercase())
+            && !(piece.len() >= HOW_LONG_AN_OPAQUE_PIECE_RUNS && piece.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        a_run_id || a_word
     })
 }
 
@@ -538,6 +553,26 @@ mod tests {
         let found = secrets_in(&in_url_safe_base64);
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(found[0].key, "with.key");
+
+        let shaped_like_a_row_name = [
+            "deadbeefcafebabefacedeadbeefcafebabefade",
+            "-ghp_abcdefghijklmnop",
+            "notes-ghp_abcdefghijklmnop",
+            "-abcdefghijklmnopqrst",
+            "qzvtkmxwrplbjhdnfgcsyaeoiuwmzxkq",
+        ];
+        let published: Vec<&str> = shaped_like_a_row_name
+            .into_iter()
+            .filter(|key| {
+                secrets_in(&one_step(
+                    "store_write",
+                    json!({"collection": "c", "key": key, "value": 1, "written_by": "w"}),
+                ))
+                .len()
+                    != 1
+            })
+            .collect();
+        assert!(published.is_empty(), "published: {published:?}");
     }
 
     #[test]
