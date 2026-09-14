@@ -62,8 +62,8 @@ stand-in forge:** steps 4, 5, 7 and 8, 10 and 9 as `open-the-draft-pull-request`
 in `sailor.forgeAs` and refuses without one; the publication gate
 (`scripts/privacy-scan.sh`, on a ref or on `--text <file>`) runs before every
 push, pull request, integration, tag and release; the delivery policy is read
-from the file the trunk commits, validated as `sailor policy` validates it,
-before each gesture it governs, and `ask` hands that gesture to a person. The review pins the head under `refs/sailor/reviews/` and hands the
+from the file the trunk commits before each gesture it governs, and `ask`
+hands that gesture to a person. The review pins the head under `refs/sailor/reviews/` and hands the
 reviewer a locked checkout of exactly that commit; the integration refuses any
 other head, runs `scripts/run-gates.sh --no-fail-fast` on the combined tree,
 and completes only when the host reports the pull request merged. No run of
@@ -75,9 +75,10 @@ reach the trunk by hand before these flows can carry anything.
 **What these flows defend against, and what they do not.** They defend against
 a different `sailor` found on PATH, since every `sailor` they call is the copy
 in service, checked against its recorded sha256 right before it runs. They
-also defend against an installed binary that does not match the candidate, a
-missing or invalid delivery policy, and a remote that cannot be read or has
-moved. They do not defend against whoever can already write to the directory
+also defend against an installed binary that does not match the candidate; a
+delivery policy that is missing, is not readable as JSON, or whose `merge`,
+`push` and `release` fields are not `auto` or `ask`; and a remote that cannot
+be read or has moved. They do not defend against whoever can already write to the directory
 of the `sailor` in service: that person can replace the binary between its
 sha256 check and its execution. The policy reader inside the flows is also
 more permissive than `sailor policy` on malformed input, such as out-of-range
