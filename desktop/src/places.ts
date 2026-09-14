@@ -69,11 +69,9 @@ export const PLACES: Place[] = [
 ];
 
 /**
- * A place with no row in `PLACES` and no strip of its own: found by name, in
- * the palette, or by the run that explains it (`RunGlimpse`'s "Why" link) —
- * never by scanning a list on the first screen. Kept as `Place[]` and not
- * folded into `PLACES` so `nameOfPlace` and the "go to" palette entries still
- * find it, without the primary navigation growing back to four.
+ * Places with no row in `PLACES`: found by name, in the palette, or from the
+ * run that explains them — never scanned for on the first screen. Kept apart
+ * so `nameOfPlace` and the palette find them without the navigation growing.
  */
 export const SECOND_LEVEL: Place[] = [
   {

@@ -4073,3 +4073,12 @@ fn a_process_this_machine_will_not_describe_is_not_dated_to_1970() {
         super::WhoHoldsThePid::Nobody => panic!("the first process on this machine is not running"),
     }
 }
+
+/// On Linux the birth is in `/proc`, in ticks since boot, after a name that may hold `)`.
+#[test]
+fn a_linux_stat_line_says_the_second_its_process_was_born() {
+    let stat = "4242 (a (strange) name) S 1 4242 4242 0 -1 4194560 100 0 0 0 1 2 0 0 20 0 1 0 12345 1000 10";
+    assert_eq!(super::born_second_in(stat, 1_700_000_000, 100), Some(1_700_000_123));
+    assert_eq!(super::born_second_in("4242 (cut short) S 1", 1_700_000_000, 100), None);
+    assert_eq!(super::born_second_in(stat, 1_700_000_000, 0), None);
+}

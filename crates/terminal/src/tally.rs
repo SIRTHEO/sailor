@@ -34,7 +34,7 @@ impl Tally {
 
 /// Where a terminal's count is kept, beside its letterbox.
 pub fn address_in(store: &Path, tty: &str) -> PathBuf {
-    crate::inbox::mailroom(store).join(format!("{tty}.seen"))
+    crate::inbox::mailroom(store).join(format!("{}.seen", crate::inbox::file_name_of(tty)))
 }
 
 /// Writes the count so that a reader never sees half of it.

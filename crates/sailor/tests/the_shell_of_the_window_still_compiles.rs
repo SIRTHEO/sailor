@@ -73,6 +73,8 @@ fn compiler(root: &Path, offline: bool, build_directory: Option<OsString>) -> Co
         .arg("--manifest-path")
         .arg(root.join(SHELL_MANIFEST))
         .args(["--locked", "--no-fail-fast", "--message-format=short"])
+        // A colour code before `error` hides the error from the reader.
+        .env("CARGO_TERM_COLOR", "never")
         // As many compilers as the memory holds: this machine is shared, and a
         // gate that takes every core is a gate that gets killed for memory.
         .args(["--jobs", &compilers_that_fit()]);

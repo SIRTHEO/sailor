@@ -695,6 +695,7 @@ mod tests {
             flow_with_env(json!({"OPENROUTER_API_KEY": {"$env": "OPENROUTER_API_KEY"}})).to_string(),
         )
         .expect("rewrite");
+        with_an_author(&dir);
         let done = publish_with_privacy(&dir, None, Some(privacy.clone()))
             .expect("a clean directory publishes");
         assert_eq!(done, Published { flows: 1, committed: true, pushed_to: None });
@@ -795,6 +796,13 @@ mod tests {
         let _ = std::fs::remove_dir_all(&elsewhere);
     }
 
+    /// A repository whose commits have an author: a runner has none to guess.
+    fn with_an_author(dir: &Path) {
+        for args in [&["init", "-q"][..], &["config", "user.name", "a"], &["config", "user.email", "a@b"]] {
+            git(dir, args).expect("preparing the scratch repository");
+        }
+    }
+
     #[test]
     fn publish_flows_reads_the_source_that_is_yours() {
         let dir = std::env::temp_dir().join(format!(
@@ -815,6 +823,7 @@ mod tests {
             names: Vec::new(),
             home: "/home/tester".to_owned(),
         };
+        with_an_author(&dir);
         publish_with_privacy(&dir, None, Some(privacy)).expect("a clean directory publishes");
 
         // `publish_flows` reads its own privacy input from the environment, so

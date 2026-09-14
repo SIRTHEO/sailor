@@ -108,9 +108,26 @@ fn born_at(pid: u32) -> Option<i64> {
     (written == wanted).then_some(about.pbi_start_tvsec as i64)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
+fn born_at(pid: u32) -> Option<i64> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let boot = std::fs::read_to_string("/proc/stat").ok()?;
+    let boot = boot.lines().find_map(|line| line.strip_prefix("btime "))?;
+    // SAFETY: `sysconf` reads a constant of the kernel and touches no memory.
+    let ticks = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
+    born_second_in(&stat, boot.trim().parse().ok()?, ticks as i64)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn born_at(_pid: u32) -> Option<i64> {
     None
+}
+
+/// When a `/proc/<pid>/stat` line says its process began; `None` if cut short.
+pub fn born_second_in(stat: &str, booted_at: i64, ticks_per_second: i64) -> Option<i64> {
+    let fields = &stat[stat.rfind(')')? + 1..];
+    let ticks: i64 = fields.split_whitespace().nth(19)?.parse().ok()?;
+    (ticks_per_second > 0).then(|| booted_at + ticks / ticks_per_second)
 }
 
 /// One invocation of Sailor, told apart from the next. The kernel knows one

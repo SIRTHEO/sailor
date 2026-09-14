@@ -165,3 +165,15 @@ fn a_line_left_in_the_letterbox_reaches_a_terminal_born_through_the_engine() {
     let _ = terminals.close(opened.id());
     let _ = std::fs::remove_dir_all(&directory);
 }
+
+/// **ON LINUX A TTY IS `pts/3`.** Its letterbox is one file beside the others,
+/// and the name read back from that file is the tty again.
+#[test]
+fn a_tty_with_a_slash_is_one_letterbox_and_reads_back_as_itself() {
+    let store = std::path::Path::new("/somewhere");
+    let address = inbox::address_in(store, "pts/3");
+    assert_eq!(address.parent(), Some(inbox::mailroom(store).as_path()));
+    let stem = address.file_stem().expect("a file name").to_string_lossy();
+    assert_eq!(inbox::tty_of(&stem), "pts/3");
+    assert_eq!(inbox::tty_of("ttys004"), "ttys004");
+}

@@ -37,7 +37,7 @@ const COMMENT_LINES_NOT_IN_ENGLISH: usize = 1;
 const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
     ("actions", 241),
     ("catalogue", 239),
-    ("desktop", 232),
+    ("desktop", 231),
     ("faults", 150),
     ("flow", 198),
     ("inventory", 274),
@@ -147,7 +147,7 @@ fn walk(dir: &Path, found: &mut Vec<PathBuf>) {
 #[test]
 fn the_files_named_one_by_one_are_inside_the_perimeter() {
     assert!(
-        !NAMED_ONE_BY_ONE.is_empty(),
+        NAMED_ONE_BY_ONE.iter().next().is_some(),
         "the list is empty: the files it held are measured by nobody"
     );
     let walked = sources();

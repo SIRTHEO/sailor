@@ -66,7 +66,7 @@ pub(super) fn since_words(secs: i64) -> String {
 pub(super) fn list_terminals(request: &Request<'_>) -> Result<Report, String> {
     let store = request.store()?;
     let rows = store.terminals().map_err(|error| error.to_string())?;
-    let abandoned = sessions::census::Census::of(&sessions::census::LocalMachine).abandoned(&rows);
+    let abandoned = request.census.abandoned(&rows);
     if request.options.contains_key("json") {
         let said: Vec<serde_json::Value> = rows
             .iter()

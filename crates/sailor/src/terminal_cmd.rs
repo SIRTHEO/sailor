@@ -137,7 +137,7 @@ fn hold(args: &[String]) -> Result<i32, String> {
     // the tracking store records the inner one: keying on the outer would
     // leave whoever reads that store knocking at an address nobody holds.
     let tty = inner.tty().to_owned();
-    let address = mailroom(&options)?.join(format!("{tty}.sock"));
+    let address = inbox::address_in(&store_root(&options)?, &tty);
     let letterbox = Inbox::open(&address).map_err(|error| {
         let _ = inner.close();
         error.to_string()
@@ -152,7 +152,7 @@ fn hold(args: &[String]) -> Result<i32, String> {
     bridge::notice_resizes().map_err(|error| error.to_string())?;
 
     let counted = tally::Counters::new();
-    let counting = counted.recorded_into(mailroom(&options)?.join(format!("{tty}.seen")));
+    let counting = counted.recorded_into(tally::address_in(&store_root(&options)?, &tty));
     let screen = Arc::new(terminal::screen::Screen::new());
     let painting = terminal::screen::recorded_into(
         Arc::clone(&screen),
@@ -167,7 +167,7 @@ fn hold(args: &[String]) -> Result<i32, String> {
     counting.stop();
     drop(restore);
     let _ = std::fs::remove_file(&address);
-    let _ = std::fs::remove_file(mailroom(&options)?.join(format!("{tty}.seen")));
+    let _ = std::fs::remove_file(tally::address_in(&store_root(&options)?, &tty));
     let _ = std::fs::remove_file(terminal::screen::address_in(&store_root(&options)?, &tty));
     showing.map_err(|error| error.to_string())?;
     Ok(exit_code_of(&inner))
@@ -369,7 +369,7 @@ fn named(options: &[(String, String)], name: &str, missing: &str) -> Result<Stri
 /// too, and the two copies of it were drifting apart on the one detail that
 /// decides whether the line is ever sent.
 fn press_into(options: &[(String, String)], tty: &str, line: &str) -> Result<(), String> {
-    let address = mailroom(options)?.join(format!("{tty}.sock"));
+    let address = mailroom(options)?.join(format!("{}.sock", inbox::file_name_of(tty)));
     inbox::press_line(&address, line).map_err(|error| {
         catalogue::say(
             "cli.terminal.not_held",
@@ -551,7 +551,7 @@ fn list(args: &[String]) -> Result<i32, String> {
         }
         let Some(name) = path
             .file_stem()
-            .map(|stem| stem.to_string_lossy().into_owned())
+            .map(|stem| inbox::tty_of(&stem.to_string_lossy()))
         else {
             continue;
         };
@@ -570,7 +570,7 @@ fn list(args: &[String]) -> Result<i32, String> {
 /// whose count has not landed yet is not an empty one, and the two must not
 /// print the same.
 fn how_full(room: &Path, tty: &str, ceiling: u64) -> String {
-    let Some(counted) = tally::read(&room.join(format!("{tty}.seen"))) else {
+    let Some(counted) = tally::read(&room.join(format!("{}.seen", inbox::file_name_of(tty)))) else {
         return catalogue::say("cli.terminal.nothing_counted_yet", &[("tty", tty)]);
     };
     let reading = fullness::measure(counted.total(), &Model::default(), ceiling);
