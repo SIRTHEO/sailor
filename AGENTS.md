@@ -108,17 +108,14 @@ Traps already paid for:
   constraint, a counter-intuitive choice, a declared limit.
 
   **Dates, "it used to do X", the story of how it went: not here.** They belong
-  in the fault ledger and in the commit message, which keep them with the real
-  author and the real date instead of a hand copy. In the code, at most a
-  pointer: `// see fault 39`.
+  in the project's own records and in the commit message, which keep them with
+  the real author and the real date instead of a hand copy. In the code, at most
+  a pointer: `// see fault 39`.
 
-  **Cap: six lines per block.** Measured 2026-09-01: 3,036 blocks, median 3
-  lines — the ordinary comment is already inside the cap and nothing changes
-  for it. What overflows is 636 blocks carrying two thirds of the 14,343
-  comment lines, the longest being 66 consecutive lines. The cap hits the tail,
-  not the habit. Shortening is not deleting: the first block trimmed was that
-  66-line one in `flow/src/subflow.rs`, five decisions already recorded
-  elsewhere plus one limit that now sits next to the function causing it.
+  **Cap: six lines per block.** The ordinary comment is already inside the cap;
+  what it hits is the tail of long narrative blocks, not the habit. Shortening
+  is not deleting: a long block usually holds decisions already recorded
+  elsewhere plus one limit that belongs next to the function causing it.
 
   The measure is `cargo test -p sailor --test comments_do_not_crowd_out_the_code`,
   and its numbers can only go down.
