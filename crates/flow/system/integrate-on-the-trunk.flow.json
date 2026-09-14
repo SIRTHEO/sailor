@@ -322,7 +322,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\nif [ \"$ALREADY\" = true ]; then\n    printf '{\"letters\":\"\",\"ran\":0,\"red\":0,\"manual\":0,\"manual_pending\":false,\"green\":true}'\n    exit 0\nfi\n# The resolver and its manifest are the trunk's: a change may not choose the gates that judge it.\nscript=$(mktemp \"${TMPDIR:-/tmp}/sailor-gates.XXXXXX\")\nmanifest=$(mktemp \"${TMPDIR:-/tmp}/sailor-manifest.XXXXXX\")\ntrap 'rm -f \"$script\" \"$manifest\"' EXIT\ngit -C \"$REPO\" show \"$TRUNK:scripts/run-gates.sh\" > \"$script\" || { echo \"the trunk $TRUNK carries no scripts/run-gates.sh\" >&2; exit 2; }\ngit -C \"$REPO\" show \"$TRUNK:docs/gates.md\" > \"$manifest\" || { echo \"the trunk $TRUNK carries no docs/gates.md\" >&2; exit 2; }\ncd \"$TREE\"\nsh \"$script\" --no-fail-fast --base \"$TRUNK\" --manifest \"$manifest\"\n",
+          "command": "set -eu\nif [ \"$ALREADY\" = true ]; then\n    printf '{\"letters\":\"\",\"ran\":0,\"red\":0,\"manual\":0,\"noted\":0,\"manual_pending\":false,\"green\":true}'\n    exit 0\nfi\n# The resolver and its manifest are the trunk's: a change may not choose the gates that judge it.\nscript=$(mktemp \"${TMPDIR:-/tmp}/sailor-gates.XXXXXX\")\nmanifest=$(mktemp \"${TMPDIR:-/tmp}/sailor-manifest.XXXXXX\")\ntrap 'rm -f \"$script\" \"$manifest\"' EXIT\ngit -C \"$REPO\" show \"$TRUNK:scripts/run-gates.sh\" > \"$script\" || { echo \"the trunk $TRUNK carries no scripts/run-gates.sh\" >&2; exit 2; }\ngit -C \"$REPO\" show \"$TRUNK:docs/gates.md\" > \"$manifest\" || { echo \"the trunk $TRUNK carries no docs/gates.md\" >&2; exit 2; }\ncd \"$TREE\"\nsh \"$script\" --no-fail-fast --base \"$TRUNK\" --manifest \"$manifest\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/answer/repo"
@@ -353,6 +353,9 @@
               "manual": {
                 "type": "number"
               },
+              "noted": {
+                "type": "number"
+              },
               "manual_pending": {
                 "type": "boolean"
               },
@@ -365,6 +368,7 @@
               "ran",
               "red",
               "manual",
+              "noted",
               "manual_pending",
               "green"
             ],

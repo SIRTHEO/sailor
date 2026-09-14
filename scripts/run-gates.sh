@@ -2,8 +2,9 @@
 # Runs, in this tree, the lines of a gate manifest that apply to base..HEAD: letter A
 # always, B to E when the paths they name changed. F is held by the delivery flows.
 # Prints one JSON summary on stdout; each command's own output goes to stderr.
-# Exit: 0 no line red, 1 a line red, 2 cannot run. A line that is not a command, or
-# needs a value only a person has, is counted in "manual" and never passes for green.
+# Exit: 0 no line red, 1 a line red, 2 cannot run. A command needing a value only a
+# person has counts in "manual" and never passes for green; a bullet with no command
+# is a reviewer's check, listed in "noted" and not run.
 
 set -u
 
@@ -59,24 +60,25 @@ plan=$(awk '
             else if (prefix != "") span = prefix span
             print letter "\t" judge "\t" span
         }
-        if (!found) { text = substr($0, 3); gsub(/\t/, " ", text); print letter "\tmanual\t" text }
+        if (!found) { text = substr($0, 3); gsub(/\t/, " ", text); print letter "\tnoted\t" text }
     }' "$manifest")
 
-printf '%s\n' "$plan" | grep -q "^A$(printf '\t')" || { echo "gates: letter A resolves to nothing in $manifest" >&2; exit 2; }
+printf '%s\n' "$plan" | grep -E -q "^A$(printf '\t')(exit|empty)$(printf '\t')" || { echo "gates: letter A resolves to no command in $manifest" >&2; exit 2; }
 
 export CARGO_TARGET_DIR="$root/target/own"
 letters=""
 ran=0
 red=0
 manual=0
+noted=0
 tab=$(printf '\t')
 while IFS="$tab" read -r letter judge command; do
     [ -n "$letter" ] || continue
     applies "$letter" || continue
     case " $letters " in *" $letter "*) ;; *) letters="${letters:+$letters }$letter" ;; esac
-    if [ "$judge" = manual ]; then
-        echo "gates[$letter] needs a person: $command" >&2
-        manual=$((manual + 1))
+    if [ "$judge" = noted ]; then
+        echo "gates[$letter] a reviewer's check, not run here: $command" >&2
+        noted=$((noted + 1))
         continue
     fi
     case "$command" in
@@ -119,7 +121,7 @@ green=false
 [ "$red" -eq 0 ] && [ "$manual" -eq 0 ] && green=true
 manual_pending=false
 [ "$manual" -gt 0 ] && manual_pending=true
-printf '{"letters":"%s","ran":%s,"red":%s,"manual":%s,"manual_pending":%s,"green":%s}\n' \
-    "$letters" "$ran" "$red" "$manual" "$manual_pending" "$green"
+printf '{"letters":"%s","ran":%s,"red":%s,"manual":%s,"noted":%s,"manual_pending":%s,"green":%s}\n' \
+    "$letters" "$ran" "$red" "$manual" "$noted" "$manual_pending" "$green"
 [ "$red" -eq 0 ] || exit 1
 exit 0

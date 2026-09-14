@@ -67,13 +67,19 @@ person. The review pins the head under `refs/sailor/reviews/` and hands the
 reviewer a locked checkout of exactly that commit; the integration refuses any
 other head, runs `scripts/run-gates.sh --no-fail-fast` on the combined tree,
 and completes only when the host reports the pull request merged. No run of
-them has touched the host yet.
+them has touched the host yet. They bootstrap in order: the integration runs
+the trunk's `scripts/run-gates.sh`, and the gate refuses a privacy script that
+differs from the trunk's, so the resolver and the privacy script with `--text`
+reach the trunk by hand before these flows can carry anything.
 
 **Not yet implemented:** checkpoint commits pinned under run-owned refs with a
 process-boundary ownership check; an acceptance journey bound to the freshly
 built candidate's own digest rather than to its commit; a review verdict bound
 to a recorded gate result rather than to the manifest's digest; ratchets
-measured by the integration flow itself.
+measured by the integration flow itself; a candidate installed into an
+isolated location before the journey — `cut-a-release` installs it into the
+live home once the release is authorized; the bullets of `gates.md` that name
+no command, which the resolver lists for the reviewer rather than runs.
 
 No dates are attached to the above: this section says what is true now, not
 when the rest lands.
