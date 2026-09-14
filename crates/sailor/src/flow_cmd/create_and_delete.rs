@@ -82,7 +82,7 @@ mod tests {
             "da-cambiare.flow.json",
             &flow_json("shell_check", "[]", "{}").replace("\"prova\"", "\"da-cambiare\""),
         );
-        let sources = flow::system::sources(&home.0, None, None);
+        let sources = flow::system::sources(Some(&home.0), None, None);
         (home, sources)
     }
 

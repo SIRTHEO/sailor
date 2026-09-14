@@ -7,15 +7,7 @@
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies};
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
-
-/// A path no real project is ever rooted at, used only when nothing declared
-/// a home: **`None` must not read as "the current directory"**, the rule
-/// `flow::workspace::find_root` already states. A bare relative `"flows"`
-/// would resolve against wherever the process happens to be launched from,
-/// which can silently pick up an unrelated directory that happens to hold
-/// one.
-const NO_HOME_DECLARED: &str = "/sailor-no-home-declared";
+use std::path::PathBuf;
 
 pub const UNUSED_ACTIONS_ACTION: &str = "unused_actions";
 
@@ -48,11 +40,7 @@ impl UnusedActionsAction {
     /// and how many did not — a flow this failed to read must not count as
     /// a flow that named nothing.
     fn referenced(&self) -> (BTreeSet<String>, usize, usize) {
-        let home = self
-            .home_flows
-            .clone()
-            .unwrap_or_else(|| Path::new(NO_HOME_DECLARED).to_path_buf());
-        let known = flow::system::load_all(&flow::system::sources_from_env(&home));
+        let known = flow::system::load_all(&flow::system::sources_from_env(self.home_flows.as_deref()));
         let unreadable = known.iter().filter(|(_, _, entry)| entry.is_err()).count();
         let names = known
             .iter()

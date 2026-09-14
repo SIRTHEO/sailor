@@ -267,8 +267,11 @@ pub type FlowRegistry = BTreeMap<String, Result<FlowFile, String>>;
 /// Every place flows are looked for, least specific first. Order is the only
 /// precedence rule: on a name clash the later source wins, so [`BUILTIN_ORIGIN`]
 /// < [`YOUR_ORIGIN`] < [`crate::workspace::ORIGIN_DECLARED`].
+///
+/// `home_flows` is `None` when no home is known, and then there is no *yours*
+/// source at all: a relative or invented folder would read somebody else's flows.
 pub fn sources(
-    home_flows: &Path,
+    home_flows: Option<&Path>,
     working: Option<&Path>,
     declared: Option<&Path>,
 ) -> Vec<FlowSource> {
@@ -286,10 +289,12 @@ pub fn sources(
         });
         return sources;
     }
-    sources.push(FlowSource {
-        origin: YOUR_ORIGIN,
-        dir: home_flows.to_path_buf(),
-    });
+    if let Some(home_flows) = home_flows {
+        sources.push(FlowSource {
+            origin: YOUR_ORIGIN,
+            dir: home_flows.to_path_buf(),
+        });
+    }
     if let Some((origin, dir)) = working.and_then(|working| project_flows(working, home_flows)) {
         sources.push(FlowSource { origin, dir });
     }
@@ -302,12 +307,12 @@ pub fn sources(
 /// itself, which is to say the declaration would declare nothing. With a marker
 /// `root.join("flows")` is the answer even when that folder does not exist: a
 /// project with no flows is honest, and empty beats somebody else's.
-fn project_flows(working: &Path, home_flows: &Path) -> Option<(&'static str, PathBuf)> {
+fn project_flows(working: &Path, home_flows: Option<&Path>) -> Option<(&'static str, PathBuf)> {
     if let Some(root) = crate::workspace::find_root(working) {
         let flows = root.join("flows");
         // Home is never also the project: counting it twice would show every
         // flow in duplicate.
-        return (flows != home_flows).then_some((crate::workspace::ORIGIN_DECLARED, flows));
+        return (Some(flows.as_path()) != home_flows).then_some((crate::workspace::ORIGIN_DECLARED, flows));
     }
     // The fallback stays: removing it would make the flows of every project
     // that has not declared itself vanish at once — this repository included,
@@ -323,10 +328,19 @@ fn project_flows(working: &Path, home_flows: &Path) -> Option<(&'static str, Pat
 /// because the `subflow` step must look for the flow it calls exactly where
 /// `sailor flow run` looks, or two machines run different flows under one name
 /// without saying so. Home stays an argument: `flow` must not need `ledger`.
-pub fn sources_from_env(home_flows: &Path) -> Vec<FlowSource> {
+pub fn sources_from_env(home_flows: Option<&Path>) -> Vec<FlowSource> {
     let declared = std::env::var_os("SAILOR_FLOWS").map(PathBuf::from);
     let working = std::env::current_dir().ok();
     sources(home_flows, working.as_deref(), declared.as_deref())
+}
+
+/// The sentence a reader needs when no home was known and nothing was declared:
+/// without it, a flow of theirs that is not found reads as a flow that is gone.
+pub fn no_home_said(sources: &[FlowSource]) -> Option<String> {
+    let looked_for_yours = sources
+        .iter()
+        .any(|source| source.origin == YOUR_ORIGIN || source.origin == DECLARED_ORIGIN);
+    (!looked_for_yours).then(|| catalogue::say("flow.sources.no_home", &[]))
 }
 
 /// The project's flows directory, found by walking up — not a luxury: a program
@@ -335,11 +349,11 @@ pub fn sources_from_env(home_flows: &Path) -> Vec<FlowSource> {
 /// user stood; measured, the window opened to work on Sailor saw none of
 /// Sailor's four flows. The directory must hold a flow, not merely be named
 /// `flows`, or an empty one stops the climb short of the real one.
-pub fn project_flows_from(working: &Path, home_flows: &Path) -> Option<PathBuf> {
+pub fn project_flows_from(working: &Path, home_flows: Option<&Path>) -> Option<PathBuf> {
     let mut here = Some(working);
     while let Some(directory) = here {
         let candidate = directory.join("flows");
-        if candidate != home_flows && holds_a_flow(&candidate) {
+        if Some(candidate.as_path()) != home_flows && holds_a_flow(&candidate) {
             return Some(candidate);
         }
         here = directory.parent();
@@ -636,7 +650,7 @@ mod tests {
     /// home must win, or "customisable" is a word with no mechanism behind it.
     #[test]
     fn the_system_source_is_the_least_specific() {
-        let places = sources(Path::new("/home/flows"), None, None);
+        let places = sources(Some(Path::new("/home/flows")), None, None);
         assert_eq!(places[0], FlowSource::builtin());
         assert_eq!(places[0].origin, "built in");
         assert_eq!(places.last().expect("at least one").origin, "yours");
@@ -647,7 +661,7 @@ mod tests {
     #[test]
     fn a_declared_folder_replaces_the_disk_but_not_the_binary() {
         let places = sources(
-            Path::new("/home/flows"),
+            Some(Path::new("/home/flows")),
             None,
             Some(Path::new("/here/the/flows")),
         );
@@ -665,7 +679,7 @@ mod tests {
         let shipped = FLOWS[0].0;
         put_flow(&home_flows, shipped);
 
-        let all = load_all(&sources(&home_flows, None, None));
+        let all = load_all(&sources(Some(&home_flows), None, None));
 
         let (_, origin, _) = all
             .iter()
@@ -694,7 +708,7 @@ mod tests {
     #[test]
     fn a_fresh_machine_still_has_the_system_flows() {
         let nowhere = std::env::temp_dir().join("sailor-home-that-never-exists");
-        let all = load_all(&sources(&nowhere.join("flows"), None, None));
+        let all = load_all(&sources(Some(&nowhere.join("flows")), None, None));
         assert_eq!(all.len(), FLOWS.len());
         assert!(all.iter().all(|(_, origin, _)| *origin == "built in"));
     }
@@ -708,7 +722,7 @@ mod tests {
         let deep = root.join("desktop").join("src-tauri");
         fs::create_dir_all(&deep).expect("subdirectory");
 
-        let found = project_flows_from(&deep, Path::new("/home/elsewhere/flows"));
+        let found = project_flows_from(&deep, Some(Path::new("/home/elsewhere/flows")));
 
         assert_eq!(found, Some(root.join("flows")));
         let _ = fs::remove_dir_all(&root);
@@ -723,7 +737,7 @@ mod tests {
         let middle = root.join("inside");
         fs::create_dir_all(middle.join("flows")).expect("empty directory named flows");
 
-        let found = project_flows_from(&middle, Path::new("/home/elsewhere/flows"));
+        let found = project_flows_from(&middle, Some(Path::new("/home/elsewhere/flows")));
 
         assert_eq!(found, Some(root.join("flows")));
         let _ = fs::remove_dir_all(&root);
@@ -737,7 +751,7 @@ mod tests {
         let home_flows = home.join("flows");
         put_flow(&home_flows, "mine");
 
-        assert_eq!(project_flows_from(&home, &home_flows), None);
+        assert_eq!(project_flows_from(&home, Some(&home_flows)), None);
         let _ = fs::remove_dir_all(&home);
     }
 
@@ -763,7 +777,7 @@ mod tests {
         let deep = project.join("crates").join("inside");
         fs::create_dir_all(&deep).expect("subdirectory");
 
-        let places = sources(Path::new("/home/flows"), Some(&deep), None);
+        let places = sources(Some(Path::new("/home/flows")), Some(&deep), None);
 
         let last = places.last().expect("at least one");
         assert_eq!(last.dir, project.join("flows"), "the declared root wins");
@@ -781,7 +795,7 @@ mod tests {
         let deep = root.join("desktop").join("src-tauri");
         fs::create_dir_all(&deep).expect("subdirectory");
 
-        let places = sources(Path::new("/home/flows"), Some(&deep), None);
+        let places = sources(Some(Path::new("/home/flows")), Some(&deep), None);
 
         let last = places.last().expect("at least one");
         assert_eq!(last.dir, root.join("flows"));

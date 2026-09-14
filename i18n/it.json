@@ -709,6 +709,7 @@
   "flow.for_each.child_failed": "l'elemento all'indice {index} di {count} è fallito: {why}",
   "flow.for_each.child_not_yet": "elemento all'indice {index} di {count}: la corsa {run_id} del flusso {flow} non è ancora finita",
   "flow.for_each.child_waiting": "elemento all'indice {index} di {count}: la corsa {run_id} del flusso {flow} è in attesa",
+  "flow.sources.no_home": "nessuna casa è nota, quindi i tuoi flussi non vengono cercati",
   "run.failure.ambiguous_reference": "questo riferimento non sta da solo nel suo oggetto",
   "run.failure.answer_not_json": "la risposta non era JSON",
   "run.failure.answer_off_shape": "la risposta non ha la forma dichiarata",

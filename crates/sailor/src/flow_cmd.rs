@@ -135,10 +135,14 @@ fn one_flow(sources: &[FlowSource], name: &str) -> Result<(FlowFile, &'static st
                 true => catalogue::say("cli.flow.none_in_sight", &[]),
                 false => names.join(", "),
             };
-            Err(catalogue::say(
+            let refusal = catalogue::say(
                 "cli.flow.no_flow_by_that_name",
                 &[("flow", name), ("names", &in_sight)],
-            ))
+            );
+            Err(match flow::system::no_home_said(sources) {
+                Some(no_home) => format!("{refusal}\n{no_home}"),
+                None => refusal,
+            })
         }
     }
 }
@@ -153,6 +157,7 @@ fn nothing_found(sources: &[FlowSource]) -> String {
             &sources
                 .iter()
                 .map(|source| format!("{}: {}", source.origin, source.dir.display()))
+                .chain(flow::system::no_home_said(sources))
                 .collect::<Vec<_>>()
                 .join("\n  "),
         )],

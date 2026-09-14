@@ -661,6 +661,7 @@ fn places(sources: &[FlowSource]) -> String {
     sources
         .iter()
         .map(|source| format!("{} ({})", source.origin, source.dir.display()))
+        .chain(system::no_home_said(sources))
         .collect::<Vec<_>>()
         .join(", ")
 }
