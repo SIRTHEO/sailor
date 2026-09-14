@@ -86,6 +86,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The battery now compiles the window's shell too, and the shell links
+      # against GTK: without these libraries `glib-sys` fails its build script
+      # and the test says the shell does not compile. Same list as the job below.
+      - name: the system libraries Tauri links against
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev
+
       - name: the Rust version the manifest declares
         # Not "the latest": the one written in `rust-version`. Building with a
         # newer one than declared means never noticing the day the code stops
