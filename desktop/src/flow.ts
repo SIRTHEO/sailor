@@ -227,6 +227,7 @@ const ACTION_KIND: Record<string, StepKind> = {
   // Readings of the ledger that write the figure back or lay a set out: the
   // store's family, as history_ask is.
   price_every_call: "deposit",
+  calls_without_cost: "deposit",
   bench_tasks: "deposit",
   run_reading: "deposit",
   subflow: "subflow",

@@ -1,6 +1,6 @@
 {
   "id": "price-every-call",
-  "description": "EVERY CALL OF THE LEDGER CARRIES AN EQUIVALENT COST, OR THE RUN IS RED. The price list pins the rules — a model the engine named, the engine's assumed model when it named none, seconds of wall time for an engine on hardware, a pinned figure for a call that left no reading, nothing for a tool or a refusal that answered nothing — and `price_every_call` writes the figure onto every row still without one, with the rule that gave it. The verdict step fails when any call stays unpriced: a sum with an unknown inside is a floor, and a floor is not the number the evaluation loop divides by. No engine is asked; the flow costs nothing and can run after every batch.",
+  "description": "EVERY CALL OF THE LEDGER CARRIES AN EQUIVALENT COST, OR THE RUN IS RED. The price list pins the rules — a model the engine named, the engine's assumed model when it named none, seconds of wall time for an engine on hardware, a pinned figure for a call that left no reading, nothing for a tool or a refusal that answered nothing — and `price_every_call` writes the figure onto every row still without one, with the rule that gave it. The verdict step fails when any call stays unpriced: a sum with an unknown inside is a floor, and a floor is not the number the evaluation loop divides by. No engine is asked; the flow costs nothing and can run after every batch. The count the verdict reads comes from a step of its own, not from the pricer's word about itself.",
   "graph": {
     "steps": [
       {
@@ -9,34 +9,65 @@
         "action": "trigger",
         "max_attempts": 1,
         "when": null,
-        "with": { "source": "manual" },
+        "with": {
+          "source": "manual"
+        },
         "input_schema": {
           "type": "object",
           "properties": {
-            "source": { "type": "string" },
-            "text": { "type": "string" },
-            "who": { "type": "string" },
-            "where": { "type": "string" }
+            "source": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "who": {
+              "type": "string"
+            },
+            "where": {
+              "type": "string"
+            }
           },
-          "required": ["source", "text"],
+          "required": [
+            "source",
+            "text"
+          ],
           "allow_extra": false
         },
         "output_schema": {
           "type": "object",
           "properties": {
-            "text": { "type": "string" },
-            "who": { "type": "string" },
-            "where": { "type": "string" },
-            "source": { "type": "string" },
-            "kind": { "type": "string" }
+            "text": {
+              "type": "string"
+            },
+            "who": {
+              "type": "string"
+            },
+            "where": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            }
           },
-          "required": ["text", "who", "where", "source", "kind"],
+          "required": [
+            "text",
+            "who",
+            "where",
+            "source",
+            "kind"
+          ],
           "allow_extra": false
         }
       },
       {
         "id": "price",
-        "deps": ["trigger"],
+        "deps": [
+          "trigger"
+        ],
         "action": "price_every_call",
         "max_attempts": 1,
         "when": null,
@@ -50,48 +81,122 @@
         "output_schema": {
           "type": "object",
           "properties": {
-            "calls": { "type": "number" },
-            "priced": { "type": "number" },
-            "priced_micros": { "type": "number" },
-            "currency": { "type": "string" },
-            "by_rule": { "type": "any" },
-            "unpriced": { "type": "number" },
-            "unpriced_calls": { "type": "array", "items": { "type": "any" } },
-            "remaining_without_cost": { "type": "number" }
+            "calls": {
+              "type": "number"
+            },
+            "priced": {
+              "type": "number"
+            },
+            "priced_micros": {
+              "type": "number"
+            },
+            "currency": {
+              "type": "string"
+            },
+            "by_rule": {
+              "type": "any"
+            },
+            "unpriced": {
+              "type": "number"
+            },
+            "unpriced_calls": {
+              "type": "array",
+              "items": {
+                "type": "any"
+              }
+            },
+            "remaining_without_cost": {
+              "type": "number"
+            }
           },
-          "required": ["calls", "priced", "unpriced", "unpriced_calls", "remaining_without_cost"],
+          "required": [
+            "calls",
+            "priced",
+            "unpriced",
+            "unpriced_calls",
+            "remaining_without_cost"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "count",
+        "deps": [
+          "price"
+        ],
+        "action": "calls_without_cost",
+        "max_attempts": 1,
+        "when": null,
+        "with": {},
+        "input_schema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "remaining": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "remaining"
+          ],
           "allow_extra": true
         }
       },
       {
         "id": "verdict",
-        "deps": ["price"],
+        "deps": [
+          "price",
+          "count"
+        ],
         "action": "shell_check",
         "max_attempts": 1,
         "when": null,
         "with": {
           "command": "[ \"$REMAINING\" = 0 ] || { echo \"$REMAINING call(s) of the ledger still carry no cost: $UNPRICED\" >&2; exit 1; }",
           "env": {
-            "REMAINING": { "$json": "/remaining_without_cost" },
-            "UNPRICED": { "$json": "/unpriced_calls" }
+            "REMAINING": {
+              "$json": "/count/remaining"
+            },
+            "UNPRICED": {
+              "$json": "/price/unpriced_calls"
+            }
           },
           "timeout_secs": 60
         },
         "input_schema": {
           "type": "object",
           "properties": {
-            "command": { "type": "string" },
-            "timeout_secs": { "type": "number" }
+            "command": {
+              "type": "string"
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
           },
-          "required": ["command", "timeout_secs"],
+          "required": [
+            "command",
+            "timeout_secs"
+          ],
           "allow_extra": true
         },
         "output_schema": {
           "type": "object",
           "properties": {
-            "status": { "type": "one_of", "values": ["passed"] }
+            "status": {
+              "type": "one_of",
+              "values": [
+                "passed"
+              ]
+            }
           },
-          "required": ["status"],
+          "required": [
+            "status"
+          ],
           "allow_extra": false
         }
       }

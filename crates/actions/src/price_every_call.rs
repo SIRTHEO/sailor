@@ -9,13 +9,49 @@ use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
 pub const PRICE_EVERY_CALL_ACTION: &str = "price_every_call";
+/// The count the verdict reads, from a step of its own: whoever prices does
+/// not also say how many are left.
+pub const CALLS_WITHOUT_COST_ACTION: &str = "calls_without_cost";
 
 const KNOWN_FIELDS: &[&str] = &["price_list"];
 
 /// Registered even without a store, so `flow check` can name the action; a
 /// run without one refuses, since there is nothing to price.
 pub fn register_price_every_call(registry: &mut flow::ActionRegistry, ledger: Option<Ledger>) {
-    registry.register(PRICE_EVERY_CALL_ACTION, PriceEveryCallAction { ledger });
+    registry.register(PRICE_EVERY_CALL_ACTION, PriceEveryCallAction { ledger: ledger.clone() });
+    registry.register(CALLS_WITHOUT_COST_ACTION, CallsWithoutCostAction { ledger });
+}
+
+struct CallsWithoutCostAction {
+    ledger: Option<Ledger>,
+}
+
+impl Action for CallsWithoutCostAction {
+    fn execute(&self, _input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
+        let Some(ledger) = &self.ledger else {
+            return Err(ActionError::new(
+                "no_store",
+                "counting the calls needs the store they are written in, and this run has none",
+            ));
+        };
+        let remaining = ledger
+            .model_calls_without_cost()
+            .map_err(|error| ActionError::new("store_failed", error.to_string()))?
+            .len();
+        Ok(ActionOutcome::Went(json!({ "remaining": remaining })))
+    }
+
+    fn may_spend(&self, _declared: Option<&Value>) -> bool {
+        false
+    }
+
+    fn species(&self) -> StepSpecies {
+        StepSpecies::Repeatable
+    }
+
+    fn redo_evidence(&self, _record: &flow::StepRecord) -> RedoEvidence {
+        RedoEvidence::TouchesNothing
+    }
 }
 
 /// At run time the input is the trigger's output too, so foreign fields are

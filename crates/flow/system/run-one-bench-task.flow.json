@@ -1,6 +1,6 @@
 {
   "id": "run-one-bench-task",
-  "description": "ONE TASK OF THE FROZEN BENCHMARK, ONE RUN OF THE FLOW UNDER MEASUREMENT, ONE VERDICT. The root step restates the item it was handed, since a child run receives its item and nothing else; a detached tree is cut at the task's base commit under target/bench/baseline; the flow under measurement runs there with the task's prompt as its whole mandate, through its own `sailor flow run`, so its run is a run of the ledger like any other; the deterministic judge reads the tree against the hidden tests; the run's equivalent cost, turns and wall time are read from the ledger; and the whole reading lands in the store under `bench-runs`. The diff the flow left is saved beside the trees before the tree is removed, so a rejected change can still be looked at. Nothing here is a verdict of an engine: the judge compiles and runs tests, and a run that never started is recorded as such rather than stopping the batch behind it.",
+  "description": "ONE TASK OF THE FROZEN BENCHMARK, ONE RUN OF THE FLOW UNDER MEASUREMENT, ONE VERDICT. The root step restates the item it was handed, since a child run receives its item and nothing else; a clone is cut at the task's base commit under target/bench/baseline with no branch, tag or reflog left in it, so the history the agent can walk ends at the base and the fix is not one `git log --all` away; the flow under measurement runs there with the task's prompt as its whole mandate, through its own `sailor flow run`, so its run is a run of the ledger like any other; the deterministic judge reads the tree against the hidden tests; the run's equivalent cost, turns and wall time are read from the ledger; and the whole reading lands in the store under `bench-runs`. The diff the flow left is saved beside the trees before the tree is removed, so a rejected change can still be looked at. Nothing here is a verdict of an engine: the judge compiles and runs tests, and a run that never started is recorded as such rather than stopping the batch behind it.",
   "graph": {
     "steps": [
       {
@@ -172,7 +172,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\nroot=\"$REPO/target/bench/baseline\"\ntree=\"$root/$TASK-$RUN\"\nmkdir -p \"$root\"\nif [ -e \"$tree\" ]; then git -C \"$REPO\" worktree remove --force \"$tree\" >/dev/null 2>&1 || rm -rf \"$tree\"; fi\ngit -C \"$REPO\" worktree prune\ngit -C \"$REPO\" worktree add --detach \"$tree\" \"$BASE\" >/dev/null 2>&1\nprintf '{\"tree\":\"%s\",\"logs\":\"%s\"}' \"$tree\" \"$root\"",
+          "command": "set -eu\nroot=\"$REPO/target/bench/baseline\"\ntree=\"$root/$TASK-$RUN\"\nmkdir -p \"$root\"\nrm -rf \"$tree\"\ngit clone -q --shared --no-checkout \"$REPO\" \"$tree\"\ngit -C \"$tree\" checkout -q --detach \"$BASE\"\ngit -C \"$tree\" for-each-ref --format='%(refname)' | while IFS= read -r ref; do git -C \"$tree\" update-ref -d \"$ref\"; done\ngit -C \"$tree\" remote remove origin >/dev/null 2>&1 || true\ngit -C \"$tree\" reflog expire --expire=now --all\nprintf '{\"tree\":\"%s\",\"logs\":\"%s\"}' \"$tree\" \"$root\"",
           "env": {
             "REPO": {
               "$from": "/answer/repo"
@@ -571,7 +571,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\ngit -C \"$TREE\" add --intent-to-add -A >/dev/null 2>&1 || true\ngit -C \"$TREE\" diff \"$BASE\" > \"$LOGS/$TASK-$RUN.diff\" || true\ngit -C \"$REPO\" worktree remove --force \"$TREE\" >/dev/null 2>&1 || rm -rf \"$TREE\"\ngit -C \"$REPO\" worktree prune",
+          "command": "set -eu\ngit -C \"$TREE\" add --intent-to-add -A >/dev/null 2>&1 || true\ngit -C \"$TREE\" diff \"$BASE\" > \"$LOGS/$TASK-$RUN.diff\" || true\nrm -rf \"$TREE\"",
           "env": {
             "REPO": {
               "$from": "/item/answer/repo"

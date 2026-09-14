@@ -123,6 +123,39 @@ pub fn diff_touches_test_attributes(diff: &str) -> bool {
         })
 }
 
+/// The files a unified diff creates: those whose old side is `/dev/null`.
+pub fn new_files_in_diff(diff: &str) -> Vec<String> {
+    let mut created = Vec::new();
+    let mut lines = diff.lines().peekable();
+    while let Some(line) = lines.next() {
+        if line.starts_with("--- /dev/null") {
+            if let Some(path) = lines.peek().and_then(|next| next.strip_prefix("+++ b/")) {
+                created.push(path.trim().to_owned());
+            }
+        }
+    }
+    created
+}
+
+/// The same diff with the blocks of the given files taken out, so a rule can
+/// be asked of what a change did to files that already existed.
+pub fn diff_without_files(diff: &str, files: &[String]) -> String {
+    let mut kept = String::new();
+    let mut skipping = false;
+    for line in diff.lines() {
+        if line.starts_with("diff --git ") {
+            skipping = files
+                .iter()
+                .any(|file| line.ends_with(&format!(" b/{file}")));
+        }
+        if !skipping {
+            kept.push_str(line);
+            kept.push('\n');
+        }
+    }
+    kept
+}
+
 /// The number of `+` lines of a diff, its headers left out.
 pub fn added_lines(diff: &str) -> u64 {
     diff.lines()
@@ -151,6 +184,17 @@ mod tests {
         assert!(!diff_touches_test_attributes(plain));
         assert_eq!(files_in_diff(plain), vec!["crates/x/src/lib.rs"]);
         assert_eq!(added_lines(plain), 1);
+    }
+
+    #[test]
+    fn a_created_file_is_told_from_a_changed_one_and_its_block_can_be_taken_out() {
+        let diff = "diff --git a/src/lib.rs b/src/lib.rs\n--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -1 +1,2 @@\n fn a() {}\n+fn b() {}\ndiff --git a/tests/new.rs b/tests/new.rs\nnew file mode 100644\n--- /dev/null\n+++ b/tests/new.rs\n@@ -0,0 +1,2 @@\n+#[test]\n+fn c() {}\n";
+        assert_eq!(new_files_in_diff(diff), vec!["tests/new.rs"]);
+        let without = diff_without_files(diff, &["tests/new.rs".to_owned()]);
+        assert!(without.contains("+fn b() {}"));
+        assert!(!without.contains("tests/new.rs"));
+        assert!(!diff_touches_test_attributes(&without));
+        assert!(diff_touches_test_attributes(diff));
     }
 
     #[test]

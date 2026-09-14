@@ -509,7 +509,12 @@ pub fn equivalent_cost(facts: &CallFacts<'_>, list: &PriceList) -> Priced {
                 return unpriced(Rule::Unpriced);
             }
         }
-        if named.is_none() {
+        // A name the list does not carry wants an entry, not a flat figure:
+        // pricing it as unread would hide exactly the repair it asks for.
+        if named.is_some() {
+            return unpriced(Rule::Unpriced);
+        }
+        {
             if let Some(entry) = engine
                 .and_then(|rules| rules.assumed_model.as_deref())
                 .and_then(|name| list.find(name))
@@ -669,6 +674,20 @@ mod equivalent {
         let priced = equivalent_cost(&without, &list());
         assert_eq!(priced.rule, Rule::MixedModelsPricedAsFirst);
         assert_eq!(priced.cost_micros, Some(1_000_000));
+    }
+
+    #[test]
+    fn a_named_model_the_list_does_not_carry_stays_unpriced_instead_of_taking_a_flat_figure() {
+        let priced = equivalent_cost(
+            &CallFacts {
+                cli: "engine-a",
+                model: Some("model-nobody-listed"),
+                counts: tokens(10, 10),
+                ..CallFacts::default()
+            },
+            &list(),
+        );
+        assert_eq!((priced.rule, priced.cost_micros), (Rule::Unpriced, None));
     }
 
     #[test]

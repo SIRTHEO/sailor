@@ -1,6 +1,6 @@
 {
   "id": "build-the-bench",
-  "description": "THE FROZEN BENCHMARK IS CUT FROM THE REPOSITORY'S OWN FIX COMMITS, AND NO ENGINE IS ASKED. One reading of git: every commit since a date whose subject starts with «fix» and which touched both a test file and a file that is not one, newest first and at most «limit» of them. One child run per candidate, through «validate-a-bench-task»: the hidden test is run on the base and on the fix, three times each, and the task is written only when it was red every time before and green every time after; a candidate turned down is an answer with its reason, not a failure, so the list is walked to its end. One reading of the set back from disk, hashed over the sorted id, base, fix and command of every validated task, and one line in the store under «bench-sets», keyed by the set's name, so a run of the benchmark can say which set it measured. WHERE THE THREE NUMBERS COME FROM. The candidates step reads «since», «limit» and «set» from its own `with`; the trigger's text, when a launch gives one, is a JSON object of the same fields plus «repo» and wins over them — `sailor flow run build-the-bench '{\"repo\": \"/a/checkout\", \"since\": \"2026-09-05\", \"limit\": 40}'`. Without a text the repository is the run's root. THE BUILD DIRECTORY is `target/bench` inside the repository, and one validation runs at a time on it: a shared machine gets two build jobs, and a run waiting for the lock does not spend its own timeout waiting.",
+  "description": "THE FROZEN BENCHMARK IS CUT FROM THE REPOSITORY'S OWN FIX COMMITS, AND NO ENGINE IS ASKED. One reading of git: every commit since a date whose subject starts with «fix» and which touched both a test file and a file that is not one, newest first and at most «limit» of them. One child run per candidate, through «validate-a-bench-task»: the hidden test is run on the base and on the fix, three times each, and the task is written only when it was red every time before and green every time after; a candidate turned down is an answer with its reason, not a failure, so the list is walked to its end. One reading of the set back from disk, hashed over the sorted id, base, fix and command of every validated task, and one line in the store under «bench-sets», keyed by the set's name, so a run of the benchmark can say which set it measured. WHERE THE THREE NUMBERS COME FROM. The candidates step reads «since», «limit» and «set» from its own `with`; the trigger's text, when a launch gives one, is a JSON object of the same fields plus «repo» and wins over them — `sailor flow run build-the-bench '{\"repo\": \"/a/checkout\", \"since\": \"2026-09-05\", \"limit\": 40}'`. Without a text the repository is the run's root. THE BUILD DIRECTORY is `target/bench` inside the repository, and one validation runs at a time on it: a shared machine gets two build jobs, and a run waiting for the lock does not spend its own timeout waiting. The set is frozen only above a floor of twelve validated tasks, the mandate's stage one: a run that validated fewer ends red instead of freezing a set nobody asked for.",
   "graph": {
     "steps": [
       {
@@ -275,9 +275,60 @@
         }
       },
       {
-        "id": "record",
+        "id": "floor",
         "deps": [
           "freeze"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "[ \"$N\" -ge \"$FLOOR\" ] || { echo \"the set holds $N validated task(s), under the floor of $FLOOR: nothing is frozen\" >&2; exit 1; }",
+          "env": {
+            "N": {
+              "$json": "/n"
+            },
+            "FLOOR": "12"
+          },
+          "timeout_secs": 60
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "command",
+            "timeout_secs"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "passed"
+              ]
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "record",
+        "deps": [
+          "freeze",
+          "floor"
         ],
         "action": "store_write",
         "max_attempts": 1,
@@ -285,20 +336,20 @@
         "with": {
           "collection": "bench-sets",
           "key": {
-            "$from": "/set"
+            "$from": "/freeze/set"
           },
           "value": {
             "set": {
-              "$from": "/set"
+              "$from": "/freeze/set"
             },
             "hash": {
-              "$from": "/hash"
+              "$from": "/freeze/hash"
             },
             "ids": {
-              "$from": "/ids"
+              "$from": "/freeze/ids"
             },
             "n": {
-              "$from": "/n"
+              "$from": "/freeze/n"
             }
           },
           "written_by": "build-the-bench"

@@ -6,8 +6,8 @@
 
 use flow::system::{load_all, FlowSource};
 use flow::{
-    ActionRegistry, Clock, ExecutionRequest, Executor, FlowError, FlowFile, InMemoryRecordStore,
-    InProcessExecutor, Outcome, SharedState,
+    ActionRegistry, Clock, ExecutionRequest, Executor, FlowError, FlowFile, Graph, InMemoryRecordStore,
+    InProcessExecutor, Outcome, SharedState, Step,
 };
 use serde_json::json;
 use std::path::{Path, PathBuf};
@@ -143,6 +143,17 @@ fn a_run_over_a_repository_with_one_fix_writes_one_task_and_records_the_set() {
     let (registry, ledger) = registry(&scratch);
 
     let flow = shipped(PARENT);
+    // The shipped floor is twelve tasks; this repository has one fix, so the
+    // floor is lowered to one and the rest of the flow runs unchanged.
+    let mut steps: Vec<Step> = flow.graph.steps().to_vec();
+    for step in &mut steps {
+        if step.id == "floor" {
+            let mut with = step.with.clone().expect("the floor step has a with");
+            with["env"]["FLOOR"] = json!("1");
+            step.with = Some(with);
+        }
+    }
+    let graph = Graph::new(steps).expect("the graph stays valid with a floor of one");
     let mut root_inputs = flow.inputs.clone();
     root_inputs.get_mut("trigger").expect("the trigger's input")["text"] = json!({
         "repo": repo.display().to_string(),
@@ -157,7 +168,7 @@ fn a_run_over_a_repository_with_one_fix_writes_one_task_and_records_the_set() {
     let store = InMemoryRecordStore::default();
     let execution = InProcessExecutor
         .execute(
-            &flow.graph,
+            &graph,
             ExecutionRequest {
                 holder: None,
                 run_id: "bench-run".to_owned(),

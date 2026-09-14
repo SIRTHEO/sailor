@@ -314,6 +314,7 @@ mod tests {
             actions::store::STORE_SELECT_ACTION,
             actions::bench::judge::JUDGE_CHANGE_ACTION,
             actions::price_every_call::PRICE_EVERY_CALL_ACTION,
+            actions::price_every_call::CALLS_WITHOUT_COST_ACTION,
             actions::bench::runs::BENCH_TASKS_ACTION,
             actions::bench::runs::RUN_READING_ACTION,
             actions::bench::candidates::BENCH_CANDIDATES_ACTION,

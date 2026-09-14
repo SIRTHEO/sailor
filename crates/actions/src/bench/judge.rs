@@ -4,7 +4,8 @@
 //! noise, where the change landed — is recorded as debt and decides nothing.
 
 use crate::bench::task::{
-    added_lines, diff_touches_test_attributes, files_in_diff, is_test_path, Task,
+    added_lines, diff_touches_test_attributes, diff_without_files, files_in_diff, is_test_path,
+    new_files_in_diff, Task,
 };
 use crate::process::{run_with_timeout, RunOutcome};
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies};
@@ -157,6 +158,11 @@ struct Reading {
     hidden_tests_passed: bool,
     touches_tests: bool,
     touched_test_files: Vec<String>,
+    /// The test files the change created rather than edited, and the verdict
+    /// the change would get if creating a test were no retreat: recorded so
+    /// the two readings can be compared, while `accepted` keeps the strict one.
+    new_test_files: Vec<String>,
+    accepted_if_new_tests_allowed: bool,
     changed_files: Vec<String>,
     gold_files: Vec<String>,
     overlap: Vec<String>,
@@ -509,6 +515,16 @@ fn judge(asked: &Asked) -> Result<Reading, ActionError> {
         .cloned()
         .collect();
     let touches_tests = !touched_test_files.is_empty() || diff_touches_test_attributes(&diff);
+    let created = new_files_in_diff(&diff);
+    let new_test_files: Vec<String> = touched_test_files
+        .iter()
+        .filter(|file| created.contains(file))
+        .cloned()
+        .collect();
+    let touches_existing_tests = touched_test_files
+        .iter()
+        .any(|file| !created.contains(file))
+        || diff_touches_test_attributes(&diff_without_files(&diff, &new_test_files));
 
     let hidden = run_hidden_tests(asked)?;
 
@@ -544,8 +560,12 @@ fn judge(asked: &Asked) -> Result<Reading, ActionError> {
     };
 
     let accepted = hidden.compiles && hidden.applied && hidden.passed && !touches_tests;
+    let accepted_if_new_tests_allowed =
+        hidden.compiles && hidden.applied && hidden.passed && !touches_existing_tests;
     let mut reading = Reading {
         accepted,
+        accepted_if_new_tests_allowed,
+        new_test_files,
         false_done: asked.run_status.as_deref() == Some(A_RUN_THAT_SAID_DONE) && !accepted,
         failure_class: "",
         compiles: hidden.compiles,
@@ -749,6 +769,24 @@ mod tests {
             .iter()
             .filter_map(Value::as_str)
             .collect()
+    }
+
+    /// Red first with `touches_existing_tests` read off `touches_tests`.
+    #[test]
+    fn a_new_test_file_is_a_retreat_for_the_verdict_and_not_for_the_lenient_reading() {
+        let fixture = Fixture::new("new-test-file");
+        fixture.write("src/lib.rs", LIB_RIGHT);
+        fixture.write("tests/added.rs", "#[test]\nfn added() {}\n");
+        let reading = fixture.judge(json!({"run_status": "complete"}));
+        assert_eq!(reading["accepted"], false, "{reading}");
+        assert_eq!(reading["failure_class"], "validation_retreat");
+        assert_eq!(strings(&reading["new_test_files"]), ["tests/added.rs"]);
+        assert_eq!(reading["accepted_if_new_tests_allowed"], true, "{reading}");
+
+        fixture.reset();
+        fixture.write("src/lib.rs", &format!("{LIB_RIGHT}\n#[cfg(test)]\nmod tests {{}}\n"));
+        let reading = fixture.judge(json!({"run_status": "complete"}));
+        assert_eq!(reading["accepted_if_new_tests_allowed"], false, "a test attribute in an existing file: {reading}");
     }
 
     /// Red first with the loop over the task's commands cut to the first one.
