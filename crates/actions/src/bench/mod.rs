@@ -2,5 +2,6 @@
 //! fix commits, and the deterministic judge that accepts or rejects a change
 //! made against one of them.
 
+pub mod judge;
 pub mod runs;
 pub mod task;

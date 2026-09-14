@@ -197,6 +197,7 @@ pub fn registry_in(
     actions::terminals::register_terminals(&mut registry, in_store(sessions::SESSIONS_FILE));
     actions::session_fill::register_measure(&mut registry);
     actions::mandate::register_mandate(&mut registry);
+    actions::bench::judge::register_judge(&mut registry);
     // A flow that runs another one. Registered **even without a ledger**, for
     // the reason declared above: `flow check` must be able to say a `subflow`
     // step names a real action without opening anything. Running without one
@@ -310,6 +311,7 @@ mod tests {
             actions::memory::MEMORY_REPLACE_ACTION,
             actions::store::STORE_WRITE_IF_ABSENT_ACTION,
             actions::store::STORE_SELECT_ACTION,
+            actions::bench::judge::JUDGE_CHANGE_ACTION,
         ] {
             assert!(
                 registry.get(wanted).is_some(),
