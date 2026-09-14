@@ -764,8 +764,10 @@ mod tests {
         );
     }
 
+    /// Every commit carries its own author: a runner has none to guess.
     fn git(root: &Path, args: &[&str]) {
-        let done = Command::new("git").arg("-C").arg(root).args(args).output().expect("git");
+        let who = ["-c", "user.name=a", "-c", "user.email=a@b"];
+        let done = Command::new("git").arg("-C").arg(root).args(who).args(args).output().expect("git");
         assert!(done.status.success(), "{args:?}: {}", String::from_utf8_lossy(&done.stderr));
     }
 
@@ -784,10 +786,7 @@ mod tests {
             std::fs::write(&path, text).expect("the file");
             git(&root, &["add", relative]);
         }
-        let who = ["-c", "user.name=a", "-c", "user.email=a@b"];
-        let mut commit = who.to_vec();
-        commit.extend(["commit", "--quiet", "-m", "first"]);
-        git(&root, &commit);
+        git(&root, &["commit", "--quiet", "-m", "first"]);
         (root, scratch.join("measured"))
     }
 
