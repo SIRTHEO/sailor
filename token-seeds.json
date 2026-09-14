@@ -6,6 +6,11 @@
       "runs_measured": 0,
       "words_it_sends": 0
     },
+    "build-the-bench": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
+    },
     "close-the-work": {
       "tokens_a_run": 0,
       "runs_measured": 0,
@@ -107,6 +112,11 @@
       "words_it_sends": 2828
     },
     "take-the-next-work": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
+    },
+    "validate-a-bench-task": {
       "tokens_a_run": 0,
       "runs_measured": 0,
       "words_it_sends": 0

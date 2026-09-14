@@ -1,0 +1,358 @@
+{
+  "id": "build-the-bench",
+  "description": "THE FROZEN BENCHMARK IS CUT FROM THE REPOSITORY'S OWN FIX COMMITS, AND NO ENGINE IS ASKED. One reading of git: every commit since a date whose subject starts with «fix» and which touched both a test file and a file that is not one, newest first and at most «limit» of them. One child run per candidate, through «validate-a-bench-task»: the hidden test is run on the base and on the fix, three times each, and the task is written only when it was red every time before and green every time after; a candidate turned down is an answer with its reason, not a failure, so the list is walked to its end. One reading of the set back from disk, hashed over the sorted id, base, fix and command of every validated task, and one line in the store under «bench-sets», keyed by the set's name, so a run of the benchmark can say which set it measured. WHERE THE THREE NUMBERS COME FROM. The candidates step reads «since», «limit» and «set» from its own `with`; the trigger's text, when a launch gives one, is a JSON object of the same fields plus «repo» and wins over them — `sailor flow run build-the-bench '{\"repo\": \"/a/checkout\", \"since\": \"2026-09-05\", \"limit\": 40}'`. Without a text the repository is the run's root. THE BUILD DIRECTORY is `target/bench` inside the repository, and one validation runs at a time on it: a shared machine gets two build jobs, and a run waiting for the lock does not spend its own timeout waiting.",
+  "graph": {
+    "steps": [
+      {
+        "id": "trigger",
+        "deps": [],
+        "action": "trigger",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "source": "manual"
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "who": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "text"
+          ],
+          "allow_extra": false
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "who": {
+              "type": "string"
+            },
+            "where": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "text",
+            "who",
+            "source",
+            "kind"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "candidates",
+        "deps": [
+          "trigger"
+        ],
+        "action": "bench_candidates",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "since": "2026-08-20",
+          "limit": 200,
+          "set": "stage-1"
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "since": {
+              "type": "string"
+            },
+            "limit": {
+              "type": "number"
+            },
+            "set": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "since",
+            "limit",
+            "set"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "repo": {
+              "type": "string"
+            },
+            "since": {
+              "type": "string"
+            },
+            "limit": {
+              "type": "number"
+            },
+            "set": {
+              "type": "string"
+            },
+            "scanned": {
+              "type": "number"
+            },
+            "candidates": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "repo": {
+                    "type": "string"
+                  },
+                  "set": {
+                    "type": "string"
+                  },
+                  "fix_commit": {
+                    "type": "string"
+                  },
+                  "base_commit": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "test_files": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "other_files": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "fault": {
+                    "type": "any"
+                  },
+                  "home": {
+                    "type": "any"
+                  }
+                },
+                "required": [
+                  "repo",
+                  "set",
+                  "fix_commit",
+                  "base_commit",
+                  "subject",
+                  "test_files",
+                  "other_files"
+                ],
+                "allow_extra": true
+              }
+            }
+          },
+          "required": [
+            "repo",
+            "set",
+            "scanned",
+            "candidates"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "validate_each",
+        "deps": [
+          "candidates"
+        ],
+        "action": "for_each",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "flow": "validate-a-bench-task",
+          "items": {
+            "$from": "/candidates"
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "flow": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "flow"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "any"
+            },
+            "runs": {
+              "type": "any"
+            }
+          },
+          "required": [
+            "items",
+            "runs"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "freeze",
+        "deps": [
+          "candidates",
+          "validate_each"
+        ],
+        "action": "bench_freeze",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "set": {
+            "$from": "/candidates/set"
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "set": {
+              "type": "any"
+            }
+          },
+          "required": [
+            "set"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "set": {
+              "type": "string"
+            },
+            "n": {
+              "type": "number"
+            },
+            "tasks": {
+              "type": "number"
+            },
+            "ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "hash": {
+              "type": "string"
+            },
+            "unvalidated": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "set",
+            "n",
+            "ids",
+            "hash"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "record",
+        "deps": [
+          "freeze"
+        ],
+        "action": "store_write",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "collection": "bench-sets",
+          "key": {
+            "$from": "/set"
+          },
+          "value": {
+            "set": {
+              "$from": "/set"
+            },
+            "hash": {
+              "$from": "/hash"
+            },
+            "ids": {
+              "$from": "/ids"
+            },
+            "n": {
+              "$from": "/n"
+            }
+          },
+          "written_by": "build-the-bench"
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "collection": {
+              "type": "string"
+            },
+            "key": {
+              "type": "any"
+            },
+            "written_by": {
+              "type": "string"
+            },
+            "value": {
+              "type": "any"
+            }
+          },
+          "required": [
+            "collection",
+            "key",
+            "value",
+            "written_by"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "collection": {
+              "type": "string"
+            },
+            "key": {
+              "type": "string"
+            },
+            "written_at": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "collection",
+            "key"
+          ],
+          "allow_extra": true
+        }
+      }
+    ]
+  },
+  "inputs": {
+    "trigger": {
+      "text": "",
+      "who": ""
+    }
+  }
+}
