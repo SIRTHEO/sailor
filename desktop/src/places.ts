@@ -37,9 +37,12 @@ export const MACHINE_GROUND = t("window.ground.machine");
 export const TERMINALS_GROUND = t("window.ground.terminals");
 
 /**
- * **WHAT THE WINDOW IS FOR**: to understand why a thing was done as it was, on
- * which engine, at what cost. `board`, `changes` and `sketch` are absent on
- * purpose — they answer about one tree, and hang under it.
+ * **THREE VOICES, THE OWNER'S OWN, 14/09**: «tre voci». `board`, `changes`
+ * and `sketch` were already absent — they answer about one tree, and hang
+ * under it. `memory` ("Why") is the fourth cut: it stayed a `Section`
+ * (`SECTIONS` below, and `setPlace("memory")` still routes to it) but left
+ * this list. It is reached from the run that generated it — `RunGlimpse`'s
+ * own "Why" link — not scanned for on the first screen a person opens.
  */
 export const PLACES: Place[] = [
   {
@@ -57,18 +60,28 @@ export const PLACES: Place[] = [
     group: "work",
   },
   {
-    id: "memory",
-    name: "Why",
-    glyph: "\u25f7",
-    asks: "why each thing was done as it was, what it cost, and the store under it",
-    group: "what happened",
-  },
-  {
     id: "sailor",
     name: MACHINE_GROUND,
     glyph: "\u2693",
     asks: "what is set up here, the same wherever you stand",
     group: "itself",
+  },
+];
+
+/**
+ * A place with no row in `PLACES` and no strip of its own: found by name, in
+ * the palette, or by the run that explains it (`RunGlimpse`'s "Why" link) —
+ * never by scanning a list on the first screen. Kept as `Place[]` and not
+ * folded into `PLACES` so `nameOfPlace` and the "go to" palette entries still
+ * find it, without the primary navigation growing back to four.
+ */
+export const SECOND_LEVEL: Place[] = [
+  {
+    id: "memory",
+    name: "Why",
+    glyph: "◷",
+    asks: "why each thing was done as it was, what it cost, and the store under it",
+    group: "what happened",
   },
 ];
 
@@ -175,7 +188,7 @@ export const BESIDE_WHAT_THEY_ARE_ABOUT: Place[] = [
 /** **A PLACE OUTSIDE THE LIST IS STILL A PLACE**: built from the fixed list
  * alone, the palette left out the three used while working in a tree. */
 export function onItsOwnName(): Place[] {
-  return [...PLACES, ...BESIDE_WHAT_THEY_ARE_ABOUT, ...UNDER_THE_TREE];
+  return [...PLACES, ...SECOND_LEVEL, ...BESIDE_WHAT_THEY_ARE_ABOUT, ...UNDER_THE_TREE];
 }
 
 /** Out of `PLACES` because their answer changes with the tree: a fixed row
