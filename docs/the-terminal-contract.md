@@ -27,7 +27,7 @@ the owner works in today.
 ## The names, and why they are in English
 
 They are identifiers — the compiler reads them and `invoke(...)` writes them —
-so English, as `AGENTS.md` says. What a person reads stays Italian.
+so English, as `AGENTS.md` says. So is what a person reads (ADR-007).
 
 ## The commands the bridge exposes
 

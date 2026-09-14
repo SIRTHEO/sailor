@@ -15,10 +15,31 @@ pub struct Secret {
 }
 
 /// The shapes a key or token is known to take, wherever they sit.
-const TOKEN_PREFIXES: &[&str] = &["sk-", "ghp_", "gho_", "github_pat_", "xoxb-", "xoxp-", "AKIA", "AIza"];
+const TOKEN_PREFIXES: &[&str] = &["sk-", "ghp_", "gho_", "github_pat_", "xoxb-", "xoxp-", "AKIA", "AIza", "HRKU-", "sk_live_", "rk_live_"];
 
-/// The head of a private key in the armour every tool writes it in.
-const PEM_HEADER: &str = "-----BEGIN";
+/// The head of a private key in the armour every tool writes it in:
+/// `-----BEGIN `, upper-case words each followed by one space, `PRIVATE KEY`,
+/// an optional ` BLOCK` as PGP writes it, `-----`.
+const PEM_OPENING: &str = "-----BEGIN ";
+const PEM_PRIVATE_KEY_CLOSINGS: &[&str] = &["PRIVATE KEY-----", "PRIVATE KEY BLOCK-----"];
+
+/// A whole header and no body, so a truncated key is still refused, while a
+/// pattern that only names the armour is not.
+fn holds_a_private_key_header(value: &str) -> bool {
+    value.match_indices(PEM_OPENING).any(|(at, _)| {
+        let mut rest = &value[at + PEM_OPENING.len()..];
+        loop {
+            if PEM_PRIVATE_KEY_CLOSINGS.iter().any(|closing| rest.starts_with(closing)) {
+                return true;
+            }
+            let word = rest.bytes().take_while(u8::is_ascii_uppercase).count();
+            if word == 0 || rest.as_bytes().get(word) != Some(&b' ') {
+                return false;
+            }
+            rest = &rest[word + 1..];
+        }
+    })
+}
 
 /// How much must follow a prefix before a word is a key and not a word that
 /// begins the same way. Without it `task-force` reads as an `sk-` token.
@@ -30,21 +51,47 @@ const CREDENTIAL_WORDS: &[&str] = &["key", "token", "secret", "password", "passw
 /// A token anywhere in the text, not only at its start: a key pasted into a
 /// sentence a step sends is a key that has left the machine.
 fn looks_like_a_token(value: &str) -> bool {
-    if value.contains(PEM_HEADER) {
+    if holds_a_private_key_header(value) {
         return true;
     }
     value
         .split(|letter: char| letter.is_whitespace() || "\"'=,;:()[]{}".contains(letter))
         .any(|word| {
-            TOKEN_PREFIXES.iter().any(|prefix| {
-                word.starts_with(prefix) && word.len() >= prefix.len() + HOW_LONG_A_TOKEN_RUNS
-            })
+            word.char_indices()
+                .filter(|&(at, _)| {
+                    word[..at].chars().next_back().is_none_or(|before| !before.is_ascii_alphanumeric())
+                })
+                .any(|(at, _)| {
+                    let rest = &word[at..];
+                    TOKEN_PREFIXES.iter().any(|prefix| {
+                        rest.strip_prefix(prefix).is_some_and(|body| {
+                            body.bytes()
+                                .take_while(|byte| byte.is_ascii_alphanumeric() || *byte == b'_' || *byte == b'-')
+                                .count()
+                                >= HOW_LONG_A_TOKEN_RUNS
+                        })
+                    })
+                })
         })
 }
+
+/// The top-level fields an action declares as a plain identifier, whatever
+/// their name says: the name rule yields to them, the shape rule never does.
+const IDENTIFIERS_NAMED_LIKE_A_CREDENTIAL: &[(&str, &str)] = &[
+    (actions::store::STORE_WRITE_ACTION, "key"),
+    (actions::store::STORE_WRITE_IF_ABSENT_ACTION, "key"),
+    (actions::store::STORE_READ_ACTION, "key"),
+];
 
 fn names_a_credential(key: &str) -> bool {
     let lower = key.to_lowercase();
     CREDENTIAL_WORDS.iter().any(|word| lower.contains(word))
+}
+
+fn declared_an_identifier(action: Option<&str>, path: &str, key: &str) -> bool {
+    let at_the_root = path == "with" || path == "inputs";
+    at_the_root
+        && action.is_some_and(|action| IDENTIFIERS_NAMED_LIKE_A_CREDENTIAL.contains(&(action, key)))
 }
 
 /// The secrets a flow carries: an `env` block with a literal value, a key
@@ -57,15 +104,21 @@ pub fn secrets_in(flow: &Value) -> Vec<Secret> {
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
+    let action_of = |id: &str| {
+        steps
+            .iter()
+            .find(|step| step.get("id").and_then(Value::as_str) == Some(id))
+            .and_then(|step| step.get("action").and_then(Value::as_str))
+    };
     for step in &steps {
-        let id = step.get("id").and_then(Value::as_str).unwrap_or("?").to_owned();
+        let id = step.get("id").and_then(Value::as_str).unwrap_or("?");
         if let Some(with) = step.get("with") {
-            walk(with, &id, "with", &mut found);
+            walk(with, id, action_of(id), "with", &mut found);
         }
     }
     if let Some(Value::Object(inputs)) = flow.get("inputs") {
         for (step, input) in inputs {
-            walk(input, step, "inputs", &mut found);
+            walk(input, step, action_of(step), "inputs", &mut found);
         }
     }
     found
@@ -73,41 +126,116 @@ pub fn secrets_in(flow: &Value) -> Vec<Secret> {
 
 /// Why this string must not be published, if it must not: one reason and not
 /// three, because a value reported once per rule reads as three secrets.
-fn why_a_literal_stays_home(key: &str, text: &str, in_env: bool) -> Option<String> {
+fn why_a_literal_stays_home(key: &str, text: &str, in_env: bool, identifier: bool) -> Option<String> {
     if text.is_empty() || key.starts_with('$') {
         return None;
     }
     if in_env {
         Some(catalogue::say("cli.flow.publish_why_a_literal_in_env", &[]))
-    } else if names_a_credential(key) {
+    } else if names_a_credential(key) && !identifier {
         Some(catalogue::say("cli.flow.publish_why_the_name_says_credential", &[]))
-    } else if looks_like_a_token(text) {
+    } else if looks_like_a_token(text) || (identifier && looks_opaque(text)) {
         Some(catalogue::say("cli.flow.publish_why_the_shape_is_a_token", &[]))
     } else {
         None
     }
 }
 
-fn walk(value: &Value, step: &str, path: &str, found: &mut Vec<Secret>) {
+/// How long a piece of an identifier must run before its randomness makes it
+/// a credential rather than a word.
+const HOW_LONG_AN_OPAQUE_PIECE_RUNS: usize = 16;
+
+/// Bits per character above which a long piece reads as random, not written.
+const HOW_RANDOM_AN_OPAQUE_PIECE_IS: f64 = 3.5;
+
+/// A credential with no known prefix: a long alphanumeric run that is not all
+/// digits and is as random as a key. Judged only where the name rule yielded,
+/// so ordinary text never meets it.
+fn looks_opaque(value: &str) -> bool {
+    if reads_as_a_row_name(value) {
+        return false;
+    }
+    let an_opaque_piece = |piece: &str| {
+        piece.len() >= HOW_LONG_AN_OPAQUE_PIECE_RUNS
+            && !piece.bytes().all(|byte| byte.is_ascii_digit())
+            && (bits_per_character(piece) >= HOW_RANDOM_AN_OPAQUE_PIECE_IS
+                || piece.bytes().all(|byte| byte.is_ascii_hexdigit()))
+    };
+    looks_like_base64(value) || value.split(|letter: char| !letter.is_ascii_alphanumeric()).any(an_opaque_piece)
+}
+
+/// The longest lowercase word a row name carries; a longer run is a token.
+const HOW_LONG_A_ROW_NAME_WORD_RUNS: usize = 20;
+
+/// Lowercase words of one to 20 letters, and numeric run ids,
+/// joined by single `/`, `-` or `_`. A word that is all hex from 16 letters is
+/// a key, not a word; a digit-only piece stays a run id at any length.
+fn reads_as_a_row_name(value: &str) -> bool {
+    value.split(['/', '-', '_']).all(|piece| {
+        let a_run_id = !piece.is_empty() && piece.bytes().all(|byte| byte.is_ascii_digit());
+        let a_word = !piece.is_empty()
+            && piece.len() <= HOW_LONG_A_ROW_NAME_WORD_RUNS
+            && piece.bytes().all(|byte| byte.is_ascii_lowercase())
+            && !(piece.len() >= HOW_LONG_AN_OPAQUE_PIECE_RUNS && piece.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        a_run_id || a_word
+    })
+}
+
+/// How long a whole value in the base64 alphabet must run to be judged whole.
+const HOW_LONG_A_BASE64_RUNS: usize = 24;
+
+/// Bits per character above which a whole base64-alphabet value reads as random.
+const HOW_RANDOM_A_BASE64_VALUE_IS: f64 = 4.0;
+
+/// Judged whole before any split, because `+ / - _` would cut a key, standard
+/// or URL-safe, into pieces too short to look random.
+fn looks_like_base64(value: &str) -> bool {
+    let body = value.trim_end_matches('=');
+    let in_the_alphabet = body
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || b"+/-_".contains(&byte));
+    value.len() - body.len() <= 2
+        && body.len() >= HOW_LONG_A_BASE64_RUNS
+        && in_the_alphabet
+        && bits_per_character(body) >= HOW_RANDOM_A_BASE64_VALUE_IS
+}
+
+fn bits_per_character(piece: &str) -> f64 {
+    let mut counts = std::collections::HashMap::new();
+    for letter in piece.chars() {
+        *counts.entry(letter).or_insert(0usize) += 1;
+    }
+    let length = piece.chars().count() as f64;
+    counts
+        .values()
+        .map(|&count| {
+            let share = count as f64 / length;
+            -share * share.log2()
+        })
+        .sum()
+}
+
+fn walk(value: &Value, step: &str, action: Option<&str>, path: &str, found: &mut Vec<Secret>) {
     match value {
         Value::Object(fields) => {
             let in_env = path == "with.env" || path.ends_with(".env");
             for (key, inner) in fields {
                 let here = format!("{path}.{key}");
                 if let Value::String(text) = inner {
-                    if let Some(why) = why_a_literal_stays_home(key, text, in_env) {
+                    let identifier = declared_an_identifier(action, path, key);
+                    if let Some(why) = why_a_literal_stays_home(key, text, in_env, identifier) {
                         found.push(Secret { step: step.to_owned(), key: here, why });
                     }
                     // The string is judged; walking into it would judge it a
                     // second time under the other rule.
                     continue;
                 }
-                walk(inner, step, &here, found);
+                walk(inner, step, action, &here, found);
             }
         }
         Value::Array(items) => {
             for (index, inner) in items.iter().enumerate() {
-                walk(inner, step, &format!("{path}[{index}]"), found);
+                walk(inner, step, action, &format!("{path}[{index}]"), found);
             }
         }
         Value::String(text) if looks_like_a_token(text) => found.push(Secret {
@@ -377,6 +505,146 @@ mod tests {
         assert_eq!(secrets_in(&named)[0].key, "with.api_token");
         let harmless = json!({"id": "x", "graph": {"steps": [{"id": "s", "with": {"stdin": "count the keys of the map"}}]}});
         assert!(secrets_in(&harmless).is_empty());
+        let patterns = json!({"id": "x", "graph": {"steps": [{"id": "s", "with": {
+            "command": "grep -E 'sk-ant-[A-Za-z0-9_-]{24,}|github_pat_[A-Za-z0-9_]{30,}|github_pat_\\w+|ghp_\\w+|sk-ant-\\S+' flows"
+        }}]}});
+        assert!(secrets_in(&patterns).is_empty(), "{:?}", secrets_in(&patterns));
+        let in_stdin = |text: &str| json!({"id": "x", "graph": {"steps": [{"id": "s", "with": {"stdin": text}}]}});
+        // Split because the publication scan refuses a whole header outside test paths.
+        let refused = [
+            concat!("-----BEGIN RSA PRIVATE", " KEY-----"),
+            concat!("-----BEGIN PRIVATE", " KEY-----"),
+            concat!("-----BEGIN OPENSSH PRIVATE", " KEY-----"),
+            concat!("-----BEGIN PGP PRIVATE", " KEY BLOCK-----"),
+        ];
+        let accepted = [
+            "-----BEGIN CERTIFICATE-----",
+            "grep -E '-----BEGIN (RSA |EC )?PRIVATE KEY|-----BEGIN [A-Z ]+' flows",
+        ];
+        let misjudged: Vec<&str> = refused
+            .into_iter()
+            .filter(|text| secrets_in(&in_stdin(text)).len() != 1)
+            .chain(accepted.into_iter().filter(|text| !secrets_in(&in_stdin(text)).is_empty()))
+            .collect();
+        assert!(misjudged.is_empty(), "misjudged: {misjudged:?}");
+    }
+
+    fn one_step(action: &str, with: Value) -> Value {
+        json!({"id": "x", "graph": {"steps": [{"id": "s", "action": action, "with": with}]}, "inputs": {}})
+    }
+
+    #[test]
+    fn a_store_row_named_in_key_is_not_a_secret() {
+        let written = one_step(
+            "store_write",
+            json!({"collection": "c", "key": "fault-card-from-a-note", "value": 1, "written_by": "w"}),
+        );
+        assert!(secrets_in(&written).is_empty(), "{:?}", secrets_in(&written));
+
+        let with_a_run_id = one_step(
+            "store_write",
+            json!({"collection": "c", "key": "take-the-next-work-1789118850025316000", "value": 1, "written_by": "w"}),
+        );
+        assert!(secrets_in(&with_a_run_id).is_empty(), "{:?}", secrets_in(&with_a_run_id));
+
+        let with_a_path = one_step(
+            "store_read",
+            json!({"collection": "c", "key": "cards/Surface/warm/palette/print/back"}),
+        );
+        assert!(secrets_in(&with_a_path).is_empty(), "{:?}", secrets_in(&with_a_path));
+
+        let with_long_words = one_step(
+            "store_read",
+            json!({"collection": "c", "key": "abcdefghijklmnopqrst/uvwxyzabcdefghijklmn"}),
+        );
+        assert!(secrets_in(&with_long_words).is_empty(), "{:?}", secrets_in(&with_long_words));
+
+        let through_inputs = json!({
+            "id": "x",
+            "graph": {"steps": [{"id": "read", "action": "store_read"}]},
+            "inputs": {"read": {"collection": "c", "key": "fault-card-from-a-note"}}
+        });
+        assert!(secrets_in(&through_inputs).is_empty(), "{:?}", secrets_in(&through_inputs));
+    }
+
+    #[test]
+    fn a_credential_name_holding_a_token_shape_is_refused() {
+        let flow = one_step("external_engine", json!({"api_key": "sk-abcdefghijklmnopqrstuv"}));
+        let found = secrets_in(&flow);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].key, "with.api_key");
+        assert_eq!(found[0].why, catalogue::say("cli.flow.publish_why_the_name_says_credential", &[]));
+    }
+
+    #[test]
+    fn an_opaque_credential_under_a_store_key_is_refused() {
+        let flow = one_step(
+            "store_write",
+            json!({"collection": "c", "key": "Q7vX2mK9pL4wR8tN1cZ6yB3hJ5dF0gS2aE7uW9qT", "value": 1, "written_by": "w"}),
+        );
+        let found = secrets_in(&flow);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].key, "with.key");
+
+        let in_base64 = one_step(
+            "store_write",
+            json!({"collection": "c", "key": "Q7vX2mK9pL4w+R8tN1cZ6yB3h/J5dF0gS2aE7uW9/qT6rH1kP8vL3cN=", "value": 1, "written_by": "w"}),
+        );
+        let found = secrets_in(&in_base64);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].key, "with.key");
+
+        let in_url_safe_base64 = one_step(
+            "store_write",
+            json!({"collection": "c", "key": "Q7vX2mK9pL4w-R8tN1cZ6yB3h_J5dF0gS2aE7uW9_qT6rH1kP8vL3cN=", "value": 1, "written_by": "w"}),
+        );
+        let found = secrets_in(&in_url_safe_base64);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].key, "with.key");
+
+        let shaped_like_a_row_name = [
+            "deadbeefcafebabefacedeadbeefcafebabefade",
+            "-ghp_abcdefghijklmnop",
+            "notes-ghp_abcdefghijklmnop",
+            "-abcdefghijklmnopqrst",
+            "qzvtkmxwrplbjhdnfgcsyaeoiuwmzxkq",
+            "HRKU-4594b794-0c94-416b-a374-bb33a025411f",
+            "sk_live_zzzzyyyyxxxxwwww",
+            "rk_live_zzzzyyyyxxxxwwww",
+        ];
+        let published: Vec<&str> = shaped_like_a_row_name
+            .into_iter()
+            .filter(|key| {
+                secrets_in(&one_step(
+                    "store_write",
+                    json!({"collection": "c", "key": key, "value": 1, "written_by": "w"}),
+                ))
+                .len()
+                    != 1
+            })
+            .collect();
+        assert!(published.is_empty(), "published: {published:?}");
+    }
+
+    #[test]
+    fn a_token_shape_under_a_store_key_is_still_refused() {
+        let flow = one_step(
+            "store_write",
+            json!({"collection": "c", "key": "ghp_abcdefghijklmnopqrst", "value": 1, "written_by": "w"}),
+        );
+        let found = secrets_in(&flow);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].key, "with.key");
+        assert_eq!(found[0].why, catalogue::say("cli.flow.publish_why_the_shape_is_a_token", &[]));
+    }
+
+    #[test]
+    fn a_key_outside_the_store_actions_is_judged_by_its_name() {
+        let flow = one_step("external_engine", json!({"key": "some-literal"}));
+        let found = secrets_in(&flow);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].key, "with.key");
+        assert_eq!(found[0].why, catalogue::say("cli.flow.publish_why_the_name_says_credential", &[]));
     }
 
     #[test]

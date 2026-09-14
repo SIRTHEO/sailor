@@ -1260,7 +1260,7 @@ mod tests {
     /// **THE NAME SAYS WHAT TELLS IT APART.** This one and its sister above
     /// were both called `a_call`, born on two branches; git merged them without
     /// a word — no line in common — and `cargo` refused the tree. Fault 36 of
-    /// `docs/faults-encountered.md` repeating: a boundary drawn on files does
+    /// the fault store repeating: a boundary drawn on files does
     /// not see names living in the same module.
     fn a_call_named(call_id: &str, cost: Option<i64>) -> ledger::ModelCallRecord {
         ledger::ModelCallRecord {

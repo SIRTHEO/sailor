@@ -71,17 +71,55 @@ const ASK_FAILURES: &[&str] = &[
 /// talks over standard input and standard output is a child process: whoever
 /// declares it writes the same three things that live in a `.mcp.json`.
 #[derive(Debug, Clone, Deserialize)]
-struct ServerSpec {
-    command: String,
+pub struct ServerSpec {
+    pub command: String,
     #[serde(default)]
-    args: Vec<String>,
+    pub args: Vec<String>,
     #[serde(default)]
-    env: BTreeMap<String, String>,
+    pub env: BTreeMap<String, String>,
     /// Which directory to start it from. A server that indexes code often
     /// looks at the current directory, and leaving it as that of whoever runs
     /// the flow means not knowing which project it is talking about.
     #[serde(default)]
-    cwd: Option<String>,
+    pub cwd: Option<String>,
+}
+
+/// What one question to a server, asked outside any flow, came back as. The
+/// same five facts the nodes keep apart, for a gesture that has no step.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Asked {
+    Unreachable(String),
+    NotOffered(String),
+    CouldNotLook(String),
+    Unanswered(String),
+    Said { text: String, refused: bool },
+}
+
+/// Opens a conversation, proves the tool is offered, asks once, and closes.
+pub fn ask_once(server: &ServerSpec, tool: &str, arguments: &Value, limit: Duration) -> Asked {
+    let mut session = match Session::open(server, limit) {
+        Ok(session) => session,
+        Err(why) => return Asked::Unreachable(why),
+    };
+    let checked = preflight(&mut session, tool, &[]);
+    if checked.status != "ready" {
+        let said = with_stderr(&checked.said, &session.close());
+        return match checked.status {
+            "unreachable" => Asked::Unreachable(said),
+            "tool_not_offered" => Asked::NotOffered(said),
+            _ => Asked::CouldNotLook(said),
+        };
+    }
+    if let Err(why) = session.say(&call_request(ERRAND_ID, tool, arguments)) {
+        return Asked::Unreachable(why);
+    }
+    let answers = session.listen_for(&[ERRAND_ID]);
+    let answer = read_answer(answers.get(&ERRAND_ID));
+    let stderr = session.close();
+    match answer {
+        Answer::Unanswered(why) => Asked::Unanswered(with_stderr(&why, &stderr)),
+        Answer::Said { text, refused } => Asked::Said { text, refused },
+    }
 }
 
 /// A preliminary check: a question to the server, and what it must answer.

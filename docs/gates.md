@@ -13,7 +13,7 @@ suffixed `_TODAY` upward, comment ratios and long blocks downward.
 
 - `cargo test -p sailor -j 1 --test the_battery_does_not_shrink_in_silence --test comments_do_not_crowd_out_the_code --test the_fault_table_holds_together`
 - `cargo test -p sailor -j 1 --test the_words_a_user_reads_are_in_english --test a_product_name_in_prose_only_ever_falls --test identifiers_are_in_english`
-- `cargo test -p sailor -j 1 --test no_engine_is_named_in_the_code --test no_product_home_is_written_into_the_code --test nothing_reserved_is_tracked --test the_repository_ships_no_workshop_flow --test no_push_publishes_a_private_name`
+- `cargo test -p sailor -j 1 --test no_engine_is_named_in_the_code --test no_product_home_is_written_into_the_code --test nothing_reserved_is_tracked --test the_repository_ships_no_workshop_flow --test no_push_publishes_a_private_name --test the_publication_boundary_holds`
 - `cargo clippy -p <every crate touched> --tests -j 1` — clean
 - `git log main..HEAD --format=%B | grep -E '^(Co-Authored-By|Claude-Session):'` — empty
 - Commits by path, project voice, no model named, no private names in fixtures

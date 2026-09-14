@@ -5,6 +5,7 @@
 //! which targets exist, how a stamp is read, when a service is busy — are in
 //! the `release` library, where they can be tested without changing the world.
 
+use crate::release_candidate;
 use profiles::{known_clis, HomeMechanism};
 use release::{read_stamp, readiness, target, target_names, Service, Target};
 use std::env;
@@ -24,6 +25,10 @@ struct Options {
     /// Release from HEAD while the tree carries uncommitted work, having been
     /// told what stays behind.
     even_if_dirty: bool,
+    /// Build and install without the trunk push, and without its preflight.
+    no_push: bool,
+    /// Build this commit instead of HEAD; only with `no_push`.
+    candidate: Option<String>,
     wait_secs: u64,
 }
 
@@ -102,7 +107,7 @@ pub fn run(args: &[String]) -> i32 {
 /// `release::TARGETS`, and whoever types a wrong name hears it from
 /// `target_names()` with today's table rather than an older one.
 pub const USAGE: &[crate::Form] = &[crate::Form {
-    form: "sailor release <target> [--dry-run] [--skip-tests] [--even-if-dirty] [--wait-secs N]",
+    form: "sailor release <target> [--dry-run] [--skip-tests] [--even-if-dirty] [--no-push [--candidate <sha>]] [--wait-secs N]",
     says_key: "",
 }];
 
@@ -121,12 +126,20 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
     let mut dry_run = false;
     let mut skip_tests = false;
     let mut even_if_dirty = false;
+    let mut no_push = false;
+    let mut candidate = None;
     let mut wait_secs = 600;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--dry-run" => dry_run = true,
             "--skip-tests" => skip_tests = true,
             "--even-if-dirty" => even_if_dirty = true,
+            "--no-push" => no_push = true,
+            "--candidate" => {
+                candidate = Some(args.next().ok_or_else(|| {
+                    catalogue::say("cli.option_wants_a_value", &[("option", "--candidate")])
+                })?);
+            }
             "--wait-secs" => {
                 let value = args.next().ok_or_else(|| {
                     catalogue::say("cli.option_wants_a_value", &[("option", "--wait-secs")])
@@ -138,11 +151,16 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
             _ => return Err(catalogue::say("cli.unknown_option", &[("option", &arg)])),
         }
     }
+    if candidate.is_some() && !no_push {
+        return Err(catalogue::say("cli.release.candidate_wants_no_push", &[]));
+    }
     Ok(Options {
         target_name,
         dry_run,
         skip_tests,
         even_if_dirty,
+        no_push,
+        candidate,
         wait_secs,
     })
 }
@@ -151,13 +169,27 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     let root = sources_root()?;
     let head_rev = git_text(&root, &["rev-parse", "HEAD"])?;
     let head_short = git_text(&root, &["rev-parse", "--short", "HEAD"])?;
-    let tree_rev = git_text(&root, &["rev-parse", "HEAD^{tree}"])?;
-    let push = publication_preflight(&root)?;
+    let push = if options.no_push {
+        None
+    } else {
+        Some(publication_preflight(&root)?)
+    };
+    let candidate = match &options.candidate {
+        Some(asked) => Some(release_candidate::resolve(&root, asked)?),
+        None => None,
+    };
+    let (built_rev, built_short) = match &candidate {
+        Some(chosen) => (chosen.revision.clone(), chosen.short.clone()),
+        None => (head_rev.clone(), head_short.clone()),
+    };
+    let tree_rev = git_text(&root, &["rev-parse", &format!("{built_rev}^{{tree}}")])?;
     // The parts the target is made of, not `crates/` alone: the window is half
     // a page, and a stamp read over the engine only would name a commit that
     // changed nothing inside it.
     let parts = release::parts_of(selected);
-    let source_rev = {
+    let source_rev = if candidate.is_some() {
+        built_rev.clone()
+    } else {
         let mut ask = vec!["log", "-1", "--format=%H", "--"];
         ask.extend(parts.iter().copied());
         let revision = git_text(&root, &ask)?;
@@ -187,24 +219,38 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     }
 
     let temporary = make_temporary_tree()?;
-    println!(
-        "{}",
-        catalogue::say(
-            "cli.release.cloning_head",
-            &[("head", &head_short), ("root", &root.display().to_string())],
-        )
-    );
-    let repository = release_tree(&root)?;
-    git_success(
-        Command::new("git")
-            .arg("-C")
-            .arg(&repository)
-            .args(["checkout", "--quiet"])
-            .arg(&head_rev),
-        &catalogue::say("cli.release.checkout_failed", &[]),
-    )?;
-
-    let build_target = root.join("target/from-head");
+    let (repository, build_target) = match &candidate {
+        Some(chosen) => {
+            println!(
+                "{}",
+                catalogue::say(
+                    "cli.release.cloning_candidate",
+                    &[("candidate", &chosen.short), ("root", &root.display().to_string())],
+                )
+            );
+            let place = release_candidate::check_out(&root, chosen)?;
+            (place.tree, place.build)
+        }
+        None => {
+            println!(
+                "{}",
+                catalogue::say(
+                    "cli.release.cloning_head",
+                    &[("head", &head_short), ("root", &root.display().to_string())],
+                )
+            );
+            let repository = release_tree(&root)?;
+            git_success(
+                Command::new("git")
+                    .arg("-C")
+                    .arg(&repository)
+                    .args(["checkout", "--quiet"])
+                    .arg(&head_rev),
+                &catalogue::say("cli.release.checkout_failed", &[]),
+            )?;
+            (repository, root.join("target/from-head"))
+        }
+    };
     crate::machine_cmd::a_build_directory_is_taken(&build_target, None, "release");
     // The crates sit at the root of the tree since the move: there is no
     // sub-tree left to build from.
@@ -287,6 +333,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         &temporary.path,
         &profile_variables,
         terminal::scratch::ROOT_VARIABLE,
+        Some(release::NAMES_CARRIED_BY_THE_PREFLIGHT),
     );
     for (number, manifest_rel) in judges.iter().enumerate() {
         println!(
@@ -373,24 +420,33 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     let live = root.join(selected.live_rel);
     let stamp = home.join(selected.stamp_rel);
     let stamp_to_read = stamp.clone();
-    if live.is_file() && files_equal(&fresh, &live)? {
+    let safe = home.join(selected.safe_rel);
+    // A candidate's proof is the copy in service, so only that copy matching
+    // the build lets it skip the install.
+    let already_in_service = live.is_file()
+        && files_equal(&fresh, &live)?
+        && (candidate.is_none() || (safe.is_file() && files_equal(&fresh, &safe)?));
+    if already_in_service {
         println!(
             "{}",
-            catalogue::say("cli.release.nothing_to_do", &[("head", &head_short)])
+            catalogue::say("cli.release.nothing_to_do", &[("head", &built_short)])
         );
         if !options.dry_run {
-            write_stamp(&stamp, &source_rev, &head_short);
+            write_stamp(&stamp, &source_rev, &built_short);
+            if let Some(chosen) = &candidate {
+                release_candidate::record_what_was_installed(chosen, &fresh, &safe, &stamp)?;
+            }
             // **THE SAME REPORT ON THE PATH THAT DOES NOTHING**, which is the
             // one a release lands on most days: «nothing to do» while an older
             // copy answers to the name is the whole fault, said reassuringly.
-            let seen = say_what_the_name_finds(selected, &home.join(selected.safe_rel));
-            say_whether_pushed(&root, &push);
+            let seen = say_what_the_name_finds(selected, &safe);
+            say_whether_pushed(&root, push.as_ref(), &built_short);
             return Ok(release::ends_with(&seen));
         }
         return Ok(0);
     }
 
-    print_changes(&root, &stamp_to_read, &head_rev, &head_short, &parts)?;
+    print_changes(&root, &stamp_to_read, &built_rev, &built_short, &parts)?;
     if options.dry_run {
         println!("{}", catalogue::say("cli.release.dry_run", &[]));
         return Ok(0);
@@ -411,10 +467,9 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     atomic_copy(&fresh, &live)?;
     println!(
         "   {}",
-        catalogue::say("cli.release.in_service", &[("head", &head_short)])
+        catalogue::say("cli.release.in_service", &[("head", &built_short)])
     );
 
-    let safe = home.join(selected.safe_rel);
     match atomic_copy(&fresh, &safe) {
         Ok(()) => println!(
             "   {}",
@@ -429,9 +484,12 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         }
     }
 
-    write_stamp(&stamp, &source_rev, &head_short);
+    write_stamp(&stamp, &source_rev, &built_short);
+    if let Some(chosen) = &candidate {
+        release_candidate::record_what_was_installed(chosen, &fresh, &safe, &stamp)?;
+    }
     let seen = say_what_the_name_finds(selected, &safe);
-    say_whether_pushed(&root, &push);
+    say_whether_pushed(&root, push.as_ref(), &built_short);
 
     if let Some(service) = selected.service {
         // The service runs every 90 seconds: between the first check and this
@@ -540,7 +598,7 @@ fn git_failure_report(output: &Output) -> String {
     catalogue::say("cli.release.git_command_failed", &[])
 }
 
-fn git_text(root: &Path, args: &[&str]) -> Result<String, String> {
+pub(crate) fn git_text(root: &Path, args: &[&str]) -> Result<String, String> {
     let output = git_output(root, args)?;
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
@@ -556,7 +614,7 @@ fn command_success(command: &mut Command, context: &str) -> Result<(), String> {
     }
 }
 
-fn git_success(command: &mut Command, context: &str) -> Result<(), String> {
+pub(crate) fn git_success(command: &mut Command, context: &str) -> Result<(), String> {
     let output = command.output().map_err(|_| context.to_owned())?;
     if output.status.success() {
         Ok(())
@@ -590,7 +648,7 @@ fn release_tree(root: &Path) -> Result<PathBuf, String> {
     Ok(tree)
 }
 
-fn clone_repository(root: &Path, repository: &Path) -> Result<(), String> {
+pub(crate) fn clone_repository(root: &Path, repository: &Path) -> Result<(), String> {
     let first = Command::new("git")
         .args(["clone", "--local", "--quiet"])
         .arg(root)
@@ -1239,8 +1297,14 @@ fn preflight_message(why: toolbox::privacy::PublicationPreflight) -> String {
     }
 }
 
-fn say_whether_pushed(root: &Path, plan: &toolbox::privacy::PushPlan) {
-    println!("   {}", push_report(&push_the_trunk(root, plan)));
+fn say_whether_pushed(root: &Path, plan: Option<&toolbox::privacy::PushPlan>, built: &str) {
+    match plan {
+        Some(plan) => println!("   {}", push_report(&push_the_trunk(root, plan))),
+        None => println!(
+            "   {}",
+            catalogue::say("cli.release.not_pushed_by_request", &[("commit", built)])
+        ),
+    }
 }
 
 fn push_report(attempt: &PushAttempt) -> String {

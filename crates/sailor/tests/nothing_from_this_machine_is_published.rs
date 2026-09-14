@@ -212,15 +212,16 @@ fn the_names_this_machine_declares_private_appear_nowhere() {
     // `toolbox::privacy`, the same place the command that writes a fault reads
     // them: two readers of one list drift, and the drift shows up as a gate
     // that passes what the store already took.
+    let carried_by = std::env::var("SAILOR_PRIVATE_NAMES_CARRIED_BY").ok();
     let Some(list) = toolbox::privacy::where_the_names_are(
         std::env::var("SAILOR_PRIVATE_NAMES").ok(),
         std::env::var("HOME").ok(),
     ) else {
-        println!("unarmed: nothing says where the private names are");
+        stand_aside_or_block(carried_by, "nothing says where the private names are");
         return;
     };
     let Ok(text) = std::fs::read_to_string(&list) else {
-        println!("unarmed: no private-names list at {}", list.display());
+        stand_aside_or_block(carried_by, &format!("no private-names list at {}", list.display()));
         return;
     };
     let names = toolbox::privacy::names_in(&text);
@@ -241,6 +242,37 @@ fn the_names_this_machine_declares_private_appear_nowhere() {
             hits.join(", ")
         );
     }
+}
+
+/// **A LIST THAT IS NOT THERE IS NOT A CLEAN TREE.** Where no list can reach,
+/// only a declaration naming the check that carries the names on this exact
+/// commit lets the judge stand aside; anything else blocks.
+fn stand_aside_or_block(carried_by: Option<String>, why: &str) {
+    match names_left_unmeasured(carried_by, why) {
+        Ok(declared) => workspace::measured_nothing(&declared),
+        Err(blocked) => panic!("{blocked}"),
+    }
+}
+
+fn names_left_unmeasured(carried_by: Option<String>, why: &str) -> Result<String, String> {
+    match carried_by.filter(|check| !check.trim().is_empty()) {
+        Some(check) => Ok(format!(
+            "names: not measured here ({why}); the required check «{check}» carries them on this exact commit"
+        )),
+        None => Err(format!(
+            "names: not measured ({why}). Declare the list (an empty file declares that this \
+             machine keeps no private name), or run where a trusted check on this exact commit carries it"
+        )),
+    }
+}
+
+#[test]
+fn a_missing_list_blocks_unless_a_named_check_carries_the_names() {
+    assert!(names_left_unmeasured(None, "no list").is_err());
+    assert!(names_left_unmeasured(Some("  ".to_owned()), "no list").is_err());
+    let declared = names_left_unmeasured(Some("sailor/private-names".to_owned()), "no list")
+        .expect("a named check carries the names");
+    assert!(declared.contains("not measured") && declared.contains("sailor/private-names"));
 }
 
 /// **A COUNT IS NOT A COVERAGE.** «More than a hundred files» stayed true while

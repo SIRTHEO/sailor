@@ -8,6 +8,8 @@ import { useCallback, useEffect, useState } from "react";
 import { engines, type Engine, type Engines } from "./engines";
 import { openTerminal, pressKeys } from "./terminal";
 import { BORN_COLS, BORN_ROWS } from "./TerminalPane";
+import { labStatus } from "./lab";
+import { LabEngineRow, type LabAsk } from "./LabEngineRow";
 
 type Ask = { state: "asking" } | { state: "asked"; value: Engines } | { state: "mute"; why: string };
 
@@ -43,6 +45,7 @@ interface EnginesScreenProps {
 
 export function EnginesScreen({ native, onTerminalOpened }: EnginesScreenProps) {
   const [ask, setAsk] = useState<Ask>({ state: "asking" });
+  const [labAsk, setLabAsk] = useState<LabAsk>({ state: "asking" });
   const [busy, setBusy] = useState<string | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
 
@@ -56,8 +59,13 @@ export function EnginesScreen({ native, onTerminalOpened }: EnginesScreenProps) 
   useEffect(() => {
     if (!native) {
       setAsk({ state: "mute", why: "outside the desktop shell there is no machine to look at" });
+      setLabAsk({ state: "mute", why: "outside the desktop shell there is no lab to ask" });
       return;
     }
+    labStatus().then(
+      (value) => setLabAsk(value === null ? { state: "mute", why: "never read yet" } : { state: "asked", value }),
+      (error) => setLabAsk({ state: "mute", why: String(error) }),
+    );
     read();
   }, [native, read]);
 
@@ -208,6 +216,7 @@ export function EnginesScreen({ native, onTerminalOpened }: EnginesScreenProps) 
           </div>
         </section>
       ))}
+      <LabEngineRow ask={labAsk} />
     </div>
   );
 }

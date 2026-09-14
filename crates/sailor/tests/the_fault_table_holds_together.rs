@@ -1,16 +1,10 @@
-//! The fault table holds together on its own: numbers with no holes and no
-//! duplicates, every entry complete, and the counts written in prose equal to
-//! the real ones.
+//! The public fault page holds together on its own: numbers ascending and
+//! unique, four full columns per row, every row still open, and the count
+//! written under the table equal to the rows above it.
 //!
-//! **WHY IT EXISTS, AND WHY IT IS NOT FUSSINESS.** Two sessions wrote into the
-//! file in the same minute and **two fault 27s and two fault 28s** were born:
-//! four rows, two numbers. Nobody noticed, because a document has no compiler.
-//! And the prose counts were wrong **in four places out of four**: a number
-//! copied by hand diverges, and this table is the source all four claimed to
-//! come from. Here the number is obtained by counting, and the prose must say
-//! the same.
+//! The full register lives in Sailor's store; this page is rendered from it by
+//! `sailor faults render --open`, and a hand edit that breaks it is red here.
 
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 fn repository_root() -> PathBuf {
@@ -21,6 +15,9 @@ fn repository_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// The columns the page declares: number, since, what goes wrong, status.
+const COLUMNS: usize = 4;
+
 struct Fault {
     number: usize,
     cells: Vec<String>,
@@ -28,38 +25,21 @@ struct Fault {
 }
 
 impl Fault {
-    /// A fault counts as open until the repair it declares is done.
-    ///
-    /// **«CLOSED IN PART» IS OPEN, AND THE COUNT MUST SAY SO.** A middle state
-    /// tells which half is done; it does not take a row out of the tally. A
-    /// reader of «eleven open» believes eleven remain, when twelve do, and the
-    /// direction of that error is never random — it is always the reassuring
-    /// one, which is why the rule lives here and not in the head of whoever
-    /// updates the prose. The reading itself lives in the crate: a second copy
-    /// of it here would drift from the one the store counts with.
+    /// «Closed in part» is open: the reading lives in the crate, and a second
+    /// copy here would drift from the one the store counts with.
     fn still_open(&self) -> bool {
         self.standing.still_open()
     }
 }
 
-/// The register as the repository carries it.
-fn register() -> String {
+fn page() -> String {
     let path = repository_root().join("docs/faults-encountered.md");
     std::fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("reading {}: {error}", path.display()))
 }
 
-/// The rows of the table, read from the document.
-///
-/// **THIS READING IS BLIND TO A BLANK LINE INSIDE THE TABLE**, worth knowing
-/// before trusting what this test claims. It skips every line not starting with
-/// `|`, so a hole between the rows fells nothing: the faults above and below
-/// stay correctly numbered and the table goes on «holding together». Closing
-/// that gap means to stop filtering and measure the block instead: from the
-/// first line starting with `|` to the last, every line between must be a row.
-/// The columns the header declares: number, date, three questions, standing.
-const COLUMNS: usize = 6;
-
+/// The rows of the table: every line starting with `|` whose first cell is a
+/// number. Header and rule are skipped because their first cell is not one.
 fn faults_in(text: &str) -> Vec<Fault> {
     text.lines()
         .filter_map(|line| {
@@ -76,12 +56,6 @@ fn faults_in(text: &str) -> Vec<Fault> {
             let status = cells.last().cloned().unwrap_or_default();
             Some(Fault {
                 number,
-                // **ONE READING, AND IT LIVES IN THE CRATE.** This test kept
-                // its own — `contains` against the crate's `starts_with` — and
-                // two hand-written readings of one column drift apart: fault 57
-                // between a test and the thing it tests. It asks instead, and
-                // in exchange it guards what the crate cannot guard alone: that
-                // **no row comes out unrecognised**.
                 standing: faults::standing_of(&status),
                 cells,
             })
@@ -90,60 +64,50 @@ fn faults_in(text: &str) -> Vec<Fault> {
 }
 
 fn faults() -> Vec<Fault> {
-    let rows = faults_in(&register());
-    workspace::measured(rows.len(), "rows of the fault table read");
+    let rows = faults_in(&page());
+    workspace::measured(rows.len(), "rows of the public fault page read");
     rows
 }
 
-/// Three rows in the shape the register writes them, one per standing.
+/// Rows in the shape the page writes them, one per standing.
 ///
-/// **A JUDGE OF THE READING MUST NOT DEPEND ON THE DAY'S REGISTER.** Against
-/// the real file the reading is measured on whatever rows happen to be there,
-/// and the day no row is closed in part the check measures nothing while
-/// staying green.
+/// **A JUDGE OF THE READING MUST NOT DEPEND ON THE DAY'S PAGE**: the day no
+/// row is closed in part, a check against the real file measures nothing.
 const A_TABLE_OF_THREE: &str = "\
-| # | date | what happened | how it showed | what would have prevented it | status |
-|---|---|---|---|---|---|
-| 1 | 01/09 | a step called a failure a success | reading the ledger by hand | a non-zero exit breaks the step | **open** |
-| 2 | 02/09 | a drawing painted in the colour behind it | a picture of the screen | the screen as an oracle | **closed** on 03/09 |
-| 3 | 03/09 | a count that reassured instead of measuring | counting the rows by hand | this table | **closed in part** on 04/09, the measure still to make |
+| # | since | what goes wrong | status |
+|---|---|---|---|
+| 1 | 01/09 | a step called a failure a success | **open** |
+| 2 | 02/09 | a drawing painted in the colour behind it | **closed** on 03/09 |
+| 3 | 03/09 | a count that reassured instead of measuring | **closed in part** on 04/09, the measure still to make |
 ";
 
-/// No repeated number, no hole: the test that would have caught the collision.
+/// The page may describe no fault, the day no open one has a summary, but it
+/// keeps the table the render writes into.
 #[test]
-fn every_fault_has_its_own_number_and_none_is_missing() {
-    let faults = faults();
-    assert!(faults.len() >= 25, "the table emptied: {}", faults.len());
-
-    let mut seen: BTreeMap<usize, usize> = BTreeMap::new();
-    for fault in &faults {
-        *seen.entry(fault.number).or_default() += 1;
-    }
-
-    let twice: Vec<usize> = seen
-        .iter()
-        .filter(|(_, count)| **count > 1)
-        .map(|(number, _)| *number)
-        .collect();
+fn the_page_keeps_its_table_even_with_no_row_on_it() {
+    let text = page();
     assert!(
-        twice.is_empty(),
-        "two different faults carry the same number: {twice:?}. It happens when \
-         two sessions write into the file in the same minute, and nobody notices"
-    );
-
-    let missing: Vec<usize> = (1..=faults.len())
-        .filter(|n| !seen.contains_key(n))
-        .collect();
-    assert!(
-        missing.is_empty(),
-        "numbers skipped: {missing:?}. A hole means a row was taken out without \
-         renumbering, and the references other documents make point at nothing"
+        text.lines().any(|line| line.trim() == faults::PUBLIC_HEADER),
+        "the header of the table is gone, so the next render has nowhere to put \
+         its rows and appends them to the end of the page"
     );
 }
 
-/// **The document has no door to refuse at, so it is guarded here.** The store
-/// turns away a status the count cannot read; a markdown table takes anything
-/// typed into it, and an unreadable status leaves the open tally in silence.
+#[test]
+fn the_numbers_ascend_and_none_repeats() {
+    let numbers: Vec<usize> = faults().iter().map(|fault| fault.number).collect();
+    let out_of_order: Vec<(usize, usize)> = numbers
+        .windows(2)
+        .filter(|pair| pair[0] >= pair[1])
+        .map(|pair| (pair[0], pair[1]))
+        .collect();
+    assert!(
+        out_of_order.is_empty(),
+        "the numbers must be strictly ascending, and these pairs are not: \
+         {out_of_order:?}. A repeated number is two faults under one name"
+    );
+}
+
 /// How many columns a Markdown reader sees: a `|` splits, `\|` does not.
 fn columns_a_reader_sees(row: &str) -> usize {
     let mut bars: usize = 0;
@@ -160,43 +124,65 @@ fn columns_a_reader_sees(row: &str) -> usize {
 }
 
 /// **A CHECK THAT READS THE ENDS OF A ROW PROVES NOTHING ABOUT ITS MIDDLE.**
-/// A status quoting `||` unescaped split its row into eight columns on the
-/// page, and every guard stayed green: the number is the first cell and the
-/// standing the last, and a split between them leaves both where they were.
+/// An unescaped `|` splits a row on the page while its number and status stay
+/// where they were.
 #[test]
-fn no_row_carries_more_columns_than_the_header_does() {
-    let text = register();
-    let rows: Vec<&str> = text
-        .lines()
-        .map(str::trim)
-        .filter(|line| line.starts_with('|'))
-        .collect();
-    assert!(rows.len() > 100, "only {} rows read: the filter is not looking", rows.len());
-    let wide: Vec<&&str> = rows
+fn every_row_has_four_columns_and_none_is_empty() {
+    let text = page();
+    for fault in faults_in(&text) {
+        let row = text
+            .lines()
+            .map(str::trim)
+            .find(|line| line.starts_with(&format!("| {} |", fault.number)))
+            .expect("the row just read");
+        assert_eq!(
+            columns_a_reader_sees(row),
+            COLUMNS,
+            "fault {} shows a reader the wrong number of columns; escape a `|` \
+             inside a cell as `\\|`",
+            fault.number
+        );
+        for (column, name) in ["number", "since", "what goes wrong", "status"].iter().enumerate() {
+            assert!(
+                fault.cells.get(column).is_some_and(|cell| !cell.is_empty()),
+                "fault {} has «{name}» empty",
+                fault.number
+            );
+        }
+    }
+}
+
+/// The page lists what is still open. A row closed, or with a status the one
+/// reading cannot classify, has no place on it.
+#[test]
+fn every_row_is_still_open() {
+    let not_open: Vec<(usize, faults::Standing)> = faults()
         .iter()
-        .filter(|row| columns_a_reader_sees(row) != COLUMNS)
+        .filter(|fault| !fault.still_open())
+        .map(|fault| (fault.number, fault.standing))
         .collect();
     assert!(
-        wide.is_empty(),
-        "a row a reader sees with the wrong number of columns; escape the `|` inside it as `\\|`: {:?}",
-        wide.iter().map(|row| &row[..80.min(row.len())]).collect::<Vec<_>>()
+        not_open.is_empty(),
+        "these rows are not open by the reading the store counts with: \
+         {not_open:?}. Render the page again from the store"
     );
 }
 
+/// **THE STATUS PROSE IS THE REGISTER'S.** A public row says where the fault
+/// stands and nothing more, in the words the standing is written with.
 #[test]
-fn every_row_says_where_it_stands_in_words_the_count_can_read() {
-    let unread: Vec<usize> = faults()
+fn every_status_is_the_standing_alone() {
+    let wordy: Vec<usize> = faults()
         .iter()
-        .filter(|fault| fault.standing == faults::Standing::Unknown)
+        .filter(|fault| {
+            fault.cells.last().map(String::as_str) != Some(faults::public_standing(fault.standing))
+        })
         .map(|fault| fault.number)
         .collect();
-
     assert!(
-        unread.is_empty(),
-        "the status of {unread:?} begins with none of the markers the count can \
-         read, so those faults have already left the open tally with nothing \
-         saying so. It is the defect the store refuses at the door; here the \
-         document is watched, which has no door"
+        wordy.is_empty(),
+        "these rows carry more than their standing in the status column: \
+         {wordy:?}. Render the page again from the store"
     );
 }
 
@@ -217,13 +203,11 @@ fn a_row_closed_in_part_is_counted_open_and_never_closed() {
         open,
         vec![1, 3],
         "row 3 is closed in part, which says which half is done and does not \
-         take the row out of the count: reading it as closed lowers the tally \
-         in the one direction nobody checks"
+         take the row out of the count"
     );
 }
 
-/// The half-done repair is the real case: translating the column one row at a
-/// time would drop the open tally with every row translated.
+/// A marker translated halfway must come out unrecognised, never closed.
 #[test]
 fn a_marker_translated_halfway_leaves_the_count_instead_of_lowering_it() {
     let table = A_TABLE_OF_THREE.replace("**closed in part**", "**chiuso in parte**");
@@ -239,8 +223,7 @@ fn a_marker_translated_halfway_leaves_the_count_instead_of_lowering_it() {
         unread,
         vec![3],
         "a marker the reading was never taught must come out unrecognised, not \
-         closed: the direction of that error is the reassuring one, and the row \
-         would leave the tally with nothing failing"
+         closed: the row would leave the tally with nothing failing"
     );
     assert_eq!(
         faults::standing_of("**aperto** and the rest of the sentence"),
@@ -249,116 +232,8 @@ fn a_marker_translated_halfway_leaves_the_count_instead_of_lowering_it() {
     );
 }
 
-/// **AN ENTRY WITH NO «WHAT WOULD HAVE PREVENTED IT» IS NOT FINISHED**, as the
-/// file says in its own header. A fault with no sequel is a diary, which is
-/// exactly what that file declares it is not.
-#[test]
-fn no_fault_is_left_without_the_check_that_would_have_stopped_it() {
-    for fault in faults() {
-        assert_eq!(
-            fault.cells.len(),
-            6,
-            "fault {} has not six columns: {:?}",
-            fault.number,
-            fault.cells
-        );
-        for (column, name) in [
-            "number",
-            "date",
-            "what happened",
-            "how it showed",
-            "what would have prevented it",
-            "status",
-        ]
-        .iter()
-        .enumerate()
-        .map(|(index, name)| (index, *name))
-        {
-            assert!(
-                !fault.cells[column].is_empty(),
-                "fault {} has «{name}» empty",
-                fault.number
-            );
-        }
-    }
-}
-
-/// The numbers up to nineteen, which follow no rule at all in English.
-const IRREGULAR: [&str; 20] = [
-    "zero",
-    "one",
-    "two",
-    "three",
-    "four",
-    "five",
-    "six",
-    "seven",
-    "eight",
-    "nine",
-    "ten",
-    "eleven",
-    "twelve",
-    "thirteen",
-    "fourteen",
-    "fifteen",
-    "sixteen",
-    "seventeen",
-    "eighteen",
-    "nineteen",
-];
-
-/// The tens.
-const TENS: [&str; 10] = [
-    "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety",
-];
-
-/// The number written in letters, the way the prose under the table writes it.
-///
-/// **THIS WAS ONCE A LIST OF HAND-WRITTEN NUMBERS**, and every new fault forced
-/// it longer. A list that grows with the data is a debt on instalments, and it
-/// is its own only source, so a typo in it cannot be seen. The rules instead
-/// are three and do not change: below twenty there is no rule and the words are
-/// listed; above it, ten and unit joined by a hyphen; a hundred and the rest
-/// joined by «and».
-fn spelled(number: usize) -> String {
-    if number < 20 {
-        return IRREGULAR[number].to_string();
-    }
-    assert!(
-        number < 1000,
-        "the prose has never written a four-digit number in letters: if it must, \
-         the rule for thousands belongs here rather than around it"
-    );
-    if number >= 100 {
-        return with_hundreds(number);
-    }
-    let (ten, unit) = (number / 10, number % 10);
-    let tens = TENS[ten];
-    match unit {
-        0 => tens.to_string(),
-        _ => format!("{tens}-{}", IRREGULAR[unit]),
-    }
-}
-
-/// The hundreds: a bare hundred takes the article, and what follows it takes
-/// «and» — a hundred and twenty-three, never a hundred twenty-three.
-fn with_hundreds(number: usize) -> String {
-    let (hundred, rest) = (number / 100, number % 100);
-    let prefix = match hundred {
-        1 => "a hundred".to_string(),
-        _ => format!("{} hundred", IRREGULAR[hundred]),
-    };
-    if rest == 0 {
-        return prefix;
-    }
-    format!("{prefix} and {}", spelled(rest))
-}
-
-/// **A TRANSLATOR MUST BE CHECKED.** The old version was a hand-written list:
-/// right or wrong, it was still the only source, so a typo could not be seen. A
-/// function goes wrong differently — on the joins and on the spellings that are
-/// not built from the digit's own word — and those are what this test lists,
-/// not every number.
+/// **A TRANSLATOR MUST BE CHECKED**, on the joins and on the spellings that
+/// are not built from the digit's own word. The page's count is spelled by it.
 #[test]
 fn the_numbers_are_spelled_the_way_english_spells_them() {
     for (number, word) in [
@@ -376,6 +251,7 @@ fn the_numbers_are_spelled_the_way_english_spells_them() {
         (41, "forty-one"),
         (47, "forty-seven"),
         (50, "fifty"),
+        (57, "fifty-seven"),
         (68, "sixty-eight"),
         (80, "eighty"),
         (91, "ninety-one"),
@@ -388,40 +264,33 @@ fn the_numbers_are_spelled_the_way_english_spells_them() {
         (200, "two hundred"),
         (308, "three hundred and eight"),
     ] {
-        assert_eq!(spelled(number), word, "{number} is written «{word}»");
+        assert_eq!(faults::in_words(number), word, "{number} is written «{word}»");
     }
 }
 
-/// **THE COUNTS IN THE PROSE TELL THE TRUTH.** Under the table the file writes
-/// how many faults are still open, out of how many. Those two numbers can be
-/// counted, and while a person copies them by hand they diverge: they were wrong
-/// in four documents out of four.
+/// **THE COUNT IN THE PROSE TELLS THE TRUTH.** The half the page can see is
+/// checked here: how many faults it describes. How many stay only in the store
+/// is known to the store alone, and the render writes that half.
 #[test]
-fn the_counts_written_in_prose_match_the_table_they_come_from() {
-    let faults = faults();
-    let open = faults.iter().filter(|fault| fault.still_open()).count();
-    let total = faults.len();
-
-    // The whole document is searched rather than the section under the table:
-    // a heading is prose somebody may re-word, and a re-worded heading must not
-    // turn a true count into a red line.
-    let prose = register();
-
-    // The capital goes on the word, not on the asterisk before it: the sentence
-    // opens with `**`, and capitalising the first character left both forms
-    // identical — the test stayed red over prose that was already right.
-    let word = spelled(open);
-    let capital = {
-        let mut chars = word.chars();
-        let first = chars.next().expect("the word is not empty");
-        format!("{}{}", first.to_uppercase(), chars.as_str())
-    };
-    let sentence = format!("**{word} are still open** out of {}", spelled(total));
-    let capitalized = format!("**{capital} are still open** out of {}", spelled(total));
+fn the_count_sentence_matches_the_rows_of_the_page() {
+    let rows = faults().len();
+    let text = page();
+    let sentences: Vec<&str> = text
+        .lines()
+        .filter(|line| faults::is_the_count_sentence(line))
+        .collect();
+    assert_eq!(
+        sentences.len(),
+        1,
+        "the page must carry exactly one count sentence, and carries {}",
+        sentences.len()
+    );
+    let expected = faults::count_sentence(rows, 0);
+    let (described, _) = expected.split_once(';').expect("the sentence has two halves");
     assert!(
-        prose.contains(&sentence) || prose.contains(&capitalized),
-        "the prose does not say the true count. Counted from the table: {open} \
-         open out of {total}, that is «{capitalized}». Change the sentence, not \
-         the table"
+        sentences[0].trim().starts_with(described),
+        "the page does not say the true count. Counted from the table: {rows} \
+         rows, so the sentence must begin «{described}». Render the page again \
+         rather than editing the sentence"
     );
 }

@@ -45,5 +45,7 @@ terminal = { path = "../terminal" }
 # Only to duplicate the two descriptors this process was handed: a terminal
 # bridge reads its own standard input instead of the buffered wrapper.
 libc = "0.2"
+# The digest a candidate release records for the binary it installed.
+sha2 = "0.10"
 serde = { workspace = true }
 serde_json = { workspace = true }
