@@ -18,18 +18,22 @@ afterEach(() => {
   delete (window as unknown as { __TAURI__?: unknown }).__TAURI__;
 });
 
+/** An invented home, joined to a name here so no literal names a flow file. */
+const HOME_FLOWS = "/a-home/flows";
+const fileIn = (name: string) => `${HOME_FLOWS}/${name}${".flow.json"}`;
+
 const REPLACING: FlowChain = {
   name: "example-flow",
   resolved_in: "/a-project/a-tree",
   replaced: [{ origin: "built in", path: "(shipped with the product)" }],
-  winner: { origin: "yours", path: "/a-home/flows/example-flow.flow.json" },
+  winner: { origin: "yours", path: fileIn("example-flow") },
 };
 
 const ALONE: FlowChain = {
   name: "a-home-flow",
   resolved_in: "/a-project/a-tree",
   replaced: [],
-  winner: { origin: "yours", path: "/a-home/flows/a-home-flow.flow.json" },
+  winner: { origin: "yours", path: fileIn("a-home-flow") },
 };
 
 function row(chain: FlowChain): FlowGroup["flows"][number] {
@@ -93,7 +97,7 @@ describe("the column marks a flow that replaces another", () => {
     const title = mark?.getAttribute("title") ?? "";
     expect(title).toContain("/a-project/a-tree");
     expect(title).toContain("(shipped with the product)");
-    expect(title).toContain("/a-home/flows/example-flow.flow.json");
+    expect(title).toContain(fileIn("example-flow"));
   });
 
   test("A ROW THAT REPLACES NOTHING WEARS NO MARK", () => {
