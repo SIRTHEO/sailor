@@ -101,11 +101,47 @@ fn why_a_literal_stays_home(key: &str, text: &str, in_env: bool, identifier: boo
         Some(catalogue::say("cli.flow.publish_why_a_literal_in_env", &[]))
     } else if names_a_credential(key) && !identifier {
         Some(catalogue::say("cli.flow.publish_why_the_name_says_credential", &[]))
-    } else if looks_like_a_token(text) {
+    } else if looks_like_a_token(text) || (identifier && looks_opaque(text)) {
         Some(catalogue::say("cli.flow.publish_why_the_shape_is_a_token", &[]))
     } else {
         None
     }
+}
+
+/// How long a piece of an identifier must run before its randomness makes it
+/// a credential rather than a word.
+const HOW_LONG_AN_OPAQUE_PIECE_RUNS: usize = 16;
+
+/// Bits per character above which a long piece reads as random, not written.
+const HOW_RANDOM_AN_OPAQUE_PIECE_IS: f64 = 3.5;
+
+/// A credential with no known prefix: a long alphanumeric run that is not all
+/// digits and is as random as a key. Judged only where the name rule yielded,
+/// so ordinary text never meets it.
+fn looks_opaque(value: &str) -> bool {
+    value
+        .split(|letter: char| !letter.is_ascii_alphanumeric())
+        .any(|piece| {
+            piece.len() >= HOW_LONG_AN_OPAQUE_PIECE_RUNS
+                && !piece.bytes().all(|byte| byte.is_ascii_digit())
+                && (bits_per_character(piece) >= HOW_RANDOM_AN_OPAQUE_PIECE_IS
+                    || piece.len() >= 32 && piece.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        })
+}
+
+fn bits_per_character(piece: &str) -> f64 {
+    let mut counts = std::collections::HashMap::new();
+    for letter in piece.chars() {
+        *counts.entry(letter).or_insert(0usize) += 1;
+    }
+    let length = piece.chars().count() as f64;
+    counts
+        .values()
+        .map(|&count| {
+            let share = count as f64 / length;
+            -share * share.log2()
+        })
+        .sum()
 }
 
 fn walk(value: &Value, step: &str, action: Option<&str>, path: &str, found: &mut Vec<Secret>) {
@@ -412,6 +448,18 @@ mod tests {
         );
         assert!(secrets_in(&written).is_empty(), "{:?}", secrets_in(&written));
 
+        let with_a_run_id = one_step(
+            "store_write",
+            json!({"collection": "c", "key": "take-the-next-work-1789118850025316000", "value": 1, "written_by": "w"}),
+        );
+        assert!(secrets_in(&with_a_run_id).is_empty(), "{:?}", secrets_in(&with_a_run_id));
+
+        let with_a_path = one_step(
+            "store_read",
+            json!({"collection": "c", "key": "cards/Surface/warm/palette/print/back"}),
+        );
+        assert!(secrets_in(&with_a_path).is_empty(), "{:?}", secrets_in(&with_a_path));
+
         let through_inputs = json!({
             "id": "x",
             "graph": {"steps": [{"id": "read", "action": "store_read"}]},
@@ -426,6 +474,18 @@ mod tests {
         let found = secrets_in(&flow);
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(found[0].key, "with.api_key");
+        assert_eq!(found[0].why, catalogue::say("cli.flow.publish_why_the_name_says_credential", &[]));
+    }
+
+    #[test]
+    fn an_opaque_credential_under_a_store_key_is_refused() {
+        let flow = one_step(
+            "store_write",
+            json!({"collection": "c", "key": "Q7vX2mK9pL4wR8tN1cZ6yB3hJ5dF0gS2aE7uW9qT", "value": 1, "written_by": "w"}),
+        );
+        let found = secrets_in(&flow);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].key, "with.key");
     }
 
     #[test]
