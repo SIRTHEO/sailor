@@ -59,9 +59,20 @@ pub struct KnownCli {
     pub reads_instructions_from: Vec<String>,
     /// Inside a home, the files whose presence means somebody signed in there.
     pub signed_in_when: Vec<String>,
+    /// The keychain item whose presence means somebody signed in to a home.
+    pub signed_in_keychain: Option<KeychainItem>,
     /// Where, inside a home, this engine names the account it answers as.
     /// `None` where nobody established it: never «matches» by default.
     pub identity_at: Option<IdentityFile>,
+}
+
+/// A login keychain item named `service`, a dash, and the first
+/// `home_digest_chars` hex characters of the SHA-256 of the home's path.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct KeychainItem {
+    pub service: String,
+    pub home_digest_chars: usize,
 }
 
 /// A file naming the account, and the keys down to it. `file` lists candidate
@@ -149,6 +160,16 @@ fn identity_at_path(path: &Path, text: &str, pointer: &[String]) -> HomeIdentity
     }
 }
 
+/// The keychain service a command line signed in to `home` writes its credentials under.
+pub fn keychain_service(item: &KeychainItem, home: &Path) -> String {
+    use sha2::{Digest, Sha256};
+    let hex: String = Sha256::digest(home.to_string_lossy().as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    format!("{}-{}", item.service, &hex[..item.home_digest_chars.min(hex.len())])
+}
+
 /// Whether a home carries credentials. **UNKNOWN IS NOT SIGNED OUT**: nobody
 /// established where this command line keeps them, so nothing is being said.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -158,16 +179,23 @@ pub enum SignedIn {
     NobodyEstablished,
 }
 
-/// `there` answers whether a path exists, so a test hands it its own machine.
-pub fn signed_in(cli: &KnownCli, home: &Path, there: &dyn Fn(&Path) -> bool) -> SignedIn {
-    if cli.signed_in_when.is_empty() {
+/// `there` answers whether a path exists and `in_keychain` whether a keychain
+/// item does, so a test hands both its own machine.
+pub fn signed_in(
+    cli: &KnownCli,
+    home: &Path,
+    there: &dyn Fn(&Path) -> bool,
+    in_keychain: &dyn Fn(&str) -> bool,
+) -> SignedIn {
+    if cli.signed_in_when.is_empty() && cli.signed_in_keychain.is_none() {
         return SignedIn::NobodyEstablished;
     }
-    if cli
-        .signed_in_when
-        .iter()
-        .any(|file| there(&home.join(file)))
-    {
+    let on_disk = cli.signed_in_when.iter().any(|file| there(&home.join(file)));
+    let in_the_keychain = cli
+        .signed_in_keychain
+        .as_ref()
+        .is_some_and(|item| in_keychain(&keychain_service(item, home)));
+    if on_disk || in_the_keychain {
         SignedIn::Yes
     } else {
         SignedIn::No
@@ -317,6 +345,8 @@ struct DeclaredCli {
     #[serde(default)]
     signed_in_when: Vec<String>,
     #[serde(default)]
+    signed_in_keychain: Option<KeychainItem>,
+    #[serde(default)]
     identity: Option<IdentityFile>,
 }
 
@@ -376,6 +406,7 @@ impl From<DeclaredCli> for KnownCli {
             endpoint: declared.endpoint,
             reads_instructions_from: declared.reads_instructions_from,
             signed_in_when: declared.signed_in_when,
+            signed_in_keychain: declared.signed_in_keychain,
             identity_at: declared.identity,
         }
     }
@@ -759,6 +790,7 @@ mod tests {
             endpoint: None,
             reads_instructions_from: Vec::new(),
             signed_in_when: Vec::new(),
+            signed_in_keychain: None,
             identity_at: None,
         };
         let env = build_environment(&cli, Path::new("/home/profiles/acme/work"), &|_| None);
@@ -923,6 +955,7 @@ mod tests {
             endpoint: None,
             reads_instructions_from: Vec::new(),
             signed_in_when: Vec::new(),
+            signed_in_keychain: None,
             identity_at: Some(IdentityFile {
                 file: vec![".acme.json".to_owned(), "../.acme.json".to_owned()],
                 pointer: vec!["oauthAccount".to_owned(), "emailAddress".to_owned()],
