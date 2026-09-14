@@ -37,10 +37,10 @@ for a vulnerability, follow [`SECURITY.md`](../SECURITY.md) instead.
 | 169 | 2026-09-12 | `sailor remaining` erroneously reports that an account's token has expired when the engine is actually rate-limited or exhausted. | **open** |
 | 172 | 2026-09-13 | `sailor profiles list` marks an engine profile as authenticated even though launching the engine still prompts for interactive login. | **open** |
 | 179 | 2026-09-13 | Launching an engine with a newly initialized profile blocks on interactive trust dialogs and silently drops input typed before the prompt is ready. | **open** |
-| 188 | 2026-09-14 | sailor flow list does not report when a home file overrides a shipped flow, leaving disabled relays unnoticed while mandates accumulate in the mailroom. | **open** |
+| 188 | 2026-09-14 | sailor flow list does not report when a local flow overrides a shipped flow, so background work stops and requests keep waiting without explanation. | **open** |
 | 189 | 2026-09-14 | sailor terminal mandate accepts engine values that no descriptor declares, causing deposited mandates to fail later when processed. | **open** |
 | 190 | 14/09 | Flow steps are falsely marked as `engine_exhausted` when an engine echoes prompt text containing the word `quota` to standard error. | **open** |
 | 192 | 13/09 | Authenticating a profile binds to whichever account is active in the browser, causing `sailor remaining` to report identical quotas across different profiles. | **open** |
 | 193 | 14/09 | `sailor flow publish` rejects flows containing steps with a field named `key` by misinterpreting the field name as an exposed credential. | **open** |
 
-**Thirty-two open faults are described on this page; twenty-nine more are kept only in the fault store.**
+**Thirty-two open faults are described on this page; thirty more are kept only in the fault store.**
