@@ -355,6 +355,7 @@
   "cli.terminal.host_purpose": "tiene i terminali che la finestra ha aperto",
   "cli.terminal.mandate_shape": "il mandato deve arrivare nella forma che il successore ha diritto di ricevere, e questa non lo è: {why}. È un oggetto JSON con `session`, `engine` e un `work` che dice l'obiettivo, cosa era stato chiesto, cosa è fatto, le decisioni prese, i vincoli che tengono, cosa non ha funzionato, la cosa successiva, le domande aperte e cosa non si deve mai fare",
   "cli.terminal.mandate_left": "mandato depositato per {tty} su {head}",
+  "run.failure.digest_incomplete": "il passo non ha ricevuto un valore da digerire nella forma che si aspetta, quindi più tardi non c'è niente con cui controllare il mandato",
   "cli.terminal.mandate_not_passed": "il mandato di {from} non è passato a {to}: {why}",
   "cli.terminal.mandate_passed": "mandato passato da {from} a {to}; l'originale resta da parte, segnato con dove è andato",
   "cli.terminal.no_such_terminal": "{tty}: nessun terminale con quel nome è aperto su questa macchina (niente in {where}), quindi il mandato è rimasto al suo posto",
