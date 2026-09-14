@@ -93,7 +93,7 @@ fn dispatch(args: &[String]) -> Result<String, String> {
             Ok(render_left_behind(&left, now()))
         }
         [command, identity] if command == "retire" => {
-            retire_one(&repo, identity, &a_store()?, &IndexTending::of(&repo))
+            retire_one(identity, &a_store()?, &IndexTending::of)
         }
         [command] if command == "open" => {
             let store = a_store()?;
@@ -235,13 +235,20 @@ fn index_after(
 /// The operator's gesture over an identity a sweep left behind. Retired or
 /// already gone from the index, the row closes; anything else is a refusal
 /// with an exit code, so nothing can be built on a retirement that did not happen.
+/// **THE ROW'S REPOSITORY IS THE GUARD, NOT WHOEVER TYPES**: an identity is
+/// per machine, and typed from elsewhere it would skip the trees that pin it.
 pub fn retire_one(
-    repo: &Path,
     identity: &str,
     store: &dyn OpenTrees,
-    index: &IndexTending,
+    tending_for: &dyn Fn(&Path) -> IndexTending,
 ) -> Result<String, String> {
-    let became = retire(repo, identity, index);
+    let row = store
+        .identities_left_behind()?
+        .into_iter()
+        .find(|row| row.identity == identity)
+        .ok_or_else(|| catalogue::say("cli.worktree.index_not_recorded", &[("identity", identity)]))?;
+    let repo = Path::new(&row.repo);
+    let became = retire(repo, identity, &tending_for(repo));
     match became {
         Retired::Retired { .. } | Retired::NoEntry { .. } => {
             store.identity_retired(identity)?;
@@ -368,15 +375,33 @@ pub fn sweep(
 }
 
 /// The identities of the trees a sweep took down, minus those a standing tree
-/// of the same repository still carries: a pin is shared by design.
+/// of the same repository still carries: a pin is shared by design. A git
+/// that cannot list says so, per identity, and nothing is written down.
 fn write_down_what_was_left(
     repo: &Path,
     store: &dyn OpenTrees,
     left_behind: &[(PathBuf, IndexIdentity)],
     rule: &IdentityRule,
 ) -> Vec<String> {
-    let standing: Vec<String> = list(repo)
-        .unwrap_or_default()
+    let trees = match list(repo) {
+        Ok(trees) => trees,
+        Err(why) => {
+            return left_behind
+                .iter()
+                .map(|(at, identity)| {
+                    catalogue::say(
+                        "cli.worktree.index_could_not_look",
+                        &[
+                            ("identity", &identity.id),
+                            ("tree", &at.to_string_lossy()),
+                            ("why", why.trim()),
+                        ],
+                    )
+                })
+                .collect()
+        }
+    };
+    let standing: Vec<String> = trees
         .iter()
         .filter_map(|tree| {
             workspace::index_identity::identity_of(Path::new(&tree.path), tree.branch.as_deref(), rule)

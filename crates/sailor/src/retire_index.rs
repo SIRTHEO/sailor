@@ -13,7 +13,8 @@ use workspace::index_identity::{identity_of, IdentityRule, IndexIdentity};
 use workspace::{list, Worktree};
 
 /// Where a tree declares the command line of the server that indexes it, the
-/// way `sailor.pushAs` declares who pushes.
+/// way `sailor.pushAs` declares who pushes. The value is argv-shaped: words
+/// split on whitespace, the first being the command.
 pub const INDEX_SERVER: &str = "sailor.indexServer";
 /// The tool the index offers over its own inventory: a report with no
 /// arguments, a deletion with a fresh token.
@@ -26,10 +27,20 @@ const IN_PROGRESS_LINE: &str = "Indexing in progress";
 const MANUAL_LINE: &str = "Manual inspection required:";
 const REMOVED_ALL: &str = "Removed all";
 
+/// What the repository says about its index server. Three answers, because
+/// a `git config` that fails is not a repository that declares nothing.
+#[derive(Debug, Clone)]
+pub enum IndexServer {
+    Declared(ServerSpec),
+    NotDeclared,
+    CouldNotRead(String),
+}
+
 /// What the machine says about its index, read once by the command line and
 /// handed in everywhere else.
+#[derive(Debug, Clone)]
 pub struct IndexTending {
-    pub server: Option<ServerSpec>,
+    pub server: IndexServer,
     pub rule: IdentityRule,
     pub timeout: Duration,
 }
@@ -43,7 +54,7 @@ impl IndexTending {
         }
     }
 
-    pub fn with(server: Option<ServerSpec>, rule: IdentityRule, timeout: Duration) -> IndexTending {
+    pub fn with(server: IndexServer, rule: IdentityRule, timeout: Duration) -> IndexTending {
         IndexTending {
             server,
             rule,
@@ -56,32 +67,44 @@ impl IndexTending {
     }
 }
 
-fn index_server_of(repo: &Path) -> Option<ServerSpec> {
-    let read = Command::new("git")
+/// `git config --get` exits 1 for a key nobody set and otherwise for a
+/// configuration it could not read: the two are kept apart.
+fn index_server_of(repo: &Path) -> IndexServer {
+    let read = match Command::new("git")
         .arg("-C")
         .arg(repo)
         .args(["config", "--get", INDEX_SERVER])
         .output()
-        .ok()?;
+    {
+        Ok(read) => read,
+        Err(error) => return IndexServer::CouldNotRead(error.to_string()),
+    };
+    if read.status.code() == Some(1) {
+        return IndexServer::NotDeclared;
+    }
     if !read.status.success() {
-        return None;
+        return IndexServer::CouldNotRead(String::from_utf8_lossy(&read.stderr).trim().to_owned());
     }
     let line = String::from_utf8_lossy(&read.stdout);
     let mut words = line.split_whitespace().map(str::to_owned);
-    let command = words.next()?;
-    Some(ServerSpec {
-        command,
-        args: words.collect(),
-        env: Default::default(),
-        cwd: None,
-    })
+    match words.next() {
+        Some(command) => IndexServer::Declared(ServerSpec {
+            command,
+            args: words.collect(),
+            env: Default::default(),
+            cwd: None,
+        }),
+        None => IndexServer::NotDeclared,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Retired {
     Retired { identity: String },
     NoServerDeclared { identity: String },
+    ServerUnreadable { identity: String, why: String },
     StillCarriedBy { identity: String, tree: String },
+    CouldNotLook { identity: String, repo: String, why: String },
     NoEntry { identity: String },
     Refused { identity: String, why: String },
     CouldNotAsk { identity: String, why: String },
@@ -97,9 +120,21 @@ impl Retired {
                 "cli.worktree.index_no_server",
                 &[("identity", identity), ("key", INDEX_SERVER)],
             ),
+            Retired::ServerUnreadable { identity, why } => catalogue::say(
+                "cli.worktree.index_server_unreadable",
+                &[("identity", identity), ("key", INDEX_SERVER), ("why", why.trim())],
+            ),
             Retired::StillCarriedBy { identity, tree } => catalogue::say(
                 "cli.worktree.index_still_carried",
                 &[("identity", identity), ("tree", tree)],
+            ),
+            Retired::CouldNotLook {
+                identity,
+                repo,
+                why,
+            } => catalogue::say(
+                "cli.worktree.index_could_not_list",
+                &[("identity", identity), ("repo", repo), ("why", why.trim())],
             ),
             Retired::NoEntry { identity } => {
                 catalogue::say("cli.worktree.index_no_entry", &[("identity", identity)])
@@ -118,22 +153,41 @@ impl Retired {
 
 /// A tree of `repo` still standing under the same identity, if any: a pin is
 /// shared by design, and retiring it would empty the index of the trees left.
-pub fn still_carried_by(repo: &Path, identity: &str, tending: &IndexTending) -> Option<String> {
-    list(repo)
-        .unwrap_or_default()
+/// A git that cannot list is an error, never a repository with no trees.
+pub fn still_carried_by(
+    repo: &Path,
+    identity: &str,
+    tending: &IndexTending,
+) -> Result<Option<String>, String> {
+    Ok(list(repo)?
         .into_iter()
         .find(|tree| tending.identity_of(tree).is_ok_and(|held| held.id == identity))
-        .map(|tree| tree.path)
+        .map(|tree| tree.path))
 }
 
 /// Retires `identity` from the index, once no tree of `repo` carries it.
 pub fn retire(repo: &Path, identity: &str, tending: &IndexTending) -> Retired {
     let identity = identity.to_owned();
-    if let Some(tree) = still_carried_by(repo, &identity, tending) {
-        return Retired::StillCarriedBy { identity, tree };
+    match still_carried_by(repo, &identity, tending) {
+        Ok(Some(tree)) => return Retired::StillCarriedBy { identity, tree },
+        Ok(None) => {}
+        Err(why) => {
+            return Retired::CouldNotLook {
+                identity,
+                repo: repo.to_string_lossy().into_owned(),
+                why,
+            }
+        }
     }
-    let Some(server) = &tending.server else {
-        return Retired::NoServerDeclared { identity };
+    let server = match &tending.server {
+        IndexServer::Declared(server) => server,
+        IndexServer::NotDeclared => return Retired::NoServerDeclared { identity },
+        IndexServer::CouldNotRead(why) => {
+            return Retired::ServerUnreadable {
+                identity,
+                why: why.clone(),
+            }
+        }
     };
     let report = match ask_once(server, PRUNE_TOOL, &json!({}), tending.timeout) {
         Asked::Said {

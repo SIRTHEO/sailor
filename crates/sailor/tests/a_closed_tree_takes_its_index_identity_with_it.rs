@@ -5,7 +5,7 @@
 //! real one proves an installation, and could not come out otherwise.
 
 use actions::mcp::ServerSpec;
-use sailor::retire_index::{retire, IndexTending, Retired, PRUNE_TOOL};
+use sailor::retire_index::{retire, IndexServer, IndexTending, Retired, PRUNE_TOOL};
 use sailor::worktree_cmd::{close_one, remove_one, retire_one, sweep};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -69,7 +69,7 @@ fn an_index_without_the_tool_or_out_of_reach_leaves_the_close_green_and_says_why
     let second_identity = identity_as_listed(&repo, "second");
     let without_the_tool = an_index(&scratch, &first_identity, &["codebase_search"]);
     let out_of_reach = IndexTending::with(
-        Some(ServerSpec {
+        IndexServer::Declared(ServerSpec {
             command: scratch.join("no-such-server").to_string_lossy().into_owned(),
             args: Vec::new(),
             env: Default::default(),
@@ -106,12 +106,21 @@ fn a_repository_declaring_no_index_server_says_where_it_would() {
     let repo = a_repository_in(&scratch);
     let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
     workspace::create(&repo, "work/done", None).expect("a tree");
-    let none = IndexTending::with(None, IdentityRule::default(), Duration::from_secs(10));
+    workspace::create(&repo, "work/other", None).expect("a tree");
+    let none = IndexTending::with(IndexServer::NotDeclared, IdentityRule::default(), Duration::from_secs(10));
+    let unreadable = IndexTending::with(
+        IndexServer::CouldNotRead("the configuration is locked".to_owned()),
+        IdentityRule::default(),
+        Duration::from_secs(10),
+    );
 
     let said = close_one(&repo, "done", &store as &dyn OpenTrees, &none).expect("the close is green");
+    let said_unreadable =
+        close_one(&repo, "other", &store as &dyn OpenTrees, &unreadable).expect("the close is green");
     let _ = std::fs::remove_dir_all(&scratch);
 
-    assert!(said.contains("sailor.indexServer"), "{said}");
+    assert!(said.contains("sailor.indexServer") && said.contains("declares no index server"), "{said}");
+    assert!(said_unreadable.contains("could not be read") && said_unreadable.contains("locked"), "{said_unreadable}");
 }
 
 /// A pin committed on the trunk is in every tree of the repository: the
@@ -157,7 +166,7 @@ fn the_sweep_writes_the_identity_down_and_the_gesture_retires_it() {
     let applied_by_the_sweep = index.applied();
     let left = store.identities_left_behind().expect("the rows");
 
-    let retired = retire_one(&repo, &identity, &store as &dyn OpenTrees, &index.tending).expect("the gesture");
+    let retired = retire_one(&identity, &store as &dyn OpenTrees, &|_: &Path| index.tending.clone()).expect("the gesture");
     let applied_by_the_gesture = index.applied();
     let left_after = store.identities_left_behind().expect("the rows");
     let _ = std::fs::remove_dir_all(&scratch);
@@ -186,6 +195,67 @@ fn an_identity_the_index_holds_back_is_not_applied() {
 
     assert!(matches!(&became, Retired::Refused { why, .. } if why.contains("Indexing in progress")), "{became:?}");
     assert!(applied.is_empty(), "{applied:?}");
+}
+
+/// **A GIT THAT CANNOT LIST IS NOT A REPOSITORY WITH NO TREES.** Whether a
+/// standing tree still carries the identity is unknown, and unknown applies
+/// nothing.
+#[test]
+fn a_repository_whose_trees_cannot_be_listed_applies_nothing_and_says_so() {
+    let scratch = a_scratch("unlistable");
+    let not_a_repository = scratch.join("nowhere");
+    std::fs::create_dir_all(&not_a_repository).expect("a directory that is no repository");
+    let index = an_index(&scratch, "aaaa00000000", &[PRUNE_TOOL]);
+
+    let became = retire(&not_a_repository, "aaaa00000000", &index.tending);
+    let applied = index.applied();
+    let _ = std::fs::remove_dir_all(&scratch);
+
+    assert!(applied.is_empty(), "an unlistable repository was read as empty:\n{applied:?}");
+    assert!(matches!(&became, Retired::CouldNotLook { .. }), "{became:?}");
+    assert!(became.render().contains("could not be listed"), "{}", became.render());
+}
+
+/// **THE GUARD IS THE ROW'S REPOSITORY, NOT WHOEVER TYPES.** An identity is
+/// per machine: typed from another repository, the gesture must still look at
+/// the trees of the repository that left it behind — and an identity no sweep
+/// left behind is not a name the gesture acts on.
+#[test]
+fn the_gesture_looks_at_the_repository_that_left_the_identity_behind() {
+    let scratch = a_scratch("elsewhere");
+    let pinned = a_repository_in(&scratch);
+    std::fs::write(
+        pinned.join(workspace::index_identity::PIN_FILE),
+        "{\"projectId\": \"shared-pin\"}\n",
+    )
+    .expect("the pin");
+    run_git(&pinned, &["add", workspace::index_identity::PIN_FILE]);
+    run_git(&pinned, &["commit", "-q", "-m", "pin the index"]);
+    let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
+    let index = an_index(&scratch, "shared-pin", &[PRUNE_TOOL]);
+
+    // Typed from another repository: what is handed in is that repository's
+    // tending, and the gesture must still judge by the row's own.
+    let typed_elsewhere = |_: &Path| index.tending.clone();
+    let unrecorded = retire_one("shared-pin", &store as &dyn OpenTrees, &typed_elsewhere);
+    store
+        .identity_left_behind(&workspace::IdentityLeftBehind {
+            identity: "shared-pin".to_owned(),
+            tree: pinned.join("gone").to_string_lossy().into_owned(),
+            repo: pinned.to_string_lossy().into_owned(),
+            left_at: 0,
+            left_by_pid: 1,
+        })
+        .expect("the row");
+    let from_elsewhere = retire_one("shared-pin", &store as &dyn OpenTrees, &typed_elsewhere);
+    let applied = index.applied();
+    let _ = std::fs::remove_dir_all(&scratch);
+
+    assert!(applied.is_empty(), "the trunk's pin was retired from another repository:\n{applied:?}");
+    let refused = unrecorded.expect_err("an identity nobody recorded is refused");
+    assert!(refused.contains("no sweep"), "{refused}");
+    let refused = from_elsewhere.expect_err("the pinned trunk still carries it");
+    assert!(refused.contains("still carries"), "{refused}");
 }
 
 struct AnIndex {
@@ -235,7 +305,7 @@ fn an_index(scratch: &Path, identity: &str, tools: &[&str]) -> AnIndex {
     let path = scratch.join("index.sh");
     std::fs::write(&path, script).expect("the fake index is written");
     let tending = IndexTending::with(
-        Some(ServerSpec {
+        IndexServer::Declared(ServerSpec {
             command: "sh".to_owned(),
             args: vec![path.to_string_lossy().into_owned()],
             env: Default::default(),
