@@ -1,0 +1,115 @@
+{
+  "entry": "one-flow-calls-another",
+  "kind": "example",
+  "purpose": "A step runs a whole other flow as its own child run, and the next step reads what that child answered.",
+  "inputs": {},
+  "needs": {
+    "actions": [
+      "shell_check",
+      "subflow"
+    ],
+    "engines": [],
+    "flows": [
+      "what-this-machine-has"
+    ]
+  },
+  "teaches": {
+    "capability": "Flows compose instead of merging: a subflow step starts the flow it names as a child run recorded under this one, and its output carries the child's name, run and status.",
+    "result": "`sailor flow run <name>` completes with two runs in the ledger, the child of what-this-machine-has under this run as its parent; say_what_came_back answers with the child's run id and status."
+  },
+  "flow": {
+    "description": "One flow calling another. The first step runs the shipped flow what-this-machine-has, which reads the tools of this machine and costs nothing, as a child run of this one. The second step reads the child's answer and says which run it was and how it ended. No engine, nothing written, nothing paid.",
+    "graph": {
+      "steps": [
+        {
+          "id": "ask_the_machine",
+          "deps": [],
+          "action": "subflow",
+          "max_attempts": 1,
+          "when": null,
+          "with": {
+            "flow": "what-this-machine-has"
+          },
+          "input_schema": {
+            "type": "any"
+          },
+          "output_schema": {
+            "type": "object",
+            "properties": {
+              "run_id": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "run_id",
+              "status"
+            ],
+            "allow_extra": true
+          }
+        },
+        {
+          "id": "say_what_came_back",
+          "deps": [
+            "ask_the_machine"
+          ],
+          "action": "shell_check",
+          "max_attempts": 1,
+          "when": null,
+          "with": {
+            "command": "printf '{\"child_run\": \"%s\", \"child_status\": \"%s\"}\\n' \"$CHILD_RUN\" \"$CHILD_STATUS\"",
+            "env": {
+              "CHILD_RUN": {
+                "$from": "/run_id"
+              },
+              "CHILD_STATUS": {
+                "$from": "/status"
+              }
+            },
+            "timeout_secs": 10,
+            "answer_shape": {
+              "type": "object",
+              "properties": {
+                "child_run": {
+                  "type": "string"
+                },
+                "child_status": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "child_run",
+                "child_status"
+              ],
+              "allow_extra": false
+            }
+          },
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string"
+              },
+              "timeout_secs": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "command",
+              "timeout_secs"
+            ],
+            "allow_extra": true
+          },
+          "output_schema": {
+            "type": "any"
+          }
+        }
+      ]
+    },
+    "inputs": {
+      "ask_the_machine": {}
+    }
+  }
+}

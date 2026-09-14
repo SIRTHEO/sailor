@@ -22,6 +22,7 @@ mod create_and_delete;
 mod edit;
 mod engines;
 mod extensions;
+pub mod from_catalogue;
 mod hazards;
 mod relocate;
 mod run_and_resume;
@@ -35,6 +36,7 @@ use check::check_flow;
 use cost::cost_of;
 use create_and_delete::{delete_flow, new_flow};
 use edit::edit_flow;
+use from_catalogue::{flow_from, list_catalogue};
 use relocate::relocate_flow;
 pub(crate) use run_and_resume::record_run;
 use run_and_resume::{resume_run, run_flow};
@@ -84,6 +86,10 @@ fn dispatch(args: &[String], sources: &[FlowSource]) -> Result<String, String> {
             edit_flow(sources, name, gesture)
         }
         [command, name] if command == "new" => new_flow(sources, name),
+        [command] if command == "catalogue" => list_catalogue(),
+        [command, entry, name, options @ ..] if command == "from" => {
+            flow_from(sources, entry, name, options)
+        }
         [command, name] if command == "delete" => delete_flow(sources, name),
         [command, name] if command == "where" => where_flow(sources, name),
         [command, name] if command == "restore" => restore_flow(sources, name),
@@ -395,6 +401,14 @@ pub const USAGE: &[Form] = &[
     Form {
         form: "sailor flow new <name>",
         says_key: "cli.flow.form.new",
+    },
+    Form {
+        form: "sailor flow catalogue",
+        says_key: "cli.flow.form.catalogue",
+    },
+    Form {
+        form: "sailor flow from <entry> <name> [--home] [--input key=value ...]",
+        says_key: "cli.flow.form.from",
     },
     Form {
         form: "sailor flow delete <name>",

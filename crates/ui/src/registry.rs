@@ -110,6 +110,7 @@ mod tests {
             wall_secs: None,
             max_turns: None,
             self_care: false,
+            from: None,
         }
     }
 

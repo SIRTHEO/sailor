@@ -1,0 +1,112 @@
+{
+  "entry": "a-text-piece-from-a-brief",
+  "kind": "template",
+  "purpose": "One piece of text written by the engine you name, from a brief that carries everything it needs.",
+  "inputs": {
+    "engine": {
+      "means": "The engine that writes, by the id its descriptor gives it: `sailor tools` lists the ones this machine has.",
+      "required": true
+    }
+  },
+  "needs": {
+    "actions": [
+      "external_engine",
+      "trigger"
+    ],
+    "engines": [
+      {
+        "$input": "engine"
+      }
+    ],
+    "flows": []
+  },
+  "flow": {
+    "description": "One piece of text written by one engine from a self-contained brief. The trigger text is the whole brief: the material, the rules and the shape of the answer. Nothing is written to disk and no tree is cut: the engine answers with the text, and whoever launched the run reads it, checks it and puts it where it belongs. No model is pinned: the engine answers with the one its own configuration picks, and `sailor flow edit` can name one.",
+    "graph": {
+      "steps": [
+        {
+          "id": "trigger",
+          "deps": [],
+          "action": "trigger",
+          "max_attempts": 1,
+          "when": null,
+          "with": {
+            "source": "manual"
+          },
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "source",
+              "text"
+            ],
+            "allow_extra": false
+          },
+          "output_schema": {
+            "type": "any"
+          }
+        },
+        {
+          "id": "the_writer",
+          "deps": [
+            "trigger"
+          ],
+          "action": "external_engine",
+          "max_attempts": 1,
+          "when": null,
+          "with": {
+            "tool": [
+              {
+                "$input": "engine"
+              }
+            ],
+            "stdin": {
+              "$join": [
+                "Write the text the brief below asks for. Do not read, write or run anything: everything you need is in the brief. Answer only with one JSON object, nothing before or after it, of this shape: ",
+                {
+                  "$json": "/answer_shape"
+                },
+                "\n\n",
+                {
+                  "$from": "/text"
+                }
+              ]
+            },
+            "answer_shape": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "allow_extra": false
+            },
+            "timeout_secs": 900
+          },
+          "input_schema": {
+            "type": "any"
+          },
+          "output_schema": {
+            "type": "any"
+          }
+        }
+      ]
+    },
+    "inputs": {
+      "trigger": {
+        "source": "manual",
+        "text": "Say in one sentence what a changelog is for."
+      }
+    }
+  }
+}

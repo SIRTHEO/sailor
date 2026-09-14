@@ -1,0 +1,158 @@
+{
+  "entry": "a-check-that-stops-the-run",
+  "kind": "example",
+  "purpose": "A command that fails stops the run there, and the step that depends on it never starts.",
+  "inputs": {},
+  "needs": {
+    "actions": [
+      "shell_check",
+      "trigger"
+    ],
+    "engines": [],
+    "flows": []
+  },
+  "teaches": {
+    "capability": "A check is a step like any other: when its command exits with an error the run ends failed at that step, and what depends on it is not started.",
+    "result": "`sailor flow run <name>` with no text ends failed at refuse_an_empty_brief and say_how_long never runs; `sailor flow run <name> \"any words\"` completes, and say_how_long answers how many characters the brief had."
+  },
+  "flow": {
+    "description": "A check that stops the run. The trigger text is the brief; the first step refuses an empty one by exiting with an error, which ends the run there. The second step depends on the first, so it only ever starts on a brief that passed, and it says how long that brief was. No engine, nothing written, nothing paid.",
+    "graph": {
+      "steps": [
+        {
+          "id": "trigger",
+          "deps": [],
+          "action": "trigger",
+          "max_attempts": 1,
+          "when": null,
+          "with": {
+            "source": "manual"
+          },
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "source",
+              "text"
+            ],
+            "allow_extra": false
+          },
+          "output_schema": {
+            "type": "any"
+          }
+        },
+        {
+          "id": "refuse_an_empty_brief",
+          "deps": [
+            "trigger"
+          ],
+          "action": "shell_check",
+          "max_attempts": 1,
+          "when": null,
+          "with": {
+            "command": "if [ -z \"$BRIEF\" ]; then printf 'the brief is empty: run the flow again with a text\\n' >&2; exit 1; fi; printf '{\"characters\": %s}\\n' \"${#BRIEF}\"",
+            "env": {
+              "BRIEF": {
+                "$from": "/text"
+              }
+            },
+            "timeout_secs": 10,
+            "answer_shape": {
+              "type": "object",
+              "properties": {
+                "characters": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "characters"
+              ],
+              "allow_extra": false
+            }
+          },
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string"
+              },
+              "timeout_secs": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "command",
+              "timeout_secs"
+            ],
+            "allow_extra": true
+          },
+          "output_schema": {
+            "type": "any"
+          }
+        },
+        {
+          "id": "say_how_long",
+          "deps": [
+            "refuse_an_empty_brief"
+          ],
+          "action": "shell_check",
+          "max_attempts": 1,
+          "when": null,
+          "with": {
+            "command": "printf '{\"said\": \"the brief has %s characters\"}\\n' \"$CHARACTERS\"",
+            "env": {
+              "CHARACTERS": {
+                "$json": "/answer/characters"
+              }
+            },
+            "timeout_secs": 10,
+            "answer_shape": {
+              "type": "object",
+              "properties": {
+                "said": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "said"
+              ],
+              "allow_extra": false
+            }
+          },
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string"
+              },
+              "timeout_secs": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "command",
+              "timeout_secs"
+            ],
+            "allow_extra": true
+          },
+          "output_schema": {
+            "type": "any"
+          }
+        }
+      ]
+    },
+    "inputs": {
+      "trigger": {
+        "source": "manual",
+        "text": ""
+      }
+    }
+  }
+}
