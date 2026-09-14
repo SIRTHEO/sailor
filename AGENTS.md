@@ -6,24 +6,9 @@ Sailor launches the command lines (Claude Code, Codex, Gemini), applies **one
 single body of rules to all of them**, and runs every piece of work as a
 **recorded flow** instead of a script, a hook or a binary of its own.
 
-The measure of every job: *does this thing take an approval away from the owner, or
-bring him a better doubt?* If it does neither, it is not work.
-
 **Before fixing anything at all, read `docs/decisions.md`** — the permanent
-constraints and the choices that do not reopen — **and the `da-fare` note**,
-which says where we stand and what is about to disappear: `sailor notes show
-da-fare`. Repairing a piece that has to disappear is work against the plan, and
-no local check shows it: everything stays green.
-
-The decisions are in the repo on purpose, the working notes in Sailor's store.
-This line once pointed at a document a cleanup had already deleted: for two days
-the first instruction of every session was an empty address, and nobody noticed,
-because a broken pointer in a document is not red.
-
-## The order of the work, decided by the owner
-
-**Code in Sailor → debt removal → building the flow.** Never the other way
-round. You do not build inside what has to disappear.
+constraints and the choices that do not reopen — and
+[`CONTRIBUTING.md`](CONTRIBUTING.md), which lists every gate a change must pass.
 
 ## The decisions already taken, which do not reopen without a measurement
 
@@ -160,22 +145,8 @@ Traps already paid for on this machine:
   `docs/decisions.md` plus one limit that now sits next to the function causing
   it.
 
-  **And the reason is not taste.** The semantic index does not strip comments:
-  SocratiCode's `chunkFileContent` embeds the text as written, and calls
-  "preamble" everything preceding a declaration. A 66-line block **becomes the
-  chunk the index compares against your question**, instead of the code below
-  it. A project that is 25% narrative comment hands you the story when you ask
-  it for the code.
-
   The measure is `cargo test -p sailor --test comments_do_not_crowd_out_the_code`,
   and its numbers can only go down.
-
-- **Notes that cannot meet these rules stay out of the repository**, under
-  `~/personal/.sailor-notes/`, which has no git remote and nothing in it is
-  ever copied in. That covers absolute paths from a developer machine, client
-  or employer names, internal repository names, transcripts and logs copied out
-  of private tooling, and any framing of this work as a reaction to or
-  comparison with somebody else's product.
 
   **The measure is `cargo test -p sailor --test
   a_product_name_in_prose_only_ever_falls`**, and it counts rather than
@@ -197,120 +168,11 @@ Traps already paid for on this machine:
   lowercase, imperative, no trailing period. The body explains why, not what —
   it is where the chronicle the code must not carry actually belongs. No
   tooling attribution trailers.
-- **Writes only with the file-editing tools**, never with `sed`, a heredoc or an
-  interpreter script: writes from an interpreter skip the checks of this house.
-- **Absolute paths**, never `cd X && command`.
 - A comment that states something false is corrected at once. The code is the
   source; comments and documents are dated clues.
 
-## The working copies: whoever opens one, closes it
-
-On 2026-09-02 **53 abandoned ones were found, 39 GB**, born in 28 hours in
-bursts of six to eight an hour. All clean, no process inside, and **50 out of 53
-already inside the trunk byte for byte**: it was not lost work, it was clutter.
-
-Nobody removed them because it was believed that removing them deleted the
-branch. **That is not true, and it is measured**: `git worktree remove
-<directory>` removes the directory and leaves the reference where it is. Orca's
-command is another thing. So closing a copy costs nothing and nothing is lost.
-
-- **When you have finished, remove your copy.** `git worktree remove` on the
-  directory, and the branch stays consultable.
-- **Do not remove somebody else's** without measuring first: `git status
-  --porcelain` inside, and no process with its `cwd` there. If either of the two
-  speaks, ask.
-- **Deleting the branch is another decision**, and it is not yours: it is proved
-  first that the content is already in the trunk, and it is asked.
-
-**The first gesture in a copy is to look at where it was cut from.** It is not
-prudence, it is fault 101: on the evening of 2026-09-05 five copies out of six
-were born **1120 commits behind**, on the old line of `main`, where `sailor
-ratchet` does not exist and neither do the files of the seeds. An agent worked
-in one for a whole turn and delivered a commit that could not be merged,
-declaring seeds that were not this tree's. The comparison costs a second:
-
-```sh
-git log --oneline -1 && git log --oneline -1 main
-```
-
-If they do not match, `git reset --hard main` before reading any file at all.
-A copy cut from a reference nobody chose is not isolation: it is another project
-with the same name.
-
-## What Sailor makes ends by a chain, never by a clock
-
-A worktree, a build directory, a socket, a lease: anything Sailor puts on this
-machine outlives the call that made it, and something has to decide when it is
-over. **That something is never the age of the thing.** An idle threshold
-deletes a slow build at fifty-nine minutes and hoards for ever a directory
-nobody will come back to; both answers are guesses dressed as measurements.
-
-The chain is three gestures and two oracles, and it is written once in
-`ledger::holdings`:
-
-- **Taken.** Whoever makes the thing writes down what it is, the process that
-  took it *with the second the kernel says that process began*, and the run it
-  was taken for. A pid alone is not an owner: numbers are handed on, and a
-  recycled one would inherit somebody else's disk.
-- **Let go.** The ordinary end. The gesture that finishes releases it.
-- **Left held.** Everything nobody released, which is what a violent death
-  leaves. Its owner is settled by asking, in this order: the kernel, whether
-  that same process is still there; the store, whether the run it served has
-  ended. `Whose` has five answers because the refusal of either oracle is
-  `Uncertain` — **a machine that will not say is not permission**.
-
-Two consequences that are not optional:
-
-- **A thing taken for no run is a declared cache**, kept until a person names
-  it. `target/from-head` is one: the sweep that read the clock would have
-  deleted the release's own cache after an hour of quiet.
-- **A thing Sailor never took is not Sailor's to take.** Unknown is not free —
-  fault 100 in another costume. It is named in the reading and removed only
-  when a person names it, the same rule already written for a port Sailor did
-  not open.
-
-[`docs/the-delivery-loop.md`](docs/the-delivery-loop.md) and
-`.sailor/delivery-policy.json` are the rule for an agent taking work through
-merge, push and release, exactly as they are for a person.
-
-## Integration has one branch only
-
-Eleven of those 53 existed **only to merge** — `fusione-quattro`, `fusione-sei`,
-`fusione-46`, `fusione-sera`, and so on — and the trunk carries **47 merges for
-some forty work branches**. Every session that finished opened its own copy to
-integrate and redid the same conflicts from scratch. That is where the tokens
-went: not writing the same code twice, but merging it twelve times in twelve
-places.
-
-Do not open a branch to merge. Merge your work where it is already integrated,
-and if you do not know where that is, **ask the neighbours before opening one**.
-
-## How it is proved that a branch is superseded
-
-The ancestor is not enough and sometimes lies: after a rewrite of the history or
-a squash, `merge-base --is-ancestor` says «no» about work that is already all
-there. **The content is compared**: merge the branch into a throwaway copy of
-the trunk and look at whether the tree changes.
-
-And before believing the result, **the absurd check**: put through the same
-measurement a branch that *must* come out as carrying — one with a file in it
-that the trunk does not have. If it comes out «superseded», the measurement is
-blind and every number of that pass is thrown away.
-
 ## The life of a branch, and what it is called
 
-Measured on 2026-09-05: **64 local branches, 56 with content identical to the
-trunk** and five working copies open for days, all clean and all already inside.
-The trunk was **196 commits ahead of the remote** and nobody had pushed. Names
-like `work/fusione-sera-guasti` and `innesto-toml-codex-ricucito`: they tell of
-an evening, not of a job.
-
-- **The trunk is `main`**, and it is the only branch: it is pushed to
-  `origin/main` **at every release**, not «when we remember», because a release
-  that puts into service a binary the remote has never seen is a release that
-  exists on one machine only. The history before the rewrite of 2026-09-06 is
-  the tag `archive/before-the-rewrite`: a tag is not to be mistaken for a place
-  where the work continues.
 - **A branch is called `work/<what-it-does>`, in English, like the commits**:
   `work/terminal-claims`, not `work/annunci-terminali`; `work/toml-graft`, not
   `work/innesto-toml`. The name says the job, not the day nor the gesture
@@ -320,32 +182,6 @@ an evening, not of a job.
   is deleted in the same gesture; the working copy is removed with `git worktree
   remove`. A branch that survives its own merge is clutter somebody will have to
   re-measure.
-- **Whoever finds somebody else's branch does not delete it**: they prove it by
-  content, and if it is superseded they say so to whoever opened it — or to
-  the owner — with the measurement alongside.
-- **There are two names you do not choose, and they have to be closed all the
-  same.** An agent in a working copy is born on a branch the mechanism names by
-  itself; a step that asks for a tree of its own opens a copy under the name of
-  the run and of the step. Neither of the two deletes itself: whoever merges
-  closes the first, whoever reads the work closes the second. Measured on
-  2026-09-05: twelve orphan copies and 905 MB after an evening of delegations,
-  and it is fault 89.
-- **The trunk is pushed at every release, and if the remote refuses it, you look
-  at why.** A machine with more than one access to that remote has to say which
-  one owns the repository: `sailor.pushAs` and `sailor.pushSecretFrom` in the
-  configuration of this tree. On 2026-09-05 the remote stayed 179 commits behind
-  for a day because the active access was not the owner, and every release said
-  so honestly while nothing moved.
-
-**A work branch does not move backwards by accident.** The shared Git hook
-refuses rewrites of protected work branches unless `SAILOR_ALLOW_REWRITE=1` is
-declared for the one command that needs it. Its tracked source is
-`scripts/hooks/reference-transaction`; install it in a fresh clone with
-`cp scripts/hooks/reference-transaction "$(git rev-parse --git-path hooks/reference-transaction)"`.
-Every commit round ends with `scripts/push-work-branches.sh`, which pins each
-delivered tip and pushes only a privacy-proven branch. `scripts/holdings-check.sh`
-names a branch that has moved behind its newest pin.
-
 **The shape of the name has a judge, and the judge is pure.** There are three
 shapes and nothing else: `main`, the trunk; `work/<what-it-does>` with
 lowercase, digits and hyphens in the topic; `worktree-agent-<id>`, which is
@@ -361,53 +197,6 @@ receives it can do nothing about it. The command, which does read the real
 branches, is the other half. And the judge looks at the shape only: that
 `work/fusione-sera` tells of an evening instead of a job is said by the line
 above, and no comparison can say it.
-
-## How this tree is explored before it is changed
-
-**Before searching by hand, the index is asked.** SocratiCode has this
-repository indexed and answers by symbol, by dependency graph and by semantic
-search: `codebase_symbol` for where a thing lives, `codebase_search` for «who
-does X», `codebase_impact` for who you touch by changing it. A `grep` on a tree
-of forty thousand lines finds the occurrences, not the relations, and whoever
-develops without asking the index redoes by hand a measurement that is already
-there.
-
-**The limit is declared**: the index lags behind files a few hours old, and on
-Rust the graph has given false orphans (fault 38). It holds as a first question,
-not as a verdict: what the index says is confirmed by reading the file it names.
-
-**And there is already a measurement of what not asking costs**: `sailor search
-<words>` searches among the flows, the runs, the store, the events and the
-faults of this machine, and answers questions no reading of the code can — how
-many times a step has failed, which fault has already been written, what
-yesterday's run learned.
-
-## When there is no clear answer, prior art is asked before a design is invented
-
-A problem without an obvious cure is not an invitation to invent one. Two
-questions come first, and they are asked of tools, not of memory:
-
-- **Has it been solved and published?** The `neuroarxiv` skill reads arXiv for
-  the shape of the problem and comes back with the paths already taken, the
-  failure modes already known, and citations. It is the question to ask before
-  writing an algorithm, a protocol, or a rule that coordinates two processes.
-- **How does a real project do it?** The `advise-project-approach` skill studies
-  comparables: the systems that already ship this, and which trade-off each one
-  took. A named system that has run for years is evidence; a plausible design is
-  not.
-
-The trigger is written so it cannot be argued away: **whenever the cure is not
-already implied by the measurement**, both are asked before the first line of
-design.
-
-**One strong reading is not a substitute.** Consulting a single model yields one
-opinion, not the set of paths already walked — and an opinion arrives with no
-way to tell a well-trodden road from a guess. This tree has already mistaken the
-one for the other.
-
-**The limit is declared**: neither answers whether *this* tree should do the
-thing. They bound the space of known answers. The choice, the measurement and
-the proof stay here.
 
 ## Whoever creates does not judge
 
