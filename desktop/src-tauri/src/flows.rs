@@ -50,9 +50,8 @@ pub(crate) fn delete_flow(name: String) -> Result<(), String> {
 /// the environment: the tests write into a throwaway folder, not among the real
 /// flows.
 ///
-/// A count copied into a comment ages on its own, and `docs/decisions.md`
-/// forbids it for exactly that reason — where a fact is already recorded, the
-/// text points at it rather than copying it. The number is said by
+/// A count copied into a comment ages on its own: where a fact is already
+/// recorded, the text points at it rather than copying it. The number is said by
 /// `sailor flow list`, which counts all three of the places they come from.
 fn save_flow_in(flows_dir: &Path, flow_json: serde_json::Value) -> Result<(), String> {
     // Deserializing `FlowFile` invokes `Graph::try_from`, which calls

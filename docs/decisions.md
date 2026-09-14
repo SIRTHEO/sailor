@@ -38,7 +38,7 @@ This document records the architectural decision records (ADRs) and permanent co
 
 **Context.** An automated step or engine that evaluates its own generated output operates with its prior context and biases already loaded. Self-evaluation routinely fails to detect its own errors and leads to false positive approvals. Independent evaluation is necessary to maintain software quality and prevent regressions.
 
-**Decision.** The verdict on any piece of work must be rendered by an entity that did not produce it. An engine, step, or agent is strictly forbidden from judging, verifying, or approving its own output.
+**Decision.** The verdict on any piece of work must be rendered by an entity that did not produce it. An engine, step, or agent is forbidden by default from judging, verifying, or approving its own output. The one exception is a step that declares `"same_holder_ok": true` (ADR-010).
 
 **Consequences.** Verification steps require separate execution contexts or independent checks. Flows must be structured with explicit, independent validation boundaries. Self-approval is strictly prohibited across all flow definitions.
 
@@ -165,10 +165,30 @@ This document records the architectural decision records (ADRs) and permanent co
 
 ## ADR-017: You do not add calls to save calls
 
-**Status:** accepted
+**Status:** proposed — recorded among the recommendations, not yet decided
 
 **Context.** Complex agent systems frequently introduce auxiliary model calls—such as routing steps, summarizers between stages, context compressors, or automated LLM judges—under the premise of optimizing execution. In practice, flow costs and latency are dominated by turn counts rather than context token reductions. Auxiliary turns increase total cost, latency, and system opacity without offsetting benefits.
 
 **Decision.** Do not introduce intermediate model calls (such as model routers, context summarizers, or step-evaluating LLMs) to optimize or judge other model calls. Verification must be performed using deterministic, executable code checks wherever an acceptance criterion is testable. An engine call is permitted only to resolve remaining ambiguities after deterministic checks have run.
 
 **Consequences.** Auxiliary LLM middleware is strictly prohibited. Intermediate state transitions remain transparent and uncompressed. Operational efficiency is achieved through session reuse and skipping already successful steps rather than adding management turns.
+
+## ADR-018: Place spending ceilings on flows and halt runs before opening fronts
+
+**Status:** accepted
+
+**Context.** Flows executing without budget limits can incur unbounded provider costs during unattended runs. A step that discovers a budget breach mid-action has already incurred costs, leaving the boundary before opening a front as the only zero-cost halting point. In addition, reporting budget exhaustion as a run failure creates false failure alarms for scheduled flows designed to touch their limits.
+
+**Decision.** A flow may declare an optional `spend_cap_micros` attribute specifying the maximum spending allowed for a run. The default value is `None`, representing no limit, which must not be treated as `Some(0)`. Before opening each front, the executor queries the store for cumulative spending; if the ceiling is reached, the run stops with the status `cap_reached` rather than `failed` and records which steps did not start. The ceiling must not depend on engine-specific native spending caps, which govern individual invocations rather than entire runs. Spending totals must consistently be presented as equivalent cost across all commands.
+
+**Consequences.** Halting is bounded by the cost granularity of a single call rather than micro-level increments because checks occur only before opening fronts. Ceilings guarantee boundaries only over known declared costs; invocations of engines that do not report cost metrics are omitted from the total, and stopped runs report the count of uncosted calls. Flow spending ceilings cannot be calibrated on fewer than three runs with known non-zero costs; `sailor flow cap` refuses to suggest a ceiling below this threshold. When calibrated, the suggested ceiling equals the worst observed run cost plus the dearest observed call cost.
+
+## ADR-019: Assemble and dry-run engine command lines during flow check
+
+**Status:** accepted
+
+**Context.** Command-line syntax errors and flag misconfigurations previously went undetected until execution time. Static analysis and `--help` flags fail to validate argument structures because engines short-circuit before parsing real parameters. Furthermore, engines can return identical non-zero exit codes for expected prompt omissions and actual flag syntax errors.
+
+**Decision.** `sailor flow check` must assemble the complete command line for every engine across all chains and execute it without the prompt question. Dry-run checks are enabled by default, but contributors may disable them using `--no-engines`, in which case unverified lines must remain unreported rather than marked healthy. Engine descriptors must specify `refuses_without_prompt` with the engine's exact expected refusal message. The validation logic in `judge_dry_run` must evaluate stdout and stderr text without inspecting or receiving process exit codes. Conditions in `unusable_when` must be evaluated before `refuses_without_prompt` to prevent misclassifying unavailable engines as malformed. Resolving engine names must remain strictly static, confining all process execution exclusively to check workflows.
+
+**Consequences.** `sailor flow check` is no longer strictly static and spawns child processes locally, requiring an explicit execution timeout without relying on system-specific timeout commands. Malformed command lines and invalid flags are caught locally before flow execution without contacting providers or incurring spending. The dry run does not verify whether an engine has actually been invoked in historical runs, which remains independently tracked by the store. Dry-run outcomes are verified and categorized by `judge_dry_run` into healthy, broken, not tried, not assemblable, or unusable states.
