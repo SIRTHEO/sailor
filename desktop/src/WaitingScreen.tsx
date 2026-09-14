@@ -1,5 +1,8 @@
-// The screen the window opens on: the decisions that wait for a person, and
-// what happened unattended. Those two, and nothing else.
+// The screen the window opens on: the decisions that wait for a person, what
+// happened unattended, and — a row, not a place — what is running now and
+// what it costs. Three questions, one screen: the owner's rule is a person
+// scans, does not navigate, so a fourth answer earns a row here, never a
+// fourth tab.
 //
 // **NO GESTURE IS INVENTED HERE.** Taking a handed step and closing it are
 // `Handed`'s, and a copy would be a second report of one act; opening a run is
@@ -8,6 +11,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { AttentionQueue } from "./AttentionQueue";
 import { attentionQueue, type AttentionRow } from "./attention";
+import { knownRuns, runUsage } from "./engine";
+import { RunningNow, runningNow, type RunningRow } from "./RunningNow";
 import { t } from "./i18n";
 import {
   AWAY_HOURS,
@@ -98,6 +103,8 @@ export interface WaitingScreenProps {
   sources?: Sources;
   /** Direct attention queue rows, or fetched if native and omitted */
   attention?: AttentionRow[];
+  /** The runs in flight and their cost, or fetched if native and omitted. */
+  running?: RunningRow[];
   /** Absent, the row draws no gesture rather than one that goes nowhere. */
   onRun?: (runId: string) => void;
   onQuota?: () => void;
@@ -110,12 +117,14 @@ export function WaitingScreen({
   since,
   sources,
   attention,
+  running,
   onRun,
   onQuota,
   onTty,
 }: WaitingScreenProps) {
   const [own, setOwn] = useState<Sources | null>(null);
   const [ownAttention, setOwnAttention] = useState<AttentionRow[] | null>(null);
+  const [ownRunning, setOwnRunning] = useState<RunningRow[] | null>(null);
   const from = since ?? now - AWAY_HOURS * 3600;
 
   useEffect(() => {
@@ -145,7 +154,42 @@ export function WaitingScreen({
     };
   }, [native, sources !== undefined, attention !== undefined]);
 
+  useEffect(() => {
+    if (!native || running !== undefined) return;
+    let watching = true;
+    const read = () => {
+      knownRuns().then((runs) => {
+        if (!watching) return;
+        const inFlight = runningNow(runs);
+        // Cost is read after the rows are known, never blocking them: a run
+        // just started answers "what" before it can answer "how much".
+        setOwnRunning(inFlight.map((run) => ({ run, costMicros: null })));
+        inFlight.forEach((run) => {
+          runUsage(run.run_id).then((usage) => {
+            if (!watching) return;
+            setOwnRunning((prior) =>
+              (prior ?? []).map((row) =>
+                row.run.run_id === run.run_id
+                  ? { ...row, costMicros: usage?.total_cost_micros ?? null }
+                  : row,
+              ),
+            );
+          }, () => {});
+        });
+      }, () => {
+        // No engine to ask: the row simply stays absent, same as no run.
+      });
+    };
+    read();
+    const tick = window.setInterval(read, REFRESH_MS);
+    return () => {
+      watching = false;
+      window.clearInterval(tick);
+    };
+  }, [native, running !== undefined]);
+
   const seen = sources ?? own;
+  const runningRows = running ?? ownRunning ?? [];
   if (seen === null) {
     // AN ENGINE THAT IS NOT THERE IS NOT AN EMPTY MORNING, and the two would
     // otherwise draw the same blank screen.
@@ -195,6 +239,8 @@ export function WaitingScreen({
           This list is short of whatever these hold, and I cannot say how much: {blind.join("; ")}
         </p>
       )}
+
+      <RunningNow rows={runningRows} now={now} onRun={onRun} />
 
       {activeAttention !== null ? (
         activeAttention.length > 0 && (

@@ -1836,7 +1836,7 @@ export default function App() {
           the attention queue's «open the run» reaches a run handed to a
           person from another terminal or another flow. */}
       {watching && !watched && (
-        <RunGlimpse runId={watching} onClose={() => setWatching(null)} />
+        <RunGlimpse runId={watching} onClose={() => setWatching(null)} onWhy={() => setPlace("memory")} />
       )}
       </StepUsageContext.Provider>
       </WireContext.Provider>

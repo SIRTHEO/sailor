@@ -3835,6 +3835,18 @@ tr[data-followable]:hover {
   color: var(--muted);
 }
 
+.glimpse__why {
+  margin: 0 12px 8px;
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--accent, var(--muted));
+  cursor: pointer;
+  font-size: var(--text-small);
+  padding: 0;
+  text-decoration: underline;
+}
+
 .console__title {
   font-weight: 600;
   font-size: var(--text-body);

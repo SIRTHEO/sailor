@@ -24,10 +24,10 @@ the real author and the real date.
   the four surfaces an action could belong to (`sense`, `act`, `remember`,
   `gate`), and the rule that would follow. The page says itself why nothing
   builds against it yet.
-- [`decisions.md`](decisions.md) — the memory of the choices. The permanent
-  constraints at the top are the yardstick every other decision is judged by; an
-  entry below binds somebody who was not in the room when it was taken. Read it
-  before repairing anything, or a road already discarded gets taken again.
+- [`decisions.md`](decisions.md) — the architecture decisions, as numbered
+  records. The six permanent constraints come first and are the yardstick every
+  other decision is judged by. Read it before repairing anything, or a road
+  already discarded gets taken again.
 
 ## Operate
 
