@@ -672,41 +672,6 @@ fn write_check_and_link(
     disk.link(staging, to)
 }
 
-/// The mark a restore leaves when it archived a file it could not remove: the
-/// source and the archive, one a line. Only that archive is ever reused.
-fn pending_marker(chain: &Chain, first: &Path) -> PathBuf {
-    first.with_file_name(format!(".{}.pending", chain.name))
-}
-
-fn write_pending(marker: &Path, source: &Path, archive: &Path) -> std::io::Result<()> {
-    use std::io::Write as _;
-    let mut file = fs::OpenOptions::new().write(true).create_new(true).open(marker)?;
-    writeln!(file, "{}\n{}", source.display(), archive.display())?;
-    file.sync_all()
-}
-
-/// The archive a failed attempt made of this very file, as its marker names it:
-/// the same source, a plain file beside the marker, the same bytes. A marker
-/// that no longer describes one is removed, and nothing is reused.
-fn archive_left_pending(chain: &Chain, first: &Path) -> Option<PathBuf> {
-    let marker = pending_marker(chain, first);
-    let text = fs::read_to_string(&marker).ok()?;
-    let mut lines = text.lines();
-    let (source, archive) = (lines.next().map(PathBuf::from), lines.next().map(PathBuf::from));
-    let ours = match (source, archive) {
-        (Some(source), Some(archive)) => (source == chain.winner.path
-            && archive.parent() == first.parent()
-            && fs::symlink_metadata(&archive).is_ok_and(|meta| meta.file_type().is_file())
-            && fs::read(&archive).ok().is_some_and(|held| fs::read(&source).ok() == Some(held)))
-        .then_some(archive),
-        _ => None,
-    };
-    if ours.is_none() {
-        let _ = fs::remove_file(&marker);
-    }
-    ours
-}
-
 /// Puts the shipped flow back by moving the file that runs out of discovery:
 /// into [`ARCHIVE_FOLDER`], named `<name>.<now>` plus its own suffix. Never a
 /// delete, and never a file other than the winner: under `SAILOR_FLOWS` only a
@@ -742,33 +707,12 @@ fn restore_on(
             error: error.to_string(),
         })?;
     }
-    let marker = pending_marker(chain, &first);
-    if let Some(archive) = archive_left_pending(chain, &first) {
-        return match disk.remove(&path) {
-            Ok(()) => {
-                let _ = fs::remove_file(&marker);
-                Ok(Restored { archive, scratch_left: None })
-            }
-            Err(error) => Err(RestoreRefusal::ArchivedButOriginalStays {
-                path,
-                archive,
-                error: error.to_string(),
-            }),
-        };
-    }
     for attempt in 0..ARCHIVE_NAMES_TO_TRY {
         let archive = archive_named(chain, now, attempt);
         match move_without_replacing(&path, &archive, disk) {
             Ok(Moved { stays: None, scratch_left }) => return Ok(Restored { archive, scratch_left }),
             Ok(Moved { stays: Some(error), scratch_left }) => {
-                let mut said: Vec<String> = vec![error.to_string()];
-                said.extend(scratch_left);
-                if let Err(error) = write_pending(&marker, &path, &archive) {
-                    said.push(catalogue::say(
-                        "flow.restore.pending_not_written",
-                        &[("marker", &marker.display().to_string()), ("error", &error.to_string())],
-                    ));
-                }
+                let said: Vec<String> = std::iter::once(error.to_string()).chain(scratch_left).collect();
                 return Err(RestoreRefusal::ArchivedButOriginalStays {
                     path,
                     archive,
@@ -1382,16 +1326,16 @@ mod tests {
         let _ = fs::remove_dir_all(&base);
     }
 
-    /// An original that cannot be removed is archived once: the next attempt
-    /// finds its own archive and retries only the removal, and both say both
-    /// paths while the file that runs does not change.
+    /// Two removals that fail leave two archives and the original whole: each
+    /// attempt names only the archive it made itself.
     #[test]
-    fn an_original_that_cannot_be_removed_is_archived_once_and_both_paths_are_said() {
+    fn two_removals_that_fail_leave_two_archives_and_the_original_whole() {
         let base = scratch("restore-stuck");
         let home_flows = base.join("home").join("flows");
         let shipped = FLOWS[0].0;
         put_flow(&home_flows, shipped);
         let file = home_flows.join(format!("{shipped}.flow.json"));
+        let written = fs::read(&file).expect("the file");
         let places = sources(Some(&home_flows), None, None);
         let chain = chain_of(&places, None, shipped).expect("the chain");
         let stuck = FaultyDisk { no_link_from: None, broken_write: false, stuck: Some(file.clone()), stuck_staging: false };
@@ -1399,20 +1343,19 @@ mod tests {
         let first = restore_on(&chain, &places, 42, &stuck);
         let second = restore_on(&chain, &places, 43, &stuck);
 
-        let everything = archived_in(&base.join("home").join(ARCHIVE_FOLDER));
-        let archives: Vec<PathBuf> = everything
-            .iter()
-            .filter(|path| !path.file_name().is_some_and(|name| name.to_string_lossy().starts_with('.')))
-            .cloned()
-            .collect();
-        assert_eq!(archives.len(), 1, "one archive after two attempts: {everything:?}");
-        assert!(pending_marker(&chain, &archives[0]).exists(), "the attempt left no mark: {everything:?}");
-        assert!(file.exists(), "the original stays");
-        for said in [&first, &second] {
-            let text = format!("{said:?}");
-            assert!(matches!(said, Err(RestoreRefusal::ArchivedButOriginalStays { .. })), "{text}");
-            assert!(text.contains(&file.display().to_string()), "{text}");
-            assert!(text.contains(&archives[0].display().to_string()), "{text}");
+        let mut archives = archived_in(&base.join("home").join(ARCHIVE_FOLDER));
+        archives.sort();
+        let (own_first, own_second) = (archive_path_for(&chain, 42), archive_path_for(&chain, 43));
+        assert_eq!(archives, vec![own_first.clone(), own_second.clone()]);
+        assert_eq!(fs::read(&file).expect("the original"), written, "the original was touched");
+        for (said, own) in [(&first, &own_first), (&second, &own_second)] {
+            match said {
+                Err(RestoreRefusal::ArchivedButOriginalStays { path, archive, .. }) => {
+                    assert_eq!(path, &file);
+                    assert_eq!(archive, own, "an attempt named an archive it did not make");
+                }
+                other => panic!("the original stays and both paths are said: {other:?}"),
+            }
         }
         let after = chain_of(&places, None, shipped).expect("the chain");
         assert_eq!(after.winner.path, file, "the flow that runs changed");
@@ -1445,15 +1388,17 @@ mod tests {
         let _ = fs::remove_dir_all(&base);
     }
 
-    /// After a removal that failed, the retry reuses the archive that attempt
-    /// made, and never an older one with the same bytes beside it.
+    /// After a removal that failed, a retry deletes nothing it did not archive
+    /// itself and never names an archive it did not make, not the one of the
+    /// failed attempt nor an older identical one beside it.
     #[test]
-    fn after_a_stuck_removal_the_retry_reuses_only_its_own_archive() {
-        let base = scratch("restore-own");
+    fn after_a_stuck_removal_a_retry_archives_again_and_names_only_what_it_made() {
+        let base = scratch("restore-retry");
         let home_flows = base.join("home").join("flows");
         let shipped = FLOWS[0].0;
         put_flow(&home_flows, shipped);
         let file = home_flows.join(format!("{shipped}.flow.json"));
+        let written = fs::read(&file).expect("the file");
         let folder = base.join("home").join(ARCHIVE_FOLDER);
         let older = folder.join(format!("{shipped}.7.flow.json"));
         fs::create_dir_all(&folder).expect("archive folder");
@@ -1461,22 +1406,19 @@ mod tests {
         let places = sources(Some(&home_flows), None, None);
         let chain = chain_of(&places, None, shipped).expect("the chain");
         let stuck = FaultyDisk { no_link_from: None, broken_write: false, stuck: Some(file.clone()), stuck_staging: false };
-        let own = archive_path_for(&chain, 42);
+        let failed = archive_path_for(&chain, 42);
 
         let first = restore_on(&chain, &places, 42, &stuck);
-        let second = restore_on(&chain, &places, 43, &stuck);
-        let third = restore_on(&chain, &places, 44, &ThisDisk);
+        let retry = restore_on(&chain, &places, 44, &ThisDisk).expect("the retry archives");
 
-        for said in [&first, &second, &third] {
-            let text = format!("{said:?}");
-            assert!(text.contains(&own.display().to_string()), "{text}");
-            assert!(!text.contains(&older.display().to_string()), "{text}");
-        }
+        assert!(format!("{first:?}").contains(&failed.display().to_string()), "{first:?}");
+        assert_eq!(retry.archive, archive_path_for(&chain, 44), "the retry named an archive it did not make");
+        assert_eq!(fs::read(&retry.archive).expect("the retry's archive"), written, "it removed what it did not archive");
+        assert_eq!(fs::read(&older).expect("the older archive"), written, "the older archive was touched");
         let mut archives = archived_in(&folder);
-        archives.retain(|path| !path.file_name().is_some_and(|name| name.to_string_lossy().starts_with('.')));
         archives.sort();
-        assert_eq!(archives, vec![own.clone(), older.clone()]);
-        assert!(!file.exists(), "the third attempt removes the original");
+        assert_eq!(archives, vec![failed, retry.archive.clone(), older]);
+        assert!(!file.exists(), "the retry removes the original it archived");
         let _ = fs::remove_dir_all(&base);
     }
 

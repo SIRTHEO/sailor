@@ -185,11 +185,11 @@ fn a_read_only_folder_still_lets_this_user_remove(probe: &Path) -> bool {
 }
 
 /// A read-only flows folder lets the file be archived but not removed: both
-/// paths are said, the flow that runs does not change, and a second attempt
-/// makes no second archive.
+/// paths are said, the flow that runs does not change, and each attempt makes
+/// and names an archive of its own.
 #[cfg(unix)]
 #[test]
-fn an_original_that_stays_is_archived_once_and_both_paths_are_said() {
+fn an_original_that_stays_is_archived_on_each_attempt_and_both_paths_are_said() {
     use std::os::unix::fs::PermissionsExt;
 
     struct Writable(PathBuf);
@@ -215,24 +215,30 @@ fn an_original_that_stays_is_archived_once_and_both_paths_are_said() {
     let first = sailor(&scratch, None, &["flow", "restore", shipped()]);
     let second = sailor(&scratch, None, &["flow", "restore", shipped()]);
 
-    let archives: Vec<PathBuf> = archived_in(&scratch.0.join("home").join("flows-archived"))
-        .into_iter()
-        .filter(|path| !path.file_name().is_some_and(|name| name.to_string_lossy().starts_with('.')))
-        .collect();
-    assert_eq!(archives.len(), 1, "one archive after two attempts: {archives:?}\n{}\n{}", first.text, second.text);
+    let archives = archived_in(&scratch.0.join("home").join("flows-archived"));
+    assert_eq!(archives.len(), 2, "two archives after two attempts: {archives:?}\n{}\n{}", first.text, second.text);
     assert!(file.exists(), "the original stays");
-    let stays = catalogue::say(
-        "cli.flow.restore_original_stays",
-        &[
-            ("flow", shipped()),
-            ("path", &file.display().to_string()),
-            ("archive", &archives[0].display().to_string()),
-        ],
-    );
+    let names = |said: &Said, archive: &PathBuf| {
+        said.text.contains(&catalogue::say(
+            "cli.flow.restore_original_stays",
+            &[
+                ("flow", shipped()),
+                ("path", &file.display().to_string()),
+                ("archive", &archive.display().to_string()),
+            ],
+        ))
+    };
     for said in [&first, &second] {
         assert_eq!(said.code, Some(1), "{}", said.text);
-        assert!(said.text.contains(&stays), "both paths are said: {}", said.text);
+        let named: Vec<&PathBuf> = archives.iter().filter(|archive| names(said, archive)).collect();
+        assert_eq!(named.len(), 1, "both paths are said, and one archive: {}", said.text);
     }
+    assert!(
+        !archives.iter().any(|archive| names(&first, archive) && names(&second, archive)),
+        "the second attempt named the first attempt's archive:\n{}\n{}",
+        first.text,
+        second.text
+    );
     let list = sailor(&scratch, None, &["flow", "list"]);
     let replaces = catalogue::say(
         "cli.flow.list_origin_replaces",
