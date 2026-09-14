@@ -18,9 +18,10 @@ pub struct Secret {
 const TOKEN_PREFIXES: &[&str] = &["sk-", "ghp_", "gho_", "github_pat_", "xoxb-", "xoxp-", "AKIA", "AIza", "HRKU-"];
 
 /// The head of a private key in the armour every tool writes it in:
-/// `-----BEGIN `, upper-case words each followed by one space, `PRIVATE KEY-----`.
+/// `-----BEGIN `, upper-case words each followed by one space, `PRIVATE KEY`,
+/// an optional ` BLOCK` as PGP writes it, `-----`.
 const PEM_OPENING: &str = "-----BEGIN ";
-const PEM_PRIVATE_KEY_CLOSING: &str = "PRIVATE KEY-----";
+const PEM_PRIVATE_KEY_CLOSINGS: &[&str] = &["PRIVATE KEY-----", "PRIVATE KEY BLOCK-----"];
 
 /// A whole header and no body, so a truncated key is still refused, while a
 /// pattern that only names the armour is not.
@@ -28,7 +29,7 @@ fn holds_a_private_key_header(value: &str) -> bool {
     value.match_indices(PEM_OPENING).any(|(at, _)| {
         let mut rest = &value[at + PEM_OPENING.len()..];
         loop {
-            if rest.starts_with(PEM_PRIVATE_KEY_CLOSING) {
+            if PEM_PRIVATE_KEY_CLOSINGS.iter().any(|closing| rest.starts_with(closing)) {
                 return true;
             }
             let word = rest.bytes().take_while(u8::is_ascii_uppercase).count();
@@ -512,6 +513,10 @@ mod tests {
             "stdin": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA"
         }}]}});
         assert_eq!(secrets_in(&truncated_key).len(), 1, "{:?}", secrets_in(&truncated_key));
+        let truncated_pgp_key = json!({"id": "x", "graph": {"steps": [{"id": "s", "with": {
+            "stdin": "-----BEGIN PGP PRIVATE KEY BLOCK-----\n"
+        }}]}});
+        assert_eq!(secrets_in(&truncated_pgp_key).len(), 1, "{:?}", secrets_in(&truncated_pgp_key));
         let header_patterns = json!({"id": "x", "graph": {"steps": [{"id": "s", "with": {
             "command": "grep -E '-----BEGIN (RSA |EC )?PRIVATE KEY|-----BEGIN [A-Z ]+' flows"
         }}]}});
