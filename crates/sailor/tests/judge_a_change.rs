@@ -98,6 +98,7 @@ impl Fixture {
             hidden_test_patch,
             gold_added_lines: actions::bench::task::added_lines(&gold_patch),
             gold_patch,
+            test_commands: Vec::new(),
             test_command: ["cargo", "test", "-p", "tiny", "--test", "hidden"]
                 .iter()
                 .map(|word| word.to_string())

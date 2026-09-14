@@ -238,6 +238,7 @@ mod tests {
             gold_patch: String::new(),
             gold_added_lines: 0,
             test_command: vec!["true".to_owned()],
+            test_commands: Vec::new(),
             validated: None,
         }
     }

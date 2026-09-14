@@ -692,7 +692,7 @@
   "cli.worktree.index_could_not_look": "l'identità dell'indice {identity} di {tree} non è stata scritta: gli alberi del deposito non si sono potuti elencare, quindi niente dice se uno la porta ancora: {why}",
   "cli.worktree.index_not_recorded": "nessuna spazzata ha lasciato {identity} in questo registro: il gesto ritira solo ciò che una spazzata ha scritto, per il deposito da cui era tagliato",
   "cli.worktree.index_server_unreadable": "l'identità dell'indice {identity} non è stata ritirata: {key} non si è potuto leggere: {why}",
-  "cli.worktree.index_could_not_ask":"l'identità dell'indice {identity} non è stata ritirata, perché l'indice non si è potuto interrogare: {why}",
+  "cli.worktree.index_could_not_ask": "l'identità dell'indice {identity} non è stata ritirata, perché l'indice non si è potuto interrogare: {why}",
   "cli.worktree.index_identity_unknown": "l'identità dell'indice di {tree} non si è potuta nominare: {why}",
   "cli.worktree.index_left_behind": "l'indice tiene ancora {identity} per {tree}: una spazzata non cancella nessun indice, quindi ritirala con «sailor worktree retire {identity}»",
   "cli.worktree.index_no_entry": "l'indice non tiene niente sotto {identity}: niente da ritirare",
@@ -1042,5 +1042,7 @@
   "cli.role.missing": "il ruolo «{role}» non ha nessuna riga in roles",
   "cli.role.invalid": "il ruolo «{role}» non è valido: {error}",
   "cli.role.no_tools": "il ruolo «{role}» non ha tool",
-  "cli.role.needs_object": "il ruolo «{role}» ha bisogno di un input oggetto"
+  "cli.role.needs_object": "il ruolo «{role}» ha bisogno di un input oggetto",
+  "run.failure.bench_not_read": "il set del banco non si è potuto leggere dalla casa: nessun set con quel nome, o un file di compito che non si legge",
+  "run.failure.store_failed": "il deposito non ha risposto, quindi niente si è potuto leggere o riscrivere"
 }

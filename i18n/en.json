@@ -692,7 +692,7 @@
   "cli.worktree.index_could_not_look": "the index identity {identity} of {tree} was not written down: the trees of the repository could not be listed, so nothing says whether one still carries it: {why}",
   "cli.worktree.index_not_recorded": "no sweep left {identity} behind on this store: the gesture retires only what a sweep wrote down, by the repository it was cut from",
   "cli.worktree.index_server_unreadable": "the index identity {identity} was not retired: {key} could not be read: {why}",
-  "cli.worktree.index_could_not_ask":"the index identity {identity} was not retired, because the index could not be asked: {why}",
+  "cli.worktree.index_could_not_ask": "the index identity {identity} was not retired, because the index could not be asked: {why}",
   "cli.worktree.index_identity_unknown": "the index identity of {tree} could not be named: {why}",
   "cli.worktree.index_left_behind": "the index still holds {identity} for {tree}: a sweep deletes no index, so retire it with «sailor worktree retire {identity}»",
   "cli.worktree.index_no_entry": "the index holds nothing under {identity}: nothing to retire",
@@ -1042,5 +1042,7 @@
   "cli.role.missing": "role «{role}» has no row in roles",
   "cli.role.invalid": "role «{role}» is invalid: {error}",
   "cli.role.no_tools": "role «{role}» has no tools",
-  "cli.role.needs_object": "role «{role}» needs an object input"
+  "cli.role.needs_object": "role «{role}» needs an object input",
+  "run.failure.bench_not_read": "the bench set could not be read from the home: no such set, or a task file that does not parse",
+  "run.failure.store_failed": "the store did not answer, so nothing could be read or written back"
 }

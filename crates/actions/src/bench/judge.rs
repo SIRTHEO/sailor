@@ -250,10 +250,10 @@ fn tail_of(text: &str) -> String {
     text[start..].to_owned()
 }
 
-/// The task's command, `-j` added when it is cargo and before any `--`, which
-/// hands what follows to the test binary.
-fn test_command(task: &Task, tree: &Path, target_dir: &Path) -> Option<Command> {
-    let (program, rest) = task.test_command.split_first()?;
+/// One of the task's commands, `-j` added when it is cargo and before any
+/// `--`, which hands what follows to the test binary.
+fn test_command_of(argv: &[String], tree: &Path, target_dir: &Path) -> Option<Command> {
+    let (program, rest) = argv.split_first()?;
     let mut command = Command::new(program);
     let cut = rest
         .iter()
@@ -296,43 +296,57 @@ fn run_hidden_tests(asked: &Asked) -> Result<HiddenTests, ActionError> {
     if let Err(why) = git(tree, &["apply", &patch_path]) {
         return Ok(not_applied(why));
     }
-    let Some(command) = test_command(&asked.task, tree, &asked.target_dir) else {
-        return Err(invalid("the task names no test command"));
-    };
-    let outcome = run_with_timeout(command, asked.timeout);
-    let restored = git(tree, &["apply", "-R", &patch_path]).map(|_| ());
-    let (compiles, passed, tail) = match outcome {
-        RunOutcome::Finished {
-            status,
-            stdout,
-            stderr,
-        } => {
-            let mut text = String::from_utf8_lossy(&stdout).into_owned();
-            text.push_str(&String::from_utf8_lossy(&stderr));
-            let log = asked.target_dir.join(HIDDEN_LOG_FILE);
-            if let Err(error) = std::fs::write(&log, &text) {
-                text.push_str(&format!("\n[judge] {}: {error}", log.display()));
+    // Every command the task names runs, and the verdict is the conjunction:
+    // a task cut from a fix that touched two test files is judged on both.
+    let mut compiles = true;
+    let mut passed = true;
+    let mut tail = String::new();
+    for argv in asked.task.commands() {
+        let Some(command) = test_command_of(&argv, tree, &asked.target_dir) else {
+            return Err(invalid("the task names no test command"));
+        };
+        let outcome = run_with_timeout(command, asked.timeout);
+        let (this_compiles, this_passed, this_tail) = match outcome {
+            RunOutcome::Finished {
+                status,
+                stdout,
+                stderr,
+            } => {
+                let mut text = String::from_utf8_lossy(&stdout).into_owned();
+                text.push_str(&String::from_utf8_lossy(&stderr));
+                let log = asked.target_dir.join(HIDDEN_LOG_FILE);
+                if let Err(error) = std::fs::write(&log, &text) {
+                    text.push_str(&format!("\n[judge] {}: {error}", log.display()));
+                }
+                let compiles = !text.contains("error: could not compile")
+                    && !text.contains("error[E")
+                    && (status.success() || text.contains("test result:"));
+                (compiles, status.success(), tail_of(&text))
             }
-            let compiles = !text.contains("error: could not compile")
-                && !text.contains("error[E")
-                && (status.success() || text.contains("test result:"));
-            (compiles, status.success(), tail_of(&text))
-        }
-        RunOutcome::TimedOut => (
-            false,
-            false,
-            format!(
-                "the hidden tests did not finish within {} seconds and were killed",
-                asked.timeout.as_secs()
+            RunOutcome::TimedOut => (
+                false,
+                false,
+                format!(
+                    "the hidden tests did not finish within {} seconds and were killed",
+                    asked.timeout.as_secs()
+                ),
             ),
-        ),
-        RunOutcome::SpawnFailed(why) => {
-            return Err(ActionError::new(
-                "test_command_not_runnable",
-                format!("{}: {why}", asked.task.test_command.join(" ")),
-            ))
+            RunOutcome::SpawnFailed(why) => {
+                let _ = git(tree, &["apply", "-R", &patch_path]);
+                return Err(ActionError::new(
+                    "test_command_not_runnable",
+                    format!("{}: {why}", argv.join(" ")),
+                ));
+            }
+        };
+        compiles &= this_compiles;
+        passed &= this_passed;
+        if !tail.is_empty() {
+            tail.push_str("\n---\n");
         }
-    };
+        tail.push_str(&this_tail);
+    }
+    let restored = git(tree, &["apply", "-R", &patch_path]).map(|_| ());
     Ok(HiddenTests {
         applied: true,
         compiles,
@@ -661,6 +675,7 @@ mod tests {
                 hidden_test_patch,
                 gold_added_lines: added_lines(&gold_patch),
                 gold_patch,
+                test_commands: Vec::new(),
                 test_command: ["cargo", "test", "-p", "tiny", "--test", "hidden"]
                     .iter()
                     .map(|word| word.to_string())
@@ -734,6 +749,41 @@ mod tests {
             .iter()
             .filter_map(Value::as_str)
             .collect()
+    }
+
+    /// Red first with the loop over the task's commands cut to the first one.
+    #[test]
+    fn every_command_a_task_names_is_run_and_one_red_rejects_the_change() {
+        let fixture = Fixture::new("two-commands");
+        fixture.write("src/lib.rs", LIB_RIGHT);
+        let mut task = fixture.task.clone();
+        task.test_commands = vec![
+            task.test_command.clone(),
+            ["sh", "-c", "exit 1"].iter().map(|word| word.to_string()).collect(),
+        ];
+        let mut input = fixture.input();
+        input.as_object_mut().unwrap().remove("task_file");
+        input["task"] = serde_json::to_value(&task).unwrap();
+        input["run_status"] = json!("complete");
+        let outcome = JudgeChangeAction
+            .execute(&input, &SharedState::new())
+            .expect("the judge reads a tree it was handed");
+        let ActionOutcome::Went(reading) = outcome else {
+            panic!("{outcome:?}")
+        };
+        assert_eq!(reading["hidden_tests_passed"], false, "{reading}");
+        assert_eq!(reading["accepted"], false);
+        assert_eq!(reading["false_done"], true);
+
+        task.test_commands = vec![task.test_command.clone(), task.test_command.clone()];
+        input["task"] = serde_json::to_value(&task).unwrap();
+        let outcome = JudgeChangeAction
+            .execute(&input, &SharedState::new())
+            .expect("the judge reads a tree it was handed");
+        let ActionOutcome::Went(reading) = outcome else {
+            panic!("{outcome:?}")
+        };
+        assert_eq!(reading["accepted"], true, "{reading}");
     }
 
     /// Red first with `compiles` forced false, with the `apply -R` skipped
@@ -1040,7 +1090,7 @@ mod tests {
             ..Fixture::new("argv").task.clone()
         };
         let command =
-            test_command(&task, Path::new("."), Path::new("target/judge")).expect("a command");
+            test_command_of(&task.test_command, Path::new("."), Path::new("target/judge")).expect("a command");
         let args: Vec<String> = command
             .get_args()
             .map(|arg| arg.to_string_lossy().into_owned())
