@@ -18,8 +18,6 @@ fn repository_root() -> PathBuf {
 /// The columns the page declares: number, since, what goes wrong, status.
 const COLUMNS: usize = 4;
 
-const HEADER: &str = "| # | since | what goes wrong | status |";
-
 struct Fault {
     number: usize,
     cells: Vec<String>,
@@ -89,7 +87,7 @@ const A_TABLE_OF_THREE: &str = "\
 fn the_page_keeps_its_table_even_with_no_row_on_it() {
     let text = page();
     assert!(
-        text.lines().any(|line| line.trim() == HEADER),
+        text.lines().any(|line| line.trim() == faults::PUBLIC_HEADER),
         "the header of the table is gone, so the next render has nowhere to put \
          its rows and appends them to the end of the page"
     );
@@ -167,6 +165,24 @@ fn every_row_is_still_open() {
         not_open.is_empty(),
         "these rows are not open by the reading the store counts with: \
          {not_open:?}. Render the page again from the store"
+    );
+}
+
+/// **THE STATUS PROSE IS THE REGISTER'S.** A public row says where the fault
+/// stands and nothing more, in the words the standing is written with.
+#[test]
+fn every_status_is_the_standing_alone() {
+    let wordy: Vec<usize> = faults()
+        .iter()
+        .filter(|fault| {
+            fault.cells.last().map(String::as_str) != Some(faults::public_standing(fault.standing))
+        })
+        .map(|fault| fault.number)
+        .collect();
+    assert!(
+        wordy.is_empty(),
+        "these rows carry more than their standing in the status column: \
+         {wordy:?}. Render the page again from the store"
     );
 }
 

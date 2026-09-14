@@ -960,44 +960,28 @@ pub fn render(faults: &[Fault]) -> String {
     out
 }
 
-/// One row per fault on the public page: `| # | since | what goes wrong | status |`,
-/// the summary written for users and the status up to its first sentence.
+/// The header of the public page's table, which a render writes under.
+pub const PUBLIC_HEADER: &str = "| # | since | what goes wrong | status |";
+
+/// One row per fault on the public page: `| # | since | what goes wrong | status |`.
+/// The status is the standing's marker alone: the prose after it is the register's.
 pub fn render_open(faults: &[Fault]) -> String {
     let mut out = String::new();
     for (fault, summary) in on_the_public_page(faults) {
         let since = as_a_cell(&fault.happened_on);
         let what = as_a_cell(summary);
-        let status = as_a_cell(&with_bold_closed(first_sentence(&fault.status)));
+        let status = public_standing(fault.standing);
         out.push_str(&format!("| {} | {since} | {what} | {status} |\n", fault.number));
     }
     out
 }
 
-/// Up to the first `.`, `!` or `?` followed by a space or the end, never
-/// inside a code span: `4.3` and `lib.rs` end nothing.
-pub fn first_sentence(text: &str) -> &str {
-    let text = text.trim();
-    let mut in_code = false;
-    let mut letters = text.char_indices().peekable();
-    while let Some((at, letter)) = letters.next() {
-        match letter {
-            '`' => in_code = !in_code,
-            '.' | '!' | '?'
-                if !in_code && letters.peek().is_none_or(|(_, next)| next.is_whitespace()) =>
-            {
-                return &text[..at + letter.len_utf8()];
-            }
-            _ => {}
-        }
-    }
-    text
-}
-
-/// A sentence cut inside a bold span would leave the rest of the page bold.
-fn with_bold_closed(sentence: &str) -> String {
-    if sentence.matches("**").count() % 2 == 1 {
-        format!("{sentence}**")
-    } else {
-        sentence.to_owned()
+/// The only words the public status column holds, read from the standing.
+pub fn public_standing(standing: Standing) -> &'static str {
+    match standing {
+        Standing::Open => OPEN,
+        Standing::PartlyClosed => PARTLY_CLOSED,
+        Standing::Closed => CLOSED,
+        Standing::Unknown => "**unknown**",
     }
 }

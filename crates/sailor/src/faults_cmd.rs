@@ -122,7 +122,7 @@ fn dispatch(args: &[String]) -> Result<String, String> {
         "list" => list(&store, &options),
         "add" => add(&store),
         "status" => set_status(&store, &loose),
-        "summary" => summarised(&store, &loose, &what_the_repository_could_not_publish),
+        "summary" => summarised(&store, &loose, &what_a_public_summary_cannot_carry),
         "reword" => reword(&store, &loose),
         "render" => render(&store, &options),
         "import" => import(&store, &loose),
@@ -222,23 +222,43 @@ fn add(store: &Faults) -> Result<String, String> {
 fn what_the_repository_could_not_publish(text: &str) -> Result<(), String> {
     let names = toolbox::privacy::declared_here(&|path| std::fs::read_to_string(path).ok());
     let home = std::env::var("HOME").ok();
-    what_could_not_be_published_given(text, &names, home.as_deref())
+    refusal_for(&toolbox::privacy::what_cannot_be_published(text, &names, home.as_deref()))
 }
 
-/// The same refusal with the names and the home handed in, so a test can
-/// declare them without touching this machine's list.
-fn what_could_not_be_published_given(
+/// What a public summary may not carry: every shape the release scan refuses in
+/// a public text. A list of names that cannot be read refuses too.
+fn what_a_public_summary_cannot_carry(text: &str) -> Result<(), String> {
+    public_text_refusal(
+        text,
+        toolbox::privacy::required_input(
+            std::env::var("SAILOR_PRIVATE_NAMES").ok(),
+            std::env::var("HOME").ok(),
+        ),
+    )
+}
+
+/// The same decision with the inputs handed in, so a test declares them.
+fn public_text_refusal(
     text: &str,
-    names: &[String],
-    home: Option<&str>,
+    inputs: Result<(Vec<String>, String), toolbox::privacy::PublicationPreflight>,
 ) -> Result<(), String> {
-    let found = toolbox::privacy::what_cannot_be_published(text, names, home);
+    let Ok((names, home)) = inputs else {
+        return Err(catalogue::say("cli.faults.cannot_prove_privacy", &[]));
+    };
+    refusal_for(&toolbox::privacy::what_a_public_text_cannot_carry(text, &names, Some(&home)))
+}
+
+/// The first reason found, said by where it starts and never by what it is.
+fn refusal_for(found: &[toolbox::privacy::Reason]) -> Result<(), String> {
+    use toolbox::privacy::Reason;
     let Some(first) = found.first() else {
         return Ok(());
     };
     let (key, at) = match first {
-        toolbox::privacy::Reason::APrivateName { at } => ("cli.faults.a_private_name", at),
-        toolbox::privacy::Reason::APathOfThisMachine { at } => ("cli.faults.a_path_of_this_machine", at),
+        Reason::APrivateName { at } => ("cli.faults.a_private_name", at),
+        Reason::APathOfThisMachine { at } => ("cli.faults.a_path_of_this_machine", at),
+        Reason::AShapeOfAMachine { at } => ("cli.faults.a_shape_of_a_machine", at),
+        Reason::APassageAboutTheMachine { at } => ("cli.faults.a_passage_about_the_machine", at),
     };
     Err(catalogue::say(
         key,
@@ -406,7 +426,12 @@ fn check(store: &Faults, loose: &[String]) -> Result<String, String> {
         .into_iter()
         .map(|fault| (fault.number, fault))
         .collect();
-    if written.is_empty() && text.lines().any(faults::is_a_data_row) {
+    let a_public_page = text.lines().any(|line| {
+        faults::is_a_data_row(line)
+            || line.trim() == faults::PUBLIC_HEADER
+            || faults::is_the_count_sentence(line)
+    });
+    if written.is_empty() && a_public_page {
         return Err(catalogue::say(
             "cli.faults.check_public_page",
             &[("file", file)],
@@ -720,9 +745,10 @@ mod tests {
 
         let text = std::fs::read_to_string(&written).expect("the file was written");
         assert!(
-            text.contains("| 1 | 03/09 | The window forgets a flow you renamed. | **open** — nobody took it. |"),
+            text.contains("| 1 | 03/09 | The window forgets a flow you renamed. | **open** |"),
             "the summarised row is not in the public shape: {text}"
         );
+        assert!(!text.contains("nobody took it"), "the register's status prose reached the page: {text}");
         assert!(!text.contains("workshop story"), "the register's prose reached the page: {text}");
         assert!(!text.contains("| 2 |"), "an open fault with no summary reached the page: {text}");
         assert!(!text.contains("A repaired defect."), "a closed fault reached the page: {text}");
@@ -737,18 +763,23 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// **THE SUMMARY IS PROSE THAT LEAVES THE MACHINE**, so it is refused by
-    /// the same check `reword` passes. The names here are declared by the test.
+    /// **THE SUMMARY IS PROSE THAT LEAVES THE MACHINE**, so it is held to the
+    /// release scan's public-text shapes. The names here are declared by the test.
     #[test]
-    fn a_summary_carrying_a_private_name_or_a_home_path_is_refused() {
+    fn a_summary_carrying_anything_the_public_scan_refuses_is_refused() {
         let (dir, store, number) = a_store_holding("summary-private", &a_fault());
         let names = vec!["quillfeather".to_owned()];
-        let publishable =
-            |text: &str| what_could_not_be_published_given(text, &names, Some("/home/pilot"));
+        let publishable = |text: &str| {
+            public_text_refusal(text, Ok((names.clone(), "/home/pilot".to_owned())))
+        };
 
         for refused in [
             "Quillfeather's window forgets a flow.",
-            "The flow kept in /home/pilot/flows is forgotten.",
+            "The relay stops pid 91964 and forgets it.",
+            "A terminal on ttys008 is never released.",
+            "The server on 127.0.0.1 is never asked.",
+            "On this machine the token lives in the keychain.",
+            "A flow kept in /home/anybody/flows is forgotten.",
         ] {
             assert!(
                 summarised(&store, &[number.to_string(), refused.to_owned()], &publishable).is_err(),
@@ -796,6 +827,48 @@ mod tests {
             catalogue::say("cli.faults.no_rows_to_check", &[("file", &file)]),
             "the public page got the generic answer"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **A GUARD THAT CANNOT READ WHAT IT GUARDS CANNOT CALL A TEXT CLEAN.**
+    #[test]
+    fn a_summary_is_refused_when_the_list_of_names_cannot_be_read() {
+        let (dir, store, number) = a_store_holding("summary-no-list", &a_fault());
+        let unreadable =
+            |text: &str| public_text_refusal(text, Err(toolbox::privacy::PublicationPreflight::CannotProve));
+
+        let refused = summarised(
+            &store,
+            &[number.to_string(), "The window forgets a flow.".to_owned()],
+            &unreadable,
+        );
+
+        assert!(refused.is_err(), "an unreadable list of private names let a summary through");
+        assert_eq!(store.get(number).expect("the fault").public_summary, None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The page the repository ships may have no row at all, and it is still
+    /// the public page and not an empty register.
+    #[test]
+    fn checking_a_public_page_with_no_rows_still_says_what_it_is() {
+        let dir = scratch("check-public-empty");
+        let store = Faults::open(dir.join("faults.db")).expect("opening");
+        let page = dir.join("page.md");
+        std::fs::write(
+            &page,
+            format!(
+                "# Faults still open\n\n{}\n|---|---|---|---|\n\n{}\n",
+                faults::PUBLIC_HEADER,
+                faults::count_sentence(0, 3)
+            ),
+        )
+        .expect("an empty public page");
+        let file = page.display().to_string();
+
+        let said = check(&store, std::slice::from_ref(&file)).expect_err("an empty public page is not a register");
+
+        assert!(said.contains("render --open"), "the empty public page got the generic answer: {said}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

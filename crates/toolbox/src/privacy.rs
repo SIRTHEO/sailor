@@ -167,6 +167,21 @@ pub enum Reason {
     APrivateName { at: usize },
     /// An absolute path of this machine, which is true on no other.
     APathOfThisMachine { at: usize },
+    /// A home, process number, session id, tty or loopback of any machine.
+    AShapeOfAMachine { at: usize },
+    /// A passage about the machine the text was written on.
+    APassageAboutTheMachine { at: usize },
+}
+
+impl Reason {
+    pub fn at(&self) -> usize {
+        match self {
+            Reason::APrivateName { at }
+            | Reason::APathOfThisMachine { at }
+            | Reason::AShapeOfAMachine { at }
+            | Reason::APassageAboutTheMachine { at } => *at,
+        }
+    }
 }
 
 /// What in this text the repository could not publish, in the order found.
@@ -189,10 +204,116 @@ pub fn what_cannot_be_published(text: &str, names: &[String], home: Option<&str>
             found.push(Reason::APathOfThisMachine { at });
         }
     }
-    found.sort_by_key(|reason| match reason {
-        Reason::APrivateName { at } | Reason::APathOfThisMachine { at } => *at,
-    });
+    found.sort_by_key(Reason::at);
     found
+}
+
+/// Homes that belong to nobody, as `scripts/privacy-scan.sh` declares them.
+const PLACEHOLDER_HOMES: &[&str] = &["someone", "somebody", "pilot", "user", "you", "example"];
+
+/// What a text written for the public may not carry: everything
+/// [`what_cannot_be_published`] refuses, plus what `scripts/privacy-scan.sh
+/// --text` refuses with no list. Commit messages keep the narrower check:
+/// the scan lets them speak about this machine.
+pub fn what_a_public_text_cannot_carry(text: &str, names: &[String], home: Option<&str>) -> Vec<Reason> {
+    let mut found = what_cannot_be_published(text, names, home);
+    let shapes = [
+        a_home_of_anybody(text),
+        a_process_number(text),
+        a_session_id(text),
+        a_tty(text),
+        text.find("127.0.0.1"),
+    ];
+    for at in shapes.into_iter().flatten() {
+        found.push(Reason::AShapeOfAMachine { at });
+    }
+    if let Some(at) = text.to_lowercase().find("this machine") {
+        found.push(Reason::APassageAboutTheMachine { at });
+    }
+    found.sort_by_key(Reason::at);
+    found
+}
+
+/// `/Users/<segment>/` or `/home/<segment>/`, unless the segment is a placeholder.
+fn a_home_of_anybody(text: &str) -> Option<usize> {
+    for root in ["/Users/", "/home/"] {
+        let mut from = 0;
+        while let Some(found) = text[from..].find(root) {
+            let at = from + found;
+            from = at + root.len();
+            let rest = &text[from..];
+            let segment = rest
+                .find(|letter: char| !(letter.is_ascii_alphanumeric() || matches!(letter, '.' | '_' | '-')))
+                .map_or(rest, |end| &rest[..end]);
+            if !segment.is_empty()
+                && rest[segment.len()..].starts_with('/')
+                && !PLACEHOLDER_HOMES.contains(&segment)
+            {
+                return Some(at);
+            }
+        }
+    }
+    None
+}
+
+/// `pid`, not glued to a word before it, then an optional `:` and space, then
+/// three digits or more.
+fn a_process_number(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut from = 0;
+    while let Some(found) = text[from..].find("pid") {
+        let at = from + found;
+        from = at + 3;
+        if at > 0 && is_word_byte(bytes[at - 1]) {
+            continue;
+        }
+        let mut next = at + 3;
+        if bytes.get(next) == Some(&b':') {
+            next += 1;
+        }
+        if bytes.get(next) == Some(&b' ') {
+            next += 1;
+        }
+        if bytes[next..].iter().take_while(|byte| byte.is_ascii_digit()).count() >= 3 {
+            return Some(at);
+        }
+    }
+    None
+}
+
+/// Lowercase hex in groups of 8-4-4-4-12.
+fn a_session_id(text: &str) -> Option<usize> {
+    const GROUPS: [usize; 5] = [8, 4, 4, 4, 12];
+    let bytes = text.as_bytes();
+    let hex = |byte: &u8| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte);
+    (0..bytes.len()).find(|&start| {
+        let mut at = start;
+        GROUPS.iter().enumerate().all(|(index, &length)| {
+            if index > 0 {
+                if bytes.get(at) != Some(&b'-') {
+                    return false;
+                }
+                at += 1;
+            }
+            let whole = bytes.get(at..at + length).is_some_and(|group| group.iter().all(hex));
+            at += length;
+            whole
+        })
+    })
+}
+
+/// `ttys` and exactly three digits.
+fn a_tty(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut from = 0;
+    while let Some(found) = text[from..].find("ttys") {
+        let at = from + found;
+        from = at + 4;
+        if bytes[from..].iter().take_while(|byte| byte.is_ascii_digit()).count() == 3 {
+            return Some(at);
+        }
+    }
+    None
 }
 
 /// Where `name` appears **as a name** in already-lowercased `text`.
@@ -408,6 +529,60 @@ mod tests {
     fn an_unarmed_machine_forbids_nothing() {
         assert!(what_cannot_be_published("anything at all", &[], None).is_empty());
         assert!(what_cannot_be_published("anything at all", &[String::new()], Some("")).is_empty());
+    }
+
+    /// **A PUBLIC TEXT IS HELD TO THE RELEASE SCAN**, shape by shape, and the
+    /// homes that belong to nobody pass as the scan lets them.
+    #[test]
+    fn a_public_text_refuses_every_shape_the_release_scan_refuses() {
+        for (guilty, what) in [
+            ("the relay stopped pid 91964 and left", "a process number"),
+            ("the relay stopped pid:91964 and left", "a process number"),
+            ("it ran on ttys008 all night", "a tty"),
+            ("session 0f8e6a4c-1b2d-4e3f-9a8b-7c6d5e4f3a2b stopped", "a session id"),
+            ("the server answered on 127.0.0.1", "the loopback"),
+            ("measured in /Users/anybody/work", "another user's home"),
+            ("kept under /home/anybody/flows", "another user's home"),
+        ] {
+            assert!(
+                what_a_public_text_cannot_carry(guilty, &[], None)
+                    .iter()
+                    .any(|reason| matches!(reason, Reason::AShapeOfAMachine { .. })),
+                "{what} passed: «{guilty}»"
+            );
+        }
+        assert!(
+            matches!(
+                what_a_public_text_cannot_carry("On This Machine the token lives elsewhere.", &[], None)
+                    .as_slice(),
+                [Reason::APassageAboutTheMachine { .. }]
+            ),
+            "a passage about this machine passed"
+        );
+        for innocent in [
+            "a flow kept in /home/pilot/flows",
+            "the pidgin three engines speak",
+            "The window forgets a flow you renamed.",
+        ] {
+            assert_eq!(
+                what_a_public_text_cannot_carry(innocent, &[], None),
+                Vec::new(),
+                "«{innocent}» carries no shape of a machine"
+            );
+        }
+    }
+
+    /// **AN UNREADABLE LIST IS NOT AN EMPTY ONE**: a guard that cannot read what
+    /// it guards cannot say a text is clean.
+    #[test]
+    fn a_list_of_names_that_cannot_be_read_is_a_refusal() {
+        let nowhere = std::env::temp_dir()
+            .join(format!("sailor-no-names-{}", std::process::id()))
+            .join("private-names");
+        assert_eq!(
+            required_input(Some(nowhere.display().to_string()), Some("/home/pilot".to_owned())),
+            Err(PublicationPreflight::CannotProve)
+        );
     }
 
     fn git(root: &Path, args: &[&str]) {

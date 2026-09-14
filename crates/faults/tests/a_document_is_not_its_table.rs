@@ -48,8 +48,8 @@ fn what_is_not_a_row_is_left_where_it_was() {
 }
 
 /// **THE REGISTER'S PROSE IS WORKSHOP MATERIAL.** The public page shows only
-/// open faults given a summary for users, the status up to its first
-/// sentence, and a count that tells the page and the store apart.
+/// open faults given a summary for users, their standing and nothing of the
+/// status prose, and a count that tells the page and the store apart.
 #[test]
 fn the_public_page_carries_only_open_faults_with_a_summary_and_keeps_its_prose() {
     let document = "# Open faults\n\nWhat this page is.\n\n\
@@ -76,16 +76,18 @@ fn the_public_page_carries_only_open_faults_with_a_summary_and_keeps_its_prose()
     assert!(written.contains("After the count."), "the prose after the count is gone: {written}");
     assert!(!written.contains("stale"), "the old row was not replaced: {written}");
     assert!(
-        written.contains("| 1 | 03/09 | The cost of a run with a handed step reads too low \\| by a factor. | **closed in part** on 01/09 — the lie is closed. |"),
-        "the summarised row, escaped and cut at its first status sentence: {written}"
+        written.contains("| 1 | 03/09 | The cost of a run with a handed step reads too low \\| by a factor. | **closed in part** |"),
+        "the summarised row, escaped, with the standing alone as its status: {written}"
     );
+    assert!(!written.contains("the lie is closed"), "the register's status prose reached the page: {written}");
     assert!(!written.contains("workshop story"), "the register's prose reached the page: {written}");
     assert!(!written.contains("| 2 |"), "an open fault with no summary reached the page: {written}");
     assert!(!written.contains("A repaired defect."), "a closed fault reached the page: {written}");
     assert!(
-        written.contains("| 4 | 03/09 | A flow name in `lib.rs` is read as 4.3 flows. | **open** — **nobody took it.** |"),
-        "the status cut inside a bold span must close it: {written}"
+        written.contains("| 4 | 03/09 | A flow name in `lib.rs` is read as 4.3 flows. | **open** |"),
+        "the open row's status is its standing alone: {written}"
     );
+    assert!(!written.contains("nobody took it"), "the register's status prose reached the page: {written}");
     assert!(
         written.contains("**Two open faults are described on this page; one more is kept only in the fault store.**"),
         "the count sentence was not rewritten: {written}"
