@@ -589,3 +589,35 @@ pub fn how_many_compilers(spare: &Spare, cores: usize) -> usize {
     };
     ((bytes / A_COMPILER_WANTS) as usize).clamp(1, cores.max(1))
 }
+
+/// Room a build is given before it starts: fault 176 filled the disk to 143 MiB.
+pub const A_BUILD_WANTS_FREE: u64 = 10 * 1024 * 1024 * 1024;
+
+/// Bytes an ordinary writer may still use on the disk holding `path`.
+pub fn free_bytes(path: &Path) -> Option<u64> {
+    use std::os::unix::ffi::OsStrExt;
+    let named = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
+    let mut about: libc::statvfs = unsafe { std::mem::zeroed() };
+    // SAFETY: the kernel fills a zeroed struct we own, from a path we own.
+    let done = unsafe { libc::statvfs(named.as_ptr(), &mut about) };
+    #[allow(clippy::unnecessary_cast)]
+    let free = about.f_bavail as u64 * about.f_frsize as u64;
+    (done == 0).then_some(free)
+}
+
+/// Whether a build must wait: only a disk that said so refuses one.
+pub fn too_little_to_build(free: Option<u64>) -> bool {
+    free.is_some_and(|free| free < A_BUILD_WANTS_FREE)
+}
+
+#[cfg(test)]
+mod tests {
+    /// Under the threshold a build waits; a disk that would not say refuses nothing.
+    #[test]
+    fn a_build_waits_only_when_the_disk_says_there_is_too_little_room() {
+        assert!(super::too_little_to_build(Some(super::A_BUILD_WANTS_FREE - 1)));
+        assert!(!super::too_little_to_build(Some(super::A_BUILD_WANTS_FREE)));
+        assert!(!super::too_little_to_build(None));
+        assert!(super::free_bytes(&std::env::temp_dir()).is_some_and(|free| free > 0));
+    }
+}
