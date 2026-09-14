@@ -8,6 +8,7 @@
 // could not be saved, so offering the gesture would be an unkeepable promise.
 
 import type { FlowPlace } from "./engine";
+import { t } from "./i18n";
 
 export type CanvasState = "loading" | "failed" | "empty";
 
@@ -21,6 +22,8 @@ interface BlankCanvasProps {
   failure?: string | null;
   brokenCount: number;
   onCreate: () => void;
+  /** Opens the catalogue: the other way to begin, beside an empty flow. */
+  onFromCatalogue?: () => void;
 }
 
 /**
@@ -31,7 +34,7 @@ interface BlankCanvasProps {
  */
 const SKELETON_LANES = [3, 4];
 
-export function BlankCanvas({ state, failure, brokenCount, onCreate, places = null }: BlankCanvasProps) {
+export function BlankCanvas({ state, failure, brokenCount, onCreate, onFromCatalogue, places = null }: BlankCanvasProps) {
   /**
    * **LOADING IS A SHAPE, NOT A SPINNER.** A spinner says "wait"; a skeleton
    * says WHAT IS COMING, so the screen reads before the data lands. It does not
@@ -125,6 +128,11 @@ export function BlankCanvas({ state, failure, brokenCount, onCreate, places = nu
         <button type="button" className="is-primary" onClick={onCreate}>
           Create the first flow
         </button>
+        {onFromCatalogue && (
+          <button type="button" onClick={onFromCatalogue}>
+            {t("window.catalogue.open")}
+          </button>
+        )}
       </div>
     </div>
   );
