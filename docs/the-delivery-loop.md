@@ -81,7 +81,10 @@ moved. They do not defend against whoever can already write to the directory
 of the `sailor` in service: that person can replace the binary between its
 sha256 check and its execution. The policy reader inside the flows is also
 more permissive than `sailor policy` on malformed input, such as out-of-range
-numbers or NUL bytes, in fields nobody reads.
+numbers or NUL bytes, in fields nobody reads. And whoever closes a handed step
+(`authorize_*`, `manual_gates`, `journey`) does it with the `sailor` on their
+own PATH. Only the review brief names the verified `sailor`, and even there
+nothing stops a reviewer from using another.
 
 **Not yet implemented:** checkpoint commits pinned under run-owned refs with a
 process-boundary ownership check; an acceptance journey bound to the freshly
