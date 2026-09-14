@@ -385,7 +385,7 @@ pub(crate) fn everywhere(ground: &Ground, crew: &'static Crew, disk: &Arc<dyn Di
 }
 
 /// Outside every workspace, and the sources left out because they did not answer.
-pub(crate) struct Outside {
+struct Outside {
     context: Context,
     skipped: Vec<flow::system::FlowSource>,
 }
@@ -438,7 +438,7 @@ fn outside_from(
 }
 
 /// Every checkout asked at once, then each waited for until the one deadline.
-pub(crate) fn resolve_checkouts(
+fn resolve_checkouts(
     crew: &'static Crew,
     disk: &Arc<dyn Disk>,
     checkouts: &[Checkout],
