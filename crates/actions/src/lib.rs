@@ -24,6 +24,7 @@
 //! where it does not.
 
 pub mod apply;
+pub mod bench;
 pub mod budget;
 pub mod cooldown;
 pub mod digest;
