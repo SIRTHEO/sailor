@@ -110,9 +110,11 @@ struct RunReadingAction {
 /// steps that broke with their class.
 pub fn run_reading(ledger: &Ledger, run_id: &str) -> Result<Value, ActionError> {
     let store = |error: ledger::LedgerError| ActionError::new("store_failed", error.to_string());
-    let header = ledger.run_header(run_id).map_err(store)?.ok_or_else(|| {
-        ActionError::new("run_unknown", format!("the ledger holds no run «{run_id}»"))
-    })?;
+    // A run the ledger does not hold is an answer the baseline records, not a
+    // fault that stops the batch behind it.
+    let Some(header) = ledger.run_header(run_id).map_err(store)? else {
+        return Ok(json!({ "run_id": run_id, "found": false }));
+    };
     let spend = ledger.spent_in_run_and_below(run_id).map_err(store)?;
     let escaped = run_id.replace('\'', "''");
     let turns = ledger
@@ -151,6 +153,7 @@ pub fn run_reading(ledger: &Ledger, run_id: &str) -> Result<Value, ActionError> 
         .map(|ended| (ended - header.started_at).max(0));
     Ok(json!({
         "run_id": run_id,
+        "found": true,
         "flow": header.entity,
         "status": header.status,
         "stop_reason": header.stop_reason,
@@ -170,12 +173,10 @@ impl Action for RunReadingAction {
     fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         let spec: ReadingSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
-        let Some(run_id) = spec.run_id.filter(|id| !id.trim().is_empty()) else {
-            return Err(ActionError::new(
-                "invalid_input",
-                "reading a run needs its `run_id`",
-            ));
-        };
+        let run_id = spec.run_id.unwrap_or_default();
+        if run_id.trim().is_empty() {
+            return Ok(ActionOutcome::Went(json!({ "run_id": "", "found": false })));
+        }
         let Some(ledger) = &self.ledger else {
             return Err(ActionError::new(
                 "no_store",
@@ -350,10 +351,10 @@ mod tests {
         assert_eq!(said["wall_secs"], 300);
         assert_eq!(said["broken_steps"][0]["step_id"], "prove");
         assert_eq!(said["broken_steps"][0]["failure_class"], "engine_exit_error");
-        assert_eq!(
-            run_reading(&ledger, "nobody").unwrap_err().class,
-            "run_unknown"
-        );
+        assert_eq!(said["found"], true);
+        let nobody = run_reading(&ledger, "nobody").unwrap();
+        assert_eq!(nobody["found"], false);
+        assert_eq!(nobody["run_id"], "nobody");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

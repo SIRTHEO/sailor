@@ -14,7 +14,7 @@ use std::sync::Arc;
 pub const FOR_EACH_ACTION: &str = "for_each";
 
 /// The fields the step knows. For `flow check`, not for execution.
-const KNOWN_FIELDS: &[&str] = &["flow", "items", "inputs"];
+const KNOWN_FIELDS: &[&str] = &["flow", "items", "inputs", "at_once"];
 
 /// What the step declares. `items` arrives already a list: the executor has
 /// replaced any `$from` before an action reads its input.
@@ -27,6 +27,10 @@ pub struct Repeat {
     /// The `root_inputs` the step imposes on every child, key by key.
     #[serde(default)]
     pub inputs: BTreeMap<String, Value>,
+    /// How many children may run together, `AT_ONCE` at most. A step whose
+    /// children each build a whole tree asks for one.
+    #[serde(default)]
+    pub at_once: Option<usize>,
 }
 
 /// The step that runs a flow for each element of a list.
@@ -65,7 +69,8 @@ impl Action for ForEachAction {
         // it is the last one opened — the elements after it are never started,
         // which is what the executor does with the fronts after a broken one.
         let mut first = 0;
-        for group in call.items.chunks(AT_ONCE) {
+        let width = call.at_once.unwrap_or(AT_ONCE).clamp(1, AT_ONCE);
+        for group in call.items.chunks(width) {
             let host = self.host.as_ref();
             let (caller, located, store) = (&caller, &located, store.as_ref());
             let ends: Vec<Result<ChildEnd, ActionError>> = std::thread::scope(|scope| {
