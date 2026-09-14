@@ -15,7 +15,7 @@ pub struct Secret {
 }
 
 /// The shapes a key or token is known to take, wherever they sit.
-const TOKEN_PREFIXES: &[&str] = &["sk-", "ghp_", "gho_", "github_pat_", "xoxb-", "xoxp-", "AKIA", "AIza", "HRKU-"];
+const TOKEN_PREFIXES: &[&str] = &["sk-", "ghp_", "gho_", "github_pat_", "xoxb-", "xoxp-", "AKIA", "AIza", "HRKU-", "sk_live_", "rk_live_"];
 
 /// The head of a private key in the armour every tool writes it in:
 /// `-----BEGIN `, upper-case words each followed by one space, `PRIVATE KEY`,
@@ -509,18 +509,23 @@ mod tests {
             "command": "grep -E 'sk-ant-[A-Za-z0-9_-]{24,}|github_pat_[A-Za-z0-9_]{30,}|github_pat_\\w+|ghp_\\w+|sk-ant-\\S+' flows"
         }}]}});
         assert!(secrets_in(&patterns).is_empty(), "{:?}", secrets_in(&patterns));
-        let truncated_key = json!({"id": "x", "graph": {"steps": [{"id": "s", "with": {
-            "stdin": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA"
-        }}]}});
-        assert_eq!(secrets_in(&truncated_key).len(), 1, "{:?}", secrets_in(&truncated_key));
-        let truncated_pgp_key = json!({"id": "x", "graph": {"steps": [{"id": "s", "with": {
-            "stdin": "-----BEGIN PGP PRIVATE KEY BLOCK-----\n"
-        }}]}});
-        assert_eq!(secrets_in(&truncated_pgp_key).len(), 1, "{:?}", secrets_in(&truncated_pgp_key));
-        let header_patterns = json!({"id": "x", "graph": {"steps": [{"id": "s", "with": {
-            "command": "grep -E '-----BEGIN (RSA |EC )?PRIVATE KEY|-----BEGIN [A-Z ]+' flows"
-        }}]}});
-        assert!(secrets_in(&header_patterns).is_empty(), "{:?}", secrets_in(&header_patterns));
+        let in_stdin = |text: &str| json!({"id": "x", "graph": {"steps": [{"id": "s", "with": {"stdin": text}}]}});
+        let refused = [
+            "-----BEGIN RSA PRIVATE KEY-----",
+            "-----BEGIN PRIVATE KEY-----",
+            "-----BEGIN OPENSSH PRIVATE KEY-----",
+            "-----BEGIN PGP PRIVATE KEY BLOCK-----",
+        ];
+        let accepted = [
+            "-----BEGIN CERTIFICATE-----",
+            "grep -E '-----BEGIN (RSA |EC )?PRIVATE KEY|-----BEGIN [A-Z ]+' flows",
+        ];
+        let misjudged: Vec<&str> = refused
+            .into_iter()
+            .filter(|text| secrets_in(&in_stdin(text)).len() != 1)
+            .chain(accepted.into_iter().filter(|text| !secrets_in(&in_stdin(text)).is_empty()))
+            .collect();
+        assert!(misjudged.is_empty(), "misjudged: {misjudged:?}");
     }
 
     fn one_step(action: &str, with: Value) -> Value {
@@ -603,6 +608,8 @@ mod tests {
             "-abcdefghijklmnopqrst",
             "qzvtkmxwrplbjhdnfgcsyaeoiuwmzxkq",
             "HRKU-4594b794-0c94-416b-a374-bb33a025411f",
+            "sk_live_zzzzyyyyxxxxwwww",
+            "rk_live_zzzzyyyyxxxxwwww",
         ];
         let published: Vec<&str> = shaped_like_a_row_name
             .into_iter()
