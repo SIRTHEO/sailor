@@ -28,7 +28,7 @@ pub const USAGE: &[Form] = &[
         says_key: "cli.faults.form.reword",
     },
     Form {
-        form: "sailor faults render [--file <md>]",
+        form: "sailor faults render [--open] [--file <md>]",
         says_key: "cli.faults.form.render",
     },
     Form {
@@ -317,17 +317,28 @@ fn set_status(store: &Faults, loose: &[String]) -> Result<String, String> {
 /// defect this very register is kept for.
 fn render(store: &Faults, options: &BTreeMap<String, String>) -> Result<String, String> {
     let all = store.all().map_err(|error| error.to_string())?;
+    let open_only = options.contains_key("open");
     let Some(file) = options.get("file") else {
-        return Ok(faults::render(&all).trim_end().to_owned());
+        let rows = if open_only {
+            faults::render_open(&all)
+        } else {
+            faults::render(&all)
+        };
+        return Ok(rows.trim_end().to_owned());
     };
     // **THE FILE IS READ BEFORE IT IS WRITTEN.** A document is not its table:
     // the rows are replaced where they stand and the prose around them stays.
     let document = std::fs::read_to_string(file).map_err(|error| format!("{file}: {error}"))?;
-    std::fs::write(file, faults::render_into(&document, &all))
-        .map_err(|error| format!("{file}: {error}"))?;
+    let (written, key, count) = if open_only {
+        let open = all.iter().filter(|fault| fault.still_open()).count();
+        (faults::render_open_into(&document, &all), "cli.faults.written_open", open)
+    } else {
+        (faults::render_into(&document, &all), "cli.faults.written", all.len())
+    };
+    std::fs::write(file, written).map_err(|error| format!("{file}: {error}"))?;
     Ok(catalogue::say(
-        "cli.faults.written",
-        &[("file", file), ("count", &all.len().to_string())],
+        key,
+        &[("file", file), ("count", &count.to_string())],
     ))
 }
 
@@ -607,6 +618,48 @@ mod tests {
             !said.contains("what the store holds"),
             "the table went to the screen as well, so nobody can tell whether the file was written: {said}"
         );
+    }
+
+    /// The public page carries the open faults only, and says how many it wrote.
+    #[test]
+    fn rendering_the_open_faults_writes_only_those_and_counts_them() {
+        let dir = scratch("rendered-open");
+        let store = Faults::open(dir.join("faults.db")).expect("opening");
+        for (what, status) in [
+            ("a fault still standing. More words", "**open** — nobody took it. Later"),
+            ("a fault already repaired", "**closed** on 04/09"),
+        ] {
+            store
+                .record(&Draft {
+                    happened_on: "03/09".to_owned(),
+                    what_happened: what.to_owned(),
+                    how_it_showed: "reading it".to_owned(),
+                    what_would_prevent: "a check that reads it back".to_owned(),
+                    status: status.to_owned(),
+                    standing: None,
+                })
+                .expect("recording");
+        }
+        let written = dir.join("page.md");
+        std::fs::write(&written, "# Open faults\n\n| # | since | what goes wrong | status |\n|---|---|---|---|\n")
+            .expect("a document to write into");
+        let options: BTreeMap<String, String> = [
+            ("file".to_owned(), written.display().to_string()),
+            ("open".to_owned(), "true".to_owned()),
+        ]
+        .into_iter()
+        .collect();
+
+        let said = render(&store, &options).expect("rendering");
+
+        let text = std::fs::read_to_string(&written).expect("the file was written");
+        assert!(
+            text.contains("| 1 | 03/09 | a fault still standing. | **open** — nobody took it. |"),
+            "the open row is not in the public shape: {text}"
+        );
+        assert!(!text.contains("already repaired"), "a closed fault reached the page: {text}");
+        assert!(said.contains(": 1 "), "the answer does not count the open faults written: {said}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// **A COUNT OF WHAT CAME IN HIDES WHAT WENT OUT.** «Brought in 62» reads

@@ -740,7 +740,16 @@ fn as_prose(cell: &str) -> String {
 /// **A DOCUMENT IS NOT ITS TABLE.** Writing `render`'s rows over the file drops
 /// the prose around them: only the run of *data* rows is replaced here.
 pub fn render_into(document: &str, faults: &[Fault]) -> String {
-    let rows = render(faults);
+    rows_replaced(document, &render(faults))
+}
+
+/// The public page: only the rows still open, in its four columns, with the
+/// prose around them kept as [`render_into`] keeps it.
+pub fn render_open_into(document: &str, faults: &[Fault]) -> String {
+    rows_replaced(document, &render_open(faults))
+}
+
+fn rows_replaced(document: &str, rows: &str) -> String {
     let lines: Vec<&str> = document.lines().collect();
     let first = lines.iter().position(|line| is_a_data_row(line));
     let Some(first) = first else {
@@ -749,7 +758,7 @@ pub fn render_into(document: &str, faults: &[Fault]) -> String {
         if !out.is_empty() && !out.ends_with('\n') {
             out.push('\n');
         }
-        out.push_str(&rows);
+        out.push_str(rows);
         return out;
     };
     let after = lines[first..]
@@ -761,7 +770,7 @@ pub fn render_into(document: &str, faults: &[Fault]) -> String {
         out.push_str(line);
         out.push('\n');
     }
-    out.push_str(&rows);
+    out.push_str(rows);
     for line in &lines[after..] {
         out.push_str(line);
         out.push('\n');
@@ -794,4 +803,56 @@ pub fn render(faults: &[Fault]) -> String {
         ));
     }
     out
+}
+
+/// One row per fault still open: `| # | since | what goes wrong | status |`.
+pub fn render_open(faults: &[Fault]) -> String {
+    let mut out = String::new();
+    for fault in faults.iter().filter(|fault| fault.still_open()) {
+        let since = as_a_cell(&fault.happened_on);
+        let what = as_a_cell(&headline_of(&fault.what_happened));
+        let status = as_a_cell(&with_bold_closed(first_sentence(&fault.status)));
+        out.push_str(&format!("| {} | {since} | {what} | {status} |\n", fault.number));
+    }
+    out
+}
+
+/// The bold headline a story opens with, or else its first sentence.
+pub fn headline_of(story: &str) -> String {
+    let story = story.trim();
+    if let Some(rest) = story.strip_prefix("**") {
+        if let Some(end) = rest.find("**") {
+            return format!("**{}**", &rest[..end]);
+        }
+    }
+    with_bold_closed(first_sentence(story))
+}
+
+/// Up to the first `.`, `!` or `?` followed by a space or the end, never
+/// inside a code span: `4.3` and `lib.rs` end nothing.
+pub fn first_sentence(text: &str) -> &str {
+    let text = text.trim();
+    let mut in_code = false;
+    let mut letters = text.char_indices().peekable();
+    while let Some((at, letter)) = letters.next() {
+        match letter {
+            '`' => in_code = !in_code,
+            '.' | '!' | '?'
+                if !in_code && letters.peek().is_none_or(|(_, next)| next.is_whitespace()) =>
+            {
+                return &text[..at + letter.len_utf8()];
+            }
+            _ => {}
+        }
+    }
+    text
+}
+
+/// A sentence cut inside a bold span would leave the rest of the page bold.
+fn with_bold_closed(sentence: &str) -> String {
+    if sentence.matches("**").count() % 2 == 1 {
+        format!("{sentence}**")
+    } else {
+        sentence.to_owned()
+    }
 }
