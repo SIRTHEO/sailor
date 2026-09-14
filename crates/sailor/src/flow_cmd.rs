@@ -85,6 +85,8 @@ fn dispatch(args: &[String], sources: &[FlowSource]) -> Result<String, String> {
         }
         [command, name] if command == "new" => new_flow(sources, name),
         [command, name] if command == "delete" => delete_flow(sources, name),
+        [command, name] if command == "where" => where_flow(sources, name),
+        [command, name] if command == "restore" => restore_flow(sources, name),
         [command] if command == "publish" => crate::publish_cmd::publish_flows(sources, None),
         [command, remote] if command == "publish" => {
             crate::publish_cmd::publish_flows(sources, Some(remote))
@@ -118,33 +120,133 @@ fn one_flow(sources: &[FlowSource], name: &str) -> Result<(FlowFile, &'static st
             "cli.flow.does_not_load",
             &[("flow", name), ("origin", origin), ("reason", reason)],
         )),
-        None => {
-            if let Some(became) = flow::system::past_name(name) {
-                return Err(match became {
-                    flow::system::PastName::CarriedOnBy(now) => catalogue::say(
-                        "cli.flow.that_name_is_carried_on",
-                        &[("flow", name), ("now", now)],
-                    ),
-                    flow::system::PastName::NothingCarriesIt => {
-                        catalogue::say("cli.flow.that_name_is_past", &[("flow", name)])
-                    }
-                });
+        None => Err(no_flow_called(sources, &known, name)),
+    }
+}
+
+/// What is said for a name no source holds: a past name's successor, or the
+/// names in sight and, when no home was known, why a flow of yours is missing.
+fn no_flow_called(
+    sources: &[FlowSource],
+    known: &[(String, &'static str, Result<FlowFile, String>)],
+    name: &str,
+) -> String {
+    if let Some(became) = flow::system::past_name(name) {
+        return match became {
+            flow::system::PastName::CarriedOnBy(now) => catalogue::say(
+                "cli.flow.that_name_is_carried_on",
+                &[("flow", name), ("now", now)],
+            ),
+            flow::system::PastName::NothingCarriesIt => {
+                catalogue::say("cli.flow.that_name_is_past", &[("flow", name)])
             }
-            let names: Vec<&str> = known.iter().map(|(name, _, _)| name.as_str()).collect();
-            let in_sight = match names.is_empty() {
-                true => catalogue::say("cli.flow.none_in_sight", &[]),
-                false => names.join(", "),
-            };
-            let refusal = catalogue::say(
-                "cli.flow.no_flow_by_that_name",
-                &[("flow", name), ("names", &in_sight)],
-            );
-            Err(match flow::system::no_home_said(sources) {
-                Some(no_home) => format!("{refusal}\n{no_home}"),
-                None => refusal,
-            })
+        };
+    }
+    let names: Vec<&str> = known.iter().map(|(name, _, _)| name.as_str()).collect();
+    let in_sight = match names.is_empty() {
+        true => catalogue::say("cli.flow.none_in_sight", &[]),
+        false => names.join(", "),
+    };
+    let refusal = catalogue::say(
+        "cli.flow.no_flow_by_that_name",
+        &[("flow", name), ("names", &in_sight)],
+    );
+    match flow::system::no_home_said(sources) {
+        Some(no_home) => format!("{refusal}\n{no_home}"),
+        None => refusal,
+    }
+}
+
+/// The directory a chain was resolved from, in the words a person reads.
+fn resolved_in_said(chain: &flow::system::Chain) -> String {
+    chain
+        .resolved_in
+        .as_ref()
+        .map(|directory| directory.display().to_string())
+        .unwrap_or_else(|| catalogue::say("cli.flow.unknown_directory", &[]))
+}
+
+/// The origin cell of a row: the origin alone, or what it replaces as well.
+fn origin_said(origin: &str, chain: Option<&flow::system::Chain>) -> String {
+    let Some(chain) = chain.filter(|chain| !chain.replaced.is_empty()) else {
+        return origin.to_owned();
+    };
+    let mut replaced: Vec<&str> = Vec::new();
+    for candidate in &chain.replaced {
+        if !replaced.contains(&candidate.origin) {
+            replaced.push(candidate.origin);
         }
     }
+    catalogue::say(
+        "cli.flow.list_origin_replaces",
+        &[("origin", origin), ("replaced", &replaced.join(", "))],
+    )
+}
+
+/// `sailor flow where`: every file the name could come from, and the winner.
+fn where_flow(sources: &[FlowSource], name: &str) -> Result<String, String> {
+    let here = std::env::current_dir().ok();
+    let chain = flow::system::chain_of(sources, here.as_deref(), name)
+        .ok_or_else(|| no_flow_called(sources, &known_flows(sources), name))?;
+    let mut lines = vec![catalogue::say(
+        "cli.flow.where_head",
+        &[("flow", name), ("directory", &resolved_in_said(&chain))],
+    )];
+    for candidate in &chain.replaced {
+        lines.push(catalogue::say(
+            "cli.flow.where_replaced",
+            &[("origin", candidate.origin), ("path", &candidate.path.display().to_string())],
+        ));
+    }
+    lines.push(catalogue::say(
+        "cli.flow.where_runs",
+        &[("origin", chain.winner.origin), ("path", &chain.winner.path.display().to_string())],
+    ));
+    Ok(lines.join("\n"))
+}
+
+/// `sailor flow restore`: the shipped flow back, the file that hid it archived.
+fn restore_flow(sources: &[FlowSource], name: &str) -> Result<String, String> {
+    use flow::system::RestoreRefusal;
+    let here = std::env::current_dir().ok();
+    let chain = flow::system::chain_of(sources, here.as_deref(), name)
+        .ok_or_else(|| no_flow_called(sources, &known_flows(sources), name))?;
+    let path = chain.winner.path.display().to_string();
+    let archive = flow::system::restore(&chain, sources, now_secs()?).map_err(|refusal| match refusal {
+        RestoreRefusal::AlreadyBuiltIn => {
+            catalogue::say("cli.flow.restore_already_built_in", &[("flow", name)])
+        }
+        RestoreRefusal::NothingBuiltIn { .. } => catalogue::say(
+            "cli.flow.restore_nothing_built_in",
+            &[("flow", name), ("path", &path)],
+        ),
+        RestoreRefusal::OutsideDeclared { .. } => catalogue::say(
+            "cli.flow.restore_outside_declared",
+            &[("flow", name), ("path", &path)],
+        ),
+        RestoreRefusal::CouldNotMove { archive, error, .. } => catalogue::say(
+            "cli.flow.restore_could_not_move",
+            &[
+                ("flow", name),
+                ("path", &path),
+                ("archive", &archive.display().to_string()),
+                ("error", &error),
+            ],
+        ),
+    })?;
+    let now_runs = flow::system::chain_of(sources, here.as_deref(), name)
+        .map(|after| after.winner.origin)
+        .unwrap_or(flow::system::BUILTIN_ORIGIN);
+    Ok(catalogue::say(
+        "cli.flow.restored",
+        &[
+            ("flow", name),
+            ("path", &path),
+            ("archive", &archive.display().to_string()),
+            ("origin", now_runs),
+            ("directory", &resolved_in_said(&chain)),
+        ],
+    ))
 }
 
 /// Where it looked, always after an empty list: an empty list that does not
@@ -270,6 +372,14 @@ pub const USAGE: &[Form] = &[
         says_key: "cli.flow.form.delete",
     },
     Form {
+        form: "sailor flow where <name>",
+        says_key: "cli.flow.form.where",
+    },
+    Form {
+        form: "sailor flow restore <name>",
+        says_key: "cli.flow.form.restore",
+    },
+    Form {
         form: "sailor flow relocate <name> [prefix-to-strip]",
         says_key: "",
     },
@@ -317,7 +427,11 @@ fn list_flows(sources: &[FlowSource]) -> Result<String, String> {
     // THE ORIGIN IS IN THE LIST, and it is no ornament: two flows of the same
     // name in two places are one in here — the most specific wins — and whoever
     // cannot see where the running one comes from edits the other.
+    let here = std::env::current_dir().ok();
+    let chains = flow::system::chains(sources, here.as_deref());
     for (name, origin, entry) in known {
+        let chain = chains.iter().find(|chain| chain.name == name);
+        let origin = origin_said(origin, chain);
         match entry {
             Ok(flow) => {
                 let _ = writeln!(
@@ -334,11 +448,18 @@ fn list_flows(sources: &[FlowSource]) -> Result<String, String> {
                     "{}",
                     catalogue::say(
                         "cli.flow.list_row_does_not_load",
-                        &[("name", &name), ("origin", origin), ("error", &error)],
+                        &[("name", &name), ("origin", &origin), ("error", &error)],
                     )
                 );
             }
         }
+    }
+    if let Some(chain) = chains.iter().find(|chain| !chain.replaced.is_empty()) {
+        let _ = writeln!(
+            report,
+            "{}",
+            catalogue::say("cli.flow.list_resolved_in", &[("directory", &resolved_in_said(chain))])
+        );
     }
     let _ = write!(report, "{}", waiting_report());
     Ok(report)
