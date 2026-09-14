@@ -73,6 +73,6 @@ belong here too.
 
 Under construction, and used every day by the people writing it. There are no
 released versions to support yet: fixes land on the trunk, `main`, and
-whoever runs Sailor from source should track it. The defects still open,
-security ones included, are listed in `docs/faults-encountered.md` — a report
-that turns out to be one already there will be pointed at its number.
+whoever runs Sailor from source should track it. The open defects a user can
+meet, security ones included, are described in `docs/faults-encountered.md` — a
+report that turns out to be one already there will be pointed at its number.

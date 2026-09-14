@@ -22,8 +22,8 @@ recorded result or handed back to you with the reason it stopped.
 > step are not enforced by Sailor itself, and a completed flow does not by
 > itself prove its result met your acceptance criteria — see
 > [`docs/completion-and-required-steps.md`](docs/completion-and-required-steps.md)
-> for what "completed" does and does not mean. The defects still open are
-> listed in [`docs/faults-encountered.md`](docs/faults-encountered.md).
+> for what "completed" does and does not mean. The open defects a user can meet
+> are described in [`docs/faults-encountered.md`](docs/faults-encountered.md).
 
 ## Five minutes
 
