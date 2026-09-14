@@ -107,6 +107,30 @@ function shapeOf(state: string): string | null {
   return path?.getAttribute("d") ?? null;
 }
 
+describe("running now — the third answer, a row and not a place", () => {
+  test("a run in flight earns a row, with what it has cost", () => {
+    render(
+      <WaitingScreen
+        native
+        now={NOW}
+        since={AWAY}
+        sources={answered({})}
+        running={[
+          { run: { run_id: "r1", flow: "take-the-next-work", started_at: NOW - 60, status: "running", events: [] }, costMicros: 250_000 },
+        ]}
+      />,
+    );
+    expect(screen.getByText("Running now")).toBeTruthy();
+    expect(screen.getByText("take-the-next-work")).toBeTruthy();
+    expect(screen.getByText(/1m ago · \$0\.25/)).toBeTruthy();
+  });
+
+  test("nothing running draws no such row — it vanishes, not a stale empty panel", () => {
+    render(<WaitingScreen native now={NOW} since={AWAY} sources={answered({})} running={[]} />);
+    expect(screen.queryByText("Running now")).toBeNull();
+  });
+});
+
 describe("nothing waiting, and not being able to tell", () => {
   test("AN EMPTY MORNING SAYS SO PLAINLY", () => {
     render(<WaitingScreen native now={NOW} since={AWAY} sources={answered({})} />);
