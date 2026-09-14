@@ -119,15 +119,25 @@ const HOW_RANDOM_AN_OPAQUE_PIECE_IS: f64 = 3.5;
 /// digits and is as random as a key. Judged only where the name rule yielded,
 /// so ordinary text never meets it.
 fn looks_opaque(value: &str) -> bool {
-    looks_like_base64(value)
-        || value
-        .split(|letter: char| !letter.is_ascii_alphanumeric())
-        .any(|piece| {
-            piece.len() >= HOW_LONG_AN_OPAQUE_PIECE_RUNS
-                && !piece.bytes().all(|byte| byte.is_ascii_digit())
-                && (bits_per_character(piece) >= HOW_RANDOM_AN_OPAQUE_PIECE_IS
-                    || piece.len() >= 32 && piece.bytes().all(|byte| byte.is_ascii_hexdigit()))
-        })
+    if reads_as_a_row_name(value) {
+        return false;
+    }
+    let an_opaque_piece = |piece: &str| {
+        piece.len() >= HOW_LONG_AN_OPAQUE_PIECE_RUNS
+            && !piece.bytes().all(|byte| byte.is_ascii_digit())
+            && (bits_per_character(piece) >= HOW_RANDOM_AN_OPAQUE_PIECE_IS
+                || piece.len() >= 32 && piece.bytes().all(|byte| byte.is_ascii_hexdigit()))
+    };
+    looks_like_base64(value) || value.split(|letter: char| !letter.is_ascii_alphanumeric()).any(an_opaque_piece)
+}
+
+/// Lowercase words and numeric run ids joined by `/`, `-` or `_`. An upper
+/// case letter, a digit inside a word, or a `=` makes it no longer one.
+fn reads_as_a_row_name(value: &str) -> bool {
+    value.split(['/', '-', '_']).all(|piece| {
+        piece.bytes().all(|byte| byte.is_ascii_lowercase())
+            || piece.bytes().all(|byte| byte.is_ascii_digit())
+    })
 }
 
 /// How long a whole value in the base64 alphabet must run to be judged whole.
@@ -136,20 +146,16 @@ const HOW_LONG_A_BASE64_RUNS: usize = 24;
 /// Bits per character above which a whole base64-alphabet value reads as random.
 const HOW_RANDOM_A_BASE64_VALUE_IS: f64 = 4.0;
 
-/// Judged whole before any split, because `+` and `/` would cut a key into
-/// pieces too short to look random. A path of plain words is a row name.
+/// Judged whole before any split, because `+ / - _` would cut a key, standard
+/// or URL-safe, into pieces too short to look random.
 fn looks_like_base64(value: &str) -> bool {
     let body = value.trim_end_matches('=');
     let in_the_alphabet = body
         .bytes()
-        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'+' || byte == b'/');
-    let a_path_of_words = body
-        .split('/')
-        .all(|piece| piece.bytes().all(|byte| byte.is_ascii_alphabetic()));
+        .all(|byte| byte.is_ascii_alphanumeric() || b"+/-_".contains(&byte));
     value.len() - body.len() <= 2
         && body.len() >= HOW_LONG_A_BASE64_RUNS
         && in_the_alphabet
-        && !a_path_of_words
         && bits_per_character(body) >= HOW_RANDOM_A_BASE64_VALUE_IS
 }
 
@@ -484,6 +490,12 @@ mod tests {
         );
         assert!(secrets_in(&with_a_path).is_empty(), "{:?}", secrets_in(&with_a_path));
 
+        let with_long_words = one_step(
+            "store_read",
+            json!({"collection": "c", "key": "abcdefghijklmnopqrst/uvwxyzabcdefghijklmn"}),
+        );
+        assert!(secrets_in(&with_long_words).is_empty(), "{:?}", secrets_in(&with_long_words));
+
         let through_inputs = json!({
             "id": "x",
             "graph": {"steps": [{"id": "read", "action": "store_read"}]},
@@ -516,6 +528,14 @@ mod tests {
             json!({"collection": "c", "key": "Q7vX2mK9pL4w+R8tN1cZ6yB3h/J5dF0gS2aE7uW9/qT6rH1kP8vL3cN=", "value": 1, "written_by": "w"}),
         );
         let found = secrets_in(&in_base64);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].key, "with.key");
+
+        let in_url_safe_base64 = one_step(
+            "store_write",
+            json!({"collection": "c", "key": "Q7vX2mK9pL4w-R8tN1cZ6yB3h_J5dF0gS2aE7uW9_qT6rH1kP8vL3cN=", "value": 1, "written_by": "w"}),
+        );
+        let found = secrets_in(&in_url_safe_base64);
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(found[0].key, "with.key");
     }
