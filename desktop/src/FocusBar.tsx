@@ -1,3 +1,4 @@
+import { chainWords, replacesWords, type FlowChain } from "./flowchain";
 import { useState } from "react";
 import {
   DropdownMenu,
@@ -19,6 +20,8 @@ interface FocusBarProps {
   flow: FlowFile;
   bar: BarFlow;
   neverSaved: boolean;
+  /** Which file runs under this name, and where the window resolved it. */
+  chain?: FlowChain;
   error?: string;
   onRename: (next: string) => void;
   onDescription: (text: string) => void;
@@ -40,6 +43,7 @@ export function FocusBar({
   flow,
   bar,
   neverSaved,
+  chain,
   error,
   onRename,
   onDescription,
@@ -77,6 +81,11 @@ export function FocusBar({
         </span>
       )}
       <span className="focusbar__steps">{bar.steps} steps</span>
+      {chain && replacesWords(chain) && (
+        <span className="focusbar__chain" title={chainWords(chain)}>
+          {replacesWords(chain)}
+        </span>
+      )}
       <input
         className="focusbar__desc-input"
         value={descDraft}

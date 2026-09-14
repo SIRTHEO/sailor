@@ -28,6 +28,10 @@ export interface FlowGroup {
     dirty: boolean;
     /** What is happening to it right now, or `null` when nothing is known. */
     live?: FlowLive | null;
+    /** «replaces built in» when the flow that runs hides another, else `null`. */
+    replaces?: string | null;
+    /** The whole chain and the directory it was resolved from. */
+    chain?: string;
   }[];
   broken: { name: string; reason: string }[];
 }
@@ -244,6 +248,11 @@ export function World({
               {one.name}
               {one.dirty && <span className="rail__dirty-dot" title="not saved" />}
             </span>
+            {one.replaces && (
+              <span className="rail__replaces" title={one.chain}>
+                {one.replaces}
+              </span>
+            )}
             <span className="rail__note">{liveNote(one.live) ?? one.note}</span>
           </button>
         ))}
