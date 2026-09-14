@@ -1012,6 +1012,7 @@
   "cli.flow.restore_archive_name_taken": "{first} was already taken and was left untouched, so the file went to {archive} instead",
   "cli.flow.restore_could_not_move": "{flow}: {path} could not be moved to {archive}: {error}",
   "cli.flow.restore_nothing_built_in": "{flow}: no built-in flow has this name, so {path} replaces nothing and is left in place",
+  "cli.flow.restore_original_stays": "{flow}: archived as {archive}, but {path} could not be removed, so it still runs",
   "cli.flow.restore_outside_declared": "{flow}: SAILOR_FLOWS names another folder, so {path} is not the file that runs and is not moved",
   "cli.flow.restored": "{flow}: moved {path} to {archive}; {origin} runs now, resolved from {directory}",
   "cli.flow.unknown_directory": "a directory this process could not read",

@@ -229,6 +229,13 @@ fn restore_flow(sources: &[FlowSource], name: &str) -> Result<String, String> {
             "cli.flow.restore_archive_is_a_link",
             &[("flow", name), ("path", &path), ("archive", &archive.display().to_string())],
         ),
+        RestoreRefusal::ArchivedButOriginalStays { archive, error, .. } => format!(
+            "{}\n{error}",
+            catalogue::say(
+                "cli.flow.restore_original_stays",
+                &[("flow", name), ("path", &path), ("archive", &archive.display().to_string())],
+            )
+        ),
         RestoreRefusal::CouldNotMove { archive, error, .. } => catalogue::say(
             "cli.flow.restore_could_not_move",
             &[
@@ -253,7 +260,7 @@ fn restore_flow(sources: &[FlowSource], name: &str) -> Result<String, String> {
         ],
     );
     let first = flow::system::archive_path_for(&chain, now);
-    if archive == first {
+    if archive == first || std::fs::symlink_metadata(&first).is_err() {
         return Ok(restored);
     }
     Ok(format!(

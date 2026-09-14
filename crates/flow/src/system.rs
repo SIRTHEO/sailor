@@ -553,6 +553,7 @@ pub enum RestoreRefusal {
     NothingBuiltIn { path: PathBuf },
     OutsideDeclared { path: PathBuf },
     ArchiveIsALink { path: PathBuf, archive: PathBuf },
+    ArchivedButOriginalStays { path: PathBuf, archive: PathBuf, error: String },
     CouldNotMove { path: PathBuf, archive: PathBuf, error: String },
 }
 
@@ -584,25 +585,94 @@ fn archive_named(chain: &Chain, now: i64, attempt: u32) -> PathBuf {
         .join(format!("{}.{stamp}{suffix}", chain.name))
 }
 
-/// Moves a file to a name nothing holds, and never replaces what is there: a
-/// hard link fails on a taken name, and where one cannot be made the copy is
-/// opened with `create_new`, checked, and only then is the original removed.
-fn move_without_replacing(from: &Path, to: &Path) -> std::io::Result<()> {
-    match fs::hard_link(from, to) {
-        Ok(()) => fs::remove_file(from),
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Err(error),
-        Err(_) => {
-            use std::io::Write as _;
-            let bytes = fs::read(from)?;
-            let mut copy = fs::OpenOptions::new().write(true).create_new(true).open(to)?;
-            copy.write_all(&bytes)?;
-            copy.sync_all()?;
-            if fs::read(to)? != bytes {
-                return Err(std::io::Error::other("the copy does not match the original"));
-            }
-            fs::remove_file(from)
-        }
+/// The disk gestures a restore makes, so a test can make one of them fail.
+trait Disk {
+    fn link(&self, from: &Path, to: &Path) -> std::io::Result<()> {
+        fs::hard_link(from, to)
     }
+    fn remove(&self, path: &Path) -> std::io::Result<()> {
+        fs::remove_file(path)
+    }
+    fn write_synced(&self, file: &mut fs::File, bytes: &[u8]) -> std::io::Result<()> {
+        use std::io::Write as _;
+        file.write_all(bytes)?;
+        file.sync_all()
+    }
+}
+
+struct ThisDisk;
+
+impl Disk for ThisDisk {}
+
+enum Moved {
+    Gone,
+    OriginalStays(std::io::Error),
+}
+
+static NEXT_STAGING: AtomicU64 = AtomicU64::new(0);
+
+/// Moves a file to a name nothing holds, and never replaces what is there: a
+/// hard link fails on a taken name. The archive exists before the original is
+/// removed, and an original that will not go is said apart from a failed move.
+fn move_without_replacing(from: &Path, to: &Path, disk: &dyn Disk) -> std::io::Result<Moved> {
+    match disk.link(from, to) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => return Err(error),
+        Err(_) => copy_then_link(from, to, disk)?,
+    }
+    Ok(match disk.remove(from) {
+        Ok(()) => Moved::Gone,
+        Err(error) => Moved::OriginalStays(error),
+    })
+}
+
+/// Where no hard link reaches the original: the copy is written under a
+/// scratch name, checked, then linked to the archive's name, so that name
+/// never holds a partial file. The scratch file goes whatever happens.
+fn copy_then_link(from: &Path, to: &Path, disk: &dyn Disk) -> std::io::Result<()> {
+    let bytes = fs::read(from)?;
+    let name = to.file_name().map(|file| file.to_string_lossy().into_owned()).unwrap_or_default();
+    let serial = NEXT_STAGING.fetch_add(1, Ordering::Relaxed);
+    let staging = to.with_file_name(format!(".{name}.{}-{serial}.staging", std::process::id()));
+    let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&staging)?;
+    let linked = write_check_and_link(&mut file, &bytes, &staging, to, disk);
+    drop(file);
+    let _ = fs::remove_file(&staging);
+    linked
+}
+
+fn write_check_and_link(
+    file: &mut fs::File,
+    bytes: &[u8],
+    staging: &Path,
+    to: &Path,
+    disk: &dyn Disk,
+) -> std::io::Result<()> {
+    disk.write_synced(file, bytes)?;
+    if fs::read(staging)? != bytes {
+        return Err(std::io::Error::other("the copy does not match the original"));
+    }
+    disk.link(staging, to)
+}
+
+/// An archive a failed attempt already made of this very file: same flow name,
+/// a plain file, the same bytes. Finding it, a retry removes the original only.
+fn archive_of_this_file(chain: &Chain, first: &Path) -> Option<PathBuf> {
+    let bytes = fs::read(&chain.winner.path).ok()?;
+    let prefix = format!("{}.", chain.name);
+    let mut found: Vec<PathBuf> = fs::read_dir(first.parent()?)
+        .ok()?
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .is_some_and(|file| file.to_string_lossy().starts_with(&prefix))
+        })
+        .filter(|path| fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_file()))
+        .filter(|path| fs::read(path).is_ok_and(|held| held == bytes))
+        .collect();
+    found.sort();
+    found.into_iter().next()
 }
 
 /// Puts the shipped flow back by moving the file that runs out of discovery:
@@ -610,6 +680,15 @@ fn move_without_replacing(from: &Path, to: &Path) -> std::io::Result<()> {
 /// delete, and never a file other than the winner: under `SAILOR_FLOWS` only a
 /// file in that folder can be the winner, and anything else is refused.
 pub fn restore(chain: &Chain, sources: &[FlowSource], now: i64) -> Result<PathBuf, RestoreRefusal> {
+    restore_on(chain, sources, now, &ThisDisk)
+}
+
+fn restore_on(
+    chain: &Chain,
+    sources: &[FlowSource],
+    now: i64,
+    disk: &dyn Disk,
+) -> Result<PathBuf, RestoreRefusal> {
     if chain.winner.origin == BUILTIN_ORIGIN {
         return Err(RestoreRefusal::AlreadyBuiltIn);
     }
@@ -631,10 +710,27 @@ pub fn restore(chain: &Chain, sources: &[FlowSource], now: i64) -> Result<PathBu
             error: error.to_string(),
         })?;
     }
+    if let Some(archive) = archive_of_this_file(chain, &first) {
+        return match disk.remove(&path) {
+            Ok(()) => Ok(archive),
+            Err(error) => Err(RestoreRefusal::ArchivedButOriginalStays {
+                path,
+                archive,
+                error: error.to_string(),
+            }),
+        };
+    }
     for attempt in 0..ARCHIVE_NAMES_TO_TRY {
         let archive = archive_named(chain, now, attempt);
-        match move_without_replacing(&path, &archive) {
-            Ok(()) => return Ok(archive),
+        match move_without_replacing(&path, &archive, disk) {
+            Ok(Moved::Gone) => return Ok(archive),
+            Ok(Moved::OriginalStays(error)) => {
+                return Err(RestoreRefusal::ArchivedButOriginalStays {
+                    path,
+                    archive,
+                    error: error.to_string(),
+                })
+            }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                 let is_link = fs::symlink_metadata(&archive)
                     .is_ok_and(|meta| meta.file_type().is_symlink());
@@ -1168,6 +1264,104 @@ mod tests {
             assert_eq!((name, *origin), (&one.chain.name, one.chain.winner.origin));
             assert_eq!(entry.as_ref().ok().map(|flow| &flow.description), one.entry.as_ref().ok().map(|flow| &flow.description));
         }
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// A disk whose gestures fail where a test says: a link from one file, a
+    /// write cut in half, the removal of one file.
+    struct FaultyDisk {
+        no_link_from: Option<PathBuf>,
+        broken_write: bool,
+        stuck: Option<PathBuf>,
+    }
+
+    impl Disk for FaultyDisk {
+        fn link(&self, from: &Path, to: &Path) -> std::io::Result<()> {
+            if self.no_link_from.as_deref() == Some(from) {
+                return Err(std::io::Error::other("another filesystem"));
+            }
+            fs::hard_link(from, to)
+        }
+        fn remove(&self, path: &Path) -> std::io::Result<()> {
+            if self.stuck.as_deref() == Some(path) {
+                return Err(std::io::Error::other("the folder is read-only"));
+            }
+            fs::remove_file(path)
+        }
+        fn write_synced(&self, file: &mut fs::File, bytes: &[u8]) -> std::io::Result<()> {
+            use std::io::Write as _;
+            if self.broken_write {
+                file.write_all(&bytes[..bytes.len() / 2])?;
+                return Err(std::io::Error::other("the disk filled up"));
+            }
+            file.write_all(bytes)?;
+            file.sync_all()
+        }
+    }
+
+    fn archived_in(folder: &Path) -> Vec<PathBuf> {
+        fs::read_dir(folder)
+            .map(|entries| entries.flatten().map(|entry| entry.path()).collect())
+            .unwrap_or_default()
+    }
+
+    /// A copy that breaks halfway leaves nothing under the archive folder, not
+    /// even a scratch file, and the source keeps every byte: a second attempt
+    /// then archives under the first name, not beside a corrupt one.
+    #[test]
+    fn a_copy_that_breaks_leaves_no_partial_archive_and_the_source_whole() {
+        let base = scratch("restore-broken-copy");
+        let home_flows = base.join("home").join("flows");
+        let shipped = FLOWS[0].0;
+        put_flow(&home_flows, shipped);
+        let file = home_flows.join(format!("{shipped}.flow.json"));
+        let written = fs::read(&file).expect("the file");
+        let places = sources(Some(&home_flows), None, None);
+        let chain = chain_of(&places, None, shipped).expect("the chain");
+        let broken = FaultyDisk { no_link_from: Some(file.clone()), broken_write: true, stuck: None };
+
+        let refused = restore_on(&chain, &places, 42, &broken);
+
+        assert!(refused.is_err(), "{refused:?}");
+        let folder = base.join("home").join(ARCHIVE_FOLDER);
+        assert_eq!(archived_in(&folder), Vec::<PathBuf>::new(), "a partial archive or a scratch file is left");
+        assert_eq!(fs::read(&file).expect("the source"), written, "the source was touched");
+        let copying = FaultyDisk { no_link_from: Some(file.clone()), broken_write: false, stuck: None };
+        let archive = restore_on(&chain, &places, 42, &copying).expect("the second attempt archives");
+        assert_eq!(archive, archive_path_for(&chain, 42));
+        assert_eq!(fs::read(&archive).expect("the archive"), written);
+        assert_eq!(archived_in(&folder), vec![archive]);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// An original that cannot be removed is archived once: the next attempt
+    /// finds its own archive and retries only the removal, and both say both
+    /// paths while the file that runs does not change.
+    #[test]
+    fn an_original_that_cannot_be_removed_is_archived_once_and_both_paths_are_said() {
+        let base = scratch("restore-stuck");
+        let home_flows = base.join("home").join("flows");
+        let shipped = FLOWS[0].0;
+        put_flow(&home_flows, shipped);
+        let file = home_flows.join(format!("{shipped}.flow.json"));
+        let places = sources(Some(&home_flows), None, None);
+        let chain = chain_of(&places, None, shipped).expect("the chain");
+        let stuck = FaultyDisk { no_link_from: None, broken_write: false, stuck: Some(file.clone()) };
+
+        let first = restore_on(&chain, &places, 42, &stuck);
+        let second = restore_on(&chain, &places, 43, &stuck);
+
+        let archives = archived_in(&base.join("home").join(ARCHIVE_FOLDER));
+        assert_eq!(archives.len(), 1, "one archive after two attempts: {archives:?}");
+        assert!(file.exists(), "the original stays");
+        for said in [&first, &second] {
+            let text = format!("{said:?}");
+            assert!(matches!(said, Err(RestoreRefusal::ArchivedButOriginalStays { .. })), "{text}");
+            assert!(text.contains(&file.display().to_string()), "{text}");
+            assert!(text.contains(&archives[0].display().to_string()), "{text}");
+        }
+        let after = chain_of(&places, None, shipped).expect("the chain");
+        assert_eq!(after.winner.path, file, "the flow that runs changed");
         let _ = fs::remove_dir_all(&base);
     }
 

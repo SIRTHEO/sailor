@@ -172,6 +172,53 @@ fn restore_archives_the_file_and_the_shipped_flow_runs_again() {
     );
 }
 
+/// A read-only flows folder lets the file be archived but not removed: both
+/// paths are said, the flow that runs does not change, and a second attempt
+/// makes no second archive.
+#[cfg(unix)]
+#[test]
+fn an_original_that_stays_is_archived_once_and_both_paths_are_said() {
+    use std::os::unix::fs::PermissionsExt;
+
+    struct Writable(PathBuf);
+    impl Drop for Writable {
+        fn drop(&mut self) {
+            let _ = std::fs::set_permissions(&self.0, std::fs::Permissions::from_mode(0o755));
+        }
+    }
+
+    let scratch = Scratch::new("stays");
+    let folder = scratch.0.join("home").join("flows");
+    let file = write_flow(&folder, shipped());
+    std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o555)).expect("a read-only folder");
+    let _writable = Writable(folder.clone());
+
+    let first = sailor(&scratch, None, &["flow", "restore", shipped()]);
+    let second = sailor(&scratch, None, &["flow", "restore", shipped()]);
+
+    let archives = archived_in(&scratch.0.join("home").join("flows-archived"));
+    assert_eq!(archives.len(), 1, "one archive after two attempts: {archives:?}\n{}\n{}", first.text, second.text);
+    assert!(file.exists(), "the original stays");
+    let stays = catalogue::say(
+        "cli.flow.restore_original_stays",
+        &[
+            ("flow", shipped()),
+            ("path", &file.display().to_string()),
+            ("archive", &archives[0].display().to_string()),
+        ],
+    );
+    for said in [&first, &second] {
+        assert_eq!(said.code, Some(1), "{}", said.text);
+        assert!(said.text.contains(&stays), "both paths are said: {}", said.text);
+    }
+    let list = sailor(&scratch, None, &["flow", "list"]);
+    let replaces = catalogue::say(
+        "cli.flow.list_origin_replaces",
+        &[("origin", "yours"), ("replaced", "built in")],
+    );
+    assert_eq!(origin_in_the_list(&list, shipped()), Some(replaces), "{}", list.text);
+}
+
 #[test]
 fn restore_refuses_a_flow_with_nothing_built_in_underneath_and_leaves_it() {
     let scratch = Scratch::new("nothing-under");
