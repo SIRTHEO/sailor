@@ -152,6 +152,7 @@ pub fn deposited(input: &Value) -> Result<Value, ActionError> {
         },
         work: spec.work,
         taken: None,
+        passed: None,
     };
     let blank = mandate::blank_fields(&mandate);
     if !blank.is_empty() {
