@@ -80,6 +80,38 @@ fn a_store_of_the_old_shape(label: &str) -> PathBuf {
     path
 }
 
+/// A store from before the summaries reads with none where it may not be
+/// written, and gains their table the first time it is opened for writing.
+#[test]
+fn a_store_from_before_the_summaries_reads_with_none_and_gains_them_when_opened() {
+    let path = a_store_of_the_old_shape("summaries");
+    Faults::open(&path).expect("migrating the vocabulary");
+    let connection = Connection::open(&path).expect("reopening it by hand");
+    connection
+        .execute_batch("DROP TABLE public_summaries;")
+        .expect("the store as a binary without summaries left it");
+    drop(connection);
+
+    let read = Faults::open_for_reading(&path)
+        .expect("a store without the table still opens for reading")
+        .all()
+        .expect("and reads");
+    assert_eq!(read.len(), AS_IT_WAS.len(), "a row was lost reading without the table");
+    assert!(
+        read.iter().all(|fault| fault.public_summary.is_none()),
+        "a summary was read out of a store that has none"
+    );
+
+    let store = Faults::open(&path).expect("opening for writing");
+    store
+        .set_public_summary(2, "A run stops before its end.")
+        .expect("the table exists once the store is opened for writing");
+    assert_eq!(
+        store.get(2).expect("the fault").public_summary.as_deref(),
+        Some("A run stops before its end.")
+    );
+}
+
 /// The prose is the only record of what somebody meant: the migration reads it,
 /// it does not rewrite it.
 #[test]

@@ -224,6 +224,10 @@ pub const SHADOWED: i32 = 4;
 /// The empty home the suite runs in, below the release's throwaway tree.
 pub const SUITE_HOME_BELOW_SCRATCH: &str = "home";
 
+/// The check that read the private names before the suite ran: the release's
+/// preflight, which refuses to go on without the list and scans every tracked file.
+pub const NAMES_CARRIED_BY_THE_PREFLIGHT: &str = "the release publication preflight, armed on this HEAD";
+
 /// The environment the suite is run with, built by inclusion: what says *where
 /// to write* stays, what says *what to read* is left out, and `HOME` is an
 /// empty directory under `scratch`. A test that passes here passed on the tree
@@ -233,6 +237,7 @@ pub fn suite_environment(
     scratch: &Path,
     profile_variables: &[&str],
     scratch_root_variable: &str,
+    names_carried_by: Option<&str>,
 ) -> Vec<(String, String)> {
     let declared = |name: &str| {
         inherited
@@ -260,6 +265,9 @@ pub fn suite_environment(
         if let Some(value) = value {
             kept.push((name.to_owned(), value));
         }
+    }
+    if let Some(check) = names_carried_by {
+        kept.push(("SAILOR_PRIVATE_NAMES_CARRIED_BY".to_owned(), check.to_owned()));
     }
     kept.retain(|(name, _)| !profile_variables.contains(&name.as_str()));
     kept
@@ -425,7 +433,7 @@ mod tests {
         let scratch = Path::new("/scratch/release.abc");
         let profiles = ["CODEX_HOME", "CLAUDE_CONFIG_DIR"];
 
-        let suite = suite_environment(&inherited, scratch, &profiles, "SAILOR_TEST_TMP");
+        let suite = suite_environment(&inherited, scratch, &profiles, "SAILOR_TEST_TMP", None);
 
         let home = declared(&suite, "HOME").expect("the suite has a home");
         assert!(home.starts_with("/scratch/release.abc/"), "{home}");
@@ -457,11 +465,36 @@ mod tests {
         .map(|(key, value)| (key.to_owned(), value.to_owned()))
         .to_vec();
 
-        let suite = suite_environment(&inherited, Path::new("/scratch"), &["TMPDIR"], "SAILOR_TEST_TMP");
+        let suite = suite_environment(&inherited, Path::new("/scratch"), &["TMPDIR"], "SAILOR_TEST_TMP", None);
 
         assert_eq!(declared(&suite, "CARGO_HOME"), Some("/altrove/cargo"));
         assert_eq!(declared(&suite, "RUSTUP_HOME"), Some("/casa/di-chiunque/.rustup"));
         assert_eq!(declared(&suite, "TMPDIR"), None, "the profile list did not have the last word");
+    }
+
+    /// **THE SUITE IS TOLD WHO MEASURED THE NAMES, NEVER HANDED THE LIST.** The
+    /// release's preflight reads the private names and scans every tracked file
+    /// before anything is built; the suite, in its empty home, can only be told so.
+    #[test]
+    fn the_check_that_carries_the_names_reaches_the_suite_and_the_list_never_does() {
+        let inherited: Vec<(String, String)> = [
+            ("HOME", "/casa/di-chiunque"),
+            ("SAILOR_PRIVATE_NAMES", "/casa/di-chiunque/names"),
+            ("SAILOR_PRIVATE_NAMES_CARRIED_BY", "whatever the releaser had set"),
+        ]
+        .map(|(key, value)| (key.to_owned(), value.to_owned()))
+        .to_vec();
+        let scratch = Path::new("/scratch");
+
+        let told = suite_environment(&inherited, scratch, &[], "SAILOR_TEST_TMP", Some(NAMES_CARRIED_BY_THE_PREFLIGHT));
+        let untold = suite_environment(&inherited, scratch, &[], "SAILOR_TEST_TMP", None);
+
+        assert_eq!(
+            declared(&told, "SAILOR_PRIVATE_NAMES_CARRIED_BY"),
+            Some(NAMES_CARRIED_BY_THE_PREFLIGHT)
+        );
+        assert_eq!(declared(&untold, "SAILOR_PRIVATE_NAMES_CARRIED_BY"), None, "an inherited claim reached the suite");
+        assert_eq!(declared(&told, "SAILOR_PRIVATE_NAMES"), None, "the list itself reached the suite");
     }
 
     /// The shape of the fault: the page built, the binary carries none of it.

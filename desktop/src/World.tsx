@@ -286,9 +286,11 @@ export function World({
     <nav className="world" aria-label="the world">
       {/* **THE QUESTIONS COME FIRST, AND THEY ARE FEW ENOUGH TO STAY.** Held
           out of here as «a strip of destinations holding space the work
-          needs», the four cost a person the palette and the name of a place
-          they had to know already — the verdict was «ingestibile». Four rows
-          is not a strip: it is the answer to «where am I and what wants me». */}
+          needs», they cost a person the palette and the name of a place they
+          had to know already — the verdict was «ingestibile». Three rows is
+          not a strip: it is the answer to «where am I and what wants me».
+          The owner's word, 14/09: «tre voci» — a fourth (`memory`, "Why")
+          moved to the run that explains it; see `places.ts`. */}
       <div className="world__places">
         {PLACES.map((place) => (
           <button

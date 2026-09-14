@@ -8,8 +8,9 @@ with its real author and date, not copied here by hand:
 
 - **the commits**, in Conventional Commits form, whose bodies carry the why:
   `git log --first-parent main`;
-- **the fault register**, `docs/faults-encountered.md`, one entry per defect
-  with how it surfaced and what would have stopped it;
+- **the fault register**, kept in Sailor's own store (`sailor faults list`), one
+  entry per defect with how it surfaced and what would have stopped it; the
+  open ones a user can meet are described in `docs/faults-encountered.md`;
 - **the decisions that do not reopen**, `docs/decisions.md`.
 
 The first entry below is written when the first version is tagged, and from

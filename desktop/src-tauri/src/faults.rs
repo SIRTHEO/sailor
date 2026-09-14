@@ -94,6 +94,7 @@ mod tests {
             what_would_prevent: "z".to_owned(),
             status: "whatever the prose says".to_owned(),
             standing,
+            public_summary: None,
         };
         let said: Vec<&str> = ::faults::EVERY_STANDING
             .iter()

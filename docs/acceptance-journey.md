@@ -17,7 +17,7 @@ Every path is `$SAILOR_REPO/...` with `SAILOR_REPO=$(git rev-parse --show-toplev
 | 7 | the same for `beta` (its check names a file the worker is never told to write) | the run ends «waiting» at `handoff`; the row carries the reason the acceptance did not pass |
 | 8 | the window (`cd desktop && npm run desktop`, with the same `SAILOR_LEDGER`) | the parked `beta` row is visible with its reason and a way to open the run; nothing else claims attention |
 | 9 | `sailor step approve --run <beta run id> --step handoff --as <name>` | the row leaves the attention list on the next beat; the run ends |
-| 10 | `sailor faults list --open` (the machine's own store) | the open count and the total match the sentence in `docs/faults-encountered.md` |
+| 10 | `sailor faults list --open` (the machine's own store) | the open count matches the count sentence in `docs/faults-encountered.md` |
 
 ## Walks
 

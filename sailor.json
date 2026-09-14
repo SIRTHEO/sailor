@@ -3,8 +3,7 @@
   "rules": [
     "AGENTS.md",
     "CLAUDE.md",
-    "docs/decisions.md",
-    "docs/faults-encountered.md"
+    "docs/decisions.md"
   ],
   "checks": {}
 }

@@ -240,7 +240,7 @@ census (`Census`), the events of a terminal, the anchoring by tty
 ### 4.9 The faults
 
 `faults` can record them, list them, check them, import them, render them, and
-say the standing of each (`Standing`). Measured **66** in
+say the standing of each (`Standing`). The open ones are rendered into
 `docs/faults-encountered.md`. In the window: nothing.
 
 ---
