@@ -287,6 +287,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         &temporary.path,
         &profile_variables,
         terminal::scratch::ROOT_VARIABLE,
+        Some(release::NAMES_CARRIED_BY_THE_PREFLIGHT),
     );
     for (number, manifest_rel) in judges.iter().enumerate() {
         println!(
