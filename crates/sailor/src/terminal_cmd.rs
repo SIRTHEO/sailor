@@ -34,7 +34,7 @@ pub const USAGE: &[Form] = &[
         says_key: "cli.terminal.form.reset",
     },
     Form {
-        form: "sailor terminal mandate [--tty <name>] [--store <dir>] < text",
+        form: "sailor terminal mandate [--tty <name>] [--to <name>] [--store <dir>] < text",
         says_key: "cli.terminal.form.mandate",
     },
     Form {
@@ -442,6 +442,9 @@ fn leave_mandate(args: &[String], from: &mut impl std::io::Read) -> Result<i32, 
         None => sessions::tty::current()
             .ok_or_else(|| catalogue::say("cli.terminal.not_in_a_terminal", &[]))?,
     };
+    if let Some((_, to)) = options.iter().find(|(name, _)| name == "to") {
+        return pass_mandate(&options, &tty, to, Path::new("/dev"));
+    }
     let mut text = String::new();
     from.read_to_string(&mut text)
         .map_err(|error| error.to_string())?;
@@ -454,6 +457,37 @@ fn leave_mandate(args: &[String], from: &mut impl std::io::Read) -> Result<i32, 
         catalogue::say(
             "cli.terminal.mandate_left",
             &[("tty", &tty), ("head", &written)]
+        )
+    );
+    Ok(0)
+}
+
+/// Hands a waiting mandate to the terminal a successor opened beside this one.
+/// `devices` is where a live terminal shows itself: `/dev`, except in a test.
+fn pass_mandate(
+    options: &[(String, String)],
+    from: &str,
+    to: &str,
+    devices: &Path,
+) -> Result<i32, String> {
+    if !devices.join(to).exists() {
+        return Err(catalogue::say(
+            "cli.terminal.no_such_terminal",
+            &[("tty", to), ("where", &devices.display().to_string())],
+        ));
+    }
+    let root = store_root(options)?;
+    sessions::mandate::pass_on(&root, from, to, sessions::now()).map_err(|error| {
+        catalogue::say(
+            "cli.terminal.mandate_not_passed",
+            &[("from", from), ("to", to), ("why", &error.to_string())],
+        )
+    })?;
+    println!(
+        "{}",
+        catalogue::say(
+            "cli.terminal.mandate_passed",
+            &[("from", from), ("to", to)]
         )
     );
     Ok(0)
@@ -736,6 +770,67 @@ mod tests {
                 .is_none()
         );
         let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    fn waiting_for(directory: &Path, tty: &str) {
+        let mut mandate = sessions::mandate::Mandate::default();
+        mandate.written.tty = tty.to_owned();
+        mandate.written.session = "the-predecessor".to_owned();
+        mandate.work.goal = "carry the conduit on".to_owned();
+        sessions::mandate::deposit(directory, &mandate).expect("a mandate waits");
+    }
+
+    /// **A MANDATE SENT TO A TERMINAL NOBODY HOLDS WOULD WAIT FOR EVER.** The
+    /// refusal names the terminal and says why, and the mandate stays put.
+    #[test]
+    fn passing_a_mandate_to_a_terminal_that_does_not_exist_is_refused_with_the_reason() {
+        let directory = scratch("mandate-pass-nowhere");
+        waiting_for(&directory, "ttys777");
+        let written = words(&[
+            "--tty",
+            "ttys777",
+            "--to",
+            "ttys-nobody-holds",
+            "--store",
+            directory.to_str().expect("a path"),
+        ]);
+
+        let refusal = leave_mandate(&written, &mut "".as_bytes())
+            .expect_err("a terminal that is not there is refused");
+
+        assert!(refusal.contains("ttys-nobody-holds"), "{refusal}");
+        assert!(refusal.contains("no terminal"), "{refusal}");
+        let still = sessions::mandate::read(&sessions::mandate::address_in(&directory, "ttys777"))
+            .expect("the mandate stays where it was");
+        assert!(still.taken.is_none() && still.passed.is_none());
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// The successor's greeting looks a mandate up by its own terminal, so one
+    /// left at the old address is handed to nobody and still reads as owed.
+    #[test]
+    fn a_mandate_passed_to_a_live_terminal_no_longer_waits_for_the_old_one() {
+        let directory = scratch("mandate-pass");
+        let devices = scratch("mandate-pass-devices");
+        std::fs::write(devices.join("ttys778"), "").expect("a terminal that is there");
+        waiting_for(&directory, "ttys777");
+        let written = words(&["--store", directory.to_str().expect("a path")]);
+
+        pass_mandate(
+            &options_of(&written).expect("pairs"),
+            "ttys777",
+            "ttys778",
+            &devices,
+        )
+        .expect("it is passed on");
+
+        let old = sessions::mandate::address_in(&directory, "ttys777");
+        assert!(sessions::mandate::read(&old).is_none(), "nothing waits for the old one");
+        let arrived = sessions::mandate::read(&sessions::mandate::address_in(&directory, "ttys778"))
+            .expect("it waits for the new one");
+        assert!(arrived.taken.is_none());
+        let _ = std::fs::remove_dir_all(&directory);
+        let _ = std::fs::remove_dir_all(&devices);
     }
 
     #[test]
