@@ -1,6 +1,6 @@
 {
   "id": "cut-a-release",
-  "description": "Step 9 of docs/the-delivery-loop.md: a validated trunk accepted and released. The mandate is one JSON object naming the repo and the version, with base and forge_repo optional. The tree must stand, clean, on the remote trunk, because the release builds from HEAD. The notes are the CHANGELOG.md section for the version at that commit, and with no such section the run stops before anything is built. `sailor release sailor` builds and installs the candidate, the installed binary must name the version, and a person walks the acceptance journey on that binary and binds the walk to the candidate commit; the journey runs whatever the release policy says. Only then is the policy read from the trusted trunk, with `ask` on release or push handing the tag to a person; the trunk is re-read, the publication gate runs on the candidate and on the notes, and the tag is created and pushed. The run is complete only when the host reports a published, non-draft release for that tag. Every forge call runs as the account in sailor.forgeAs.",
+  "description": "Step 9 of docs/the-delivery-loop.md: a trunk accepted, then published and released. The mandate is one JSON object naming the repo and the version, with base and forge_repo optional. The candidate is the commit the tree's trunk branch carries, clean, and the remote trunk must be its ancestor. The notes are the CHANGELOG.md section for the version at that commit; with no such section the run stops before anything is built. Before anything leaves, the policy is read from the trusted trunk, `ask` hands the release to a person, and the publication gate runs on what the candidate would publish. `sailor release sailor --no-push --candidate` then builds a detached checkout of exactly that commit and installs it, pushing nothing. The stamp must name the candidate, and bin/sailor must match the sha256 the release recorded. A person walks the acceptance journey on that binary, bound to its commit and digest, whatever the policy says. Only after a green journey are the gate and the policy read again, the installed digest checked unchanged, and the remote trunk checked unmoved. The flow then pushes the trunk itself, with the tree's own account and upstream, and checks that the remote carries the candidate. The notes pass the text gate, the tag is pushed, and the run completes only when the host reports a published, non-draft release for that tag. Every forge call runs as the account in sailor.forgeAs.",
   "inputs": {
     "trigger": {
       "source": "manual",
@@ -134,7 +134,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\ngit -C \"$REPO\" fetch --quiet --tags origin\ncandidate=$(git -C \"$REPO\" rev-parse --verify \"refs/remotes/origin/$BASE^{commit}\")\nhead=$(git -C \"$REPO\" rev-parse HEAD)\n[ \"$head\" = \"$candidate\" ] || { echo \"the tree stands at $head, not the remote $BASE at $candidate: the release builds from HEAD, so it would build something else\" >&2; exit 1; }\n[ -z \"$(git -C \"$REPO\" status --porcelain --untracked-files=no)\" ] || { echo \"the tree carries uncommitted changes\" >&2; exit 1; }\n# `sailor release` pushes HEAD to its branch's upstream with sailor.pushAs and sailor.pushSecretFrom,\n# or with the machine's credentials when either is missing: bind that push before it can happen.\n[ \"$(git -C \"$REPO\" symbolic-ref --quiet --short HEAD)\" = \"$BASE\" ] || { echo \"the tree is not on $BASE: the release's own push would go somewhere this flow did not gate\" >&2; exit 1; }\n[ \"$(git -C \"$REPO\" config --get \"branch.$BASE.remote\")\" = origin ] && [ \"$(git -C \"$REPO\" config --get \"branch.$BASE.merge\")\" = \"refs/heads/$BASE\" ] || { echo \"$BASE does not track origin/$BASE: the release's own push would go somewhere this flow did not gate\" >&2; exit 1; }\ncase \"$(git -C \"$REPO\" remote get-url origin)\" in\n    /*|file://*) ;;\n    https://*)\n        [ -n \"$(git -C \"$REPO\" config --get sailor.pushAs || true)\" ] && [ -n \"$(git -C \"$REPO\" config --get sailor.pushSecretFrom || true)\" ] || { echo \"sailor.pushAs or sailor.pushSecretFrom is missing or empty: sailor release would push with the machine's own credentials\" >&2; exit 1; } ;;\n    *) echo \"origin is not https or a local path: the release's own push cannot be bound to an account\" >&2; exit 1 ;;\nesac\ntag=\"v$VERSION\"\nif tagged=$(git -C \"$REPO\" rev-parse --verify --quiet \"refs/tags/$tag^{commit}\"); then\n    [ \"$tagged\" = \"$candidate\" ] || { echo \"$tag already names $tagged, not the candidate $candidate\" >&2; exit 1; }\nfi\nprevious=$(git -C \"$REPO\" describe --tags --abbrev=0 --match 'v*' \"$candidate^\" 2>/dev/null || true)\nprintf '{\"candidate\":\"%s\",\"tag\":\"%s\",\"previous_tag\":\"%s\"}' \"$candidate\" \"$tag\" \"$previous\"\n",
+          "command": "set -eu\ngit -C \"$REPO\" fetch --quiet --tags origin\n[ \"$(git -C \"$REPO\" symbolic-ref --quiet --short HEAD)\" = \"$BASE\" ] || { echo \"the tree is not on $BASE: the candidate is the trunk this tree carries\" >&2; exit 1; }\ncandidate=$(git -C \"$REPO\" rev-parse --verify \"refs/heads/$BASE^{commit}\")\n# sailor release refuses uncommitted work in HEAD's tree: HEAD is the candidate so that refusal speaks about it.\n[ \"$(git -C \"$REPO\" rev-parse HEAD)\" = \"$candidate\" ] || { echo \"HEAD is not $BASE at $candidate\" >&2; exit 1; }\n[ -z \"$(git -C \"$REPO\" status --porcelain --untracked-files=no)\" ] || { echo \"the tree carries uncommitted changes\" >&2; exit 1; }\nremote=$(git -C \"$REPO\" rev-parse --verify --quiet \"refs/remotes/origin/$BASE^{commit}\" || true)\nif [ -n \"$remote\" ]; then\n    git -C \"$REPO\" merge-base --is-ancestor \"$remote\" \"$candidate\" || { echo \"the remote $BASE at $remote is not an ancestor of the candidate $candidate: publishing it would need a force\" >&2; exit 1; }\nfi\ntag=\"v$VERSION\"\nif tagged=$(git -C \"$REPO\" rev-parse --verify --quiet \"refs/tags/$tag^{commit}\"); then\n    [ \"$tagged\" = \"$candidate\" ] || { echo \"$tag already names $tagged, not the candidate $candidate\" >&2; exit 1; }\nfi\nprevious=$(git -C \"$REPO\" describe --tags --abbrev=0 --match 'v*' \"$candidate^\" 2>/dev/null || true)\nprintf '{\"candidate\":\"%s\",\"remote_trunk\":\"%s\",\"tag\":\"%s\",\"previous_tag\":\"%s\"}' \"$candidate\" \"$remote\" \"$tag\" \"$previous\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/answer/repo"
@@ -153,6 +153,9 @@
               "candidate": {
                 "type": "string"
               },
+              "remote_trunk": {
+                "type": "string"
+              },
               "tag": {
                 "type": "string"
               },
@@ -162,6 +165,7 @@
             },
             "required": [
               "candidate",
+              "remote_trunk",
               "tag",
               "previous_tag"
             ],
@@ -185,7 +189,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\ncommon=$(cd \"$REPO\" && cd \"$(git rev-parse --git-common-dir)\" && pwd)\noutgoing=\"$common/sailor/outgoing\"\nmkdir -p \"$outgoing\"\nfile=\"$outgoing/release-notes-$VERSION.md\"\ngit -C \"$REPO\" show \"$CANDIDATE:CHANGELOG.md\" > \"$outgoing/changelog-$VERSION.md\" 2>/dev/null || { echo \"the candidate carries no CHANGELOG.md: the release stops\" >&2; exit 1; }\nVERSION=\"$VERSION\" FILE=\"$file\" python3 - \"$outgoing/changelog-$VERSION.md\" <<'PY'\nimport json, os, re, sys\ntext = open(sys.argv[1]).read()\nversion = os.environ[\"VERSION\"]\nheading = re.compile(r\"^## \\[?v?\" + re.escape(version) + r\"\\]?(\\s.*)?$\")\nlines = text.splitlines()\nstart = next((i for i, line in enumerate(lines) if heading.match(line)), None)\nif start is None:\n    sys.exit(\"CHANGELOG.md has no section for %s: the release stops\" % version)\nend = next((i for i in range(start + 1, len(lines)) if lines[i].startswith(\"## \")), len(lines))\nnotes = \"\\n\".join(lines[start + 1:end]).strip()\nif not notes:\n    sys.exit(\"the CHANGELOG.md section for %s is empty: the release stops\" % version)\nopen(os.environ[\"FILE\"], \"w\").write(notes + \"\\n\")\nprint(json.dumps({\"notes_file\": os.environ[\"FILE\"]}))\nPY\n",
+          "command": "set -eu\ncommon=$(cd \"$REPO\" && cd \"$(git rev-parse --git-common-dir)\" && pwd)\noutgoing=\"$common/sailor/outgoing\"\nmkdir -p \"$outgoing\"\nfile=\"$outgoing/release-notes-$VERSION.md\"\ngit -C \"$REPO\" show \"$CANDIDATE:CHANGELOG.md\" > \"$outgoing/changelog-$VERSION.md\" 2>/dev/null || { echo \"the candidate carries no CHANGELOG.md: the release stops\" >&2; exit 1; }\nVERSION=\"$VERSION\" FILE=\"$file\" python3 -c \"$NOTES_PROGRAM\" \"$outgoing/changelog-$VERSION.md\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/answer/repo"
@@ -195,7 +199,8 @@
             },
             "CANDIDATE": {
               "$from": "/the_candidate/answer/candidate"
-            }
+            },
+            "NOTES_PROGRAM": "import json, os, re, sys\ntext = open(sys.argv[1]).read()\nversion = os.environ[\"VERSION\"]\nheading = re.compile(r\"^## \\[?v?\" + re.escape(version) + r\"\\]?(\\s.*)?$\")\nlines = text.splitlines()\nstart = next((i for i, line in enumerate(lines) if heading.match(line)), None)\nif start is None:\n    sys.exit(\"CHANGELOG.md has no section for %s: the release stops\" % version)\nend = next((i for i in range(start + 1, len(lines)) if lines[i].startswith(\"## \")), len(lines))\nnotes = \"\\n\".join(lines[start + 1:end]).strip()\nif not notes:\n    sys.exit(\"the CHANGELOG.md section for %s is empty: the release stops\" % version)\nopen(os.environ[\"FILE\"], \"w\").write(notes + \"\\n\")\nprint(json.dumps({\"notes_file\": os.environ[\"FILE\"]}))\n"
           },
           "timeout_secs": 30,
           "answer_shape": {
@@ -299,7 +304,7 @@
               {
                 "$from": "/policy/answer/read_from"
               },
-              ") asks a person before this flow may put the candidate into service, walk the journey on it, tag it and publish the release. Approve with an output file holding {\"authorized\": true}, or reject with the reason."
+              ") asks a person before this flow may build and install the candidate, walk the journey on it, push the trunk, tag it and publish the release. Approve with an output file holding {\"authorized\": true}, or reject with the reason."
             ]
           },
           "holder": "person",
@@ -376,7 +381,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\ncd \"$REPO\"\ntrusted_scan() {\n    git -C \"$REPO\" show \"main:scripts/privacy-scan.sh\" 2>/dev/null | cmp -s - \"$REPO/scripts/privacy-scan.sh\" || { echo \"scripts/privacy-scan.sh in this tree differs from the one the trusted trunk commits: the gate refuses to judge with it\" >&2; exit 2; }\n}\ntrusted_scan\npolicy_now=$(cd \"$REPO\" && sailor policy) || { echo \"the delivery policy could not be re-read from the trusted trunk\" >&2; exit 1; }\npolicy_was=$(printf '%s' \"$POLICY_READ\" | python3 -c 'import json,sys; p=json.load(sys.stdin); print(\"merge: %s\\npush: %s\\nrelease: %s\\n%s\" % (p[\"merge\"], p[\"push\"], p[\"release\"], p[\"read_from\"]))')\n[ \"$policy_now\" = \"$policy_was\" ] || { echo \"the delivery policy changed since it was read: the authorization in flight no longer holds; run the flow again\" >&2; exit 1; }\n[ \"$(git rev-parse HEAD)\" = \"$REF\" ] || { echo \"the tree moved off the candidate $REF before the release\" >&2; exit 1; }\nset +e\nif [ -n \"$SCAN_BASE\" ]; then \"$REPO/scripts/privacy-scan.sh\" \"$REF\" \"$SCAN_BASE\" >&2; else \"$REPO/scripts/privacy-scan.sh\" \"$REF\" >&2; fi\ncode=$?\nset -e\n[ \"$code\" -eq 0 ] || { echo \"publication gate: privacy-scan exited $code on $REF; nothing leaves\" >&2; exit \"$code\"; }\nprintf '{\"ref\":\"%s\",\"privacy_exit\":0}' \"$REF\"\n",
+          "command": "set -eu\ncd \"$REPO\"\ntrusted_scan() {\n    git -C \"$REPO\" show \"main:scripts/privacy-scan.sh\" 2>/dev/null | cmp -s - \"$REPO/scripts/privacy-scan.sh\" || { echo \"scripts/privacy-scan.sh in this tree differs from the one the trusted trunk commits: the gate refuses to judge with it\" >&2; exit 2; }\n}\ntrusted_scan\npolicy_now=$(cd \"$REPO\" && sailor policy) || { echo \"the delivery policy could not be re-read from the trusted trunk\" >&2; exit 1; }\npolicy_was=$(printf '%s' \"$POLICY_READ\" | python3 -c 'import json,sys; p=json.load(sys.stdin); print(\"merge: %s\\npush: %s\\nrelease: %s\\n%s\" % (p[\"merge\"], p[\"push\"], p[\"release\"], p[\"read_from\"]))')\n[ \"$policy_now\" = \"$policy_was\" ] || { echo \"the delivery policy changed since it was read: the authorization in flight no longer holds; run the flow again\" >&2; exit 1; }\nset +e\nif [ -n \"$SCAN_BASE\" ]; then \"$REPO/scripts/privacy-scan.sh\" \"$REF\" \"$SCAN_BASE\" >&2; else \"$REPO/scripts/privacy-scan.sh\" \"$REF\" >&2; fi\ncode=$?\nset -e\n[ \"$code\" -eq 0 ] || { echo \"publication gate: privacy-scan exited $code on $REF; nothing leaves\" >&2; exit \"$code\"; }\nprintf '{\"ref\":\"%s\",\"privacy_exit\":0}' \"$REF\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/answer/repo"
@@ -385,7 +390,7 @@
               "$from": "/the_candidate/answer/candidate"
             },
             "SCAN_BASE": {
-              "$from": "/the_candidate/answer/previous_tag"
+              "$from": "/the_candidate/answer/remote_trunk"
             },
             "POLICY_READ": {
               "$json": "/policy/answer"
@@ -427,7 +432,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\ncd \"$REPO\"\n[ \"$(git rev-parse HEAD)\" = \"$CANDIDATE\" ] || { echo \"the tree moved off the candidate $CANDIDATE\" >&2; exit 1; }\nSAILOR_SOURCES=\"$REPO\" sailor release sailor >&2\nprintf '{\"built_from\":\"%s\"}' \"$CANDIDATE\"\n",
+          "command": "set -eu\ncd \"$REPO\"\n# Builds a detached checkout of exactly the candidate and installs it; it publishes nothing.\nSAILOR_SOURCES=\"$REPO\" sailor release sailor --no-push --candidate \"$CANDIDATE\" >&2\nprintf '{\"built_from\":\"%s\"}' \"$CANDIDATE\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/answer/repo"
@@ -468,7 +473,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\nhome=${SAILOR_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/sailor}\nstamp=$(awk 'NF && $1 !~ /^#/ { print $1; exit }' \"$home/state/sailor-binary-commit\" 2>/dev/null || true)\n[ \"$stamp\" = \"$CANDIDATE\" ] || { echo \"the release stamp names ${stamp:-nothing}, not the candidate $CANDIDATE: the binary in service was built from something else\" >&2; exit 1; }\n[ -r \"$home/bin/sailor\" ] || { echo \"no installed binary at the release's safe copy\" >&2; exit 1; }\ndigest=$(shasum -a 256 < \"$home/bin/sailor\" | awk '{ print $1 }')\nsaid=$(sailor version)\ncase \"$said \" in \"sailor $VERSION \"*) ;; *) echo \"the installed binary says «${said}», not sailor ${VERSION}\" >&2; exit 1 ;; esac\nprintf '{\"said\":\"%s\",\"commit\":\"%s\",\"binary_sha256\":\"%s\"}' \"$said\" \"$stamp\" \"$digest\"\n",
+          "command": "set -eu\nhome=${SAILOR_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/sailor}\nstamp=$(awk 'NF && $1 !~ /^#/ { print $1; exit }' \"$home/state/sailor-binary-commit\" 2>/dev/null || true)\n[ \"$stamp\" = \"$CANDIDATE\" ] || { echo \"the release stamp names ${stamp:-nothing}, not the candidate $CANDIDATE: the binary in service was built from something else\" >&2; exit 1; }\n[ -r \"$home/bin/sailor\" ] || { echo \"no installed binary at the release's safe copy\" >&2; exit 1; }\ndigest=$(shasum -a 256 < \"$home/bin/sailor\" | awk '{ print $1 }')\nrecorded=$(awk 'NF && $1 !~ /^#/ { print $1; exit }' \"$home/state/sailor-binary-commit.sha256\" 2>/dev/null || true)\n[ -n \"$recorded\" ] && [ \"$recorded\" = \"$digest\" ] || { echo \"bin/sailor has sha256 $digest, and the release recorded ${recorded:-nothing} for the candidate: the binary in service is not the one it built\" >&2; exit 1; }\nsaid=$(sailor version)\ncase \"$said \" in \"sailor $VERSION \"*) ;; *) echo \"the installed binary says «${said}», not sailor ${VERSION}\" >&2; exit 1 ;; esac\nprintf '{\"said\":\"%s\",\"commit\":\"%s\",\"binary_sha256\":\"%s\"}' \"$said\" \"$stamp\" \"$digest\"\n",
           "env": {
             "VERSION": {
               "$from": "/the_request/answer/version"
@@ -531,7 +536,7 @@
               {
                 "$from": "/installed/answer/binary_sha256"
               },
-              "), never on an older one. Record the walk outside this tree and add it to the journey's table only after the release is published: a commit to the trunk now moves it off the candidate and stops the release. Approve with an output file holding {\"commit\": the commit above, \"binary_sha256\": the digest above, \"green\": true} only when every step is green; reject with the red steps otherwise. This step runs whatever the release policy says."
+              "), never on an older one. Nothing has been pushed yet. Record the walk outside this tree until the release is published. Approve with an output file holding {\"commit\": the commit above, \"binary_sha256\": the digest above, \"green\": true} only when every step is green; reject with the red steps otherwise, and nothing is published. This step runs whatever the release policy says."
             ]
           },
           "holder": "person",
@@ -543,7 +548,7 @@
             },
             {
               "label": "red",
-              "facts": "a red step stops the release, whatever the suite said"
+              "facts": "a red step stops the release, whatever the suite said, and the trunk is never pushed"
             }
           ]
         },
@@ -620,7 +625,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\ncd \"$REPO\"\ntrusted_scan() {\n    git -C \"$REPO\" show \"main:scripts/privacy-scan.sh\" 2>/dev/null | cmp -s - \"$REPO/scripts/privacy-scan.sh\" || { echo \"scripts/privacy-scan.sh in this tree differs from the one the trusted trunk commits: the gate refuses to judge with it\" >&2; exit 2; }\n}\ntrusted_scan\npolicy_now=$(cd \"$REPO\" && sailor policy) || { echo \"the delivery policy could not be re-read from the trusted trunk\" >&2; exit 1; }\npolicy_was=$(printf '%s' \"$POLICY_READ\" | python3 -c 'import json,sys; p=json.load(sys.stdin); print(\"merge: %s\\npush: %s\\nrelease: %s\\n%s\" % (p[\"merge\"], p[\"push\"], p[\"release\"], p[\"read_from\"]))')\n[ \"$policy_now\" = \"$policy_was\" ] || { echo \"the delivery policy changed since it was read: the authorization in flight no longer holds; run the flow again\" >&2; exit 1; }\nhome=${SAILOR_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/sailor}\nstamp=$(awk 'NF && $1 !~ /^#/ { print $1; exit }' \"$home/state/sailor-binary-commit\" 2>/dev/null || true)\n[ \"$stamp\" = \"$REF\" ] || { echo \"the release stamp names ${stamp:-nothing}, not the candidate $REF: the binary in service was built from something else\" >&2; exit 1; }\n[ -r \"$home/bin/sailor\" ] || { echo \"no installed binary at the release's safe copy\" >&2; exit 1; }\ndigest=$(shasum -a 256 < \"$home/bin/sailor\" | awk '{ print $1 }')\n[ \"$digest\" = \"$DIGEST\" ] || { echo \"the binary in service changed since the journey was walked on it\" >&2; exit 1; }\ngit fetch --quiet origin\n[ \"$(git rev-parse \"refs/remotes/origin/$BASE\")\" = \"$REF\" ] || { echo \"the remote $BASE moved off the candidate $REF since it was built\" >&2; exit 1; }\nset +e\nif [ -n \"$SCAN_BASE\" ]; then \"$REPO/scripts/privacy-scan.sh\" \"$REF\" \"$SCAN_BASE\" >&2; else \"$REPO/scripts/privacy-scan.sh\" \"$REF\" >&2; fi\ncode=$?\nset -e\n[ \"$code\" -eq 0 ] || { echo \"publication gate: privacy-scan exited $code on $REF; nothing leaves\" >&2; exit \"$code\"; }\nprintf '{\"ref\":\"%s\",\"privacy_exit\":0}' \"$REF\"\n",
+          "command": "set -eu\ncd \"$REPO\"\ntrusted_scan() {\n    git -C \"$REPO\" show \"main:scripts/privacy-scan.sh\" 2>/dev/null | cmp -s - \"$REPO/scripts/privacy-scan.sh\" || { echo \"scripts/privacy-scan.sh in this tree differs from the one the trusted trunk commits: the gate refuses to judge with it\" >&2; exit 2; }\n}\ntrusted_scan\npolicy_now=$(cd \"$REPO\" && sailor policy) || { echo \"the delivery policy could not be re-read from the trusted trunk\" >&2; exit 1; }\npolicy_was=$(printf '%s' \"$POLICY_READ\" | python3 -c 'import json,sys; p=json.load(sys.stdin); print(\"merge: %s\\npush: %s\\nrelease: %s\\n%s\" % (p[\"merge\"], p[\"push\"], p[\"release\"], p[\"read_from\"]))')\n[ \"$policy_now\" = \"$policy_was\" ] || { echo \"the delivery policy changed since it was read: the authorization in flight no longer holds; run the flow again\" >&2; exit 1; }\nhome=${SAILOR_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/sailor}\nstamp=$(awk 'NF && $1 !~ /^#/ { print $1; exit }' \"$home/state/sailor-binary-commit\" 2>/dev/null || true)\n[ \"$stamp\" = \"$REF\" ] || { echo \"the release stamp names ${stamp:-nothing}, not the candidate $REF: the binary in service was built from something else\" >&2; exit 1; }\n[ -r \"$home/bin/sailor\" ] || { echo \"no installed binary at the release's safe copy\" >&2; exit 1; }\ndigest=$(shasum -a 256 < \"$home/bin/sailor\" | awk '{ print $1 }')\nrecorded=$(awk 'NF && $1 !~ /^#/ { print $1; exit }' \"$home/state/sailor-binary-commit.sha256\" 2>/dev/null || true)\n[ -n \"$recorded\" ] && [ \"$recorded\" = \"$digest\" ] || { echo \"bin/sailor has sha256 $digest, and the release recorded ${recorded:-nothing} for the candidate: the binary in service is not the one it built\" >&2; exit 1; }\n[ \"$digest\" = \"$DIGEST\" ] || { echo \"the binary in service changed since the journey was walked on it\" >&2; exit 1; }\ngit fetch --quiet origin\nremote_now=$(git rev-parse --verify --quiet \"refs/remotes/origin/$BASE^{commit}\" || true)\n[ \"$remote_now\" = \"$REMOTE_WAS\" ] || [ \"$remote_now\" = \"$REF\" ] || { echo \"the remote $BASE moved from ${REMOTE_WAS:-nothing} to ${remote_now:-nothing} while the candidate was being accepted: run the release again\" >&2; exit 1; }\nset +e\nif [ -n \"$SCAN_BASE\" ]; then \"$REPO/scripts/privacy-scan.sh\" \"$REF\" \"$SCAN_BASE\" >&2; else \"$REPO/scripts/privacy-scan.sh\" \"$REF\" >&2; fi\ncode=$?\nset -e\n[ \"$code\" -eq 0 ] || { echo \"publication gate: privacy-scan exited $code on $REF; nothing leaves\" >&2; exit \"$code\"; }\nprintf '{\"ref\":\"%s\",\"privacy_exit\":0}' \"$REF\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/answer/repo"
@@ -629,7 +634,7 @@
               "$from": "/the_candidate/answer/candidate"
             },
             "SCAN_BASE": {
-              "$from": "/the_candidate/answer/previous_tag"
+              "$from": "/the_candidate/answer/remote_trunk"
             },
             "POLICY_READ": {
               "$json": "/policy/answer"
@@ -639,6 +644,9 @@
             },
             "DIGEST": {
               "$from": "/journey_green/answer/binary_sha256"
+            },
+            "REMOTE_WAS": {
+              "$from": "/the_candidate/answer/remote_trunk"
             }
           },
           "timeout_secs": 300,
@@ -667,11 +675,103 @@
         }
       },
       {
+        "id": "trunk_push",
+        "deps": [
+          "the_request",
+          "the_candidate",
+          "ref_gate"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -eu\n[ \"$(git -C \"$REPO\" config --get \"branch.$BASE.remote\" || true)\" = origin ] && [ \"$(git -C \"$REPO\" config --get \"branch.$BASE.merge\" || true)\" = \"refs/heads/$BASE\" ] || { echo \"$BASE does not track origin/$BASE: this flow pushes the trunk only to the upstream it declares\" >&2; exit 1; }\ncase \"$(git -C \"$REPO\" remote get-url origin)\" in\n    https://*)\n        [ -n \"$(git -C \"$REPO\" config --get sailor.pushAs || true)\" ] && [ -n \"$(git -C \"$REPO\" config --get sailor.pushSecretFrom || true)\" ] || { echo \"sailor.pushAs or sailor.pushSecretFrom is missing or empty: the trunk would be pushed with the machine's own credentials\" >&2; exit 1; } ;;\nesac\nurl=$(git -C \"$REPO\" remote get-url origin) || { echo \"the tree has no origin remote\" >&2; exit 1; }\nset -- -C \"$REPO\"\ncase \"$url\" in\n    /*|file://*) ;;\n    http://*|https://*)\n        push_as=$(git -C \"$REPO\" config --get sailor.pushAs) || { echo \"sailor.pushAs is not declared on this tree: refusing to push with the machine's own credentials\" >&2; exit 1; }\n        [ -n \"$push_as\" ] || { echo \"sailor.pushAs is empty on this tree: refusing to push with the machine's own credentials\" >&2; exit 1; }\n        helper='!f() { printf \"%s\\\\n\" username=x-access-token; printf \"password=%s\\\\n\" \"$(env -u GH_TOKEN -u GITHUB_TOKEN -u GH_REPO gh auth token --user \"'\"$push_as\"'\")\"; }; f'\n        set -- -C \"$REPO\" -c credential.helper= -c \"credential.helper=$helper\" ;;\n    *) echo \"origin is $url: a push over it cannot be bound to sailor.pushAs, so this flow refuses it\" >&2; exit 1 ;;\nesac\nremote=$(git -C \"$REPO\" ls-remote origin \"refs/heads/$BASE\" | awk '{ print $1 }')\nif [ \"$remote\" != \"$CANDIDATE\" ]; then\n    [ \"$remote\" = \"$REMOTE_WAS\" ] || { echo \"the remote $BASE reads ${remote:-nothing}, not ${REMOTE_WAS:-nothing} as gated: nothing is pushed\" >&2; exit 1; }\n    git \"$@\" push origin \"$CANDIDATE:refs/heads/$BASE\" >&2\nfi\nprintf '{\"pushed\":\"%s\"}' \"$CANDIDATE\"\n",
+          "env": {
+            "REPO": {
+              "$from": "/the_request/answer/repo"
+            },
+            "BASE": {
+              "$from": "/the_request/answer/base"
+            },
+            "CANDIDATE": {
+              "$from": "/the_candidate/answer/candidate"
+            },
+            "REMOTE_WAS": {
+              "$from": "/the_candidate/answer/remote_trunk"
+            }
+          },
+          "timeout_secs": 300,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "pushed": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "pushed"
+            ],
+            "allow_extra": false
+          }
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
+        "id": "trunk_carries",
+        "deps": [
+          "the_request",
+          "the_candidate",
+          "trunk_push"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -eu\nremote=$(git -C \"$REPO\" ls-remote origin \"refs/heads/$BASE\" | awk '{ print $1 }')\n[ \"$remote\" = \"$CANDIDATE\" ] || { echo \"the remote $BASE reads ${remote:-nothing}, not the candidate $CANDIDATE\" >&2; exit 1; }\nprintf '{\"remote_trunk\":\"%s\"}' \"$remote\"\n",
+          "env": {
+            "REPO": {
+              "$from": "/the_request/answer/repo"
+            },
+            "BASE": {
+              "$from": "/the_request/answer/base"
+            },
+            "CANDIDATE": {
+              "$from": "/the_candidate/answer/candidate"
+            }
+          },
+          "timeout_secs": 60,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "remote_trunk": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "remote_trunk"
+            ],
+            "allow_extra": false
+          }
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        },
+        "required": true
+      },
+      {
         "id": "text_gate",
         "deps": [
           "the_request",
           "the_notes",
-          "ref_gate"
+          "trunk_carries"
         ],
         "action": "shell_check",
         "max_attempts": 1,
