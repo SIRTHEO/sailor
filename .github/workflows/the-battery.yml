@@ -33,10 +33,55 @@ jobs:
   # **JOB KEYS ARE IDENTIFIERS.** Not a nuance: `needs:`, `jobs.<id>` in the
   # API and `gh run` filters all read this word. It is the same line of
   # `AGENTS.md` that lists "JSON keys" — what a machine reads is English.
+  # **THE LIST OF PRIVATE NAMES NEVER REACHES THIS MACHINE**, so this job
+  # measures what needs no list and asks for the owner's armed check on the
+  # exact commit. Without that check it says «not measured» and stays red.
+  privacy:
+    name: publication boundary
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      statuses: read
+    env:
+      CANDIDATE: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: the shapes that need no list
+        run: |
+          case "$BASE" in
+            ''|0000000000000000000000000000000000000000) BASE=$(git rev-parse "$CANDIDATE^") ;;
+          esac
+          scripts/privacy-scan.sh --shapes-only "$CANDIDATE" "$BASE"
+
+      - name: the names, carried by a trusted check on this exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          for attempt in $(seq 1 20); do
+            state=$(gh api "repos/$GITHUB_REPOSITORY/commits/$CANDIDATE/statuses" \
+              --jq "[.[] | select(.context == \"sailor/private-names\" and .creator.login == \"$OWNER\")][0].state // \"\"")
+            case "$state" in
+              success) echo "names: measured on $CANDIDATE by the owner's armed check"; exit 0 ;;
+              failure|error) echo "::error::names: refused on $CANDIDATE"; exit 1 ;;
+            esac
+            sleep 30
+          done
+          echo "::error::names: not measured on $CANDIDATE; publication waits for scripts/attest-private-names.sh on this exact commit"
+          exit 1
+
   tests:
     name: workspace tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      SAILOR_PRIVATE_NAMES_CARRIED_BY: sailor/private-names
     steps:
       - uses: actions/checkout@v4
 
