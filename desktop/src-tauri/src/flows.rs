@@ -463,6 +463,15 @@ pub(crate) fn flow_texts() -> Vec<FlowText> {
         .collect()
 }
 
+/// The precedence chain of every flow, as `sailor flow where` reads it: the
+/// same function, over the same sources, in **the window's** working directory,
+/// which is named in each chain because it need not be the terminal's.
+#[tauri::command]
+pub(crate) fn flow_chains() -> Vec<flow::system::Chain> {
+    let here = std::env::current_dir().ok();
+    flow::system::chains(&ui::gather::flow_sources(), here.as_deref())
+}
+
 fn texts_of(source: &flow::system::FlowSource) -> Vec<FlowText> {
     if source.is_builtin() {
         return flow::system::FLOWS

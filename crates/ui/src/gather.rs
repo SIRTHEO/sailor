@@ -149,17 +149,10 @@ pub fn flow_sources() -> Vec<FlowSource> {
     // in the user's home, the other in `flows/` under the working directory.
     // Neither of the two was wrong on its own — what was wrong is that there
     // was only one, because the two places serve two different purposes.
-    let declared = std::env::var_os("SAILOR_FLOWS").map(PathBuf::from);
-    let working = std::env::current_dir().ok();
     // Least specific first — system < yours < the project's — so whoever wants
     // a different shipped flow writes one under the same name in their own home
-    // or their own project, and theirs wins. The rule is the order, and the why
-    // of the order lives in `flow::system`.
-    flow::system::sources(
-        &sailor_home().join("flows"),
-        working.as_deref(),
-        declared.as_deref().map(Path::new),
-    )
+    // or their own project, and theirs wins. The rule lives in `flow::system`.
+    flow::system::sources_from_env(ledger::sailor_home().map(|home| home.join("flows")).as_deref())
 }
 
 /// The flows of every source, each with the origin it came from.

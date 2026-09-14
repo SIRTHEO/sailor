@@ -77,6 +77,7 @@ const ARRIVING = null;
 
 import { TopBar } from "./TopBar";
 import { sourceWords, statusOfRun, type BarFlow, type Source } from "./boardhead";
+import { chainMark, readChains, type ChainsRead } from "./flowchain";
 import { BenchContext, type Bench } from "./Workbench";
 import { declaredCeiling } from "./terminal";
 import { Palette, isPaletteKey, type Entry } from "./Palette";
@@ -379,6 +380,7 @@ export default function App() {
 
   const [saving, setSaving] = useState<Set<string>>(new Set());
   const [saveErrors, setSaveErrors] = useState<Record<string, string>>({});
+  const [chains, setChains] = useState<ChainsRead>({ state: "read", chains: new Map() });
 
   const [discovery, setDiscovery] = useState<ToolDiscovery>(() =>
     NATIVE ? { state: "asking" } : { state: "mute", why: "outside the shell: the engine knows the tools" },
@@ -389,6 +391,9 @@ export default function App() {
   // still on screen when the answer arrives.
   const readFlows = useCallback((still: () => boolean) => {
     if (!NATIVE) return;
+    void readChains().then((read) => {
+      if (still()) setChains(read);
+    });
     loadFlows()
       .then((loaded) => {
         if (!still()) return;
@@ -1260,17 +1265,20 @@ export default function App() {
         origin: group.origin,
         flows: group.flows.map(({ name, flow }) => {
           const working = flows.get(name);
+          const mark = chainMark(chains, name);
           return {
             name,
             note: stepCountLabel(flow.graph.steps.length),
             color: layout.bands.get(name)?.color,
             dirty: working ? isDirty(working) : false,
             live: liveOf(liveFlows.get(name), now),
+            replaces: mark?.text ?? null,
+            chain: mark?.title,
           };
         }),
         broken: group.broken.map((entry) => ({ name: entry.name, reason: entry.reason })),
       })),
-    [railGroups, layout, flows, liveFlows, now],
+    [railGroups, layout, flows, liveFlows, now, chains],
   );
 
   /**
@@ -1493,6 +1501,7 @@ export default function App() {
               flow={focusedWorking.flow}
               bar={barFlow}
               neverSaved={focusedWorking.saved === null}
+              mark={chainMark(chains, focusName)}
               error={saveErrors[focusName]}
               onRename={(next) => renameFlow(focusName, next)}
               onDescription={(text) => updateFlow(focusName, (flow) => ({ ...flow, description: text }))}

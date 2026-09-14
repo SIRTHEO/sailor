@@ -7,13 +7,9 @@
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies};
 use ledger::{Ledger, StepReach};
 use serde_json::{json, Value};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 pub const DORMANT_STEPS_ACTION: &str = "dormant_steps";
-
-/// See `unused_actions::NO_HOME_DECLARED` — the same reasoning, kept local
-/// because these two actions do not otherwise share a dependency.
-const NO_HOME_DECLARED: &str = "/sailor-no-home-declared";
 
 pub fn register_dormant_steps(
     registry: &mut flow::ActionRegistry,
@@ -43,11 +39,7 @@ impl Action for DormantStepsAction {
             .ledger
             .as_ref()
             .ok_or_else(|| ActionError::new("no_store", String::new()))?;
-        let home = self
-            .home_flows
-            .clone()
-            .unwrap_or_else(|| Path::new(NO_HOME_DECLARED).to_path_buf());
-        let known = flow::system::load_all(&flow::system::sources_from_env(&home));
+        let known = flow::system::load_all(&flow::system::sources_from_env(self.home_flows.as_deref()));
         let flows_unreadable = known.iter().filter(|(_, _, entry)| entry.is_err()).count();
         let mut never_run = Vec::new();
         let mut always_skipped = Vec::new();
@@ -95,6 +87,7 @@ impl Action for DormantStepsAction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
     use std::path::PathBuf;
 
     fn scratch(name: &str) -> PathBuf {

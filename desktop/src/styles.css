@@ -571,6 +571,17 @@ body {
   flex-shrink: 0;
 }
 
+.focusbar__chain {
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 2px var(--space-1);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .focusbar__status {
   display: flex;
   align-items: center;
@@ -2152,6 +2163,15 @@ tr[data-followable]:hover {
   border-radius: var(--radius-pill);
   background: var(--warn);
   margin-left: var(--space-1);
+}
+
+/* What the flow that runs hides, beside its name; the chain is in the title. */
+.rail__replaces {
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .rail__note {

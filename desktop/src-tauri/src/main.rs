@@ -181,6 +181,7 @@ fn main() {
             flows::save_flow,
             flows::delete_flow,
             flows::flow_texts,
+            flows::flow_chains,
             tools::discover_tools,
             tools::tools_sweep,
             engines::engines,

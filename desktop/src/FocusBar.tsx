@@ -1,3 +1,4 @@
+import type { ChainMark } from "./flowchain";
 import { useState } from "react";
 import {
   DropdownMenu,
@@ -19,6 +20,8 @@ interface FocusBarProps {
   flow: FlowFile;
   bar: BarFlow;
   neverSaved: boolean;
+  /** What this flow replaces and the chain, or why the chain is unread. */
+  mark?: ChainMark | null;
   error?: string;
   onRename: (next: string) => void;
   onDescription: (text: string) => void;
@@ -40,6 +43,7 @@ export function FocusBar({
   flow,
   bar,
   neverSaved,
+  mark,
   error,
   onRename,
   onDescription,
@@ -77,6 +81,11 @@ export function FocusBar({
         </span>
       )}
       <span className="focusbar__steps">{bar.steps} steps</span>
+      {mark && (
+        <span className="focusbar__chain" title={mark.title}>
+          {mark.text}
+        </span>
+      )}
       <input
         className="focusbar__desc-input"
         value={descDraft}

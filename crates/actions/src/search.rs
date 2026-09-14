@@ -128,8 +128,7 @@ impl Action for FlowSearchAction {
     fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         let spec: SearchSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
-        let home = self.home_flows.clone().unwrap_or_else(|| Path::new("flows").to_path_buf());
-        let known = flow::system::load_all(&flow::system::sources_from_env(&home));
+        let known = flow::system::load_all(&flow::system::sources_from_env(self.home_flows.as_deref()));
         let hits = rank_flows(&known, &spec.query)
             .map_err(|reason| ActionError::new("search_refused", reason))?;
         Ok(ActionOutcome::Went(json!({ "query": spec.query, "hits": hits })))

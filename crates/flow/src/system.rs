@@ -267,8 +267,11 @@ pub type FlowRegistry = BTreeMap<String, Result<FlowFile, String>>;
 /// Every place flows are looked for, least specific first. Order is the only
 /// precedence rule: on a name clash the later source wins, so [`BUILTIN_ORIGIN`]
 /// < [`YOUR_ORIGIN`] < [`crate::workspace::ORIGIN_DECLARED`].
+///
+/// `home_flows` is `None` when no home is known, and then there is no *yours*
+/// source at all: a relative or invented folder would read somebody else's flows.
 pub fn sources(
-    home_flows: &Path,
+    home_flows: Option<&Path>,
     working: Option<&Path>,
     declared: Option<&Path>,
 ) -> Vec<FlowSource> {
@@ -286,10 +289,12 @@ pub fn sources(
         });
         return sources;
     }
-    sources.push(FlowSource {
-        origin: YOUR_ORIGIN,
-        dir: home_flows.to_path_buf(),
-    });
+    if let Some(home_flows) = home_flows {
+        sources.push(FlowSource {
+            origin: YOUR_ORIGIN,
+            dir: home_flows.to_path_buf(),
+        });
+    }
     if let Some((origin, dir)) = working.and_then(|working| project_flows(working, home_flows)) {
         sources.push(FlowSource { origin, dir });
     }
@@ -302,12 +307,12 @@ pub fn sources(
 /// itself, which is to say the declaration would declare nothing. With a marker
 /// `root.join("flows")` is the answer even when that folder does not exist: a
 /// project with no flows is honest, and empty beats somebody else's.
-fn project_flows(working: &Path, home_flows: &Path) -> Option<(&'static str, PathBuf)> {
+fn project_flows(working: &Path, home_flows: Option<&Path>) -> Option<(&'static str, PathBuf)> {
     if let Some(root) = crate::workspace::find_root(working) {
         let flows = root.join("flows");
         // Home is never also the project: counting it twice would show every
         // flow in duplicate.
-        return (flows != home_flows).then_some((crate::workspace::ORIGIN_DECLARED, flows));
+        return (Some(flows.as_path()) != home_flows).then_some((crate::workspace::ORIGIN_DECLARED, flows));
     }
     // The fallback stays: removing it would make the flows of every project
     // that has not declared itself vanish at once — this repository included,
@@ -323,10 +328,19 @@ fn project_flows(working: &Path, home_flows: &Path) -> Option<(&'static str, Pat
 /// because the `subflow` step must look for the flow it calls exactly where
 /// `sailor flow run` looks, or two machines run different flows under one name
 /// without saying so. Home stays an argument: `flow` must not need `ledger`.
-pub fn sources_from_env(home_flows: &Path) -> Vec<FlowSource> {
+pub fn sources_from_env(home_flows: Option<&Path>) -> Vec<FlowSource> {
     let declared = std::env::var_os("SAILOR_FLOWS").map(PathBuf::from);
     let working = std::env::current_dir().ok();
     sources(home_flows, working.as_deref(), declared.as_deref())
+}
+
+/// The sentence a reader needs when no home was known and nothing was declared:
+/// without it, a flow of theirs that is not found reads as a flow that is gone.
+pub fn no_home_said(sources: &[FlowSource]) -> Option<String> {
+    let looked_for_yours = sources
+        .iter()
+        .any(|source| source.origin == YOUR_ORIGIN || source.origin == DECLARED_ORIGIN);
+    (!looked_for_yours).then(|| catalogue::say("flow.sources.no_home", &[]))
 }
 
 /// The project's flows directory, found by walking up — not a luxury: a program
@@ -335,11 +349,11 @@ pub fn sources_from_env(home_flows: &Path) -> Vec<FlowSource> {
 /// user stood; measured, the window opened to work on Sailor saw none of
 /// Sailor's four flows. The directory must hold a flow, not merely be named
 /// `flows`, or an empty one stops the climb short of the real one.
-pub fn project_flows_from(working: &Path, home_flows: &Path) -> Option<PathBuf> {
+pub fn project_flows_from(working: &Path, home_flows: Option<&Path>) -> Option<PathBuf> {
     let mut here = Some(working);
     while let Some(directory) = here {
         let candidate = directory.join("flows");
-        if candidate != home_flows && holds_a_flow(&candidate) {
+        if Some(candidate.as_path()) != home_flows && holds_a_flow(&candidate) {
             return Some(candidate);
         }
         here = directory.parent();
@@ -396,52 +410,336 @@ pub fn builtin_registry() -> FlowRegistry {
 /// file" — but half written lasts milliseconds and broken is permanent, and
 /// alike treatment leaves a short list nobody can tell is short.
 pub fn load_registry(dir: &Path) -> FlowRegistry {
-    let mut registry = FlowRegistry::new();
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return registry;
+    flow_files_in(dir)
+        .into_iter()
+        .map(|(name, path)| {
+            let entry = load_file(&path);
+            (name, entry)
+        })
+        .collect()
+}
+
+/// One flow file, loaded, or the reason it will not load.
+fn load_file(path: &Path) -> Result<FlowFile, String> {
+    let text = fs::read_to_string(path)
+        .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
+    serde_json::from_str::<FlowFile>(&text)
+        .map_err(|error| format!("{} is not a valid flow: {error}", path.display()))
+}
+
+/// The flow files of a folder by the name the engine resolves them under: the
+/// file name without `.flow.json`, or without `.json`. Two files of one name in
+/// one folder keep the last the folder lists, as the registry always did.
+fn flow_files_in(dir: &Path) -> BTreeMap<String, PathBuf> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return BTreeMap::new();
     };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let file_name = path
-            .file_name()
-            .map(|name| name.to_string_lossy())
-            .unwrap_or_default();
-        let is_flow_json = file_name.ends_with(".flow.json");
-        let is_json = path.extension().and_then(|ext| ext.to_str()) == Some("json");
-        if !is_flow_json && !is_json {
-            continue;
-        }
-        let name = file_name
-            .strip_suffix(".flow.json")
-            .or_else(|| file_name.strip_suffix(".json"))
-            .unwrap_or(&file_name)
-            .to_owned();
-        if name.is_empty() {
-            continue;
-        }
-        let text = match std::fs::read_to_string(&path) {
-            Ok(content) => content,
-            Err(error) => {
-                registry.insert(
-                    name,
-                    Err(format!("cannot read {}: {error}", path.display())),
-                );
-                continue;
-            }
+    entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            let file_name = path.file_name()?.to_string_lossy().into_owned();
+            let name = file_name
+                .strip_suffix(".flow.json")
+                .or_else(|| file_name.strip_suffix(".json"))?
+                .to_owned();
+            (!name.is_empty()).then_some((name, path))
+        })
+        .collect()
+}
+
+/// One place a flow name can come from: the file, or [`PLACE`] when shipped.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Candidate {
+    pub origin: &'static str,
+    pub path: PathBuf,
+}
+
+/// Every candidate for one flow name and the one that runs. `replaced` is least
+/// specific first, and `resolved_in` is the working directory the sources were
+/// read from: two processes standing in two places can pick two winners.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Chain {
+    pub name: String,
+    pub resolved_in: Option<PathBuf>,
+    pub replaced: Vec<Candidate>,
+    pub winner: Candidate,
+}
+
+impl Chain {
+    /// True when the flow that runs hides one shipped with the product.
+    pub fn replaces_builtin(&self) -> bool {
+        self.replaced.iter().any(|candidate| candidate.origin == BUILTIN_ORIGIN)
+    }
+}
+
+/// One flow name as every reader sees it: its chain, and the loaded entry of
+/// the file that wins. Both come from one pass over the sources.
+pub struct Resolved {
+    pub chain: Chain,
+    pub entry: Result<FlowFile, String>,
+}
+
+type Seen = (Vec<Candidate>, Option<Result<FlowFile, String>>);
+
+/// The one reading of precedence, by name: [`chains`] and [`load_all`] are
+/// views of it, so a mark and the flow it marks describe the same file.
+pub fn resolve(sources: &[FlowSource], resolved_in: Option<&Path>) -> Vec<Resolved> {
+    let mut by_name: BTreeMap<String, Seen> = BTreeMap::new();
+    for source in sources {
+        let entries: Vec<(String, PathBuf, Result<FlowFile, String>)> = if source.is_builtin() {
+            builtin_registry()
+                .into_iter()
+                .map(|(name, entry)| (name, PathBuf::from(PLACE), entry))
+                .collect()
+        } else {
+            flow_files_in(&source.dir)
+                .into_iter()
+                .map(|(name, path)| {
+                    let entry = load_file(&path);
+                    (name, path, entry)
+                })
+                .collect()
         };
-        match serde_json::from_str::<FlowFile>(&text) {
-            Ok(flow) => {
-                registry.insert(name, Ok(flow));
+        for (name, path, entry) in entries {
+            let slot = by_name.entry(name).or_default();
+            slot.0.push(Candidate {
+                origin: source.origin,
+                path,
+            });
+            slot.1 = Some(entry);
+        }
+    }
+    by_name
+        .into_iter()
+        .filter_map(|(name, (mut candidates, entry))| {
+            let winner = candidates.pop()?;
+            Some(Resolved {
+                chain: Chain {
+                    name,
+                    resolved_in: resolved_in.map(Path::to_path_buf),
+                    replaced: candidates,
+                    winner,
+                },
+                entry: entry?,
+            })
+        })
+        .collect()
+}
+
+/// The precedence chain of every flow name the sources hold, by name.
+pub fn chains(sources: &[FlowSource], resolved_in: Option<&Path>) -> Vec<Chain> {
+    resolve(sources, resolved_in)
+        .into_iter()
+        .map(|resolved| resolved.chain)
+        .collect()
+}
+
+/// The chain of one name, or `None` when no source holds it.
+pub fn chain_of(sources: &[FlowSource], resolved_in: Option<&Path>, name: &str) -> Option<Chain> {
+    chains(sources, resolved_in)
+        .into_iter()
+        .find(|chain| chain.name == name)
+}
+
+/// The folder a restored file is moved into, beside the flows folder it left.
+/// Its name is not `flows`, so no walk up ever reads it as a project's flows.
+pub const ARCHIVE_FOLDER: &str = "flows-archived";
+
+/// Why a flow was not restored.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RestoreRefusal {
+    AlreadyBuiltIn,
+    NothingBuiltIn { path: PathBuf },
+    OutsideDeclared { path: PathBuf },
+    ArchiveIsALink { path: PathBuf, archive: PathBuf },
+    ArchivedButOriginalStays { path: PathBuf, archive: PathBuf, error: String },
+    CouldNotMove { path: PathBuf, archive: PathBuf, error: String },
+}
+
+/// How many other names a restore tries when the archive's name is taken.
+const ARCHIVE_NAMES_TO_TRY: u32 = 100;
+
+/// The name a restore tries first: `<name>.<now>` and the file's own suffix, in
+/// [`ARCHIVE_FOLDER`] beside the flows folder the file leaves.
+pub fn archive_path_for(chain: &Chain, now: i64) -> PathBuf {
+    archive_named(chain, now, 0)
+}
+
+fn archive_named(chain: &Chain, now: i64, attempt: u32) -> PathBuf {
+    let path = &chain.winner.path;
+    let folder = path.parent().unwrap_or(Path::new(""));
+    let suffix = path
+        .file_name()
+        .map(|file| file.to_string_lossy().into_owned())
+        .and_then(|file| file.strip_prefix(chain.name.as_str()).map(str::to_owned))
+        .unwrap_or_else(|| ".flow.json".to_owned());
+    let stamp = match attempt {
+        0 => now.to_string(),
+        n => format!("{now}.{n}"),
+    };
+    folder
+        .parent()
+        .unwrap_or(folder)
+        .join(ARCHIVE_FOLDER)
+        .join(format!("{}.{stamp}{suffix}", chain.name))
+}
+
+/// The disk gestures a restore makes, so a test can make one of them fail.
+trait Disk {
+    fn link(&self, from: &Path, to: &Path) -> std::io::Result<()> {
+        fs::hard_link(from, to)
+    }
+    fn remove(&self, path: &Path) -> std::io::Result<()> {
+        fs::remove_file(path)
+    }
+    fn write_synced(&self, file: &mut fs::File, bytes: &[u8]) -> std::io::Result<()> {
+        use std::io::Write as _;
+        file.write_all(bytes)?;
+        file.sync_all()
+    }
+}
+
+struct ThisDisk;
+
+impl Disk for ThisDisk {}
+
+/// What a restore did: the archive, and the sentence about a scratch file that
+/// could not be removed, when one is left.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Restored {
+    pub archive: PathBuf,
+    pub scratch_left: Option<String>,
+}
+
+struct Moved {
+    stays: Option<std::io::Error>,
+    scratch_left: Option<String>,
+}
+
+static NEXT_STAGING: AtomicU64 = AtomicU64::new(0);
+
+/// Moves a file to a name nothing holds, and never replaces what is there: a
+/// hard link fails on a taken name. The archive exists before the original is
+/// removed, and an original that will not go is said apart from a failed move.
+fn move_without_replacing(from: &Path, to: &Path, disk: &dyn Disk) -> std::io::Result<Moved> {
+    let scratch_left = match disk.link(from, to) {
+        Ok(()) => None,
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => return Err(error),
+        Err(_) => copy_then_link(from, to, disk)?,
+    };
+    Ok(Moved {
+        stays: disk.remove(from).err(),
+        scratch_left,
+    })
+}
+
+/// Where no hard link reaches the original: the copy is written under a
+/// scratch name, checked, then linked to the archive's name, so that name
+/// never holds a partial file. A scratch file that will not go is said.
+fn copy_then_link(from: &Path, to: &Path, disk: &dyn Disk) -> std::io::Result<Option<String>> {
+    let bytes = fs::read(from)?;
+    let name = to.file_name().map(|file| file.to_string_lossy().into_owned()).unwrap_or_default();
+    let serial = NEXT_STAGING.fetch_add(1, Ordering::Relaxed);
+    let staging = to.with_file_name(format!(".{name}.{}-{serial}.staging", std::process::id()));
+    let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&staging)?;
+    let linked = write_check_and_link(&mut file, &bytes, &staging, to, disk);
+    drop(file);
+    let left = disk.remove(&staging).err().map(|error| {
+        catalogue::say(
+            "flow.restore.scratch_left",
+            &[("scratch", &staging.display().to_string()), ("error", &error.to_string())],
+        )
+    });
+    match (linked, left) {
+        (Ok(()), left) => Ok(left),
+        (Err(error), None) => Err(error),
+        (Err(error), Some(said)) => Err(std::io::Error::new(error.kind(), format!("{error}; {said}"))),
+    }
+}
+
+fn write_check_and_link(
+    file: &mut fs::File,
+    bytes: &[u8],
+    staging: &Path,
+    to: &Path,
+    disk: &dyn Disk,
+) -> std::io::Result<()> {
+    disk.write_synced(file, bytes)?;
+    if fs::read(staging)? != bytes {
+        return Err(std::io::Error::other("the copy does not match the original"));
+    }
+    disk.link(staging, to)
+}
+
+/// Puts the shipped flow back by moving the file that runs out of discovery:
+/// into [`ARCHIVE_FOLDER`], named `<name>.<now>` plus its own suffix. Never a
+/// delete, and never a file other than the winner: under `SAILOR_FLOWS` only a
+/// file in that folder can be the winner, and anything else is refused.
+pub fn restore(chain: &Chain, sources: &[FlowSource], now: i64) -> Result<Restored, RestoreRefusal> {
+    restore_on(chain, sources, now, &ThisDisk)
+}
+
+fn restore_on(
+    chain: &Chain,
+    sources: &[FlowSource],
+    now: i64,
+    disk: &dyn Disk,
+) -> Result<Restored, RestoreRefusal> {
+    if chain.winner.origin == BUILTIN_ORIGIN {
+        return Err(RestoreRefusal::AlreadyBuiltIn);
+    }
+    let path = chain.winner.path.clone();
+    if !chain.replaces_builtin() {
+        return Err(RestoreRefusal::NothingBuiltIn { path });
+    }
+    let folder = path.parent().unwrap_or(Path::new(""));
+    if let Some(declared) = sources.iter().find(|source| source.origin == DECLARED_ORIGIN) {
+        if folder != declared.dir {
+            return Err(RestoreRefusal::OutsideDeclared { path });
+        }
+    }
+    let first = archive_path_for(chain, now);
+    if let Some(parent) = first.parent() {
+        fs::create_dir_all(parent).map_err(|error| RestoreRefusal::CouldNotMove {
+            path: path.clone(),
+            archive: first.clone(),
+            error: error.to_string(),
+        })?;
+    }
+    for attempt in 0..ARCHIVE_NAMES_TO_TRY {
+        let archive = archive_named(chain, now, attempt);
+        match move_without_replacing(&path, &archive, disk) {
+            Ok(Moved { stays: None, scratch_left }) => return Ok(Restored { archive, scratch_left }),
+            Ok(Moved { stays: Some(error), scratch_left }) => {
+                let said: Vec<String> = std::iter::once(error.to_string()).chain(scratch_left).collect();
+                return Err(RestoreRefusal::ArchivedButOriginalStays {
+                    path,
+                    archive,
+                    error: said.join("; "),
+                });
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                let is_link = fs::symlink_metadata(&archive)
+                    .is_ok_and(|meta| meta.file_type().is_symlink());
+                if is_link {
+                    return Err(RestoreRefusal::ArchiveIsALink { path, archive });
+                }
             }
             Err(error) => {
-                registry.insert(
-                    name,
-                    Err(format!("{} is not a valid flow: {error}", path.display())),
-                );
+                return Err(RestoreRefusal::CouldNotMove {
+                    path,
+                    archive,
+                    error: error.to_string(),
+                })
             }
         }
     }
-    registry
+    Err(RestoreRefusal::CouldNotMove {
+        path,
+        archive: first,
+        error: format!("every one of {ARCHIVE_NAMES_TO_TRY} archive names is taken"),
+    })
 }
 
 /// The flows of every source, each with the origin it came from.
@@ -451,17 +749,10 @@ pub fn load_registry(dir: &Path) -> FlowRegistry {
 /// the project's flow to be the one that runs. The replacement is not silent:
 /// the origin stays visible on every line.
 pub fn load_all(sources: &[FlowSource]) -> Vec<(String, &'static str, Result<FlowFile, String>)> {
-    let mut found: Vec<(String, &'static str, Result<FlowFile, String>)> = Vec::new();
-    for source in sources {
-        for (name, entry) in registry_of(source) {
-            match found.iter_mut().find(|(existing, _, _)| existing == &name) {
-                Some(slot) => *slot = (name, source.origin, entry),
-                None => found.push((name, source.origin, entry)),
-            }
-        }
-    }
-    found.sort_by(|a, b| a.0.cmp(&b.0));
-    found
+    resolve(sources, None)
+        .into_iter()
+        .map(|resolved| (resolved.chain.name, resolved.chain.winner.origin, resolved.entry))
+        .collect()
 }
 
 // ── writing a flow, and deleting one ─────────────────────────────────────
@@ -636,7 +927,7 @@ mod tests {
     /// home must win, or "customisable" is a word with no mechanism behind it.
     #[test]
     fn the_system_source_is_the_least_specific() {
-        let places = sources(Path::new("/home/flows"), None, None);
+        let places = sources(Some(Path::new("/home/flows")), None, None);
         assert_eq!(places[0], FlowSource::builtin());
         assert_eq!(places[0].origin, "built in");
         assert_eq!(places.last().expect("at least one").origin, "yours");
@@ -647,7 +938,7 @@ mod tests {
     #[test]
     fn a_declared_folder_replaces_the_disk_but_not_the_binary() {
         let places = sources(
-            Path::new("/home/flows"),
+            Some(Path::new("/home/flows")),
             None,
             Some(Path::new("/here/the/flows")),
         );
@@ -665,7 +956,7 @@ mod tests {
         let shipped = FLOWS[0].0;
         put_flow(&home_flows, shipped);
 
-        let all = load_all(&sources(&home_flows, None, None));
+        let all = load_all(&sources(Some(&home_flows), None, None));
 
         let (_, origin, _) = all
             .iter()
@@ -694,7 +985,7 @@ mod tests {
     #[test]
     fn a_fresh_machine_still_has_the_system_flows() {
         let nowhere = std::env::temp_dir().join("sailor-home-that-never-exists");
-        let all = load_all(&sources(&nowhere.join("flows"), None, None));
+        let all = load_all(&sources(Some(&nowhere.join("flows")), None, None));
         assert_eq!(all.len(), FLOWS.len());
         assert!(all.iter().all(|(_, origin, _)| *origin == "built in"));
     }
@@ -708,7 +999,7 @@ mod tests {
         let deep = root.join("desktop").join("src-tauri");
         fs::create_dir_all(&deep).expect("subdirectory");
 
-        let found = project_flows_from(&deep, Path::new("/home/elsewhere/flows"));
+        let found = project_flows_from(&deep, Some(Path::new("/home/elsewhere/flows")));
 
         assert_eq!(found, Some(root.join("flows")));
         let _ = fs::remove_dir_all(&root);
@@ -723,7 +1014,7 @@ mod tests {
         let middle = root.join("inside");
         fs::create_dir_all(middle.join("flows")).expect("empty directory named flows");
 
-        let found = project_flows_from(&middle, Path::new("/home/elsewhere/flows"));
+        let found = project_flows_from(&middle, Some(Path::new("/home/elsewhere/flows")));
 
         assert_eq!(found, Some(root.join("flows")));
         let _ = fs::remove_dir_all(&root);
@@ -737,7 +1028,7 @@ mod tests {
         let home_flows = home.join("flows");
         put_flow(&home_flows, "mine");
 
-        assert_eq!(project_flows_from(&home, &home_flows), None);
+        assert_eq!(project_flows_from(&home, Some(&home_flows)), None);
         let _ = fs::remove_dir_all(&home);
     }
 
@@ -763,7 +1054,7 @@ mod tests {
         let deep = project.join("crates").join("inside");
         fs::create_dir_all(&deep).expect("subdirectory");
 
-        let places = sources(Path::new("/home/flows"), Some(&deep), None);
+        let places = sources(Some(Path::new("/home/flows")), Some(&deep), None);
 
         let last = places.last().expect("at least one");
         assert_eq!(last.dir, project.join("flows"), "the declared root wins");
@@ -781,13 +1072,383 @@ mod tests {
         let deep = root.join("desktop").join("src-tauri");
         fs::create_dir_all(&deep).expect("subdirectory");
 
-        let places = sources(Path::new("/home/flows"), Some(&deep), None);
+        let places = sources(Some(Path::new("/home/flows")), Some(&deep), None);
 
         let last = places.last().expect("at least one");
         assert_eq!(last.dir, root.join("flows"));
         assert_eq!(last.origin, crate::workspace::ORIGIN_GUESSED);
 
         let _ = fs::remove_dir_all(&root);
+    }
+
+    /// The chain names every candidate, least specific first, and its winner is
+    /// the one `load_all` keeps for every name: one order, read twice.
+    #[test]
+    fn a_chain_names_every_candidate_and_its_winner_is_the_one_that_loads() {
+        let base = scratch("chain");
+        let home_flows = base.join("home").join("flows");
+        let project = base.join("project");
+        fs::create_dir_all(&project).expect("project directory");
+        fs::write(project.join(crate::workspace::MARKER), "{}").expect("marker");
+        let shipped = FLOWS[0].0;
+        put_flow(&home_flows, shipped);
+        put_flow(&project.join("flows"), shipped);
+        put_flow(&home_flows, "a-home-flow");
+
+        let places = sources(Some(&home_flows), Some(&project), None);
+        let all = chains(&places, Some(&project));
+
+        let chain = all.iter().find(|chain| chain.name == shipped).expect("the chain");
+        let origins: Vec<&str> = chain.replaced.iter().map(|candidate| candidate.origin).collect();
+        assert_eq!(origins, vec![BUILTIN_ORIGIN, YOUR_ORIGIN]);
+        assert_eq!(chain.replaced[0].path, PathBuf::from(PLACE));
+        assert_eq!(chain.winner.origin, crate::workspace::ORIGIN_DECLARED);
+        assert_eq!(chain.winner.path, project.join("flows").join(format!("{shipped}.flow.json")));
+        assert_eq!(chain.resolved_in.as_deref(), Some(project.as_path()));
+        assert!(chain.replaces_builtin());
+        let alone = all.iter().find(|chain| chain.name == "a-home-flow").expect("the chain");
+        assert!(alone.replaced.is_empty() && !alone.replaces_builtin());
+
+        let loaded = load_all(&places);
+        assert_eq!(loaded.len(), all.len(), "one chain per name");
+        for (name, origin, _) in &loaded {
+            let chain = all.iter().find(|chain| &chain.name == name).expect("a chain per name");
+            assert_eq!(chain.winner.origin, *origin, "{name}");
+        }
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// Restoring moves the winner beside its folder, keeps every byte, and the
+    /// next reading finds the shipped flow running again.
+    #[test]
+    fn restoring_moves_the_file_that_replaces_a_shipped_flow_and_never_deletes_it() {
+        let base = scratch("restore");
+        let home_flows = base.join("home").join("flows");
+        let shipped = FLOWS[0].0;
+        put_flow(&home_flows, shipped);
+        let file = home_flows.join(format!("{shipped}.flow.json"));
+        let written = fs::read(&file).expect("the file");
+        let places = sources(Some(&home_flows), None, None);
+        let chain = chain_of(&places, None, shipped).expect("the chain");
+
+        let archive = restore(&chain, &places, 42).expect("restored").archive;
+
+        assert_eq!(archive, base.join("home").join(ARCHIVE_FOLDER).join(format!("{shipped}.42.flow.json")));
+        assert!(!file.exists());
+        assert_eq!(fs::read(&archive).expect("the archive"), written);
+        let after = chain_of(&places, None, shipped).expect("the chain");
+        assert_eq!(after.winner.origin, BUILTIN_ORIGIN);
+        assert_eq!(restore(&after, &places, 43), Err(RestoreRefusal::AlreadyBuiltIn));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// A file that replaces nothing shipped is not restored to anything, and a
+    /// file outside a declared folder is not the person's, so neither moves.
+    #[test]
+    fn restoring_refuses_what_hides_nothing_shipped_and_what_lies_outside_the_declared_folder() {
+        let base = scratch("refuse");
+        let home_flows = base.join("home").join("flows");
+        put_flow(&home_flows, "a-home-flow");
+        let places = sources(Some(&home_flows), None, None);
+        let alone = chain_of(&places, None, "a-home-flow").expect("the chain");
+        let path = home_flows.join("a-home-flow.flow.json");
+        assert_eq!(
+            restore(&alone, &places, 1),
+            Err(RestoreRefusal::NothingBuiltIn { path: path.clone() })
+        );
+        assert!(path.exists());
+
+        let shipped = FLOWS[0].0;
+        put_flow(&home_flows, shipped);
+        let declared = base.join("declared");
+        fs::create_dir_all(&declared).expect("declared folder");
+        let mixed = vec![
+            FlowSource::builtin(),
+            FlowSource { origin: DECLARED_ORIGIN, dir: declared },
+            FlowSource { origin: YOUR_ORIGIN, dir: home_flows.clone() },
+        ];
+        let chain = chain_of(&mixed, None, shipped).expect("the chain");
+        let outside = home_flows.join(format!("{shipped}.flow.json"));
+        assert_eq!(
+            restore(&chain, &mixed, 1),
+            Err(RestoreRefusal::OutsideDeclared { path: outside.clone() })
+        );
+        assert!(outside.exists());
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// An archive already at the chosen name is never overwritten: the file goes
+    /// to another name, the old archive keeps every byte, and the winner leaves.
+    #[test]
+    fn restoring_never_overwrites_an_archive_already_there() {
+        let base = scratch("restore-taken");
+        let home_flows = base.join("home").join("flows");
+        let shipped = FLOWS[0].0;
+        put_flow(&home_flows, shipped);
+        let file = home_flows.join(format!("{shipped}.flow.json"));
+        let taken = base.join("home").join(ARCHIVE_FOLDER).join(format!("{shipped}.42.flow.json"));
+        fs::create_dir_all(taken.parent().expect("a folder")).expect("archive folder");
+        fs::write(&taken, "an archive from before").expect("the older archive");
+        let places = sources(Some(&home_flows), None, None);
+        let chain = chain_of(&places, None, shipped).expect("the chain");
+
+        let archive = restore(&chain, &places, 42).expect("restored under another name").archive;
+
+        assert_ne!(archive, taken, "the older archive's name was reused");
+        assert_eq!(fs::read_to_string(&taken).expect("still there"), "an archive from before");
+        assert!(archive.exists() && !file.exists(), "moved to {}", archive.display());
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// A link at the archive's name, even one pointing nowhere, is refused: the
+    /// move follows no link and replaces none, and the winner stays in place.
+    #[cfg(unix)]
+    #[test]
+    fn restoring_refuses_a_link_where_the_archive_would_go() {
+        let base = scratch("restore-link");
+        let home_flows = base.join("home").join("flows");
+        let shipped = FLOWS[0].0;
+        put_flow(&home_flows, shipped);
+        let file = home_flows.join(format!("{shipped}.flow.json"));
+        let link = base.join("home").join(ARCHIVE_FOLDER).join(format!("{shipped}.42.flow.json"));
+        fs::create_dir_all(link.parent().expect("a folder")).expect("archive folder");
+        std::os::unix::fs::symlink(base.join("nowhere"), &link).expect("a dangling link");
+        let places = sources(Some(&home_flows), None, None);
+        let chain = chain_of(&places, None, shipped).expect("the chain");
+
+        let refused = restore(&chain, &places, 42);
+
+        assert!(
+            matches!(refused, Err(RestoreRefusal::ArchiveIsALink { .. })),
+            "a link at the archive's name was replaced: {refused:?}"
+        );
+        assert!(fs::symlink_metadata(&link).expect("the link").file_type().is_symlink());
+        assert!(file.exists(), "the winner stays where it was");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// One reading gives both the chain and the loaded entry of its winner, so
+    /// the mark and the flow shown can never describe two different files.
+    #[test]
+    fn one_reading_gives_the_chain_and_the_entry_of_the_file_that_wins() {
+        let base = scratch("resolve");
+        let home_flows = base.join("home").join("flows");
+        let shipped = FLOWS[0].0;
+        fs::create_dir_all(&home_flows).expect("home flows");
+        let winner = home_flows.join(format!("{shipped}.flow.json"));
+        let mut document: serde_json::Value = serde_json::from_str(FLOWS[0].1).expect("a shipped flow");
+        document["description"] = serde_json::json!("the home copy");
+        fs::write(&winner, document.to_string()).expect("the home copy");
+        let places = sources(Some(&home_flows), None, None);
+
+        let read = resolve(&places, Some(&base));
+
+        let one = read.iter().find(|one| one.chain.name == shipped).expect("the name");
+        assert_eq!(one.chain.winner.path, winner);
+        assert_eq!(one.entry.as_ref().expect("it loads").description, "the home copy");
+        let loaded = load_all(&places);
+        assert_eq!(loaded.len(), read.len());
+        for ((name, origin, entry), one) in loaded.iter().zip(&read) {
+            assert_eq!((name, *origin), (&one.chain.name, one.chain.winner.origin));
+            assert_eq!(entry.as_ref().ok().map(|flow| &flow.description), one.entry.as_ref().ok().map(|flow| &flow.description));
+        }
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// A disk whose gestures fail where a test says: a link from one file, a
+    /// write cut in half, the removal of one file.
+    struct FaultyDisk {
+        no_link_from: Option<PathBuf>,
+        broken_write: bool,
+        stuck: Option<PathBuf>,
+        stuck_staging: bool,
+    }
+
+    impl Disk for FaultyDisk {
+        fn link(&self, from: &Path, to: &Path) -> std::io::Result<()> {
+            if self.no_link_from.as_deref() == Some(from) {
+                return Err(std::io::Error::other("another filesystem"));
+            }
+            fs::hard_link(from, to)
+        }
+        fn remove(&self, path: &Path) -> std::io::Result<()> {
+            if self.stuck.as_deref() == Some(path) {
+                return Err(std::io::Error::other("the folder is read-only"));
+            }
+            if self.stuck_staging && path.to_string_lossy().ends_with(".staging") {
+                return Err(std::io::Error::other("the scratch file is held open"));
+            }
+            fs::remove_file(path)
+        }
+        fn write_synced(&self, file: &mut fs::File, bytes: &[u8]) -> std::io::Result<()> {
+            use std::io::Write as _;
+            if self.broken_write {
+                file.write_all(&bytes[..bytes.len() / 2])?;
+                return Err(std::io::Error::other("the disk filled up"));
+            }
+            file.write_all(bytes)?;
+            file.sync_all()
+        }
+    }
+
+    fn archived_in(folder: &Path) -> Vec<PathBuf> {
+        fs::read_dir(folder)
+            .map(|entries| entries.flatten().map(|entry| entry.path()).collect())
+            .unwrap_or_default()
+    }
+
+    /// A copy that breaks halfway leaves nothing under the archive folder, not
+    /// even a scratch file, and the source keeps every byte: a second attempt
+    /// then archives under the first name, not beside a corrupt one.
+    #[test]
+    fn a_copy_that_breaks_leaves_no_partial_archive_and_the_source_whole() {
+        let base = scratch("restore-broken-copy");
+        let home_flows = base.join("home").join("flows");
+        let shipped = FLOWS[0].0;
+        put_flow(&home_flows, shipped);
+        let file = home_flows.join(format!("{shipped}.flow.json"));
+        let written = fs::read(&file).expect("the file");
+        let places = sources(Some(&home_flows), None, None);
+        let chain = chain_of(&places, None, shipped).expect("the chain");
+        let broken = FaultyDisk { no_link_from: Some(file.clone()), broken_write: true, stuck: None, stuck_staging: false };
+
+        let refused = restore_on(&chain, &places, 42, &broken);
+
+        assert!(refused.is_err(), "{refused:?}");
+        let folder = base.join("home").join(ARCHIVE_FOLDER);
+        assert_eq!(archived_in(&folder), Vec::<PathBuf>::new(), "a partial archive or a scratch file is left");
+        assert_eq!(fs::read(&file).expect("the source"), written, "the source was touched");
+        let copying = FaultyDisk { no_link_from: Some(file.clone()), broken_write: false, stuck: None, stuck_staging: false };
+        let archive = restore_on(&chain, &places, 42, &copying).expect("the second attempt archives").archive;
+        assert_eq!(archive, archive_path_for(&chain, 42));
+        assert_eq!(fs::read(&archive).expect("the archive"), written);
+        assert_eq!(archived_in(&folder), vec![archive]);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// Two removals that fail leave two archives and the original whole: each
+    /// attempt names only the archive it made itself.
+    #[test]
+    fn two_removals_that_fail_leave_two_archives_and_the_original_whole() {
+        let base = scratch("restore-stuck");
+        let home_flows = base.join("home").join("flows");
+        let shipped = FLOWS[0].0;
+        put_flow(&home_flows, shipped);
+        let file = home_flows.join(format!("{shipped}.flow.json"));
+        let written = fs::read(&file).expect("the file");
+        let places = sources(Some(&home_flows), None, None);
+        let chain = chain_of(&places, None, shipped).expect("the chain");
+        let stuck = FaultyDisk { no_link_from: None, broken_write: false, stuck: Some(file.clone()), stuck_staging: false };
+
+        let first = restore_on(&chain, &places, 42, &stuck);
+        let second = restore_on(&chain, &places, 43, &stuck);
+
+        let mut archives = archived_in(&base.join("home").join(ARCHIVE_FOLDER));
+        archives.sort();
+        let (own_first, own_second) = (archive_path_for(&chain, 42), archive_path_for(&chain, 43));
+        assert_eq!(archives, vec![own_first.clone(), own_second.clone()]);
+        assert_eq!(fs::read(&file).expect("the original"), written, "the original was touched");
+        for (said, own) in [(&first, &own_first), (&second, &own_second)] {
+            match said {
+                Err(RestoreRefusal::ArchivedButOriginalStays { path, archive, .. }) => {
+                    assert_eq!(path, &file);
+                    assert_eq!(archive, own, "an attempt named an archive it did not make");
+                }
+                other => panic!("the original stays and both paths are said: {other:?}"),
+            }
+        }
+        let after = chain_of(&places, None, shipped).expect("the chain");
+        assert_eq!(after.winner.path, file, "the flow that runs changed");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// An older archive that happens to hold the same bytes is history, not
+    /// this restore's archive: a new one is made under this restore's name.
+    #[test]
+    fn an_older_archive_with_the_same_bytes_is_not_taken_for_this_restore() {
+        let base = scratch("restore-history");
+        let home_flows = base.join("home").join("flows");
+        let shipped = FLOWS[0].0;
+        put_flow(&home_flows, shipped);
+        let file = home_flows.join(format!("{shipped}.flow.json"));
+        let folder = base.join("home").join(ARCHIVE_FOLDER);
+        let older = folder.join(format!("{shipped}.7.flow.json"));
+        fs::create_dir_all(&folder).expect("archive folder");
+        fs::copy(&file, &older).expect("an older archive with the same bytes");
+        let places = sources(Some(&home_flows), None, None);
+        let chain = chain_of(&places, None, shipped).expect("the chain");
+
+        let restored = restore_on(&chain, &places, 42, &ThisDisk);
+
+        let text = format!("{restored:?}");
+        assert!(text.contains(&archive_path_for(&chain, 42).display().to_string()), "{text}");
+        assert!(!text.contains(&older.display().to_string()), "an unrelated archive is named: {text}");
+        assert!(older.exists() && archive_path_for(&chain, 42).exists(), "{:?}", archived_in(&folder));
+        assert!(!file.exists());
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// After a removal that failed, a retry deletes nothing it did not archive
+    /// itself and never names an archive it did not make, not the one of the
+    /// failed attempt nor an older identical one beside it.
+    #[test]
+    fn after_a_stuck_removal_a_retry_archives_again_and_names_only_what_it_made() {
+        let base = scratch("restore-retry");
+        let home_flows = base.join("home").join("flows");
+        let shipped = FLOWS[0].0;
+        put_flow(&home_flows, shipped);
+        let file = home_flows.join(format!("{shipped}.flow.json"));
+        let written = fs::read(&file).expect("the file");
+        let folder = base.join("home").join(ARCHIVE_FOLDER);
+        let older = folder.join(format!("{shipped}.7.flow.json"));
+        fs::create_dir_all(&folder).expect("archive folder");
+        fs::copy(&file, &older).expect("an older archive with the same bytes");
+        let places = sources(Some(&home_flows), None, None);
+        let chain = chain_of(&places, None, shipped).expect("the chain");
+        let stuck = FaultyDisk { no_link_from: None, broken_write: false, stuck: Some(file.clone()), stuck_staging: false };
+        let failed = archive_path_for(&chain, 42);
+
+        let first = restore_on(&chain, &places, 42, &stuck);
+        let retry = restore_on(&chain, &places, 44, &ThisDisk).expect("the retry archives");
+
+        assert!(format!("{first:?}").contains(&failed.display().to_string()), "{first:?}");
+        assert_eq!(retry.archive, archive_path_for(&chain, 44), "the retry named an archive it did not make");
+        assert_eq!(fs::read(&retry.archive).expect("the retry's archive"), written, "it removed what it did not archive");
+        assert_eq!(fs::read(&older).expect("the older archive"), written, "the older archive was touched");
+        let mut archives = archived_in(&folder);
+        archives.sort();
+        assert_eq!(archives, vec![failed, retry.archive.clone(), older]);
+        assert!(!file.exists(), "the retry removes the original it archived");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// A scratch file that cannot be removed is said, with its name: the
+    /// outcome is not reported as a clean success.
+    #[test]
+    fn a_scratch_file_that_cannot_be_removed_is_said() {
+        let base = scratch("restore-scratch-left");
+        let home_flows = base.join("home").join("flows");
+        let shipped = FLOWS[0].0;
+        put_flow(&home_flows, shipped);
+        let file = home_flows.join(format!("{shipped}.flow.json"));
+        let places = sources(Some(&home_flows), None, None);
+        let chain = chain_of(&places, None, shipped).expect("the chain");
+        let held = FaultyDisk { no_link_from: Some(file.clone()), broken_write: false, stuck: None, stuck_staging: true };
+
+        let restored = restore_on(&chain, &places, 42, &held);
+
+        let left: Vec<PathBuf> = archived_in(&base.join("home").join(ARCHIVE_FOLDER))
+            .into_iter()
+            .filter(|path| path.to_string_lossy().ends_with(".staging"))
+            .collect();
+        assert_eq!(left.len(), 1, "the held scratch file is still there: {left:?}");
+        let text = format!("{restored:?}");
+        assert!(
+            matches!(&restored, Ok(Restored { scratch_left: Some(_), .. })),
+            "a scratch file left is reported as a clean success: {text}"
+        );
+        assert!(text.contains(&left[0].display().to_string()), "the scratch file is not said: {text}");
+        let _ = fs::remove_dir_all(&base);
     }
 
     // ── writing a flow ──────────────────────────────────────────────────

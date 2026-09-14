@@ -67,11 +67,24 @@ pub fn default_directory() -> Option<PathBuf> {
 /// configuration directory, else the running user's. `None` when the
 /// environment declares neither.
 pub fn sailor_home() -> Option<PathBuf> {
-    Some(sailor_home_in(
+    sailor_home_declared_or(
         env_path("SAILOR_HOME"),
         env_path("XDG_CONFIG_HOME"),
-        env_path("HOME")?,
-    ))
+        env_path("HOME"),
+    )
+}
+
+/// The rule of [`sailor_home_in`] when `HOME` may be missing: a declared home
+/// or configuration directory does not need it, and only the last rung does.
+pub fn sailor_home_declared_or(
+    declared: Option<PathBuf>,
+    xdg_config: Option<PathBuf>,
+    home: Option<PathBuf>,
+) -> Option<PathBuf> {
+    if declared.is_none() && xdg_config.is_none() {
+        return home.map(|home| sailor_home_in(None, None, home));
+    }
+    Some(sailor_home_in(declared, xdg_config, home.unwrap_or_default()))
 }
 
 /// The same rule applied to a declared environment rather than this process's.
