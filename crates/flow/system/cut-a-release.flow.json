@@ -269,7 +269,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\nsaid=$(sailor version)\ncase \"$said\" in *\"$VERSION\"*) ;; *) echo \"the installed binary says «$said», not $VERSION\" >&2; exit 1 ;; esac\nprintf '{\"said\":\"%s\"}' \"$said\"\n",
+          "command": "set -eu\nsaid=$(sailor version)\ncase \"$said\" in *\"$VERSION\"*) ;; *) echo \"the installed binary says «${said}», not ${VERSION}\" >&2; exit 1 ;; esac\nprintf '{\"said\":\"%s\"}' \"$said\"\n",
           "env": {
             "VERSION": {
               "$from": "/the_request/answer/version"

@@ -55,12 +55,25 @@ the policy file, read through one mechanical resolver — `sailor policy` — bo
 to the trunk's own commit rather than the working tree or the branch under
 review (`crates/sailor/tests/the_delivery_policy_is_read_from_the_trusted_trunk.rs`).
 
+**Shipped as flows, and run so far only against a throwaway local remote with a
+stand-in forge:** steps 4, 5, 7 and 8, 10 and 9 as `open-the-draft-pull-request`,
+`review-a-pinned-commit`, `integrate-on-the-trunk`, `close-the-work` and
+`cut-a-release` in `crates/flow/system/`. Each forge call acts as the account
+in `sailor.forgeAs` and refuses without one; the publication gate
+(`scripts/privacy-scan.sh`, on a ref or on `--text <file>`) runs before every
+push, pull request, integration, tag and release; `sailor policy` is read from
+a flow step before each gesture it governs, and `ask` hands that gesture to a
+person. The review pins the head under `refs/sailor/reviews/` and hands the
+reviewer a locked checkout of exactly that commit; the integration refuses any
+other head, runs `scripts/run-gates.sh --no-fail-fast` on the combined tree,
+and completes only when the host reports the pull request merged. No run of
+them has touched the host yet.
+
 **Not yet implemented:** checkpoint commits pinned under run-owned refs with a
-process-boundary ownership check; the policy resolver invoked from a flow step
-rather than only the command line; branch publication and the pull request as
-flow steps instead of coordinator-invoked actions; an acceptance journey bound
-to the freshly built candidate's own digest; idempotent, retried closure
-instead of a one-shot reconciliation.
+process-boundary ownership check; an acceptance journey bound to the freshly
+built candidate's own digest rather than to its commit; a review verdict bound
+to a recorded gate result rather than to the manifest's digest; ratchets
+measured by the integration flow itself.
 
 No dates are attached to the above: this section says what is true now, not
 when the rest lands.
