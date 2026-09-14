@@ -7279,3 +7279,159 @@ tr[data-followable]:hover {
   color: var(--muted);
   margin: 0;
 }
+
+/* The flows of every checkout: what runs here, and what it replaces. */
+.flows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  min-width: 0;
+}
+
+.flows__asks {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-mid);
+  color: var(--ink);
+}
+
+.flows__modes,
+.flows__actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.flows__mode,
+.flows__action,
+.flows__expand {
+  font-family: var(--font-prose);
+  font-size: var(--text-small);
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+}
+
+.flows__mode[aria-pressed="true"] {
+  border-color: var(--focus);
+}
+
+.flows__body {
+  display: flex;
+  gap: var(--space-4);
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.flows__list {
+  flex: 1 1 28rem;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.flows__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-prose);
+  font-size: var(--text-small);
+  color: var(--ink);
+}
+
+.flows__table th,
+.flows__table td {
+  text-align: left;
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--line);
+}
+
+.flows__group th {
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  color: var(--muted);
+  padding-top: var(--space-3);
+}
+
+.flows__row {
+  cursor: pointer;
+}
+
+.flows__row[data-chosen] {
+  background: var(--raised);
+}
+
+.flows__row[data-differs] {
+  cursor: default;
+  color: var(--warn);
+}
+
+.flows__steps,
+.flows__origin,
+.flows__sub,
+.flows__where,
+.flows__path,
+.flows__label {
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  color: var(--muted);
+}
+
+.flows__where,
+.flows__path,
+.flows__label,
+.flows__name {
+  margin: 0;
+}
+
+.flows__name {
+  font-family: var(--font-display);
+  font-size: var(--text-body);
+  color: var(--ink);
+}
+
+.flows__path {
+  overflow-wrap: anywhere;
+}
+
+.flows__detail {
+  flex: 0 1 20rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: var(--space-3);
+  min-width: 0;
+}
+
+.flows__chain {
+  margin: 0;
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.flows__mute {
+  margin: 0;
+  font-family: var(--font-prose);
+  font-size: var(--text-small);
+  color: var(--muted);
+}
+
+.flows__broken,
+.flows__troubles {
+  font-family: var(--font-prose);
+  font-size: var(--text-small);
+  color: var(--danger);
+}
+
+.flows__troubles {
+  margin: 0;
+  padding-left: var(--space-4);
+}

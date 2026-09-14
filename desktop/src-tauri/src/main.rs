@@ -24,6 +24,7 @@ mod engines;
 mod events;
 mod faults;
 mod flows;
+mod flows_by_workspace;
 mod handoff;
 mod keeps;
 mod ledger;
@@ -182,6 +183,7 @@ fn main() {
             flows::delete_flow,
             flows::flow_texts,
             flows::flow_chains,
+            flows_by_workspace::flows_by_workspace,
             tools::discover_tools,
             tools::tools_sweep,
             engines::engines,
