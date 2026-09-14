@@ -796,6 +796,7 @@
   "window.flow.chain_replaced": "{origin}: {path} (sostituito)",
   "window.flow.chain_runs": "{origin}: {path} (gira questo)",
   "window.flow.chain_unknown_directory": "una cartella che la finestra non ha potuto leggere",
+  "window.flow.chains_unread": "non è stato possibile leggere quali flussi ne sostituiscono altri",
   "window.flow.replaces": "sostituisce {replaced}",
   "window.flow.live.running": "{done} di {steps}",
   "window.flow.live.stopped": "fermato a mano",

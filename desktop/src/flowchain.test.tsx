@@ -9,7 +9,7 @@ import { cleanup, render } from "@testing-library/react";
 import { World, type FlowGroup } from "./World";
 import { FocusBar } from "./FocusBar";
 import { TooltipProvider } from "./components/ui/tooltip";
-import { chainWords, flowChains, replacesWords, type FlowChain } from "./flowchain";
+import { chainMark, chainWords, flowChains, readChains, replacesWords, type FlowChain } from "./flowchain";
 import type { FlowFile } from "./flow";
 import { t } from "./i18n";
 
@@ -78,7 +78,7 @@ function bar(chain: FlowChain) {
       flow={flow}
       bar={{ steps: 1, dirty: false, busy: false, starting: false, status: { live: false, word: "no run of this flow yet" } }}
       neverSaved={false}
-      chain={chain}
+      mark={chainMark({ state: "read", chains: new Map([[chain.name, chain]]) }, chain.name)}
       onRename={() => {}}
       onDescription={() => {}}
       onDelete={() => {}}
@@ -131,6 +131,17 @@ describe("the chain, as it is read and said", () => {
     };
     expect(await flowChains()).toEqual([REPLACING]);
     expect(asked).toEqual(["flow_chains"]);
+  });
+
+  test("A REFUSED READING IS KEPT AS A STATE, AND EVERY FLOW IS MARKED WITH IT", async () => {
+    (window as unknown as { __TAURI__: unknown }).__TAURI__ = {
+      core: { invoke: () => Promise.reject(new Error("the folder would not open")) },
+    };
+    const read = await readChains();
+    expect(read.state).toBe("unread");
+    const mark = chainMark(read, "a-home-flow");
+    expect(mark?.text).toBe(t("window.flow.chains_unread"));
+    expect(mark?.title).toContain("the folder would not open");
   });
 
   test("THE WORDS GO LEAST SPECIFIC FIRST, AND SAY WHERE WHEN NOBODY KNOWS", () => {

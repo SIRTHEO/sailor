@@ -796,6 +796,7 @@
   "window.flow.chain_replaced": "{origin}: {path} (replaced)",
   "window.flow.chain_runs": "{origin}: {path} (this one runs)",
   "window.flow.chain_unknown_directory": "a directory the window could not read",
+  "window.flow.chains_unread": "could not read which flows replace others",
   "window.flow.replaces": "replaces {replaced}",
   "window.flow.live.running": "{done} of {steps}",
   "window.flow.live.stopped": "stopped by hand",

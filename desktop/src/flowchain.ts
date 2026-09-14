@@ -28,6 +28,38 @@ export async function flowChains(): Promise<FlowChain[]> {
   return invoke<FlowChain[]>("flow_chains");
 }
 
+/** What the window knows of the chains: read, or refused with the reason. */
+export type ChainsRead =
+  | { state: "read"; chains: Map<string, FlowChain> }
+  | { state: "unread"; why: string };
+
+/** The chains, or the refusal kept as a state: never an empty map in its place. */
+export async function readChains(): Promise<ChainsRead> {
+  try {
+    const chains = await flowChains();
+    return { state: "read", chains: new Map(chains.map((chain) => [chain.name, chain])) };
+  } catch (error: unknown) {
+    return { state: "unread", why: String(error) };
+  }
+}
+
+/** The mark a flow wears and its title, or `null` when it replaces nothing. */
+export interface ChainMark {
+  text: string;
+  title: string;
+}
+
+/**
+ * **AN UNREAD CHAIN MARKS EVERY FLOW.** Drawn bare, a flow that replaces a
+ * shipped one would look exactly like one that does not.
+ */
+export function chainMark(read: ChainsRead, name: string): ChainMark | null {
+  if (read.state === "unread") return { text: t("window.flow.chains_unread"), title: read.why };
+  const chain = read.chains.get(name);
+  const text = replacesWords(chain);
+  return chain && text ? { text, title: chainWords(chain) } : null;
+}
+
 /** «replaces built in», or `null` when the flow that runs hides nothing. */
 export function replacesWords(chain: FlowChain | undefined): string | null {
   if (!chain || chain.replaced.length === 0) return null;
