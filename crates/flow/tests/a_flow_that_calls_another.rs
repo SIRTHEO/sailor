@@ -338,6 +338,8 @@ fn a_step_runs_another_flow_and_carries_back_its_output() {
     let output = record.output.expect("the step has an output");
     assert_eq!(output["flow"], "foglia");
     assert_eq!(output["origin"], "this project");
+    let ran = scratch.place().join("foglia.flow.json");
+    assert_eq!(output["path"], ran.display().to_string(), "the file that ran is named: {output}");
     assert_eq!(output["status"], "complete");
     assert_eq!(
         output["outputs"]["riporta"]["echo"]["scritto-nel-file"],

@@ -1,22 +1,99 @@
 //! `sailor flow catalogue` and `sailor flow from`: the templates and examples
 //! the binary carries, and a flow of your own made from one of them. The
-//! window makes its flows through [`made_from_catalogue`] too.
+//! window reads and makes its flows through [`full_judge`] and
+//! [`made_from_catalogue`] too.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use flow::starters::{self, Created, Destination, Kind};
+use flow::starters::{self, Created, Destination, Kind, Listed};
+use toolbox::privacy::{self, Reason};
 use ui::gather::FlowSource;
 
 use super::check::refusals_of;
-use super::edit::{refuse_unknown_actions, registry};
+use super::edit::registry;
+
+/// The list of names a machine keeps private, as far as it can be read.
+pub enum PrivateNames {
+    Read(Vec<String>),
+    /// Nothing declares one: names are not measured, shapes still are.
+    NotDeclared,
+    /// `SAILOR_PRIVATE_NAMES` names a list that does not read.
+    Unreadable,
+}
+
+pub fn private_names() -> PrivateNames {
+    let declared = std::env::var("SAILOR_PRIVATE_NAMES").ok().filter(|path| !path.is_empty());
+    let explicit = declared.is_some();
+    let Some(list) = privacy::where_the_names_are(declared, std::env::var("HOME").ok()) else {
+        return PrivateNames::NotDeclared;
+    };
+    match std::fs::read_to_string(list) {
+        Ok(text) => PrivateNames::Read(privacy::names_in(&text)),
+        Err(_) if explicit => PrivateNames::Unreadable,
+        Err(_) => PrivateNames::NotDeclared,
+    }
+}
+
+/// The judge an entry answers to before anybody sees it, beyond the flow
+/// crate's own: the refusals of `flow check`, and what a public text may not carry.
+pub fn full_judge(listed: &Listed) -> Vec<String> {
+    let names = match private_names() {
+        PrivateNames::Read(names) => names,
+        PrivateNames::NotDeclared | PrivateNames::Unreadable => Vec::new(),
+    };
+    judged_against(listed, &names, std::env::var("HOME").ok().as_deref())
+}
+
+pub fn judged_against(listed: &Listed, names: &[String], home: Option<&str>) -> Vec<String> {
+    let mut refused = match flow::system::flow_of_document(&starters::probe(listed)) {
+        Ok(flow) => refusals_of(&flow, &registry()),
+        Err(error) => vec![error],
+    };
+    for (at, text) in starters::every_text(listed) {
+        let mut what = BTreeSet::new();
+        for reason in privacy::what_a_public_text_cannot_carry(&text, names, home) {
+            what.insert(match reason {
+                Reason::APrivateName { .. } => "cli.flow.catalogue_private_name",
+                Reason::APathOfThisMachine { .. } | Reason::AShapeOfAMachine { .. } => {
+                    "cli.flow.catalogue_private_machine"
+                }
+                Reason::APassageAboutTheMachine { .. } => "cli.flow.catalogue_private_passage",
+            });
+        }
+        if privacy::an_account_address(&text).is_some() {
+            what.insert("cli.flow.catalogue_private_account");
+        }
+        if privacy::a_private_network_address(&text).is_some() {
+            what.insert("cli.flow.catalogue_private_network");
+        }
+        for key in what {
+            refused.push(catalogue::say(
+                "cli.flow.catalogue_private",
+                &[
+                    ("entry", &listed.entry.entry),
+                    ("what", &catalogue::say(key, &[])),
+                    ("at", &at),
+                ],
+            ));
+        }
+    }
+    refused
+}
 
 pub(super) fn list_catalogue() -> Result<String, String> {
+    Ok(list_catalogue_in(catalogue::language()))
+}
+
+fn list_catalogue_in(language: &str) -> String {
+    let say = |key: &str, values: &[(&str, &str)]| {
+        catalogue::look(language, key, values).unwrap_or_else(|| key.to_owned())
+    };
     let mut lines = Vec::new();
-    for (name, judged) in starters::all() {
+    for (name, judged) in starters::all(&full_judge) {
         let listed = match judged {
             Ok(listed) => listed,
             Err(refused) => {
-                lines.push(catalogue::say(
+                lines.push(say(
                     "cli.flow.catalogue_refused",
                     &[("entry", name), ("why", &refused.join("; "))],
                 ));
@@ -24,16 +101,17 @@ pub(super) fn list_catalogue() -> Result<String, String> {
             }
         };
         let entry = &listed.entry;
-        let kind = catalogue::say(
+        let kind = say(
             match entry.kind {
                 Kind::Template => "cli.flow.catalogue_kind_template",
                 Kind::Example => "cli.flow.catalogue_kind_example",
             },
             &[],
         );
-        lines.push(catalogue::say(
+        let purpose = starters::said(language, &entry.purpose);
+        lines.push(say(
             "cli.flow.catalogue_row",
-            &[("entry", &entry.entry), ("kind", &kind), ("purpose", &entry.purpose)],
+            &[("entry", &entry.entry), ("kind", &kind), ("purpose", &purpose)],
         ));
         let inputs: Vec<String> = entry
             .inputs
@@ -44,22 +122,28 @@ pub(super) fn list_catalogue() -> Result<String, String> {
                 } else {
                     "cli.flow.catalogue_optional"
                 };
-                catalogue::say(key, &[("input", input), ("means", &declared.means)])
+                say(key, &[("input", input), ("means", &starters::said(language, &declared.means))])
             })
             .collect();
         let inputs = if inputs.is_empty() {
-            catalogue::say("cli.flow.catalogue_no_inputs", &[])
+            say("cli.flow.catalogue_no_inputs", &[])
         } else {
-            catalogue::say("cli.flow.catalogue_inputs", &[("inputs", &inputs.join("; "))])
+            say("cli.flow.catalogue_inputs", &[("inputs", &inputs.join("; "))])
         };
         lines.push(format!("    {inputs}"));
         if let Some(teaches) = &entry.teaches {
-            let capability = catalogue::say("cli.flow.catalogue_teaches", &[("capability", &teaches.capability)]);
-            let result = catalogue::say("cli.flow.catalogue_you_will_see", &[("result", &teaches.result)]);
+            let capability = say(
+                "cli.flow.catalogue_teaches",
+                &[("capability", &starters::said(language, &teaches.capability))],
+            );
+            let result = say(
+                "cli.flow.catalogue_you_will_see",
+                &[("result", &starters::said(language, &teaches.result))],
+            );
             lines.push(format!("    {capability}\n    {result}"));
         }
     }
-    Ok(lines.join("\n"))
+    lines.join("\n")
 }
 
 pub(super) fn flow_from(
@@ -87,7 +171,7 @@ pub(super) fn flow_from(
 }
 
 /// One road from an entry to a written flow, for the command line and the
-/// window alike: the refusals `flow new` and `flow check` would give stop it.
+/// window alike: the entry's full judge and the refusals of `flow check` stop it.
 pub fn made_from_catalogue(
     sources: &[FlowSource],
     entry: &str,
@@ -95,8 +179,7 @@ pub fn made_from_catalogue(
     given: &BTreeMap<String, String>,
     destination: Destination,
 ) -> Result<Created, String> {
-    starters::create(sources, entry, name, given, destination, &|flow| {
-        refuse_unknown_actions(&flow.graph)?;
+    starters::create(sources, entry, name, given, destination, &full_judge, &|flow| {
         refusals_of(flow, &registry())
             .into_iter()
             .next()
@@ -133,6 +216,7 @@ mod tests {
     use super::super::dispatch;
     use super::super::test_support::TestDirectory;
     use super::*;
+    use serde_json::Value;
     use std::fs;
 
     const AN_ENGINE: &str = "the-engine-this-test-declares";
@@ -181,6 +265,104 @@ mod tests {
         assert!(refused.is_empty() && unknown.is_empty(), "{refused:?} {unknown:?}\n{report}");
     }
 
+    /// A real entry with one field changed, judged as the product judges it
+    /// but against names and a home the test declares.
+    fn full_refusals_of(entry: &str, names: &[&str], change: impl FnOnce(&mut Value)) -> Vec<String> {
+        let (_, text) = starters::ENTRIES.iter().find(|(name, _)| *name == entry).expect("the entry exists");
+        let mut value: Value = serde_json::from_str(text).expect("JSON");
+        change(&mut value);
+        let text = serde_json::to_string_pretty(&value).expect("it writes back");
+        let names: Vec<String> = names.iter().map(|name| (*name).to_owned()).collect();
+        match starters::read(entry, &text, &|listed| judged_against(listed, &names, None)) {
+            Ok(_) => Vec::new(),
+            Err(refused) => refused,
+        }
+    }
+
+    #[test]
+    fn every_entry_passes_the_full_judge_with_this_machine_s_names_when_it_keeps_a_list() {
+        let names = match private_names() {
+            PrivateNames::Read(names) => names,
+            PrivateNames::NotDeclared => {
+                println!("private names: not measured, no list of them is declared here");
+                Vec::new()
+            }
+            PrivateNames::Unreadable => panic!("SAILOR_PRIVATE_NAMES names a list that does not read"),
+        };
+        let home = std::env::var("HOME").ok();
+        for (name, judged) in starters::all(&|listed| judged_against(listed, &names, home.as_deref())) {
+            if let Err(refused) = judged {
+                panic!("«{name}» is refused:\n{}", refused.join("\n"));
+            }
+        }
+    }
+
+    #[test]
+    fn private_material_of_every_kind_is_refused_by_the_full_judge() {
+        let path = format!("/{}/{}/notes", "Users", "a-person");
+        let account = format!("send it to someone{}example.org", '@');
+        let server = format!("the server at http://{}.{}.1.20:8080", 192, 168);
+        let cases: Vec<(&str, Vec<String>, &str)> = vec![
+            (
+                "a person",
+                full_refusals_of("a-check-that-stops-the-run", &["a-private-person"], |entry| {
+                    entry["flow"]["description"] = "Written for a-private-person to run.".into();
+                }),
+                "a private name",
+            ),
+            (
+                "an account",
+                full_refusals_of("a-check-that-stops-the-run", &[], |entry| {
+                    entry["flow"]["inputs"]["trigger"]["text"] = account.clone().into();
+                }),
+                "an account address",
+            ),
+            (
+                "a path",
+                full_refusals_of("a-check-that-stops-the-run", &[], |entry| {
+                    entry["flow"]["inputs"]["trigger"]["text"] = path.clone().into();
+                }),
+                "a path or a shape of one machine",
+            ),
+            (
+                "a home server",
+                full_refusals_of("a-check-that-stops-the-run", &[], |entry| {
+                    entry["flow"]["description"] = server.clone().into();
+                }),
+                "an address of a private network",
+            ),
+            (
+                "a private flow",
+                full_refusals_of("one-flow-calls-another", &[], |entry| {
+                    entry["needs"]["flows"] = serde_json::json!(["somebody-s-own-flow"]);
+                    entry["flow"]["graph"]["steps"][0]["with"]["flow"] = "somebody-s-own-flow".into();
+                }),
+                "does not ship",
+            ),
+            (
+                "a pinned model",
+                full_refusals_of("a-text-piece-from-a-brief", &[], |entry| {
+                    entry["flow"]["graph"]["steps"][1]["with"]["model"] = serde_json::json!({"an-engine": "a-model"});
+                }),
+                "pins a model",
+            ),
+        ];
+        for (what, refused, said) in cases {
+            assert!(refused.iter().any(|reason| reason.contains(said)), "{what}: nobody said «{said}»: {refused:?}");
+        }
+        assert!(full_refusals_of("a-check-that-stops-the-run", &["a-private-person"], |_| {}).is_empty());
+    }
+
+    #[test]
+    fn an_action_nobody_registers_is_refused_by_the_full_judge_even_when_declared() {
+        let refused = full_refusals_of("a-check-that-stops-the-run", &[], |entry| {
+            entry["needs"]["actions"] = serde_json::json!(["no_such_action", "shell_check", "trigger"]);
+            entry["flow"]["graph"]["steps"][2]["action"] = "no_such_action".into();
+        });
+
+        assert!(refused.iter().any(|reason| reason.contains("no_such_action")), "{refused:?}");
+    }
+
     #[test]
     fn catalogue_lists_every_entry_with_its_kind_purpose_and_inputs() {
         let place = home_and_project();
@@ -196,8 +378,24 @@ mod tests {
     }
 
     #[test]
+    fn catalogue_in_italian_says_every_sentence_in_italian() {
+        let italian = list_catalogue_in("it");
+        let english = list_catalogue_in("en");
+
+        for (name, judged) in starters::all(&starters::no_extra) {
+            let listed = judged.expect("the entry passes");
+            for (at, key) in starters::sentence_keys(&listed.entry) {
+                let sentence = starters::said("it", &key);
+                assert!(italian.contains(&sentence), "«{name}» {at} is not said in Italian:\n{italian}");
+                assert!(!english.contains(&sentence), "«{name}» {at}: the English listing says the Italian sentence");
+            }
+        }
+        assert!(italian.contains("(esempio)") && italian.contains("engine (obbligatorio)"), "{italian}");
+    }
+
+    #[test]
     fn every_entry_makes_a_flow_the_check_passes() {
-        for (name, judged) in flow::starters::all() {
+        for (name, judged) in flow::starters::all(&starters::no_extra) {
             let listed = judged.unwrap_or_else(|refused| panic!("«{name}»: {refused:?}"));
             let given: BTreeMap<String, String> =
                 listed.entry.inputs.keys().map(|input| (input.clone(), AN_ENGINE.to_owned())).collect();

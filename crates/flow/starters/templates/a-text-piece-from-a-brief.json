@@ -1,10 +1,10 @@
 {
   "entry": "a-text-piece-from-a-brief",
   "kind": "template",
-  "purpose": "One piece of text written by the engine you name, from a brief that carries everything it needs.",
+  "purpose": "starter.a_text_piece_from_a_brief.purpose",
   "inputs": {
     "engine": {
-      "means": "The engine that writes, by the id its descriptor gives it: `sailor tools` lists the ones this machine has.",
+      "means": "starter.a_text_piece_from_a_brief.input.engine",
       "required": true
     }
   },

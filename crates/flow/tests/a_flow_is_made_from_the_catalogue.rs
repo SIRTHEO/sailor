@@ -51,7 +51,7 @@ fn read_back(dir: &Path, name: &str) -> Value {
 }
 
 fn template() -> Listed {
-    starters::find("a-text-piece-from-a-brief").expect("the template is in the catalogue")
+    starters::find("a-text-piece-from-a-brief", &starters::no_extra).expect("the template is in the catalogue")
 }
 
 /// A real entry with one field changed: every broken fixture starts from one
@@ -69,16 +69,29 @@ fn mutant(entry: &str, change: impl FnOnce(&mut Value)) -> String {
 #[test]
 fn every_entry_in_the_catalogue_passes_its_judge() {
     assert!(starters::ENTRIES.len() >= 2, "the catalogue holds a template and an example");
-    for (name, judged) in starters::all() {
+    for (name, judged) in starters::all(&starters::no_extra) {
         let listed = judged.unwrap_or_else(|refused| panic!("«{name}» is refused:\n{}", refused.join("\n")));
         assert_eq!(listed.entry.entry, name);
         assert_eq!(listed.version.len(), 64, "the version is a whole digest");
     }
-    let kinds: Vec<starters::Kind> = starters::all()
+    let kinds: Vec<starters::Kind> = starters::all(&starters::no_extra)
         .into_iter()
         .filter_map(|(_, judged)| judged.ok().map(|listed| listed.entry.kind))
         .collect();
     assert!(kinds.contains(&starters::Kind::Template) && kinds.contains(&starters::Kind::Example), "{kinds:?}");
+}
+
+#[test]
+fn every_sentence_of_an_entry_is_written_in_each_language_the_product_speaks() {
+    for (name, judged) in starters::all(&starters::no_extra) {
+        let listed = judged.unwrap_or_else(|refused| panic!("«{name}»: {refused:?}"));
+        for (at, key) in starters::sentence_keys(&listed.entry) {
+            let english = starters::said("en", &key);
+            let italian = starters::said("it", &key);
+            assert_ne!(english, key, "«{name}» {at}: no English sentence for «{key}»");
+            assert_ne!(italian, english, "«{name}» {at}: the Italian sentence is the English one");
+        }
+    }
 }
 
 #[test]
@@ -103,20 +116,23 @@ fn no_source_finds_an_entry_and_nothing_resolves_or_runs_one() {
 #[test]
 fn a_broken_entry_is_refused_for_the_reason_it_is_broken() {
     let cases: Vec<(&str, &str, String)> = vec![
-        ("an empty purpose", "purpose", mutant("a-check-that-stops-the-run", |entry| entry["purpose"] = "".into())),
+        ("an empty purpose", "names the sentence", mutant("a-check-that-stops-the-run", |entry| entry["purpose"] = "".into())),
+        ("a sentence no catalogue writes", "the it catalogue has no such key", mutant("a-check-that-stops-the-run", |entry| {
+            entry["purpose"] = "starter.nobody_wrote_this".into();
+        })),
+        ("a purpose written out instead of named", "the en catalogue has no such key", mutant("a-check-that-stops-the-run", |entry| {
+            entry["purpose"] = "A check stops a run.".into();
+        })),
         ("a pinned engine", "pins the engine", mutant("a-text-piece-from-a-brief", |entry| {
             entry["flow"]["graph"]["steps"][1]["with"]["tool"] = serde_json::json!(["an-engine"]);
         })),
         ("a pinned model", "pins a model", mutant("a-text-piece-from-a-brief", |entry| {
             entry["flow"]["graph"]["steps"][1]["with"]["model"] = serde_json::json!({"an-engine": "a-model"});
         })),
-        ("a path of one machine", "path of one machine", mutant("a-check-that-stops-the-run", |entry| {
-            entry["flow"]["inputs"]["trigger"]["text"] = "/Users/somebody/notes".into();
-        })),
         ("an input nobody declared", "declares no such input", mutant("a-check-that-stops-the-run", |entry| {
             entry["flow"]["inputs"]["trigger"]["text"] = serde_json::json!({"$input": "brief"});
         })),
-        ("an input without a meaning", "without saying what it means", mutant("a-text-piece-from-a-brief", |entry| {
+        ("an input without a meaning", "names the sentence", mutant("a-text-piece-from-a-brief", |entry| {
             entry["inputs"]["engine"]["means"] = "".into();
         })),
         ("an example that teaches nothing", "teaches", mutant("one-flow-calls-another", |entry| {
@@ -150,6 +166,15 @@ fn a_broken_entry_is_refused_for_the_reason_it_is_broken() {
 }
 
 #[test]
+fn what_the_caller_judges_refuses_an_entry_too() {
+    let (name, text) = starters::ENTRIES[0];
+
+    let refused = starters::read(name, text, &|_| vec!["the caller refuses it".to_owned()]);
+
+    assert_eq!(refused.expect_err("refused"), vec!["the caller refuses it".to_owned()]);
+}
+
+#[test]
 fn a_flow_made_from_a_template_has_its_name_its_input_and_its_provenance() {
     let scratch = Scratch::new(line!());
     let sources = home_and_project(&scratch);
@@ -160,6 +185,7 @@ fn a_flow_made_from_a_template_has_its_name_its_input_and_its_provenance() {
         "notes-in-plain-words",
         &given(&[("engine", "the-engine-i-have")]),
         starters::default_destination(&sources),
+        &starters::no_extra,
         &accept,
     )
     .expect("the flow is made");
@@ -181,8 +207,16 @@ fn home_is_where_it_goes_when_asked_or_when_no_project_is_in_sight() {
     let sources = home_and_project(&scratch);
     let only_home: Vec<FlowSource> = sources[..2].to_vec();
 
-    starters::create(&sources, "a-check-that-stops-the-run", "asked-for-home", &given(&[]), Destination::Home, &accept)
-        .expect("made at home");
+    starters::create(
+        &sources,
+        "a-check-that-stops-the-run",
+        "asked-for-home",
+        &given(&[]),
+        Destination::Home,
+        &starters::no_extra,
+        &accept,
+    )
+    .expect("made at home");
     assert_eq!(starters::default_destination(&only_home), Destination::Home);
     let refused = starters::place(&only_home, Destination::Workspace).expect_err("no project in sight");
 
@@ -197,7 +231,7 @@ fn a_namesake_a_missing_input_an_unknown_input_and_an_unknown_entry_are_refused(
     let sources = home_and_project(&scratch);
     let (shipped, _) = system::FLOWS.first().expect("a flow ships");
     let make = |entry: &str, name: &str, inputs: &[(&str, &str)]| {
-        starters::create(&sources, entry, name, &given(inputs), Destination::Workspace, &accept)
+        starters::create(&sources, entry, name, &given(inputs), Destination::Workspace, &starters::no_extra, &accept)
             .expect_err("refused")
     };
 
@@ -229,6 +263,7 @@ fn a_refusal_of_the_callers_check_writes_nothing() {
         "checked-and-refused",
         &given(&[]),
         Destination::Workspace,
+        &starters::no_extra,
         &|_| Err("the caller refuses it".to_owned()),
     )
     .expect_err("the check refused");
@@ -240,10 +275,12 @@ fn a_refusal_of_the_callers_check_writes_nothing() {
 #[test]
 fn an_optional_input_nobody_gives_takes_its_field_away() {
     let text = mutant("a-text-piece-from-a-brief", |entry| {
-        entry["inputs"]["seconds"] = serde_json::json!({"means": "how long the engine may take", "required": false});
+        entry["inputs"]["seconds"] =
+            serde_json::json!({"means": "starter.a_text_piece_from_a_brief.input.engine", "required": false});
         entry["flow"]["graph"]["steps"][1]["with"]["timeout_secs"] = serde_json::json!({"$input": "seconds"});
     });
-    let listed = starters::read("a-text-piece-from-a-brief", &text).expect("the mutant passes the judge");
+    let listed = starters::read("a-text-piece-from-a-brief", &text, &starters::no_extra)
+        .expect("the mutant passes the judge");
 
     let without = starters::instantiate(&listed, "no-seconds", &given(&[("engine", "e")])).expect("made");
     let with = starters::instantiate(&listed, "seconds", &given(&[("engine", "e"), ("seconds", "60")])).expect("made");

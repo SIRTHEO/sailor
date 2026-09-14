@@ -51,9 +51,10 @@ pub(crate) struct MadeFlow {
     directory: String,
 }
 
+/// Sentences come in the language this process speaks, the window's own.
 #[tauri::command]
 pub(crate) fn flow_catalogue() -> CatalogueReading {
-    reading_of(&ui::gather::flow_sources())
+    reading_of(&ui::gather::flow_sources(), catalogue::language())
 }
 
 #[tauri::command]
@@ -66,20 +67,23 @@ pub(crate) fn flow_from_catalogue(
     make_in(&ui::gather::flow_sources(), &entry, &name, &inputs, &place)
 }
 
-fn reading_of(sources: &[FlowSource]) -> CatalogueReading {
+fn reading_of(sources: &[FlowSource], language: &str) -> CatalogueReading {
     let place = |destination| {
         starters::place(sources, destination)
             .ok()
             .map(|source| source.dir.display().to_string())
     };
     CatalogueReading {
-        entries: starters::all().into_iter().map(|(name, judged)| entry_of(name, judged)).collect(),
+        entries: starters::all(&sailor::flow_cmd::from_catalogue::full_judge)
+            .into_iter()
+            .map(|(name, judged)| entry_of(name, judged, language))
+            .collect(),
         workspace: place(Destination::Workspace),
         home: place(Destination::Home),
     }
 }
 
-fn entry_of(name: &str, judged: Result<starters::Listed, Vec<String>>) -> CatalogueEntry {
+fn entry_of(name: &str, judged: Result<starters::Listed, Vec<String>>, language: &str) -> CatalogueEntry {
     let listed = match judged {
         Ok(listed) => listed,
         Err(refused) => {
@@ -120,13 +124,20 @@ fn entry_of(name: &str, judged: Result<starters::Listed, Vec<String>>) -> Catalo
             Kind::Template => "template",
             Kind::Example => "example",
         }),
-        purpose: entry.purpose,
+        purpose: starters::said(language, &entry.purpose),
         inputs: entry
             .inputs
             .into_iter()
-            .map(|(name, input)| CatalogueInput { name, means: input.means, required: input.required })
+            .map(|(name, input)| CatalogueInput {
+                name,
+                means: starters::said(language, &input.means),
+                required: input.required,
+            })
             .collect(),
-        teaches: entry.teaches,
+        teaches: entry.teaches.map(|teaches| Teaches {
+            capability: starters::said(language, &teaches.capability),
+            result: starters::said(language, &teaches.result),
+        }),
         steps,
         refused: None,
     }
@@ -175,7 +186,7 @@ mod tests {
             FlowSource { origin: flow::system::YOUR_ORIGIN, dir: home.clone() },
         ];
 
-        let reading = reading_of(&sources);
+        let reading = reading_of(&sources, "en");
 
         assert_eq!(reading.entries.len(), starters::ENTRIES.len());
         assert!(reading.entries.iter().all(|entry| entry.refused.is_none() && !entry.steps.is_empty()));
@@ -184,6 +195,28 @@ mod tests {
         assert_eq!(reading.workspace, None, "no project in sight");
         assert_eq!(reading.home, Some(home.display().to_string()));
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_reading_in_italian_carries_the_italian_sentences_of_every_entry() {
+        let sources = vec![FlowSource::builtin()];
+
+        let italian = reading_of(&sources, "it");
+        let english = reading_of(&sources, "en");
+
+        for (read, other) in italian.entries.iter().zip(&english.entries) {
+            let (_, text) = starters::ENTRIES.iter().find(|(name, _)| *name == read.name).expect("an entry");
+            let entry: starters::Entry = serde_json::from_str(text).expect("it reads");
+            assert_eq!(read.purpose, starters::said("it", &entry.purpose));
+            assert_ne!(read.purpose, other.purpose, "«{}» is not said in Italian", read.name);
+            for (input, declared) in read.inputs.iter().zip(entry.inputs.values()) {
+                assert_eq!(input.means, starters::said("it", &declared.means));
+            }
+            if let (Some(said), Some(declared)) = (&read.teaches, &entry.teaches) {
+                assert_eq!(said.capability, starters::said("it", &declared.capability));
+                assert_eq!(said.result, starters::said("it", &declared.result));
+            }
+        }
     }
 
     #[test]

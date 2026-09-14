@@ -1,7 +1,7 @@
 {
   "entry": "a-check-that-stops-the-run",
   "kind": "example",
-  "purpose": "A command that fails stops the run there, and the step that depends on it never starts.",
+  "purpose": "starter.a_check_that_stops_the_run.purpose",
   "inputs": {},
   "needs": {
     "actions": [
@@ -12,8 +12,8 @@
     "flows": []
   },
   "teaches": {
-    "capability": "A check is a step like any other: when its command exits with an error the run ends failed at that step, and what depends on it is not started.",
-    "result": "`sailor flow run <name>` with no text ends failed at refuse_an_empty_brief and say_how_long never runs; `sailor flow run <name> \"any words\"` completes, and say_how_long answers how many characters the brief had."
+    "capability": "starter.a_check_that_stops_the_run.capability",
+    "result": "starter.a_check_that_stops_the_run.result"
   },
   "flow": {
     "description": "A check that stops the run. The trigger text is the brief; the first step refuses an empty one by exiting with an error, which ends the run there. The second step depends on the first, so it only ever starts on a brief that passed, and it says how long that brief was. No engine, nothing written, nothing paid.",

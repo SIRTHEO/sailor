@@ -31,8 +31,8 @@ pub const ENTRIES: &[(&str, &str)] = &[
 /// The key of a value filled in when a flow is made: `{"$input": "engine"}`.
 pub const INPUT_MARK: &str = "$input";
 
-/// What an entry gives a person without being run.
-const SHAPES_OF_A_MACHINE: &[&str] = &["~/", "/Users/", "/home/", "/private/tmp", "/var/folders", "C:\\Users\\"];
+/// The languages every sentence of an entry is written in.
+pub const LANGUAGES: &[&str] = &["en", "it"];
 
 const ENGINE_ACTION: &str = "external_engine";
 const CALLING_ACTIONS: &[&str] = &["subflow", "for_each"];
@@ -46,6 +46,7 @@ pub enum Kind {
     Example,
 }
 
+/// An input a person fills. `means` is a catalogue key, not a sentence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
@@ -63,6 +64,7 @@ pub struct Needs {
     pub flows: Vec<String>,
 }
 
+/// Catalogue keys, as for `Input::means`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Teaches {
@@ -75,20 +77,32 @@ pub struct Teaches {
 pub struct Entry {
     pub entry: String,
     pub kind: Kind,
+    /// A catalogue key: the sentence is said in the reader's language.
     pub purpose: String,
     pub inputs: BTreeMap<String, Input>,
     pub needs: Needs,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub teaches: Option<Teaches>,
     /// The flow without its `id`: the name is given when a flow is made.
+    /// Its description is data of the file it makes, and stays English.
     pub flow: Value,
 }
 
 /// An entry that passed the judge, with the digest of its text.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Listed {
     pub entry: Entry,
     pub version: String,
+    pub text: String,
+}
+
+/// What the caller judges and this crate cannot: which actions are registered,
+/// what a public text may not carry. Each string is one refusal.
+pub type Extra<'a> = &'a dyn Fn(&Listed) -> Vec<String>;
+
+/// No judgement beyond this crate's own.
+pub fn no_extra(_: &Listed) -> Vec<String> {
+    Vec::new()
 }
 
 /// Where a flow made from an entry is written.
@@ -115,29 +129,40 @@ pub fn version_of(text: &str) -> String {
         .collect()
 }
 
+/// A sentence of an entry in one language; the key itself where none is written.
+pub fn said(language: &str, key: &str) -> String {
+    catalogue::look(language, key, &[]).unwrap_or_else(|| key.to_owned())
+}
+
 /// Every entry, judged. A refused one stays in the list with its reasons, so a
 /// broken entry is said rather than missing.
-pub fn all() -> Vec<(&'static str, Result<Listed, Vec<String>>)> {
+pub fn all(extra: Extra) -> Vec<(&'static str, Result<Listed, Vec<String>>)> {
     ENTRIES
         .iter()
-        .map(|(name, text)| (*name, read(name, text)))
+        .map(|(name, text)| (*name, read(name, text, extra)))
         .collect()
 }
 
-pub fn read(name: &str, text: &str) -> Result<Listed, Vec<String>> {
+pub fn read(name: &str, text: &str, extra: Extra) -> Result<Listed, Vec<String>> {
     let refused = judge(name, text);
     if !refused.is_empty() {
         return Err(refused);
     }
-    serde_json::from_str(text)
-        .map(|entry| Listed {
-            entry,
-            version: version_of(text),
-        })
-        .map_err(|error| vec![unreadable(name, &error.to_string())])
+    let entry = serde_json::from_str(text).map_err(|error| vec![unreadable(name, &error.to_string())])?;
+    let listed = Listed {
+        entry,
+        version: version_of(text),
+        text: text.to_owned(),
+    };
+    let refused = extra(&listed);
+    if refused.is_empty() {
+        Ok(listed)
+    } else {
+        Err(refused)
+    }
 }
 
-pub fn find(name: &str) -> Result<Listed, String> {
+pub fn find(name: &str, extra: Extra) -> Result<Listed, String> {
     let Some((_, text)) = ENTRIES.iter().find(|(known, _)| *known == name) else {
         let names: Vec<&str> = ENTRIES.iter().map(|(known, _)| *known).collect();
         return Err(catalogue::say(
@@ -145,10 +170,51 @@ pub fn find(name: &str) -> Result<Listed, String> {
             &[("entry", name), ("entries", &names.join(", "))],
         ));
     };
-    read(name, text).map_err(|refused| refused.join("\n"))
+    read(name, text, extra).map_err(|refused| refused.join("\n"))
 }
 
-/// Every reason an entry is not fit to hand out. Empty means it passes.
+/// Where each sentence of an entry sits, and the key it names.
+pub fn sentence_keys(entry: &Entry) -> Vec<(String, String)> {
+    let mut keys = vec![("/purpose".to_owned(), entry.purpose.clone())];
+    for (input, declared) in &entry.inputs {
+        keys.push((format!("/inputs/{input}/means"), declared.means.clone()));
+    }
+    if let Some(teaches) = &entry.teaches {
+        keys.push(("/teaches/capability".to_owned(), teaches.capability.clone()));
+        keys.push(("/teaches/result".to_owned(), teaches.result.clone()));
+    }
+    keys
+}
+
+/// Every text an entry hands a person: each string it holds, and each sentence
+/// it names in every language, with where it was found.
+pub fn every_text(listed: &Listed) -> Vec<(String, String)> {
+    let mut found = Vec::new();
+    if let Ok(whole) = serde_json::from_str::<Value>(&listed.text) {
+        strings_in(&whole, "", &mut found);
+    }
+    for (at, key) in sentence_keys(&listed.entry) {
+        for language in LANGUAGES {
+            if let Some(sentence) = catalogue::look(language, &key, &[]) {
+                found.push((format!("{at} ({language})"), sentence));
+            }
+        }
+    }
+    found
+}
+
+/// The flow an entry makes with every input filled: what a check looks at.
+pub fn probe(listed: &Listed) -> Value {
+    let entry = &listed.entry;
+    let every_input: BTreeMap<String, String> = entry
+        .inputs
+        .keys()
+        .map(|input| (input.clone(), format!("{input}-given")))
+        .collect();
+    document(entry, &listed.version, &format!("{}-made", entry.entry), &every_input)
+}
+
+/// Every reason an entry is not fit to hand out, as far as this crate can see.
 pub fn judge(name: &str, text: &str) -> Vec<String> {
     let entry: Entry = match serde_json::from_str(text) {
         Ok(entry) => entry,
@@ -164,12 +230,21 @@ pub fn judge(name: &str, text: &str) -> Vec<String> {
     if id != name {
         say("flow.catalogue.judge.name_differs", &[("file", name)]);
     }
-    if !is_one_sentence(&entry.purpose) {
-        say("flow.catalogue.judge.purpose", &[]);
+    for (at, key) in sentence_keys(&entry) {
+        for language in LANGUAGES {
+            let written = catalogue::entries(language).is_some_and(|keys| keys.contains_key(&key));
+            if !written {
+                say(
+                    "flow.catalogue.judge.key_missing",
+                    &[("field", &at), ("key", &key), ("language", language)],
+                );
+            }
+        }
     }
-    for (input, declared) in &entry.inputs {
-        if declared.means.trim().is_empty() {
-            say("flow.catalogue.judge.input_unexplained", &[("input", input)]);
+    for language in LANGUAGES {
+        let purpose = catalogue::entries(language).and_then(|keys| keys.get(&entry.purpose));
+        if purpose.is_some_and(|sentence| !is_one_sentence(sentence)) {
+            say("flow.catalogue.judge.purpose", &[("language", language)]);
         }
     }
     let mut filled = BTreeSet::new();
@@ -180,11 +255,7 @@ pub fn judge(name: &str, text: &str) -> Vec<String> {
     for input in entry.inputs.keys().filter(|input| !filled.contains(*input)) {
         say("flow.catalogue.judge.input_unused", &[("input", input)]);
     }
-    let teaches = entry
-        .teaches
-        .as_ref()
-        .is_some_and(|said| !said.capability.trim().is_empty() && !said.result.trim().is_empty());
-    if entry.kind == Kind::Example && !teaches {
+    if entry.kind == Kind::Example && entry.teaches.is_none() {
         say("flow.catalogue.judge.teaches_nothing", &[]);
     }
 
@@ -230,16 +301,6 @@ pub fn judge(name: &str, text: &str) -> Vec<String> {
     for step in &used.pinned_models {
         say("flow.catalogue.judge.model_pinned", &[("step", step)]);
     }
-
-    if let Ok(whole) = serde_json::from_str::<Value>(text) {
-        let mut strings = Vec::new();
-        strings_in(&whole, "", &mut strings);
-        for (at, said) in strings {
-            if SHAPES_OF_A_MACHINE.iter().any(|shape| said.contains(shape)) {
-                say("flow.catalogue.judge.machine_path", &[("at", &at)]);
-            }
-        }
-    }
     for field in ["id", "from"] {
         if entry.flow.get(field).is_some() {
             say("flow.catalogue.judge.carries_identity", &[("field", field)]);
@@ -258,8 +319,8 @@ pub fn judge(name: &str, text: &str) -> Vec<String> {
         .keys()
         .map(|input| (input.clone(), format!("{input}-given")))
         .collect();
-    let probe = document(&entry, &version_of(text), &format!("{id}-made"), &every_input);
-    if let Err(error) = system::flow_of_document(&probe) {
+    let made = document(&entry, &version_of(text), &format!("{id}-made"), &every_input);
+    if let Err(error) = system::flow_of_document(&made) {
         say("flow.catalogue.judge.graph_refused", &[("error", &error)]);
     }
     refused
@@ -296,7 +357,11 @@ pub fn instantiate(
         if declared.required && blank {
             return Err(catalogue::say(
                 "flow.catalogue.missing_input",
-                &[("entry", &entry.entry), ("input", input), ("means", &declared.means)],
+                &[
+                    ("entry", &entry.entry),
+                    ("input", input),
+                    ("means", &catalogue::say(&declared.means, &[])),
+                ],
             ));
         }
     }
@@ -330,17 +395,18 @@ pub fn default_destination(sources: &[FlowSource]) -> Destination {
     }
 }
 
-/// Makes a flow from an entry and writes it. `check` is what the caller knows
-/// and this crate cannot: which actions are registered, what `flow check` refuses.
+/// Makes a flow from an entry and writes it. `extra` and `check` are what the
+/// caller knows and this crate cannot: the entry's full judge, and `flow check`.
 pub fn create(
     sources: &[FlowSource],
     entry: &str,
     name: &str,
     given: &BTreeMap<String, String>,
     destination: Destination,
+    extra: Extra,
     check: &dyn Fn(&FlowFile) -> Result<(), String>,
 ) -> Result<Created, String> {
-    let listed = find(entry)?;
+    let listed = find(entry, extra)?;
     let document = instantiate(&listed, name, given)?;
     if let Some((_, origin, _)) = system::load_all(sources)
         .into_iter()

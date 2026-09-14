@@ -137,4 +137,17 @@ describe("starting a flow from the catalogue", () => {
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("the shell broke");
   });
+
+  test("THE SENTENCES ARE SHOWN AS THE SHELL SAID THEM, IN THE LANGUAGE IT SPEAKS", async () => {
+    const italian: CatalogueReading = {
+      ...READING,
+      entries: [{ ...READING.entries[1], purpose: "Un controllo ferma la corsa.", teaches: { capability: "un comando che fallisce chiude la corsa", result: "la corsa finisce fallita" } }],
+    };
+    pretendNativeShell(({ command }) => (command === "flow_catalogue" ? italian : undefined));
+    render(<CatalogueDialog onClose={() => {}} onMade={() => {}} />);
+
+    expect(await screen.findByText("Un controllo ferma la corsa.")).toBeTruthy();
+    expect(screen.getByText("un comando che fallisce chiude la corsa")).toBeTruthy();
+    expect(screen.queryByText("A check stops the run.")).toBeNull();
+  });
 });

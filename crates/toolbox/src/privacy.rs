@@ -234,6 +234,69 @@ pub fn what_a_public_text_cannot_carry(text: &str, names: &[String], home: Optio
     found
 }
 
+/// `name@host.tld`: an account written the way a person signs in. How a flow
+/// names an account, `tool@account`, has no dot after the `@` and is not this.
+pub fn an_account_address(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    for (at, _) in text.match_indices('@') {
+        let local = bytes[..at]
+            .iter()
+            .rev()
+            .take_while(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'%' | b'+' | b'-'))
+            .count();
+        if local == 0 {
+            continue;
+        }
+        let rest = &text[at + 1..];
+        let end = rest
+            .find(|letter: char| !(letter.is_ascii_alphanumeric() || matches!(letter, '.' | '-')))
+            .unwrap_or(rest.len());
+        let domain = rest[..end].trim_end_matches('.');
+        let Some((host, top)) = domain.rsplit_once('.') else {
+            continue;
+        };
+        if !host.is_empty() && top.len() >= 2 && top.chars().all(|letter| letter.is_ascii_alphabetic()) {
+            return Some(at - local);
+        }
+    }
+    None
+}
+
+/// An address only one house reaches: an IPv4 address of a private range, or
+/// a host under `.local`, `.lan`, `.home.arpa` or `.internal`.
+pub fn a_private_network_address(text: &str) -> Option<usize> {
+    let is_part = |letter: char| letter.is_ascii_alphanumeric() || matches!(letter, '.' | '-');
+    let mut start = None;
+    for (index, letter) in text.char_indices().chain(std::iter::once((text.len(), ' '))) {
+        match (start, is_part(letter)) {
+            (None, true) => start = Some(index),
+            (Some(begin), false) => {
+                if names_a_private_host(text[begin..index].trim_end_matches('.')) {
+                    return Some(begin);
+                }
+                start = None;
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn names_a_private_host(token: &str) -> bool {
+    let parts: Vec<&str> = token.split('.').collect();
+    if parts.len() == 4 {
+        if let Ok(octets) = parts.iter().map(|part| part.parse::<u8>()).collect::<Result<Vec<u8>, _>>() {
+            return octets[0] == 10
+                || (octets[0] == 192 && octets[1] == 168)
+                || (octets[0] == 172 && (16..=31).contains(&octets[1]));
+        }
+    }
+    let lowered = token.to_ascii_lowercase();
+    [".local", ".lan", ".home.arpa", ".internal"]
+        .iter()
+        .any(|suffix| lowered.len() > suffix.len() && lowered.ends_with(suffix))
+}
+
 /// `/Users/<segment>/` or `/home/<segment>/`, unless the segment is a placeholder.
 fn a_home_of_anybody(text: &str) -> Option<usize> {
     for root in ["/Users/", "/home/"] {
@@ -688,5 +751,23 @@ mod tests {
             Err(PublicationPreflight::CannotProve)
         );
     }
-}
 
+    #[test]
+    fn an_account_address_is_found_and_a_flow_s_tool_at_account_is_not() {
+        let address = format!("write to someone{}example.org today", '@');
+        assert_eq!(super::an_account_address(&address), Some(9));
+        assert_eq!(super::an_account_address("the chain is claude-code@team"), None);
+        assert_eq!(super::an_account_address("an @ alone, and a@b"), None);
+    }
+
+    #[test]
+    fn a_private_network_address_is_found_and_a_public_one_is_not() {
+        let lan = format!("the server at http://{}.{}.1.20:8080 answers", 192, 168);
+        assert_eq!(super::a_private_network_address(&lan), Some(21));
+        assert!(super::a_private_network_address(&format!("{}.0.0.7", 10)).is_some());
+        assert!(super::a_private_network_address(&format!("{}.20.0.1", 172)).is_some());
+        assert!(super::a_private_network_address("the box on printer.local is off").is_some());
+        assert_eq!(super::a_private_network_address(&format!("{}.32.0.1 and 8.8.8.8", 172)), None);
+        assert_eq!(super::a_private_network_address("version 1.2.3 of «a.b»"), None);
+    }
+}

@@ -15,6 +15,7 @@ use crate::{
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -133,6 +134,8 @@ pub(crate) struct Located {
     pub name: String,
     pub flow: FlowFile,
     pub origin: &'static str,
+    /// The file that won the precedence, or the shipped place: what really ran.
+    pub path: PathBuf,
 }
 
 /// Everything `prepare` hands back. The store stands apart from the caller
@@ -183,7 +186,16 @@ pub(crate) fn prepare(
     let store = host.store()?;
 
     let sources = host.sources();
-    let found = system::load_all(&sources);
+    let resolved = system::resolve(&sources, None);
+    let path = resolved
+        .iter()
+        .find(|one| one.chain.name == flow_name)
+        .map(|one| one.chain.winner.path.clone())
+        .unwrap_or_default();
+    let found: Vec<(String, &'static str, Result<FlowFile, String>)> = resolved
+        .into_iter()
+        .map(|one| (one.chain.name, one.chain.winner.origin, one.entry))
+        .collect();
     let (_, origin, entry) = found
         .iter()
         .find(|(name, _, _)| name == flow_name)
@@ -232,6 +244,7 @@ pub(crate) fn prepare(
             name: flow_name.to_owned(),
             flow: child,
             origin,
+            path,
         },
         store,
     })
@@ -373,6 +386,7 @@ pub(crate) fn went_output(located: &Located, end: &ChildEnd) -> Value {
     json!({
         "flow": located.name,
         "origin": located.origin,
+        "path": located.path.display().to_string(),
         "run_id": end.run_id,
         "status": end.status,
         "outputs": end.outputs,
