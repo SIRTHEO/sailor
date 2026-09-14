@@ -125,6 +125,12 @@ pub const FLOWS: &[(&str, &str)] = &[
         "take-the-next-fault",
         include_str!("../system/take-the-next-fault.flow.json"),
     ),
+    // A change made against a benchmark task, accepted or rejected by tests it
+    // never saw; the run is red exactly when the change is rejected.
+    (
+        "judge-a-change",
+        include_str!("../system/judge-a-change.flow.json"),
+    ),
     // The ordinary gesture that reaches the two actions naming everything
     // else's dead powers — without this flow, they were their own example.
     (
