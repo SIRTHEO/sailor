@@ -193,8 +193,10 @@ machine, a process number, a session id or a tty. Placeholder homes such as
 `/home/pilot/` are not a machine. For the names, the job reports the status
 `sailor/private-names` on the exact commit. A maintainer posts that status by
 running `scripts/attest-private-names.sh <ref>` with the list armed. The status
-itself, not the job, is what a merge into `main` requires: a pull request can
-edit a workflow, but it cannot post a status. A pull request body or release
+itself, not the job, is what a merge into `main` requires: a pull request from
+a fork can edit a workflow, but its token cannot post a status. Anyone with
+write access to the repository can post one, so the rule protects against
+outside contributions, not against a writer. A pull request body or release
 note passes through `scripts/privacy-scan.sh --text <file>` before it is
 published. That also refuses `127.0.0.1` and a passage about the machine the
 text was written on.

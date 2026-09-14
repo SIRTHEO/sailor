@@ -36,7 +36,7 @@ jobs:
   # **THE LIST OF PRIVATE NAMES NEVER REACHES THIS MACHINE**, so this job
   # measures what needs no list and reports the owner's armed check. It is a
   # measure, not the lock: a pull request can edit this file, so the rule on
-  # main requires the status sailor/private-names itself.
+  # main requires the status sailor/private-names, which a fork cannot post.
   privacy:
     name: publication boundary
     runs-on: ubuntu-latest
