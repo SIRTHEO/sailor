@@ -89,6 +89,46 @@
         }
       },
       {
+        "id": "the_sailor",
+        "deps": [
+          "the_request"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -eu\nhome=${SAILOR_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/sailor}\nbinary=\"$home/bin/sailor\"\n[ -x \"$binary\" ] || { echo \"no sailor in service at $binary: this flow calls no other\" >&2; exit 2; }\n[ -r \"$home/state/sailor-binary-commit\" ] || { echo \"the sailor at $binary has no stamp naming the commit it was built from\" >&2; exit 2; }\nstamp=$(awk 'NF && $1 !~ /^#/ { print $1; exit }' \"$home/state/sailor-binary-commit\") || { echo \"cannot read the stamp of $binary\" >&2; exit 2; }\n[ -n \"$stamp\" ] || { echo \"the stamp of $binary names no commit\" >&2; exit 2; }\n[ -r \"$home/state/sailor-binary-commit.sha256\" ] || { echo \"no sha256 is recorded for the sailor at $binary, so nothing vouches for it. A person who trusts that binary records it with: shasum -a 256 < $binary | awk '{ print \\$1 }' > $home/state/sailor-binary-commit.sha256\" >&2; exit 2; }\nrecorded=$(awk 'NF && $1 !~ /^#/ { print $1; exit }' \"$home/state/sailor-binary-commit.sha256\") || { echo \"cannot read the recorded sha256 of $binary\" >&2; exit 2; }\ndigest=$(shasum -a 256 < \"$binary\") || { echo \"cannot read $binary\" >&2; exit 2; }\ndigest=${digest%% *}\n[ -n \"$recorded\" ] && [ \"$digest\" = \"$recorded\" ] || { echo \"the sailor at $binary has sha256 $digest, and ${recorded:-nothing} is recorded for it: it is not the binary that was put into service\" >&2; exit 2; }\nprintf '{\"sailor\":\"%s\",\"commit\":\"%s\",\"sha256\":\"%s\"}' \"$binary\" \"$stamp\" \"$digest\"\n",
+          "env": {},
+          "timeout_secs": 30,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "sailor": {
+                "type": "string"
+              },
+              "commit": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "sailor",
+              "commit",
+              "sha256"
+            ],
+            "allow_extra": false
+          }
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
         "id": "the_pin",
         "deps": [
           "the_request"
@@ -201,6 +241,7 @@
         "id": "review",
         "deps": [
           "the_request",
+          "the_sailor",
           "the_pin",
           "reviewer_tree"
         ],
@@ -238,7 +279,19 @@
               {
                 "$from": "/the_pin/answer/gates_digest"
               },
-              "), and confirm each applicable bullet of that manifest which names no command by copying its exact text into checked. Close with sailor step approve and an output file holding one JSON object: {\"commit\": the commit above, \"verdict\": \"clean\" or \"findings\", \"findings\": [each finding as text], \"checked\": [each contract checked], \"uncertainty\": what you could not establish}. Reject only when the commit cannot be reviewed at all, saying why."
+              "), and confirm each applicable bullet of that manifest which names no command by copying its exact text into checked. Close this step only with the sailor this flow verified, never with a sailor your PATH finds: first check that `shasum -a 256 < ",
+              {
+                "$from": "/the_sailor/answer/sailor"
+              },
+              "` prints ",
+              {
+                "$from": "/the_sailor/answer/sha256"
+              },
+              ", and stop if it does not; then run `",
+              {
+                "$from": "/the_sailor/answer/sailor"
+              },
+              " step approve --run <this run> --step review --as <your name> --output-file <your verdict file>`, where the file holds one JSON object: {\"commit\": the commit above, \"verdict\": \"clean\" or \"findings\", \"findings\": [each finding as text], \"checked\": [each contract checked], \"uncertainty\": what you could not establish}. Reject only when the commit cannot be reviewed at all, saying why."
             ]
           },
           "holder": "reviewer",
@@ -265,6 +318,7 @@
         "id": "verdict_bound",
         "deps": [
           "the_request",
+          "the_sailor",
           "the_pin",
           "review"
         ],
@@ -272,13 +326,19 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\nprintf '%s' \"$VERDICT\" | HEAD_COMMIT=\"$HEAD_COMMIT\" python3 -c '\nimport json, os, sys\nverdict = json.loads(sys.stdin.read())\nif not isinstance(verdict, dict):\n    sys.exit(\"the verdict is not one JSON object\")\nif verdict.get(\"commit\") != os.environ[\"HEAD_COMMIT\"]:\n    sys.exit(\"the verdict names commit %r, not the pinned %s\" % (verdict.get(\"commit\"), os.environ[\"HEAD_COMMIT\"]))\nif verdict.get(\"verdict\") not in (\"clean\", \"findings\"):\n    sys.exit(\"the verdict is neither clean nor findings\")\nfindings = verdict.get(\"findings\", [])\nchecked = verdict.get(\"checked\", [])\nif not isinstance(findings, list) or not isinstance(checked, list):\n    sys.exit(\"findings and checked are lists\")\nif verdict[\"verdict\"] == \"findings\" and not findings:\n    sys.exit(\"a verdict of findings names none\")\nif not checked:\n    sys.exit(\"the verdict lists nothing it checked\")\nprint(json.dumps({\"commit\": verdict[\"commit\"], \"verdict\": verdict[\"verdict\"], \"findings\": len(findings), \"checked\": len(checked)}))\n'\n",
+          "command": "set -eu\nsailor_now=$(shasum -a 256 < \"$SAILOR_BIN\") || { echo \"cannot read the sailor the review was to be closed with, $SAILOR_BIN\" >&2; exit 2; }\n[ \"${sailor_now%% *}\" = \"$SAILOR_SHA\" ] || { echo \"the sailor at $SAILOR_BIN changed while the review was open (sha256 ${sailor_now%% *}, not $SAILOR_SHA): the verdict it recorded is not taken\" >&2; exit 2; }\nprintf '%s' \"$VERDICT\" | HEAD_COMMIT=\"$HEAD_COMMIT\" python3 -c '\nimport json, os, sys\nverdict = json.loads(sys.stdin.read())\nif not isinstance(verdict, dict):\n    sys.exit(\"the verdict is not one JSON object\")\nif verdict.get(\"commit\") != os.environ[\"HEAD_COMMIT\"]:\n    sys.exit(\"the verdict names commit %r, not the pinned %s\" % (verdict.get(\"commit\"), os.environ[\"HEAD_COMMIT\"]))\nif verdict.get(\"verdict\") not in (\"clean\", \"findings\"):\n    sys.exit(\"the verdict is neither clean nor findings\")\nfindings = verdict.get(\"findings\", [])\nchecked = verdict.get(\"checked\", [])\nif not isinstance(findings, list) or not isinstance(checked, list):\n    sys.exit(\"findings and checked are lists\")\nif verdict[\"verdict\"] == \"findings\" and not findings:\n    sys.exit(\"a verdict of findings names none\")\nif not checked:\n    sys.exit(\"the verdict lists nothing it checked\")\nprint(json.dumps({\"commit\": verdict[\"commit\"], \"verdict\": verdict[\"verdict\"], \"findings\": len(findings), \"checked\": len(checked)}))\n'\n",
           "env": {
             "VERDICT": {
               "$json": "/review"
             },
             "HEAD_COMMIT": {
               "$from": "/the_pin/answer/head"
+            },
+            "SAILOR_BIN": {
+              "$from": "/the_sailor/answer/sailor"
+            },
+            "SAILOR_SHA": {
+              "$from": "/the_sailor/answer/sha256"
             }
           },
           "timeout_secs": 30,
