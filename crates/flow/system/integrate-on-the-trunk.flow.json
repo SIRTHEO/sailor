@@ -97,7 +97,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\nFORGE_REPO=\"\"\nforge_as=$(git -C \"$REPO\" config --get sailor.forgeAs) || { echo \"sailor.forgeAs is not declared on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\n[ -n \"$forge_as\" ] || { echo \"sailor.forgeAs is empty on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\ngh auth token --user \"$forge_as\" >/dev/null || { echo \"no forge token for the declared account $forge_as\" >&2; exit 1; }\n[ -z \"$FORGE_REPO\" ] || export GH_REPO=\"$FORGE_REPO\"\nprintf '{\"login\":\"%s\"}' \"$forge_as\"\n",
+          "command": "set -eu\nforge_as=$(git -C \"$REPO\" config --get sailor.forgeAs) || { echo \"sailor.forgeAs is not declared on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\n[ -n \"$forge_as\" ] || { echo \"sailor.forgeAs is empty on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\ngh auth token --user \"$forge_as\" >/dev/null || { echo \"no forge token for the declared account $forge_as\" >&2; exit 1; }\n[ -z \"${FORGE_REPO:-}\" ] || export GH_REPO=\"$FORGE_REPO\"\n# An empty --user or an empty GH_TOKEN makes gh answer as the machine's active account.\nforge() {\n    who=$(git -C \"$REPO\" config --get sailor.forgeAs) && [ -n \"$who\" ] || { echo \"sailor.forgeAs vanished from this tree: refusing\" >&2; exit 1; }\n    GH_TOKEN=$(gh auth token --user \"$who\") && [ -n \"$GH_TOKEN\" ] || { echo \"no forge token for $who: refusing\" >&2; exit 1; }\n    GH_TOKEN=\"$GH_TOKEN\" gh \"$@\"\n}\nprintf '{\"login\":\"%s\"}' \"$forge_as\"\n",
           "env": {
             "REPO": {
               "$from": "/answer/repo"
@@ -209,7 +209,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\ncd \"$REPO\"\nforge_as=$(git -C \"$REPO\" config --get sailor.forgeAs) || { echo \"sailor.forgeAs is not declared on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\n[ -n \"$forge_as\" ] || { echo \"sailor.forgeAs is empty on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\ngh auth token --user \"$forge_as\" >/dev/null || { echo \"no forge token for the declared account $forge_as\" >&2; exit 1; }\n[ -z \"$FORGE_REPO\" ] || export GH_REPO=\"$FORGE_REPO\"\nseen=$(GH_TOKEN=$(gh auth token --user \"$(git -C \"$REPO\" config --get sailor.forgeAs)\") gh pr view \"$BRANCH\" --json number,state,headRefOid,isDraft --jq '[.number, .state, .headRefOid, .isDraft] | @tsv')\nnumber=$(printf '%s' \"$seen\" | cut -f1); state=$(printf '%s' \"$seen\" | cut -f2)\noid=$(printf '%s' \"$seen\" | cut -f3); draft=$(printf '%s' \"$seen\" | cut -f4)\n[ \"$oid\" = \"$COMMIT\" ] || { echo \"the pull request reads head $oid, not the reviewed $COMMIT\" >&2; exit 1; }\ncase \"$state\" in OPEN|MERGED) ;; *) echo \"the pull request is $state\" >&2; exit 1 ;; esac\nprintf '{\"number\":%s,\"state\":\"%s\",\"draft\":%s}' \"$number\" \"$state\" \"$draft\"\n",
+          "command": "set -eu\ncd \"$REPO\"\nforge_as=$(git -C \"$REPO\" config --get sailor.forgeAs) || { echo \"sailor.forgeAs is not declared on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\n[ -n \"$forge_as\" ] || { echo \"sailor.forgeAs is empty on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\ngh auth token --user \"$forge_as\" >/dev/null || { echo \"no forge token for the declared account $forge_as\" >&2; exit 1; }\n[ -z \"${FORGE_REPO:-}\" ] || export GH_REPO=\"$FORGE_REPO\"\n# An empty --user or an empty GH_TOKEN makes gh answer as the machine's active account.\nforge() {\n    who=$(git -C \"$REPO\" config --get sailor.forgeAs) && [ -n \"$who\" ] || { echo \"sailor.forgeAs vanished from this tree: refusing\" >&2; exit 1; }\n    GH_TOKEN=$(gh auth token --user \"$who\") && [ -n \"$GH_TOKEN\" ] || { echo \"no forge token for $who: refusing\" >&2; exit 1; }\n    GH_TOKEN=\"$GH_TOKEN\" gh \"$@\"\n}\nseen=$(forge pr view \"$BRANCH\" --json number,state,headRefOid,isDraft --jq '[.number, .state, .headRefOid, .isDraft] | @tsv')\nnumber=$(printf '%s' \"$seen\" | cut -f1); state=$(printf '%s' \"$seen\" | cut -f2)\noid=$(printf '%s' \"$seen\" | cut -f3); draft=$(printf '%s' \"$seen\" | cut -f4)\n[ \"$oid\" = \"$COMMIT\" ] || { echo \"the pull request reads head $oid, not the reviewed $COMMIT\" >&2; exit 1; }\ncase \"$state\" in OPEN|MERGED) ;; *) echo \"the pull request is $state\" >&2; exit 1 ;; esac\nprintf '{\"number\":%s,\"state\":\"%s\",\"draft\":%s}' \"$number\" \"$state\" \"$draft\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/answer/repo"
@@ -322,8 +322,11 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\nif [ \"$ALREADY\" = true ]; then\n    printf '{\"letters\":\"\",\"ran\":0,\"red\":0,\"manual\":0,\"manual_pending\":false,\"green\":true}'\n    exit 0\nfi\n[ -x \"$TREE/scripts/run-gates.sh\" ] || { echo \"the combined tree has no scripts/run-gates.sh to resolve its gates\" >&2; exit 2; }\ncd \"$TREE\"\n\"$TREE/scripts/run-gates.sh\" --no-fail-fast --base \"$TRUNK\"\n",
+          "command": "set -eu\nif [ \"$ALREADY\" = true ]; then\n    printf '{\"letters\":\"\",\"ran\":0,\"red\":0,\"manual\":0,\"manual_pending\":false,\"green\":true}'\n    exit 0\nfi\n# The resolver and its manifest are the trunk's: a change may not choose the gates that judge it.\nscript=$(mktemp \"${TMPDIR:-/tmp}/sailor-gates.XXXXXX\")\nmanifest=$(mktemp \"${TMPDIR:-/tmp}/sailor-manifest.XXXXXX\")\ntrap 'rm -f \"$script\" \"$manifest\"' EXIT\ngit -C \"$REPO\" show \"$TRUNK:scripts/run-gates.sh\" > \"$script\" || { echo \"the trunk $TRUNK carries no scripts/run-gates.sh\" >&2; exit 2; }\ngit -C \"$REPO\" show \"$TRUNK:docs/gates.md\" > \"$manifest\" || { echo \"the trunk $TRUNK carries no docs/gates.md\" >&2; exit 2; }\ncd \"$TREE\"\nsh \"$script\" --no-fail-fast --base \"$TRUNK\" --manifest \"$manifest\"\n",
           "env": {
+            "REPO": {
+              "$from": "/the_request/answer/repo"
+            },
             "TREE": {
               "$from": "/combined/answer/tree"
             },
@@ -395,7 +398,7 @@
               {
                 "$from": "/combined/answer/tree"
               },
-              " include lines a person must run (the step log of «gates» names them). Run them there and approve with an output file holding {\"green\": true}, or reject with what was red."
+              " include lines a person must run or confirm (the step log of «gates» names them). Run them there and approve with an output file holding {\"green\": true} only when every one passed; reject with what was red."
             ]
           },
           "holder": "person",
@@ -419,11 +422,52 @@
         }
       },
       {
+        "id": "manual_green",
+        "deps": [
+          "gates",
+          "manual_gates"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/gates/answer/manual_pending",
+          "value": true
+        },
+        "with": {
+          "command": "set -eu\nprintf '%s' \"$SAID\" | python3 -c '\nimport json, sys\nsaid = json.loads(sys.stdin.read())\nif not isinstance(said, dict) or said.get(\"green\") is not True:\n    sys.exit(\"the person did not write green: true for the manual gates; nothing is pushed\")\nprint(json.dumps({\"confirmed\": True}))\n'\n",
+          "env": {
+            "SAID": {
+              "$json": "/manual_gates"
+            }
+          },
+          "timeout_secs": 30,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "confirmed": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "confirmed"
+            ],
+            "allow_extra": false
+          }
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
         "id": "policy",
         "deps": [
           "the_request",
           "gates",
-          "manual_gates"
+          "manual_green"
         ],
         "action": "shell_check",
         "max_attempts": 1,
@@ -524,25 +568,73 @@
         }
       },
       {
+        "id": "integration_authorized",
+        "deps": [
+          "policy",
+          "authorize_integration"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/policy/answer/asks_integration",
+          "value": "ask"
+        },
+        "with": {
+          "command": "set -eu\nprintf '%s' \"$SAID\" | KEY=\"$KEY\" python3 -c '\nimport json, os, sys\nsaid = json.loads(sys.stdin.read())\nif not isinstance(said, dict) or said.get(os.environ[\"KEY\"]) is not True:\n    sys.exit(\"the person did not write %s: true; nothing proceeds\" % os.environ[\"KEY\"])\nprint(json.dumps({\"confirmed\": True}))\n'\n",
+          "env": {
+            "SAID": {
+              "$json": "/authorize_integration"
+            },
+            "KEY": "authorized"
+          },
+          "timeout_secs": 30,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "confirmed": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "confirmed"
+            ],
+            "allow_extra": false
+          }
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
         "id": "ref_gate",
         "deps": [
           "the_request",
           "the_reviewed",
           "combined",
           "policy",
-          "authorize_integration"
+          "integration_authorized"
         ],
         "action": "shell_check",
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\ncd \"$REPO\"\ngit fetch --quiet origin\n[ \"$(git rev-parse \"refs/remotes/origin/$BASE\")\" = \"$BASE_COMMIT\" ] || [ \"$ALREADY\" = true ] || { echo \"the trunk moved since the combined tree was built on $BASE_COMMIT: run the integration again\" >&2; exit 1; }\n[ \"$(git rev-parse --verify \"refs/heads/$BRANCH^{commit}\")\" = \"$COMMIT\" ] || { echo \"the branch head differs from the reviewed commit $COMMIT\" >&2; exit 1; }\nset +e\nif [ -n \"$BASE\" ]; then \"$REPO/scripts/privacy-scan.sh\" \"$REF\" \"$BASE\" >&2; else \"$REPO/scripts/privacy-scan.sh\" \"$REF\" >&2; fi\ncode=$?\nset -e\n[ \"$code\" -eq 0 ] || { echo \"publication gate: privacy-scan exited $code on $REF; nothing leaves\" >&2; exit \"$code\"; }\nprintf '{\"ref\":\"%s\",\"privacy_exit\":0}' \"$REF\"\n",
+          "command": "set -eu\ncd \"$REPO\"\ntrusted_scan() {\n    git -C \"$REPO\" show \"main:scripts/privacy-scan.sh\" 2>/dev/null | cmp -s - \"$REPO/scripts/privacy-scan.sh\" || { echo \"scripts/privacy-scan.sh in this tree differs from the one the trusted trunk commits: the gate refuses to judge with it\" >&2; exit 2; }\n}\ntrusted_scan\npolicy_now=$(cd \"$REPO\" && sailor policy) || { echo \"the delivery policy could not be re-read from the trusted trunk\" >&2; exit 1; }\npolicy_was=$(printf '%s' \"$POLICY_READ\" | python3 -c 'import json,sys; p=json.load(sys.stdin); print(\"merge: %s\\npush: %s\\nrelease: %s\\n%s\" % (p[\"merge\"], p[\"push\"], p[\"release\"], p[\"read_from\"]))')\n[ \"$policy_now\" = \"$policy_was\" ] || { echo \"the delivery policy changed since it was read: the authorization in flight no longer holds; run the flow again\" >&2; exit 1; }\ngit fetch --quiet origin\n[ \"$(git rev-parse \"refs/remotes/origin/$BASE\")\" = \"$BASE_COMMIT\" ] || [ \"$ALREADY\" = true ] || { echo \"the trunk moved since the combined tree was built on $BASE_COMMIT: run the integration again\" >&2; exit 1; }\n[ \"$(git rev-parse --verify \"refs/heads/$BRANCH^{commit}\")\" = \"$COMMIT\" ] || { echo \"the branch head differs from the reviewed commit $COMMIT\" >&2; exit 1; }\nremote_head=$(git ls-remote origin \"refs/heads/$BRANCH\" | awk '{ print $1 }')\n[ \"$ALREADY\" = true ] || [ \"$remote_head\" = \"$COMMIT\" ] || { echo \"the remote branch head ${remote_head:-nothing} differs from the reviewed commit $COMMIT: the pull request no longer shows what was reviewed\" >&2; exit 1; }\nset +e\nif [ -n \"$SCAN_BASE\" ]; then \"$REPO/scripts/privacy-scan.sh\" \"$REF\" \"$SCAN_BASE\" >&2; else \"$REPO/scripts/privacy-scan.sh\" \"$REF\" >&2; fi\ncode=$?\nset -e\n[ \"$code\" -eq 0 ] || { echo \"publication gate: privacy-scan exited $code on $REF; nothing leaves\" >&2; exit \"$code\"; }\nprintf '{\"ref\":\"%s\",\"privacy_exit\":0}' \"$REF\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/answer/repo"
             },
             "REF": {
               "$from": "/combined/answer/candidate"
+            },
+            "SCAN_BASE": {
+              "$from": "/combined/answer/trunk"
+            },
+            "POLICY_READ": {
+              "$json": "/policy/answer"
             },
             "BASE": {
               "$from": "/the_request/answer/base"
@@ -596,7 +688,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\ncd \"$REPO\"\nforge_as=$(git -C \"$REPO\" config --get sailor.forgeAs) || { echo \"sailor.forgeAs is not declared on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\n[ -n \"$forge_as\" ] || { echo \"sailor.forgeAs is empty on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\ngh auth token --user \"$forge_as\" >/dev/null || { echo \"no forge token for the declared account $forge_as\" >&2; exit 1; }\n[ -z \"$FORGE_REPO\" ] || export GH_REPO=\"$FORGE_REPO\"\nif [ \"$DRAFT\" = true ] && [ \"$STATE\" = OPEN ]; then\n    GH_TOKEN=$(gh auth token --user \"$(git -C \"$REPO\" config --get sailor.forgeAs)\") gh pr ready \"$NUMBER\" >&2\nfi\nprintf '{\"number\":%s}' \"$NUMBER\"\n",
+          "command": "set -eu\ncd \"$REPO\"\nforge_as=$(git -C \"$REPO\" config --get sailor.forgeAs) || { echo \"sailor.forgeAs is not declared on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\n[ -n \"$forge_as\" ] || { echo \"sailor.forgeAs is empty on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\ngh auth token --user \"$forge_as\" >/dev/null || { echo \"no forge token for the declared account $forge_as\" >&2; exit 1; }\n[ -z \"${FORGE_REPO:-}\" ] || export GH_REPO=\"$FORGE_REPO\"\n# An empty --user or an empty GH_TOKEN makes gh answer as the machine's active account.\nforge() {\n    who=$(git -C \"$REPO\" config --get sailor.forgeAs) && [ -n \"$who\" ] || { echo \"sailor.forgeAs vanished from this tree: refusing\" >&2; exit 1; }\n    GH_TOKEN=$(gh auth token --user \"$who\") && [ -n \"$GH_TOKEN\" ] || { echo \"no forge token for $who: refusing\" >&2; exit 1; }\n    GH_TOKEN=\"$GH_TOKEN\" gh \"$@\"\n}\nif [ \"$DRAFT\" = true ] && [ \"$STATE\" = OPEN ]; then\n    forge pr ready \"$NUMBER\" >&2\nfi\nprintf '{\"number\":%s}' \"$NUMBER\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/answer/repo"
@@ -646,7 +738,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\nurl=$(git -C \"$REPO\" remote get-url origin) || { echo \"the tree has no origin remote\" >&2; exit 1; }\nset -- -C \"$REPO\"\ncase \"$url\" in\n    http://*|https://*)\n        push_as=$(git -C \"$REPO\" config --get sailor.pushAs) || { echo \"sailor.pushAs is not declared on this tree: refusing to push with the machine's own credentials\" >&2; exit 1; }\n        helper='!f() { printf \"%s\\\\n\" username=x-access-token; printf \"password=%s\\\\n\" \"$(gh auth token --user \"'\"$push_as\"'\")\"; }; f'\n        set -- -C \"$REPO\" -c credential.helper= -c \"credential.helper=$helper\" ;;\nesac\nif [ \"$ALREADY\" != true ]; then\n    git \"$@\" push origin \"$CANDIDATE:refs/heads/$BASE\" >&2\nfi\nprintf '{\"pushed\":\"%s\"}' \"$CANDIDATE\"\n",
+          "command": "set -eu\nurl=$(git -C \"$REPO\" remote get-url origin) || { echo \"the tree has no origin remote\" >&2; exit 1; }\nset -- -C \"$REPO\"\ncase \"$url\" in\n    /*|file://*) ;;\n    http://*|https://*)\n        push_as=$(git -C \"$REPO\" config --get sailor.pushAs) || { echo \"sailor.pushAs is not declared on this tree: refusing to push with the machine's own credentials\" >&2; exit 1; }\n        helper='!f() { printf \"%s\\\\n\" username=x-access-token; printf \"password=%s\\\\n\" \"$(gh auth token --user \"'\"$push_as\"'\")\"; }; f'\n        set -- -C \"$REPO\" -c credential.helper= -c \"credential.helper=$helper\" ;;\n    *) echo \"origin is $url: a push over it cannot be bound to sailor.pushAs, so this flow refuses it\" >&2; exit 1 ;;\nesac\nif [ \"$ALREADY\" != true ]; then\n    git \"$@\" push origin \"$CANDIDATE:refs/heads/$BASE\" >&2\nfi\nprintf '{\"pushed\":\"%s\"}' \"$CANDIDATE\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/answer/repo"
@@ -742,7 +834,7 @@
         "max_attempts": 3,
         "when": null,
         "with": {
-          "command": "set -eu\ncd \"$REPO\"\nforge_as=$(git -C \"$REPO\" config --get sailor.forgeAs) || { echo \"sailor.forgeAs is not declared on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\n[ -n \"$forge_as\" ] || { echo \"sailor.forgeAs is empty on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\ngh auth token --user \"$forge_as\" >/dev/null || { echo \"no forge token for the declared account $forge_as\" >&2; exit 1; }\n[ -z \"$FORGE_REPO\" ] || export GH_REPO=\"$FORGE_REPO\"\ntries=0\nwhile :; do\n    state=$(GH_TOKEN=$(gh auth token --user \"$(git -C \"$REPO\" config --get sailor.forgeAs)\") gh pr view \"$NUMBER\" --json state --jq .state)\n    [ \"$state\" = MERGED ] && break\n    tries=$((tries + 1))\n    [ \"$tries\" -lt 20 ] || { echo \"the host still reports pull request $NUMBER as $state after the trunk carries it\" >&2; exit 1; }\n    sleep 3\ndone\nprintf '{\"number\":%s,\"state\":\"%s\"}' \"$NUMBER\" \"$state\"\n",
+          "command": "set -eu\ncd \"$REPO\"\nforge_as=$(git -C \"$REPO\" config --get sailor.forgeAs) || { echo \"sailor.forgeAs is not declared on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\n[ -n \"$forge_as\" ] || { echo \"sailor.forgeAs is empty on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\ngh auth token --user \"$forge_as\" >/dev/null || { echo \"no forge token for the declared account $forge_as\" >&2; exit 1; }\n[ -z \"${FORGE_REPO:-}\" ] || export GH_REPO=\"$FORGE_REPO\"\n# An empty --user or an empty GH_TOKEN makes gh answer as the machine's active account.\nforge() {\n    who=$(git -C \"$REPO\" config --get sailor.forgeAs) && [ -n \"$who\" ] || { echo \"sailor.forgeAs vanished from this tree: refusing\" >&2; exit 1; }\n    GH_TOKEN=$(gh auth token --user \"$who\") && [ -n \"$GH_TOKEN\" ] || { echo \"no forge token for $who: refusing\" >&2; exit 1; }\n    GH_TOKEN=\"$GH_TOKEN\" gh \"$@\"\n}\ntries=0\nwhile :; do\n    state=$(forge pr view \"$NUMBER\" --json state --jq .state)\n    [ \"$state\" = MERGED ] && break\n    tries=$((tries + 1))\n    [ \"$tries\" -lt 20 ] || { echo \"the host still reports pull request $NUMBER as $state after the trunk carries it\" >&2; exit 1; }\n    sleep 3\ndone\nprintf '{\"number\":%s,\"state\":\"%s\"}' \"$NUMBER\" \"$state\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/answer/repo"
@@ -816,11 +908,19 @@
     ],
     "skippable_dependencies": [
       {
-        "step": "policy",
+        "step": "manual_green",
         "dependency": "manual_gates"
       },
       {
+        "step": "policy",
+        "dependency": "manual_green"
+      },
+      {
         "step": "ref_gate",
+        "dependency": "integration_authorized"
+      },
+      {
+        "step": "integration_authorized",
         "dependency": "authorize_integration"
       }
     ]

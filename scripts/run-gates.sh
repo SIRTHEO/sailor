@@ -1,28 +1,30 @@
 #!/bin/sh
-# Runs, in this tree, the lines of docs/gates.md that apply to base..HEAD: letter A
+# Runs, in this tree, the lines of a gate manifest that apply to base..HEAD: letter A
 # always, B to E when the paths they name changed. F is held by the delivery flows.
 # Prints one JSON summary on stdout; each command's own output goes to stderr.
-# Exit: 0 no line red, 1 a line red, 2 cannot run. A line needing a person is
-# counted in "manual" and never passes for green.
+# Exit: 0 no line red, 1 a line red, 2 cannot run. A line that is not a command, or
+# needs a value only a person has, is counted in "manual" and never passes for green.
 
 set -u
 
 no_fail_fast=0
 list_only=0
 base=""
+manifest=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --no-fail-fast) no_fail_fast=1 ;;
         --list) list_only=1 ;;
         --base) base=${2:-}; [ -n "$base" ] || { echo "gates: --base needs a commit" >&2; exit 2; }; shift ;;
+        --manifest) manifest=${2:-}; [ -n "$manifest" ] || { echo "gates: --manifest needs a file" >&2; exit 2; }; shift ;;
         *) echo "gates: unknown argument $1" >&2; exit 2 ;;
     esac
     shift
 done
 
 root=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "gates: not inside a git tree" >&2; exit 2; }
-manifest="$root/docs/gates.md"
-[ -r "$manifest" ] || { echo "gates: cannot read docs/gates.md" >&2; exit 2; }
+manifest=${manifest:-"$root/docs/gates.md"}
+[ -r "$manifest" ] || { echo "gates: cannot read the manifest $manifest" >&2; exit 2; }
 if [ -z "$base" ]; then
     base=$(git -C "$root" merge-base main HEAD 2>/dev/null) || { echo "gates: no base to compare against" >&2; exit 2; }
 fi
@@ -42,21 +44,25 @@ applies() {
 
 crates=$(printf '%s\n' "$changed" | sed -n 's#^crates/\([^/]*\)/.*#-p \1#p' | sort -u | tr '\n' ' ')
 
-# One line per command: letter, a tab, "empty" or "exit", a tab, the command.
+# One line per bullet or command: letter, a tab, "empty", "exit" or "manual", a tab, the text.
 plan=$(awk '
     /^## [A-Z]\./ { letter = substr($2, 1, 1); next }
     /^## / { letter = ""; next }
     letter != "" && /^- / {
-        line = $0; prefix = ""; judge = (line ~ /— empty/) ? "empty" : "exit"
+        line = $0; prefix = ""; judge = (line ~ /— empty/) ? "empty" : "exit"; found = 0
         while (match(line, /`[^`]+`/)) {
             span = substr(line, RSTART + 1, RLENGTH - 2)
             line = substr(line, RSTART + RLENGTH)
             if (span !~ /^(cargo |git |cd |npx |npm |SAILOR_)/) continue
+            found = 1
             if (span ~ /^cd [^ ]+ && /) { split(span, parts, " "); prefix = "cd " parts[2] " && " }
             else if (prefix != "") span = prefix span
             print letter "\t" judge "\t" span
         }
+        if (!found) { text = substr($0, 3); gsub(/\t/, " ", text); print letter "\tmanual\t" text }
     }' "$manifest")
+
+printf '%s\n' "$plan" | grep -q "^A$(printf '\t')" || { echo "gates: letter A resolves to nothing in $manifest" >&2; exit 2; }
 
 export CARGO_TARGET_DIR="$root/target/own"
 letters=""
@@ -68,6 +74,11 @@ while IFS="$tab" read -r letter judge command; do
     [ -n "$letter" ] || continue
     applies "$letter" || continue
     case " $letters " in *" $letter "*) ;; *) letters="${letters:+$letters }$letter" ;; esac
+    if [ "$judge" = manual ]; then
+        echo "gates[$letter] needs a person: $command" >&2
+        manual=$((manual + 1))
+        continue
+    fi
     case "$command" in
         *"<every crate touched>"*)
             [ -n "$crates" ] || { echo "gates[$letter] no crate touched: $command" >&2; continue; }
@@ -90,13 +101,13 @@ while IFS="$tab" read -r letter judge command; do
     echo "gates[$letter] \$ $command" >&2
     ran=$((ran + 1))
     if [ "$judge" = empty ]; then
-        said=$(cd "$root" && sh -c "$command" 2>&1)
+        said=$(cd "$root" && sh -c "$command" </dev/null 2>&1)
         if [ -n "$said" ]; then
             printf '%s\n' "$said" >&2
             echo "gates[$letter] red: expected no output" >&2
             red=$((red + 1))
         fi
-    elif ! (cd "$root" && sh -c "$command") >&2 2>&1; then
+    elif ! (cd "$root" && sh -c "$command" </dev/null) >&2 2>&1; then
         echo "gates[$letter] red: $command" >&2
         red=$((red + 1))
     fi
