@@ -119,7 +119,8 @@ const HOW_RANDOM_AN_OPAQUE_PIECE_IS: f64 = 3.5;
 /// digits and is as random as a key. Judged only where the name rule yielded,
 /// so ordinary text never meets it.
 fn looks_opaque(value: &str) -> bool {
-    value
+    looks_like_base64(value)
+        || value
         .split(|letter: char| !letter.is_ascii_alphanumeric())
         .any(|piece| {
             piece.len() >= HOW_LONG_AN_OPAQUE_PIECE_RUNS
@@ -127,6 +128,29 @@ fn looks_opaque(value: &str) -> bool {
                 && (bits_per_character(piece) >= HOW_RANDOM_AN_OPAQUE_PIECE_IS
                     || piece.len() >= 32 && piece.bytes().all(|byte| byte.is_ascii_hexdigit()))
         })
+}
+
+/// How long a whole value in the base64 alphabet must run to be judged whole.
+const HOW_LONG_A_BASE64_RUNS: usize = 24;
+
+/// Bits per character above which a whole base64-alphabet value reads as random.
+const HOW_RANDOM_A_BASE64_VALUE_IS: f64 = 4.0;
+
+/// Judged whole before any split, because `+` and `/` would cut a key into
+/// pieces too short to look random. A path of plain words is a row name.
+fn looks_like_base64(value: &str) -> bool {
+    let body = value.trim_end_matches('=');
+    let in_the_alphabet = body
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'+' || byte == b'/');
+    let a_path_of_words = body
+        .split('/')
+        .all(|piece| piece.bytes().all(|byte| byte.is_ascii_alphabetic()));
+    value.len() - body.len() <= 2
+        && body.len() >= HOW_LONG_A_BASE64_RUNS
+        && in_the_alphabet
+        && !a_path_of_words
+        && bits_per_character(body) >= HOW_RANDOM_A_BASE64_VALUE_IS
 }
 
 fn bits_per_character(piece: &str) -> f64 {
@@ -484,6 +508,14 @@ mod tests {
             json!({"collection": "c", "key": "Q7vX2mK9pL4wR8tN1cZ6yB3hJ5dF0gS2aE7uW9qT", "value": 1, "written_by": "w"}),
         );
         let found = secrets_in(&flow);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].key, "with.key");
+
+        let in_base64 = one_step(
+            "store_write",
+            json!({"collection": "c", "key": "Q7vX2mK9pL4w+R8tN1cZ6yB3h/J5dF0gS2aE7uW9/qT6rH1kP8vL3cN=", "value": 1, "written_by": "w"}),
+        );
+        let found = secrets_in(&in_base64);
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(found[0].key, "with.key");
     }
