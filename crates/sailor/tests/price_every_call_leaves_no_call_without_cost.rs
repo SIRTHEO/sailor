@@ -141,7 +141,7 @@ fn one_call_deliberately_unpriced_turns_the_run_red_at_the_verdict() {
     ledger.record_model_call(&call("a", "engine-a")).unwrap();
     ledger.record_model_call(&call("stranger", "engine-nobody-priced")).unwrap();
     let (execution, store) = run(&scratch, ledger.clone());
-    assert_eq!(run_status(&execution).1, false, "{execution:?}");
+    assert!(!run_status(&execution).1, "{execution:?}");
     let verdict = store
         .all()
         .into_iter()
