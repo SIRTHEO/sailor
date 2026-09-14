@@ -462,7 +462,7 @@ fn register(
     terminal: &Arc<Terminal>,
     mailroom: &std::path::Path,
 ) -> Result<(Registered, Arc<crate::screen::Screen>), PtyError> {
-    let tty = terminal.tty();
+    let tty = crate::inbox::file_name_of(terminal.tty());
     let letterbox = Inbox::open(mailroom.join(format!("{tty}.sock"))).map_err(|error| {
         let _ = terminal.close();
         PtyError::NotRegistered(error)
