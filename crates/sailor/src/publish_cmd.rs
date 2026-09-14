@@ -42,9 +42,23 @@ fn looks_like_a_token(value: &str) -> bool {
         })
 }
 
+/// The top-level fields an action declares as a plain identifier, whatever
+/// their name says: the name rule yields to them, the shape rule never does.
+const IDENTIFIERS_NAMED_LIKE_A_CREDENTIAL: &[(&str, &str)] = &[
+    (actions::store::STORE_WRITE_ACTION, "key"),
+    (actions::store::STORE_WRITE_IF_ABSENT_ACTION, "key"),
+    (actions::store::STORE_READ_ACTION, "key"),
+];
+
 fn names_a_credential(key: &str) -> bool {
     let lower = key.to_lowercase();
     CREDENTIAL_WORDS.iter().any(|word| lower.contains(word))
+}
+
+fn declared_an_identifier(action: Option<&str>, path: &str, key: &str) -> bool {
+    let at_the_root = path == "with" || path == "inputs";
+    at_the_root
+        && action.is_some_and(|action| IDENTIFIERS_NAMED_LIKE_A_CREDENTIAL.contains(&(action, key)))
 }
 
 /// The secrets a flow carries: an `env` block with a literal value, a key
@@ -57,15 +71,21 @@ pub fn secrets_in(flow: &Value) -> Vec<Secret> {
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
+    let action_of = |id: &str| {
+        steps
+            .iter()
+            .find(|step| step.get("id").and_then(Value::as_str) == Some(id))
+            .and_then(|step| step.get("action").and_then(Value::as_str))
+    };
     for step in &steps {
-        let id = step.get("id").and_then(Value::as_str).unwrap_or("?").to_owned();
+        let id = step.get("id").and_then(Value::as_str).unwrap_or("?");
         if let Some(with) = step.get("with") {
-            walk(with, &id, "with", &mut found);
+            walk(with, id, action_of(id), "with", &mut found);
         }
     }
     if let Some(Value::Object(inputs)) = flow.get("inputs") {
         for (step, input) in inputs {
-            walk(input, step, "inputs", &mut found);
+            walk(input, step, action_of(step), "inputs", &mut found);
         }
     }
     found
@@ -73,13 +93,13 @@ pub fn secrets_in(flow: &Value) -> Vec<Secret> {
 
 /// Why this string must not be published, if it must not: one reason and not
 /// three, because a value reported once per rule reads as three secrets.
-fn why_a_literal_stays_home(key: &str, text: &str, in_env: bool) -> Option<String> {
+fn why_a_literal_stays_home(key: &str, text: &str, in_env: bool, identifier: bool) -> Option<String> {
     if text.is_empty() || key.starts_with('$') {
         return None;
     }
     if in_env {
         Some(catalogue::say("cli.flow.publish_why_a_literal_in_env", &[]))
-    } else if names_a_credential(key) {
+    } else if names_a_credential(key) && !identifier {
         Some(catalogue::say("cli.flow.publish_why_the_name_says_credential", &[]))
     } else if looks_like_a_token(text) {
         Some(catalogue::say("cli.flow.publish_why_the_shape_is_a_token", &[]))
@@ -88,26 +108,27 @@ fn why_a_literal_stays_home(key: &str, text: &str, in_env: bool) -> Option<Strin
     }
 }
 
-fn walk(value: &Value, step: &str, path: &str, found: &mut Vec<Secret>) {
+fn walk(value: &Value, step: &str, action: Option<&str>, path: &str, found: &mut Vec<Secret>) {
     match value {
         Value::Object(fields) => {
             let in_env = path == "with.env" || path.ends_with(".env");
             for (key, inner) in fields {
                 let here = format!("{path}.{key}");
                 if let Value::String(text) = inner {
-                    if let Some(why) = why_a_literal_stays_home(key, text, in_env) {
+                    let identifier = declared_an_identifier(action, path, key);
+                    if let Some(why) = why_a_literal_stays_home(key, text, in_env, identifier) {
                         found.push(Secret { step: step.to_owned(), key: here, why });
                     }
                     // The string is judged; walking into it would judge it a
                     // second time under the other rule.
                     continue;
                 }
-                walk(inner, step, &here, found);
+                walk(inner, step, action, &here, found);
             }
         }
         Value::Array(items) => {
             for (index, inner) in items.iter().enumerate() {
-                walk(inner, step, &format!("{path}[{index}]"), found);
+                walk(inner, step, action, &format!("{path}[{index}]"), found);
             }
         }
         Value::String(text) if looks_like_a_token(text) => found.push(Secret {
@@ -377,6 +398,55 @@ mod tests {
         assert_eq!(secrets_in(&named)[0].key, "with.api_token");
         let harmless = json!({"id": "x", "graph": {"steps": [{"id": "s", "with": {"stdin": "count the keys of the map"}}]}});
         assert!(secrets_in(&harmless).is_empty());
+    }
+
+    fn one_step(action: &str, with: Value) -> Value {
+        json!({"id": "x", "graph": {"steps": [{"id": "s", "action": action, "with": with}]}, "inputs": {}})
+    }
+
+    #[test]
+    fn a_store_row_named_in_key_is_not_a_secret() {
+        let written = one_step(
+            "store_write",
+            json!({"collection": "c", "key": "fault-card-from-a-note", "value": 1, "written_by": "w"}),
+        );
+        assert!(secrets_in(&written).is_empty(), "{:?}", secrets_in(&written));
+
+        let through_inputs = json!({
+            "id": "x",
+            "graph": {"steps": [{"id": "read", "action": "store_read"}]},
+            "inputs": {"read": {"collection": "c", "key": "fault-card-from-a-note"}}
+        });
+        assert!(secrets_in(&through_inputs).is_empty(), "{:?}", secrets_in(&through_inputs));
+    }
+
+    #[test]
+    fn a_credential_name_holding_a_token_shape_is_refused() {
+        let flow = one_step("external_engine", json!({"api_key": "sk-abcdefghijklmnopqrstuv"}));
+        let found = secrets_in(&flow);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].key, "with.api_key");
+    }
+
+    #[test]
+    fn a_token_shape_under_a_store_key_is_still_refused() {
+        let flow = one_step(
+            "store_write",
+            json!({"collection": "c", "key": "ghp_abcdefghijklmnopqrst", "value": 1, "written_by": "w"}),
+        );
+        let found = secrets_in(&flow);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].key, "with.key");
+        assert_eq!(found[0].why, catalogue::say("cli.flow.publish_why_the_shape_is_a_token", &[]));
+    }
+
+    #[test]
+    fn a_key_outside_the_store_actions_is_judged_by_its_name() {
+        let flow = one_step("external_engine", json!({"key": "some-literal"}));
+        let found = secrets_in(&flow);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].key, "with.key");
+        assert_eq!(found[0].why, catalogue::say("cli.flow.publish_why_the_name_says_credential", &[]));
     }
 
     #[test]
