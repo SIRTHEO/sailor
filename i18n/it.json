@@ -823,6 +823,7 @@
   "window.flows.column.contexts": "Si risolve in",
   "window.flows.broken": "non si carica",
   "window.flows.in_places": "uguale in {count} posti",
+  "window.flows.only_in": "solo in {context}",
   "window.flows.differs": "{count} posti, non lo stesso file",
   "window.flows.detail.label": "il flusso scelto",
   "window.flows.detail.none": "Scegli una riga per vedere dove sta il suo file e cosa sostituisce.",

@@ -6,9 +6,8 @@
  */
 import { afterEach, describe, expect, test } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { FlowsScreen, FlowsView } from "./FlowsScreen";
+import { FlowsScreen, FlowsView, chainOf } from "./FlowsScreen";
 import { globalRows, groupsHere, type FlowContext, type FlowRow, type FlowsReading } from "./flowsbyworkspace";
-import { chainWords } from "./flowchain";
 import { t } from "./i18n";
 
 afterEach(cleanup);
@@ -78,7 +77,9 @@ describe("the flows of this checkout", () => {
 
     const mark = container.querySelector(".rail__replaces");
     expect(mark?.textContent).toBe(t("window.flow.replaces", { replaced: "built in" }));
-    expect(mark?.getAttribute("title")).toBe(chainWords(OUTSIDE_OVERRIDE));
+    expect(mark?.getAttribute("title")).toBe(chainOf(OUTSIDE_OVERRIDE));
+    expect(mark?.getAttribute("title")).toContain(t("window.flow.chain_head", { directory: t("window.flows.outside") }));
+    expect(mark?.getAttribute("title")).not.toContain(t("window.flow.chain_unknown_directory"));
     expect(screen.getByText(/a-workspace · plain · main/)).toBeTruthy();
   });
 
@@ -128,6 +129,18 @@ describe("the flows of every workspace", () => {
       .filter((one) => one.querySelector(".flows__sub"))
       .map((one) => one.querySelector(".flows__origin")?.textContent);
     expect(origins).toEqual(["yours", "yours", "this project"]);
+  });
+
+  test("A NAME ONE CHECKOUT ALONE HOLDS NAMES THAT CHECKOUT, not «the same in 1 places»", () => {
+    const only = reading();
+    only.contexts[1].flows.push(
+      row("a-project-flow", { origin: "this project", path: fileIn(`${OVERRIDING}/flows`, "a-project-flow") }, [], OVERRIDING, 6),
+    );
+    const { container } = render(<FlowsView ask={{ state: "read", reading: only }} />);
+    fireEvent.click(screen.getByRole("button", { name: t("window.flows.mode.all") }));
+    const alone = [...container.querySelectorAll("tr")].find((one) => one.textContent?.startsWith("a-project-flow"));
+    expect(alone?.textContent).toContain(t("window.flows.only_in", { context: "a-workspace · overriding · work/an-override" }));
+    expect(alone?.textContent).not.toContain(t("window.flows.in_places", { count: 1 }));
   });
 
   test("a name every context resolves alike stays one row", () => {

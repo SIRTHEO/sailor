@@ -823,6 +823,7 @@
   "window.flows.column.contexts": "Resolves in",
   "window.flows.broken": "will not load",
   "window.flows.in_places": "the same in {count} places",
+  "window.flows.only_in": "only in {context}",
   "window.flows.differs": "{count} places, not the same file",
   "window.flows.detail.label": "the chosen flow",
   "window.flows.detail.none": "Choose a row to see where its file lives and what it replaces.",

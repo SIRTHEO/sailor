@@ -46,6 +46,11 @@ export function contextWords(context: FlowContext): string {
   });
 }
 
+/** The chain words, with «outside every workspace» where no directory was read. */
+export function chainOf(row: FlowRow): string {
+  return chainWords(row.resolved_in === null ? { ...row, resolved_in: t("window.flows.outside") } : row);
+}
+
 function Steps({ row }: { row: FlowRow }) {
   if (row.steps === null) {
     return (
@@ -61,7 +66,7 @@ function Replaces({ row }: { row: FlowRow }) {
   const words = replacesWords(row);
   if (words === null) return null;
   return (
-    <span className="rail__replaces" title={chainWords(row)}>
+    <span className="rail__replaces" title={chainOf(row)}>
       {words}
     </span>
   );
@@ -99,7 +104,7 @@ function Detail({
       <h3 className="flows__label">{t("window.flows.detail.file")}</h3>
       <p className="flows__path">{row.winner.path}</p>
       <h3 className="flows__label">{t("window.flows.detail.chain")}</h3>
-      <pre className="flows__chain">{chainWords(row)}</pre>
+      <pre className="flows__chain">{chainOf(row)}</pre>
       {row.broken !== undefined && <p className="flows__broken">{row.broken}</p>}
       {here ? (
         <div className="flows__actions">
@@ -247,7 +252,11 @@ export function FlowsView({ ask, onOpen, onRun }: FlowsViewProps) {
               return rowOf(
                 first.row,
                 first.context,
-                <td className="flows__origin">{t("window.flows.in_places", { count: one.winners.length })}</td>,
+                <td className="flows__origin">
+                  {one.winners.length === 1
+                    ? t("window.flows.only_in", { context: contextWords(first.context) })
+                    : t("window.flows.in_places", { count: one.winners.length })}
+                </td>,
               );
             }
             const expanded = open.has(one.name);
