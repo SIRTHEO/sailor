@@ -1,21 +1,11 @@
 import { describe, expect, test } from "vitest";
 
 /**
- * **A TRUNCATED WORD WITHOUT A TOOLTIP IS A WORD LOST.** Tailwind's `truncate`
- * cuts a string at the box's edge with no trace of what was cut; a person who
- * scans, per the owner's rule, reads the clipped half and never learns there
- * was a rest unless something on the same element offers it back. `Tooltip`
- * (from `@/components/ui/tooltip`) is that offer. This is rule 2 of w30's
- * five: `truncate` on an element, or one of its own JSX children, must sit
- * inside a `<Tooltip` somewhere in the same file's usage of that element —
- * checked per line, not per file, so one honest use elsewhere in the file
- * does not clear a dishonest one.
- *
- * Seed today: zero uses of `truncate` in `desktop/src` at all — measured
- * with a plain grep before this test existed. The check exists so the first
- * one to appear either carries its `Tooltip` or fails loudly, rather than
- * shipping silently the way every other truncation in this window's history
- * did before anyone asked.
+ * **A TRUNCATED WORD WITHOUT A TOOLTIP IS A WORD LOST.** `truncate` cuts a
+ * string with no trace of what was cut, so an element carrying it, or one of
+ * its own children, must sit inside a `<Tooltip` — checked per line, so one
+ * honest use elsewhere in the file does not clear a dishonest one. Zero uses
+ * today: the first to appear carries its `Tooltip` or fails.
  */
 
 const sources = import.meta.glob("./*.tsx", {

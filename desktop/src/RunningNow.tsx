@@ -1,12 +1,8 @@
-// Question 2 of the three the window must answer: "what is running now, and
-// what has it cost?" `WaitingScreen` already answers "what waits on me" and
-// "what happened while I was away" — both about the past. Nothing until now
-// named what is in flight, though the engine already carries it.
-//
-// Logic and view share this one file on purpose: a same-named sibling
-// differing only by case (`RunningNow.tsx` / `runningnow.ts`) resolves to the
-// wrong one on a case-insensitive volume — the component import came back
-// `undefined` from the bundler picking the lowercase file first.
+// Question 2 of the window's three: "what is running now, and what has it
+// cost?" — what is in flight, which the engine already carries.
+
+// Logic and view share this file: a sibling differing only by case
+// (`runningnow.ts`) resolves to the wrong one on a case-insensitive volume.
 
 import { ago } from "./waiting";
 import type { RunSnapshot } from "./engine";
