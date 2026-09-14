@@ -39,6 +39,7 @@ pub mod mcp;
 pub mod memory;
 pub mod notes;
 pub mod presence;
+pub mod price_every_call;
 pub mod reserve;
 pub mod search;
 pub mod session_fill;

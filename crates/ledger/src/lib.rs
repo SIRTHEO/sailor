@@ -565,6 +565,21 @@ impl Ledger {
         self.write_event(StoredEvent::ModelCallRecorded(record.clone()))
     }
 
+    /// The calls that carry neither the engine's figure nor ours, oldest
+    /// first: the rows `price_every_call` still has to give a cost to.
+    pub fn model_calls_without_cost(&self) -> Result<Vec<ModelCallRecord>, LedgerError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(&format!(
+            "SELECT {MODEL_CALL_COLUMNS} FROM model_calls
+             WHERE declared_cost_micros IS NULL AND cost_micros IS NULL
+             ORDER BY started_at, call_id"
+        ))?;
+        let rows = statement
+            .query_map([], read_model_call_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     pub fn record_snapshot(&self, record: &SnapshotRecord) -> Result<(), LedgerError> {
         self.write_event(StoredEvent::SnapshotRecorded(record.clone()))
     }
@@ -2816,6 +2831,69 @@ fn project_model_call(
         ],
     )?;
     Ok(())
+}
+
+const MODEL_CALL_COLUMNS: &str = "call_id, run_id, step_id, purpose, cli, requested_model, actual_model,
+     input_tokens, output_tokens, cached_tokens, cost_micros, price_currency,
+     input_price_micros_per_million, output_price_micros_per_million,
+     cached_price_micros_per_million, engine_identity, retry_chain, error_type,
+     started_at, ended_at, total_tokens, declared_cost_micros, cache_write_tokens,
+     cache_write_long_tokens, cache_write_price_micros_per_million,
+     cache_write_long_price_micros_per_million, turns, session_id, work_kind,
+     fell_back_from, session_mode, role, role_resolved_to";
+
+/// The row back into the record it was projected from; counts are text
+/// columns, so they are parsed rather than read as integers.
+fn read_model_call_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ModelCallRecord> {
+    fn count(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<Option<u64>> {
+        let text: Option<String> = row.get(index)?;
+        Ok(text.and_then(|text| text.trim().parse().ok()))
+    }
+    fn names(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<Vec<String>> {
+        let text: Option<String> = row.get(index)?;
+        Ok(text
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_default())
+    }
+    let identity: Option<String> = row.get(15)?;
+    let session_mode: Option<String> = row.get(30)?;
+    Ok(ModelCallRecord {
+        call_id: row.get(0)?,
+        run_id: row.get(1)?,
+        step_id: row.get(2)?,
+        purpose: row.get(3)?,
+        cli: row.get(4)?,
+        requested_model: row.get::<_, Option<String>>(5)?.unwrap_or_default(),
+        actual_model: row.get::<_, Option<String>>(6)?.unwrap_or_default(),
+        input_tokens: count(row, 7)?,
+        output_tokens: count(row, 8)?,
+        cached_tokens: count(row, 9)?,
+        cost_micros: row.get(10)?,
+        price_currency: row.get(11)?,
+        input_price_micros_per_million: row.get(12)?,
+        output_price_micros_per_million: row.get(13)?,
+        cached_price_micros_per_million: row.get(14)?,
+        engine_identity: identity
+            .map(|text| EngineIdentity::from_column(&text))
+            .unwrap_or_default(),
+        retry_chain: names(row, 16)?,
+        error_type: row.get(17)?,
+        started_at: row.get(18)?,
+        ended_at: row.get(19)?,
+        total_tokens: count(row, 20)?,
+        declared_cost_micros: row.get(21)?,
+        cache_write_tokens: count(row, 22)?,
+        cache_write_long_tokens: count(row, 23)?,
+        cache_write_price_micros_per_million: row.get(24)?,
+        cache_write_long_price_micros_per_million: row.get(25)?,
+        turns: count(row, 26)?,
+        session_id: row.get(27)?,
+        work_kind: row.get(28)?,
+        fell_back_from: names(row, 29)?,
+        session_mode: session_mode.as_deref().and_then(SessionMode::from_word),
+        role: row.get(31)?,
+        role_resolved_to: names(row, 32)?,
+    })
 }
 
 fn read_inventory_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<InventoryChange> {

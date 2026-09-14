@@ -4082,3 +4082,33 @@ fn a_linux_stat_line_says_the_second_its_process_was_born() {
     assert_eq!(super::born_second_in("4242 (cut short) S 1", 1_700_000_000, 100), None);
     assert_eq!(super::born_second_in(stat, 1_700_000_000, 0), None);
 }
+
+/// Every column of a call comes back as it went in, so a row repriced later
+/// is the same row with a cost, not a copy missing what a column held.
+#[test]
+fn a_call_without_cost_reads_back_whole() {
+    let directory = TestDirectory::new("calls-without-cost");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    let mut written = call_with("call-open", Some(12), None);
+    written.cached_tokens = Some(3);
+    written.cache_write_tokens = Some(4);
+    written.turns = Some(2);
+    written.retry_chain = vec!["engine-a".to_owned()];
+    written.fell_back_from = vec!["engine-b".to_owned()];
+    written.session_mode = Some(SessionMode::Forked);
+    written.role = Some("mechanical".to_owned());
+    written.role_resolved_to = vec!["engine-c".to_owned()];
+    written.error_type = Some("exit_error".to_owned());
+    written.work_kind = Some("research".to_owned());
+    written.session_id = Some("session-1".to_owned());
+    ledger.record_model_call(&written).unwrap();
+    ledger
+        .record_model_call(&call_with("call-priced", Some(12), Some(7)))
+        .unwrap();
+    let mut declared = call_with("call-declared", None, None);
+    declared.declared_cost_micros = Some(5);
+    ledger.record_model_call(&declared).unwrap();
+
+    let open = ledger.model_calls_without_cost().unwrap();
+    assert_eq!(open, vec![written]);
+}

@@ -96,7 +96,7 @@ pub fn files_in_diff(diff: &str) -> Vec<String> {
         .collect()
 }
 
-/// Whether a diff adds or removes a test attribute inside a non-test file:
+/// Whether a diff adds or removes a test attribute inside a file that is not a test:
 /// the second way of touching the tests, which the path rule cannot see.
 pub fn diff_touches_test_attributes(diff: &str) -> bool {
     diff.lines()

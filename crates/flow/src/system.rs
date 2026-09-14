@@ -52,6 +52,12 @@ pub const FLOWS: &[(&str, &str)] = &[
         "what-this-machine-has",
         include_str!("../system/what-this-machine-has.flow.json"),
     ),
+    // Every call of the ledger gets an equivalent cost by the pinned rules, and
+    // the run is red while one stays unpriced.
+    (
+        "price-every-call",
+        include_str!("../system/price-every-call.flow.json"),
+    ),
     // A hard question taken to a strong model with the material already in
     // hand. The refusal of an empty brief is a step, not a comment: the same
     // engine on the same question spent its whole window exploring and

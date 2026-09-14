@@ -186,6 +186,8 @@ pub fn registry_in(
         actions::handoff::HandoffAction::new().watched_by(watcher.clone()),
     );
     actions::history::register_history(&mut registry, ledger.clone());
+    actions::price_every_call::register_price_every_call(&mut registry, ledger.clone());
+    actions::bench::runs::register_runs(&mut registry, ledger.clone());
     // The fault register, reachable from a flow and not only from a person's
     // hands. Registered even where the store is absent, for the same reason as
     // the two above: `flow check` must be able to say the step names a real
