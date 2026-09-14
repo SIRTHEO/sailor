@@ -9,13 +9,9 @@ commit messages, and every message a user of the tool can read. The Italian
 still in older comments is a measured debt, counted by a test whose number may
 only fall.
 
-**The one declared exception is `docs/faults-encountered.md`.** Its rows are
-generated from Sailor's own store by whoever met the fault, in the language
-they wrote it in, and are translated nowhere: a translation would tear a row
-off the store that rewrites the table, and the next render would put the
-Italian back. This is not the English-only rule failing — it is the rule's one
-named, bounded exception, and no other document in this tree gets the same
-allowance.
+There is no declared exception any more. `docs/faults-encountered.md` is now
+a short page of the faults still open, rendered from Sailor's own store, and it
+is held to the same rule as every other document.
 
 ## Build and test
 

@@ -52,12 +52,10 @@ the real author and the real date.
 
 ## Contribute
 
-- [`faults-encountered.md`](faults-encountered.md) — every fault that really
-  happened, with how it came to light and **what would have stopped it**. The
-  table is generated from Sailor's own fault store by
-  `sailor faults render`, and `sailor faults check` compares the two. See
-  [`../CONTRIBUTING.md`](../CONTRIBUTING.md) for why this table stays in
-  Italian while the rest of the tree does not.
+- [`faults-encountered.md`](faults-encountered.md) — the faults still open,
+  one line each. The page is generated from Sailor's own fault store by
+  `sailor faults render --open`; the full register, with how each fault came
+  to light and **what would have stopped it**, stays in that store.
 
 ## What is not here
 

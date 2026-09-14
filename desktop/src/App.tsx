@@ -163,7 +163,7 @@ type Place = Section;
 
 /* Only the graph. "Code" was a data file dressed as source and "Runs" is
    already the «Now» and «History» places. What the two unmounted screens
-   had measured about the engine is in `docs/faults-encountered.md`. */
+   had measured about the engine is in the fault store (`sailor faults list`). */
 
 /**
  * A flow being edited: what is on screen and what is already on disk.

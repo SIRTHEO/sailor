@@ -22,9 +22,8 @@ recorded result or handed back to you with the reason it stopped.
 > step are not enforced by Sailor itself, and a completed flow does not by
 > itself prove its result met your acceptance criteria — see
 > [`docs/completion-and-required-steps.md`](docs/completion-and-required-steps.md)
-> for what "completed" does and does not mean. Known defects are written down
-> in [`docs/faults-encountered.md`](docs/faults-encountered.md), open ones
-> included.
+> for what "completed" does and does not mean. The defects still open are
+> listed in [`docs/faults-encountered.md`](docs/faults-encountered.md).
 
 ## Five minutes
 
@@ -97,7 +96,7 @@ not taste: `cargo tauri dev` closes the window on **every** touched file,
 *before* compiling, so a compile error makes it vanish and it does not come
 back. `sailor-live` builds first and touches what is running **only if** the
 build succeeded: the window survives, changes its title and shows the error.
-The long version is fault 11 in `docs/faults-encountered.md`.
+The long version is fault 11 in Sailor's fault store: `sailor faults list`.
 
 And a build no longer takes the window away either. It builds on every save —
 that is how you learn the code compiles — but the swap **waits to be asked**:
@@ -185,7 +184,7 @@ Few, and they count for more than style preferences. In full in
   does not come from whoever wrote it.
 - **A rule in a comment is not a defence: it is the shape of one.** It counts
   only where a list applies it or a check interrogates it.
-- **Every defect gets written down**, in `docs/faults-encountered.md`, with how
+- **Every defect gets written down**, in Sailor's own fault store, with how
   it came to light and **what would have stopped it** — because what follows a
   fault is a check, not a task assigned to somebody.
 - **Everything in the tree is in English**: identifiers, comments, documents,
