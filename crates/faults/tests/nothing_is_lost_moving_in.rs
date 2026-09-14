@@ -273,6 +273,7 @@ fn no_door_into_the_store_takes_a_cell_the_table_cannot_hold() {
                 what_happened: sound.what_happened.clone(),
                 how_it_showed: sound.how_it_showed.clone(),
                 what_would_prevent: sound.what_would_prevent.clone(),
+                public_summary: None,
             })
             .is_err(),
         "«restore» let a broken status through"
@@ -315,6 +316,7 @@ fn a_newline_in_a_cell_makes_the_row_vanish_on_the_way_back() {
         what_would_prevent: "refusing it at the door".to_owned(),
         status: "**open**".to_owned(),
         standing: faults::Standing::Open,
+        public_summary: None,
     };
 
     let back = faults::parse(&faults::render(&[broken]));
@@ -324,6 +326,46 @@ fn a_newline_in_a_cell_makes_the_row_vanish_on_the_way_back() {
         "this test records why the door is shut. If the row now survives the \
          round trip, the rendering learned to escape newlines, and the guard \
          in the store can be reconsidered - deliberately, not by accident"
+    );
+}
+
+/// **THE SUMMARY HAS A DOOR OF ITS OWN**, and the doors that rewrite a row do
+/// not pass through it: restoring the same number keeps what users read.
+#[test]
+fn a_public_summary_is_written_by_its_own_door_and_survives_a_restore() {
+    let store = Faults::open(scratch("summary")).expect("opening");
+    let written = store
+        .record(&Draft {
+            happened_on: "01/09".to_owned(),
+            what_happened: "a workshop story".to_owned(),
+            how_it_showed: "by running it".to_owned(),
+            what_would_prevent: "this test".to_owned(),
+            status: "**open**".to_owned(),
+            standing: None,
+        })
+        .expect("recording");
+    assert_eq!(written.public_summary, None, "a fault is born with no summary");
+
+    assert!(store.set_public_summary(written.number, "  ").is_err(), "an empty summary was written");
+    assert!(
+        store.set_public_summary(written.number, "one line\nand another").is_err(),
+        "a summary that breaks a row was written"
+    );
+    assert!(
+        store.set_public_summary(99, "A summary.").is_err(),
+        "a summary for a fault that is not there was written"
+    );
+
+    store
+        .set_public_summary(written.number, "The window forgets a flow you renamed.")
+        .expect("a summary");
+    let row = faults::parse(&faults::render(&store.all().expect("reading back"))).remove(0);
+    store.restore(&row).expect("restoring the row");
+
+    assert_eq!(
+        store.get(written.number).expect("the fault").public_summary.as_deref(),
+        Some("The window forgets a flow you renamed."),
+        "restoring the row erased what users read"
     );
 }
 

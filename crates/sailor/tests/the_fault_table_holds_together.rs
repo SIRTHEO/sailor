@@ -18,6 +18,8 @@ fn repository_root() -> PathBuf {
 /// The columns the page declares: number, since, what goes wrong, status.
 const COLUMNS: usize = 4;
 
+const HEADER: &str = "| # | since | what goes wrong | status |";
+
 struct Fault {
     number: usize,
     cells: Vec<String>,
@@ -81,13 +83,15 @@ const A_TABLE_OF_THREE: &str = "\
 | 3 | 03/09 | a count that reassured instead of measuring | **closed in part** on 04/09, the measure still to make |
 ";
 
+/// The page may describe no fault, the day no open one has a summary, but it
+/// keeps the table the render writes into.
 #[test]
-fn the_page_carries_at_least_one_fault() {
-    let rows = faults();
+fn the_page_keeps_its_table_even_with_no_row_on_it() {
+    let text = page();
     assert!(
-        !rows.is_empty(),
-        "no row was read from the page: either nothing is open, and the page \
-         should say so without a table, or the reading is not looking"
+        text.lines().any(|line| line.trim() == HEADER),
+        "the header of the table is gone, so the next render has nowhere to put \
+         its rows and appends them to the end of the page"
     );
 }
 
@@ -212,73 +216,8 @@ fn a_marker_translated_halfway_leaves_the_count_instead_of_lowering_it() {
     );
 }
 
-/// The numbers up to nineteen, which follow no rule at all in English.
-const IRREGULAR: [&str; 20] = [
-    "zero",
-    "one",
-    "two",
-    "three",
-    "four",
-    "five",
-    "six",
-    "seven",
-    "eight",
-    "nine",
-    "ten",
-    "eleven",
-    "twelve",
-    "thirteen",
-    "fourteen",
-    "fifteen",
-    "sixteen",
-    "seventeen",
-    "eighteen",
-    "nineteen",
-];
-
-/// The tens.
-const TENS: [&str; 10] = [
-    "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety",
-];
-
-/// The number written in letters, the way the sentence under the table writes
-/// it: below twenty listed, then ten and unit joined by a hyphen, then a
-/// hundred and the rest joined by «and».
-fn spelled(number: usize) -> String {
-    if number < 20 {
-        return IRREGULAR[number].to_string();
-    }
-    assert!(
-        number < 1000,
-        "the page has never written a four-digit number in letters: if it must, \
-         the rule for thousands belongs here rather than around it"
-    );
-    if number >= 100 {
-        return with_hundreds(number);
-    }
-    let (ten, unit) = (number / 10, number % 10);
-    let tens = TENS[ten];
-    match unit {
-        0 => tens.to_string(),
-        _ => format!("{tens}-{}", IRREGULAR[unit]),
-    }
-}
-
-/// A bare hundred takes the article, and what follows it takes «and».
-fn with_hundreds(number: usize) -> String {
-    let (hundred, rest) = (number / 100, number % 100);
-    let prefix = match hundred {
-        1 => "a hundred".to_string(),
-        _ => format!("{} hundred", IRREGULAR[hundred]),
-    };
-    if rest == 0 {
-        return prefix;
-    }
-    format!("{prefix} and {}", spelled(rest))
-}
-
 /// **A TRANSLATOR MUST BE CHECKED**, on the joins and on the spellings that
-/// are not built from the digit's own word.
+/// are not built from the digit's own word. The page's count is spelled by it.
 #[test]
 fn the_numbers_are_spelled_the_way_english_spells_them() {
     for (number, word) in [
@@ -309,35 +248,33 @@ fn the_numbers_are_spelled_the_way_english_spells_them() {
         (200, "two hundred"),
         (308, "three hundred and eight"),
     ] {
-        assert_eq!(spelled(number), word, "{number} is written «{word}»");
+        assert_eq!(faults::in_words(number), word, "{number} is written «{word}»");
     }
 }
 
-/// The sentence under the table, for a count: `**Fifty-seven faults are still
-/// open.**`, with «fault is» for one.
-fn the_count_sentence(count: usize) -> String {
-    let word = spelled(count);
-    let mut letters = word.chars();
-    let first = letters.next().expect("the word is not empty");
-    let noun = if count == 1 { "fault is" } else { "faults are" };
-    format!("**{}{} {noun} still open.**", first.to_uppercase(), letters.as_str())
-}
-
-#[test]
-fn the_count_sentence_is_written_for_one_and_for_many() {
-    assert_eq!(the_count_sentence(1), "**One fault is still open.**");
-    assert_eq!(the_count_sentence(57), "**Fifty-seven faults are still open.**");
-}
-
-/// **THE COUNT IN THE PROSE TELLS THE TRUTH.** A number copied by hand
-/// diverges; here it is counted from the rows above it.
+/// **THE COUNT IN THE PROSE TELLS THE TRUTH.** The half the page can see is
+/// checked here: how many faults it describes. How many stay only in the store
+/// is known to the store alone, and the render writes that half.
 #[test]
 fn the_count_sentence_matches_the_rows_of_the_page() {
     let rows = faults().len();
-    let sentence = the_count_sentence(rows);
+    let text = page();
+    let sentences: Vec<&str> = text
+        .lines()
+        .filter(|line| faults::is_the_count_sentence(line))
+        .collect();
+    assert_eq!(
+        sentences.len(),
+        1,
+        "the page must carry exactly one count sentence, and carries {}",
+        sentences.len()
+    );
+    let expected = faults::count_sentence(rows, 0);
+    let (described, _) = expected.split_once(';').expect("the sentence has two halves");
     assert!(
-        page().contains(&sentence),
+        sentences[0].trim().starts_with(described),
         "the page does not say the true count. Counted from the table: {rows} \
-         rows, that is «{sentence}». Change the sentence, not the table"
+         rows, so the sentence must begin «{described}». Render the page again \
+         rather than editing the sentence"
     );
 }

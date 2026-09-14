@@ -24,6 +24,10 @@ pub const USAGE: &[Form] = &[
         says_key: "cli.faults.form.status",
     },
     Form {
+        form: "sailor faults summary <n> <text>",
+        says_key: "cli.faults.form.summary",
+    },
+    Form {
         form: "sailor faults reword <n> < fault.json",
         says_key: "cli.faults.form.reword",
     },
@@ -118,6 +122,7 @@ fn dispatch(args: &[String]) -> Result<String, String> {
         "list" => list(&store, &options),
         "add" => add(&store),
         "status" => set_status(&store, &loose),
+        "summary" => summarised(&store, &loose, &what_the_repository_could_not_publish),
         "reword" => reword(&store, &loose),
         "render" => render(&store, &options),
         "import" => import(&store, &loose),
@@ -217,7 +222,17 @@ fn add(store: &Faults) -> Result<String, String> {
 fn what_the_repository_could_not_publish(text: &str) -> Result<(), String> {
     let names = toolbox::privacy::declared_here(&|path| std::fs::read_to_string(path).ok());
     let home = std::env::var("HOME").ok();
-    let found = toolbox::privacy::what_cannot_be_published(text, &names, home.as_deref());
+    what_could_not_be_published_given(text, &names, home.as_deref())
+}
+
+/// The same refusal with the names and the home handed in, so a test can
+/// declare them without touching this machine's list.
+fn what_could_not_be_published_given(
+    text: &str,
+    names: &[String],
+    home: Option<&str>,
+) -> Result<(), String> {
+    let found = toolbox::privacy::what_cannot_be_published(text, names, home);
     let Some(first) = found.first() else {
         return Ok(());
     };
@@ -287,6 +302,7 @@ fn reworded(store: &Faults, loose: &[String], raw: &str) -> Result<String, Strin
             what_would_prevent: said.what_would_prevent,
             status: already.status,
             standing: already.standing,
+            public_summary: already.public_summary,
         })
         .map_err(|error| error.to_string())?;
     Ok(catalogue::say(
@@ -309,6 +325,30 @@ fn set_status(store: &Faults, loose: &[String]) -> Result<String, String> {
     Ok(format!("fault {}: {}", changed.number, changed.status))
 }
 
+/// The sentence a user reads for a fault on the public page. It passes the
+/// check every other prose write into the register passes, handed in so a
+/// test can declare the names.
+fn summarised(
+    store: &Faults,
+    loose: &[String],
+    publishable: &dyn Fn(&str) -> Result<(), String>,
+) -> Result<String, String> {
+    let [number, summary] = loose else {
+        return Err(catalogue::say("cli.faults.usage_summary", &[]));
+    };
+    let number: i64 = number
+        .parse()
+        .map_err(|_| catalogue::say("cli.faults.not_a_number", &[("number", number)]))?;
+    publishable(summary)?;
+    store
+        .set_public_summary(number, summary)
+        .map_err(|error| error.to_string())?;
+    Ok(catalogue::say(
+        "cli.faults.summarised",
+        &[("number", &number.to_string())],
+    ))
+}
+
 /// The table, on the screen or into the file `--file` names.
 ///
 /// **THE OPTION WAS IN THE USAGE LINE AND IN NO CODE.** Whoever typed it got
@@ -329,16 +369,25 @@ fn render(store: &Faults, options: &BTreeMap<String, String>) -> Result<String, 
     // **THE FILE IS READ BEFORE IT IS WRITTEN.** A document is not its table:
     // the rows are replaced where they stand and the prose around them stays.
     let document = std::fs::read_to_string(file).map_err(|error| format!("{file}: {error}"))?;
-    let (written, key, count) = if open_only {
+    if open_only {
+        let on_the_page = faults::on_the_public_page(&all).len();
         let open = all.iter().filter(|fault| fault.still_open()).count();
-        (faults::render_open_into(&document, &all), "cli.faults.written_open", open)
-    } else {
-        (faults::render_into(&document, &all), "cli.faults.written", all.len())
-    };
-    std::fs::write(file, written).map_err(|error| format!("{file}: {error}"))?;
+        std::fs::write(file, faults::render_open_into(&document, &all))
+            .map_err(|error| format!("{file}: {error}"))?;
+        return Ok(catalogue::say(
+            "cli.faults.written_open",
+            &[
+                ("file", file),
+                ("count", &on_the_page.to_string()),
+                ("others", &(open - on_the_page).to_string()),
+            ],
+        ));
+    }
+    std::fs::write(file, faults::render_into(&document, &all))
+        .map_err(|error| format!("{file}: {error}"))?;
     Ok(catalogue::say(
-        key,
-        &[("file", file), ("count", &count.to_string())],
+        "cli.faults.written",
+        &[("file", file), ("count", &all.len().to_string())],
     ))
 }
 
@@ -357,6 +406,12 @@ fn check(store: &Faults, loose: &[String]) -> Result<String, String> {
         .into_iter()
         .map(|fault| (fault.number, fault))
         .collect();
+    if written.is_empty() && text.lines().any(faults::is_a_data_row) {
+        return Err(catalogue::say(
+            "cli.faults.check_public_page",
+            &[("file", file)],
+        ));
+    }
     if written.is_empty() {
         return Err(catalogue::say(
             "cli.faults.no_rows_to_check",
@@ -620,13 +675,15 @@ mod tests {
         );
     }
 
-    /// The public page carries the open faults only, and says how many it wrote.
+    /// The public page carries the open faults given a summary for users, and
+    /// none of the register's own prose.
     #[test]
-    fn rendering_the_open_faults_writes_only_those_and_counts_them() {
+    fn rendering_the_public_page_writes_only_the_summarised_open_faults() {
         let dir = scratch("rendered-open");
         let store = Faults::open(dir.join("faults.db")).expect("opening");
         for (what, status) in [
-            ("a fault still standing. More words", "**open** — nobody took it. Later"),
+            ("a workshop story of the first fault", "**open** — nobody took it. Later"),
+            ("a workshop story of the second fault", "**open**"),
             ("a fault already repaired", "**closed** on 04/09"),
         ] {
             store
@@ -640,9 +697,18 @@ mod tests {
                 })
                 .expect("recording");
         }
+        store
+            .set_public_summary(1, "The window forgets a flow you renamed.")
+            .expect("a summary");
+        store
+            .set_public_summary(3, "A repaired defect.")
+            .expect("a summary");
         let written = dir.join("page.md");
-        std::fs::write(&written, "# Open faults\n\n| # | since | what goes wrong | status |\n|---|---|---|---|\n")
-            .expect("a document to write into");
+        std::fs::write(
+            &written,
+            "# Open faults\n\n| # | since | what goes wrong | status |\n|---|---|---|---|\n\nWhat the page is not.\n",
+        )
+        .expect("a document to write into");
         let options: BTreeMap<String, String> = [
             ("file".to_owned(), written.display().to_string()),
             ("open".to_owned(), "true".to_owned()),
@@ -654,11 +720,82 @@ mod tests {
 
         let text = std::fs::read_to_string(&written).expect("the file was written");
         assert!(
-            text.contains("| 1 | 03/09 | a fault still standing. | **open** — nobody took it. |"),
-            "the open row is not in the public shape: {text}"
+            text.contains("| 1 | 03/09 | The window forgets a flow you renamed. | **open** — nobody took it. |"),
+            "the summarised row is not in the public shape: {text}"
         );
-        assert!(!text.contains("already repaired"), "a closed fault reached the page: {text}");
-        assert!(said.contains(": 1 "), "the answer does not count the open faults written: {said}");
+        assert!(!text.contains("workshop story"), "the register's prose reached the page: {text}");
+        assert!(!text.contains("| 2 |"), "an open fault with no summary reached the page: {text}");
+        assert!(!text.contains("A repaired defect."), "a closed fault reached the page: {text}");
+        assert!(
+            text.contains("**One open fault is described on this page; one more is kept only in the fault store.**"),
+            "the count sentence does not count the page and the store apart: {text}"
+        );
+        assert!(
+            said.contains(&written.display().to_string()),
+            "the answer does not name the file it wrote: {said}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **THE SUMMARY IS PROSE THAT LEAVES THE MACHINE**, so it is refused by
+    /// the same check `reword` passes. The names here are declared by the test.
+    #[test]
+    fn a_summary_carrying_a_private_name_or_a_home_path_is_refused() {
+        let (dir, store, number) = a_store_holding("summary-private", &a_fault());
+        let names = vec!["quillfeather".to_owned()];
+        let publishable =
+            |text: &str| what_could_not_be_published_given(text, &names, Some("/home/pilot"));
+
+        for refused in [
+            "Quillfeather's window forgets a flow.",
+            "The flow kept in /home/pilot/flows is forgotten.",
+        ] {
+            assert!(
+                summarised(&store, &[number.to_string(), refused.to_owned()], &publishable).is_err(),
+                "a summary that cannot be published was accepted: {refused}"
+            );
+        }
+        assert_eq!(
+            store.get(number).expect("the fault").public_summary,
+            None,
+            "a refused summary landed in the store anyway"
+        );
+
+        summarised(
+            &store,
+            &[number.to_string(), "The window forgets a flow.".to_owned()],
+            &publishable,
+        )
+        .expect("a publishable summary is written");
+        assert_eq!(
+            store.get(number).expect("the fault").public_summary.as_deref(),
+            Some("The window forgets a flow.")
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **«NO ROWS TO CHECK» WAS TRUE AND USELESS** on the one page the
+    /// repository ships: the command must say what the page is and how it is kept.
+    #[test]
+    fn checking_the_public_page_says_it_is_not_the_register() {
+        let dir = scratch("check-public");
+        let store = Faults::open(dir.join("faults.db")).expect("opening");
+        let page = dir.join("page.md");
+        std::fs::write(
+            &page,
+            "| # | since | what goes wrong | status |\n|---|---|---|---|\n| 4 | 01/09 | The window forgets a flow. | **open** |\n",
+        )
+        .expect("a public page");
+        let file = page.display().to_string();
+
+        let said = check(&store, std::slice::from_ref(&file)).expect_err("a public page is not a register");
+
+        assert!(said.contains("render --open"), "the refusal does not say how the page is kept: {said}");
+        assert_ne!(
+            said,
+            catalogue::say("cli.faults.no_rows_to_check", &[("file", &file)]),
+            "the public page got the generic answer"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

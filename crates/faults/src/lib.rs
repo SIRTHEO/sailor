@@ -81,6 +81,10 @@ pub struct Fault {
     pub status: String,
     #[serde(default)]
     pub standing: Standing,
+    /// What goes wrong as a user of Sailor sees it: the only prose of a fault
+    /// the public page shows. `None` keeps the fault off that page.
+    #[serde(default)]
+    pub public_summary: Option<String>,
 }
 
 /// A fault to record: everything except the number, which is not chosen.
@@ -369,6 +373,18 @@ pub struct Faults {
     /// A store written before the vocabulary existed still opens read-only,
     /// where nothing may be migrated: its rows are read from the prose.
     the_reading_columns: bool,
+    /// A store only ever opened by a binary without the summary verb has no
+    /// table for them, and read-only it cannot be given one.
+    the_public_summaries: bool,
+}
+
+fn the_public_summaries_are_there(connection: &Connection) -> Result<bool, FaultError> {
+    let found: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'public_summaries'",
+        [],
+        |row| row.get(0),
+    )?;
+    Ok(found == 1)
 }
 
 const THE_READING_COLUMNS: [&str; 3] = ["standing", "happened_on_reading", "happened_on_value"];
@@ -453,10 +469,12 @@ impl Faults {
             return Err(FaultError::UnsupportedSchema(version));
         }
         let the_reading_columns = the_reading_columns_are_there(&connection)?;
+        let the_public_summaries = the_public_summaries_are_there(&connection)?;
         Ok(Faults {
             connection,
             path,
             the_reading_columns,
+            the_public_summaries,
         })
     }
 
@@ -485,11 +503,21 @@ impl Faults {
              );",
         )?;
         teach_the_store_the_vocabulary(&connection)?;
+        // A table of its own, not a column: `restore` replaces the whole row,
+        // and a binary that predates the summary would blank a column on every
+        // reword. It never touches this table, so the schema version holds.
+        connection.execute_batch(
+            "CREATE TABLE IF NOT EXISTS public_summaries (
+                 number INTEGER PRIMARY KEY,
+                 summary TEXT NOT NULL
+             );",
+        )?;
         connection.pragma_update(None, "user_version", FAULTS_SCHEMA_VERSION)?;
         Ok(Faults {
             connection,
             path,
             the_reading_columns: true,
+            the_public_summaries: true,
         })
     }
 
@@ -588,9 +616,14 @@ impl Faults {
         } else {
             "'', '', ''"
         };
+        let summary = if self.the_public_summaries {
+            "(SELECT summary FROM public_summaries WHERE public_summaries.number = faults.number)"
+        } else {
+            "NULL"
+        };
         let mut statement = self.connection.prepare(&format!(
             "SELECT number, happened_on, what_happened, how_it_showed, what_would_prevent,
-                    status, {columns}
+                    status, {columns}, {summary}
              FROM faults ORDER BY number"
         ))?;
         let rows = statement.query_map([], |row| {
@@ -604,6 +637,7 @@ impl Faults {
                     what_would_prevent: row.get(4)?,
                     status: row.get(5)?,
                     standing: Standing::Unknown,
+                    public_summary: row.get(9)?,
                 },
                 row.get::<_, String>(6)?,
                 row.get::<_, String>(7)?,
@@ -655,6 +689,23 @@ impl Faults {
         if touched == 0 {
             return Err(FaultError::Unknown(number));
         }
+        self.get(number)
+    }
+
+    /// Writes the one sentence of a fault the public page shows. What may be
+    /// published is the caller's question: this store holds no list of names.
+    pub fn set_public_summary(&self, number: i64, summary: &str) -> Result<Fault, FaultError> {
+        if summary.trim().is_empty() {
+            return Err(FaultError::CannotCrossTheTable(
+                "a public summary with no words in it would put an empty row on the page".to_owned(),
+            ));
+        }
+        nothing_that_breaks_a_row(&[("public summary", summary)])?;
+        self.get(number)?;
+        self.connection.execute(
+            "INSERT OR REPLACE INTO public_summaries (number, summary) VALUES (?1, ?2)",
+            params![number, summary.trim()],
+        )?;
         self.get(number)
     }
 
@@ -720,6 +771,7 @@ pub fn parse(markdown: &str) -> Vec<Fault> {
                 what_would_prevent: as_prose(cells[4]),
                 standing: standing_of(&status),
                 status,
+                public_summary: None,
             })
         })
         .collect()
@@ -743,16 +795,106 @@ pub fn render_into(document: &str, faults: &[Fault]) -> String {
     rows_replaced(document, &render(faults))
 }
 
-/// The public page: only the rows still open, in its four columns, with the
-/// prose around them kept as [`render_into`] keeps it.
+/// The public page: its rows and its count sentence replaced, and the prose
+/// around them kept as [`render_into`] keeps it. A document with no count
+/// sentence gets one at its end.
 pub fn render_open_into(document: &str, faults: &[Fault]) -> String {
-    rows_replaced(document, &render_open(faults))
+    let on_the_page = on_the_public_page(faults).len();
+    let open = faults.iter().filter(|fault| fault.still_open()).count();
+    let sentence = count_sentence(on_the_page, open - on_the_page);
+    let with_rows = rows_replaced(document, &render_open(faults));
+    let mut out = String::new();
+    let mut replaced = false;
+    for line in with_rows.lines() {
+        if !replaced && is_the_count_sentence(line) {
+            out.push_str(&sentence);
+            replaced = true;
+        } else {
+            out.push_str(line);
+        }
+        out.push('\n');
+    }
+    if !replaced {
+        out.push('\n');
+        out.push_str(&sentence);
+        out.push('\n');
+    }
+    out
+}
+
+/// How the count sentence ends, so a render finds the line it rewrites.
+pub const COUNT_SENTENCE_END: &str = "kept only in the fault store.**";
+
+pub fn is_the_count_sentence(line: &str) -> bool {
+    let line = line.trim();
+    line.starts_with("**") && line.ends_with(COUNT_SENTENCE_END)
+}
+
+/// `**Three open faults are described on this page; fifty-five more are kept
+/// only in the fault store.**`
+pub fn count_sentence(on_the_page: usize, only_in_the_store: usize) -> String {
+    let words = in_words(on_the_page);
+    let mut letters = words.chars();
+    let capital: String = letters.next().map(|first| first.to_uppercase().collect()).unwrap_or_default();
+    let page = if on_the_page == 1 { "open fault is" } else { "open faults are" };
+    let store = if only_in_the_store == 1 { "is" } else { "are" };
+    format!(
+        "**{capital}{} {page} described on this page; {} more {store} {COUNT_SENTENCE_END}",
+        letters.as_str(),
+        in_words(only_in_the_store)
+    )
+}
+
+/// The faults the public page shows: still open, and given a summary for users.
+pub fn on_the_public_page(faults: &[Fault]) -> Vec<(&Fault, &str)> {
+    faults
+        .iter()
+        .filter(|fault| fault.still_open())
+        .filter_map(|fault| fault.public_summary.as_deref().map(|summary| (fault, summary)))
+        .collect()
+}
+
+const BELOW_TWENTY: [&str; 20] = [
+    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+    "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen",
+    "nineteen",
+];
+
+const TENS: [&str; 10] = [
+    "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety",
+];
+
+/// A count in English words: tens and units joined by a hyphen, a hundred and
+/// the rest by «and». From a thousand on, the digits.
+pub fn in_words(number: usize) -> String {
+    match number {
+        0..=19 => BELOW_TWENTY[number].to_owned(),
+        20..=99 => match (TENS[number / 10], number % 10) {
+            (tens, 0) => tens.to_owned(),
+            (tens, unit) => format!("{tens}-{}", BELOW_TWENTY[unit]),
+        },
+        100..=999 => {
+            let hundreds = match number / 100 {
+                1 => "a hundred".to_owned(),
+                many => format!("{} hundred", BELOW_TWENTY[many]),
+            };
+            match number % 100 {
+                0 => hundreds,
+                rest => format!("{hundreds} and {}", in_words(rest)),
+            }
+        }
+        _ => number.to_string(),
+    }
 }
 
 fn rows_replaced(document: &str, rows: &str) -> String {
     let lines: Vec<&str> = document.lines().collect();
     let first = lines.iter().position(|line| is_a_data_row(line));
     let Some(first) = first else {
+        // An empty table takes its rows under the header's separator.
+        if let Some(separator) = lines.iter().position(|line| is_a_separator(line)) {
+            return spliced(&lines, separator + 1, separator + 1, rows);
+        }
         // No table to replace: the rows go at the end rather than nowhere.
         let mut out = document.to_owned();
         if !out.is_empty() && !out.ends_with('\n') {
@@ -765,21 +907,34 @@ fn rows_replaced(document: &str, rows: &str) -> String {
         .iter()
         .position(|line| !is_a_data_row(line))
         .map_or(lines.len(), |offset| first + offset);
+    spliced(&lines, first, after, rows)
+}
+
+/// The lines before `from`, the rows, then the lines from `to` on.
+fn spliced(lines: &[&str], from: usize, to: usize, rows: &str) -> String {
     let mut out = String::new();
-    for line in &lines[..first] {
+    for line in &lines[..from] {
         out.push_str(line);
         out.push('\n');
     }
     out.push_str(rows);
-    for line in &lines[after..] {
+    for line in &lines[to..] {
         out.push_str(line);
         out.push('\n');
     }
     out
 }
 
+/// The `|---|---|` line under a table's header.
+fn is_a_separator(line: &str) -> bool {
+    let trimmed = line.trim();
+    trimmed.starts_with('|')
+        && trimmed.contains('-')
+        && trimmed.chars().all(|letter| matches!(letter, '|' | '-' | ':' | ' '))
+}
+
 /// A row of the register: a first cell holding a number.
-fn is_a_data_row(line: &str) -> bool {
+pub fn is_a_data_row(line: &str) -> bool {
     let trimmed = line.trim();
     if !trimmed.starts_with('|') {
         return false;
@@ -805,27 +960,17 @@ pub fn render(faults: &[Fault]) -> String {
     out
 }
 
-/// One row per fault still open: `| # | since | what goes wrong | status |`.
+/// One row per fault on the public page: `| # | since | what goes wrong | status |`,
+/// the summary written for users and the status up to its first sentence.
 pub fn render_open(faults: &[Fault]) -> String {
     let mut out = String::new();
-    for fault in faults.iter().filter(|fault| fault.still_open()) {
+    for (fault, summary) in on_the_public_page(faults) {
         let since = as_a_cell(&fault.happened_on);
-        let what = as_a_cell(&headline_of(&fault.what_happened));
+        let what = as_a_cell(summary);
         let status = as_a_cell(&with_bold_closed(first_sentence(&fault.status)));
         out.push_str(&format!("| {} | {since} | {what} | {status} |\n", fault.number));
     }
     out
-}
-
-/// The bold headline a story opens with, or else its first sentence.
-pub fn headline_of(story: &str) -> String {
-    let story = story.trim();
-    if let Some(rest) = story.strip_prefix("**") {
-        if let Some(end) = rest.find("**") {
-            return format!("**{}**", &rest[..end]);
-        }
-    }
-    with_bold_closed(first_sentence(story))
 }
 
 /// Up to the first `.`, `!` or `?` followed by a space or the end, never

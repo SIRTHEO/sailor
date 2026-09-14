@@ -52,17 +52,18 @@ the real author and the real date.
 
 ## Contribute
 
-- [`faults-encountered.md`](faults-encountered.md) — the faults still open,
-  one line each. The page is generated from Sailor's own fault store by
-  `sailor faults render --open`; the full register, with how each fault came
-  to light and **what would have stopped it**, stays in that store.
+- [`faults-encountered.md`](faults-encountered.md) — the open faults that
+  carry a summary written for users, one line each. The page is generated from
+  Sailor's own fault store by `sailor faults render --open`; the full register,
+  with how each fault came to light and **what would have stopped it**, stays
+  in that store.
 
 ## What is not here
 
-**The fault register is in Italian, and stays that way.** Its rows are written
-by whoever met the fault and are kept in Sailor's store, which is the source
-that rewrites the table: translating them in this file would tear them off it,
-and the next render would put them back.
+**The full fault register is not here.** Sailor keeps it in its own store,
+with how each fault showed and what would have prevented it: `sailor faults
+list` reads it. Only an open fault given a summary for users, with `sailor
+faults summary`, is rendered into `faults-encountered.md`.
 
 **The project's working notes are not here.** Sailor keeps them in its own
 store: `sailor search <words>` finds one, `sailor notes list` shows what is
