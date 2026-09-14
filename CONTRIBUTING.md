@@ -70,7 +70,7 @@ hand.
 |---|---|---|
 | the counted seeds hold | `cargo test -p sailor -j 1 --test the_battery_does_not_shrink_in_silence --test comments_do_not_crowd_out_the_code --test the_fault_table_holds_together` | a test or flow file appeared or vanished, or a comment block or fault row grew past its cap — write the new seed the judge states, in the same commit (see "The ratchet" below) |
 | everything a user reads is English | `cargo test -p sailor -j 1 --test the_words_a_user_reads_are_in_english --test a_product_name_in_prose_only_ever_falls --test identifiers_are_in_english` | translate the sentence, remove the product name from prose, or rename the identifier — a new Italian word for an identifier is one line added to the list, not an exception |
-| nothing private or workshop-only is tracked | `cargo test -p sailor -j 1 --test no_engine_is_named_in_the_code --test no_product_home_is_written_into_the_code --test nothing_reserved_is_tracked --test the_repository_ships_no_workshop_flow --test no_push_publishes_a_private_name` | move an engine's name into its descriptor, a product's home directory into data rather than a constant, and keep a personal flow out of `flows/` — a name once force-pushed cannot be unpublished, so this one is refused before the push, not fixed after |
+| nothing private or workshop-only is tracked | `cargo test -p sailor -j 1 --test no_engine_is_named_in_the_code --test no_product_home_is_written_into_the_code --test nothing_reserved_is_tracked --test the_repository_ships_no_workshop_flow --test no_push_publishes_a_private_name --test the_publication_boundary_holds` | move an engine's name into its descriptor, a product's home directory into data rather than a constant, and keep a personal flow out of `flows/` — a name once force-pushed cannot be unpublished, so this one is refused before the push, not fixed after |
 | clippy is clean | `cargo clippy -p <every crate you touched> --tests -j 1` | fix the lint; do not silence it with an attribute unless the comment says why |
 
 No tool signature in the commit range — the command has a pipe, so it does
@@ -180,6 +180,26 @@ above. The release preflight refuses, and a commit must never carry:
   already refuse to see tracked.
 - **Credentials of any kind** — tokens, keys, session data, credential-bearing
   configuration, and an unsanitized export or log copied out of the store.
+
+**The names are read from a list that never enters the repository**:
+`~/personal/.sailor-notes/private-names`, or the file `SAILOR_PRIVATE_NAMES`
+points at, one name per line. A missing list is not a clean tree:
+`nothing_from_this_machine_is_published` goes red with «not measured». If you
+keep no private name, create the file empty, and that declares it.
+
+The CI has no list, so it splits the check in two. Its `publication boundary`
+job refuses what needs no list in a commit message: a home path of a real
+machine, a process number, a session id or a tty. Placeholder homes such as
+`/home/pilot/` are not a machine. For the names, the job reports the status
+`sailor/private-names` on the exact commit. A maintainer posts that status by
+running `scripts/attest-private-names.sh <ref>` with the list armed. The status
+itself, not the job, is what a merge into `main` requires: a pull request from
+a fork can edit a workflow, but its token cannot post a status. Anyone with
+write access to the repository can post one, so the rule protects against
+outside contributions, not against a writer. A pull request body or release
+note passes through `scripts/privacy-scan.sh --text <file>` before it is
+published. That also refuses `127.0.0.1` and a passage about the machine the
+text was written on.
 
 **Not covered yet:** sensitive data folded inside a generated *attachment* —
 a screenshot, a database fixture, an archive, a packaged desktop resource —
