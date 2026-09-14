@@ -171,12 +171,16 @@ fn glance() -> Result<Glance, String> {
     }
     ledger::Ledger::open(&dir)
         .and_then(|ledger| {
+            let a_tree_is_left_behind = workspace::a_tree_is_left_behind(
+                &ledger,
+                &sailor::worktree_cmd::a_sweep_would_take(&ledger),
+            );
             Ok(Glance {
                 last_started: ledger.last_started_at()?,
                 and_also: flow::AndAlso {
                     something_is_left_behind: machine::something_is_left_behind(&ledger)
                         .unwrap_or(false),
-                    a_tree_is_left_behind: workspace::a_tree_is_left_behind(&ledger),
+                    a_tree_is_left_behind,
                 },
                 streaks: ledger.failure_streaks(flow::FAILURES_THAT_MAKE_A_FAULT)?,
                 faults_written: ledger.faults_written()?,

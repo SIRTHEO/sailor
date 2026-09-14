@@ -6,7 +6,7 @@
 
 use actions::mcp::ServerSpec;
 use sailor::retire_index::{retire, IndexServer, IndexTending, Retired, PRUNE_TOOL};
-use sailor::worktree_cmd::{close_one, remove_one, retire_one, sweep};
+use sailor::worktree_cmd::{close_one, remove_one, retire_one, sweep, Holders};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
@@ -161,7 +161,20 @@ fn the_sweep_writes_the_identity_down_and_the_gesture_retires_it() {
     let identity = identity_as_listed(&repo, "done");
     let index = an_index(&scratch, &identity, &[PRUNE_TOOL]);
 
-    let swept = sweep(&repo, &store as &dyn OpenTrees, &[], &IdentityRule::default()).expect("the sweep");
+    store
+        .tree_opened(&workspace::OpenTree {
+            path: tree.to_string_lossy().into_owned(),
+            repo: repo.to_string_lossy().into_owned(),
+            run: "run-finita".to_owned(),
+            step: "a_step".to_owned(),
+            opened_by_pid: 1,
+            opened_at: 0,
+            opened_by_born_at: None,
+        })
+        .expect("written down the way Sailor writes the trees it cuts");
+    let let_go = |_: &workspace::OpenTree| ledger::holdings::Whose::Nobody;
+    let long_ago = Holders { occupied: &[], standing: &[], owner: &let_go, now: i64::MAX / 2 };
+    let swept = sweep(&repo, &store as &dyn OpenTrees, &long_ago, &IdentityRule::default()).expect("the sweep");
     let gone = !tree.exists();
     let applied_by_the_sweep = index.applied();
     let left = store.identities_left_behind().expect("the rows");

@@ -7,6 +7,7 @@
 
 use crate::retire_index::{retire, IndexTending, Retired};
 use crate::Form;
+use ledger::holdings::Whose;
 use ledger::Ledger;
 use std::path::{Path, PathBuf};
 use workspace::branches::against_the_convention;
@@ -106,7 +107,18 @@ fn dispatch(args: &[String]) -> Result<String, String> {
             let Some(occupied) = who_is_standing() else {
                 return Err(catalogue::say("cli.worktree.cannot_ask_who_is_standing", &[]));
             };
-            sweep(&repo, &a_store()?, &occupied, &IdentityRule::from_environment())
+            let store = a_store()?;
+            let standing = machine::where_processes_stand().map_err(|why| {
+                catalogue::say("cli.worktree.cannot_see_processes", &[("why", &why)])
+            })?;
+            let owner = owner_in(&store);
+            let holders = Holders {
+                occupied: &occupied,
+                standing: &standing,
+                owner: &owner,
+                now: now(),
+            };
+            sweep(&repo, &store, &holders, &IdentityRule::from_environment())
         }
         [command, word] if command == "close" && word.starts_with("--") => Err(catalogue::say(
             "cli.unknown_option",
@@ -306,6 +318,17 @@ pub fn who_is_standing() -> Option<Vec<PathBuf>> {
     })))
 }
 
+/// Who holds a tree, read from the machine and handed in so the rule is tested
+/// without arranging the machine: terminals standing in a tree, every process
+/// with its directory, the owner the chain of possession names for a row Sailor
+/// wrote down, and the second it is now.
+pub struct Holders<'a> {
+    pub occupied: &'a [PathBuf],
+    pub standing: &'a [(u32, PathBuf)],
+    pub owner: &'a dyn Fn(&OpenTree) -> Whose,
+    pub now: i64,
+}
+
 /// Every tree of this repository the trunk already holds. What it does not
 /// hold is named and stays: this is the gesture that must never lose work.
 /// `occupied` is handed in and never read in here: a condition read from the
@@ -314,10 +337,12 @@ pub fn who_is_standing() -> Option<Vec<PathBuf>> {
 pub fn sweep(
     repo: &Path,
     store: &dyn OpenTrees,
-    occupied: &[PathBuf],
+    holders: &Holders,
     rule: &IdentityRule,
 ) -> Result<String, String> {
+    let occupied = holders.occupied;
     let trees = list(repo)?;
+    let rows = store.trees_left_open().unwrap_or_default();
     let mut said: Vec<String> = Vec::new();
     let mut closed = 0usize;
     let mut left_behind: Vec<(PathBuf, IndexIdentity)> = Vec::new();
@@ -326,7 +351,7 @@ pub fn sweep(
         if why_it_is_not_mine_to_close(&trees, &at).is_some() {
             continue;
         }
-        if let Some(line) = held_by_somebody(occupied, &at) {
+        if let Some(line) = why_it_stays(&at, written_down_as(&rows, &at), holders) {
             said.push(line);
             continue;
         }
@@ -349,9 +374,9 @@ pub fn sweep(
     // **THE REGISTER IS SWEPT TOO, AND NOT ONLY GIT'S LIST.** A row whose tree
     // was taken away behind git's back never appears above, so eleven of them
     // stood for two days waking the flow that exists to clear them (fault 166).
-    for row in store.trees_left_open().unwrap_or_default() {
+    for row in &rows {
         let at = PathBuf::from(&row.path);
-        if trees.iter().any(|known| Path::new(&known.path) == at) {
+        if trees.iter().any(|known| same_place(Path::new(&known.path), &at)) {
             continue;
         }
         if let Some(line) = held_by_somebody(occupied, &at) {
@@ -433,6 +458,132 @@ fn write_down_what_was_left(
             }
         })
         .collect()
+}
+
+/// Why a tree stays whatever history it carries, or `None` when nobody holds it:
+/// somebody standing in it, a thing Sailor never took, an age under the hour, and
+/// for a row Sailor wrote down the chain of possession. See `ledger::holdings`.
+fn why_it_stays(at: &Path, row: Option<&OpenTree>, holders: &Holders) -> Option<String> {
+    let tree = at.to_string_lossy().into_owned();
+    if let Some(line) = held_by_somebody(holders.occupied, at) {
+        return Some(line);
+    }
+    if let Some(pid) = a_process_in(holders.standing, at) {
+        let pid = pid.to_string();
+        return Some(catalogue::say(
+            "cli.worktree.a_process_is_in_it",
+            &[("tree", tree.as_str()), ("pid", pid.as_str())],
+        ));
+    }
+    let Some(row) = row else {
+        return Some(catalogue::say("cli.worktree.not_cut_by_sailor", &[("tree", tree.as_str())]));
+    };
+    match cut_at(at) {
+        None => {
+            return Some(catalogue::say("cli.worktree.cut_at_unknown", &[("tree", tree.as_str())]));
+        }
+        Some(cut) if holders.now - cut < AN_HOUR => {
+            let minutes = ((holders.now - cut).max(0) / 60).to_string();
+            return Some(catalogue::say(
+                "cli.worktree.cut_too_recently",
+                &[("tree", tree.as_str()), ("minutes", minutes.as_str())],
+            ));
+        }
+        Some(_) => {}
+    }
+    let key = match (holders.owner)(row) {
+        Whose::Nobody => return None,
+        Whose::TheProcessThatTookIt => "cli.worktree.its_opener_is_there",
+        Whose::TheRunItWasTakenFor => "cli.worktree.its_run_is_open",
+        Whose::KeptOnPurpose => "cli.worktree.kept_on_purpose",
+        Whose::Uncertain => "cli.worktree.whose_is_uncertain",
+    };
+    let pid = row.opened_by_pid.to_string();
+    Some(catalogue::say(
+        key,
+        &[("tree", tree.as_str()), ("pid", pid.as_str()), ("run", row.run.as_str())],
+    ))
+}
+
+/// The chain of possession asked for a tree Sailor wrote down: the process that
+/// cut it first, then the run it was cut for.
+pub fn owner_in(store: &Ledger) -> impl Fn(&OpenTree) -> Whose + '_ {
+    move |tree| {
+        let holding = ledger::holdings::Holding {
+            kind: "worktree".to_owned(),
+            name: tree.path.clone(),
+            held_by_pid: tree.opened_by_pid,
+            held_by_born_at: tree.opened_by_born_at,
+            for_run: (!tree.run.is_empty()).then(|| tree.run.clone()),
+            taken_at: tree.opened_at,
+            purpose: tree.step.clone(),
+        };
+        ledger::holdings::whose(&holding, &|run| {
+            store
+                .run_header(run)
+                .map(|header| header.is_none_or(|one| one.ended_at.is_none()))
+                .map_err(|error| error.to_string())
+        })
+    }
+}
+
+/// What the beat wakes the sweep on: a tree the sweep would take down, read off
+/// the same machine the sweep reads. A reading that fails wakes nothing.
+pub fn a_sweep_would_take(store: &Ledger) -> impl Fn(&OpenTree) -> bool + '_ {
+    let occupied = who_is_standing();
+    let standing = machine::where_processes_stand().ok();
+    move |tree| {
+        let (Some(occupied), Some(standing)) = (occupied.as_deref(), standing.as_deref()) else {
+            return false;
+        };
+        let owner = owner_in(store);
+        let holders = Holders {
+            occupied,
+            standing,
+            owner: &owner,
+            now: now(),
+        };
+        why_it_stays(Path::new(&tree.path), Some(tree), &holders).is_none()
+    }
+}
+
+/// When `git worktree add` wrote the tree's `.git` file, which is when it was cut.
+fn cut_at(at: &Path) -> Option<i64> {
+    let written = std::fs::metadata(at.join(".git")).ok()?.modified().ok()?;
+    written
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|since| since.as_secs() as i64)
+}
+
+fn a_process_in(standing: &[(u32, PathBuf)], at: &Path) -> Option<u32> {
+    let tree = canonical(at);
+    standing
+        .iter()
+        .find(|(_, cwd)| canonical(cwd).starts_with(&tree))
+        .map(|(pid, _)| *pid)
+}
+
+fn written_down_as<'a>(rows: &'a [OpenTree], at: &Path) -> Option<&'a OpenTree> {
+    rows.iter().find(|row| same_place(Path::new(&row.path), at))
+}
+
+/// Git lists a tree by its real path and the register keeps the one it was cut
+/// at; on this machine `/var` and `/private/var` are the same directory.
+fn same_place(one: &Path, other: &Path) -> bool {
+    canonical(one) == canonical(other)
+}
+
+/// A tree the sweep has just taken down no longer resolves, so its nearest
+/// ancestor that still exists is resolved and the rest joined back on.
+fn canonical(at: &Path) -> PathBuf {
+    if let Ok(real) = at.canonicalize() {
+        return real;
+    }
+    match (at.parent(), at.file_name()) {
+        (Some(parent), Some(name)) => canonical(parent).join(name),
+        _ => at.to_path_buf(),
+    }
 }
 
 /// **A TREE SOMEBODY IS IN IS KEPT AND NAMED**: a session at work is work.
