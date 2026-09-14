@@ -490,6 +490,26 @@ pub fn build_directories_left(root: &Path) -> Vec<LeftBehind> {
     found
 }
 
+/// A tree's own building under a `target/` cargo was pointed at: weighed, and
+/// never a leftover, because the tree comes back to it.
+pub fn ordinary_building(root: &Path) -> Vec<LeftBehind> {
+    let target = root.join("target");
+    if !cargo_built_it(&target) {
+        return Vec::new();
+    }
+    let Ok(entries) = std::fs::read_dir(&target) else {
+        return Vec::new();
+    };
+    let mut found: Vec<LeftBehind> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| !cargo_built_it(path) && path.join(".fingerprint").is_dir())
+        .map(|path| LeftBehind { bytes: what_it_holds(&path), path })
+        .collect();
+    found.sort_by_key(|one| std::cmp::Reverse(one.bytes));
+    found
+}
+
 fn cargo_built_it(path: &Path) -> bool {
     std::fs::read_to_string(path.join("CACHEDIR.TAG"))
         .is_ok_and(|text| text.starts_with(CARGO_WROTE_THIS))

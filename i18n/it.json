@@ -1009,6 +1009,8 @@
   "cli.machine.build_directory": "  {path}: {gigabytes} GB, {whose}",
   "cli.machine.build_directory_taken": "  tolta {path}: {gigabytes} GB",
   "cli.machine.disk_freed": "{gigabytes} GB di cartelle di compilazione tolte",
+  "cli.machine.own_building": "  {path} contiene {gigabytes} GB {tail}",
+  "cli.machine.own_building_tail": "di compilazione di questo albero: mai portati via",
   "cli.machine.never_taken": "sailor non ha mai preso questa",
   "cli.machine.held_now": "tenuta dal pid {pid}, che è ancora lì: {purpose}",
   "cli.machine.its_run_is_open": "il processo che l'ha presa non c'è più, ma la corsa {run} non è finita, quindi qualcuno può tornarci",

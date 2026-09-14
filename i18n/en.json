@@ -1009,6 +1009,8 @@
   "cli.machine.build_directory": "  {path}: {gigabytes} GB, {whose}",
   "cli.machine.build_directory_taken": "  took away {path}: {gigabytes} GB",
   "cli.machine.disk_freed": "{gigabytes} GB of build directories taken away",
+  "cli.machine.own_building": "  {path} holds {gigabytes} GB {tail}",
+  "cli.machine.own_building_tail": "of this tree's own building: never taken away",
   "cli.machine.never_taken": "sailor never took this one",
   "cli.machine.held_now": "held by pid {pid}, which is still there: {purpose}",
   "cli.machine.its_run_is_open": "the process that took it is gone, but run {run} has not ended, so somebody may come back to it",
