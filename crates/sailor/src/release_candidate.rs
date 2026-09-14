@@ -69,7 +69,7 @@ pub(crate) fn check_out(root: &Path, candidate: &Candidate) -> Result<Place, Str
     }
     for args in [
         vec!["checkout", "--quiet", "--force", "--detach", candidate.revision.as_str()],
-        vec!["clean", "-fdq"],
+        vec!["clean", "-fdxq"],
     ] {
         git_success(
             Command::new("git").arg("-C").arg(&place.tree).args(&args),
@@ -78,6 +78,11 @@ pub(crate) fn check_out(root: &Path, candidate: &Candidate) -> Result<Place, Str
     }
     if git_text(&place.tree, &["rev-parse", "HEAD"])? != candidate.revision {
         return Err(failed());
+    }
+    // Cargo judges a cached output fresh by mtimes, not by bytes: a stale or
+    // swapped one would be installed and digested as the candidate's.
+    if place.build.exists() {
+        fs::remove_dir_all(&place.build).map_err(|_| failed())?;
     }
     Ok(place)
 }
