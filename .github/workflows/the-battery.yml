@@ -34,8 +34,9 @@ jobs:
   # API and `gh run` filters all read this word. It is the same line of
   # `AGENTS.md` that lists "JSON keys" — what a machine reads is English.
   # **THE LIST OF PRIVATE NAMES NEVER REACHES THIS MACHINE**, so this job
-  # measures what needs no list and asks for the owner's armed check on the
-  # exact commit. Without that check it says «not measured» and stays red.
+  # measures what needs no list and reports the owner's armed check. It is a
+  # measure, not the lock: a pull request can edit this file, so the rule on
+  # main requires the status sailor/private-names itself.
   privacy:
     name: publication boundary
     runs-on: ubuntu-latest

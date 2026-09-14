@@ -6,8 +6,11 @@ root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 2
 names=${SAILOR_PRIVATE_NAMES:-"$HOME/personal/.sailor-notes/private-names"}
 
 # What a workshop leaves in a sentence and no list is needed to recognise: a
-# home path of any machine, the loopback, a process number, a session id, a tty.
-hard_shapes='/(Users|home)/[A-Za-z0-9._-]+/|127\.0\.0\.1|(^|[^A-Za-z0-9_])pid:? ?[0-9]{3,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|ttys[0-9]{3}([^0-9]|$)'
+# home path of a real machine, a process number, a session id, a tty. A public
+# text also may not carry the loopback; placeholder homes are nobody's machine.
+message_shapes='/(Users|home)/[A-Za-z0-9._-]+/|(^|[^A-Za-z0-9_])pid:? ?[0-9]{3,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|ttys[0-9]{3}([^0-9]|$)'
+text_shapes="$message_shapes|127\\.0\\.0\\.1"
+without_placeholders() { sed -E 's#/(Users|home)/(someone|somebody|pilot|user|you|example)/#/placeholder/#g'; }
 
 mode=ref
 case "${1:-}" in
@@ -33,7 +36,7 @@ if [ "$mode" = text ]; then
     arm
     if [ -s "$clean" ] && grep -i -w -q -f "$clean" "$text"; then say "a private name"; red=1; fi
     if [ -n "${HOME:-}" ] && grep -F -q "$HOME" "$text"; then say "this machine's home path"; red=1; fi
-    if grep -E -q "$hard_shapes" "$text"; then say "a path, address, process or session of a machine"; red=1; fi
+    if without_placeholders < "$text" | grep -E -q "$text_shapes"; then say "a path, address, process or session of a machine"; red=1; fi
     if grep -i -q 'this machine' "$text"; then say "a passage about the machine it was written on"; red=1; fi
     if [ "$red" -eq 0 ]; then
         say "clean: the text may be published"
@@ -83,7 +86,7 @@ if [ "$mode" = ref ]; then
     home_messages=$(git -C "$root" log --format=%B "$range" | grep -F -c "$HOME" || true)
     [ "$home_messages" -eq 0 ] || { say "commit messages with this machine's home path: $home_messages"; red=1; }
 fi
-shaped_messages=$(git -C "$root" log --format=%B "$range" | grep -E -c "$hard_shapes" || true)
+shaped_messages=$(git -C "$root" log --format=%B "$range" | without_placeholders | grep -E -c "$message_shapes" || true)
 [ "$shaped_messages" -eq 0 ] || { say "commit messages with a machine's path, address, process or session: $shaped_messages"; red=1; }
 signatures=$(git -C "$root" log --format=%B "$range" | grep -E -c '^(Co-Authored-By|Claude-Session|Signed-off-by: .*(claude|codex|gemini))' || true)
 [ "$signatures" -eq 0 ] || { say "tool-signature trailers: $signatures"; red=1; }
@@ -91,7 +94,7 @@ credentials=$(git -C "$root" diff --name-only -G'sk-ant-[A-Za-z0-9_-]{20,}|ghp_[
 non_test_credentials=$(printf '%s\n' "$credentials" | awk 'NF && $0 !~ /(^|\/)(tests?|fixtures?)\// && $0 !~ /test/ { print }')
 refuse_paths "credential-shaped additions outside tests" "$non_test_credentials"
 
-shaped_prose=$(git -C "$root" grep -I -l -i -E -e "$hard_shapes" -e 'this machine' "$ref" -- '*.md' 2>/dev/null | awk -F: '{ print $2 }' | awk 'NF { count += 1 } END { print count + 0 }')
+shaped_prose=$(git -C "$root" grep -I -l -i -E -e "$text_shapes" -e 'this machine' "$ref" -- '*.md' 2>/dev/null | awk -F: '{ print $2 }' | awk 'NF { count += 1 } END { print count + 0 }')
 say "tracked prose carrying a machine's shapes, counted and not refused: $shaped_prose file(s)"
 
 count=$(git -C "$root" rev-list --count "$range")

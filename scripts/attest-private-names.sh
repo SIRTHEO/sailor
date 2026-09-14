@@ -10,8 +10,10 @@ root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 2
 # The gate is the one beside this script, never the candidate's own copy.
 gate=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/privacy-scan.sh
 ref=${1:?"a ref is required"}
-base=${2:-}
 say() { echo "attest[$ref]: $*"; }
+# The base is derived from the trunk the forge already holds, never given: a
+# base equal to the ref would empty the range of messages the gate reads.
+[ "$#" -eq 1 ] || { say "the base is derived here, never given"; exit 2; }
 
 sha=$(git -C "$root" rev-parse --verify "$ref^{commit}" 2>/dev/null) || { say "cannot read the ref"; exit 2; }
 account=$(git -C "$root" config --get sailor.forgeAs) || { say "sailor.forgeAs is not declared"; exit 2; }
@@ -22,7 +24,9 @@ case "$slug" in
     *) say "origin is not a GitHub repository"; exit 2 ;;
 esac
 
-"$gate" "$ref" ${base:+"$base"}
+trunk=$(git -C "$root" rev-parse --verify refs/remotes/origin/main 2>/dev/null) || { say "origin/main is not known here, so the range cannot be proved"; exit 2; }
+base=$(git -C "$root" merge-base "$trunk" "$sha") || { say "the ref shares no history with origin/main"; exit 2; }
+"$gate" "$ref" "$base"
 verdict=$?
 [ "$(git -C "$root" rev-parse --verify "$ref^{commit}" 2>/dev/null)" = "$sha" ] || { say "the ref moved during the check"; exit 2; }
 case "$verdict" in

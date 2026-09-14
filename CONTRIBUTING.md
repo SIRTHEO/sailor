@@ -188,13 +188,16 @@ points at, one name per line. A missing list is not a clean tree:
 keep no private name, create the file empty, and that declares it.
 
 The CI has no list, so it splits the check in two. Its `publication boundary`
-job refuses what needs no list: a home path of any machine, `127.0.0.1`, a
-process number, a session id or a tty in a commit message. For the names, it
-waits for the status `sailor/private-names` on the exact commit. A maintainer
-posts that status by running `scripts/attest-private-names.sh <ref>` with the
-list armed, and without it the job stays red. A pull request body or release
+job refuses what needs no list in a commit message: a home path of a real
+machine, a process number, a session id or a tty. Placeholder homes such as
+`/home/pilot/` are not a machine. For the names, the job reports the status
+`sailor/private-names` on the exact commit. A maintainer posts that status by
+running `scripts/attest-private-names.sh <ref>` with the list armed. The status
+itself, not the job, is what a merge into `main` requires: a pull request can
+edit a workflow, but it cannot post a status. A pull request body or release
 note passes through `scripts/privacy-scan.sh --text <file>` before it is
-published, which also refuses a passage about the machine it was written on.
+published. That also refuses `127.0.0.1` and a passage about the machine the
+text was written on.
 
 **Not covered yet:** sensitive data folded inside a generated *attachment* —
 a screenshot, a database fixture, an archive, a packaged desktop resource —

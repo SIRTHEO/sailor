@@ -71,6 +71,7 @@ impl Scratch {
         std::fs::write(self.repo().join("readme.txt"), "a project\n").expect("first file");
         self.git(&["add", "readme.txt"]);
         self.git(&["commit", "-q", "-m", "the first"]);
+        self.git(&["update-ref", "refs/remotes/origin/main", "HEAD"]);
         self.git(&["checkout", "-q", "-b", "work/change"]);
         std::fs::write(self.repo().join("change.txt"), file_text).expect("changed file");
         self.git(&["add", "change.txt"]);
@@ -226,6 +227,36 @@ fn a_clean_branch_is_attested_on_its_exact_commit_as_the_tree_s_account() {
     assert!(calls.contains("GH_TOKEN=token-for-an-account "), "not the tree's account: {calls}");
     assert!(calls.contains(&format!("repos/an-owner/a-repository/statuses/{head}")), "not the exact commit: {calls}");
     assert!(calls.contains("state=success") && calls.contains("context=sailor/private-names"), "{calls}");
+}
+
+#[test]
+fn an_attestation_takes_no_base_so_the_range_it_reads_cannot_be_emptied() {
+    let scratch = Scratch::new("forged-base");
+    scratch.declare_names();
+    scratch.a_branch_ahead("an ordinary change\n", &format!("a note about {SYNTHETIC_PRIVATE_NAME}"));
+    scratch.a_recording_forge();
+
+    let forged = scratch.run("attest-private-names.sh", &["work/change", "work/change"]);
+    assert_ne!(forged.status.code(), Some(0), "{}", said(&forged));
+    assert!(!scratch.forge_calls().contains("state=success"), "a forged base was attested: {}", scratch.forge_calls());
+
+    let derived = scratch.run("attest-private-names.sh", &["work/change"]);
+    assert_ne!(derived.status.code(), Some(0), "{}", said(&derived));
+    assert!(!scratch.forge_calls().contains("state=success"), "a private message was attested: {}", scratch.forge_calls());
+}
+
+#[test]
+fn placeholder_homes_and_the_loopback_in_a_commit_message_are_not_a_machine() {
+    let scratch = Scratch::new("placeholders");
+    scratch.declare_names();
+    scratch.a_branch_ahead(
+        "an ordinary change\n",
+        "fix(ui): the store path becomes /home/pilot/.config, which is nobody's home\n\n\
+         It was written under /Users/someone/personal, and the probe binds 127.0.0.1 inside the sandbox.",
+    );
+
+    let branch = scratch.run("privacy-scan.sh", &["work/change"]);
+    assert_eq!(branch.status.code(), Some(0), "{}", said(&branch));
 }
 
 #[test]
