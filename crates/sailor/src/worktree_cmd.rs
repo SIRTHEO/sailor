@@ -5,13 +5,15 @@
 //! records knew which tree a run happened in — and the window, where the work
 //! is meant to move, had no idea trees existed at all.
 
+use crate::retire_index::{retire, IndexTending, Retired};
 use crate::Form;
 use ledger::Ledger;
 use std::path::{Path, PathBuf};
 use workspace::branches::against_the_convention;
+use workspace::index_identity::{IdentityRule, IndexIdentity};
 use workspace::{
     branch_names, close_if_the_trunk_holds_it, create, list, remove, root, run_and_step_of, Closing,
-    OpenTree, OpenTrees, Swept, Worktree,
+    IdentityLeftBehind, OpenTree, OpenTrees, Swept, Worktree,
 };
 
 pub const USAGE: &[Form] = &[
@@ -42,6 +44,10 @@ pub const USAGE: &[Form] = &[
     Form {
         form: "sailor worktree close --merged",
         says_key: "cli.worktree.form.close_merged",
+    },
+    Form {
+        form: "sailor worktree retire [<identity>]",
+        says_key: "cli.worktree.form.retire",
     },
 ];
 
@@ -79,10 +85,16 @@ fn dispatch(args: &[String]) -> Result<String, String> {
             Ok(format!("{}", path.display()))
         }
         [command, name] if command == "remove" => {
-            let path = remove(&repo, name)?;
-            Ok(format!("taken down: {}", path.display()))
+            remove_one(&repo, name, &IndexTending::of(&repo))
         }
         [command] if command == "names" => names(&branch_names(&repo)?),
+        [command] if command == "retire" => {
+            let left = a_store()?.identities_left_behind()?;
+            Ok(render_left_behind(&left, now()))
+        }
+        [command, identity] if command == "retire" => {
+            retire_one(&repo, identity, &a_store()?, &IndexTending::of(&repo))
+        }
         [command] if command == "open" => {
             let store = a_store()?;
             let held = store.trees_left_open()?;
@@ -94,13 +106,15 @@ fn dispatch(args: &[String]) -> Result<String, String> {
             let Some(occupied) = who_is_standing() else {
                 return Err(catalogue::say("cli.worktree.cannot_ask_who_is_standing", &[]));
             };
-            sweep(&repo, &a_store()?, &occupied)
+            sweep(&repo, &a_store()?, &occupied, &IdentityRule::from_environment())
         }
         [command, word] if command == "close" && word.starts_with("--") => Err(catalogue::say(
             "cli.unknown_option",
             &[("option", word)],
         )),
-        [command, name] if command == "close" => close_one(&repo, name, &a_store()?),
+        [command, name] if command == "close" => {
+            close_one(&repo, name, &a_store()?, &IndexTending::of(&repo))
+        }
         _ => Err(crate::forms_as_lines(USAGE).join("\n")),
     }
 }
@@ -156,8 +170,14 @@ pub fn render_open(held: &[OpenTree], now: i64, alive: impl Fn(&OpenTree) -> boo
         .join("\n")
 }
 
-/// Closes the one tree named, if the trunk already holds everything in it.
-pub fn close_one(repo: &Path, name: &str, store: &dyn OpenTrees) -> Result<String, String> {
+/// Closes the one tree named, if the trunk already holds everything in it,
+/// and retires its index identity once it is down.
+pub fn close_one(
+    repo: &Path,
+    name: &str,
+    store: &dyn OpenTrees,
+    index: &IndexTending,
+) -> Result<String, String> {
     let trees = list(repo)?;
     let found = trees
         .iter()
@@ -167,7 +187,88 @@ pub fn close_one(repo: &Path, name: &str, store: &dyn OpenTrees) -> Result<Strin
     if let Some(refusal) = why_it_is_not_mine_to_close(&trees, &at) {
         return Err(refusal);
     }
-    Ok(what_became_of_it(&at, close_if_the_trunk_holds_it(repo, &at, store)))
+    // Read before the take-down: a pin lives in the tree, and goes with it.
+    let identity = index.identity_of(found);
+    let became = close_if_the_trunk_holds_it(repo, &at, store);
+    let taken_down = matches!(became, Swept::Closed(Closing::TakenDown));
+    let mut said = what_became_of_it(&at, became);
+    if taken_down {
+        said.push('\n');
+        said.push_str(&index_after(repo, &at, identity, index));
+    }
+    Ok(said)
+}
+
+/// Takes the one tree named down, work or not as git decides, and retires its
+/// index identity once it is down.
+pub fn remove_one(repo: &Path, name: &str, index: &IndexTending) -> Result<String, String> {
+    let trees = list(repo)?;
+    let found = trees
+        .iter()
+        .find(|tree| tree.name() == name)
+        .ok_or_else(|| catalogue::say("cli.worktree.no_tree_by_that_name", &[("name", name)]))?;
+    let identity = index.identity_of(found);
+    let path = remove(repo, name)?;
+    let mut said = catalogue::say("cli.worktree.closed", &[("tree", &path.to_string_lossy())]);
+    said.push('\n');
+    said.push_str(&index_after(repo, &path, identity, index));
+    Ok(said)
+}
+
+/// What became of the index once the tree is down, in words: an identity
+/// that could not be named or retired is said, never swallowed.
+fn index_after(
+    repo: &Path,
+    at: &Path,
+    identity: Result<IndexIdentity, String>,
+    index: &IndexTending,
+) -> String {
+    match identity {
+        Err(why) => catalogue::say(
+            "cli.worktree.index_identity_unknown",
+            &[("tree", &at.to_string_lossy()), ("why", &why)],
+        ),
+        Ok(identity) => retire(repo, &identity.id, index).render(),
+    }
+}
+
+/// The operator's gesture over an identity a sweep left behind. Retired or
+/// already gone from the index, the row closes; anything else is a refusal
+/// with an exit code, so nothing can be built on a retirement that did not happen.
+pub fn retire_one(
+    repo: &Path,
+    identity: &str,
+    store: &dyn OpenTrees,
+    index: &IndexTending,
+) -> Result<String, String> {
+    let became = retire(repo, identity, index);
+    match became {
+        Retired::Retired { .. } | Retired::NoEntry { .. } => {
+            store.identity_retired(identity)?;
+            Ok(became.render())
+        }
+        _ => Err(became.render()),
+    }
+}
+
+/// The identities the sweeps left behind and nobody has retired.
+pub fn render_left_behind(left: &[IdentityLeftBehind], now: i64) -> String {
+    if left.is_empty() {
+        return catalogue::say("cli.worktree.none_left_behind", &[]);
+    }
+    left.iter()
+        .map(|row| {
+            catalogue::say(
+                "cli.worktree.left_behind_row",
+                &[
+                    ("identity", &row.identity),
+                    ("tree", &row.tree),
+                    ("hours", &((now - row.left_at).max(0) / AN_HOUR).to_string()),
+                ],
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// **HISTORY AND GIT CANNOT SEE A PERSON.** A clean tree whose work the trunk
@@ -203,10 +304,16 @@ pub fn who_is_standing() -> Option<Vec<PathBuf>> {
 /// `occupied` is handed in and never read in here: a condition read from the
 /// machine can only be tested by arranging the machine, and such a test never
 /// gets written. [`who_is_standing`] is what the command line hands it.
-pub fn sweep(repo: &Path, store: &dyn OpenTrees, occupied: &[PathBuf]) -> Result<String, String> {
+pub fn sweep(
+    repo: &Path,
+    store: &dyn OpenTrees,
+    occupied: &[PathBuf],
+    rule: &IdentityRule,
+) -> Result<String, String> {
     let trees = list(repo)?;
     let mut said: Vec<String> = Vec::new();
     let mut closed = 0usize;
+    let mut left_behind: Vec<(PathBuf, IndexIdentity)> = Vec::new();
     for tree in &trees {
         let at = PathBuf::from(&tree.path);
         if why_it_is_not_mine_to_close(&trees, &at).is_some() {
@@ -216,7 +323,17 @@ pub fn sweep(repo: &Path, store: &dyn OpenTrees, occupied: &[PathBuf]) -> Result
             said.push(line);
             continue;
         }
+        let identity = workspace::index_identity::identity_of(&at, tree.branch.as_deref(), rule);
         let became = close_if_the_trunk_holds_it(repo, &at, store);
+        if matches!(became, Swept::Closed(Closing::TakenDown)) {
+            match identity {
+                Ok(identity) => left_behind.push((at.clone(), identity)),
+                Err(why) => said.push(catalogue::say(
+                    "cli.worktree.index_identity_unknown",
+                    &[("tree", &at.to_string_lossy()), ("why", &why)],
+                )),
+            }
+        }
         if matches!(became, Swept::Closed(Closing::TakenDown) | Swept::AlreadyGone) {
             closed += 1;
         }
@@ -240,14 +357,57 @@ pub fn sweep(repo: &Path, store: &dyn OpenTrees, occupied: &[PathBuf]) -> Result
         }
         said.push(what_became_of_it(&at, became));
     }
+    let kept = said.len() - closed;
+    // **A SWEEP DELETES NO INDEX.** It names what it left, for a person.
+    said.extend(write_down_what_was_left(repo, store, &left_behind, rule));
     said.push(catalogue::say(
         "cli.worktree.swept",
-        &[
-            ("closed", &closed.to_string()),
-            ("kept", &(said.len() - closed).to_string()),
-        ],
+        &[("closed", &closed.to_string()), ("kept", &kept.to_string())],
     ));
     Ok(said.join("\n"))
+}
+
+/// The identities of the trees a sweep took down, minus those a standing tree
+/// of the same repository still carries: a pin is shared by design.
+fn write_down_what_was_left(
+    repo: &Path,
+    store: &dyn OpenTrees,
+    left_behind: &[(PathBuf, IndexIdentity)],
+    rule: &IdentityRule,
+) -> Vec<String> {
+    let standing: Vec<String> = list(repo)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|tree| {
+            workspace::index_identity::identity_of(Path::new(&tree.path), tree.branch.as_deref(), rule)
+                .ok()
+                .map(|held| held.id)
+        })
+        .collect();
+    left_behind
+        .iter()
+        .filter(|(_, identity)| !standing.contains(&identity.id))
+        .map(|(at, identity)| {
+            let tree = at.to_string_lossy().into_owned();
+            let written = store.identity_left_behind(&IdentityLeftBehind {
+                identity: identity.id.clone(),
+                tree: tree.clone(),
+                repo: repo.to_string_lossy().into_owned(),
+                left_at: now(),
+                left_by_pid: std::process::id(),
+            });
+            match written {
+                Ok(()) => catalogue::say(
+                    "cli.worktree.index_left_behind",
+                    &[("identity", &identity.id), ("tree", &tree)],
+                ),
+                Err(why) => catalogue::say(
+                    "cli.worktree.index_not_written",
+                    &[("identity", &identity.id), ("tree", &tree), ("why", &why)],
+                ),
+            }
+        })
+        .collect()
 }
 
 /// **A TREE SOMEBODY IS IN IS KEPT AND NAMED**: a session at work is work.

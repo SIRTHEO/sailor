@@ -5,6 +5,7 @@
 
 pub mod branches;
 pub mod column;
+pub mod index_identity;
 pub mod ratchet;
 
 use std::path::{Path, PathBuf};
@@ -170,6 +171,17 @@ pub struct OpenTree {
     pub opened_by_born_at: Option<i64>,
 }
 
+/// An index identity a sweep left standing when it took its tree down. A
+/// sweep deletes no index: it writes the identity down for a person to retire.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct IdentityLeftBehind {
+    pub identity: String,
+    pub tree: String,
+    pub repo: String,
+    pub left_at: i64,
+    pub left_by_pid: u32,
+}
+
 /// Where the trees Sailor cuts are written down. A trait, so this crate keeps
 /// talking to git and nothing else and whoever holds Sailor's state implements
 /// it. No do-nothing register is offered: that is fault 97 itself.
@@ -177,6 +189,9 @@ pub trait OpenTrees {
     fn tree_opened(&self, tree: &OpenTree) -> Result<(), String>;
     fn tree_closed(&self, path: &str) -> Result<(), String>;
     fn trees_left_open(&self) -> Result<Vec<OpenTree>, String>;
+    fn identity_left_behind(&self, left: &IdentityLeftBehind) -> Result<(), String>;
+    fn identities_left_behind(&self) -> Result<Vec<IdentityLeftBehind>, String>;
+    fn identity_retired(&self, identity: &str) -> Result<(), String>;
 }
 
 fn now() -> i64 {
@@ -600,6 +615,18 @@ mod tests {
         fn trees_left_open(&self) -> Result<Vec<OpenTree>, String> {
             Ok(self.open_now())
         }
+
+        fn identity_left_behind(&self, _left: &IdentityLeftBehind) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn identities_left_behind(&self) -> Result<Vec<IdentityLeftBehind>, String> {
+            Ok(Vec::new())
+        }
+
+        fn identity_retired(&self, _identity: &str) -> Result<(), String> {
+            Ok(())
+        }
     }
 
     /// A register that refuses every write: the store is unreachable.
@@ -616,6 +643,18 @@ mod tests {
 
         fn trees_left_open(&self) -> Result<Vec<OpenTree>, String> {
             Ok(Vec::new())
+        }
+
+        fn identity_left_behind(&self, _left: &IdentityLeftBehind) -> Result<(), String> {
+            Err("the page will not take it".to_owned())
+        }
+
+        fn identities_left_behind(&self) -> Result<Vec<IdentityLeftBehind>, String> {
+            Ok(Vec::new())
+        }
+
+        fn identity_retired(&self, _identity: &str) -> Result<(), String> {
+            Ok(())
         }
     }
 
@@ -750,6 +789,18 @@ mod tests {
 
         fn trees_left_open(&self) -> Result<Vec<OpenTree>, String> {
             Err("the page will not open".to_owned())
+        }
+
+        fn identity_left_behind(&self, _left: &IdentityLeftBehind) -> Result<(), String> {
+            Err("shut".to_owned())
+        }
+
+        fn identities_left_behind(&self) -> Result<Vec<IdentityLeftBehind>, String> {
+            Err("the page will not open".to_owned())
+        }
+
+        fn identity_retired(&self, _identity: &str) -> Result<(), String> {
+            Err("shut".to_owned())
         }
     }
 

@@ -7,6 +7,7 @@
 use sailor::worktree_cmd::{render, render_open, still_the_opener, sweep};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use workspace::index_identity::IdentityRule;
 use workspace::{name_for, parse_worktrees, tree_path, OpenTree, OpenTrees};
 
 const PORCELAIN: &str = "\
@@ -195,7 +196,7 @@ fn the_sweep_takes_down_the_merged_trees_and_names_the_ones_holding_work() {
     run_git(&ahead, &["commit", "-q", "-m", "not in the trunk"]);
     std::fs::write(dirty.join("half"), "half a thought\n").expect("work");
 
-    let said = sweep(&repo, &store as &dyn OpenTrees, &[]).expect("the sweep runs");
+    let said = sweep(&repo, &store as &dyn OpenTrees, &[], &IdentityRule::default()).expect("the sweep runs");
     let merged_is_gone = !merged.exists();
     let work_is_there = ahead.join("answer").exists() && dirty.join("half").exists();
     let _ = std::fs::remove_dir_all(&scratch);
@@ -223,7 +224,7 @@ fn the_sweep_clears_a_row_whose_tree_is_no_longer_on_disk() {
     run_git(&repo, &["worktree", "prune"]);
     let held_before = store.trees_left_open().expect("the rows").len();
 
-    let said = sweep(&repo, &store as &dyn OpenTrees, &[]).expect("the sweep runs");
+    let said = sweep(&repo, &store as &dyn OpenTrees, &[], &IdentityRule::default()).expect("the sweep runs");
     let held_after = store.trees_left_open().expect("the rows").len();
     let _ = std::fs::remove_dir_all(&scratch);
 
@@ -242,12 +243,12 @@ fn a_merged_tree_somebody_is_working_in_is_kept_and_named() {
     let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
     let busy = workspace::create(&repo, "work/qualcuno-dentro", None).expect("a merged tree");
 
-    let said = sweep(&repo, &store as &dyn OpenTrees, std::slice::from_ref(&busy)).expect("the sweep runs");
+    let said = sweep(&repo, &store as &dyn OpenTrees, std::slice::from_ref(&busy), &IdentityRule::default()).expect("the sweep runs");
     let still_there = busy.exists();
 
     // And with nobody in it the same tree goes, or the guard is a sweep that
     // never sweeps.
-    let again = sweep(&repo, &store as &dyn OpenTrees, &[]).expect("the sweep runs");
+    let again = sweep(&repo, &store as &dyn OpenTrees, &[], &IdentityRule::default()).expect("the sweep runs");
     let gone = !busy.exists();
     let _ = std::fs::remove_dir_all(&scratch);
 

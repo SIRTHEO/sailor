@@ -48,14 +48,14 @@ const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
     ("registry", 286),
     ("relay", 142),
     ("release", 426),
-    ("sailor", 180),
+    ("sailor", 179),
     ("sessions", 236),
     ("supervisor", 243),
     ("terminal", 266),
     ("toolbox", 282),
     ("trigger", 236),
     ("ui", 186),
-    ("workspace", 126),
+    ("workspace", 122),
 ];
 
 /// Words no English sentence uses, which a sentence in this tree's other
