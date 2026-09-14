@@ -1006,6 +1006,8 @@
   "cli.flow.list_origin_replaces": "{origin}, replaces {replaced}",
   "cli.flow.list_resolved_in": "resolved from {directory}: a window or a hook started in another directory can pick a different flow under the same name",
   "cli.flow.restore_already_built_in": "{flow}: the built-in flow already runs, so there is nothing to restore",
+  "cli.flow.restore_archive_is_a_link": "{flow}: {archive} is a link, so nothing was moved and {path} stays in place",
+  "cli.flow.restore_archive_name_taken": "{first} was already taken and was left untouched, so the file went to {archive} instead",
   "cli.flow.restore_could_not_move": "{flow}: {path} could not be moved to {archive}: {error}",
   "cli.flow.restore_nothing_built_in": "{flow}: no built-in flow has this name, so {path} replaces nothing and is left in place",
   "cli.flow.restore_outside_declared": "{flow}: SAILOR_FLOWS names another folder, so {path} is not the file that runs and is not moved",

@@ -131,6 +131,7 @@ struct Roads {
     rows_of_the_list: u64,
     run_refusal: String,
     subflow_refusal: String,
+    list_text: String,
 }
 
 fn ask_every_road(cwd: &Path, ledger: &Path, home: Option<&Path>) -> Roads {
@@ -199,6 +200,7 @@ fn ask_every_road(cwd: &Path, ledger: &Path, home: Option<&Path>) -> Roads {
         rows_of_the_list: rows.len() as u64,
         run_refusal: if child.code == Some(0) { String::new() } else { child.text },
         subflow_refusal,
+        list_text: list.text,
     }
 }
 
@@ -235,6 +237,11 @@ fn a_flows_folder_where_the_command_stands_is_nobody_s_home() {
 
     assert_one_answer(&roads, None);
     let no_home = catalogue::say("flow.sources.no_home", &[]);
+    assert!(
+        roads.list_text.contains(&no_home),
+        "a list full of shipped flows still says yours were not looked for: {}",
+        roads.list_text
+    );
     for (road, refusal) in [("flow run", &roads.run_refusal), ("subflow", &roads.subflow_refusal)] {
         assert!(refusal.contains(&no_home), "{road} says no home is known: {refusal}");
         assert!(!refusal.contains("yours ("), "{road} names no folder as yours: {refusal}");

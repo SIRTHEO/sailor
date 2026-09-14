@@ -212,7 +212,8 @@ fn restore_flow(sources: &[FlowSource], name: &str) -> Result<String, String> {
     let chain = flow::system::chain_of(sources, here.as_deref(), name)
         .ok_or_else(|| no_flow_called(sources, &known_flows(sources), name))?;
     let path = chain.winner.path.display().to_string();
-    let archive = flow::system::restore(&chain, sources, now_secs()?).map_err(|refusal| match refusal {
+    let now = now_secs()?;
+    let archive = flow::system::restore(&chain, sources, now).map_err(|refusal| match refusal {
         RestoreRefusal::AlreadyBuiltIn => {
             catalogue::say("cli.flow.restore_already_built_in", &[("flow", name)])
         }
@@ -223,6 +224,10 @@ fn restore_flow(sources: &[FlowSource], name: &str) -> Result<String, String> {
         RestoreRefusal::OutsideDeclared { .. } => catalogue::say(
             "cli.flow.restore_outside_declared",
             &[("flow", name), ("path", &path)],
+        ),
+        RestoreRefusal::ArchiveIsALink { archive, .. } => catalogue::say(
+            "cli.flow.restore_archive_is_a_link",
+            &[("flow", name), ("path", &path), ("archive", &archive.display().to_string())],
         ),
         RestoreRefusal::CouldNotMove { archive, error, .. } => catalogue::say(
             "cli.flow.restore_could_not_move",
@@ -237,7 +242,7 @@ fn restore_flow(sources: &[FlowSource], name: &str) -> Result<String, String> {
     let now_runs = flow::system::chain_of(sources, here.as_deref(), name)
         .map(|after| after.winner.origin)
         .unwrap_or(flow::system::BUILTIN_ORIGIN);
-    Ok(catalogue::say(
+    let restored = catalogue::say(
         "cli.flow.restored",
         &[
             ("flow", name),
@@ -246,6 +251,17 @@ fn restore_flow(sources: &[FlowSource], name: &str) -> Result<String, String> {
             ("origin", now_runs),
             ("directory", &resolved_in_said(&chain)),
         ],
+    );
+    let first = flow::system::archive_path_for(&chain, now);
+    if archive == first {
+        return Ok(restored);
+    }
+    Ok(format!(
+        "{restored}\n{}",
+        catalogue::say(
+            "cli.flow.restore_archive_name_taken",
+            &[("first", &first.display().to_string()), ("archive", &archive.display().to_string())],
+        )
     ))
 }
 
@@ -419,19 +435,20 @@ fn usage() -> String {
 }
 
 fn list_flows(sources: &[FlowSource]) -> Result<String, String> {
-    let known = known_flows(sources);
-    if known.is_empty() {
+    // ONE READING: the row's flow, its origin and its mark all come from the
+    // same resolved entry, so they cannot describe two different files.
+    let here = std::env::current_dir().ok();
+    let resolved = flow::system::resolve(sources, here.as_deref());
+    if resolved.is_empty() {
         return Ok(nothing_found(sources));
     }
     let mut report = String::new();
     // THE ORIGIN IS IN THE LIST, and it is no ornament: two flows of the same
     // name in two places are one in here — the most specific wins — and whoever
     // cannot see where the running one comes from edits the other.
-    let here = std::env::current_dir().ok();
-    let chains = flow::system::chains(sources, here.as_deref());
-    for (name, origin, entry) in known {
-        let chain = chains.iter().find(|chain| chain.name == name);
-        let origin = origin_said(origin, chain);
+    for flow::system::Resolved { chain, entry } in &resolved {
+        let name = &chain.name;
+        let origin = origin_said(chain.winner.origin, Some(chain));
         match entry {
             Ok(flow) => {
                 let _ = writeln!(
@@ -448,18 +465,21 @@ fn list_flows(sources: &[FlowSource]) -> Result<String, String> {
                     "{}",
                     catalogue::say(
                         "cli.flow.list_row_does_not_load",
-                        &[("name", &name), ("origin", &origin), ("error", &error)],
+                        &[("name", name), ("origin", &origin), ("error", error)],
                     )
                 );
             }
         }
     }
-    if let Some(chain) = chains.iter().find(|chain| !chain.replaced.is_empty()) {
+    if let Some(one) = resolved.iter().find(|one| !one.chain.replaced.is_empty()) {
         let _ = writeln!(
             report,
             "{}",
-            catalogue::say("cli.flow.list_resolved_in", &[("directory", &resolved_in_said(chain))])
+            catalogue::say("cli.flow.list_resolved_in", &[("directory", &resolved_in_said(&one.chain))])
         );
+    }
+    if let Some(no_home) = flow::system::no_home_said(sources) {
+        let _ = writeln!(report, "{no_home}");
     }
     let _ = write!(report, "{}", waiting_report());
     Ok(report)

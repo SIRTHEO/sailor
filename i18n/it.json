@@ -1007,6 +1007,8 @@
   "cli.flow.list_origin_replaces": "{origin}, sostituisce {replaced}",
   "cli.flow.list_resolved_in": "risolto da {directory}: una finestra o un hook avviati in un'altra cartella possono scegliere un flusso diverso con lo stesso nome",
   "cli.flow.restore_already_built_in": "{flow}: gira già il flusso incorporato, quindi non c'è niente da rimettere",
+  "cli.flow.restore_archive_is_a_link": "{flow}: {archive} è un collegamento, quindi non è stato spostato niente e {path} resta al suo posto",
+  "cli.flow.restore_archive_name_taken": "{first} era già occupato ed è stato lasciato intatto, quindi il file è andato in {archive}",
   "cli.flow.restore_could_not_move": "{flow}: non è stato possibile spostare {path} in {archive}: {error}",
   "cli.flow.restore_nothing_built_in": "{flow}: nessun flusso incorporato ha questo nome, quindi {path} non sostituisce niente e viene lasciato al suo posto",
   "cli.flow.restore_outside_declared": "{flow}: SAILOR_FLOWS indica un'altra cartella, quindi {path} non è il file che gira e non viene spostato",
