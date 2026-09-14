@@ -37,6 +37,7 @@ pub mod policy_cmd;
 pub mod profiles_cmd;
 pub mod publish_cmd;
 pub mod ratchet_cmd;
+mod release_candidate;
 pub mod release_cmd;
 pub mod remaining_cmd;
 pub mod remember_cmd;

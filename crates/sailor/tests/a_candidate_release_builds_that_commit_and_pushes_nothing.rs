@@ -1,0 +1,317 @@
+//! `--no-push` and `--candidate` on a throwaway repository with a bare local
+//! remote and a scratch home. The sources are a one-file crate whose binary
+//! carries a sentence that differs between the two commits, so the bytes that
+//! were installed say which commit they were built from.
+
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
+
+const FIRST_BUOY: &str = "moored at the first buoy";
+const SECOND_BUOY: &str = "moored at the second buoy";
+
+fn scratch(label: &str) -> PathBuf {
+    let at = std::env::temp_dir().join(format!(
+        "sailor-candidate-release-{label}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|since| since.as_nanos())
+            .unwrap_or_default()
+    ));
+    let _ = std::fs::remove_dir_all(&at);
+    std::fs::create_dir_all(&at).expect("the scratch directory is made");
+    at
+}
+
+fn git(repo: &Path, args: &[&str]) -> String {
+    let done = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(args)
+        .output()
+        .expect("git starts");
+    assert!(
+        done.status.success(),
+        "git {}: {}",
+        args.join(" "),
+        String::from_utf8_lossy(&done.stderr)
+    );
+    String::from_utf8_lossy(&done.stdout).trim().to_owned()
+}
+
+fn commit_the_buoy(repo: &Path, buoy: &str) -> String {
+    std::fs::write(
+        repo.join("crates/harbourmaster/src/main.rs"),
+        format!("fn main() {{\n    println!(\"{buoy}\");\n}}\n"),
+    )
+    .expect("the binary's source is written");
+    git(repo, &["add", "Cargo.toml", "crates/harbourmaster/src/main.rs"]);
+    git(repo, &["commit", "--quiet", "-m", buoy]);
+    git(repo, &["rev-parse", "HEAD"])
+}
+
+struct Harbour {
+    at: PathBuf,
+    repo: PathBuf,
+    remote: PathBuf,
+    home: PathBuf,
+    first: String,
+    second: String,
+}
+
+impl Drop for Harbour {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.at);
+    }
+}
+
+/// The first commit is on the remote, the second only here: a push would
+/// move the remote, and HEAD has moved past the first commit.
+fn a_harbour(label: &str) -> Harbour {
+    let at = scratch(label);
+    let repo = at.join("sources");
+    let remote = at.join("remote.git");
+    let home = at.join("home");
+    std::fs::create_dir_all(repo.join("crates/harbourmaster/src")).expect("sources are made");
+    std::fs::create_dir_all(&home).expect("the house is made");
+    std::fs::write(
+        repo.join("Cargo.toml"),
+        "[package]\nname = \"harbourmaster\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n\
+         [[bin]]\nname = \"sailor\"\npath = \"crates/harbourmaster/src/main.rs\"\n\n[workspace]\n",
+    )
+    .expect("the manifest is written");
+    git(&repo, &["init", "--quiet", "-b", "trunk"]);
+    git(&repo, &["config", "user.email", "keeper@example.invalid"]);
+    git(&repo, &["config", "user.name", "The Harbourmaster"]);
+    let first = commit_the_buoy(&repo, FIRST_BUOY);
+    assert!(
+        Command::new("git")
+            .args(["init", "-q", "--bare", "-b", "trunk"])
+            .arg(&remote)
+            .status()
+            .expect("git runs")
+            .success(),
+        "the local remote is created"
+    );
+    git(&repo, &["remote", "add", "origin", remote.to_str().expect("utf-8 path")]);
+    git(&repo, &["push", "--quiet", "-u", "origin", "trunk"]);
+    let second = commit_the_buoy(&repo, SECOND_BUOY);
+    Harbour {
+        at,
+        repo,
+        remote,
+        home,
+        first,
+        second,
+    }
+}
+
+impl Harbour {
+    /// Any push reaching the remote leaves a mark and is turned away.
+    fn refuse_and_mark_every_push(&self) {
+        let hook = self.remote.join("hooks/pre-receive");
+        std::fs::write(
+            &hook,
+            format!("#!/bin/sh\ntouch '{}'\nexit 1\n", self.push_mark().display()),
+        )
+        .expect("the hook is written");
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755))
+            .expect("the hook runs");
+    }
+
+    fn push_mark(&self) -> PathBuf {
+        self.at.join("a-push-reached-the-remote")
+    }
+
+    fn remote_trunk(&self) -> String {
+        git(&self.remote, &["rev-parse", "refs/heads/trunk"])
+    }
+
+    fn release(&self, extra: &[&str]) -> Output {
+        let names = self.home.join("declared-private-names");
+        std::fs::write(&names, "example-private-name\n").expect("the fictitious list is written");
+        Command::new(env!("CARGO_BIN_EXE_sailor"))
+            .current_dir(&self.repo)
+            .args(["release", "sailor"])
+            .args(extra)
+            .env("SAILOR_SOURCES", &self.repo)
+            .env("SAILOR_HOME", &self.home)
+            .env("SAILOR_PRIVATE_NAMES", &names)
+            .env("SAILOR_LANG", "en")
+            .env("HOME", &self.home)
+            .output()
+            .expect("the binary starts")
+    }
+
+    fn installed(&self) -> PathBuf {
+        self.home.join("bin/sailor")
+    }
+}
+
+fn spoken(said: &Output) -> String {
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&said.stdout),
+        String::from_utf8_lossy(&said.stderr)
+    )
+}
+
+/// 0, or 4 when the name on this machine's PATH finds another copy.
+fn went_through(said: &Output) -> bool {
+    matches!(said.status.code(), Some(0) | Some(4))
+}
+
+fn sha256_of(file: &Path) -> String {
+    let done = Command::new("shasum")
+        .args(["-a", "256"])
+        .arg(file)
+        .output()
+        .expect("shasum starts");
+    assert!(done.status.success(), "shasum read {file:?}");
+    String::from_utf8_lossy(&done.stdout)
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .to_owned()
+}
+
+fn holds(file: &Path, words: &str) -> bool {
+    let bytes = std::fs::read(file).expect("the binary is read");
+    bytes.windows(words.len()).any(|window| window == words.as_bytes())
+}
+
+#[test]
+fn no_push_installs_and_leaves_the_remote_untouched() {
+    let harbour = a_harbour("no-push");
+    harbour.refuse_and_mark_every_push();
+
+    let said = harbour.release(&["--no-push", "--skip-tests"]);
+    let spoke = spoken(&said);
+
+    assert!(went_through(&said), "the release did not go through: {spoke}");
+    assert!(harbour.installed().is_file(), "nothing was installed: {spoke}");
+    assert!(!harbour.push_mark().exists(), "a push was attempted: {spoke}");
+    assert_eq!(harbour.remote_trunk(), harbour.first, "the remote moved: {spoke}");
+    assert!(
+        spoke.contains("nothing was pushed, by request") && spoke.contains(&harbour.second[..7]),
+        "the release did not say it held the push back, and what it built: {spoke}"
+    );
+}
+
+#[test]
+fn a_candidate_is_built_from_its_own_commit_while_head_has_moved_on() {
+    let harbour = a_harbour("candidate");
+    harbour.refuse_and_mark_every_push();
+
+    let said = harbour.release(&["--no-push", "--candidate", &harbour.first, "--skip-tests"]);
+    let spoke = spoken(&said);
+
+    assert!(went_through(&said), "the release did not go through: {spoke}");
+    let stamp = std::fs::read_to_string(harbour.home.join("state/sailor-binary-commit"))
+        .unwrap_or_default();
+    assert_eq!(stamp.trim(), harbour.first, "the stamp names another commit: {spoke}");
+
+    let built = harbour
+        .repo
+        .join("target/candidates")
+        .join(&harbour.first)
+        .join("build/release/sailor");
+    assert!(built.is_file(), "nothing was built under the candidate's own directory: {spoke}");
+    assert!(
+        !harbour.repo.join("target/from-head").exists(),
+        "the shared build directory was used: {spoke}"
+    );
+    assert!(holds(&built, FIRST_BUOY), "the build is not the first commit's");
+    assert!(!holds(&harbour.installed(), SECOND_BUOY), "HEAD was installed");
+    assert!(holds(&harbour.installed(), FIRST_BUOY), "the candidate was not installed");
+
+    let recorded = std::fs::read_to_string(harbour.home.join("state/sailor-binary-commit.sha256"))
+        .unwrap_or_default();
+    assert_eq!(recorded.trim(), sha256_of(&built), "the recorded digest is not the build's: {spoke}");
+    assert_eq!(sha256_of(&harbour.installed()), sha256_of(&built), "the installed copy differs");
+    assert!(spoke.contains(recorded.trim()), "the digest was not printed: {spoke}");
+    assert!(!harbour.push_mark().exists(), "a push was attempted: {spoke}");
+}
+
+#[test]
+fn an_unknown_candidate_is_refused_before_anything_is_built() {
+    let harbour = a_harbour("unknown");
+
+    let said = harbour.release(&[
+        "--no-push",
+        "--candidate",
+        "0123456789abcdef0123456789abcdef01234567",
+        "--skip-tests",
+    ]);
+    let spoke = spoken(&said);
+
+    assert!(!said.status.success(), "an unknown commit went through: {spoke}");
+    assert!(spoke.contains("does not name a commit"), "refused for another reason: {spoke}");
+    assert!(!harbour.repo.join("target").exists(), "something was built: {spoke}");
+    assert!(!harbour.installed().exists(), "something was installed: {spoke}");
+}
+
+#[test]
+fn a_candidate_the_trunk_does_not_reach_is_refused() {
+    let harbour = a_harbour("unreached");
+    git(&harbour.repo, &["checkout", "--quiet", "-b", "aside", &harbour.first]);
+    let aside = commit_the_buoy(&harbour.repo, "moored off the chart");
+    git(&harbour.repo, &["checkout", "--quiet", "trunk"]);
+
+    let said = harbour.release(&["--no-push", "--candidate", &aside, "--skip-tests"]);
+    let spoke = spoken(&said);
+
+    assert!(!said.status.success(), "a commit off the trunk went through: {spoke}");
+    assert!(spoke.contains("is not reachable from HEAD"), "refused for another reason: {spoke}");
+    assert!(!harbour.repo.join("target").exists(), "something was built: {spoke}");
+    assert!(!harbour.installed().exists(), "something was installed: {spoke}");
+}
+
+#[test]
+fn a_candidate_without_no_push_is_refused() {
+    let harbour = a_harbour("publishing");
+
+    let said = harbour.release(&["--candidate", &harbour.first, "--skip-tests"]);
+    let spoke = spoken(&said);
+
+    assert_eq!(said.status.code(), Some(2), "a candidate was released to publish: {spoke}");
+    assert!(spoke.contains("needs `--no-push`"), "refused for another reason: {spoke}");
+    assert!(!harbour.repo.join("target").exists(), "something was built: {spoke}");
+    assert_eq!(harbour.remote_trunk(), harbour.first, "the remote moved: {spoke}");
+}
+
+#[test]
+fn a_dry_run_takes_both_options_and_installs_nothing() {
+    let harbour = a_harbour("dry-run");
+    harbour.refuse_and_mark_every_push();
+
+    let said = harbour.release(&[
+        "--dry-run",
+        "--no-push",
+        "--candidate",
+        &harbour.first,
+        "--skip-tests",
+    ]);
+    let spoke = spoken(&said);
+
+    assert_eq!(said.status.code(), Some(0), "the dry run did not go through: {spoke}");
+    assert!(
+        harbour.repo.join("target/candidates").join(&harbour.first).exists(),
+        "the dry run did not build the candidate: {spoke}"
+    );
+    assert!(!harbour.installed().exists(), "the dry run installed: {spoke}");
+    assert!(!harbour.push_mark().exists(), "the dry run attempted a push: {spoke}");
+}
+
+#[test]
+fn a_release_with_neither_option_still_pushes_the_trunk() {
+    let harbour = a_harbour("pushes");
+
+    let said = harbour.release(&["--skip-tests"]);
+    let spoke = spoken(&said);
+
+    assert!(went_through(&said), "the release did not go through: {spoke}");
+    assert_eq!(harbour.remote_trunk(), harbour.second, "the trunk was not pushed: {spoke}");
+    assert!(!spoke.contains("by request"), "an ordinary release held its push back: {spoke}");
+}
