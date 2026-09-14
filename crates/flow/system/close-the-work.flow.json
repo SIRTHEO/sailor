@@ -1,0 +1,632 @@
+{
+  "id": "close-the-work",
+  "description": "Step 10 of docs/the-delivery-loop.md: the holdings of a delivered branch released, every gesture safe to run again. The mandate is one JSON object naming the repo, the branch and the issue, with base and forge_repo optional. The proof is the merged pull request of the branch, read from the host so a rerun after the branch is gone still finds it, and the remote trunk must carry both its head and its merge commit before anything is deleted. The closing comment names that commit and passes the publication gate before it leaves; an issue already closed is left as it is. The worktree holding the branch is removed only when it is clean and nobody holds its lock; the local and remote branches are deleted only when the remote trunk carries their tip, and the remote deletion follows the push policy read from the trusted trunk. The run is complete only when the issue reads closed and no worktree, local branch or remote branch is left. Every forge call runs as the account in sailor.forgeAs.",
+  "inputs": {
+    "trigger": {
+      "source": "manual",
+      "text": ""
+    }
+  },
+  "graph": {
+    "steps": [
+      {
+        "id": "trigger",
+        "deps": [],
+        "action": "trigger",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "source": "manual"
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "text"
+          ],
+          "allow_extra": false
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
+        "id": "the_request",
+        "deps": [
+          "trigger"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -eu\nprintf '%s' \"$TEXT\" | REQUIRED=\"$REQUIRED\" OPTIONAL=\"$OPTIONAL\" python3 -c '\nimport json, os, re, subprocess, sys\ntry:\n    asked = json.loads(sys.stdin.read())\nexcept ValueError as error:\n    sys.exit(\"the mandate is not one JSON object: %s\" % error)\nif not isinstance(asked, dict):\n    sys.exit(\"the mandate is not one JSON object\")\nrequired = os.environ[\"REQUIRED\"].split()\noptional = json.loads(os.environ[\"OPTIONAL\"])\nmissing = [key for key in required if not str(asked.get(key, \"\")).strip()]\nif missing:\n    sys.exit(\"the mandate does not name: \" + \", \".join(missing))\nunknown = sorted(set(asked) - set(required) - set(optional))\nif unknown:\n    sys.exit(\"the mandate names what this flow does not read: \" + \", \".join(unknown))\nout = {key: str(asked.get(key, default)) for key, default in optional.items()}\nout.update({key: str(asked[key]) for key in required})\nrepo = out[\"repo\"]\nif not os.path.isabs(repo) or subprocess.run([\"git\", \"-C\", repo, \"rev-parse\", \"--git-dir\"], capture_output=True).returncode != 0:\n    sys.exit(\"the repo is not an absolute path to a git tree: \" + repo)\nfor key in (\"branch\", \"base\"):\n    if key in out and not re.fullmatch(r\"[A-Za-z0-9][A-Za-z0-9._/-]*\", out[key]):\n        sys.exit(\"the %s is not a plain branch name: %s\" % (key, out[key]))\nfor key in (\"issue\",):\n    if key in out and not re.fullmatch(r\"[0-9]+\", out[key]):\n        sys.exit(\"the issue is not a number: \" + out[key])\nif \"version\" in out and not re.fullmatch(r\"[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?\", out[\"version\"]):\n    sys.exit(\"the version is not MAJOR.MINOR.PATCH: \" + out[\"version\"])\nif \"forge_repo\" in out and out[\"forge_repo\"] and not re.fullmatch(r\"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+\", out[\"forge_repo\"]):\n    sys.exit(\"the forge_repo is not owner/name: \" + out[\"forge_repo\"])\nprint(json.dumps(out))\n'\n",
+          "env": {
+            "TEXT": {
+              "$from": "/text"
+            },
+            "REQUIRED": "repo branch issue",
+            "OPTIONAL": "{\"base\": \"main\", \"forge_repo\": \"\"}"
+          },
+          "timeout_secs": 30,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "repo": {
+                "type": "string"
+              },
+              "branch": {
+                "type": "string"
+              },
+              "issue": {
+                "type": "string"
+              },
+              "base": {
+                "type": "string"
+              },
+              "forge_repo": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "repo",
+              "branch",
+              "issue",
+              "base",
+              "forge_repo"
+            ],
+            "allow_extra": false
+          }
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
+        "id": "the_account",
+        "deps": [
+          "the_request"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -eu\nFORGE_REPO=\"\"\nforge_as=$(git -C \"$REPO\" config --get sailor.forgeAs) || { echo \"sailor.forgeAs is not declared on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\n[ -n \"$forge_as\" ] || { echo \"sailor.forgeAs is empty on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\ngh auth token --user \"$forge_as\" >/dev/null || { echo \"no forge token for the declared account $forge_as\" >&2; exit 1; }\n[ -z \"$FORGE_REPO\" ] || export GH_REPO=\"$FORGE_REPO\"\nprintf '{\"login\":\"%s\"}' \"$forge_as\"\n",
+          "env": {
+            "REPO": {
+              "$from": "/answer/repo"
+            }
+          },
+          "timeout_secs": 30,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "login": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "login"
+            ],
+            "allow_extra": false
+          }
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
+        "id": "the_proof",
+        "deps": [
+          "the_request",
+          "the_account"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -eu\ncd \"$REPO\"\nforge_as=$(git -C \"$REPO\" config --get sailor.forgeAs) || { echo \"sailor.forgeAs is not declared on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\n[ -n \"$forge_as\" ] || { echo \"sailor.forgeAs is empty on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\ngh auth token --user \"$forge_as\" >/dev/null || { echo \"no forge token for the declared account $forge_as\" >&2; exit 1; }\n[ -z \"$FORGE_REPO\" ] || export GH_REPO=\"$FORGE_REPO\"\nseen=$(GH_TOKEN=$(gh auth token --user \"$(git -C \"$REPO\" config --get sailor.forgeAs)\") gh pr list --head \"$BRANCH\" --state merged --json number,headRefOid,mergeCommit --jq '.[0] | select(. != null) | [.number, .headRefOid, .mergeCommit.oid] | @tsv')\n[ -n \"$seen\" ] || { echo \"no merged pull request carries $BRANCH: there is no proof to close with\" >&2; exit 1; }\nnumber=$(printf '%s' \"$seen\" | cut -f1); head=$(printf '%s' \"$seen\" | cut -f2); commit=$(printf '%s' \"$seen\" | cut -f3)\ngit fetch --quiet origin\ntrunk=$(git rev-parse \"refs/remotes/origin/$BASE\")\ngit merge-base --is-ancestor \"$head\" \"$trunk\" || { echo \"the remote $BASE does not carry $head\" >&2; exit 1; }\ngit merge-base --is-ancestor \"$commit\" \"$trunk\" || { echo \"the remote $BASE does not carry $commit\" >&2; exit 1; }\nprintf '{\"number\":%s,\"head\":\"%s\",\"commit\":\"%s\",\"trunk\":\"%s\"}' \"$number\" \"$head\" \"$commit\" \"$trunk\"\n",
+          "env": {
+            "REPO": {
+              "$from": "/the_request/answer/repo"
+            },
+            "BRANCH": {
+              "$from": "/the_request/answer/branch"
+            },
+            "BASE": {
+              "$from": "/the_request/answer/base"
+            },
+            "FORGE_REPO": {
+              "$from": "/the_request/answer/forge_repo"
+            }
+          },
+          "timeout_secs": 120,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "number": {
+                "type": "number"
+              },
+              "head": {
+                "type": "string"
+              },
+              "commit": {
+                "type": "string"
+              },
+              "trunk": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "number",
+              "head",
+              "commit",
+              "trunk"
+            ],
+            "allow_extra": false
+          }
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
+        "id": "closing_text",
+        "deps": [
+          "the_request",
+          "the_proof"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -eu\ncommon=$(cd \"$REPO\" && cd \"$(git rev-parse --git-common-dir)\" && pwd)\noutgoing=\"$common/sailor/outgoing\"\nmkdir -p \"$outgoing\"\nfile=\"$outgoing/closing-issue-$ISSUE.md\"\nprintf 'Closed by %s (pull request #%s), which the remote %s carries.\\n' \"$COMMIT\" \"$NUMBER\" \"$BASE\" > \"$file\"\nprintf '{\"text_file\":\"%s\"}' \"$file\"\n",
+          "env": {
+            "REPO": {
+              "$from": "/the_request/answer/repo"
+            },
+            "ISSUE": {
+              "$from": "/the_request/answer/issue"
+            },
+            "BASE": {
+              "$from": "/the_request/answer/base"
+            },
+            "COMMIT": {
+              "$from": "/the_proof/answer/commit"
+            },
+            "NUMBER": {
+              "$json": "/the_proof/answer/number"
+            }
+          },
+          "timeout_secs": 30,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "text_file": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "text_file"
+            ],
+            "allow_extra": false
+          }
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
+        "id": "text_gate",
+        "deps": [
+          "the_request",
+          "closing_text"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -eu\ncd \"$REPO\"\nset +e\n\"$REPO/scripts/privacy-scan.sh\" --text \"$TEXT_FILE\" >&2\ncode=$?\nset -e\n[ \"$code\" -eq 0 ] || { echo \"publication gate: privacy-scan --text exited $code on $TEXT_FILE; the text does not leave\" >&2; exit \"$code\"; }\nprintf '{\"text_file\":\"%s\",\"privacy_exit\":0}' \"$TEXT_FILE\"\n",
+          "env": {
+            "REPO": {
+              "$from": "/the_request/answer/repo"
+            },
+            "TEXT_FILE": {
+              "$from": "/closing_text/answer/text_file"
+            }
+          },
+          "timeout_secs": 120,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "text_file": {
+                "type": "string"
+              },
+              "privacy_exit": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "text_file",
+              "privacy_exit"
+            ],
+            "allow_extra": false
+          }
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
+        "id": "issue",
+        "deps": [
+          "the_request",
+          "closing_text",
+          "text_gate"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -eu\ncd \"$REPO\"\nforge_as=$(git -C \"$REPO\" config --get sailor.forgeAs) || { echo \"sailor.forgeAs is not declared on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\n[ -n \"$forge_as\" ] || { echo \"sailor.forgeAs is empty on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\ngh auth token --user \"$forge_as\" >/dev/null || { echo \"no forge token for the declared account $forge_as\" >&2; exit 1; }\n[ -z \"$FORGE_REPO\" ] || export GH_REPO=\"$FORGE_REPO\"\nstate=$(GH_TOKEN=$(gh auth token --user \"$(git -C \"$REPO\" config --get sailor.forgeAs)\") gh issue view \"$ISSUE\" --json state --jq .state)\nif [ \"$state\" != CLOSED ]; then\n    GH_TOKEN=$(gh auth token --user \"$(git -C \"$REPO\" config --get sailor.forgeAs)\") gh issue close \"$ISSUE\" --comment \"$(cat \"$TEXT_FILE\")\" >&2\n    state=$(GH_TOKEN=$(gh auth token --user \"$(git -C \"$REPO\" config --get sailor.forgeAs)\") gh issue view \"$ISSUE\" --json state --jq .state)\nfi\n[ \"$state\" = CLOSED ] || { echo \"issue $ISSUE reads $state after closing\" >&2; exit 1; }\nprintf '{\"issue\":\"%s\",\"state\":\"%s\"}' \"$ISSUE\" \"$state\"\n",
+          "env": {
+            "REPO": {
+              "$from": "/the_request/answer/repo"
+            },
+            "ISSUE": {
+              "$from": "/the_request/answer/issue"
+            },
+            "FORGE_REPO": {
+              "$from": "/the_request/answer/forge_repo"
+            },
+            "TEXT_FILE": {
+              "$from": "/closing_text/answer/text_file"
+            }
+          },
+          "timeout_secs": 120,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "issue": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "issue",
+              "state"
+            ],
+            "allow_extra": false
+          }
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
+        "id": "worktree",
+        "deps": [
+          "the_request",
+          "issue"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -eu\nfound=$(git -C \"$REPO\" worktree list --porcelain | awk -v want=\"branch refs/heads/$BRANCH\" '\n    /^worktree / { path = substr($0, 10); locked = 0 }\n    /^locked/ { locked = 1 }\n    $0 == want { hit = path }\n    /^$/ { if (hit != \"\" && out == \"\") { out = hit; lock = locked } hit = \"\" }\n    END { if (hit != \"\" && out == \"\") { out = hit; lock = locked } if (out != \"\") print lock \"\\t\" out }')\nif [ -z \"$found\" ]; then\n    printf '{\"removed\":\"\"}'\n    exit 0\nfi\nlocked=$(printf '%s' \"$found\" | cut -f1); path=$(printf '%s' \"$found\" | cut -f2)\n[ \"$locked\" = 0 ] || { echo \"the worktree $path is locked: whoever holds it unlocks it when they have finished reading\" >&2; exit 1; }\ngit -C \"$REPO\" worktree remove \"$path\" >&2\nprintf '{\"removed\":\"%s\"}' \"$path\"\n",
+          "env": {
+            "REPO": {
+              "$from": "/the_request/answer/repo"
+            },
+            "BRANCH": {
+              "$from": "/the_request/answer/branch"
+            }
+          },
+          "timeout_secs": 120,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "removed": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "removed"
+            ],
+            "allow_extra": false
+          }
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
+        "id": "local_branch",
+        "deps": [
+          "the_request",
+          "the_proof",
+          "worktree"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -eu\ntip=$(git -C \"$REPO\" rev-parse --verify --quiet \"refs/heads/$BRANCH^{commit}\" || true)\nif [ -n \"$tip\" ]; then\n    git -C \"$REPO\" merge-base --is-ancestor \"$tip\" \"$TRUNK\" || { echo \"the local $BRANCH at $tip carries commits the remote $BASE does not\" >&2; exit 1; }\n    git -C \"$REPO\" branch -D \"$BRANCH\" >&2\nfi\nprintf '{\"deleted\":\"%s\"}' \"$tip\"\n",
+          "env": {
+            "REPO": {
+              "$from": "/the_request/answer/repo"
+            },
+            "BRANCH": {
+              "$from": "/the_request/answer/branch"
+            },
+            "BASE": {
+              "$from": "/the_request/answer/base"
+            },
+            "TRUNK": {
+              "$from": "/the_proof/answer/trunk"
+            }
+          },
+          "timeout_secs": 60,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "deleted": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "deleted"
+            ],
+            "allow_extra": false
+          }
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
+        "id": "policy",
+        "deps": [
+          "the_request",
+          "local_branch"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -eu\ncd \"$REPO\"\nsaid=$(sailor policy) || { echo \"the delivery policy could not be resolved from the trusted trunk\" >&2; exit 1; }\nprintf '%s\\n' \"$said\" | python3 -c '\nimport json, sys\nlines = [line.strip() for line in sys.stdin if line.strip()]\nfields = dict(line.split(\": \", 1) for line in lines[:-1])\nfor key in (\"merge\", \"push\", \"release\"):\n    if fields.get(key) not in (\"auto\", \"ask\"):\n        sys.exit(\"the policy does not say auto or ask for \" + key)\nprint(json.dumps({\n    \"merge\": fields[\"merge\"], \"push\": fields[\"push\"], \"release\": fields[\"release\"],\n    \"read_from\": lines[-1],\n    \"asks_publication\": \"ask\" if fields[\"push\"] == \"ask\" else \"auto\",\n    \"asks_integration\": \"ask\" if \"ask\" in (fields[\"merge\"], fields[\"push\"]) else \"auto\",\n    \"asks_release\": \"ask\" if \"ask\" in (fields[\"release\"], fields[\"push\"]) else \"auto\",\n}))\n'\n",
+          "env": {
+            "REPO": {
+              "$from": "/the_request/answer/repo"
+            }
+          },
+          "timeout_secs": 30,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "merge": {
+                "type": "string"
+              },
+              "push": {
+                "type": "string"
+              },
+              "release": {
+                "type": "string"
+              },
+              "read_from": {
+                "type": "string"
+              },
+              "asks_publication": {
+                "type": "string"
+              },
+              "asks_integration": {
+                "type": "string"
+              },
+              "asks_release": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "merge",
+              "push",
+              "release",
+              "read_from",
+              "asks_publication",
+              "asks_integration",
+              "asks_release"
+            ],
+            "allow_extra": false
+          }
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
+        "id": "authorize_push",
+        "deps": [
+          "the_request",
+          "policy"
+        ],
+        "action": "handed_to_agent",
+        "max_attempts": 1,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/policy/answer/asks_publication",
+          "value": "ask"
+        },
+        "with": {
+          "mandate": {
+            "$join": [
+              "The delivery policy read from the trusted trunk (commit ",
+              {
+                "$from": "/policy/answer/read_from"
+              },
+              ") asks a person before this flow may delete the remote branch. Approve with an output file holding {\"authorized\": true}, or reject with the reason."
+            ]
+          },
+          "holder": "person",
+          "handoff_timeout_secs": 86400,
+          "options": [
+            {
+              "label": "authorize",
+              "facts": "every check before this step passed on the recorded commit"
+            },
+            {
+              "label": "refuse",
+              "facts": "nothing outward has happened yet; the run stops here"
+            }
+          ]
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
+        "id": "remote_branch",
+        "deps": [
+          "the_request",
+          "the_proof",
+          "policy",
+          "authorize_push"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -eu\nurl=$(git -C \"$REPO\" remote get-url origin) || { echo \"the tree has no origin remote\" >&2; exit 1; }\nset -- -C \"$REPO\"\ncase \"$url\" in\n    http://*|https://*)\n        push_as=$(git -C \"$REPO\" config --get sailor.pushAs) || { echo \"sailor.pushAs is not declared on this tree: refusing to push with the machine's own credentials\" >&2; exit 1; }\n        helper='!f() { printf \"%s\\\\n\" username=x-access-token; printf \"password=%s\\\\n\" \"$(gh auth token --user \"'\"$push_as\"'\")\"; }; f'\n        set -- -C \"$REPO\" -c credential.helper= -c \"credential.helper=$helper\" ;;\nesac\ngit -C \"$REPO\" fetch --quiet origin\ntrunk=$(git -C \"$REPO\" rev-parse \"refs/remotes/origin/$BASE\")\ntip=$(git -C \"$REPO\" ls-remote origin \"refs/heads/$BRANCH\" | awk '{ print $1 }')\nif [ -n \"$tip\" ]; then\n    git -C \"$REPO\" merge-base --is-ancestor \"$tip\" \"$trunk\" || { echo \"the remote $BRANCH at $tip carries commits the remote $BASE does not\" >&2; exit 1; }\n    git \"$@\" push origin --delete \"$BRANCH\" >&2\nfi\nprintf '{\"deleted\":\"%s\"}' \"$tip\"\n",
+          "env": {
+            "REPO": {
+              "$from": "/the_request/answer/repo"
+            },
+            "BRANCH": {
+              "$from": "/the_request/answer/branch"
+            },
+            "BASE": {
+              "$from": "/the_request/answer/base"
+            }
+          },
+          "timeout_secs": 120,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "deleted": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "deleted"
+            ],
+            "allow_extra": false
+          }
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
+        "id": "settled",
+        "deps": [
+          "the_request",
+          "the_proof",
+          "remote_branch"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -eu\ncd \"$REPO\"\nforge_as=$(git -C \"$REPO\" config --get sailor.forgeAs) || { echo \"sailor.forgeAs is not declared on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\n[ -n \"$forge_as\" ] || { echo \"sailor.forgeAs is empty on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\ngh auth token --user \"$forge_as\" >/dev/null || { echo \"no forge token for the declared account $forge_as\" >&2; exit 1; }\n[ -z \"$FORGE_REPO\" ] || export GH_REPO=\"$FORGE_REPO\"\nstate=$(GH_TOKEN=$(gh auth token --user \"$(git -C \"$REPO\" config --get sailor.forgeAs)\") gh issue view \"$ISSUE\" --json state --jq .state)\n[ \"$state\" = CLOSED ] || { echo \"issue $ISSUE reads $state\" >&2; exit 1; }\n! git worktree list --porcelain | grep -F -x -q \"branch refs/heads/$BRANCH\" || { echo \"a worktree still holds $BRANCH\" >&2; exit 1; }\n! git rev-parse --verify --quiet \"refs/heads/$BRANCH\" >/dev/null || { echo \"the local $BRANCH still exists\" >&2; exit 1; }\n[ -z \"$(git ls-remote origin \"refs/heads/$BRANCH\")\" ] || { echo \"the remote $BRANCH still exists\" >&2; exit 1; }\nprintf '{\"issue\":\"%s\",\"commit\":\"%s\"}' \"$state\" \"$COMMIT\"\n",
+          "env": {
+            "REPO": {
+              "$from": "/the_request/answer/repo"
+            },
+            "BRANCH": {
+              "$from": "/the_request/answer/branch"
+            },
+            "ISSUE": {
+              "$from": "/the_request/answer/issue"
+            },
+            "FORGE_REPO": {
+              "$from": "/the_request/answer/forge_repo"
+            },
+            "COMMIT": {
+              "$from": "/the_proof/answer/commit"
+            }
+          },
+          "timeout_secs": 120,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "issue": {
+                "type": "string"
+              },
+              "commit": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "issue",
+              "commit"
+            ],
+            "allow_extra": false
+          }
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        },
+        "required": true
+      }
+    ],
+    "skippable_dependencies": [
+      {
+        "step": "remote_branch",
+        "dependency": "authorize_push"
+      }
+    ]
+  }
+}

@@ -148,6 +148,27 @@ pub const FLOWS: &[(&str, &str)] = &[
         "ask-for-a-mandate",
         include_str!("../system/ask-for-a-mandate.flow.json"),
     ),
+    // The delivery loop of docs/the-delivery-loop.md, one flow per outward step.
+    (
+        "open-the-draft-pull-request",
+        include_str!("../system/open-the-draft-pull-request.flow.json"),
+    ),
+    (
+        "review-a-pinned-commit",
+        include_str!("../system/review-a-pinned-commit.flow.json"),
+    ),
+    (
+        "integrate-on-the-trunk",
+        include_str!("../system/integrate-on-the-trunk.flow.json"),
+    ),
+    (
+        "cut-a-release",
+        include_str!("../system/cut-a-release.flow.json"),
+    ),
+    (
+        "close-the-work",
+        include_str!("../system/close-the-work.flow.json"),
+    ),
     // And the second, the only destructive one: it empties a session that has
     // handed on, and only once nobody is being waited for in there.
     (

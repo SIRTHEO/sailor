@@ -6,6 +6,11 @@
       "runs_measured": 0,
       "words_it_sends": 0
     },
+    "close-the-work": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
+    },
     "consolidate-memories": {
       "tokens_a_run": 0,
       "runs_measured": 0,
@@ -15,6 +20,11 @@
       "tokens_a_run": 0,
       "runs_measured": 0,
       "words_it_sends": 1182
+    },
+    "cut-a-release": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
     },
     "dispatch-the-work": {
       "tokens_a_run": 130894,
@@ -41,6 +51,11 @@
       "runs_measured": 0,
       "words_it_sends": 0
     },
+    "integrate-on-the-trunk": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
+    },
     "migrate-to-sailor": {
       "tokens_a_run": 0,
       "runs_measured": 0,
@@ -56,6 +71,11 @@
       "runs_measured": 2,
       "words_it_sends": 205
     },
+    "open-the-draft-pull-request": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
+    },
     "put-the-crew-to-work": {
       "tokens_a_run": 0,
       "runs_measured": 0,
@@ -67,6 +87,11 @@
       "words_it_sends": 0
     },
     "remember-in-the-graph": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
+    },
+    "review-a-pinned-commit": {
       "tokens_a_run": 0,
       "runs_measured": 0,
       "words_it_sends": 0
