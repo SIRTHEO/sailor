@@ -357,7 +357,7 @@
   "cli.terminal.mandate_left": "mandato depositato per {tty} su {head}",
   "cli.terminal.mandate_not_passed": "il mandato di {from} non è passato a {to}: {why}",
   "cli.terminal.mandate_passed": "mandato passato da {from} a {to}; l'originale resta da parte, segnato con dove è andato",
-  "cli.terminal.no_such_terminal": "{tty}: nessun terminale con quel nome è aperto su questa macchina (niente in {where}), quindi il mandato resta dov'era",
+  "cli.terminal.no_such_terminal": "{tty}: nessun terminale con quel nome è aperto su questa macchina (niente in {where}), quindi il mandato è rimasto al suo posto",
   "cli.terminal.no_reset_declared": "«{cli}» non dichiara come si svuota una sua sessione in corso. Nessuno l'ha misurato, che non è la stessa cosa che sia impossibile: aggiungi `reset_context` al suo descrittore invece di indovinare una riga qui",
   "cli.terminal.no_store": "non so dire dove sta il deposito",
   "cli.terminal.no_such_descriptor": "«{cli}»: nessun descrittore con quel nome è caricato",
