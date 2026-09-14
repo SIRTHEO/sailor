@@ -196,7 +196,7 @@ pub fn freshness(mandate: &Mandate, head: &str, uncommitted: &str) -> Freshness 
 
 /// Where a terminal's mandate waits.
 pub fn address_in(store: &Path, tty: &str) -> PathBuf {
-    store.join(MANDATES).join(format!("{tty}.json"))
+    store.join(MANDATES).join(format!("{}.json", tty.replace('/', "-")))
 }
 
 /// Where a mandate goes when a second one is deposited over it.
@@ -459,4 +459,12 @@ mod tests {
         assert_eq!(read(&address_in(&store, "ttys012")), Some(theirs));
         let _ = std::fs::remove_dir_all(&store);
     }
+    /// On Linux a terminal is `pts/3`: its mandate is one file among the others.
+    #[test]
+    fn a_mandate_for_a_terminal_named_with_a_slash_is_one_file() {
+        let store = std::path::Path::new("/somewhere");
+        let address = address_in(store, "pts/3");
+        assert_eq!(address.parent(), Some(store.join(MANDATES).as_path()));
+    }
+
 }

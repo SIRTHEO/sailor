@@ -246,8 +246,9 @@ fn about_the_disk(store: Option<&Ledger>) -> Option<String> {
 
 fn about_the_disk_in(root: &Path, store: Option<&Ledger>) -> Option<String> {
     let on_disk = build_directories(root, store);
+    let own = machine::ordinary_building(root);
     if on_disk.is_empty() {
-        return None;
+        return (!own.is_empty()).then(|| own_building(&own).trim_start().to_owned());
     }
     let held: u64 = on_disk.iter().map(|one| one.left.bytes).sum();
     let mut said = catalogue::say(
@@ -269,7 +270,20 @@ fn about_the_disk_in(root: &Path, store: Option<&Ledger>) -> Option<String> {
             ],
         ));
     }
+    said.push_str(&own_building(&own));
     Some(said)
+}
+
+fn own_building(own: &[machine::LeftBehind]) -> String {
+    own.iter()
+        .map(|one| {
+            let path = one.path.display().to_string();
+            let size = gigabytes(one.bytes);
+            let tail = catalogue::say("cli.machine.own_building_tail", &[]);
+            let line = [("path", path.as_str()), ("gigabytes", size.as_str()), ("tail", tail.as_str())];
+            format!("\n{}", catalogue::say("cli.machine.own_building", &line))
+        })
+        .collect()
 }
 
 /// How many of the heaviest build directories are worth naming.
@@ -665,6 +679,29 @@ mod tests {
             !said.contains("target/debug:"),
             "the tree's own work was offered up as a leftover: {said}"
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// **A TREE'S OWN BUILDING IS WEIGHED, NEVER OFFERED.** `target/debug` grew
+    /// to 27 GB unseen: it carries no tag of its own, so the reading skipped it.
+    #[test]
+    fn the_reading_weighs_the_tree_s_own_building_and_never_takes_it() {
+        let root = scratch("own-building");
+        let store = Ledger::open(root.join("store")).expect("the store");
+        let target = root.join("target");
+        std::fs::create_dir_all(target.join("debug").join(".fingerprint")).expect("the tree's building");
+        std::fs::write(target.join("CACHEDIR.TAG"), "Signature: 8a477f597d28d172789f06886806bc55\n")
+            .expect("the tag cargo writes in the directory it was pointed at");
+        std::fs::write(target.join("debug").join("artefact"), "x".repeat(8_192)).expect("an artefact");
+
+        let own = machine::ordinary_building(&root);
+        assert_eq!(own.len(), 1, "{own:?}");
+        assert!(own[0].path.ends_with("debug") && own[0].bytes >= 8_192, "{own:?}");
+
+        let said = about_the_disk_in(&root, Some(&store)).expect("there is something to weigh");
+        assert!(said.contains(&catalogue::say("cli.machine.own_building_tail", &[])), "{said}");
+        assert!(free_the_disk_in(&root, Some(&store)).is_none(), "the tree's own building was taken");
+        assert!(target.join("debug").exists());
         let _ = std::fs::remove_dir_all(&root);
     }
 

@@ -28,6 +28,7 @@ const NOTHING_TO_BUILD_WITH: &[&str] = &[
     "failed to load source",
     "no matching package named",
     "registry/cache",
+    "The system library",
 ];
 
 #[derive(Debug, PartialEq, Eq)]
@@ -256,6 +257,9 @@ fn the_check_tells_a_broken_shell_from_a_missing_tool() {
     let refused = "error: failed to download `a_crate v0.1.6`\n\nCaused by:\n  \
                    attempting to make an HTTP request, but --offline was specified\n";
     assert!(matches!(verdict_of(false, refused), Verdict::NothingMeasured(_)), "{refused}");
+    let no_library = "error: failed to run custom build command for `glib-sys v0.18.1`\n\
+                      The system library `glib-2.0` required by crate `glib-sys` was not found.\n";
+    assert!(matches!(verdict_of(false, no_library), Verdict::NothingMeasured(_)), "{no_library}");
     let denied = "error: failed to open `/home/x/.cargo/registry/cache/index/a_crate.crate`\n";
     assert!(matches!(verdict_of(false, denied), Verdict::NothingMeasured(_)), "{denied}");
     let empty = "error: no matching package named `a_crate` found\n\

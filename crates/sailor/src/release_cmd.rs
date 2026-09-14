@@ -261,6 +261,11 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     if let Some(page) = selected.page_rel {
         build_the_page(&root, &repository, page)?;
     }
+    let room = machine::free_bytes(&root);
+    if machine::too_little_to_build(room) {
+        let free = format!("{:.1}", room.unwrap_or(0) as f64 / 1_073_741_824.0);
+        return Err(catalogue::say("cli.release.too_little_room", &[("gigabytes", &free)]));
+    }
     println!("{}", catalogue::say("cli.release.building", &[]));
     let cloned_manifest = repository.join(selected.manifest_rel);
     let mut builder = Command::new("cargo");
