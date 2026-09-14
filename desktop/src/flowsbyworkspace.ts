@@ -11,6 +11,8 @@ export interface FlowRow extends FlowChain {
   /** `null` when the winning file will not load. */
   steps: number | null;
   broken?: string;
+  /** The sources left out that stand above this winner: any of them could have replaced it. */
+  uncertain_by?: Unanswered[];
 }
 
 /** Why a checkout carries no rows: facts the window puts into words. */
@@ -168,6 +170,11 @@ export function troublesOf(reading: FlowsReading): SourceTrouble[] {
 /** Every source outside the checkouts that did not answer in time. */
 export function unansweredOf(reading: FlowsReading): Unanswered[] {
   return [reading.outside, ...reading.contexts].flatMap((context) => context.unanswered ?? []);
+}
+
+/** Whether a source that did not answer could have replaced this winner. */
+export function isUncertain(row: FlowRow): boolean {
+  return (row.uncertain_by?.length ?? 0) > 0;
 }
 
 /** Whether the chosen row is the file that runs where the window stands. */

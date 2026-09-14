@@ -201,3 +201,48 @@ describe("the states are said, not drawn as nothing", () => {
     );
   });
 });
+
+
+describe("a row a source left out could replace", () => {
+  const UNREAD = { origin: "yours", dir: HOME, refused: { kind: "timed_out" as const, seconds: 5 } };
+  const said = t("window.flows.uncertain", { source: `${HOME} (yours)` });
+
+  /** Home did not answer: every shipped winner could have been replaced by a flow there. */
+  function uncertain(): FlowsReading {
+    const standing = reading();
+    standing.outside.unanswered = [UNREAD];
+    standing.outside.flows = standing.outside.flows.map((one) =>
+      one.name === "example-flow"
+        ? { ...one, replaced: [], winner: { origin: "built in", path: SHIPPED }, uncertain_by: [UNREAD] }
+        : one.winner.origin === "built in"
+          ? { ...one, uncertain_by: [UNREAD] }
+          : one,
+    );
+    return standing;
+  }
+
+  test("IS SAID UNCERTAIN, NAMES THE SOURCE, AND OFFERS NO GESTURE", () => {
+    const { container } = render(
+      <FlowsView here={{ state: "read", reading: uncertain() }} all={{ state: "read", reading: uncertain() }} onOpen={() => {}} onRun={() => {}} />,
+    );
+    const row = [...container.querySelectorAll("tr.flows__row")].find((one) => one.textContent?.startsWith("a-shipped-flow"));
+    expect(row?.textContent).toContain(said);
+    fireEvent.click(row as HTMLElement);
+    const detail = screen.getByRole("complementary", { name: t("window.flows.detail.label") });
+    expect(within(detail).queryByRole("button")).toBeNull();
+    expect(within(detail).getByText(said)).toBeTruthy();
+  });
+
+  test("and in every workspace, the expanded rows included", () => {
+    const { container } = render(
+      <FlowsView here={{ state: "read", reading: uncertain() }} all={{ state: "read", reading: uncertain() }} onOpen={() => {}} onRun={() => {}} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: t("window.flows.mode.all") }));
+    fireEvent.click(screen.getByRole("button", { name: t("window.flows.differs", { count: 3 }) }));
+    const expanded = [...container.querySelectorAll("tr")].filter((one) => one.querySelector(".flows__sub"));
+    expect(expanded.map((one) => one.textContent?.includes(said))).toEqual([true, true, false]);
+    fireEvent.click(expanded[1]);
+    const detail = screen.getByRole("complementary", { name: t("window.flows.detail.label") });
+    expect(within(detail).queryByRole("button")).toBeNull();
+  });
+});

@@ -196,6 +196,14 @@ stand, and is reached by its own name through ⌘K instead of hiding two clicks
 deep under a noun. `World.tsx` draws the column; there is no `Rail.tsx` any
 more, and the six sections a person can stand in are named once, in `SECTIONS`.
 
+The Flows place, beside «Which calls which», reads every checkout within one
+deadline and marks a row a source left out could have replaced; it does not
+defend against a network or FUSE mount stalled for ever, because the
+checkout's root, the workspace register, `sailor.json` and the sources are
+still read synchronously, its reading threads have no global cap, and a
+timed-out reading still in flight can answer a newer request with its old
+result until it ends.
+
 Two things this cost, and both are recorded as faults rather than smoothed
 over: a section that draws no canvas had a bar still speaking of a flow, and
 the picture-taking that checks these screens was blind on the four scenes it

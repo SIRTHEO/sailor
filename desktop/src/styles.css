@@ -7363,6 +7363,12 @@ tr[data-followable]:hover {
   background: var(--raised);
 }
 
+.flows__uncertain {
+  font-family: var(--font-prose);
+  font-size: var(--text-small);
+  color: var(--warn);
+}
+
 .flows__row[data-differs] {
   cursor: default;
   color: var(--warn);

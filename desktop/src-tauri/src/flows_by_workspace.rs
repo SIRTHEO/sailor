@@ -9,6 +9,10 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
+// Not defended: a network or FUSE mount stalled for ever. The checkout's root, the workspace
+// register, `sailor.json` and building the sources are still read synchronously; the reading
+// threads have no global cap; and a timed-out reading still in flight can answer a newer
+// request with its old result until it ends. Accepted as it stands.
 /// How long a whole reading may take, from the first folder to the last checkout.
 pub(crate) const A_READING_TAKES_AT_MOST: Duration = Duration::from_secs(5);
 
@@ -30,6 +34,9 @@ pub(crate) struct FlowRow {
     pub steps: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub broken: Option<String>,
+    /// The sources left out that stand above this winner: had they answered, one could have won.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub uncertain_by: Vec<Unanswered>,
 }
 
 /// Why something carries no rows. Facts, not sentences: the window words them.
@@ -416,19 +423,21 @@ fn outside_from(
             skipped: Vec::new(),
         },
         Err(refusal) => {
+            let order = sources.clone();
             // The shipped flows live in the binary, so they are resolved here with no disk at all.
             let (on_disk, shipped): (Vec<_>, Vec<_>) = sources.into_iter().partition(|source| !source.is_builtin());
+            let unanswered: Vec<Unanswered> = on_disk
+                .iter()
+                .map(|source| Unanswered {
+                    origin: source.origin,
+                    dir: source.dir.clone(),
+                    refused: refusal.clone(),
+                })
+                .collect();
             Outside {
                 context: Context {
-                    flows: rows_of(&shipped, None),
-                    unanswered: on_disk
-                        .iter()
-                        .map(|source| Unanswered {
-                            origin: source.origin,
-                            dir: source.dir.clone(),
-                            refused: refusal.clone(),
-                        })
-                        .collect(),
+                    flows: marked(rows_of(&shipped, None), &order, &unanswered),
+                    unanswered,
                     ..blank
                 },
                 skipped: on_disk,
@@ -450,32 +459,37 @@ fn resolve_checkouts(
     let flights: Vec<_> = checkouts
         .iter()
         .map(|checkout| {
-            let mut sources = flow::system::sources(home_flows, Some(&checkout.root), declared);
+            let order = flow::system::sources(home_flows, Some(&checkout.root), declared);
+            let mut sources = order.clone();
             sources.retain(|source| !outside.skipped.contains(source));
-            ask_resolution(crew, disk, sources, Some(checkout.root.clone()))
+            (order, ask_resolution(crew, disk, sources, Some(checkout.root.clone())))
         })
         .collect();
     checkouts
         .iter()
         .zip(flights)
-        .map(|(checkout, flight)| match flight.wait_until(deadline.last, deadline.seconds) {
+        .map(|(checkout, (order, flight))| match flight.wait_until(deadline.last, deadline.seconds) {
             Err(refusal) => refused_context(checkout, refusal),
             Ok(Resolution {
                 root_unreadable: Some(why),
                 ..
             }) => refused_context(checkout, Refusal::Unreadable { why }),
             Ok(resolution) => Context {
-                flows: resolution
-                    .rows
-                    .into_iter()
-                    .filter(|row| {
-                        !outside
-                            .context
-                            .flows
-                            .iter()
-                            .any(|there| there.chain.name == row.chain.name && there.chain.winner == row.chain.winner)
-                    })
-                    .collect(),
+                flows: marked(
+                    resolution
+                        .rows
+                        .into_iter()
+                        .filter(|row| {
+                            !outside
+                                .context
+                                .flows
+                                .iter()
+                                .any(|there| there.chain.name == row.chain.name && there.chain.winner == row.chain.winner)
+                        })
+                        .collect(),
+                    &order,
+                    &outside.context.unanswered,
+                ),
                 // Home and a declared folder are said once, outside; here only the checkout's own.
                 troubles: resolution
                     .troubles
@@ -489,6 +503,32 @@ fn resolve_checkouts(
             },
         })
         .collect()
+}
+
+/// Rows marked with every left-out source that stands above their winner in the
+/// order `sources` gave: that order is the precedence, and nothing here decides another.
+fn marked(
+    mut rows: Vec<FlowRow>,
+    order: &[flow::system::FlowSource],
+    left_out: &[Unanswered],
+) -> Vec<FlowRow> {
+    let at = |origin: &str, dir: &Path| {
+        order
+            .iter()
+            .position(|source| source.origin == origin && source.dir == dir)
+    };
+    for row in &mut rows {
+        let winner = order.iter().position(|source| {
+            source.origin == row.chain.winner.origin
+                && (source.is_builtin() || row.chain.winner.path.starts_with(&source.dir))
+        });
+        row.uncertain_by = left_out
+            .iter()
+            .filter(|one| matches!((winner, at(one.origin, &one.dir)), (Some(won), Some(left)) if left > won))
+            .cloned()
+            .collect();
+    }
+    rows
 }
 
 fn ask_resolution(
@@ -560,6 +600,7 @@ fn rows_of(sources: &[flow::system::FlowSource], resolved_in: Option<&Path>) -> 
                 chain: resolved.chain,
                 steps,
                 broken,
+                uncertain_by: Vec::new(),
             }
         })
         .collect()
@@ -957,6 +998,51 @@ mod tests {
         assert_eq!(reading.contexts.len(), 1);
         assert!(reading.contexts[0].refused.is_none(), "{:?}", reading.contexts[0].refused);
         assert!(reading.contexts[0].flows.iter().any(|row| row.chain.name == "a-project-flow"));
+    }
+
+    /// **A ROW A SOURCE LEFT OUT COULD HAVE REPLACED IS NOT A CERTAIN WINNER**, and
+    /// a row from a source more specific than the one left out stays certain.
+    #[test]
+    fn a_row_a_source_left_out_could_replace_is_uncertain_and_a_more_specific_one_is_not() {
+        let scratch = Scratch::new("uncertain");
+        let home = scratch.0.join("home");
+        let home_flows = home.join("flows");
+        write_flow(&home_flows, shipped(), 1);
+        let tree = checkout(&scratch.0, "tree", true);
+        write_flow(&tree.root.join("flows"), "a-project-flow", 2);
+        let disk: Arc<dyn Disk> = Arc::new(SlowDisk {
+            listing: Duration::ZERO,
+            resolving: Duration::from_secs(4),
+            only_where: Some(home_flows.clone()),
+        });
+        let ground = Ground {
+            home: Some(home),
+            declared: None,
+            working: Some(tree.root.clone()),
+            seen: Vec::new(),
+            limit: Duration::from_millis(600),
+        };
+
+        let said = serde_json::to_value(here(&ground, crew(), &disk)).expect("the reading serialises");
+
+        let unread = serde_json::json!([{
+            "origin": flow::system::YOUR_ORIGIN,
+            "dir": home_flows,
+            "refused": { "kind": "timed_out", "seconds": 1 }
+        }]);
+        let row = |rows: &serde_json::Value, name: &str| {
+            rows.as_array()
+                .expect("rows")
+                .iter()
+                .find(|row| row["name"] == name)
+                .cloned()
+                .unwrap_or_else(|| panic!("no row {name}: {rows}"))
+        };
+        let shipped_row = row(&said["outside"]["flows"], shipped());
+        assert_eq!(shipped_row["winner"]["origin"], flow::system::BUILTIN_ORIGIN);
+        assert_eq!(shipped_row["uncertain_by"], unread, "the home that did not answer may replace it: {shipped_row}");
+        let project_row = row(&said["contexts"][0]["flows"], "a-project-flow");
+        assert!(project_row.get("uncertain_by").is_none(), "a project flow stands above the home: {project_row}");
     }
 
     /// **THROUGH THE REGISTER AND GIT**: a workspace remembered in a home, its

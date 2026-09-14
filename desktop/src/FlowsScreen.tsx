@@ -11,6 +11,7 @@ import {
   globalRows,
   groupsHere,
   holdsAnyFlow,
+  isUncertain,
   runsWhereTheWindowStands,
   standingContext,
   troublesOf,
@@ -76,7 +77,20 @@ function Steps({ row }: { row: FlowRow }) {
   return <>{row.steps}</>;
 }
 
+/** Which unread sources could have replaced this winner, in the words of the catalogue. */
+export function uncertainWords(row: FlowRow): string {
+  const sources = (row.uncertain_by ?? []).map((one) => `${one.dir} (${one.origin})`);
+  return t("window.flows.uncertain", { source: sources.join(", ") });
+}
+
 function Replaces({ row }: { row: FlowRow }) {
+  if (isUncertain(row)) {
+    return (
+      <span className="flows__uncertain" title={chainOf(row)}>
+        {uncertainWords(row)}
+      </span>
+    );
+  }
   const words = replacesWords(row);
   if (words === null) return null;
   return (
@@ -120,7 +134,9 @@ function Detail({
       <h3 className="flows__label">{t("window.flows.detail.chain")}</h3>
       <pre className="flows__chain">{chainOf(row)}</pre>
       {row.broken !== undefined && <p className="flows__broken">{row.broken}</p>}
-      {here ? (
+      {isUncertain(row) ? (
+        <p className="flows__uncertain">{uncertainWords(row)}</p>
+      ) : here ? (
         <div className="flows__actions">
           {onOpen && (
             <button type="button" className="flows__action" onClick={() => onOpen(row.name)}>
