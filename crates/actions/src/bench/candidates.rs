@@ -162,12 +162,12 @@ pub(crate) fn repo_of(named: Option<&str>, shared: &SharedState) -> Result<PathB
 }
 
 pub(crate) fn not_a_repository(repo: &Path, said: &str) -> ActionError {
-    let class = if said.contains("could not be started") {
-        "git_missing"
+    let said = format!("{}: {said}", repo.display());
+    if said.contains("could not be started") {
+        ActionError::new("git_missing", said)
     } else {
-        "not_a_repository"
-    };
-    ActionError::new(class, format!("{}: {said}", repo.display()))
+        ActionError::new("not_a_repository", said)
+    }
 }
 
 pub struct BenchCandidatesAction {

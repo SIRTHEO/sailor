@@ -72,12 +72,8 @@ struct ValidateInput {
 /// A task, or why the candidate is not one.
 #[derive(Debug)]
 pub enum Verdict {
-    Kept(Task),
+    Kept(Box<Task>),
     Rejected(String),
-}
-
-fn environment(class: &str, said: impl Into<String>) -> ActionError {
-    ActionError::new(class, said)
 }
 
 fn now_secs() -> i64 {
@@ -310,7 +306,7 @@ pub(crate) fn cut_task(repo: &Path, fix: &str, base: &str, register: &Path) -> R
 
     let test_command = commands[0].clone();
     let test_commands = if commands.len() > 1 { commands } else { Vec::new() };
-    Ok(Verdict::Kept(Task {
+    Ok(Verdict::Kept(Box::new(Task {
         id: short(fix),
         repo: repo.display().to_string(),
         base_commit: base.to_owned(),
@@ -324,7 +320,7 @@ pub(crate) fn cut_task(repo: &Path, fix: &str, base: &str, register: &Path) -> R
         test_command,
         test_commands,
         validated: None,
-    }))
+    })))
 }
 
 fn short(sha: &str) -> String {
@@ -375,7 +371,7 @@ fn run_once(
         let outcome = run_with_timeout(command, timeout);
         let (status, text) = match outcome {
             RunOutcome::SpawnFailed(said) => {
-                return Err(environment("test_runner_missing", format!("«{program}» could not be started: {said}")));
+                return Err(ActionError::new("test_runner_missing", format!("«{program}» could not be started: {said}")));
             }
             RunOutcome::TimedOut => {
                 std::fs::write(logs.join(format!("{label}-{nth}.log")), "timed out\n").ok();
@@ -408,15 +404,15 @@ struct OneAtATime {
 impl OneAtATime {
     fn take(target_dir: &Path) -> Result<Self, ActionError> {
         std::fs::create_dir_all(target_dir)
-            .map_err(|error| environment("build_dir_unwritable", format!("{}: {error}", target_dir.display())))?;
+            .map_err(|error| ActionError::new("build_dir_unwritable", format!("{}: {error}", target_dir.display())))?;
         let file = std::fs::OpenOptions::new()
             .create(true)
             .truncate(false)
             .write(true)
             .open(target_dir.join("bench.lock"))
-            .map_err(|error| environment("build_dir_unwritable", format!("{}: {error}", target_dir.display())))?;
+            .map_err(|error| ActionError::new("build_dir_unwritable", format!("{}: {error}", target_dir.display())))?;
         file.lock()
-            .map_err(|error| environment("build_dir_unwritable", format!("the build lock: {error}")))?;
+            .map_err(|error| ActionError::new("build_dir_unwritable", format!("the build lock: {error}")))?;
         Ok(Self { _held: file })
     }
 }
@@ -435,10 +431,10 @@ impl Tree {
         };
         tree.remove();
         std::fs::create_dir_all(trees)
-            .map_err(|error| environment("build_dir_unwritable", format!("{}: {error}", trees.display())))?;
+            .map_err(|error| ActionError::new("build_dir_unwritable", format!("{}: {error}", trees.display())))?;
         let path = tree.path.display().to_string();
         git(repo, &["worktree", "add", "--detach", &path, base])
-            .map_err(|said| environment("tree_not_cut", format!("git worktree add {path} {base}: {said}")))?;
+            .map_err(|said| ActionError::new("tree_not_cut", format!("git worktree add {path} {base}: {said}")))?;
         Ok(tree)
     }
 
@@ -471,11 +467,11 @@ fn validate(
     let tree = Tree::cut(repo, &trees, &task.id, &task.base_commit)?;
     let logs = target_dir.join("logs").join(&task.id);
     std::fs::create_dir_all(&logs)
-        .map_err(|error| environment("build_dir_unwritable", format!("{}: {error}", logs.display())))?;
+        .map_err(|error| ActionError::new("build_dir_unwritable", format!("{}: {error}", logs.display())))?;
 
     let patch = trees.join(format!("{}.patch", task.id));
     std::fs::write(&patch, &task.hidden_test_patch)
-        .map_err(|error| environment("build_dir_unwritable", format!("{}: {error}", patch.display())))?;
+        .map_err(|error| ActionError::new("build_dir_unwritable", format!("{}: {error}", patch.display())))?;
     let patch_path = patch.display().to_string();
     if git(&tree.path, &["apply", "--whitespace=nowarn", &patch_path]).is_err() {
         return Ok(Err("hidden test does not apply on base".to_owned()));
@@ -491,7 +487,7 @@ fn validate(
         }
     }
     git(&tree.path, &["checkout", "--detach", "--force", &task.fix_commit])
-        .map_err(|said| environment("tree_not_cut", format!("checkout of the fix: {said}")))?;
+        .map_err(|said| ActionError::new("tree_not_cut", format!("checkout of the fix: {said}")))?;
     for nth in 0..runs {
         match run_once(&tree.path, &commands, target_dir, timeout, &logs, &format!("fix-{nth}"))? {
             RunEnd::Green => {}
@@ -543,7 +539,7 @@ impl Action for BenchValidateAction {
             .home
             .map(PathBuf::from)
             .or_else(|| self.home.clone())
-            .ok_or_else(|| environment("no_home", "no home to write the task into: name one with `home`"))?;
+            .ok_or_else(|| ActionError::new("no_home", "no home to write the task into: name one with `home`"))?;
         let set = asked.set.unwrap_or_else(|| DEFAULT_SET.to_owned());
         let runs = asked.runs.unwrap_or(DEFAULT_RUNS).max(1);
         let target_dir = asked
@@ -571,7 +567,7 @@ impl Action for BenchValidateAction {
         let started = Instant::now();
         let register = home.join("ledger").join(faults::FAULTS_FILE);
         let task = match cut_task(&repo, &fix, &base, &register)? {
-            Verdict::Kept(task) => task,
+            Verdict::Kept(task) => *task,
             Verdict::Rejected(why) => return Ok(answer(&id, false, &why, started.elapsed().as_secs(), None)),
         };
         match validate(&repo, &task, &target_dir, runs, timeout)? {
@@ -581,7 +577,7 @@ impl Action for BenchValidateAction {
                     ..task
                 };
                 task.save(&path)
-                    .map_err(|error| environment("task_unwritable", error))?;
+                    .map_err(|error| ActionError::new("task_unwritable", error))?;
                 let why = format!("red on base {runs} times, green on fix {runs} times");
                 Ok(answer(&id, true, &why, started.elapsed().as_secs(), Some(&path)))
             }
@@ -666,12 +662,12 @@ impl Action for BenchFreezeAction {
             .home
             .map(PathBuf::from)
             .or_else(|| self.home.clone())
-            .ok_or_else(|| environment("no_home", "no home to read the set from: name one with `home`"))?;
+            .ok_or_else(|| ActionError::new("no_home", "no home to read the set from: name one with `home`"))?;
         let set = asked.set.unwrap_or_else(|| DEFAULT_SET.to_owned());
         let tasks = match Task::load_set(&home, &set) {
             Ok(tasks) => tasks,
             Err(_) if !home.join(super::task::BENCH_DIR).join(&set).exists() => Vec::new(),
-            Err(error) => return Err(environment("set_unreadable", error)),
+            Err(error) => return Err(ActionError::new("set_unreadable", error)),
         };
         let validated: Vec<&Task> = tasks.iter().filter(|task| task.validated.is_some()).collect();
         let ids: Vec<&str> = validated.iter().map(|task| task.id.as_str()).collect();
