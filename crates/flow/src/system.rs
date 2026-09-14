@@ -197,6 +197,17 @@ pub const FLOWS: &[(&str, &str)] = &[
         "empty-a-session-that-handed-on",
         include_str!("../system/empty-a-session-that-handed-on.flow.json"),
     ),
+    // The frozen benchmark: the fix commits of a repository become tasks whose
+    // hidden test is seen red on the base and green on the fix, once per
+    // candidate through the child below, and the set is hashed and recorded.
+    (
+        "build-the-bench",
+        include_str!("../system/build-the-bench.flow.json"),
+    ),
+    (
+        "validate-a-bench-task",
+        include_str!("../system/validate-a-bench-task.flow.json"),
+    ),
 ];
 
 /// What the catalogue answers for a name it does not ship.

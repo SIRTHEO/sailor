@@ -189,6 +189,11 @@ const ACTION_KIND: Record<string, StepKind> = {
   memory_query: "deposit",
   memory_write: "deposit",
   topic_drift: "deposit",
+  // The benchmark's builder: two readings that end in a verdict, and one
+  // reading of the set back from the home.
+  bench_candidates: "check",
+  bench_validate: "check",
+  bench_freeze: "deposit",
   // Writes a flow file where the person's flows live: a gesture on the world.
   flow_draft: "gesture",
   // The terminals Sailor follows. A reading of a store like the ones above,

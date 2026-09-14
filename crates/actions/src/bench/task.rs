@@ -30,6 +30,10 @@ pub struct Task {
     /// The command that runs the hidden tests, argument by argument, from the
     /// root of the tree.
     pub test_command: Vec<String>,
+    /// Every command, when the fix touched more than one test file; empty for
+    /// a task with one, whose command is `test_command`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub test_commands: Vec<Vec<String>>,
     #[serde(default)]
     pub validated: Option<Validation>,
 }
@@ -44,6 +48,15 @@ pub struct Validation {
 }
 
 impl Task {
+    /// The commands a judge runs, one or several.
+    pub fn commands(&self) -> Vec<Vec<String>> {
+        if self.test_commands.is_empty() {
+            vec![self.test_command.clone()]
+        } else {
+            self.test_commands.clone()
+        }
+    }
+
     pub fn path_in(home: &Path, set: &str, id: &str) -> PathBuf {
         home.join(BENCH_DIR).join(set).join(format!("{id}.json"))
     }
@@ -156,6 +169,7 @@ mod tests {
             gold_patch: String::new(),
             gold_added_lines: 0,
             test_command: vec!["cargo".into(), "test".into()],
+            test_commands: Vec::new(),
             validated: None,
         };
         let path = Task::path_in(&dir, "stage-1", "t1");

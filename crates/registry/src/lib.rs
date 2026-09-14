@@ -198,6 +198,7 @@ pub fn registry_in(
     actions::session_fill::register_measure(&mut registry);
     actions::mandate::register_mandate(&mut registry);
     actions::bench::judge::register_judge(&mut registry);
+    actions::bench::register_bench(&mut registry, home.clone());
     // A flow that runs another one. Registered **even without a ledger**, for
     // the reason declared above: `flow check` must be able to say a `subflow`
     // step names a real action without opening anything. Running without one
@@ -315,6 +316,9 @@ mod tests {
             actions::price_every_call::PRICE_EVERY_CALL_ACTION,
             actions::bench::runs::BENCH_TASKS_ACTION,
             actions::bench::runs::RUN_READING_ACTION,
+            actions::bench::candidates::BENCH_CANDIDATES_ACTION,
+            actions::bench::build::BENCH_VALIDATE_ACTION,
+            actions::bench::build::BENCH_FREEZE_ACTION,
         ] {
             assert!(
                 registry.get(wanted).is_some(),
