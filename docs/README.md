@@ -24,10 +24,10 @@ the real author and the real date.
   the four surfaces an action could belong to (`sense`, `act`, `remember`,
   `gate`), and the rule that would follow. The page says itself why nothing
   builds against it yet.
-- [`decisions.md`](decisions.md) — the memory of the choices. The permanent
-  constraints at the top are the yardstick every other decision is judged by; an
-  entry below binds somebody who was not in the room when it was taken. Read it
-  before repairing anything, or a road already discarded gets taken again.
+- [`decisions.md`](decisions.md) — the architecture decisions, as numbered
+  records. The six permanent constraints come first and are the yardstick every
+  other decision is judged by. Read it before repairing anything, or a road
+  already discarded gets taken again.
 
 ## Operate
 
@@ -52,19 +52,18 @@ the real author and the real date.
 
 ## Contribute
 
-- [`faults-encountered.md`](faults-encountered.md) — every fault that really
-  happened, with how it came to light and **what would have stopped it**. The
-  table is generated from Sailor's own fault store by
-  `sailor faults render`, and `sailor faults check` compares the two. See
-  [`../CONTRIBUTING.md`](../CONTRIBUTING.md) for why this table stays in
-  Italian while the rest of the tree does not.
+- [`faults-encountered.md`](faults-encountered.md) — the open faults that
+  carry a summary written for users, one line each. The page is generated from
+  Sailor's own fault store by `sailor faults render --open`; the full register,
+  with how each fault came to light and **what would have stopped it**, stays
+  in that store.
 
 ## What is not here
 
-**The fault register is in Italian, and stays that way.** Its rows are written
-by whoever met the fault and are kept in Sailor's store, which is the source
-that rewrites the table: translating them in this file would tear them off it,
-and the next render would put them back.
+**The full fault register is not here.** Sailor keeps it in its own store,
+with how each fault showed and what would have prevented it: `sailor faults
+list` reads it. Only an open fault given a summary for users, with `sailor
+faults summary`, is rendered into `faults-encountered.md`.
 
 **The project's working notes are not here.** Sailor keeps them in its own
 store: `sailor search <words>` finds one, `sailor notes list` shows what is

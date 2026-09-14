@@ -99,8 +99,7 @@ answers the sentence this document is born from.
 
 ## The language
 
-`decisions.md`, a decision of 01/09/2026 taken by the owner: *«English everywhere,
-restoring the charter the project was founded with»* — identifiers, comments,
+ADR-007 in `decisions.md`, *«Use English everywhere»* — identifiers, comments,
 documentation, **and every message a user of the tool can see**.
 
 The first preview was in Italian. Redone in English: it is not a preference, it

@@ -11,7 +11,7 @@ use workspace::ratchet::{weigh, Weighed};
 /// Measured on a clean `HEAD` — `git archive HEAD | tar -x` — and never on the
 /// working tree: several sessions write in this checkout, and a seed taken
 /// from uncommitted lines describes a tree nobody else has.
-const MENTIONS_IN_PROSE_TODAY: usize = 5;
+const MENTIONS_IN_PROSE_TODAY: usize = 0;
 
 /// The shells and workspaces this work could be sold against. **Not**
 /// `PRODUCT_NAMES` from `no_product_name_decides_anything`: that one holds the
@@ -67,8 +67,7 @@ fn mentions() -> Vec<(PathBuf, usize)> {
             continue;
         };
         read += 1;
-        let lowered = text.to_lowercase();
-        let here: usize = PRODUCTS.iter().map(|name| lowered.matches(name).count()).sum();
+        let here = mentions_in(&text);
         if here > 0 {
             counted.push((file, here));
         }
@@ -91,7 +90,7 @@ fn the_mentions_in_prose_only_ever_fall() {
         .collect();
 
     assert!(
-        total <= MENTIONS_IN_PROSE_TODAY,
+        total.saturating_sub(MENTIONS_IN_PROSE_TODAY) == 0,
         "product names in prose: {total} (the seed is {MENTIONS_IN_PROSE_TODAY}). \
          A new one is not forbidden, it is unread: decide whether it records a \
          measurement or sells this work against a product. If it is a \
@@ -101,8 +100,14 @@ fn the_mentions_in_prose_only_ever_fall() {
     );
 }
 
+fn mentions_in(text: &str) -> usize {
+    let lowered = text.to_lowercase();
+    PRODUCTS.iter().map(|name| lowered.matches(name).count()).sum()
+}
+
 /// A count that stopped counting reads as agreement — fault 22. Both halves:
-/// files were found, and the products are still spelled as the tree spells them.
+/// files were found, and the search still matches a name. The second half is
+/// asked of a sentence of its own, because a clean tree counts zero.
 #[test]
 fn the_check_can_still_see_what_it_counts() {
     let files = prose_files();
@@ -112,12 +117,11 @@ fn the_check_can_still_see_what_it_counts() {
         files.len()
     );
 
-    let counted = mentions();
-    assert!(
-        !counted.is_empty(),
-        "no product name was found anywhere, which after {} files means the \
-         search stopped matching, not that the prose is clean",
-        files.len()
+    assert_eq!(
+        mentions_in("Measured inside Tmux, then again in a VSCode terminal."),
+        2,
+        "the search no longer matches a product name, so a zero from the tree \
+         would mean it stopped looking, not that the prose is clean"
     );
 }
 

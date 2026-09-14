@@ -42,6 +42,7 @@ pub mod release_cmd;
 pub mod remaining_cmd;
 pub mod remember_cmd;
 pub mod repeats_cmd;
+pub mod retire_index;
 pub mod run_cmd;
 pub mod search_cmd;
 pub mod session_cmd;

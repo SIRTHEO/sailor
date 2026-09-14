@@ -5,6 +5,7 @@
 
 pub mod branches;
 pub mod column;
+pub mod index_identity;
 pub mod ratchet;
 
 use std::path::{Path, PathBuf};
@@ -170,6 +171,17 @@ pub struct OpenTree {
     pub opened_by_born_at: Option<i64>,
 }
 
+/// An index identity a sweep left standing when it took its tree down. A
+/// sweep deletes no index: it writes the identity down for a person to retire.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct IdentityLeftBehind {
+    pub identity: String,
+    pub tree: String,
+    pub repo: String,
+    pub left_at: i64,
+    pub left_by_pid: u32,
+}
+
 /// Where the trees Sailor cuts are written down. A trait, so this crate keeps
 /// talking to git and nothing else and whoever holds Sailor's state implements
 /// it. No do-nothing register is offered: that is fault 97 itself.
@@ -177,6 +189,9 @@ pub trait OpenTrees {
     fn tree_opened(&self, tree: &OpenTree) -> Result<(), String>;
     fn tree_closed(&self, path: &str) -> Result<(), String>;
     fn trees_left_open(&self) -> Result<Vec<OpenTree>, String>;
+    fn identity_left_behind(&self, left: &IdentityLeftBehind) -> Result<(), String>;
+    fn identities_left_behind(&self) -> Result<Vec<IdentityLeftBehind>, String>;
+    fn identity_retired(&self, identity: &str) -> Result<(), String>;
 }
 
 fn now() -> i64 {
@@ -291,7 +306,7 @@ pub fn close_if_the_trunk_holds_it(repo: &Path, tree: &Path, register: &dyn Open
 
 /// **IT NAMES EXACTLY WHAT THE SWEEP PUTS BACK.** A tree the trunk has not got
 /// would wake a state-woken flow for ever: no run of it could take that down.
-pub fn a_tree_is_left_behind(register: &dyn OpenTrees) -> bool {
+pub fn a_tree_is_left_behind(register: &dyn OpenTrees, let_go: &dyn Fn(&OpenTree) -> bool) -> bool {
     let Ok(open) = register.trees_left_open() else {
         return false;
     };
@@ -304,7 +319,9 @@ pub fn a_tree_is_left_behind(register: &dyn OpenTrees) -> bool {
     }
     standing.iter().any(|tree| {
         let at = Path::new(&tree.path);
-        the_trunk_already_holds(Path::new(&tree.repo), at) && nothing_is_uncommitted_in(at)
+        let_go(tree)
+            && the_trunk_already_holds(Path::new(&tree.repo), at)
+            && nothing_is_uncommitted_in(at)
     })
 }
 
@@ -600,6 +617,18 @@ mod tests {
         fn trees_left_open(&self) -> Result<Vec<OpenTree>, String> {
             Ok(self.open_now())
         }
+
+        fn identity_left_behind(&self, _left: &IdentityLeftBehind) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn identities_left_behind(&self) -> Result<Vec<IdentityLeftBehind>, String> {
+            Ok(Vec::new())
+        }
+
+        fn identity_retired(&self, _identity: &str) -> Result<(), String> {
+            Ok(())
+        }
     }
 
     /// A register that refuses every write: the store is unreachable.
@@ -616,6 +645,18 @@ mod tests {
 
         fn trees_left_open(&self) -> Result<Vec<OpenTree>, String> {
             Ok(Vec::new())
+        }
+
+        fn identity_left_behind(&self, _left: &IdentityLeftBehind) -> Result<(), String> {
+            Err("the page will not take it".to_owned())
+        }
+
+        fn identities_left_behind(&self) -> Result<Vec<IdentityLeftBehind>, String> {
+            Ok(Vec::new())
+        }
+
+        fn identity_retired(&self, _identity: &str) -> Result<(), String> {
+            Ok(())
         }
     }
 
@@ -698,7 +739,7 @@ mod tests {
             .success());
         let page = APage::default();
 
-        let empty = a_tree_is_left_behind(&page);
+        let empty = a_tree_is_left_behind(&page, &|_| true);
 
         let carrying = tree_for(&repo, "run-1", "carrying", &page, None).expect("a tree");
         std::fs::write(carrying.join("only-here"), "a thought of its own
@@ -707,17 +748,17 @@ mod tests {
         assert!(run_git(&carrying, &["commit", "-q", "-m", "only here"])
             .status
             .success());
-        let only_unmerged_work = a_tree_is_left_behind(&page);
+        let only_unmerged_work = a_tree_is_left_behind(&page, &|_| true);
 
         let held = tree_for(&repo, "run-1", "held", &page, None).expect("a tree");
         std::fs::write(held.join("a-scratch-file"), "not committed\n").expect("a file");
-        let git_would_refuse_it = a_tree_is_left_behind(&page);
+        let git_would_refuse_it = a_tree_is_left_behind(&page, &|_| true);
 
         std::fs::remove_file(held.join("a-scratch-file")).expect("the file goes");
-        let the_trunk_holds_one = a_tree_is_left_behind(&page);
+        let the_trunk_holds_one = a_tree_is_left_behind(&page, &|_| true);
 
         std::fs::remove_dir_all(&held).expect("the directory goes");
-        let the_register_outlived_it = a_tree_is_left_behind(&page);
+        let the_register_outlived_it = a_tree_is_left_behind(&page, &|_| true);
         let _ = std::fs::remove_dir_all(&scratch);
 
         assert!(!empty, "an empty register woke a sweep with nothing to do");
@@ -736,6 +777,25 @@ mod tests {
         );
     }
 
+    /// **A TREE ITS OPENER STILL HOLDS WAKES NOTHING.** The sweep keeps it, so a
+    /// beat woken on it would run the sweep for ever and put nothing back.
+    #[test]
+    fn a_tree_its_opener_still_holds_wakes_nothing() {
+        let (scratch, repo) = a_repository("still-held");
+        assert!(run_git(&repo, &["branch", "-M", branches::TRUNK])
+            .status
+            .success());
+        let page = APage::default();
+        tree_for(&repo, "run-1", "held", &page, None).expect("a tree");
+
+        let held = a_tree_is_left_behind(&page, &|_| false);
+        let let_go = a_tree_is_left_behind(&page, &|_| true);
+        let _ = std::fs::remove_dir_all(&scratch);
+
+        assert!(!held, "a tree somebody still holds woke a sweep that must keep it");
+        assert!(let_go, "the same tree, let go, woke nothing");
+    }
+
     /// `ARefusal` lists cleanly, so the test below would never meet a failure.
     struct AShutPage;
 
@@ -751,13 +811,25 @@ mod tests {
         fn trees_left_open(&self) -> Result<Vec<OpenTree>, String> {
             Err("the page will not open".to_owned())
         }
+
+        fn identity_left_behind(&self, _left: &IdentityLeftBehind) -> Result<(), String> {
+            Err("shut".to_owned())
+        }
+
+        fn identities_left_behind(&self) -> Result<Vec<IdentityLeftBehind>, String> {
+            Err("the page will not open".to_owned())
+        }
+
+        fn identity_retired(&self, _identity: &str) -> Result<(), String> {
+            Err("shut".to_owned())
+        }
     }
 
     /// A register that will not open is not a machine with trees left on it:
     /// waking on a failed reading spins on the failure and never clears it.
     #[test]
     fn a_register_that_will_not_open_wakes_nothing() {
-        assert!(!a_tree_is_left_behind(&AShutPage));
+        assert!(!a_tree_is_left_behind(&AShutPage, &|_| true));
     }
 
     /// The refusal is the safety property: what overrides it is never written.

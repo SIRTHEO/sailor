@@ -21,38 +21,35 @@ fn scratch(label: &str) -> PathBuf {
     dir.join(faults::FAULTS_FILE)
 }
 
-/// The fault table as written. **No documents at all is nothing to measure;
-/// documents without this one is the table lost, which is the defect.**
-fn table() -> Option<String> {
-    table_in(
-        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .and_then(|crates| crates.parent())
-            .expect("the crate lives in <root>/crates/faults")
-            .join("docs"),
-    )
-}
+/// A full six-column register, kept here rather than read from the repository:
+/// the published page carries only the open faults, and the round trip must
+/// still meet every shape a cell takes — an escaped bar, bold, both date
+/// forms, and all three standings.
+const A_REGISTER: &str = "\
+# The faults
 
-/// The same reading, of whatever documents it is pointed at, so the verdicts
-/// below can be put to a table with a defect planted in it.
-fn table_in(documents: &std::path::Path) -> Option<String> {
-    let Ok(text) = std::fs::read_to_string(documents.join("faults-encountered.md")) else {
-        assert!(
-            !documents.is_dir(),
-            "this tree carries documents and not the fault register: \
-             docs/faults-encountered.md was renamed, moved or lost, and every check \
-             below would have passed for having nothing to read"
-        );
-        workspace::measured_nothing("this tree carries no documents, so it carries no table");
-        return None;
-    };
+| # | date | what happened | how it showed | what would have prevented it | status |
+|---|---|---|---|---|---|
+| 1 | 29/08 | **A step reported success on a non-zero exit.** The run went on | reading the ledger by hand | a non-zero exit breaks the step | **open** |
+| 2 | 2026-08-30 | a flag read `on\\|off` and split the row | the page showed eight columns | escaping the bar on the way out | **closed** on 31/08 — with a mutant |
+| 3 | 31/08 | a count «reassured» instead of measuring | counting the rows by hand | a judge that counts | **closed in part** on 01/09, the measure still to make |
+| 4 | 01/09 | a port held by an orphan process blocked the start | the window would not open | the store names every process it starts | **open** — the sweep exists, the start is not guarded |
+| 5 | 2026-09-02 | two sessions took the same number | two rows 27 in one table | the store hands out the number | **closed** on 03/09 |
+
+What the table says is prose, and the round trip does not read it.
+";
+
+const ROWS_IN_THE_REGISTER: usize = 5;
+
+/// The register the checks below walk, with the receipt of what they walked.
+fn table() -> String {
     workspace::measured_against(
-        faults_in(&text),
-        "faults read from the table and carried across",
-        text.lines().count(),
-        "lines the file holds",
+        faults_in(A_REGISTER),
+        "faults read from the fixture register and carried across",
+        A_REGISTER.lines().count(),
+        "lines the fixture holds",
     );
-    Some(text)
+    A_REGISTER.to_owned()
 }
 
 /// What the judge actually walks: the file holds twice as many lines.
@@ -142,14 +139,12 @@ fn the_numbers_of(read: &[Fault]) -> Vec<i64> {
 /// the information.
 #[test]
 fn every_row_survives_the_move_word_for_word() {
-    let Some(source) = table() else {
-        return;
-    };
+    let source = table();
     let read = faults::parse(&source);
-    assert!(
-        read.len() > 40,
-        "the table emptied under the migration's feet: {} rows",
-        read.len()
+    assert_eq!(
+        read.len(),
+        ROWS_IN_THE_REGISTER,
+        "the fixture register was not read whole"
     );
 
     let store = Faults::open(scratch("round-trip")).expect("opening");
@@ -278,6 +273,7 @@ fn no_door_into_the_store_takes_a_cell_the_table_cannot_hold() {
                 what_happened: sound.what_happened.clone(),
                 how_it_showed: sound.how_it_showed.clone(),
                 what_would_prevent: sound.what_would_prevent.clone(),
+                public_summary: None,
             })
             .is_err(),
         "«restore» let a broken status through"
@@ -320,6 +316,7 @@ fn a_newline_in_a_cell_makes_the_row_vanish_on_the_way_back() {
         what_would_prevent: "refusing it at the door".to_owned(),
         status: "**open**".to_owned(),
         standing: faults::Standing::Open,
+        public_summary: None,
     };
 
     let back = faults::parse(&faults::render(&[broken]));
@@ -329,6 +326,46 @@ fn a_newline_in_a_cell_makes_the_row_vanish_on_the_way_back() {
         "this test records why the door is shut. If the row now survives the \
          round trip, the rendering learned to escape newlines, and the guard \
          in the store can be reconsidered - deliberately, not by accident"
+    );
+}
+
+/// **THE SUMMARY HAS A DOOR OF ITS OWN**, and the doors that rewrite a row do
+/// not pass through it: restoring the same number keeps what users read.
+#[test]
+fn a_public_summary_is_written_by_its_own_door_and_survives_a_restore() {
+    let store = Faults::open(scratch("summary")).expect("opening");
+    let written = store
+        .record(&Draft {
+            happened_on: "01/09".to_owned(),
+            what_happened: "a workshop story".to_owned(),
+            how_it_showed: "by running it".to_owned(),
+            what_would_prevent: "this test".to_owned(),
+            status: "**open**".to_owned(),
+            standing: None,
+        })
+        .expect("recording");
+    assert_eq!(written.public_summary, None, "a fault is born with no summary");
+
+    assert!(store.set_public_summary(written.number, "  ").is_err(), "an empty summary was written");
+    assert!(
+        store.set_public_summary(written.number, "one line\nand another").is_err(),
+        "a summary that breaks a row was written"
+    );
+    assert!(
+        store.set_public_summary(99, "A summary.").is_err(),
+        "a summary for a fault that is not there was written"
+    );
+
+    store
+        .set_public_summary(written.number, "The window forgets a flow you renamed.")
+        .expect("a summary");
+    let row = faults::parse(&faults::render(&store.all().expect("reading back"))).remove(0);
+    store.restore(&row).expect("restoring the row");
+
+    assert_eq!(
+        store.get(written.number).expect("the fault").public_summary.as_deref(),
+        Some("The window forgets a flow you renamed."),
+        "restoring the row erased what users read"
     );
 }
 
@@ -435,9 +472,7 @@ fn a_newer_store_says_it_is_newer_and_not_broken() {
 /// line between this and a diary.
 #[test]
 fn a_row_without_the_check_that_would_have_stopped_it_is_not_finished() {
-    let Some(source) = table() else {
-        return;
-    };
+    let source = table();
     let unfinished = rows_that_are_a_diary(&faults::parse(&source));
     assert!(
         unfinished.is_empty(),
@@ -450,9 +485,7 @@ fn a_row_without_the_check_that_would_have_stopped_it_is_not_finished() {
 /// and from here on they cannot be got wrong.
 #[test]
 fn the_numbers_that_come_in_have_no_gaps_and_no_twins() {
-    let Some(source) = table() else {
-        return;
-    };
+    let source = table();
     let numbers = the_numbers_of(&faults::parse(&source));
     assert_eq!(
         numbers,
@@ -462,27 +495,11 @@ fn the_numbers_that_come_in_have_no_gaps_and_no_twins() {
     );
 }
 
-/// A table of its own under the temporary directory, holding the rows it is
-/// handed.
-fn a_table(label: &str, rows: &str) -> PathBuf {
-    let documents = std::env::temp_dir().join(format!(
-        "faults-planted-{label}-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|since| since.as_nanos())
-            .unwrap_or(0)
-    ));
-    let _ = std::fs::remove_dir_all(&documents);
-    std::fs::create_dir_all(&documents).expect("a scratch documents directory");
-    std::fs::write(
-        documents.join("faults-encountered.md"),
-        format!(
-            "# The faults\n\n| # | when | what happened | how it showed | what would prevent it | status |\n| --- | --- | --- | --- | --- | --- |\n{rows}"
-        ),
+/// A table of its own, holding the rows it is handed.
+fn a_table(rows: &str) -> String {
+    format!(
+        "# The faults\n\n| # | when | what happened | how it showed | what would prevent it | status |\n| --- | --- | --- | --- | --- | --- |\n{rows}"
     )
-    .expect("a table");
-    documents
 }
 
 /// One row of the table, written the way the register writes it.
@@ -490,17 +507,12 @@ fn a_row(number: i64, prevention: &str) -> String {
     format!("| {number} | 01/09 | something went wrong | by running it | {prevention} | **open** |\n")
 }
 
-/// **A SOUND TABLE IS NOT A WORKING CHECK.** The three verdicts above have only
-/// ever been asked about the register of this repository, which holds nothing
-/// to refuse, so none of them had ever named a row. Here three tables of their
-/// own are built under the temporary directory, one defect planted in each, and
-/// the same three verdicts are asked of them.
+/// **A SOUND TABLE IS NOT A WORKING CHECK.** The three verdicts above are
+/// asked of a register with nothing to refuse, so here a defect is planted in
+/// a table of its own and the same verdicts must name the row.
 #[test]
 fn a_defect_planted_in_a_throwaway_table_is_found_by_every_verdict() {
-    let sound = format!("{}{}", a_row(1, "this test"), a_row(2, "this test"));
-
-    let held = a_table("sound", &sound);
-    let source = table_in(&held).expect("the planted table is read");
+    let source = a_table(&format!("{}{}", a_row(1, "this test"), a_row(2, "this test")));
     let store = Faults::open(scratch("planted-sound")).expect("opening");
     assert!(
         what_the_crossing_changes(&source, &store).is_empty(),
@@ -508,37 +520,31 @@ fn a_defect_planted_in_a_throwaway_table_is_found_by_every_verdict() {
     );
     assert!(rows_that_are_a_diary(&faults::parse(&source)).is_empty());
     assert_eq!(the_numbers_of(&faults::parse(&source)), vec![1, 2]);
-    let _ = std::fs::remove_dir_all(&held);
 
     // A cell padded with spaces is read trimmed and written back trimmed: the
     // row that comes out is not the row that went in, word for word.
-    let padded = a_table(
-        "padded",
-        &format!("{}| 2 | 01/09 | something went wrong | by running it |  this test  | **open** |\n", a_row(1, "this test")),
-    );
-    let source = table_in(&padded).expect("the planted table is read");
+    let source = a_table(&format!(
+        "{}| 2 | 01/09 | something went wrong | by running it |  this test  | **open** |\n",
+        a_row(1, "this test")
+    ));
     let store = Faults::open(scratch("planted-padded")).expect("opening");
     let changed = what_the_crossing_changes(&source, &store);
     assert!(
         changed.iter().any(|said| said.contains("fault 2 changed while crossing the store")),
         "the row that does not survive the crossing was not named: {changed:?}"
     );
-    let _ = std::fs::remove_dir_all(&padded);
 
     // A row that says nothing about what would have stopped it is a diary
     // entry, and the column being empty is how it looks.
-    let diary = a_table("diary", &format!("{}{}", a_row(1, "this test"), a_row(2, "")));
-    let source = table_in(&diary).expect("the planted table is read");
+    let source = a_table(&format!("{}{}", a_row(1, "this test"), a_row(2, "")));
     assert_eq!(
         rows_that_are_a_diary(&faults::parse(&source)),
         vec![2],
         "the row with no prevention in it was not named"
     );
-    let _ = std::fs::remove_dir_all(&diary);
 
     // And a gap in the numbers is a row the migration would carry in wrong.
-    let gap = a_table("gap", &format!("{}{}", a_row(1, "this test"), a_row(3, "this test")));
-    let source = table_in(&gap).expect("the planted table is read");
+    let source = a_table(&format!("{}{}", a_row(1, "this test"), a_row(3, "this test")));
     let numbers = the_numbers_of(&faults::parse(&source));
     assert_eq!(numbers, vec![1, 3]);
     assert_ne!(
@@ -546,40 +552,16 @@ fn a_defect_planted_in_a_throwaway_table_is_found_by_every_verdict() {
         (1..=numbers.len() as i64).collect::<Vec<i64>>(),
         "a gap in the numbers read as 1..N"
     );
-    let _ = std::fs::remove_dir_all(&gap);
 }
 
 /// **THE RECEIPT COUNTS WHAT WAS WALKED**, not the lines around it.
 #[test]
 fn the_receipt_counts_the_faults_and_not_the_lines_of_the_file() {
-    let three = a_table("counted", &format!("{}{}{}", a_row(1, "a"), a_row(2, "b"), a_row(3, "c")));
-    let source = table_in(&three).expect("the planted table is read");
+    let source = a_table(&format!("{}{}{}", a_row(1, "a"), a_row(2, "b"), a_row(3, "c")));
 
     assert_eq!(faults_in(&source), 3, "three rows went in");
     assert!(
         source.lines().count() > 3,
         "the file holds heading and rule as well, which is why the two numbers differ"
-    );
-    let _ = std::fs::remove_dir_all(&three);
-}
-
-/// **THE JUDGE MUST BE ABLE TO SAY IT DID NOT MEASURE.** A tree carrying no
-/// documents carries no table, and that is not a table with nothing wrong in
-/// it: every verdict above would pass over an empty string.
-#[test]
-fn a_tree_with_no_documents_makes_the_judge_declare_it_measured_nothing() {
-    let nowhere = std::env::temp_dir().join(format!(
-        "faults-no-documents-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|since| since.as_nanos())
-            .unwrap_or(0)
-    ));
-    let _ = std::fs::remove_dir_all(&nowhere);
-
-    assert!(
-        table_in(&nowhere).is_none(),
-        "with no documents to read the judge must hand back nothing, never an empty table"
     );
 }
