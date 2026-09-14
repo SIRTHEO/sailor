@@ -172,6 +172,18 @@ fn restore_archives_the_file_and_the_shipped_flow_runs_again() {
     );
 }
 
+/// Whether a file inside a `0555` folder can still be removed by this user.
+#[cfg(unix)]
+fn a_read_only_folder_still_lets_this_user_remove(probe: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::create_dir_all(probe).expect("the probe folder");
+    std::fs::write(probe.join("a-file"), "probe").expect("the probe file");
+    std::fs::set_permissions(probe, std::fs::Permissions::from_mode(0o555)).expect("a read-only probe");
+    let removed = std::fs::remove_file(probe.join("a-file")).is_ok();
+    let _ = std::fs::set_permissions(probe, std::fs::Permissions::from_mode(0o755));
+    removed
+}
+
 /// A read-only flows folder lets the file be archived but not removed: both
 /// paths are said, the flow that runs does not change, and a second attempt
 /// makes no second archive.
@@ -188,6 +200,13 @@ fn an_original_that_stays_is_archived_once_and_both_paths_are_said() {
     }
 
     let scratch = Scratch::new("stays");
+    if a_read_only_folder_still_lets_this_user_remove(&scratch.0.join("probe")) {
+        eprintln!(
+            "skipped: this user removes files from a 0555 folder (root does), so a read-only \
+             folder cannot make the removal fail here; flow's FaultyDisk unit test covers it"
+        );
+        return;
+    }
     let folder = scratch.0.join("home").join("flows");
     let file = write_flow(&folder, shipped());
     std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o555)).expect("a read-only folder");
@@ -196,7 +215,10 @@ fn an_original_that_stays_is_archived_once_and_both_paths_are_said() {
     let first = sailor(&scratch, None, &["flow", "restore", shipped()]);
     let second = sailor(&scratch, None, &["flow", "restore", shipped()]);
 
-    let archives = archived_in(&scratch.0.join("home").join("flows-archived"));
+    let archives: Vec<PathBuf> = archived_in(&scratch.0.join("home").join("flows-archived"))
+        .into_iter()
+        .filter(|path| !path.file_name().is_some_and(|name| name.to_string_lossy().starts_with('.')))
+        .collect();
     assert_eq!(archives.len(), 1, "one archive after two attempts: {archives:?}\n{}\n{}", first.text, second.text);
     assert!(file.exists(), "the original stays");
     let stays = catalogue::say(

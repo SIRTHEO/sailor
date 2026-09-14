@@ -710,6 +710,8 @@
   "flow.for_each.child_failed": "element at index {index} of {count} failed: {why}",
   "flow.for_each.child_not_yet": "element at index {index} of {count}: run {run_id} of flow {flow} is not done yet",
   "flow.for_each.child_waiting": "element at index {index} of {count}: run {run_id} of flow {flow} is waiting",
+  "flow.restore.pending_not_written": "the mark {marker} could not be written, so a retry will archive the file again: {error}",
+  "flow.restore.scratch_left": "the scratch file {scratch} could not be removed and is left beside the archive: {error}",
   "flow.sources.no_home": "no home is known, so your flows are not looked for",
   "run.failure.ambiguous_reference": "this reference is not alone in its object",
   "run.failure.answer_not_json": "the answer was not JSON",

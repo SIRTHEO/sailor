@@ -213,7 +213,7 @@ fn restore_flow(sources: &[FlowSource], name: &str) -> Result<String, String> {
         .ok_or_else(|| no_flow_called(sources, &known_flows(sources), name))?;
     let path = chain.winner.path.display().to_string();
     let now = now_secs()?;
-    let archive = flow::system::restore(&chain, sources, now).map_err(|refusal| match refusal {
+    let done = flow::system::restore(&chain, sources, now).map_err(|refusal| match refusal {
         RestoreRefusal::AlreadyBuiltIn => {
             catalogue::say("cli.flow.restore_already_built_in", &[("flow", name)])
         }
@@ -246,6 +246,7 @@ fn restore_flow(sources: &[FlowSource], name: &str) -> Result<String, String> {
             ],
         ),
     })?;
+    let archive = done.archive;
     let now_runs = flow::system::chain_of(sources, here.as_deref(), name)
         .map(|after| after.winner.origin)
         .unwrap_or(flow::system::BUILTIN_ORIGIN);
@@ -260,16 +261,21 @@ fn restore_flow(sources: &[FlowSource], name: &str) -> Result<String, String> {
         ],
     );
     let first = flow::system::archive_path_for(&chain, now);
-    if archive == first || std::fs::symlink_metadata(&first).is_err() {
-        return Ok(restored);
-    }
-    Ok(format!(
-        "{restored}\n{}",
-        catalogue::say(
+    let mut lines = vec![restored];
+    if archive != first && std::fs::symlink_metadata(&first).is_ok() {
+        lines.push(catalogue::say(
             "cli.flow.restore_archive_name_taken",
             &[("first", &first.display().to_string()), ("archive", &archive.display().to_string())],
-        )
-    ))
+        ));
+    }
+    // A scratch file left beside the archive is not a clean success.
+    match done.scratch_left {
+        Some(left) => {
+            lines.push(left);
+            Err(lines.join("\n"))
+        }
+        None => Ok(lines.join("\n")),
+    }
 }
 
 /// Where it looked, always after an empty list: an empty list that does not
