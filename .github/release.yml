@@ -4,8 +4,10 @@
 changelog:
   exclude:
     labels:
-      - internal
       - skip-changelog
+      - duplicate
+      - invalid
+      - wontfix
   categories:
     - title: Fixes
       labels:
