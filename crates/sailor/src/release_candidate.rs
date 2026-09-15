@@ -46,6 +46,22 @@ pub(crate) fn resolve(root: &Path, asked: &str) -> Result<Candidate, String> {
     Ok(Candidate { revision, short })
 }
 
+/// Every candidate directory an earlier release left, but the one this release
+/// builds: each belongs to one commit, and even that commit's build is thrown
+/// away when it comes back, so no later release reuses them.
+pub(crate) fn earlier_candidates(root: &Path, building: Option<&str>) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(root.join("target").join("candidates")) else {
+        return Vec::new();
+    };
+    let mut found: Vec<PathBuf> = entries
+        .flatten()
+        .filter(|entry| building.is_none_or(|revision| entry.file_name() != revision))
+        .map(|entry| entry.path())
+        .collect();
+    found.sort();
+    found
+}
+
 /// A detached checkout of exactly the candidate, kept between releases of
 /// the same commit so cargo rebuilds nothing it already built.
 pub(crate) fn check_out(root: &Path, candidate: &Candidate) -> Result<Place, String> {
@@ -134,4 +150,23 @@ fn sha256_of(file: &Path) -> Result<String, String> {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_earlier_candidate_is_named_but_the_one_being_built() {
+        let root = std::env::temp_dir().join(format!("sailor-earlier-candidates-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        for revision in ["aaaa", "bbbb"] {
+            fs::create_dir_all(root.join("target/candidates").join(revision).join("build")).expect("a candidate");
+        }
+        let candidates = root.join("target/candidates");
+
+        assert_eq!(earlier_candidates(&root, Some("bbbb")), vec![candidates.join("aaaa")]);
+        assert_eq!(earlier_candidates(&root, None), vec![candidates.join("aaaa"), candidates.join("bbbb")]);
+        let _ = fs::remove_dir_all(&root);
+    }
 }

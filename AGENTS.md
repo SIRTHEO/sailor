@@ -60,11 +60,12 @@ Traps already paid for:
   sailor ratchet --only comments_do_not_crowd_out_the_code
   ```
 
-  It redoes `git archive HEAD` into `target/ratchet-tree`, lays over it the
+  It redoes `git archive HEAD` into `target/ratchet-tree` of the main checkout,
+  shared with every worktree together with its build, lays over it the
   modified files and the new ones that land in a directory `HEAD` knows about
   (it lists them: look whether one of them is not yours), and prints of the red
   judges only what they said. The rite by hand — archive, `cp` file by file,
-  `cargo test --manifest-path` with `CARGO_TARGET_DIR=$PWD/target/from-head` —
+  `cargo test --manifest-path` with `CARGO_TARGET_DIR=$PWD/target/ratchet` —
   remains the explanation of what it does, no longer the gesture. It holds
   before saying «the tree is green» too: `git status` shows who else is writing,
   and their reds are not yours.
