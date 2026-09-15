@@ -220,6 +220,12 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
 
     let temporary = make_temporary_tree()?;
     let building = candidate.as_ref().map(|chosen| chosen.revision.as_str());
+    // Taken before the checkout, or a release starting meanwhile would find
+    // this candidate held by nobody and remove it mid-clone.
+    if let Some(chosen) = &candidate {
+        let build = release_candidate::place_of(&root, chosen).build;
+        crate::machine_cmd::a_build_directory_is_taken(&build, None, "release");
+    }
     for earlier in release_candidate::earlier_candidates(&root, building) {
         if crate::machine_cmd::an_earlier_runs_build_goes(&earlier.join("build")) {
             let _ = fs::remove_dir_all(&earlier);

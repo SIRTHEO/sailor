@@ -580,7 +580,7 @@ fn tracked_by_a_repository_of_its_own(into: &Path) -> Result<(), String> {
 /// that build incremental, so neither is removed after a run. Every worktree
 /// reuses the main checkout's pair instead of leaving gigabytes of its own
 /// behind; a checkout git cannot place is its own home.
-pub(crate) fn checkout_holding_the_gate(root: &Path) -> PathBuf {
+fn checkout_holding_the_gate(root: &Path) -> PathBuf {
     let asked = Command::new("git")
         .arg("-C")
         .arg(root)
@@ -591,7 +591,10 @@ pub(crate) fn checkout_holding_the_gate(root: &Path) -> PathBuf {
         _ => return root.to_path_buf(),
     };
     match common.parent() {
-        Some(main) if common.file_name().is_some_and(|name| name == ".git") => {
+        Some(main)
+            if common.file_name().is_some_and(|name| name == ".git")
+                && workspace::is_the_top_of_its_repository(main) =>
+        {
             main.canonicalize().unwrap_or_else(|_| main.to_path_buf())
         }
         _ => root.to_path_buf(),
@@ -614,13 +617,27 @@ fn this_checkouts_own_copies_go(root: &Path, gate: &Path, build_goes: impl Fn(&P
         let _ = std::fs::remove_dir_all(own.join(name));
     }
     build_goes(&own.join(names[2]));
+    // The lock file stays: unlinked, an older gate could lock the orphan while
+    // a third one locks a fresh file beside it.
     drop(held);
-    let _ = std::fs::remove_file(own.join("ratchet.lock"));
+}
+
+/// Whether the gate can be taken where it is shared. A checkout allowed to
+/// write only inside itself, as a sandboxed session is, measures at home.
+fn the_shared_place_takes_a_lock(gate: &Path) -> bool {
+    let target = gate.join("target");
+    std::fs::create_dir_all(&target).is_ok()
+        && std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(target.join("ratchet.lock"))
+            .is_ok()
 }
 
 /// The tree the command is run in, when it is one: a checkout other than the
-/// sources in service — a worktree, a clone — is measured for itself, and
-/// two checkouts never share one `target/ratchet-tree`.
+/// sources in service — a worktree, a clone — is measured for itself, even
+/// where it lays that measure out in a place it shares with its repository.
 pub(crate) fn root_to_measure() -> Result<PathBuf, String> {
     match std::env::current_dir().ok().and_then(|here| workspace::tree_around(&here)) {
         Some(tree) => Ok(tree),
@@ -663,7 +680,8 @@ fn only_gate_in(root: &Path) -> Result<OneGateAtATime, String> {
 fn measured(asked: &Asked) -> Result<bool, String> {
     let only = &asked.only;
     let root = root_to_measure()?;
-    let gate = checkout_holding_the_gate(&root);
+    let shared = checkout_holding_the_gate(&root);
+    let gate = if the_shared_place_takes_a_lock(&shared) { shared } else { root.clone() };
     let _only_one = only_gate_in(&gate)?;
     this_checkouts_own_copies_go(&root, &gate, crate::machine_cmd::an_earlier_runs_build_goes);
     let clean = gate.join("target").join("ratchet-tree");
@@ -891,10 +909,11 @@ mod tests {
     fn a_lay_out_that_fails_leaves_no_copy_of_head_behind() {
         let scratch = std::env::temp_dir().join(format!("sailor-staging-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&scratch);
-        std::fs::create_dir_all(scratch.join("not-a-repository")).expect("the scratch tree");
+        std::fs::create_dir_all(&scratch).expect("the scratch tree");
         let into = scratch.join("measured");
 
-        let laid = clean_tree_with_changes(&scratch.join("not-a-repository"), &into, true);
+        // A directory that does not exist, so no repository above it answers.
+        let laid = clean_tree_with_changes(&scratch.join("nowhere"), &into, true);
 
         assert!(laid.is_err(), "an archive of no repository was laid out");
         assert!(!beside(&into).exists(), "the failed run left its copy of HEAD on the disk");
@@ -913,6 +932,27 @@ mod tests {
         assert_eq!(checkout_holding_the_gate(&root), main);
         assert_eq!(checkout_holding_the_gate(&worktree), main, "a worktree gates in a place of its own");
         let _ = std::fs::remove_dir_all(root.parent().expect("the scratch"));
+    }
+
+    /// A main checkout this session may not write to is no place to gate in:
+    /// the checkout measures at home instead of failing on a permission.
+    #[cfg(unix)]
+    #[test]
+    fn a_shared_place_that_cannot_be_written_is_not_taken() {
+        use std::os::unix::fs::PermissionsExt;
+        let scratch = std::env::temp_dir().join(format!("sailor-read-only-gate-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&scratch);
+        let (writable, shut) = (scratch.join("writable"), scratch.join("shut"));
+        std::fs::create_dir_all(&writable).expect("a writable main checkout");
+        std::fs::create_dir_all(&shut).expect("a main checkout");
+        std::fs::set_permissions(&shut, std::fs::Permissions::from_mode(0o555)).expect("shut it");
+
+        let taken = the_shared_place_takes_a_lock(&shut);
+        std::fs::set_permissions(&shut, std::fs::Permissions::from_mode(0o755)).expect("open it again");
+
+        assert!(the_shared_place_takes_a_lock(&writable), "a writable place was refused");
+        assert!(!taken, "a place nobody may write to was taken for the gate");
+        let _ = std::fs::remove_dir_all(&scratch);
     }
 
     /// What this checkout's own earlier gates left goes, unless a gate still

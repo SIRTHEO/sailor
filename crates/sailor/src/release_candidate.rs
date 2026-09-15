@@ -62,14 +62,21 @@ pub(crate) fn earlier_candidates(root: &Path, building: Option<&str>) -> Vec<Pat
     found
 }
 
-/// A detached checkout of exactly the candidate, kept between releases of
-/// the same commit so cargo rebuilds nothing it already built.
-pub(crate) fn check_out(root: &Path, candidate: &Candidate) -> Result<Place, String> {
+/// Where a candidate is checked out and built, known before anything is made
+/// so the build can be written down as taken first.
+pub(crate) fn place_of(root: &Path, candidate: &Candidate) -> Place {
     let base = root.join("target").join("candidates").join(&candidate.revision);
-    let place = Place {
+    Place {
         tree: base.join("tree"),
         build: base.join("build"),
-    };
+    }
+}
+
+/// A detached checkout of exactly the candidate, kept between releases of
+/// the same commit so it is not cloned again; its build is always remade.
+pub(crate) fn check_out(root: &Path, candidate: &Candidate) -> Result<Place, String> {
+    let place = place_of(root, candidate);
+    let base = place.tree.parent().unwrap_or(root).to_path_buf();
     let failed = || {
         catalogue::say(
             "cli.release.candidate_checkout_failed",
