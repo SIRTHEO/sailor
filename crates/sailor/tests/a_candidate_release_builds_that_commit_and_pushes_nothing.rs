@@ -256,13 +256,16 @@ fn a_tampered_candidate_build_is_rebuilt_before_it_is_installed() {
             .join(revision)
             .join("build/release/sailor")
     };
+    let mut other_bytes = Vec::new();
     for revision in [&harbour.first, &harbour.second] {
         let said = harbour.release(&["--no-push", "--candidate", revision, "--skip-tests"]);
         assert!(went_through(&said), "a release did not go through: {}", spoken(&said));
+        if other_bytes.is_empty() {
+            other_bytes = std::fs::read(build_of(&harbour.first)).expect("the other build is read");
+        }
     }
     // Written, not copied, so the mtime stays newer than the sources; and in
     // `deps/` too, which cargo judges fresh and copies back over `release/`.
-    let other_bytes = std::fs::read(build_of(&harbour.first)).expect("the other build is read");
     let cached = build_of(&harbour.second);
     let deps = cached.parent().expect("release/").join("deps");
     let mut swapped = vec![cached.clone()];
@@ -286,6 +289,25 @@ fn a_tampered_candidate_build_is_rebuilt_before_it_is_installed() {
     let recorded = std::fs::read_to_string(harbour.home.join("state/sailor-binary-commit.sha256"))
         .unwrap_or_default();
     assert_eq!(recorded.trim(), sha256_of(&harbour.installed()), "the digest is not the install's");
+}
+
+/// **A RELEASE REMOVES WHAT ITS EARLIER RUNS LEFT** before it weighs the disk:
+/// another commit's candidate directory is never built on again.
+#[test]
+fn an_earlier_candidate_is_removed_by_the_next_release() {
+    let harbour = a_harbour("earlier");
+    harbour.refuse_and_mark_every_push();
+    let candidate = |revision: &str| harbour.repo.join("target/candidates").join(revision);
+
+    let said = harbour.release(&["--no-push", "--candidate", &harbour.first, "--skip-tests"]);
+    assert!(went_through(&said), "the first release did not go through: {}", spoken(&said));
+    assert!(candidate(&harbour.first).is_dir(), "the first candidate built nowhere");
+    let said = harbour.release(&["--no-push", "--candidate", &harbour.second, "--skip-tests"]);
+    let spoke = spoken(&said);
+
+    assert!(went_through(&said), "the second release did not go through: {spoke}");
+    assert!(!candidate(&harbour.first).exists(), "the earlier candidate was left on the disk: {spoke}");
+    assert!(candidate(&harbour.second).join("build").is_dir(), "the candidate being built was taken: {spoke}");
 }
 
 #[test]
