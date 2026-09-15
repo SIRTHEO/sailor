@@ -933,7 +933,13 @@ mod tests {
         assert!(checkout.join("target/ratchet").exists(), "a running gate's build was taken");
         drop(running);
 
-        this_checkouts_own_copies_go(&checkout, &gate, remove);
+        // A child another test spawns at this instant inherits the lock until
+        // it execs, so the freed checkout is given a moment, not one try.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while checkout.join("target/ratchet").exists() && std::time::Instant::now() < deadline {
+            this_checkouts_own_copies_go(&checkout, &gate, remove);
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
         assert!(!checkout.join("target/ratchet-tree").exists(), "the old copy of HEAD stayed");
         assert!(!checkout.join("target/ratchet").exists(), "the old build of the judges stayed");
         this_checkouts_own_copies_go(&gate, &gate, remove);
