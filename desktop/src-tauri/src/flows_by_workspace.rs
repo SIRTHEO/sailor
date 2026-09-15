@@ -240,6 +240,7 @@ impl Crew {
     }
 
     /// Readings started and not yet finished, answered or abandoned.
+    #[cfg(test)]
     pub(crate) fn live(&self) -> usize {
         self.trees.live.load(Ordering::SeqCst) + self.resolutions.live.load(Ordering::SeqCst)
     }
