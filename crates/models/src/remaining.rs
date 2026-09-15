@@ -24,6 +24,12 @@ pub struct OauthUsageChannel {
     pub headers: Vec<String>,
     /// A command that prints the credentials, when they are not in the file.
     pub held_by: Vec<String>,
+    /// The keys down to the access token's own expiry, unix milliseconds.
+    /// Empty when the provider's credentials carry none: fault 169 is then
+    /// not distinguishable from a real refusal, and `Refused` stays plain.
+    pub access_expires_pointer: Vec<String>,
+    /// The keys down to the refresh token's own expiry, unix milliseconds.
+    pub refresh_expires_pointer: Vec<String>,
     /// The words this provider uses for its windows.
     pub shape: WindowWords,
 }
@@ -105,6 +111,13 @@ pub enum RemainingError {
     /// **It never carries the token**: only the `message` field is copied,
     /// never the request.
     Refused(String),
+    /// It refused, and the same credentials say why on their own terms: the
+    /// short-lived access token had already passed its own `expiresAt` when
+    /// asked, while the refresh token beside it had not (fault 169). A `claude`
+    /// run renews the access token on its own; this reader never does. This is
+    /// evidence, not a verdict — the refresh token could still be rejected for
+    /// a reason these timestamps cannot show.
+    RefusedWithAnUnexpiredRefreshToken { said: String, refresh_expires_at: i64 },
     /// It answered something that is not the expected JSON: the channel is
     /// beta, and this is how it will break.
     NotUnderstood,
@@ -130,6 +143,13 @@ impl fmt::Display for RemainingError {
             }
             RemainingError::Unreachable(why) => write!(out, "the channel does not answer: {why}"),
             RemainingError::Refused(said) => write!(out, "the engine refused: {said}"),
+            RemainingError::RefusedWithAnUnexpiredRefreshToken { said, refresh_expires_at } => write!(
+                out,
+                "the engine refused: {said} — but the refresh token beside it is not due to \
+                 expire until {refresh_expires_at} (unix ms): a live run of the client would \
+                 likely renew the access token on its own, this is not necessarily a sign the \
+                 account needs a fresh login"
+            ),
             RemainingError::NotUnderstood => write!(
                 out,
                 "the answer is not in the expected shape: the channel is beta and \
@@ -281,8 +301,47 @@ pub fn read_oauth_usage(
         }
     };
     let token = Token::from_credentials_at(&text, &channel.token_pointer)?;
-    let body = ask_curl(&token.curl_config(&channel.url, &channel.headers))?;
+    let body = match ask_curl(&token.curl_config(&channel.url, &channel.headers)) {
+        Ok(body) => body,
+        Err(RemainingError::Refused(said)) => return Err(refusal_against_expiry(said, &text, channel)),
+        Err(other) => return Err(other),
+    };
     from_oauth_usage(&body, &channel.engine, observed_at, &channel.shape)
+}
+
+/// A `Refused` read against the same credentials text, once — never a second
+/// keychain read, which a renewal landing between the two could make
+/// disagree with itself. `RefusedWithAnUnexpiredRefreshToken` only where both
+/// pointers are declared and both parse: an absent or malformed timestamp
+/// leaves the plain refusal exactly as the provider said it.
+fn refusal_against_expiry(said: String, text: &str, channel: &OauthUsageChannel) -> RemainingError {
+    if channel.access_expires_pointer.is_empty() || channel.refresh_expires_pointer.is_empty() {
+        return RemainingError::Refused(said);
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_millis() as i64)
+        .unwrap_or(0);
+    let access_expired = epoch_millis_at(text, &channel.access_expires_pointer).is_some_and(|at| at <= now);
+    let refresh_expires_at = epoch_millis_at(text, &channel.refresh_expires_pointer);
+    match (access_expired, refresh_expires_at) {
+        (true, Some(refresh_expires_at)) if refresh_expires_at > now => {
+            RemainingError::RefusedWithAnUnexpiredRefreshToken { said, refresh_expires_at }
+        }
+        _ => RemainingError::Refused(said),
+    }
+}
+
+/// A unix-milliseconds number at a JSON pointer inside already-read
+/// credentials text; `None` for anything that is not exactly that, never a
+/// guess of zero.
+fn epoch_millis_at(text: &str, pointer: &[String]) -> Option<i64> {
+    let parsed: serde_json::Value = serde_json::from_str(text).ok()?;
+    let mut at = &parsed;
+    for key in pointer {
+        at = at.get(key)?;
+    }
+    at.as_i64()
 }
 
 /// What the keeper of secrets prints, or why it would not.
@@ -623,6 +682,8 @@ mod tests {
             url: URL.to_owned(),
             headers: vec![BETA.to_owned()],
             held_by: Vec::new(),
+            access_expires_pointer: Vec::new(),
+            refresh_expires_pointer: Vec::new(),
             shape: WindowWords::default(),
         };
         let refused = read_oauth_usage(&channel, 0).expect_err("there is nothing to read");
@@ -640,6 +701,8 @@ mod tests {
             url: URL.to_owned(),
             headers: vec![BETA.to_owned()],
             held_by: vec!["false".to_owned(), "--for".to_owned(), "a-home".to_owned()],
+            access_expires_pointer: Vec::new(),
+            refresh_expires_pointer: Vec::new(),
             shape: WindowWords::default(),
         };
 
@@ -648,5 +711,86 @@ mod tests {
         let said = refused.to_string();
         assert!(said.contains("false --for a-home"), "{said}");
         assert!(!said.contains(".credentials.json"), "the file is not the story: {said}");
+    }
+
+    // ── fault 169: an expired access token is not a signed-out account ──
+
+    fn credentials_at(access_expires_at: i64, refresh_expires_at: i64) -> String {
+        format!(
+            r#"{{"claudeAiOauth": {{"accessToken": "{A_SECRET}", "expiresAt": {access_expires_at}, "refreshTokenExpiresAt": {refresh_expires_at}}}}}"#
+        )
+    }
+
+    fn access_pointer() -> Vec<String> {
+        vec!["claudeAiOauth".to_owned(), "expiresAt".to_owned()]
+    }
+
+    fn refresh_pointer() -> Vec<String> {
+        vec!["claudeAiOauth".to_owned(), "refreshTokenExpiresAt".to_owned()]
+    }
+
+    fn channel_with_expiry_pointers(access: Vec<String>, refresh: Vec<String>) -> OauthUsageChannel {
+        OauthUsageChannel {
+            engine: ENGINE.to_owned(),
+            credentials: PathBuf::from("/unused"),
+            token_pointer: pointer(),
+            url: URL.to_owned(),
+            headers: vec![BETA.to_owned()],
+            held_by: Vec::new(),
+            access_expires_pointer: access,
+            refresh_expires_pointer: refresh,
+            shape: WindowWords::default(),
+        }
+    }
+
+    /// **Mutant run**: return `RemainingError::Refused(said)` unconditionally
+    /// from `refusal_against_expiry` and this goes red — the enriched variant
+    /// never appears.
+    #[test]
+    fn an_expired_access_token_with_a_live_refresh_token_is_told_apart_from_a_real_refusal() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|since| since.as_millis() as i64)
+            .unwrap_or(0);
+        let text = credentials_at(now - 3_600_000, now + 30 * 86_400_000);
+        let channel = channel_with_expiry_pointers(access_pointer(), refresh_pointer());
+
+        let enriched = refusal_against_expiry("token expired".to_owned(), &text, &channel);
+
+        match &enriched {
+            RemainingError::RefusedWithAnUnexpiredRefreshToken { said, refresh_expires_at } => {
+                assert_eq!(said, "token expired");
+                assert_eq!(*refresh_expires_at, now + 30 * 86_400_000);
+            }
+            other => panic!("expected the enriched variant, got {other}"),
+        }
+        assert!(
+            enriched.to_string().contains("not necessarily a sign the account needs a fresh login"),
+            "{enriched}"
+        );
+    }
+
+    /// Both tokens expired: this is a real refusal, told plainly.
+    #[test]
+    fn both_tokens_expired_stays_a_plain_refusal() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|since| since.as_millis() as i64)
+            .unwrap_or(0);
+        let text = credentials_at(now - 3_600_000, now - 60_000);
+        let channel = channel_with_expiry_pointers(access_pointer(), refresh_pointer());
+
+        let plain = refusal_against_expiry("token expired".to_owned(), &text, &channel);
+
+        assert_eq!(plain, RemainingError::Refused("token expired".to_owned()));
+    }
+
+    /// A provider whose descriptor declares neither pointer is unaffected:
+    /// today's behaviour, unchanged.
+    #[test]
+    fn a_provider_with_no_expiry_pointers_declared_stays_a_plain_refusal() {
+        let channel = channel_with_expiry_pointers(Vec::new(), Vec::new());
+        let plain = refusal_against_expiry("token expired".to_owned(), "{}", &channel);
+        assert_eq!(plain, RemainingError::Refused("token expired".to_owned()));
     }
 }
