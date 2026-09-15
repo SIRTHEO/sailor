@@ -334,7 +334,7 @@
       "detect": { "command": "codex" },
       "version": { "args": ["--version"] },
       "ask": {
-        "args": ["exec", "--sandbox", "read-only"],
+        "args": ["exec", "--sandbox", "read-only", "--skip-git-repo-check"],
         "prompt": "stdin",
         "unusable_when": ["401 unauthorized", "missing bearer", "quota exceeded", "insufficient_quota", "usage limit", "is not supported when using codex with a chatgpt account"],
         "exhausted_when": ["quota exceeded", "insufficient_quota", "usage limit"],

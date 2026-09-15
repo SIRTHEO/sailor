@@ -137,6 +137,27 @@ fn a_line_of_work_that_mentions_a_quota_neither_refuses_nor_spends_one() {
     }
 }
 
+/// Without the flag codex refuses a project root that is not a repository with
+/// «Not inside a trusted directory and --skip-git-repo-check was not
+/// specified.», before any model is asked; the ask is read-only, so the check
+/// protects nothing there.
+#[test]
+fn codex_is_asked_in_a_project_root_that_is_not_a_repository() {
+    let recipe = shipped_only()
+        .ask_recipe("codex")
+        .expect("«codex» declares how a question is put to it");
+    assert!(
+        recipe.args.iter().any(|arg| arg == "--skip-git-repo-check"),
+        "codex is asked with {:?}, which refuses outside a repository",
+        recipe.args
+    );
+    assert!(
+        recipe.args.windows(2).any(|pair| pair == ["--sandbox", "read-only"]),
+        "the flag is safe only beside a read-only sandbox: {:?}",
+        recipe.args
+    );
+}
+
 #[test]
 fn a_spent_quota_reaches_the_class_of_a_spent_quota() {
     let tools = shipped_only();
