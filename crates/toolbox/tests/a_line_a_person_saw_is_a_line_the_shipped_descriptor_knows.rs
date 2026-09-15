@@ -158,6 +158,27 @@ fn codex_is_asked_in_a_project_root_that_is_not_a_repository() {
     );
 }
 
+/// A step that declares a session runs the session line instead of the ask
+/// line, so each read-only session line needs the flag of its own.
+#[test]
+fn codex_opens_resumes_and_forks_a_session_in_a_project_root_that_is_not_a_repository() {
+    let recipe = toolbox::session::SessionAbilities::shipped()
+        .for_tool("codex")
+        .expect("«codex» declares its sessions");
+    let mut read_only = 0;
+    for (mode, line) in [("open", recipe.open), ("resume", recipe.resume), ("fork", recipe.fork)] {
+        let line = line.unwrap_or_else(|| panic!("codex declares no {mode} line"));
+        if line.windows(2).any(|pair| pair == ["--sandbox", "read-only"]) {
+            read_only += 1;
+            assert!(
+                line.iter().any(|arg| arg == "--skip-git-repo-check"),
+                "codex {mode} runs {line:?}, which refuses outside a repository"
+            );
+        }
+    }
+    assert!(read_only > 0, "no codex session line runs in a read-only sandbox");
+}
+
 #[test]
 fn a_spent_quota_reaches_the_class_of_a_spent_quota() {
     let tools = shipped_only();
