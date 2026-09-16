@@ -85,6 +85,19 @@ pub struct Fault {
     /// the public page shows. `None` keeps the fault off that page.
     #[serde(default)]
     pub public_summary: Option<String>,
+    /// The GitHub issue this fault is shown as, if a person has linked one.
+    /// This store never opens or closes an issue itself — linking only
+    /// records that somebody already did, the same way `public_summary`
+    /// records a sentence without deciding whether to publish it.
+    #[serde(default)]
+    pub github_issue: Option<GithubIssue>,
+}
+
+/// One GitHub issue a fault is linked to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GithubIssue {
+    pub number: i64,
+    pub url: String,
 }
 
 /// A fault to record: everything except the number, which is not chosen.
@@ -376,11 +389,23 @@ pub struct Faults {
     /// A store only ever opened by a binary without the summary verb has no
     /// table for them, and read-only it cannot be given one.
     the_public_summaries: bool,
+    /// A store only ever opened by a binary without `faults link` has no
+    /// table for them, and read-only it cannot be given one.
+    the_github_issues: bool,
 }
 
 fn the_public_summaries_are_there(connection: &Connection) -> Result<bool, FaultError> {
     let found: i64 = connection.query_row(
         "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'public_summaries'",
+        [],
+        |row| row.get(0),
+    )?;
+    Ok(found == 1)
+}
+
+fn the_github_issues_are_there(connection: &Connection) -> Result<bool, FaultError> {
+    let found: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'github_issues'",
         [],
         |row| row.get(0),
     )?;
@@ -470,11 +495,13 @@ impl Faults {
         }
         let the_reading_columns = the_reading_columns_are_there(&connection)?;
         let the_public_summaries = the_public_summaries_are_there(&connection)?;
+        let the_github_issues = the_github_issues_are_there(&connection)?;
         Ok(Faults {
             connection,
             path,
             the_reading_columns,
             the_public_summaries,
+            the_github_issues,
         })
     }
 
@@ -512,12 +539,23 @@ impl Faults {
                  summary TEXT NOT NULL
              );",
         )?;
+        // A table of its own, for the same reason as public_summaries: linking
+        // is never part of `restore`, and never opens or closes anything on
+        // GitHub by itself — it only records that a person already did.
+        connection.execute_batch(
+            "CREATE TABLE IF NOT EXISTS github_issues (
+                 number INTEGER PRIMARY KEY,
+                 issue_number INTEGER NOT NULL,
+                 issue_url TEXT NOT NULL
+             );",
+        )?;
         connection.pragma_update(None, "user_version", FAULTS_SCHEMA_VERSION)?;
         Ok(Faults {
             connection,
             path,
             the_reading_columns: true,
             the_public_summaries: true,
+            the_github_issues: true,
         })
     }
 
@@ -621,12 +659,24 @@ impl Faults {
         } else {
             "NULL"
         };
+        let (issue_number, issue_url) = if self.the_github_issues {
+            (
+                "(SELECT issue_number FROM github_issues WHERE github_issues.number = faults.number)",
+                "(SELECT issue_url FROM github_issues WHERE github_issues.number = faults.number)",
+            )
+        } else {
+            ("NULL", "NULL")
+        };
         let mut statement = self.connection.prepare(&format!(
             "SELECT number, happened_on, what_happened, how_it_showed, what_would_prevent,
-                    status, {columns}, {summary}
+                    status, {columns}, {summary}, {issue_number}, {issue_url}
              FROM faults ORDER BY number"
         ))?;
         let rows = statement.query_map([], |row| {
+            let linked = match (row.get::<_, Option<i64>>(10)?, row.get::<_, Option<String>>(11)?) {
+                (Some(number), Some(url)) => Some(GithubIssue { number, url }),
+                _ => None,
+            };
             Ok((
                 Fault {
                     number: row.get(0)?,
@@ -638,6 +688,7 @@ impl Faults {
                     status: row.get(5)?,
                     standing: Standing::Unknown,
                     public_summary: row.get(9)?,
+                    github_issue: linked,
                 },
                 row.get::<_, String>(6)?,
                 row.get::<_, String>(7)?,
@@ -715,6 +766,38 @@ impl Faults {
         Ok(self.all()?.iter().filter(|f| f.still_open()).count())
     }
 
+    /// Records that a fault is shown as this GitHub issue. This never opens,
+    /// closes or edits anything on GitHub — it only writes down a link a
+    /// person already made, the same way `set_public_summary` writes a
+    /// sentence without deciding whether to publish it. Replaces any earlier
+    /// link, so relinking after a duplicate issue is closed needs no unlink.
+    pub fn link(&self, number: i64, issue_number: i64, issue_url: &str) -> Result<Fault, FaultError> {
+        if issue_url.trim().is_empty() {
+            return Err(FaultError::CannotCrossTheTable(
+                "a link with no url points nowhere".to_owned(),
+            ));
+        }
+        nothing_that_breaks_a_row(&[("issue url", issue_url)])?;
+        if issue_number <= 0 {
+            return Err(FaultError::CannotCrossTheTable(
+                "an issue number of zero or less names nothing on GitHub".to_owned(),
+            ));
+        }
+        self.get(number)?;
+        self.connection.execute(
+            "INSERT OR REPLACE INTO github_issues (number, issue_number, issue_url) VALUES (?1, ?2, ?3)",
+            params![number, issue_number, issue_url],
+        )?;
+        self.get(number)
+    }
+
+    /// Removes a fault's link, without touching the issue itself.
+    pub fn unlink(&self, number: i64) -> Result<Fault, FaultError> {
+        self.get(number)?;
+        self.connection.execute("DELETE FROM github_issues WHERE number = ?1", params![number])?;
+        self.get(number)
+    }
+
     pub fn next_open(&self) -> Result<Option<Fault>, FaultError> {
         Ok(self.all()?.into_iter().find(Fault::still_open))
     }
@@ -772,6 +855,7 @@ pub fn parse(markdown: &str) -> Vec<Fault> {
                 standing: standing_of(&status),
                 status,
                 public_summary: None,
+                github_issue: None,
             })
         })
         .collect()

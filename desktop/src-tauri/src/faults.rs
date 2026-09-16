@@ -95,6 +95,7 @@ mod tests {
             status: "whatever the prose says".to_owned(),
             standing,
             public_summary: None,
+            github_issue: None,
         };
         let said: Vec<&str> = ::faults::EVERY_STANDING
             .iter()

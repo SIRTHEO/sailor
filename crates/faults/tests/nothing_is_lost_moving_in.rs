@@ -274,6 +274,7 @@ fn no_door_into_the_store_takes_a_cell_the_table_cannot_hold() {
                 how_it_showed: sound.how_it_showed.clone(),
                 what_would_prevent: sound.what_would_prevent.clone(),
                 public_summary: None,
+                github_issue: None,
             })
             .is_err(),
         "«restore» let a broken status through"
@@ -317,6 +318,7 @@ fn a_newline_in_a_cell_makes_the_row_vanish_on_the_way_back() {
         status: "**open**".to_owned(),
         standing: faults::Standing::Open,
         public_summary: None,
+        github_issue: None,
     };
 
     let back = faults::parse(&faults::render(&[broken]));
