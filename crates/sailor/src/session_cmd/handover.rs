@@ -60,15 +60,28 @@ pub(super) fn handed_on(request: &Request<'_>, arrival: &Arrival) -> Option<Stri
         ledger.directory(),
         &arrival.anchor.tty,
         &arrival.session_id.clone().unwrap_or_default(),
+        &arrival.anchor.worktree,
     )
 }
 
 /// The same handover with everything it reads named, so it can be taken from a
 /// store this machine does not keep.
-fn the_mandate_of(store: &std::path::Path, tty: &str, session: &str) -> Option<String> {
+fn the_mandate_of(
+    store: &std::path::Path,
+    tty: &str,
+    session: &str,
+    tree: &str,
+) -> Option<String> {
     let path = sessions::mandate::address_in(store, tty);
     let left = sessions::mandate::read(&path)?;
     if left.taken.is_some() {
+        return None;
+    }
+    // **THE TTY IS THE ADDRESS, AND THE ADDRESS IS REUSED.** A different
+    // session is what a mandate expects; the tree is the part that must still
+    // hold. Taken once, it would be gone for the successor it was left for. A
+    // mandate naming no tree is the older shape, and silence is not a tree.
+    if !left.written.tree.is_empty() && !tree.is_empty() && left.written.tree != tree {
         return None;
     }
     if sessions::mandate::consume(&path, session, sessions::now()).is_err() {
@@ -91,21 +104,39 @@ fn the_mandate_of(store: &std::path::Path, tty: &str, session: &str) -> Option<S
 /// Written by a run that measured this session out of band, and read here by a
 /// keyed lookup: measuring on every hook would read a transcript of hundreds of
 /// megabytes in front of a person waiting to type.
-pub(super) fn the_ask_still_standing(request: &Request<'_>, tty: &str) -> Option<String> {
+pub(super) fn the_ask_still_standing(
+    request: &Request<'_>,
+    tty: &str,
+    session: &str,
+) -> Option<String> {
     let TheDeposit::Open(ledger) = request.deposit else {
         return None;
     };
     // The same store the ask was read from, so a run pointed elsewhere is
     // answered by the mandate that belongs to it.
-    the_ask_of(ledger, ledger.directory(), tty)
+    the_ask_of(ledger, ledger.directory(), tty, session)
 }
 
 /// The same question with everything it reads named, so it can be answered
 /// about a store this machine does not keep.
-fn the_ask_of(ledger: &ledger::Ledger, store: &std::path::Path, tty: &str) -> Option<String> {
+fn the_ask_of(
+    ledger: &ledger::Ledger,
+    store: &std::path::Path,
+    tty: &str,
+    session: &str,
+) -> Option<String> {
     let asked = ledger.read_record(ASKS, tty).ok().flatten()?;
     if asked.value.get("state").and_then(serde_json::Value::as_str) != Some(OBLIGE) {
         return None;
+    }
+    // **A TTY NUMBER OUTLIVES THE SESSION THAT HELD IT.** The row names the
+    // session it was written for; one naming another is not this session's to
+    // answer. A row naming nobody is the older shape on disk, and silence is
+    // not a different session.
+    if let Some(asked_for) = asked.value.get("session").and_then(serde_json::Value::as_str) {
+        if !asked_for.is_empty() && !session.is_empty() && asked_for != session {
+            return None;
+        }
     }
     // **A MANDATE NOBODY HAS TAKEN IS AN ANSWER, NOT A GAP.** The session goes
     // on filling and the run writes a fresher request each time: asking again
@@ -196,7 +227,7 @@ mod tests {
         sessions::mandate::deposit(&directory, &mandate).expect("the mandate is deposited");
 
         let handed =
-            the_mandate_of(&directory, "ttys001", "the-successor").expect("a mandate arrives");
+            the_mandate_of(&directory, "ttys001", "the-successor", "").expect("a mandate arrives");
         assert!(handed.contains("carry the relay to the end"), "{handed}");
         assert!(
             handed.contains("read the screen of a held terminal"),
@@ -208,7 +239,7 @@ mod tests {
         );
 
         assert_eq!(
-            the_mandate_of(&directory, "ttys001", "another-successor"),
+            the_mandate_of(&directory, "ttys001", "another-successor", ""),
             None,
             "a mandate already taken is not handed on a second time"
         );
@@ -228,7 +259,89 @@ mod tests {
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("a directory of this test's own");
 
-        assert_eq!(the_mandate_of(&directory, "ttys009", "whoever"), None);
+        assert_eq!(the_mandate_of(&directory, "ttys009", "whoever", ""), None);
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// **A TTY NUMBER IS RECYCLED AND A SESSION IS NOT.** The lookup is keyed
+    /// by the terminal, so a session handed that number later is told it is
+    /// full on its predecessor's measurement. Seen in the store: a row of
+    /// 345,732 tokens for a session of another tree, read by one holding 78k.
+    #[test]
+    fn a_session_that_takes_a_recycled_tty_does_not_inherit_the_ask_of_the_one_before() {
+        let directory = std::env::temp_dir().join(format!(
+            "sailor-recycled-tty-{}-{}",
+            std::process::id(),
+            sessions::now()
+        ));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("a directory of this test's own");
+        let ledger = ledger::Ledger::open(&directory).expect("a store of this test's own");
+        ledger
+            .put_record(&ledger::StoreRecord {
+                collection: ASKS.to_owned(),
+                key: "ttys015".to_owned(),
+                value: serde_json::json!({
+                    "state": OBLIGE,
+                    "tokens": 345_732,
+                    "session": "the-session-that-was-measured",
+                }),
+                written_by: "the-run-that-measured-it".to_owned(),
+                written_at: sessions::now(),
+            })
+            .expect("the ask is written");
+
+        let mine = the_ask_of(&ledger, &directory, "ttys015", "the-session-that-was-measured")
+            .expect("the session that was measured is told it is full");
+        assert!(mine.contains("345732"), "{mine}");
+
+        assert_eq!(
+            the_ask_of(&ledger, &directory, "ttys015", "the-one-that-took-the-number-after"),
+            None,
+            "a later session on the same tty number inherits nothing of the one before"
+        );
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// **AND THE MANDATE IS KEYED BY THE SAME RECYCLED NUMBER.** A mandate
+    /// expects a session that is not its author, so the session cannot tell
+    /// them apart — the tree can. Taken once, a mandate handed across trees is
+    /// gone for the successor it was left for.
+    #[test]
+    fn a_mandate_is_not_handed_to_a_session_that_took_the_tty_in_another_tree() {
+        let directory = std::env::temp_dir().join(format!(
+            "sailor-mandate-tree-{}-{}",
+            std::process::id(),
+            sessions::now()
+        ));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("a directory of this test's own");
+        let mut mandate = sessions::mandate::Mandate::default();
+        mandate.written.tty = "ttys015".to_owned();
+        mandate.written.tree = "/the/tree/it/was/written/in".to_owned();
+        mandate.written.at = 100;
+        mandate.work.goal = "swap the profile of a live session".to_owned();
+        mandate.work.next = "consult the strong model before deciding".to_owned();
+        sessions::mandate::deposit(&directory, &mandate).expect("the mandate is deposited");
+
+        assert_eq!(
+            the_mandate_of(&directory, "ttys015", "a-stranger", "/a/different/tree"),
+            None,
+            "a session that took the tty number in another tree is handed nothing"
+        );
+        let path = sessions::mandate::address_in(&directory, "ttys015");
+        assert!(
+            sessions::mandate::read(&path)
+                .expect("the mandate is still there")
+                .taken
+                .is_none(),
+            "refusing to hand it on must not consume it: it is still owed to its own tree"
+        );
+
+        let handed =
+            the_mandate_of(&directory, "ttys015", "the-successor", "/the/tree/it/was/written/in")
+                .expect("the successor in the mandate's own tree is handed it");
+        assert!(handed.contains("swap the profile of a live session"), "{handed}");
         let _ = std::fs::remove_dir_all(&directory);
     }
 
@@ -251,7 +364,7 @@ mod tests {
             })
             .expect("the ask is written");
 
-        let asked = the_ask_of(&ledger, &directory, "ttys001");
+        let asked = the_ask_of(&ledger, &directory, "ttys001", "whoever-is-here");
         assert!(
             asked.is_some_and(|said| said.contains("260000")),
             "unanswered, it is asked"
@@ -261,7 +374,8 @@ mod tests {
         mandate.written.tty = "ttys001".to_owned();
         mandate.written.at = 101;
         sessions::mandate::deposit(&directory, &mandate).expect("the mandate is deposited");
-        let waiting = the_ask_of(&ledger, &directory, "ttys001").expect("it says what stands now");
+        let waiting = the_ask_of(&ledger, &directory, "ttys001", "whoever-is-here")
+            .expect("it says what stands now");
         assert!(
             !waiting.contains("260000"),
             "deposited, it is no longer asked for: {waiting}"
@@ -284,7 +398,8 @@ mod tests {
                 written_at: 200,
             })
             .expect("the later ask is written");
-        let again = the_ask_of(&ledger, &directory, "ttys001").expect("it is asked again");
+        let again = the_ask_of(&ledger, &directory, "ttys001", "whoever-is-here")
+            .expect("it is asked again");
         assert!(again.contains("300000"), "{again}");
         let _ = std::fs::remove_dir_all(&directory);
     }
@@ -307,7 +422,10 @@ mod tests {
             })
             .expect("the ask is written");
 
-        assert_eq!(the_ask_of(&ledger, &directory, "ttys002"), None);
+        assert_eq!(
+            the_ask_of(&ledger, &directory, "ttys002", "whoever-is-here"),
+            None
+        );
         let _ = std::fs::remove_dir_all(&directory);
     }
 }

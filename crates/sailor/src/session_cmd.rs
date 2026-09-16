@@ -1670,7 +1670,11 @@ fn record_event(request: &Request<'_>) -> Result<Report, String> {
         said.push('\n');
         said.push_str(&started);
     }
-    if let Some(asked) = the_ask_still_standing(request, &happened.tty) {
+    if let Some(asked) = the_ask_still_standing(
+        request,
+        &happened.tty,
+        happened.session_id.as_deref().unwrap_or_default(),
+    ) {
         said.push('\n');
         said.push_str(&asked);
     }
