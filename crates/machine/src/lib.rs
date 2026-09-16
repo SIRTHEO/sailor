@@ -482,7 +482,7 @@ pub fn build_directories_left(root: &Path) -> Vec<LeftBehind> {
         .map(|entry| entry.path())
         .filter(|path| cargo_built_it(path))
         .map(|path| LeftBehind {
-            bytes: what_it_holds(&path),
+            bytes: weight_of(&path).unwrap_or(0),
             path,
         })
         .collect();
@@ -504,7 +504,7 @@ pub fn ordinary_building(root: &Path) -> Vec<LeftBehind> {
         .flatten()
         .map(|entry| entry.path())
         .filter(|path| !cargo_built_it(path) && path.join(".fingerprint").is_dir())
-        .map(|path| LeftBehind { bytes: what_it_holds(&path), path })
+        .map(|path| LeftBehind { bytes: weight_of(&path).unwrap_or(0), path })
         .collect();
     found.sort_by_key(|one| std::cmp::Reverse(one.bytes));
     found
@@ -513,20 +513,6 @@ pub fn ordinary_building(root: &Path) -> Vec<LeftBehind> {
 fn cargo_built_it(path: &Path) -> bool {
     std::fs::read_to_string(path.join("CACHEDIR.TAG"))
         .is_ok_and(|text| text.starts_with(CARGO_WROTE_THIS))
-}
-
-fn what_it_holds(path: &Path) -> u64 {
-    let Ok(entries) = std::fs::read_dir(path) else {
-        return 0;
-    };
-    entries
-        .flatten()
-        .map(|entry| match entry.file_type() {
-            Ok(kind) if kind.is_dir() => what_it_holds(&entry.path()),
-            Ok(_) => entry.metadata().map(|held| held.len()).unwrap_or(0),
-            Err(_) => 0,
-        })
-        .sum()
 }
 
 /// Memory going spare, or why we cannot say.
