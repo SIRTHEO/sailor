@@ -610,6 +610,26 @@ pub fn too_little_to_build(free: Option<u64>) -> bool {
     free.is_some_and(|free| free < A_BUILD_WANTS_FREE)
 }
 
+/// Bytes actually held under `path`: a symlink counts as zero, so a place
+/// that only points elsewhere is never charged the weight of what it points
+/// to. `None` when any entry along the way could not be read — a permission
+/// refusal or a path that no longer exists is not the same as an empty
+/// place, and reporting it as zero would say the opposite of what happened.
+pub fn weight_of(path: &Path) -> Option<u64> {
+    let metadata = std::fs::symlink_metadata(path).ok()?;
+    if metadata.is_symlink() {
+        return Some(0);
+    }
+    if !metadata.is_dir() {
+        return Some(metadata.len());
+    }
+    std::fs::read_dir(path)
+        .ok()?
+        .try_fold(metadata.len(), |total, entry| {
+            Some(total.saturating_add(weight_of(&entry.ok()?.path())?))
+        })
+}
+
 #[cfg(test)]
 mod tests {
     /// Under the threshold a build waits; a disk that would not say refuses nothing.
@@ -619,5 +639,25 @@ mod tests {
         assert!(!super::too_little_to_build(Some(super::A_BUILD_WANTS_FREE)));
         assert!(!super::too_little_to_build(None));
         assert!(super::free_bytes(&std::env::temp_dir()).is_some_and(|free| free > 0));
+    }
+
+    /// A directory's weight is the sum of its files, not a guess at one.
+    #[test]
+    fn a_places_weight_is_measured_not_guessed() {
+        let root = std::env::temp_dir().join(format!("weight-of-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("nested")).expect("a scratch tree");
+        std::fs::write(root.join("a"), vec![0u8; 100_000]).expect("a file");
+        std::fs::write(root.join("nested/b"), vec![0u8; 200_000]).expect("a nested file");
+
+        let weight = super::weight_of(&root).expect("a tree that exists is measured");
+        assert!(
+            weight >= 300_000,
+            "directory metadata alone cannot reach this: the files' bytes must be counted, got {weight}"
+        );
+
+        let gone = root.join("never-existed");
+        assert_eq!(super::weight_of(&gone), None, "an absent path is not a zero-weight one");
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
