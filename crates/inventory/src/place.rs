@@ -4,13 +4,15 @@
 //! stay silent rather than guessed: this module never invents a plausible
 //! answer where it has none.
 
+use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
 /// What kind of thing a place holds, named for the question that decides if
 /// it can be let go: does making it again cost nothing (`Regenerable`), is it
 /// a cache of something that still exists elsewhere (`Cache`), or is it the
 /// only copy of something (`Data`, `Saved`)?
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Category {
     Regenerable,
     Cache,
@@ -22,7 +24,7 @@ pub enum Category {
 /// touching it. Written by whoever owns the place, never guessed from its
 /// name or its age: a name promises nothing (`socraticode-ollama` did not
 /// use `~/.ollama`), and a date does not tell a paused build from a dead one.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Declaration {
     pub category: Category,
     /// The command or gesture that would produce this place again.
@@ -33,6 +35,56 @@ pub struct Declaration {
     pub proven_unneeded_by: String,
     /// What getting it back costs: minutes of a rebuild, hours of a download.
     pub cost_to_rebuild: String,
+}
+
+/// One `~/.config/sailor/places.d/*.json` file: a name, a path and the four
+/// fields of a `Declaration`, flattened — the same shape a descriptor takes
+/// in `tools.d`, so writing one needs no recompile.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Descriptor {
+    pub name: String,
+    pub path: String,
+    #[serde(flatten)]
+    pub declaration: Declaration,
+}
+
+/// Every descriptor in `dir`, weighed. A file that will not parse is named in
+/// the error instead of silently left out — an ignored typo is a place that
+/// looks undeclared when it said something nobody read.
+pub fn declared_places(dir: &Path) -> Result<Vec<Place>, String> {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Ok(Vec::new());
+    };
+    let mut found = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().is_none_or(|ext| ext != "json") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path)
+            .map_err(|error| format!("{}: {error}", path.display()))?;
+        let read: Descriptor = serde_json::from_str(&text)
+            .map_err(|error| format!("{}: {error}", path.display()))?;
+        found.push(Place::weighed(
+            &read.name,
+            &shell_expanded(&read.path, home.as_deref()),
+            Some(read.declaration),
+        ));
+    }
+    found.sort_by_key(|place| std::cmp::Reverse(place.weight.unwrap_or(0)));
+    Ok(found)
+}
+
+/// A leading `~` stands for `home`, as every other place Sailor reads a path
+/// from a person's own file already accepts it. Takes `home` as a value
+/// rather than reading it itself, so proving this holds never has to open a
+/// door to this machine's real environment.
+fn shell_expanded(raw: &str, home: Option<&Path>) -> PathBuf {
+    match raw.strip_prefix("~/") {
+        Some(rest) => home.map_or_else(|| PathBuf::from(raw), |home| home.join(rest)),
+        None => PathBuf::from(raw),
+    }
 }
 
 /// One place on disk, weighed.
@@ -137,5 +189,70 @@ mod tests {
         assert_eq!(item.kind, "place");
         assert_eq!(item.reach, "unknown");
         assert!(item.reason.is_some(), "silence must say why, never read as zero");
+    }
+
+    fn scratch_dir(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("places-d-{label}-{}", std::process::id()))
+    }
+
+    #[test]
+    fn a_directory_with_no_descriptors_names_no_place() {
+        let dir = scratch_dir("empty");
+        std::fs::create_dir_all(&dir).expect("a scratch places.d");
+        assert_eq!(declared_places(&dir).expect("an empty dir reads fine"), Vec::new());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_missing_directory_is_not_an_error() {
+        let dir = scratch_dir("missing").join("never-created");
+        assert_eq!(declared_places(&dir).expect("absence is not a parse failure"), Vec::new());
+    }
+
+    #[test]
+    fn a_descriptor_becomes_a_weighed_declared_place() {
+        let dir = scratch_dir("real");
+        let target = dir.join("target-of-the-place");
+        std::fs::create_dir_all(&target).expect("the place itself");
+        std::fs::write(target.join("f"), vec![0u8; 5_000]).expect("a file in it");
+        std::fs::write(
+            dir.join("one.json"),
+            format!(
+                r#"{{"name":"scratch","path":{:?},"category":"cache","rebuilt_by":"cargo build","proven_unneeded_by":"git worktree list no longer names it","cost_to_rebuild":"minutes"}}"#,
+                target.to_string_lossy()
+            ),
+        )
+        .expect("a descriptor file");
+
+        let places = declared_places(&dir).expect("a well-formed descriptor parses");
+        assert_eq!(places.len(), 1);
+        assert_eq!(places[0].name, "scratch");
+        assert!(places[0].weight.is_some_and(|w| w >= 5_000));
+        assert!(places[0].is_proposable());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_descriptor_that_will_not_parse_is_named_not_swallowed() {
+        let dir = scratch_dir("broken");
+        std::fs::create_dir_all(&dir).expect("a scratch places.d");
+        std::fs::write(dir.join("broken.json"), "{ not json").expect("a broken descriptor");
+
+        let error = declared_places(&dir).expect_err("a broken file must not read as empty");
+        assert!(error.contains("broken.json"), "the error must name the file: {error}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_leading_tilde_expands_to_home() {
+        let home = Path::new("/a/made-up/home");
+        assert_eq!(shell_expanded("~/x/y", Some(home)), home.join("x/y"));
+        assert_eq!(
+            shell_expanded("/already/absolute", Some(home)),
+            PathBuf::from("/already/absolute")
+        );
+        assert_eq!(shell_expanded("~/x", None), PathBuf::from("~/x"), "no home, no expansion");
     }
 }
