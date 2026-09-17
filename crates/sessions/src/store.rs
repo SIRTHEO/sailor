@@ -184,7 +184,7 @@ pub struct TerminalEvent {
 }
 
 pub struct Sessions {
-    connection: Connection,
+    pub(crate) connection: Connection,
     path: PathBuf,
 }
 
@@ -256,6 +256,21 @@ impl Sessions {
              );
              CREATE UNIQUE INDEX IF NOT EXISTS event_verdicts_once
                  ON event_verdicts (event_id, flow);
+             CREATE TABLE IF NOT EXISTS handovers (
+                 id TEXT PRIMARY KEY,
+                 tty TEXT NOT NULL,
+                 tree TEXT NOT NULL,
+                 session_id TEXT NOT NULL,
+                 engine TEXT NOT NULL,
+                 mandate_at INTEGER NOT NULL,
+                 generation INTEGER NOT NULL,
+                 state TEXT NOT NULL,
+                 why TEXT,
+                 successor TEXT,
+                 created_at INTEGER NOT NULL,
+                 updated_at INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS handovers_by_terminal ON handovers (tty, created_at);
              CREATE TABLE IF NOT EXISTS keepers (
                  tty TEXT PRIMARY KEY,
                  keeper TEXT NOT NULL,
