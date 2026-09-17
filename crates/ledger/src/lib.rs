@@ -593,6 +593,21 @@ impl Ledger {
         Ok(rows)
     }
 
+    /// The calls whose figure came from a price list rather than from the
+    /// engine: the ones a newer list may price differently.
+    pub fn model_calls_priced_by_rule(&self) -> Result<Vec<ModelCallRecord>, LedgerError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(&format!(
+            "SELECT {MODEL_CALL_COLUMNS} FROM model_calls
+             WHERE declared_cost_micros IS NULL AND cost_micros IS NOT NULL
+             ORDER BY started_at, call_id"
+        ))?;
+        let rows = statement
+            .query_map([], read_model_call_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     pub fn record_snapshot(&self, record: &SnapshotRecord) -> Result<(), LedgerError> {
         self.write_event(StoredEvent::SnapshotRecorded(record.clone()))
     }

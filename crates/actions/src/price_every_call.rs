@@ -94,14 +94,33 @@ fn facts_of(call: &ModelCallRecord) -> CallFacts<'_> {
 /// Every call without a cost, priced where a rule fits and written back as the
 /// same row with the figure and the prices that made it.
 pub fn price_every_call(ledger: &Ledger, list: &PriceList) -> Result<Value, ActionError> {
-    let store = |error: ledger::LedgerError| ActionError::new("store_failed", error.to_string());
-    let calls = ledger.model_calls_without_cost().map_err(store)?;
+    let calls = ledger.model_calls_without_cost().map_err(store_failed)?;
+    price_calls(ledger, list, &calls)
+}
+
+/// Every call priced by a rule of the list, including the ones already carrying
+/// a figure from an older list, written back only where the figure changes.
+pub fn reprice_every_call(ledger: &Ledger, list: &PriceList) -> Result<Value, ActionError> {
+    let mut calls = ledger.model_calls_priced_by_rule().map_err(store_failed)?;
+    calls.extend(ledger.model_calls_without_cost().map_err(store_failed)?);
+    price_calls(ledger, list, &calls)
+}
+
+fn store_failed(error: ledger::LedgerError) -> ActionError {
+    ActionError::new("store_failed", error.to_string())
+}
+
+fn price_calls(ledger: &Ledger, list: &PriceList, calls: &[ModelCallRecord]) -> Result<Value, ActionError> {
     let mut by_rule: BTreeMap<String, u64> = BTreeMap::new();
     let mut unpriced = Vec::new();
     let mut priced_micros: i64 = 0;
-    for call in &calls {
+    let mut changed: u64 = 0;
+    for call in calls {
         let priced = equivalent_cost(&facts_of(call), list);
         let Some(micros) = priced.cost_micros else {
+            if call.cost_micros.is_some() {
+                continue;
+            }
             unpriced.push(json!({
                 "call_id": call.call_id,
                 "cli": call.cli,
@@ -128,12 +147,16 @@ pub fn price_every_call(ledger: &Ledger, list: &PriceList) -> Result<Value, Acti
             cache_write_long_price_micros_per_million: priced.prices.cache_write_long,
             ..call.clone()
         };
-        ledger.record_model_call(&repriced).map_err(store)?;
+        if repriced != *call {
+            ledger.record_model_call(&repriced).map_err(store_failed)?;
+            changed += 1;
+        }
     }
-    let remaining = ledger.model_calls_without_cost().map_err(store)?.len();
+    let remaining = ledger.model_calls_without_cost().map_err(store_failed)?.len();
     Ok(json!({
         "calls": calls.len(),
         "priced": calls.len() - unpriced.len(),
+        "changed": changed,
         "priced_micros": priced_micros,
         "currency": list.currency,
         "by_rule": by_rule,
@@ -162,7 +185,7 @@ impl Action for PriceEveryCallAction {
             }
             None => crate::current_price_list(),
         };
-        price_every_call(ledger, &list).map(ActionOutcome::Went)
+        reprice_every_call(ledger, &list).map(ActionOutcome::Went)
     }
 
     fn unknown_fields(&self, declared: &Value) -> Vec<String> {
@@ -204,7 +227,8 @@ mod tests {
       ],
       "engines": {
         "engine-a": {"assumed_model": "model-b", "unread_call_equivalent_micros": 7000},
-        "local-a": {"per_wall_second_micros": 14}
+        "local-a": {"per_wall_second_micros": 14},
+        "engine-holds": {"assumed_model": "model-b", "input_holds_cached": true}
       },
       "not_models": ["hammer"]
     }"#;
@@ -329,6 +353,37 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// A row priced by an older rule book is priced again by today's, and the
+    /// engine's own figure is still left alone.
+    #[test]
+    fn repricing_corrects_a_figure_an_older_rule_book_got_wrong() {
+        let dir = scratch("again");
+        let ledger = Ledger::open(dir.join("ledger")).expect("a store of the test's own");
+        let mut doubled = call("doubled", "engine-holds");
+        doubled.input_tokens = Some(1_000_000);
+        doubled.cached_tokens = Some(500_000);
+        doubled.output_tokens = Some(0);
+        doubled.cost_micros = Some(2_100_000);
+        let mut declared = call("declared", "engine-holds");
+        declared.input_tokens = Some(1_000_000);
+        declared.declared_cost_micros = Some(9);
+        declared.cost_micros = Some(1);
+        for record in [&doubled, &declared] {
+            ledger.record_model_call(record).unwrap();
+        }
+
+        let said = reprice_every_call(&ledger, &PriceList::parse(LIST).unwrap()).unwrap();
+
+        assert_eq!(said["changed"], 1);
+        let rows = ledger
+            .browse("SELECT call_id, cost_micros FROM model_calls ORDER BY call_id", 10)
+            .unwrap();
+        // 500,000 uncached at 2.00 and 500,000 cached at 0.20.
+        assert_eq!(rows.rows[1][1], 1_100_000);
+        assert_eq!(rows.rows[0][1], 1, "a call the engine declared keeps its row");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn a_call_no_rule_fits_is_named_and_counted_as_unpriced() {
         let dir = scratch("one-unpriced");
@@ -350,6 +405,11 @@ mod tests {
     fn the_action_reads_the_list_it_is_pointed_at_and_refuses_a_field_it_does_not_know() {
         let dir = scratch("as-an-action");
         let ledger = a_ledger_of_every_shape(&dir);
+        let mut doubled = call("doubled", "engine-holds");
+        doubled.input_tokens = Some(1_000_000);
+        doubled.cached_tokens = Some(500_000);
+        doubled.cost_micros = Some(2_100_000);
+        ledger.record_model_call(&doubled).unwrap();
         let list = dir.join("pricing.json");
         std::fs::write(&list, LIST).unwrap();
         let action = PriceEveryCallAction {
@@ -365,6 +425,8 @@ mod tests {
             panic!("{outcome:?}")
         };
         assert_eq!(said["remaining_without_cost"], 0);
+        assert_eq!(said["unpriced"], 0, "a figure no rule can redo is kept, not reported");
+        assert_eq!(said["changed"], 5, "four rows without a cost and one priced by an older list");
         assert_eq!(
             action.unknown_fields(&json!({"price_list": "x", "pricelist": "y"})),
             vec!["pricelist"]
