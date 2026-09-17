@@ -139,17 +139,17 @@ fn price_calls(ledger: &Ledger, list: &PriceList, calls: &[ModelCallRecord]) -> 
     let mut unpriced = Vec::new();
     let mut priced_micros: i64 = 0;
     let mut changed: u64 = 0;
-    for call in calls {
+    for written in calls {
         let recovered;
-        let call = match requested_in_recorded_definition(ledger, call) {
+        let call = match requested_in_recorded_definition(ledger, written) {
             Some(model) => {
                 recovered = ModelCallRecord {
                     requested_model: model,
-                    ..call.clone()
+                    ..written.clone()
                 };
                 &recovered
             }
-            None => call,
+            None => written,
         };
         let priced = equivalent_cost(&facts_of(call), list);
         let Some(micros) = priced.cost_micros else {
@@ -182,7 +182,7 @@ fn price_calls(ledger: &Ledger, list: &PriceList, calls: &[ModelCallRecord]) -> 
             cache_write_long_price_micros_per_million: priced.prices.cache_write_long,
             ..call.clone()
         };
-        if repriced != *call {
+        if repriced != *written {
             ledger.record_model_call(&repriced).map_err(store_failed)?;
             changed += 1;
         }
@@ -437,15 +437,20 @@ mod tests {
         let mut old = call("old", "engine-a");
         old.input_tokens = Some(1_000_000);
         old.output_tokens = Some(0);
-        ledger.record_model_call(&old).unwrap();
+        let mut unread = call("unread", "engine-a");
+        unread.cost_micros = Some(7000);
+        for record in [&old, &unread] {
+            ledger.record_model_call(record).unwrap();
+        }
 
         let said = reprice_every_call(&ledger, &PriceList::parse(LIST).unwrap()).unwrap();
 
-        assert_eq!(said["priced_micros"], 5_000_000);
+        assert_eq!(said["priced_micros"], 5_000_000 + 7000);
         let rows = ledger
-            .browse("SELECT requested_model FROM model_calls WHERE call_id = 'old'", 1)
+            .browse("SELECT call_id, requested_model FROM model_calls ORDER BY call_id", 2)
             .unwrap();
-        assert_eq!(rows.rows[0][0], "model-c");
+        assert_eq!(rows.rows[0][1], "model-c");
+        assert_eq!(rows.rows[1][1], "model-c", "written even where the figure does not move");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
