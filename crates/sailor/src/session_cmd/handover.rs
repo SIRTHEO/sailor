@@ -183,8 +183,9 @@ fn told_for_the_first_time(ledger: &ledger::Ledger, episode: &str) -> bool {
 
 const TOLD: &str = "mandate_asks_told";
 
-/// Where a run leaves the request, and the standing that makes one.
-const ASKS: &str = "mandate_asks";
+use super::MANDATE_ASKS as ASKS;
+
+/// The standing that makes a request.
 const OBLIGE: &str = "oblige";
 
 #[cfg(test)]

@@ -75,6 +75,9 @@ pub struct Happened {
     /// Where this session's record of itself is kept. A path, not a body: it
     /// is what lets a flow measure the session without holding it.
     pub transcript: Option<String>,
+    /// The command line whose hook announced it, as the hook names it. `None`
+    /// is a hook grafted before hooks named their line.
+    pub engine: Option<String>,
 }
 
 pub const ALREADY_PARKED: &str = "a run of this flow is already parked for this terminal";

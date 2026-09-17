@@ -101,6 +101,9 @@ impl Report {
 pub const REFUSED: i32 = 3;
 
 mod handover;
+
+/// Where a run leaves the request for a mandate, keyed by terminal.
+pub(crate) const MANDATE_ASKS: &str = "mandate_asks";
 mod listing;
 
 use handover::{handed_on, kept_by, the_ask_still_standing};
@@ -1711,6 +1714,7 @@ fn what_this_event_starts(
         session: happened.session_id.clone().unwrap_or_default(),
         prompt: what_a_person_typed(request.raw),
         transcript: happened.transcript_path.clone(),
+        engine: request.options.get("cli").filter(|id| !id.is_empty()).cloned(),
     };
     let verdicts = crate::arc_cmd::evaluate(
         store,

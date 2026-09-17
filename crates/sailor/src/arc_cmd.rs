@@ -134,6 +134,7 @@ fn delivery(happened: &Happened) -> String {
         "tty": happened.tty,
         "session": happened.session,
         "transcript": happened.transcript,
+        "engine": happened.engine,
     })
     .to_string()
 }

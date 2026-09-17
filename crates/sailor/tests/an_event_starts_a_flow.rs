@@ -76,6 +76,7 @@ fn happened() -> Happened {
         session: "a-session".to_owned(),
         prompt: Some("carry on".to_owned()),
         transcript: Some("/a/tree/.transcript.jsonl".to_owned()),
+        engine: Some("a-command-line".to_owned()),
     }
 }
 
@@ -306,6 +307,11 @@ fn the_delivery_carries_the_event_and_never_the_prompt() {
 
     let delivery = &asked[0].1;
     assert!(delivery.contains("ttys001"), "{delivery}");
+    let carried: serde_json::Value = serde_json::from_str(delivery).expect("json");
+    assert_eq!(
+        carried["engine"], "a-command-line",
+        "the line whose hook spoke travels, so a mandate need not be told it"
+    );
     assert!(
         !delivery.contains("carry on"),
         "the prompt must not leave this process: {delivery}"

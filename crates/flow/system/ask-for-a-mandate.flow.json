@@ -60,6 +60,9 @@
                 },
                 "transcript": {
                   "type": "any"
+                },
+                "engine": {
+                  "type": "any"
                 }
               },
               "required": [],
@@ -140,6 +143,9 @@
             },
             "tree": {
               "$from": "/trigger/carried/tree"
+            },
+            "engine": {
+              "$from": "/trigger/carried/engine"
             }
           },
           "written_by": "ask-for-a-mandate"

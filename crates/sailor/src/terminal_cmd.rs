@@ -568,6 +568,16 @@ fn read_off_the_store(
         }
         read.insert("transcript".to_owned(), Value::String(transcript));
     }
+    // The line is named by the hook that wrote the ask, for this session only.
+    if let Some(engine) = ledger::Ledger::open(store)
+        .ok()
+        .and_then(|ledger| ledger.read_record(crate::session_cmd::MANDATE_ASKS, tty).ok().flatten())
+        .filter(|asked| asked.value["session"].as_str() == Some(session.as_str()))
+        .and_then(|asked| asked.value["engine"].as_str().map(str::to_owned))
+        .filter(|engine| !engine.is_empty())
+    {
+        read.insert("engine".to_owned(), Value::String(engine));
+    }
     read.insert("session".to_owned(), Value::String(session));
     read
 }
@@ -911,6 +921,68 @@ mod tests {
             .expect_err("a session nobody could read is refused as blank");
 
         assert!(refusal.contains("written.session"), "{refusal}");
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// The ask names the command line it was written for; the mandate that
+    /// answers it, for the same session, is filled with that name.
+    #[test]
+    fn the_engine_is_read_from_the_ask_the_mandate_answers() {
+        let directory = scratch("mandate-engine");
+        let tree = directory.join("tree");
+        std::fs::create_dir_all(&tree).expect("a tree");
+        a_session_announced(&directory, &tree, "s-1");
+        let ledger = ledger::Ledger::open(&directory).expect("a store");
+        for (key, session, engine) in [("ttys004", "s-1", "the-asked-line"), ("ttys005", "s-1", "wrong")] {
+            ledger
+                .put_record(&ledger::StoreRecord {
+                    collection: crate::session_cmd::MANDATE_ASKS.to_owned(),
+                    key: key.to_owned(),
+                    value: serde_json::json!({"state": "oblige", "session": session, "engine": engine}),
+                    written_by: "a-run".to_owned(),
+                    written_at: 100,
+                })
+                .expect("the ask is written");
+        }
+        let written = words(&["--tty", "ttys004", "--store", directory.to_str().expect("a path")]);
+        let mut text = serde_json::from_str::<serde_json::Value>(&only_the_work()).expect("json");
+        text.as_object_mut().expect("an object").remove("engine");
+        text["tree"] = serde_json::json!(tree.display().to_string());
+
+        leave_mandate(&written, &mut text.to_string().as_bytes()).expect("the mandate is left");
+
+        let held = sessions::mandate::read(&sessions::mandate::address_in(&directory, "ttys004"))
+            .expect("the mandate waits");
+        assert_eq!(held.written.engine, "the-asked-line");
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// An ask written for another session names another session's line.
+    #[test]
+    fn an_ask_for_another_session_names_no_engine() {
+        let directory = scratch("mandate-engine-other");
+        let tree = directory.join("tree");
+        std::fs::create_dir_all(&tree).expect("a tree");
+        a_session_announced(&directory, &tree, "s-1");
+        ledger::Ledger::open(&directory)
+            .expect("a store")
+            .put_record(&ledger::StoreRecord {
+                collection: crate::session_cmd::MANDATE_ASKS.to_owned(),
+                key: "ttys004".to_owned(),
+                value: serde_json::json!({"state": "oblige", "session": "s-0", "engine": "wrong"}),
+                written_by: "a-run".to_owned(),
+                written_at: 100,
+            })
+            .expect("the ask is written");
+        let written = words(&["--tty", "ttys004", "--store", directory.to_str().expect("a path")]);
+        let mut text = serde_json::from_str::<serde_json::Value>(&only_the_work()).expect("json");
+        text.as_object_mut().expect("an object").remove("engine");
+        text["tree"] = serde_json::json!(tree.display().to_string());
+
+        let refusal = leave_mandate(&written, &mut text.to_string().as_bytes())
+            .expect_err("no line is known, so the blank is refused");
+
+        assert!(refusal.contains("written.engine"), "{refusal}");
         let _ = std::fs::remove_dir_all(&directory);
     }
 

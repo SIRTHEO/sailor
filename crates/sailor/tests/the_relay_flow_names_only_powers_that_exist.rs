@@ -108,3 +108,11 @@ fn the_ask_stands_on_one_condition_anybody_can_read() {
     assert_eq!(ask["when"]["pointer"], "/measure/state");
     assert_eq!(ask["when"]["value"], Value::String("oblige".to_owned()));
 }
+
+/// The ask keeps which command line it was written for, so the mandate that
+/// answers it is filled with that name instead of asking a full context for it.
+#[test]
+fn the_ask_keeps_the_command_line_it_was_written_for() {
+    let ask = step("ask-for-a-mandate", "ask");
+    assert_eq!(ask["with"]["value"]["engine"]["$from"], "/trigger/carried/engine");
+}

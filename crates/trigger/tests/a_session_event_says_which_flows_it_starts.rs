@@ -11,6 +11,7 @@ fn happened() -> Happened {
         session: "a-session".to_owned(),
         prompt: Some("carry on with the relay".to_owned()),
         transcript: None,
+        engine: None,
     }
 }
 
