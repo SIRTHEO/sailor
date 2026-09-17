@@ -32,6 +32,8 @@ pub fn channel_of(descriptor: &Descriptor, machine: &Machine) -> Option<Result<O
             headers: quota.headers.clone(),
             held_by: spoken_for(&quota.held_by, &machine.expand(&quota.credentials)),
             shape: words_of(quota),
+            expires_at_pointer: quota.expires_at_pointer.clone(),
+            renewed_with_pointer: quota.renewed_with_pointer.clone(),
         }),
         other => Err(format!(
             "descriptor «{}» declares a quota reader «{other}» this Sailor does not read",

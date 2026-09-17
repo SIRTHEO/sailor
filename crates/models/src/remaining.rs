@@ -26,6 +26,11 @@ pub struct OauthUsageChannel {
     pub held_by: Vec<String>,
     /// The words this provider uses for its windows.
     pub shape: WindowWords,
+    /// The keys down to when the token stops being accepted, in milliseconds
+    /// since the epoch. Empty: nobody declared it, and nothing is checked.
+    pub expires_at_pointer: Vec<String>,
+    /// The keys down to the token the engine renews the first one with.
+    pub renewed_with_pointer: Vec<String>,
 }
 
 /// What a provider calls the parts of its answer. The default below is one
@@ -108,6 +113,9 @@ pub enum RemainingError {
     /// It answered something that is not the expected JSON: the channel is
     /// beta, and this is how it will break.
     NotUnderstood,
+    /// The token in the credentials has expired. The engine renews it on its
+    /// next call when it keeps a renewal token, and then nobody has to sign in.
+    TokenExpired { renewable: bool },
 }
 
 impl fmt::Debug for RemainingError {
@@ -130,6 +138,15 @@ impl fmt::Display for RemainingError {
             }
             RemainingError::Unreachable(why) => write!(out, "the channel does not answer: {why}"),
             RemainingError::Refused(said) => write!(out, "the engine refused: {said}"),
+            RemainingError::TokenExpired { renewable: true } => write!(
+                out,
+                "the access token has expired; the command line renews it with its refresh token \
+                 on its next call, so there is nothing to sign in to"
+            ),
+            RemainingError::TokenExpired { renewable: false } => write!(
+                out,
+                "the access token has expired and no refresh token is kept: sign in again"
+            ),
             RemainingError::NotUnderstood => write!(
                 out,
                 "the answer is not in the expected shape: the channel is beta and \
@@ -280,9 +297,32 @@ pub fn read_oauth_usage(
                 .map_err(|error| RemainingError::CredentialsUnreadable(error.to_string()))?
         }
     };
+    if let Some(expired) = expired_token(&text, channel, observed_at) {
+        return Err(expired);
+    }
     let token = Token::from_credentials_at(&text, &channel.token_pointer)?;
     let body = ask_curl(&token.curl_config(&channel.url, &channel.headers))?;
     from_oauth_usage(&body, &channel.engine, observed_at, &channel.shape)
+}
+
+/// Whether the credentials hold a token past its declared expiry, read before
+/// the provider is asked: an expired token is refused there with words that
+/// send a person to sign in when the engine would renew it by itself.
+fn expired_token(text: &str, channel: &OauthUsageChannel, observed_at: i64) -> Option<RemainingError> {
+    if channel.expires_at_pointer.is_empty() {
+        return None;
+    }
+    let parsed: serde_json::Value = serde_json::from_str(text).ok()?;
+    let at = |pointer: &[String]| pointer.iter().try_fold(&parsed, |here, key| here.get(key));
+    let expires_at = at(&channel.expires_at_pointer)?.as_i64()?;
+    if expires_at > observed_at.saturating_mul(1000) {
+        return None;
+    }
+    let renewable = !channel.renewed_with_pointer.is_empty()
+        && at(&channel.renewed_with_pointer)
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|token| !token.is_empty());
+    Some(RemainingError::TokenExpired { renewable })
 }
 
 /// What the keeper of secrets prints, or why it would not.
@@ -624,9 +664,44 @@ mod tests {
             headers: vec![BETA.to_owned()],
             held_by: Vec::new(),
             shape: WindowWords::default(),
+            expires_at_pointer: Vec::new(),
+            renewed_with_pointer: Vec::new(),
         };
         let refused = read_oauth_usage(&channel, 0).expect_err("there is nothing to read");
         assert!(matches!(refused, RemainingError::NoCredentials(_)));
+    }
+
+    /// An access token past its expiry is not a reason to sign in when the
+    /// engine keeps the token that renews it; without one, it is. Nothing is
+    /// asked of the provider either way.
+    #[test]
+    fn an_expired_token_the_engine_renews_is_not_a_request_to_sign_in() {
+        let dir = std::env::temp_dir().join(format!("sailor-expired-token-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a scratch directory");
+        let channel_for = |credentials: &str| {
+            let path = dir.join(format!("{}.json", credentials.len()));
+            std::fs::write(&path, credentials).expect("the credentials");
+            OauthUsageChannel {
+                engine: ENGINE.to_owned(),
+                credentials: path,
+                token_pointer: pointer(),
+                url: "http://127.0.0.1:9/never-asked".to_owned(),
+                headers: Vec::new(),
+                held_by: Vec::new(),
+                shape: WindowWords::default(),
+                expires_at_pointer: vec!["claudeAiOauth".to_owned(), "expiresAt".to_owned()],
+                renewed_with_pointer: vec!["claudeAiOauth".to_owned(), "refreshToken".to_owned()],
+            }
+        };
+        let renewable = channel_for(r#"{"claudeAiOauth":{"accessToken":"a","expiresAt":1000,"refreshToken":"r"}}"#);
+        let stranded = channel_for(r#"{"claudeAiOauth":{"accessToken":"a","expiresAt":1000}}"#);
+
+        let said = read_oauth_usage(&renewable, 2).expect_err("expired").to_string();
+        let stranded_said = read_oauth_usage(&stranded, 2).expect_err("expired").to_string();
+
+        assert!(said.contains("nothing to sign in to"), "{said}");
+        assert!(stranded_said.contains("sign in again"), "{stranded_said}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A keeper that will not answer is a refusal that names the line it ran,
@@ -641,6 +716,8 @@ mod tests {
             headers: vec![BETA.to_owned()],
             held_by: vec!["false".to_owned(), "--for".to_owned(), "a-home".to_owned()],
             shape: WindowWords::default(),
+            expires_at_pointer: Vec::new(),
+            renewed_with_pointer: Vec::new(),
         };
 
         let refused = read_oauth_usage(&channel, 0).expect_err("the keeper says no");

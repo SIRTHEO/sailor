@@ -547,6 +547,12 @@ pub struct Quota {
     /// from another's. The words are the product's and belong here, in data.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub held_by: Vec<String>,
+    /// The keys down to the token's expiry, in milliseconds since the epoch.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub expires_at_pointer: Vec<String>,
+    /// The keys down to the token the engine renews an expired one with.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub renewed_with_pointer: Vec<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub note: String,
 }
