@@ -2,6 +2,7 @@
   "cli.arc.no_binary_of_my_own": "Non so quale binario sono, quindi non posso avviare una corsa: {error}",
   "cli.arc.no_directory_of_my_own": "Non so in quale cartella mi trovo, quindi una corsa avviata qui lavorerebbe da nessuna parte: {error}",
   "cli.session.the_mandate_is_yours": "La sessione prima di te ha lasciato un mandato per questo terminale, e tu l'hai appena preso.\nIl lavoro: {goal}\nCosa le era stato chiesto: {asked}\nLa cosa successiva, quella sola: {next}\nMai: {never}\nTutto il resto — cosa è fatto e verificato, le decisioni prese e chi le ha autorizzate, i vincoli che tengono, cosa è stato provato e non ha funzionato, e le domande ancora aperte — è in {path}. Leggilo prima di toccare qualsiasi cosa.",
+  "cli.session.the_mandate_in_full": "Il mandato per intero, così non c'è un file da aprire: {mandate}",
   "cli.session.the_mandate_is_waiting": "**Un mandato è depositato per questo terminale e nessuno l'ha preso.** Chi viene dopo di te lo legge prima di ogni altra cosa; questa sessione si svuota solo se il suo mandato ha detto che era finita e niente di suo è ancora in corso.",
   "run.failure.base_commit_unknown": "il commit di base del compito non è in questo albero, quindi non c'è niente contro cui leggere la modifica",
   "run.failure.git_failed": "git non ha risposto, quindi la modifica non si è potuta leggere o l'albero rimettere com'era",

@@ -172,7 +172,7 @@ fn the_mandate_of(
     if sessions::mandate::consume(&path, session, sessions::now()).is_err() {
         return None;
     }
-    Some(catalogue::say(
+    let mut said = catalogue::say(
         "cli.session.the_mandate_is_yours",
         &[
             ("goal", &left.work.goal),
@@ -181,7 +181,16 @@ fn the_mandate_of(
             ("never", &left.work.never.join(" · ")),
             ("path", &path.display().to_string()),
         ],
-    ))
+    );
+    // **THE WHOLE OF IT, WHERE IT FITS.** Read from a file outside the tree, it
+    // costs a turn and a permission a live session stops to ask a person for.
+    let whole = serde_json::json!({"work": left.work, "commits": left.written.commits});
+    let text = whole.to_string();
+    if text.len() <= WHOLE_MANDATE_BYTES {
+        said.push('\n');
+        said.push_str(&catalogue::say("cli.session.the_mandate_in_full", &[("mandate", &text)]));
+    }
+    Some(said)
 }
 
 /// The request for a mandate, while it is still unanswered.
@@ -268,6 +277,9 @@ fn told_for_the_first_time(ledger: &ledger::Ledger, episode: &str) -> bool {
 
 const TOLD: &str = "mandate_asks_told";
 
+/// The largest mandate handed whole in a greeting; past it, the file is named.
+const WHOLE_MANDATE_BYTES: usize = 16_000;
+
 use super::MANDATE_ASKS as ASKS;
 
 /// The standing that makes a request.
@@ -333,6 +345,10 @@ mod tests {
         mandate.work.goal = "carry the relay to the end".to_owned();
         mandate.work.next = "read the screen of a held terminal".to_owned();
         mandate.work.never = vec!["do not type into what nobody holds".to_owned()];
+        mandate.work.decisions = vec![sessions::mandate::Decision {
+            decided: "read the screen before typing".to_owned(),
+            authorised_by: "the owner".to_owned(),
+        }];
         sessions::mandate::deposit(&directory, &mandate).expect("the mandate is deposited");
 
         let handed =
@@ -345,6 +361,11 @@ mod tests {
         assert!(
             handed.contains("do not type into what nobody holds"),
             "{handed}"
+        );
+        assert!(
+            handed.contains("read the screen before typing"),
+            "the whole mandate arrives in the greeting, so nothing has to be read from a file \
+             outside the tree, which a session asks permission for: {handed}"
         );
 
         assert_eq!(

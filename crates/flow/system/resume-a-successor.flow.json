@@ -90,7 +90,7 @@
           "session": {
             "$from": "/carried/session"
           },
-          "line": "Carry on from the mandate you were handed at the start of this session: read the file it names, check the tree against it, then do its one next thing.",
+          "line": "Carry on from the mandate handed to you at the start of this session: check the tree against it, then do its one next thing.",
           "patience_seconds": 120
         },
         "input_schema": {
