@@ -647,7 +647,12 @@ fn handovers(args: &[String]) -> Result<String, String> {
     let path = store_root(&options)?.join(sessions::SESSIONS_FILE);
     let found = match path.exists() {
         true => sessions::Sessions::open(&path)
-            .and_then(|store| store.handovers())
+            .and_then(|store| {
+                for tty in store.handovers()?.iter().map(|it| it.tty.clone()) {
+                    store.overdue(&tty, sessions::now())?;
+                }
+                store.handovers()
+            })
             .map_err(|error| error.to_string())?,
         false => Vec::new(),
     };

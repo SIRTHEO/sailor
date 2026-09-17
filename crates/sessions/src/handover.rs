@@ -1,11 +1,9 @@
-//! The handover as a transaction: one session that declared its work handed
-//! on, the activity it declared it on, one clear sent, one successor.
+//! The handover as a transaction: one session, the activity it declared its
+//! work handed on at, one clear sent, one successor.
 //!
-//! **EVERY MOVE NAMES THE STATE IT LEAVES.** A move is an update guarded by
-//! that state, so two controllers racing on one terminal cannot both send the
-//! clear, and a clear read on stale activity is not sent. The table is added
-//! beside the others without raising the schema: a binary that does not know
-//! it reads the file as before, and raising would make it refuse the file.
+//! **EVERY MOVE NAMES THE STATE IT LEAVES**, so two controllers cannot both
+//! send the clear. The table is added without raising the schema: an older
+//! binary keeps reading the file, where raising would make it refuse it.
 
 use crate::store::{SessionError, Sessions};
 use rusqlite::{params, OptionalExtension};
@@ -81,6 +79,14 @@ pub struct NewHandover {
     pub mandate_at: i64,
     pub at: i64,
 }
+
+/// How long a move may stay unfinished: the typing of one line, and the start
+/// of a successor. A prompted successor is at work, which has no deadline.
+const DEADLINES: [(State, i64); 3] = [
+    (State::Clearing, 60),
+    (State::AwaitingSuccessor, 300),
+    (State::Verifying, 300),
+];
 
 const COLUMNS: &str = "id, tty, tree, session_id, engine, mandate_at, generation, state, why, \
                        successor, created_at, updated_at";
@@ -168,6 +174,22 @@ impl Sessions {
             "tty = ?1 AND tree = ?2 AND state = 'awaiting_successor'",
             params![tty, tree],
         )
+    }
+
+    /// Moves every handover of a terminal stuck mid-way past its deadline to
+    /// recovery, and says how many. Waiting to be declared ready has no
+    /// deadline: that is the session still at work.
+    pub fn overdue(&self, tty: &str, now: i64) -> Result<usize, SessionError> {
+        let mut moved = 0;
+        for (state, seconds) in DEADLINES {
+            moved += self.connection.execute(
+                "UPDATE handovers SET state = 'recovery_required', updated_at = ?3,
+                     why = 'stuck in ' || state || ' past its deadline'
+                 WHERE tty = ?1 AND state = ?2 AND updated_at < ?3 - ?4",
+                params![tty, state.as_str(), now, seconds],
+            )?;
+        }
+        Ok(moved)
     }
 
     /// Whether a clear was sent on this terminal and no successor holds it yet.

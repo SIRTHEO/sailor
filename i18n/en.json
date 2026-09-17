@@ -795,6 +795,7 @@
   "run.failure.subflow_unreadable": "the store could not be read — the fault is not in the flow",
   "run.failure.target_dir_unwritable": "the judge's build directory could not be written",
   "run.failure.task_unreadable": "the task file could not be read, or it names no test command",
+  "run.failure.sessions": "the record of the terminals could not be read or written",
   "run.failure.terminal_not_held": "Sailor is not holding that terminal",
   "run.failure.test_command_not_runnable": "the task's test command did not start: is cargo on this machine?",
   "run.failure.tool_unavailable": "that tool is not on this machine",

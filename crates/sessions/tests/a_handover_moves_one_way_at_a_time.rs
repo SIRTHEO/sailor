@@ -166,3 +166,25 @@ fn a_successor_is_awaited_only_after_the_clear_was_sent() {
         Some(reserved.id)
     );
 }
+
+/// **A MOVE NOBODY FINISHED IS LEFT FOR A PERSON, NOT FOR A RETRY.** A
+/// controller that died holding the licence, or a successor that never came,
+/// would otherwise hold the row in place forever and in silence.
+#[test]
+fn a_handover_stuck_past_its_deadline_is_left_for_a_person() {
+    let scratch = Scratch::new("overdue");
+    let store = scratch.store();
+    let opened = finished(&store, 25);
+    let generation = store.activity_of("s-1").expect("read");
+    assert!(store.clear_if_still(&opened.id, generation, 100).expect("the licence"));
+
+    assert_eq!(store.overdue("ttys004", 100 + 59).expect("read"), 0, "not yet");
+    assert_eq!(store.overdue("ttys004", 100 + 61).expect("read"), 1);
+    let stuck = store.handover(&opened.id).expect("read").expect("there");
+    assert_eq!(stuck.state, State::RecoveryRequired);
+    assert!(stuck.why.unwrap_or_default().contains("clearing"));
+
+    let waiting = finished(&store, 400);
+    assert_eq!(store.overdue("ttys004", 400 + 100_000).expect("read"), 0, "finished has no deadline");
+    assert_eq!(store.handover(&waiting.id).expect("read").expect("there").state, State::Finished);
+}

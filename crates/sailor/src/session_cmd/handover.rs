@@ -121,7 +121,7 @@ pub(super) fn a_turn_ended(store: &sessions::Sessions, session: &str, event: &st
             &prompted.id,
             State::Prompted,
             State::Resumed,
-            "the successor finished its first turn",
+            "first_turn_ended",
             sessions::now(),
         );
     }
@@ -155,7 +155,7 @@ fn the_mandate_of(
                     &awaited.id,
                     State::Verifying,
                     State::RecoveryRequired,
-                    "the mandate on disk is not the one the handover was declared on",
+                    "mandate_replaced",
                     sessions::now(),
                 );
                 return None;

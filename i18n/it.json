@@ -795,6 +795,7 @@
   "run.failure.subflow_unreadable": "il deposito non si è lasciato leggere — il guasto non è nel flusso",
   "run.failure.target_dir_unwritable": "la cartella di compilazione del giudice non si è potuta scrivere",
   "run.failure.task_unreadable": "il file del compito non si è potuto leggere, o non nomina un comando di prova",
+  "run.failure.sessions": "il registro dei terminali non si è potuto leggere o scrivere",
   "run.failure.terminal_not_held": "Sailor non ha in mano quel terminale",
   "run.failure.test_command_not_runnable": "il comando di prova del compito non è partito: cargo c'è su questa macchina?",
   "run.failure.tool_unavailable": "lo strumento non c'è su questa macchina",

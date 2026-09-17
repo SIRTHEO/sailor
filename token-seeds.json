@@ -111,6 +111,11 @@
       "runs_measured": 0,
       "words_it_sends": 0
     },
+    "resume-a-successor": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
+    },
     "review-a-pinned-commit": {
       "tokens_a_run": 0,
       "runs_measured": 0,

@@ -1,10 +1,8 @@
-//! Emptying a session that handed its work on, as the one move of a transaction.
+//! Emptying a session that handed its work on, and setting its successor going.
 //!
-//! **SURFACE: writing into a live session. POWERS CLAIMED: typing the line a
-//! descriptor declares, once.** The clear is sent only when the session
-//! declared its mandate finished and every gate agrees on the same activity:
-//! no instruction since, no sub-agent running, no call left running or
-//! scheduled in its record, a free screen. Unknown is a no.
+//! **SURFACE: writing into a live session. POWERS CLAIMED: typing the lines a
+//! descriptor and a flow declare, once each.** Every gate must agree on the
+//! same activity, and unknown is a no.
 
 use crate::{freedom_now, reset_line_of, store_root, typed_into, unknown_of, Freedom};
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies};
@@ -98,6 +96,7 @@ pub fn hand_over(
         return Ok(held("no session has announced itself in this store".to_owned()));
     }
     let store = sessions::Sessions::open(&path).map_err(fault)?;
+    store.overdue(tty, sessions::now()).map_err(fault)?;
     let Some(handover) = store.open_for(tty, session).map_err(fault)? else {
         return Ok(held(format!("{tty}: this session declared no finished handover")));
     };
@@ -183,7 +182,7 @@ pub fn hand_over(
     match typed_into(root, tty, &reset) {
         Ok(()) => {
             store
-                .advance(&handover.id, State::Clearing, State::AwaitingSuccessor, "sent", sessions::now())
+                .advance(&handover.id, State::Clearing, State::AwaitingSuccessor, "clear_sent", sessions::now())
                 .map_err(fault)?;
             Ok(json!({"handed_over": true, "handover": handover.id, "typed": reset}))
         }
