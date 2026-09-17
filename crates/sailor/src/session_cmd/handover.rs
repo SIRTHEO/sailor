@@ -143,11 +143,16 @@ fn the_ask_of(
     // for what is already on disk teaches whoever reads it to stop reading.
     match sessions::mandate::read(&sessions::mandate::address_in(store, tty)) {
         Some(left) if left.taken.is_none() => {
-            return Some(catalogue::say("cli.session.the_mandate_is_waiting", &[]));
+            let episode = format!("{tty}|{session}|waiting|{}", left.written.at);
+            return told_for_the_first_time(ledger, &episode)
+                .then(|| catalogue::say("cli.session.the_mandate_is_waiting", &[]));
         }
         // Taken, and asked for again since: the successor filled up in its turn.
         Some(left) if left.written.at >= asked.written_at => return None,
         _ => {}
+    }
+    if !told_for_the_first_time(ledger, &format!("{tty}|{session}|asked")) {
+        return None;
     }
     let tokens = asked
         .value
@@ -159,6 +164,24 @@ fn the_ask_of(
         &[("tokens", &tokens.to_string())],
     ))
 }
+
+/// Whether this episode is told now for the first time: the run rewrites its
+/// request at every turn, and a request repeated at every prompt stops being
+/// read. A store that will not answer tells, rather than silences.
+fn told_for_the_first_time(ledger: &ledger::Ledger, episode: &str) -> bool {
+    !matches!(
+        ledger.put_record_if_absent(&ledger::StoreRecord {
+            collection: TOLD.to_owned(),
+            key: episode.to_owned(),
+            value: serde_json::json!({}),
+            written_by: "the greeting".to_owned(),
+            written_at: sessions::now(),
+        }),
+        Ok(ledger::ConditionalWrite::AlreadyPresent(_))
+    )
+}
+
+const TOLD: &str = "mandate_asks_told";
 
 /// Where a run leaves the request, and the standing that makes one.
 const ASKS: &str = "mandate_asks";
@@ -398,9 +421,45 @@ mod tests {
                 written_at: 200,
             })
             .expect("the later ask is written");
-        let again = the_ask_of(&ledger, &directory, "ttys001", "whoever-is-here")
+        let again = the_ask_of(&ledger, &directory, "ttys001", "the-successor")
             .expect("it is asked again");
         assert!(again.contains("300000"), "{again}");
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// **ONE REQUEST PER EPISODE.** The run rewrites the ask at every turn, and
+    /// repeating it at every prompt taught the session to stop reading it: the
+    /// same session is told once that a mandate is owed, and once that its
+    /// mandate waits.
+    #[test]
+    fn a_session_is_told_once_per_episode_and_not_at_every_prompt() {
+        let directory = std::env::temp_dir().join(format!("sailor-ask-once-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("a directory of this test's own");
+        let ledger = ledger::Ledger::open(&directory).expect("a store of this test's own");
+        let ask = |at: i64| {
+            ledger
+                .put_record(&ledger::StoreRecord {
+                    collection: ASKS.to_owned(),
+                    key: "ttys005".to_owned(),
+                    value: serde_json::json!({"state": OBLIGE, "tokens": 260_000u64, "session": "s"}),
+                    written_by: "a-run".to_owned(),
+                    written_at: at,
+                })
+                .expect("the ask is written")
+        };
+
+        ask(100);
+        assert!(the_ask_of(&ledger, &directory, "ttys005", "s").is_some(), "told the first time");
+        ask(110);
+        assert!(the_ask_of(&ledger, &directory, "ttys005", "s").is_none(), "not again at the next turn");
+
+        let mut mandate = sessions::mandate::Mandate::default();
+        mandate.written.tty = "ttys005".to_owned();
+        mandate.written.at = 120;
+        sessions::mandate::deposit(&directory, &mandate).expect("the mandate is deposited");
+        assert!(the_ask_of(&ledger, &directory, "ttys005", "s").is_some(), "told once that it waits");
+        assert!(the_ask_of(&ledger, &directory, "ttys005", "s").is_none(), "and not at every prompt after");
         let _ = std::fs::remove_dir_all(&directory);
     }
 
