@@ -197,6 +197,10 @@ pub(crate) struct EngineSpec {
     pub(crate) model: BTreeMap<String, String>,
     #[serde(default)]
     pub(crate) args: Vec<String>,
+    /// Tools the engine may use without asking, written on the option its
+    /// descriptor declares (`capabilities.allow_tools`).
+    #[serde(default)]
+    pub(crate) allow_tools: Vec<String>,
     #[serde(default)]
     pub(crate) env: BTreeMap<String, String>,
     #[serde(default)]

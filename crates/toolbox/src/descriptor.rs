@@ -1000,6 +1000,13 @@ impl Descriptor {
             .map(|form| form.args.clone())
     }
 
+    /// The options the tools a call may use without asking are written after.
+    pub fn allow_tools_option(&self) -> Option<Vec<String>> {
+        let forms = self.capabilities.get(ALLOW_TOOLS)?.forms();
+        let carries = |form: &&CapabilityForm| form.takes_value && !form.args.is_empty();
+        forms.iter().find(carries).map(|form| form.args.clone())
+    }
+
     pub fn model_option(&self) -> Option<Vec<String>> {
         let forms = self.capabilities.get(CHOOSE_MODEL)?.forms();
         let carries = |form: &&CapabilityForm| form.takes_value && !form.args.is_empty();
@@ -1141,6 +1148,7 @@ pub const ASK_WITHOUT_INTERACTION: &str = "ask_without_interaction";
 /// answer with. The code reads a form; the options are the descriptor's.
 pub const CHOOSE_MODEL: &str = "choose_model";
 pub const RESPONSE_SHAPE: &str = "response_shape";
+pub const ALLOW_TOOLS: &str = "allow_tools";
 
 /// A descriptor that says two different things about the same fact.
 ///

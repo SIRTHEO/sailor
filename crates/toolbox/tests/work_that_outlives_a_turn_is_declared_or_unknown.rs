@@ -41,6 +41,7 @@ fn the_shipped_line_that_is_relayed_declares_its_record_and_its_sub_agents() {
     assert!(line.outlives_the_turn.is_some());
     assert_eq!(line.event_for("subagent_started"), Some("SubagentStart"));
     assert_eq!(line.event_for("subagent_stopped"), Some("SubagentStop"));
+    assert_eq!(line.allow_tools_option(), Some(vec!["--allowedTools".to_owned()]));
     let reset = line.reset_context.expect("a reset line");
     assert_eq!(reset.successor_starts_with.get("source").map(String::as_str), Some("clear"));
 }

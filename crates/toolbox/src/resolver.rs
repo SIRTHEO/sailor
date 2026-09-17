@@ -245,6 +245,16 @@ impl actions::ToolResolver for Tools {
             .model_option()
     }
 
+    /// The same rule as the model option, for the tools a call may use.
+    fn allow_tools_option(&self, id: &str) -> Option<Vec<String>> {
+        self.catalog
+            .live()
+            .into_iter()
+            .find(|loaded| loaded.descriptor.id == id)?
+            .descriptor
+            .allow_tools_option()
+    }
+
     /// The same rule as the model option, for the schema of an answer.
     fn response_schema_option(&self, id: &str) -> Option<Vec<String>> {
         self.catalog

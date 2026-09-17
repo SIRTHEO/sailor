@@ -279,6 +279,11 @@
           "note": "works only together with --print, which is the line Sailor composes; the value is written in whole dollars, hence the unit"
         },
         "choose_model": { "args": ["--model"], "takes_value": true },
+        "allow_tools": {
+          "args": ["--allowedTools"],
+          "takes_value": true,
+          "note": "Read on `claude --help` of 2.1.273 on 17/09/2026: «--allowedTools, --allowed-tools <tools...> Comma or space-separated list of tool names to allow». Without it a one-shot call is denied every tool that would ask for permission, the tools of an enabled MCP server included."
+        },
         "fallback_model": {
           "args": ["--fallback-model"],
           "takes_value": true,

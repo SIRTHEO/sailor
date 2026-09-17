@@ -312,6 +312,21 @@ impl ExternalEngineAction {
                     // The ceiling this call is held to, and the reserve it
                     // makes. Both come from the descriptor and the step: an
                     // engine that takes none leaves the run a stop threshold.
+                    let allowed = spec.allow_tools.join(",");
+                    let allow = match (spec.allow_tools.is_empty(), tools.allow_tools_option(id)) {
+                        (true, _) => None,
+                        (false, Some(option)) => Some(option),
+                        (false, None) => {
+                            refused.push(Refused {
+                                id: id.clone(),
+                                reason: "the step allows it tools, and its descriptor does not declare \
+                                         how they are named to it (`capabilities.allow_tools`)"
+                                    .to_owned(),
+                                unresolved: false,
+                            });
+                            continue;
+                        }
+                    };
                     let held_to = tools.spend_ceiling_option(id);
                     let ceiling = held_to
                         .as_ref()
@@ -333,6 +348,7 @@ impl ExternalEngineAction {
                         schema
                             .as_ref()
                             .map(|(option, schema)| (option.as_slice(), schema.as_str())),
+                        allow.as_ref().map(|option| (option.as_slice(), allowed.as_str())),
                     ];
                     match tools.ask_recipe(id) {
                         Some(recipe) => usable.push(Candidate {
@@ -1147,6 +1163,56 @@ mod tests {
         fn model_option(&self, id: &str) -> Option<Vec<String>> {
             (id == "knows-the-model").then(|| vec!["--model".to_owned()])
         }
+
+        fn allow_tools_option(&self, id: &str) -> Option<Vec<String>> {
+            (id == "knows-the-model").then(|| vec!["--allow".to_owned()])
+        }
+    }
+
+    /// The tools a step lets the engine use are named on the line the
+    /// descriptor says, joined into the one value that option takes, and the
+    /// recipe's usage options stay: a step's own `args` would lose them.
+    #[test]
+    fn the_tools_a_step_allows_land_on_the_option_the_descriptor_names() {
+        let action = ExternalEngineAction::resolving_with(Models);
+        let input = json!({
+            "tool": "knows-the-model",
+            "allow_tools": ["Read", "a_search"],
+            "stdin": "the-question",
+            "timeout_secs": 10
+        });
+
+        let ActionOutcome::Went(output) = action
+            .execute(&input, &SharedState::new())
+            .expect("it answers")
+        else {
+            panic!("an engine that answers is always Went")
+        };
+
+        assert_eq!(
+            output["stdout"],
+            "--answered-knows-the-model --mode plan --allow Read,a_search --print the-question\n"
+        );
+    }
+
+    /// An engine that cannot be told which tools it may use is not run with
+    /// tools nobody allowed: it is set aside, with the reason.
+    #[test]
+    fn an_engine_that_cannot_be_told_its_tools_is_set_aside_with_the_reason() {
+        let action = ExternalEngineAction::resolving_with(Models);
+        let input = json!({
+            "tool": ["does-not-know-the-model"],
+            "allow_tools": ["Read"],
+            "stdin": "the-question",
+            "timeout_secs": 10
+        });
+
+        let error = action
+            .execute(&input, &SharedState::new())
+            .expect_err("no tools can be allowed to it");
+
+        assert_eq!(error.class, "no_usable_engine");
+        assert!(error.said.contains("allow_tools"), "{}", error.said);
     }
 
     /// The step names a model for an engine that can receive one: the line

@@ -84,6 +84,12 @@ pub trait ToolResolver: Send + Sync {
         None
     }
 
+    /// The options the tools a step allows are written after, joined by commas.
+    /// `None` refuses the engine for a step that names tools, as for a model.
+    fn allow_tools_option(&self, _id: &str) -> Option<Vec<String>> {
+        None
+    }
+
     /// How `id` is told the most one call may spend, when its descriptor says.
     ///
     /// **`None` MEANS NO CEILING CAN BE IMPOSED ON IT**, and that is what turns
