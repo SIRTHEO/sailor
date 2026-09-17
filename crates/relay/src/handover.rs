@@ -282,12 +282,21 @@ pub fn resume_successor(
         return Ok(not_prompted("no session has announced itself in this store".to_owned()));
     }
     let store = sessions::Sessions::open(&path).map_err(fault)?;
-    let Some(handover) = store
-        .successor_in(session, State::Verifying)
-        .map_err(fault)?
-        .filter(|found| found.tty == tty)
-    else {
-        return Ok(not_prompted(format!("{tty}: this session reserved no handover")));
+    // The run of a start can ask before the greeting of the same start has
+    // reserved: while a successor is awaited here, the reservation is waited for.
+    let began = Instant::now();
+    let handover = loop {
+        let reserved = store
+            .successor_in(session, State::Verifying)
+            .map_err(fault)?
+            .filter(|found| found.tty == tty);
+        match reserved {
+            Some(found) => break found,
+            None if store.awaited_on(tty).map_err(fault)? && began.elapsed() < patience => {
+                std::thread::sleep(Duration::from_millis(500));
+            }
+            None => return Ok(not_prompted(format!("{tty}: this session reserved no handover"))),
+        }
     };
     let descriptor = catalog
         .live()

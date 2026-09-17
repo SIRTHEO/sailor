@@ -170,6 +170,13 @@ impl Sessions {
         )
     }
 
+    /// Whether a clear was sent on this terminal and no successor holds it yet.
+    pub fn awaited_on(&self, tty: &str) -> Result<bool, SessionError> {
+        Ok(self
+            .latest("tty = ?1 AND state = 'awaiting_successor'", params![tty])?
+            .is_some())
+    }
+
     /// The handover a successor holds in one state.
     pub fn successor_in(
         &self,

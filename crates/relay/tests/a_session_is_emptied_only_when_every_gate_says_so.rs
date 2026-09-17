@@ -371,3 +371,27 @@ fn a_successor_is_prompted_only_on_the_terminal_that_was_cleared() {
     assert_eq!(answer["prompted"], false, "{answer}");
     assert_eq!(state(&stage), State::Verifying);
 }
+
+/// **THE FLOW OF A START CAN RUN BEFORE ITS GREETING RESERVES.** Seen end to
+/// end: the run asked in the same second and found nothing reserved. While a
+/// successor is awaited on the terminal, the reservation is waited for.
+#[test]
+fn a_reservation_that_lands_after_the_flow_started_is_waited_for() {
+    let stage = a_finished_session("late-reservation");
+    run(&stage, true).expect("the clear is sent");
+    let _ = typed(&stage);
+    let root = stage.root.clone();
+    let reserving = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(1500));
+        let sessions = store(&root);
+        let id = sessions.handovers().expect("read")[0].id.clone();
+        assert!(sessions.reserve(&id, "s-2", 300).expect("reserved"));
+    });
+
+    let answer = resume_successor(&catalog(), &stage.root, TTY, "s-2", GO_ON, true, Duration::from_secs(10))
+        .expect("the relay runs");
+
+    reserving.join().expect("the greeting reserved");
+    assert_eq!(answer["prompted"], true, "{answer}");
+    assert!(typed(&stage).starts_with(GO_ON));
+}
