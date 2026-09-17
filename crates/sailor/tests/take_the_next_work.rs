@@ -119,6 +119,37 @@ fn make_fixtures() -> PathBuf {
     fixtures
 }
 
+/// Run from a git hook, git exports GIT_DIR, and a fixture script that writes
+/// its identity with `git config` writes it into the repository the hook runs
+/// for: every later commit there was authored by the fixture.
+#[test]
+fn the_fixtures_write_no_identity_into_the_repository_a_hook_runs_for() {
+    let _held = FIXTURES_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let outer = std::env::temp_dir().join(format!("queue-flow-outer-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&outer);
+    std::fs::create_dir_all(&outer).expect("a scratch directory");
+    let init = std::process::Command::new("git").args(["init", "-q"]).current_dir(&outer).status();
+    assert!(init.is_ok_and(|status| status.success()), "git init");
+    let script = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../flows/tests/make-fixtures.sh"));
+
+    let output = std::process::Command::new("sh")
+        .arg(script)
+        .env("GIT_DIR", outer.join(".git"))
+        .output()
+        .expect("make-fixtures.sh runs");
+
+    let config = std::fs::read_to_string(outer.join(".git/config")).expect("the outer config");
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(!config.contains("queue-flow-fixture"), "{config}");
+    let commits = std::process::Command::new("git")
+        .args(["rev-list", "--all"])
+        .current_dir(&outer)
+        .output()
+        .expect("git rev-list runs");
+    assert!(commits.stdout.is_empty(), "the fixtures committed into the outer repository");
+    let _ = std::fs::remove_dir_all(&outer);
+}
+
 fn fresh_ledger(tag: &str) -> Ledger {
     let dir = std::env::temp_dir().join(format!(
         "queue-flow-{tag}-{}-{}",
