@@ -2135,5 +2135,7 @@ printf '{"result":"the true answer","model":"modello-di-prova","usage":{"input_t
         );
     }
 
-    mod what_the_engine_says;
+    mod tests {
+        mod what_the_engine_says;
+    }
 }

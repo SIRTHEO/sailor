@@ -2,7 +2,7 @@
 //! model a step asked for, the answer inside an envelope, and the words of a
 //! refusal that belong to the engine rather than to the prompt it echoed.
 
-use super::*;
+use super::super::*;
 
 struct NamesAModel(Declares);
 
