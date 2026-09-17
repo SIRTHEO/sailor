@@ -110,12 +110,47 @@ fn store_failed(error: ledger::LedgerError) -> ActionError {
     ActionError::new("store_failed", error.to_string())
 }
 
+/// The model a row's step asked its engine for, read from the flow definition
+/// the run recorded, for a row written before that model went on the row. Two
+/// recorded definitions that disagree leave it unknown.
+fn requested_in_recorded_definition(ledger: &Ledger, call: &ModelCallRecord) -> Option<String> {
+    if !call.requested_model.trim().is_empty() {
+        return None;
+    }
+    let step = call.step_id.as_deref()?;
+    let ledger::RunFlow::Recorded(definitions) = ledger.flow_of_run(&call.run_id).ok()? else {
+        return None;
+    };
+    let mut asked = definitions.iter().map(|definition| {
+        let body: Value = serde_json::from_str(&definition.body).ok()?;
+        body["graph"]["steps"]
+            .as_array()?
+            .iter()
+            .find(|candidate| candidate["id"] == step)?["with"]["model"][&call.cli]
+            .as_str()
+            .map(str::to_owned)
+    });
+    let first = asked.next()??;
+    asked.all(|other| other.as_deref() == Some(first.as_str())).then_some(first)
+}
+
 fn price_calls(ledger: &Ledger, list: &PriceList, calls: &[ModelCallRecord]) -> Result<Value, ActionError> {
     let mut by_rule: BTreeMap<String, u64> = BTreeMap::new();
     let mut unpriced = Vec::new();
     let mut priced_micros: i64 = 0;
     let mut changed: u64 = 0;
     for call in calls {
+        let recovered;
+        let call = match requested_in_recorded_definition(ledger, call) {
+            Some(model) => {
+                recovered = ModelCallRecord {
+                    requested_model: model,
+                    ..call.clone()
+                };
+                &recovered
+            }
+            None => call,
+        };
         let priced = equivalent_cost(&facts_of(call), list);
         let Some(micros) = priced.cost_micros else {
             if call.cost_micros.is_some() {
@@ -381,6 +416,62 @@ mod tests {
         // 500,000 uncached at 2.00 and 500,000 cached at 0.20.
         assert_eq!(rows.rows[1][1], 1_100_000);
         assert_eq!(rows.rows[0][1], 1, "a call the engine declared keeps its row");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A row written before the model asked for was recorded takes it from the
+    /// flow definition its run recorded, and keeps it.
+    #[test]
+    fn a_model_asked_for_is_recovered_from_the_definition_the_run_recorded() {
+        let dir = scratch("recovered");
+        let ledger = Ledger::open(dir.join("ledger")).expect("a store of the test's own");
+        let definition = json!({
+            "id": "a-flow",
+            "graph": {"steps": [
+                {"id": "ask", "action": "external_engine", "with": {"model": {"engine-a": "model-c"}}}
+            ]}
+        });
+        ledger
+            .record_flow_definition(&ledger::FlowDefinitionRecord::of("run-1", &definition, 1))
+            .unwrap();
+        let mut old = call("old", "engine-a");
+        old.input_tokens = Some(1_000_000);
+        old.output_tokens = Some(0);
+        ledger.record_model_call(&old).unwrap();
+
+        let said = reprice_every_call(&ledger, &PriceList::parse(LIST).unwrap()).unwrap();
+
+        assert_eq!(said["priced_micros"], 5_000_000);
+        let rows = ledger
+            .browse("SELECT requested_model FROM model_calls WHERE call_id = 'old'", 1)
+            .unwrap();
+        assert_eq!(rows.rows[0][0], "model-c");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn two_recorded_definitions_that_disagree_recover_no_model() {
+        let dir = scratch("disagree");
+        let ledger = Ledger::open(dir.join("ledger")).expect("a store of the test's own");
+        for (model, at) in [("model-c", 1), ("model-b", 2)] {
+            let definition = json!({
+                "id": "a-flow",
+                "graph": {"steps": [
+                    {"id": "ask", "action": "external_engine", "with": {"model": {"engine-a": model}}}
+                ]}
+            });
+            ledger
+                .record_flow_definition(&ledger::FlowDefinitionRecord::of("run-1", &definition, at))
+                .unwrap();
+        }
+        let mut old = call("old", "engine-a");
+        old.input_tokens = Some(1_000_000);
+        old.output_tokens = Some(0);
+        ledger.record_model_call(&old).unwrap();
+
+        let said = reprice_every_call(&ledger, &PriceList::parse(LIST).unwrap()).unwrap();
+
+        assert_eq!(said["by_rule"]["assumed_model"], 1, "no model is recovered from a disagreement");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
