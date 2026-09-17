@@ -652,6 +652,23 @@ pub struct FreeWhen {
     pub extra: BTreeMap<String, Value>,
 }
 
+/// How a session's record shows work left running past its turn. Absent means
+/// nobody measured it, and a session whose record cannot be read is not emptied.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct OutlivesTheTurn {
+    /// Input fields whose value `true` sends a call to run in the background.
+    pub background_when: Vec<String>,
+    /// What the record holds once such a call ended, `{id}` standing for its id.
+    pub ended_mark: String,
+    /// Calls that leave work scheduled after the turn, by name.
+    #[serde(default)]
+    pub schedules: Vec<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub note: String,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
 /// The moment a session begins: the one whose answer reaches the agent.
 pub const SESSION_START: &str = "session_start";
 
@@ -660,7 +677,18 @@ pub const SESSION_START: &str = "session_start";
 /// Named here because they are what Sailor needs, not what any one product
 /// offers. A command line maps them onto its own event names, and stays silent
 /// about the ones it cannot report. Whoever acts at each asks this list.
-pub const MOMENTS: &[&str] = &[SESSION_START, "alive", "asked", "compacting"];
+pub const MOMENTS: &[&str] = &[
+    SESSION_START,
+    "alive",
+    "asked",
+    "compacting",
+    SUBAGENT_STARTED,
+    SUBAGENT_STOPPED,
+];
+
+/// A sub-agent of the session starts, and stops: what the relay counts.
+pub const SUBAGENT_STARTED: &str = "subagent_started";
+pub const SUBAGENT_STOPPED: &str = "subagent_stopped";
 
 /// How a settings file is written, because grafting has to read it back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
@@ -816,6 +844,8 @@ pub struct Descriptor {
     /// Absent means nobody measured it, and then nothing is typed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub free_when: Option<FreeWhen>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outlives_the_turn: Option<OutlivesTheTurn>,
     /// For a program that opens terminals of its own: how it is asked.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keeps_terminals: Option<KeepsTerminals>,
@@ -866,6 +896,9 @@ impl Descriptor {
         }
         if let Some(login) = &self.login_status {
             found.extend(login.extra.keys().map(|key| format!("login_status.{key}")));
+        }
+        if let Some(outlives) = &self.outlives_the_turn {
+            found.extend(outlives.extra.keys().map(|key| format!("outlives_the_turn.{key}")));
         }
         if let Some(free) = &self.free_when {
             found.extend(free.extra.keys().map(|key| format!("free_when.{key}")));

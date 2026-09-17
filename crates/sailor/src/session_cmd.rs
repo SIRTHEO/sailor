@@ -302,8 +302,9 @@ fn what_we_do_at(moment: &str) -> &'static str {
     }
 }
 
-/// Every moment with its verb, in the order toolbox names them. **FOUR, AND
-/// NO MORE**: one more hook is one more process at every event of every session.
+/// Every moment with its verb, in the order toolbox names them. **SIX, AND NO
+/// MORE**: one more hook is one more process at every event of every session;
+/// the two of sub-agents fire only when one starts or stops.
 fn what_we_do_at_each() -> impl Iterator<Item = (&'static str, &'static str)> {
     toolbox::descriptor::MOMENTS
         .iter()
@@ -1939,7 +1940,7 @@ mod tests {
     fn every_moment_toolbox_names_gets_a_verb_and_only_the_first_opens() {
         let paired: Vec<(&str, &str)> = what_we_do_at_each().collect();
         assert_eq!(paired.len(), toolbox::descriptor::MOMENTS.len());
-        assert_eq!(paired.len(), 4, "four, and no more: {paired:?}");
+        assert_eq!(paired.len(), 6, "six, and no more: {paired:?}");
         let opening: Vec<&str> = paired
             .iter()
             .filter(|(_, verb)| *verb == "open")
@@ -1948,7 +1949,7 @@ mod tests {
         assert_eq!(opening, vec![toolbox::descriptor::SESSION_START]);
         assert_eq!(
             paired.iter().filter(|(_, verb)| *verb == "event").count(),
-            3,
+            5,
             "every moment but the first is an event: {paired:?}"
         );
     }
@@ -2279,7 +2280,13 @@ mod tests {
 
         assert_eq!(
             missing,
-            vec!["session_start", "asked", "compacting"],
+            vec![
+                "session_start",
+                "asked",
+                "compacting",
+                "subagent_started",
+                "subagent_stopped"
+            ],
             "the moments with no event are the ones the report must name, and \
              they are exactly the ones the descriptor does not declare"
         );
@@ -2290,7 +2297,8 @@ mod tests {
               "family": "ai_cli",
               "session_hooks": {
                 "file": {"below_home": "altrove/settings.json"},
-                "events": {"session_start": "A", "alive": "B", "asked": "C", "compacting": "D"}
+                "events": {"session_start": "A", "alive": "B", "asked": "C", "compacting": "D",
+                           "subagent_started": "E", "subagent_stopped": "F"}
               }
             }"#,
         )
@@ -2298,7 +2306,7 @@ mod tests {
 
         assert!(
             moments_without_an_event(&says_all).is_empty(),
-            "a command line declaring all four must have nothing to declare \
+            "a command line declaring all six must have nothing to declare \
              missing, or the warning becomes noise and stops being read"
         );
     }
