@@ -3,7 +3,7 @@
 //! left running or scheduled, a free screen, and no activity between the checks
 //! and the keys. Each test breaks one gate and checks that nothing is typed.
 
-use relay::handover::{hand_over, work_left_running};
+use relay::handover::{hand_over, resume_successor, work_left_running};
 use sessions::handover::{NewHandover, State};
 use sessions::{Sessions, TerminalEvent, SESSIONS_FILE};
 use std::path::{Path, PathBuf};
@@ -125,6 +125,7 @@ fn run(stage: &Stage, dispatch: bool) -> Result<serde_json::Value, flow::ActionE
         "s-1",
         Some(stage.transcript.to_str().expect("a path")),
         dispatch,
+        Duration::ZERO,
     )
 }
 
@@ -267,7 +268,7 @@ fn a_clear_that_could_not_be_delivered_is_left_for_a_person_and_not_retried() {
 #[test]
 fn a_session_with_no_finished_handover_is_left_alone() {
     let stage = a_finished_session("none");
-    let answer = hand_over(&catalog(), &stage.root, TTY, "another-session", None, true)
+    let answer = hand_over(&catalog(), &stage.root, TTY, "another-session", None, true, Duration::ZERO)
         .expect("the relay runs");
     assert_eq!(answer["handed_over"], false, "{answer}");
     assert_eq!(typed(&stage), "");
@@ -291,4 +292,82 @@ fn a_record_names_the_calls_left_running() {
     let left = work_left_running(&record, &declared);
 
     assert_eq!(left.len(), 2, "{left:?}");
+}
+
+const GO_ON: &str = "carry on from the mandate";
+
+/// The handover cleared and reserved by `s-2`, the successor, on a free screen.
+fn a_reserved_successor(name: &str) -> Stage {
+    let stage = a_finished_session(name);
+    run(&stage, true).expect("the clear is sent");
+    let _ = typed(&stage);
+    let sessions = store(&stage.root);
+    let id = sessions.handovers().expect("read")[0].id.clone();
+    assert!(sessions.reserve(&id, "s-2", 300).expect("reserved"));
+    stage
+}
+
+fn resume(stage: &Stage) -> Result<serde_json::Value, flow::ActionError> {
+    resume_successor(&catalog(), &stage.root, TTY, "s-2", GO_ON, true, Duration::ZERO)
+}
+
+#[test]
+fn a_reserved_successor_is_set_going_once() {
+    let stage = a_reserved_successor("resume");
+
+    let answer = resume(&stage).expect("the relay runs");
+
+    assert_eq!(answer["prompted"], true, "{answer}");
+    assert!(typed(&stage).starts_with(GO_ON));
+    assert_eq!(state(&stage), State::Prompted);
+    let again = resume(&stage).expect("the relay runs again");
+    assert_eq!(again["prompted"], false, "{again}");
+    assert_eq!(typed(&stage), "");
+}
+
+/// A person who already spoke to the successor set it going: nothing is typed.
+#[test]
+fn a_successor_a_person_already_spoke_to_is_not_prompted_again() {
+    let stage = a_reserved_successor("person");
+    let mut spoke = event("UserPromptSubmit");
+    spoke.session_id = Some("s-2".to_owned());
+    store(&stage.root).record_event(&spoke).expect("a person typed");
+
+    let answer = resume(&stage).expect("the relay runs");
+
+    assert_eq!(answer["prompted"], false, "{answer}");
+    assert_eq!(typed(&stage), "");
+    assert_eq!(state(&stage), State::Resumed);
+}
+
+#[test]
+fn a_successor_whose_screen_never_comes_free_is_left_for_a_person() {
+    let stage = a_reserved_successor("busy");
+    paint(&stage.root, "Do you want to proceed?\n\u{276f}\u{a0}");
+
+    let answer = resume(&stage).expect("the relay runs");
+
+    assert_eq!(answer["prompted"], false, "{answer}");
+    assert_eq!(typed(&stage), "");
+    assert_eq!(state(&stage), State::RecoveryRequired);
+}
+
+#[test]
+fn a_session_that_reserved_nothing_is_not_prompted() {
+    let stage = a_reserved_successor("stranger");
+    let answer = resume_successor(&catalog(), &stage.root, TTY, "s-9", GO_ON, true, Duration::ZERO)
+        .expect("the relay runs");
+    assert_eq!(answer["prompted"], false, "{answer}");
+    assert_eq!(typed(&stage), "");
+}
+
+/// The line goes to the terminal the handover was cleared on, not to another
+/// one the same session is named on.
+#[test]
+fn a_successor_is_prompted_only_on_the_terminal_that_was_cleared() {
+    let stage = a_reserved_successor("other-terminal");
+    let answer = resume_successor(&catalog(), &stage.root, "ttys902", "s-2", GO_ON, true, Duration::ZERO)
+        .expect("the relay runs");
+    assert_eq!(answer["prompted"], false, "{answer}");
+    assert_eq!(state(&stage), State::Verifying);
 }

@@ -23,6 +23,7 @@ pub fn register_relay(registry: &mut flow::ActionRegistry) {
     registry.register(EMPTY_TERMINAL_ACTION, EmptyTerminalAction);
     registry.register(WAIT_FREE_ACTION, WaitFreeAction);
     registry.register(handover::HAND_OVER_ACTION, handover::HandOverAction);
+    registry.register(handover::RESUME_SUCCESSOR_ACTION, handover::ResumeSuccessorAction);
 }
 
 /// Where the terminals' files live for this step: declarable so a run can be
