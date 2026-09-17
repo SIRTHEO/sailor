@@ -173,6 +173,21 @@ fn a_new_instruction_after_the_mandate_cancels_the_handover() {
     assert_eq!(state(&stage), State::Cancelled);
 }
 
+/// A turn that ran after the one that wrote the mandate, with no person asking
+/// (a background call that ended wakes the session), may have changed what the
+/// mandate says: it is written again, not trusted.
+#[test]
+fn another_turn_after_the_mandate_cancels_the_handover() {
+    let stage = a_finished_session("another-turn");
+    store(&stage.root).record_event(&event("Stop")).expect("a second turn ended");
+
+    let answer = run(&stage, true).expect("the relay runs");
+
+    assert_eq!(answer["handed_over"], false, "{answer}");
+    assert_eq!(typed(&stage), "");
+    assert_eq!(state(&stage), State::Cancelled);
+}
+
 #[test]
 fn a_sub_agent_still_running_holds_the_session() {
     let stage = a_finished_session("sub-agent");

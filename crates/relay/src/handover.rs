@@ -133,6 +133,11 @@ pub fn hand_over(
             return cancel(format!("«{asked}» arrived after the mandate: new work, not handed on"));
         }
     }
+    if let Some(alive) = line.event_for("alive") {
+        if since.iter().filter(|name| *name == alive).count() > 1 {
+            return cancel("another turn ran after the one that wrote the mandate".to_owned());
+        }
+    }
     let written = sessions::mandate::read(&sessions::mandate::address_in(root, tty));
     match &written {
         Some(mandate)
