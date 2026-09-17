@@ -1,4 +1,4 @@
-//! The relay as a sequence: that its two shipped flows load, that every power
+//! The relay as a sequence: that its three shipped flows load, that every power
 //! they name is registered, and that the destructive one cannot fire alone.
 //!
 //! The files are read at test time and not at compile time: with `include_str!`
@@ -8,8 +8,12 @@
 use flow::{FlowFile, Graph};
 use serde_json::Value;
 
-/// The one that asks, and the one that empties.
-const THE_TWO: &[&str] = &["ask-for-a-mandate", "empty-a-session-that-handed-on"];
+/// The one that asks, the one that empties, and the one that sets the successor going.
+const THE_TWO: &[&str] = &[
+    "ask-for-a-mandate",
+    "empty-a-session-that-handed-on",
+    "resume-a-successor",
+];
 
 fn flow_text(id: &str) -> String {
     flow::system::FLOWS
@@ -83,20 +87,35 @@ fn neither_flow_names_a_product_nor_the_line_that_empties_one() {
     }
 }
 
-/// **THE DESTRUCTIVE STEP HANGS FROM THE READING.** A terminal that handed
-/// nothing on has written nothing down, so emptying it throws the work away.
+/// **THE DESTRUCTIVE STEP IS THE ONE THAT CHECKS.** Emptying goes through the
+/// node whose gates read the session's own declaration, never through the bare
+/// typing node a flow could reach without them.
 #[test]
-fn nothing_is_emptied_that_did_not_hand_a_mandate_on_first() {
+fn nothing_is_emptied_but_through_the_node_that_checks_the_handover() {
     let emptying = step("empty-a-session-that-handed-on", "empty");
-    let deps = emptying["deps"].as_array().expect("the step declares deps");
-    assert!(
-        deps.iter().any(|dep| dep == "handed_on"),
-        "the emptying step must hang from the one that reads the handover: {deps:?}"
-    );
-    assert_eq!(
-        emptying["with"]["cli"]["$from"], "/handed_on/engine",
-        "which command line to empty comes from the mandate, not from this file"
-    );
+    assert_eq!(emptying["action"], "hand_over");
+    for field in ["tty", "session", "transcript"] {
+        assert_eq!(
+            emptying["with"][field]["$from"],
+            format!("/carried/{field}"),
+            "the session to empty is the one whose turn just ended"
+        );
+    }
+    for id in THE_TWO {
+        let flow = parsed(id);
+        for step in flow["graph"]["steps"].as_array().expect("steps") {
+            assert_ne!(step["action"], "empty_terminal", "«{id}» empties without the gates");
+            assert_ne!(step["action"], "type_into_terminal", "«{id}» types without the gates");
+        }
+    }
+}
+
+/// The successor is set going from the event of its own start.
+#[test]
+fn the_successor_is_set_going_when_it_starts() {
+    let resume = step("resume-a-successor", "resume");
+    assert_eq!(resume["action"], "resume_successor");
+    assert_eq!(step("resume-a-successor", "trigger")["with"]["on"]["event"], "SessionStart");
 }
 
 /// The threshold is a decision about a budget. Inside the node it could not be

@@ -1,6 +1,6 @@
 {
-  "id": "empty-a-session-that-handed-on",
-  "description": "THE ONLY DESTRUCTIVE THING THE RELAY DOES, AS ONE MOVE OF A TRANSACTION. When a session of this machine ends a turn, this flow asks whether that session declared its mandate finished. If it did not, nothing happens: a deposited mandate is not consent, and on 11/09/2026 an earlier version of this flow emptied a session seventeen minutes after its deposit while it was still at work. If it did, the session is emptied by the line its command line's descriptor declares, once, and only when every gate agrees on the same activity: no instruction arrived after the mandate, the mandate is still the one declared and untaken, no sub-agent of the session is running by its own start and stop events, its record shows no call unanswered, left in the background or scheduling work after the turn, and the screen shows the prompt with nobody being asked anything. Unknown is a no. Keys that may or may not have landed are never sent again: the handover stops where a person must look. The session that the clear starts is handed the mandate and set going by resume-a-successor.",
+  "id": "resume-a-successor",
+  "description": "THE OTHER END OF A HANDOVER. After a clear the command line waits for a prompt, so the mandate its greeting hands to the new session would sit unread. When a session starts, this flow asks whether it is the successor that reserved a handover on this terminal; if so, once its screen is free, it types one line that sets it going, and the end of the turn that line starts is the receipt that it resumed. A session that reserved nothing is left alone; one a person already spoke to is not prompted; a screen that never comes free, or keys that cannot be delivered, leave the handover for a person, because nothing else will come back to it.",
   "inputs": {},
   "graph": {
     "steps": [
@@ -13,7 +13,7 @@
         "with": {
           "source": "session-event",
           "on": {
-            "event": "Stop"
+            "event": "SessionStart"
           }
         },
         "input_schema": {
@@ -76,11 +76,11 @@
         }
       },
       {
-        "id": "empty",
+        "id": "resume",
         "deps": [
           "trigger"
         ],
-        "action": "hand_over",
+        "action": "resume_successor",
         "max_attempts": 1,
         "when": null,
         "with": {
@@ -90,9 +90,8 @@
           "session": {
             "$from": "/carried/session"
           },
-          "transcript": {
-            "$from": "/carried/transcript"
-          }
+          "line": "Carry on from the mandate you were handed at the start of this session: read the file it names, check the tree against it, then do its one next thing.",
+          "patience_seconds": 120
         },
         "input_schema": {
           "type": "object",
@@ -103,7 +102,7 @@
         "output_schema": {
           "type": "object",
           "properties": {
-            "handed_over": {
+            "prompted": {
               "type": "boolean"
             },
             "why": {
@@ -111,7 +110,7 @@
             }
           },
           "required": [
-            "handed_over"
+            "prompted"
           ],
           "allow_extra": true
         }
