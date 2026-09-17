@@ -3,6 +3,7 @@
 //! in is a flow file, because a relay written as one function is 1,400 lines
 //! whose every refusal disappears.
 
+pub mod handover;
 pub mod keeper;
 
 use flow::{Action, ActionError, ActionOutcome, SharedState};
@@ -21,11 +22,12 @@ pub fn register_relay(registry: &mut flow::ActionRegistry) {
     registry.register(TYPE_INTO_TERMINAL_ACTION, TypeIntoTerminalAction);
     registry.register(EMPTY_TERMINAL_ACTION, EmptyTerminalAction);
     registry.register(WAIT_FREE_ACTION, WaitFreeAction);
+    registry.register(handover::HAND_OVER_ACTION, handover::HandOverAction);
 }
 
 /// Where the terminals' files live for this step: declarable so a run can be
 /// pointed elsewhere, and defaulted so the ordinary case says nothing.
-fn store_root(declared: &Option<String>) -> Result<PathBuf, ActionError> {
+pub(crate) fn store_root(declared: &Option<String>) -> Result<PathBuf, ActionError> {
     match declared {
         Some(written) => Ok(PathBuf::from(written)),
         None => ledger::default_directory().ok_or_else(|| {
@@ -39,7 +41,7 @@ fn read_input<T: serde::de::DeserializeOwned>(input: &Value) -> Result<T, Action
         .map_err(|error| ActionError::new("invalid_input", error.to_string()))
 }
 
-fn unknown_of(declared: &Value, known: &[&str]) -> Vec<String> {
+pub(crate) fn unknown_of(declared: &Value, known: &[&str]) -> Vec<String> {
     match declared.as_object() {
         Some(fields) => fields
             .keys()
@@ -136,7 +138,7 @@ impl Action for TypeIntoTerminalAction {
 }
 
 /// How a line is typed is the letterbox's business, not this crate's.
-fn typed_into(root: &std::path::Path, tty: &str, line: &str) -> Result<(), ActionError> {
+pub(crate) fn typed_into(root: &std::path::Path, tty: &str, line: &str) -> Result<(), ActionError> {
     let address = terminal::inbox::address_in(root, tty);
     let Err(error) = terminal::inbox::press_line(&address, line) else {
         return Ok(());
@@ -271,7 +273,7 @@ impl Action for WaitFreeAction {
     }
 }
 
-enum Freedom {
+pub(crate) enum Freedom {
     Free { prompt: String },
     NotYet(String),
 }
@@ -279,7 +281,7 @@ enum Freedom {
 /// One terminal's screen, read against what its command line declares.
 /// **NOT YET IN EVERY CASE BUT ONE**: only a still screen showing the prompt
 /// and none of the marks lets go of it.
-fn freedom_now(
+pub(crate) fn freedom_now(
     catalog: &toolbox::Catalog,
     root: &Path,
     tty: &str,

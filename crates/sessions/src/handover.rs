@@ -232,6 +232,26 @@ impl Sessions {
         Ok(changed == 1)
     }
 
+    /// The names of a session's events after one of them, in order.
+    pub fn events_after(&self, session: &str, after: i64) -> Result<Vec<String>, SessionError> {
+        let mut statement = self.connection.prepare(
+            "SELECT name FROM terminal_events WHERE session_id = ?1 AND id > ?2 ORDER BY id",
+        )?;
+        let rows = statement
+            .query_map(params![session, after], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Why a finished handover is still waiting, kept on its row.
+    pub fn explain(&self, id: &str, why: &str, at: i64) -> Result<(), SessionError> {
+        self.connection.execute(
+            "UPDATE handovers SET why = ?2, updated_at = ?3 WHERE id = ?1 AND state = 'finished'",
+            params![id, why, at],
+        )?;
+        Ok(())
+    }
+
     /// The successor takes the handover, once.
     pub fn reserve(&self, id: &str, successor: &str, at: i64) -> Result<bool, SessionError> {
         let changed = self.connection.execute(
