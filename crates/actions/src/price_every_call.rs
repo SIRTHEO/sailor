@@ -439,6 +439,7 @@ mod tests {
         old.output_tokens = Some(0);
         let mut unread = call("unread", "engine-a");
         unread.cost_micros = Some(7000);
+        unread.price_currency = Some("USD".to_owned());
         for record in [&old, &unread] {
             ledger.record_model_call(record).unwrap();
         }
