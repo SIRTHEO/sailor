@@ -17,8 +17,10 @@ pub enum State {
     /// A controller holds the one licence to send the clear.
     Clearing,
     AwaitingSuccessor,
-    /// A successor reserved the mandate and has not yet acted.
+    /// A successor reserved the mandate and has not yet been set going.
     Verifying,
+    /// The line that sets the successor going was sent; its first turn is awaited.
+    Prompted,
     Resumed,
     Cancelled,
     /// Something may have happened that nobody can tell: nothing is retried.
@@ -32,6 +34,7 @@ impl State {
             State::Clearing => "clearing",
             State::AwaitingSuccessor => "awaiting_successor",
             State::Verifying => "verifying",
+            State::Prompted => "prompted",
             State::Resumed => "resumed",
             State::Cancelled => "cancelled",
             State::RecoveryRequired => "recovery_required",
@@ -44,6 +47,7 @@ impl State {
             "clearing" => State::Clearing,
             "awaiting_successor" => State::AwaitingSuccessor,
             "verifying" => State::Verifying,
+            "prompted" => State::Prompted,
             "resumed" => State::Resumed,
             "cancelled" => State::Cancelled,
             // A state this binary does not know is not one it may act on.
@@ -166,11 +170,15 @@ impl Sessions {
         )
     }
 
-    /// The handover a successor reserved and has not yet acted on.
-    pub fn verifying_by(&self, successor: &str) -> Result<Option<Handover>, SessionError> {
+    /// The handover a successor holds in one state.
+    pub fn successor_in(
+        &self,
+        successor: &str,
+        state: State,
+    ) -> Result<Option<Handover>, SessionError> {
         self.latest(
-            "successor = ?1 AND state = 'verifying'",
-            params![successor],
+            "successor = ?1 AND state = ?2",
+            params![successor, state.as_str()],
         )
     }
 

@@ -594,6 +594,11 @@ pub struct Install {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct ResetContext {
     pub line: String,
+    /// What the payload of the session that starts after the line carries, so
+    /// a successor is told from a session somebody opened by hand. Empty means
+    /// nobody measured it, and then no successor is recognised.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub successor_starts_with: BTreeMap<String, String>,
     /// For whoever reads: how it was established, and what was not checked.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub note: String,

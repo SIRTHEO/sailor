@@ -1664,6 +1664,9 @@ fn record_event(request: &Request<'_>) -> Result<Report, String> {
         .record_event(&happened)
         .map_err(|error| error.to_string())?;
     let started = what_this_event_starts(request, store, event_id, &happened);
+    if let Some(session) = happened.session_id.as_deref() {
+        handover::a_turn_ended(store, session, &happened.name);
+    }
     // The announcement is renewed here and nowhere else: a lease that only the
     // opening renewed would expire on a terminal that has been working all day.
     let announced = announce(request, &arrival, "working");

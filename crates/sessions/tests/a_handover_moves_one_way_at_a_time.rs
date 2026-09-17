@@ -162,7 +162,7 @@ fn a_successor_is_awaited_only_after_the_clear_was_sent() {
     assert_eq!(reserved.state, State::Verifying);
     assert_eq!(reserved.successor.as_deref(), Some("s-2"));
     assert_eq!(
-        store.verifying_by("s-2").expect("read").map(|it| it.id),
+        store.successor_in("s-2", State::Verifying).expect("read").map(|it| it.id),
         Some(reserved.id)
     );
 }

@@ -290,6 +290,7 @@
       },
       "reset_context": {
         "line": "/clear",
+        "successor_starts_with": { "source": "clear" },
         "note": "Typed into a session that is already running, not passed at launch. Established from the command list this command line publishes to its own sessions, NOT by running it and watching the context empty: the effect is on a live session, and measuring it means having one to spend. What is measured is that the line reaches the program — the conduit is provable without knowing what the line means. Whoever gets a chance to watch a real session empty should say so here and take this sentence out."
       },
       "free_when": {

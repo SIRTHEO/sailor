@@ -6,6 +6,7 @@
 //! of hundreds of megabytes in front of a person waiting to type.
 
 use super::{Arrival, Request, TheDeposit};
+use sessions::handover::State;
 
 /// Whoever opened this terminal, read from the variables their descriptor says
 /// they leave in a session of theirs.
@@ -56,12 +57,74 @@ pub(super) fn handed_on(request: &Request<'_>, arrival: &Arrival) -> Option<Stri
     let TheDeposit::Open(ledger) = request.deposit else {
         return None;
     };
+    let payload = serde_json::from_str(request.raw).unwrap_or(serde_json::Value::Null);
+    let machine = toolbox::Machine::current();
+    let catalog = toolbox::Catalog::load(&toolbox::default_sources(&machine));
     the_mandate_of(
         ledger.directory(),
         &arrival.anchor.tty,
         &arrival.session_id.clone().unwrap_or_default(),
         &arrival.anchor.worktree,
+        request.store.map(|sessions| Relay {
+            sessions,
+            payload: &payload,
+            catalog: &catalog,
+        }),
     )
+}
+
+/// What a greeting needs to tell the successor a clear started from a session
+/// that merely opened on the same terminal.
+pub(super) struct Relay<'a> {
+    pub(super) sessions: &'a sessions::Sessions,
+    pub(super) payload: &'a serde_json::Value,
+    pub(super) catalog: &'a toolbox::Catalog,
+}
+
+/// Whether this start is the one the handover's clear causes: the payload
+/// carries everything the line declares a successor starts with. Nothing
+/// declared recognises nobody.
+fn is_the_successor(relay: &Relay<'_>, engine: &str) -> bool {
+    let Some(declared) = relay
+        .catalog
+        .live()
+        .into_iter()
+        .find(|loaded| loaded.descriptor.id == engine)
+        .and_then(|loaded| loaded.descriptor.reset_context.clone())
+    else {
+        return false;
+    };
+    !declared.successor_starts_with.is_empty()
+        && declared
+            .successor_starts_with
+            .iter()
+            .all(|(field, value)| relay.payload[field.as_str()].as_str() == Some(value.as_str()))
+}
+
+/// The receipt that a successor carried on: its first finished turn after the
+/// line that set it going.
+pub(super) fn a_turn_ended(store: &sessions::Sessions, session: &str, event: &str) {
+    if let Ok(Some(prompted)) = store.successor_in(session, State::Prompted) {
+        // The line that set it going arrives as a prompt: only the end of the
+        // turn it started is the receipt.
+        let machine = toolbox::Machine::current();
+        let catalog = toolbox::Catalog::load(&toolbox::default_sources(&machine));
+        let alive = catalog
+            .live()
+            .into_iter()
+            .find(|loaded| loaded.descriptor.id == prompted.engine)
+            .and_then(|loaded| loaded.descriptor.event_for("alive").map(str::to_owned));
+        if alive.as_deref() != Some(event) {
+            return;
+        }
+        let _ = store.advance(
+            &prompted.id,
+            State::Prompted,
+            State::Resumed,
+            "the successor finished its first turn",
+            sessions::now(),
+        );
+    }
 }
 
 /// The same handover with everything it reads named, so it can be taken from a
@@ -71,11 +134,33 @@ fn the_mandate_of(
     tty: &str,
     session: &str,
     tree: &str,
+    relay: Option<Relay<'_>>,
 ) -> Option<String> {
     let path = sessions::mandate::address_in(store, tty);
     let left = sessions::mandate::read(&path)?;
     if left.taken.is_some() {
         return None;
+    }
+    // **A HANDOVER THAT SENT ITS CLEAR IS OWED TO ONE SESSION.** Only the start
+    // the clear causes reserves it; any other start is handed nothing.
+    if let Some(relay) = &relay {
+        if let Ok(Some(awaited)) = relay.sessions.awaiting(tty, tree) {
+            if !is_the_successor(relay, &awaited.engine)
+                || !relay.sessions.reserve(&awaited.id, session, sessions::now()).unwrap_or(false)
+            {
+                return None;
+            }
+            if left.written.at != awaited.mandate_at {
+                let _ = relay.sessions.advance(
+                    &awaited.id,
+                    State::Verifying,
+                    State::RecoveryRequired,
+                    "the mandate on disk is not the one the handover was declared on",
+                    sessions::now(),
+                );
+                return None;
+            }
+        }
     }
     // **THE TTY IS THE ADDRESS, AND THE ADDRESS IS REUSED.** A different
     // session is what a mandate expects; the tree is the part that must still
@@ -251,7 +336,7 @@ mod tests {
         sessions::mandate::deposit(&directory, &mandate).expect("the mandate is deposited");
 
         let handed =
-            the_mandate_of(&directory, "ttys001", "the-successor", "").expect("a mandate arrives");
+            the_mandate_of(&directory, "ttys001", "the-successor", "", None).expect("a mandate arrives");
         assert!(handed.contains("carry the relay to the end"), "{handed}");
         assert!(
             handed.contains("read the screen of a held terminal"),
@@ -263,7 +348,7 @@ mod tests {
         );
 
         assert_eq!(
-            the_mandate_of(&directory, "ttys001", "another-successor", ""),
+            the_mandate_of(&directory, "ttys001", "another-successor", "", None),
             None,
             "a mandate already taken is not handed on a second time"
         );
@@ -275,6 +360,119 @@ mod tests {
         let _ = std::fs::remove_dir_all(&directory);
     }
 
+    /// A handover whose clear was sent, awaiting its successor on `ttys001`.
+    fn awaiting(directory: &std::path::Path) -> (sessions::Sessions, String) {
+        let store = sessions::Sessions::open(directory.join(sessions::SESSIONS_FILE))
+            .expect("the sessions");
+        let mut mandate = sessions::mandate::Mandate::default();
+        mandate.written.tty = "ttys001".to_owned();
+        mandate.written.tree = "/the/tree".to_owned();
+        mandate.written.session = "the-predecessor".to_owned();
+        mandate.written.at = 100;
+        mandate.work.goal = "carry the relay to the end".to_owned();
+        sessions::mandate::deposit(directory, &mandate).expect("the mandate is deposited");
+        let opened = store
+            .open_handover(&sessions::handover::NewHandover {
+                tty: "ttys001".to_owned(),
+                tree: "/the/tree".to_owned(),
+                session: "the-predecessor".to_owned(),
+                engine: "claude-code".to_owned(),
+                mandate_at: 100,
+                at: 100,
+            })
+            .expect("the handover");
+        assert!(store.clear_if_still(&opened.id, 0, 101).expect("the licence"));
+        assert!(store
+            .advance(&opened.id, State::Clearing, State::AwaitingSuccessor, "sent", 102)
+            .expect("sent"));
+        (store, opened.id)
+    }
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let directory = std::env::temp_dir().join(format!(
+            "sailor-successor-{name}-{}-{}",
+            std::process::id(),
+            sessions::now()
+        ));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("a directory of this test's own");
+        directory
+    }
+
+    /// **THE SESSION THE CLEAR STARTED RESERVES THE HANDOVER, AND ONLY IT.**
+    #[test]
+    fn the_session_the_clear_started_reserves_the_handover_and_is_handed_the_mandate() {
+        let directory = scratch("reserved");
+        let (store, id) = awaiting(&directory);
+        let catalog = toolbox::Catalog::load(&[toolbox::Source::Builtin]);
+        let started = serde_json::json!({"source": "clear"});
+
+        let handed = the_mandate_of(
+            &directory,
+            "ttys001",
+            "the-successor",
+            "/the/tree",
+            Some(Relay { sessions: &store, payload: &started, catalog: &catalog }),
+        )
+        .expect("the successor is handed the mandate");
+
+        assert!(handed.contains("carry the relay to the end"), "{handed}");
+        let reserved = store.handover(&id).expect("read").expect("there");
+        assert_eq!(reserved.state, State::Verifying);
+        assert_eq!(reserved.successor.as_deref(), Some("the-successor"));
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// A session somebody opened by hand while the successor is awaited is not
+    /// the successor: it is handed nothing, and the handover keeps waiting.
+    #[test]
+    fn a_session_opened_otherwise_while_a_successor_is_awaited_is_handed_nothing() {
+        let directory = scratch("otherwise");
+        let (store, id) = awaiting(&directory);
+        let catalog = toolbox::Catalog::load(&[toolbox::Source::Builtin]);
+        let started = serde_json::json!({"source": "startup"});
+
+        let handed = the_mandate_of(
+            &directory,
+            "ttys001",
+            "a-stranger",
+            "/the/tree",
+            Some(Relay { sessions: &store, payload: &started, catalog: &catalog }),
+        );
+
+        assert_eq!(handed, None);
+        assert_eq!(
+            store.handover(&id).expect("read").expect("there").state,
+            State::AwaitingSuccessor
+        );
+        let path = sessions::mandate::address_in(&directory, "ttys001");
+        assert!(sessions::mandate::read(&path).expect("there").taken.is_none());
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// The successor's first finished turn is the receipt that it carried on.
+    #[test]
+    fn a_prompted_successor_that_ends_a_turn_has_resumed() {
+        let directory = scratch("resumed");
+        let (store, id) = awaiting(&directory);
+        assert!(store.reserve(&id, "the-successor", 103).expect("reserved"));
+        assert!(store
+            .advance(&id, State::Verifying, State::Prompted, "set going", 104)
+            .expect("prompted"));
+
+        a_turn_ended(&store, "a-stranger", "Stop");
+        assert_eq!(store.handover(&id).expect("read").expect("there").state, State::Prompted);
+        a_turn_ended(&store, "the-successor", "UserPromptSubmit");
+        assert_eq!(
+            store.handover(&id).expect("read").expect("there").state,
+            State::Prompted,
+            "the prompt that set it going is not the end of its turn"
+        );
+        a_turn_ended(&store, "the-successor", "Stop");
+        assert_eq!(store.handover(&id).expect("read").expect("there").state, State::Resumed);
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
     /// A terminal nobody left anything for is greeted and told nothing.
     #[test]
     fn a_terminal_with_no_mandate_waiting_is_handed_nothing() {
@@ -283,7 +481,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("a directory of this test's own");
 
-        assert_eq!(the_mandate_of(&directory, "ttys009", "whoever", ""), None);
+        assert_eq!(the_mandate_of(&directory, "ttys009", "whoever", "", None), None);
         let _ = std::fs::remove_dir_all(&directory);
     }
 
@@ -349,7 +547,7 @@ mod tests {
         sessions::mandate::deposit(&directory, &mandate).expect("the mandate is deposited");
 
         assert_eq!(
-            the_mandate_of(&directory, "ttys015", "a-stranger", "/a/different/tree"),
+            the_mandate_of(&directory, "ttys015", "a-stranger", "/a/different/tree", None),
             None,
             "a session that took the tty number in another tree is handed nothing"
         );
@@ -363,7 +561,7 @@ mod tests {
         );
 
         let handed =
-            the_mandate_of(&directory, "ttys015", "the-successor", "/the/tree/it/was/written/in")
+            the_mandate_of(&directory, "ttys015", "the-successor", "/the/tree/it/was/written/in", None)
                 .expect("the successor in the mandate's own tree is handed it");
         assert!(handed.contains("swap the profile of a live session"), "{handed}");
         let _ = std::fs::remove_dir_all(&directory);
