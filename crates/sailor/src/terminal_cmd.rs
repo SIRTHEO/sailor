@@ -61,7 +61,7 @@ fn dispatch(args: &[String]) -> Result<i32, String> {
     let Some(form) = args.first() else {
         return Err(usage_text());
     };
-    if form == "--help" || form == "-h" {
+    if asks_for_help(args) {
         println!("{}", usage_text());
         return Ok(0);
     }
@@ -81,6 +81,16 @@ fn dispatch(args: &[String]) -> Result<i32, String> {
         "host" => host(&args[1..]),
         other => Err(catalogue::say("cli.no_such_form", &[("verb", other)])),
     }
+}
+
+/// Help asked anywhere before the program a form runs, and not as the value
+/// of an option: `run -- a-line --help` belongs to the line.
+fn asks_for_help(args: &[String]) -> bool {
+    let ours = args.split(|word| word == "--").next().unwrap_or_default();
+    ours.iter().enumerate().any(|(at, word)| {
+        (word == "--help" || word == "-h")
+            && (at == 0 || !ours[at - 1].starts_with("--") || ours[at - 1] == "--help")
+    })
 }
 
 fn usage_text() -> String {
@@ -437,11 +447,7 @@ fn reset_line_of(catalog: &toolbox::Catalog, cli: &str) -> Result<String, String
 /// running on nothing.
 fn leave_mandate(args: &[String], from: &mut impl std::io::Read) -> Result<i32, String> {
     let options = options_of(args)?;
-    let tty = match options.iter().find(|(name, _)| name == "tty") {
-        Some((_, declared)) => declared.clone(),
-        None => sessions::tty::current()
-            .ok_or_else(|| catalogue::say("cli.terminal.not_in_a_terminal", &[]))?,
-    };
+    let tty = this_terminal(&options, sessions::tty::current(), &sessions::census::LocalMachine)?;
     if let Some((_, to)) = options.iter().find(|(name, _)| name == "to") {
         return pass_mandate(&options, &tty, to, Path::new("/dev"));
     }
@@ -460,6 +466,21 @@ fn leave_mandate(args: &[String], from: &mut impl std::io::Read) -> Result<i32, 
         )
     );
     Ok(0)
+}
+
+/// The terminal a mandate is for: the one declared, else this process's, else
+/// its nearest ancestor's. An agent's shell holds no terminal of its own, and
+/// refusing there was the refusal met most often on this machine.
+fn this_terminal(
+    options: &[(String, String)],
+    here: Option<String>,
+    machine: &dyn sessions::census::Machine,
+) -> Result<String, String> {
+    if let Some((_, declared)) = options.iter().find(|(name, _)| name == "tty") {
+        return Ok(declared.clone());
+    }
+    here.or_else(|| sessions::census::tty_of_nearest_ancestor(machine))
+        .ok_or_else(|| catalogue::say("cli.terminal.not_in_a_terminal", &[]))
 }
 
 /// Hands a waiting mandate to the terminal a successor opened beside this one.
@@ -705,6 +726,38 @@ mod tests {
             error.contains("invented"),
             "the refusal must name it: {error}"
         );
+    }
+
+    /// Asked for help after a form, the command answers with its forms: refused,
+    /// it cost ten turns over a full context in the transcripts of this machine.
+    #[test]
+    fn help_after_a_form_is_answered_not_refused() {
+        assert_eq!(dispatch(&words(&["mandate", "--help"])), Ok(0));
+        assert_eq!(dispatch(&words(&["list", "-h"])), Ok(0));
+        assert!(!asks_for_help(&words(&["run", "--", "a-line", "--help"])));
+        assert!(!asks_for_help(&words(&["press", "--text", "--help"])));
+    }
+
+    /// A process on no terminal of its own, such as an agent's shell, takes the
+    /// terminal of the nearest ancestor that has one.
+    #[test]
+    fn a_mandate_left_from_a_shell_without_a_terminal_takes_its_ancestors() {
+        struct Chain;
+        impl sessions::census::Machine for Chain {
+            fn process_table(&self) -> Result<String, sessions::census::Refusal> {
+                Ok("30 20 ?? 00:01 sailor\n20 10 ?? 00:02 zsh\n10 1 ttys009 01:00 agent\n".to_owned())
+            }
+            fn working_directory(&self, _pid: u32) -> Option<String> {
+                None
+            }
+            fn own_pid(&self) -> u32 {
+                30
+            }
+        }
+        assert_eq!(this_terminal(&[], None, &Chain), Ok("ttys009".to_owned()));
+        let declared = [("tty".to_owned(), "ttys004".to_owned())];
+        assert_eq!(this_terminal(&declared, None, &Chain), Ok("ttys004".to_owned()));
+        assert_eq!(this_terminal(&[], Some("ttys002".to_owned()), &Chain), Ok("ttys002".to_owned()));
     }
 
     #[test]
