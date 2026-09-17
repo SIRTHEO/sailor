@@ -1603,6 +1603,68 @@ printf '{"result":"the quota page in the tree explains the weekly limit","model"
         );
     }
 
+    /// An engine that writes the prompt it received back on its error channel
+    /// is not refusing when that prompt happens to hold a refusal's words: the
+    /// words it echoed are the step's, not the engine's. See fault 190.
+    #[test]
+    fn a_refusal_word_the_engine_only_echoed_from_the_prompt_is_not_a_refusal() {
+        let dir = scratch("echoed-prompt");
+        let bin = fake_engine(&dir, "motore-eco", "cat >&2
+exit 1");
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
+        let mut recipe = declaring_recipe();
+        recipe.unusable_when = vec!["usage limit".to_owned()];
+        recipe.exhausted_when = vec!["usage limit".to_owned()];
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            recipe: Some(recipe),
+        })
+        .recording_to(Some(ledger));
+        let input = json!({
+            "tool": "motore-di-prova",
+            "stdin": "Write a paragraph.\nKeep the brief under the usage limit we agreed.",
+            "timeout_secs": 10
+        });
+
+        let error = with_price_list(None, || action.execute(&input, &shared("corsa-eco", "passo")))
+            .expect_err("an engine that exits one has not answered");
+
+        assert_eq!(error.class, "engine_exit_error");
+        let calls = calls_in(&dir.join("deposito"));
+        assert_eq!(calls[0].error_type.as_deref(), Some("exit_error"));
+    }
+
+    /// The negative control: the same words written by the engine itself, on a
+    /// line the prompt does not hold, are still its refusal.
+    #[test]
+    fn a_refusal_word_the_engine_wrote_itself_is_still_a_refusal() {
+        let dir = scratch("own-refusal");
+        let bin = fake_engine(
+            &dir,
+            "motore-esaurito",
+            "cat >&2\necho 'error: usage limit reached' >&2\nexit 1",
+        );
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
+        let mut recipe = declaring_recipe();
+        recipe.unusable_when = vec!["usage limit".to_owned()];
+        recipe.exhausted_when = vec!["usage limit".to_owned()];
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            recipe: Some(recipe),
+        })
+        .recording_to(Some(ledger));
+        let input = json!({
+            "tool": "motore-di-prova",
+            "stdin": "Keep the brief under the usage limit we agreed.",
+            "timeout_secs": 10
+        });
+
+        let error = with_price_list(None, || action.execute(&input, &shared("corsa-propria", "passo")))
+            .expect_err("a spent engine has not answered");
+
+        assert_eq!(error.class, "engine_exhausted");
+    }
+
     /// **THE KIND DOES NOT DEPEND ON `accept`, IN EITHER BRANCH.** A step's
     /// tolerance decides what the run does, never what stays written: in the
     /// `Ok` branch it sat ahead of `note(...)`, so a tolerated refusal was born

@@ -4,7 +4,7 @@
 use crate::cost::now_secs;
 use crate::engine::ExternalEngineAction;
 use crate::recipe::{
-    command_line_naming_model_and_ceiling, mentions_any, says_it_cannot_work, PromptVia,
+    command_line_naming_model_and_ceiling, mentions_any, says_it_cannot_work, without_echo, PromptVia,
     SessionRecipe, ToolResolver,
 };
 use crate::session::session_lines;
@@ -489,26 +489,35 @@ impl Candidate {
         }
     }
 
-    fn says_it_cannot_work(&self, stdout: &str, stderr: &str) -> bool {
-        says_it_cannot_work(&self.unusable_when, stdout)
-            || says_it_cannot_work(&self.unusable_when, stderr)
-    }
-
     /// The class of a failure this engine declared: a spent quota is its own
     /// class, anything else it cannot work with is `exhausted` as before, and
-    /// an output that says neither is `None`.
-    pub(crate) fn declared_class(&self, stdout: &str, stderr: &str) -> Option<&'static str> {
-        if mentions_any(&self.exhausted_when, stdout) || mentions_any(&self.exhausted_when, stderr) {
+    /// an output that says neither is `None`. Lines the engine only echoed from
+    /// the prompt are not its words, and are not read. See fault 190.
+    pub(crate) fn declared_class(
+        &self,
+        stdout: &str,
+        stderr: &str,
+        prompt: Option<&str>,
+    ) -> Option<&'static str> {
+        let stdout = without_echo(stdout, prompt);
+        let stderr = without_echo(stderr, prompt);
+        if mentions_any(&self.exhausted_when, &stdout) || mentions_any(&self.exhausted_when, &stderr) {
             return Some("quota_exhausted");
         }
-        self.says_it_cannot_work(stdout, stderr).then_some("exhausted")
+        (says_it_cannot_work(&self.unusable_when, &stdout)
+            || says_it_cannot_work(&self.unusable_when, &stderr))
+        .then_some("exhausted")
     }
 
     /// The class of a call that **exited zero and reported real usage**: it
     /// answered, so only its error channel can still say it could not work —
     /// never the body of the answer it just paid for. See fault 183.
-    pub(crate) fn declared_class_of_a_call_that_answered(&self, stderr: &str) -> Option<&'static str> {
-        self.declared_class("", stderr)
+    pub(crate) fn declared_class_of_a_call_that_answered(
+        &self,
+        stderr: &str,
+        prompt: Option<&str>,
+    ) -> Option<&'static str> {
+        self.declared_class("", stderr, prompt)
     }
 }
 

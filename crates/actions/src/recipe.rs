@@ -278,6 +278,25 @@ pub(crate) fn mentions_any(marks: &[String], output: &str) -> bool {
         .any(|mark| !mark.trim().is_empty() && output.contains(&mark.to_lowercase()))
 }
 
+/// The output without the lines that repeat a line of the prompt the engine was
+/// sent: an engine that echoes its question would otherwise be judged by the
+/// words the step itself wrote.
+pub(crate) fn without_echo(output: &str, prompt: Option<&str>) -> String {
+    let Some(prompt) = prompt else {
+        return output.to_owned();
+    };
+    let sent: std::collections::HashSet<&str> = prompt
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
+    output
+        .lines()
+        .filter(|line| !sent.contains(line.trim()))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Whether this output is how an engine says it cannot work.
 pub(crate) fn says_it_cannot_work(marks: &[String], output: &str) -> bool {
     mentions_any(marks, output)

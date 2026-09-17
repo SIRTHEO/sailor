@@ -610,9 +610,9 @@ impl ExternalEngineAction {
                 let class = if in_shape {
                     None
                 } else if has_usage {
-                    candidate.declared_class_of_a_call_that_answered(&stderr)
+                    candidate.declared_class_of_a_call_that_answered(&stderr, spec.stdin.as_deref())
                 } else {
-                    candidate.declared_class(&stdout, &stderr)
+                    candidate.declared_class(&stdout, &stderr, spec.stdin.as_deref())
                 };
                 let cannot_work = class.is_some();
                 // **A SILENCE IS ITS OWN CLASS, AND NEVER A SUCCESS.** With no
@@ -698,7 +698,7 @@ impl ExternalEngineAction {
                 let class = if in_shape {
                     None
                 } else {
-                    candidate.declared_class(&stdout, &stderr)
+                    candidate.declared_class(&stdout, &stderr, spec.stdin.as_deref())
                 };
                 let exhausted = class.is_some();
                 note(reading.clone(), Some(class.unwrap_or("exit_error")), &stdout);
@@ -753,7 +753,7 @@ impl ExternalEngineAction {
                 // the declared one and never a plain exit error, and the wait
                 // it would have cost is the whole reason it was stopped.
                 let reading = read(&stdout, &stderr);
-                let class = candidate.declared_class(&stdout, &stderr).unwrap_or("exhausted");
+                let class = candidate.declared_class(&stdout, &stderr, spec.stdin.as_deref()).unwrap_or("exhausted");
                 note(reading.clone(), Some(class), &stdout);
                 self.set_aside_if_spent(candidate, Some(class), ended_at, &stdout, &stderr);
                 if !tolerates(&spec.accept, "exit_error") {
