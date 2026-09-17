@@ -24,6 +24,7 @@ mod engines;
 mod extensions;
 mod hazards;
 mod relocate;
+mod roles;
 mod run_and_resume;
 pub mod seeds;
 #[cfg(test)]
@@ -85,6 +86,11 @@ fn dispatch(args: &[String], sources: &[FlowSource]) -> Result<String, String> {
         }
         [command, name] if command == "new" => new_flow(sources, name),
         [command, name] if command == "delete" => delete_flow(sources, name),
+        [command] if command == "role" => roles::roles(),
+        [command, name, tools] if command == "role" => roles::set_role(name, tools, None),
+        [command, name, tools, account] if command == "role" => {
+            roles::set_role(name, tools, Some(account))
+        }
         [command, name] if command == "where" => where_flow(sources, name),
         [command, name] if command == "restore" => restore_flow(sources, name),
         [command] if command == "publish" => crate::publish_cmd::publish_flows(sources, None),
@@ -399,6 +405,10 @@ pub const USAGE: &[Form] = &[
     Form {
         form: "sailor flow delete <name>",
         says_key: "cli.flow.form.delete",
+    },
+    Form {
+        form: "sailor flow role [<name> <tool,...> [account]]",
+        says_key: "cli.flow.form.role",
     },
     Form {
         form: "sailor flow where <name>",

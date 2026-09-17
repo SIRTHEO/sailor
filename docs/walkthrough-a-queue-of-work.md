@@ -86,14 +86,12 @@ to check, unless the engine's descriptor recipe declares the flag that
 grants the write (`--sandbox workspace-write` / `--permission-mode
 acceptEdits`), a decision for whoever owns that descriptor.
 
-If the engine the seed picked is not your authenticated one, `CHEAP_WORKER`
-is a plain ledger row, rewritten directly — there is no `sailor store`
-command and no other one that writes a bare role, so this is the only path
-today:
+If the engine the seed picked is not your authenticated one, declare the
+chain `CHEAP_WORKER` resolves to; a tool no descriptor declares is refused
+before anything is written:
 
 ```
-sqlite3 "$SAILOR_REPO/target/fixtures/store/state.db" \
-  "update store set value='{\"tools\":[\"codex\"]}' where collection='roles' and key='CHEAP_WORKER';"
+SAILOR_LEDGER="$SAILOR_REPO/target/fixtures/store" sailor_bin flow role CHEAP_WORKER codex
 ```
 
 ## 4. Check the flow before spending anything

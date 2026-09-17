@@ -897,7 +897,7 @@ mod tests {
 
         assert_eq!(
             outcome,
-            Err("role «reviewer» has no row in roles".to_owned()),
+            Err("role «reviewer» has no row in roles: `sailor flow role reviewer <tool,...>` declares it".to_owned()),
             "the role refusal is still the reason the flow is refused"
         );
         assert!(
