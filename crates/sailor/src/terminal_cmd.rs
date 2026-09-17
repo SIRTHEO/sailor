@@ -42,6 +42,10 @@ pub const USAGE: &[Form] = &[
         says_key: "cli.terminal.form.list",
     },
     Form {
+        form: "sailor terminal handovers [--store <dir>]",
+        says_key: "cli.terminal.form.handovers",
+    },
+    Form {
         form: "sailor terminal host [--store <dir>]",
         says_key: "cli.terminal.form.host",
     },
@@ -79,6 +83,10 @@ fn dispatch(args: &[String]) -> Result<i32, String> {
         "mandate" => leave_mandate(&args[1..], &mut std::io::stdin()),
         "list" => list(&args[1..]),
         "host" => host(&args[1..]),
+        "handovers" => handovers(&args[1..]).map(|lines| {
+            println!("{lines}");
+            0
+        }),
         other => Err(catalogue::say("cli.no_such_form", &[("verb", other)])),
     }
 }
@@ -632,6 +640,39 @@ fn read_off_the_store(
     read
 }
 
+/// Every handover of the store, newest first: where it stands and why, so one
+/// left for a person is seen by one.
+fn handovers(args: &[String]) -> Result<String, String> {
+    let options = options_of(args)?;
+    let path = store_root(&options)?.join(sessions::SESSIONS_FILE);
+    let found = match path.exists() {
+        true => sessions::Sessions::open(&path)
+            .and_then(|store| store.handovers())
+            .map_err(|error| error.to_string())?,
+        false => Vec::new(),
+    };
+    if found.is_empty() {
+        return Ok(catalogue::say("cli.terminal.no_handovers", &[]));
+    }
+    Ok(found
+        .iter()
+        .map(|handover| {
+            catalogue::say(
+                "cli.terminal.a_handover",
+                &[
+                    ("tty", &handover.tty),
+                    ("state", handover.state.as_str()),
+                    ("session", &handover.session),
+                    ("successor", handover.successor.as_deref().unwrap_or("-")),
+                    ("why", handover.why.as_deref().unwrap_or("-")),
+                    ("updated", &handover.updated_at.to_string()),
+                ],
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n"))
+}
+
 /// The tree this terminal works in.
 fn here() -> PathBuf {
     let at = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -789,6 +830,35 @@ mod tests {
         let declared = [("tty".to_owned(), "ttys004".to_owned())];
         assert_eq!(this_terminal(&declared, None, &Chain), Ok("ttys004".to_owned()));
         assert_eq!(this_terminal(&[], Some("ttys002".to_owned()), &Chain), Ok("ttys002".to_owned()));
+    }
+
+    /// A handover left for a person is listed with its state and its reason.
+    #[test]
+    fn the_handovers_of_a_store_are_listed_with_where_they_stand() {
+        let directory = scratch("handovers-listed");
+        let dir = directory.to_str().expect("a path");
+        assert_eq!(
+            handovers(&words(&["--store", dir])).expect("listed"),
+            catalogue::say("cli.terminal.no_handovers", &[])
+        );
+        let store = sessions::Sessions::open(directory.join(sessions::SESSIONS_FILE)).expect("sessions");
+        let opened = store
+            .open_handover(&sessions::handover::NewHandover {
+                tty: "ttys004".to_owned(),
+                tree: "/t".to_owned(),
+                session: "s-1".to_owned(),
+                engine: "a-line".to_owned(),
+                mandate_at: 1,
+                at: 1,
+            })
+            .expect("opened");
+        store.explain(&opened.id, "a sub-agent is running", 2).expect("explained");
+
+        let listed = handovers(&words(&["--store", dir])).expect("listed");
+
+        assert!(listed.contains("ttys004") && listed.contains("finished"), "{listed}");
+        assert!(listed.contains("a sub-agent is running"), "{listed}");
+        let _ = std::fs::remove_dir_all(&directory);
     }
 
     #[test]
