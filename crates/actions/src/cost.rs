@@ -1603,6 +1603,57 @@ printf '{"result":"the quota page in the tree explains the weekly limit","model"
         );
     }
 
+    /// agy's envelope carries the answer as a JSON text inside `response`; the
+    /// step's shape is judged on that answer, not on the envelope. Fault 194.
+    #[test]
+    fn an_answer_inside_the_envelope_is_the_one_the_shape_judges() {
+        let dir = scratch("envelope-answer");
+        let bin = fake_engine(
+            &dir,
+            "motore-busta",
+            r#"cat > /dev/null
+printf '%s' '{"conversation_id":"f48ce772","status":"SUCCESS","response":"{\"printed\": \"     662 LICENSE\\n\"}\n","num_turns":1,"usage":{"input_tokens":23070,"output_tokens":8616,"cache_read_tokens":12210,"total_tokens":31686}}'"#,
+        );
+        let recipe = AskRecipe {
+            usage: Some(UsageRecipe {
+                args: vec!["--output-format".to_owned(), "json".to_owned()],
+                declared: Declared {
+                    input_tokens: path(&["usage", "input_tokens"]),
+                    output_tokens: path(&["usage", "output_tokens"]),
+                    cached_tokens: path(&["usage", "cache_read_tokens"]),
+                    total_tokens: path(&["usage", "total_tokens"]),
+                    answer: path(&["response"]),
+                    ..Declared::default()
+                },
+            }),
+            ..declaring_recipe()
+        };
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            recipe: Some(recipe),
+        });
+        let shape = json!({
+            "type": "object",
+            "properties": {"printed": {"type": "string"}},
+            "required": ["printed"],
+            "allow_extra": false
+        });
+        let input = json!({
+            "tool": "motore-di-prova",
+            "stdin": format!("run wc -c LICENSE and answer in this shape: {shape}"),
+            "timeout_secs": 10,
+            "answer_shape": shape
+        });
+
+        let outcome = with_price_list(None, || action.execute(&input, &shared("corsa-busta", "passo")))
+            .expect("the answer inside the envelope is in shape");
+
+        let ActionOutcome::Went(output) = outcome else {
+            panic!("an answer in shape is Went")
+        };
+        assert_eq!(output["answer"]["printed"], "     662 LICENSE\n");
+    }
+
     /// An engine that writes the prompt it received back on its error channel
     /// is not refusing when that prompt happens to hold a refusal's words: the
     /// words it echoed are the step's, not the engine's. See fault 190.
