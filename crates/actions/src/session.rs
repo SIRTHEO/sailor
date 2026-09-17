@@ -26,7 +26,7 @@ pub(crate) fn session_lines(
     };
     let line = |args: Option<Vec<String>>| {
         args.map(|mut args| {
-            for (option, value) in options.iter().flatten().copied() {
+            for &(option, value) in options.iter().flatten() {
                 args.extend(option.iter().cloned());
                 args.push(value.to_owned());
             }

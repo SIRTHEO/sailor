@@ -213,7 +213,7 @@ pub fn command_line_naming_model_and_ceiling(
 /// recipe's own options, in order.
 pub fn command_line_with_options(recipe: &AskRecipe, options: &[Option<(&[String], &str)>]) -> Vec<String> {
     let mut ask_args = recipe.args.clone();
-    for (option, value) in options.iter().flatten().copied() {
+    for &(option, value) in options.iter().flatten() {
         ask_args.extend(option.iter().cloned());
         ask_args.push(value.to_owned());
     }
