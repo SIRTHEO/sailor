@@ -542,9 +542,40 @@ fn deposited(options: &[(String, String)], tty: &str, text: &str) -> Result<(Str
         object.insert(name, value);
     }
     // The one part a successor reads that no command could fill.
+    let finished = written
+        .as_object_mut()
+        .and_then(|object| object.remove("finished"))
+        .is_some_and(|said| said == serde_json::Value::Bool(true));
     let bytes = written.get("work").map_or(0, |work| work.to_string().len());
     let answer = actions::mandate::deposited(&written).map_err(|error| error.said)?;
+    if finished {
+        open_the_handover(options, tty, &written, &answer)?;
+    }
     Ok((answer["head"].as_str().unwrap_or_default().to_owned(), bytes))
+}
+
+/// The session said its turn ends with this mandate: the relay may empty it
+/// once every gate agrees. Bound to the session and the mandate as deposited.
+fn open_the_handover(
+    options: &[(String, String)],
+    tty: &str,
+    written: &serde_json::Value,
+    answer: &serde_json::Value,
+) -> Result<(), String> {
+    let text = |name: &str| written[name].as_str().unwrap_or_default().to_owned();
+    let store = sessions::Sessions::open(store_root(options)?.join(sessions::SESSIONS_FILE))
+        .map_err(|error| error.to_string())?;
+    store
+        .open_handover(&sessions::handover::NewHandover {
+            tty: tty.to_owned(),
+            tree: text("tree"),
+            session: text("session"),
+            engine: text("engine"),
+            mandate_at: answer["at"].as_i64().unwrap_or_default(),
+            at: sessions::now(),
+        })
+        .map(drop)
+        .map_err(|error| error.to_string())
 }
 
 /// What the store and the session's record say of this terminal's session.
@@ -1005,6 +1036,14 @@ mod tests {
 
             leave_mandate(&written, &mut text.to_string().as_bytes())
                 .unwrap_or_else(|refusal| panic!("{language}: the shape shown is refused: {refusal}"));
+            assert!(
+                sessions::Sessions::open(directory.join(sessions::SESSIONS_FILE))
+                    .expect("the sessions")
+                    .open_for("ttys004", "s-1")
+                    .expect("read")
+                    .is_some(),
+                "{language}: the object shown hands the session over"
+            );
             let _ = std::fs::remove_dir_all(&directory);
         }
     }
@@ -1069,6 +1108,42 @@ mod tests {
 
         assert!(refusal.contains("written.engine"), "{refusal}");
         let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// **FINISHED IS THE SESSION'S CONSENT, AND ONLY IT.** A mandate that says its
+    /// turn ends here opens the handover the relay may act on, bound to the
+    /// session and to the mandate as deposited; one that does not opens nothing.
+    #[test]
+    fn a_finished_mandate_opens_a_handover_and_an_unfinished_one_does_not() {
+        for finished in [true, false] {
+            let directory = scratch(&format!("mandate-finished-{finished}"));
+            let tree = directory.join("tree");
+            std::fs::create_dir_all(&tree).expect("a tree");
+            a_session_announced(&directory, &tree, "s-1");
+            let written = words(&["--tty", "ttys004", "--store", directory.to_str().expect("a path")]);
+            let mut text = serde_json::from_str::<serde_json::Value>(&only_the_work()).expect("json");
+            text["tree"] = serde_json::json!(tree.display().to_string());
+            text["finished"] = serde_json::json!(finished);
+
+            leave_mandate(&written, &mut text.to_string().as_bytes()).expect("the mandate is left");
+
+            let held = sessions::mandate::read(&sessions::mandate::address_in(&directory, "ttys004"))
+                .expect("the mandate waits");
+            let open = sessions::Sessions::open(directory.join(sessions::SESSIONS_FILE))
+                .expect("the sessions")
+                .open_for("ttys004", "s-1")
+                .expect("read");
+            match finished {
+                true => {
+                    let handover = open.expect("a handover is open");
+                    assert_eq!(handover.mandate_at, held.written.at);
+                    assert_eq!(handover.engine, "a-command-line");
+                    assert_eq!(handover.tree, tree.display().to_string());
+                }
+                false => assert!(open.is_none(), "{open:?}"),
+            }
+            let _ = std::fs::remove_dir_all(&directory);
+        }
     }
 
     /// A row whose session has closed is what the terminal held before, not what
