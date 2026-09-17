@@ -156,6 +156,13 @@ fn read_in_order(spec: &MeasureSpec) -> (&'static str, Option<Reading>) {
     }
 }
 
+/// A session's record read as whichever of the two kinds it is, from its end.
+/// `None` is a record that is not there or says nothing about its fill.
+pub fn read_record(path: &str) -> Option<Reading> {
+    let text = the_last_of(path)?;
+    from_transcript(&text).or_else(|| from_rollout(&text))
+}
+
 /// How much of a record is read from its end.
 ///
 /// **A SESSION'S RECORD REACHES HUNDREDS OF MEGABYTES**, and this is asked once

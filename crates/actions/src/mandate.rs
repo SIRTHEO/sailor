@@ -48,7 +48,11 @@ pub fn register_mandate(registry: &mut flow::ActionRegistry) {
 struct DepositSpec {
     tree: String,
     tty: String,
+    // Absent is refused below with every other blank field, named at once,
+    // rather than one at a time by the parser.
+    #[serde(default)]
     session: String,
+    #[serde(default)]
     engine: String,
     #[serde(default)]
     model: Option<String>,

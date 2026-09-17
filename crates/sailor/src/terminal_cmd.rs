@@ -515,8 +515,61 @@ fn deposited(options: &[(String, String)], tty: &str, text: &str) -> Result<Stri
             serde_json::Value::String(store.1.clone()),
         );
     }
+    let tree = object["tree"].as_str().unwrap_or_default().to_owned();
+    let declared = object.get("session").and_then(|it| it.as_str()).map(str::to_owned);
+    for (name, value) in read_off_the_store(&store_root(options)?, tty, &tree, declared.as_deref()) {
+        object.insert(name, value);
+    }
     let answer = actions::mandate::deposited(&written).map_err(|error| error.said)?;
     Ok(answer["head"].as_str().unwrap_or_default().to_owned())
+}
+
+/// What the store and the session's own record say about the session on this
+/// terminal: which session, where its record is, when it began, how full it is
+/// and which model answered.
+///
+/// **THE TTY ALONE OWNS NOTHING.** The row is read only while it is open, in
+/// the tree the mandate is for, and for the session the mandate names when it
+/// names one: a tty outlives its sessions and a tree holds several terminals.
+/// A store that cannot be read fills nothing, and the blank is refused below.
+fn read_off_the_store(
+    store: &Path,
+    tty: &str,
+    tree: &str,
+    declared: Option<&str>,
+) -> serde_json::Map<String, serde_json::Value> {
+    use serde_json::Value;
+    let mut read = serde_json::Map::new();
+    let path = store.join(sessions::SESSIONS_FILE);
+    if !path.exists() {
+        return read;
+    }
+    let Ok(sessions) = sessions::Sessions::open(&path) else {
+        return read;
+    };
+    let Ok(Some(row)) = sessions.terminal(tty) else {
+        return read;
+    };
+    let Some(session) = row.session_id.clone().filter(|it| !it.is_empty()) else {
+        return read;
+    };
+    if !row.is_open() || row.worktree != tree || declared.is_some_and(|it| it != session) {
+        return read;
+    }
+    if let Ok(Some(began)) = sessions.first_seen(&session) {
+        read.insert("began".to_owned(), Value::from(began));
+    }
+    if let Some(transcript) = row.transcript_path.filter(|it| !it.is_empty()) {
+        if let Some(reading) = actions::session_fill::read_record(&transcript) {
+            read.insert("tokens".to_owned(), Value::from(reading.tokens));
+            if let Some(model) = reading.model {
+                read.insert("model".to_owned(), Value::String(model));
+            }
+        }
+        read.insert("transcript".to_owned(), Value::String(transcript));
+    }
+    read.insert("session".to_owned(), Value::String(session));
+    read
 }
 
 /// The tree this terminal works in.
@@ -769,6 +822,140 @@ mod tests {
             sessions::mandate::read(&sessions::mandate::address_in(&directory, "ttys004"))
                 .is_none()
         );
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// A store where this terminal's session announced itself in `tree`, with a
+    /// record of itself that says how full it is and which model answered.
+    fn a_session_announced(directory: &Path, tree: &Path, session: &str) {
+        let transcript = directory.join(format!("{session}.jsonl"));
+        let row = serde_json::json!({"message": {"model": "a-model", "usage": {
+            "input_tokens": 10, "cache_read_input_tokens": 200_000,
+            "cache_creation_input_tokens": 5_000}}});
+        std::fs::write(&transcript, format!("{row}\n")).expect("a transcript");
+        let store = sessions::Sessions::open(directory.join(sessions::SESSIONS_FILE))
+            .expect("the sessions");
+        let arrival = sessions::Arrival {
+            anchor: sessions::Anchor {
+                tty: "ttys004".to_owned(),
+                worktree: tree.display().to_string(),
+                ancestor: None,
+            },
+            session_id: Some(session.to_owned()),
+            transcript_path: Some(transcript.display().to_string()),
+            at: 1_700_000_900,
+        };
+        store.open_terminal(&arrival).expect("the terminal opens");
+        store
+            .record_event(&sessions::TerminalEvent {
+                tty: "ttys004".to_owned(),
+                session_id: Some(session.to_owned()),
+                worktree: Some(tree.display().to_string()),
+                ancestor: None,
+                name: "SessionStart".to_owned(),
+                transcript_path: None,
+                occurred_at: 1_700_000_400,
+                payload: None,
+            })
+            .expect("the event is written");
+    }
+
+    fn only_the_work() -> String {
+        serde_json::json!({
+            "engine": "a-command-line",
+            "work": {"goal": "carry the conduit on", "asked": "procedi",
+                     "next": "write the source"}
+        })
+        .to_string()
+    }
+
+    /// **WHAT SAILOR CAN READ, THE SESSION DOES NOT WRITE.** Which session this
+    /// is, where its record lives, when it began, how full it is and which model
+    /// answered are facts of the store and the transcript: asked of a model at a
+    /// full context, each costs a turn over the whole of it.
+    #[test]
+    fn a_mandate_that_names_only_the_work_is_filled_from_the_store() {
+        let directory = scratch("mandate-filled");
+        let tree = directory.join("tree");
+        std::fs::create_dir_all(&tree).expect("a tree");
+        a_session_announced(&directory, &tree, "s-1");
+        let written = words(&["--tty", "ttys004", "--store", directory.to_str().expect("a path")]);
+        let mut text = serde_json::from_str::<serde_json::Value>(&only_the_work()).expect("json");
+        text["tree"] = serde_json::json!(tree.display().to_string());
+
+        leave_mandate(&written, &mut text.to_string().as_bytes()).expect("the mandate is left");
+
+        let held = sessions::mandate::read(&sessions::mandate::address_in(&directory, "ttys004"))
+            .expect("the mandate waits");
+        assert_eq!(held.written.session, "s-1");
+        assert_eq!(held.written.tokens, 205_010);
+        assert_eq!(held.written.model.as_deref(), Some("a-model"));
+        assert_eq!(held.written.began, Some(1_700_000_400));
+        assert!(held.written.transcript.as_deref().is_some_and(|path| path.ends_with("s-1.jsonl")));
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// **THE TTY ALONE OWNS NOTHING.** A row for this terminal written in another
+    /// tree belongs to another session, and nothing is filled from it.
+    #[test]
+    fn a_session_announced_in_another_tree_fills_nothing() {
+        let directory = scratch("mandate-other-tree");
+        let tree = directory.join("tree");
+        std::fs::create_dir_all(&tree).expect("a tree");
+        a_session_announced(&directory, &directory.join("elsewhere"), "s-1");
+        let written = words(&["--tty", "ttys004", "--store", directory.to_str().expect("a path")]);
+        let mut text = serde_json::from_str::<serde_json::Value>(&only_the_work()).expect("json");
+        text["tree"] = serde_json::json!(tree.display().to_string());
+
+        let refusal = leave_mandate(&written, &mut text.to_string().as_bytes())
+            .expect_err("a session nobody could read is refused as blank");
+
+        assert!(refusal.contains("written.session"), "{refusal}");
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// A row whose session has closed is what the terminal held before, not what
+    /// holds it now.
+    #[test]
+    fn a_terminal_whose_session_closed_fills_nothing() {
+        let directory = scratch("mandate-closed");
+        let tree = directory.join("tree");
+        std::fs::create_dir_all(&tree).expect("a tree");
+        a_session_announced(&directory, &tree, "s-1");
+        sessions::Sessions::open(directory.join(sessions::SESSIONS_FILE))
+            .expect("the sessions")
+            .close_terminal("ttys004", 1_700_001_000)
+            .expect("the terminal closes");
+        let written = words(&["--tty", "ttys004", "--store", directory.to_str().expect("a path")]);
+        let mut text = serde_json::from_str::<serde_json::Value>(&only_the_work()).expect("json");
+        text["tree"] = serde_json::json!(tree.display().to_string());
+
+        let refusal = leave_mandate(&written, &mut text.to_string().as_bytes())
+            .expect_err("a closed session is not read");
+
+        assert!(refusal.contains("written.session"), "{refusal}");
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// And a session that names itself otherwise is not the one the row is for.
+    #[test]
+    fn a_session_that_names_another_session_is_not_filled_from_the_row() {
+        let directory = scratch("mandate-other-session");
+        let tree = directory.join("tree");
+        std::fs::create_dir_all(&tree).expect("a tree");
+        a_session_announced(&directory, &tree, "s-1");
+        let written = words(&["--tty", "ttys004", "--store", directory.to_str().expect("a path")]);
+        let mut text = serde_json::from_str::<serde_json::Value>(&only_the_work()).expect("json");
+        text["tree"] = serde_json::json!(tree.display().to_string());
+        text["session"] = serde_json::json!("s-2");
+
+        leave_mandate(&written, &mut text.to_string().as_bytes()).expect("the mandate is left");
+
+        let held = sessions::mandate::read(&sessions::mandate::address_in(&directory, "ttys004"))
+            .expect("the mandate waits");
+        assert_eq!(held.written.session, "s-2");
+        assert_eq!(held.written.tokens, 0);
+        assert_eq!(held.written.began, None);
         let _ = std::fs::remove_dir_all(&directory);
     }
 

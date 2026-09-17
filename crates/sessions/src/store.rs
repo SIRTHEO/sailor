@@ -547,6 +547,16 @@ impl Sessions {
         Ok(rows)
     }
 
+    /// When the queue first heard from a session, on any terminal. `None` is a
+    /// session it never heard from.
+    pub fn first_seen(&self, session: &str) -> Result<Option<i64>, SessionError> {
+        Ok(self.connection.query_row(
+            "SELECT MIN(occurred_at) FROM terminal_events WHERE session_id = ?1",
+            params![session],
+            |row| row.get::<_, Option<i64>>(0),
+        )?)
+    }
+
     /// Which sessions followed one another on a terminal, in the order they
     /// were seen. The `terminals` row carries only the last: the succession is
     /// asked of the queue, which is never rewritten.

@@ -340,3 +340,22 @@ fn who_keeps_a_terminal_is_written_and_read_back() {
     assert_eq!(now.keeper, "another-one", "the last arrival wins");
     assert_eq!(now.handle, "pane-9");
 }
+
+/// **A SESSION BEGAN WHEN ITS TERMINAL FIRST HEARD FROM IT**, and not when the
+/// terminal's row was last opened: the row is rewritten whenever another
+/// session passes through the tty, and a session that comes back would look
+/// born again. The queue is never rewritten.
+#[test]
+fn a_session_began_at_the_first_event_the_queue_holds_for_it() {
+    let scratch = Scratch::new("first-seen");
+    let store = scratch.store();
+    for (session, at) in [("s-1", 100), ("s-2", 200), ("s-1", 300)] {
+        store
+            .record_event(&event("ttys004", session, "Stop", at))
+            .expect("the event is written");
+    }
+
+    assert_eq!(store.first_seen("s-1").expect("the read works"), Some(100));
+    assert_eq!(store.first_seen("s-2").expect("the read works"), Some(200));
+    assert_eq!(store.first_seen("nobody").expect("the read works"), None);
+}
