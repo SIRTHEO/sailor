@@ -341,10 +341,7 @@ fn who_keeps_a_terminal_is_written_and_read_back() {
     assert_eq!(now.handle, "pane-9");
 }
 
-/// **A SESSION BEGAN WHEN ITS TERMINAL FIRST HEARD FROM IT**, and not when the
-/// terminal's row was last opened: the row is rewritten whenever another
-/// session passes through the tty, and a session that comes back would look
-/// born again. The queue is never rewritten.
+/// A session began at its first event, not when the row was last rewritten.
 #[test]
 fn a_session_began_at_the_first_event_the_queue_holds_for_it() {
     let scratch = Scratch::new("first-seen");

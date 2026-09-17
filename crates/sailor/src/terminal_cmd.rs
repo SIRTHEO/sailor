@@ -498,9 +498,6 @@ fn pass_mandate(
 /// Whatever the session did not have to know is filled in here: which tree,
 /// which terminal, which store. Everything else is its own judgment, and a
 /// field left blank is refused while its author is still alive to be asked.
-///
-/// Answers the head it was written on and the bytes of the work the session
-/// wrote, the one part a successor reads that no command could fill.
 fn deposited(options: &[(String, String)], tty: &str, text: &str) -> Result<(String, usize), String> {
     let mut written: serde_json::Value = serde_json::from_str(text).map_err(|error| {
         catalogue::say("cli.terminal.mandate_shape", &[("why", &error.to_string())])
@@ -523,19 +520,16 @@ fn deposited(options: &[(String, String)], tty: &str, text: &str) -> Result<(Str
     for (name, value) in read_off_the_store(&store_root(options)?, tty, &tree, declared.as_deref()) {
         object.insert(name, value);
     }
+    // The one part a successor reads that no command could fill.
     let bytes = written.get("work").map_or(0, |work| work.to_string().len());
     let answer = actions::mandate::deposited(&written).map_err(|error| error.said)?;
     Ok((answer["head"].as_str().unwrap_or_default().to_owned(), bytes))
 }
 
-/// What the store and the session's own record say about the session on this
-/// terminal: which session, where its record is, when it began, how full it is
-/// and which model answered.
+/// What the store and the session's record say of this terminal's session.
 ///
-/// **THE TTY ALONE OWNS NOTHING.** The row is read only while it is open, in
-/// the tree the mandate is for, and for the session the mandate names when it
-/// names one: a tty outlives its sessions and a tree holds several terminals.
-/// A store that cannot be read fills nothing, and the blank is refused below.
+/// **THE TTY ALONE OWNS NOTHING.** The row counts only while open, in the
+/// mandate's tree, and for the session the mandate names when it names one.
 fn read_off_the_store(
     store: &Path,
     tty: &str,

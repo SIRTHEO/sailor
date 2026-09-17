@@ -388,10 +388,8 @@ fn a_handover_waiting_names_the_line_that_wrote_it() {
     assert_eq!(answer["session"], json!("the-predecessor"), "{answer}");
 }
 
-/// **WHAT GIT ALREADY SAYS IS NOT WRITTEN BY THE MODEL.** Measured 17/09/2026:
-/// half of a 22 KB mandate was the session retelling its own commits, at the
-/// price of a turn over a full context. Given when the session began, the
-/// deposit reads them, and none from before.
+/// **WHAT GIT ALREADY SAYS IS NOT WRITTEN BY THE MODEL.** Given when the
+/// session began, the deposit reads the commits since, and none from before.
 #[test]
 fn the_deposit_lists_the_commits_made_since_the_session_began() {
     let scratch = Scratch::new("commits-since");
