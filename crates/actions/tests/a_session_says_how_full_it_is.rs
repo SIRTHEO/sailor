@@ -3,7 +3,7 @@
 //! The three readings and the third answer: a source that cannot be read says
 //! so, and a segment that was reset does not carry the segment before it.
 
-use actions::session_fill::{from_bytes, from_rollout, from_transcript, MEASURE_SESSION_ACTION};
+use actions::session_fill::{from_bytes, from_rollout, from_transcript, thresholds, MEASURE_SESSION_ACTION};
 use flow::{ActionOutcome, SharedState};
 use serde_json::{json, Value};
 
@@ -303,3 +303,17 @@ fn only_the_end_of_a_long_record_is_read_and_no_half_line_with_it() {
         );
     }
 }
+
+/// A model served with a 200k window compacts before 250k is ever read, so the
+/// ask would never come; a session reading 400k on a model with a 1M window
+/// keeps the measured quality points. The window is the smallest declared one
+/// holding what the session reads.
+#[test]
+fn the_thresholds_follow_the_window_the_model_is_served_with() {
+    assert_eq!(thresholds(&[200_000], 120_000), (100_000, 150_000, Some(200_000)));
+    assert_eq!(thresholds(&[1_000_000, 200_000], 150_000), (100_000, 150_000, Some(200_000)));
+    assert_eq!(thresholds(&[200_000, 1_000_000], 400_000), (150_000, 250_000, Some(1_000_000)));
+    assert_eq!(thresholds(&[], 400_000), (150_000, 250_000, None), "an unknown window keeps the measured points");
+    assert_eq!(thresholds(&[200_000], 900_000), (150_000, 250_000, None), "a reading past every window says the data is wrong");
+}
+

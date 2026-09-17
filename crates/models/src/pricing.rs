@@ -67,6 +67,9 @@ pub struct Price {
     /// offers more than one. Absent means "unknown", and then those tokens
     /// stay unpriced instead of being counted at the short-write price.
     pub cache_write_long_per_million: Option<f64>,
+    /// The context windows this model is served with, in tokens: one where it
+    /// has one, several where a longer one can be asked for. Empty: unknown.
+    pub context_windows: Vec<u64>,
 }
 
 /// How an engine's calls are priced when its answer names no model, or no
@@ -308,6 +311,11 @@ fn parse_price(value: &serde_json::Value) -> Option<Price> {
         cached_per_million: money(value.get("cached_per_million")),
         cache_write_per_million: money(value.get("cache_write_per_million")),
         cache_write_long_per_million: money(value.get("cache_write_long_per_million")),
+        context_windows: value
+            .get("context_windows")
+            .and_then(serde_json::Value::as_array)
+            .map(|windows| windows.iter().filter_map(serde_json::Value::as_u64).filter(|tokens| *tokens > 0).collect())
+            .unwrap_or_default(),
     })
 }
 
@@ -871,6 +879,16 @@ mod tests {
         assert!(prices.find("claude-sonnet").is_none());
         assert!(prices.find("claude-sonnet-5-20260101").is_none());
         assert!(prices.find("").is_none());
+    }
+
+    /// The windows the context thresholds are lowered by travel with the
+    /// product, found under the name the engine writes.
+    #[test]
+    fn the_shipped_list_names_the_windows_a_model_is_served_with() {
+        let list = shipped();
+        assert_eq!(list.find("claude-haiku-4-5-20251001").expect("haiku").context_windows, vec![200_000]);
+        assert_eq!(list.find("claude-opus-5").expect("opus").context_windows, vec![200_000, 1_000_000]);
+        assert!(list.find("gpt-5-codex").expect("codex").context_windows.is_empty(), "unknown stays empty");
     }
 
     #[test]

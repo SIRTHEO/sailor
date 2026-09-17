@@ -21,6 +21,20 @@ const KNOWN_FIELDS: &[&str] = &["transcript", "rollout", "bytes", "warn", "oblig
 pub const WARN_TOKENS: u64 = 150_000;
 pub const OBLIGE_TOKENS: u64 = 250_000;
 
+/// The thresholds for a session whose model is served with these windows: the
+/// measured quality points, lowered to half and three quarters of the window
+/// the session is in, which is the smallest declared window holding what it
+/// reads now. A model whose windows are unknown, or that reads more than any
+/// declared window, keeps the measured points and no window is named.
+pub fn thresholds(windows: &[u64], tokens: u64) -> (u64, u64, Option<u64>) {
+    let mut declared = windows.to_vec();
+    declared.sort_unstable();
+    match declared.into_iter().find(|window| *window >= tokens) {
+        Some(window) => (WARN_TOKENS.min(window / 2), OBLIGE_TOKENS.min(window / 4 * 3), Some(window)),
+        None => (WARN_TOKENS, OBLIGE_TOKENS, None),
+    }
+}
+
 /// What the estimate assumes when nothing else can be read: the prologue that
 /// costs tokens without crossing the pipe, and the tokens a byte carries.
 const PROLOGUE_TOKENS: u64 = 60_000;
@@ -73,9 +87,16 @@ impl Action for MeasureSessionAction {
     fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         let spec: MeasureSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
-        let warn = spec.warn.unwrap_or(WARN_TOKENS);
-        let oblige = spec.oblige.unwrap_or(OBLIGE_TOKENS);
         let (source, reading) = read_in_order(&spec);
+        let windows = reading
+            .as_ref()
+            .and_then(|read| read.model.as_deref())
+            .and_then(|model| crate::current_price_list().find(model).map(|entry| entry.context_windows.clone()))
+            .unwrap_or_default();
+        let (by_window_warn, by_window_oblige, window) =
+            thresholds(&windows, reading.as_ref().map_or(0, |read| read.tokens));
+        let warn = spec.warn.unwrap_or(by_window_warn);
+        let oblige = spec.oblige.unwrap_or(by_window_oblige);
         let state = match &reading {
             None => "unknown",
             Some(read) => standing(read.tokens, warn, oblige),
@@ -90,6 +111,7 @@ impl Action for MeasureSessionAction {
             "records": read.records,
             "warn": warn,
             "oblige": oblige,
+            "window": window,
         })))
     }
 
