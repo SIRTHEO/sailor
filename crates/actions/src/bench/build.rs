@@ -5,7 +5,7 @@
 //! failure, so the flow running this once per candidate reaches the last one;
 //! only a broken environment — no git, no cargo, no repository — is red.
 
-use super::candidates::{fault_number, files_of, git, not_a_repository, repo_of, split_files, DEFAULT_SET};
+use super::candidates::{fault_number, faults_named_in, files_of, git, not_a_repository, repo_of, split_files, DEFAULT_SET};
 use super::task::{added_lines, Task, Validation};
 use crate::{run_with_timeout, RunOutcome};
 use flow::{Action, ActionError, ActionOutcome, RedoEvidence, SharedState, StepRecord, StepSpecies};
@@ -247,10 +247,16 @@ pub fn test_command_for(package: &str, inside: &str, names: &[String]) -> Vec<St
 }
 
 /// The prompt and where it came from: the fault's own words when the commit
-/// names one the register holds, else the commit's reason.
-fn prompt_for(subject: &str, body: &str, register: &Path) -> Option<(String, String)> {
+/// names one the register holds and no earlier commit named it, else the
+/// commit's reason. A fault named before describes work the base may hold.
+fn prompt_for(
+    subject: &str,
+    body: &str,
+    register: &Path,
+    named_before: impl Fn(i64) -> bool,
+) -> Option<(String, String)> {
     if let Some(number) = fault_number(subject).or_else(|| fault_number(body)) {
-        if register.is_file() {
+        if register.is_file() && !named_before(number) {
             if let Ok(fault) = faults::Faults::open_for_reading(register).and_then(|faults| faults.get(number)) {
                 return Some((
                     format!("{}\n\n{}", fault.what_happened, fault.how_it_showed),
@@ -300,7 +306,9 @@ pub(crate) fn cut_task(repo: &Path, fix: &str, base: &str, register: &Path) -> R
     let gold_args: Vec<&str> = gold_args.iter().map(String::as_str).collect();
     let gold_patch = git(repo, &gold_args).map_err(read)?;
 
-    let Some((prompt, prompt_source)) = prompt_for(&subject, &body, register) else {
+    let history = git(repo, &["log", "--format=%s%n%b", base]).map_err(read)?;
+    let named_before = |number: i64| faults_named_in(&history).contains(&number);
+    let Some((prompt, prompt_source)) = prompt_for(&subject, &body, register, named_before) else {
         return Ok(Verdict::Rejected("no prompt".to_owned()));
     };
 
@@ -833,6 +841,51 @@ mod tests {
         assert_eq!(task.prompt, "what happened 7\n\nhow it showed 7");
     }
 
+    /// A fix that names a fault an earlier commit already named is a follow-up:
+    /// the fault's words describe work the base already holds, so the commit's
+    /// own reason is the prompt. Three of the first baseline's eight tasks were
+    /// prompted with a fault their base had closed.
+    #[test]
+    fn a_fault_the_base_already_named_does_not_prompt_its_follow_up() {
+        let fixture = FixtureRepository::new("follow-up");
+        let register = fixture.home.join("ledger").join(faults::FAULTS_FILE);
+        let store = faults::Faults::open(&register).expect("a register of our own");
+        for nth in 1..=7 {
+            store
+                .record(&faults::Draft {
+                    happened_on: "01/09".to_owned(),
+                    what_happened: format!("what happened {nth}"),
+                    how_it_showed: format!("how it showed {nth}"),
+                    what_would_prevent: "a test".to_owned(),
+                    status: "**closed**".to_owned(),
+                    standing: None,
+                })
+                .expect("recorded");
+        }
+        let base = fixture.green_fix.clone();
+        super::super::fixture::write(
+            &fixture.repo,
+            "src/lib.rs",
+            "/// Adds two numbers.\npub fn add(a: i32, b: i32) -> i32 {\n    a.wrapping_add(b)\n}\n",
+        );
+        super::super::fixture::write(
+            &fixture.repo,
+            "tests/wraps.rs",
+            "#[test]\nfn the_largest_wraps() {\n    assert_eq!(fixture::add(i32::MAX, 1), i32::MIN);\n}\n",
+        );
+        let follow_up = super::super::fixture::commit(
+            &fixture.repo,
+            "fix(adder): the largest number wraps\n\nThe adder overflowed where it should wrap. A follow-up to fault 7.",
+        );
+
+        let Verdict::Kept(task) = cut_task(&fixture.repo, &follow_up, &base, &register).expect("git reads") else {
+            panic!("the follow-up is a task");
+        };
+
+        assert_eq!(task.prompt_source, "commit body");
+        assert!(task.prompt.starts_with("The adder overflowed"), "{}", task.prompt);
+    }
+
     #[test]
     fn a_test_that_was_green_before_the_fix_is_not_a_task() {
         let fixture = FixtureRepository::new("green");
@@ -850,14 +903,14 @@ mod tests {
     #[test]
     fn a_commit_without_a_body_or_with_only_trailers_has_no_prompt() {
         let nowhere = Path::new("/nowhere/faults.db");
-        assert_eq!(prompt_for("fix: x", "", nowhere), None);
-        assert_eq!(prompt_for("fix: x", "Refs: #1\n", nowhere), None);
+        assert_eq!(prompt_for("fix: x", "", nowhere, |_| false), None);
+        assert_eq!(prompt_for("fix: x", "Refs: #1\n", nowhere, |_| false), None);
         assert_eq!(
-            prompt_for("fix: x", "Because.\n\nRefs: #1\n", nowhere),
+            prompt_for("fix: x", "Because.\n\nRefs: #1\n", nowhere, |_| false),
             Some(("Because.".to_owned(), "commit body".to_owned()))
         );
         assert_eq!(
-            prompt_for("fix: closes fault 7", "Because.", nowhere).map(|(_, source)| source),
+            prompt_for("fix: closes fault 7", "Because.", nowhere, |_| false).map(|(_, source)| source),
             Some("commit body".to_owned()),
             "a fault the register does not hold falls back to the body"
         );

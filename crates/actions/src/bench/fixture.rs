@@ -85,7 +85,7 @@ impl Drop for FixtureRepository {
     }
 }
 
-fn write(repo: &Path, relative: &str, text: &str) {
+pub(crate) fn write(repo: &Path, relative: &str, text: &str) {
     let path = repo.join(relative);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).expect("the file's directory");
@@ -114,7 +114,7 @@ fn git(repo: &Path, args: &[&str]) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_owned()
 }
 
-fn commit(repo: &Path, message: &str) -> String {
+pub(crate) fn commit(repo: &Path, message: &str) -> String {
     git(repo, &["add", "-A"]);
     git(repo, &["-c", "commit.gpgsign=false", "commit", "-q", "-m", message]);
     git(repo, &["rev-parse", "HEAD"])

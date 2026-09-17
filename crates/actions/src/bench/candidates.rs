@@ -114,17 +114,25 @@ pub fn is_a_fix(subject: &str) -> bool {
 /// The number after the word «fault» in a text, if any: `fault 39`,
 /// `fault #39`, `Fault 39.`.
 pub fn fault_number(text: &str) -> Option<i64> {
+    faults_named_in(text).first().copied()
+}
+
+/// Every number that follows the word «fault» in a text, in order.
+pub fn faults_named_in(text: &str) -> Vec<i64> {
     let words: Vec<&str> = text.split_whitespace().collect();
-    words.windows(2).find_map(|pair| {
-        let word = pair[0].trim_matches(|c: char| !c.is_alphanumeric());
-        if !word.eq_ignore_ascii_case("fault") {
-            return None;
-        }
-        pair[1]
-            .trim_matches(|c: char| !c.is_ascii_digit())
-            .parse::<i64>()
-            .ok()
-    })
+    words
+        .windows(2)
+        .filter_map(|pair| {
+            let word = pair[0].trim_matches(|c: char| !c.is_alphanumeric());
+            if !word.eq_ignore_ascii_case("fault") {
+                return None;
+            }
+            pair[1]
+                .trim_matches(|c: char| !c.is_ascii_digit())
+                .parse::<i64>()
+                .ok()
+        })
+        .collect()
 }
 
 /// The files a commit touched, the window's shell left out.
