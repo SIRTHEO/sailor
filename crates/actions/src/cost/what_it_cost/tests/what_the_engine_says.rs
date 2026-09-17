@@ -188,7 +188,7 @@ fn an_engine_a_flow_starts_knows_the_run_it_belongs_to() {
     let seen = dir.join("seen-run");
     let bin = fake_engine(
         &dir,
-        "motore-che-guarda",
+        "engine-that-looks",
         &format!("cat > /dev/null\nprintf '%s' \"$SAILOR_RUN\" > {}\nprintf '{{\"result\":\"ok\"}}'", seen.display()),
     );
     let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
@@ -199,9 +199,9 @@ fn an_engine_a_flow_starts_knows_the_run_it_belongs_to() {
     .recording_to(Some(ledger));
     let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
 
-    with_price_list(None, || action.execute(&input, &shared("corsa-che-lancia", "passo")))
+    with_price_list(None, || action.execute(&input, &shared("run-that-launches", "passo")))
         .expect("the engine answers");
 
-    assert_eq!(std::fs::read_to_string(&seen).expect("the engine wrote it"), "corsa-che-lancia");
+    assert_eq!(std::fs::read_to_string(&seen).expect("the engine wrote it"), "run-that-launches");
 }
 

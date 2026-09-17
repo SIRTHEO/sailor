@@ -85,9 +85,11 @@ impl Spent {
         } else {
             format!("{:.1}x", self.cache_read as f64 / self.cache_written as f64)
         };
-        let per_call = (self.calls > self.without_counts)
-            .then(|| (self.input() / (self.calls - self.without_counts)).to_string())
-            .unwrap_or_else(|| "-".to_owned());
+        let per_call = if self.calls > self.without_counts {
+            (self.input() / (self.calls - self.without_counts)).to_string()
+        } else {
+            "-".to_owned()
+        };
         format!(
             "{label}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{rereads}",
             self.calls,
