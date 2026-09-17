@@ -6,6 +6,11 @@
       "runs_measured": 0,
       "words_it_sends": 0
     },
+    "build-the-bench": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
+    },
     "close-the-work": {
       "tokens_a_run": 0,
       "runs_measured": 0,
@@ -56,6 +61,16 @@
       "runs_measured": 0,
       "words_it_sends": 0
     },
+    "judge-a-change": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
+    },
+    "measure-the-baseline": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
+    },
     "migrate-to-sailor": {
       "tokens_a_run": 0,
       "runs_measured": 0,
@@ -72,6 +87,11 @@
       "words_it_sends": 205
     },
     "open-the-draft-pull-request": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
+    },
+    "price-every-call": {
       "tokens_a_run": 0,
       "runs_measured": 0,
       "words_it_sends": 0
@@ -96,6 +116,11 @@
       "runs_measured": 0,
       "words_it_sends": 0
     },
+    "run-one-bench-task": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
+    },
     "sweep-the-tree": {
       "tokens_a_run": 0,
       "runs_measured": 0,
@@ -107,6 +132,11 @@
       "words_it_sends": 2828
     },
     "take-the-next-work": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
+    },
+    "validate-a-bench-task": {
       "tokens_a_run": 0,
       "runs_measured": 0,
       "words_it_sends": 0

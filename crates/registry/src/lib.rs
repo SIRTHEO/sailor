@@ -186,6 +186,8 @@ pub fn registry_in(
         actions::handoff::HandoffAction::new().watched_by(watcher.clone()),
     );
     actions::history::register_history(&mut registry, ledger.clone());
+    actions::price_every_call::register_price_every_call(&mut registry, ledger.clone());
+    actions::bench::runs::register_runs(&mut registry, ledger.clone());
     // The fault register, reachable from a flow and not only from a person's
     // hands. Registered even where the store is absent, for the same reason as
     // the two above: `flow check` must be able to say the step names a real
@@ -195,6 +197,8 @@ pub fn registry_in(
     actions::terminals::register_terminals(&mut registry, in_store(sessions::SESSIONS_FILE));
     actions::session_fill::register_measure(&mut registry);
     actions::mandate::register_mandate(&mut registry);
+    actions::bench::judge::register_judge(&mut registry);
+    actions::bench::register_bench(&mut registry, home.clone());
     // A flow that runs another one. Registered **even without a ledger**, for
     // the reason declared above: `flow check` must be able to say a `subflow`
     // step names a real action without opening anything. Running without one
@@ -308,6 +312,14 @@ mod tests {
             actions::memory::MEMORY_REPLACE_ACTION,
             actions::store::STORE_WRITE_IF_ABSENT_ACTION,
             actions::store::STORE_SELECT_ACTION,
+            actions::bench::judge::JUDGE_CHANGE_ACTION,
+            actions::price_every_call::PRICE_EVERY_CALL_ACTION,
+            actions::price_every_call::CALLS_WITHOUT_COST_ACTION,
+            actions::bench::runs::BENCH_TASKS_ACTION,
+            actions::bench::runs::RUN_READING_ACTION,
+            actions::bench::candidates::BENCH_CANDIDATES_ACTION,
+            actions::bench::build::BENCH_VALIDATE_ACTION,
+            actions::bench::build::BENCH_FREEZE_ACTION,
         ] {
             assert!(
                 registry.get(wanted).is_some(),

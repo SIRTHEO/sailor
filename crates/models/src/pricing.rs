@@ -69,6 +69,22 @@ pub struct Price {
     pub cache_write_long_per_million: Option<f64>,
 }
 
+/// How an engine's calls are priced when its answer names no model, or no
+/// tokens at all: the pinned rules that make every call of the ledger carry an
+/// equivalent cost. Each field is optional and a missing one leaves the cost
+/// unknown for that shape of call, which `price_every_call` then reports.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct EnginePricing {
+    /// The entry to price the tokens with when the engine states no model.
+    pub assumed_model: Option<String>,
+    /// For an engine that runs on hardware and not on an account: the
+    /// equivalent cost of one second of wall time.
+    pub per_wall_second_micros: Option<i64>,
+    /// For a call that left no reading at all: a pinned figure, taken from the
+    /// engine's measured calls and written here so it does not move.
+    pub unread_call_equivalent_micros: Option<i64>,
+}
+
 /// The whole list, with the currency declared once.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PriceList {
@@ -80,6 +96,11 @@ pub struct PriceList {
     /// whether the list behind it is from yesterday or from last year.
     pub dated: Option<String>,
     pub entries: Vec<Price>,
+    /// Per engine id, the rules above.
+    pub engines: std::collections::BTreeMap<String, EnginePricing>,
+    /// Tools a step may name that burn no account: their rows cost nothing,
+    /// and saying so is different from not knowing.
+    pub not_models: Vec<String>,
 }
 
 impl Default for PriceList {
@@ -88,6 +109,8 @@ impl Default for PriceList {
             currency: "USD".to_owned(),
             dated: None,
             entries: Vec::new(),
+            engines: std::collections::BTreeMap::new(),
+            not_models: Vec::new(),
         }
     }
 }
@@ -113,10 +136,32 @@ impl PriceList {
             .and_then(serde_json::Value::as_array)
             .map(|items| items.iter().filter_map(parse_price).collect())
             .unwrap_or_default();
+        let engines = parsed
+            .get("engines")
+            .and_then(serde_json::Value::as_object)
+            .map(|items| {
+                items
+                    .iter()
+                    .map(|(id, rules)| (id.trim().to_lowercase(), parse_engine(rules)))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let not_models = parsed
+            .get("not_models")
+            .and_then(serde_json::Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(|id| id.trim().to_lowercase()))
+                    .collect()
+            })
+            .unwrap_or_default();
         Ok(PriceList {
             currency,
             dated,
             entries,
+            engines,
+            not_models,
         })
     }
 
@@ -176,6 +221,14 @@ impl PriceList {
                 .into_iter()
                 .filter(|entry| !taken.contains(&entry.id.trim().to_lowercase())),
         );
+        let mut engines = self.engines;
+        engines.extend(home.engines);
+        let mut not_models = self.not_models;
+        for id in home.not_models {
+            if !not_models.contains(&id) {
+                not_models.push(id);
+            }
+        }
         PriceList {
             currency: home.currency,
             // The date belongs to whoever wrote last: whoever looks at a figure
@@ -183,7 +236,18 @@ impl PriceList {
             // the only one anybody has touched.
             dated: home.dated.or(self.dated),
             entries,
+            engines,
+            not_models,
         }
+    }
+
+    /// The rules for this engine, if the list carries any.
+    pub fn engine(&self, cli: &str) -> Option<&EnginePricing> {
+        self.engines.get(&cli.trim().to_lowercase())
+    }
+
+    pub fn is_not_a_model(&self, cli: &str) -> bool {
+        self.not_models.contains(&cli.trim().to_lowercase())
     }
 }
 
@@ -195,6 +259,23 @@ impl PriceList {
 /// still produce a total — plausible, and meaningless.
 fn same_currency(one: &str, other: &str) -> bool {
     one.trim().to_lowercase() == other.trim().to_lowercase()
+}
+
+fn parse_engine(value: &serde_json::Value) -> EnginePricing {
+    let whole = |key: &str| {
+        value
+            .get(key)
+            .and_then(serde_json::Value::as_i64)
+            .filter(|micros| *micros >= 0)
+    };
+    EnginePricing {
+        assumed_model: value
+            .get("assumed_model")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned),
+        per_wall_second_micros: whole("per_wall_second_micros"),
+        unread_call_equivalent_micros: whole("unread_call_equivalent_micros"),
+    }
 }
 
 fn parse_price(value: &serde_json::Value) -> Option<Price> {
@@ -315,6 +396,329 @@ pub fn cost_micros(counts: TokenCounts, prices: PriceMicros) -> Option<i64> {
     // Rounding to the micro-unit: half up, once.
     let rounded = (total + 500_000) / 1_000_000;
     i64::try_from(rounded).ok()
+}
+
+/// What is known of one call when its equivalent cost is worked out. Every
+/// field may be missing; the rule that applies says so on the row's reading.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CallFacts<'a> {
+    pub cli: &'a str,
+    pub model: Option<&'a str>,
+    pub counts: TokenCounts,
+    /// How many models the engine counted apart; above one, the counts are
+    /// the whole call's and the model is only the first named.
+    pub models_named: Option<u64>,
+    pub error_type: Option<&'a str>,
+    pub started_at: i64,
+    pub ended_at: Option<i64>,
+    /// The engine's own figure, when it gave one. It never enters our sum,
+    /// but a call that carries one is already accounted for.
+    pub declared_cost: Option<f64>,
+}
+
+/// Which rule gave a call its equivalent cost, written beside the number so
+/// nobody mistakes a pinned estimate for a measure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Rule {
+    /// A tool that burns no account.
+    NotAModelCall,
+    /// Refused before generating anything, with no figure to its name.
+    AnsweredNothing,
+    /// The model the engine named, times the tokens it counted.
+    EngineModel,
+    /// Several models counted apart and no figure from the engine: the whole
+    /// call's tokens at the first model's price, a floor and declaredly so.
+    MixedModelsPricedAsFirst,
+    /// The engine named no model: the tokens at the engine's assumed model.
+    AssumedModel,
+    /// Hardware, not an account: seconds of wall time at the pinned rate.
+    WallSeconds,
+    /// No reading at all: the engine's pinned figure for an unread call.
+    UnreadCallEquivalent,
+    /// None of the above could be applied.
+    Unpriced,
+}
+
+/// A call's equivalent cost and how it was reached.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Priced {
+    pub cost_micros: Option<i64>,
+    pub rule: Rule,
+    /// The prices applied, when tokens were priced.
+    pub prices: PriceMicros,
+    /// The entry the tokens were priced with, when one was.
+    pub priced_as: Option<String>,
+}
+
+fn nothing_read(facts: &CallFacts<'_>) -> bool {
+    facts.counts.input.is_none()
+        && facts.counts.output.is_none()
+        && facts.counts.cached.is_none()
+        && facts.counts.cache_write.is_none()
+        && facts.counts.cache_write_long.is_none()
+}
+
+/// The equivalent cost of one call, by the first rule that applies, in the
+/// order of [`Rule`]. Deterministic: the same facts and the same list give
+/// the same figure, whoever asks and whenever.
+pub fn equivalent_cost(facts: &CallFacts<'_>, list: &PriceList) -> Priced {
+    let unpriced = |rule: Rule| Priced {
+        cost_micros: None,
+        rule,
+        prices: PriceMicros::default(),
+        priced_as: None,
+    };
+    let flat = |micros: i64, rule: Rule| Priced {
+        cost_micros: Some(micros),
+        rule,
+        prices: PriceMicros::default(),
+        priced_as: None,
+    };
+    if list.is_not_a_model(facts.cli) {
+        return flat(0, Rule::NotAModelCall);
+    }
+    let refused = matches!(
+        facts.error_type,
+        Some("quota_exhausted" | "exhausted" | "spawn_failed")
+    );
+    if refused && nothing_read(facts) && facts.declared_cost.is_none() {
+        return flat(0, Rule::AnsweredNothing);
+    }
+    let engine = list.engine(facts.cli);
+    let has_tokens = facts.counts.input.is_some() || facts.counts.output.is_some();
+    let named = facts.model.map(str::trim).filter(|name| !name.is_empty());
+    let whole_call = !matches!(facts.models_named, Some(named) if named > 1);
+    if has_tokens {
+        if let Some(entry) = named.and_then(|name| list.find(name)) {
+            if whole_call || facts.declared_cost.is_none() {
+                let prices = entry.micros();
+                if let Some(micros) = cost_micros(facts.counts, prices) {
+                    return Priced {
+                        cost_micros: Some(micros),
+                        rule: if whole_call {
+                            Rule::EngineModel
+                        } else {
+                            Rule::MixedModelsPricedAsFirst
+                        },
+                        prices,
+                        priced_as: Some(entry.id.clone()),
+                    };
+                }
+            } else {
+                return unpriced(Rule::Unpriced);
+            }
+        }
+        // A name the list does not carry wants an entry, not a flat figure:
+        // pricing it as unread would hide exactly the repair it asks for.
+        if named.is_some() {
+            return unpriced(Rule::Unpriced);
+        }
+        {
+            if let Some(entry) = engine
+                .and_then(|rules| rules.assumed_model.as_deref())
+                .and_then(|name| list.find(name))
+            {
+                let prices = entry.micros();
+                if let Some(micros) = cost_micros(facts.counts, prices) {
+                    return Priced {
+                        cost_micros: Some(micros),
+                        rule: Rule::AssumedModel,
+                        prices,
+                        priced_as: Some(entry.id.clone()),
+                    };
+                }
+            }
+        }
+    }
+    if let Some(rate) = engine.and_then(|rules| rules.per_wall_second_micros) {
+        if let Some(ended) = facts.ended_at {
+            let seconds = (ended - facts.started_at).max(0);
+            return flat(seconds.saturating_mul(rate), Rule::WallSeconds);
+        }
+    }
+    if let Some(micros) = engine.and_then(|rules| rules.unread_call_equivalent_micros) {
+        return flat(micros, Rule::UnreadCallEquivalent);
+    }
+    unpriced(Rule::Unpriced)
+}
+
+#[cfg(test)]
+mod equivalent {
+    use super::*;
+
+    const LIST: &str = r#"{
+      "currency": "USD",
+      "models": [
+        {"id": "model-a", "aliases": ["a"], "input_per_million": 1.0, "output_per_million": 10.0, "cached_per_million": 0.1},
+        {"id": "model-b", "input_per_million": 2.0, "output_per_million": 20.0}
+      ],
+      "engines": {
+        "engine-a": {"assumed_model": "model-b", "unread_call_equivalent_micros": 7000},
+        "local-a": {"per_wall_second_micros": 14},
+        "engine-c": {}
+      },
+      "not_models": ["hammer"]
+    }"#;
+
+    fn list() -> PriceList {
+        PriceList::parse(LIST).unwrap()
+    }
+
+    fn tokens(input: u64, output: u64) -> TokenCounts {
+        TokenCounts {
+            input: Some(input),
+            output: Some(output),
+            ..TokenCounts::default()
+        }
+    }
+
+    #[test]
+    fn a_named_and_listed_model_is_priced_by_its_own_entry() {
+        let priced = equivalent_cost(
+            &CallFacts {
+                cli: "engine-a",
+                model: Some("a"),
+                counts: tokens(1_000_000, 100_000),
+                ..CallFacts::default()
+            },
+            &list(),
+        );
+        assert_eq!(priced.rule, Rule::EngineModel);
+        assert_eq!(priced.cost_micros, Some(2_000_000));
+        assert_eq!(priced.priced_as.as_deref(), Some("model-a"));
+    }
+
+    #[test]
+    fn tokens_without_a_model_are_priced_at_the_engines_assumed_model() {
+        let priced = equivalent_cost(
+            &CallFacts {
+                cli: "engine-a",
+                model: None,
+                counts: tokens(1_000_000, 0),
+                ..CallFacts::default()
+            },
+            &list(),
+        );
+        assert_eq!(priced.rule, Rule::AssumedModel);
+        assert_eq!(priced.cost_micros, Some(2_000_000));
+        assert_eq!(priced.priced_as.as_deref(), Some("model-b"));
+    }
+
+    #[test]
+    fn a_local_engine_is_priced_by_the_seconds_it_ran() {
+        let priced = equivalent_cost(
+            &CallFacts {
+                cli: "local-a",
+                counts: tokens(3839, 3700),
+                started_at: 100,
+                ended_at: Some(355),
+                ..CallFacts::default()
+            },
+            &list(),
+        );
+        assert_eq!(priced.rule, Rule::WallSeconds);
+        assert_eq!(priced.cost_micros, Some(255 * 14));
+    }
+
+    #[test]
+    fn a_call_that_left_no_reading_takes_the_engines_pinned_figure() {
+        let priced = equivalent_cost(
+            &CallFacts {
+                cli: "engine-a",
+                started_at: 1,
+                ..CallFacts::default()
+            },
+            &list(),
+        );
+        assert_eq!(priced.rule, Rule::UnreadCallEquivalent);
+        assert_eq!(priced.cost_micros, Some(7000));
+    }
+
+    #[test]
+    fn a_refusal_that_answered_nothing_costs_nothing_and_a_tool_costs_nothing() {
+        let refused = equivalent_cost(
+            &CallFacts {
+                cli: "engine-a",
+                error_type: Some("quota_exhausted"),
+                ..CallFacts::default()
+            },
+            &list(),
+        );
+        assert_eq!((refused.rule, refused.cost_micros), (Rule::AnsweredNothing, Some(0)));
+        let tool = equivalent_cost(
+            &CallFacts {
+                cli: "Hammer",
+                ..CallFacts::default()
+            },
+            &list(),
+        );
+        assert_eq!((tool.rule, tool.cost_micros), (Rule::NotAModelCall, Some(0)));
+    }
+
+    #[test]
+    fn mixed_models_stay_unknown_beside_a_declared_figure_and_become_a_floor_without_one() {
+        let facts = CallFacts {
+            cli: "engine-a",
+            model: Some("model-a"),
+            counts: tokens(1_000_000, 0),
+            models_named: Some(2),
+            declared_cost: Some(3.0),
+            ..CallFacts::default()
+        };
+        assert_eq!(equivalent_cost(&facts, &list()).rule, Rule::Unpriced);
+        let without = CallFacts {
+            declared_cost: None,
+            ..facts
+        };
+        let priced = equivalent_cost(&without, &list());
+        assert_eq!(priced.rule, Rule::MixedModelsPricedAsFirst);
+        assert_eq!(priced.cost_micros, Some(1_000_000));
+    }
+
+    #[test]
+    fn a_named_model_the_list_does_not_carry_stays_unpriced_instead_of_taking_a_flat_figure() {
+        let priced = equivalent_cost(
+            &CallFacts {
+                cli: "engine-a",
+                model: Some("model-nobody-listed"),
+                counts: tokens(10, 10),
+                ..CallFacts::default()
+            },
+            &list(),
+        );
+        assert_eq!((priced.rule, priced.cost_micros), (Rule::Unpriced, None));
+    }
+
+    #[test]
+    fn an_engine_with_no_rule_that_fits_stays_unpriced() {
+        let priced = equivalent_cost(
+            &CallFacts {
+                cli: "engine-c",
+                counts: tokens(10, 10),
+                ..CallFacts::default()
+            },
+            &list(),
+        );
+        assert_eq!((priced.rule, priced.cost_micros), (Rule::Unpriced, None));
+        let unknown = equivalent_cost(
+            &CallFacts {
+                cli: "nobody",
+                ..CallFacts::default()
+            },
+            &list(),
+        );
+        assert_eq!(unknown.rule, Rule::Unpriced);
+    }
+
+    #[test]
+    fn the_home_list_replaces_an_engines_rules_whole_and_adds_tools() {
+        let home = PriceList::parse(r#"{"currency":"USD","engines":{"engine-a":{"unread_call_equivalent_micros":1}},"not_models":["saw","hammer"]}"#).unwrap();
+        let merged = list().overridden_by(home);
+        assert_eq!(merged.engine("engine-a").unwrap().assumed_model, None);
+        assert_eq!(merged.engine("local-a").unwrap().per_wall_second_micros, Some(14));
+        assert_eq!(merged.not_models, vec!["hammer", "saw"]);
+    }
 }
 
 #[cfg(test)]

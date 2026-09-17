@@ -1,0 +1,120 @@
+{
+  "id": "judge-a-change",
+  "description": "A change made against a benchmark task is accepted or rejected by code, never by a model. The launch is one JSON text in the trigger: «tree», the worktree holding the change; «task_file», the task it was made against; «run_status», what the flow that made it reported, if any. The judge reads the diff against the task's base, applies the hidden tests the change never saw, runs them, and takes them out again so the tree is left as found. Accepted means: it compiles, the hidden tests pass, and no test file or test attribute was touched. Size against the gold patch, lint noise and where the change landed are recorded as debt beside the verdict and decide nothing; a run that said complete and is rejected is recorded as a false done. The last step is red exactly when the change is rejected, so the run's colour is the verdict and the judge's whole reading stays in the ledger.",
+  "graph": {
+    "steps": [
+      {
+        "id": "trigger",
+        "deps": [],
+        "action": "trigger",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "source": "manual"
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "source": { "type": "string" },
+            "text": { "type": "string" },
+            "who": { "type": "string" }
+          },
+          "required": ["source", "text"],
+          "allow_extra": false
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "text": { "type": "string" },
+            "who": { "type": "string" },
+            "source": { "type": "string" },
+            "kind": { "type": "string" }
+          },
+          "required": ["text"],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "judge",
+        "deps": ["trigger"],
+        "action": "judge_change",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "launch": { "$from": "/text" }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "text": { "type": "string" }
+          },
+          "required": ["text"],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "accepted": { "type": "boolean" },
+            "false_done": { "type": "boolean" },
+            "failure_class": { "type": "string" },
+            "compiles": { "type": "boolean" },
+            "hidden_tests_applied": { "type": "boolean" },
+            "hidden_tests_passed": { "type": "boolean" },
+            "touches_tests": { "type": "boolean" },
+            "touched_test_files": { "type": "array", "items": { "type": "string" } },
+            "changed_files": { "type": "array", "items": { "type": "string" } },
+            "gold_files": { "type": "array", "items": { "type": "string" } },
+            "overlap": { "type": "array", "items": { "type": "string" } },
+            "added_lines": { "type": "number" },
+            "gold_added_lines": { "type": "number" },
+            "bloat": { "type": "boolean" },
+            "clippy_said": { "type": "string" },
+            "test_tail": { "type": "string" },
+            "tree_restored": { "type": "boolean" },
+            "seconds": { "type": "number" }
+          },
+          "required": [
+            "accepted",
+            "false_done",
+            "failure_class",
+            "compiles",
+            "hidden_tests_applied",
+            "hidden_tests_passed",
+            "touches_tests",
+            "tree_restored"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "verdict",
+        "deps": ["judge"],
+        "action": "shell_check",
+        "required": true,
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -eu\n# The verdict is the judge's word, read by the shell and not rewritten:\n# a rejected change makes this run red, with the class as the reason.\n[ \"$ACCEPTED\" = true ] || { echo \"the change is rejected: $FAILURE_CLASS\" >&2; exit 1; }",
+          "env": {
+            "ACCEPTED": { "$json": "/accepted" },
+            "FAILURE_CLASS": { "$from": "/failure_class" }
+          },
+          "timeout_secs": 30
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "allow_extra": true
+        },
+        "output_schema": { "type": "any" }
+      }
+    ]
+  },
+  "inputs": {
+    "trigger": {
+      "text": "",
+      "who": ""
+    }
+  }
+}

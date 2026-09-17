@@ -24,6 +24,7 @@
 //! where it does not.
 
 pub mod apply;
+pub mod bench;
 pub mod budget;
 pub mod cooldown;
 pub mod digest;
@@ -38,6 +39,7 @@ pub mod mcp;
 pub mod memory;
 pub mod notes;
 pub mod presence;
+pub mod price_every_call;
 pub mod reserve;
 pub mod search;
 pub mod session_fill;

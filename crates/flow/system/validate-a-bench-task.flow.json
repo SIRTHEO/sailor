@@ -1,0 +1,49 @@
+{
+  "id": "validate-a-bench-task",
+  "description": "ONE FIX COMMIT BECOMES ONE TASK OF THE FROZEN BENCHMARK, OR IS TURNED DOWN WITH THE REASON. The child of «build-the-bench», and useful on its own. THE CANDIDATE IS THE ROOT STEP'S INPUT, which is what makes this a child a list can be run over: `for_each` puts each element in the place of the root step's own input, so the same file works launched by hand — fill «the_candidate» in the inputs with the repository, the fix commit and its base — and launched once per candidate. WHAT THE STEP DOES. It reads the fix commit from git alone: the test files it touched are the hidden test, every other file is the gold patch, and the prompt is the fault the commit names when the register holds it, else the commit's body. Then it cuts a detached tree of the repository at the base under the build directory inside `target/`, lays the hidden test over it and runs it «runs» times, expecting red every time; checks out the fix and runs it again, expecting green every time. Only then is the task written under the home, with how many times each was seen. A test green before the fix, a run that carries the words of a sandbox, a commit without a body: each is an answer with «kept: false» and its reason, never a failure, so the list this runs over reaches its last element. What is red is a broken environment — no git, no cargo, no repository. A task already validated is not validated again, which is what makes a second run of the parent resume where the first stopped.",
+  "graph": {
+    "steps": [
+      {
+        "id": "the_candidate",
+        "deps": [],
+        "action": "bench_validate",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "runs": 3
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "repo": { "type": "string" },
+            "fix_commit": { "type": "string" },
+            "base_commit": { "type": "string" },
+            "set": { "type": "string" },
+            "runs": { "type": "number" }
+          },
+          "required": ["fix_commit", "base_commit", "runs"],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "task_id": { "type": "string" },
+            "kept": { "type": "boolean" },
+            "why": { "type": "string" },
+            "seconds": { "type": "number" },
+            "path": { "type": "any" }
+          },
+          "required": ["task_id", "kept", "why", "seconds"],
+          "allow_extra": true
+        }
+      }
+    ]
+  },
+  "inputs": {
+    "the_candidate": {
+      "fix_commit": "",
+      "base_commit": "",
+      "set": "stage-1"
+    }
+  }
+}

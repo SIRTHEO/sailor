@@ -52,6 +52,22 @@ pub const FLOWS: &[(&str, &str)] = &[
         "what-this-machine-has",
         include_str!("../system/what-this-machine-has.flow.json"),
     ),
+    // Every call of the ledger gets an equivalent cost by the pinned rules, and
+    // the run is red while one stays unpriced.
+    (
+        "price-every-call",
+        include_str!("../system/price-every-call.flow.json"),
+    ),
+    // The first number of the evaluation loop: the flow under measurement on
+    // every task of a frozen set, one child at a time, each judged and read.
+    (
+        "measure-the-baseline",
+        include_str!("../system/measure-the-baseline.flow.json"),
+    ),
+    (
+        "run-one-bench-task",
+        include_str!("../system/run-one-bench-task.flow.json"),
+    ),
     // A hard question taken to a strong model with the material already in
     // hand. The refusal of an empty brief is a step, not a comment: the same
     // engine on the same question spent its whole window exploring and
@@ -125,6 +141,12 @@ pub const FLOWS: &[(&str, &str)] = &[
         "take-the-next-fault",
         include_str!("../system/take-the-next-fault.flow.json"),
     ),
+    // A change made against a benchmark task, accepted or rejected by tests it
+    // never saw; the run is red exactly when the change is rejected.
+    (
+        "judge-a-change",
+        include_str!("../system/judge-a-change.flow.json"),
+    ),
     // The ordinary gesture that reaches the two actions naming everything
     // else's dead powers — without this flow, they were their own example.
     (
@@ -174,6 +196,17 @@ pub const FLOWS: &[(&str, &str)] = &[
     (
         "empty-a-session-that-handed-on",
         include_str!("../system/empty-a-session-that-handed-on.flow.json"),
+    ),
+    // The frozen benchmark: the fix commits of a repository become tasks whose
+    // hidden test is seen red on the base and green on the fix, once per
+    // candidate through the child below, and the set is hashed and recorded.
+    (
+        "build-the-bench",
+        include_str!("../system/build-the-bench.flow.json"),
+    ),
+    (
+        "validate-a-bench-task",
+        include_str!("../system/validate-a-bench-task.flow.json"),
     ),
 ];
 
