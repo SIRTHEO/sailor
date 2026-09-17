@@ -62,6 +62,22 @@ impl Scratch {
         git(&self.tree, &["commit", "--quiet", "-m", name]);
     }
 
+    /// A commit dated by the clock the test names, not by the one it runs on.
+    fn commit_at(&self, name: &str, at: i64) {
+        std::fs::write(self.tree.join(name), name).expect("a file to commit");
+        git(&self.tree, &["add", name]);
+        let date = format!("@{at} +0000");
+        let done = Command::new("git")
+            .arg("-C")
+            .arg(&self.tree)
+            .args(["commit", "--quiet", "-m", name])
+            .env("GIT_AUTHOR_DATE", &date)
+            .env("GIT_COMMITTER_DATE", &date)
+            .output()
+            .expect("git runs");
+        assert!(done.status.success(), "{done:?}");
+    }
+
     fn store(&self) -> String {
         self.store.to_string_lossy().into_owned()
     }
@@ -370,4 +386,64 @@ fn a_handover_waiting_names_the_line_that_wrote_it() {
 
     assert_eq!(answer["engine"], json!("a-command-line"), "{answer}");
     assert_eq!(answer["session"], json!("the-predecessor"), "{answer}");
+}
+
+/// **WHAT GIT ALREADY SAYS IS NOT WRITTEN BY THE MODEL.** Measured 17/09/2026:
+/// half of a 22 KB mandate was the session retelling its own commits, at the
+/// price of a turn over a full context. Given when the session began, the
+/// deposit reads them, and none from before.
+#[test]
+fn the_deposit_lists_the_commits_made_since_the_session_began() {
+    let scratch = Scratch::new("commits-since");
+    scratch.commit_at("before.txt", 1_700_000_000);
+    scratch.commit_at("during-one.txt", 1_700_000_500);
+    scratch.commit_at("during-two.txt", 1_700_000_900);
+
+    let written = went(
+        MANDATE_DEPOSIT_ACTION,
+        json!({
+            "tree": scratch.tree(),
+            "tty": "ttys001",
+            "session": "the-predecessor",
+            "engine": "a-command-line",
+            "began": 1_700_000_400,
+            "work": work(),
+            "store": scratch.store(),
+        }),
+    );
+
+    let held = sessions::mandate::read(&sessions::mandate::address_in(&scratch.store, "ttys001"))
+        .expect("the mandate is on disk");
+    let subjects: Vec<&str> = held
+        .written
+        .commits
+        .iter()
+        .map(|line| line.split_once(' ').map_or("", |(_, subject)| subject))
+        .collect();
+    assert_eq!(subjects, ["during-two.txt", "during-one.txt"], "{written}");
+    assert_eq!(held.written.began, Some(1_700_000_400));
+}
+
+/// A session whose beginning nobody recorded is not credited with the history
+/// of the repository.
+#[test]
+fn a_deposit_that_does_not_know_when_the_session_began_lists_no_commits() {
+    let scratch = Scratch::new("commits-unknown");
+    scratch.commit_at("during.txt", 1_700_000_500);
+
+    went(
+        MANDATE_DEPOSIT_ACTION,
+        json!({
+            "tree": scratch.tree(),
+            "tty": "ttys001",
+            "session": "the-predecessor",
+            "engine": "a-command-line",
+            "work": work(),
+            "store": scratch.store(),
+        }),
+    );
+
+    let held = sessions::mandate::read(&sessions::mandate::address_in(&scratch.store, "ttys001"))
+        .expect("the mandate is on disk");
+    assert!(held.written.commits.is_empty(), "{:?}", held.written.commits);
 }

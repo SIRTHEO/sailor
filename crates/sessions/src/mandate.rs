@@ -40,6 +40,17 @@ pub struct Written {
     /// theirs and not the successor's to explain.
     #[serde(default)]
     pub alongside: Vec<String>,
+    /// When the session writing it began, as the terminal's own queue of
+    /// events first saw it. `None` is a beginning nobody recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub began: Option<i64>,
+    /// The commits of the repository's branches since `began`, newest first,
+    /// one `hash subject` a line: read from git so the session does not spend
+    /// a turn over a full context retelling them. Terminals `alongside`
+    /// commit to the same branches, so a line here is a fact about the
+    /// repository and not a claim of authorship.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub commits: Vec<String>,
 }
 
 /// One thing the session believes about the world, and whether it looked.

@@ -516,6 +516,24 @@ pub fn what_moved_since(root: &Path, commit: &str) -> String {
     git(root, &["diff", "--name-status", &format!("{commit}..HEAD")]).unwrap_or_default()
 }
 
+/// The commits of the local branches since a moment, newest first, one
+/// `hash subject` a line and at most `cap` of them. An unreadable tree has
+/// none: nothing is credited on a reading that failed.
+pub fn commits_since(root: &Path, at: i64, cap: usize) -> Vec<String> {
+    git(
+        root,
+        &[
+            "log",
+            "--branches",
+            &format!("--since=@{at}"),
+            &format!("--max-count={cap}"),
+            "--format=%h %s",
+        ],
+    )
+    .map(|said| said.lines().map(str::to_owned).collect())
+    .unwrap_or_default()
+}
+
 /// The repository the current directory belongs to.
 pub fn root() -> Result<PathBuf, String> {
     let here = std::env::current_dir().map_err(|error| error.to_string())?;

@@ -25,9 +25,14 @@ const DEPOSIT_FIELDS: &[&str] = &[
     "transcript",
     "reread",
     "alongside",
+    "began",
     "work",
     "store",
 ];
+
+/// How many commits a mandate carries: past this the log is the place to read
+/// them, and the mandate would grow back into what it replaces.
+const COMMITS_HELD: usize = 40;
 
 const RESUME_FIELDS: &[&str] = &["tree", "tty", "session", "store"];
 
@@ -55,6 +60,8 @@ struct DepositSpec {
     reread: Vec<String>,
     #[serde(default)]
     alongside: Vec<String>,
+    #[serde(default)]
+    began: Option<i64>,
     /// The half only the session knows. Its shape is refused here, where its
     /// author is still alive to be asked again.
     work: Work,
@@ -134,6 +141,10 @@ pub fn deposited(input: &Value) -> Result<Value, ActionError> {
     let root = store_root(&spec.store)?;
     let tree = PathBuf::from(&spec.tree);
     let (branch, head, uncommitted) = standing_of(&tree);
+    let commits = spec
+        .began
+        .map(|began| workspace::commits_since(&tree, began, COMMITS_HELD))
+        .unwrap_or_default();
     let mandate = Mandate {
         written: Written {
             tree: spec.tree,
@@ -149,6 +160,8 @@ pub fn deposited(input: &Value) -> Result<Value, ActionError> {
             reread: spec.reread,
             transcript: spec.transcript,
             alongside: spec.alongside,
+            began: spec.began,
+            commits,
         },
         work: spec.work,
         taken: None,
