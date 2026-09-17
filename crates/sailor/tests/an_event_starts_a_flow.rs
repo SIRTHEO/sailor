@@ -311,3 +311,44 @@ fn the_delivery_carries_the_event_and_never_the_prompt() {
         "the prompt must not leave this process: {delivery}"
     );
 }
+
+/// **A SESSION THAT STARTS IS AN EVENT TOO.** The start-up hook took a road of
+/// its own that greeted the session and judged no flow, so a flow watching
+/// SessionStart never started and nothing said why. The watcher here asks for a
+/// phrase no start carries, so the arc leaves a refusal row and starts nothing.
+#[test]
+fn a_session_that_starts_is_judged_against_the_flows_that_watch_it() {
+    let scratch = Scratch::new("session-start");
+    scratch.holding(
+        "watches-the-start",
+        json!({"source": SESSION_EVENT, "on": {"event": "SessionStart", "phrase": "words no start carries"}}),
+    );
+    let store_file = scratch.0.join("sessions.db");
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_sailor"))
+        .args(["session", "open", "--tty", "ttys901", "--store"])
+        .arg(&store_file)
+        .env("SAILOR_FLOWS", scratch.0.join("flows"))
+        .env("SAILOR_LEDGER", &scratch.0)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("sailor starts");
+    use std::io::Write;
+    child
+        .stdin
+        .take()
+        .expect("a stdin")
+        .write_all(br#"{"session_id":"s-start","hook_event_name":"SessionStart","cwd":"/a/tree"}"#)
+        .expect("the payload is written");
+    assert!(child.wait().expect("sailor ends").success());
+
+    let verdicts = Sessions::open(&store_file).expect("the store").verdicts_for(1).expect("the verdicts");
+
+    let ours = verdicts
+        .iter()
+        .find(|row| row.flow == "watches-the-start")
+        .unwrap_or_else(|| panic!("the start was judged against the flow that watches it: {verdicts:?}"));
+    assert_eq!(ours.verdict, DEFERRED);
+}
+

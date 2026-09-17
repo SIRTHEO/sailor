@@ -1104,9 +1104,14 @@ fn open_terminal(request: &Request<'_>) -> Result<Report, String> {
     if let Some(kept) = kept_by(&arrival.anchor.tty) {
         let _ = store.remember_keeper(&kept);
     }
-    store
-        .record_event(&event_named(request, "open"))
+    let opened = event_named(request, "open");
+    let event_id = store
+        .record_event(&opened)
         .map_err(|error| error.to_string())?;
+    // A session that starts is an event the arc judges like any other: without
+    // this, a flow watching SessionStart never started. Its lines stay out of
+    // the greeting, whose shape the command line reads.
+    let _ = what_this_event_starts(request, store, event_id, &opened);
 
     let announced = announce(request, &arrival, "working");
     if request.is_a_session_start() {
