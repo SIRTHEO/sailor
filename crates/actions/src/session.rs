@@ -13,11 +13,26 @@ use ledger::SessionMode;
 
 /// The session options the engine declares, assembled with the rest of its
 /// recipe. What the engine leaves undeclared stays `None` all the way here.
-pub(crate) fn session_lines(recipe: &AskRecipe, declared: Option<SessionRecipe>) -> SessionRecipe {
+/// The model and the ceiling the step's question carries are written on every
+/// session line too: a session line takes the question's place, not its terms.
+pub(crate) fn session_lines(
+    recipe: &AskRecipe,
+    declared: Option<SessionRecipe>,
+    model: Option<(&[String], &str)>,
+    ceiling: Option<(&[String], &str)>,
+) -> SessionRecipe {
     let Some(declared) = declared else {
         return SessionRecipe::default();
     };
-    let line = |args: Option<Vec<String>>| args.map(|args| command_line_with(recipe, &args));
+    let line = |args: Option<Vec<String>>| {
+        args.map(|mut args| {
+            for (option, value) in [model, ceiling].into_iter().flatten() {
+                args.extend(option.iter().cloned());
+                args.push(value.to_owned());
+            }
+            command_line_with(recipe, &args)
+        })
+    };
     SessionRecipe {
         open: line(declared.open),
         resume: line(declared.resume),
@@ -135,7 +150,7 @@ fn say_it_starts_over(live: Option<&dyn LiveSink>, named: &str, why: &str) {
     if let Some(live) = live {
         live.chunk(
             Pipe::Stderr,
-            format!("[sailor] {named} riparte da zero: {why}\n").as_bytes(),
+            format!("[sailor] {named} starts over: {why}\n").as_bytes(),
         );
     }
 }
@@ -594,6 +609,54 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
             "the engine has to receive the very identifier the ledger keeps: \
              line «{line}», recorded «{written}»"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    struct AsksForAModel(Declares);
+
+    impl ToolResolver for AsksForAModel {
+        fn resolve(&self, id: &str) -> Result<String, String> {
+            self.0.resolve(id)
+        }
+        fn ask_recipe(&self, id: &str) -> Option<AskRecipe> {
+            self.0.ask_recipe(id)
+        }
+        fn session_recipe(&self, id: &str) -> Option<SessionRecipe> {
+            self.0.session_recipe(id)
+        }
+        fn model_option(&self, _id: &str) -> Option<Vec<String>> {
+            Some(vec!["--model".to_owned()])
+        }
+    }
+
+    /// A session line takes the place of the question's options, and the model
+    /// the step asked for is one of them: opening or resuming must not quietly
+    /// run the engine on its default model.
+    #[test]
+    fn a_session_keeps_the_model_the_step_asked_for() {
+        let dir = scratch("keeps-the-model");
+        let bin = fake_engine(&dir);
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
+        let action = ExternalEngineAction::resolving_with(AsksForAModel(Declares {
+            bin,
+            sessions: Some(knows_all_three()),
+        }))
+        .recording_to(Some(ledger));
+        let asking = |session: Value| {
+            let mut step = step_that(session);
+            step["model"] = json!({ TOOL: "the-model-asked" });
+            step
+        };
+
+        ran(&action, &asking(json!("open")), "corsa-modello", "scopri");
+        ran(&action, &asking(json!({"resume": "scopri"})), "corsa-modello", "continua");
+
+        for line in invocations(&dir) {
+            assert!(
+                line.contains("--model the-model-asked"),
+                "every line of the session names the model asked for: «{line}»"
+            );
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 

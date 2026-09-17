@@ -338,7 +338,17 @@ impl ExternalEngineAction {
                                 &ceiling_of(spec, share_of_the_cap),
                             ),
                             prompt: recipe.prompt,
-                            session: session_lines(&recipe, tools.session_recipe(id)),
+                            session: session_lines(
+                                &recipe,
+                                tools.session_recipe(id),
+                                option
+                                    .as_ref()
+                                    .map(|(option, model)| (option.as_slice(), model.as_str())),
+                                held_to
+                                    .as_ref()
+                                    .zip(written.as_deref())
+                                    .map(|(option, value)| (option.args.as_slice(), value)),
+                            ),
                             unusable_when: recipe.unusable_when,
                             exhausted_when: recipe.exhausted_when,
                             cooldown_secs: recipe.cooldown_secs,

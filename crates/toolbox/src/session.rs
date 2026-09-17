@@ -234,6 +234,24 @@ mod tests {
         );
     }
 
+    /// The usage reading asks codex for `--json`, and a session line keeps the
+    /// usage options, so what a session step reads its name from is the event
+    /// stream, not the text. The line below is copied from a real run.
+    #[test]
+    fn the_shipped_pattern_finds_the_identifier_in_the_event_stream() {
+        let pointer = SessionAbilities::shipped()
+            .for_tool("codex")
+            .and_then(|recipe| recipe.id_from)
+            .expect("codex declares where it writes its own name");
+        let said = "{\"type\":\"thread.started\",\"thread_id\":\"01a0ac1b-dd36-7f73-b047-4a68a37d587c\"}\n\
+                    {\"type\":\"turn.started\"}\n";
+
+        assert_eq!(
+            actions::read_text(said, &pointer).as_deref(),
+            Some("01a0ac1b-dd36-7f73-b047-4a68a37d587c")
+        );
+    }
+
     /// A mode that is not declared stays absent **while the other two work**:
     /// the case of an engine that can resume and cannot fork, which without this
     /// asymmetry would have to give up what it can do as well.
