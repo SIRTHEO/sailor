@@ -48,6 +48,39 @@ pub(super) fn waiting_report() -> String {
         }
         lines
     };
+    let left_behind: Vec<ledger::WaitingRun> = ledger
+        .as_ref()
+        .and_then(|ledger| {
+            let running = ledger.running_runs().ok()?;
+            Some(
+                running
+                    .into_iter()
+                    .filter(|run| {
+                        ledger
+                            .steps(&run.run_id)
+                            .is_ok_and(|steps| left_by_a_gone_process(&steps, ledger::still_held))
+                    })
+                    .collect(),
+            )
+        })
+        .unwrap_or_default();
+    if !left_behind.is_empty() {
+        let _ = write!(
+            report,
+            "\n{}",
+            catalogue::say(
+                "cli.flow.runs_left_by_a_gone_process",
+                &[("count", &left_behind.len().to_string())]
+            )
+        );
+        for run in left_behind {
+            let _ = write!(
+                report,
+                "\n  {}\t{}\tsailor flow resume {}",
+                run.run_id, run.entity, run.run_id
+            );
+        }
+    }
     if !to_ask_again.is_empty() {
         let _ = write!(
             report,
@@ -66,6 +99,20 @@ pub(super) fn waiting_report() -> String {
         }
     }
     report
+}
+
+/// Whether a run still marked running was left by processes that are gone:
+/// every step that names its holder names one the kernel says is not there.
+/// A holder that cannot be seen is not taken for dead.
+fn left_by_a_gone_process(
+    steps: &[flow::StepRecord],
+    still_held: impl Fn(&flow::StepRecord) -> ledger::StillHeld,
+) -> bool {
+    let mut held = steps
+        .iter()
+        .filter(|step| step.held_by_pid.is_some() || step.held_by.is_some())
+        .peekable();
+    held.peek().is_some() && held.all(|step| still_held(step) == ledger::StillHeld::Released)
 }
 
 /// What the ledger can say about when each flow last started.
@@ -428,6 +475,32 @@ mod tests {
     use super::super::{dispatch, now_secs, USAGE};
     use super::*;
     use std::fs;
+
+    // ── the runs a process that is gone left running ─────────────────────
+
+    fn step_held_by(pid: u32) -> flow::StepRecord {
+        let mut record = flow::StepRecord::started("run-1", "a-step", 1, 0, Vec::new(), serde_json::json!({}), Vec::new(), 100);
+        record.held_by_pid = Some(pid);
+        record
+    }
+
+    #[test]
+    fn a_run_is_left_behind_only_when_every_holder_of_its_steps_is_gone() {
+        let gone = |_: &flow::StepRecord| ledger::StillHeld::Released;
+        let alive = |record: &flow::StepRecord| {
+            if record.held_by_pid == Some(2) {
+                ledger::StillHeld::Held
+            } else {
+                ledger::StillHeld::Released
+            }
+        };
+        let unseen = |_: &flow::StepRecord| ledger::StillHeld::Uncertain;
+
+        assert!(left_by_a_gone_process(&[step_held_by(1), step_held_by(1)], gone));
+        assert!(!left_by_a_gone_process(&[step_held_by(1), step_held_by(2)], alive), "one holder still there");
+        assert!(!left_by_a_gone_process(&[step_held_by(1)], unseen), "not seeing it is not seeing it dead");
+        assert!(!left_by_a_gone_process(&[], gone), "a run no process ever held is not this list's");
+    }
 
     // ── the beat ─────────────────────────────────────────────────────────
 

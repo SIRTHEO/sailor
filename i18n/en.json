@@ -96,6 +96,7 @@
   "cli.flow.not_a_time_of_day": "«{value}» is not a time of day: hours run from 00 to 23 and minutes from 00 to 59",
   "cli.flow.parked_under_a_flow_that_waits_for_a_person": "its flow starts only when a person runs it, so nothing was ever going to bring this run back",
   "cli.flow.runs_to_ask_again": "{count} runs stopped on a step that said not yet, and are to be asked again:",
+  "cli.flow.runs_left_by_a_gone_process": "{count} runs are still marked running, and every process that ran their steps is gone: nothing brings them back until somebody resumes them:",
   "cli.flow.tools_no_descriptor_declares": "flow {flow} asks for tools no descriptor declares: {tools}. This is not «missing on this machine»: those names exist in no catalogue, so the flow runs nowhere until the name is corrected or a descriptor is added in ~/.config/sailor/tools.d/",
   "cli.flow.two_files_one_name": "«{name}» sits in two files — «{name}.flow.json» and «{name}.json» — and which of the two runs is decided by the order the system lists the directory in. I rewrite nothing until one is left: delete the one you do not want",
   "cli.flow.value_mounted_into_an_executed_field": "flow {flow} mounts a value it did not write into an executed field: {fields}. The command is shell text and gets executed: what arrives from outside — from an engine or from another command — goes into «env», where it stays a piece of data, and the command reads it between quotes.",

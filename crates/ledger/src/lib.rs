@@ -1000,6 +1000,25 @@ impl Ledger {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// Runs still marked running, children of another run left out: a child is
+    /// resumed through the run that started it.
+    pub fn running_runs(&self) -> Result<Vec<WaitingRun>, LedgerError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT run_id, entity, started_at
+             FROM runs WHERE status = 'running' AND parent_run_id IS NULL
+             ORDER BY started_at, run_id",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok(WaitingRun {
+                run_id: row.get(0)?,
+                entity: row.get(1)?,
+                waiting_since: row.get(2)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
     /// Runs that stopped on a step saying "not yet", to be run again.
     ///
     /// **A SEPARATE QUESTION FROM `waiting_runs`, AND IT HAS TO BE.** That one
