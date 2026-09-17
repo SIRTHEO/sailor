@@ -4,7 +4,7 @@
 use crate::cost::now_secs;
 use crate::engine::ExternalEngineAction;
 use crate::recipe::{
-    command_line_naming_model_and_ceiling, mentions_any, says_it_cannot_work, without_echo, PromptVia,
+    command_line_with_options, mentions_any, says_it_cannot_work, without_echo, PromptVia,
     SessionRecipe, ToolResolver,
 };
 use crate::session::session_lines;
@@ -317,38 +317,36 @@ impl ExternalEngineAction {
                         .as_ref()
                         .and_then(|option| reserve::ceiling_for(option, &ceiling_of(spec, share_of_the_cap)));
                     let written = ceiling.as_ref().and_then(reserve::Ceiling::as_written);
+                    let schema = spec
+                        .answer_shape
+                        .as_ref()
+                        .zip(tools.response_schema_option(id))
+                        .map(|(shape, option)| (option, shape.json_schema().to_string()));
+                    let options = [
+                        option
+                            .as_ref()
+                            .map(|(option, model)| (option.as_slice(), model.as_str())),
+                        held_to
+                            .as_ref()
+                            .zip(written.as_deref())
+                            .map(|(option, value)| (option.args.as_slice(), value)),
+                        schema
+                            .as_ref()
+                            .map(|(option, schema)| (option.as_slice(), schema.as_str())),
+                    ];
                     match tools.ask_recipe(id) {
                         Some(recipe) => usable.push(Candidate {
                             id: Some(id.clone()),
                             account: account.clone(),
                             bin,
-                            args: command_line_naming_model_and_ceiling(
-                                &recipe,
-                                option
-                                    .as_ref()
-                                    .map(|(option, model)| (option.as_slice(), model.as_str())),
-                                held_to
-                                    .as_ref()
-                                    .zip(written.as_deref())
-                                    .map(|(option, value)| (option.args.as_slice(), value)),
-                            ),
+                            args: command_line_with_options(&recipe, &options),
                             ceiling,
                             no_ceiling_because: reserve::why_no_ceiling(
                                 held_to.as_ref(),
                                 &ceiling_of(spec, share_of_the_cap),
                             ),
                             prompt: recipe.prompt,
-                            session: session_lines(
-                                &recipe,
-                                tools.session_recipe(id),
-                                option
-                                    .as_ref()
-                                    .map(|(option, model)| (option.as_slice(), model.as_str())),
-                                held_to
-                                    .as_ref()
-                                    .zip(written.as_deref())
-                                    .map(|(option, value)| (option.args.as_slice(), value)),
-                            ),
+                            session: session_lines(&recipe, tools.session_recipe(id), &options),
                             unusable_when: recipe.unusable_when,
                             exhausted_when: recipe.exhausted_when,
                             cooldown_secs: recipe.cooldown_secs,

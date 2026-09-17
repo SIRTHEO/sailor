@@ -13,20 +13,20 @@ use ledger::SessionMode;
 
 /// The session options the engine declares, assembled with the rest of its
 /// recipe. What the engine leaves undeclared stays `None` all the way here.
-/// The model and the ceiling the step's question carries are written on every
-/// session line too: a session line takes the question's place, not its terms.
+/// The options the step's question carries — model, ceiling, the answer's
+/// schema — are written on every session line too: a session line takes the
+/// question's place, not its terms.
 pub(crate) fn session_lines(
     recipe: &AskRecipe,
     declared: Option<SessionRecipe>,
-    model: Option<(&[String], &str)>,
-    ceiling: Option<(&[String], &str)>,
+    options: &[Option<(&[String], &str)>],
 ) -> SessionRecipe {
     let Some(declared) = declared else {
         return SessionRecipe::default();
     };
     let line = |args: Option<Vec<String>>| {
         args.map(|mut args| {
-            for (option, value) in [model, ceiling].into_iter().flatten() {
+            for (option, value) in options.iter().flatten().copied() {
                 args.extend(option.iter().cloned());
                 args.push(value.to_owned());
             }
@@ -657,6 +657,56 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
                 "every line of the session names the model asked for: «{line}»"
             );
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    struct HoldsTheShape(Declares);
+
+    impl ToolResolver for HoldsTheShape {
+        fn resolve(&self, id: &str) -> Result<String, String> {
+            self.0.resolve(id)
+        }
+        fn ask_recipe(&self, id: &str) -> Option<AskRecipe> {
+            self.0.ask_recipe(id)
+        }
+        fn session_recipe(&self, id: &str) -> Option<SessionRecipe> {
+            self.0.session_recipe(id)
+        }
+        fn response_schema_option(&self, _id: &str) -> Option<Vec<String>> {
+            Some(vec!["--json-schema".to_owned()])
+        }
+    }
+
+    /// An engine that can be held to a JSON Schema is handed the step's shape
+    /// as one, on the question's line and on a session's line alike; a step
+    /// that declares no shape is handed none.
+    #[test]
+    fn a_step_with_a_shape_hands_it_to_an_engine_that_holds_to_one() {
+        let dir = scratch("holds-the-shape");
+        let bin = fake_engine(&dir);
+        let action = ExternalEngineAction::resolving_with(HoldsTheShape(Declares {
+            bin,
+            sessions: Some(knows_all_three()),
+        }))
+        .recording_to(Some(Ledger::open(dir.join("deposito")).expect("open the ledger")));
+        let shape = json!({"type": "object", "properties": {"answer": {"type": "string"}}, "required": ["answer"], "allow_extra": false});
+        let shaped = |session: Value| {
+            json!({
+                "tool": TOOL,
+                "stdin": format!("answer in this shape: {shape}"),
+                "timeout_secs": 20,
+                "answer_shape": shape,
+                "session": session,
+            })
+        };
+
+        let _ = action.execute(&shaped(json!("open")), &shared("corsa-forma", "scopri"));
+        let _ = action.execute(&step_that(json!("open")), &shared("corsa-senza", "scopri"));
+
+        let lines = invocations(&dir);
+        let schema = r#"--json-schema {"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"],"additionalProperties":false}"#;
+        assert!(lines[0].contains("--session-id") && lines[0].contains(schema), "«{}»", lines[0]);
+        assert!(!lines[1].contains("--json-schema"), "«{}»", lines[1]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

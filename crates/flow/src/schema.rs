@@ -43,6 +43,33 @@ impl SchemaError {
 }
 
 impl ValueSchema {
+    /// The same shape as a JSON Schema, for an engine that can be held to one
+    /// natively instead of being asked for it in the prompt alone.
+    pub fn json_schema(&self) -> Value {
+        match self {
+            ValueSchema::Any => serde_json::json!({}),
+            ValueSchema::Null => serde_json::json!({"type": "null"}),
+            ValueSchema::Boolean => serde_json::json!({"type": "boolean"}),
+            ValueSchema::Number => serde_json::json!({"type": "number"}),
+            ValueSchema::String => serde_json::json!({"type": "string"}),
+            ValueSchema::OneOf { values } => serde_json::json!({"enum": values}),
+            ValueSchema::Array { items } => serde_json::json!({"type": "array", "items": items.json_schema()}),
+            ValueSchema::Object {
+                properties,
+                required,
+                allow_extra,
+            } => serde_json::json!({
+                "type": "object",
+                "properties": properties
+                    .iter()
+                    .map(|(name, schema)| (name.clone(), schema.json_schema()))
+                    .collect::<serde_json::Map<String, Value>>(),
+                "required": required,
+                "additionalProperties": allow_extra,
+            }),
+        }
+    }
+
     pub fn validate(&self, value: &Value) -> Result<(), SchemaError> {
         self.validate_at(value, "$".to_owned())
     }
@@ -256,6 +283,35 @@ impl Error for SchemaError {}
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_shape_becomes_the_json_schema_that_holds_the_same_answers() {
+        let shape: ValueSchema = serde_json::from_value(serde_json::json!({
+            "type": "object",
+            "properties": {
+                "answer": {"type": "string"},
+                "moves": {"type": "array", "items": {"type": "any"}},
+                "verdict": {"type": "one_of", "values": ["yes", "no"]}
+            },
+            "required": ["answer"],
+            "allow_extra": false
+        }))
+        .expect("a shape");
+
+        assert_eq!(
+            shape.json_schema(),
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "answer": {"type": "string"},
+                    "moves": {"type": "array", "items": {}},
+                    "verdict": {"enum": ["yes", "no"]}
+                },
+                "required": ["answer"],
+                "additionalProperties": false
+            })
+        );
+    }
     use super::*;
     use serde_json::json;
 

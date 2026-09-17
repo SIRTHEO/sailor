@@ -245,6 +245,16 @@ impl actions::ToolResolver for Tools {
             .model_option()
     }
 
+    /// The same rule as the model option, for the schema of an answer.
+    fn response_schema_option(&self, id: &str) -> Option<Vec<String>> {
+        self.catalog
+            .live()
+            .into_iter()
+            .find(|loaded| loaded.descriptor.id == id)?
+            .descriptor
+            .response_schema_option()
+    }
+
     /// The same rule as the model option: what is not written is not there.
     fn spend_ceiling_option(&self, id: &str) -> Option<actions::reserve::CeilingOption> {
         let loaded = self
@@ -700,6 +710,18 @@ mod tests {
         let recipe = tools.ask_recipe("mute").expect("the recipe is there");
         assert!(recipe.usage.is_none());
         assert_eq!(recipe.args, vec!["-p"], "the rest of the recipe is intact");
+    }
+
+    /// Only an engine whose response shape takes the schema's text is handed
+    /// one: codex wants a file path and gemini a format name.
+    #[test]
+    fn only_the_engine_that_takes_a_schema_as_text_is_handed_one() {
+        let dir = temp_dir("schema-option");
+        let tools = Tools::new(Catalog::load(&[Source::Builtin]), machine(&dir));
+
+        assert_eq!(tools.response_schema_option("claude-code"), Some(vec!["--json-schema".to_owned()]));
+        assert_eq!(tools.response_schema_option("codex"), None);
+        assert_eq!(tools.response_schema_option("gemini-cli"), None);
     }
 
     /// The shipped `codex` recipe reaches the engine asking for the stream, and

@@ -77,6 +77,13 @@ pub trait ToolResolver: Send + Sync {
         None
     }
 
+    /// The options a JSON Schema's text is written after, when `id` can be held
+    /// to the shape of its answer natively. `None` leaves the shape to the
+    /// prompt and the check on the answer, as before.
+    fn response_schema_option(&self, _id: &str) -> Option<Vec<String>> {
+        None
+    }
+
     /// How `id` is told the most one call may spend, when its descriptor says.
     ///
     /// **`None` MEANS NO CEILING CAN BE IMPOSED ON IT**, and that is what turns
@@ -199,8 +206,14 @@ pub fn command_line_naming_model_and_ceiling(
     model: Option<(&[String], &str)>,
     ceiling: Option<(&[String], &str)>,
 ) -> Vec<String> {
+    command_line_with_options(recipe, &[model, ceiling])
+}
+
+/// The question's line with each option and its value written after the
+/// recipe's own options, in order.
+pub fn command_line_with_options(recipe: &AskRecipe, options: &[Option<(&[String], &str)>]) -> Vec<String> {
     let mut ask_args = recipe.args.clone();
-    for (option, value) in [model, ceiling].into_iter().flatten() {
+    for (option, value) in options.iter().flatten().copied() {
         ask_args.extend(option.iter().cloned());
         ask_args.push(value.to_owned());
     }

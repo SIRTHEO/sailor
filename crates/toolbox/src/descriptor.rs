@@ -945,6 +945,17 @@ impl Descriptor {
     /// The options a model's name is written after. A form without a value has
     /// nowhere to put the name, so it answers `None` as an undeclared
     /// capability does: neither can be told which model to answer with.
+    /// The options a JSON Schema is written after, when the descriptor declares
+    /// a response shape whose value is the schema's text (`unit: json_schema`).
+    /// A form that wants a file path, or a format name, is not this.
+    pub fn response_schema_option(&self) -> Option<Vec<String>> {
+        let forms = self.capabilities.get(RESPONSE_SHAPE)?.forms();
+        forms
+            .iter()
+            .find(|form| form.takes_value && !form.args.is_empty() && form.unit == "json_schema")
+            .map(|form| form.args.clone())
+    }
+
     pub fn model_option(&self) -> Option<Vec<String>> {
         let forms = self.capabilities.get(CHOOSE_MODEL)?.forms();
         let carries = |form: &&CapabilityForm| form.takes_value && !form.args.is_empty();
@@ -1085,6 +1096,7 @@ pub const ASK_WITHOUT_INTERACTION: &str = "ask_without_interaction";
 /// The name of the capability saying how an engine is told which model to
 /// answer with. The code reads a form; the options are the descriptor's.
 pub const CHOOSE_MODEL: &str = "choose_model";
+pub const RESPONSE_SHAPE: &str = "response_shape";
 
 /// A descriptor that says two different things about the same fact.
 ///

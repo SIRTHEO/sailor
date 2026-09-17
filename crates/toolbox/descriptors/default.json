@@ -241,7 +241,8 @@
         "response_shape": {
           "args": ["--json-schema"],
           "takes_value": true,
-          "note": "it takes a whole JSON schema, not a format name: the only one of the four that imposes the shape of the fields and not just the envelope"
+          "unit": "json_schema",
+          "note": "it takes a whole JSON schema, not a format name: the only one of the four that imposes the shape of the fields and not just the envelope. MEASURED 17/09/2026 on claude-haiku-4-5 with --output-format json: asked for a greeting sentence and a fact, `result` held only the object the schema describes, and `structured_output` the same object parsed"
         },
         "resume_session": [
           { "args": ["--resume"], "note": "the value is optional: without it, the picker opens" },
