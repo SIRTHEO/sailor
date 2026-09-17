@@ -163,6 +163,7 @@ pub(crate) fn record_the_call(
         &models::pricing::CallFacts {
             cli,
             model: reading.model.as_deref(),
+            requested_model: candidate.requested_model.as_deref(),
             counts: models::pricing::TokenCounts {
                 input: reading.input_tokens,
                 output: reading.output_tokens,
@@ -190,10 +191,8 @@ pub(crate) fn record_the_call(
         step_id: Some(record.step_id.clone()),
         purpose: EXTERNAL_ENGINE_ACTION.to_owned(),
         cli: cli.to_owned(),
-        // A step names the tool, not the model: nobody here *asks* for a model,
-        // and writing one down would be inventing it. Empty means «undeclared»,
-        // and the window shows it as such.
-        requested_model: String::new(),
+        // Empty means the step named no model for this engine.
+        requested_model: candidate.requested_model.clone().unwrap_or_default(),
         actual_model: reading.model.clone().unwrap_or_default(),
         // Turns come from the same output the tokens do, and they are the
         // quantity that explains why a chain of steps costs more than a single
@@ -535,6 +534,70 @@ printf '{"result":"the true answer","model":"modello-di-prova","total_cost_usd":
 
         // And the step's output is the text, not the envelope.
         assert_eq!(output["stdout"], "the true answer");
+    }
+
+    struct NamesAModel(Declares);
+
+    impl ToolResolver for NamesAModel {
+        fn resolve(&self, id: &str) -> Result<String, String> {
+            self.0.resolve(id)
+        }
+        fn ask_recipe(&self, id: &str) -> Option<AskRecipe> {
+            self.0.ask_recipe(id)
+        }
+        fn model_option(&self, _id: &str) -> Option<Vec<String>> {
+            Some(vec!["--model".to_owned()])
+        }
+    }
+
+    /// An engine that names no model in its answer is priced at the model the
+    /// step asked it for, and the row says which one that was.
+    #[test]
+    fn a_call_whose_engine_names_no_model_is_priced_at_the_model_asked_for() {
+        let dir = scratch("asked-for");
+        let price_list = dir.join("pricing.json");
+        std::fs::write(
+            &price_list,
+            r#"{"currency": "USD", "models": [
+                {"id": "the-model-asked", "input_per_million": 4.0, "output_per_million": 0.0}
+            ]}"#,
+        )
+        .expect("write the price list");
+        let bin = fake_engine(
+            &dir,
+            "motore",
+            r#"cat > /dev/null
+printf '{"result":"ok","usage":{"input_tokens":1000000,"output_tokens":0}}'"#,
+        );
+        let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
+        let recipe = AskRecipe {
+            usage: declaring_recipe().usage.map(|usage| UsageRecipe {
+                declared: Declared { model: None, ..usage.declared },
+                ..usage
+            }),
+            ..declaring_recipe()
+        };
+        let action = ExternalEngineAction::resolving_with(NamesAModel(Declares {
+            bin,
+            recipe: Some(recipe),
+        }))
+        .recording_to(Some(ledger));
+        let input = json!({
+            "tool": "motore-di-prova",
+            "model": {"motore-di-prova": "the-model-asked"},
+            "stdin": "ciao",
+            "timeout_secs": 10
+        });
+
+        with_price_list(Some(&price_list), || {
+            action.execute(&input, &shared("corsa-asked", "passo"))
+        })
+        .expect("the engine answers");
+
+        let calls = calls_in(&dir.join("deposito"));
+        assert_eq!(calls[0].actual_model, "");
+        assert_eq!(calls[0].requested_model, "the-model-asked");
+        assert_eq!(calls[0].cost_micros, Some(4_000_000));
     }
 
     /// The row of a call that crossed two models: the engine's own figure, and

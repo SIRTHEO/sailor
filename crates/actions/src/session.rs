@@ -376,6 +376,7 @@ mod resuming_instead_of_rediscovering {
             cooldown_secs: None,
             waits_for_a_person_when: Vec::new(),
             declared_usage: None,
+            requested_model: None,
             can_be_asked: true,
             why: None,
             ceiling: None,

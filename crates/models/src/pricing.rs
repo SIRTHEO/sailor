@@ -411,6 +411,8 @@ pub fn cost_micros(counts: TokenCounts, prices: PriceMicros) -> Option<i64> {
 pub struct CallFacts<'a> {
     pub cli: &'a str,
     pub model: Option<&'a str>,
+    /// The model the step asked this engine for, named on its command line.
+    pub requested_model: Option<&'a str>,
     pub counts: TokenCounts,
     /// How many models the engine counted apart; above one, the counts are
     /// the whole call's and the model is only the first named.
@@ -437,6 +439,9 @@ pub enum Rule {
     /// Several models counted apart and no figure from the engine: the whole
     /// call's tokens at the first model's price, a floor and declaredly so.
     MixedModelsPricedAsFirst,
+    /// The engine named no model and the step asked for one by name: the
+    /// tokens at the model asked for.
+    RequestedModel,
     /// The engine named no model: the tokens at the engine's assumed model.
     AssumedModel,
     /// Hardware, not an account: seconds of wall time at the pinned rate.
@@ -540,20 +545,26 @@ pub fn equivalent_cost(facts: &CallFacts<'_>, list: &PriceList) -> Priced {
         if named.is_some() {
             return unpriced(Rule::Unpriced);
         }
-        {
-            if let Some(entry) = engine
-                .and_then(|rules| rules.assumed_model.as_deref())
-                .and_then(|name| list.find(name))
-            {
-                let prices = entry.micros();
-                if let Some(micros) = cost_micros(facts.counts, prices) {
-                    return Priced {
-                        cost_micros: Some(micros),
-                        rule: Rule::AssumedModel,
-                        prices,
-                        priced_as: Some(entry.id.clone()),
-                    };
-                }
+        let requested = facts
+            .requested_model
+            .map(str::trim)
+            .filter(|name| !name.is_empty());
+        let fallbacks = [
+            (requested, Rule::RequestedModel),
+            (engine.and_then(|rules| rules.assumed_model.as_deref()), Rule::AssumedModel),
+        ];
+        for (name, rule) in fallbacks {
+            let Some(entry) = name.and_then(|name| list.find(name)) else {
+                continue;
+            };
+            let prices = entry.micros();
+            if let Some(micros) = cost_micros(facts.counts, prices) {
+                return Priced {
+                    cost_micros: Some(micros),
+                    rule,
+                    prices,
+                    priced_as: Some(entry.id.clone()),
+                };
             }
         }
     }

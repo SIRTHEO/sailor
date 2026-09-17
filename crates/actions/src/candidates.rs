@@ -120,6 +120,7 @@ impl ExternalEngineAction {
                     cooldown_secs: None,
                     waits_for_a_person_when: Vec::new(),
                     declared_usage: None,
+                    requested_model: None,
                     // A hand-written command has no descriptor: nothing
                     // declares it an engine, and the line is already withheld
                     // by the absent `id`.
@@ -274,6 +275,7 @@ impl ExternalEngineAction {
                             // line is written all the same, and says exactly
                             // that.
                             declared_usage: None,
+                            requested_model: None,
                             session: SessionRecipe::default(),
                             // Nor a ceiling, for the same reason: a person who
                             // wrote their own line did not ask for an option on
@@ -342,6 +344,7 @@ impl ExternalEngineAction {
                             cooldown_secs: recipe.cooldown_secs,
                             waits_for_a_person_when: recipe.waits_for_a_person_when,
                             declared_usage: recipe.usage.map(|usage| usage.declared),
+                            requested_model: option.as_ref().map(|(_, model)| (*model).clone()),
                             // We are inside the branch that found an `ask`
                             // recipe: this tool is an engine by definition.
                             can_be_asked: true,
@@ -409,6 +412,8 @@ pub(crate) struct Candidate {
     /// Where to read the usage in this engine's output. `None` when the
     /// descriptor declares none, or when the step wrote the options.
     pub(crate) declared_usage: Option<Declared>,
+    /// The model this step asked this engine for, when it named one.
+    pub(crate) requested_model: Option<String>,
     /// **THIS TOOL IS AN ENGINE**: its descriptor declares how a question is
     /// put to it (`ask`).
     ///

@@ -71,6 +71,7 @@ fn facts_of(call: &ModelCallRecord) -> CallFacts<'_> {
     CallFacts {
         cli: &call.cli,
         model: Some(call.actual_model.as_str()).filter(|name| !name.trim().is_empty()),
+        requested_model: Some(call.requested_model.as_str()).filter(|name| !name.trim().is_empty()),
         counts: TokenCounts {
             input: call.input_tokens,
             output: call.output_tokens,
@@ -198,7 +199,8 @@ mod tests {
     const LIST: &str = r#"{
       "currency": "USD",
       "models": [
-        {"id": "model-b", "input_per_million": 2.0, "output_per_million": 20.0, "cached_per_million": 0.2}
+        {"id": "model-b", "input_per_million": 2.0, "output_per_million": 20.0, "cached_per_million": 0.2},
+        {"id": "model-c", "input_per_million": 5.0, "output_per_million": 50.0}
       ],
       "engines": {
         "engine-a": {"assumed_model": "model-b", "unread_call_equivalent_micros": 7000},
@@ -305,6 +307,25 @@ mod tests {
         assert_eq!(by_id["tool"][1], 0);
         assert_eq!(by_id["declared"][1], Value::Null, "the engine's own figure is left alone");
         assert_eq!(by_id["priced"][1], 3);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The step asked for a model and the engine named none: the model asked
+    /// for is the one that served, not the engine's usual one.
+    #[test]
+    fn a_model_the_step_asked_for_prices_a_call_whose_engine_named_none() {
+        let dir = scratch("asked-for");
+        let ledger = Ledger::open(dir.join("ledger")).expect("a store of the test's own");
+        let mut asked = call("asked", "engine-a");
+        asked.requested_model = "model-c".to_owned();
+        asked.input_tokens = Some(1_000_000);
+        asked.output_tokens = Some(0);
+        ledger.record_model_call(&asked).unwrap();
+
+        let said = price_every_call(&ledger, &PriceList::parse(LIST).unwrap()).unwrap();
+
+        assert_eq!(said["priced_micros"], 5_000_000);
+        assert_eq!(said["by_rule"]["requested_model"], 1);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
