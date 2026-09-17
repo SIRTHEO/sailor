@@ -53,6 +53,15 @@ pub enum Pointer {
     /// that state the model as a *key* rather than a field. Without the name
     /// no price-list entry is found, and the cost stays unknown.
     FirstKey(Vec<String>),
+    /// **The name of the key whose counts are the ones read elsewhere**: of the
+    /// object at `keys`, the entry where every `(field, path)` pair holds the
+    /// same value as the body at `path`. An engine may count a helper call of
+    /// its own first; the counts on the row belong to one model, and this names
+    /// that one. No match, or more than one, leaves the name unknown.
+    KeyWhose {
+        keys: Vec<String>,
+        whose: Vec<(String, Vec<String>)>,
+    },
 }
 
 /// Which pipe the engine states its usage on. Ollama prints its counts on
@@ -241,7 +250,7 @@ pub fn read_text(said: &str, pointer: &Pointer) -> Option<String> {
 pub fn read_scalar(said: &str, pointer: &Pointer) -> Option<String> {
     match pointer {
         Pointer::Pattern(pattern) => first_group(said, pattern),
-        Pointer::FirstKey(_) => read_text(said, pointer),
+        Pointer::FirstKey(_) | Pointer::KeyWhose { .. } => read_text(said, pointer),
         Pointer::Path(_) => {
             let body = serde_json::from_str::<serde_json::Value>(said.trim()).ok()?;
             let value = walk(&body, Some(pointer))?;
@@ -335,6 +344,16 @@ fn read_name(body: &serde_json::Value, pointer: Option<&Pointer>) -> Option<Stri
             }
             here.as_object()?.keys().next().cloned()
         }
+        Pointer::KeyWhose { keys, whose } => {
+            let at = |path: &[String]| path.iter().try_fold(body, |here, key| here.get(key));
+            let mut matching = at(keys)?.as_object()?.iter().filter(|(_, counts)| {
+                whose
+                    .iter()
+                    .all(|(field, path)| at(path).is_some_and(|said| counts.get(field) == Some(said)))
+            });
+            let (name, _) = matching.next()?;
+            matching.next().is_none().then(|| name.clone())
+        }
         other => walk(body, Some(other)).and_then(as_text),
     }
 }
@@ -342,8 +361,9 @@ fn read_name(body: &serde_json::Value, pointer: Option<&Pointer>) -> Option<Stri
 /// How many models the answer counts apart. Only the map shape can say: any
 /// other pointer leaves it unknown, which is not the same as one.
 fn count_names(body: &serde_json::Value, pointer: Option<&Pointer>) -> Option<u64> {
-    let Pointer::FirstKey(keys) = pointer? else {
-        return None;
+    let keys = match pointer? {
+        Pointer::FirstKey(keys) | Pointer::KeyWhose { keys, .. } => keys,
+        _ => return None,
     };
     let mut here = body;
     for key in keys {

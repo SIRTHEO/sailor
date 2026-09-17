@@ -341,6 +341,14 @@ pub enum Where {
     /// without the name no price-list entry is found: the cost stays unknown even
     /// with every token counted and a correct price list to hand.
     FirstKeyOf { first_key_of: Vec<String> },
+    /// `{"key_of": ["modelUsage"], "whose": {"inputTokens": ["usage", "input_tokens"]}}`
+    /// — the name of the key whose fields hold the values read at those paths:
+    /// the model the counts on the row belong to, when the engine counts a
+    /// helper call of its own before it.
+    KeyWhose {
+        key_of: Vec<String>,
+        whose: std::collections::BTreeMap<String, Vec<String>>,
+    },
 }
 
 /// Where the question's text goes.

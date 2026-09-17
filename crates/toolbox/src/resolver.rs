@@ -389,6 +389,13 @@ fn pointer(place: &crate::descriptor::Where) -> actions::Pointer {
     match place {
         crate::descriptor::Where::Path(keys) => actions::Pointer::Path(keys.clone()),
         crate::descriptor::Where::Pattern(pattern) => actions::Pointer::Pattern(pattern.clone()),
+        crate::descriptor::Where::KeyWhose { key_of, whose } => actions::Pointer::KeyWhose {
+            keys: key_of.clone(),
+            whose: whose
+                .iter()
+                .map(|(field, path)| (field.clone(), path.clone()))
+                .collect(),
+        },
         crate::descriptor::Where::FirstKeyOf { first_key_of } => {
             actions::Pointer::FirstKey(first_key_of.clone())
         }

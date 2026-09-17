@@ -30,6 +30,7 @@ const REAL_OUTPUT: &str = r#"{
   "modelUsage": {
     "claude-opus-5[1m]": {
       "inputTokens": 2,
+      "outputTokens": 4,
       "costUSD": 0.128541,
       "canonicalModel": "claude-opus-5"
     }
@@ -76,6 +77,45 @@ const A_CALL_ACROSS_TWO_MODELS: &str = r#"{
   },
   "subagent_stats": { "spawned": 4 },
   "result": "ok",
+  "type": "result"
+}"#;
+
+/// A real output where the engine's own helper call is counted first: its
+/// model is the first key of `modelUsage`, and the counts in `usage` belong to
+/// the second, the model the step asked for.
+const A_HELPER_COUNTED_FIRST: &str = r#"{
+  "stop_reason": "end_turn",
+  "num_turns": 1,
+  "total_cost_usd": 0.0274687,
+  "usage": {
+    "input_tokens": 10,
+    "cache_creation_input_tokens": 12387,
+    "cache_read_input_tokens": 13607,
+    "output_tokens": 68,
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 12387,
+      "ephemeral_5m_input_tokens": 0
+    }
+  },
+  "modelUsage": {
+    "claude-haiku-4-5-20251001": {
+      "inputTokens": 919,
+      "outputTokens": 13,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "costUSD": 0.000984,
+      "canonicalModel": "claude-haiku-4-5"
+    },
+    "claude-haiku-4-5": {
+      "inputTokens": 10,
+      "outputTokens": 68,
+      "cacheReadInputTokens": 13607,
+      "cacheCreationInputTokens": 12387,
+      "costUSD": 0.0264847,
+      "canonicalModel": "claude-haiku-4-5"
+    }
+  },
+  "result": "stored",
   "type": "result"
 }"#;
 
@@ -271,4 +311,18 @@ fn the_prompt_flag_stays_glued_to_the_prompt_it_introduces() {
         Some("--print"),
         "nothing gets between the flag introducing the question and the question"
     );
+}
+
+#[test]
+fn the_model_named_is_the_one_the_counts_belong_to() {
+    let usage = shipped_only()
+        .ask_recipe("claude-code")
+        .and_then(|recipe| recipe.usage)
+        .expect("claude-code declares how its usage is read");
+
+    let reading = models::usage::read_declared(A_HELPER_COUNTED_FIRST, &usage.declared);
+
+    assert_eq!(reading.input_tokens, Some(10));
+    assert_eq!(reading.output_tokens, Some(68));
+    assert_eq!(reading.model.as_deref(), Some("claude-haiku-4-5"));
 }
