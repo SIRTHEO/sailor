@@ -260,11 +260,13 @@
   "engines": {
     "codex": {
       "assumed_model": "gpt-5-codex",
-      "unread_call_equivalent_micros": 41000
+      "unread_call_equivalent_micros": 41000,
+      "input_holds_cached": true
     },
     "codex-repair": {
       "assumed_model": "gpt-5-codex",
-      "unread_call_equivalent_micros": 41000
+      "unread_call_equivalent_micros": 41000,
+      "input_holds_cached": true
     },
     "agy": {
       "assumed_model": "gemini-3-pro",

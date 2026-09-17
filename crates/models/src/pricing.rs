@@ -83,6 +83,9 @@ pub struct EnginePricing {
     /// For a call that left no reading at all: a pinned figure, taken from the
     /// engine's measured calls and written here so it does not move.
     pub unread_call_equivalent_micros: Option<i64>,
+    /// The engine's input count already holds the tokens it read from the
+    /// cache, so they are taken out before the input is priced.
+    pub input_holds_cached: bool,
 }
 
 /// The whole list, with the currency declared once.
@@ -275,6 +278,10 @@ fn parse_engine(value: &serde_json::Value) -> EnginePricing {
             .map(str::to_owned),
         per_wall_second_micros: whole("per_wall_second_micros"),
         unread_call_equivalent_micros: whole("unread_call_equivalent_micros"),
+        input_holds_cached: value
+            .get("input_holds_cached")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
     }
 }
 
@@ -459,6 +466,21 @@ fn nothing_read(facts: &CallFacts<'_>) -> bool {
         && facts.counts.cache_write_long.is_none()
 }
 
+/// The counts with the cached tokens outside the input. With the cache unknown,
+/// what is left of an input that holds it is unknown too.
+fn counts_apart(counts: TokenCounts, input_holds_cached: bool) -> TokenCounts {
+    if !input_holds_cached {
+        return counts;
+    }
+    TokenCounts {
+        input: counts
+            .input
+            .zip(counts.cached)
+            .and_then(|(input, cached)| input.checked_sub(cached)),
+        ..counts
+    }
+}
+
 /// The equivalent cost of one call, by the first rule that applies, in the
 /// order of [`Rule`]. Deterministic: the same facts and the same list give
 /// the same figure, whoever asks and whenever.
@@ -486,6 +508,10 @@ pub fn equivalent_cost(facts: &CallFacts<'_>, list: &PriceList) -> Priced {
         return flat(0, Rule::AnsweredNothing);
     }
     let engine = list.engine(facts.cli);
+    let facts = &CallFacts {
+        counts: counts_apart(facts.counts, engine.is_some_and(|rules| rules.input_holds_cached)),
+        ..facts.clone()
+    };
     let has_tokens = facts.counts.input.is_some() || facts.counts.output.is_some();
     let named = facts.model.map(str::trim).filter(|name| !name.is_empty());
     let whole_call = !matches!(facts.models_named, Some(named) if named > 1);
@@ -556,7 +582,8 @@ mod equivalent {
       "engines": {
         "engine-a": {"assumed_model": "model-b", "unread_call_equivalent_micros": 7000},
         "local-a": {"per_wall_second_micros": 14},
-        "engine-c": {}
+        "engine-c": {},
+        "engine-inclusive": {"assumed_model": "model-a", "input_holds_cached": true}
       },
       "not_models": ["hammer"]
     }"#;
@@ -603,6 +630,67 @@ mod equivalent {
         assert_eq!(priced.rule, Rule::AssumedModel);
         assert_eq!(priced.cost_micros, Some(2_000_000));
         assert_eq!(priced.priced_as.as_deref(), Some("model-b"));
+    }
+
+    fn codex_counts() -> TokenCounts {
+        TokenCounts {
+            input: Some(24_894),
+            output: Some(5),
+            cached: Some(11_008),
+            cache_write: Some(0),
+            ..TokenCounts::default()
+        }
+    }
+
+    #[test]
+    fn an_input_that_holds_its_cache_pays_the_cached_part_once() {
+        let priced = equivalent_cost(
+            &CallFacts {
+                cli: "engine-inclusive",
+                model: Some("a"),
+                counts: TokenCounts {
+                    cache_write: None,
+                    ..codex_counts()
+                },
+                ..CallFacts::default()
+            },
+            &list(),
+        );
+        // 13,886 uncached at 1.00, 11,008 cached at 0.10, 5 out at 10.00.
+        assert_eq!(priced.cost_micros, Some(15_037));
+    }
+
+    #[test]
+    fn an_input_that_holds_an_unknown_cache_is_not_priced_whole() {
+        let priced = equivalent_cost(
+            &CallFacts {
+                cli: "engine-inclusive",
+                model: Some("a"),
+                counts: TokenCounts {
+                    cached: None,
+                    cache_write: None,
+                    ..codex_counts()
+                },
+                ..CallFacts::default()
+            },
+            &list(),
+        );
+        assert_ne!(priced.cost_micros, Some(24_944), "the whole input at the input rate");
+    }
+
+    #[test]
+    fn the_shipped_codex_engine_pays_its_cached_input_once() {
+        let priced = equivalent_cost(
+            &CallFacts {
+                cli: "codex",
+                counts: codex_counts(),
+                ..CallFacts::default()
+            },
+            &shipped(),
+        );
+        assert_eq!(priced.priced_as.as_deref(), Some("gpt-5-codex"));
+        // 13,886 uncached at 1.25, 11,008 cached at 0.125, 5 out at 10.00.
+        assert_eq!(priced.cost_micros, Some(18_784));
     }
 
     #[test]
