@@ -946,6 +946,50 @@ fn temp_path_for(target: &Path) -> PathBuf {
 mod tests {
     use super::*;
 
+    /// The flow under measurement writes code in a sandbox that may write only
+    /// inside its tree, so the build it runs must live there too: a shared
+    /// CARGO_TARGET_DIR inherited from whoever launched the bench denied cargo
+    /// in every run that wrote on the first baseline.
+    #[test]
+    fn the_bench_builds_the_flow_under_measurement_inside_its_own_tree() {
+        let flow = builtin_registry()
+            .remove("run-one-bench-task")
+            .expect("shipped")
+            .expect("loads");
+        let develop = flow
+            .graph
+            .steps()
+            .iter()
+            .find(|step| step.id == "develop")
+            .expect("a develop step");
+        let command = develop.with.as_ref().and_then(|with| with["command"].as_str()).expect("a command").to_owned();
+        let dir = scratch("bench-target");
+        let tree = dir.join("tree");
+        fs::create_dir_all(&tree).expect("a tree");
+        let seen = dir.join("seen");
+        let fake = dir.join("fake-sailor");
+        fs::write(&fake, format!("#!/bin/sh\nprintf '%s' \"$CARGO_TARGET_DIR\" > {}\n", seen.display())).expect("a fake sailor");
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).expect("executable");
+
+        let status = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(&command)
+            .current_dir(&tree)
+            .env("CARGO_TARGET_DIR", dir.join("shared-target"))
+            .env("SAILOR", &fake)
+            .env("LOGS", &dir)
+            .env("TASK", "t")
+            .env("RUN", "1")
+            .env("PROMPT", "p")
+            .status()
+            .expect("the step's command runs");
+
+        assert!(status.success());
+        let tree = tree.canonicalize().expect("the tree");
+        assert_eq!(fs::read_to_string(&seen).expect("the fake sailor ran"), tree.join("target").display().to_string());
+    }
+
     /// **A FOLDER THAT REFUSED THE READING IS NOT A FOLDER WITH NO FLOWS**, and
     /// one nobody made is: only the first is a trouble to say.
     #[test]
