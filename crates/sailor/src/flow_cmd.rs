@@ -25,6 +25,7 @@ mod extensions;
 mod hazards;
 mod relocate;
 mod roles;
+mod tokens;
 mod run_and_resume;
 pub mod seeds;
 #[cfg(test)]
@@ -86,6 +87,8 @@ fn dispatch(args: &[String], sources: &[FlowSource]) -> Result<String, String> {
         }
         [command, name] if command == "new" => new_flow(sources, name),
         [command, name] if command == "delete" => delete_flow(sources, name),
+        [command, name] if command == "tokens" => tokens::tokens_of(name, None),
+        [command, name, runs] if command == "tokens" => tokens::tokens_of(name, Some(runs)),
         [command] if command == "role" => roles::roles(),
         [command, name, tools] if command == "role" => roles::set_role(name, tools, None),
         [command, name, tools, account] if command == "role" => {
@@ -405,6 +408,10 @@ pub const USAGE: &[Form] = &[
     Form {
         form: "sailor flow delete <name>",
         says_key: "cli.flow.form.delete",
+    },
+    Form {
+        form: "sailor flow tokens <name> [runs]",
+        says_key: "cli.flow.form.tokens",
     },
     Form {
         form: "sailor flow role [<name> <tool,...> [account]]",
