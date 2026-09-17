@@ -451,12 +451,12 @@ fn leave_mandate(args: &[String], from: &mut impl std::io::Read) -> Result<i32, 
     if text.trim().is_empty() {
         return Err(catalogue::say("cli.terminal.nothing_to_hand_on", &[]));
     }
-    let written = deposited(&options, &tty, &text)?;
+    let (head, bytes) = deposited(&options, &tty, &text)?;
     println!(
         "{}",
         catalogue::say(
             "cli.terminal.mandate_left",
-            &[("tty", &tty), ("head", &written)]
+            &[("tty", &tty), ("head", &head), ("bytes", &bytes.to_string())]
         )
     );
     Ok(0)
@@ -498,7 +498,10 @@ fn pass_mandate(
 /// Whatever the session did not have to know is filled in here: which tree,
 /// which terminal, which store. Everything else is its own judgment, and a
 /// field left blank is refused while its author is still alive to be asked.
-fn deposited(options: &[(String, String)], tty: &str, text: &str) -> Result<String, String> {
+///
+/// Answers the head it was written on and the bytes of the work the session
+/// wrote, the one part a successor reads that no command could fill.
+fn deposited(options: &[(String, String)], tty: &str, text: &str) -> Result<(String, usize), String> {
     let mut written: serde_json::Value = serde_json::from_str(text).map_err(|error| {
         catalogue::say("cli.terminal.mandate_shape", &[("why", &error.to_string())])
     })?;
@@ -520,8 +523,9 @@ fn deposited(options: &[(String, String)], tty: &str, text: &str) -> Result<Stri
     for (name, value) in read_off_the_store(&store_root(options)?, tty, &tree, declared.as_deref()) {
         object.insert(name, value);
     }
+    let bytes = written.get("work").map_or(0, |work| work.to_string().len());
     let answer = actions::mandate::deposited(&written).map_err(|error| error.said)?;
-    Ok(answer["head"].as_str().unwrap_or_default().to_owned())
+    Ok((answer["head"].as_str().unwrap_or_default().to_owned(), bytes))
 }
 
 /// What the store and the session's own record say about the session on this
@@ -922,6 +926,40 @@ mod tests {
 
         assert!(refusal.contains("written.session"), "{refusal}");
         let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// **THE ASK SHOWS THE SHAPE THAT IS ACCEPTED.** A shape found by trial costs a
+    /// turn over a full context at every refusal: the object the ask prints, in
+    /// every language it is printed in, is deposited as it stands.
+    #[test]
+    fn the_object_the_ask_shows_is_a_mandate_that_is_accepted() {
+        for language in ["en", "it"] {
+            let directory = scratch(&format!("mandate-shown-{language}"));
+            let tree = directory.join("tree");
+            std::fs::create_dir_all(&tree).expect("a tree");
+            a_session_announced(&directory, &tree, "s-1");
+            let catalogue: serde_json::Value = serde_json::from_str(
+                &std::fs::read_to_string(
+                    Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../i18n/{language}.json")),
+                )
+                .expect("the catalogue"),
+            )
+            .expect("json");
+            let ask = catalogue["cli.session.the_mandate_is_asked_for"].as_str().expect("the ask");
+            let shown = ask
+                .lines()
+                .find_map(|line| line.strip_prefix('`')?.strip_suffix('`')?.starts_with('{').then_some(line))
+                .map(|line| line.trim_matches('`'))
+                .expect("the ask shows an object on a line of its own");
+            let mut text: serde_json::Value = serde_json::from_str(shown).expect("the object shown is JSON");
+            text["tree"] = serde_json::json!(tree.display().to_string());
+            text["engine"] = serde_json::json!("a-command-line");
+            let written = words(&["--tty", "ttys004", "--store", directory.to_str().expect("a path")]);
+
+            leave_mandate(&written, &mut text.to_string().as_bytes())
+                .unwrap_or_else(|refusal| panic!("{language}: the shape shown is refused: {refusal}"));
+            let _ = std::fs::remove_dir_all(&directory);
+        }
     }
 
     /// The ask names the command line it was written for; the mandate that
