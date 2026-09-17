@@ -28,6 +28,9 @@ use std::time::Duration;
 
 const ROLES_COLLECTION: &str = "roles";
 
+/// Set on every engine a flow starts, holding the run it belongs to.
+pub const RUN_ENV: &str = "SAILOR_RUN";
+
 #[derive(Deserialize)]
 struct Role {
     tools: Vec<String>,
@@ -450,7 +453,12 @@ fn compose(
     // the environment of whoever opened the terminal — reading the
     // neighbour's home, while `sailor run` took the same engine into its own.
     // The profile sits **under** `spec.env`: a variable written in the step wins.
-    let equipment = current_equipment_asking_for(bin, &spec.env, candidate.account.as_deref());
+    let mut equipment = current_equipment_asking_for(bin, &spec.env, candidate.account.as_deref());
+    // The engine's own hooks read this to know they fire inside a flow's call
+    // and not in the terminal's session.
+    if let Some(record) = record {
+        equipment.env.insert(RUN_ENV.to_owned(), record.run_id.clone());
+    }
     Prepared {
         invocation: EngineInvocation {
             bin: bin.clone(),

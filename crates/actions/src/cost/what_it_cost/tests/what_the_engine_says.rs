@@ -179,3 +179,29 @@ fn a_refusal_word_the_engine_wrote_itself_is_still_a_refusal() {
 
     assert_eq!(error.class, "engine_exhausted");
 }
+
+/// The engine a flow starts carries the run it belongs to, so its own hooks
+/// can tell a flow's call from the terminal's session.
+#[test]
+fn an_engine_a_flow_starts_knows_the_run_it_belongs_to() {
+    let dir = scratch("knows-its-run");
+    let seen = dir.join("seen-run");
+    let bin = fake_engine(
+        &dir,
+        "motore-che-guarda",
+        &format!("cat > /dev/null\nprintf '%s' \"$SAILOR_RUN\" > {}\nprintf '{{\"result\":\"ok\"}}'", seen.display()),
+    );
+    let ledger = Ledger::open(dir.join("deposito")).expect("open the ledger");
+    let action = ExternalEngineAction::resolving_with(Declares {
+        bin,
+        recipe: Some(declaring_recipe()),
+    })
+    .recording_to(Some(ledger));
+    let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
+
+    with_price_list(None, || action.execute(&input, &shared("corsa-che-lancia", "passo")))
+        .expect("the engine answers");
+
+    assert_eq!(std::fs::read_to_string(&seen).expect("the engine wrote it"), "corsa-che-lancia");
+}
+

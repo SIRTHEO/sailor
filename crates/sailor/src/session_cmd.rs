@@ -153,6 +153,13 @@ fn dispatch(args: &[String]) -> Result<Report, String> {
         String::new()
     };
     let payload = Payload::parse(&raw)?;
+    // A hook firing inside an engine a flow started speaks for that call, not
+    // for the terminal it inherited: it takes no mandate and starts no flow.
+    if matches!(verb, "open" | "event")
+        && std::env::var_os(actions::RUN_ENV).is_some_and(|run| !run.is_empty())
+    {
+        return Ok(Report::spoken(String::new()));
+    }
 
     // **ONLY WHOEVER SPEAKS OF A TERMINAL DEMANDS ONE.** `list` and `census`
     // speak of all of them: asking them for a tty makes them fail wherever the

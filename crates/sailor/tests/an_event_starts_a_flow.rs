@@ -352,3 +352,59 @@ fn a_session_that_starts_is_judged_against_the_flows_that_watch_it() {
     assert_eq!(ours.verdict, DEFERRED);
 }
 
+fn a_waiting_mandate_for(ledger_dir: &std::path::Path, tty: &str) -> PathBuf {
+    let path = ledger_dir.join("mandates").join(format!("{tty}.json"));
+    std::fs::create_dir_all(path.parent().expect("a folder")).expect("the mandates folder");
+    let mandate = json!({
+        "written": {"tree": "", "tty": tty, "session": "the-session-before", "engine": "claude-code",
+                    "tokens": 1, "at": 1, "branch": "b", "head": "h", "uncommitted": "u"},
+        "work": {"goal": "g", "asked": "a", "next": "n"}
+    });
+    std::fs::write(&path, mandate.to_string()).expect("the mandate");
+    path
+}
+
+fn open_a_session(scratch: &Scratch, tty: &str, run: Option<&str>) {
+    let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_sailor"));
+    command
+        .args(["session", "open", "--tty", tty, "--store"])
+        .arg(scratch.0.join("sessions.db"))
+        .env("SAILOR_FLOWS", scratch.0.join("flows"))
+        .env("SAILOR_LEDGER", &scratch.0)
+        .env_remove("SAILOR_RUN")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    if let Some(run) = run {
+        command.env("SAILOR_RUN", run);
+    }
+    let mut child = command.spawn().expect("sailor starts");
+    use std::io::Write;
+    child
+        .stdin
+        .take()
+        .expect("a stdin")
+        .write_all(br#"{"session_id":"a-child-or-a-person","hook_event_name":"SessionStart","cwd":"/a/tree"}"#)
+        .expect("the payload is written");
+    assert!(child.wait().expect("sailor ends").success());
+}
+
+/// **A HOOK FIRED INSIDE A FLOW'S OWN ENGINE CALL IS NOT THE TERMINAL'S
+/// SESSION.** A `claude -p` a flow starts inherits the terminal and runs the
+/// same hooks: it took the mandate the terminal's own successor was owed, 36
+/// times in three days. The control, with no run in the environment, is the
+/// successor, and takes it.
+#[test]
+fn a_session_a_flow_started_takes_no_mandate_and_the_terminals_own_does() {
+    let scratch = Scratch::new("child-hook");
+    let child_mandate = a_waiting_mandate_for(&scratch.0, "ttys903");
+    let own_mandate = a_waiting_mandate_for(&scratch.0, "ttys904");
+
+    open_a_session(&scratch, "ttys903", Some("a-flow-run-1"));
+    open_a_session(&scratch, "ttys904", None);
+
+    let taken = |path: &PathBuf| sessions::mandate::read(path).expect("still on disk").taken.is_some();
+    assert!(!taken(&child_mandate), "a flow's engine call took the terminal's mandate");
+    assert!(taken(&own_mandate), "the terminal's own successor takes its mandate");
+}
+

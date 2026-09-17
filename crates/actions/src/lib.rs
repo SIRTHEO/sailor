@@ -71,7 +71,7 @@ pub use models::usage::{
 };
 
 pub use cost::{current_price_list, price_list_from};
-pub use engine::{resolve_role, ExternalEngineAction};
+pub use engine::{resolve_role, ExternalEngineAction, RUN_ENV};
 pub use equipment::{
     equipment_asking_for, equipment_for, equipment_with_keys, equipment_with_keys_and_disk,
     equipment_with_keys_disk_and_keychain,
