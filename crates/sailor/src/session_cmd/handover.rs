@@ -122,7 +122,7 @@ fn filing_from(
     store: &std::path::Path,
     tty: &str,
 ) -> Option<String> {
-    for home in homes_in(catalog, env) {
+    for (_, home) in homes_in(catalog, env) {
         let dropped = sessions::mandate::dropped_in(&home, tty);
         let Ok(text) = std::fs::read_to_string(&dropped) else {
             continue;
@@ -154,7 +154,7 @@ fn filing_from(
 fn homes_in(
     catalog: &toolbox::Catalog,
     env: &std::collections::BTreeMap<String, String>,
-) -> Vec<std::path::PathBuf> {
+) -> Vec<(String, std::path::PathBuf)> {
     let home = env.get("HOME").cloned().unwrap_or_default();
     catalog
         .live()
@@ -163,22 +163,31 @@ fn homes_in(
             let hooks = loaded.descriptor.session_hooks.as_ref()?;
             let root = env.get(&hooks.file.root_var).map(String::as_str);
             let file = hooks.file.path(root, &home)?;
-            file.parent().map(std::path::Path::to_path_buf)
+            let at = file.parent().map(std::path::Path::to_path_buf)?;
+            Some((loaded.descriptor.id.clone(), at))
         })
         .collect()
 }
 
-/// Where this session is told to leave what its shell cannot file. The first
-/// home is the one a session of that line writes to; with no line declared,
-/// the ask names nothing and the typed form is the only way.
+/// Where this session is told to leave what its shell cannot file.
+///
+/// **THE LINE IS THE ONE THE GRAFT DECLARES, NOT THE FIRST ON THE LIST.** A
+/// session of one line carries the variables of another — `CODEX_HOME` is set
+/// in a Claude session under Orca — so a home picked by order names a
+/// directory this session cannot write.
 fn the_drop_for(
     catalog: &toolbox::Catalog,
     env: &std::collections::BTreeMap<String, String>,
+    line: Option<&str>,
     tty: &str,
 ) -> String {
-    homes_in(catalog, env)
-        .first()
-        .map(|home| sessions::mandate::dropped_in(home, tty).display().to_string())
+    let homes = homes_in(catalog, env);
+    let found = match line {
+        Some(id) => homes.iter().find(|(known, _)| known == id),
+        None => homes.first(),
+    };
+    found
+        .map(|(_, home)| sessions::mandate::dropped_in(home, tty).display().to_string())
         .unwrap_or_default()
 }
 
@@ -227,7 +236,8 @@ pub(super) fn the_ask_still_standing(
     // answered by the mandate that belongs to it.
     let machine = toolbox::Machine::current();
     let catalog = toolbox::Catalog::load(&toolbox::default_sources(&machine));
-    let drop = the_drop_for(&catalog, &machine.env, tty);
+    let line = request.options.get("cli").map(String::as_str);
+    let drop = the_drop_for(&catalog, &machine.env, line, tty);
     the_ask_of(ledger, ledger.directory(), tty, session, &drop)
 }
 
@@ -309,6 +319,36 @@ mod tests {
             .collect()
     }
 
+    /// **A SESSION CARRIES THE VARIABLES OF LINES IT IS NOT.** Under Orca a
+    /// Claude session has `CODEX_HOME` set, so a letterbox picked by the order
+    /// of the list names a directory that session cannot write. The graft
+    /// declares which line is calling, and that is the one asked.
+    #[test]
+    fn the_letterbox_belongs_to_the_line_the_graft_declares() {
+        let env = env_of(&[("HOME", "/home/whoever"), ("CODEX_HOME", "/elsewhere/codex")]);
+        let homes = homes_in(&shipped(), &env);
+        let (first, _) = homes.first().expect("some line declares a home");
+
+        for (id, _) in &homes {
+            let said = the_drop_for(&shipped(), &env, Some(id), "ttys004");
+            assert!(
+                said.contains("ttys004"),
+                "the line «{id}» is asked for its own letterbox: {said}"
+            );
+            if id != first {
+                assert_ne!(
+                    said,
+                    the_drop_for(&shipped(), &env, Some(first), "ttys004"),
+                    "«{id}» is not sent to the letterbox of «{first}»"
+                );
+            }
+        }
+        assert!(
+            the_drop_for(&shipped(), &env, Some("a-line-nobody-ships"), "ttys004").is_empty(),
+            "a line nobody declares is named no letterbox at all"
+        );
+    }
+
     /// **A DEPOSIT THAT NEEDS A PERSON IS NOT A RELAY.** The session's own shell
     /// is refused the store by the sandbox it runs in, so the one thing the
     /// relay is built on — a session handing on when it fills — was the one
@@ -328,7 +368,8 @@ mod tests {
         let line = homes_in(&shipped(), &env)
             .into_iter()
             .next()
-            .expect("a command line declares where its home is");
+            .expect("a command line declares where its home is")
+            .1;
         let dropped = sessions::mandate::dropped_in(&line, "ttys009");
         std::fs::create_dir_all(dropped.parent().expect("the letterbox has a parent"))
             .expect("the letterbox");
@@ -366,7 +407,8 @@ mod tests {
         let line = homes_in(&shipped(), &env)
             .into_iter()
             .next()
-            .expect("a command line declares where its home is");
+            .expect("a command line declares where its home is")
+            .1;
         let dropped = sessions::mandate::dropped_in(&line, "ttys009");
         std::fs::create_dir_all(dropped.parent().expect("the letterbox has a parent"))
             .expect("the letterbox");
