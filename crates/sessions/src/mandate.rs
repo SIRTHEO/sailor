@@ -12,7 +12,6 @@ use std::path::{Path, PathBuf};
 /// Where the mandates of a store live.
 pub const MANDATES: &str = "mandates";
 
-/// The letterbox in a command line's own home.
 const DROPPED: &str = "sailor-mandates";
 
 /// What Sailor fills in at the moment the mandate is asked for.
@@ -202,13 +201,7 @@ pub fn address_in(store: &Path, tty: &str) -> PathBuf {
     store.join(MANDATES).join(format!("{}.json", tty.replace('/', "-")))
 }
 
-/// Where a session leaves a mandate it cannot file itself.
-///
-/// **A SESSION'S SHELL DOES NOT REACH THE STORE.** It runs under a sandbox the
-/// store sits outside of, so a session that filled up could not hand on without
-/// a person to run the deposit for it. A command line's own home is the one
-/// place the session can write and the hook can read, and the hook runs outside
-/// that sandbox.
+/// Where a session leaves a mandate its own shell cannot file.
 pub fn dropped_in(home: &Path, tty: &str) -> PathBuf {
     home.join(DROPPED)
         .join(format!("{}.json", tty.replace('/', "-")))
