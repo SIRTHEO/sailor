@@ -12,3 +12,11 @@ desktop/src-tauri/target/
 *.lock
 Cargo.lock
 desktop/package-lock.json
+
+# Renders and window mock-ups. `design/` also holds a-single-delivery.md, which
+# is prose about how the product is delivered and stays indexed; these are
+# pictures of a window and the HTML that drew them. sailor-la-finestra.html
+# alone is 2.5 MB, a seventh of every tracked byte in the tree.
+design/rendered/
+design/*.html
+design/canvas.json
