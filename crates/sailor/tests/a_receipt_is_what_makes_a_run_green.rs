@@ -2,7 +2,7 @@
 //! own words and the gate decides from them. Not a judge itself — it opens no
 //! source, it drives the gate — so it carries no seed and no receipt.
 
-use sailor::ratchet_cmd::{judges_in, verdict_of, Gate, Handed, Verdict};
+use sailor::ratchet_cmd::{blind_checks_in, judges_in, verdict_of, Gate, Handed, Verdict};
 
 /// The element the perimeter must contain: a judge that walked can count it.
 const SENTINEL: &str = "the sentinel this perimeter demands";
@@ -200,4 +200,41 @@ fn the_finder_reaches_one_of_the_three_places_a_judge_can_live() {
     assert_eq!(named.len(), 1, "one of the three, and no more: {named:?}");
 
     let _ = std::fs::remove_dir_all(&root);
+}
+
+/// What a judge that walked hands in when it also proves it can say it did not:
+/// the cure for blind gates asked every judge for that proof, and a fixture
+/// driving the blind branch prints the production line from inside it.
+fn a_judge_that_walked_and_proved_it_can_say_it_did_not() -> String {
+    format!(
+        "running 4 tests\n{} nothing to ask\n{} 760 sources holding {SENTINEL}{}760 paths git \
+         tracks\nok.",
+        workspace::MEASURED_NOTHING,
+        workspace::MEASURED,
+        workspace::AGAINST
+    )
+}
+
+/// **THE PROOF THAT A JUDGE IS NOT PUNISHED FOR PROVING ITSELF.** Reading the
+/// blind line before the receipt made the better judge the worse-reported one:
+/// `nothing_reserved_is_tracked` read 760 tracked paths on every run and was
+/// recorded blind on every run, so the seed it feeds could never reach zero and
+/// the run never closed clean.
+#[test]
+fn a_judge_that_measured_is_green_even_where_one_of_its_checks_could_not() {
+    let both = a_judge_that_walked_and_proved_it_can_say_it_did_not();
+    let gate = Gate::over(&[Handed { judge: "nothing_reserved_is_tracked", passed: true, said: &both }]);
+
+    assert_eq!(
+        verdict_of(true, &both),
+        Verdict::Green,
+        "a judge that read 760 paths was recorded as having measured nothing"
+    );
+    assert_eq!(gate.unmeasured(), 0, "the run counted a judge that measured among the blind");
+    assert!(gate.lets_through(0, 0), "the gate held a run shut on a judge that measured");
+    assert_eq!(
+        blind_checks_in(&both),
+        1,
+        "the blind check went unsaid, which is the silence this gate exists to break"
+    );
 }
