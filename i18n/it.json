@@ -1070,6 +1070,7 @@
   "cli.flow.where_runs": "  {origin}: {path} (gira questo)",
   "cli.flow.no_home_no_ledger": "HOME non è definita: non so quale deposito aprire",
   "cli.flow.schedule_line": "{when}; peso {weight}; perimetro: {perimeter}",
+  "cli.flow.run_not_started_without_its_tools": "questa corsa non parte: le servono {tools}, e questa macchina non li ha. Installali, o lancia un flusso che non li usa",
   "cli.session.event_on_terminal": "{event} su {tty}",
   "cli.session.census_terminal": "{tty} ({ancestor}), {processes} processi",
   "cli.clock_before_the_epoch": "l'orologio di sistema precede Unix epoch: {error}",
