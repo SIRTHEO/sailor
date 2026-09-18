@@ -5,7 +5,7 @@
 //! sources; a step that breaks on a value only the machine has is invisible to
 //! all of them, and the store has held every one of those breaks.
 
-use ledger::{BreakingStep, Ledger};
+use ledger::{BreakingStep, Ledger, StillbornRun};
 
 /// How many breaks make a pattern rather than an accident.
 const A_PATTERN_STARTS_AT: u64 = 3;
@@ -40,7 +40,14 @@ fn dispatch(args: &[String]) -> Result<String, String> {
     let found = ledger
         .steps_that_keep_breaking(at_least)
         .map_err(|error| error.to_string())?;
-    Ok(report(&found, at_least))
+    let stillborn = ledger
+        .runs_that_died_before_a_step(at_least)
+        .map_err(|error| error.to_string())?;
+    Ok([report(&found, at_least), before_a_step(&stillborn)]
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n"))
 }
 
 fn at_least_in(args: &[String]) -> Result<u64, String> {
@@ -134,6 +141,33 @@ fn in_one_line(said: &str) -> String {
         Some((at, _)) => format!("{}…", &flat[..at]),
         None => flat,
     }
+}
+
+/// **A RUN REFUSED AT ITS OWN INPUT LEAVES NO STEP TO COUNT.** Every reading
+/// above is step-shaped, so without this one a flow can fail every half hour
+/// for days and read as silence.
+pub fn before_a_step(found: &[StillbornRun]) -> String {
+    if found.is_empty() {
+        return String::new();
+    }
+    let mut lines = vec![catalogue::say(
+        "cli.stuck.died_before_a_step",
+        &[("count", &found.len().to_string())],
+    )];
+    for run in found {
+        lines.push(catalogue::say(
+            "cli.stuck.one_stillborn",
+            &[
+                ("times", &run.times.to_string()),
+                ("flow", &run.flow),
+                ("last", &last_break(run.last_at)),
+            ],
+        ));
+        if let Some(error) = run.error.as_deref() {
+            lines.push(format!("      {}", in_one_line(error)));
+        }
+    }
+    lines.join("\n")
 }
 
 #[cfg(test)]
@@ -235,6 +269,39 @@ mod tests {
         never.last_at = 0;
         let said = report(&[never], 3);
         assert!(!said.contains(&now.to_string()), "a raw clock reached the reader");
+    }
+
+    fn stillborn(flow: &str, times: u64, error: Option<&str>) -> StillbornRun {
+        StillbornRun {
+            flow: flow.to_owned(),
+            times,
+            last_at: 0,
+            error: error.map(str::to_owned),
+        }
+    }
+
+    /// **A RUN REFUSED AT ITS OWN INPUT LEAVES NO STEP TO COUNT.**
+    #[test]
+    fn a_flow_whose_runs_never_began_is_named_with_what_refused_them() {
+        let said = before_a_step(&[stillborn(
+            "keep-the-index-fresh",
+            74,
+            Some("$.text: expected required property"),
+        )]);
+        for held in ["74", "keep-the-index-fresh", "$.text"] {
+            assert!(said.contains(held), "«{held}» is missing: {said}");
+        }
+    }
+
+    #[test]
+    fn no_stillborn_runs_print_no_second_section_at_all() {
+        assert!(before_a_step(&[]).is_empty(), "an empty section was printed");
+    }
+
+    #[test]
+    fn a_refusal_of_many_lines_is_printed_as_one() {
+        let said = before_a_step(&[stillborn("a-flow", 9, Some("refused\n  at $.x\n  and $.y"))]);
+        assert_eq!(said.lines().count(), 3, "the refusal unfolded: {said}");
     }
 
     #[test]
