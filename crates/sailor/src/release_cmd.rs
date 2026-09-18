@@ -614,11 +614,8 @@ fn root_under(
 
 /// The sources this command is standing in, when it is standing in them.
 ///
-/// **`personal/sailor` IS ONE MACHINE'S FOLDER LAYOUT, NOT A FACT.** Falling
-/// straight to it sent anyone who cloned Sailor anywhere else to a directory
-/// that does not exist, with the only way out - `SAILOR_SOURCES` - named in no
-/// document in the repository. Where the command is standing in a Sailor tree,
-/// that tree is the answer and nothing has to be declared.
+/// **`personal/sailor` IS ONE MACHINE'S FOLDER LAYOUT, NOT A FACT.** Standing
+/// in a Sailor tree is an answer nobody has to declare.
 fn the_sources_standing_in() -> Option<PathBuf> {
     let at = env::current_dir().ok()?;
     let root = flow::workspace::find_root(&at)?;
@@ -1591,19 +1588,8 @@ mod tests {
     }
 
 
-    /// A declared root beats the home, and a declared empty one does not.
-    ///
-    /// The second arm is the one that gets lost: a variable exported empty by a
-    /// script that could not find it would give `personal/sailor` **relative**,
-    /// a clone wherever the process happens to stand — fault 25 dressed up as
-    /// configuration.
-    #[test]
     /// **THE FOLDER LAYOUT OF ONE MACHINE IS NOT A FACT ABOUT ANY OTHER.**
-    /// Whoever clones Sailor below their home under a name of their own got a
-    /// release and a ratchet that built from `$HOME/personal/sailor`, a
-    /// directory they do not have, and `SAILOR_SOURCES` was named in no
-    /// document in the repository. Standing in the sources is the answer, and
-    /// it needs nothing declared.
+    /// A clone under a name of its own built from a directory nobody has.
     #[test]
     fn the_tree_the_command_stands_in_beats_one_machines_folder_layout() {
         let home = Some(OsString::from("/casa/di-chiunque"));
@@ -1634,6 +1620,13 @@ mod tests {
         );
     }
 
+    /// A declared root beats the home, and a declared empty one does not.
+    ///
+    /// The second arm is the one that gets lost: a variable exported empty by a
+    /// script that could not find it would give `personal/sailor` **relative**,
+    /// a clone wherever the process happens to stand — fault 25 dressed up as
+    /// configuration.
+    #[test]
     fn a_declared_root_wins_over_the_home_but_an_empty_one_does_not() {
         let home = Some(OsString::from("/casa/di-chiunque"));
         let declared = root_under(

@@ -204,9 +204,7 @@ fn the_finder_reaches_one_of_the_three_places_a_judge_can_live() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
-/// What a judge that walked hands in when it also proves it can say it did not:
-/// the cure for blind gates asked every judge for that proof, and a fixture
-/// driving the blind branch prints the production line from inside it.
+/// What a judge that walked hands in when it also proves it can say it did not.
 fn a_judge_that_walked_and_proved_it_can_say_it_did_not() -> String {
     format!(
         "running 4 tests\n{} nothing to ask\n{} 760 sources holding {SENTINEL}{}760 paths git \
@@ -218,10 +216,7 @@ fn a_judge_that_walked_and_proved_it_can_say_it_did_not() -> String {
 }
 
 /// **THE PROOF THAT A JUDGE IS NOT PUNISHED FOR PROVING ITSELF.** Reading the
-/// blind line before the receipt made the better judge the worse-reported one:
-/// `nothing_reserved_is_tracked` read 760 tracked paths on every run and was
-/// recorded blind on every run, so the seed it feeds could never reach zero and
-/// the run never closed clean.
+/// blind line before the receipt made the better judge the worse-reported one.
 #[test]
 fn a_judge_that_measured_is_green_even_where_one_of_its_checks_could_not() {
     let both = a_judge_that_walked_and_proved_it_can_say_it_did_not();
@@ -249,16 +244,13 @@ fn repository() -> std::path::PathBuf {
         .to_path_buf()
 }
 
-/// A suite as `cargo test --nocapture` writes it: each binary named on its own
-/// line before the words it then prints.
+/// A suite as `cargo test --nocapture` writes it.
 fn a_suite_where(judge: &str, said: &str) -> String {
     format!("   Compiling sailor\n     Running tests/{judge}.rs (target/release/deps/{judge}-ab)\n{said}\n")
 }
 
-/// **THE RELEASE READ CARGO'S EXIT CODE AND NOTHING ELSE.** Every receipt this
-/// apparatus produces lived in `sailor ratchet`, which no release, hook or
-/// script ever invoked, so a judge passing while measuring nothing went into
-/// service untouched.
+/// **THE RELEASE READ CARGO'S EXIT CODE AND NOTHING ELSE.** Every receipt lived
+/// in `sailor ratchet`, which no release ever invoked.
 #[test]
 fn a_release_refuses_a_suite_whose_judge_proved_nothing() {
     let judge = judges_in(&repository())
@@ -285,4 +277,36 @@ fn a_release_refuses_a_suite_whose_judge_proved_nothing() {
     );
     what_the_suite_proved(&repository(), &walked)
         .expect("a suite whose judges handed in receipts was refused");
+}
+
+/// **THIS ONE DROVE THE GATE AND SAID NOTHING EITHER.** It opens no source, so
+/// it long carried no seed and no receipt - but the run counts it like any
+/// other, and a judge the run counts must say what it walked.
+#[test]
+fn every_verdict_the_gate_can_give_is_put_to_it_here() {
+    let cases = [
+        ("running 1 test\nok.", Verdict::NoReceipt),
+        (
+            &format!("{} nothing to ask\nok.", workspace::MEASURED_NOTHING) as &str,
+            Verdict::NotMeasured,
+        ),
+        (
+            &format!(
+                "{} 1 sources holding {SENTINEL}{}1 paths git tracks",
+                workspace::MEASURED,
+                workspace::AGAINST
+            ) as &str,
+            Verdict::Green,
+        ),
+    ];
+    workspace::measured_against(
+        cases.len() + 1,
+        "verdicts put to the gate",
+        judges_in(&repository()).len(),
+        "judges this tree holds",
+    );
+    for (said, expected) in cases {
+        assert_eq!(verdict_of(true, said), expected, "the gate read «{said}» as something else");
+    }
+    assert_eq!(verdict_of(false, "anything"), Verdict::Red, "a red judge read as anything else");
 }

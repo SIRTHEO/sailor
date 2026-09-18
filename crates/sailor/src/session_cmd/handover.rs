@@ -125,11 +125,6 @@ pub(super) fn filed_what_was_dropped(
 
 /// What the hook knows about the session that dropped, and the session can
 /// only guess about itself.
-///
-/// **THE FILER FILLS WHAT THE FILER KNOWS.** A mandate refused for a field the
-/// hook was holding is a handover that does not happen, and it is refused
-/// exactly where it matters most: at the threshold, in the session with the
-/// least room left to fix it.
 #[derive(Debug, Default)]
 struct Known {
     session: String,
@@ -137,8 +132,7 @@ struct Known {
     tokens: Option<u64>,
 }
 
-/// The fill the relay measured when it asked, which beats a number the session
-/// estimated about itself.
+/// The fill the relay measured when it asked.
 fn tokens_asked_of(ledger: &ledger::Ledger, tty: &str) -> Option<u64> {
     ledger
         .read_record(ASKS, tty)
@@ -442,9 +436,7 @@ mod tests {
     }
 
     /// **A MANDATE IS REFUSED FOR ITS WORK, NEVER FOR A FACT THE FILER HELD.**
-    /// The store wants a session, a line and a fill before it takes a mandate,
-    /// and a session at the threshold is the worst placed of the two to state
-    /// any of them. Dropped without them, it is still filed.
+    /// A session at the threshold is the worst placed to state any of them.
     #[test]
     fn the_hook_fills_in_what_the_session_never_had_to_know() {
         let directory =

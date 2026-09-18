@@ -88,10 +88,8 @@ fn full_graph() -> Graph {
     Graph::new(flow.graph.steps().to_vec()).expect("the shipped graph stays valid")
 }
 
-/// **A FLOW RUN END TO END HANDED IN NO RECEIPT.** Six tests passed and the run
-/// learned only that the process exited zero - the same thing it would have
-/// said with the flow gone from the binary, which is the one failure this judge
-/// exists to catch.
+/// **A FLOW RUN END TO END HANDED IN NO RECEIPT.** Passing said the same thing
+/// it would have said with the flow gone from the binary.
 #[test]
 fn the_shipped_flow_this_judge_runs_is_the_one_the_binary_hands_out() {
     let steps = full_graph().steps().len();
