@@ -237,14 +237,10 @@ fn receipt_in(said: &str) -> Receipt {
 
 /// Passing is not the same as having measured, and the judge is the only one
 /// that can tell: it says so on its own output, and this reads it there.
-/// **A JUDGE THAT MEASURED IS NOT BLIND, WHATEVER ELSE IT PRINTED.** One binary
-/// holds several tests, and the cure for blind gates asked each judge to drive
-/// its own blind branch on purpose so the answer «I could not measure» is
-/// proved to work. Deciding the whole judge on the first such line anywhere in
-/// the output turned that proof into the verdict: `nothing_reserved_is_tracked`
-/// read 760 tracked paths on every run and was recorded blind on every run.
-/// The receipt is read first, and the blind line decides only where there is no
-/// receipt to read.
+/// **A JUDGE THAT MEASURED IS NOT BLIND, WHATEVER ELSE IT PRINTED.** The cure
+/// for blind gates asked each judge to drive its own blind branch on purpose,
+/// and deciding the whole binary on that line turned the proof into the
+/// verdict. The receipt is read first.
 pub fn verdict_of(passed: bool, said: &str) -> Verdict {
     if !passed {
         Verdict::Red
@@ -258,8 +254,7 @@ pub fn verdict_of(passed: bool, said: &str) -> Verdict {
 }
 
 /// The checks a judge declared it could not measure, counted even where it
-/// handed in a receipt for the others: a green that hides one is the blindness
-/// this whole apparatus was built to stop.
+/// handed in a receipt for the others.
 pub fn blind_checks_in(said: &str) -> usize {
     said.lines().filter(|line| line.trim().starts_with(workspace::MEASURED_NOTHING)).count()
 }
@@ -274,13 +269,7 @@ const NO_RECEIPT_TODAY: usize = 0;
 const UNMEASURED_TODAY: usize = 0;
 
 /// The verdicts of the judges a suite ran, read off the output it already
-/// captured.
-///
-/// **THE RELEASE HELD THE RECEIPTS AND READ NONE OF THEM.** `cargo test` names
-/// each binary on a `Running tests/<name>.rs` line before it runs, and the
-/// release passes `--nocapture`, so what a judge said is in the suite file with
-/// the judge's own name above it. Nothing needed rebuilding to know this; it
-/// needed reading.
+/// captured: `cargo test` names each binary before it runs.
 fn verdicts_in(suite: &str, judges: &[Judge]) -> Vec<(String, Verdict)> {
     let mut found = Vec::new();
     let mut named: Option<&Judge> = None;
@@ -310,10 +299,8 @@ fn verdicts_in(suite: &str, judges: &[Judge]) -> Vec<(String, Verdict)> {
 
 /// What the release must be told before it puts a binary in service.
 ///
-/// **A RECEIPT THAT GATES NOTHING IS DOCUMENTATION.** Every judge could hand in
-/// its words and the release read only cargo's exit code, so a judge passing
-/// while measuring nothing sailed through untouched — the one condition this
-/// whole apparatus was built to make impossible.
+/// **A RECEIPT THAT GATES NOTHING IS DOCUMENTATION.** The release read cargo's
+/// exit code alone, so a judge passing while measuring nothing sailed through.
 pub fn what_the_suite_proved(root: &Path, suite: &str) -> Result<String, String> {
     let judges = judges_in(root);
     if judges.is_empty() {

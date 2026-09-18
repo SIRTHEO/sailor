@@ -857,15 +857,8 @@ fn tools_wanted(graph: &Graph) -> BTreeSet<String> {
         .collect()
 }
 
-/// The command-line tools a step says it calls, by the id a descriptor gives
-/// them.
-///
-/// **THE ONE GUARDED CALL IN TWENTY-FIVE SHOWED THE STANDARD AND NOBODY
-/// FOLLOWED IT.** `close-the-work` checks for `lsof` and refuses with the
-/// reason; the other twenty-four uses - `gh` in seven flows, `python3` in ten,
-/// `jq` in four, `shasum` in four - ran and found out. Declaring it puts the
-/// answer where the descriptors already are, instead of in twenty-five
-/// hand-written `command -v` lines the next flow will forget.
+/// The command-line tools the steps say they call, by the id a descriptor
+/// gives them.
 fn tools_needed(graph: &Graph) -> BTreeSet<String> {
     graph.steps().iter().flat_map(|step| step.needs.clone()).collect()
 }
@@ -1528,18 +1521,16 @@ mod tests {
         }
     }
 
-    /// **TWENTY-FIVE CALLS TO TOOLS NOBODY CHECKED, AND ONE GUARDED.** Shipped
-    /// flows call `gh`, `python3` and `shasum`, which no operating system
-    /// installs by default, and `gh` carries the whole delivery loop. A run
-    /// that finds out halfway has already done half the work.
+    /// **CALLS TO TOOLS NOBODY CHECKED.** No operating system installs `gh`,
+    /// `python3` or `shasum`, and `gh` carries the whole delivery loop.
     #[test]
     fn a_run_does_not_start_without_the_tools_its_steps_declare() {
         let prices = models::pricing::PriceList::default();
-        let flow = a_flow_of(&format!(
-            r#"{{"id": "taglia", "deps": [], "action": "shell", "max_attempts": 1,
-                 "when": null, "with": {{"command": "gh pr create"}}, "needs": ["gh"],
-                 "input_schema": {{"type": "any"}}, "output_schema": {{"type": "any"}}}}"#
-        ));
+        let flow = a_flow_of(
+            r#"{"id": "taglia", "deps": [], "action": "shell", "max_attempts": 1,
+                 "when": null, "with": {"command": "gh pr create"}, "needs": ["gh"],
+                 "input_schema": {"type": "any"}, "output_schema": {"type": "any"}}"#,
+        );
 
         let refused = why_the_run_would_not_start(&flow, &HasNothingInstalled, &prices)
             .expect("a run started without the tool its step calls");

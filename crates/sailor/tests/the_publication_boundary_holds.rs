@@ -127,9 +127,7 @@ impl Drop for Scratch {
     }
 }
 
-/// The refusals the script declares, read off the script and not listed here:
-/// a hand list beside it is the same thing written twice, and it goes stale the
-/// day a refusal is added.
+/// The refusals the script declares, read off the script and not listed here.
 fn refusals_the_script_declares() -> usize {
     std::fs::read_to_string(scripts().join("privacy-scan.sh"))
         .expect("the boundary script is in the tree")
@@ -138,9 +136,8 @@ fn refusals_the_script_declares() -> usize {
         .count()
 }
 
-/// **THE GATE THAT RUNS BEFORE EVERY PUBLICATION HANDED IN NO RECEIPT.** Nine
-/// tests passed and the run learned only that the process exited zero - which
-/// is what a judge says when the script it drives was never there to be read.
+/// **THE GATE THAT RUNS BEFORE EVERY PUBLICATION HANDED IN NO RECEIPT.** That is
+/// what a judge says when the script it drives was never there to be read.
 #[test]
 fn every_refusal_the_script_declares_is_put_to_this_judge() {
     let declared = refusals_the_script_declares();
