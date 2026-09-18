@@ -103,7 +103,7 @@ pub const REFUSED: i32 = 3;
 mod handover;
 mod listing;
 
-use handover::{handed_on, kept_by, the_ask_still_standing};
+use handover::{filed_what_was_dropped, handed_on, kept_by, the_ask_still_standing};
 use listing::{also_saying, close_the_gone, list_terminals, standing_of, Standing};
 
 pub fn run(args: &[String]) -> i32 {
@@ -1669,6 +1669,12 @@ fn record_event(request: &Request<'_>) -> Result<Report, String> {
     if !started.is_empty() {
         said.push('\n');
         said.push_str(&started);
+    }
+    // Before the ask is judged: a mandate dropped since the last hook is an
+    // answer to it, and filing it here is what keeps the relay off a person.
+    if let Some(filed) = filed_what_was_dropped(request, &happened.tty) {
+        said.push('\n');
+        said.push_str(&filed);
     }
     if let Some(asked) = the_ask_still_standing(
         request,
