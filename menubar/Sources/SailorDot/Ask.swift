@@ -15,7 +15,7 @@ func askSailor(hours: Int) async -> Reading {
     }
     let task = Process()
     task.executableURL = sailorInService
-    task.arguments = ["accounts", "--json", "--hours", String(hours)]
+    task.arguments = ["accounts", "--json", "--quota", "--hours", String(hours)]
     let pipe = Pipe()
     task.standardOutput = pipe
     task.standardError = FileHandle.nullDevice
