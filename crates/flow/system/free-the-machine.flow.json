@@ -66,7 +66,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "printf '{\"free_pages\": %s, \"pageouts\": %s}\\n' \"$(vm_stat | awk '/Pages free/ {gsub(/\\./,\"\",$3); print $3}')\" \"$(vm_stat | awk '/Pageouts/ {gsub(/\\./,\"\",$NF); print $NF}')\"",
+          "command": "printf '{\"free_pages\": %s, \"pageouts\": %s, \"swap_used_mb\": %s, \"swap_total_mb\": %s}\\n' \"$(vm_stat | awk '/Pages free/ {gsub(/\\./,\"\",$3); print $3}')\" \"$(vm_stat | awk '/Pageouts/ {gsub(/\\./,\"\",$NF); print $NF}')\" \"$(sysctl -n vm.swapusage | awk '{gsub(/M/,\"\",$6); print $6+0}')\" \"$(sysctl -n vm.swapusage | awk '{gsub(/M/,\"\",$3); print $3+0}')\"",
           "timeout_secs": 30,
           "answer_shape": {
             "type": "object",
@@ -76,11 +76,19 @@
               },
               "pageouts": {
                 "type": "any"
+              },
+              "swap_used_mb": {
+                "type": "any"
+              },
+              "swap_total_mb": {
+                "type": "any"
               }
             },
             "required": [
               "free_pages",
-              "pageouts"
+              "pageouts",
+              "swap_used_mb",
+              "swap_total_mb"
             ],
             "allow_extra": false
           }
