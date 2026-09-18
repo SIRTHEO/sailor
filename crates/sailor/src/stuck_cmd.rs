@@ -1,12 +1,9 @@
 //! `sailor stuck`: which steps of which flows keep breaking, and on what. It
 //! reads the store and calls no engine, so asking costs nothing.
 //!
-//! **A RED RUN NOBODY READS IS A GREEN TREE.** Every gate of this repository
-//! passes on sources; a step that breaks on a value only the machine has is
-//! invisible to all of them. On 18/09/2026 the relay's last step had broken
-//! sixteen times out of sixteen on a name no descriptor carried, and eleven
-//! other flows were breaking the same way, one of them a hundred and
-//! fifty-four times. The store had held all of it for weeks.
+//! **A RED RUN NOBODY READS IS A GREEN TREE.** Every gate here passes on
+//! sources; a step that breaks on a value only the machine has is invisible to
+//! all of them, and the store has held every one of those breaks.
 
 use ledger::{BreakingStep, Ledger};
 
@@ -37,8 +34,8 @@ pub const USAGE: &[crate::Form] = &[crate::Form {
 
 fn dispatch(args: &[String]) -> Result<String, String> {
     let at_least = at_least_in(args)?;
-    let directory =
-        ledger::default_directory().ok_or_else(|| catalogue::say("cli.stuck.no_home_no_store", &[]))?;
+    let directory = ledger::default_directory()
+        .ok_or_else(|| catalogue::say("cli.stuck.no_home_no_store", &[]))?;
     let ledger = Ledger::open(&directory).map_err(|error| error.to_string())?;
     let found = ledger
         .steps_that_keep_breaking(at_least)
@@ -60,11 +57,8 @@ fn at_least_in(args: &[String]) -> Result<u64, String> {
     }
 }
 
-/// **PUBLIC SO A TEST READS THE WORDS THE PERSON READS.**
-///
-/// The times a step went are printed beside the times it broke, always: a step
-/// run a thousand times breaks more often than one run twice, and a count on
-/// its own accuses the busy.
+/// **PUBLIC SO A TEST READS THE WORDS THE PERSON READS.** The times a step went
+/// are printed beside the times it broke: a count on its own accuses the busy.
 pub fn report(found: &[BreakingStep], at_least: u64) -> String {
     if found.is_empty() {
         return catalogue::say(
@@ -97,8 +91,8 @@ pub fn report(found: &[BreakingStep], at_least: u64) -> String {
     lines.join("\n")
 }
 
-/// A complaint as one line of a list: newlines are what a stack trace is made
-/// of, and a report that unfolds one is a report nobody finishes reading.
+/// A complaint as one line: a report that unfolds a stack trace is one nobody
+/// finishes reading.
 fn in_one_line(said: &str) -> String {
     let flat: String = said
         .lines()
@@ -145,8 +139,7 @@ mod tests {
         }
     }
 
-    /// **A STACK TRACE IS NOT A COMPLAINT.** The first one this found ran to
-    /// eleven lines, which is a report nobody reads to the end.
+    /// **A STACK TRACE IS NOT A COMPLAINT.**
     #[test]
     fn a_complaint_of_many_lines_is_printed_as_one() {
         let trace = "refused by command\nTraceback (most recent call last):\n  File \"x\"";
