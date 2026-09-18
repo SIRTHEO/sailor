@@ -113,7 +113,7 @@
         "when": null,
         "with": {
           "command": "sailor machine | sed 's/\"/\\\\\"/g' | awk 'BEGIN{printf \"{\\\"said\\\": \\\"\"} {printf \"%s\\\\n\", $0} END{print \"\\\"}\"}'",
-          "timeout_secs": 30,
+          "timeout_secs": 120,
           "answer_shape": {
             "type": "object",
             "properties": {
