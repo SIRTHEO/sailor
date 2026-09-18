@@ -225,10 +225,15 @@ fn ran_out_recently(spent: Option<&AccountStanding>, now: i64) -> bool {
         .is_some_and(|at| now - at < A_QUOTA_COMES_BACK_IN)
 }
 
-/// The worst standing of the lot: what one mark in a menu bar has to show.
+/// The worst standing of the accounts in use: what one mark has to show.
+///
+/// **A PROFILE ON THE SHELF IS NOT A PROBLEM.** One declared, never called and
+/// not in force held the mark at its worst for good, and a mark that is always
+/// at its worst is one nobody reads.
 pub fn worst_of(views: &[AccountView]) -> Standing {
     views
         .iter()
+        .filter(|view| view.active || view.calls > 0)
         .fold(Standing::Ready, |worst, view| worst.worse(view.standing))
 }
 
@@ -488,5 +493,27 @@ mod tests {
         assert!(how_it_was_asked(&["--hours".to_owned()]).is_err());
         assert!(how_it_was_asked(&["--hours".to_owned(), "many".to_owned()]).is_err());
         assert!(how_it_was_asked(&["--whatever".to_owned()]).is_err());
+    }
+
+    /// **A MARK ALWAYS AT ITS WORST IS ONE NOBODY READS.**
+    #[test]
+    fn a_profile_declared_never_called_and_not_in_force_does_not_hold_the_mark() {
+        let mut shelved = declared("claude", "shelf@example.test", Access::No);
+        shelved.active = false;
+        let views = joined(&[shelved], &[], NOW);
+        assert_eq!(views[0].standing, Standing::Shut, "it is still shown as shut");
+        assert_eq!(worst_of(&views), Standing::Ready, "the shelf held the mark");
+    }
+
+    #[test]
+    fn the_same_profile_once_it_answers_does_hold_the_mark() {
+        let mut shelved = declared("claude", "shelf@example.test", Access::No);
+        shelved.active = false;
+        let views = joined(
+            &[shelved],
+            &[spent("claude", Some("shelf@example.test"), 0, None)],
+            NOW,
+        );
+        assert_eq!(worst_of(&views), Standing::Shut);
     }
 }
