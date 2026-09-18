@@ -324,17 +324,17 @@ mod tests {
         std::fs::create_dir_all(&home).expect("a home of this test's own");
         std::fs::create_dir_all(&store).expect("a store of this test's own");
 
-        let dropped = sessions::mandate::dropped_in(&home.join(".claude"), "ttys009");
+        let env = env_of(&[("HOME", &home.display().to_string())]);
+        let line = homes_in(&shipped(), &env)
+            .into_iter()
+            .next()
+            .expect("a command line declares where its home is");
+        let dropped = sessions::mandate::dropped_in(&line, "ttys009");
         std::fs::create_dir_all(dropped.parent().expect("the letterbox has a parent"))
             .expect("the letterbox");
         std::fs::write(&dropped, a_whole_mandate()).expect("what the shell could write");
 
-        let said = filing_from(
-            &shipped(),
-            &env_of(&[("HOME", &home.display().to_string())]),
-            &store,
-            "ttys009",
-        )
+        let said = filing_from(&shipped(), &env, &store, "ttys009")
         .expect("a drop waiting for this terminal is filed");
 
         assert!(said.contains("ttys009"), "the filing names the terminal: {said}");
@@ -362,17 +362,17 @@ mod tests {
         std::fs::create_dir_all(&home).expect("a home of this test's own");
         std::fs::create_dir_all(&store).expect("a store of this test's own");
 
-        let dropped = sessions::mandate::dropped_in(&home.join(".claude"), "ttys009");
+        let env = env_of(&[("HOME", &home.display().to_string())]);
+        let line = homes_in(&shipped(), &env)
+            .into_iter()
+            .next()
+            .expect("a command line declares where its home is");
+        let dropped = sessions::mandate::dropped_in(&line, "ttys009");
         std::fs::create_dir_all(dropped.parent().expect("the letterbox has a parent"))
             .expect("the letterbox");
         std::fs::write(&dropped, "carry the conduit on").expect("prose where a mandate belongs");
 
-        let said = filing_from(
-            &shipped(),
-            &env_of(&[("HOME", &home.display().to_string())]),
-            &store,
-            "ttys009",
-        )
+        let said = filing_from(&shipped(), &env, &store, "ttys009")
         .expect("a drop that cannot be filed is still answered");
 
         assert!(
