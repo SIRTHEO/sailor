@@ -22,6 +22,7 @@ use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
 
 pub mod accounts;
+pub mod before_a_step;
 pub mod answers;
 pub mod halts;
 pub mod holdings;
@@ -35,6 +36,7 @@ pub mod streaks;
 pub mod who_is_there;
 
 pub use accounts::*;
+pub use before_a_step::*;
 pub use answers::*;
 pub use records::*;
 pub use who_is_there::*;

@@ -524,6 +524,8 @@
   "cli.stuck.hours_ago": "{hours}h ago",
   "cli.stuck.days_ago": "{days}d ago",
   "cli.stuck.a_break_is_not_a_fault": "a step that breaks may be doing its job: read the complaint before recording anything. What this answers is which ones nobody has read.",
+  "cli.stuck.died_before_a_step": "{count} flow(s) have runs that died before their first step:",
+  "cli.stuck.one_stillborn": "  {times} run(s) never began   {flow}   last {last}",
   "cli.run.active_profile_gone": "the active profile '{profile}' for {id} is no longer in the state",
   "cli.run.cannot_start": "sailor run: cannot start {executable}: {error}",
   "cli.run.home_mechanism_unknown": "{cli}: how it moves its home directory is not known yet ({note}); sailor run refuses to guess",
