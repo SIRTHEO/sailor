@@ -1079,12 +1079,9 @@ impl Ledger {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// Every step of a flow that broke at least `at_least` times, worst first,
-    /// with the times it worked beside it and the newest complaint.
+    /// Every step of a flow that broke at least `at_least` times, worst first.
     ///
-    /// **THE COUNT ALONE ACCUSES THE BUSY.** A step run a thousand times breaks
-    /// more often than one run twice, so the times it went are carried here and
-    /// never left for the caller to fetch separately.
+    /// **THE COUNT ALONE ACCUSES THE BUSY**, so the times it went come with it.
     pub fn steps_that_keep_breaking(
         &self,
         at_least: u64,
