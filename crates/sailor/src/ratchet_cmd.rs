@@ -237,16 +237,31 @@ fn receipt_in(said: &str) -> Receipt {
 
 /// Passing is not the same as having measured, and the judge is the only one
 /// that can tell: it says so on its own output, and this reads it there.
+/// **A JUDGE THAT MEASURED IS NOT BLIND, WHATEVER ELSE IT PRINTED.** One binary
+/// holds several tests, and the cure for blind gates asked each judge to drive
+/// its own blind branch on purpose so the answer «I could not measure» is
+/// proved to work. Deciding the whole judge on the first such line anywhere in
+/// the output turned that proof into the verdict: `nothing_reserved_is_tracked`
+/// read 760 tracked paths on every run and was recorded blind on every run.
+/// The receipt is read first, and the blind line decides only where there is no
+/// receipt to read.
 pub fn verdict_of(passed: bool, said: &str) -> Verdict {
     if !passed {
         Verdict::Red
-    } else if said.contains(workspace::MEASURED_NOTHING) {
-        Verdict::NotMeasured
     } else if matches!(receipt_in(said), Receipt::Walked { .. }) {
         Verdict::Green
+    } else if said.contains(workspace::MEASURED_NOTHING) {
+        Verdict::NotMeasured
     } else {
         Verdict::NoReceipt
     }
+}
+
+/// The checks a judge declared it could not measure, counted even where it
+/// handed in a receipt for the others: a green that hides one is the blindness
+/// this whole apparatus was built to stop.
+pub fn blind_checks_in(said: &str) -> usize {
+    said.lines().filter(|line| line.trim().starts_with(workspace::MEASURED_NOTHING)).count()
 }
 
 /// How many judges hand in no receipt today. **It can only fall**, and no run
@@ -745,6 +760,14 @@ fn measured(asked: &Asked) -> Result<bool, String> {
         match verdict {
             Verdict::Green => {
                 println!("  {} {}", catalogue::say("cli.ratchet.green", &[]), judge.test);
+                // A judge that measured can still hold a check that could not.
+                // Green is the verdict; the blind check is still said, or the
+                // reader is handed the silence this apparatus exists to break.
+                for line in text.lines().filter(|line| {
+                    line.trim_start().starts_with(workspace::MEASURED_NOTHING)
+                }) {
+                    println!("      {}", line.trim());
+                }
             }
             Verdict::NotMeasured => {
                 println!("  {} {}", catalogue::say("cli.ratchet.not_measured", &[]), judge.test);
