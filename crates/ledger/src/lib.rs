@@ -21,6 +21,7 @@ use tracing::field::{Field, Visit};
 use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
 
+pub mod accounts;
 pub mod answers;
 pub mod halts;
 pub mod holdings;
@@ -33,6 +34,7 @@ pub mod self_care;
 pub mod streaks;
 pub mod who_is_there;
 
+pub use accounts::*;
 pub use answers::*;
 pub use records::*;
 pub use who_is_there::*;

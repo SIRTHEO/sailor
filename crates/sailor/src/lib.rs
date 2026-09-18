@@ -34,6 +34,7 @@ pub mod memory_cmd;
 pub mod models_cmd;
 pub mod notes_cmd;
 pub mod policy_cmd;
+pub mod accounts_cmd;
 pub mod profiles_cmd;
 pub mod publish_cmd;
 pub mod ratchet_cmd;
@@ -238,6 +239,12 @@ pub const COMMANDS: &[Command] = &[
         description_key: "cli.command.repeats",
         usage: repeats_cmd::USAGE,
         run: repeats_cmd::run,
+    },
+    Command {
+        name: "accounts",
+        description_key: "cli.command.accounts",
+        usage: accounts_cmd::USAGE,
+        run: accounts_cmd::run,
     },
     Command {
         name: "stuck",
