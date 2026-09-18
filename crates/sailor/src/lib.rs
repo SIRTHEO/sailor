@@ -42,6 +42,7 @@ pub mod release_cmd;
 pub mod remaining_cmd;
 pub mod remember_cmd;
 pub mod repeats_cmd;
+mod stuck_cmd;
 pub mod retire_index;
 pub mod run_cmd;
 pub mod search_cmd;
@@ -237,6 +238,12 @@ pub const COMMANDS: &[Command] = &[
         description_key: "cli.command.repeats",
         usage: repeats_cmd::USAGE,
         run: repeats_cmd::run,
+    },
+    Command {
+        name: "stuck",
+        description_key: "cli.command.stuck",
+        usage: stuck_cmd::USAGE,
+        run: stuck_cmd::run,
     },
     Command {
         name: "version",

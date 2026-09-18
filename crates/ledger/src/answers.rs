@@ -150,6 +150,25 @@ pub struct DiscardedOutputStep {
     pub bytes_discarded: u64,
 }
 
+/// A step of a flow that keeps breaking, counted against the times it worked.
+///
+/// **A RUN THAT ENDS RED LEAVES NO ONE TO READ IT.** The store has held every
+/// broken step since it was written, and the one guard built on that lesson was
+/// built for the arc's verdicts alone: on 18/09/2026 twelve flows were found
+/// breaking at the same step, one of them 154 times, and every gate was green.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BreakingStep {
+    pub flow: String,
+    pub step_id: String,
+    pub broke: u64,
+    pub went: u64,
+    /// What the store filed the newest break under, where it filed one.
+    pub failure_class: Option<String>,
+    /// The newest complaint, in the words the step used.
+    pub said: Option<String>,
+    pub last_at: i64,
+}
+
 // ── how it went: the answers a flow can get about its own history ──
 //
 // **NONE OF THESE STRUCTS CARRIES `input` OR `output`, AND IT IS NOT AN
