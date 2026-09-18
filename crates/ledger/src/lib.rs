@@ -23,6 +23,7 @@ use tracing_subscriber::layer::{Context, Layer};
 
 pub mod accounts;
 pub mod before_a_step;
+pub mod handover_missed;
 pub mod answers;
 pub mod halts;
 pub mod holdings;
@@ -37,6 +38,7 @@ pub mod who_is_there;
 
 pub use accounts::*;
 pub use before_a_step::*;
+pub use handover_missed::*;
 pub use answers::*;
 pub use records::*;
 pub use who_is_there::*;

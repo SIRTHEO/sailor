@@ -65,6 +65,10 @@ pub struct Reading {
     pub model: Option<String>,
     pub misses: u64,
     pub records: u64,
+    /// **A RESET ERASES THE ONLY EVIDENCE THAT ONE WAS NEEDED.** Every other
+    /// field is measured since the last reset, so a session that was full and
+    /// got compacted reads exactly like a session that was never full.
+    pub resets: u64,
 }
 
 struct MeasureSessionAction;
@@ -88,6 +92,7 @@ impl Action for MeasureSessionAction {
             "model": read.model,
             "misses": read.misses,
             "records": read.records,
+            "resets": read.resets,
             "warn": warn,
             "oblige": oblige,
         })))
@@ -183,6 +188,7 @@ fn standing(tokens: u64, warn: u64, oblige: u64) -> &'static str {
 /// cache by an order of magnitude.
 pub fn from_transcript(text: &str) -> Option<Reading> {
     let mut read = Reading::default();
+    let mut resets = 0;
     for line in text.lines() {
         let Ok(row) = serde_json::from_str::<Value>(line) else {
             continue;
@@ -191,6 +197,7 @@ pub fn from_transcript(text: &str) -> Option<Reading> {
         // the row that announces a reset carries no prompt of its own.
         if row["isCompactSummary"].as_bool() == Some(true) {
             read = Reading::default();
+            resets += 1;
         }
         let message = &row["message"];
         if let Some(usage) = message.get("usage").filter(|value| value.is_object()) {
@@ -199,6 +206,7 @@ pub fn from_transcript(text: &str) -> Option<Reading> {
                 + number(&usage["cache_creation_input_tokens"]);
             if fell_away(read.tokens, now) {
                 read = Reading::default();
+                resets += 1;
             }
             read.tokens = now;
             read.records += 1;
@@ -208,6 +216,8 @@ pub fn from_transcript(text: &str) -> Option<Reading> {
         }
         read.misses += misses_in(&message["content"]);
     }
+    // Counted outside the reading, because a reset rebuilds the reading.
+    read.resets = resets;
     (read.records > 0).then_some(read)
 }
 

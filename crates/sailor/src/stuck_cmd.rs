@@ -5,7 +5,7 @@
 //! sources; a step that breaks on a value only the machine has is invisible to
 //! all of them, and the store has held every one of those breaks.
 
-use ledger::{BreakingStep, Ledger, StillbornRun};
+use ledger::{BreakingStep, HandoverMissed, Ledger, StillbornRun};
 
 /// How many breaks make a pattern rather than an accident.
 const A_PATTERN_STARTS_AT: u64 = 3;
@@ -43,7 +43,14 @@ fn dispatch(args: &[String]) -> Result<String, String> {
     let stillborn = ledger
         .runs_that_died_before_a_step(at_least)
         .map_err(|error| error.to_string())?;
-    Ok([report(&found, at_least), before_a_step(&stillborn)]
+    let never_emptied = ledger
+        .handovers_owed_and_missed(at_least)
+        .map_err(|error| error.to_string())?;
+    Ok([
+        report(&found, at_least),
+        before_a_step(&stillborn),
+        never_emptied_section(&never_emptied),
+    ]
         .into_iter()
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>()
@@ -167,6 +174,35 @@ pub fn before_a_step(found: &[StillbornRun]) -> String {
             lines.push(format!("      {}", in_one_line(error)));
         }
     }
+    lines.join("\n")
+}
+
+/// **A HANDOVER OWED AND NOT MADE ENDS ITS RUN GREEN.** The relay skips the
+/// emptying when the screen is never free, the run completes, and the session
+/// goes on to be compacted with nothing having named the miss.
+pub fn never_emptied_section(found: &[HandoverMissed]) -> String {
+    if found.is_empty() {
+        return String::new();
+    }
+    let mut lines = vec![catalogue::say(
+        "cli.stuck.handover_owed_and_missed",
+        &[("count", &found.len().to_string())],
+    )];
+    for terminal in found {
+        lines.push(catalogue::say(
+            "cli.stuck.one_never_emptied",
+            &[
+                ("missed", &terminal.missed().to_string()),
+                ("owed", &terminal.owed.to_string()),
+                ("tty", &terminal.tty),
+                ("last", &last_break(terminal.last_at)),
+            ],
+        ));
+        if let Some(said) = terminal.said.as_deref() {
+            lines.push(format!("      {}", in_one_line(said)));
+        }
+    }
+    lines.push(catalogue::say("cli.stuck.a_missed_handover_ends_green", &[]));
     lines.join("\n")
 }
 
@@ -302,6 +338,47 @@ mod tests {
     fn a_refusal_of_many_lines_is_printed_as_one() {
         let said = before_a_step(&[stillborn("a-flow", 9, Some("refused\n  at $.x\n  and $.y"))]);
         assert_eq!(said.lines().count(), 3, "the refusal unfolded: {said}");
+    }
+
+    fn never_emptied(tty: &str, owed: u64, made: u64, said: Option<&str>) -> HandoverMissed {
+        HandoverMissed {
+            tty: tty.to_owned(),
+            owed,
+            made,
+            last_at: 0,
+            said: said.map(str::to_owned),
+        }
+    }
+
+    /// **THE MISS IS THE NUMBER, AND THE CHANCES ARE THE CONTEXT.** A count of
+    /// misses alone accuses a terminal that was asked once.
+    #[test]
+    fn a_terminal_that_never_hands_on_is_named_with_what_refused_it() {
+        let said = never_emptied_section(&[never_emptied(
+            "ttys015",
+            8,
+            0,
+            Some("ttys015: «\u{25ef} » is on the screen, so somebody is being waited for"),
+        )]);
+        for held in ["8", "ttys015", "on the screen"] {
+            assert!(said.contains(held), "«{held}» is missing: {said}");
+        }
+    }
+
+    #[test]
+    fn a_terminal_that_hands_on_every_time_is_not_in_the_section() {
+        assert!(
+            never_emptied_section(&[]).is_empty(),
+            "an empty section was printed"
+        );
+        assert_eq!(never_emptied("ttys003", 8, 8, None).missed(), 0);
+        assert_eq!(never_emptied("ttys003", 8, 2, None).missed(), 6);
+    }
+
+    /// A made handover can never outnumber the chances it was given.
+    #[test]
+    fn more_made_than_owed_does_not_wrap_around() {
+        assert_eq!(never_emptied("ttys003", 1, 4, None).missed(), 0);
     }
 
     #[test]
