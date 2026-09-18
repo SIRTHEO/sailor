@@ -1672,7 +1672,11 @@ fn record_event(request: &Request<'_>) -> Result<Report, String> {
     }
     // Before the ask is judged: a mandate dropped since the last hook is an
     // answer to it, and filing it here is what keeps the relay off a person.
-    if let Some(filed) = filed_what_was_dropped(request, &happened.tty) {
+    if let Some(filed) = filed_what_was_dropped(
+        request,
+        &happened.tty,
+        happened.session_id.as_deref().unwrap_or_default(),
+    ) {
         said.push('\n');
         said.push_str(&filed);
     }

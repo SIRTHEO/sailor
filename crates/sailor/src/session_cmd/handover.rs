@@ -105,13 +105,48 @@ fn the_mandate_of(
 /// the store, so a mandate typed there is refused and the relay stops at the one
 /// session that filled up. The hook runs outside that sandbox: what the session
 /// could only drop, this files.
-pub(super) fn filed_what_was_dropped(request: &Request<'_>, tty: &str) -> Option<String> {
+pub(super) fn filed_what_was_dropped(
+    request: &Request<'_>,
+    tty: &str,
+    session: &str,
+) -> Option<String> {
     let TheDeposit::Open(ledger) = request.deposit else {
         return None;
     };
     let machine = toolbox::Machine::current();
     let catalog = toolbox::Catalog::load(&toolbox::default_sources(&machine));
-    filing_from(&catalog, &machine.env, ledger.directory(), tty)
+    let known = Known {
+        session: session.to_owned(),
+        engine: request.options.get("cli").cloned().unwrap_or_default(),
+        tokens: tokens_asked_of(ledger, tty),
+    };
+    filing_from(&catalog, &machine.env, ledger.directory(), tty, &known)
+}
+
+/// What the hook knows about the session that dropped, and the session can
+/// only guess about itself.
+///
+/// **THE FILER FILLS WHAT THE FILER KNOWS.** A mandate refused for a field the
+/// hook was holding is a handover that does not happen, and it is refused
+/// exactly where it matters most: at the threshold, in the session with the
+/// least room left to fix it.
+#[derive(Debug, Default)]
+struct Known {
+    session: String,
+    engine: String,
+    tokens: Option<u64>,
+}
+
+/// The fill the relay measured when it asked, which beats a number the session
+/// estimated about itself.
+fn tokens_asked_of(ledger: &ledger::Ledger, tty: &str) -> Option<u64> {
+    ledger
+        .read_record(ASKS, tty)
+        .ok()
+        .flatten()?
+        .value
+        .get("tokens")
+        .and_then(serde_json::Value::as_u64)
 }
 
 /// The same filing with the environment named, so it can be put to a machine
@@ -121,6 +156,7 @@ fn filing_from(
     env: &std::collections::BTreeMap<String, String>,
     store: &std::path::Path,
     tty: &str,
+    known: &Known,
 ) -> Option<String> {
     for (_, home) in homes_in(catalog, env) {
         let dropped = sessions::mandate::dropped_in(&home, tty);
@@ -128,7 +164,7 @@ fn filing_from(
             continue;
         };
         let at = dropped.display().to_string();
-        return Some(match filed(store, tty, &text) {
+        return Some(match filed(store, tty, known, &text) {
             Ok(head) => {
                 // Gone once filed: a drop left behind would be filed again at
                 // the next hook, archiving the mandate over itself every turn.
@@ -194,8 +230,14 @@ fn the_drop_for(
 /// The deposit itself, from the shape the session dropped.
 ///
 /// Whatever the session did not have to know is filled in here, exactly as the
-/// typed form fills it: which terminal, which tree, which store.
-fn filed(store: &std::path::Path, tty: &str, text: &str) -> Result<String, String> {
+/// typed form fills it: which terminal, which tree, which store, and which
+/// session on which line, filled to the reading the relay took.
+fn filed(
+    store: &std::path::Path,
+    tty: &str,
+    known: &Known,
+    text: &str,
+) -> Result<String, String> {
     if text.trim().is_empty() {
         return Err(catalogue::say("cli.terminal.nothing_to_hand_on", &[]));
     }
@@ -206,6 +248,15 @@ fn filed(store: &std::path::Path, tty: &str, text: &str) -> Result<String, Strin
         .as_object_mut()
         .ok_or_else(|| catalogue::say("cli.terminal.mandate_shape", &[("why", "not an object")]))?;
     object.insert("tty".to_owned(), serde_json::Value::String(tty.to_owned()));
+    for (field, held) in [("session", &known.session), ("engine", &known.engine)] {
+        if !held.is_empty() {
+            object.insert(field.to_owned(), serde_json::Value::String(held.clone()));
+        }
+    }
+    if let Some(tokens) = known.tokens {
+        object.insert("tokens".to_owned(), serde_json::Value::from(tokens));
+    }
+    object.entry("tokens").or_insert_with(|| serde_json::Value::from(0));
     let at = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let tree = flow::workspace::find_root(&at).unwrap_or(at);
     object
@@ -375,7 +426,7 @@ mod tests {
             .expect("the letterbox");
         std::fs::write(&dropped, a_whole_mandate()).expect("what the shell could write");
 
-        let said = filing_from(&shipped(), &env, &store, "ttys009")
+        let said = filing_from(&shipped(), &env, &store, "ttys009", &Known::default())
         .expect("a drop waiting for this terminal is filed");
 
         assert!(said.contains("ttys009"), "the filing names the terminal: {said}");
@@ -386,6 +437,55 @@ mod tests {
         assert!(
             !dropped.exists(),
             "the drop is gone, or the next hook files it over itself"
+        );
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// **A MANDATE IS REFUSED FOR ITS WORK, NEVER FOR A FACT THE FILER HELD.**
+    /// The store wants a session, a line and a fill before it takes a mandate,
+    /// and a session at the threshold is the worst placed of the two to state
+    /// any of them. Dropped without them, it is still filed.
+    #[test]
+    fn the_hook_fills_in_what_the_session_never_had_to_know() {
+        let directory =
+            std::env::temp_dir().join(format!("sailor-filled-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        let home = directory.join("home");
+        let store = directory.join("store");
+        std::fs::create_dir_all(&home).expect("a home of this test's own");
+        std::fs::create_dir_all(&store).expect("a store of this test's own");
+
+        let env = env_of(&[("HOME", &home.display().to_string())]);
+        let line = homes_in(&shipped(), &env)
+            .into_iter()
+            .next()
+            .expect("a command line declares where its home is")
+            .1;
+        let dropped = sessions::mandate::dropped_in(&line, "ttys009");
+        std::fs::create_dir_all(dropped.parent().expect("the letterbox has a parent"))
+            .expect("the letterbox");
+        let mut bare: serde_json::Value =
+            serde_json::from_str(&a_whole_mandate()).expect("the whole mandate parses");
+        for held in ["session", "engine", "tokens"] {
+            bare.as_object_mut().expect("an object").remove(held);
+        }
+        std::fs::write(&dropped, bare.to_string()).expect("what the shell could write");
+
+        let known = Known {
+            session: "a-session-of-this-test".to_owned(),
+            engine: "claude".to_owned(),
+            tokens: Some(251_000),
+        };
+        filing_from(&shipped(), &env, &store, "ttys009", &known)
+            .expect("a drop missing only what the hook knows is still filed");
+
+        let filed = sessions::mandate::read(&sessions::mandate::address_in(&store, "ttys009"))
+            .expect("the mandate is in the store");
+        assert_eq!(filed.written.session, "a-session-of-this-test");
+        assert_eq!(filed.written.engine, "claude");
+        assert_eq!(
+            filed.written.tokens, 251_000,
+            "the fill is the one the relay measured, not one the session guessed"
         );
         let _ = std::fs::remove_dir_all(&directory);
     }
@@ -414,7 +514,7 @@ mod tests {
             .expect("the letterbox");
         std::fs::write(&dropped, "carry the conduit on").expect("prose where a mandate belongs");
 
-        let said = filing_from(&shipped(), &env, &store, "ttys009")
+        let said = filing_from(&shipped(), &env, &store, "ttys009", &Known::default())
         .expect("a drop that cannot be filed is still answered");
 
         assert!(
