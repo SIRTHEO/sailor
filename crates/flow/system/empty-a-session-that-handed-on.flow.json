@@ -1,6 +1,6 @@
 {
   "id": "empty-a-session-that-handed-on",
-  "description": "THE OTHER HALF OF THE HANDOVER, AND THE ONLY DESTRUCTIVE THING THE RELAY DOES. When a session of this machine finishes a turn, this flow asks one question of the store: has the terminal that just spoke left a mandate nobody has taken? If it has not, the flow ends green with nothing done — a terminal that handed nothing on has written nothing down, and emptying it would throw the work away. If it has, the session is emptied by the line that command line's own descriptor declares, and only once the reading says nobody is being waited for in there: the screen has stood still for as long as the line declares, its prompt is painted, and none of the marks that mean a person is being asked something is on it. In every other case the answer is «not yet» and nothing is typed. The name of the command line is read from the mandate itself, so no product is named in this file. The mandate the successor then reads arrives with the greeting of its own session.",
+  "description": "THE OTHER HALF OF THE HANDOVER, AND THE ONLY DESTRUCTIVE THING THE RELAY DOES. When a session of this machine finishes a turn, this flow asks two questions, and empties nothing unless both answer. First the session's own context: the reading must stand at oblige, taken from the transcript the command line writes about itself, not from stillness and not from the age of a mandate. Second the store: has the terminal that just spoke left a mandate nobody has taken? If either answers no the flow ends green with nothing done. **A MANDATE ON DISK IS NOT CONSENT.** On 11/09/2026 this flow, keyed on the mandate alone, emptied a session that had written its handover seventeen minutes earlier and had gone on working, and a person lost the thread of an investigation in progress. Depositing a handover is something a session is asked to do while it keeps working; it is not a statement that it is finished. A session standing at oblige is. If both answer yes, the session is emptied by the line that command line's own descriptor declares, and only once the reading says nobody is being waited for in there: the screen has stood still for as long as the line declares, its prompt is painted, and none of the marks that mean a person is being asked something is on it. In every other case the answer is «not yet» and nothing is typed. The name of the command line is read from the mandate itself, so no product is named in this file. The mandate the successor then reads arrives with the greeting of its own session.",
   "inputs": {},
   "graph": {
     "steps": [
@@ -73,6 +73,44 @@
         }
       },
       {
+        "id": "measure",
+        "deps": [
+          "trigger"
+        ],
+        "action": "measure_session",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "transcript": {
+            "$from": "/carried/transcript"
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string"
+            },
+            "tokens": {
+              "type": "number"
+            },
+            "source": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "state"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
         "id": "handed_on",
         "deps": [
           "trigger"
@@ -118,11 +156,16 @@
         "id": "empty",
         "deps": [
           "trigger",
+          "measure",
           "handed_on"
         ],
         "action": "empty_terminal",
         "max_attempts": 1,
-        "when": null,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/measure/state",
+          "value": "oblige"
+        },
         "with": {
           "tty": {
             "$from": "/handed_on/tty"
