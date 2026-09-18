@@ -84,6 +84,14 @@ fn the_mandate_of(
     if !left.written.tree.is_empty() && !tree.is_empty() && left.written.tree != tree {
         return None;
     }
+    // **A COMPACTION IS NOT A SUCCESSOR.** The session keeps its name across a
+    // compaction, and the greeting runs there too: keyed on the terminal alone
+    // the mandate went back to its own author and was marked taken, so the
+    // session opened by the emptying was greeted with nothing. Of 79 mandates
+    // taken here, 20 went back to their author, 17 of them at a compaction.
+    if !left.written.session.is_empty() && left.written.session == session {
+        return None;
+    }
     if sessions::mandate::consume(&path, session, sessions::now()).is_err() {
         return None;
     }
@@ -684,6 +692,48 @@ mod tests {
             the_mandate_of(&directory, "ttys015", "the-successor", "/the/tree/it/was/written/in")
                 .expect("the successor in the mandate's own tree is handed it");
         assert!(handed.contains("swap the profile of a live session"), "{handed}");
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// **A COMPACTION GREETS THE AUTHOR, NOT A SUCCESSOR.** Handed back to
+    /// whoever wrote it, the mandate is marked taken and the session opened by
+    /// the emptying is greeted with nothing: 17 mandates of 79 died that way.
+    #[test]
+    fn a_mandate_is_not_handed_back_to_the_session_that_wrote_it() {
+        let directory = std::env::temp_dir().join(format!(
+            "sailor-mandate-compacted-{}-{}",
+            std::process::id(),
+            sessions::now()
+        ));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("a directory of this test's own");
+        let mut mandate = sessions::mandate::Mandate::default();
+        mandate.written.tty = "ttys015".to_owned();
+        mandate.written.session = "the-one-that-filled-up".to_owned();
+        mandate.written.at = 100;
+        mandate.work.goal = "carry the relay past the compaction".to_owned();
+        mandate.work.next = "read the greeting the successor gets".to_owned();
+        sessions::mandate::deposit(&directory, &mandate).expect("the mandate is deposited");
+
+        assert_eq!(
+            the_mandate_of(&directory, "ttys015", "the-one-that-filled-up", ""),
+            None,
+            "the session that wrote the mandate is not its own successor"
+        );
+        assert!(
+            sessions::mandate::read(&sessions::mandate::address_in(&directory, "ttys015"))
+                .expect("the mandate is still there")
+                .taken
+                .is_none(),
+            "a compaction must not consume what the successor is owed"
+        );
+
+        let handed = the_mandate_of(&directory, "ttys015", "the-one-after-the-clear", "")
+            .expect("the session opened by the emptying is handed it");
+        assert!(
+            handed.contains("carry the relay past the compaction"),
+            "{handed}"
+        );
         let _ = std::fs::remove_dir_all(&directory);
     }
 
