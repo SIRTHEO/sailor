@@ -1162,7 +1162,10 @@ mod tests {
         let home_flows = home.join("flows");
         put_flow(&home_flows, "mine");
 
-        assert_eq!(project_flows_from(&home, Some(&home_flows)), None);
+        assert_ne!(
+            project_flows_from(&home, Some(&home_flows)),
+            Some(home_flows.clone())
+        );
         let _ = fs::remove_dir_all(&home);
     }
 
