@@ -1069,6 +1069,7 @@
   "cli.flow.where_runs": "  {origin}: {path} (this one runs)",
   "cli.flow.no_home_no_ledger": "HOME is not set: I do not know which ledger to open",
   "cli.flow.schedule_line": "{when}; weight {weight}; perimeter: {perimeter}",
+  "cli.flow.run_not_started_without_its_tools": "this run does not start: it needs {tools}, and this machine does not have them. Install them, or run a flow that does not",
   "cli.session.event_on_terminal": "{event} on {tty}",
   "cli.session.census_terminal": "{tty} ({ancestor}), {processes} processes",
   "cli.clock_before_the_epoch": "the system clock is before the Unix epoch: {error}",

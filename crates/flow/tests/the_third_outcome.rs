@@ -42,6 +42,7 @@ fn step(id: &str, action: &str, max_attempts: u32) -> Step {
         stops_when: None,
         decides_done: false,
         required: false,
+        needs: Vec::new(),
     }
 }
 

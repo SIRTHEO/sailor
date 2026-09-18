@@ -808,6 +808,19 @@
       "version": { "args": ["--version"] }
     },
     {
+      "id": "shasum",
+      "family": "tool",
+      "label": "shasum",
+      "detect": { "command": "shasum" },
+      "version": { "args": ["--version"] }
+    },
+    {
+      "id": "lsof",
+      "family": "tool",
+      "label": "lsof",
+      "detect": { "command": "lsof" }
+    },
+    {
       "id": "ripgrep",
       "family": "tool",
       "label": "ripgrep",

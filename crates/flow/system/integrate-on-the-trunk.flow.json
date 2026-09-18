@@ -81,6 +81,9 @@
             "allow_extra": false
           }
         },
+        "needs": [
+          "python3"
+        ],
         "input_schema": {
           "type": "any"
         },
@@ -117,6 +120,9 @@
             "allow_extra": false
           }
         },
+        "needs": [
+          "gh"
+        ],
         "input_schema": {
           "type": "any"
         },
@@ -192,6 +198,9 @@
             "allow_extra": false
           }
         },
+        "needs": [
+          "python3"
+        ],
         "input_schema": {
           "type": "any"
         },
@@ -246,6 +255,9 @@
             "allow_extra": false
           }
         },
+        "needs": [
+          "gh"
+        ],
         "input_schema": {
           "type": "any"
         },
@@ -379,6 +391,9 @@
             "allow_extra": false
           }
         },
+        "needs": [
+          "python3"
+        ],
         "input_schema": {
           "type": "any"
         },
@@ -463,6 +478,9 @@
             "allow_extra": false
           }
         },
+        "needs": [
+          "python3"
+        ],
         "input_schema": {
           "type": "any"
         },
@@ -525,6 +543,9 @@
             "allow_extra": false
           }
         },
+        "needs": [
+          "python3"
+        ],
         "input_schema": {
           "type": "any"
         },
@@ -610,6 +631,9 @@
             "allow_extra": false
           }
         },
+        "needs": [
+          "python3"
+        ],
         "input_schema": {
           "type": "any"
         },
@@ -678,6 +702,9 @@
             "allow_extra": false
           }
         },
+        "needs": [
+          "python3"
+        ],
         "input_schema": {
           "type": "any"
         },
@@ -728,6 +755,9 @@
             "allow_extra": false
           }
         },
+        "needs": [
+          "gh"
+        ],
         "input_schema": {
           "type": "any"
         },
@@ -775,6 +805,9 @@
             "allow_extra": false
           }
         },
+        "needs": [
+          "gh"
+        ],
         "input_schema": {
           "type": "any"
         },
@@ -872,6 +905,9 @@
             "allow_extra": false
           }
         },
+        "needs": [
+          "gh"
+        ],
         "input_schema": {
           "type": "any"
         },
