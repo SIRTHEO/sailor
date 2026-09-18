@@ -156,6 +156,7 @@ pub(super) fn still_open_in(
     deposit: &ledger::Ledger,
     home: Option<&std::path::Path>,
     started: &Started<'_>,
+    tty: &str,
 ) -> Result<StillOpen, String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -174,6 +175,11 @@ pub(super) fn still_open_in(
         ),
         page_unseen: page_unseen(started, page.as_ref()),
         page,
+        handover: deposit
+            .handovers_owed_and_missed(1)
+            .unwrap_or_default()
+            .into_iter()
+            .find(|missed| missed.tty == tty),
     })
 }
 
@@ -198,10 +204,14 @@ pub(super) fn deposit(declared: Option<&str>) -> Result<Option<ledger::Ledger>, 
 }
 
 /// The same, from this machine's home.
-pub(super) fn still_open(started: &Started<'_>, declared: Option<&str>) -> Result<Option<StillOpen>, String> {
+pub(super) fn still_open(
+    started: &Started<'_>,
+    declared: Option<&str>,
+    tty: &str,
+) -> Result<Option<StillOpen>, String> {
     match deposit(declared)? {
         Some(deposit) => {
-            still_open_in(&deposit, ledger::sailor_home().as_deref(), started).map(Some)
+            still_open_in(&deposit, ledger::sailor_home().as_deref(), started, tty).map(Some)
         }
         None => Ok(None),
     }
@@ -303,6 +313,16 @@ pub(super) fn what_is_still_open(found: &StillOpen) -> Option<String> {
             &[
                 ("count", &found.remembered.len().to_string()),
                 ("recent", &recent.join(", ")),
+            ],
+        ));
+    }
+    if let Some(missed) = found.handover.as_ref().filter(|m| m.missed() > 0) {
+        lines.push(catalogue::say(
+            "cli.session.handovers_missed",
+            &[
+                ("missed", &missed.missed().to_string()),
+                ("owed", &missed.owed.to_string()),
+                ("said", missed.said.as_deref().unwrap_or("")),
             ],
         ));
     }

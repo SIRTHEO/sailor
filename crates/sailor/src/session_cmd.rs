@@ -572,6 +572,7 @@ fn open_terminal(request: &Request<'_>) -> Result<Report, String> {
             &still_open(
                 &started(request, &arrival),
                 request.options.get("ledger").map(String::as_str),
+                &arrival.anchor.tty,
             ),
             &announced,
             handed_on(request, &arrival),
@@ -605,12 +606,15 @@ fn named(row: &sessions::TerminalRow, here: &str) -> String {
 /// and not one**: a run `waiting` was handed to a person, one stopped on «not
 /// yet» wants only running again, and merging them would send a reader to take
 /// a step nobody handed them.
+#[derive(Default)]
 struct StillOpen {
     waiting: Vec<ledger::WaitingRun>,
     ask_again: Vec<ledger::WaitingRun>,
     remembered: Vec<actions::memory::Memory>,
     page: Option<PageOnDisk>,
     page_unseen: Option<PageUnseen>,
+    /// This terminal's own record of handovers owed and not made.
+    handover: Option<ledger::HandoverMissed>,
 }
 
 /// The page of memories as it sits on disk: its address, and how it opens.
@@ -1384,6 +1388,42 @@ mod tests {
     /// **THE ANNOUNCEMENT IS HELD BY THE TERMINAL, NOT BY WHOEVER WRITES IT.**
     /// A hook is a new process at every event: keyed on that pid, a day of work
     /// would leave one abandoned claim per keystroke and a crew of ghosts.
+    /// **THE READING HAS TO REACH THE SESSION THAT CAN ACT ON IT.** `sailor
+    /// stuck` is invoked by nothing, so a terminal that never hands on learns
+    /// it here or nowhere.
+    #[test]
+    fn a_terminal_that_never_hands_on_is_told_so_at_its_own_start() {
+        let said = what_is_still_open(&StillOpen {
+            handover: Some(ledger::HandoverMissed {
+                tty: "ttys015".to_owned(),
+                owed: 8,
+                made: 0,
+                last_at: 0,
+                said: Some("ttys015: the screen changed inside 3s".to_owned()),
+            }),
+            ..Default::default()
+        })
+        .expect("something to say");
+        for held in ["8", "the screen changed inside 3s"] {
+            assert!(said.contains(held), "«{held}» is missing: {said}");
+        }
+    }
+
+    #[test]
+    fn a_terminal_that_hands_on_every_time_is_told_nothing_about_it() {
+        let quiet = what_is_still_open(&StillOpen {
+            handover: Some(ledger::HandoverMissed {
+                tty: "ttys003".to_owned(),
+                owed: 8,
+                made: 8,
+                last_at: 0,
+                said: None,
+            }),
+            ..Default::default()
+        });
+        assert!(quiet.is_none(), "a terminal with nothing missed was nagged");
+    }
+
     #[test]
     fn a_second_event_renews_the_announcement_instead_of_adding_one() {
         let scratch = Scratch::new("annuncio-rinnovato");
@@ -1968,6 +2008,7 @@ mod tests {
             remembered: vec![memory("the trunk", 3), memory("the home", 2)],
             page: None,
             page_unseen: None,
+            ..Default::default()
         };
         let said = what_is_still_open(&found).expect("something to say");
         assert!(
@@ -2016,8 +2057,8 @@ mod tests {
             home: None,
         };
 
-        let here = still_open_in(&ledger, None, &started_in(&deep)).expect("open");
-        let outside = still_open_in(&ledger, None, &started_in(&scratch.directory)).expect("open");
+        let here = still_open_in(&ledger, None, &started_in(&deep), "ttysTEST").expect("open");
+        let outside = still_open_in(&ledger, None, &started_in(&scratch.directory), "ttysTEST").expect("open");
         let labels = |found: &StillOpen| {
             found
                 .remembered
@@ -2054,6 +2095,7 @@ mod tests {
             remembered: Vec::new(),
             page: None,
             page_unseen: None,
+            ..Default::default()
         });
         let said = what_is_still_open(&StillOpen {
             waiting: Vec::new(),
@@ -2061,6 +2103,7 @@ mod tests {
             remembered: Vec::new(),
             page: Some(present),
             page_unseen: None,
+            ..Default::default()
         })
         .expect("something to say");
 
@@ -2130,6 +2173,7 @@ mod tests {
             remembered: Vec::new(),
             page: None,
             page_unseen: Some(unseen),
+            ..Default::default()
         })
         .expect("something to say");
         assert!(
@@ -2461,6 +2505,7 @@ mod tests {
             remembered: Vec::new(),
             page: None,
             page_unseen: None,
+            ..Default::default()
         }));
 
         let said = welcome(&arriving_in(&scratch), None, &open, &Ok(()), None);
@@ -2492,6 +2537,7 @@ mod tests {
             remembered: Vec::new(),
             page: None,
             page_unseen: None,
+            ..Default::default()
         })
         .expect("a run that is waiting gets said");
         let again = what_is_still_open(&StillOpen {
@@ -2500,6 +2546,7 @@ mod tests {
             remembered: Vec::new(),
             page: None,
             page_unseen: None,
+            ..Default::default()
         })
         .expect("a run to start again gets said");
 
@@ -2514,6 +2561,7 @@ mod tests {
             remembered: Vec::new(),
             page: None,
             page_unseen: None,
+            ..Default::default()
         })
         .expect("the two lists together get said");
         assert_eq!(both.lines().count(), 2, "{both}");
@@ -2541,6 +2589,7 @@ mod tests {
                 remembered: Vec::new(),
                 page: None,
                 page_unseen: None,
+                ..Default::default()
             }),
             None
         );
@@ -2609,7 +2658,7 @@ mod tests {
             worktree: PathBuf::new(),
             home: None,
         };
-        let found = still_open_in(&deposit, None, &nobody).expect("reading the two lists");
+        let found = still_open_in(&deposit, None, &nobody, "ttysTEST").expect("reading the two lists");
 
         assert_eq!(
             found
