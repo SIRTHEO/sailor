@@ -540,7 +540,7 @@
   "cli.session.runs_to_ask_again": "{count} run(s) stopped on a step that answered «not yet»: {which}. They come back only when somebody runs them again: `sailor flow resume {first}`.",
   "cli.session.runs_waiting_for_a_person": "{count} run(s) of the ledger are waiting for a person to take them up: {which}. Nothing takes them on its own — `sailor flow resume {first}` does.",
   "cli.session.root_not_an_object": "{file}: the root is not an object",
-  "cli.session.the_mandate_is_asked_for": "**This context is full ({tokens} tokens).** Before going on, hand the work on: `sailor terminal mandate` reads a mandate on standard input and deposits it for this terminal. It is a JSON object with `session`, `engine` and a `work` that says the goal, what you were asked, what is done and verified, the decisions taken and who authorised them, the constraints that hold, what failed, the one next thing, the questions still open and what must never be done. A field left blank is refused while you are still here to fill it. **Do not write a handover file of your own**: whoever comes after you is handed this one, at the start of their session, and goes looking for nothing else. Measured on this machine, an edit above 300k tokens fails for a reason of memory nine times as often as one below 64k. Nothing has been reset, and nothing will be.",
+  "cli.session.the_mandate_is_asked_for": "**This context is full ({tokens} tokens).** Before going on, hand the work on: `sailor terminal mandate` reads a mandate on standard input and deposits it for this terminal. It is a JSON object with `session`, `engine` and a `work` that says the goal, what you were asked, what is done and verified, the decisions taken and who authorised them, the constraints that hold, what failed, the one next thing, the questions still open and what must never be done. A field left blank is refused while you are still here to fill it. Your shell cannot write the store: write the object to `{drop}` instead, and the next hook deposits it for you — `sailor terminal mandate` still works where the shell does reach the store. **Do not write a handover file of your own**: whoever comes after you is handed this one, at the start of their session, and goes looking for nothing else. Measured on this machine, an edit above 300k tokens fails for a reason of memory nine times as often as one below 64k. Nothing has been reset, and nothing will be.",
   "cli.session.word_body": "Run `sailor session {verb}` and report in one line what it answered. Do nothing else.",
   "cli.session.word_off": "Detach this terminal from Sailor: it stops being tracked, and so do the sessions opened here afterwards.",
   "cli.session.word_on": "Attach this terminal to Sailor again, if it had been detached.",
@@ -1095,5 +1095,7 @@
   "cli.role.missing": "role «{role}» has no row in roles",
   "cli.role.invalid": "role «{role}» is invalid: {error}",
   "cli.role.no_tools": "role «{role}» has no tools",
-  "cli.role.needs_object": "role «{role}» needs an object input"
+  "cli.role.needs_object": "role «{role}» needs an object input",
+  "cli.session.the_drop_was_filed": "The mandate you left for {tty} has been deposited: «{head}». Nothing else is owed for the handover.",
+  "cli.session.the_drop_was_refused": "The mandate at {path} was not deposited: {why}. It is still there: correct it and it will be taken at the next turn."
 }
