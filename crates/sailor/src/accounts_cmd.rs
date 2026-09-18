@@ -111,9 +111,7 @@ fn how_it_was_asked(args: &[String]) -> Result<(i64, bool), String> {
         match argument.as_str() {
             "--json" => as_json = true,
             "--hours" => {
-                let said = rest
-                    .next()
-                    .ok_or_else(|| usage_line())?;
+                let said = rest.next().ok_or_else(usage_line)?;
                 hours = said
                     .parse()
                     .map_err(|_| catalogue::say("cli.accounts.hours_is_a_number", &[("value", said)]))?;
@@ -162,9 +160,11 @@ pub fn joined(
                 standing.cli.clone(),
                 standing.profile.clone(),
                 false,
-                ran_out_recently(Some(standing), now)
-                    .then_some(Standing::RanOut)
-                    .unwrap_or(Standing::Unknown),
+                if ran_out_recently(Some(standing), now) {
+                    Standing::RanOut
+                } else {
+                    Standing::Unknown
+                },
                 catalogue::say("cli.accounts.no_profile_declares_it", &[]),
                 Some(standing),
             ));
