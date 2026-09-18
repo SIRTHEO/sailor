@@ -83,12 +83,28 @@ pub fn report(found: &[BreakingStep], at_least: u64) -> String {
                 ("step", &step.step_id),
             ],
         ));
-        if let Some(said) = step.said.as_deref().filter(|said| !said.trim().is_empty()) {
-            lines.push(format!("      {}", in_one_line(said)));
+        if let Some(detail) = detail_of(step) {
+            lines.push(format!("      {detail}"));
         }
     }
     lines.push(catalogue::say("cli.stuck.a_break_is_not_a_fault", &[]));
     lines.join("\n")
+}
+
+/// The kind of break first, then the words: the store already tells a broken
+/// contract from a refusal that is working, and a list that hides the kind
+/// makes a reader open every one of them to find out.
+fn detail_of(step: &BreakingStep) -> Option<String> {
+    let said = step
+        .said
+        .as_deref()
+        .map(in_one_line)
+        .filter(|said| !said.is_empty());
+    match (step.failure_class.as_deref(), said) {
+        (Some(kind), Some(said)) => Some(format!("{kind} · {said}")),
+        (Some(kind), None) => Some(kind.to_owned()),
+        (None, said) => said,
+    }
 }
 
 /// A complaint as one line: a report that unfolds a stack trace is one nobody
@@ -111,12 +127,23 @@ mod tests {
     use super::*;
 
     fn breaking(flow: &str, step: &str, broke: u64, went: u64, said: &str) -> BreakingStep {
+        classed(flow, step, broke, went, said, None)
+    }
+
+    fn classed(
+        flow: &str,
+        step: &str,
+        broke: u64,
+        went: u64,
+        said: &str,
+        failure_class: Option<&str>,
+    ) -> BreakingStep {
         BreakingStep {
             flow: flow.to_owned(),
             step_id: step.to_owned(),
             broke,
             went,
-            failure_class: None,
+            failure_class: failure_class.map(str::to_owned),
             said: (!said.is_empty()).then(|| said.to_owned()),
             last_at: 0,
         }
@@ -161,6 +188,25 @@ mod tests {
             !said.contains(&long),
             "the whole complaint was printed anyway"
         );
+    }
+
+    /// **A REFUSAL THAT WORKS LOOKS LIKE A DEFECT WITHOUT ITS KIND.**
+    #[test]
+    fn the_kind_of_break_is_named_before_the_words() {
+        let said = report(
+            &[classed("a-flow", "a-step", 9, 0, "it saw «[]»", Some("answer_off_shape"))],
+            3,
+        );
+        assert!(
+            said.contains("answer_off_shape · it saw"),
+            "the kind is missing or not first: {said}"
+        );
+    }
+
+    #[test]
+    fn a_break_the_store_never_classed_still_shows_its_words() {
+        let said = report(&[breaking("a-flow", "a-step", 9, 0, "it fell over")], 3);
+        assert!(said.contains("it fell over"), "the words were lost: {said}");
     }
 
     #[test]
