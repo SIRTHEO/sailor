@@ -352,6 +352,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         terminal::scratch::ROOT_VARIABLE,
         Some(release::NAMES_CARRIED_BY_THE_PREFLIGHT),
     );
+    let mut proved = String::new();
     for (number, manifest_rel) in judges.iter().enumerate() {
         println!(
             "{}",
@@ -397,6 +398,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
             })?;
         let suite = fs::read(&suite_path)
             .map_err(|error| format!("cannot read {} back: {error}", suite_path.display()))?;
+        proved.push_str(&String::from_utf8_lossy(&suite));
         print_tail(&suite, 25);
         if !suite_status.success() {
             // The tail ends on cargo's «N targets failed» and never on the
@@ -428,6 +430,18 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
                     &[("count", &not_run.to_string())],
                 )
             );
+        }
+    }
+    // **THE SUITE HELD THE RECEIPTS AND NOBODY READ THEM.** Passing was all the
+    // release ever asked, so a judge green while measuring nothing went into
+    // service untouched. The words are already in hand; this reads them.
+    if !options.skip_tests {
+        match crate::ratchet_cmd::what_the_suite_proved(&repository, &proved) {
+            Ok(said) => println!("{said}"),
+            Err(why) => {
+                eprintln!("sailor release: {why}");
+                return Ok(1);
+            }
         }
     }
     if !judges.is_empty() {

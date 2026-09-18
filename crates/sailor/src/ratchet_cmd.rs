@@ -273,6 +273,78 @@ const NO_RECEIPT_TODAY: usize = 0;
 /// give that answer were each run against this tree and all eight measured.
 const UNMEASURED_TODAY: usize = 0;
 
+/// The verdicts of the judges a suite ran, read off the output it already
+/// captured.
+///
+/// **THE RELEASE HELD THE RECEIPTS AND READ NONE OF THEM.** `cargo test` names
+/// each binary on a `Running tests/<name>.rs` line before it runs, and the
+/// release passes `--nocapture`, so what a judge said is in the suite file with
+/// the judge's own name above it. Nothing needed rebuilding to know this; it
+/// needed reading.
+fn verdicts_in(suite: &str, judges: &[Judge]) -> Vec<(String, Verdict)> {
+    let mut found = Vec::new();
+    let mut named: Option<&Judge> = None;
+    let mut said = String::new();
+    let mut close = |named: &mut Option<&Judge>, said: &mut String| {
+        if let Some(judge) = named.take() {
+            found.push((judge.test.clone(), verdict_of(true, said)));
+        }
+        said.clear();
+    };
+    for line in suite.lines() {
+        if let Some(binary) = line.trim().strip_prefix("Running ") {
+            close(&mut named, &mut said);
+            named = judges.iter().find(|judge| {
+                binary.starts_with(&format!("tests/{}.rs", judge.test))
+            });
+            continue;
+        }
+        if named.is_some() {
+            said.push_str(line);
+            said.push('\n');
+        }
+    }
+    close(&mut named, &mut said);
+    found
+}
+
+/// What the release must be told before it puts a binary in service.
+///
+/// **A RECEIPT THAT GATES NOTHING IS DOCUMENTATION.** Every judge could hand in
+/// its words and the release read only cargo's exit code, so a judge passing
+/// while measuring nothing sailed through untouched — the one condition this
+/// whole apparatus was built to make impossible.
+pub fn what_the_suite_proved(root: &Path, suite: &str) -> Result<String, String> {
+    let judges = judges_in(root);
+    if judges.is_empty() {
+        return Ok(catalogue::say("cli.release.no_judge_to_read", &[]));
+    }
+    let verdicts = verdicts_in(suite, &judges);
+    let mut counted = Verdicts::default();
+    for (_, verdict) in &verdicts {
+        counted.saw(*verdict);
+    }
+    let unheard = judges.len() - verdicts.len();
+    let blind: Vec<&str> = verdicts
+        .iter()
+        .filter(|(_, verdict)| matches!(verdict, Verdict::NotMeasured | Verdict::NoReceipt))
+        .map(|(name, _)| name.as_str())
+        .collect();
+    if counted.not_measured > UNMEASURED_TODAY || counted.no_receipt > NO_RECEIPT_TODAY {
+        return Err(catalogue::say(
+            "cli.release.the_suite_proved_too_little",
+            &[("judges", &blind.join(", "))],
+        ));
+    }
+    Ok(catalogue::say(
+        "cli.release.the_suite_proved_itself",
+        &[
+            ("read", &verdicts.len().to_string()),
+            ("unheard", &unheard.to_string()),
+        ],
+    ))
+}
+
 /// The tally of the run, kept apart so a green count never absorbs the others.
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Verdicts {

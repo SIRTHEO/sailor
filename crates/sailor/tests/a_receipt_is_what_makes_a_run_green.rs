@@ -2,7 +2,9 @@
 //! own words and the gate decides from them. Not a judge itself — it opens no
 //! source, it drives the gate — so it carries no seed and no receipt.
 
-use sailor::ratchet_cmd::{blind_checks_in, judges_in, verdict_of, Gate, Handed, Verdict};
+use sailor::ratchet_cmd::{
+    blind_checks_in, judges_in, verdict_of, what_the_suite_proved, Gate, Handed, Verdict,
+};
 
 /// The element the perimeter must contain: a judge that walked can count it.
 const SENTINEL: &str = "the sentinel this perimeter demands";
@@ -237,4 +239,50 @@ fn a_judge_that_measured_is_green_even_where_one_of_its_checks_could_not() {
         1,
         "the blind check went unsaid, which is the silence this gate exists to break"
     );
+}
+
+fn repository() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|crates| crates.parent())
+        .expect("the crate lives in <root>/crates/sailor")
+        .to_path_buf()
+}
+
+/// A suite as `cargo test --nocapture` writes it: each binary named on its own
+/// line before the words it then prints.
+fn a_suite_where(judge: &str, said: &str) -> String {
+    format!("   Compiling sailor\n     Running tests/{judge}.rs (target/release/deps/{judge}-ab)\n{said}\n")
+}
+
+/// **THE RELEASE READ CARGO'S EXIT CODE AND NOTHING ELSE.** Every receipt this
+/// apparatus produces lived in `sailor ratchet`, which no release, hook or
+/// script ever invoked, so a judge passing while measuring nothing went into
+/// service untouched.
+#[test]
+fn a_release_refuses_a_suite_whose_judge_proved_nothing() {
+    let judge = judges_in(&repository())
+        .first()
+        .expect("this tree has judges")
+        .test
+        .clone();
+
+    let silent = a_suite_where(&judge, "running 3 tests\ntest result: ok. 3 passed; 0 failed");
+    let refused = what_the_suite_proved(&repository(), &silent)
+        .expect_err("a suite that proved nothing was accepted for service");
+    assert!(
+        refused.contains(&judge),
+        "the refusal did not name the judge that proved nothing: {refused}"
+    );
+
+    let walked = a_suite_where(
+        &judge,
+        &format!(
+            "{} 214 sources holding {SENTINEL}{}214 paths git tracks\nok.",
+            workspace::MEASURED,
+            workspace::AGAINST
+        ),
+    );
+    what_the_suite_proved(&repository(), &walked)
+        .expect("a suite whose judges handed in receipts was refused");
 }
