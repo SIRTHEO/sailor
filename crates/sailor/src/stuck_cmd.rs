@@ -81,6 +81,7 @@ pub fn report(found: &[BreakingStep], at_least: u64) -> String {
                 ("went", &step.went.to_string()),
                 ("flow", &step.flow),
                 ("step", &step.step_id),
+                ("last", &last_break(step.last_at)),
             ],
         ));
         if let Some(detail) = detail_of(step) {
@@ -89,6 +90,19 @@ pub fn report(found: &[BreakingStep], at_least: u64) -> String {
     }
     lines.push(catalogue::say("cli.stuck.a_break_is_not_a_fault", &[]));
     lines.join("\n")
+}
+
+/// **A COUNT CANNOT FALL, SO A CURED STEP STAYS AT THE TOP.** When it last
+/// broke is the only part of a lifetime total that says whether the cure held.
+fn last_break(at: i64) -> String {
+    if at <= 0 {
+        return catalogue::say("cli.stuck.never_dated", &[]);
+    }
+    let ago = (machine::now() - at).max(0);
+    if ago < 86_400 {
+        return catalogue::say("cli.stuck.hours_ago", &[("hours", &(ago / 3_600).to_string())]);
+    }
+    catalogue::say("cli.stuck.days_ago", &[("days", &(ago / 86_400).to_string())])
 }
 
 /// The kind of break first, then the words: the store already tells a broken
@@ -207,6 +221,20 @@ mod tests {
     fn a_break_the_store_never_classed_still_shows_its_words() {
         let said = report(&[breaking("a-flow", "a-step", 9, 0, "it fell over")], 3);
         assert!(said.contains("it fell over"), "the words were lost: {said}");
+    }
+
+    /// **A CURED STEP KEEPS ITS COUNT.** Without a date the list cannot say
+    /// which of these is still happening.
+    #[test]
+    fn a_step_says_when_it_last_broke() {
+        let now = machine::now();
+        let mut step = breaking("a-flow", "a-step", 9, 0, "");
+        step.last_at = now - 3 * 86_400;
+        assert!(report(&[step], 3).contains('3'), "the days are not said");
+        let mut never = breaking("a-flow", "a-step", 9, 0, "");
+        never.last_at = 0;
+        let said = report(&[never], 3);
+        assert!(!said.contains(&now.to_string()), "a raw clock reached the reader");
     }
 
     #[test]
