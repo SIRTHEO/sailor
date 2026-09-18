@@ -8,14 +8,14 @@
 use std::path::{Path, PathBuf};
 use workspace::ratchet::{weigh, Weighed};
 
-const LINES_OUT_OF_SCALE: usize = 2_000;
+const LINES_OUT_OF_SCALE: usize = 1_000;
 
 /// How many files carry more product than that today. Downwards only.
-const OUT_OF_SCALE_TODAY: usize = 0;
+const OUT_OF_SCALE_TODAY: usize = 9;
 
 /// And how many carry more judges than that. A separate seed, because the two
 /// fall for different reasons.
-const JUDGE_WALLS_TODAY: usize = 2;
+const JUDGE_WALLS_TODAY: usize = 10;
 
 /// Where a file stops being what it does and starts being what proves it.
 #[derive(Debug, Clone, PartialEq, Eq)]
