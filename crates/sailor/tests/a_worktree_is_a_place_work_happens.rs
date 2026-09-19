@@ -11,6 +11,9 @@ use std::process::Command;
 use workspace::index_identity::IdentityRule;
 use workspace::{name_for, parse_worktrees, tree_path, OpenTree, OpenTrees};
 
+/// **NOT «main».** A trunk with another name is what catches one read from the code.
+const A_TRUNK: &str = "tronco";
+
 const PORCELAIN: &str = "\
 worktree /somewhere/project
 HEAD 495a93344af1912bfb72d85f9caf4ee70f11cdd8
@@ -411,6 +414,7 @@ fn a_repository_in(scratch: &Path) -> PathBuf {
     std::fs::write(repo.join("README"), "a tree to cut from\n").expect("a file");
     run_git(&repo, &["add", "README"]);
     run_git(&repo, &["commit", "-q", "-m", "the first"]);
-    run_git(&repo, &["branch", "-M", workspace::branches::TRUNK]);
+    run_git(&repo, &["branch", "-M", A_TRUNK]);
+    run_git(&repo, &["config", workspace::branches::TRUNK_KEY, A_TRUNK]);
     repo
 }

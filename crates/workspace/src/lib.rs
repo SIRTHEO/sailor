@@ -145,7 +145,7 @@ pub fn create(repo: &Path, branch: &str, name: Option<&str>) -> Result<PathBuf, 
         &["rev-parse", "--verify", &format!("refs/heads/{branch}")],
     )
     .is_ok();
-    branches::may_be_cut(branch, known)?;
+    branches::may_be_cut(branch, known, &declared_trunk(repo)?)?;
     let target = path.to_string_lossy().into_owned();
     let args: Vec<&str> = if known {
         vec!["worktree", "add", &target, branch]
@@ -342,19 +342,36 @@ fn take_down(repo: &Path, tree: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Unreadable head, missing trunk, no git: all false, because the answer that
-/// keeps a tree standing is the one that loses nothing.
+/// Unreadable head, undeclared trunk, no git: all false, because the answer
+/// that keeps a tree standing is the one that loses nothing.
 pub fn the_trunk_already_holds(repo: &Path, tree: &Path) -> bool {
     let Ok(head) = git(tree, &["rev-parse", "HEAD"]) else {
         return false;
     };
+    let Ok(trunk) = declared_trunk(repo) else {
+        return false;
+    };
     let head = head.trim();
     !head.is_empty()
-        && git(
-            repo,
-            &["merge-base", "--is-ancestor", head, branches::TRUNK],
-        )
-        .is_ok()
+        && git(repo, &["merge-base", "--is-ancestor", head, &trunk]).is_ok()
+}
+
+/// **WHAT IS NOT DECLARED IS NAMED AND STOPS** — ADR-020.
+pub fn declared_trunk(repo: &Path) -> Result<String, String> {
+    let name = git(repo, &["config", "--get", branches::TRUNK_KEY])
+        .map_err(|_| undeclared_trunk())?;
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(undeclared_trunk());
+    }
+    Ok(name.to_owned())
+}
+
+fn undeclared_trunk() -> String {
+    format!(
+        "this repository declares no trunk: set it with `git config {} <branch>`",
+        branches::TRUNK_KEY
+    )
 }
 
 /// The branch a tree is on, or its head when it is on none: the address a
@@ -583,7 +600,8 @@ pub fn measured_against(walked: usize, what: &str, held: usize, oracle: &str) {
 
 /// Every local branch with the three facts [`branches::adrift`] reads.
 pub fn branch_standing(repo: &Path, now: i64) -> Result<Vec<branches::Branch>, String> {
-    let trunk = branches::TRUNK;
+    let trunk = declared_trunk(repo)?;
+    let trunk = trunk.as_str();
     let merged: Vec<String> = git(
         repo,
         &[
@@ -732,6 +750,10 @@ mod tests {
             .expect("git runs")
     }
 
+    /// **NOT «main».** A test repository whose trunk is called something else
+    /// is the only thing that catches a trunk read from the code.
+    const A_TRUNK: &str = "tronco";
+
     /// A repository with one commit: no tree can be cut from an empty history.
     fn a_repository(label: &str) -> (PathBuf, PathBuf) {
         let scratch = a_scratch(label);
@@ -741,6 +763,7 @@ mod tests {
             &["init", "-q"][..],
             &["config", "user.email", "test@example"],
             &["config", "user.name", "test"],
+            &["config", branches::TRUNK_KEY, A_TRUNK],
         ] {
             assert!(run_git(&repo, args).status.success(), "git {args:?}");
         }
@@ -785,7 +808,7 @@ mod tests {
     #[test]
     fn only_a_tree_a_sweep_could_take_down_wakes_the_sweep() {
         let (scratch, repo) = a_repository("left-behind");
-        assert!(run_git(&repo, &["branch", "-M", branches::TRUNK])
+        assert!(run_git(&repo, &["branch", "-M", A_TRUNK])
             .status
             .success());
         let page = APage::default();
@@ -837,7 +860,7 @@ mod tests {
     #[test]
     fn a_tree_its_opener_still_holds_wakes_nothing() {
         let (scratch, repo) = a_repository("still-held");
-        assert!(run_git(&repo, &["branch", "-M", branches::TRUNK])
+        assert!(run_git(&repo, &["branch", "-M", A_TRUNK])
             .status
             .success());
         let page = APage::default();
@@ -981,7 +1004,7 @@ mod tests {
     #[test]
     fn a_sweep_never_closes_a_tree_whose_work_the_trunk_has_not_got() {
         let (scratch, repo) = a_repository("sweeping");
-        assert!(run_git(&repo, &["branch", "-M", branches::TRUNK])
+        assert!(run_git(&repo, &["branch", "-M", A_TRUNK])
             .status
             .success());
         let page = APage::default();
