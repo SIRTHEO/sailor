@@ -13,7 +13,44 @@ use models::remaining::{read_oauth_usage, OauthUsageChannel, Remaining};
 #[derive(Debug, Clone, PartialEq)]
 pub struct Reading {
     pub engine: String,
-    pub result: Result<Vec<Remaining>, String>,
+    pub result: Result<Vec<Remaining>, Refusal>,
+}
+
+/// Why a reading is not there, and whether that is the account's fault.
+///
+/// **THE VERDICT TRAVELS AS A FIELD, NOT AS A SENTENCE TO BE SEARCHED.** It is
+/// decided where the provider's own answer is still in hand; a reader further
+/// down matching words would be reading a translation of a guess.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Refusal {
+    pub said: String,
+    pub credential_is_dead: bool,
+    /// Whether the provider was reached at all, or the channel stopped before.
+    pub provider_answered: bool,
+}
+
+impl Refusal {
+    /// Anything that went wrong before the provider was even asked: a channel
+    /// this Sailor cannot read, a file that is not there. Never the account.
+    fn nobody_asked(said: String) -> Refusal {
+        Refusal { said, credential_is_dead: false, provider_answered: false }
+    }
+}
+
+impl From<models::remaining::RemainingError> for Refusal {
+    fn from(error: models::remaining::RemainingError) -> Refusal {
+        Refusal {
+            credential_is_dead: error.credential_is_dead(),
+            provider_answered: error.provider_answered(),
+            said: error.to_string(),
+        }
+    }
+}
+
+impl std::fmt::Display for Refusal {
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        out.write_str(&self.said)
+    }
 }
 
 /// The channel a descriptor declares, made concrete for this machine, or the
@@ -46,7 +83,9 @@ pub fn read_one(descriptor: &Descriptor, machine: &Machine, observed_at: i64) ->
     let channel = channel_of(descriptor, machine)?;
     Some(Reading {
         engine: descriptor.id.clone(),
-        result: channel.and_then(|channel| read_oauth_usage(&channel, observed_at).map_err(|why| why.to_string())),
+        result: channel
+            .map_err(Refusal::nobody_asked)
+            .and_then(|channel| read_oauth_usage(&channel, observed_at).map_err(Refusal::from)),
     })
 }
 
@@ -91,17 +130,25 @@ pub fn declared_absent(descriptor: &Descriptor) -> Option<&str> {
 }
 
 /// The words this provider uses, or the ones the first measured channel used.
+///
+/// **THE FATAL KINDS COME FROM THE QUOTA BLOCK, NOT FROM THE SHAPE.** A
+/// provider that answers in the shape first measured still names its own
+/// refusals, and a descriptor declaring no shape at all declares them too.
 fn words_of(quota: &crate::descriptor::Quota) -> models::remaining::WindowWords {
-    let Some(said) = &quota.shape else {
-        return models::remaining::WindowWords::default();
-    };
     let standing = models::remaining::WindowWords::default();
+    let Some(said) = &quota.shape else {
+        return models::remaining::WindowWords {
+            dead_when: quota.dead_when.clone(),
+            ..standing
+        };
+    };
     models::remaining::WindowWords {
         windows_at: said.windows_at.clone(),
         used: said.used.clone(),
         used_in_percent: said.used_in != "fraction",
         resets: if said.resets.is_empty() { standing.resets } else { said.resets.clone() },
         resets_in_seconds: said.resets_in == "epoch_seconds",
+        dead_when: quota.dead_when.clone(),
     }
 }
 
@@ -135,7 +182,8 @@ pub fn read_in_home(
     Some(Reading {
         engine: descriptor.id.clone(),
         result: channel
-            .and_then(|channel| read_oauth_usage(&channel, observed_at).map_err(|why| why.to_string())),
+            .map_err(Refusal::nobody_asked)
+            .and_then(|channel| read_oauth_usage(&channel, observed_at).map_err(Refusal::from)),
     })
 }
 
@@ -184,7 +232,11 @@ mod tests {
         // names the file, never an empty measure.
         let reading = read_one(&known, &machine, 0).expect("declared");
         let why = reading.result.expect_err("no credentials here");
-        assert!(why.contains("creds.json"), "{why}");
+        assert!(why.said.contains("creds.json"), "{why}");
+        assert!(
+            !why.credential_is_dead,
+            "a file that is not there is nobody having looked, never a dead account"
+        );
     }
 
     /// **THE READING FOLLOWS THE PROFILE, OR IT ANSWERS FOR SOMEBODY ELSE.**

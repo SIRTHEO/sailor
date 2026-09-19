@@ -104,7 +104,11 @@ pub struct QuotaSeen {
     /// **WHETHER THE PROVIDER ITSELF ANSWERED NO.** A home with no credentials
     /// in it is nobody having looked; a token the provider calls revoked is a
     /// dead account, and only the second may contradict «authenticated».
-    pub the_engine_refused: bool,
+    /// A meter that answers «too often» is neither, and carries `false` here.
+    pub credential_is_dead: bool,
+    /// Whether the provider was reached at all: a channel that stopped at a
+    /// missing file never learned anything about this account.
+    pub provider_answered: bool,
 }
 
 impl QuotaSeen {
@@ -140,23 +144,37 @@ pub fn quota_by_profile(readings: &[toolbox::quota::Reading]) -> BTreeMap<String
                     })
                     .collect(),
                 refused: None,
-                the_engine_refused: false,
+                credential_is_dead: false,
+                provider_answered: true,
             },
-            Err(said) => QuotaSeen {
+            Err(refusal) => QuotaSeen {
                 windows: Vec::new(),
-                refused: Some(said.clone()),
-                the_engine_refused: said.contains("the engine refused"),
+                refused: Some(refusal.said.clone()),
+                credential_is_dead: refusal.credential_is_dead,
+                provider_answered: refusal.provider_answered,
             },
         };
-        match found.get(profile) {
-            Some(held) if !held.windows.is_empty() && seen.windows.is_empty() => {}
-            Some(held) if held.the_engine_refused && !seen.the_engine_refused => {}
-            _ => {
-                found.insert(profile.to_owned(), seen);
-            }
+        if found.get(profile).is_none_or(|held| worth(&seen) > worth(held)) {
+            found.insert(profile.to_owned(), seen);
         }
     }
     found
+}
+
+/// How much one reading of an account is worth against another of the same
+/// account. **THE ORDER OF THE DESCRIPTORS MUST NOT DECIDE**: a measure beats
+/// any refusal, a refusal the provider itself gave beats one from a channel
+/// that stopped at a missing file, and among the provider's own a dead
+/// credential is the news.
+fn worth(seen: &QuotaSeen) -> u8 {
+    if !seen.windows.is_empty() {
+        return 4;
+    }
+    match (seen.provider_answered, seen.credential_is_dead) {
+        (true, true) => 3,
+        (true, false) => 2,
+        _ => 1,
+    }
 }
 
 fn dispatch(args: &[String]) -> Result<String, String> {
@@ -315,8 +333,9 @@ fn standing_of(
         Access::Yes | Access::Unverified | Access::HomeDoesNotMove => {
             // **THE ALLOWANCE OUTRANKS THE FLAG.** «authenticated» is read from
             // a file on disk; a provider calling the token revoked has actually
-            // been asked, and it is the one telling the truth.
-            if quota.is_some_and(|left| left.the_engine_refused) {
+            // been asked, and it is the one telling the truth. Only that: a
+            // meter refusing to be read this minute leaves the standing alone.
+            if quota.is_some_and(|left| left.credential_is_dead) {
                 return Standing::Shut;
             }
             if quota.is_some_and(QuotaSeen::ran_out) || ran_out_recently(spent, now) {
@@ -589,7 +608,7 @@ mod tests {
     fn a_token_the_provider_calls_revoked_is_shut_however_authenticated_it_reads() {
         let refused = QuotaSeen {
             refused: Some("the engine refused: OAuth access token has been revoked.".to_owned()),
-            the_engine_refused: true,
+            credential_is_dead: true,
             ..Default::default()
         };
         let views = joined(
@@ -601,13 +620,42 @@ mod tests {
         assert_eq!(views[0].standing, Standing::Shut);
     }
 
+    /// **A METER THAT REFUSES TO BE READ IS NOT A CLOSED ACCOUNT**, and it
+    /// refuses exactly when the person is working: measured 19/09/2026, all
+    /// three Claude accounts read `shut` — two of them with a terminal open on
+    /// them at that minute — because the provider limits how often its own
+    /// usage endpoint may be asked.
+    #[test]
+    fn a_meter_that_asks_to_be_asked_later_leaves_the_account_where_it_was() {
+        let later = QuotaSeen {
+            refused: Some(
+                "the engine asked to be asked later: Rate limited. Please try again later."
+                    .to_owned(),
+            ),
+            credential_is_dead: false,
+            ..Default::default()
+        };
+        let views = joined(
+            &[declared("claude", "who@example.test", Access::Yes)],
+            &[],
+            &allowance("who@example.test", later),
+            NOW,
+        );
+        assert_eq!(views[0].standing, Standing::Ready);
+        assert_eq!(worst_of(&views), Standing::Ready, "and the mark stays quiet");
+        assert!(
+            views[0].quota.as_ref().and_then(|left| left.refused.as_deref()).is_some(),
+            "the words still show: the reading is missing, and that is worth saying"
+        );
+    }
+
     /// A home with no credentials in it is nobody having looked, and it must
     /// not turn a working account into a dead one.
     #[test]
     fn a_home_nobody_looked_in_does_not_contradict_an_account_that_works() {
         let unread = QuotaSeen {
             refused: Some("no credentials in /somewhere/.credentials.json".to_owned()),
-            the_engine_refused: false,
+            credential_is_dead: false,
             ..Default::default()
         };
         let views = joined(
@@ -663,7 +711,11 @@ mod tests {
         };
         let unread = toolbox::quota::Reading {
             engine: "claude-code-repair · who@example.test".to_owned(),
-            result: Err("no credentials in /somewhere".to_owned()),
+            result: Err(toolbox::quota::Refusal {
+                said: "no credentials in /somewhere".to_owned(),
+                credential_is_dead: false,
+                provider_answered: false,
+            }),
         };
         for order in [
             vec![taken.clone(), unread.clone()],
@@ -673,6 +725,43 @@ mod tests {
             let seen = found.get("who@example.test").expect("the account");
             assert_eq!(seen.windows.len(), 1, "the reading was buried");
             assert_eq!(seen.refused, None);
+        }
+    }
+
+    /// **THE SENTENCE SHOWN MUST COME FROM WHOEVER ACTUALLY ASKED.** The same
+    /// account is read through two descriptors: one reaches the provider and is
+    /// told «rate limited», the other stops at a file that was never where this
+    /// engine keeps its credential. Shown the second, a person goes looking for
+    /// a missing file that explains nothing.
+    #[test]
+    fn a_refusal_from_the_provider_beats_one_from_a_channel_that_never_asked() {
+        let asked = toolbox::quota::Reading {
+            engine: "claude-code · who@example.test".to_owned(),
+            result: Err(toolbox::quota::Refusal {
+                said: "the engine asked to be asked later: Rate limited.".to_owned(),
+                credential_is_dead: false,
+                provider_answered: true,
+            }),
+        };
+        let stopped = toolbox::quota::Reading {
+            engine: "claude-code-repair · who@example.test".to_owned(),
+            result: Err(toolbox::quota::Refusal {
+                said: "no credentials in /somewhere/.credentials.json".to_owned(),
+                credential_is_dead: false,
+                provider_answered: false,
+            }),
+        };
+        for order in [
+            vec![asked.clone(), stopped.clone()],
+            vec![stopped.clone(), asked.clone()],
+        ] {
+            let found = quota_by_profile(&order);
+            let seen = found.get("who@example.test").expect("the account");
+            assert_eq!(
+                seen.refused.as_deref(),
+                Some("the engine asked to be asked later: Rate limited."),
+                "the order of the descriptors decided, and it must not"
+            );
         }
     }
 

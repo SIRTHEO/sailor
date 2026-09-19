@@ -539,6 +539,13 @@ pub struct Quota {
     /// from another's. The words are the product's and belong here, in data.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub held_by: Vec<String>,
+    /// The refusal kinds, in the provider's own words, that mean the credential
+    /// is no good. Anything else it refuses with is a «not now».
+    ///
+    /// **WHAT IS NOT NAMED HERE NEVER MARKS AN ACCOUNT SHUT.** A meter that
+    /// answers «too often» says nothing about the account behind it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dead_when: Vec<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub note: String,
 }

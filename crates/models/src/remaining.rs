@@ -40,6 +40,13 @@ pub struct WindowWords {
     pub resets: String,
     /// Whether `resets` is an instant written out or a count of seconds.
     pub resets_in_seconds: bool,
+    /// The refusal kinds that mean **the credential itself is no good**, in the
+    /// provider's own words. Every other refusal is a «not now».
+    ///
+    /// **EMPTY IS THE SAFE DEFAULT, AND THAT IS THE POINT.** A kind this list
+    /// does not name cannot declare an account dead, so a provider adding one
+    /// costs a reading, never a working account.
+    pub dead_when: Vec<String>,
 }
 
 impl Default for WindowWords {
@@ -50,6 +57,7 @@ impl Default for WindowWords {
             used_in_percent: true,
             resets: "resets_at".to_owned(),
             resets_in_seconds: false,
+            dead_when: Vec::new(),
         }
     }
 }
@@ -104,10 +112,43 @@ pub enum RemainingError {
     /// authenticating again, and no sentence written here would say it better.
     /// **It never carries the token**: only the `message` field is copied,
     /// never the request.
+    ///
+    /// **ONLY THE KINDS THE DESCRIPTOR CALLS FATAL LAND HERE** (`dead_when`).
+    /// This one may contradict a home that calls itself authenticated; the one
+    /// below never may.
     Refused(String),
+    /// It answered, and asked to be asked again later: rate limited, busy,
+    /// briefly down.
+    ///
+    /// **IT SAYS NOTHING ABOUT THE ACCOUNT.** A counter that refuses to count
+    /// is not a door that refuses to open, and reading it as one marks an
+    /// account shut precisely while its owner is working — which is when the
+    /// provider limits how often its meter may be read.
+    NotNow(String),
     /// It answered something that is not the expected JSON: the channel is
     /// beta, and this is how it will break.
     NotUnderstood,
+}
+
+impl RemainingError {
+    /// Whether this refusal is about the credential rather than the moment.
+    ///
+    /// **THE CALLER MUST NOT READ THIS OUT OF THE SENTENCE.** The words are the
+    /// provider's and change without notice; the branch is the fact.
+    pub fn credential_is_dead(&self) -> bool {
+        matches!(self, RemainingError::Refused(_))
+    }
+
+    /// Whether the provider was reached at all.
+    ///
+    /// **THE TWO HALVES OF «NO READING» ARE NOT WORTH THE SAME.** «rate
+    /// limited» comes from the account's own provider; «no credentials in this
+    /// file» comes from a channel that stopped at the doorstep, and where one
+    /// account is read through several descriptors the second must never be
+    /// the sentence a person is shown.
+    pub fn provider_answered(&self) -> bool {
+        matches!(self, RemainingError::Refused(_) | RemainingError::NotNow(_))
+    }
 }
 
 impl fmt::Debug for RemainingError {
@@ -130,6 +171,9 @@ impl fmt::Display for RemainingError {
             }
             RemainingError::Unreachable(why) => write!(out, "the channel does not answer: {why}"),
             RemainingError::Refused(said) => write!(out, "the engine refused: {said}"),
+            RemainingError::NotNow(said) => {
+                write!(out, "the engine asked to be asked later: {said}")
+            }
             RemainingError::NotUnderstood => write!(
                 out,
                 "the answer is not in the expected shape: the channel is beta and \
@@ -210,12 +254,18 @@ pub fn from_oauth_usage(
     // **Look at `error.message`, not the envelope.** A revocation carries a
     // top-level `"type": "error"`, a rate limit does not: matching the envelope
     // let the rate limit through as that empty list, to an automated poller.
-    if let Some(said) = whole
-        .get("error")
-        .and_then(|error| error.get("message"))
-        .and_then(serde_json::Value::as_str)
-    {
-        return Err(RemainingError::Refused(said.to_owned()));
+    if let Some(error) = whole.get("error") {
+        if let Some(said) = error.get("message").and_then(serde_json::Value::as_str) {
+            // **THE KIND DECIDES, NOT THE SENTENCE.** Beside the message the
+            // provider names what went wrong, and only the kinds the descriptor
+            // calls fatal are allowed to mean «this account is finished».
+            let kind = error.get("type").and_then(serde_json::Value::as_str).unwrap_or_default();
+            return Err(if words.dead_when.iter().any(|fatal| fatal == kind) {
+                RemainingError::Refused(said.to_owned())
+            } else {
+                RemainingError::NotNow(said.to_owned())
+            });
+        }
     }
 
     // **THE WINDOWS ARE WHERE THE DESCRIPTOR SAYS.** Read at the root, windows
@@ -364,6 +414,17 @@ mod tests {
         from_oauth_usage(body, ENGINE, observed_at, &WindowWords::default())
     }
 
+    /// As the descriptor of the one provider measured declares it.
+    fn parse_for_a_descriptor_that_names_its_fatal_kinds(
+        body: &str,
+    ) -> Result<Vec<Remaining>, RemainingError> {
+        let words = WindowWords {
+            dead_when: vec!["authentication_error".to_owned(), "permission_error".to_owned()],
+            ..WindowWords::default()
+        };
+        from_oauth_usage(body, ENGINE, 0, &words)
+    }
+
     /// **A PROVIDER THAT NESTS ITS WINDOWS IS NOT ONE WITHOUT QUOTA.** Read at
     /// the root it yields the empty list, for a window that is full.
     #[test]
@@ -377,6 +438,7 @@ mod tests {
             used_in_percent: true,
             resets: "reset_at".to_owned(),
             resets_in_seconds: true,
+            dead_when: Vec::new(),
         };
 
         assert_eq!(
@@ -485,12 +547,43 @@ mod tests {
         let refused = r#"{"type":"error","error":{"type":"authentication_error",
             "message":"OAuth access token has been revoked."},"request_id":null}"#;
 
-        let said = parse(refused, 0).expect_err("it is a refusal, not a measure");
+        let said = parse_for_a_descriptor_that_names_its_fatal_kinds(refused)
+            .expect_err("it is a refusal, not a measure");
         assert_eq!(
             said,
             RemainingError::Refused("OAuth access token has been revoked.".to_owned()),
             "the provider's own words carry through: they say what to do, namely authenticate again"
         );
+        assert!(said.credential_is_dead(), "this one is about the credential");
+    }
+
+    /// **A COUNTER THAT REFUSES TO COUNT IS NOT A DOOR THAT REFUSES TO OPEN.**
+    /// Measured on 19/09/2026: three working accounts read as `shut` all day,
+    /// because the provider limits how often its own meter may be asked and the
+    /// reader took that for a verdict on the account. The kind beside the
+    /// message is what separates them, and the descriptor names the fatal ones.
+    #[test]
+    fn a_rate_limit_is_a_not_now_and_never_a_dead_credential() {
+        let limited = r#"{"error":{"type":"rate_limit_error",
+            "message":"Rate limited. Please try again later."}}"#;
+
+        let said = parse_for_a_descriptor_that_names_its_fatal_kinds(limited)
+            .expect_err("it is still not a measure");
+        assert_eq!(
+            said,
+            RemainingError::NotNow("Rate limited. Please try again later.".to_owned())
+        );
+        assert!(!said.credential_is_dead(), "the account was never asked about");
+    }
+
+    /// **A KIND NOBODY NAMED CANNOT KILL AN ACCOUNT.** The channel is beta and
+    /// the provider adds kinds without asking; an unknown one costs a reading.
+    #[test]
+    fn a_refusal_of_an_unnamed_kind_is_a_not_now() {
+        let odd = r#"{"error":{"type":"a_kind_from_next_year","message":"no"}}"#;
+        assert!(!parse_for_a_descriptor_that_names_its_fatal_kinds(odd)
+            .expect_err("still a refusal")
+            .credential_is_dead());
     }
 
     /// **THE PROVIDER REFUSES IN MORE THAN ONE SHAPE, AND BOTH WERE SEEN
@@ -506,7 +599,7 @@ mod tests {
 
         assert_eq!(
             parse(limited, 0),
-            Err(RemainingError::Refused(
+            Err(RemainingError::NotNow(
                 "Rate limited. Please try again later.".to_owned()
             )),
             "the reader must learn it was refused, not that it consumed nothing"
