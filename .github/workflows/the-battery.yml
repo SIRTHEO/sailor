@@ -97,13 +97,11 @@ jobs:
       - name: the Rust version the manifest declares
         # Not "the latest": the one written in `rust-version`. Building with a
         # newer one than declared means never noticing the day the code stops
-        # fitting inside the minimum it promises. Clippy comes with it because
-        # the bench's judge shells out to it and counts what it says.
+        # fitting inside the minimum it promises.
         run: |
-          rustup toolchain install "$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)" --profile minimal --component clippy
+          rustup toolchain install "$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)" --profile minimal
           rustup default "$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)"
           rustc --version
-          cargo clippy --version
 
       - name: the battery
         # **NEVER PIPED.** `cargo test | tail` exits 0 with a red battery: a

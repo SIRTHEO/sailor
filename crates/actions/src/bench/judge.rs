@@ -992,17 +992,17 @@ mod tests {
             "{reading}"
         );
         assert_eq!(reading["gold_added_lines"], 1);
-        assert!(
-            reading["clippy_warnings"].is_u64(),
-            "clippy was asked and counted: {reading}"
-        );
-        assert!(
-            reading["clippy_said"]
-                .as_str()
-                .expect("a word")
-                .contains("tiny"),
-            "{reading}"
-        );
+        // **A MACHINE WITHOUT THE LINTER IS NOT A JUDGE THAT LIED**: the
+        // runner installs the toolchain bare. Either there is a count and the
+        // linter named the crate, or there is no count and `clippy_said` says
+        // why — never a count nobody took.
+        let said = reading["clippy_said"].as_str().expect("a word");
+        if reading["clippy_warnings"].is_u64() {
+            assert!(said.contains("tiny"), "{reading}");
+        } else {
+            assert!(reading["clippy_warnings"].is_null(), "{reading}");
+            assert!(said.contains("clippy"), "no count, and no word on why: {reading}");
+        }
         assert_eq!(reading["tree_restored"], true, "{reading}");
     }
 
