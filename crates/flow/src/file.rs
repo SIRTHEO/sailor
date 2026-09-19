@@ -67,6 +67,19 @@ pub struct FlowFile {
     /// leaves one line of its own beside the run's header.
     #[serde(default, skip_serializing_if = "not_declared")]
     pub self_care: bool,
+    /// The catalogue entry this flow was made from, and which text of it.
+    /// Absent for a flow written from nothing, which is most of them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<Provenance>,
+}
+
+/// Where a flow made from the catalogue came from. `version` is the digest of
+/// the entry's text, so a later entry is told apart from the one used.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Provenance {
+    pub catalogue: String,
+    pub version: String,
 }
 
 fn not_declared(declared: &bool) -> bool {

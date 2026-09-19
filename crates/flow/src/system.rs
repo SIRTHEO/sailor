@@ -52,14 +52,10 @@ pub const FLOWS: &[(&str, &str)] = &[
         "what-this-machine-has",
         include_str!("../system/what-this-machine-has.flow.json"),
     ),
-    // Every call of the ledger gets an equivalent cost by the pinned rules, and
-    // the run is red while one stays unpriced.
     (
         "price-every-call",
         include_str!("../system/price-every-call.flow.json"),
     ),
-    // The first number of the evaluation loop: the flow under measurement on
-    // every task of a frozen set, one child at a time, each judged and read.
     (
         "measure-the-baseline",
         include_str!("../system/measure-the-baseline.flow.json"),
@@ -141,8 +137,6 @@ pub const FLOWS: &[(&str, &str)] = &[
         "take-the-next-fault",
         include_str!("../system/take-the-next-fault.flow.json"),
     ),
-    // A change made against a benchmark task, accepted or rejected by tests it
-    // never saw; the run is red exactly when the change is rejected.
     (
         "judge-a-change",
         include_str!("../system/judge-a-change.flow.json"),
@@ -197,9 +191,6 @@ pub const FLOWS: &[(&str, &str)] = &[
         "empty-a-session-that-handed-on",
         include_str!("../system/empty-a-session-that-handed-on.flow.json"),
     ),
-    // The frozen benchmark: the fix commits of a repository become tasks whose
-    // hidden test is seen red on the base and green on the fix, once per
-    // candidate through the child below, and the set is hashed and recorded.
     (
         "build-the-bench",
         include_str!("../system/build-the-bench.flow.json"),
@@ -920,13 +911,24 @@ static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 /// half-written file — `rename` on the same filesystem is indivisible, a direct
 /// `write` on the target is not.
 fn write_atomically(target: &Path, contents: &[u8]) -> Result<(), String> {
+    write_atomically_with(target, contents, &|path, bytes| fs::write(path, bytes))
+}
+
+/// A write that fails halfway can leave the temporary file created and partly
+/// filled: it goes, as it does when the rename fails.
+fn write_atomically_with(
+    target: &Path,
+    contents: &[u8],
+    write: &dyn Fn(&Path, &[u8]) -> io::Result<()>,
+) -> Result<(), String> {
     let temp_path = temp_path_for(target);
-    fs::write(&temp_path, contents).map_err(|error| {
-        format!(
+    if let Err(error) = write(&temp_path, contents) {
+        let _ = fs::remove_file(&temp_path);
+        return Err(format!(
             "cannot write the temporary file {}: {error}",
             temp_path.display()
-        )
-    })?;
+        ));
+    }
     fs::rename(&temp_path, target).map_err(|error| {
         let _ = fs::remove_file(&temp_path);
         format!("cannot replace {}: {error}", target.display())
@@ -945,6 +947,25 @@ fn temp_path_for(target: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_write_that_fails_halfway_leaves_no_temporary_file_and_no_flow() {
+        let dir = std::env::temp_dir().join(format!("sailor-half-write-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("a scratch directory");
+        let target = dir.join("half.flow.json");
+
+        let refused = write_atomically_with(&target, b"{\"id\": \"half\"}", &|path, bytes| {
+            fs::write(path, &bytes[..bytes.len() / 2])?;
+            Err(io::Error::other("the disk filled up"))
+        })
+        .expect_err("the write failed");
+
+        let left: Vec<_> = fs::read_dir(&dir).expect("readable").flatten().map(|entry| entry.file_name()).collect();
+        let _ = fs::remove_dir_all(&dir);
+        assert!(refused.contains("the disk filled up"), "{refused}");
+        assert!(left.is_empty(), "left behind: {left:?}");
+    }
 
     /// **A FOLDER THAT REFUSED THE READING IS NOT A FOLDER WITH NO FLOWS**, and
     /// one nobody made is: only the first is a trouble to say.

@@ -316,7 +316,7 @@ fn own_building(own: &[machine::LeftBehind]) -> String {
 /// How many of the heaviest build directories are worth naming.
 const ENOUGH_TO_SEE_THE_TROUBLE: usize = 6;
 
-fn gigabytes(bytes: u64) -> String {
+pub(crate) fn gigabytes(bytes: u64) -> String {
     format!("{:.1}", bytes as f64 / 1_073_741_824.0)
 }
 

@@ -21,7 +21,7 @@ const MAX_BLOCK: usize = 6;
 
 /// How many blocks run over today. **It can only go down**: lowering it is the
 /// repair, raising it has to be argued and shows in the diff.
-const LONG_BLOCKS_TODAY: usize = 411;
+const LONG_BLOCKS_TODAY: usize = 410;
 
 /// How many comment lines are still not in English. **THE ONLY HONEST RAISE**
 /// is a merge bringing in non-English comments written elsewhere: there you
@@ -37,24 +37,24 @@ const COMMENT_LINES_NOT_IN_ENGLISH: usize = 1;
 const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
     ("actions", 213),
     ("catalogue", 239),
-    ("desktop", 221),
-    ("faults", 150),
-    ("flow", 194),
-    ("inventory", 274),
+    ("desktop", 218),
+    ("faults", 146),
+    ("flow", 185),
+    ("inventory", 269),
     ("ledger", 137),
-    ("machine", 227),
+    ("machine", 226),
     ("models", 251),
     ("profiles", 168),
     ("registry", 277),
     ("relay", 138),
     ("release", 415),
-    ("sailor", 164),
+    ("sailor", 162),
     ("sessions", 230),
     ("supervisor", 243),
     ("terminal", 266),
-    ("toolbox", 268),
+    ("toolbox", 264),
     ("trigger", 236),
-    ("ui", 185),
+    ("ui", 184),
     ("workspace", 122),
 ];
 

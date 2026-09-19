@@ -14,6 +14,7 @@ pub mod reference;
 mod schedule;
 mod schema;
 mod streak;
+pub mod starters;
 pub mod subflow;
 pub mod system;
 pub mod timekeeping;
@@ -30,7 +31,7 @@ pub use executor::{
     CURRENT_WALL,
     WALL_REMAINING_SECS, WORKDIR_FIELD, WORKSPACE_ROOT,
 };
-pub use file::{CapKind, FlowFile};
+pub use file::{CapKind, FlowFile, Provenance};
 pub use graph::{Condition, DependencyEdge, Graph, GraphError, Judgement, Step};
 pub use record::{
     canonical_text, digest_input, truncate_said, AttemptRelation, Holder, HolderIdentity, Outcome,

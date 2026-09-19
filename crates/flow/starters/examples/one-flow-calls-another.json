@@ -1,0 +1,137 @@
+{
+  "entry": "one-flow-calls-another",
+  "kind": "example",
+  "purpose": "starter.one_flow_calls_another.purpose",
+  "inputs": {},
+  "needs": {
+    "actions": [
+      "shell_check",
+      "subflow"
+    ],
+    "engines": [],
+    "flows": [
+      "what-this-machine-has"
+    ]
+  },
+  "teaches": {
+    "capability": "starter.one_flow_calls_another.capability",
+    "result": "starter.one_flow_calls_another.result"
+  },
+  "flow": {
+    "description": "One flow calling another, and which file answered. The first step runs the flow named what-this-machine-has as a child run of this one. Like every run it is found by the normal precedence: a flow of yours or of the project with that name wins over the shipped one, which reads the installed tools and writes nothing. The second step says which run the child was, how it ended, which source its definition came from and the file that ran. No engine, nothing paid.",
+    "graph": {
+      "steps": [
+        {
+          "id": "ask_the_machine",
+          "deps": [],
+          "action": "subflow",
+          "max_attempts": 1,
+          "when": null,
+          "with": {
+            "flow": "what-this-machine-has"
+          },
+          "input_schema": {
+            "type": "any"
+          },
+          "output_schema": {
+            "type": "object",
+            "properties": {
+              "run_id": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "origin": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "run_id",
+              "status",
+              "origin",
+              "path"
+            ],
+            "allow_extra": true
+          }
+        },
+        {
+          "id": "say_what_came_back",
+          "deps": [
+            "ask_the_machine"
+          ],
+          "action": "shell_check",
+          "max_attempts": 1,
+          "when": null,
+          "with": {
+            "command": "python3 -c \"import json, os; print(json.dumps({'child_run': os.environ['CHILD_RUN'], 'child_status': os.environ['CHILD_STATUS'], 'child_origin': os.environ['CHILD_ORIGIN'], 'child_file': os.environ['CHILD_FILE']}))\"",
+            "env": {
+              "CHILD_RUN": {
+                "$from": "/run_id"
+              },
+              "CHILD_STATUS": {
+                "$from": "/status"
+              },
+              "CHILD_ORIGIN": {
+                "$from": "/origin"
+              },
+              "CHILD_FILE": {
+                "$from": "/path"
+              }
+            },
+            "timeout_secs": 10,
+            "answer_shape": {
+              "type": "object",
+              "properties": {
+                "child_run": {
+                  "type": "string"
+                },
+                "child_status": {
+                  "type": "string"
+                },
+                "child_origin": {
+                  "type": "string"
+                },
+                "child_file": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "child_run",
+                "child_status",
+                "child_origin",
+                "child_file"
+              ],
+              "allow_extra": false
+            }
+          },
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string"
+              },
+              "timeout_secs": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "command",
+              "timeout_secs"
+            ],
+            "allow_extra": true
+          },
+          "output_schema": {
+            "type": "any"
+          }
+        }
+      ]
+    },
+    "inputs": {
+      "ask_the_machine": {}
+    }
+  }
+}

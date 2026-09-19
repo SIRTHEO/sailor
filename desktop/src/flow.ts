@@ -77,6 +77,8 @@ export interface FlowFile {
    * start at all.
    */
   spend_cap_kind?: "guaranteed" | "stop_threshold" | null;
+  /** The catalogue entry this flow was made from, and the digest of its text. */
+  from?: { catalogue: string; version: string } | null;
 }
 
 /**

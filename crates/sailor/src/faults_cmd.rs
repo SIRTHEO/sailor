@@ -43,6 +43,14 @@ pub const USAGE: &[Form] = &[
         form: "sailor faults check <file.md>",
         says_key: "cli.faults.form.check",
     },
+    Form {
+        form: "sailor faults link <n> <issue-url>",
+        says_key: "cli.faults.form.link",
+    },
+    Form {
+        form: "sailor faults unlink <n>",
+        says_key: "cli.faults.form.unlink",
+    },
 ];
 
 const WITHOUT_VALUE: &[&str] = &["open", "json"];
@@ -127,8 +135,49 @@ fn dispatch(args: &[String]) -> Result<String, String> {
         "render" => render(&store, &options),
         "import" => import(&store, &loose),
         "check" => check(&store, &loose),
+        "link" => link(&store, &loose),
+        "unlink" => unlink(&store, &loose),
         other => Err(catalogue::say("cli.no_such_form", &[("verb", other)])),
     }
+}
+
+/// Reads `<owner>/<repo>#<n>` or `.../issues/<n>` out of a URL; a bare number
+/// is taken as-is. Never opens a network connection — this only parses text
+/// somebody already has, whether from a browser tab or a `gh` command.
+fn issue_number_in(url: &str) -> Result<i64, String> {
+    if let Ok(bare) = url.parse::<i64>() {
+        return Ok(bare);
+    }
+    let digits: String = url.rsplit('/').next().unwrap_or("").chars().filter(char::is_ascii_digit).collect();
+    digits
+        .parse()
+        .map_err(|_| catalogue::say("cli.faults.not_an_issue_url", &[("url", url)]))
+}
+
+fn link(store: &Faults, loose: &[String]) -> Result<String, String> {
+    let [number, url] = loose else {
+        return Err(catalogue::say("cli.faults.usage_link", &[]));
+    };
+    let number: i64 = number
+        .parse()
+        .map_err(|_| catalogue::say("cli.faults.not_a_number", &[("number", number)]))?;
+    let issue_number = issue_number_in(url)?;
+    let linked = store.link(number, issue_number, url).map_err(|error| error.to_string())?;
+    Ok(catalogue::say(
+        "cli.faults.linked",
+        &[("number", &linked.number.to_string()), ("issue", &issue_number.to_string())],
+    ))
+}
+
+fn unlink(store: &Faults, loose: &[String]) -> Result<String, String> {
+    let [number] = loose else {
+        return Err(catalogue::say("cli.faults.usage_unlink", &[]));
+    };
+    let number: i64 = number
+        .parse()
+        .map_err(|_| catalogue::say("cli.faults.not_a_number", &[("number", number)]))?;
+    let unlinked = store.unlink(number).map_err(|error| error.to_string())?;
+    Ok(catalogue::say("cli.faults.unlinked", &[("number", &unlinked.number.to_string())]))
 }
 
 fn list(
@@ -323,6 +372,7 @@ fn reworded(store: &Faults, loose: &[String], raw: &str) -> Result<String, Strin
             status: already.status,
             standing: already.standing,
             public_summary: already.public_summary,
+            github_issue: already.github_issue,
         })
         .map_err(|error| error.to_string())?;
     Ok(catalogue::say(

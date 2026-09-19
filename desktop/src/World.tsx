@@ -155,6 +155,7 @@ export function World({
   focusName,
   onFlow,
   onNewFlow,
+  onFromCatalogue,
   globalFlows,
 }: {
   native: boolean;
@@ -173,6 +174,8 @@ export function World({
   focusName: string | null;
   onFlow: (name: string | null) => void;
   onNewFlow: () => void;
+  /** Opens the catalogue of templates and examples, beside «New flow». */
+  onFromCatalogue?: () => void;
   /** The view of every linked global flow, built elsewhere and shown here. */
   globalFlows?: React.ReactNode;
 }) {
@@ -394,6 +397,11 @@ export function World({
                           + New flow
                         </button>
                       )}
+                      {anyFlow && onFromCatalogue && (
+                        <button type="button" className="rail__new" onClick={onFromCatalogue}>
+                          {t("window.catalogue.open")}
+                        </button>
+                      )}
                     </>
                   )}
                   {terminals
@@ -452,6 +460,11 @@ export function World({
       {noTreeOpen && anyFlow && (
         <button type="button" className="rail__new" onClick={onNewFlow}>
           + New flow
+        </button>
+      )}
+      {noTreeOpen && anyFlow && onFromCatalogue && (
+        <button type="button" className="rail__new" onClick={onFromCatalogue}>
+          {t("window.catalogue.open")}
         </button>
       )}
       {homeless.length === 0 && !noTreeOpen && (
