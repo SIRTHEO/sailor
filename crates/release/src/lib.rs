@@ -22,8 +22,8 @@ pub struct Service {
 }
 
 /// How a target's binary is made. **NOT EVERYTHING HERE IS A CARGO CRATE**: the
-/// dot in the menu bar is a Swift package, and a release that only knew cargo
-/// left it to a script beside its own sources.
+/// dot in the menu bar is a Swift package, left to a script beside its sources
+/// by a release that only knew cargo.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Built {
     /// `cargo build --release --bin <bin>` against the declared manifest.
@@ -37,11 +37,9 @@ pub enum Built {
     },
 }
 
-/// What is assembled around a binary before it is in service.
-///
-/// **A macOS APP IS A DIRECTORY, NOT A FILE.** The binary alone starts nothing:
-/// without its `Info.plist` it opens a window instead of living in the bar, and
-/// without a signature the system refuses to start it at all.
+/// What is assembled around a binary before it is in service. **A macOS APP IS
+/// A DIRECTORY, NOT A FILE**: without its `Info.plist` the binary opens a
+/// window instead of living in the bar, and unsigned it does not start at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Bundle {
     /// The root, relative to the home; `safe_rel` names the binary inside it.
@@ -717,6 +715,12 @@ mod tests {
         assert_eq!(
             parts_of(target("window").expect("named")),
             vec!["crates", "desktop"]
+        );
+        // Built by something that is not cargo: the root manifest names no
+        // directory of its own, and the builder's is where its changes are.
+        assert_eq!(
+            parts_of(target("dot").expect("named")),
+            vec!["crates", "menubar"]
         );
     }
 
