@@ -111,3 +111,20 @@ fn run_git(at: &Path, args: &[&str]) {
         String::from_utf8_lossy(&done.stderr)
     );
 }
+
+/// **THE REFUSAL NAMED A TRUNK THAT NO LONGER EXISTS.** It said «sorgenti»
+/// for however long after the rename, sending every reader to a branch git
+/// would not find; the name now comes from the one place that holds it.
+#[test]
+fn the_verdict_on_the_names_says_the_trunk_this_repository_has() {
+    let said = sailor::worktree_cmd::names(&[String::from("fix-docs")])
+        .expect_err("a stray name is bad news, and bad news is an error");
+    assert!(
+        said.contains(workspace::branches::TRUNK),
+        "the verdict names no trunk: {said}"
+    );
+    assert!(
+        !said.contains("sorgenti"),
+        "the verdict still names the old trunk: {said}"
+    );
+}

@@ -674,7 +674,7 @@ fn what_became_of_it(at: &Path, became: Swept) -> String {
 /// An error and not a line of prose: whoever runs this wants an exit code to
 /// act on, and a check that says its bad news on standard output at exit zero
 /// is a check nothing can be built upon.
-fn names(all: &[String]) -> Result<String, String> {
+pub fn names(all: &[String]) -> Result<String, String> {
     let against = against_the_convention(all);
     if against.is_empty() {
         return Ok(catalogue::say("cli.worktree.names_follow", &[]));
@@ -682,7 +682,7 @@ fn names(all: &[String]) -> Result<String, String> {
     let count = against.len().to_string();
     let mut lines = vec![catalogue::say(
         "cli.worktree.names_against",
-        &[("count", &count)],
+        &[("count", &count), ("trunk", workspace::branches::TRUNK)],
     )];
     lines.extend(against);
     Err(lines.join("\n"))
