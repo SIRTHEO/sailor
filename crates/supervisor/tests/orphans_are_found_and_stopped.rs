@@ -430,3 +430,73 @@ fn a_listener_inside_a_group_sailor_started_is_not_a_stranger() {
 
     parent.stop().expect("stop the parent");
 }
+
+/// **THE ONE ROAD STILL HAD A DOOR OUT OF IT: `let_it_go`.**
+///
+/// The destructor is the whole guarantee left to a start no ledger holds, and
+/// `let_it_go` takes it away on purpose. Over no ledger what it leaves is this
+/// fault itself: alive, and named by no row anybody arriving tomorrow can read.
+#[test]
+fn a_start_no_row_holds_is_never_let_go() {
+    let supervisor = Supervisor::over(None);
+    let process = supervisor
+        .start(sleeper("no-row-names-it", None))
+        .expect("start the process");
+    let pid = process.pid();
+
+    let _ = process.let_it_go();
+
+    assert!(
+        gone_within(pid),
+        "pid {pid} was let go with nothing written about it: it is the orphan of \
+         this fault, made by the road that exists to prevent it"
+    );
+}
+
+/// The other side, because a cure that stopped every detached start would put
+/// out the runs a session event lights: a start the ledger names goes on, and
+/// the row is what lets somebody else stop it.
+#[test]
+fn a_start_the_ledger_names_is_let_go_and_goes_on_running() {
+    let directory = TestDirectory::new("lasciato-andare");
+    let supervisor = Supervisor::over(Some(
+        ledger::Ledger::open(&directory.0).expect("the store"),
+    ));
+    let process = supervisor
+        .start(sleeper("a-row-names-it", None))
+        .expect("start the process");
+    let pid = process.pid();
+
+    let _ = process.let_it_go();
+
+    assert!(ledger::pid_is_alive(pid), "the detached run was put out");
+    let store = supervisor.ledger().expect("the store it was given");
+    assert!(
+        left_running(store)
+            .expect("read the store")
+            .iter()
+            .any(|one| one.record.pid == pid && one.still_alive),
+        "it runs on and no row reaches it, which is the fault by another door"
+    );
+
+    // The group, so the `sleep` inside it goes too; the shell is left a zombie,
+    // which is the limit `pid_is_alive` declares and cannot be asserted on.
+    let _ = std::process::Command::new("kill")
+        .args(["-9", &format!("-{pid}")])
+        .status();
+}
+
+/// A freshly signalled pid stays a zombie until somebody reaps it, and a zombie
+/// still answers the null signal: a handful of turns before accusing.
+fn gone_within(pid: u32) -> bool {
+    for _ in 0..100 {
+        if !ledger::pid_is_alive(pid) {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let _ = std::process::Command::new("kill")
+        .args(["-9", &pid.to_string()])
+        .status();
+    false
+}
