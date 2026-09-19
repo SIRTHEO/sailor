@@ -40,6 +40,16 @@ fn flow_files(directory: &Path) -> BTreeSet<String> {
         .collect()
 }
 
+/// Everything the directory holds, or nothing where it cannot be read at all.
+///
+/// **AN EMPTY WALK AND A WALK THAT NEVER HAPPENED ARE DIFFERENT ANSWERS.** A
+/// `flows/` removed from the tree reads exactly like one holding no flow of
+/// ours, and a judge that cannot tell them apart passes a repository whose
+/// `flows/` was deleted.
+fn paths_read_under(directory: &Path) -> Option<usize> {
+    Some(std::fs::read_dir(directory).ok()?.filter_map(Result::ok).count())
+}
+
 /// The flows a `flows/` directory holds that the product does not hand out.
 ///
 /// Takes the directory rather than reading the repository's own, so the verdict
@@ -62,16 +72,24 @@ fn flows_the_product_does_not_hand_out(directory: &Path) -> Vec<String> {
 /// back inside a merge, which is why this is a check and not a note.
 #[test]
 fn the_repository_ships_no_flow_of_ours() {
-    let here = flow_files(&repository().join("flows"));
-    if here.is_empty() {
-        workspace::measured_nothing("flows/ holds no flow file, so there is nothing here to refuse");
+    let at = repository().join("flows");
+    let Some(walked) = paths_read_under(&at) else {
+        workspace::measured_nothing("flows/ is not in this tree, so nothing here could be read");
+        return;
+    };
+    if walked == 0 {
+        workspace::measured_nothing("flows/ is there and empty, so nothing here could be read");
         return;
     }
+    // The oracle is what the product hands out from inside the binary: these
+    // are the flows that must be there and not here, so a perimeter of this
+    // directory is weighed against them and never against the empty list of
+    // templates, which would hand in a count of nothing for a receipt.
     workspace::measured_against(
-        here.len(),
-        "flow files under flows/ read",
-        TEMPLATES_THE_PRODUCT_HANDS_OUT.len(),
-        "templates the product hands out",
+        walked,
+        "paths read under flows/",
+        flow::system::FLOWS.len(),
+        "flows the product ships from inside the binary",
     );
 
     let ours = flows_the_product_does_not_hand_out(&repository().join("flows"));
@@ -151,6 +169,16 @@ fn a_flows_directory_with_nothing_in_it_makes_the_judge_declare_it_measured_noth
     assert!(
         flow_files(&root.join("nowhere")).is_empty(),
         "a flows/ that is not there is the same nothing"
+    );
+    assert_eq!(
+        paths_read_under(&root.join("flows")),
+        Some(0),
+        "a flows/ that is there and empty is a walk that happened and found nothing"
+    );
+    assert_eq!(
+        paths_read_under(&root.join("nowhere")),
+        None,
+        "a flows/ that is not there was never walked, and must not read as an empty one"
     );
     assert!(
         flows_the_product_does_not_hand_out(&root.join("flows")).is_empty(),

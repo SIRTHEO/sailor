@@ -76,6 +76,7 @@ fn step(id: &str, deps: &[&str], action: &str, with: Value) -> Step {
         with: Some(with),
         input_schema: ValueSchema::Any,
         output_schema: ValueSchema::Any,
+        needs: Vec::new(),
     }
 }
 

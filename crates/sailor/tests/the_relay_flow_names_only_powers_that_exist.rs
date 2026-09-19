@@ -108,3 +108,39 @@ fn the_ask_stands_on_one_condition_anybody_can_read() {
     assert_eq!(ask["when"]["pointer"], "/measure/state");
     assert_eq!(ask["when"]["value"], Value::String("oblige".to_owned()));
 }
+
+/// **THE EMPTYING IS NOT THE END OF THE RELAY.** The successor is handed its
+/// mandate as context and then stands at the prompt, so the relay types one
+/// line to start it — and that line hangs from the store saying a successor
+/// arrived, never from the emptying alone. Keyed on the emptying it would go
+/// into whatever session is standing there when nobody took anything.
+#[test]
+fn nothing_is_typed_to_a_successor_the_store_has_not_seen_arrive() {
+    let arrived = step("empty-a-session-that-handed-on", "arrived");
+    assert_eq!(arrived["action"], "mandate_taken");
+    assert!(
+        arrived["deps"].as_array().expect("deps").iter().any(|dep| dep == "empty"),
+        "the arrival is waited for after the emptying, not before it: {arrived}"
+    );
+    assert_eq!(
+        arrived["with"]["not_by"]["$from"], "/handed_on/session",
+        "whose taking does not count comes from the mandate, not from this file"
+    );
+
+    let free_again = step("empty-a-session-that-handed-on", "free_again");
+    assert!(
+        free_again["deps"].as_array().expect("deps").iter().any(|dep| dep == "arrived"),
+        "the screen is read after the arrival, not before it: {free_again}"
+    );
+
+    let wake = step("empty-a-session-that-handed-on", "wake");
+    assert_eq!(wake["action"], "type_into_terminal");
+    assert!(
+        wake["deps"].as_array().expect("deps").iter().any(|dep| dep == "free_again"),
+        "the line is typed only into a session the reading found free: {wake}"
+    );
+    assert!(
+        wake["with"]["line"].as_str().is_some_and(|line| !line.is_empty()),
+        "a wake with no line typed would be a step that does nothing: {wake}"
+    );
+}
