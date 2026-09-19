@@ -580,20 +580,9 @@ pub fn measured_against(walked: usize, what: &str, held: usize, oracle: &str) {
     println!("\n{MEASURED} {walked} {what}{AGAINST}{held} {oracle}");
 }
 
-/// Every local branch with the three facts [`branches::adrift`] reads. The
-/// trunk is `origin/main` when known: a local `main` left behind calls
-/// delivered work unmerged.
+/// Every local branch with the three facts [`branches::adrift`] reads.
 pub fn branch_standing(repo: &Path, now: i64) -> Result<Vec<branches::Branch>, String> {
-    let trunk = if git(
-        repo,
-        &["rev-parse", "--verify", "-q", "refs/remotes/origin/main"],
-    )
-    .is_ok()
-    {
-        "origin/main"
-    } else {
-        branches::TRUNK
-    };
+    let trunk = branches::TRUNK;
     let merged: Vec<String> = git(
         repo,
         &[
