@@ -1,6 +1,6 @@
-//! The guard `docs/time-is-the-last-choice.md` specifies: walk the
-//! trigger descriptors and fail if a periodic one does not declare what it does
-//! with a missed run and what its concurrency limit is.
+//! The guard a time node owes: walk the trigger descriptors and fail if a
+//! periodic one does not declare what it does with a missed run and what its
+//! concurrency limit is.
 
 // **WHY IT IS WRITTEN FROM THE REFUSAL SIDE TOO.** The type requires the three
 // declarations, so a descriptor missing one never reaches the list the walk

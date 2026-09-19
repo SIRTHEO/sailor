@@ -460,7 +460,7 @@ mod tests {
     fn a_home_with_the_flow() -> (TestDirectory, Vec<FlowSource>) {
         let home = TestDirectory::new();
         home.write("da-cambiare.flow.json", AS_ITS_AUTHOR_WROTE_IT);
-        let sources = flow::system::sources(&home.0, None, None);
+        let sources = flow::system::sources(Some(&home.0), None, None);
         (home, sources)
     }
 
@@ -631,7 +631,7 @@ mod tests {
     #[test]
     fn a_shipped_flow_is_not_edited_and_no_file_is_born() {
         let home = TestDirectory::new();
-        let sources = flow::system::sources(&home.0, None, None);
+        let sources = flow::system::sources(Some(&home.0), None, None);
         let shipped = flow::system::FLOWS
             .first()
             .expect("at least one shipped flow")

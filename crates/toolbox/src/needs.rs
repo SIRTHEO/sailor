@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// The name the action registers under.
 pub const TOOL_NEEDS_ACTION: &str = "tool_needs";
@@ -169,6 +169,7 @@ impl Action for ToolNeedsAction {
         let looked_in: Vec<String> = sources
             .iter()
             .map(|source| format!("{}: {}", source.origin, source.dir.display()))
+            .chain(system::no_home_said(&sources))
             .collect();
         let report = report_of(
             flows_seen,
@@ -207,14 +208,7 @@ impl Action for ToolNeedsAction {
 /// **HOME IS ASKED OF THE LEDGER**, as the window does: two ideas of where home
 /// is do not give an error, they give a list that talks about flows nobody runs.
 fn default_flow_sources() -> Vec<FlowSource> {
-    let home = ledger::sailor_home().unwrap_or_else(|| PathBuf::from("."));
-    let working = std::env::current_dir().ok();
-    let declared = std::env::var_os("SAILOR_FLOWS").map(PathBuf::from);
-    system::sources(
-        &home.join("flows"),
-        working.as_deref(),
-        declared.as_deref().map(Path::new),
-    )
+    system::sources_from_env(ledger::sailor_home().map(|home| home.join("flows")).as_deref())
 }
 
 /// The tools a flow asks for, step by step.

@@ -69,6 +69,9 @@ const Demo = lazy(() => import("./Demo").then((module) => ({ default: module.Dem
 const FlowMapScreen = lazy(() =>
   import("./FlowMapScreen").then((module) => ({ default: module.FlowMapScreen })),
 );
+const FlowsScreen = lazy(() =>
+  import("./FlowsScreen").then((module) => ({ default: module.FlowsScreen })),
+);
 
 /** What stands where a section will be: nothing. A section a few hundred
  *  milliseconds away does not need announcing, and a spinner that flashes is
@@ -77,6 +80,7 @@ const ARRIVING = null;
 
 import { TopBar } from "./TopBar";
 import { sourceWords, statusOfRun, type BarFlow, type Source } from "./boardhead";
+import { chainMark, readChains, type ChainsRead } from "./flowchain";
 import { BenchContext, type Bench } from "./Workbench";
 import { declaredCeiling } from "./terminal";
 import { Palette, isPaletteKey, type Entry } from "./Palette";
@@ -379,6 +383,7 @@ export default function App() {
 
   const [saving, setSaving] = useState<Set<string>>(new Set());
   const [saveErrors, setSaveErrors] = useState<Record<string, string>>({});
+  const [chains, setChains] = useState<ChainsRead>({ state: "read", chains: new Map() });
 
   const [discovery, setDiscovery] = useState<ToolDiscovery>(() =>
     NATIVE ? { state: "asking" } : { state: "mute", why: "outside the shell: the engine knows the tools" },
@@ -389,6 +394,9 @@ export default function App() {
   // still on screen when the answer arrives.
   const readFlows = useCallback((still: () => boolean) => {
     if (!NATIVE) return;
+    void readChains().then((read) => {
+      if (still()) setChains(read);
+    });
     loadFlows()
       .then((loaded) => {
         if (!still()) return;
@@ -1260,17 +1268,20 @@ export default function App() {
         origin: group.origin,
         flows: group.flows.map(({ name, flow }) => {
           const working = flows.get(name);
+          const mark = chainMark(chains, name);
           return {
             name,
             note: stepCountLabel(flow.graph.steps.length),
             color: layout.bands.get(name)?.color,
             dirty: working ? isDirty(working) : false,
             live: liveOf(liveFlows.get(name), now),
+            replaces: mark?.text ?? null,
+            chain: mark?.title,
           };
         }),
         broken: group.broken.map((entry) => ({ name: entry.name, reason: entry.reason })),
       })),
-    [railGroups, layout, flows, liveFlows, now],
+    [railGroups, layout, flows, liveFlows, now, chains],
   );
 
   /**
@@ -1461,6 +1472,7 @@ export default function App() {
         globalFlows={
           /* THE GROUP IS ALREADY CALLED «FLOWS EVERYWHERE», so the row inside
              it is not called that too: it says what the map answers. */
+          <>
           <button
             type="button"
             className="wsx__leaf"
@@ -1472,6 +1484,18 @@ export default function App() {
             </span>
             <span className="world__label">{nameOfPlace("flowmap")}</span>
           </button>
+          <button
+            type="button"
+            className="wsx__leaf"
+            data-here={place === "flows" || undefined}
+            onClick={() => setPlace("flows")}
+          >
+            <span className="world__glyph" aria-hidden="true">
+              ≡
+            </span>
+            <span className="world__label">{nameOfPlace("flows")}</span>
+          </button>
+          </>
         }
       />
       <div className="stage">
@@ -1493,6 +1517,7 @@ export default function App() {
               flow={focusedWorking.flow}
               bar={barFlow}
               neverSaved={focusedWorking.saved === null}
+              mark={chainMark(chains, focusName)}
               error={saveErrors[focusName]}
               onRename={(next) => renameFlow(focusName, next)}
               onDescription={(text) => updateFlow(focusName, (flow) => ({ ...flow, description: text }))}
@@ -1594,6 +1619,23 @@ export default function App() {
               }}
             />
           </Suspense>
+          </div>
+        </div>
+      )}
+      {place === "flows" && (
+        <div className="section" data-place="flows">
+          <div className="section__body">
+            <Suspense fallback={ARRIVING}>
+              <FlowsScreen
+                native={NATIVE}
+                onOpen={(name) => {
+                  setPlace("board");
+                  setFocusName(name);
+                  setSelectedNode(null);
+                }}
+                onRun={(name) => void handleRun(name)}
+              />
+            </Suspense>
           </div>
         </div>
       )}

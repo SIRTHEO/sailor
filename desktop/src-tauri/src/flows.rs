@@ -72,8 +72,8 @@ fn delete_flow_in(flows_dir: &Path, name: &str) -> Result<(), String> {
 ///
 /// **THESE ARE POLICIES, NOT CLAIMS.** Both come from a trait method with a
 /// conservative default and cannot tell an author's answer from silence, so
-/// what travels is how the engine behaves. The surface and the other powers of
-/// `docs/the-four-surfaces.md` are absent because no action declares one.
+/// what travels is how the engine behaves. A surface and the other powers are
+/// absent because no action declares one.
 #[derive(serde::Serialize)]
 pub(crate) struct Registered {
     name: String,
@@ -461,6 +461,15 @@ pub(crate) fn flow_texts() -> Vec<FlowText> {
         .iter()
         .flat_map(texts_of)
         .collect()
+}
+
+/// The precedence chain of every flow, as `sailor flow where` reads it: the
+/// same function, over the same sources, in **the window's** working directory,
+/// which is named in each chain because it need not be the terminal's.
+#[tauri::command]
+pub(crate) fn flow_chains() -> Vec<flow::system::Chain> {
+    let here = std::env::current_dir().ok();
+    flow::system::chains(&ui::gather::flow_sources(), here.as_deref())
 }
 
 fn texts_of(source: &flow::system::FlowSource) -> Vec<FlowText> {

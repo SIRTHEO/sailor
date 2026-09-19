@@ -213,6 +213,7 @@ const ACTION_KIND: Record<string, StepKind> = {
   mandate_deposit: "deposit",
   mandate_resume: "deposit",
   mandate_waiting: "check",
+  mandate_taken: "check",
   type_into_terminal: "gesture",
   empty_terminal: "gesture",
   // The only step that writes a proposal onto the tree. It draws as a gesture

@@ -5,7 +5,14 @@
 //! runs when an event arrives, never on a clock, and a refused census does not
 //! fail a recording: only `sailor session census` exits 3 on a refusal.
 
+mod events;
+mod greeting;
+mod hooks;
+
 use crate::Form;
+use events::*;
+use greeting::*;
+use hooks::*;
 use sessions::census::{Census, LocalMachine};
 use sessions::{anchor_from, now, Anchor, Arrival, Payload, Sessions, TerminalEvent};
 use std::collections::BTreeMap;
@@ -103,7 +110,7 @@ pub const REFUSED: i32 = 3;
 mod handover;
 mod listing;
 
-use handover::{handed_on, kept_by, the_ask_still_standing};
+use handover::{filed_what_was_dropped, handed_on, kept_by, the_ask_still_standing};
 use listing::{also_saying, close_the_gone, list_terminals, standing_of, Standing};
 
 pub fn run(args: &[String]) -> i32 {
@@ -280,25 +287,7 @@ const NEEDS_THE_STORE: &[&str] = &["open", "event", "close", "list", "detach", "
 /// The forms that announce this terminal to the other agents, or stop.
 const NEEDS_THE_DEPOSIT: &[&str] = &["open", "event", "close", "detach"];
 
-/// What Sailor does at a moment. The moments are toolbox's list, asked rather
-/// than copied here; what a line calls each is said by its descriptor.
-/// `session_start` carries the welcome and is the only one whose text reaches
-/// the agent, so it opens; every other moment is an event.
-fn what_we_do_at(moment: &str) -> &'static str {
-    if moment == toolbox::descriptor::SESSION_START {
-        "open"
-    } else {
-        "event"
-    }
-}
 
-/// Every moment with its verb, in the order toolbox names them. **FOUR, AND
-/// NO MORE**: one more hook is one more process at every event of every session.
-fn what_we_do_at_each() -> impl Iterator<Item = (&'static str, &'static str)> {
-    toolbox::descriptor::MOMENTS
-        .iter()
-        .map(|moment| (*moment, what_we_do_at(moment)))
-}
 
 /// How one of our hooks is told from anyone else's: by the fact that it invokes
 /// **this** command. Not by a name written beside it, which can be changed
@@ -327,198 +316,9 @@ fn ours(text: &str) -> bool {
     MARKS.iter().all(|mark| text.contains(mark))
 }
 
-/// Walks every command line and hands the resolved addresses to `work`, which
-/// answers whether it did anything there.
-///
-/// **THE ADDRESSES ARE RESOLVED IN ONE PLACE.** A second walk would be a second
-/// idea of where Sailor wrote, and a graft and an inverse disagreeing about it
-/// is a graft that cannot be undone.
-fn each_command_line(
-    request: &Request<'_>,
-    catalog: &toolbox::descriptor::Catalog,
-    machine: &toolbox::Machine,
-    said: &mut Vec<String>,
-    mut work: impl FnMut(
-        &toolbox::descriptor::Descriptor,
-        &std::path::Path,
-        Option<&std::path::Path>,
-        &mut Vec<String>,
-    ) -> Result<bool, String>,
-) -> Result<bool, String> {
-    // **THE LIST AND THE MACHINE ARE HANDED OVER, NOT READ HERE.** A check must
-    // be able to ask this about a command line nobody ships, and asking through
-    // the shipped list would put a product's name inside the check.
 
-    // `--settings` stays, and stays one file: it serves the tests and whoever
-    // moved their own. With it, the descriptor says only what the events are
-    // called, no longer where to write them.
-    let home = machine.env.get("HOME").cloned().unwrap_or_default();
-    let only = request.options.get("tool");
-    let declared_file = request.options.get("settings").map(PathBuf::from);
-    if declared_file.is_some() && only.is_none() {
-        return Err(catalogue::say("cli.session.settings_without_tool", &[]));
-    }
 
-    if let Some(wanted) = only {
-        let known: Vec<&str> = catalog
-            .descriptors
-            .iter()
-            .map(|loaded| loaded.descriptor.id.as_str())
-            .collect();
-        if !known.contains(&wanted.as_str()) {
-            return Err(catalogue::say(
-                "cli.session.no_such_command_line",
-                &[("tool", wanted), ("known", &known.join(", "))],
-            ));
-        }
-    }
 
-    let mut worked_anywhere = false;
-    for loaded in &catalog.descriptors {
-        let tool = &loaded.descriptor;
-        if tool.family != "ai_cli" || tool.disabled {
-            continue;
-        }
-        if only.is_some_and(|wanted| *wanted != tool.id) {
-            continue;
-        }
-        let Some(hooks) = &tool.session_hooks else {
-            said.push(catalogue::say(
-                "cli.session.declares_no_hooks",
-                &[("tool", &tool.id)],
-            ));
-            continue;
-        };
-
-        // It applies to the line `--tool` names, never to «the one the code
-        // knows»: a fallback choosing for itself would put a product name back
-        // in a condition, through another door.
-        let file = match &declared_file {
-            Some(path) => path.clone(),
-            None => {
-                let root = machine.env.get(&hooks.file.root_var).cloned();
-                match hooks.file.path(root.as_deref(), &home) {
-                    Some(path) => path,
-                    None => {
-                        said.push(catalogue::say(
-                            "cli.session.no_settings_address",
-                            &[("tool", &tool.id)],
-                        ));
-                        continue;
-                    }
-                }
-            }
-        };
-
-        // Under `--settings` the words follow the declared file instead of
-        // their own address: whoever diverts the graft diverts all of it,
-        // and a test writing half into its scratch and half into the real
-        // home would leave that half behind.
-        let directory = hooks.words.as_ref().and_then(|words| match &declared_file {
-            Some(path) => path.parent().map(|beside| {
-                beside.join(
-                    std::path::Path::new(&words.below_home)
-                        .file_name()
-                        .unwrap_or_default(),
-                )
-            }),
-            None => words.path(machine.env.get(&words.root_var).map(String::as_str), &home),
-        });
-
-        worked_anywhere |= work(tool, &file, directory.as_deref(), said)?;
-    }
-    Ok(worked_anywhere)
-}
-
-/// Grafts every command line that declares how, and **names each one that does
-/// not**.
-///
-/// The settings address used to live here, under a comment arguing it was «the
-/// address of what we are grafting» and so not a coupling. It was: two other
-/// lines with the same four moments got nothing, and silence reads as success.
-fn install_hooks(request: &Request<'_>) -> Result<Report, String> {
-    let machine = toolbox::Machine::current();
-    let catalog = toolbox::descriptor::Catalog::load(&toolbox::default_sources(&machine));
-    grafting(request, &catalog, &machine)
-}
-
-/// The same graft, with the list and the machine handed over, so a check can
-/// run the whole road over a command line nobody ships.
-fn grafting(
-    request: &Request<'_>,
-    catalog: &toolbox::descriptor::Catalog,
-    machine: &toolbox::Machine,
-) -> Result<Report, String> {
-    let mut said = Vec::new();
-    let declared_file = request.options.contains_key("settings");
-    let grafted_any = each_command_line(
-        request,
-        catalog,
-        machine,
-        &mut said,
-        |tool, file, words, said| {
-            let missing = moments_without_an_event(tool);
-            // **NO CATCH-ALL ARM.** A format that gets a variant and no arm is a
-            // compile error, which is the same promise the old arm made in prose:
-            // a format declared and not written must never pass in silence.
-            match format_of(tool) {
-                toolbox::descriptor::FileFormat::Json => said.push(grafted_into(tool, file)?),
-                toolbox::descriptor::FileFormat::Toml => {
-                    said.push(grafted_into_toml(tool, file, &key_of(tool))?)
-                }
-            }
-
-            // **WHICH HOME, AND WHY THAT ONE.** A line whose file moves with a
-            // variable has two addresses, and a graft that names only the file it
-            // wrote leaves whoever reads unable to tell it went to the one their
-            // sessions actually read.
-            let root_var = root_var_of(tool);
-            if !declared_file && !root_var.is_empty() {
-                said.push(which_home(tool, &root_var, machine));
-            }
-
-            if !missing.is_empty() {
-                said.push(format!(
-                    "  {}",
-                    catalogue::say(
-                        "cli.session.moments_without_an_event",
-                        &[("tool", &tool.id), ("moments", &format!("{missing:?}"))],
-                    )
-                ));
-            }
-
-            match words {
-                Some(directory) => said.push(wrote_the_two_commands(directory)?),
-                None => said.push(format!(
-                    "  {}",
-                    catalogue::say("cli.session.no_typed_words", &[("tool", &tool.id)])
-                )),
-            }
-            // Every format the walk reaches is written now, so reaching a line is
-            // grafting it. What is left below answers for the lines never reached.
-            Ok(true)
-        },
-    )?;
-
-    // The lines the walk did say are kept: they answer «which one refused».
-    if !grafted_any {
-        said.push(catalogue::say("cli.session.nothing_grafted", &[]));
-        return Err(said.join("\n"));
-    }
-    Ok(Report::spoken(said.join("\n")))
-}
-
-/// Takes the graft back out of every command line it went into, and **names
-/// each thing it could not take out and why**.
-///
-/// The owner's requirement is that a command line be left as Sailor found it.
-/// A silent failure here is worse than at the graft: whoever ran this believes
-/// the file is clean and has no reason to look again.
-fn uninstall_hooks(request: &Request<'_>) -> Result<Report, String> {
-    let machine = toolbox::Machine::current();
-    let catalog = toolbox::descriptor::Catalog::load(&toolbox::default_sources(&machine));
-    taking_out(request, &catalog, &machine)
-}
 
 /// The same inverse, with the list and the machine handed over, for the same
 /// reason [`grafting`] has it: a check must be able to ask about a command line
@@ -684,206 +484,12 @@ fn took_the_two_commands_out(directory: &std::path::Path) -> Result<String, Stri
     Ok(said)
 }
 
-/// Takes our hooks out of a settings file, **by subtraction**.
-///
-/// It reads every event the file holds, not the ones the descriptor names
-/// today: a command line that renames an event would otherwise leave ours
-/// behind for ever, in the one place nobody would think to look. What may be
-/// taken is settled by [`ours`], which is also what the graft asks.
-fn uninstalled(settings: &std::path::Path) -> Result<String, String> {
-    let text = match std::fs::read_to_string(settings) {
-        Ok(text) => text,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(catalogue::say(
-                "cli.session.uninstall.no_file",
-                &[("file", &settings.display().to_string())],
-            ))
-        }
-        Err(error) => return Err(format!("{}: {error}", settings.display())),
-    };
-    if text.trim().is_empty() {
-        return Ok(catalogue::say(
-            "cli.session.uninstall.file_empty",
-            &[("file", &settings.display().to_string())],
-        ));
-    }
-    // **A FILE WE CANNOT READ IS NOT REWRITTEN**, the same rule as the graft:
-    // rewriting it with our part taken out would erase the configuration of
-    // whoever uses it, over a typo.
-    let mut root: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|error| format!("{}: not valid JSON ({error})", settings.display()))?;
 
-    let Some(hooks) = root.get_mut("hooks").and_then(|at| at.as_object_mut()) else {
-        return Ok(catalogue::say(
-            "cli.session.uninstall.no_hooks",
-            &[("file", &settings.display().to_string())],
-        ));
-    };
 
-    let mut taken = Vec::new();
-    let mut emptied = Vec::new();
-    let mut unreadable = Vec::new();
-    for (event, entries) in hooks.iter_mut() {
-        let Some(list) = entries.as_array_mut() else {
-            unreadable.push(event.clone());
-            continue;
-        };
-        let before = list.len();
-        list.retain(|entry| {
-            !serde_json::to_string(entry)
-                .map(|written| ours(&written))
-                .unwrap_or(false)
-        });
-        if list.len() == before {
-            continue;
-        }
-        taken.push(event.clone());
-        if list.is_empty() {
-            emptied.push(event.clone());
-        }
-    }
 
-    let mut said = Vec::new();
-    for event in &unreadable {
-        said.push(catalogue::say(
-            "cli.session.uninstall.not_an_array",
-            &[("event", event), ("file", &settings.display().to_string())],
-        ));
-    }
-    if taken.is_empty() {
-        said.insert(
-            0,
-            catalogue::say(
-                "cli.session.uninstall.nothing_of_ours",
-                &[("file", &settings.display().to_string())],
-            ),
-        );
-        return Ok(said.join("\n"));
-    }
 
-    // An event left holding an empty array is a trace of the graft too, and it
-    // goes - but only where we are the ones who emptied it.
-    for event in &emptied {
-        hooks.remove(event);
-    }
-    let all_gone = hooks.is_empty();
-    if let Some(object) = root.as_object_mut() {
-        if all_gone {
-            object.remove("hooks");
-        }
-        if object.is_empty() {
-            said.push(catalogue::say(
-                "cli.session.uninstall.empty_object_left",
-                &[("file", &settings.display().to_string())],
-            ));
-        }
-    }
 
-    let written = serde_json::to_string_pretty(&root).map_err(|error| error.to_string())?;
-    std::fs::write(settings, format!("{written}\n"))
-        .map_err(|error| format!("{}: {error}", settings.display()))?;
-    said.insert(
-        0,
-        catalogue::say(
-            "cli.session.uninstall.taken_out",
-            &[
-                ("file", &settings.display().to_string()),
-                ("events", &taken.join(", ")),
-            ],
-        ),
-    );
-    Ok(said.join("\n"))
-}
 
-/// The moments this command line has no event for, which are the ones the
-/// report has to name. A pure answer, so it can be asked of a descriptor
-/// nobody ships and the check needs no product to exist.
-fn moments_without_an_event(tool: &toolbox::descriptor::Descriptor) -> Vec<&'static str> {
-    what_we_do_at_each()
-        .map(|(moment, _)| moment)
-        .filter(|moment| tool.event_for(moment).is_none())
-        .collect()
-}
-
-/// Grafts the moments **this** command line can report, under its own names.
-/// The ones it cannot report do not enter and are named elsewhere: there is no
-/// fallback here, because a fallback would be invisible to whoever reads.
-fn grafted_into(
-    tool: &toolbox::descriptor::Descriptor,
-    settings: &std::path::Path,
-) -> Result<String, String> {
-    let named = events_this_line_can_report(tool);
-    if named.is_empty() {
-        return Ok(nothing_to_graft(tool));
-    }
-    installed(settings, &named, &tool.id)
-}
-
-/// The moments this line can report, paired with the verb we run at each.
-fn events_this_line_can_report(tool: &toolbox::descriptor::Descriptor) -> Vec<(&str, &str)> {
-    what_we_do_at_each()
-        .filter_map(|(moment, verb)| tool.event_for(moment).map(|event| (event, verb)))
-        .collect()
-}
-
-/// The line a graft writes, in **one copy for both formats**, naming the
-/// command line it went into: a hook that does not say who it was grafted for
-/// reaches us with a session and a directory and nothing else, and the terminal
-/// is then tracked as somebody and announced to the others as nobody.
-fn hook_command(binary: &str, verb: &str, cli: &str) -> String {
-    format!("{binary} session {verb} --cli {cli}")
-}
-
-fn nothing_to_graft(tool: &toolbox::descriptor::Descriptor) -> String {
-    catalogue::say("cli.session.nothing_to_graft", &[("tool", &tool.id)])
-}
-
-/// The same graft into a settings file written in TOML.
-fn grafted_into_toml(
-    tool: &toolbox::descriptor::Descriptor,
-    settings: &std::path::Path,
-    under: &[String],
-) -> Result<String, String> {
-    let named = events_this_line_can_report(tool);
-    if named.is_empty() {
-        return Ok(nothing_to_graft(tool));
-    }
-    let binary = std::env::current_exe()
-        .map_err(|error| {
-            catalogue::say(
-                "cli.no_telling_where_i_am",
-                &[("error", &error.to_string())],
-            )
-        })?
-        .display()
-        .to_string();
-    let commands: Vec<(&str, String)> = named
-        .iter()
-        .map(|(event, verb)| (*event, hook_command(&binary, verb, &tool.id)))
-        .collect();
-
-    // **A FILE THAT IS THERE AND WILL NOT BE READ STOPS THE GRAFT.** Treating
-    // an unreadable file as an empty one appends to nothing and writes back a
-    // file holding our lines alone, which is the configuration of whoever uses
-    // it deleted over a permission.
-    let existing = match std::fs::read_to_string(settings) {
-        Ok(text) => text,
-        Err(_) if !settings.exists() => String::new(),
-        Err(error) => return Err(format!("{}: {error}", settings.display())),
-    };
-    let graft = crate::toml_graft::appended(&existing, under, &commands, MARKS)
-        .map_err(|reason| format!("{}: {reason}", settings.display()))?;
-    if graft.added.is_empty() {
-        return Ok(already_grafted(settings));
-    }
-    if let Some(parent) = settings.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|error| format!("{}: {error}", parent.display()))?;
-    }
-    std::fs::write(settings, &graft.text)
-        .map_err(|error| format!("{}: {error}", settings.display()))?;
-    Ok(just_grafted(settings, &graft.added.join(", ")))
-}
 
 /// Which of a line's two addresses was grafted, and what that leaves open.
 ///
@@ -907,125 +513,8 @@ fn which_home(
     }
 }
 
-/// The two sentences the report ends on, said the same for every format: two
-/// formats wording it differently would read as two different things done.
-fn already_grafted(settings: &std::path::Path) -> String {
-    let file = settings.display().to_string();
-    catalogue::say("cli.session.already_grafted", &[("file", &file)])
-}
 
-fn just_grafted(settings: &std::path::Path, events: &str) -> String {
-    let file = settings.display().to_string();
-    catalogue::say(
-        "cli.session.grafted",
-        &[("file", &file), ("events", events)],
-    )
-}
 
-/// Grafts the hooks into a settings file, **by adding**.
-///
-/// The binary's path is the one running right now (`current_exe`): a graft
-/// writing plain `sailor` would work only where that name is already on the
-/// `PATH` of whoever opens the terminal, which is not something knowable here.
-fn installed(
-    settings: &std::path::Path,
-    events: &[(&str, &str)],
-    cli: &str,
-) -> Result<String, String> {
-    let mut root: serde_json::Value = match std::fs::read_to_string(settings) {
-        Ok(text) if text.trim().is_empty() => serde_json::json!({}),
-        // **A FILE WE CANNOT READ IS NOT REWRITTEN.** Replacing it with our own
-        // part alone would erase the configuration of whoever uses it, over a
-        // typo.
-        Ok(text) => serde_json::from_str(&text)
-            .map_err(|error| format!("{}: not valid JSON ({error})", settings.display()))?,
-        Err(_) => serde_json::json!({}),
-    };
-
-    let binary = std::env::current_exe()
-        .map_err(|error| {
-            catalogue::say(
-                "cli.no_telling_where_i_am",
-                &[("error", &error.to_string())],
-            )
-        })?
-        .display()
-        .to_string();
-
-    let hooks = root
-        .as_object_mut()
-        .ok_or_else(|| {
-            catalogue::say(
-                "cli.session.root_not_an_object",
-                &[("file", &settings.display().to_string())],
-            )
-        })?
-        .entry("hooks")
-        .or_insert_with(|| serde_json::json!({}))
-        .as_object_mut()
-        .ok_or_else(|| {
-            catalogue::say(
-                "cli.session.hooks_not_an_object",
-                &[("file", &settings.display().to_string())],
-            )
-        })?;
-
-    let mut added = Vec::new();
-    for (event, verb) in events {
-        let command = hook_command(&binary, verb, cli);
-        let list = hooks
-            .entry(*event)
-            .or_insert_with(|| serde_json::json!([]))
-            .as_array_mut()
-            .ok_or_else(|| {
-                catalogue::say(
-                    "cli.session.event_not_an_array",
-                    &[("file", &settings.display().to_string()), ("event", event)],
-                )
-            })?;
-
-        // Ours, told by the command and not by the position — **and one of
-        // ours that no longer says what we would write is rewritten**, or the
-        // terminals grafted before this line stay announced as nobody.
-        let ours_here: Vec<usize> = list
-            .iter()
-            .enumerate()
-            .filter(|(_, entry)| {
-                serde_json::to_string(entry)
-                    .map(|written| ours(&written))
-                    .unwrap_or(false)
-            })
-            .map(|(at, _)| at)
-            .collect();
-        let up_to_date = ours_here.iter().any(|at| {
-            serde_json::to_string(&list[*at])
-                .map(|written| written.contains(&command))
-                .unwrap_or(false)
-        });
-        if up_to_date {
-            continue;
-        }
-        for at in ours_here.iter().rev() {
-            list.remove(*at);
-        }
-        list.push(serde_json::json!({
-            "hooks": [{"type": "command", "command": command}]
-        }));
-        added.push(*event);
-    }
-
-    if added.is_empty() {
-        return Ok(already_grafted(settings));
-    }
-    if let Some(parent) = settings.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|error| format!("{}: {error}", parent.display()))?;
-    }
-    let text = serde_json::to_string_pretty(&root).map_err(|error| error.to_string())?;
-    std::fs::write(settings, format!("{text}\n"))
-        .map_err(|error| format!("{}: {error}", settings.display()))?;
-    Ok(just_grafted(settings, &added.join(", ")))
-}
 
 fn act(request: &Request<'_>) -> Result<Report, String> {
     match request.verb {
@@ -1046,40 +535,7 @@ fn anchor_of(request: &Request<'_>) -> Anchor {
     anchor_from(request.payload, request.tty.to_owned(), request.census)
 }
 
-fn arrival_of(request: &Request<'_>) -> Arrival {
-    Arrival {
-        anchor: anchor_of(request),
-        session_id: request.payload.session_id.clone(),
-        transcript_path: request.payload.transcript_path.clone(),
-        at: request.at,
-    }
-}
 
-/// The fact's name: the one the payload declares, or the verb's own.
-fn event_named(request: &Request<'_>, fallback: &str) -> TerminalEvent {
-    let anchor = anchor_of(request);
-    TerminalEvent {
-        tty: anchor.tty.clone(),
-        session_id: request.payload.session_id.clone(),
-        worktree: Some(anchor.worktree.clone()),
-        ancestor: anchor.ancestor.clone(),
-        name: request
-            .payload
-            .hook_event_name
-            .clone()
-            .filter(|found| !found.is_empty())
-            .unwrap_or_else(|| fallback.to_owned()),
-        transcript_path: request.payload.transcript_path.clone(),
-        occurred_at: request.at,
-        // The keys `terminal::keeping` allows, and nothing else. A hook sends
-        // what a person typed and what the engine answered; keeping those
-        // would put a secret typed once on this disk for good.
-        payload: terminal::keeping::what_is_kept(
-            request.raw,
-            std::env::var(terminal::keeping::KEEP_BODIES).ok(),
-        ),
-    }
-}
 
 fn open_terminal(request: &Request<'_>) -> Result<Report, String> {
     let store = request.store()?;
@@ -1116,6 +572,7 @@ fn open_terminal(request: &Request<'_>) -> Result<Report, String> {
             &still_open(
                 &started(request, &arrival),
                 request.options.get("ledger").map(String::as_str),
+                &arrival.anchor.tty,
             ),
             &announced,
             handed_on(request, &arrival),
@@ -1132,87 +589,7 @@ fn rules_in(worktree: &std::path::Path) -> Vec<flow::workspace::Rule> {
     flow::workspace::rules_of(&root)
 }
 
-/// Who else the register holds open in this tree, for the greeting. Nothing at
-/// all when nobody else is here: a greeting that reports emptiness every time
-/// teaches nobody to read it.
-fn neighbours(arrival: &Arrival, store: &Sessions) -> Option<String> {
-    let rows = store.terminals().ok()?;
-    let asked: std::cell::RefCell<std::collections::HashMap<String, Option<String>>> =
-        std::cell::RefCell::new(std::collections::HashMap::new());
-    let repository_of = |path: &str| {
-        if let Some(known) = asked.borrow().get(path) {
-            return known.clone();
-        }
-        let found = repository_holding(path);
-        asked.borrow_mut().insert(path.to_owned(), found.clone());
-        found
-    };
-    let here = &arrival.anchor.worktree;
-    let others = sessions::others_in_the_tree(&rows, &arrival.anchor.tty, here, &repository_of);
-    if others.is_empty() {
-        return None;
-    }
-    let abandoned = sessions::census::Census::of(&sessions::census::LocalMachine).abandoned(&rows);
-    who_is_here(&others, &abandoned, here)
-}
 
-/// The sentence itself, apart from the machine that answered: which of the
-/// rows still hold somebody, and how many are only rows.
-///
-/// **A ROW THAT HOLDS NOBODY IS NOT A NEIGHBOUR**, and it is not silence
-/// either — it is counted and said, because a reader who is told nothing goes
-/// looking for a terminal that is not there.
-fn who_is_here(
-    others: &[&sessions::TerminalRow],
-    abandoned: &sessions::census::Abandoned,
-    here: &str,
-) -> Option<String> {
-    let mut alive = Vec::new();
-    let mut stale = 0usize;
-    let mut unknown = false;
-    for row in others {
-        match standing_of(row, abandoned) {
-            Standing::NobodyThere => stale += 1,
-            Standing::Unknown => {
-                unknown = true;
-                alive.push(named(row, here));
-            }
-            Standing::Open | Standing::Closed => alive.push(named(row, here)),
-        }
-    }
-    // **THE OLD SENTENCE DECLARED WHAT IT COULD NOT ANSWER, AND THAT STAYS
-    // TRUE WHEN THE MACHINE WOULD NOT SAY.** Answering for a census we were
-    // refused would turn a limit we can state into a claim we cannot.
-    if unknown {
-        return Some(catalogue::say(
-            "cli.session.others_in_this_tree",
-            &[
-                ("count", &alive.len().to_string()),
-                ("who", &alive.join(", ")),
-            ],
-        ));
-    }
-    let mut said = Vec::new();
-    if !alive.is_empty() {
-        said.push(catalogue::say(
-            "cli.session.others_alive",
-            &[
-                ("count", &alive.len().to_string()),
-                ("who", &alive.join(", ")),
-            ],
-        ));
-    }
-    if stale > 0 {
-        said.push(catalogue::say(
-            "cli.session.others_stale",
-            &[("count", &stale.to_string())],
-        ));
-    }
-    if said.is_empty() {
-        return None;
-    }
-    Some(said.join(" "))
-}
 
 /// A neighbour by name, and **where they are when it is not where you are**:
 /// the same repository is reached from several directories, and «ttys010»
@@ -1224,37 +601,20 @@ fn named(row: &sessions::TerminalRow, here: &str) -> String {
     format!("{} ({})", row.tty, row.worktree)
 }
 
-/// The repository a directory belongs to, in git's own words, so that a
-/// worktree and the checkout it was cut from come back as one place. `None`
-/// where git says nothing: outside a repository, or with no git to ask.
-fn repository_holding(path: &str) -> Option<String> {
-    let said = std::process::Command::new("git")
-        .args([
-            "-C",
-            path,
-            "rev-parse",
-            "--path-format=absolute",
-            "--git-common-dir",
-        ])
-        .output()
-        .ok()?;
-    if !said.status.success() {
-        return None;
-    }
-    let found = String::from_utf8_lossy(&said.stdout).trim().to_owned();
-    (!found.is_empty()).then_some(found)
-}
 
 /// What the ledger holds open that nothing picks up on its own, in **two lists
 /// and not one**: a run `waiting` was handed to a person, one stopped on «not
 /// yet» wants only running again, and merging them would send a reader to take
 /// a step nobody handed them.
+#[derive(Default)]
 struct StillOpen {
     waiting: Vec<ledger::WaitingRun>,
     ask_again: Vec<ledger::WaitingRun>,
     remembered: Vec<actions::memory::Memory>,
     page: Option<PageOnDisk>,
     page_unseen: Option<PageUnseen>,
+    /// This terminal's own record of handovers owed and not made.
+    handover: Option<ledger::HandoverMissed>,
 }
 
 /// The page of memories as it sits on disk: its address, and how it opens.
@@ -1297,345 +657,20 @@ fn started(request: &Request<'_>, arrival: &Arrival) -> Started<'static> {
     }
 }
 
-/// **ONLY WHERE THERE IS A PAGE TO SEE**: with no page on disk there is nothing
-/// to miss, and an engine nobody looked into is not called blind.
-fn page_unseen(started: &Started<'_>, page: Option<&PageOnDisk>) -> Option<PageUnseen> {
-    let (engine, page, home) = (started.engine?, page?, started.home.as_deref()?);
-    let sight = crate::memory_cmd::Sight::of(
-        engine,
-        &started.worktree,
-        home,
-        started.profile_home.as_deref(),
-        &page.path,
-    );
-    if sight.reads.is_empty() || sight.names_the_page.is_some() {
-        return None;
-    }
-    Some(PageUnseen {
-        engine: engine.display_name.clone(),
-        files: sight.reads,
-    })
-}
 
 /// How many of the page's lines the greeting repeats.
 const PAGE_OPENING_LINES: usize = 3;
 
-/// The page, where the home has one. **A missing file is `None`**, not an
-/// empty page: the greeting must not send a reader to a file that is not there.
-fn page_on_disk(home: Option<&std::path::Path>) -> Option<PageOnDisk> {
-    let path = actions::memory::page_path(home?);
-    let text = std::fs::read_to_string(&path).ok()?;
-    let opening = text
-        .lines()
-        .take(PAGE_OPENING_LINES)
-        .collect::<Vec<_>>()
-        .join("\n");
-    Some(PageOnDisk { path, opening })
-}
 
-/// The two lists and the memories this tree is handed, from a ledger already
-/// open: a fact about one repository is not news in the next.
-fn still_open_in(
-    deposit: &ledger::Ledger,
-    home: Option<&std::path::Path>,
-    started: &Started<'_>,
-) -> Result<StillOpen, String> {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or_default();
-    let page = page_on_disk(home);
-    let tree = workspace::tree_around(&started.worktree).map(|tree| tree.display().to_string());
-    Ok(StillOpen {
-        waiting: deposit.waiting_runs().map_err(|error| error.to_string())?,
-        ask_again: deposit
-            .runs_to_ask_again()
-            .map_err(|error| error.to_string())?,
-        remembered: actions::memory::seen_from(
-            actions::memory::remembered(deposit, now).map_err(|error| error.to_string())?,
-            tree.as_deref(),
-        ),
-        page_unseen: page_unseen(started, page.as_ref()),
-        page,
-    })
-}
 
-/// This machine's ledger, or the one `--ledger` names. `Ok(None)` where there
-/// is no home to look in, which is not the same as a home holding nothing.
-/// `--ledger` is the twin of `--store`: the road down to a ledger that will
-/// not open must be walkable without the machine's own home in it.
-fn deposit(declared: Option<&str>) -> Result<Option<ledger::Ledger>, String> {
-    let directory = match declared {
-        Some(declared) => PathBuf::from(declared),
-        None => match ledger::default_directory() {
-            Some(directory) => directory,
-            None => return Ok(None),
-        },
-    };
-    if !directory.exists() {
-        return Ok(None);
-    }
-    ledger::Ledger::open(&directory)
-        .map(Some)
-        .map_err(|error| error.to_string())
-}
 
-/// The same, from this machine's home.
-fn still_open(started: &Started<'_>, declared: Option<&str>) -> Result<Option<StillOpen>, String> {
-    match deposit(declared)? {
-        Some(deposit) => {
-            still_open_in(&deposit, ledger::sailor_home().as_deref(), started).map(Some)
-        }
-        None => Ok(None),
-    }
-}
 
-/// The name the others see in the survey: **the command line and the profile it
-/// runs under**, which is what tells two terminals of the same tree apart when
-/// the tree is all they have in common.
-fn agent_of(request: &Request<'_>) -> String {
-    // A hook grafted before the line learnt to name its command line says
-    // nothing here, and the survey shows that instead of guessing a name.
-    let Some(cli) = request.options.get("cli").filter(|id| !id.is_empty()) else {
-        return catalogue::say("cli.session.a_line_that_did_not_say", &[]);
-    };
-    match profiles::store_io::load_store()
-        .ok()
-        .and_then(|store| store.active.get(cli).cloned())
-    {
-        Some(profile) => format!("{cli} ({profile})"),
-        None => cli.clone(),
-    }
-}
 
-/// The branch a directory is on, in git's own words. `None` where git says
-/// nothing: a detached head, or no git to ask.
-fn branch_of(path: &str) -> Option<String> {
-    let said = std::process::Command::new("git")
-        .args(["-C", path, "rev-parse", "--abbrev-ref", "HEAD"])
-        .output()
-        .ok()?;
-    if !said.status.success() {
-        return None;
-    }
-    let found = String::from_utf8_lossy(&said.stdout).trim().to_owned();
-    (!found.is_empty() && found != "HEAD").then_some(found)
-}
 
-/// **THE TERMINAL ANNOUNCES ITSELF TO THE OTHER AGENTS**, and renews at every
-/// event. Held by the terminal — not by the process that writes, which is a new
-/// one at every keystroke, and not by the name of the command line, which
-/// changes under the same terminal.
-fn announce(request: &Request<'_>, arrival: &Arrival, state: &str) -> Result<(), String> {
-    let deposit = match request.deposit {
-        // Nobody asked for a ledger here, so nothing was refused and there is
-        // nothing to report: silence is the true answer.
-        TheDeposit::NobodyNeedsItHere => return Ok(()),
-        TheDeposit::WouldNotOpen(why) => return Err((*why).to_owned()),
-        TheDeposit::Open(deposit) => deposit,
-    };
-    let workdir = arrival.anchor.worktree.clone();
-    let record = actions::presence::claim_record(&actions::presence::Claim {
-        agent: agent_of(request),
-        key: actions::presence::terminal_claim_key(&arrival.anchor.tty),
-        repository: repository_holding(&workdir).unwrap_or_else(|| workdir.clone()),
-        branch: branch_of(&workdir),
-        workdir: Some(workdir),
-        // A terminal takes the tree: what an agent will touch is not known when
-        // it arrives, and the prudent answer is the one already written down.
-        paths: Vec::new(),
-        doing: None,
-        pid: std::process::id(),
-        at: request.at,
-        lease_seconds: actions::presence::DEFAULT_LEASE_SECONDS,
-        conversation: arrival.session_id.clone(),
-        state: state.to_owned(),
-    });
-    deposit
-        .put_record(&record)
-        .map_err(|error| error.to_string())
-}
 
-/// The other end: the terminal closes, and stops holding anything.
-fn stop_announcing(request: &Request<'_>, arrival: &Arrival) -> Result<(), String> {
-    let deposit = match request.deposit {
-        TheDeposit::NobodyNeedsItHere => return Ok(()),
-        // A terminal that cannot stop announcing keeps its claim until the
-        // lease runs out: worth saying, never worth failing the hook for.
-        TheDeposit::WouldNotOpen(why) => return Err((*why).to_owned()),
-        TheDeposit::Open(deposit) => deposit,
-    };
-    let key = actions::presence::terminal_claim_key(&arrival.anchor.tty);
-    actions::presence::release_claim(deposit, &key, request.at)
-        .map(|_| ())
-        .map_err(|error| error.to_string())
-}
 
-/// A run named for a reader: the flow, then the identifier the resume needs.
-fn run_named(run: &ledger::WaitingRun) -> String {
-    if run.entity.is_empty() {
-        return run.run_id.clone();
-    }
-    format!("{} ({})", run.entity, run.run_id)
-}
 
-/// What the greeting says about them, and **nothing where there is nothing**:
-/// a greeting that reports emptiness every time teaches nobody to read it.
-fn what_is_still_open(found: &StillOpen) -> Option<String> {
-    let mut lines: Vec<String> = Vec::new();
-    for (runs, key) in [
-        (&found.waiting, "cli.session.runs_waiting_for_a_person"),
-        (&found.ask_again, "cli.session.runs_to_ask_again"),
-    ] {
-        if runs.is_empty() {
-            continue;
-        }
-        let which: Vec<String> = runs.iter().map(run_named).collect();
-        lines.push(catalogue::say(
-            key,
-            &[
-                ("count", &runs.len().to_string()),
-                ("which", &which.join(", ")),
-                ("first", &runs[0].run_id),
-            ],
-        ));
-    }
-    if !found.remembered.is_empty() {
-        let recent: Vec<String> = found
-            .remembered
-            .iter()
-            .take(3)
-            .map(|memory| format!("«{}»", memory.label))
-            .collect();
-        lines.push(catalogue::say(
-            "cli.session.remembered",
-            &[
-                ("count", &found.remembered.len().to_string()),
-                ("recent", &recent.join(", ")),
-            ],
-        ));
-    }
-    if let Some(page) = &found.page {
-        lines.push(catalogue::say(
-            "cli.session.memory_page",
-            &[
-                ("path", &page.path.display().to_string()),
-                ("opening", &page.opening),
-            ],
-        ));
-    }
-    if let Some(unseen) = &found.page_unseen {
-        let files: Vec<String> = unseen
-            .files
-            .iter()
-            .map(|file| file.display().to_string())
-            .collect();
-        lines.push(catalogue::say(
-            "cli.session.page_unseen",
-            &[("engine", &unseen.engine), ("files", &files.join(", "))],
-        ));
-    }
-    (!lines.is_empty()).then(|| lines.join("\n"))
-}
 
-/// The welcome, in the wrapper that gets injected into the session's context.
-///
-/// **A WRAPPER AND NOT A PRINTED LINE** because `SessionStart` is one of the
-/// four moments where what the hook writes becomes context the agent reads. A
-/// plain line would be read by the person at the screen and not by the agent,
-/// and detaching would stay a thing that exists and nobody knows about.
-fn welcome(
-    arrival: &Arrival,
-    store: Option<&Sessions>,
-    open: &Result<Option<StillOpen>, String>,
-    announced: &Result<(), String>,
-    handed_on: Option<String>,
-) -> String {
-    let mut text = catalogue::say(
-        "cli.session.welcome",
-        &[
-            ("tty", &arrival.anchor.tty),
-            ("worktree", &arrival.anchor.worktree),
-        ],
-    );
-    // THE RULES OF THE TREE TRAVEL ON THE SAME CHANNEL AS THE GREETING, which
-    // was already the only one that reaches whoever works here.
-    let rules = rules_in(std::path::Path::new(&arrival.anchor.worktree));
-    let here: Vec<&str> = rules
-        .iter()
-        .filter(|rule| rule.there)
-        .map(|rule| rule.name.as_str())
-        .collect();
-    if !here.is_empty() {
-        text.push('\n');
-        text.push_str(&catalogue::say(
-            "cli.session.rules",
-            &[("files", &here.join(", "))],
-        ));
-    }
-    // **A DECLARATION THAT MISSES IS NEWS.** The project still points whoever
-    // arrives at a document that is not there; said nowhere, the declaration
-    // stays wrong until somebody opens the file for another reason.
-    let gone: Vec<&str> = rules
-        .iter()
-        .filter(|rule| !rule.there)
-        .map(|rule| rule.name.as_str())
-        .collect();
-    if !gone.is_empty() {
-        text.push('\n');
-        text.push_str(&catalogue::say(
-            "cli.session.rules_gone",
-            &[("files", &gone.join(", "))],
-        ));
-    }
-    if let Some(said) = store.and_then(|store| neighbours(arrival, store)) {
-        text.push('\n');
-        text.push_str(&said);
-    }
-    // **«I COULD NOT LOOK» IS NOT «NOTHING IS OPEN»**, and the greeting is the
-    // one place where the two get confused: a silent line reads like a quiet
-    // machine. So a ledger that would not open says so, with the reason.
-    match open {
-        Ok(Some(found)) => {
-            if let Some(said) = what_is_still_open(found) {
-                text.push('\n');
-                text.push_str(&said);
-            }
-        }
-        Ok(None) => {}
-        Err(why) => {
-            text.push('\n');
-            text.push_str(&catalogue::say(
-                "cli.session.ledger_did_not_open",
-                &[("why", why)],
-            ));
-        }
-    }
-    // **AN ANNOUNCEMENT THAT DID NOT GO IS SAID HERE**, because the survey will
-    // then show this terminal as nobody, and whoever reads it will conclude the
-    // tree is empty when it is not.
-    if let Err(why) = announced {
-        text.push('\n');
-        text.push_str(&catalogue::say(
-            "cli.session.not_announced",
-            &[("why", why)],
-        ));
-    }
-    // **LAST, AND NOT FIRST.** What the session before left is the longest
-    // thing on this channel, and a greeting that opens with it buries the
-    // terminal's own name under somebody else's work.
-    if let Some(said) = handed_on {
-        text.push('\n');
-        text.push_str(&said);
-    }
-    serde_json::json!({
-        "hookSpecificOutput": {
-            "hookEventName": "SessionStart",
-            "additionalContext": text,
-        }
-    })
-    .to_string()
-}
 
 fn record_event(request: &Request<'_>) -> Result<Report, String> {
     let store = request.store()?;
@@ -1670,75 +705,28 @@ fn record_event(request: &Request<'_>) -> Result<Report, String> {
         said.push('\n');
         said.push_str(&started);
     }
-    if let Some(asked) = the_ask_still_standing(request, &happened.tty) {
+    // Before the ask is judged: a mandate dropped since the last hook is an
+    // answer to it, and filing it here is what keeps the relay off a person.
+    if let Some(filed) = filed_what_was_dropped(
+        request,
+        &happened.tty,
+        happened.session_id.as_deref().unwrap_or_default(),
+    ) {
+        said.push('\n');
+        said.push_str(&filed);
+    }
+    if let Some(asked) = the_ask_still_standing(
+        request,
+        &happened.tty,
+        happened.session_id.as_deref().unwrap_or_default(),
+    ) {
         said.push('\n');
         said.push_str(&asked);
     }
     Ok(Report::spoken(also_saying(said, announced)))
 }
 
-/// The flows this event starts, judged and started before the hook returns.
-///
-/// **NOTHING IS WAITED FOR.** Every run is let go the instant it is lit: a
-/// person's prompt is waiting on this call, and a hook that waits for a flow
-/// is a hook that stops the work it was meant to help.
-fn what_this_event_starts(
-    request: &Request<'_>,
-    store: &Sessions,
-    event_id: i64,
-    happened: &TerminalEvent,
-) -> String {
-    let asked = crate::arc_cmd::Happened {
-        event: happened.name.clone(),
-        tree: happened.worktree.clone().unwrap_or_default(),
-        tty: happened.tty.clone(),
-        session: happened.session_id.clone().unwrap_or_default(),
-        prompt: what_a_person_typed(request.raw),
-        transcript: happened.transcript_path.clone(),
-    };
-    let verdicts = crate::arc_cmd::evaluate(
-        store,
-        event_id,
-        &asked,
-        &ui::gather::flow_sources(),
-        request.at,
-        &mut crate::arc_cmd::launch_detached,
-        &mut crate::arc_cmd::parked_for,
-    );
-    let acted: Vec<&sessions::Verdict> = verdicts
-        .iter()
-        .filter(|row| row.verdict != sessions::DEFERRED)
-        .collect();
-    if acted.is_empty() {
-        return String::new();
-    }
-    acted
-        .iter()
-        .map(|row| {
-            format!(
-                "{}\t{}\t{}",
-                row.flow,
-                row.verdict,
-                row.why.clone().unwrap_or_default()
-            )
-        })
-        .collect::<Vec<String>>()
-        .join("\n")
-}
 
-/// What the person typed, read from the payload and never written down.
-///
-/// A prompt is a body: it is matched here, in memory, and goes no further —
-/// not into the store, not into an argument list, not into the record of the
-/// child a match starts.
-fn what_a_person_typed(raw: &str) -> Option<String> {
-    let value: serde_json::Value = serde_json::from_str(raw).ok()?;
-    value
-        .get("prompt")
-        .and_then(serde_json::Value::as_str)
-        .filter(|typed| !typed.trim().is_empty())
-        .map(str::to_owned)
-}
 
 fn close_terminal(request: &Request<'_>) -> Result<Report, String> {
     let store = request.store()?;
@@ -2400,6 +1388,42 @@ mod tests {
     /// **THE ANNOUNCEMENT IS HELD BY THE TERMINAL, NOT BY WHOEVER WRITES IT.**
     /// A hook is a new process at every event: keyed on that pid, a day of work
     /// would leave one abandoned claim per keystroke and a crew of ghosts.
+    /// **THE READING HAS TO REACH THE SESSION THAT CAN ACT ON IT.** `sailor
+    /// stuck` is invoked by nothing, so a terminal that never hands on learns
+    /// it here or nowhere.
+    #[test]
+    fn a_terminal_that_never_hands_on_is_told_so_at_its_own_start() {
+        let said = what_is_still_open(&StillOpen {
+            handover: Some(ledger::HandoverMissed {
+                tty: "ttys015".to_owned(),
+                owed: 8,
+                made: 0,
+                last_at: 0,
+                said: Some("ttys015: the screen changed inside 3s".to_owned()),
+            }),
+            ..Default::default()
+        })
+        .expect("something to say");
+        for held in ["8", "the screen changed inside 3s"] {
+            assert!(said.contains(held), "«{held}» is missing: {said}");
+        }
+    }
+
+    #[test]
+    fn a_terminal_that_hands_on_every_time_is_told_nothing_about_it() {
+        let quiet = what_is_still_open(&StillOpen {
+            handover: Some(ledger::HandoverMissed {
+                tty: "ttys003".to_owned(),
+                owed: 8,
+                made: 8,
+                last_at: 0,
+                said: None,
+            }),
+            ..Default::default()
+        });
+        assert!(quiet.is_none(), "a terminal with nothing missed was nagged");
+    }
+
     #[test]
     fn a_second_event_renews_the_announcement_instead_of_adding_one() {
         let scratch = Scratch::new("annuncio-rinnovato");
@@ -2984,6 +2008,7 @@ mod tests {
             remembered: vec![memory("the trunk", 3), memory("the home", 2)],
             page: None,
             page_unseen: None,
+            ..Default::default()
         };
         let said = what_is_still_open(&found).expect("something to say");
         assert!(
@@ -3032,8 +2057,8 @@ mod tests {
             home: None,
         };
 
-        let here = still_open_in(&ledger, None, &started_in(&deep)).expect("open");
-        let outside = still_open_in(&ledger, None, &started_in(&scratch.directory)).expect("open");
+        let here = still_open_in(&ledger, None, &started_in(&deep), "ttysTEST").expect("open");
+        let outside = still_open_in(&ledger, None, &started_in(&scratch.directory), "ttysTEST").expect("open");
         let labels = |found: &StillOpen| {
             found
                 .remembered
@@ -3070,6 +2095,7 @@ mod tests {
             remembered: Vec::new(),
             page: None,
             page_unseen: None,
+            ..Default::default()
         });
         let said = what_is_still_open(&StillOpen {
             waiting: Vec::new(),
@@ -3077,6 +2103,7 @@ mod tests {
             remembered: Vec::new(),
             page: Some(present),
             page_unseen: None,
+            ..Default::default()
         })
         .expect("something to say");
 
@@ -3146,6 +2173,7 @@ mod tests {
             remembered: Vec::new(),
             page: None,
             page_unseen: Some(unseen),
+            ..Default::default()
         })
         .expect("something to say");
         assert!(
@@ -3477,6 +2505,7 @@ mod tests {
             remembered: Vec::new(),
             page: None,
             page_unseen: None,
+            ..Default::default()
         }));
 
         let said = welcome(&arriving_in(&scratch), None, &open, &Ok(()), None);
@@ -3508,6 +2537,7 @@ mod tests {
             remembered: Vec::new(),
             page: None,
             page_unseen: None,
+            ..Default::default()
         })
         .expect("a run that is waiting gets said");
         let again = what_is_still_open(&StillOpen {
@@ -3516,6 +2546,7 @@ mod tests {
             remembered: Vec::new(),
             page: None,
             page_unseen: None,
+            ..Default::default()
         })
         .expect("a run to start again gets said");
 
@@ -3530,6 +2561,7 @@ mod tests {
             remembered: Vec::new(),
             page: None,
             page_unseen: None,
+            ..Default::default()
         })
         .expect("the two lists together get said");
         assert_eq!(both.lines().count(), 2, "{both}");
@@ -3557,6 +2589,7 @@ mod tests {
                 remembered: Vec::new(),
                 page: None,
                 page_unseen: None,
+                ..Default::default()
             }),
             None
         );
@@ -3625,7 +2658,7 @@ mod tests {
             worktree: PathBuf::new(),
             home: None,
         };
-        let found = still_open_in(&deposit, None, &nobody).expect("reading the two lists");
+        let found = still_open_in(&deposit, None, &nobody, "ttysTEST").expect("reading the two lists");
 
         assert_eq!(
             found

@@ -4111,4 +4111,26 @@ fn a_call_without_cost_reads_back_whole() {
 
     let open = ledger.model_calls_without_cost().unwrap();
     assert_eq!(open, vec![written]);
+/// A declared home, or a declared configuration directory, does not need
+/// `HOME`: only the last rung is built from it.
+#[test]
+fn a_declared_home_does_not_need_home() {
+    use std::path::PathBuf;
+    let declared = Some(PathBuf::from("/declared/home"));
+    let config = Some(PathBuf::from("/declared/config"));
+    let home = Some(PathBuf::from("/home/someone"));
+
+    assert_eq!(
+        crate::sailor_home_declared_or(declared.clone(), None, None),
+        declared
+    );
+    assert_eq!(
+        crate::sailor_home_declared_or(None, config, None),
+        Some(PathBuf::from("/declared/config/sailor"))
+    );
+    assert_eq!(
+        crate::sailor_home_declared_or(None, None, home),
+        Some(PathBuf::from("/home/someone/.config/sailor"))
+    );
+    assert_eq!(crate::sailor_home_declared_or(None, None, None), None);
 }

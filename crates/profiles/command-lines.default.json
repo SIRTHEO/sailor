@@ -49,6 +49,10 @@
     "signed in there. Measured on this machine, never guessed. Absent means NOBODY",
     "ESTABLISHED IT, and no engine is ever refused for that: unknown is not signed",
     "out. gemini and antigravity keep nothing under such a name, so neither declares one.",
+    "`signed_in_keychain` is the login keychain item that means the same where a",
+    "command line keeps its credentials there instead: `service`, a dash, and the",
+    "first `home_digest_chars` hex characters of the SHA-256 of the home's path.",
+    "Measured for claude on macOS, where a signed-in home has no credentials file.",
     "",
     "`identity.file` lists candidate paths, relative to the home, that say",
     "WHICH ACCOUNT that home answers as — read off the disk, never asked of the",
@@ -75,6 +79,7 @@
       "home_note": "checked against the installed binary: the variable moves the whole directory, credentials and settings included.",
       "reads_instructions_from": ["~/.claude/CLAUDE.md", "CLAUDE.md"],
       "signed_in_when": [".credentials.json"],
+      "signed_in_keychain": { "service": "Claude Code-credentials", "home_digest_chars": 8 },
       "identity": {
         "file": [".claude.json", "../.claude.json"],
         "pointer": ["oauthAccount", "emailAddress"]

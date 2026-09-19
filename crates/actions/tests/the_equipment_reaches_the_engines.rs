@@ -13,7 +13,10 @@
 //! and did not travel with the product; the equipment was there and never
 //! reached the engines.
 
-use actions::{equipment_asking_for, equipment_for, equipment_with_keys_and_disk};
+use actions::{
+    equipment_asking_for, equipment_for, equipment_with_keys_and_disk,
+    equipment_with_keys_disk_and_keychain,
+};
 use ledger::EngineIdentity;
 use profiles::{Profile, ProfileEndpoint, ProfileStore};
 use std::collections::BTreeMap;
@@ -444,6 +447,47 @@ fn a_profile_signed_in_where_its_command_line_says_is_not_refused() {
         equipment.env.get("CODEX_HOME"),
         Some(&"/case/codex/lavoro".to_owned()),
         "the home stopped reaching the engine"
+    );
+}
+
+/// A claude home signed in on macOS has no credentials file: the item that
+/// proves it sits in the login keychain, under a name drawn from the home.
+#[test]
+fn a_claude_profile_signed_in_through_the_keychain_is_not_refused() {
+    let mut store = ProfileStore::default();
+    store.profiles.push(Profile {
+        name: "lavoro".to_owned(),
+        cli_id: "claude".to_owned(),
+        home_dir: PathBuf::from("/case/claude/lavoro"),
+        endpoint: None,
+    });
+    store.active.insert("claude".to_owned(), "lavoro".to_owned());
+    let nothing_on_this_disk = |_: &std::path::Path| false;
+    let keychain = |service: &str| service == "Claude Code-credentials-380d832c";
+
+    let signed_in = equipment_with_keys_disk_and_keychain(
+        &store,
+        "claude",
+        &step_env(&[]),
+        &|_| None,
+        &nothing_on_this_disk,
+        &keychain,
+        None,
+    );
+    let signed_out = equipment_with_keys_disk_and_keychain(
+        &store,
+        "claude",
+        &step_env(&[]),
+        &|_| None,
+        &nothing_on_this_disk,
+        &|_| false,
+        None,
+    );
+
+    assert_eq!(signed_in.refused, None, "a home signed in through the keychain was refused");
+    assert!(
+        signed_out.refused.is_some(),
+        "a home with neither a credentials file nor a keychain item was let through"
     );
 }
 

@@ -21,6 +21,9 @@ use tracing::field::{Field, Visit};
 use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
 
+pub mod accounts;
+pub mod before_a_step;
+pub mod handover_missed;
 pub mod answers;
 pub mod halts;
 pub mod holdings;
@@ -33,6 +36,9 @@ pub mod self_care;
 pub mod streaks;
 pub mod who_is_there;
 
+pub use accounts::*;
+pub use before_a_step::*;
+pub use handover_missed::*;
 pub use answers::*;
 pub use records::*;
 pub use who_is_there::*;
@@ -67,11 +73,24 @@ pub fn default_directory() -> Option<PathBuf> {
 /// configuration directory, else the running user's. `None` when the
 /// environment declares neither.
 pub fn sailor_home() -> Option<PathBuf> {
-    Some(sailor_home_in(
+    sailor_home_declared_or(
         env_path("SAILOR_HOME"),
         env_path("XDG_CONFIG_HOME"),
-        env_path("HOME")?,
-    ))
+        env_path("HOME"),
+    )
+}
+
+/// The rule of [`sailor_home_in`] when `HOME` may be missing: a declared home
+/// or configuration directory does not need it, and only the last rung does.
+pub fn sailor_home_declared_or(
+    declared: Option<PathBuf>,
+    xdg_config: Option<PathBuf>,
+    home: Option<PathBuf>,
+) -> Option<PathBuf> {
+    if declared.is_none() && xdg_config.is_none() {
+        return home.map(|home| sailor_home_in(None, None, home));
+    }
+    Some(sailor_home_in(declared, xdg_config, home.unwrap_or_default()))
 }
 
 /// The same rule applied to a declared environment rather than this process's.
@@ -1079,6 +1098,55 @@ impl Ledger {
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Every step of a flow that broke at least `at_least` times, worst first.
+    ///
+    /// **THE COUNT ALONE ACCUSES THE BUSY**, so the times it went come with it.
+    pub fn steps_that_keep_breaking(
+        &self,
+        at_least: u64,
+    ) -> Result<Vec<BreakingStep>, LedgerError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT r.entity, s.step_id,
+                    SUM(s.outcome = 'Broke') AS broke,
+                    SUM(s.outcome = 'Went') AS went,
+                    MAX(CASE WHEN s.outcome = 'Broke' THEN s.ended_at END) AS last_at
+             FROM steps s JOIN runs r ON r.run_id = s.run_id
+             GROUP BY r.entity, s.step_id
+             HAVING broke >= ?1
+             ORDER BY broke DESC, r.entity, s.step_id",
+        )?;
+        let found = statement
+            .query_map(params![at_least as i64], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)? as u64,
+                    row.get::<_, i64>(3)? as u64,
+                    row.get::<_, Option<i64>>(4)?.unwrap_or_default(),
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(statement);
+        found
+            .into_iter()
+            .map(|(flow, step_id, broke, went, last_at)| {
+                let (failure_class, said) = connection
+                    .query_row(
+                        "SELECT s.failure_class, s.said
+                         FROM steps s JOIN runs r ON r.run_id = s.run_id
+                         WHERE r.entity = ?1 AND s.step_id = ?2 AND s.outcome = 'Broke'
+                         ORDER BY s.ended_at DESC LIMIT 1",
+                        params![&flow, &step_id],
+                        |row| Ok((row.get(0)?, row.get(1)?)),
+                    )
+                    .optional()?
+                    .unwrap_or((None, None));
+                Ok(BreakingStep { flow, step_id, broke, went, failure_class, said, last_at })
+            })
+            .collect()
     }
 
     pub fn is_checkpointed(

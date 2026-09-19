@@ -652,7 +652,7 @@ mod tests {
     #[test]
     fn a_system_flow_refuses_the_cap_instead_of_growing_a_twin() {
         let home = TestDirectory::new();
-        let sources = flow::system::sources(&home.0, None, None);
+        let sources = flow::system::sources(Some(&home.0), None, None);
         let shipped = flow::system::FLOWS[0].0;
 
         let error = set_cap(&sources, shipped, "1000000").expect_err("a system flow");
@@ -671,7 +671,7 @@ mod tests {
     fn setting_the_cap_writes_where_the_flow_lives() {
         let home = TestDirectory::new();
         home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
-        let sources = flow::system::sources(&home.0, None, None);
+        let sources = flow::system::sources(Some(&home.0), None, None);
 
         let said = set_cap(&sources, "prova", "750000").expect("the cap is written");
 
@@ -701,7 +701,7 @@ mod tests {
             "altro-nome.flow.json",
             &flow_json("shell_check", "[]", "{}"),
         );
-        let sources = flow::system::sources(&home.0, None, None);
+        let sources = flow::system::sources(Some(&home.0), None, None);
 
         let error = set_cap(&sources, "altro-nome", "500").expect_err("name and id diverge");
 
@@ -716,7 +716,7 @@ mod tests {
     fn a_cap_that_is_not_a_number_is_refused_with_the_unit_spelled_out() {
         let home = TestDirectory::new();
         home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
-        let sources = flow::system::sources(&home.0, None, None);
+        let sources = flow::system::sources(Some(&home.0), None, None);
 
         let error = set_cap(&sources, "prova", "1,50").expect_err("it is not a number of micros");
         assert!(error.contains("micro"), "{error}");
@@ -732,7 +732,7 @@ mod tests {
     fn the_word_for_no_cap_clears_it_instead_of_setting_zero() {
         let home = TestDirectory::new();
         home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
-        let sources = flow::system::sources(&home.0, None, None);
+        let sources = flow::system::sources(Some(&home.0), None, None);
         set_cap(&sources, "prova", "500").expect("first it is set");
 
         set_cap(&sources, "prova", NO_CAP).expect("then it is taken off");
@@ -749,7 +749,7 @@ mod tests {
     fn the_words_that_used_to_be_the_only_ones_still_work() {
         let home = TestDirectory::new();
         home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
-        let sources = flow::system::sources(&home.0, None, None);
+        let sources = flow::system::sources(Some(&home.0), None, None);
 
         set_cap(&sources, "prova", "500").expect("first it is set");
         set_cap(&sources, "prova", "nessuno").expect("yesterday's word takes the cap off");
@@ -806,7 +806,7 @@ mod tests {
     fn the_trigger_of_a_flow_changes_from_inside_sailor() {
         let home = TestDirectory::new();
         home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
-        let sources = flow::system::sources(&home.0, None, None);
+        let sources = flow::system::sources(Some(&home.0), None, None);
         assert_eq!(
             written_flow(&home.0, "prova").schedule,
             None,
@@ -842,7 +842,7 @@ mod tests {
     fn an_hour_of_the_day_is_the_other_form_the_engine_can_run() {
         let home = TestDirectory::new();
         home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
-        let sources = flow::system::sources(&home.0, None, None);
+        let sources = flow::system::sources(Some(&home.0), None, None);
 
         set_schedule(&sources, "prova", "07:30", Some(HEAVY)).expect("l'ora si scrive");
 
@@ -869,7 +869,7 @@ mod tests {
     fn a_weight_nobody_declared_is_refused_instead_of_guessed() {
         let home = TestDirectory::new();
         home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
-        let sources = flow::system::sources(&home.0, None, None);
+        let sources = flow::system::sources(Some(&home.0), None, None);
 
         let error =
             set_schedule(&sources, "prova", "3600s", None).expect_err("there is no weight to keep");
@@ -890,7 +890,7 @@ mod tests {
     fn changing_only_the_hour_keeps_the_weight_and_the_perimeter() {
         let home = TestDirectory::new();
         home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
-        let sources = flow::system::sources(&home.0, None, None);
+        let sources = flow::system::sources(Some(&home.0), None, None);
         let mut with_perimeter = written_flow(&home.0, "prova");
         with_perimeter.schedule = Some(flow::Schedule {
             recurrence: flow::Recurrence::DailyAt { hour: 3, minute: 0 },
@@ -926,7 +926,7 @@ mod tests {
     fn the_word_for_no_trigger_clears_it() {
         let home = TestDirectory::new();
         home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
-        let sources = flow::system::sources(&home.0, None, None);
+        let sources = flow::system::sources(Some(&home.0), None, None);
         set_schedule(&sources, "prova", "3600s", Some(LIGHT)).expect("first it is set");
 
         set_schedule(&sources, "prova", NO_SCHEDULE, None).expect("then it is taken off");
@@ -945,7 +945,7 @@ mod tests {
     fn a_trigger_that_is_not_one_of_the_three_forms_says_what_the_three_are() {
         let home = TestDirectory::new();
         home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
-        let sources = flow::system::sources(&home.0, None, None);
+        let sources = flow::system::sources(Some(&home.0), None, None);
 
         for wrong in ["ogni-tanto", "0s", "25:00", "07:70", "3600"] {
             let error =
@@ -968,7 +968,7 @@ mod tests {
     #[test]
     fn a_system_flow_refuses_the_trigger_too() {
         let home = TestDirectory::new();
-        let sources = flow::system::sources(&home.0, None, None);
+        let sources = flow::system::sources(Some(&home.0), None, None);
         let shipped = flow::system::FLOWS[0].0;
 
         let error = set_schedule(&sources, shipped, "3600s", Some(LIGHT))
@@ -998,7 +998,7 @@ mod tests {
             "nome-diverso.flow.json",
             &flow_json("shell_check", "[]", "{}"),
         );
-        let sources = flow::system::sources(&home.0, None, None);
+        let sources = flow::system::sources(Some(&home.0), None, None);
 
         let refused = set_schedule(&sources, "nome-diverso", "3600s", Some(LIGHT))
             .expect_err("the file name is not the id");
@@ -1033,7 +1033,7 @@ mod tests {
     fn a_flow_read_from_a_plain_json_is_refused_instead_of_duplicated() {
         let home = TestDirectory::new();
         home.write("prova.json", &flow_json("shell_check", "[]", "{}"));
-        let sources = flow::system::sources(&home.0, None, None);
+        let sources = flow::system::sources(Some(&home.0), None, None);
 
         let refused = set_schedule(&sources, "prova", "3600s", Some(LIGHT))
             .expect_err("the file read is not the one that would be written");
@@ -1048,7 +1048,7 @@ mod tests {
     fn asking_for_the_trigger_says_what_is_there_and_what_is_not() {
         let home = TestDirectory::new();
         home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
-        let sources = flow::system::sources(&home.0, None, None);
+        let sources = flow::system::sources(Some(&home.0), None, None);
 
         let before = schedule_of(&sources, "prova").expect("it reads");
         assert!(before.contains(NO_SCHEDULE), "{before}");

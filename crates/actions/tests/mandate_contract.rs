@@ -371,3 +371,62 @@ fn a_handover_waiting_names_the_line_that_wrote_it() {
     assert_eq!(answer["engine"], json!("a-command-line"), "{answer}");
     assert_eq!(answer["session"], json!("the-predecessor"), "{answer}");
 }
+
+fn taken(scratch: &Scratch, within: u64) -> Result<ActionOutcome, flow::ActionError> {
+    run(
+        actions::mandate::MANDATE_TAKEN_ACTION,
+        json!({
+            "tty": "ttys001",
+            "not_by": "the-predecessor",
+            "within_seconds": within,
+            "store": scratch.store(),
+        }),
+    )
+}
+
+/// **A GREETING NOBODY ANSWERS IS NOT A HANDOVER.** What the relay types after
+/// emptying a session is owed to a successor that is really there, and the one
+/// mark of that is the mandate marked taken by somebody else.
+#[test]
+fn a_mandate_no_successor_took_leaves_nobody_to_start() {
+    let scratch = Scratch::new("nobody-arrived");
+    deposit(&scratch, work()).expect("the deposit goes");
+
+    let why = not_yet(taken(&scratch, 0));
+
+    assert!(why.contains("nobody to start"), "{why}");
+}
+
+/// **A SESSION TAKING ITS OWN MANDATE BACK IS NOT AN ARRIVAL.** The greeting
+/// runs at a compaction too, and the session keeps its name across one: a line
+/// typed then would land in the session that is still working.
+#[test]
+fn the_author_taking_its_own_mandate_back_is_not_a_successor() {
+    let scratch = Scratch::new("taken-by-its-author");
+    deposit(&scratch, work()).expect("the deposit goes");
+    resume(&scratch, "the-predecessor").expect("the author takes it back");
+
+    let why = not_yet(taken(&scratch, 0));
+
+    assert!(why.contains("the-predecessor"), "{why}");
+}
+
+/// And a session of another name is the successor the line is for.
+#[test]
+fn a_mandate_another_session_took_names_who_is_there_to_start() {
+    let scratch = Scratch::new("successor-arrived");
+    deposit(&scratch, work()).expect("the deposit goes");
+    resume(&scratch, "the-successor").expect("the successor takes it");
+
+    let answer = went(
+        actions::mandate::MANDATE_TAKEN_ACTION,
+        json!({
+            "tty": "ttys001",
+            "not_by": "the-predecessor",
+            "within_seconds": 0,
+            "store": scratch.store(),
+        }),
+    );
+
+    assert_eq!(answer["taken_by"], json!("the-successor"), "{answer}");
+}

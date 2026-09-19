@@ -524,6 +524,20 @@ pub(super) fn why_the_run_would_not_start(
     tools: &dyn actions::ToolResolver,
     prices: &models::pricing::PriceList,
 ) -> Option<String> {
+    // **A TOOL THAT IS NOT THERE IS FOUND AT THE STEP THAT NEEDED IT.** Shipped
+    // flows call `gh`, `jq`, `python3` and `shasum`, none of which any operating
+    // system installs by default, and a run that discovers it halfway has
+    // already done half the work and left a record nobody can finish.
+    let missing: Vec<String> = tools_needed(&flow.graph)
+        .into_iter()
+        .filter(|id| tools.resolve(id).is_err())
+        .collect();
+    if !missing.is_empty() {
+        return Some(catalogue::say(
+            "cli.flow.run_not_started_without_its_tools",
+            &[("tools", &missing.join(", "))],
+        ));
+    }
     if flow.required_cap_kind() != flow::CapKind::Guaranteed {
         return None;
     }
@@ -839,7 +853,14 @@ fn tools_wanted(graph: &Graph) -> BTreeSet<String> {
         .iter()
         .filter_map(|step| step.with.as_ref())
         .flat_map(engines_of)
+        .chain(tools_needed(graph))
         .collect()
+}
+
+/// The command-line tools the steps say they call, by the id a descriptor
+/// gives them.
+fn tools_needed(graph: &Graph) -> BTreeSet<String> {
+    graph.steps().iter().flat_map(|step| step.needs.clone()).collect()
 }
 
 /// The engines a `with` names, in the order written: one name or a chain.
@@ -1489,6 +1510,37 @@ mod tests {
                 unit: actions::reserve::UNIT_CURRENCY.to_owned(),
             })
         }
+    }
+
+    /// A machine with none of the command-line tools a flow might call.
+    struct HasNothingInstalled;
+
+    impl actions::ToolResolver for HasNothingInstalled {
+        fn resolve(&self, id: &str) -> Result<String, String> {
+            Err(format!("«{id}» is not on this machine"))
+        }
+    }
+
+    /// **CALLS TO TOOLS NOBODY CHECKED.** No operating system installs `gh`,
+    /// `python3` or `shasum`, and `gh` carries the whole delivery loop.
+    #[test]
+    fn a_run_does_not_start_without_the_tools_its_steps_declare() {
+        let prices = models::pricing::PriceList::default();
+        let flow = a_flow_of(
+            r#"{"id": "taglia", "deps": [], "action": "shell", "max_attempts": 1,
+                 "when": null, "with": {"command": "gh pr create"}, "needs": ["gh"],
+                 "input_schema": {"type": "any"}, "output_schema": {"type": "any"}}"#,
+        );
+
+        let refused = why_the_run_would_not_start(&flow, &HasNothingInstalled, &prices)
+            .expect("a run started without the tool its step calls");
+        assert!(refused.contains("gh"), "the refusal did not name the tool: {refused}");
+
+        assert_eq!(
+            why_the_run_would_not_start(&flow, &SomeHoldToACeiling, &prices),
+            None,
+            "a machine that has the tool was refused the run anyway"
+        );
     }
 
     fn a_flow_of(steps: &str) -> FlowFile {

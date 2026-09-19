@@ -61,12 +61,13 @@ pub fn equipment_asking_for(
     step_env: &BTreeMap<String, String>,
     asked: Option<&str>,
 ) -> Equipment {
-    equipment_with_keys_and_disk(
+    equipment_with_keys_disk_and_keychain(
         store,
         bin,
         step_env,
         &|variable| std::env::var(variable).ok(),
         &|path| path.exists(),
+        &in_the_login_keychain,
         asked,
     )
 }
@@ -83,13 +84,26 @@ pub fn equipment_with_keys(
 }
 
 /// [`equipment_with_keys`] with the machine's disk read through `there`, so a
-/// test says what is on it without laying a home down.
+/// test says what is on it without laying a home down; its keychain is empty.
 pub fn equipment_with_keys_and_disk(
     store: &profiles::ProfileStore,
     bin: &str,
     step_env: &BTreeMap<String, String>,
     key_of: &dyn Fn(&str) -> Option<String>,
     there: &dyn Fn(&std::path::Path) -> bool,
+    asked: Option<&str>,
+) -> Equipment {
+    equipment_with_keys_disk_and_keychain(store, bin, step_env, key_of, there, &|_| false, asked)
+}
+
+/// [`equipment_with_keys_and_disk`] with the login keychain read through `in_keychain`.
+pub fn equipment_with_keys_disk_and_keychain(
+    store: &profiles::ProfileStore,
+    bin: &str,
+    step_env: &BTreeMap<String, String>,
+    key_of: &dyn Fn(&str) -> Option<String>,
+    there: &dyn Fn(&std::path::Path) -> bool,
+    in_keychain: &dyn Fn(&str) -> bool,
     asked: Option<&str>,
 ) -> Equipment {
     let Some(cli) = profiles::cli_for_executable(bin) else {
@@ -125,7 +139,7 @@ pub fn equipment_with_keys_and_disk(
         None => None,
     };
     let refused = refused
-        .or_else(|| resolved.and_then(|profile| signed_out(cli, profile, there)))
+        .or_else(|| resolved.and_then(|profile| signed_out(cli, profile, there, in_keychain)))
         .or_else(|| match (asked, resolved) {
             (Some(name), None) => Some(catalogue::say(
                 "engine.asked_profile_is_not_here",
@@ -147,6 +161,18 @@ pub fn equipment_with_keys_and_disk(
     }
 }
 
+/// Whether this machine's login keychain holds an item under `service`: only
+/// macOS keeps command-line credentials there.
+fn in_the_login_keychain(service: &str) -> bool {
+    cfg!(target_os = "macos")
+        && std::process::Command::new("/usr/bin/security")
+            .args(["find-generic-password", "-s", service])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+}
+
 /// Why this profile must not be started: its home carries no credentials.
 ///
 /// **ONLY A MEASURED NO REFUSES.** Where nobody established where a command
@@ -156,8 +182,9 @@ fn signed_out(
     cli: &profiles::KnownCli,
     profile: &profiles::Profile,
     there: &dyn Fn(&std::path::Path) -> bool,
+    in_keychain: &dyn Fn(&str) -> bool,
 ) -> Option<String> {
-    match profiles::signed_in(cli, &profile.home_dir, there) {
+    match profiles::signed_in(cli, &profile.home_dir, there, in_keychain) {
         profiles::SignedIn::No => Some(catalogue::say(
             "engine.profile_is_signed_out",
             &[

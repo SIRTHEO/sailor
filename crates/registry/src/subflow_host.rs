@@ -12,7 +12,6 @@
 //! detects the machine's tools again, but it only happens if somebody actually
 //! nests, and `flow::subflow::MAX_DEPTH` bounds it.
 
-use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
 use flow::subflow::{RunNote, SubflowHost};
@@ -21,15 +20,6 @@ use flow::{ActionError, ActionRegistry, Execution, RecordStore};
 use ledger::Ledger;
 
 use crate::{default_registry, record_child_run, stopped_by_cap, FlowRun};
-
-/// The "where" of the *yours* source when this machine declares no home.
-///
-/// **Not an empty path, and that is the point.** An empty path becomes the
-/// relative `flows`, meaning the current directory: the project's flows would
-/// also show up as "yours", and on a name clash the wrong one would win. An
-/// absolute path that does not exist reads zero flows, which is the true
-/// answer.
-const NO_HOME: &str = "/sailor-non-ha-una-casa-su-questa-macchina";
 
 /// The bridge between the `subflow` step and the rest of Sailor.
 pub struct LedgerHost {
@@ -72,10 +62,7 @@ impl SubflowHost for LedgerHost {
     /// `flow::system::sources_from_env`. If a `subflow` looked elsewhere, two
     /// machines would run different flows under the same name without saying so.
     fn sources(&self) -> Vec<FlowSource> {
-        let home = ledger::sailor_home()
-            .map(|home| home.join("flows"))
-            .unwrap_or_else(|| PathBuf::from(NO_HOME));
-        system::sources_from_env(&home)
+        system::sources_from_env(ledger::sailor_home().map(|home| home.join("flows")).as_deref())
     }
 
     /// The child's actions are the parent's, built on first call and kept.
