@@ -281,16 +281,14 @@ mod tests {
 
     #[test]
     fn every_entry_passes_the_full_judge_with_this_machine_s_names_when_it_keeps_a_list() {
-        let names = match private_names() {
-            PrivateNames::Read(names) => names,
+        match private_names() {
+            PrivateNames::Read(_) => {}
             PrivateNames::NotDeclared => {
-                println!("private names: not measured, no list of them is declared here");
-                Vec::new()
+                println!("private names: not measured, no list of them is declared here")
             }
             PrivateNames::Unreadable => panic!("SAILOR_PRIVATE_NAMES names a list that does not read"),
-        };
-        let home = std::env::var("HOME").ok();
-        for (name, judged) in starters::all(&|listed| judged_against(listed, &names, home.as_deref())) {
+        }
+        for (name, judged) in starters::all(&full_judge) {
             if let Err(refused) = judged {
                 panic!("«{name}» is refused:\n{}", refused.join("\n"));
             }
