@@ -7,6 +7,18 @@ const WORK: &str = "work/";
 
 const AGENT_TREE: &str = "worktree-agent-";
 
+pub const THE_CONVENTION: &str = "work/<topic>, in lowercase letters, digits and hyphens";
+
+/// A branch already standing keeps the name it was given; a new one does not.
+pub fn may_be_cut(branch: &str, the_branch_exists: bool) -> Result<(), String> {
+    if the_branch_exists || follows_the_convention(branch) {
+        return Ok(());
+    }
+    Err(format!(
+        "«{branch}» is not a name new work is given here: {THE_CONVENTION}"
+    ))
+}
+
 /// The names that break the convention, in the order they were given. **Pure,
 /// and that is the point:** a check reading the branches of whichever machine
 /// runs it goes red over a stray branch of somebody else's.

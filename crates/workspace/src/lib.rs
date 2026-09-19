@@ -145,6 +145,7 @@ pub fn create(repo: &Path, branch: &str, name: Option<&str>) -> Result<PathBuf, 
         &["rev-parse", "--verify", &format!("refs/heads/{branch}")],
     )
     .is_ok();
+    branches::may_be_cut(branch, known)?;
     let target = path.to_string_lossy().into_owned();
     let args: Vec<&str> = if known {
         vec!["worktree", "add", &target, branch]
