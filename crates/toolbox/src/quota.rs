@@ -17,21 +17,17 @@ pub struct Reading {
 }
 
 /// Why a reading is not there, and whether that is the account's fault.
-///
-/// **THE VERDICT TRAVELS AS A FIELD, NOT AS A SENTENCE TO BE SEARCHED.** It is
-/// decided where the provider's own answer is still in hand; a reader further
-/// down matching words would be reading a translation of a guess.
+/// **THE VERDICT TRAVELS AS A FIELD, NOT AS A SENTENCE TO BE SEARCHED.**
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Refusal {
     pub said: String,
     pub credential_is_dead: bool,
-    /// Whether the provider was reached at all, or the channel stopped before.
     pub provider_answered: bool,
 }
 
 impl Refusal {
-    /// Anything that went wrong before the provider was even asked: a channel
-    /// this Sailor cannot read, a file that is not there. Never the account.
+    /// Anything that went wrong before the provider was asked. Never the
+    /// account.
     fn nobody_asked(said: String) -> Refusal {
         Refusal { said, credential_is_dead: false, provider_answered: false }
     }
@@ -131,9 +127,7 @@ pub fn declared_absent(descriptor: &Descriptor) -> Option<&str> {
 
 /// The words this provider uses, or the ones the first measured channel used.
 ///
-/// **THE FATAL KINDS COME FROM THE QUOTA BLOCK, NOT FROM THE SHAPE.** A
-/// provider that answers in the shape first measured still names its own
-/// refusals, and a descriptor declaring no shape at all declares them too.
+/// **THE FATAL KINDS COME FROM THE QUOTA BLOCK, NOT FROM THE SHAPE.**
 fn words_of(quota: &crate::descriptor::Quota) -> models::remaining::WindowWords {
     let standing = models::remaining::WindowWords::default();
     let Some(said) = &quota.shape else {

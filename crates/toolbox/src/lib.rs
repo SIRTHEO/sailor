@@ -11,6 +11,7 @@ pub mod needs;
 pub mod privacy;
 pub mod probe;
 pub mod quota;
+pub mod work;
 pub mod resolver;
 pub mod session;
 

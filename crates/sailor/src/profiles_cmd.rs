@@ -160,7 +160,14 @@ fn views_of(
             // A command line this table does not know has no home to move, so
             // there is no question to ask it.
             let (access, said) = match find_cli(&profile.cli_id) {
-                Ok(cli) => access_of(tools, probe, cli, &profile.home_dir, &profile.name),
+                Ok(cli) => access_of(
+                    tools,
+                    probe,
+                    cli,
+                    &profile.home_dir,
+                    &profile.name,
+                    Reached::ByVariable,
+                ),
                 Err(reason) => (
                     Access::NotKnown,
                     catalogue::say(
@@ -196,6 +203,7 @@ fn access_of(
     cli: &KnownCli,
     home: &Path,
     profile_name: &str,
+    reached: Reached,
 ) -> (Access, String) {
     let Some((tool, bin)) = tools.declared_as_executable(&cli.executable) else {
         return (
@@ -230,7 +238,7 @@ fn access_of(
     }
     match actions::probe_login_status(probe, &bin, &env, &recipe) {
         LoginVerdict::LoggedIn { said } => {
-            match profiles::verdict_of(&identity_of_home(cli, home), profile_name) {
+            match profiles::verdict_of(&identity_of_home(cli, home, reached), profile_name) {
                 profiles::IdentityVerdict::Mismatched { home_answers_as } => (
                     Access::Mismatched,
                     catalogue::say(
@@ -279,10 +287,103 @@ fn access_of(
     }
 }
 
+/// The home each command line keeps for itself, where no declared profile sits
+/// on it. **AN ENGINE WITH PROFILES STILL HAS ITS OWN HOME, AND THAT IS WHERE
+/// THE WORK HAPPENS**: every terminal opened outside Sailor starts in it, and
+/// nobody declares it, so every surface listed the profiles and not it. The row
+/// is named by what the home answers as, never by the engine.
+pub fn engines_own_homes(declared: &[ProfileView]) -> Vec<ProfileView> {
+    let Ok(home) = store_io::home_dir() else {
+        return Vec::new();
+    };
+    let tools = toolbox::Tools::current();
+    the_homes(&home, declared, &tools, &actions::RealDryProbe)
+}
+
+fn the_homes(
+    home: &Path,
+    declared: &[ProfileView],
+    tools: &toolbox::Tools,
+    probe: &dyn LoginProbe,
+) -> Vec<ProfileView> {
+    profiles::known_clis()
+        .iter()
+        .filter_map(|cli| {
+            let own = profiles::existing_home(cli, home)?;
+            if declared.iter().any(|profile| profile.home_dir == own) {
+                return None;
+            }
+            let name = profiles::own_home_answers_as(cli, &own)?;
+            if declared
+                .iter()
+                .any(|profile| profile.cli_id == cli.id && profile.name == name)
+            {
+                return None;
+            }
+            let (access, said) = access_of(tools, probe, cli, &own, &name, Reached::AsItsOwn);
+            Some(ProfileView {
+                cli_id: cli.id.clone(),
+                name,
+                home_dir: own,
+                // **IN FORCE IS NOT THE SAME AS IN USE.** A profile takes this
+                // home's place only for what Sailor itself launches; a terminal
+                // opened by hand lands here whatever the store says.
+                active: false,
+                access,
+                said,
+            })
+        })
+        .collect()
+}
+
 /// What this home's own file says about the account it answers as, read off
 /// the real disk.
-fn identity_of_home(cli: &KnownCli, home: &Path) -> profiles::HomeIdentity {
-    profiles::identity_of_home(cli, home, &|path| std::fs::read_to_string(path).ok())
+/// The line a person runs to cure a home nobody can use: this engine's own
+/// login, in this very home. **SHOWN, NEVER RUN**: the login is interactive by
+/// declaration, and a panel that signs somebody in by itself re-authorises
+/// whoever's browser is already open — the fault this whole reading exists for.
+pub fn how_to_sign_in(cli_id: &str, home: &Path) -> Option<String> {
+    let cli = find_cli(cli_id).ok()?;
+    let machine = toolbox::Machine::current();
+    let catalog = toolbox::Catalog::load(&toolbox::default_sources(&machine));
+    let login = catalog
+        .live()
+        .into_iter()
+        .find(|loaded| {
+            loaded
+                .descriptor
+                .detect
+                .as_ref()
+                .and_then(|probes| probes.as_slice().first())
+                .and_then(|probe| probe.command.as_deref())
+                == Some(cli.executable.as_str())
+        })
+        .and_then(|loaded| loaded.descriptor.login.clone())?;
+    let environment = profiles::build_environment(cli, home, &|name| std::env::var(name).ok());
+    let said: Vec<String> = environment
+        .iter()
+        .map(|(name, value)| format!("{name}={value}"))
+        .chain(std::iter::once(cli.executable.clone()))
+        .chain(login.args.clone())
+        .collect();
+    Some(said.join(" "))
+}
+
+/// How a home is reached, which decides which file names the account it
+/// answers as: a profile home by the variable that moves it, the engine's own
+/// home by nothing at all — and then the file beside it is the one read.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Reached {
+    ByVariable,
+    AsItsOwn,
+}
+
+fn identity_of_home(cli: &KnownCli, home: &Path, reached: Reached) -> profiles::HomeIdentity {
+    let read = |path: &Path| std::fs::read_to_string(path).ok();
+    match reached {
+        Reached::ByVariable => profiles::identity_of_home(cli, home, &read),
+        Reached::AsItsOwn => profiles::identity_of_own_home(cli, home, &read),
+    }
 }
 
 /// The engine's words on a single line: a list is read at a glance, and a
@@ -355,12 +456,16 @@ pub fn adopt(cli_id: &str, name: &String, path: Option<&Path>) -> Result<(), Str
     let cli = find_cli(cli_id)?;
     profiles::validate_profile_name(name)
         .map_err(|e| catalogue::say("cli.profiles.name_not_valid", &[("error", &e.to_string())]))?;
-    let home = match path {
-        Some(path) => path.to_path_buf(),
+    let (home, reached) = match path {
+        Some(path) => (path.to_path_buf(), Reached::ByVariable),
         None => {
             let here = std::env::var_os("HOME").map(std::path::PathBuf::from);
-            here.and_then(|here| profiles::existing_home(cli, &here))
-                .ok_or_else(|| catalogue::say("cli.profiles.no_home_of_its_own", &[("id", &cli.id)]))?
+            let own = here
+                .and_then(|here| profiles::existing_home(cli, &here))
+                .ok_or_else(|| {
+                    catalogue::say("cli.profiles.no_home_of_its_own", &[("id", &cli.id)])
+                })?;
+            (own, Reached::AsItsOwn)
         }
     };
     if !home.is_dir() {
@@ -372,7 +477,7 @@ pub fn adopt(cli_id: &str, name: &String, path: Option<&Path>) -> Result<(), Str
     // Verified right after the login, before any row is written: a home
     // whose own file already names a different account is refused here.
     if let profiles::IdentityVerdict::Mismatched { home_answers_as } =
-        profiles::verdict_of(&identity_of_home(cli, &home), name)
+        profiles::verdict_of(&identity_of_home(cli, &home, reached), name)
     {
         return Err(catalogue::say(
             "cli.profiles.access.mismatched",
@@ -638,8 +743,14 @@ mod tests {
         )
         .expect("the identity file");
 
-        let (access, said) =
-            access_of(&tools, &probe, cli, &named_after_someone, "someone@example.com");
+        let (access, said) = access_of(
+            &tools,
+            &probe,
+            cli,
+            &named_after_someone,
+            "someone@example.com",
+            Reached::ByVariable,
+        );
         assert_eq!(access, Access::Mismatched, "{said}");
         assert!(said.contains("somebody-else@example.com"), "{said}");
         assert!(said.contains("someone@example.com"), "{said}");
@@ -661,7 +772,14 @@ mod tests {
         )
         .expect("the identity file");
 
-        let (access, _said) = access_of(&tools, &probe, cli, &home, "someone@example.com");
+        let (access, _said) = access_of(
+            &tools,
+            &probe,
+            cli,
+            &home,
+            "someone@example.com",
+            Reached::ByVariable,
+        );
         assert_eq!(access, Access::Yes);
     }
 
@@ -677,7 +795,14 @@ mod tests {
         let home = dir.join("senza-file-di-identita");
         std::fs::create_dir_all(&home).expect("the profile's home");
 
-        let (access, _said) = access_of(&tools, &probe, cli, &home, "someone@example.com");
+        let (access, _said) = access_of(
+            &tools,
+            &probe,
+            cli,
+            &home,
+            "someone@example.com",
+            Reached::ByVariable,
+        );
         assert_eq!(access, Access::Unverified);
     }
 
@@ -701,7 +826,7 @@ mod tests {
 
         let empty = dir.join("casa-vuota");
         std::fs::create_dir_all(&empty).expect("the home without credentials");
-        let said = access_of(&tools, &probe, cli, &empty, "codex").1;
+        let said = access_of(&tools, &probe, cli, &empty, "codex", Reached::ByVariable).1;
         assert!(
             said.contains("NOT AUTHENTICATED") && said.contains("Not logged in"),
             "a home without credentials has to show, in the engine's own words: {said}"
@@ -710,7 +835,7 @@ mod tests {
         let full = dir.join("casa-piena");
         std::fs::create_dir_all(&full).expect("the authenticated home");
         std::fs::write(full.join("auth.json"), "{}").expect("the credentials");
-        let said = access_of(&tools, &probe, cli, &full, "codex").1;
+        let said = access_of(&tools, &probe, cli, &full, "codex", Reached::ByVariable).1;
         assert!(
             said.starts_with("authenticated"),
             "a full home has to read as full: {said}"
@@ -795,7 +920,7 @@ mod tests {
         let empty = dir.join("casa-vuota");
         std::fs::create_dir_all(&empty).expect("the home without credentials");
 
-        let said = access_of(&tools, &probe, cli, &empty, "codex").1;
+        let said = access_of(&tools, &probe, cli, &empty, "codex", Reached::ByVariable).1;
         // **THE VERDICT IS THE HEAD OF THE ROW, AND IS READ THERE.** The
         // explanation after it necessarily names the word «authenticated» — it
         // is saying nobody asked whether it is — so hunting for that across the

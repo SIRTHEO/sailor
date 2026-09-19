@@ -85,6 +85,11 @@ pub struct AccountView {
     pub last_call_at: i64,
     pub ran_out_at: Option<i64>,
     pub quota: Option<QuotaSeen>,
+    /// What this account did in its own home over the window, read off the
+    /// engine's own records. `None` where nobody measured that engine.
+    pub worked: Option<models::work::Worked>,
+    /// The line a person runs to cure this row, where the engine declares one.
+    pub repair: Option<String>,
 }
 
 /// One window of an account's allowance.
@@ -186,8 +191,16 @@ fn dispatch(args: &[String]) -> Result<String, String> {
     let spending = ledger
         .accounts_standing(since)
         .map_err(|error| error.to_string())?;
-    let declared = overview(None)?;
-    let views = joined(&declared, &spending, &asked_for_allowances(with_quota), machine::now());
+    let mut declared = overview(None)?;
+    declared.extend(crate::profiles_cmd::engines_own_homes(&declared));
+    let mut views = joined(
+        &declared,
+        &spending,
+        &asked_for_allowances(with_quota),
+        &what_they_worked(since),
+        machine::now(),
+    );
+    name_the_repairs(&mut views, &declared);
     Ok(if as_json {
         as_one_object(&views, machine::now())
     } else {
@@ -209,6 +222,30 @@ fn asked_for_allowances(with_quota: bool) -> BTreeMap<String, QuotaSeen> {
         &machine,
         machine::now(),
     ))
+}
+
+/// The gesture that cures each row that needs one. **IT IS NAMED, NOT MADE**:
+/// the login is interactive by declaration, and a panel that signs somebody in
+/// by itself re-authorises whoever's browser is already open.
+fn name_the_repairs(views: &mut [AccountView], declared: &[ProfileView]) {
+    for view in views.iter_mut().filter(|view| view.standing == Standing::Shut) {
+        let Some(profile) = declared
+            .iter()
+            .find(|profile| profile.cli_id == view.cli && Some(&profile.name) == view.profile.as_ref())
+        else {
+            continue;
+        };
+        view.repair = crate::profiles_cmd::how_to_sign_in(&profile.cli_id, &profile.home_dir);
+    }
+}
+
+/// **READ WHATEVER IS ASKED, BECAUSE IT COSTS NO ROUND TRIP.** These records
+/// are files under the homes; only the ones touched inside the window are
+/// opened, so the whole panel is read without asking anybody anything.
+fn what_they_worked(since: i64) -> BTreeMap<String, models::work::Worked> {
+    let machine = toolbox::Machine::current();
+    let catalog = toolbox::Catalog::load(&toolbox::default_sources(&machine));
+    crate::remaining_cmd::work_per_profile(&catalog, since)
 }
 
 fn how_it_was_asked(args: &[String]) -> Result<(i64, bool, bool), String> {
@@ -243,6 +280,7 @@ pub fn joined(
     declared: &[ProfileView],
     spending: &[AccountStanding],
     quota: &BTreeMap<String, QuotaSeen>,
+    worked: &BTreeMap<String, models::work::Worked>,
     now: i64,
 ) -> Vec<AccountView> {
     let mut views: Vec<AccountView> = declared
@@ -262,6 +300,7 @@ pub fn joined(
                 spent,
             );
             view.quota = left.cloned();
+            view.worked = worked.get(&profile.name).cloned();
             view
         })
         .collect();
@@ -285,14 +324,21 @@ pub fn joined(
         }
     }
     views.sort_by(|left, right| {
-        right
-            .spent_micros
-            .cmp(&left.spent_micros)
+        // **THE PANEL IS SORTED BY WHAT WAS DONE, NOT BY WHAT WAS BILLED.**
+        // The account a person works in all day bills nothing here, and it sat
+        // at the bottom under seven that did nothing.
+        tokens_worked(right)
+            .cmp(&tokens_worked(left))
+            .then(right.spent_micros.cmp(&left.spent_micros))
             .then(right.calls.cmp(&left.calls))
             .then(left.cli.cmp(&right.cli))
             .then(left.profile.cmp(&right.profile))
     });
     views
+}
+
+fn tokens_worked(view: &AccountView) -> u64 {
+    view.worked.as_ref().map(|did| did.tokens().all()).unwrap_or_default()
 }
 
 fn one_view(
@@ -315,6 +361,8 @@ fn one_view(
         last_call_at: spent.map(|found| found.last_call_at).unwrap_or_default(),
         ran_out_at: spent.and_then(|found| found.ran_out_at),
         quota: None,
+        worked: None,
+        repair: None,
     }
 }
 
@@ -375,6 +423,24 @@ fn mark_of(standing: Standing) -> &'static str {
     }
 }
 
+/// A token count as a person reads it at a glance: 155M, not 155_012_233.
+fn in_short(tokens: u64) -> String {
+    match tokens {
+        0..=9_999 => tokens.to_string(),
+        10_000..=999_999 => format!("{}k", tokens / 1_000),
+        _ => format!("{:.1}M", tokens as f64 / 1_000_000.0),
+    }
+}
+
+/// What the work would have cost at list price, or the words for «nobody
+/// priced one of these models»: never a figure short of a model.
+fn worth_of(did: &models::work::Worked) -> String {
+    match models::work::cost_micros(did, &models::pricing::shipped()) {
+        Some(micros) => dollars(micros),
+        None => catalogue::say("cli.accounts.no_price_for_it", &[]),
+    }
+}
+
 fn dollars(micros: i64) -> String {
     format!("{:.2}", micros as f64 / 1_000_000.0)
 }
@@ -421,11 +487,25 @@ pub fn report(views: &[AccountView], hours: i64) -> String {
                 ),
             });
         }
+        if let Some(did) = view.worked.as_ref().filter(|did| did.calls > 0) {
+            lines.push(catalogue::say(
+                "cli.accounts.what_it_worked",
+                &[
+                    ("calls", &did.calls.to_string()),
+                    ("sessions", &did.sessions.to_string()),
+                    ("tokens", &in_short(did.tokens().all())),
+                    ("worth", &worth_of(did)),
+                ],
+            ));
+        }
         if view.standing != Standing::Ready && !view.said.is_empty() {
             lines.push(format!("      {}", view.said));
         }
         if let Some(refused) = view.quota.as_ref().and_then(|left| left.refused.as_deref()) {
             lines.push(format!("      {refused}"));
+        }
+        if let Some(repair) = view.repair.as_deref() {
+            lines.push(catalogue::say("cli.accounts.to_cure_it", &[("line", repair)]));
         }
     }
     lines.push(catalogue::say("cli.accounts.what_the_spend_counts", &[]));
@@ -463,6 +543,22 @@ pub fn as_one_object(views: &[AccountView], now: i64) -> String {
                         .collect::<Vec<_>>()
                 }),
                 "quota_said": view.quota.as_ref().and_then(|left| left.refused.clone()),
+                "repair": view.repair,
+                "worked": view.worked.as_ref().map(|did| serde_json::json!({
+                    "calls": did.calls,
+                    "sessions": did.sessions,
+                    "input_tokens": did.tokens().input,
+                    "output_tokens": did.tokens().output,
+                    "cache_read_tokens": did.tokens().cache_read,
+                    "cache_write_tokens": did.tokens().cache_write + did.tokens().cache_write_long,
+                    "at_list_price": models::work::cost_micros(did, &models::pricing::shipped())
+                        .map(dollars),
+                    "latest_call_at": did.latest,
+                    "by_model": did.by_model.iter().map(|(model, tokens)| serde_json::json!({
+                        "model": model,
+                        "tokens": tokens.all(),
+                    })).collect::<Vec<_>>(),
+                })),
             })
         })
         .collect();
@@ -509,6 +605,54 @@ mod tests {
         }
     }
 
+    fn worked(calls: u64, model: &str, input: u64) -> models::work::Worked {
+        models::work::Worked {
+            calls,
+            sessions: 1,
+            by_model: [(
+                model.to_owned(),
+                models::work::Tokens {
+                    input,
+                    ..models::work::Tokens::default()
+                },
+            )]
+            .into_iter()
+            .collect(),
+            latest: "2026-09-19T12:00:00Z".to_owned(),
+        }
+    }
+
+    /// **THE FAULT THIS TEST HOLDS SHUT.** Nothing a person types in a terminal
+    /// passes through the store, so the account they work in all day billed
+    /// $0.00 and sat below seven that did nothing at all.
+    #[test]
+    fn the_account_that_did_the_work_is_read_first_and_says_what_it_did() {
+        let views = joined(
+            &[
+                declared("claude", "idle@example.test", Access::Yes),
+                declared("claude", "busy@example.test", Access::Yes),
+            ],
+            &[spent("claude", Some("idle@example.test"), 9_000_000, None)],
+            &nothing_left(),
+            &[("busy@example.test".to_owned(), worked(900, "claude-opus-5", 1_000_000))]
+                .into_iter()
+                .collect(),
+            NOW,
+        );
+        assert_eq!(
+            views[0].profile.as_deref(),
+            Some("busy@example.test"),
+            "the one that worked comes first, though it billed nothing"
+        );
+        let said = report(&views, 5);
+        assert!(said.contains("900"), "the calls are shown: {said}");
+        assert!(said.contains("$5.00"), "and what they weigh at list price: {said}");
+    }
+
+    fn nothing_worked() -> BTreeMap<String, models::work::Worked> {
+        BTreeMap::new()
+    }
+
     fn nothing_left() -> BTreeMap<String, QuotaSeen> {
         BTreeMap::new()
     }
@@ -531,6 +675,7 @@ mod tests {
             &[declared("codex", "someone@example.test", Access::Yes)],
             &[spent("codex", Some("someone@example.test"), 2_500_000, None)],
             &nothing_left(),
+            &nothing_worked(),
             NOW,
         );
         assert_eq!(views.len(), 1);
@@ -541,7 +686,7 @@ mod tests {
     /// **A CALL THAT COST MONEY AND BELONGS TO NOBODY IS THE ONE WORTH SEEING.**
     #[test]
     fn an_account_that_answered_and_no_profile_declares_is_still_shown() {
-        let views = joined(&[], &[spent("antigravity", None, 5_770_000, None)], &nothing_left(), NOW);
+        let views = joined(&[], &[spent("antigravity", None, 5_770_000, None)], &nothing_left(), &nothing_worked(), NOW);
         assert_eq!(views.len(), 1);
         assert_eq!(views[0].cli, "antigravity");
         assert_eq!(views[0].standing, Standing::Unknown);
@@ -553,6 +698,7 @@ mod tests {
             &[declared("codex", "who@example.test", Access::Yes)],
             &[spent("codex", Some("who@example.test"), 0, Some(NOW - 60))],
             &nothing_left(),
+            &nothing_worked(),
             NOW,
         );
         assert_eq!(inside[0].standing, Standing::RanOut);
@@ -565,6 +711,7 @@ mod tests {
                 Some(NOW - A_QUOTA_COMES_BACK_IN - 1),
             )],
             &nothing_left(),
+            &nothing_worked(),
             NOW,
         );
         assert_eq!(outside[0].standing, Standing::Ready);
@@ -577,6 +724,7 @@ mod tests {
             &[declared("claude", "who@example.test", Access::No)],
             &[spent("claude", Some("who@example.test"), 0, Some(NOW - 60))],
             &nothing_left(),
+            &nothing_worked(),
             NOW,
         );
         assert_eq!(views[0].standing, Standing::Shut);
@@ -595,6 +743,7 @@ mod tests {
                 &[declared("codex", "who@example.test", access)],
                 &[],
                 &nothing_left(),
+                &nothing_worked(),
                 NOW,
             );
             assert_eq!(views[0].standing, expected, "on {access:?}");
@@ -615,16 +764,16 @@ mod tests {
             &[declared("claude", "who@example.test", Access::Yes)],
             &[],
             &allowance("who@example.test", refused),
+            &nothing_worked(),
             NOW,
         );
         assert_eq!(views[0].standing, Standing::Shut);
     }
 
     /// **A METER THAT REFUSES TO BE READ IS NOT A CLOSED ACCOUNT**, and it
-    /// refuses exactly when the person is working: measured 19/09/2026, all
-    /// three Claude accounts read `shut` — two of them with a terminal open on
-    /// them at that minute — because the provider limits how often its own
-    /// usage endpoint may be asked.
+    /// refuses exactly when the person is working: three Claude accounts read
+    /// `shut` — two with a terminal open on them that minute — because the
+    /// provider limits how often its own usage endpoint may be asked.
     #[test]
     fn a_meter_that_asks_to_be_asked_later_leaves_the_account_where_it_was() {
         let later = QuotaSeen {
@@ -639,6 +788,7 @@ mod tests {
             &[declared("claude", "who@example.test", Access::Yes)],
             &[],
             &allowance("who@example.test", later),
+            &nothing_worked(),
             NOW,
         );
         assert_eq!(views[0].standing, Standing::Ready);
@@ -662,6 +812,7 @@ mod tests {
             &[declared("claude", "who@example.test", Access::Yes)],
             &[],
             &allowance("who@example.test", unread),
+            &nothing_worked(),
             NOW,
         );
         assert_eq!(views[0].standing, Standing::Ready);
@@ -677,6 +828,7 @@ mod tests {
             &[declared("codex", "who@example.test", Access::Yes)],
             &[],
             &allowance("who@example.test", full),
+            &nothing_worked(),
             NOW,
         );
         assert_eq!(views[0].standing, Standing::RanOut);
@@ -795,6 +947,7 @@ mod tests {
             ],
             &[spent("codex", Some("empty@example.test"), 0, Some(NOW - 60))],
             &nothing_left(),
+            &nothing_worked(),
             NOW,
         );
         assert_eq!(worst_of(&views), Standing::RanOut);
@@ -812,6 +965,7 @@ mod tests {
                 spent("codex", Some("big@example.test"), 9_000_000, None),
             ],
             &nothing_left(),
+            &nothing_worked(),
             NOW,
         );
         assert_eq!(views[0].profile.as_deref(), Some("big@example.test"));
@@ -825,6 +979,7 @@ mod tests {
             &[declared("codex", "who@example.test", Access::Yes)],
             &[spent("codex", Some("who@example.test"), 1_230_000, Some(NOW - 60))],
             &nothing_left(),
+            &nothing_worked(),
             NOW,
         );
         let said = as_one_object(&views, NOW);
@@ -841,6 +996,7 @@ mod tests {
             &[declared("claude", "idle@example.test", Access::Yes)],
             &[],
             &nothing_left(),
+            &nothing_worked(),
             NOW,
         );
         let read: serde_json::Value =
@@ -882,7 +1038,7 @@ mod tests {
     fn a_profile_declared_never_called_and_not_in_force_does_not_hold_the_mark() {
         let mut shelved = declared("claude", "shelf@example.test", Access::No);
         shelved.active = false;
-        let views = joined(&[shelved], &[], &nothing_left(), NOW);
+        let views = joined(&[shelved], &[], &nothing_left(), &nothing_worked(), NOW);
         assert_eq!(views[0].standing, Standing::Shut, "it is still shown as shut");
         assert_eq!(worst_of(&views), Standing::Ready, "the shelf held the mark");
     }
@@ -895,6 +1051,7 @@ mod tests {
             &[shelved],
             &[spent("claude", Some("shelf@example.test"), 0, None)],
             &nothing_left(),
+            &nothing_worked(),
             NOW,
         );
         assert_eq!(worst_of(&views), Standing::Shut);

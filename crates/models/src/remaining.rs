@@ -40,12 +40,8 @@ pub struct WindowWords {
     pub resets: String,
     /// Whether `resets` is an instant written out or a count of seconds.
     pub resets_in_seconds: bool,
-    /// The refusal kinds that mean **the credential itself is no good**, in the
-    /// provider's own words. Every other refusal is a «not now».
-    ///
-    /// **EMPTY IS THE SAFE DEFAULT, AND THAT IS THE POINT.** A kind this list
-    /// does not name cannot declare an account dead, so a provider adding one
-    /// costs a reading, never a working account.
+    /// The refusal kinds that mean **the credential itself is no good**; every
+    /// other refusal is a «not now», and **EMPTY IS THE SAFE DEFAULT**.
     pub dead_when: Vec<String>,
 }
 
@@ -107,23 +103,11 @@ pub enum RemainingError {
     NoToken,
     /// `curl` did not start, or did not answer.
     Unreachable(String),
-    /// It answered, and said no. It carries the provider's own words, which
-    /// say **what to do** — "the token has been revoked" is cured by
-    /// authenticating again, and no sentence written here would say it better.
-    /// **It never carries the token**: only the `message` field is copied,
-    /// never the request.
-    ///
-    /// **ONLY THE KINDS THE DESCRIPTOR CALLS FATAL LAND HERE** (`dead_when`).
-    /// This one may contradict a home that calls itself authenticated; the one
-    /// below never may.
+    /// It answered and said no, in its own words; only `message` is copied,
+    /// never the token. **ONLY `dead_when` KINDS LAND HERE.**
     Refused(String),
-    /// It answered, and asked to be asked again later: rate limited, busy,
-    /// briefly down.
-    ///
-    /// **IT SAYS NOTHING ABOUT THE ACCOUNT.** A counter that refuses to count
-    /// is not a door that refuses to open, and reading it as one marks an
-    /// account shut precisely while its owner is working — which is when the
-    /// provider limits how often its meter may be read.
+    /// It answered and asked to be asked later: rate limited, busy, briefly
+    /// down. **A COUNTER THAT REFUSES TO COUNT IS NOT A CLOSED DOOR.**
     NotNow(String),
     /// It answered something that is not the expected JSON: the channel is
     /// beta, and this is how it will break.
@@ -132,20 +116,12 @@ pub enum RemainingError {
 
 impl RemainingError {
     /// Whether this refusal is about the credential rather than the moment.
-    ///
-    /// **THE CALLER MUST NOT READ THIS OUT OF THE SENTENCE.** The words are the
-    /// provider's and change without notice; the branch is the fact.
     pub fn credential_is_dead(&self) -> bool {
         matches!(self, RemainingError::Refused(_))
     }
 
-    /// Whether the provider was reached at all.
-    ///
-    /// **THE TWO HALVES OF «NO READING» ARE NOT WORTH THE SAME.** «rate
-    /// limited» comes from the account's own provider; «no credentials in this
-    /// file» comes from a channel that stopped at the doorstep, and where one
-    /// account is read through several descriptors the second must never be
-    /// the sentence a person is shown.
+    /// Whether the provider was reached at all: a channel that stopped at the
+    /// doorstep is worth less than a refusal, and must not outrank one.
     pub fn provider_answered(&self) -> bool {
         matches!(self, RemainingError::Refused(_) | RemainingError::NotNow(_))
     }
@@ -256,9 +232,6 @@ pub fn from_oauth_usage(
     // let the rate limit through as that empty list, to an automated poller.
     if let Some(error) = whole.get("error") {
         if let Some(said) = error.get("message").and_then(serde_json::Value::as_str) {
-            // **THE KIND DECIDES, NOT THE SENTENCE.** Beside the message the
-            // provider names what went wrong, and only the kinds the descriptor
-            // calls fatal are allowed to mean «this account is finished».
             let kind = error.get("type").and_then(serde_json::Value::as_str).unwrap_or_default();
             return Err(if words.dead_when.iter().any(|fatal| fatal == kind) {
                 RemainingError::Refused(said.to_owned())
@@ -414,7 +387,6 @@ mod tests {
         from_oauth_usage(body, ENGINE, observed_at, &WindowWords::default())
     }
 
-    /// As the descriptor of the one provider measured declares it.
     fn parse_for_a_descriptor_that_names_its_fatal_kinds(
         body: &str,
     ) -> Result<Vec<Remaining>, RemainingError> {
@@ -557,11 +529,8 @@ mod tests {
         assert!(said.credential_is_dead(), "this one is about the credential");
     }
 
-    /// **A COUNTER THAT REFUSES TO COUNT IS NOT A DOOR THAT REFUSES TO OPEN.**
-    /// Measured on 19/09/2026: three working accounts read as `shut` all day,
-    /// because the provider limits how often its own meter may be asked and the
-    /// reader took that for a verdict on the account. The kind beside the
-    /// message is what separates them, and the descriptor names the fatal ones.
+    /// **A COUNTER THAT REFUSES TO COUNT IS NOT A DOOR THAT REFUSES TO OPEN**:
+    /// three working accounts read `shut` all day for the meter's rate limit.
     #[test]
     fn a_rate_limit_is_a_not_now_and_never_a_dead_credential() {
         let limited = r#"{"error":{"type":"rate_limit_error",
@@ -576,8 +545,7 @@ mod tests {
         assert!(!said.credential_is_dead(), "the account was never asked about");
     }
 
-    /// **A KIND NOBODY NAMED CANNOT KILL AN ACCOUNT.** The channel is beta and
-    /// the provider adds kinds without asking; an unknown one costs a reading.
+    /// **A KIND NOBODY NAMED CANNOT KILL AN ACCOUNT**: the channel is beta.
     #[test]
     fn a_refusal_of_an_unnamed_kind_is_a_not_now() {
         let odd = r#"{"error":{"type":"a_kind_from_next_year","message":"no"}}"#;

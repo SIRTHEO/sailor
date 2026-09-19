@@ -208,7 +208,7 @@ pub(crate) fn engines() -> Result<Engines, String> {
         let (quota, quota_why) = match toolbox::quota::read_one(&descriptor, &machine, now) {
             Some(reading) => match reading.result {
                 Ok(found) => (found.into_iter().map(crate::models::Window::from).collect(), None),
-                Err(why) => (Vec::new(), Some(why)),
+                Err(why) => (Vec::new(), Some(why.said)),
             },
             None => (Vec::new(), Some("this engine declares no channel to read what is left".to_owned())),
         };

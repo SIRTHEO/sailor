@@ -540,10 +540,7 @@ pub struct Quota {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub held_by: Vec<String>,
     /// The refusal kinds, in the provider's own words, that mean the credential
-    /// is no good. Anything else it refuses with is a «not now».
-    ///
-    /// **WHAT IS NOT NAMED HERE NEVER MARKS AN ACCOUNT SHUT.** A meter that
-    /// answers «too often» says nothing about the account behind it.
+    /// is no good. **WHAT IS NOT NAMED HERE NEVER MARKS AN ACCOUNT SHUT.**
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dead_when: Vec<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -567,6 +564,55 @@ pub struct QuotaShape {
     /// `text` for an instant written out, `epoch_seconds` for a number.
     #[serde(default)]
     pub resets_in: String,
+}
+
+/// Where a home writes down the calls made in it, and what the fields are
+/// called. Every pointer is a path of keys into one record.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Work {
+    /// The directory, below the home, holding the records.
+    pub under: String,
+    /// What a record file's name ends with.
+    pub suffix: String,
+    /// The keys down to the instant of a call, written so two of them sort as
+    /// they happened.
+    pub when: Vec<String>,
+    /// Fields a record must carry to be counted as a call.
+    #[serde(default)]
+    pub only_when: Vec<Kept>,
+    #[serde(default)]
+    pub model: Vec<String>,
+    #[serde(default)]
+    pub session: Vec<String>,
+    pub tokens: WorkTokens,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub note: String,
+}
+
+/// One field a record must carry, with that value, to be counted.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Kept {
+    pub at: Vec<String>,
+    pub is: String,
+}
+
+/// Where each count sits inside a record. **EACH UNDER ITS OWN NAME**: lined
+/// up on a signature, two swapped by mistake compile and never come back.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkTokens {
+    #[serde(default)]
+    pub input: Vec<String>,
+    #[serde(default)]
+    pub output: Vec<String>,
+    #[serde(default)]
+    pub cache_read: Vec<String>,
+    #[serde(default)]
+    pub cache_write: Vec<String>,
+    #[serde(default)]
+    pub cache_write_long: Vec<String>,
 }
 
 /// The one line that installs a command line, and how it was established.
@@ -792,6 +838,10 @@ pub struct Descriptor {
     /// means no channel is known, and the engine works without knowing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quota: Option<Quota>,
+    /// Where a home keeps the record of the calls made in it. Absent means
+    /// nobody measured it, and the work of that account stays unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work: Option<Work>,
     /// Whether what is sent through it trains the provider's next model, for
     /// the models its own subscription reaches. Absent is unknown, never a no.
     #[serde(default, skip_serializing_if = "Option::is_none")]

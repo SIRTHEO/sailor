@@ -118,26 +118,14 @@ pub fn per_profile(
             continue;
         }
         let mut asked_for_one = false;
-        for profile in homes_for(&store, descriptor) {
+        for (name, home) in every_home(&store, descriptor) {
             asked_for_one = true;
-            if let Some(reading) = toolbox::quota::read_in_home(descriptor, machine, &profile.home_dir, now) {
-                let whose = format!("{} · {}", reading.engine, profile.name);
+            if let Some(reading) = toolbox::quota::read_in_home(descriptor, machine, &home, now) {
                 // **THE LINE SAYS WHOSE IT IS, MEASURED OR REFUSED ALIKE.** The
                 // window carries the engine's name from the channel, and three
                 // accounts of one engine printed under that name read as one
                 // account measured three times.
-                out.push(toolbox::quota::Reading {
-                    engine: whose.clone(),
-                    result: reading.result.map(|windows| {
-                        windows
-                            .into_iter()
-                            .map(|window| models::remaining::Remaining {
-                                engine: whose.clone(),
-                                ..window
-                            })
-                            .collect()
-                    }),
-                });
+                out.push(named_for(reading, &format!("{} · {name}", descriptor.id)));
             }
         }
         if !asked_for_one {
@@ -145,6 +133,85 @@ pub fn per_profile(
         }
     }
     out
+}
+
+/// What each account did in its own home since `since`, keyed by the account.
+///
+/// **THE WORK OF A PERSON IS NOT IN SAILOR'S STORE.** Only what a flow called
+/// passes through the ledger; a terminal opened by hand writes its calls in the
+/// home it runs in, and that is the only place they are written at all.
+pub fn work_per_profile(
+    catalog: &toolbox::Catalog,
+    since: i64,
+) -> std::collections::BTreeMap<String, models::work::Worked> {
+    let store = profiles::store_io::load_store().unwrap_or_default();
+    let mut found = std::collections::BTreeMap::new();
+    for loaded in catalog.live() {
+        let descriptor = &loaded.descriptor;
+        for (name, home) in every_home(&store, descriptor) {
+            if let Some(worked) = toolbox::work::read_in_home(descriptor, &home, since) {
+                found.insert(name, worked);
+            }
+        }
+    }
+    found
+}
+
+/// The same reading with the account written into every name it carries.
+fn named_for(reading: toolbox::quota::Reading, whose: &str) -> toolbox::quota::Reading {
+    toolbox::quota::Reading {
+        engine: whose.to_owned(),
+        result: reading.result.map(|windows| {
+            windows
+                .into_iter()
+                .map(|window| models::remaining::Remaining {
+                    engine: whose.to_owned(),
+                    ..window
+                })
+                .collect()
+        }),
+    }
+}
+
+/// Every home of this engine that holds an account: the declared profiles, and
+/// the home the engine keeps for itself when no profile sits on it.
+/// **HAVING PROFILES DID NOT USED TO LEAVE THE ENGINE ITS OWN HOME**, so the
+/// account a person works in every day — every terminal opened outside Sailor
+/// starts there — was the one whose allowance nobody ever asked.
+fn every_home(
+    store: &profiles::ProfileStore,
+    descriptor: &toolbox::Descriptor,
+) -> Vec<(String, std::path::PathBuf)> {
+    let mut homes: Vec<(String, std::path::PathBuf)> = homes_for(store, descriptor)
+        .into_iter()
+        .map(|profile| (profile.name.clone(), profile.home_dir.clone()))
+        .collect();
+    if let Some((cli, own)) = own_home_of(descriptor) {
+        // **NAMED BY WHAT IT ANSWERS AS, AND BY NOTHING ELSE.** The panel joins
+        // this reading to its row on that name, so a home nobody can name is
+        // left out rather than given a placeholder no row would ever match.
+        let named = profiles::own_home_answers_as(cli, &own);
+        if let Some(name) = named.filter(|_| !homes.iter().any(|(_, home)| home == &own)) {
+            homes.push((name, own));
+        }
+    }
+    homes
+}
+
+/// The command line this descriptor detects, and the home it keeps for itself.
+fn own_home_of(
+    descriptor: &toolbox::Descriptor,
+) -> Option<(&'static profiles::KnownCli, std::path::PathBuf)> {
+    let detected = descriptor
+        .detect
+        .as_ref()
+        .and_then(|probes| probes.as_slice().first())
+        .and_then(|probe| probe.command.as_deref())?;
+    let home = profiles::store_io::home_dir().ok()?;
+    let cli = profiles::known_clis()
+        .iter()
+        .find(|cli| cli.executable == detected)?;
+    Some((cli, profiles::existing_home(cli, &home)?))
 }
 
 /// The profiles whose command line is the one this descriptor detects. **THE
