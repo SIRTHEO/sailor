@@ -4,7 +4,7 @@
 use crate::cost::now_secs;
 use crate::engine::ExternalEngineAction;
 use crate::recipe::{
-    command_line_naming_model_and_ceiling, mentions_any, says_it_cannot_work, PromptVia,
+    command_line_naming_model_and_ceiling, mentions_any, says_it_cannot_work, AskRecipe, PromptVia,
     SessionRecipe, ToolResolver,
 };
 use crate::session::session_lines;
@@ -226,6 +226,20 @@ impl ExternalEngineAction {
                         });
                         continue;
                     }
+                    // Leave, next, for the reason the pact came first: no cap
+                    // and no order can supply it.
+                    let leave = tools.edit_the_tree_option(id);
+                    if spec.edits_the_tree && leave.is_none() {
+                        refused.push(Refused {
+                            id: id.clone(),
+                            reason: format!(
+                                "the step changes the tree, and «{id}» does not declare how it \
+                                 is asked for leave to do that (`capabilities.edit_the_tree`)"
+                            ),
+                            unresolved: false,
+                        });
+                        continue;
+                    }
                     // A cap on a window excludes, and never reorders: the sum
                     // is the ledger's, over every run of this engine.
                     if let Some(why) = self.over_budget(id) {
@@ -338,7 +352,14 @@ impl ExternalEngineAction {
                         .as_ref()
                         .and_then(|option| reserve::ceiling_for(option, &ceiling_of(spec, share_of_the_cap)));
                     let written = ceiling.as_ref().and_then(reserve::Ceiling::as_written);
-                    match tools.ask_recipe(id) {
+                    match tools.ask_recipe(id).map(|recipe| match &leave {
+                        // Whole, never appended: see `edit_the_tree_option`.
+                        Some(args) if spec.edits_the_tree => AskRecipe {
+                            args: args.clone(),
+                            ..recipe
+                        },
+                        _ => recipe,
+                    }) {
                         Some(recipe) => usable.push(Candidate {
                             id: Some(id.clone()),
                             account: account.clone(),
@@ -702,6 +723,161 @@ mod tests {
         fn ask_recipe(&self, id: &str) -> Option<AskRecipe> {
             Chain.ask_recipe(id)
         }
+    }
+
+    // ── the permission a step asks for, and the engine that spells it ──
+
+    /// Two engines of one make: both are asked the same way, and only one has
+    /// been measured on how it is asked for leave to change the tree.
+    struct AsksLeave;
+
+    impl ToolResolver for AsksLeave {
+        fn resolve(&self, id: &str) -> Result<String, String> {
+            match id {
+                "measured" | "unmeasured" => Ok("echo".to_owned()),
+                other => Err(format!("«{other}» is declared by no descriptor")),
+            }
+        }
+
+        fn ask_recipe(&self, id: &str) -> Option<AskRecipe> {
+            self.resolve(id).ok().map(|_| AskRecipe {
+                args: vec!["-p".to_owned()],
+                prompt: PromptVia::Stdin,
+                args_before_prompt: Vec::new(),
+                unusable_when: Vec::new(),
+                exhausted_when: Vec::new(),
+                cooldown_secs: None,
+                waits_for_a_person_when: Vec::new(),
+                refuses_without_prompt: Vec::new(),
+                silent_without_prompt: false,
+                usage: None,
+            })
+        }
+
+        fn edit_the_tree_option(&self, id: &str) -> Option<Vec<String>> {
+            (id == "measured").then(|| {
+                vec![
+                    "-p".to_owned(),
+                    "--permission-mode".to_owned(),
+                    "acceptEdits".to_owned(),
+                ]
+            })
+        }
+    }
+
+    fn only_candidate(spec: serde_json::Value) -> (Vec<Candidate>, Vec<Refused>) {
+        let action = ExternalEngineAction::resolving_with(AsksLeave);
+        let spec: EngineSpec = serde_json::from_value(spec).expect("the step parses");
+        action.candidates(&spec, None).expect("the chain is read")
+    }
+
+    /// **THE CASE THIS FIELD EXISTS FOR.** The step says it changes the tree;
+    /// the descriptor says how that leave is spelled to this command line, and
+    /// the options land on the line the step will run.
+    #[test]
+    fn a_step_that_edits_the_tree_runs_the_line_its_descriptor_spells() {
+        let (usable, refused) =
+            only_candidate(json!({"tool": "measured", "edits_the_tree": true, "timeout_secs": 5}));
+
+        assert!(refused.is_empty(), "{} refusals", refused.len());
+        let line = usable.first().expect("one candidate");
+        assert!(
+            line.args.windows(2).any(|pair| pair
+                == ["--permission-mode".to_owned(), "acceptEdits".to_owned()]),
+            "the leave the descriptor spells is on the line: {:?}",
+            line.args
+        );
+    }
+
+    /// An engine nobody measured on this point is not one that writes freely:
+    /// the step is refused before it spends, and the refusal names the block
+    /// whose absence decided it.
+    #[test]
+    fn an_engine_that_does_not_spell_the_leave_is_refused_the_step_that_needs_it() {
+        let (usable, refused) = only_candidate(
+            json!({"tool": "unmeasured", "edits_the_tree": true, "timeout_secs": 5}),
+        );
+
+        assert!(usable.is_empty(), "{} candidates", usable.len());
+        let said = &refused.first().expect("one refusal").reason;
+        assert!(said.contains("edit_the_tree"), "{said}");
+    }
+
+    /// **LEAVE IS NOT ALWAYS AN ADDITION.** One engine takes it as an option
+    /// beside the question; another by changing a value already on the line.
+    /// The descriptor spells the whole line for that reason, and the old value
+    /// must not survive beside the new one — `--sandbox read-only
+    /// workspace-write` is a line that writes nothing and says nothing about
+    /// why.
+    #[test]
+    fn leave_that_changes_a_value_replaces_it_instead_of_standing_beside_it() {
+        struct Sandboxed;
+
+        impl ToolResolver for Sandboxed {
+            fn resolve(&self, _id: &str) -> Result<String, String> {
+                Ok("echo".to_owned())
+            }
+
+            fn ask_recipe(&self, _id: &str) -> Option<AskRecipe> {
+                Some(AskRecipe {
+                    args: vec![
+                        "exec".to_owned(),
+                        "--sandbox".to_owned(),
+                        "read-only".to_owned(),
+                    ],
+                    prompt: PromptVia::Stdin,
+                    args_before_prompt: Vec::new(),
+                    unusable_when: Vec::new(),
+                    exhausted_when: Vec::new(),
+                    cooldown_secs: None,
+                    waits_for_a_person_when: Vec::new(),
+                    refuses_without_prompt: Vec::new(),
+                    silent_without_prompt: false,
+                    usage: None,
+                })
+            }
+
+            fn edit_the_tree_option(&self, _id: &str) -> Option<Vec<String>> {
+                Some(vec![
+                    "exec".to_owned(),
+                    "--sandbox".to_owned(),
+                    "workspace-write".to_owned(),
+                ])
+            }
+        }
+
+        let action = ExternalEngineAction::resolving_with(Sandboxed);
+        let spec: EngineSpec =
+            serde_json::from_value(json!({"tool": "sandboxed", "edits_the_tree": true, "timeout_secs": 5}))
+                .expect("the step parses");
+        let (usable, _) = action.candidates(&spec, None).expect("the chain is read");
+
+        let line = usable.first().expect("one candidate");
+        assert!(
+            !line.args.iter().any(|arg| arg == "read-only"),
+            "the value that forbade writing is gone: {:?}",
+            line.args
+        );
+        assert!(
+            line.args.iter().any(|arg| arg == "workspace-write"),
+            "{:?}",
+            line.args
+        );
+    }
+
+    /// **A PERMISSION NOBODY ASKED FOR IS NOT GRANTED.** The same engine, the
+    /// same descriptor, a step that does not say it changes anything: the
+    /// options that give leave stay off the line.
+    #[test]
+    fn a_step_that_says_nothing_is_given_no_leave_it_did_not_ask_for() {
+        let (usable, _) = only_candidate(json!({"tool": "measured", "timeout_secs": 5}));
+
+        let line = usable.first().expect("one candidate");
+        assert!(
+            !line.args.iter().any(|arg| arg == "--permission-mode"),
+            "no leave without a step asking for it: {:?}",
+            line.args
+        );
     }
 
     fn scratch(name: &str) -> std::path::PathBuf {
