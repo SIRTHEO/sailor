@@ -39,10 +39,13 @@ pub trait ToolResolver: Send + Sync {
         models::pact::DataPact::Unknown
     }
 
-    /// The subscription windows of `id` as fuel, read now; empty when it
-    /// declares no channel or the reading failed.
-    fn fuel(&self, _id: &str) -> Vec<models::fuel::Fuel> {
-        Vec::new()
+    /// The subscription windows of `id` as fuel, read now.
+    ///
+    /// `Ok(&[])` is a channel the descriptor does not declare; `Err` is one
+    /// that exists and failed to read just now. Fault 139 was folding both
+    /// into the same silent empty list.
+    fn fuel(&self, _id: &str) -> Result<Vec<models::fuel::Fuel>, String> {
+        Ok(Vec::new())
     }
 
     /// How **this** engine opens, resumes and forks a session, when it can.
