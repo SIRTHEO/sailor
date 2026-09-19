@@ -166,6 +166,29 @@ branches, is the other half. And the judge looks at the shape only: that
 `work/fusione-sera` tells of an evening instead of a job is said by the line
 above, and no comparison can say it.
 
+## The trunk is reached only through a merged request
+
+- **Nothing is pushed to `main`.** A branch reaches the trunk when its pull
+  request is merged on the forge, and the merge commit is the proof. Measured on
+  19/09/2026: every commit on `main` had one parent, so no work had ever passed
+  through a request — the three requests marked merged were closed by a push, all
+  three at the same second. The forge held a mirror of the work, not the road it
+  travelled.
+- **The forge refuses the shortcut, so nobody has to remember it.** The trunk's
+  ruleset requires a pull request and six green checks: `publication boundary`,
+  `sailor/private-names`, `workspace tests`, `desktop tests`, `clippy gate`,
+  `the style debt`.
+- **`sailor/private-names` is posted from here, not by the forge.** This machine
+  is the only one holding the list, so `scripts/attest-private-names.sh HEAD`
+  runs on the exact commit under review. Until it does, the request cannot merge
+  and nothing says why.
+- **Every call to the forge runs as the account the tree declares** in
+  `sailor.forgeAs`, never as whoever happens to be logged in. A branch pushed
+  from another account is a branch nobody watching this repository sees.
+- **A branch with nothing open on it is invisible.** Work that is paused gets a
+  draft request saying what it holds and what it needs, so the decision is made
+  on a page instead of in a branch list.
+
 ## Whoever creates does not judge
 
 The verdict on a piece of work goes to a context that did not produce it. If you
