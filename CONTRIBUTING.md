@@ -127,11 +127,18 @@ vanishes, and nothing was looking for it. Write the number the judge states, in
 the same commit, and let the commit message say why the count moved.
 
 `sailor ratchet` does not measure your working tree. It rebuilds
-`git archive HEAD` into `target/ratchet-tree`, lays your changed and new files
+`git archive HEAD` into `target/ratchet-tree` of the main checkout (every
+worktree shares that copy and its build), lays your changed and new files
 over that clean copy, and runs each judge there — because several sessions can
 write in one checkout, and a seed taken over somebody else's uncommitted file
 describes a tree nobody has. It prints the files it laid over: read that list
 and check they are all yours. `sailor ratchet --only <judge>` runs one judge.
+
+Both `sailor ratchet` and `sailor release` build from the sources, and they find
+them in this order: `SAILOR_SOURCES` if you set it, otherwise the Sailor tree you
+are standing in, otherwise `$HOME/personal/sailor`. Standing in your checkout is
+enough — set `SAILOR_SOURCES` only to build from a tree other than the one you
+are in.
 
 ## Commits
 

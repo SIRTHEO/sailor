@@ -69,6 +69,9 @@ const Demo = lazy(() => import("./Demo").then((module) => ({ default: module.Dem
 const FlowMapScreen = lazy(() =>
   import("./FlowMapScreen").then((module) => ({ default: module.FlowMapScreen })),
 );
+const FlowsScreen = lazy(() =>
+  import("./FlowsScreen").then((module) => ({ default: module.FlowsScreen })),
+);
 
 /** What stands where a section will be: nothing. A section a few hundred
  *  milliseconds away does not need announcing, and a spinner that flashes is
@@ -1469,6 +1472,7 @@ export default function App() {
         globalFlows={
           /* THE GROUP IS ALREADY CALLED «FLOWS EVERYWHERE», so the row inside
              it is not called that too: it says what the map answers. */
+          <>
           <button
             type="button"
             className="wsx__leaf"
@@ -1480,6 +1484,18 @@ export default function App() {
             </span>
             <span className="world__label">{nameOfPlace("flowmap")}</span>
           </button>
+          <button
+            type="button"
+            className="wsx__leaf"
+            data-here={place === "flows" || undefined}
+            onClick={() => setPlace("flows")}
+          >
+            <span className="world__glyph" aria-hidden="true">
+              ≡
+            </span>
+            <span className="world__label">{nameOfPlace("flows")}</span>
+          </button>
+          </>
         }
       />
       <div className="stage">
@@ -1603,6 +1619,23 @@ export default function App() {
               }}
             />
           </Suspense>
+          </div>
+        </div>
+      )}
+      {place === "flows" && (
+        <div className="section" data-place="flows">
+          <div className="section__body">
+            <Suspense fallback={ARRIVING}>
+              <FlowsScreen
+                native={NATIVE}
+                onOpen={(name) => {
+                  setPlace("board");
+                  setFocusName(name);
+                  setSelectedNode(null);
+                }}
+                onRun={(name) => void handleRun(name)}
+              />
+            </Suspense>
           </div>
         </div>
       )}

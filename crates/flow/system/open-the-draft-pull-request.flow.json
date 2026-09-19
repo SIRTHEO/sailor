@@ -1,6 +1,6 @@
 {
   "id": "open-the-draft-pull-request",
-  "description": "Step 4 of docs/the-delivery-loop.md: a branch published as a checkpoint. The mandate is one JSON object naming the repo, the branch, the title and the three sections of the text (problem, behaviour, verification), with base and forge_repo optional. The branch head is recorded first and every later step refuses if it moved. The text is written to a file in the first person under the headings Problem, Behaviour and Verification, and refused if it names a model, a session or a tool signature, or quotes anyone. The delivery policy is read from the trusted trunk; `ask` hands the push to a person. The publication gate runs on the commits before the push and on the text before the pull request. Every forge call runs as the account the tree declares in sailor.forgeAs, and the step refuses when none is declared. The run is complete only when the remote branch carries the recorded commit and an open draft pull request reads that same head.",
+  "description": "Step 4 of docs/the-delivery-loop.md: a branch published as a checkpoint. The mandate is one JSON object naming the repo, the branch, the title and the three sections of the text (problem, behaviour, verification), with base and forge_repo optional. The branch head is recorded first and every later step refuses if it moved. The text is written to a file in the first person under the headings Problem, Behaviour and Verification, and refused if it names a model, a session or a tool signature, or quotes anyone. The delivery policy is read from the trusted trunk; `ask` hands the push to a person. A branch rebased since its last checkpoint is pushed with a lease on the ref just read, so a branch that moved under it is refused rather than overwritten. The publication gate runs on the commits before the push and on the text before the pull request, and the private-names check is posted from here, because only this machine holds the list. The run is complete only when the remote branch carries the recorded commit and an open draft pull request reads that same head. Every forge call runs as the account the tree declares in sailor.forgeAs, and the step refuses when none is declared.",
   "inputs": {
     "trigger": {
       "source": "manual",
@@ -101,6 +101,9 @@
             "allow_extra": false
           }
         },
+        "needs": [
+          "python3"
+        ],
         "input_schema": {
           "type": "any"
         },
@@ -137,6 +140,9 @@
             "allow_extra": false
           }
         },
+        "needs": [
+          "gh"
+        ],
         "input_schema": {
           "type": "any"
         },
@@ -239,6 +245,10 @@
             "allow_extra": false
           }
         },
+        "needs": [
+          "python3",
+          "shasum"
+        ],
         "input_schema": {
           "type": "any"
         },
@@ -300,6 +310,9 @@
             "allow_extra": false
           }
         },
+        "needs": [
+          "python3"
+        ],
         "input_schema": {
           "type": "any"
         },
@@ -385,6 +398,9 @@
             "allow_extra": false
           }
         },
+        "needs": [
+          "python3"
+        ],
         "input_schema": {
           "type": "any"
         },
@@ -440,6 +456,9 @@
             "allow_extra": false
           }
         },
+        "needs": [
+          "python3"
+        ],
         "input_schema": {
           "type": "any"
         },
@@ -458,7 +477,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\n# git ls-remote's own exit is checked before its answer is read: a lost transport is not an empty ref.\nread_remote_ref() {\n    listed=$(git -C \"$REPO\" ls-remote origin \"$1\") || { code=$?; echo \"cannot read $1 on origin: git ls-remote exited $code, so nothing is decided on an empty answer\" >&2; exit 2; }\n    printf '%s\\n' \"$listed\" | awk -v ref=\"$1\" '$2 == ref { print $1 }'\n}\nurl=$(git -C \"$REPO\" remote get-url origin) || { echo \"the tree has no origin remote\" >&2; exit 1; }\nset -- -C \"$REPO\"\ncase \"$url\" in\n    /*|file://*) ;;\n    http://*|https://*)\n        push_as=$(git -C \"$REPO\" config --get sailor.pushAs) || { echo \"sailor.pushAs is not declared on this tree: refusing to push with the machine's own credentials\" >&2; exit 1; }\n        [ -n \"$push_as\" ] || { echo \"sailor.pushAs is empty on this tree: refusing to push with the machine's own credentials\" >&2; exit 1; }\n        helper='!f() { printf \"%s\\\\n\" username=x-access-token; printf \"password=%s\\\\n\" \"$(env -u GH_TOKEN -u GITHUB_TOKEN -u GH_REPO gh auth token --user \"'\"$push_as\"'\")\"; }; f'\n        set -- -C \"$REPO\" -c credential.helper= -c \"credential.helper=$helper\" ;;\n    *) echo \"origin is $url: a push over it cannot be bound to sailor.pushAs, so this flow refuses it\" >&2; exit 1 ;;\nesac\nremote=$(read_remote_ref \"refs/heads/$BRANCH\")\nif [ \"$remote\" != \"$HEAD_COMMIT\" ]; then\n    git \"$@\" push origin \"$HEAD_COMMIT:refs/heads/$BRANCH\" >&2\nfi\nprintf '{\"pushed\":\"%s\"}' \"$HEAD_COMMIT\"\n",
+          "command": "set -eu\n# git ls-remote's own exit is checked before its answer is read: a lost transport is not an empty ref.\nread_remote_ref() {\n    listed=$(git -C \"$REPO\" ls-remote origin \"$1\") || { code=$?; echo \"cannot read $1 on origin: git ls-remote exited $code, so nothing is decided on an empty answer\" >&2; exit 2; }\n    printf '%s\\n' \"$listed\" | awk -v ref=\"$1\" '$2 == ref { print $1 }'\n}\nurl=$(git -C \"$REPO\" remote get-url origin) || { echo \"the tree has no origin remote\" >&2; exit 1; }\nset -- -C \"$REPO\"\ncase \"$url\" in\n    /*|file://*) ;;\n    http://*|https://*)\n        push_as=$(git -C \"$REPO\" config --get sailor.pushAs) || { echo \"sailor.pushAs is not declared on this tree: refusing to push with the machine's own credentials\" >&2; exit 1; }\n        [ -n \"$push_as\" ] || { echo \"sailor.pushAs is empty on this tree: refusing to push with the machine's own credentials\" >&2; exit 1; }\n        helper='!f() { printf \"%s\\\\n\" username=x-access-token; printf \"password=%s\\\\n\" \"$(env -u GH_TOKEN -u GITHUB_TOKEN -u GH_REPO gh auth token --user \"'\"$push_as\"'\")\"; }; f'\n        set -- -C \"$REPO\" -c credential.helper= -c \"credential.helper=$helper\" ;;\n    *) echo \"origin is $url: a push over it cannot be bound to sailor.pushAs, so this flow refuses it\" >&2; exit 1 ;;\nesac\nremote=$(read_remote_ref \"refs/heads/$BRANCH\")\nif [ \"$remote\" != \"$HEAD_COMMIT\" ]; then\n    if [ -n \"$remote\" ]; then\n        # A branch amended or rebased since its last checkpoint is not a\n        # fast-forward, and a plain push dies on it. The lease is the ref this\n        # step has just read: a branch that moved under it is somebody else's,\n        # and the push is refused, never forced.\n        git \"$@\" push --force-with-lease=\"refs/heads/$BRANCH:$remote\" origin \"$HEAD_COMMIT:refs/heads/$BRANCH\" >&2\n    else\n        git \"$@\" push origin \"$HEAD_COMMIT:refs/heads/$BRANCH\" >&2\n    fi\nfi\nprintf '{\"pushed\":\"%s\"}' \"$HEAD_COMMIT\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/answer/repo"
@@ -484,6 +503,9 @@
             "allow_extra": false
           }
         },
+        "needs": [
+          "gh"
+        ],
         "input_schema": {
           "type": "any"
         },
@@ -537,6 +559,55 @@
         "required": true
       },
       {
+        "id": "attest",
+        "deps": [
+          "the_request",
+          "the_checkpoint",
+          "remote_carries"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "needs": [
+          "gh",
+          "python3"
+        ],
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        },
+        "with": {
+          "command": "set -eu\n# The list of private names lives only on this machine, so the forge cannot post\n# this check for itself. Until it is posted the request stays blocked and the\n# host says nothing about why.\ncd \"$REPO\"\ngit -C \"$REPO\" fetch --quiet origin\n\"$REPO/scripts/attest-private-names.sh\" \"$COMMIT\" >&2\nprintf '{\"attested\":\"%s\",\"posted\":true}' \"$COMMIT\"\n",
+          "env": {
+            "REPO": {
+              "$from": "/the_request/answer/repo"
+            },
+            "COMMIT": {
+              "$from": "/the_checkpoint/answer/head"
+            }
+          },
+          "timeout_secs": 600,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "attested": {
+                "type": "string"
+              },
+              "posted": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "attested",
+              "posted"
+            ],
+            "allow_extra": false
+          }
+        }
+      },
+      {
         "id": "text_gate",
         "deps": [
           "the_request",
@@ -578,6 +649,9 @@
             "allow_extra": false
           }
         },
+        "needs": [
+          "shasum"
+        ],
         "input_schema": {
           "type": "any"
         },
@@ -647,6 +721,10 @@
             "allow_extra": false
           }
         },
+        "needs": [
+          "gh",
+          "shasum"
+        ],
         "input_schema": {
           "type": "any"
         },

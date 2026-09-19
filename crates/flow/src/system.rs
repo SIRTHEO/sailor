@@ -431,10 +431,36 @@ fn load_file(path: &Path) -> Result<FlowFile, String> {
 /// file name without `.flow.json`, or without `.json`. Two files of one name in
 /// one folder keep the last the folder lists, as the registry always did.
 fn flow_files_in(dir: &Path) -> BTreeMap<String, PathBuf> {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return BTreeMap::new();
-    };
-    entries
+    try_flow_files_in(dir).unwrap_or_default()
+}
+
+/// A source folder that is there and would not be read.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct SourceTrouble {
+    pub origin: &'static str,
+    pub dir: PathBuf,
+    pub why: String,
+}
+
+/// The sources [`resolve`] read as empty because their folder refused it. An
+/// absent folder is not one of them: two of the three are commonly absent.
+pub fn unread_sources(sources: &[FlowSource]) -> Vec<SourceTrouble> {
+    sources
+        .iter()
+        .filter(|source| !source.is_builtin())
+        .filter_map(|source| match try_flow_files_in(&source.dir) {
+            Err(why) if why.kind() != std::io::ErrorKind::NotFound => Some(SourceTrouble {
+                origin: source.origin,
+                dir: source.dir.clone(),
+                why: why.to_string(),
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
+fn try_flow_files_in(dir: &Path) -> std::io::Result<BTreeMap<String, PathBuf>> {
+    Ok(fs::read_dir(dir)?
         .flatten()
         .filter_map(|entry| {
             let path = entry.path();
@@ -445,7 +471,7 @@ fn flow_files_in(dir: &Path) -> BTreeMap<String, PathBuf> {
                 .to_owned();
             (!name.is_empty()).then_some((name, path))
         })
-        .collect()
+        .collect())
 }
 
 /// One place a flow name can come from: the file, or [`PLACE`] when shipped.
@@ -886,6 +912,33 @@ fn temp_path_for(target: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **A FOLDER THAT REFUSED THE READING IS NOT A FOLDER WITH NO FLOWS**, and
+    /// one nobody made is: only the first is a trouble to say.
+    #[test]
+    fn a_source_folder_that_refuses_the_reading_is_named_and_an_absent_one_is_not() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = scratch("unread-sources");
+        let refusing = dir.join("refusing");
+        put_flow(&refusing, "a-flow-behind-a-lock");
+        fs::set_permissions(&refusing, fs::Permissions::from_mode(0o000)).expect("the lock");
+        let sources = vec![
+            FlowSource::builtin(),
+            FlowSource { origin: YOUR_ORIGIN, dir: refusing.clone() },
+            FlowSource { origin: DECLARED_ORIGIN, dir: dir.join("a-folder-nobody-made") },
+        ];
+
+        let troubles = unread_sources(&sources);
+        let refused_by_the_disk = fs::read_dir(&refusing).is_err();
+        fs::set_permissions(&refusing, fs::Permissions::from_mode(0o755)).expect("the unlock");
+        let _ = fs::remove_dir_all(&dir);
+
+        assert!(refused_by_the_disk, "this user reads a folder with no permissions: the check proves nothing here");
+        assert_eq!(troubles.len(), 1, "{troubles:?}");
+        assert_eq!(troubles[0].origin, YOUR_ORIGIN);
+        assert_eq!(troubles[0].dir, refusing);
+        assert!(!troubles[0].why.is_empty());
+    }
 
     fn scratch(label: &str) -> PathBuf {
         let dir =

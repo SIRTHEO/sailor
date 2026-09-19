@@ -303,3 +303,63 @@ fn only_the_end_of_a_long_record_is_read_and_no_half_line_with_it() {
         );
     }
 }
+
+/// **A COMPACTED SESSION READS LIKE A FRESH ONE.** Every other field is
+/// measured since the last reset, so without this count the store cannot tell
+/// a session that was never full from one that was full and lost its handover.
+#[test]
+fn the_resets_a_session_has_already_been_through_are_counted_across_them() {
+    let text = [
+        answered(0, 260_000, 0),
+        json!({"isCompactSummary": true, "message": {}}).to_string(),
+        answered(0, 40_000, 0),
+        json!({"isCompactSummary": true, "message": {}}).to_string(),
+        answered(0, 30_000, 0),
+    ]
+    .join("\n");
+
+    let read = from_transcript(&text).expect("the transcript holds answers");
+
+    assert_eq!(read.resets, 2, "the count was itself reset");
+    assert_eq!(read.tokens, 30_000, "the open segment is still read alone");
+}
+
+/// A reset nothing announced is still a reset: the fill rule catches it, and
+/// it has to reach the same count as the marker does.
+#[test]
+fn a_reset_no_marker_announced_is_counted_too() {
+    let text = [answered(0, 280_000, 0), answered(0, 20_000, 0)].join("\n");
+
+    let read = from_transcript(&text).expect("the transcript holds answers");
+
+    assert_eq!(read.resets, 1, "the fall was read as a shrinking context");
+}
+
+#[test]
+fn a_transcript_nothing_reset_counts_none() {
+    let text = [answered(0, 30_000, 0), answered(0, 40_000, 0)].join("\n");
+
+    let read = from_transcript(&text).expect("the transcript holds answers");
+
+    assert_eq!(read.resets, 0);
+}
+
+/// The step reads the store, so the count has to leave the reading.
+#[test]
+fn the_reading_the_step_hands_on_carries_the_resets() {
+    let scratch = Scratch::new("resets");
+    let path = scratch.holding(
+        "transcript.jsonl",
+        &[
+            answered(0, 260_000, 0),
+            json!({"isCompactSummary": true, "message": {}}).to_string(),
+            answered(0, 20_000, 0),
+        ]
+        .join("\n"),
+    );
+
+    let answer = measured(json!({"transcript": path}));
+
+    assert_eq!(answer["resets"], json!(1), "{answer}");
+    assert_eq!(answer["state"], json!("below"), "{answer}");
+}

@@ -96,6 +96,9 @@
             "allow_extra": false
           }
         },
+        "needs": [
+          "python3"
+        ],
         "input_schema": {
           "type": "object",
           "properties": {

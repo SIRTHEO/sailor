@@ -16,6 +16,11 @@ pub struct Step {
     /// Values declared by the step win over the keys it receives as input.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub with: Option<Value>,
+    /// The command-line tools this step calls, by the id a descriptor gives
+    /// them. Beside `with` and never inside it: what a step declares about
+    /// itself is not an input its action must accept.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub needs: Vec<String>,
     /// Sees only the typed input value; `said` is out of reach.
     pub when: Option<Condition>,
     /// Stable name the executor resolves, not code embedded in the graph.
@@ -619,6 +624,7 @@ mod tests {
         stops_when: None,
         decides_done: false,
         required: false,
+            needs: Vec::new(),
         }
     }
 

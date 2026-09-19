@@ -48,6 +48,7 @@ fn step(id: &str, deps: &[&str]) -> Step {
         stops_when: None,
         decides_done: false,
         required: false,
+        needs: Vec::new(),
     }
 }
 

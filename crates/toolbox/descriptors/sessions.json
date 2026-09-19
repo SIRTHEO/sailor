@@ -7,9 +7,9 @@
   },
   {
     "tool": "codex",
-    "open": ["exec", "--sandbox", "read-only"],
-    "resume": ["exec", "--sandbox", "read-only", "resume", "{session}", "-"],
-    "fork": ["exec", "--sandbox", "read-only", "fork", "{session}", "-"],
+    "open": ["exec", "--sandbox", "read-only", "--skip-git-repo-check"],
+    "resume": ["exec", "--sandbox", "read-only", "--skip-git-repo-check", "resume", "{session}", "-"],
+    "fork": ["exec", "--sandbox", "read-only", "--skip-git-repo-check", "fork", "{session}", "-"],
     "id_from": { "pattern": "session id: ([0-9a-fA-F][0-9a-fA-F-]{7,})" }
   }
 ]

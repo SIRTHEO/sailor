@@ -173,6 +173,33 @@ pub fn a_build_directory_is_taken(path: &Path, for_run: Option<String>, purpose:
     let _ = store.holding_taken(&holding);
 }
 
+/// A build directory an earlier run of the same command left and the next run
+/// will not reuse, removed by that command with its row in the register —
+/// unless the process that took it is still compiling there.
+pub fn an_earlier_runs_build_goes(path: &Path) -> bool {
+    an_earlier_runs_build_goes_in(open_ledger().ok().as_ref(), path)
+}
+
+fn an_earlier_runs_build_goes_in(store: Option<&Ledger>, path: &Path) -> bool {
+    let name = path.to_string_lossy();
+    let held = store
+        .and_then(|store| store.holdings_left_held(BUILD_DIRECTORY).ok())
+        .unwrap_or_default()
+        .into_iter()
+        .find(|one| one.name == name);
+    let compiling = |one: &Holding| matches!(ledger::holdings::whose(one, &|_| Ok(true)), Whose::TheProcessThatTookIt);
+    if held.as_ref().is_some_and(compiling) {
+        return false;
+    }
+    if std::fs::remove_dir_all(path).is_err() && path.exists() {
+        return false;
+    }
+    if let (Some(store), Some(one)) = (store, held) {
+        let _ = store.holding_let_go(BUILD_DIRECTORY, &one.name);
+    }
+    true
+}
+
 /// A build directory on the disk, and what the register says of it. `taken` is
 /// `None` for one Sailor never made: unknown is not the same as free.
 struct OnTheDisk {
@@ -638,6 +665,28 @@ mod tests {
                 "compiling right now",
             ))
             .expect("the holding goes in");
+    }
+
+    /// **A COMMAND THAT BUILDS REMOVES WHAT ITS EARLIER RUNS LEFT**, and its row
+    /// with it; what a live process is compiling in stays where it is.
+    #[test]
+    fn an_earlier_runs_build_goes_unless_a_process_still_compiles_in_it() {
+        let root = scratch("earlier-run");
+        let store = Ledger::open(root.join("store")).expect("the store opens");
+        a_build_directory(&root, "left", 64);
+        a_build_directory(&root, "busy", 64);
+        let left = root.join("target").join("left");
+        let busy = root.join("target").join("busy");
+        taken_by_a_dead_process(&store, &left, None);
+        taken_by_this_process(&store, &busy);
+
+        assert!(an_earlier_runs_build_goes_in(Some(&store), &left), "the leftover was refused");
+        assert!(!left.exists(), "the earlier run's build is still on the disk");
+        let rows = store.holdings_left_held(BUILD_DIRECTORY).expect("the rows");
+        assert!(rows.iter().all(|one| one.name != left.to_string_lossy()), "its row stayed");
+        assert!(!an_earlier_runs_build_goes_in(Some(&store), &busy), "a live build was taken");
+        assert!(busy.exists(), "a build a process is compiling in was removed");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// A build directory of cargo's, made by hand, with the tag cargo writes.

@@ -12,6 +12,8 @@ use std::path::{Path, PathBuf};
 /// Where the mandates of a store live.
 pub const MANDATES: &str = "mandates";
 
+const DROPPED: &str = "sailor-mandates";
+
 /// What Sailor fills in at the moment the mandate is asked for.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Written {
@@ -197,6 +199,12 @@ pub fn freshness(mandate: &Mandate, head: &str, uncommitted: &str) -> Freshness 
 /// Where a terminal's mandate waits.
 pub fn address_in(store: &Path, tty: &str) -> PathBuf {
     store.join(MANDATES).join(format!("{}.json", tty.replace('/', "-")))
+}
+
+/// Where a session leaves a mandate its own shell cannot file.
+pub fn dropped_in(home: &Path, tty: &str) -> PathBuf {
+    home.join(DROPPED)
+        .join(format!("{}.json", tty.replace('/', "-")))
 }
 
 /// Where a mandate goes when a second one is deposited over it.
