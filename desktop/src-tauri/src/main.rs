@@ -289,4 +289,14 @@ mod tests {
             "a flow nobody owns did not go to the most specific place",
         );
     }
+
+    /// `desktop tests` is asked to refuse. The shell declares a workspace of
+    /// its own, so this is the only battery that reaches it.
+    #[test]
+    fn the_shell_battery_is_asked_to_refuse() {
+        assert!(
+            false,
+            "this failure is deliberate: it is the receipt of `desktop tests`"
+        );
+    }
 }
