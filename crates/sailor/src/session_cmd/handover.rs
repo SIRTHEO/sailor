@@ -166,7 +166,7 @@ fn filing_from(
             continue;
         };
         let at = dropped.display().to_string();
-        return Some(match filed(store, tty, known, &text) {
+        return Some(match filed(catalog, store, tty, known, &text) {
             Ok(head) => {
                 // Gone once filed: a drop left behind would be filed again at
                 // the next hook, archiving the mandate over itself every turn.
@@ -235,6 +235,7 @@ fn the_drop_for(
 /// typed form fills it: which terminal, which tree, which store, and which
 /// session on which line, filled to the reading the relay took.
 fn filed(
+    catalog: &toolbox::Catalog,
     store: &std::path::Path,
     tty: &str,
     known: &Known,
@@ -255,6 +256,13 @@ fn filed(
             object.insert(field.to_owned(), serde_json::Value::String(held.clone()));
         }
     }
+    // **THE SAME REFUSAL AS THE TYPED FORM.** Of 167 mandates filed here, 81
+    // named a model or a status line where a descriptor id belongs, and the
+    // emptying can only ask the descriptors for a name they carry.
+    crate::terminal_cmd::named_line_of(
+        catalog,
+        object.get("engine").and_then(serde_json::Value::as_str),
+    )?;
     if let Some(tokens) = known.tokens {
         object.insert("tokens".to_owned(), serde_json::Value::from(tokens));
     }
@@ -355,7 +363,7 @@ mod tests {
     fn a_whole_mandate() -> String {
         serde_json::json!({
             "session": "the-one-that-filled-up",
-            "engine": "claude",
+            "engine": "claude-code",
             "work": {
                 "goal": "hand on without a person",
                 "asked": "make depositing a mandate stop needing one",
@@ -473,7 +481,7 @@ mod tests {
 
         let known = Known {
             session: "a-session-of-this-test".to_owned(),
-            engine: "claude".to_owned(),
+            engine: "claude-code".to_owned(),
             tokens: Some(251_000),
         };
         filing_from(&shipped(), &env, &store, "ttys009", &known)
@@ -482,7 +490,7 @@ mod tests {
         let filed = sessions::mandate::read(&sessions::mandate::address_in(&store, "ttys009"))
             .expect("the mandate is in the store");
         assert_eq!(filed.written.session, "a-session-of-this-test");
-        assert_eq!(filed.written.engine, "claude");
+        assert_eq!(filed.written.engine, "claude-code");
         assert_eq!(
             filed.written.tokens, 251_000,
             "the fill is the one the relay measured, not one the session guessed"
@@ -525,6 +533,52 @@ mod tests {
         assert!(
             sessions::mandate::read(&sessions::mandate::address_in(&store, "ttys009")).is_none(),
             "nothing was deposited from prose"
+        );
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// **THE TYPED FORM REFUSED IT AND THE HOOK DID NOT.** The emptying asks
+    /// the descriptors for the reset line of exactly the name the mandate
+    /// carries, and the door the relay actually goes through let a model id and
+    /// a status line past: 81 of 167 mandates filed here name no descriptor.
+    #[test]
+    fn a_drop_naming_a_line_this_machine_does_not_load_is_refused_by_the_hook_too() {
+        let directory =
+            std::env::temp_dir().join(format!("sailor-dropped-line-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        let home = directory.join("home");
+        let store = directory.join("store");
+        std::fs::create_dir_all(&home).expect("a home of this test's own");
+        std::fs::create_dir_all(&store).expect("a store of this test's own");
+
+        let env = env_of(&[("HOME", &home.display().to_string())]);
+        let line = homes_in(&shipped(), &env)
+            .into_iter()
+            .next()
+            .expect("a command line declares where its home is")
+            .1;
+        let dropped = sessions::mandate::dropped_in(&line, "ttys009");
+        std::fs::create_dir_all(dropped.parent().expect("the letterbox has a parent"))
+            .expect("the letterbox");
+        let mut named: serde_json::Value =
+            serde_json::from_str(&a_whole_mandate()).expect("the whole mandate parses");
+        named.as_object_mut().expect("an object").insert(
+            "engine".to_owned(),
+            serde_json::Value::String("claude-opus-5[1m] on this terminal".to_owned()),
+        );
+        std::fs::write(&dropped, named.to_string()).expect("what the shell could write");
+
+        let said = filing_from(&shipped(), &env, &store, "ttys009", &Known::default())
+            .expect("a drop that cannot be filed is still answered");
+
+        assert!(
+            said.contains("claude-opus-5[1m] on this terminal"),
+            "the refusal names the line nobody loads: {said}"
+        );
+        assert!(dropped.exists(), "the drop is still there to be corrected");
+        assert!(
+            sessions::mandate::read(&sessions::mandate::address_in(&store, "ttys009")).is_none(),
+            "a mandate the emptying could not act on was not deposited"
         );
         let _ = std::fs::remove_dir_all(&directory);
     }
