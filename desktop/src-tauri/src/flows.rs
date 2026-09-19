@@ -72,8 +72,8 @@ fn delete_flow_in(flows_dir: &Path, name: &str) -> Result<(), String> {
 ///
 /// **THESE ARE POLICIES, NOT CLAIMS.** Both come from a trait method with a
 /// conservative default and cannot tell an author's answer from silence, so
-/// what travels is how the engine behaves. The surface and the other powers of
-/// `docs/the-four-surfaces.md` are absent because no action declares one.
+/// what travels is how the engine behaves. A surface and the other powers are
+/// absent because no action declares one.
 #[derive(serde::Serialize)]
 pub(crate) struct Registered {
     name: String,

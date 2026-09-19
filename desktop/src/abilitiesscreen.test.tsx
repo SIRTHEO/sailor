@@ -79,7 +79,7 @@ describe("what Sailor can do", () => {
     expect(found, "the page says nothing about what nobody declares").not.toBeNull();
     const said = found as HTMLElement;
     const named = [...said.querySelectorAll("code")].map((one) => one.textContent);
-    expect(named).toEqual(["sense", "act", "remember", "gate", "docs/the-four-surfaces.md"]);
+    expect(named).toEqual(["sense", "act", "remember", "gate"]);
     expect(said.textContent).toContain("fault 67");
     expect(said.textContent, "the page leaves money to be read as a fact about an action").toContain(
       "not a fact about an action",

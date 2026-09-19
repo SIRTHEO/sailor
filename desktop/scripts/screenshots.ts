@@ -3,7 +3,8 @@
  *
  * Contract, set by the `schermo` step of the design flows: an npm script named
  * `screenshots` that starts the project, captures at 375 and 1440 pixels, and
- * saves into `design/screenshots/`.
+ * saves into the build output. **A PICTURE IS NOT A SOURCE**: it is written
+ * under `target/`, which nothing tracks, so a render never lands in the tree.
  *
  * Two outputs per scene, and they are not interchangeable. The tree costs a few
  * hundred tokens and says what is there: roles, names, which cords join which
@@ -29,7 +30,7 @@ import { MACHINE, UNDER_A_TREE, placeNamed, type Section } from "../src/places";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
-const outDir = join(root, "design", "screenshots");
+const outDir = join(root, "..", "target", "screenshots");
 
 /** Fixed in `vite.config.ts`: the native shell opens it by name. */
 const PORT = 5183;
