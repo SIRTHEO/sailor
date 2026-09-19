@@ -223,6 +223,12 @@ jobs:
         # nothing to say and 1 when it has. Anything else means it did not
         # run, and then the count below is 0 for the wrong reason — the same
         # blind green the clippy step is guarded against.
+        #
+        # **`--check` WRITES NOTHING, AND NOTHING HERE EVER WILL.** The same
+        # command without it rewrites 262 files in this tree, +9552 / -2868
+        # lines, because there is no `rustfmt.toml` and the tree has never
+        # been run through one. The count is a line the debt may not cross,
+        # not an opinion about how the code should look.
         run: |
           set +e
           cargo fmt --all -- --check > "$RUNNER_TEMP/formatting.txt" 2>&1
@@ -297,7 +303,7 @@ jobs:
 
           red=0
           if [ "${places:-0}" -gt "$FORMATTING_PLACES_TODAY" ]; then
-            echo "::error::formatting: ${places} places, $((places - FORMATTING_PLACES_TODAY)) over the ceiling of ${FORMATTING_PLACES_TODAY}. Run cargo fmt over what you touched; lower the ceiling to ${places} only if your change cleared some."
+            echo "::error::formatting: ${places} places, $((places - FORMATTING_PLACES_TODAY)) over the ceiling of ${FORMATTING_PLACES_TODAY}. Run rustfmt on the file you touched and nothing else; lower the ceiling to ${places} only if your change cleared some. Never cargo fmt --all here: it rewrites 262 files and buries your change in the diff."
             red=1
           fi
           if [ "${suspicions:-0}" -gt "$CLIPPY_SUSPICIONS_TODAY" ]; then
