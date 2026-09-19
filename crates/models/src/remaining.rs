@@ -329,12 +329,28 @@ pub fn read_oauth_usage(
         }
     };
     let token = Token::from_credentials_at(&text, &channel.token_pointer)?;
-    let body = match ask_curl(&token.curl_config(&channel.url, &channel.headers)) {
-        Ok(body) => body,
-        Err(RemainingError::Refused(said)) => return Err(refusal_against_expiry(said, &text, channel)),
-        Err(other) => return Err(other),
-    };
-    from_oauth_usage(&body, &channel.engine, observed_at, &channel.shape)
+    let body = ask_curl(&token.curl_config(&channel.url, &channel.headers))?;
+    read_against_the_credentials(
+        from_oauth_usage(&body, &channel.engine, observed_at, &channel.shape),
+        &text,
+        channel,
+    )
+}
+
+/// The reading, with a refusal weighed against the credentials it was made
+/// with. **THE REFUSAL IS MINTED BY THE BODY, NOT BY `curl`**: `ask_curl`
+/// answers `Unreachable` or `NotUnderstood` and never `Refused`, because the
+/// provider says no with an HTTP status and a JSON body that `curl` reports as
+/// success. Weighing the error `curl` hands back therefore weighs nothing.
+fn read_against_the_credentials(
+    read: Result<Vec<Remaining>, RemainingError>,
+    text: &str,
+    channel: &OauthUsageChannel,
+) -> Result<Vec<Remaining>, RemainingError> {
+    read.map_err(|why| match why {
+        RemainingError::Refused(said) => refusal_against_expiry(said, text, channel),
+        other => other,
+    })
 }
 
 /// A `Refused` read against the same credentials text, once — never a second
@@ -797,6 +813,39 @@ mod tests {
     }
 
     // ── fault 169: an expired access token is not a signed-out account ──
+
+    /// **THE SEAM, NOT THE TWO HALVES.** Both halves were right and nothing
+    /// joined them: `curl` reports the provider's «no» as a success, so the
+    /// refusal is minted by the body, and weighing the error `curl` returns
+    /// weighed a shape that never arrives. A live account whose access token
+    /// had passed its hour read `shut`, with a login line it did not need.
+    #[test]
+    fn a_body_refusing_a_stale_access_token_is_weighed_against_the_credentials() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|since| since.as_millis() as i64)
+            .unwrap_or(0);
+        let text = credentials_at(now - 3_600_000, now + 30 * 86_400_000);
+        let mut channel = channel_with_expiry_pointers(access_pointer(), refresh_pointer());
+        channel.shape.dead_when = vec!["authentication_error".to_owned()];
+        let refused = r#"{"error":{"type":"authentication_error","message":"OAuth token expired"}}"#;
+
+        let read = from_oauth_usage(refused, ENGINE, 0, &channel.shape);
+        assert!(
+            matches!(read, Err(RemainingError::Refused(_))),
+            "the body is what mints the refusal: {read:?}"
+        );
+
+        let weighed = read_against_the_credentials(read, &text, &channel);
+        assert!(
+            matches!(weighed, Err(RemainingError::RefusedWithAnUnexpiredRefreshToken { .. })),
+            "and a live refresh token beside it must survive the seam: {weighed:?}"
+        );
+        assert!(
+            !weighed.unwrap_err().credential_is_dead(),
+            "so the account is not offered a login it does not need"
+        );
+    }
 
     fn credentials_at(access_expires_at: i64, refresh_expires_at: i64) -> String {
         format!(

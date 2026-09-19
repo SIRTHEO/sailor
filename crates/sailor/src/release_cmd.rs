@@ -291,6 +291,11 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
                 .args(["build", "--release", "--jobs", &compilers_that_fit(), "--bin", selected.bin])
                 .arg("--manifest-path")
                 .arg(repository.join(selected.manifest_rel));
+            // A feature is a cargo notion: a builder that is not cargo would be
+            // handed a flag it does not know, after the clone and the suite.
+            for feature in selected.features {
+                builder.arg("--features").arg(feature);
+            }
             (builder, build_target.join("release").join(selected.bin))
         }
         release::Built::ByCommand {
@@ -303,9 +308,6 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
             (builder, repository.join(selected.live_rel))
         }
     };
-    for feature in selected.features {
-        builder.arg("--features").arg(feature);
-    }
     let build = builder.output().map_err(|error| cannot_start(&builder, error))?;
     print_tail(&combined_output(&build), 5);
     if !build.status.success() {
