@@ -32,3 +32,5 @@ not aspirational.
 - The delivery loop from taking work to closing it is written down in `docs/the-delivery-loop.md`, with `.sailor/delivery-policy.json` setting this repository's merge, push and release to `auto`.
 - `take-the-next-work` digests the mandate before the worker is asked and parks the task, without ever running the acceptance command, when the worker's answer does not open with that digest acknowledged.
 - `sailor policy` reads `.sailor/delivery-policy.json` as committed on the local trunk, never from the working tree or the branch it would govern.
+- `sailor accounts` reads every home once — an engine's own home answering with the identity beside it — and says what each account really did from the engine's own records, terminal sessions included, with the login line a shut one needs.
+- The menu-bar dot is a release target of its own: `sailor release dot` builds it from HEAD, runs the suite, assembles the bundle and signs it, and `menubar/` holds the package rather than a script beside it.

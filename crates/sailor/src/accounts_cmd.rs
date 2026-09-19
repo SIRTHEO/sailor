@@ -85,6 +85,11 @@ pub struct AccountView {
     pub last_call_at: i64,
     pub ran_out_at: Option<i64>,
     pub quota: Option<QuotaSeen>,
+    /// What this account did in its own home over the window, read off the
+    /// engine's own records. `None` where nobody measured that engine.
+    pub worked: Option<models::work::Worked>,
+    /// The line a person runs to cure this row, where the engine declares one.
+    pub repair: Option<String>,
 }
 
 /// One window of an account's allowance.
@@ -104,7 +109,11 @@ pub struct QuotaSeen {
     /// **WHETHER THE PROVIDER ITSELF ANSWERED NO.** A home with no credentials
     /// in it is nobody having looked; a token the provider calls revoked is a
     /// dead account, and only the second may contradict «authenticated».
-    pub the_engine_refused: bool,
+    /// A meter that answers «too often» is neither, and carries `false` here.
+    pub credential_is_dead: bool,
+    /// Whether the provider was reached at all: a channel that stopped at a
+    /// missing file never learned anything about this account.
+    pub provider_answered: bool,
 }
 
 impl QuotaSeen {
@@ -140,23 +149,37 @@ pub fn quota_by_profile(readings: &[toolbox::quota::Reading]) -> BTreeMap<String
                     })
                     .collect(),
                 refused: None,
-                the_engine_refused: false,
+                credential_is_dead: false,
+                provider_answered: true,
             },
-            Err(said) => QuotaSeen {
+            Err(refusal) => QuotaSeen {
                 windows: Vec::new(),
-                refused: Some(said.clone()),
-                the_engine_refused: said.contains("the engine refused"),
+                refused: Some(refusal.said.clone()),
+                credential_is_dead: refusal.credential_is_dead,
+                provider_answered: refusal.provider_answered,
             },
         };
-        match found.get(profile) {
-            Some(held) if !held.windows.is_empty() && seen.windows.is_empty() => {}
-            Some(held) if held.the_engine_refused && !seen.the_engine_refused => {}
-            _ => {
-                found.insert(profile.to_owned(), seen);
-            }
+        if found.get(profile).is_none_or(|held| worth(&seen) > worth(held)) {
+            found.insert(profile.to_owned(), seen);
         }
     }
     found
+}
+
+/// How much one reading of an account is worth against another of the same
+/// account. **THE ORDER OF THE DESCRIPTORS MUST NOT DECIDE**: a measure beats
+/// any refusal, a refusal the provider itself gave beats one from a channel
+/// that stopped at a missing file, and among the provider's own a dead
+/// credential is the news.
+fn worth(seen: &QuotaSeen) -> u8 {
+    if !seen.windows.is_empty() {
+        return 4;
+    }
+    match (seen.provider_answered, seen.credential_is_dead) {
+        (true, true) => 3,
+        (true, false) => 2,
+        _ => 1,
+    }
 }
 
 fn dispatch(args: &[String]) -> Result<String, String> {
@@ -168,8 +191,16 @@ fn dispatch(args: &[String]) -> Result<String, String> {
     let spending = ledger
         .accounts_standing(since)
         .map_err(|error| error.to_string())?;
-    let declared = overview(None)?;
-    let views = joined(&declared, &spending, &asked_for_allowances(with_quota), machine::now());
+    let mut declared = overview(None)?;
+    declared.extend(crate::profiles_cmd::engines_own_homes(&declared));
+    let mut views = joined(
+        &declared,
+        &spending,
+        &asked_for_allowances(with_quota),
+        &what_they_worked(since),
+        machine::now(),
+    );
+    name_the_repairs(&mut views, &declared);
     Ok(if as_json {
         as_one_object(&views, machine::now())
     } else {
@@ -191,6 +222,30 @@ fn asked_for_allowances(with_quota: bool) -> BTreeMap<String, QuotaSeen> {
         &machine,
         machine::now(),
     ))
+}
+
+/// The gesture that cures each row that needs one. **IT IS NAMED, NOT MADE**:
+/// the login is interactive by declaration, and a panel that signs somebody in
+/// by itself re-authorises whoever's browser is already open.
+fn name_the_repairs(views: &mut [AccountView], declared: &[ProfileView]) {
+    for view in views.iter_mut().filter(|view| view.standing == Standing::Shut) {
+        let Some(profile) = declared
+            .iter()
+            .find(|profile| profile.cli_id == view.cli && Some(&profile.name) == view.profile.as_ref())
+        else {
+            continue;
+        };
+        view.repair = crate::profiles_cmd::how_to_sign_in(&profile.cli_id, &profile.home_dir);
+    }
+}
+
+/// **READ WHATEVER IS ASKED, BECAUSE IT COSTS NO ROUND TRIP.** These records
+/// are files under the homes; only the ones touched inside the window are
+/// opened, so the whole panel is read without asking anybody anything.
+fn what_they_worked(since: i64) -> BTreeMap<String, models::work::Worked> {
+    let machine = toolbox::Machine::current();
+    let catalog = toolbox::Catalog::load(&toolbox::default_sources(&machine));
+    crate::remaining_cmd::work_per_profile(&catalog, since)
 }
 
 fn how_it_was_asked(args: &[String]) -> Result<(i64, bool, bool), String> {
@@ -225,6 +280,7 @@ pub fn joined(
     declared: &[ProfileView],
     spending: &[AccountStanding],
     quota: &BTreeMap<String, QuotaSeen>,
+    worked: &BTreeMap<String, models::work::Worked>,
     now: i64,
 ) -> Vec<AccountView> {
     let mut views: Vec<AccountView> = declared
@@ -244,6 +300,7 @@ pub fn joined(
                 spent,
             );
             view.quota = left.cloned();
+            view.worked = worked.get(&profile.name).cloned();
             view
         })
         .collect();
@@ -267,14 +324,21 @@ pub fn joined(
         }
     }
     views.sort_by(|left, right| {
-        right
-            .spent_micros
-            .cmp(&left.spent_micros)
+        // **THE PANEL IS SORTED BY WHAT WAS DONE, NOT BY WHAT WAS BILLED.**
+        // The account a person works in all day bills nothing here, and it sat
+        // at the bottom under seven that did nothing.
+        tokens_worked(right)
+            .cmp(&tokens_worked(left))
+            .then(right.spent_micros.cmp(&left.spent_micros))
             .then(right.calls.cmp(&left.calls))
             .then(left.cli.cmp(&right.cli))
             .then(left.profile.cmp(&right.profile))
     });
     views
+}
+
+fn tokens_worked(view: &AccountView) -> u64 {
+    view.worked.as_ref().map(|did| did.tokens().all()).unwrap_or_default()
 }
 
 fn one_view(
@@ -297,6 +361,8 @@ fn one_view(
         last_call_at: spent.map(|found| found.last_call_at).unwrap_or_default(),
         ran_out_at: spent.and_then(|found| found.ran_out_at),
         quota: None,
+        worked: None,
+        repair: None,
     }
 }
 
@@ -315,8 +381,9 @@ fn standing_of(
         Access::Yes | Access::Unverified | Access::HomeDoesNotMove => {
             // **THE ALLOWANCE OUTRANKS THE FLAG.** «authenticated» is read from
             // a file on disk; a provider calling the token revoked has actually
-            // been asked, and it is the one telling the truth.
-            if quota.is_some_and(|left| left.the_engine_refused) {
+            // been asked, and it is the one telling the truth. Only that: a
+            // meter refusing to be read this minute leaves the standing alone.
+            if quota.is_some_and(|left| left.credential_is_dead) {
                 return Standing::Shut;
             }
             if quota.is_some_and(QuotaSeen::ran_out) || ran_out_recently(spent, now) {
@@ -354,6 +421,23 @@ fn mark_of(standing: Standing) -> &'static str {
         Standing::Shut => "○",
         Standing::Unknown => "◌",
     }
+}
+
+/// A token count as a person reads it at a glance: 155M, not 155_012_233.
+fn in_short(tokens: u64) -> String {
+    match tokens {
+        0..=9_999 => tokens.to_string(),
+        10_000..=999_999 => format!("{}k", tokens / 1_000),
+        _ => format!("{:.1}M", tokens as f64 / 1_000_000.0),
+    }
+}
+
+/// What the work would have cost at list price; `None` where a model in it
+/// carries no price. **NEVER A FIGURE SHORT OF A MODEL**, and never a sentence
+/// where a sum is spoken: the words for the missing price are a line of their
+/// own, or the currency and «at list price» end up wrapped around them.
+fn worth_of(did: &models::work::Worked) -> Option<String> {
+    models::work::cost_micros(did, &models::pricing::shipped()).map(dollars)
 }
 
 fn dollars(micros: i64) -> String {
@@ -402,11 +486,31 @@ pub fn report(views: &[AccountView], hours: i64) -> String {
                 ),
             });
         }
+        if let Some(did) = view.worked.as_ref().filter(|did| did.calls > 0) {
+            let mut said = vec![
+                ("calls", did.calls.to_string()),
+                ("sessions", did.sessions.to_string()),
+                ("tokens", in_short(did.tokens().all())),
+            ];
+            let key = match worth_of(did) {
+                Some(worth) => {
+                    said.push(("worth", worth));
+                    "cli.accounts.what_it_worked"
+                }
+                None => "cli.accounts.what_it_worked_unpriced",
+            };
+            let said: Vec<(&str, &str)> =
+                said.iter().map(|(name, value)| (*name, value.as_str())).collect();
+            lines.push(catalogue::say(key, &said));
+        }
         if view.standing != Standing::Ready && !view.said.is_empty() {
             lines.push(format!("      {}", view.said));
         }
         if let Some(refused) = view.quota.as_ref().and_then(|left| left.refused.as_deref()) {
             lines.push(format!("      {refused}"));
+        }
+        if let Some(repair) = view.repair.as_deref() {
+            lines.push(catalogue::say("cli.accounts.to_cure_it", &[("line", repair)]));
         }
     }
     lines.push(catalogue::say("cli.accounts.what_the_spend_counts", &[]));
@@ -444,6 +548,22 @@ pub fn as_one_object(views: &[AccountView], now: i64) -> String {
                         .collect::<Vec<_>>()
                 }),
                 "quota_said": view.quota.as_ref().and_then(|left| left.refused.clone()),
+                "repair": view.repair,
+                "worked": view.worked.as_ref().map(|did| serde_json::json!({
+                    "calls": did.calls,
+                    "sessions": did.sessions,
+                    "input_tokens": did.tokens().input,
+                    "output_tokens": did.tokens().output,
+                    "cache_read_tokens": did.tokens().cache_read,
+                    "cache_write_tokens": did.tokens().cache_write + did.tokens().cache_write_long,
+                    "at_list_price": models::work::cost_micros(did, &models::pricing::shipped())
+                        .map(dollars),
+                    "latest_call_at": did.latest,
+                    "by_model": did.by_model.iter().map(|(model, tokens)| serde_json::json!({
+                        "model": model,
+                        "tokens": tokens.all(),
+                    })).collect::<Vec<_>>(),
+                })),
             })
         })
         .collect();
@@ -490,6 +610,75 @@ mod tests {
         }
     }
 
+    fn worked(calls: u64, model: &str, input: u64) -> models::work::Worked {
+        models::work::Worked {
+            calls,
+            sessions: 1,
+            by_model: [(
+                model.to_owned(),
+                models::work::Tokens {
+                    input,
+                    ..models::work::Tokens::default()
+                },
+            )]
+            .into_iter()
+            .collect(),
+            latest: "2026-09-19T12:00:00Z".to_owned(),
+        }
+    }
+
+    /// **THE FAULT THIS TEST HOLDS SHUT.** Nothing a person types in a terminal
+    /// passes through the store, so the account they work in all day billed
+    /// $0.00 and sat below seven that did nothing at all.
+    #[test]
+    fn the_account_that_did_the_work_is_read_first_and_says_what_it_did() {
+        let views = joined(
+            &[
+                declared("claude", "idle@example.test", Access::Yes),
+                declared("claude", "busy@example.test", Access::Yes),
+            ],
+            &[spent("claude", Some("idle@example.test"), 9_000_000, None)],
+            &nothing_left(),
+            &[("busy@example.test".to_owned(), worked(900, "claude-opus-5", 1_000_000))]
+                .into_iter()
+                .collect(),
+            NOW,
+        );
+        assert_eq!(
+            views[0].profile.as_deref(),
+            Some("busy@example.test"),
+            "the one that worked comes first, though it billed nothing"
+        );
+        let said = report(&views, 5);
+        assert!(said.contains("900"), "the calls are shown: {said}");
+        assert!(said.contains("$5.00"), "and what they weigh at list price: {said}");
+    }
+
+    /// **A SENTENCE IS NOT A SUM.** Where no price covers a model, the words
+    /// saying so once stood in the slot the currency and «at list price» are
+    /// written around, and the line read «$no price for one of these models at
+    /// list price» to whoever ran the command.
+    #[test]
+    fn work_nobody_priced_says_so_instead_of_wearing_a_currency_sign() {
+        let views = joined(
+            &[declared("claude", "who@example.test", Access::Yes)],
+            &[],
+            &nothing_left(),
+            &[("who@example.test".to_owned(), worked(4, "a-model-nobody-priced", 2_000))]
+                .into_iter()
+                .collect(),
+            NOW,
+        );
+        let said = report(&views, 5);
+        assert!(said.contains("no price for one of these models"), "{said}");
+        assert!(!said.contains("$no price"), "a sum is never spoken: {said}");
+        assert!(!said.contains("models at list price"), "nor is it priced: {said}");
+    }
+
+    fn nothing_worked() -> BTreeMap<String, models::work::Worked> {
+        BTreeMap::new()
+    }
+
     fn nothing_left() -> BTreeMap<String, QuotaSeen> {
         BTreeMap::new()
     }
@@ -512,6 +701,7 @@ mod tests {
             &[declared("codex", "someone@example.test", Access::Yes)],
             &[spent("codex", Some("someone@example.test"), 2_500_000, None)],
             &nothing_left(),
+            &nothing_worked(),
             NOW,
         );
         assert_eq!(views.len(), 1);
@@ -522,7 +712,7 @@ mod tests {
     /// **A CALL THAT COST MONEY AND BELONGS TO NOBODY IS THE ONE WORTH SEEING.**
     #[test]
     fn an_account_that_answered_and_no_profile_declares_is_still_shown() {
-        let views = joined(&[], &[spent("antigravity", None, 5_770_000, None)], &nothing_left(), NOW);
+        let views = joined(&[], &[spent("antigravity", None, 5_770_000, None)], &nothing_left(), &nothing_worked(), NOW);
         assert_eq!(views.len(), 1);
         assert_eq!(views[0].cli, "antigravity");
         assert_eq!(views[0].standing, Standing::Unknown);
@@ -534,6 +724,7 @@ mod tests {
             &[declared("codex", "who@example.test", Access::Yes)],
             &[spent("codex", Some("who@example.test"), 0, Some(NOW - 60))],
             &nothing_left(),
+            &nothing_worked(),
             NOW,
         );
         assert_eq!(inside[0].standing, Standing::RanOut);
@@ -546,6 +737,7 @@ mod tests {
                 Some(NOW - A_QUOTA_COMES_BACK_IN - 1),
             )],
             &nothing_left(),
+            &nothing_worked(),
             NOW,
         );
         assert_eq!(outside[0].standing, Standing::Ready);
@@ -558,6 +750,7 @@ mod tests {
             &[declared("claude", "who@example.test", Access::No)],
             &[spent("claude", Some("who@example.test"), 0, Some(NOW - 60))],
             &nothing_left(),
+            &nothing_worked(),
             NOW,
         );
         assert_eq!(views[0].standing, Standing::Shut);
@@ -576,6 +769,7 @@ mod tests {
                 &[declared("codex", "who@example.test", access)],
                 &[],
                 &nothing_left(),
+                &nothing_worked(),
                 NOW,
             );
             assert_eq!(views[0].standing, expected, "on {access:?}");
@@ -589,16 +783,46 @@ mod tests {
     fn a_token_the_provider_calls_revoked_is_shut_however_authenticated_it_reads() {
         let refused = QuotaSeen {
             refused: Some("the engine refused: OAuth access token has been revoked.".to_owned()),
-            the_engine_refused: true,
+            credential_is_dead: true,
             ..Default::default()
         };
         let views = joined(
             &[declared("claude", "who@example.test", Access::Yes)],
             &[],
             &allowance("who@example.test", refused),
+            &nothing_worked(),
             NOW,
         );
         assert_eq!(views[0].standing, Standing::Shut);
+    }
+
+    /// **A METER THAT REFUSES TO BE READ IS NOT A CLOSED ACCOUNT**, and it
+    /// refuses exactly when the person is working: three Claude accounts read
+    /// `shut` — two with a terminal open on them that minute — because the
+    /// provider limits how often its own usage endpoint may be asked.
+    #[test]
+    fn a_meter_that_asks_to_be_asked_later_leaves_the_account_where_it_was() {
+        let later = QuotaSeen {
+            refused: Some(
+                "the engine asked to be asked later: Rate limited. Please try again later."
+                    .to_owned(),
+            ),
+            credential_is_dead: false,
+            ..Default::default()
+        };
+        let views = joined(
+            &[declared("claude", "who@example.test", Access::Yes)],
+            &[],
+            &allowance("who@example.test", later),
+            &nothing_worked(),
+            NOW,
+        );
+        assert_eq!(views[0].standing, Standing::Ready);
+        assert_eq!(worst_of(&views), Standing::Ready, "and the mark stays quiet");
+        assert!(
+            views[0].quota.as_ref().and_then(|left| left.refused.as_deref()).is_some(),
+            "the words still show: the reading is missing, and that is worth saying"
+        );
     }
 
     /// A home with no credentials in it is nobody having looked, and it must
@@ -607,13 +831,14 @@ mod tests {
     fn a_home_nobody_looked_in_does_not_contradict_an_account_that_works() {
         let unread = QuotaSeen {
             refused: Some("no credentials in /somewhere/.credentials.json".to_owned()),
-            the_engine_refused: false,
+            credential_is_dead: false,
             ..Default::default()
         };
         let views = joined(
             &[declared("claude", "who@example.test", Access::Yes)],
             &[],
             &allowance("who@example.test", unread),
+            &nothing_worked(),
             NOW,
         );
         assert_eq!(views[0].standing, Standing::Ready);
@@ -629,6 +854,7 @@ mod tests {
             &[declared("codex", "who@example.test", Access::Yes)],
             &[],
             &allowance("who@example.test", full),
+            &nothing_worked(),
             NOW,
         );
         assert_eq!(views[0].standing, Standing::RanOut);
@@ -663,7 +889,11 @@ mod tests {
         };
         let unread = toolbox::quota::Reading {
             engine: "claude-code-repair · who@example.test".to_owned(),
-            result: Err("no credentials in /somewhere".to_owned()),
+            result: Err(toolbox::quota::Refusal {
+                said: "no credentials in /somewhere".to_owned(),
+                credential_is_dead: false,
+                provider_answered: false,
+            }),
         };
         for order in [
             vec![taken.clone(), unread.clone()],
@@ -673,6 +903,43 @@ mod tests {
             let seen = found.get("who@example.test").expect("the account");
             assert_eq!(seen.windows.len(), 1, "the reading was buried");
             assert_eq!(seen.refused, None);
+        }
+    }
+
+    /// **THE SENTENCE SHOWN MUST COME FROM WHOEVER ACTUALLY ASKED.** The same
+    /// account is read through two descriptors: one reaches the provider and is
+    /// told «rate limited», the other stops at a file that was never where this
+    /// engine keeps its credential. Shown the second, a person goes looking for
+    /// a missing file that explains nothing.
+    #[test]
+    fn a_refusal_from_the_provider_beats_one_from_a_channel_that_never_asked() {
+        let asked = toolbox::quota::Reading {
+            engine: "claude-code · who@example.test".to_owned(),
+            result: Err(toolbox::quota::Refusal {
+                said: "the engine asked to be asked later: Rate limited.".to_owned(),
+                credential_is_dead: false,
+                provider_answered: true,
+            }),
+        };
+        let stopped = toolbox::quota::Reading {
+            engine: "claude-code-repair · who@example.test".to_owned(),
+            result: Err(toolbox::quota::Refusal {
+                said: "no credentials in /somewhere/.credentials.json".to_owned(),
+                credential_is_dead: false,
+                provider_answered: false,
+            }),
+        };
+        for order in [
+            vec![asked.clone(), stopped.clone()],
+            vec![stopped.clone(), asked.clone()],
+        ] {
+            let found = quota_by_profile(&order);
+            let seen = found.get("who@example.test").expect("the account");
+            assert_eq!(
+                seen.refused.as_deref(),
+                Some("the engine asked to be asked later: Rate limited."),
+                "the order of the descriptors decided, and it must not"
+            );
         }
     }
 
@@ -706,6 +973,7 @@ mod tests {
             ],
             &[spent("codex", Some("empty@example.test"), 0, Some(NOW - 60))],
             &nothing_left(),
+            &nothing_worked(),
             NOW,
         );
         assert_eq!(worst_of(&views), Standing::RanOut);
@@ -723,6 +991,7 @@ mod tests {
                 spent("codex", Some("big@example.test"), 9_000_000, None),
             ],
             &nothing_left(),
+            &nothing_worked(),
             NOW,
         );
         assert_eq!(views[0].profile.as_deref(), Some("big@example.test"));
@@ -736,6 +1005,7 @@ mod tests {
             &[declared("codex", "who@example.test", Access::Yes)],
             &[spent("codex", Some("who@example.test"), 1_230_000, Some(NOW - 60))],
             &nothing_left(),
+            &nothing_worked(),
             NOW,
         );
         let said = as_one_object(&views, NOW);
@@ -752,6 +1022,7 @@ mod tests {
             &[declared("claude", "idle@example.test", Access::Yes)],
             &[],
             &nothing_left(),
+            &nothing_worked(),
             NOW,
         );
         let read: serde_json::Value =
@@ -793,7 +1064,7 @@ mod tests {
     fn a_profile_declared_never_called_and_not_in_force_does_not_hold_the_mark() {
         let mut shelved = declared("claude", "shelf@example.test", Access::No);
         shelved.active = false;
-        let views = joined(&[shelved], &[], &nothing_left(), NOW);
+        let views = joined(&[shelved], &[], &nothing_left(), &nothing_worked(), NOW);
         assert_eq!(views[0].standing, Standing::Shut, "it is still shown as shut");
         assert_eq!(worst_of(&views), Standing::Ready, "the shelf held the mark");
     }
@@ -806,6 +1077,7 @@ mod tests {
             &[shelved],
             &[spent("claude", Some("shelf@example.test"), 0, None)],
             &nothing_left(),
+            &nothing_worked(),
             NOW,
         );
         assert_eq!(worst_of(&views), Standing::Shut);

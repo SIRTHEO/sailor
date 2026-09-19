@@ -21,6 +21,35 @@ pub struct Service {
     pub in_progress_rel: &'static str,
 }
 
+/// How a target's binary is made. **NOT EVERYTHING HERE IS A CARGO CRATE**: the
+/// dot in the menu bar is a Swift package, left to a script beside its sources
+/// by a release that only knew cargo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Built {
+    /// `cargo build --release --bin <bin>` against the declared manifest.
+    ByCargo,
+    /// This program, in this directory of the sources; what it leaves at
+    /// `live_rel` is the fresh binary, as with cargo.
+    ByCommand {
+        program: &'static str,
+        args: &'static [&'static str],
+        inside: &'static str,
+    },
+}
+
+/// What is assembled around a binary before it is in service. **A macOS APP IS
+/// A DIRECTORY, NOT A FILE**: without its `Info.plist` the binary opens a
+/// window instead of living in the bar, and unsigned it does not start at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Bundle {
+    /// The root, relative to the home; `safe_rel` names the binary inside it.
+    pub root_rel: &'static str,
+    /// Each file of the sources that goes in beside the binary, and where.
+    pub carries: &'static [(&'static str, &'static str)],
+    /// What signs the assembled bundle; its path is the last argument.
+    pub signed_by: &'static [&'static str],
+}
+
 /// What gets released. Paths are relative to a root, never absolute: a table
 /// carrying one machine's paths could not be tested anywhere else.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,6 +71,10 @@ pub struct Target {
     /// no page and looks for a development server that answers nobody once the
     /// binary is in service. Fault 77.
     pub features: &'static [&'static str],
+    /// What builds it.
+    pub built: Built,
+    /// What the binary is wrapped in, or `None` for one run by its own name.
+    pub bundle: Option<Bundle>,
     /// The copy inside the build tree, relative to the **sources** — the one a
     /// local `cargo build` overwrites.
     pub live_rel: &'static str,
@@ -82,6 +115,8 @@ pub const TARGETS: &[Target] = &[
         manifest_rel: ROOT_MANIFEST,
         page_rel: None,
         features: &[],
+        built: Built::ByCargo,
+        bundle: None,
         live_rel: "target/release/sailor",
         safe_rel: "bin/sailor",
         stamp_rel: "state/sailor-binary-commit",
@@ -102,10 +137,37 @@ pub const TARGETS: &[Target] = &[
         // shell's own builder passes, and copying it here keeps the release and
         // that builder producing the same binary.
         features: &["tauri/custom-protocol"],
+        built: Built::ByCargo,
+        bundle: None,
         live_rel: "desktop/src-tauri/target/release/sailor-desktop",
         safe_rel: "bin/sailor-desktop",
         stamp_rel: "state/window-binary-commit",
         suite_memo_rel: "state/window-suite-tree",
+        service: None,
+    },
+    // The dot in the menu bar: judged by the root's suite like the others, and
+    // declaring the two things that differ — a builder that is not cargo, and a
+    // bundle around the binary.
+    Target {
+        name: "dot",
+        bin: "SailorDot",
+        manifest_rel: ROOT_MANIFEST,
+        page_rel: None,
+        features: &[],
+        built: Built::ByCommand {
+            program: "swift",
+            args: &["build", "-c", "release"],
+            inside: "menubar",
+        },
+        bundle: Some(Bundle {
+            root_rel: "bin/SailorDot.app",
+            carries: &[("menubar/Info.plist", "Contents/Info.plist")],
+            signed_by: &["codesign", "--force", "--deep", "--sign", "-"],
+        }),
+        live_rel: "menubar/.build/release/SailorDot",
+        safe_rel: "bin/SailorDot.app/Contents/MacOS/SailorDot",
+        stamp_rel: "state/dot-binary-commit",
+        suite_memo_rel: "state/dot-suite-tree",
         service: None,
     },
 ];
@@ -139,7 +201,11 @@ pub fn parts_of(target: &Target) -> Vec<&'static str> {
         .manifest_rel
         .contains('/')
         .then(|| top_of(target.manifest_rel));
-    for part in [manifest_dir, target.page_rel.map(top_of)]
+    let built_in = match target.built {
+        Built::ByCargo => None,
+        Built::ByCommand { inside, .. } => Some(top_of(inside)),
+    };
+    for part in [manifest_dir, target.page_rel.map(top_of), built_in]
         .into_iter()
         .flatten()
     {
@@ -649,6 +715,12 @@ mod tests {
         assert_eq!(
             parts_of(target("window").expect("named")),
             vec!["crates", "desktop"]
+        );
+        // Built by something that is not cargo: the root manifest names no
+        // directory of its own, and the builder's is where its changes are.
+        assert_eq!(
+            parts_of(target("dot").expect("named")),
+            vec!["crates", "menubar"]
         );
     }
 

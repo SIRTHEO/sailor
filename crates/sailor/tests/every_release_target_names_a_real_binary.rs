@@ -97,6 +97,26 @@ fn binaries_of(manifest_rel: &str) -> Vec<String> {
 fn every_release_target_names_a_binary_the_workspace_really_builds() {
     let mut named_by_cargo = 0;
     for candidate in release::TARGETS {
+        // A target built by something else is checked below, against the
+        // builder it declares: asking cargo about a Swift package would be
+        // asking the wrong witness.
+        if let release::Built::ByCommand { inside, .. } = candidate.built {
+            let package = repository_root().join(inside);
+            assert!(
+                package.is_dir(),
+                "target '{}' is built in '{inside}', which does not exist: {}",
+                candidate.name,
+                package.display()
+            );
+            assert!(
+                candidate.live_rel.starts_with(&format!("{inside}/")),
+                "target '{}' is built in '{inside}' and looks for the fresh copy \
+                 outside it: '{}'",
+                candidate.name,
+                candidate.live_rel
+            );
+            continue;
+        }
         let binaries = binaries_of(candidate.manifest_rel);
         named_by_cargo += binaries.len();
         assert!(
@@ -133,6 +153,41 @@ fn every_release_target_names_a_binary_the_workspace_really_builds() {
         release::TARGETS.len(),
         "release targets",
     );
+}
+
+/// The binary of a bundled target lands inside its own bundle. Two paths that
+/// drift apart install the binary beside the bundle and sign an empty one: both
+/// gestures succeed, and nothing starts.
+#[test]
+fn every_bundle_holds_the_binary_it_signs() {
+    for candidate in release::TARGETS {
+        let Some(bundle) = candidate.bundle else {
+            continue;
+        };
+        assert!(
+            candidate
+                .safe_rel
+                .starts_with(&format!("{}/", bundle.root_rel)),
+            "target '{}' installs its binary in '{}', outside the bundle '{}' it signs",
+            candidate.name,
+            candidate.safe_rel,
+            bundle.root_rel
+        );
+        assert!(
+            !bundle.signed_by.is_empty(),
+            "target '{}' declares no signature: the system refuses to start an unsigned bundle",
+            candidate.name
+        );
+        for (from, _) in bundle.carries {
+            let carried = repository_root().join(from);
+            assert!(
+                carried.is_file(),
+                "target '{}' carries '{from}' into its bundle, and the tree has no such file: {}",
+                candidate.name,
+                carried.display()
+            );
+        }
+    }
 }
 
 /// The page a target declares exists, and carries its `package.json`. Without

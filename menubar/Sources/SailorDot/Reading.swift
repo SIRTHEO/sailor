@@ -1,4 +1,4 @@
-import Foundation
+import SwiftUI
 
 /// What `sailor accounts --json` answers. The dot never reads the store: one
 /// place makes the sums, and a second would give a second figure.
@@ -24,6 +24,34 @@ struct Reading: Decodable {
             .filter { $0.usedPercent >= gettingFull }
             .max { one, two in one.usedPercent < two.usedPercent }
     }
+
+    /// The accounts worked in during the window, heaviest first: the ones a
+    /// glance is about.
+    var atWork: [Account] {
+        accounts.filter(\.atWork).sorted { $0.tokensWorked > $1.tokensWorked }
+    }
+
+    /// The ones asking for a hand: shut, run out, or unreadable — and not
+    /// already shown above, where they are being worked in anyway.
+    var needingAHand: [Account] {
+        accounts
+            .filter { !$0.atWork && $0.standing != "ready" }
+            .sorted { $0.urgency < $1.urgency }
+    }
+
+    /// Signed in, nothing to fix, nothing done: folded away.
+    var theRest: [Account] {
+        accounts.filter { !$0.atWork && $0.standing == "ready" }
+    }
+
+    /// The whole reading in the one line a first look reads.
+    var inOneLine: String {
+        let working = atWork
+        guard !working.isEmpty else { return "no account at work in this window" }
+        let tokens = working.reduce(0) { $0 + $1.tokensWorked }
+        let sessions = working.reduce(0) { $0 + ($1.worked?.sessions ?? 0) }
+        return "\(working.count) account at work · \(sessions) session(s) · \(inShort(tokens)) tokens"
+    }
 }
 
 struct Account: Decodable, Identifiable {
@@ -40,6 +68,11 @@ struct Account: Decodable, Identifiable {
     let windows: [Window]?
     /// Why the allowance could not be read, in the provider's own words.
     let quotaSaid: String?
+    /// What this account really did in its own home, terminals included.
+    /// `nil` where nobody measured that engine: unknown, never nothing.
+    let worked: Worked?
+    /// The line that cures this row, where the engine declares one.
+    let repair: String?
 
     var id: String { "\(cli)/\(profile ?? "-")" }
 
@@ -56,11 +89,48 @@ struct Account: Decodable, Identifiable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case cli, profile, active, standing, said, calls, spent, windows
+        case cli, profile, active, standing, said, calls, spent, windows, worked, repair
         case lastCallAgoS = "last_call_ago_s"
         case ranOutAgoS = "ran_out_ago_s"
         case quotaSaid = "quota_said"
     }
+
+    /// Whether this account was worked in during the window: the one question
+    /// the first look is about.
+    var atWork: Bool { (worked?.calls ?? 0) > 0 }
+
+    var tokensWorked: Int { worked?.tokens ?? 0 }
+}
+
+/// What an account really did, read off the engine's own records: the calls a
+/// person made by hand pass through no ledger, and this is where they are.
+struct Worked: Decodable {
+    let calls: Int
+    let sessions: Int
+    let inputTokens: Int
+    let outputTokens: Int
+    let cacheReadTokens: Int
+    let cacheWriteTokens: Int
+    /// What the work weighs at list price; `nil` where a model has no price.
+    let atListPrice: String?
+
+    var tokens: Int { inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens }
+
+    enum CodingKeys: String, CodingKey {
+        case calls, sessions
+        case inputTokens = "input_tokens"
+        case outputTokens = "output_tokens"
+        case cacheReadTokens = "cache_read_tokens"
+        case cacheWriteTokens = "cache_write_tokens"
+        case atListPrice = "at_list_price"
+    }
+}
+
+/// A token count as a person reads it at a glance.
+func inShort(_ tokens: Int) -> String {
+    if tokens < 10_000 { return "\(tokens)" }
+    if tokens < 1_000_000 { return "\(tokens / 1_000)k" }
+    return String(format: "%.1fM", Double(tokens) / 1_000_000)
 }
 
 /// One window of an allowance, as `sailor accounts --quota` reports it.
@@ -75,9 +145,9 @@ struct Window: Decodable, Identifiable {
     /// version does not know it: the provider adds windows without asking.
     var said: String {
         switch unit {
-        case "five_hour": return "5 ore"
-        case "seven_day": return "7 giorni"
-        case "primary_window": return "finestra"
+        case "five_hour": return "5 hours"
+        case "seven_day": return "7 days"
+        case "primary_window": return "window"
         default: return unit
         }
     }
@@ -100,7 +170,7 @@ func whenItComesBack(_ text: String?) -> String? {
     plain.formatOptions = [.withInternetDateTime]
     guard let at = whole.date(from: text) ?? plain.date(from: text) else { return text }
     let said = DateFormatter()
-    said.locale = Locale(identifier: "it_IT")
+    said.locale = Locale(identifier: "en_US_POSIX")
     said.dateFormat = Calendar.current.isDateInToday(at) ? "HH:mm" : "d MMM HH:mm"
     return said.string(from: at)
 }
@@ -116,21 +186,31 @@ enum Standing {
         }
     }
 
+    /// One colour per standing, so the mark and the word never disagree.
+    static func colour(_ standing: String) -> Color {
+        switch standing {
+        case "ready": return .green
+        case "ran_out": return .orange
+        case "shut": return .red
+        default: return .secondary
+        }
+    }
+
     static func said(_ standing: String) -> String {
         switch standing {
-        case "ready": return "pronto"
-        case "ran_out": return "ESAURITO"
-        case "shut": return "CHIUSO"
-        default: return "non si sa"
+        case "ready": return "ready"
+        case "ran_out": return "RAN OUT"
+        case "shut": return "SHUT"
+        default: return "not known"
         }
     }
 }
 
 /// How long ago, in the shortest words that are still true.
 func ago(_ seconds: Int?) -> String {
-    guard let seconds, seconds >= 0 else { return "mai" }
-    if seconds < 90 { return "adesso" }
-    if seconds < 5_400 { return "\(seconds / 60)m fa" }
-    if seconds < 172_800 { return "\(seconds / 3_600)h fa" }
-    return "\(seconds / 86_400)g fa"
+    guard let seconds, seconds >= 0 else { return "never" }
+    if seconds < 90 { return "just now" }
+    if seconds < 5_400 { return "\(seconds / 60)m ago" }
+    if seconds < 172_800 { return "\(seconds / 3_600)h ago" }
+    return "\(seconds / 86_400)d ago"
 }

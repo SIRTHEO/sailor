@@ -266,12 +266,15 @@ impl actions::ToolResolver for Tools {
         };
         match crate::quota::read_one(&loaded.descriptor, &self.machine, now) {
             None => Ok(Vec::new()),
-            Some(reading) => reading.result.map(|windows| {
-                windows
-                    .iter()
-                    .map(|remaining| models::fuel::Fuel::from_remaining(remaining, now))
-                    .collect()
-            }),
+            Some(reading) => reading
+                .result
+                .map(|windows| {
+                    windows
+                        .iter()
+                        .map(|remaining| models::fuel::Fuel::from_remaining(remaining, now))
+                        .collect()
+                })
+                .map_err(|refusal| refusal.to_string()),
         }
     }
 

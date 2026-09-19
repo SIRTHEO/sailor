@@ -240,8 +240,8 @@ pub(crate) fn collect_attention_queue() -> Result<Vec<AttentionRow>, String> {
     let readings = sailor::remaining_cmd::per_profile(&catalog, &machine, now);
     for reading in readings {
         if let Err(why) = reading.result {
-            let reason = if !why.trim().is_empty() {
-                format!("{}: {}", reading.engine, why)
+            let reason = if !why.said.trim().is_empty() {
+                format!("{}: {}", reading.engine, why.said)
             } else {
                 "reason unknown".to_owned()
             };

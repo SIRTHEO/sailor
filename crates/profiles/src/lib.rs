@@ -112,6 +112,31 @@ pub fn verdict_of(identity: &HomeIdentity, profile_name: &str) -> IdentityVerdic
     }
 }
 
+/// The account a home answers as, read off the real disk; `None` where nobody
+/// can tell. **ONE READING FOR EVERY CALLER**: the quota and the row that shows
+/// it are keyed by this name, and two spellings list the account twice.
+pub fn home_answers_as(cli: &KnownCli, home: &Path) -> Option<String> {
+    answered(identity_of_home(cli, home, &read_the_file))
+}
+
+/// The account the home an engine keeps for itself answers as. **A DEFAULT HOME
+/// IS REACHED WITH NO VARIABLE SET**, so the file beside it is the one a launch
+/// reads; one left inside it belongs to a run that pointed the variable there.
+pub fn own_home_answers_as(cli: &KnownCli, home: &Path) -> Option<String> {
+    answered(identity_of_own_home(cli, home, &read_the_file))
+}
+
+fn answered(identity: HomeIdentity) -> Option<String> {
+    match identity {
+        HomeIdentity::Answers(account) => Some(account),
+        HomeIdentity::CannotTell(_) => None,
+    }
+}
+
+fn read_the_file(path: &Path) -> Option<String> {
+    std::fs::read_to_string(path).ok()
+}
+
 /// Reads what a home's own file says, never asks the engine: the file is
 /// what a launch reads. `read` is a seam for a test to hand text with.
 pub fn identity_of_home(
@@ -119,14 +144,36 @@ pub fn identity_of_home(
     home: &Path,
     read: &dyn Fn(&Path) -> Option<String>,
 ) -> HomeIdentity {
+    identity_from(cli, home, read, false)
+}
+
+/// The same reading for a home no variable moves: beside before inside.
+pub fn identity_of_own_home(
+    cli: &KnownCli,
+    home: &Path,
+    read: &dyn Fn(&Path) -> Option<String>,
+) -> HomeIdentity {
+    identity_from(cli, home, read, true)
+}
+
+fn identity_from(
+    cli: &KnownCli,
+    home: &Path,
+    read: &dyn Fn(&Path) -> Option<String>,
+    beside_the_home_first: bool,
+) -> HomeIdentity {
     let Some(declared) = &cli.identity_at else {
         return HomeIdentity::CannotTell(format!(
             "{} declares no file naming the account its home answers as",
             cli.display_name
         ));
     };
+    let mut order: Vec<&String> = declared.file.iter().collect();
+    if beside_the_home_first {
+        order.sort_by_key(|candidate| usize::from(!candidate.starts_with("../")));
+    }
     let mut last_reason = String::new();
-    for candidate in &declared.file {
+    for candidate in order {
         let path = home.join(candidate);
         last_reason = match read(&path) {
             Some(text) => match identity_at_path(&path, &text, &declared.pointer) {
@@ -992,6 +1039,53 @@ mod tests {
             }
         });
         assert_eq!(identity, HomeIdentity::Answers("someone@example.com".to_owned()));
+    }
+
+    fn leaves_the_home(path: &Path) -> bool {
+        path.components().any(|part| part == std::path::Component::ParentDir)
+    }
+
+    /// **THE FAULT THIS TEST HOLDS SHUT.** `~/.claude/.claude.json` left behind
+    /// by a run that set the variable to the default directory made the account
+    /// panel show hours of work under the wrong account.
+    #[test]
+    fn a_default_home_is_read_beside_itself_and_never_from_a_leftover_inside() {
+        let cli = find_cli("claude").unwrap();
+        let home = Path::new("/Users/someone/.claude");
+        let read = |path: &Path| {
+            let email = if leaves_the_home(path) {
+                "the-account-in-use@example.com"
+            } else {
+                "a-leftover@example.com"
+            };
+            Some(format!(
+                r#"{{"oauthAccount":{{"emailAddress":"{email}"}}}}"#
+            ))
+        };
+        assert_eq!(
+            identity_of_own_home(cli, home, &read),
+            HomeIdentity::Answers("the-account-in-use@example.com".to_owned())
+        );
+        assert_eq!(
+            identity_of_home(cli, home, &read),
+            HomeIdentity::Answers("a-leftover@example.com".to_owned()),
+            "a home reached by variable still reads the file inside it"
+        );
+    }
+
+    /// An order, not a demand: with nothing beside it, the file inside wins.
+    #[test]
+    fn a_default_home_with_nothing_beside_it_is_read_from_inside() {
+        let cli = find_cli("claude").unwrap();
+        let identity =
+            identity_of_own_home(cli, Path::new("/Users/someone/.claude"), &|path: &Path| {
+                (!leaves_the_home(path))
+                    .then(|| r#"{"oauthAccount":{"emailAddress":"only@example.com"}}"#.to_owned())
+            });
+        assert_eq!(
+            identity,
+            HomeIdentity::Answers("only@example.com".to_owned())
+        );
     }
 
     #[test]

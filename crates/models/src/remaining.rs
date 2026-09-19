@@ -46,6 +46,9 @@ pub struct WindowWords {
     pub resets: String,
     /// Whether `resets` is an instant written out or a count of seconds.
     pub resets_in_seconds: bool,
+    /// The refusal kinds that mean **the credential itself is no good**; every
+    /// other refusal is a «not now», and **EMPTY IS THE SAFE DEFAULT**.
+    pub dead_when: Vec<String>,
 }
 
 impl Default for WindowWords {
@@ -56,6 +59,7 @@ impl Default for WindowWords {
             used_in_percent: true,
             resets: "resets_at".to_owned(),
             resets_in_seconds: false,
+            dead_when: Vec::new(),
         }
     }
 }
@@ -105,12 +109,12 @@ pub enum RemainingError {
     NoToken,
     /// `curl` did not start, or did not answer.
     Unreachable(String),
-    /// It answered, and said no. It carries the provider's own words, which
-    /// say **what to do** — "the token has been revoked" is cured by
-    /// authenticating again, and no sentence written here would say it better.
-    /// **It never carries the token**: only the `message` field is copied,
-    /// never the request.
+    /// It answered and said no, in its own words; only `message` is copied,
+    /// never the token. **ONLY `dead_when` KINDS LAND HERE.**
     Refused(String),
+    /// It answered and asked to be asked later: rate limited, busy, briefly
+    /// down. **A COUNTER THAT REFUSES TO COUNT IS NOT A CLOSED DOOR.**
+    NotNow(String),
     /// It refused, and the same credentials say why on their own terms: the
     /// short-lived access token had already passed its own `expiresAt` when
     /// asked, while the refresh token beside it had not (fault 169). A `claude`
@@ -121,6 +125,24 @@ pub enum RemainingError {
     /// It answered something that is not the expected JSON: the channel is
     /// beta, and this is how it will break.
     NotUnderstood,
+}
+
+impl RemainingError {
+    /// Whether this refusal is about the credential rather than the moment.
+    pub fn credential_is_dead(&self) -> bool {
+        matches!(self, RemainingError::Refused(_))
+    }
+
+    /// Whether the provider was reached at all: a channel that stopped at the
+    /// doorstep is worth less than a refusal, and must not outrank one.
+    pub fn provider_answered(&self) -> bool {
+        matches!(
+            self,
+            RemainingError::Refused(_)
+                | RemainingError::NotNow(_)
+                | RemainingError::RefusedWithAnUnexpiredRefreshToken { .. }
+        )
+    }
 }
 
 impl fmt::Debug for RemainingError {
@@ -143,6 +165,9 @@ impl fmt::Display for RemainingError {
             }
             RemainingError::Unreachable(why) => write!(out, "the channel does not answer: {why}"),
             RemainingError::Refused(said) => write!(out, "the engine refused: {said}"),
+            RemainingError::NotNow(said) => {
+                write!(out, "the engine asked to be asked later: {said}")
+            }
             RemainingError::RefusedWithAnUnexpiredRefreshToken { said, refresh_expires_at } => write!(
                 out,
                 "the engine refused: {said} — but the refresh token beside it is not due to \
@@ -230,12 +255,15 @@ pub fn from_oauth_usage(
     // **Look at `error.message`, not the envelope.** A revocation carries a
     // top-level `"type": "error"`, a rate limit does not: matching the envelope
     // let the rate limit through as that empty list, to an automated poller.
-    if let Some(said) = whole
-        .get("error")
-        .and_then(|error| error.get("message"))
-        .and_then(serde_json::Value::as_str)
-    {
-        return Err(RemainingError::Refused(said.to_owned()));
+    if let Some(error) = whole.get("error") {
+        if let Some(said) = error.get("message").and_then(serde_json::Value::as_str) {
+            let kind = error.get("type").and_then(serde_json::Value::as_str).unwrap_or_default();
+            return Err(if words.dead_when.iter().any(|fatal| fatal == kind) {
+                RemainingError::Refused(said.to_owned())
+            } else {
+                RemainingError::NotNow(said.to_owned())
+            });
+        }
     }
 
     // **THE WINDOWS ARE WHERE THE DESCRIPTOR SAYS.** Read at the root, windows
@@ -301,12 +329,28 @@ pub fn read_oauth_usage(
         }
     };
     let token = Token::from_credentials_at(&text, &channel.token_pointer)?;
-    let body = match ask_curl(&token.curl_config(&channel.url, &channel.headers)) {
-        Ok(body) => body,
-        Err(RemainingError::Refused(said)) => return Err(refusal_against_expiry(said, &text, channel)),
-        Err(other) => return Err(other),
-    };
-    from_oauth_usage(&body, &channel.engine, observed_at, &channel.shape)
+    let body = ask_curl(&token.curl_config(&channel.url, &channel.headers))?;
+    read_against_the_credentials(
+        from_oauth_usage(&body, &channel.engine, observed_at, &channel.shape),
+        &text,
+        channel,
+    )
+}
+
+/// The reading, with a refusal weighed against the credentials it was made
+/// with. **THE REFUSAL IS MINTED BY THE BODY, NOT BY `curl`**: `ask_curl`
+/// answers `Unreachable` or `NotUnderstood` and never `Refused`, because the
+/// provider says no with an HTTP status and a JSON body that `curl` reports as
+/// success. Weighing the error `curl` hands back therefore weighs nothing.
+fn read_against_the_credentials(
+    read: Result<Vec<Remaining>, RemainingError>,
+    text: &str,
+    channel: &OauthUsageChannel,
+) -> Result<Vec<Remaining>, RemainingError> {
+    read.map_err(|why| match why {
+        RemainingError::Refused(said) => refusal_against_expiry(said, text, channel),
+        other => other,
+    })
 }
 
 /// A `Refused` read against the same credentials text, once — never a second
@@ -423,6 +467,16 @@ mod tests {
         from_oauth_usage(body, ENGINE, observed_at, &WindowWords::default())
     }
 
+    fn parse_for_a_descriptor_that_names_its_fatal_kinds(
+        body: &str,
+    ) -> Result<Vec<Remaining>, RemainingError> {
+        let words = WindowWords {
+            dead_when: vec!["authentication_error".to_owned(), "permission_error".to_owned()],
+            ..WindowWords::default()
+        };
+        from_oauth_usage(body, ENGINE, 0, &words)
+    }
+
     /// **A PROVIDER THAT NESTS ITS WINDOWS IS NOT ONE WITHOUT QUOTA.** Read at
     /// the root it yields the empty list, for a window that is full.
     #[test]
@@ -436,6 +490,7 @@ mod tests {
             used_in_percent: true,
             resets: "reset_at".to_owned(),
             resets_in_seconds: true,
+            dead_when: Vec::new(),
         };
 
         assert_eq!(
@@ -544,12 +599,56 @@ mod tests {
         let refused = r#"{"type":"error","error":{"type":"authentication_error",
             "message":"OAuth access token has been revoked."},"request_id":null}"#;
 
-        let said = parse(refused, 0).expect_err("it is a refusal, not a measure");
+        let said = parse_for_a_descriptor_that_names_its_fatal_kinds(refused)
+            .expect_err("it is a refusal, not a measure");
         assert_eq!(
             said,
             RemainingError::Refused("OAuth access token has been revoked.".to_owned()),
             "the provider's own words carry through: they say what to do, namely authenticate again"
         );
+        assert!(said.credential_is_dead(), "this one is about the credential");
+    }
+
+    /// **A COUNTER THAT REFUSES TO COUNT IS NOT A DOOR THAT REFUSES TO OPEN**:
+    /// three working accounts read `shut` all day for the meter's rate limit.
+    #[test]
+    fn a_rate_limit_is_a_not_now_and_never_a_dead_credential() {
+        let limited = r#"{"error":{"type":"rate_limit_error",
+            "message":"Rate limited. Please try again later."}}"#;
+
+        let said = parse_for_a_descriptor_that_names_its_fatal_kinds(limited)
+            .expect_err("it is still not a measure");
+        assert_eq!(
+            said,
+            RemainingError::NotNow("Rate limited. Please try again later.".to_owned())
+        );
+        assert!(!said.credential_is_dead(), "the account was never asked about");
+    }
+
+    /// **AN ACCESS TOKEN PAST ITS HOUR IS NOT A SIGNED-OUT ACCOUNT.** The
+    /// provider answered, so this outranks a channel that stopped at a missing
+    /// file; the credential is not the thing that died, so the panel must not
+    /// offer a fresh login over it.
+    #[test]
+    fn an_unexpired_refresh_token_answers_both_questions_apart() {
+        let enriched = RemainingError::RefusedWithAnUnexpiredRefreshToken {
+            said: "token expired".to_owned(),
+            refresh_expires_at: 1,
+        };
+        assert!(enriched.provider_answered(), "the provider is the one who said no");
+        assert!(
+            !enriched.credential_is_dead(),
+            "a live refresh token beside it is why this variant exists at all"
+        );
+    }
+
+    /// **A KIND NOBODY NAMED CANNOT KILL AN ACCOUNT**: the channel is beta.
+    #[test]
+    fn a_refusal_of_an_unnamed_kind_is_a_not_now() {
+        let odd = r#"{"error":{"type":"a_kind_from_next_year","message":"no"}}"#;
+        assert!(!parse_for_a_descriptor_that_names_its_fatal_kinds(odd)
+            .expect_err("still a refusal")
+            .credential_is_dead());
     }
 
     /// **THE PROVIDER REFUSES IN MORE THAN ONE SHAPE, AND BOTH WERE SEEN
@@ -565,7 +664,7 @@ mod tests {
 
         assert_eq!(
             parse(limited, 0),
-            Err(RemainingError::Refused(
+            Err(RemainingError::NotNow(
                 "Rate limited. Please try again later.".to_owned()
             )),
             "the reader must learn it was refused, not that it consumed nothing"
@@ -714,6 +813,39 @@ mod tests {
     }
 
     // ── fault 169: an expired access token is not a signed-out account ──
+
+    /// **THE SEAM, NOT THE TWO HALVES.** Both halves were right and nothing
+    /// joined them: `curl` reports the provider's «no» as a success, so the
+    /// refusal is minted by the body, and weighing the error `curl` returns
+    /// weighed a shape that never arrives. A live account whose access token
+    /// had passed its hour read `shut`, with a login line it did not need.
+    #[test]
+    fn a_body_refusing_a_stale_access_token_is_weighed_against_the_credentials() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|since| since.as_millis() as i64)
+            .unwrap_or(0);
+        let text = credentials_at(now - 3_600_000, now + 30 * 86_400_000);
+        let mut channel = channel_with_expiry_pointers(access_pointer(), refresh_pointer());
+        channel.shape.dead_when = vec!["authentication_error".to_owned()];
+        let refused = r#"{"error":{"type":"authentication_error","message":"OAuth token expired"}}"#;
+
+        let read = from_oauth_usage(refused, ENGINE, 0, &channel.shape);
+        assert!(
+            matches!(read, Err(RemainingError::Refused(_))),
+            "the body is what mints the refusal: {read:?}"
+        );
+
+        let weighed = read_against_the_credentials(read, &text, &channel);
+        assert!(
+            matches!(weighed, Err(RemainingError::RefusedWithAnUnexpiredRefreshToken { .. })),
+            "and a live refresh token beside it must survive the seam: {weighed:?}"
+        );
+        assert!(
+            !weighed.unwrap_err().credential_is_dead(),
+            "so the account is not offered a login it does not need"
+        );
+    }
 
     fn credentials_at(access_expires_at: i64, refresh_expires_at: i64) -> String {
         format!(

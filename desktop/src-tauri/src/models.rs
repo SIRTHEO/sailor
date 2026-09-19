@@ -157,7 +157,7 @@ pub(crate) fn quota() -> Result<Quota, String> {
             Ok(found) => windows.extend(found.into_iter().map(Window::from)),
             Err(why) => unreachable.push(Unreachable {
                 account: reading.engine,
-                why,
+                why: why.said,
             }),
         }
     }
