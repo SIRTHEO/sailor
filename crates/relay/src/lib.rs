@@ -280,9 +280,7 @@ enum Freedom {
 /// **NOT YET IN EVERY CASE BUT ONE**: only a still screen showing the prompt
 /// and none of the marks lets go of it.
 /// The executable a session of this line runs under, as the process table
-/// spells it. **IT IS THE DESCRIPTOR'S, NOT THIS CRATE'S**: a name written here
-/// would be one product's fact in the code, and the next line grafted in would
-/// be measured against it.
+/// spells it. **IT IS THE DESCRIPTOR'S, NOT THIS CRATE'S.**
 fn line_command_of(catalog: &toolbox::Catalog, cli: &str) -> Result<String, ActionError> {
     catalog
         .live()
@@ -409,10 +407,8 @@ fn called(command: &str) -> &str {
 /// What the session at this terminal still holds, beyond the commands its line
 /// declares it runs while idle.
 ///
-/// **THE MODEL STOPPING IS NOT THE SESSION FINISHING.** A tool, a shell or a
-/// server the session started outlives the turn, and while it runs the screen
-/// stands perfectly still and the prompt is painted: the two screen tests both
-/// say «free» about a session that is working. This asks the machine instead.
+/// **THE MODEL STOPPING IS NOT THE SESSION FINISHING**: a tool the session
+/// started outlives the turn, and both screen tests call that terminal free.
 pub fn still_holding(
     rows: &[OnTheMachine],
     tty: &str,

@@ -265,14 +265,8 @@ fn a_screen_whose_painter_is_gone_says_nothing_about_now() {
     assert!(why.contains("is gone"), "{why}");
 }
 
-/// **THE MODEL STOPPING IS NOT THE SESSION FINISHING.** The two screen tests
-/// are both satisfied by a session running a tool: nothing repaints while a
-/// command works, and the prompt it painted before is still the last thing on
-/// the screen. So the machine is asked what the session still holds.
-///
-/// The table below is the one read on 19/09/2026 from a live session, with the
-/// pids kept: a login, its shell, the command line, and under it the server it
-/// had started and that server's node.
+/// A process table read from a live session at work: a login, its shell, the
+/// command line, and under it a server it started and that server's node.
 fn the_table_of_a_session_at_work() -> Vec<relay::OnTheMachine> {
     fn row(pid: u32, parent: u32, command: &str) -> relay::OnTheMachine {
         relay::OnTheMachine {
@@ -283,7 +277,7 @@ fn the_table_of_a_session_at_work() -> Vec<relay::OnTheMachine> {
         }
     }
     vec![
-        row(21404, 1314, "/usr/bin/login -flpq theo"),
+        row(21404, 1314, "/usr/bin/login -flpq a-person"),
         row(21405, 21404, "/bin/zsh -l"),
         row(27719, 21405, "a-command-line"),
         row(11494, 27719, "caffeinate -i -t 300"),
