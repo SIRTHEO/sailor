@@ -29,7 +29,6 @@ not aspirational.
 - The login probe clears a home's environment but keeps `USER`.
 - A home's identity is read off its own file and turned into one verdict every surface acts on.
 - The desktop window shows account readings and handed-step state in the strip and the attention queue.
-- The walkthrough `docs/walkthrough-a-queue-of-work.md` takes a queue of work from a seeded fixture to a parked task, in five minutes.
 - The delivery loop from taking work to closing it is written down in `docs/the-delivery-loop.md`, with `.sailor/delivery-policy.json` setting this repository's merge, push and release to `auto`.
 - `take-the-next-work` digests the mandate before the worker is asked and parks the task, without ever running the acceptance command, when the worker's answer does not open with that digest acknowledged.
 - `sailor policy` reads `.sailor/delivery-policy.json` as committed on the local trunk, never from the working tree or the branch it would govern.

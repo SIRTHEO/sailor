@@ -20,10 +20,10 @@ recorded result or handed back to you with the reason it stopped.
 > shows what is waiting and lets you close a step that was handed to a
 > person. **Not there yet:** filesystem and network restrictions on a handed
 > step are not enforced by Sailor itself, and a completed flow does not by
-> itself prove its result met your acceptance criteria — see
-> [`docs/completion-and-required-steps.md`](docs/completion-and-required-steps.md)
-> for what "completed" does and does not mean. The open defects a user can meet
-> are described in [`docs/faults-encountered.md`](docs/faults-encountered.md).
+> itself prove its result met your acceptance criteria: a `required` step
+> withholds completion, it does not certify the result. The open defects a
+> user can meet are described in
+> [`docs/faults-encountered.md`](docs/faults-encountered.md).
 
 ## Five minutes
 

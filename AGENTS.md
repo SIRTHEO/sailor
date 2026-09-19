@@ -189,6 +189,24 @@ above, and no comparison can say it.
   draft request saying what it holds and what it needs, so the decision is made
   on a page instead of in a branch list.
 
+## The repository carries the product, not the material that led to it
+
+- **A page stays in `docs/` only if something that runs opens it by name**: a
+  judge, a shipped flow, a compiled constant, or a contract both halves of the
+  code are written against. Six do. Anything else — an essay, a walkthrough, a
+  study, a proposal not in force — is working material.
+- **Working material lives in Sailor's own store.** `sailor notes import`
+  takes a markdown file in, `sailor notes list` shows what is held, `sailor
+  notes show <slug>` reads it back byte for byte. Nothing is lost by taking it
+  out of the tree; it stops being published, which is the point.
+- **No mock-ups, no renders, no prototypes.** They were 27 tracked files and
+  seven of every ten bytes in the tree. A picture of a window is not a source,
+  and `npm run screenshots` writes under `target/`, which nothing tracks.
+- **A document that leaves takes its links with it.** A dead link in a public
+  repository is worse than no link, and a judge that opens a file by name
+  panics when it is gone: both are found by running the battery, not by
+  reading.
+
 ## Whoever creates does not judge
 
 The verdict on a piece of work goes to a context that did not produce it. If you

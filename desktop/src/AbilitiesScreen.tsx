@@ -1,8 +1,8 @@
 /**
  * Every action the engine can run, **with the policy it runs under**. The list
  * was names grouped by a family this window computes itself, so nothing on it
- * came from the engine but the words. The surface and the powers of
- * `docs/the-four-surfaces.md` are not drawn: nobody declares them, fault 67.
+ * came from the engine but the words. A surface and its powers are not drawn:
+ * nobody declares them, fault 67.
  */
 import { useEffect, useState } from "react";
 import { invoker } from "./engine";
@@ -96,7 +96,7 @@ export function AbilitiesScreen({ native }: { native: boolean }) {
         Nothing here says which surface an action belongs to — <code>sense</code>,{" "}
         <code>act</code>, <code>remember</code>, <code>gate</code> — nor whether it reaches the
         network, the disk, processes or a secret: no registered action declares any of it,
-        and that contract is deferred, in <code>docs/the-four-surfaces.md</code> and fault 67.
+        and that contract is deferred, in fault 67.
         Money is the one power the engine really enforces, and it is enforced per step,
         against the parameters that step declares, so it is not a fact about an action.
       </p>

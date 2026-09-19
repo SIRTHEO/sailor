@@ -1,9 +1,10 @@
 # What git keeps but the semantic index should not carry: generated output and
 # desktop build artefacts. `.gitignore` already covers target/ and node_modules/.
 #
-# `docs/` is deliberately absent from this list — the workshop notebooks are
-# meant to be findable. Revisit that only if the fault table becomes data in the
-# store, because indexing a rendering would then hold the same thing twice.
+# `docs/` is deliberately absent from this list. It no longer holds workshop
+# notebooks — those live in Sailor's own store now — and the six pages left are
+# each opened by name by something that runs, so an index that finds them finds
+# the thing the code is written against.
 
 target/
 desktop/node_modules/
@@ -13,10 +14,3 @@ desktop/src-tauri/target/
 Cargo.lock
 desktop/package-lock.json
 
-# Renders and window mock-ups. `design/` also holds a-single-delivery.md, which
-# is prose about how the product is delivered and stays indexed; these are
-# pictures of a window and the HTML that drew them. sailor-la-finestra.html
-# alone is 2.5 MB, a seventh of every tracked byte in the tree.
-design/rendered/
-design/*.html
-design/canvas.json
