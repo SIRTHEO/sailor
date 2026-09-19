@@ -435,7 +435,10 @@ fn reset_line_of(catalog: &toolbox::Catalog, cli: &str) -> Result<String, String
 /// descriptors for the reset line of exactly this name: prose broke that step
 /// 41 times against 6 that went, and the terminal was never handed on. Refused
 /// here, where its author is still at the keyboard.
-fn named_line_of(catalog: &toolbox::Catalog, engine: Option<&str>) -> Result<(), String> {
+pub(crate) fn named_line_of(
+    catalog: &toolbox::Catalog,
+    engine: Option<&str>,
+) -> Result<(), String> {
     let Some(engine) = engine.filter(|it| !it.is_empty()) else {
         return Ok(());
     };
