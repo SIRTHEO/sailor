@@ -279,26 +279,39 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         return Err(catalogue::say("cli.release.too_little_room", &[("gigabytes", &free)]));
     }
     println!("{}", catalogue::say("cli.release.building", &[]));
-    let cloned_manifest = repository.join(selected.manifest_rel);
-    let mut builder = Command::new("cargo");
-    builder
-        .current_dir(&cloned_rust)
-        .env("CARGO_TARGET_DIR", &build_target)
-        .args(["build", "--release", "--jobs", &compilers_that_fit(), "--bin", selected.bin])
-        .arg("--manifest-path")
-        .arg(&cloned_manifest);
+    // The builder is declared, and so is where it leaves the binary: cargo
+    // writes under the directory we hand it, another one writes inside the
+    // clone at the path the target names.
+    let (mut builder, fresh) = match selected.built {
+        release::Built::ByCargo => {
+            let mut builder = Command::new("cargo");
+            builder
+                .current_dir(&cloned_rust)
+                .env("CARGO_TARGET_DIR", &build_target)
+                .args(["build", "--release", "--jobs", &compilers_that_fit(), "--bin", selected.bin])
+                .arg("--manifest-path")
+                .arg(repository.join(selected.manifest_rel));
+            (builder, build_target.join("release").join(selected.bin))
+        }
+        release::Built::ByCommand {
+            program,
+            args,
+            inside,
+        } => {
+            let mut builder = Command::new(program);
+            builder.current_dir(repository.join(inside)).args(args);
+            (builder, repository.join(selected.live_rel))
+        }
+    };
     for feature in selected.features {
         builder.arg("--features").arg(feature);
     }
-    let build = builder
-        .output()
-        .map_err(|error| format!("cannot start cargo: {error}"))?;
+    let build = builder.output().map_err(|error| cannot_start(&builder, error))?;
     print_tail(&combined_output(&build), 5);
     if !build.status.success() {
         return Err(catalogue::say("cli.release.head_does_not_compile", &[]));
     }
 
-    let fresh = build_target.join("release").join(selected.bin);
     if !fresh.is_file() {
         return Err(catalogue::say(
             "cli.release.built_nothing",
@@ -452,11 +465,12 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     let stamp = home.join(selected.stamp_rel);
     let stamp_to_read = stamp.clone();
     let safe = home.join(selected.safe_rel);
-    // A candidate's proof is the copy in service, so only that copy matching
-    // the build lets it skip the install.
+    // A candidate's proof is the copy in service, and a bundle's is the copy
+    // inside it: only that copy matching the build lets either skip the install.
+    let the_copy_in_service_proves_it = candidate.is_some() || selected.bundle.is_some();
     let already_in_service = live.is_file()
         && files_equal(&fresh, &live)?
-        && (candidate.is_none() || (safe.is_file() && files_equal(&fresh, &safe)?));
+        && (!the_copy_in_service_proves_it || (safe.is_file() && files_equal(&fresh, &safe)?));
     if already_in_service {
         println!(
             "{}",
@@ -501,6 +515,9 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         catalogue::say("cli.release.in_service", &[("head", &built_short)])
     );
 
+    if let Some(bundle) = &selected.bundle {
+        carry_into_the_bundle(&home, &root, bundle)?;
+    }
     match atomic_copy(&fresh, &safe) {
         Ok(()) => println!(
             "   {}",
@@ -513,6 +530,17 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
             eprintln!("{}", catalogue::say("cli.release.no_safety_copy", &[]));
             eprintln!("   {error}");
         }
+    }
+
+    if let Some(bundle) = &selected.bundle {
+        sign_the_bundle(&home, bundle)?;
+        println!(
+            "   {}",
+            catalogue::say(
+                "cli.release.open_the_bundle",
+                &[("path", &home.join(bundle.root_rel).display().to_string())]
+            )
+        );
     }
 
     write_stamp(&stamp, &source_rev, &built_short);
@@ -765,7 +793,60 @@ fn status_description(status: ExitStatus) -> String {
 /// The copy in service lives outside `target/` on purpose, and that same care
 /// puts it where a shell may never look. This only reports: where the binary
 /// belongs on a machine is not a release's decision to take.
+fn cannot_start(command: &Command, error: io::Error) -> String {
+    catalogue::say(
+        "cli.release.cannot_start_the_builder",
+        &[
+            ("program", &command.get_program().to_string_lossy()),
+            ("error", &error.to_string()),
+        ],
+    )
+}
+
+/// The files the bundle carries, put in before the binary lands inside it.
+fn carry_into_the_bundle(
+    home: &Path,
+    sources: &Path,
+    bundle: &release::Bundle,
+) -> Result<(), String> {
+    let app = home.join(bundle.root_rel);
+    for (from, to) in bundle.carries {
+        atomic_copy(&sources.join(from), &app.join(to))?;
+    }
+    Ok(())
+}
+
+/// The signature, taken last: it is a hash of everything else in the bundle,
+/// and macOS refuses to start one whose binary was replaced under it.
+fn sign_the_bundle(home: &Path, bundle: &release::Bundle) -> Result<(), String> {
+    let app = home.join(bundle.root_rel);
+    // A bundle that declares no gesture asks for no signature;
+    // `every_bundle_holds_the_binary_it_signs` is what keeps this one from
+    // being an empty slice nobody noticed.
+    let Some((program, arguments)) = bundle.signed_by.split_first() else {
+        return Ok(());
+    };
+    let mut signing = Command::new(program);
+    signing.args(arguments).arg(&app);
+    let signed = signing.output().map_err(|error| cannot_start(&signing, error))?;
+    if !signed.status.success() {
+        return Err(catalogue::say(
+            "cli.release.the_bundle_is_not_signed",
+            &[
+                ("path", &app.display().to_string()),
+                ("said", String::from_utf8_lossy(&signed.stderr).trim()),
+            ],
+        ));
+    }
+    Ok(())
+}
+
 fn say_what_the_name_finds(selected: &Target, safe: &Path) -> release::OnPath {
+    // A bundle is opened, not typed: nothing looks it up on the PATH, and a
+    // copy of the same name somewhere else shadows nothing.
+    if selected.bundle.is_some() {
+        return release::OnPath::Same;
+    }
     let found = match toolbox::probe::look_up(selected.bin, &toolbox::Machine::current()) {
         toolbox::probe::Look::Found(path) => Some(path.display().to_string()),
         _ => None,
