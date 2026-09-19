@@ -91,7 +91,10 @@ fn named_in(text: &str) -> usize {
     let lines = lines_of(text);
     let words: Vec<Vec<String>> = lines.iter().map(|line| words_of(line)).collect();
     let keeps_company = |at: usize| {
-        !is_prose(lines[at]) && words[at].iter().any(|word| COMPANY.contains(&word.as_str()))
+        !is_prose(lines[at])
+            && words[at]
+                .iter()
+                .any(|word| COMPANY.contains(&word.as_str()))
     };
     let mut named = 0;
     for (at, line) in lines.iter().enumerate() {
@@ -125,7 +128,10 @@ fn measure(under: &[PathBuf], keep: fn(&str) -> bool) -> (usize, Vec<(usize, Pat
         let count = named_in(&text);
         if count > 0 {
             total += count;
-            per_file.push((count, file.strip_prefix(&root).unwrap_or(&file).to_path_buf()));
+            per_file.push((
+                count,
+                file.strip_prefix(&root).unwrap_or(&file).to_path_buf(),
+            ));
         }
     }
     per_file.sort_by_key(|entry| std::cmp::Reverse(entry.0));
@@ -156,16 +162,28 @@ fn the_control_a_name_counts_only_in_the_company_that_makes_it_a_repository_s_fa
 
     // The same words where they are not a repository's fact at all.
     assert_eq!(named_in(r#"let shown = if schema == "main" { name };"#), 0);
-    assert_eq!(named_in(r#"className="origin-(--radix-transform-origin)""#), 0);
+    assert_eq!(
+        named_in(r#"className="origin-(--radix-transform-origin)""#),
+        0
+    );
     assert_eq!(named_in(r#""kind,name,path,origin,reach,reason""#), 0);
     assert_eq!(named_in(r#"say("window.flows.column.origin")"#), 0);
-    assert_eq!(named_in(r#"let a = "remaining"; let b = "the original";"#), 0);
+    assert_eq!(
+        named_in(r#"let a = "remaining"; let b = "the original";"#),
+        0
+    );
     // Company that is prose does not make a name a repository's fact.
-    assert_eq!(named_in("// this is what git does\nlet schema = \"main\";"), 0);
+    assert_eq!(
+        named_in("// this is what git does\nlet schema = \"main\";"),
+        0
+    );
 
     // Prose about the rule is not a breach of it; a test module is not code.
     assert_eq!(named_in("// git push origin main is what this replaces"), 0);
-    assert_eq!(named_in("let x = 1;\n#[cfg(test)]\nlet y = \"git checkout main\";"), 0);
+    assert_eq!(
+        named_in("let x = 1;\n#[cfg(test)]\nlet y = \"git checkout main\";"),
+        0
+    );
 
     // A shell block written on one JSON line is cut on its own newlines.
     assert_eq!(

@@ -201,7 +201,7 @@ jobs:
       # two warnings to find. Nobody saw it, because the job could not fall
       # whatever it counted. Colour is off here and the numbers are real.
       CARGO_TERM_COLOR: never
-      FORMATTING_PLACES_TODAY: 1675
+      FORMATTING_PLACES_TODAY: 1671
       # The one suspicion is `this boolean expression can be simplified`, and
       # it exists only under the version the manifest declares: clippy nine
       # minors later does not raise it at all. That is the whole reason this
