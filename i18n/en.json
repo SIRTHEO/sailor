@@ -699,7 +699,7 @@
   "cli.worktree.kept_over_a_commit": "{tree} stays: it sits on commit {commit}, and no branch holds that commit",
   "cli.worktree.kept_over_work": "{tree} stays, because git would not take it down: {said}",
   "cli.worktree.locked": "locked",
-  "cli.worktree.names_against": "{count} branches are named against the convention — the trunk is «sorgenti», work happens on «work/<topic>», and a tree the mechanism cut names itself:",
+  "cli.worktree.names_against": "{count} branches are named against the convention — the trunk is «{trunk}», work happens on «work/<topic>», and a tree the mechanism cut names itself:",
   "cli.worktree.names_follow": "every branch is named for the work it does",
   "cli.worktree.no_tree_by_that_name": "no worktree called {name}",
   "cli.worktree.none_open": "Sailor has no tree open: nothing it cut is still standing.",
