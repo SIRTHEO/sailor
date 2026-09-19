@@ -12,7 +12,7 @@ use workspace::ratchet::{weigh, Weighed};
 /// Sections that declare a check and name no test, as counted today.
 /// Downwards only: each is a rule still waiting for what makes it red, and
 /// the red message lists them by file and line so somebody can write it.
-const PROSE_ONLY_CHECKS_TODAY: usize = 1;
+const PROSE_ONLY_CHECKS_TODAY: usize = 0;
 
 /// A heading opening with one of these declares the check of its page.
 const HEADINGS_THAT_DECLARE_A_CHECK: &[&str] = &[
@@ -561,9 +561,11 @@ fn a_seed_that_no_longer_describes_the_docs_is_a_seed_nobody_re_measured() {
     }
 }
 
-/// A count that stopped counting reads as agreement. No single form carries
-/// this directory on its own, so what is asked is that sections are still
-/// found in some form, that they still name tests, and that the tree reads.
+/// A count that stopped counting reads as agreement. What is asked is that
+/// sections are still found in some form, that they still name tests, and that
+/// the tree reads. Each of the three forms is parsed against a fixture above;
+/// this floor is over the live documents, and it fell with them when the
+/// workshop pages left for the store.
 #[test]
 fn the_scanner_can_still_see_what_it_reads() {
     let root = root();
@@ -576,7 +578,7 @@ fn the_scanner_can_still_see_what_it_reads() {
     };
     let forms = (of(Form::Heading), of(Form::Lead), of(Form::Command));
     assert!(
-        forms.0 + forms.1 + forms.2 >= 4,
+        forms.0 + forms.1 + forms.2 >= 3,
         "declaring sections found by form (heading, lead, command): {forms:?}; \
          none at all means the docs changed shape or the scanner stopped seeing it"
     );

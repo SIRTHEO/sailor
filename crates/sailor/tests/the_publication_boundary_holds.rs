@@ -9,6 +9,10 @@ use std::process::{Command, Output};
 const INVENTED_HOME_OF_ANOTHER_MACHINE: &str = "/Users/a-name-nobody-here-has";
 const SYNTHETIC_PRIVATE_NAME: &str = "mylberry";
 
+/// How many cases the tests below put to the boundary. **It can only rise**:
+/// each refusal the script declares needs one, or the receipt says so.
+const CASES_PUT_TO_THE_BOUNDARY: usize = 9;
+
 fn scripts() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts")
 }
@@ -121,6 +125,33 @@ impl Drop for Scratch {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.root);
     }
+}
+
+/// The refusals the script declares, read off the script and not listed here.
+fn refusals_the_script_declares() -> usize {
+    std::fs::read_to_string(scripts().join("privacy-scan.sh"))
+        .expect("the boundary script is in the tree")
+        .lines()
+        .filter(|line| line.trim_start().starts_with("refuse_paths"))
+        .count()
+}
+
+/// **THE GATE THAT RUNS BEFORE EVERY PUBLICATION HANDED IN NO RECEIPT.** That is
+/// what a judge says when the script it drives was never there to be read.
+#[test]
+fn every_refusal_the_script_declares_is_put_to_this_judge() {
+    let declared = refusals_the_script_declares();
+    workspace::measured_against(
+        CASES_PUT_TO_THE_BOUNDARY,
+        "cases put to the boundary",
+        declared,
+        "refusals the script declares",
+    );
+    assert!(
+        CASES_PUT_TO_THE_BOUNDARY >= declared,
+        "the script declares {declared} refusal(s) and this judge puts {CASES_PUT_TO_THE_BOUNDARY} \
+         case(s) to it: a refusal nobody drives is a boundary nobody proved"
+    );
 }
 
 fn said(output: &Output) -> String {

@@ -429,6 +429,43 @@ fn reset_line_of(catalog: &toolbox::Catalog, cli: &str) -> Result<String, String
         .ok_or_else(|| catalogue::say("cli.terminal.no_reset_declared", &[("cli", cli)]))
 }
 
+/// The command line a mandate names, or the sentence that refuses it.
+///
+/// **A SENTENCE WHERE AN ID BELONGS EMPTIES NOTHING.** The emptying asks the
+/// descriptors for the reset line of exactly this name: prose broke that step
+/// 41 times against 6 that went, and the terminal was never handed on. Refused
+/// here, where its author is still at the keyboard.
+pub(crate) fn named_line_of(
+    catalog: &toolbox::Catalog,
+    engine: Option<&str>,
+) -> Result<(), String> {
+    let Some(engine) = engine.filter(|it| !it.is_empty()) else {
+        return Ok(());
+    };
+    if catalog
+        .live()
+        .into_iter()
+        .any(|loaded| loaded.descriptor.id == engine)
+    {
+        return Ok(());
+    }
+    Err(catalogue::say(
+        "cli.terminal.mandate_line_unknown",
+        &[
+            ("engine", engine),
+            (
+                "known",
+                &catalog
+                    .live()
+                    .into_iter()
+                    .map(|loaded| loaded.descriptor.id.clone())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            ),
+        ],
+    ))
+}
+
 /// Leaves the work for whoever comes next, written by the session itself.
 ///
 /// Written and not scraped. Looking for a phrase in what the terminal showed
@@ -506,6 +543,11 @@ fn deposited(options: &[(String, String)], tty: &str, text: &str) -> Result<Stri
         .as_object_mut()
         .ok_or_else(|| catalogue::say("cli.terminal.mandate_shape", &[("why", "not an object")]))?;
     object.insert("tty".to_owned(), serde_json::Value::String(tty.to_owned()));
+    let machine = toolbox::Machine::current();
+    named_line_of(
+        &toolbox::Catalog::load(&toolbox::default_sources(&machine)),
+        object.get("engine").and_then(serde_json::Value::as_str),
+    )?;
     object
         .entry("tree")
         .or_insert_with(|| serde_json::Value::String(here().display().to_string()));
@@ -739,7 +781,7 @@ mod tests {
         let short = serde_json::json!({
             "tree": ".",
             "session": "a-session",
-            "engine": "a-command-line",
+            "engine": "claude-code",
             "work": {"goal": "", "asked": "", "state": [], "next": ""}
         })
         .to_string();
@@ -748,6 +790,51 @@ mod tests {
             leave_mandate(&written, &mut short.as_bytes()).expect_err("a blank field is refused");
 
         assert!(refusal.contains("blank"), "{refusal}");
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// **THE LINE IS AN ID, AND A SESSION DESCRIBING ITSELF IS NOT ONE.** The
+    /// prose below broke the emptying 41 times against 6 that went, and the
+    /// terminal it names was never handed on.
+    #[test]
+    fn a_mandate_naming_no_command_line_is_refused_before_it_is_deposited() {
+        let directory = scratch("mandate-line");
+        let written = words(&[
+            "--tty",
+            "ttys004",
+            "--store",
+            directory.to_str().expect("a path"),
+        ]);
+        let prose = serde_json::json!({
+            "tree": ".",
+            "session": "a-session",
+            "engine": "a-model-name[1m] on ttys007, Sailor profile somebody@example.com",
+            "work": {
+                "goal": "hand this terminal on",
+                "asked": "measure why it never was",
+                "state": [],
+                "next": "read what the emptying asks for"
+            }
+        })
+        .to_string();
+
+        let refusal = leave_mandate(&written, &mut prose.as_bytes())
+            .expect_err("a line nobody declares is refused");
+
+        assert!(refusal.contains("a-model-name[1m]"), "{refusal}");
+        assert!(
+            sessions::mandate::read(&sessions::mandate::address_in(&directory, "ttys004"))
+                .is_none(),
+            "nothing that cannot be emptied is deposited"
+        );
+        assert!(
+            named_line_of(&shipped(), Some("claude-code")).is_ok(),
+            "a line the catalog declares is deposited as it is"
+        );
+        assert!(
+            named_line_of(&shipped(), None).is_ok(),
+            "an older mandate naming no line at all is not this refusal's business"
+        );
         let _ = std::fs::remove_dir_all(&directory);
     }
 

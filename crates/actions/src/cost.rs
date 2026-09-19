@@ -1270,8 +1270,8 @@ printf '{"result":"the quota page in the tree explains the weekly limit","model"
         fn ask_recipe(&self, _id: &str) -> Option<AskRecipe> {
             Some(declaring_recipe())
         }
-        fn fuel(&self, id: &str) -> Vec<models::fuel::Fuel> {
-            self.fuels.get(id).cloned().into_iter().collect()
+        fn fuel(&self, id: &str) -> Result<Vec<models::fuel::Fuel>, String> {
+            Ok(self.fuels.get(id).cloned().into_iter().collect())
         }
     }
 
