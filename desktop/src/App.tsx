@@ -31,6 +31,7 @@ import {
 import { stepUsageOfRun, type StepUsage } from "./stepusage";
 import { stepStatesOfCanvas } from "./runstate";
 import { BlankCanvas, type PlacesAsk } from "./BlankCanvas";
+import { CatalogueDialog } from "./CatalogueDialog";
 import { MACHINE, MACHINE_GROUND, SECTIONS, TERMINALS_GROUND, nameOfPlace, onItsOwnName, type MachineRow, type Section } from "./places";
 import { World, OF_THIS_TREE, type FlowGroup } from "./World";
 import { liveOf, newestPerFlow } from "./flowlive";
@@ -379,6 +380,7 @@ export default function App() {
   // Focus belongs to the branch, not the canvas: the rail points at a path
   // inside the single graph, it does not choose which graph to show.
   const [focusName, setFocusName] = useState<string | null>(() => wasAt.current.focus ?? null);
+  const [catalogueOpen, setCatalogueOpen] = useState(false);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
 
   const [saving, setSaving] = useState<Set<string>>(new Set());
@@ -1469,6 +1471,7 @@ export default function App() {
           setSelectedNode(null);
         }}
         onNewFlow={addFlow}
+        onFromCatalogue={NATIVE ? () => setCatalogueOpen(true) : undefined}
         globalFlows={
           /* THE GROUP IS ALREADY CALLED «FLOWS EVERYWHERE», so the row inside
              it is not called that too: it says what the map answers. */
@@ -1586,6 +1589,16 @@ export default function App() {
             )}
           </div>
         </div>
+      )}
+      {catalogueOpen && (
+        <CatalogueDialog
+          onClose={() => setCatalogueOpen(false)}
+          onMade={(made) => {
+            setCatalogueOpen(false);
+            readFlows(() => true);
+            setFocusName(made.flow);
+          }}
+        />
       )}
       {/* THE WHITEBOARD IS WHERE A FLOW IS ASKED FOR, NOT DRAWN: blocks and
           words go to `draft-a-flow`, and the board shows what came back. */}
@@ -1789,6 +1802,7 @@ export default function App() {
               failure={failure}
               brokenCount={broken.length}
               onCreate={addFlow}
+              onFromCatalogue={NATIVE ? () => setCatalogueOpen(true) : undefined}
               places={places}
             />
           )}

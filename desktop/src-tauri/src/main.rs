@@ -23,6 +23,7 @@ mod changes;
 mod engines;
 mod events;
 mod faults;
+mod flow_catalogue;
 mod flows;
 mod flows_by_workspace;
 mod handoff;
@@ -183,6 +184,8 @@ fn main() {
             flows::delete_flow,
             flows::flow_texts,
             flows::flow_chains,
+            flow_catalogue::flow_catalogue,
+            flow_catalogue::flow_from_catalogue,
             flows_by_workspace::flows_here,
             flows_by_workspace::flows_by_workspace,
             tools::discover_tools,
