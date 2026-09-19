@@ -205,8 +205,15 @@ jobs:
 
       - name: the Rust version the manifest declares
         run: |
-          rustup toolchain install "$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)" --profile minimal
+          rustup toolchain install "$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)" --profile minimal --component clippy
           rustup default "$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)"
+
+      # The clippy gate runs `--workspace`, and this shell declares one of its
+      # own, so nothing linted it. The release's own ratchet did, and caught a
+      # warning that had reached the trunk through six green checks.
+      - name: the shell is linted where the gate cannot reach it
+        working-directory: desktop/src-tauri
+        run: cargo clippy --all-targets -- -D clippy::correctness -D clippy::suspicious -D clippy::perf
 
       - name: the shell's own battery
         run: |

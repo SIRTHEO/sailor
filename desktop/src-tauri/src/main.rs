@@ -53,7 +53,9 @@ mod worktree;
 #[serde(tag = "state", rename_all = "snake_case")]
 enum FlowEntry {
     Loaded {
-        flow: flow::FlowFile,
+        /// Boxed: a loaded flow is an order of magnitude bigger than a broken
+        /// one, and every entry of the list would carry the difference.
+        flow: Box<flow::FlowFile>,
         /// Which source it comes from: "yours", "the project's", "declared".
         /// Seeing two flows of one name, you must be able to tell which runs.
         origin: String,
@@ -87,7 +89,7 @@ fn flows(app: tauri::AppHandle) -> Vec<FlowEntry> {
         .into_iter()
         .map(|(name, origin, entry)| match entry {
             Ok(flow) => FlowEntry::Loaded {
-                flow,
+                flow: Box::new(flow),
                 origin: origin.to_owned(),
             },
             Err(reason) => FlowEntry::Broken {
