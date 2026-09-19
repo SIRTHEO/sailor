@@ -17,6 +17,7 @@ fn a_fault(number: i64, what: &str) -> Fault {
         status: "**open**".to_owned(),
         standing: faults::Standing::Open,
         public_summary: None,
+        github_issue: None,
     }
 }
 

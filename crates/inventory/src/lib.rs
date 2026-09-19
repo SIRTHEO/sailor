@@ -13,6 +13,7 @@
 // knows where Claude Code loads things from, and here the list gets built.
 pub mod discovery;
 pub mod extensions;
+pub mod place;
 
 use serde::Serialize;
 use std::collections::BTreeSet;

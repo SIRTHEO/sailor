@@ -197,6 +197,8 @@ dependencies = [
 name = "inventory"
 version = "0.1.0"
 dependencies = [
+ "ledger",
+ "machine",
  "regex",
  "serde",
  "serde_json",
