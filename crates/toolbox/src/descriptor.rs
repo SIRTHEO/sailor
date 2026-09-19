@@ -543,10 +543,8 @@ pub struct Quota {
     /// milliseconds; empty where the provider's credentials carry none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub access_expires_pointer: Vec<String>,
-    /// The path of keys down to the refresh token's own expiry, unix
-    /// milliseconds. Fault 169: read beside `access_expires_pointer` from the
-    /// same credentials text, an expired access token with an unexpired
-    /// refresh token is not the same fact as a real refusal to authenticate.
+    /// The same for the refresh token: an expired access token beside an
+    /// unexpired refresh one is not a refusal to authenticate.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub refresh_expires_pointer: Vec<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
