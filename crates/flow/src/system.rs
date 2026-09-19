@@ -52,6 +52,18 @@ pub const FLOWS: &[(&str, &str)] = &[
         "what-this-machine-has",
         include_str!("../system/what-this-machine-has.flow.json"),
     ),
+    (
+        "price-every-call",
+        include_str!("../system/price-every-call.flow.json"),
+    ),
+    (
+        "measure-the-baseline",
+        include_str!("../system/measure-the-baseline.flow.json"),
+    ),
+    (
+        "run-one-bench-task",
+        include_str!("../system/run-one-bench-task.flow.json"),
+    ),
     // A hard question taken to a strong model with the material already in
     // hand. The refusal of an empty brief is a step, not a comment: the same
     // engine on the same question spent its whole window exploring and
@@ -125,6 +137,10 @@ pub const FLOWS: &[(&str, &str)] = &[
         "take-the-next-fault",
         include_str!("../system/take-the-next-fault.flow.json"),
     ),
+    (
+        "judge-a-change",
+        include_str!("../system/judge-a-change.flow.json"),
+    ),
     // The ordinary gesture that reaches the two actions naming everything
     // else's dead powers — without this flow, they were their own example.
     (
@@ -174,6 +190,14 @@ pub const FLOWS: &[(&str, &str)] = &[
     (
         "empty-a-session-that-handed-on",
         include_str!("../system/empty-a-session-that-handed-on.flow.json"),
+    ),
+    (
+        "build-the-bench",
+        include_str!("../system/build-the-bench.flow.json"),
+    ),
+    (
+        "validate-a-bench-task",
+        include_str!("../system/validate-a-bench-task.flow.json"),
     ),
 ];
 

@@ -28,6 +28,8 @@ models = { path = "../models" }
 profiles = { path = "../profiles" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# The frozen benchmark's hash: the same digest `flow` and `workspace` use.
+sha2 = "0.10"
 # Whoever watches the crew reads the terminals Sailor tracks, not only the
 # claims agents write. No cycle: `sessions` depends only on `ledger`.
 sessions = { path = "../sessions" }

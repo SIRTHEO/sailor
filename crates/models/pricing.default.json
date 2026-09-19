@@ -56,10 +56,29 @@
     "tariffa di un altro. È una VOCE e non un alias di `claude-fable-5`, perché le",
     "due non hanno la stessa tariffa: lettura dalla cache 0,25 contro 1,00 per",
     "milione. I cinque numeri sono letti dal catalogo, la stessa fonte che",
-    "`sailor models list` legge, non derivati dai moltiplicatori dichiarati sopra."
+    "`sailor models list` legge, non derivati dai moltiplicatori dichiarati sopra.",
+    "",
+    "EVERY CALL CARRIES AN EQUIVALENT COST, AND THE RULES ARE PINNED HERE. Since",
+    "14/09/2026 a call is priced by the first rule that fits, in this order: a tool",
+    "named in `not_models` costs nothing; a refusal that answered nothing costs",
+    "nothing; a model the engine names is priced by its entry; tokens without a",
+    "model are priced at the engine's `assumed_model`; an engine on hardware is",
+    "priced by `per_wall_second_micros` times the seconds it ran; a call with no",
+    "reading at all takes the engine's `unread_call_equivalent_micros`. The rule",
+    "applied travels with the figure in the output of `price_every_call`, so a",
+    "pinned estimate is never read as a measure.",
+    "",
+    "WHERE THE PINNED FIGURES COME FROM. The OpenAI and Google entries below are the",
+    "published list prices as remembered on 14/09/2026, NOT verified on a bill: a",
+    "deterministic equivalent needs a fixed number more than an exact one, and the",
+    "home file corrects them without a rebuild. `unread_call_equivalent_micros` is",
+    "the median of that engine's measured calls on this machine's ledger the same",
+    "day (codex 14 calls, agy 23, claude-code 99). `per_wall_second_micros` is",
+    "watts times tariff: the home server at about 180 W and 0.27 USD/kWh gives",
+    "13.5 micro-dollars a second, this machine's local runner about 3."
   ],
   "currency": "USD",
-  "dated": "2026-09-06",
+  "dated": "2026-09-14",
   "models": [
     {
       "id": "claude-opus-5",
@@ -170,6 +189,129 @@
       "cached_per_million": 0.1,
       "cache_write_per_million": 1.25,
       "cache_write_long_per_million": 2.0
+    },
+    {
+      "id": "gpt-5-codex",
+      "aliases": [
+        "gpt-5",
+        "gpt-5.1",
+        "gpt-5.1-codex",
+        "gpt-5.2",
+        "gpt-5.2-codex",
+        "gpt-5.3-codex",
+        "codex",
+        "openai/gpt-5",
+        "openai/gpt-5-codex"
+      ],
+      "input_per_million": 1.25,
+      "output_per_million": 10.0,
+      "cached_per_million": 0.125,
+      "cache_write_per_million": 0.0,
+      "cache_write_long_per_million": 0.0
+    },
+    {
+      "id": "gpt-5-mini",
+      "aliases": [
+        "gpt-5-mini-codex",
+        "openai/gpt-5-mini"
+      ],
+      "input_per_million": 0.25,
+      "output_per_million": 2.0,
+      "cached_per_million": 0.025,
+      "cache_write_per_million": 0.0,
+      "cache_write_long_per_million": 0.0
+    },
+    {
+      "id": "gemini-3-pro",
+      "aliases": [
+        "gemini-3-pro-preview",
+        "gemini-3.0-pro",
+        "google/gemini-3-pro"
+      ],
+      "input_per_million": 2.0,
+      "output_per_million": 12.0,
+      "cached_per_million": 0.2,
+      "cache_write_per_million": 0.0,
+      "cache_write_long_per_million": 0.0
+    },
+    {
+      "id": "gemini-2.5-pro",
+      "aliases": [
+        "google/gemini-2.5-pro"
+      ],
+      "input_per_million": 1.25,
+      "output_per_million": 10.0,
+      "cached_per_million": 0.31,
+      "cache_write_per_million": 0.0,
+      "cache_write_long_per_million": 0.0
+    },
+    {
+      "id": "gemini-2.5-flash",
+      "aliases": [
+        "google/gemini-2.5-flash"
+      ],
+      "input_per_million": 0.3,
+      "output_per_million": 2.5,
+      "cached_per_million": 0.03,
+      "cache_write_per_million": 0.0,
+      "cache_write_long_per_million": 0.0
     }
+  ],
+  "engines": {
+    "codex": {
+      "assumed_model": "gpt-5-codex",
+      "unread_call_equivalent_micros": 41000
+    },
+    "codex-repair": {
+      "assumed_model": "gpt-5-codex",
+      "unread_call_equivalent_micros": 41000
+    },
+    "agy": {
+      "assumed_model": "gemini-3-pro",
+      "unread_call_equivalent_micros": 76000
+    },
+    "gemini-cli": {
+      "assumed_model": "gemini-3-pro",
+      "unread_call_equivalent_micros": 76000
+    },
+    "claude-code": {
+      "unread_call_equivalent_micros": 2034000
+    },
+    "claude-code-repair": {
+      "unread_call_equivalent_micros": 2034000
+    },
+    "claude": {
+      "unread_call_equivalent_micros": 2034000
+    },
+    "lab": {
+      "per_wall_second_micros": 14
+    },
+    "qwen-35b": {
+      "per_wall_second_micros": 14
+    },
+    "qwen-4b": {
+      "per_wall_second_micros": 14
+    },
+    "ollama": {
+      "per_wall_second_micros": 3
+    },
+    "ollama-coder-14b": {
+      "per_wall_second_micros": 3
+    }
+  },
+  "not_models": [
+    "cargo",
+    "git",
+    "npm",
+    "npx",
+    "node",
+    "pnpm",
+    "bun",
+    "python3",
+    "jq",
+    "gh",
+    "make",
+    "just",
+    "sh"
   ]
 }

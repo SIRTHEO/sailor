@@ -191,6 +191,11 @@ const ACTION_KIND: Record<string, StepKind> = {
   memory_query: "deposit",
   memory_write: "deposit",
   topic_drift: "deposit",
+  // The benchmark's builder: two readings that end in a verdict, and one
+  // reading of the set back from the home.
+  bench_candidates: "check",
+  bench_validate: "check",
+  bench_freeze: "deposit",
   // Writes a flow file where the person's flows live: a gesture on the world.
   flow_draft: "gesture",
   // The terminals Sailor follows. A reading of a store like the ones above,
@@ -219,6 +224,15 @@ const ACTION_KIND: Record<string, StepKind> = {
   // A hash of a value already in hand, touching neither store nor tree: the
   // same family as a reading a `when` compares against.
   digest: "check",
+  // The deterministic judge of a change: a verdict a run closes on, so it
+  // draws with the checks.
+  judge_change: "check",
+  // Readings of the ledger that write the figure back or lay a set out: the
+  // store's family, as history_ask is.
+  price_every_call: "deposit",
+  calls_without_cost: "deposit",
+  bench_tasks: "deposit",
+  run_reading: "deposit",
   subflow: "subflow",
   // The same flow once per element of a list: a subflow repeated, so it draws
   // in that family rather than inventing one.

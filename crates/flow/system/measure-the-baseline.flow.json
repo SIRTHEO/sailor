@@ -1,0 +1,266 @@
+{
+  "id": "measure-the-baseline",
+  "description": "THE FIRST NUMBER OF THE EVALUATION LOOP: the flow under measurement, run on every task of a frozen set a declared number of times, one child at a time, each child judged by the deterministic judge and read from the ledger. The tasks come from `bench_tasks`, a root step whose input names the set, the runs per task, the flow under measurement and the binary that runs it, laid out as one item per task and run; `run-one-bench-task` does the rest for each; the list of child runs lands in the store under `bench-baselines` so the table can be drawn from the ledger afterwards. One child at a time on purpose: each one cuts a tree and runs the whole battery in it, and four together are what this machine's memory guard kills. The trigger carries only the launch; nothing here decides what the flow under measurement does.",
+  "graph": {
+    "steps": [
+      {
+        "id": "trigger",
+        "deps": [],
+        "action": "trigger",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "source": "manual"
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "who": {
+              "type": "string"
+            },
+            "where": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "text"
+          ],
+          "allow_extra": false
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "who": {
+              "type": "string"
+            },
+            "where": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "text",
+            "who",
+            "where",
+            "source",
+            "kind"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "tasks",
+        "deps": [],
+        "action": "bench_tasks",
+        "max_attempts": 1,
+        "when": null,
+        "with": {},
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "set": {
+              "type": "string"
+            },
+            "runs": {
+              "type": "number"
+            },
+            "flow": {
+              "type": "string"
+            },
+            "sailor": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "set",
+            "runs",
+            "flow",
+            "sailor"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "set": {
+              "type": "string"
+            },
+            "flow": {
+              "type": "string"
+            },
+            "sailor": {
+              "type": "string"
+            },
+            "tasks": {
+              "type": "number"
+            },
+            "runs_per_task": {
+              "type": "number"
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "any"
+              }
+            }
+          },
+          "required": [
+            "set",
+            "flow",
+            "sailor",
+            "tasks",
+            "runs_per_task",
+            "items"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "measure",
+        "deps": [
+          "trigger",
+          "tasks"
+        ],
+        "action": "for_each",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "flow": "run-one-bench-task",
+          "items": {
+            "$from": "/tasks/items"
+          },
+          "at_once": 1
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "flow": {
+              "type": "string"
+            },
+            "at_once": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "flow",
+            "at_once"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "any"
+              }
+            },
+            "runs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "items",
+            "runs"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "record",
+        "deps": [
+          "tasks",
+          "measure"
+        ],
+        "action": "store_write",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "collection": "bench-baselines",
+          "written_by": "measure-the-baseline",
+          "value": {
+            "set": {
+              "$from": "/tasks/set"
+            },
+            "flow": {
+              "$from": "/tasks/flow"
+            },
+            "runs_per_task": {
+              "$from": "/tasks/runs_per_task"
+            },
+            "tasks": {
+              "$from": "/tasks/tasks"
+            },
+            "child_runs": {
+              "$from": "/measure/runs"
+            }
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "collection": {
+              "type": "string"
+            },
+            "written_by": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "collection",
+            "written_by"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "collection": {
+              "type": "string"
+            },
+            "key": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "collection",
+            "key"
+          ],
+          "allow_extra": true
+        }
+      }
+    ]
+  },
+  "inputs": {
+    "trigger": {
+      "text": "measure the flow under evaluation on the frozen set",
+      "who": "sailor",
+      "where": "."
+    },
+    "tasks": {
+      "set": "stage-1",
+      "runs": 2,
+      "flow": "sviluppa-sailor",
+      "sailor": "sailor"
+    }
+  }
+}

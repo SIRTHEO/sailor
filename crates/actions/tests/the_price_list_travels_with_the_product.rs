@@ -89,13 +89,12 @@ fn a_broken_file_at_home_falls_back_to_what_is_shipped() {
     assert_eq!(prices.knows("claude-opus-5"), Known::Priced);
 }
 
-/// Having no price for a model has to be knowable. OpenAI's and Google's models
-/// are out of the shipped list **on purpose** — nobody has verified their
-/// prices — and stay declaredly unknown instead of becoming zero.
+/// Having no price for a model has to be knowable: a name the shipped list
+/// does not carry stays declaredly unknown instead of becoming zero.
 #[test]
 fn a_model_nobody_priced_is_reported_as_absent_not_as_free() {
     let prices = actions::price_list_from(None);
-    assert_eq!(prices.knows("gpt-5-codex"), Known::Absent);
+    assert_eq!(prices.knows("a-model-nobody-listed"), Known::Absent);
     assert_eq!(
         cost_micros(
             TokenCounts {
@@ -104,7 +103,7 @@ fn a_model_nobody_priced_is_reported_as_absent_not_as_free() {
                 ..TokenCounts::default()
             },
             prices
-                .find("gpt-5-codex")
+                .find("a-model-nobody-listed")
                 .map(Price::micros)
                 .unwrap_or_default()
         ),
