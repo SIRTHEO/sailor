@@ -609,6 +609,23 @@ mod tests {
         assert!(!said.credential_is_dead(), "the account was never asked about");
     }
 
+    /// **AN ACCESS TOKEN PAST ITS HOUR IS NOT A SIGNED-OUT ACCOUNT.** The
+    /// provider answered, so this outranks a channel that stopped at a missing
+    /// file; the credential is not the thing that died, so the panel must not
+    /// offer a fresh login over it.
+    #[test]
+    fn an_unexpired_refresh_token_answers_both_questions_apart() {
+        let enriched = RemainingError::RefusedWithAnUnexpiredRefreshToken {
+            said: "token expired".to_owned(),
+            refresh_expires_at: 1,
+        };
+        assert!(enriched.provider_answered(), "the provider is the one who said no");
+        assert!(
+            !enriched.credential_is_dead(),
+            "a live refresh token beside it is why this variant exists at all"
+        );
+    }
+
     /// **A KIND NOBODY NAMED CANNOT KILL AN ACCOUNT**: the channel is beta.
     #[test]
     fn a_refusal_of_an_unnamed_kind_is_a_not_now() {
