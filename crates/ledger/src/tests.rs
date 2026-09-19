@@ -4111,6 +4111,8 @@ fn a_call_without_cost_reads_back_whole() {
 
     let open = ledger.model_calls_without_cost().unwrap();
     assert_eq!(open, vec![written]);
+}
+
 /// A declared home, or a declared configuration directory, does not need
 /// `HOME`: only the last rung is built from it.
 #[test]
