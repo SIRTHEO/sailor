@@ -43,3 +43,27 @@ suffixed `_TODAY` upward, comment ratios and long blocks downward.
 
 - The branch's `HEAD` is recorded before a reviewer starts; the review names that commit; a different `HEAD` invalidates the review
 - The combined trunk runs A plus every applicable letter, then the per-crate battery in a tab with line-by-line logging
+
+## The six the trunk requires, and the day each said no
+
+A required check that cannot refuse is worse than no check: the ruleset counts
+it, the tree believes it, and the belief is free. Two of these six were exactly
+that — `the style debt` could not go red whatever it measured, `publication
+boundary` could not go green on any merge — and nothing noticed, because
+nothing had ever asked a gate to prove it had said no.
+
+So each ends in one of two states, never a third. **proved red**: a real commit
+and the receipt of the run that concluded `failure` on it. **refused**: it
+cannot be made red without touching the product, the reason is written, and a
+fault number holds it. `scripts/gates-can-say-no.sh` reads this table, reads
+the six from the ruleset itself, and exits 0 only when the two agree and every
+receipt still holds on the forge.
+
+| check | state | commit | receipt | what made it refuse |
+| --- | --- | --- | --- | --- |
+| `publication boundary` | not yet asked | — | — | — |
+| `sailor/private-names` | not yet asked | — | — | — |
+| `workspace tests` | not yet asked | — | — | — |
+| `desktop tests` | not yet asked | — | — | — |
+| `clippy gate` | not yet asked | — | — | — |
+| `the style debt` | not yet asked | — | — | — |

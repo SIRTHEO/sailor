@@ -7,11 +7,12 @@
 # file exists to catch. When the slowness hurts, a cache goes in declaring
 # what it carries over.
 #
-# Two kinds of job: one that stops you (the tests, and the lints that name a
-# defect) and one that counts (the style). Put first, formatting and clippy
-# kept the battery from ever running, and a light that is always red says
-# nothing. The style numbers land in the run summary so it shows when they
-# grow; they stop nobody until a decision is taken.
+# Every job here can refuse, and the ruleset on main requires every one of
+# them. Formatting and clippy, demanded at zero, kept the battery from ever
+# running and a light that is always red says nothing — so the style job
+# holds a ceiling instead: it counts the two gaps and falls when they grow
+# past the number of the day. The decision the old note waited for was taken
+# on 19/09/2026, and the ceiling is what came of it.
 
 name: the battery
 
@@ -60,21 +61,47 @@ jobs:
           esac
           scripts/privacy-scan.sh --shapes-only "$CANDIDATE" "$BASE"
 
-      - name: the names, carried by a trusted check on this exact commit
+      # **A MERGE COMMIT IS NEVER ATTESTED, AND USED TO BE RED FOREVER.** The
+      # attestation is posted from the machine that holds the list, onto the
+      # head of the request; the commit the forge then writes on main is a sha
+      # nobody measured, so this job waited ten minutes and refused every
+      # merge. A check that is red whatever you do says exactly as much as one
+      # that is green whatever you do.
+      #
+      # WHAT CARRIES THE MEASURE OVER IS THE TREE, NOT THE PARENTHOOD. A merge
+      # of an up-to-date branch writes a commit whose tree is the head's tree,
+      # byte for byte: what would be published is what was already measured.
+      # A merge that resolved anything has a tree of its own, is carried by
+      # nobody, and still waits for its own attestation.
+      #
+      # WHAT THE CARRY DOES NOT COVER is the merge commit's own message, which
+      # no list read it. It names a branch, and a branch name reached the forge
+      # when it was pushed, long before any gate — so this loses nothing that
+      # was ever protected here. The shapes in that message are read by the
+      # step above, which needs no list.
+      - name: the names, carried by a trusted check on this content
         env:
           GH_TOKEN: ${{ github.token }}
           OWNER: ${{ github.repository_owner }}
         run: |
+          tree=$(git rev-parse "$CANDIDATE^{tree}")
+          carriers=$CANDIDATE
+          for parent in $(git rev-parse "$CANDIDATE^@"); do
+            [ "$(git rev-parse "$parent^{tree}")" = "$tree" ] && carriers="$carriers $parent"
+          done
+          echo "the commits whose measure counts for this content: $carriers"
           for attempt in $(seq 1 20); do
-            state=$(gh api "repos/$GITHUB_REPOSITORY/commits/$CANDIDATE/statuses" \
-              --jq "[.[] | select(.context == \"sailor/private-names\" and .creator.login == \"$OWNER\")][0].state // \"\"")
-            case "$state" in
-              success) echo "names: measured on $CANDIDATE by the owner's armed check"; exit 0 ;;
-              failure|error) echo "::error::names: refused on $CANDIDATE"; exit 1 ;;
-            esac
+            for carrier in $carriers; do
+              state=$(gh api "repos/$GITHUB_REPOSITORY/commits/$carrier/statuses" \
+                --jq "[.[] | select(.context == \"sailor/private-names\" and .creator.login == \"$OWNER\")][0].state // \"\"")
+              case "$state" in
+                success) echo "names: measured on $carrier by the owner's armed check"; exit 0 ;;
+                failure|error) echo "::error::names: refused on $carrier"; exit 1 ;;
+              esac
+            done
             sleep 30
           done
-          echo "::error::names: not measured on $CANDIDATE; publication waits for scripts/attest-private-names.sh on this exact commit"
+          echo "::error::names: not measured on any of $carriers; publication waits for scripts/attest-private-names.sh on this exact commit"
           exit 1
 
   tests:
@@ -145,11 +172,18 @@ jobs:
     name: the style debt
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # **THIS JOB STOPS NOBODY, AND SAYS SO.** It counts two gaps and writes
-    # them into the summary. The day either reaches zero — or a ceiling is
-    # agreed that can only come down — this line goes and the job becomes a
-    # real gate.
-    continue-on-error: true
+    # **A CEILING THAT ONLY COMES DOWN.** Until 19/09/2026 this job carried
+    # `continue-on-error: true` and could not go red whatever it measured,
+    # while the ruleset on main counted it among the checks that must pass.
+    # A required check that cannot refuse is worse than no check at all: the
+    # tree believes it, and the belief is free.
+    #
+    # The two gaps are far too large to demand zero, so the ceiling is the
+    # number of the day and the rule is the tree's own — a seed may fall,
+    # never rise. `CONTRIBUTING.md` states it for the judges; it holds here.
+    env:
+      FORMATTING_PLACES_TODAY: 1669
+      CLIPPY_SUSPICIONS_TODAY: 0
     steps:
       - uses: actions/checkout@v4
 
@@ -160,7 +194,8 @@ jobs:
 
       - name: formatting, counted
         # `|| true` because here a non-zero exit is the data, not the failure:
-        # rustfmt exits 1 exactly when it has something to say.
+        # rustfmt exits 1 exactly when it has something to say. The fall comes
+        # from the step that reads the count against the ceiling.
         run: cargo fmt --all -- --check > "$RUNNER_TEMP/formatting.txt" 2>&1 || true
 
       - name: clippy, counted
@@ -169,22 +204,46 @@ jobs:
         # that warns would become our red while saying nothing about our code.
         run: cargo clippy --workspace --all-targets > "$RUNNER_TEMP/clippy.txt" 2>&1 || true
 
-      - name: the two numbers, visible without opening the logs
-        if: always()
+      # **NO `if: always()` HERE, AND THAT IS THE GATE.** With it, a toolchain
+      # that failed to install leaves no file to read, `grep` counts nothing,
+      # and the job reports zero of both gaps and passes. That is the blind
+      # green the fault register already holds twice: a check that cannot
+      # measure must fall, not report zero.
+      - name: the two numbers, against the ceiling
         run: |
+          for measured in formatting clippy; do
+            [ -f "$RUNNER_TEMP/$measured.txt" ] \
+              || { echo "::error::$measured was never measured: there is no file to count"; exit 1; }
+          done
           places=$(grep -c '^Diff in' "$RUNNER_TEMP/formatting.txt" || true)
           files=$(grep '^Diff in' "$RUNNER_TEMP/formatting.txt" | sed 's/:[0-9]*:$//' | sort -u | wc -l || true)
           suspicions=$(grep -cE '^warning: ' "$RUNNER_TEMP/clippy.txt" || true)
+
+          # **SAID IN THE LOG, NOT ONLY IN THE SUMMARY.** A step summary is not
+          # in the API: asked what this job had measured on a past commit, the
+          # only way to answer was to open a web page by hand. A number no
+          # script can read is a number nobody checks.
+          echo "formatting places: ${places:-0} across ${files:-0} files, ceiling ${FORMATTING_PLACES_TODAY}"
+          echo "clippy suspicions: ${suspicions:-0}, ceiling ${CLIPPY_SUSPICIONS_TODAY}"
           {
             echo "### The style debt"
             echo
-            echo "| gap | how much |"
-            echo "| --- | --- |"
-            echo "| places rustfmt disagrees with | ${places:-0} (across ${files:-0} files) |"
-            echo "| clippy suspicions | ${suspicions:-0} |"
-            echo
-            echo "Neither blocks publishing. They are here so it shows when they grow."
+            echo "| gap | how much | the ceiling it may not pass |"
+            echo "| --- | --- | --- |"
+            echo "| places rustfmt disagrees with | ${places:-0} (across ${files:-0} files) | ${FORMATTING_PLACES_TODAY} |"
+            echo "| clippy suspicions | ${suspicions:-0} | ${CLIPPY_SUSPICIONS_TODAY} |"
           } >> "$GITHUB_STEP_SUMMARY"
+
+          red=0
+          if [ "${places:-0}" -gt "$FORMATTING_PLACES_TODAY" ]; then
+            echo "::error::formatting: ${places} places, $((places - FORMATTING_PLACES_TODAY)) over the ceiling of ${FORMATTING_PLACES_TODAY}. Run cargo fmt over what you touched; lower the ceiling to ${places} only if your change cleared some."
+            red=1
+          fi
+          if [ "${suspicions:-0}" -gt "$CLIPPY_SUSPICIONS_TODAY" ]; then
+            echo "::error::clippy: ${suspicions} suspicions, $((suspicions - CLIPPY_SUSPICIONS_TODAY)) over the ceiling of ${CLIPPY_SUSPICIONS_TODAY}. Silence what your change added; lower the ceiling to ${suspicions} only if your change cleared some."
+            red=1
+          fi
+          exit $red
 
   desktop:
     name: desktop tests
