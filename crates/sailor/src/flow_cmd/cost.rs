@@ -371,6 +371,25 @@ const MICROS_IN_A_UNIT: f64 = 1_000_000.0;
 /// **`None` IS NOT AN EMPTY SET**: a ledger that will not open says nobody
 /// could look, and confusing the two would print «never run here» for a flow
 /// run a hundred times.
+/// How many runs this flow has here, counted rather than gathered.
+pub(super) fn runs_of(flow_id: &str) -> usize {
+    let Ok(dir) = default_ledger_dir() else {
+        return 0;
+    };
+    if !ui::gather::ledger_present(&dir) {
+        return 0;
+    }
+    let Ok(ledger) = ledger::Ledger::open(&dir) else {
+        return 0;
+    };
+    ledger
+        .runs_by_entity()
+        .unwrap_or_default()
+        .into_iter()
+        .find(|(entity, ..)| entity == flow_id)
+        .map_or(0, |(_, count, _)| count.max(0) as usize)
+}
+
 pub(super) fn models_seen_by(flow_id: &str) -> Option<BTreeSet<String>> {
     let dir = default_ledger_dir().ok()?;
     let data = ui::gather::gather(&dir).ok()??;
@@ -501,13 +520,20 @@ fn named_and_unpriced(prices: &PriceList, asked: &ModelsAskedByTheFlow) -> Vec<S
 
 /// What the ledger says about the models past runs were answered by, and
 /// whether one of them has no price.
-fn past_models_into(said: &mut String, prices: &PriceList, seen: Option<&BTreeSet<String>>) -> bool {
+fn past_models_into(said: &mut String, prices: &PriceList, seen: Option<&BTreeSet<String>>, runs: usize) -> bool {
     let Some(seen) = seen else {
         said.push_str(&catalogue::say("cli.flow.models_store_unreadable", &[]));
         return false;
     };
     if seen.is_empty() {
-        said.push_str(&catalogue::say("cli.flow.models_never_run_here", &[]));
+        // No model and no run are different facts. The relay has 412 runs and
+        // calls no engine at all; saying it never ran sent a reader looking
+        // for a flow that had been working all along.
+        let key = match runs {
+            0 => "cli.flow.models_never_run_here",
+            _ => "cli.flow.models_ran_without_an_engine",
+        };
+        said.push_str(&catalogue::say(key, &[("runs", &runs.to_string())]));
         return false;
     }
     let unpriced = cannot_be_priced(prices, seen);
@@ -536,6 +562,7 @@ pub(super) fn what_is_priced(
     asked: &ModelsAskedByTheFlow,
     seen: Option<&BTreeSet<String>>,
     cap: Option<i64>,
+    runs: usize,
 ) -> String {
     let mut said = format!(
         "\n{}",
@@ -581,7 +608,7 @@ pub(super) fn what_is_priced(
             )
         );
     }
-    let past_unpriced = past_models_into(&mut said, prices, seen);
+    let past_unpriced = past_models_into(&mut said, prices, seen, runs);
     // **THE CAP LINE ONLY WHERE THE TWO THINGS MEET.** A cap with no uncovered
     // models has nothing to declare, and uncovered models with no cap stop
     // nothing: the coincidence is what is dangerous, and it is the sentence
@@ -637,6 +664,7 @@ mod tests {
             &naming_nothing(),
             Some(&names(&["prezzato", "a-meta", "mai-visto"])),
             None,
+            0,
         );
 
         assert!(
@@ -664,6 +692,7 @@ mod tests {
             &naming_nothing(),
             Some(&names(&["prezzato"])),
             None,
+            0,
         );
 
         assert!(said.contains("all priced"), "{said}");
@@ -682,12 +711,13 @@ mod tests {
     /// sentences become one and this test goes red.
     #[test]
     fn a_ledger_that_could_not_be_read_is_not_a_flow_that_never_ran() {
-        let unreadable = what_is_priced(&a_small_price_list(), &naming_nothing(), None, None);
+        let unreadable = what_is_priced(&a_small_price_list(), &naming_nothing(), None, None, 0);
         let never_ran = what_is_priced(
             &a_small_price_list(),
             &naming_nothing(),
             Some(&BTreeSet::new()),
             None,
+            0,
         );
 
         assert_ne!(unreadable, never_ran);
@@ -707,10 +737,36 @@ mod tests {
             &naming_nothing(),
             Some(&BTreeSet::new()),
             None,
+            0,
         );
 
         assert!(!said.contains("all priced"), "{said}");
         assert!(said.contains("has never run here"), "{said}");
+    }
+
+    /// **NO MODEL AND NO RUN ARE DIFFERENT FACTS.** The relay has 412 runs here
+    /// and calls no engine at all, and this line told its reader it had never
+    /// run — sending them to repair a flow that had been working all along.
+    #[test]
+    fn a_flow_that_ran_without_calling_an_engine_is_not_a_flow_that_never_ran() {
+        let never = what_is_priced(
+            &a_small_price_list(),
+            &naming_nothing(),
+            Some(&BTreeSet::new()),
+            None,
+            0,
+        );
+        let ran = what_is_priced(
+            &a_small_price_list(),
+            &naming_nothing(),
+            Some(&BTreeSet::new()),
+            None,
+            412,
+        );
+
+        assert_ne!(never, ran);
+        assert!(ran.contains("412"), "{ran}");
+        assert!(!ran.contains("has never run here"), "{ran}");
     }
 
     /// A world where one tool is told a model and one is not, which is what
@@ -777,6 +833,7 @@ mod tests {
             &asked,
             Some(&names(&["prezzato"])),
             None,
+            0,
         );
 
         assert!(
@@ -799,7 +856,7 @@ mod tests {
             &WhereOneToolTakesNoModel,
         );
 
-        let said = what_is_priced(&a_small_price_list(), &asked, Some(&BTreeSet::new()), None);
+        let said = what_is_priced(&a_small_price_list(), &asked, Some(&BTreeSet::new()), None, 0);
 
         assert!(said.contains("this flow names, all priced: prezzato"), "{said}");
         assert!(!said.contains("THIS FLOW NAMES"), "{said}");
@@ -817,7 +874,7 @@ mod tests {
             &WhereOneToolTakesNoModel,
         );
 
-        let said = what_is_priced(&a_small_price_list(), &asked, Some(&BTreeSet::new()), None);
+        let said = what_is_priced(&a_small_price_list(), &asked, Some(&BTreeSet::new()), None, 0);
 
         assert!(
             said.contains("nomina (un-altro), tace (un-motore)"),
@@ -846,6 +903,7 @@ mod tests {
             &naming_nothing(),
             Some(&names(&["prezzato"])),
             None,
+            0,
         );
 
         assert!(
@@ -873,6 +931,7 @@ mod tests {
             &naming_nothing(),
             Some(&unpriced),
             Some(5_000_000),
+            0,
         );
         assert!(with_cap.contains("the spend cap"), "{with_cap}");
 
@@ -881,13 +940,14 @@ mod tests {
             &naming_nothing(),
             Some(&priced),
             Some(5_000_000),
+            0,
         );
         assert!(
             !all_priced.contains("the spend cap"),
             "with no uncovered models the cap has nothing to declare: {all_priced}"
         );
 
-        let no_cap = what_is_priced(&a_small_price_list(), &naming_nothing(), Some(&unpriced), None);
+        let no_cap = what_is_priced(&a_small_price_list(), &naming_nothing(), Some(&unpriced), None, 0);
         assert!(
             !no_cap.contains("the spend cap"),
             "a flow with no cap has no cap to warn about: {no_cap}"
