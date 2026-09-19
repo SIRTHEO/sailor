@@ -78,7 +78,7 @@ fn walk(dir: &Path, found: &mut Vec<PathBuf>) {
                 walk(&path, found);
             }
         } else if name != "the_words_a_user_reads_are_in_english.rs"
-            && [".rs", ".ts", ".tsx"].iter().any(|end| name.ends_with(end))
+            && [".rs", ".ts", ".tsx", ".swift"].iter().any(|end| name.ends_with(end))
         {
             found.push(path);
         }
@@ -100,6 +100,7 @@ const WHERE_THE_PRODUCT_SPEAKS: &[&str] = &[
     "crates/supervisor/src",
     "crates/relay/src",
     "desktop/src-tauri/src",
+    "menubar/Sources",
 ];
 
 struct Found {

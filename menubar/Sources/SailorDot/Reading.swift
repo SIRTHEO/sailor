@@ -47,10 +47,10 @@ struct Reading: Decodable {
     /// The whole reading in the one line a first look reads.
     var inOneLine: String {
         let working = atWork
-        guard !working.isEmpty else { return "nessun account al lavoro in questa finestra" }
+        guard !working.isEmpty else { return "no account at work in this window" }
         let tokens = working.reduce(0) { $0 + $1.tokensWorked }
         let sessions = working.reduce(0) { $0 + ($1.worked?.sessions ?? 0) }
-        return "\(working.count) account al lavoro · \(sessions) sessioni · \(inShort(tokens)) gettoni"
+        return "\(working.count) account at work · \(sessions) session(s) · \(inShort(tokens)) tokens"
     }
 }
 
@@ -145,9 +145,9 @@ struct Window: Decodable, Identifiable {
     /// version does not know it: the provider adds windows without asking.
     var said: String {
         switch unit {
-        case "five_hour": return "5 ore"
-        case "seven_day": return "7 giorni"
-        case "primary_window": return "finestra"
+        case "five_hour": return "5 hours"
+        case "seven_day": return "7 days"
+        case "primary_window": return "window"
         default: return unit
         }
     }
@@ -170,7 +170,7 @@ func whenItComesBack(_ text: String?) -> String? {
     plain.formatOptions = [.withInternetDateTime]
     guard let at = whole.date(from: text) ?? plain.date(from: text) else { return text }
     let said = DateFormatter()
-    said.locale = Locale(identifier: "it_IT")
+    said.locale = Locale(identifier: "en_US_POSIX")
     said.dateFormat = Calendar.current.isDateInToday(at) ? "HH:mm" : "d MMM HH:mm"
     return said.string(from: at)
 }
@@ -198,19 +198,19 @@ enum Standing {
 
     static func said(_ standing: String) -> String {
         switch standing {
-        case "ready": return "pronto"
-        case "ran_out": return "ESAURITO"
-        case "shut": return "CHIUSO"
-        default: return "non si sa"
+        case "ready": return "ready"
+        case "ran_out": return "RAN OUT"
+        case "shut": return "SHUT"
+        default: return "not known"
         }
     }
 }
 
 /// How long ago, in the shortest words that are still true.
 func ago(_ seconds: Int?) -> String {
-    guard let seconds, seconds >= 0 else { return "mai" }
-    if seconds < 90 { return "adesso" }
-    if seconds < 5_400 { return "\(seconds / 60)m fa" }
-    if seconds < 172_800 { return "\(seconds / 3_600)h fa" }
-    return "\(seconds / 86_400)g fa"
+    guard let seconds, seconds >= 0 else { return "never" }
+    if seconds < 90 { return "just now" }
+    if seconds < 5_400 { return "\(seconds / 60)m ago" }
+    if seconds < 172_800 { return "\(seconds / 3_600)h ago" }
+    return "\(seconds / 86_400)d ago"
 }

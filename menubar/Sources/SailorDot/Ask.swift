@@ -8,7 +8,7 @@ let sailorInService = FileManager.default.homeDirectoryForCurrentUser
 /// Run `sailor accounts --json` and hand back what it said.
 ///
 /// A dot that threw on a missing binary would vanish from the menu bar with no
-/// word; every failure here becomes a reading that says «non si sa» instead.
+/// word; every failure here becomes a reading that says «not known» instead.
 func askSailor(hours: Int) async -> Reading {
     guard FileManager.default.isExecutableFile(atPath: sailorInService.path) else {
         return .quiet

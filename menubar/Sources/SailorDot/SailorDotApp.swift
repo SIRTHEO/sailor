@@ -66,18 +66,18 @@ struct Panel: View {
         VStack(alignment: .leading, spacing: 12) {
             Header(reading: accounts.reading)
             if accounts.reading.accounts.isEmpty {
-                Text("Sailor non ha ancora risposto")
+                Text("Sailor has not answered yet")
                     .foregroundStyle(.secondary)
             }
             if !accounts.reading.atWork.isEmpty {
-                Section_("Al lavoro adesso") {
+                Section_("At work now") {
                     ForEach(accounts.reading.atWork) { account in
                         Row(account: account, copied: $copied)
                     }
                 }
             }
             if !accounts.reading.needingAHand.isEmpty {
-                Section_("Da sistemare") {
+                Section_("Needing a hand") {
                     ForEach(accounts.reading.needingAHand) { account in
                         Row(account: account, copied: $copied)
                     }
@@ -92,22 +92,22 @@ struct Panel: View {
                     }
                     .padding(.top, 6)
                 } label: {
-                    Text("Fermi (\(accounts.reading.theRest.count))")
+                    Text("Idle (\(accounts.reading.theRest.count))")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
             }
             Divider()
-            Text("Il lavoro è letto dai diari dei motori, sessioni di terminale comprese; la spesa in dollari è solo quella dei flussi di Sailor. Le percentuali sono la quota vera, chiesta al fornitore.")
+            Text("The work is read from the engines' own records, terminal sessions included; the dollars are only what Sailor's flows billed. The percentages are the real quota, asked of the provider.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             HStack {
-                Button(accounts.asking ? "Sto chiedendo…" : "Aggiorna adesso") {
+                Button(accounts.asking ? "Asking…" : "Read again now") {
                     Task { await accounts.askNow() }
                 }
                 .disabled(accounts.asking)
                 Spacer()
-                Button("Esci") { NSApplication.shared.terminate(nil) }
+                Button("Quit") { NSApplication.shared.terminate(nil) }
             }
         }
         .padding(14)
@@ -125,10 +125,10 @@ struct Header: View {
             HStack(spacing: 6) {
                 Image(systemName: Standing.mark(reading.worst))
                     .foregroundStyle(Standing.colour(reading.worst))
-                Text("Account e quota")
+                Text("Accounts and quota")
                     .font(.headline)
                 Spacer()
-                Text("ultime \(hoursShown)h")
+                Text("last \(hoursShown)h")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -167,7 +167,7 @@ struct Row: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Image(systemName: Standing.mark(account.standing))
                     .foregroundStyle(Standing.colour(account.standing))
-                Text(account.profile ?? "dal terminale")
+                Text(account.profile ?? "from the terminal")
                     .fontWeight(account.atWork ? .semibold : .regular)
                 Text(account.cli)
                     .font(.caption2)
@@ -192,7 +192,7 @@ struct Row: View {
             }
             if let repair = account.repair {
                 HStack(spacing: 6) {
-                    Button(copied == repair ? "Copiato" : "Copia il comando") {
+                    Button(copied == repair ? "Copied" : "Copy the command") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(repair, forType: .string)
                         copied = repair
@@ -212,8 +212,8 @@ struct Row: View {
     /// What the account did, in the order a person asks it: how much, how many
     /// calls, and what it would cost at list price.
     private func said(_ worked: Worked) -> String {
-        let weight = worked.atListPrice.map { " · $\($0) a listino" } ?? ""
-        return "\(inShort(worked.tokens)) gettoni · \(worked.calls) chiamate in \(worked.sessions) sessioni\(weight)"
+        let weight = worked.atListPrice.map { " · $\($0) at list price" } ?? ""
+        return "\(inShort(worked.tokens)) tokens · \(worked.calls) call(s) in \(worked.sessions) session(s)\(weight)"
     }
 }
 
