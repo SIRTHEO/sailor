@@ -187,6 +187,13 @@ jobs:
     # cargo that had already checked these crates re-emitted none of clippy's
     # warnings at all. The ceiling belongs to the machine that enforces it.
     env:
+      # **`CARGO_TERM_COLOR: always` IS SET FOR THE WHOLE FILE, AND IT MADE
+      # THIS COUNT A ZERO FOR EVER.** Cargo then writes `\e[1m\e[33mwarning`,
+      # which `grep '^warning: '` cannot match, so the number was 0 on every
+      # run since the job was written — including on a tree deliberately given
+      # two warnings to find. Nobody saw it, because the job could not fall
+      # whatever it counted. Colour is off here and the numbers are real.
+      CARGO_TERM_COLOR: never
       FORMATTING_PLACES_TODAY: 1675
       CLIPPY_SUSPICIONS_TODAY: 0
     steps:
@@ -207,7 +214,14 @@ jobs:
         # No `-D warnings`: we want the number, not the fall. And no global
         # `RUSTFLAGS` — that reaches **dependencies too**, and a dependency
         # that warns would become our red while saying nothing about our code.
-        run: cargo clippy --workspace --all-targets > "$RUNNER_TEMP/clippy.txt" 2>&1 || true
+        #
+        # The exit is kept because a run that stopped early counted only the
+        # crates it reached, and a partial count is *lower* than the truth: a
+        # tree that does not compile would come out tidier than one that does.
+        run: |
+          set +e
+          cargo clippy --workspace --all-targets > "$RUNNER_TEMP/clippy.txt" 2>&1
+          echo $? > "$RUNNER_TEMP/clippy.status"
 
       # **NO `if: always()` HERE, AND THAT IS THE GATE.** With it, a toolchain
       # that failed to install leaves no file to read, `grep` counts nothing,
@@ -220,6 +234,13 @@ jobs:
             [ -f "$RUNNER_TEMP/$measured.txt" ] \
               || { echo "::error::$measured was never measured: there is no file to count"; exit 1; }
           done
+          [ -f "$RUNNER_TEMP/clippy.status" ] \
+            || { echo "::error::clippy left no exit behind: whether it finished is unknown"; exit 1; }
+          status=$(cat "$RUNNER_TEMP/clippy.status")
+          [ "$status" = 0 ] || {
+            echo "::error::clippy stopped at exit $status, so it linted only the crates it reached and any count would read lower than the truth"
+            exit 1
+          }
           places=$(grep -c '^Diff in' "$RUNNER_TEMP/formatting.txt" || true)
           files=$(grep '^Diff in' "$RUNNER_TEMP/formatting.txt" | sed 's/:[0-9]*:$//' | sort -u | wc -l || true)
           suspicions=$(grep -cE '^warning: ' "$RUNNER_TEMP/clippy.txt" || true)
