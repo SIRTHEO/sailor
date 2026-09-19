@@ -51,3 +51,32 @@ fn is_a_topic(topic: &str) -> bool {
             .chars()
             .all(|letter| letter.is_ascii_lowercase() || letter.is_ascii_digit() || letter == '-')
 }
+
+/// A branch, and the three facts that say whether anything still watches it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Branch {
+    pub name: String,
+    pub in_the_trunk: bool,
+    pub has_a_tree: bool,
+    pub idle_hours: i64,
+}
+
+/// Measured over the forty branches that reached this trunk: the longest
+/// lived 117 hours.
+pub const ADRIFT_AFTER_HOURS: i64 = 120;
+
+/// The branches carrying work nothing watches. **Pure, for the reason
+/// `against_the_convention` is**: the facts are handed in, never read here.
+pub fn adrift(branches: &[Branch]) -> Vec<&Branch> {
+    let mut adrift: Vec<&Branch> = branches
+        .iter()
+        .filter(|branch| {
+            branch.name != TRUNK
+                && !branch.in_the_trunk
+                && !branch.has_a_tree
+                && branch.idle_hours > ADRIFT_AFTER_HOURS
+        })
+        .collect();
+    adrift.sort_by_key(|branch| std::cmp::Reverse(branch.idle_hours));
+    adrift
+}
