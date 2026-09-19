@@ -48,7 +48,7 @@ describe("the profile contract", () => {
     for (const word of ["supported", "not supported", "unverified"]) {
       expect(ts, `«${word}» is not in the window's Native union`).toContain(`"${word}"`);
     }
-    for (const word of ["yes", "no", "not known", "home does not move"]) {
+    for (const word of ["yes", "no", "not known", "home does not move", "mismatched", "unverified"]) {
       expect(ts, `«${word}» is not in the window's Access union`).toContain(`"${word}"`);
     }
     for (const word of ["variable", "symlink", "none"]) {

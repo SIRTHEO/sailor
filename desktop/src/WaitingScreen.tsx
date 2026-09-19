@@ -1,11 +1,19 @@
-// The screen the window opens on: the decisions that wait for a person, and
-// what happened unattended. Those two, and nothing else.
+// The screen the window opens on: the decisions that wait for a person, what
+// happened unattended, and — a row, not a place — what is running now and
+// what it costs. Three questions, one screen: the owner's rule is a person
+// scans, does not navigate, so a fourth answer earns a row here, never a
+// fourth tab.
 //
 // **NO GESTURE IS INVENTED HERE.** Taking a handed step and closing it are
 // `Handed`'s, and a copy would be a second report of one act; opening a run is
 // navigation, which whoever wires the window owns.
 
 import { useEffect, useState, type ReactNode } from "react";
+import { AttentionQueue } from "./AttentionQueue";
+import { attentionQueue, type AttentionRow } from "./attention";
+import { knownRuns, runUsage } from "./engine";
+import { RunningNow, runningNow, type RunningRow } from "./RunningNow";
+import { t } from "./i18n";
 import {
   AWAY_HOURS,
   HOW_MANY_SOURCES,
@@ -93,21 +101,83 @@ export interface WaitingScreenProps {
   since?: number;
   /** Given by a test, or by whoever already holds the answers. */
   sources?: Sources;
+  /** Direct attention queue rows, or fetched if native and omitted */
+  attention?: AttentionRow[];
+  /** The runs in flight and their cost, or fetched if native and omitted. */
+  running?: RunningRow[];
   /** Absent, the row draws no gesture rather than one that goes nowhere. */
   onRun?: (runId: string) => void;
   onQuota?: () => void;
+  onTty?: (tty: string) => void;
 }
 
-export function WaitingScreen({ native, now, since, sources, onRun, onQuota }: WaitingScreenProps) {
+export function WaitingScreen({
+  native,
+  now,
+  since,
+  sources,
+  attention,
+  running,
+  onRun,
+  onQuota,
+  onTty,
+}: WaitingScreenProps) {
   const [own, setOwn] = useState<Sources | null>(null);
+  const [ownAttention, setOwnAttention] = useState<AttentionRow[] | null>(null);
+  const [ownRunning, setOwnRunning] = useState<RunningRow[] | null>(null);
   const from = since ?? now - AWAY_HOURS * 3600;
 
   useEffect(() => {
-    if (!native || sources !== undefined) return;
+    if (!native || (sources !== undefined && attention !== undefined)) return;
     let watching = true;
     const read = () => {
-      readSources().then((seen) => {
-        if (watching) setOwn(seen);
+      if (attention === undefined) {
+        attentionQueue()
+          .then((rows) => {
+            if (watching) setOwnAttention(rows);
+          })
+          .catch(() => {
+            // Attention query not available in legacy test mocks
+          });
+      }
+      if (sources === undefined) {
+        readSources().then((seen) => {
+          if (watching) setOwn(seen);
+        });
+      }
+    };
+    read();
+    const tick = window.setInterval(read, REFRESH_MS);
+    return () => {
+      watching = false;
+      window.clearInterval(tick);
+    };
+  }, [native, sources !== undefined, attention !== undefined]);
+
+  useEffect(() => {
+    if (!native || running !== undefined) return;
+    let watching = true;
+    const read = () => {
+      knownRuns().then((runs) => {
+        if (!watching) return;
+        const inFlight = runningNow(runs);
+        // Cost is read after the rows are known, never blocking them: a run
+        // just started answers "what" before it can answer "how much".
+        setOwnRunning(inFlight.map((run) => ({ run, costMicros: null })));
+        inFlight.forEach((run) => {
+          runUsage(run.run_id).then((usage) => {
+            if (!watching) return;
+            setOwnRunning((prior) =>
+              (prior ?? []).map((row) =>
+                row.run.run_id === run.run_id
+                  ? { ...row, costMicros: usage?.total_cost_micros ?? null }
+                  : row,
+              ),
+            );
+          }, () => {});
+        });
+      }, () => {
+        // No engine to ask: the row simply stays absent, same as no run.
       });
     };
     read();
@@ -116,9 +186,10 @@ export function WaitingScreen({ native, now, since, sources, onRun, onQuota }: W
       watching = false;
       window.clearInterval(tick);
     };
-  }, [native, sources !== undefined]);
+  }, [native, running !== undefined]);
 
   const seen = sources ?? own;
+  const runningRows = running ?? ownRunning ?? [];
   if (seen === null) {
     // AN ENGINE THAT IS NOT THERE IS NOT AN EMPTY MORNING, and the two would
     // otherwise draw the same blank screen.
@@ -147,10 +218,19 @@ export function WaitingScreen({ native, now, since, sources, onRun, onQuota }: W
   const reports = history === null ? [] : reportsFrom(history, from);
   const unknown = history === null ? [] : unknownStatuses(history, from);
 
+  const activeAttention = attention ?? ownAttention;
+  const count = activeAttention !== null ? activeAttention.length : decisions.length;
+  // **A STORE THAT COULD NOT BE READ IS NOT A COUNT.** Its one row would
+  // otherwise read as «1 thing waits for you» — a number, when what happened
+  // is that nothing could be told at all.
+  const unreadable = activeAttention?.some((row) => row.kind === "unreadable") ?? false;
+
   return (
     <div className="waiting">
       <header className="waiting__head">
-        <h2 className="waiting__title">{headingOf(decisions.length, blind.length > 0)}</h2>
+        <h2 className="waiting__title">
+          {unreadable ? t("window.attention.unreadable_heading") : headingOf(count, blind.length > 0)}
+        </h2>
         <p className="waiting__sub">{subOf(reports.length, history === null)}</p>
       </header>
 
@@ -160,13 +240,21 @@ export function WaitingScreen({ native, now, since, sources, onRun, onQuota }: W
         </p>
       )}
 
-      {decisions.length > 0 && (
-        <section className="waiting__group">
-          <h3 className="waiting__section">Decide</h3>
-          {decisions.map((one) => (
-            <DecisionRow key={one.id} decision={one} now={now} onRun={onRun} onQuota={onQuota} />
-          ))}
-        </section>
+      <RunningNow rows={runningRows} now={now} onRun={onRun} />
+
+      {activeAttention !== null ? (
+        activeAttention.length > 0 && (
+          <AttentionQueue rows={activeAttention} now={now} onRun={onRun} onTty={onTty} />
+        )
+      ) : (
+        decisions.length > 0 && (
+          <section className="waiting__group">
+            <h3 className="waiting__section">Decide</h3>
+            {decisions.map((one) => (
+              <DecisionRow key={one.id} decision={one} now={now} onRun={onRun} onQuota={onQuota} />
+            ))}
+          </section>
+        )
       )}
 
       {reports.length > 0 && (

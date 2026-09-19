@@ -34,13 +34,41 @@ pub(super) fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) 
         probe: &real,
         profiles: &profiles,
     };
-    let registry = default_registry(open_default_ledger(), None);
-    let (mut report, unknown) = check_report(
-        &flow,
-        &registry,
-        Some(&tools),
+    let ledger = open_default_ledger();
+    let (report, outcome) = check_flow_report(
+        flow,
+        ledger,
+        &tools,
         if try_engines { Some(&world) } else { None },
     );
+    match outcome {
+        Ok(()) => Ok(report),
+        Err(refusal) => {
+            // THE REPORT IS SEEN EVEN WHEN THE FLOW IS BROKEN. Whoever checks a
+            // flow does it to understand it: answering with the error line
+            // alone would force a second run of the command to see the rest.
+            println!("{report}");
+            Err(refusal)
+        }
+    }
+}
+
+/// The rest of `check_flow`, split out so a test can hand it a throwaway
+/// ledger and read the report text itself. A role that will not resolve is
+/// gathered as a refusal like any other, never an early `?` that would have
+/// skipped the report entirely.
+fn check_flow_report(
+    flow: FlowFile,
+    ledger: Option<ledger::Ledger>,
+    tools: &toolbox::Tools,
+    world: Option<&EngineWorld>,
+) -> (String, Result<(), String>) {
+    let (flow, role_refusal) = match resolved_roles(&flow, ledger.as_ref()) {
+        Ok(resolved) => (resolved, None),
+        Err(error) => (flow, Some(error)),
+    };
+    let registry = default_registry(ledger, None);
+    let (mut report, unknown) = check_report(&flow, &registry, Some(tools), world);
     // **THE PRICE LIST IS READ HERE AND NOT INSIDE `check_report`.** That
     // report is pure — flow, registry, detector, probe, all passed in — and
     // only the ledger knows the models a flow has used. Keeping it out leaves
@@ -49,31 +77,54 @@ pub(super) fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) 
     // **WHAT KIND OF CAP IT IS, DECIDED HERE AND NOT BELIEVED.** It needs both
     // the machine's descriptors and its price list, so it sits beside the price
     // list and outside the pure report, for the same reason.
-    what_the_cap_is_into(&mut report, &flow, &tools, &prices);
+    what_the_cap_is_into(&mut report, &flow, tools, &prices);
     report.push_str(&what_is_priced(
         &prices,
-        &models_asked_by(&flow, &tools),
+        &models_asked_by(&flow, tools),
         models_seen_by(&flow.id).as_ref(),
         flow.spend_cap_micros,
     ));
     // The inventory is this machine's, so it is read here for the same reason
     // as the price list: a test feeds `check_report` a scratch one instead.
     extensions_of_this_machine_into(&mut report, &flow);
-    if let Some(refusal) = refusals_of(&flow, &registry).into_iter().next() {
-        println!("{report}");
-        return Err(refusal);
+    if let Some(refusal) = role_refusal.into_iter().chain(refusals_of(&flow, &registry)).next() {
+        return (report, Err(refusal));
     }
     if unknown.is_empty() {
-        return Ok(report);
+        return (report, Ok(()));
     }
-    // THE REPORT IS SEEN EVEN WHEN THE FLOW IS BROKEN. Whoever checks a flow
-    // does it to understand it: answering with the error line alone would
-    // force a second run of the command to see the rest.
-    println!("{report}");
-    Err(catalogue::say(
+    let refusal = catalogue::say(
         "cli.flow.tools_no_descriptor_declares",
         &[("flow", &flow.id), ("tools", &unknown.join(", "))],
-    ))
+    );
+    (report, Err(refusal))
+}
+
+pub(super) fn resolved_roles(flow: &FlowFile, ledger: Option<&ledger::Ledger>) -> Result<FlowFile, String> {
+    let mut value = serde_json::to_value(flow).map_err(|error| error.to_string())?;
+    if let Some(inputs) = value.pointer_mut("/inputs").and_then(Value::as_object_mut) {
+        for input in inputs.values_mut() {
+            if input.get("role").is_some() {
+                *input = actions::resolve_role(input, ledger)?;
+            }
+        }
+    }
+    let Some(steps) = value.pointer_mut("/graph/steps").and_then(Value::as_array_mut) else {
+        return Ok(flow.clone());
+    };
+    for step in steps {
+        let Some(with) = step.get("with").cloned() else {
+            continue;
+        };
+        if with.get("role").is_none() {
+            continue;
+        }
+        let resolved = actions::resolve_role(&with, ledger)?;
+        if let Some(object) = step.as_object_mut() {
+            object.insert("with".to_owned(), resolved);
+        }
+    }
+    serde_json::from_value(value).map_err(|error| error.to_string())
 }
 
 /// Every reason this flow is refused, in the order a reader meets them.
@@ -473,6 +524,20 @@ pub(super) fn why_the_run_would_not_start(
     tools: &dyn actions::ToolResolver,
     prices: &models::pricing::PriceList,
 ) -> Option<String> {
+    // **A TOOL THAT IS NOT THERE IS FOUND AT THE STEP THAT NEEDED IT.** Shipped
+    // flows call `gh`, `jq`, `python3` and `shasum`, none of which any operating
+    // system installs by default, and a run that discovers it halfway has
+    // already done half the work and left a record nobody can finish.
+    let missing: Vec<String> = tools_needed(&flow.graph)
+        .into_iter()
+        .filter(|id| tools.resolve(id).is_err())
+        .collect();
+    if !missing.is_empty() {
+        return Some(catalogue::say(
+            "cli.flow.run_not_started_without_its_tools",
+            &[("tools", &missing.join(", "))],
+        ));
+    }
     if flow.required_cap_kind() != flow::CapKind::Guaranteed {
         return None;
     }
@@ -788,7 +853,14 @@ fn tools_wanted(graph: &Graph) -> BTreeSet<String> {
         .iter()
         .filter_map(|step| step.with.as_ref())
         .flat_map(engines_of)
+        .chain(tools_needed(graph))
         .collect()
+}
+
+/// The command-line tools the steps say they call, by the id a descriptor
+/// gives them.
+fn tools_needed(graph: &Graph) -> BTreeSet<String> {
+    graph.steps().iter().flat_map(|step| step.needs.clone()).collect()
 }
 
 /// The engines a `with` names, in the order written: one name or a chain.
@@ -803,6 +875,61 @@ mod tests {
     use super::super::test_support::*;
     use super::*;
     use registry::{registry_in, House};
+
+    #[test]
+    fn a_role_missing_from_the_store_is_named_before_the_flow_runs() {
+        let json = flow_json("external_engine", "[]", r#"{"root":{"role":"reviewer"}}"#);
+        let flow: FlowFile = serde_json::from_str(&json).expect("it loads");
+        let directory = std::env::temp_dir().join(format!("sailor-check-role-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("create the scratch directory");
+        let ledger = ledger::Ledger::open(directory).expect("open the ledger");
+
+        let error = resolved_roles(&flow, Some(&ledger)).expect_err("the role has no row");
+
+        assert!(error.contains("role «reviewer» has no row"), "{error}");
+    }
+
+    /// A role that will not resolve used to return on the spot before
+    /// `check_report` ever ran, so the report shown before the command
+    /// failed was empty. Reverting `check_flow_report` to that early `?`
+    /// makes this assertion fail: the string it returns is never built.
+    #[test]
+    fn a_role_missing_from_the_store_still_returns_the_full_report() {
+        let json = r#"{
+            "id": "prova", "description": "flusso di prova",
+            "graph": {"steps": [{
+                "id": "root", "deps": [], "action": "external_engine",
+                "max_attempts": 1, "when": null,
+                "input_schema": {"type": "any"}, "output_schema": {"type": "any"},
+                "with": {"role": "reviewer", "timeout_secs": 10}
+            }]},
+            "inputs": {}
+        }"#;
+        let flow: FlowFile = serde_json::from_str(json).expect("it loads");
+        let directory =
+            std::env::temp_dir().join(format!("sailor-check-role-report-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("create the scratch directory");
+        let ledger = ledger::Ledger::open(directory).expect("open the ledger");
+        let tools = tools_declaring(&["external_engine"]);
+
+        let (report, outcome) = check_flow_report(flow, Some(ledger), &tools, None);
+
+        assert_eq!(
+            outcome,
+            Err("role «reviewer» has no row in roles".to_owned()),
+            "the role refusal is still the reason the flow is refused"
+        );
+        assert!(
+            report.contains("root <- none"),
+            "the step listing must still be built despite the role refusal: {report}"
+        );
+        assert!(
+            report.contains("available actions:"),
+            "the rest of the report must still be built despite the role refusal: {report}"
+        );
+    }
 
     // ── the fields the action does not know ──────────────────────────
 
@@ -1385,6 +1512,37 @@ mod tests {
         }
     }
 
+    /// A machine with none of the command-line tools a flow might call.
+    struct HasNothingInstalled;
+
+    impl actions::ToolResolver for HasNothingInstalled {
+        fn resolve(&self, id: &str) -> Result<String, String> {
+            Err(format!("«{id}» is not on this machine"))
+        }
+    }
+
+    /// **CALLS TO TOOLS NOBODY CHECKED.** No operating system installs `gh`,
+    /// `python3` or `shasum`, and `gh` carries the whole delivery loop.
+    #[test]
+    fn a_run_does_not_start_without_the_tools_its_steps_declare() {
+        let prices = models::pricing::PriceList::default();
+        let flow = a_flow_of(
+            r#"{"id": "taglia", "deps": [], "action": "shell", "max_attempts": 1,
+                 "when": null, "with": {"command": "gh pr create"}, "needs": ["gh"],
+                 "input_schema": {"type": "any"}, "output_schema": {"type": "any"}}"#,
+        );
+
+        let refused = why_the_run_would_not_start(&flow, &HasNothingInstalled, &prices)
+            .expect("a run started without the tool its step calls");
+        assert!(refused.contains("gh"), "the refusal did not name the tool: {refused}");
+
+        assert_eq!(
+            why_the_run_would_not_start(&flow, &SomeHoldToACeiling, &prices),
+            None,
+            "a machine that has the tool was refused the run anyway"
+        );
+    }
+
     fn a_flow_of(steps: &str) -> FlowFile {
         let json = format!(
             r#"{{
@@ -1604,9 +1762,9 @@ mod tests {
     /// **A CAP THAT IS THERE CARRIES WHAT IT DOES NOT PROMISE.**
     ///
     /// A number alone reads as a guarantee on the spend. The three real limits
-    /// — the brake does not reach the engines, the first front is never braked,
-    /// costless calls stay out — must sit beside the number, not in a document
-    /// nobody opens while launching.
+    /// — it reaches only the engines that take a ceiling, the first front is
+    /// never braked, costless calls stay out — must sit beside the number, not
+    /// in a document nobody opens while launching.
     #[test]
     fn a_cap_in_the_report_declares_what_it_does_not_promise() {
         let json = flow_json("shell_check", "[]", "{}");
@@ -1615,7 +1773,7 @@ mod tests {
 
         let (report, _) = check_report(&flow, &registry_in(House::empty(), None, None), None, None);
 
-        assert!(report.contains("does not reach the engines"), "{report}");
+        assert!(report.contains("only the engines that take a ceiling"), "{report}");
         assert!(report.contains("first front"), "{report}");
         assert!(report.contains("stay out of the sum"), "{report}");
     }

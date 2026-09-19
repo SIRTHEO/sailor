@@ -3,10 +3,13 @@
 //! it starts from is authenticated.
 
 use crate::equipment::current_equipment_for;
-use crate::process::{invoke_external_engine, EngineInvocation, EngineResult};
+use crate::process::{
+    invoke_external_engine, run_with_timeout, EngineInvocation, EngineResult, RunOutcome,
+};
 use crate::recipe::{command_line, mentions_any, says_it_cannot_work, AskRecipe, PromptVia};
 use crate::{read_scalar, Pointer};
 use std::collections::BTreeMap;
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
 // ── the dry trial of a command line ─────────────────────────────────────────
@@ -393,31 +396,25 @@ impl<T: DryProbe + LoginProbe> EngineProbe for T {}
 
 impl LoginProbe for RealDryProbe {
     fn ask(&self, bin: &str, args: &[String], env: &BTreeMap<String, String>) -> DryRun {
-        let result = invoke_external_engine(&EngineInvocation {
-            bin: bin.to_owned(),
-            args: args.to_vec(),
-            env: env.clone(),
-            workdir: None,
-            // **EMPTY, CLOSED STDIN, THAT IS `< /dev/null`.** An engine that
-            // started waiting on stdin would hang the check of all the others:
-            // the trap already paid for on `codex exec`, and one character
-            // avoids it.
-            stdin: Some(Vec::new()),
-            timeout: DRY_PROBE_TIMEOUT,
-        });
-        match result {
-            EngineResult::Ok { stdout, stderr }
-            | EngineResult::ExitError { stdout, stderr, .. }
-            | EngineResult::WaitingForAPerson { stdout, stderr } => {
-                DryRun::Answered { stdout, stderr }
+        let mut command = Command::new(bin);
+        command.args(args).env_clear();
+        // Keep only essentials after clearing the inherited environment for privacy.
+        for name in profiles::AMBIENT_LAUNCH_ESSENTIALS {
+            if let Ok(value) = std::env::var(name) {
+                command.env(name, value);
             }
-            EngineResult::TimedOut => DryRun::NoAnswer {
-                why: format!(
-                    "no answer within {} seconds",
-                    DRY_PROBE_TIMEOUT.as_secs()
-                ),
+        }
+        command.envs(env).stdin(Stdio::null());
+        let result = run_with_timeout(command, DRY_PROBE_TIMEOUT);
+        match result {
+            RunOutcome::Finished { stdout, stderr, .. } => DryRun::Answered {
+                stdout: String::from_utf8_lossy(&stdout).into_owned(),
+                stderr: String::from_utf8_lossy(&stderr).into_owned(),
             },
-            EngineResult::SpawnFailed { reason } => DryRun::NoAnswer {
+            RunOutcome::TimedOut => DryRun::NoAnswer {
+                why: format!("no answer within {} seconds", DRY_PROBE_TIMEOUT.as_secs()),
+            },
+            RunOutcome::SpawnFailed(reason) => DryRun::NoAnswer {
                 why: format!("the process did not start: {reason}"),
             },
         }
@@ -444,5 +441,71 @@ pub fn probe_login_status(
     match probe.ask(bin, &recipe.args, env) {
         DryRun::Answered { stdout, stderr } => judge_login_status(recipe, &stdout, &stderr),
         DryRun::NoAnswer { why } => LoginVerdict::NoAnswer { why },
+    }
+}
+
+#[cfg(test)]
+#[cfg(unix)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_login_probe_keeps_path_and_home_beside_its_declared_environment() {
+        let environment = BTreeMap::from([("PROFILE_HOME".to_owned(), "isolated".to_owned())]);
+        let DryRun::Answered { stdout, stderr } =
+            RealDryProbe.ask("/usr/bin/env", &[], &environment)
+        else {
+            panic!("the local environment reader starts");
+        };
+        assert!(stderr.is_empty());
+        assert!(
+            stdout.contains("PROFILE_HOME=isolated\n"),
+            "the declared variable did not reach the probe: {stdout}"
+        );
+        if let Ok(path) = std::env::var("PATH") {
+            assert!(
+                stdout.contains(&format!("PATH={path}\n")),
+                "PATH did not reach the probe unchanged: {stdout}"
+            );
+        }
+        // Nothing beside the session essentials and what was declared: a probe
+        // that kept more would be back to reading this machine's credentials.
+        let allowed = ["PROFILE_HOME", "PATH", "HOME", "USER"];
+        for line in stdout.lines() {
+            let name = line.split('=').next().unwrap_or_default();
+            assert!(
+                allowed.contains(&name),
+                "an ambient variable beyond the session essentials reached the probe: {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_login_probe_does_not_receive_an_undeclared_ambient_variable() {
+        // SAFETY: This uniquely named variable is set only for this child-process probe.
+        unsafe {
+            std::env::set_var("SAILOR_TEST_UNDECLARED_AMBIENT", "must-not-leak");
+        }
+        let environment = BTreeMap::from([("DECLARED".to_owned(), "handed-to-it".to_owned())]);
+        let script = "printf 'PATH_SEEN=%s\\nDECLARED=%s\\nUNDECLARED=%s\\n' \
+            \"${PATH:+yes}\" \"$DECLARED\" \"${SAILOR_TEST_UNDECLARED_AMBIENT:-absent}\"";
+        let outcome = RealDryProbe.ask("/bin/sh", &["-c".to_owned(), script.to_owned()], &environment);
+        // SAFETY: Restore the process environment before an assertion can panic.
+        unsafe {
+            std::env::remove_var("SAILOR_TEST_UNDECLARED_AMBIENT");
+        }
+        let DryRun::Answered { stdout, stderr } = outcome else {
+            panic!("the shell starts");
+        };
+        assert!(stderr.is_empty(), "{stderr}");
+        assert!(stdout.contains("PATH_SEEN=yes\n"), "PATH did not reach the probe: {stdout}");
+        assert!(
+            stdout.contains("DECLARED=handed-to-it\n"),
+            "the declared variable did not reach the probe: {stdout}"
+        );
+        assert!(
+            stdout.contains("UNDECLARED=absent\n"),
+            "an undeclared ambient variable reached the probe: {stdout}"
+        );
     }
 }

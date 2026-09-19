@@ -350,6 +350,8 @@ mod tests {
             session_id: None,
             work_kind: None,
             session_mode: None,
+            role: None,
+            role_resolved_to: Vec::new(),
         };
         let run = ledger::RunRecord {
             run_id,

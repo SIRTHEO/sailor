@@ -16,6 +16,7 @@
 use serde::Serialize;
 use ui::gather::{flow_sources, load_all_flows};
 
+mod attention;
 mod beat;
 mod board;
 mod changes;
@@ -23,6 +24,7 @@ mod engines;
 mod events;
 mod faults;
 mod flows;
+mod flows_by_workspace;
 mod handoff;
 mod keeps;
 mod ledger;
@@ -33,6 +35,7 @@ mod manual;
 mod models;
 mod profiles;
 mod run;
+mod strip;
 mod terminal;
 mod tools;
 mod workspaces;
@@ -178,6 +181,10 @@ fn main() {
             live::take_new_build,
             flows::save_flow,
             flows::delete_flow,
+            flows::flow_texts,
+            flows::flow_chains,
+            flows_by_workspace::flows_here,
+            flows_by_workspace::flows_by_workspace,
             tools::discover_tools,
             tools::tools_sweep,
             engines::engines,
@@ -198,6 +205,7 @@ fn main() {
             handoff::handed_steps,
             handoff::take_handed_step,
             handoff::close_handed_step,
+            handoff::run_glimpse,
             run::run_snapshot,
             run::known_runs,
             run::open_runs,
@@ -217,6 +225,7 @@ fn main() {
             terminal::terminals_abandoned,
             terminal::terminal_backlog,
             workspaces::workspaces,
+            workspaces::left_column,
             workspaces::work_here,
             workspaces::workspace_declaration,
             profiles::profiles,
@@ -232,7 +241,9 @@ fn main() {
             worktree::worktree_remove,
             changes::workspace_changes,
             changes::open_in_editor,
-            changes::who_opens_files
+            changes::who_opens_files,
+            attention::attention_queue,
+            strip::strip
         ])
         .run(tauri::generate_context!())
         .expect("Sailor's window did not open");

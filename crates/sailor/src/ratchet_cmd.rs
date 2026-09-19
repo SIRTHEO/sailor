@@ -237,16 +237,26 @@ fn receipt_in(said: &str) -> Receipt {
 
 /// Passing is not the same as having measured, and the judge is the only one
 /// that can tell: it says so on its own output, and this reads it there.
+/// **A JUDGE THAT MEASURED IS NOT BLIND, WHATEVER ELSE IT PRINTED.** The cure
+/// for blind gates asked each judge to drive its own blind branch on purpose,
+/// and deciding the whole binary on that line turned the proof into the
+/// verdict. The receipt is read first.
 pub fn verdict_of(passed: bool, said: &str) -> Verdict {
     if !passed {
         Verdict::Red
-    } else if said.contains(workspace::MEASURED_NOTHING) {
-        Verdict::NotMeasured
     } else if matches!(receipt_in(said), Receipt::Walked { .. }) {
         Verdict::Green
+    } else if said.contains(workspace::MEASURED_NOTHING) {
+        Verdict::NotMeasured
     } else {
         Verdict::NoReceipt
     }
+}
+
+/// The checks a judge declared it could not measure, counted even where it
+/// handed in a receipt for the others.
+pub fn blind_checks_in(said: &str) -> usize {
+    said.lines().filter(|line| line.trim().starts_with(workspace::MEASURED_NOTHING)).count()
 }
 
 /// How many judges hand in no receipt today. **It can only fall**, and no run
@@ -257,6 +267,70 @@ const NO_RECEIPT_TODAY: usize = 0;
 /// through. **It can only fall**, and it is at the floor: the eight that can
 /// give that answer were each run against this tree and all eight measured.
 const UNMEASURED_TODAY: usize = 0;
+
+/// The verdicts of the judges a suite ran, read off the output it already
+/// captured: `cargo test` names each binary before it runs.
+fn verdicts_in(suite: &str, judges: &[Judge]) -> Vec<(String, Verdict)> {
+    let mut found = Vec::new();
+    let mut named: Option<&Judge> = None;
+    let mut said = String::new();
+    let mut close = |named: &mut Option<&Judge>, said: &mut String| {
+        if let Some(judge) = named.take() {
+            found.push((judge.test.clone(), verdict_of(true, said)));
+        }
+        said.clear();
+    };
+    for line in suite.lines() {
+        if let Some(binary) = line.trim().strip_prefix("Running ") {
+            close(&mut named, &mut said);
+            named = judges.iter().find(|judge| {
+                binary.starts_with(&format!("tests/{}.rs", judge.test))
+            });
+            continue;
+        }
+        if named.is_some() {
+            said.push_str(line);
+            said.push('\n');
+        }
+    }
+    close(&mut named, &mut said);
+    found
+}
+
+/// What the release must be told before it puts a binary in service.
+///
+/// **A RECEIPT THAT GATES NOTHING IS DOCUMENTATION.** The release read cargo's
+/// exit code alone, so a judge passing while measuring nothing sailed through.
+pub fn what_the_suite_proved(root: &Path, suite: &str) -> Result<String, String> {
+    let judges = judges_in(root);
+    if judges.is_empty() {
+        return Ok(catalogue::say("cli.release.no_judge_to_read", &[]));
+    }
+    let verdicts = verdicts_in(suite, &judges);
+    let mut counted = Verdicts::default();
+    for (_, verdict) in &verdicts {
+        counted.saw(*verdict);
+    }
+    let unheard = judges.len() - verdicts.len();
+    let blind: Vec<&str> = verdicts
+        .iter()
+        .filter(|(_, verdict)| matches!(verdict, Verdict::NotMeasured | Verdict::NoReceipt))
+        .map(|(name, _)| name.as_str())
+        .collect();
+    if counted.not_measured > UNMEASURED_TODAY || counted.no_receipt > NO_RECEIPT_TODAY {
+        return Err(catalogue::say(
+            "cli.release.the_suite_proved_too_little",
+            &[("judges", &blind.join(", "))],
+        ));
+    }
+    Ok(catalogue::say(
+        "cli.release.the_suite_proved_itself",
+        &[
+            ("read", &verdicts.len().to_string()),
+            ("unheard", &unheard.to_string()),
+        ],
+    ))
+}
 
 /// The tally of the run, kept apart so a green count never absorbs the others.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -376,19 +450,29 @@ pub fn clean_tree_with_changes(
     // file of twenty crates a new modification time, so cargo rebuilt all of it
     // on every run: a gate took forty minutes, was therefore run rarely, and
     // four red judges were found only after nine commits had landed.
-    let next = beside(into);
-    let _ = std::fs::remove_dir_all(&next);
-    std::fs::create_dir_all(&next).map_err(|error| format!("{}: {error}", next.display()))?;
-    lay_out_head(root, &next)?;
+    let next = Staging(beside(into));
+    let _ = std::fs::remove_dir_all(&next.0);
+    std::fs::create_dir_all(&next.0).map_err(|error| format!("{}: {error}", next.0.display()))?;
+    lay_out_head(root, &next.0)?;
     let moved = if lay_the_changes_over {
-        lay_over_the_changes(root, &next)?
+        lay_over_the_changes(root, &next.0)?
     } else {
         Overlay::default()
     };
-    bring_across(&next, into)?;
-    let _ = std::fs::remove_dir_all(&next);
+    bring_across(&next.0, into)?;
+    drop(next);
     tracked_by_a_repository_of_its_own(into)?;
     Ok(moved)
+}
+
+/// The copy HEAD is unpacked into before it is brought across, removed however
+/// the lay-out ends: an archive that fails halfway is not a run anybody resumes.
+struct Staging(PathBuf);
+
+impl Drop for Staging {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
 }
 
 /// Where the tree is built before it is brought across. Beside the tree, so the
@@ -565,9 +649,69 @@ fn tracked_by_a_repository_of_its_own(into: &Path) -> Result<(), String> {
     git(&["add", "--all"])
 }
 
+/// **ONE GATE PLACE PER REPOSITORY, NOT PER CHECKOUT.** The copy of HEAD and
+/// the judges built over it are one cache: the copy's file dates are what keep
+/// that build incremental, so neither is removed after a run. Every worktree
+/// reuses the main checkout's pair instead of leaving gigabytes of its own
+/// behind; a checkout git cannot place is its own home.
+fn checkout_holding_the_gate(root: &Path) -> PathBuf {
+    let asked = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
+        .output();
+    let common = match asked {
+        Ok(out) if out.status.success() => PathBuf::from(String::from_utf8_lossy(&out.stdout).trim()),
+        _ => return root.to_path_buf(),
+    };
+    match common.parent() {
+        Some(main)
+            if common.file_name().is_some_and(|name| name == ".git")
+                && workspace::is_the_top_of_its_repository(main) =>
+        {
+            main.canonicalize().unwrap_or_else(|_| main.to_path_buf())
+        }
+        _ => root.to_path_buf(),
+    }
+}
+
+/// What gates run in this checkout left under its own `target/` before the
+/// place was shared: never reused again. Taken only under that checkout's own
+/// lock, which a gate an older binary is still running there holds.
+fn this_checkouts_own_copies_go(root: &Path, gate: &Path, build_goes: impl Fn(&Path) -> bool) {
+    let own = root.join("target");
+    let names = ["ratchet-tree", "ratchet-tree-next", "ratchet"];
+    if root == gate || !names.iter().any(|name| own.join(name).exists()) {
+        return;
+    }
+    let Ok(held) = only_gate_in(root) else {
+        return;
+    };
+    for name in &names[..2] {
+        let _ = std::fs::remove_dir_all(own.join(name));
+    }
+    build_goes(&own.join(names[2]));
+    // The lock file stays: unlinked, an older gate could lock the orphan while
+    // a third one locks a fresh file beside it.
+    drop(held);
+}
+
+/// Whether the gate can be taken where it is shared. A checkout allowed to
+/// write only inside itself, as a sandboxed session is, measures at home.
+fn the_shared_place_takes_a_lock(gate: &Path) -> bool {
+    let target = gate.join("target");
+    std::fs::create_dir_all(&target).is_ok()
+        && std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(target.join("ratchet.lock"))
+            .is_ok()
+}
+
 /// The tree the command is run in, when it is one: a checkout other than the
-/// sources in service — a worktree, a clone — is measured for itself, and
-/// two checkouts never share one `target/ratchet-tree`.
+/// sources in service — a worktree, a clone — is measured for itself, even
+/// where it lays that measure out in a place it shares with its repository.
 pub(crate) fn root_to_measure() -> Result<PathBuf, String> {
     match std::env::current_dir().ok().and_then(|here| workspace::tree_around(&here)) {
         Some(tree) => Ok(tree),
@@ -610,8 +754,11 @@ fn only_gate_in(root: &Path) -> Result<OneGateAtATime, String> {
 fn measured(asked: &Asked) -> Result<bool, String> {
     let only = &asked.only;
     let root = root_to_measure()?;
-    let _only_one = only_gate_in(&root)?;
-    let clean = root.join("target").join("ratchet-tree");
+    let shared = checkout_holding_the_gate(&root);
+    let gate = if the_shared_place_takes_a_lock(&shared) { shared } else { root.clone() };
+    let _only_one = only_gate_in(&gate)?;
+    this_checkouts_own_copies_go(&root, &gate, crate::machine_cmd::an_earlier_runs_build_goes);
+    let clean = gate.join("target").join("ratchet-tree");
     let moved = clean_tree_with_changes(&root, &clean, !asked.as_committed)?;
     // **THE LIST COMES FROM THE TREE THAT IS WEIGHED**, not from the one beside
     // it: read from the working tree, who gets weighed was decided by one tree
@@ -643,7 +790,7 @@ fn measured(asked: &Asked) -> Result<bool, String> {
         &machine::spare_memory(),
         std::thread::available_parallelism().map_or(1, |cores| cores.get()),
     );
-    let measured_in = root.join("target").join("ratchet");
+    let measured_in = gate.join("target").join("ratchet");
     crate::machine_cmd::a_build_directory_is_taken(&measured_in, None, "ratchet");
     let mut counted = Verdicts::default();
     for judge in &judges {
@@ -672,6 +819,14 @@ fn measured(asked: &Asked) -> Result<bool, String> {
         match verdict {
             Verdict::Green => {
                 println!("  {} {}", catalogue::say("cli.ratchet.green", &[]), judge.test);
+                // A judge that measured can still hold a check that could not.
+                // Green is the verdict; the blind check is still said, or the
+                // reader is handed the silence this apparatus exists to break.
+                for line in text.lines().filter(|line| {
+                    line.trim_start().starts_with(workspace::MEASURED_NOTHING)
+                }) {
+                    println!("      {}", line.trim());
+                }
             }
             Verdict::NotMeasured => {
                 println!("  {} {}", catalogue::say("cli.ratchet.not_measured", &[]), judge.test);
@@ -764,8 +919,10 @@ mod tests {
         );
     }
 
+    /// Every commit carries its own author: a runner has none to guess.
     fn git(root: &Path, args: &[&str]) {
-        let done = Command::new("git").arg("-C").arg(root).args(args).output().expect("git");
+        let who = ["-c", "user.name=a", "-c", "user.email=a@b"];
+        let done = Command::new("git").arg("-C").arg(root).args(who).args(args).output().expect("git");
         assert!(done.status.success(), "{args:?}: {}", String::from_utf8_lossy(&done.stderr));
     }
 
@@ -784,10 +941,7 @@ mod tests {
             std::fs::write(&path, text).expect("the file");
             git(&root, &["add", relative]);
         }
-        let who = ["-c", "user.name=a", "-c", "user.email=a@b"];
-        let mut commit = who.to_vec();
-        commit.extend(["commit", "--quiet", "-m", "first"]);
-        git(&root, &commit);
+        git(&root, &["commit", "--quiet", "-m", "first"]);
         (root, scratch.join("measured"))
     }
 
@@ -831,6 +985,90 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// **A LAY-OUT THAT FAILS LEAVES NO COPY BEHIND.** Nothing comes back for
+    /// the half-unpacked HEAD of a run that stopped on an error.
+    #[test]
+    fn a_lay_out_that_fails_leaves_no_copy_of_head_behind() {
+        let scratch = std::env::temp_dir().join(format!("sailor-staging-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&scratch);
+        std::fs::create_dir_all(&scratch).expect("the scratch tree");
+        let into = scratch.join("measured");
+
+        // A directory that does not exist, so no repository above it answers.
+        let laid = clean_tree_with_changes(&scratch.join("nowhere"), &into, true);
+
+        assert!(laid.is_err(), "an archive of no repository was laid out");
+        assert!(!beside(&into).exists(), "the failed run left its copy of HEAD on the disk");
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// **ONE PLACE PER REPOSITORY.** A worktree gates in the main checkout, so
+    /// a merged worktree holds no build of its own.
+    #[test]
+    fn every_checkout_of_a_repository_gates_in_the_main_one() {
+        let (root, _) = a_repository_holding("shared-gate", &[("kept.md", "one\n")]);
+        let worktree = root.with_file_name("worktree");
+        git(&root, &["worktree", "add", "--quiet", "--detach", &worktree.to_string_lossy()]);
+        let main = root.canonicalize().expect("the main checkout");
+
+        assert_eq!(checkout_holding_the_gate(&root), main);
+        assert_eq!(checkout_holding_the_gate(&worktree), main, "a worktree gates in a place of its own");
+        let _ = std::fs::remove_dir_all(root.parent().expect("the scratch"));
+    }
+
+    /// A main checkout this session may not write to is no place to gate in:
+    /// the checkout measures at home instead of failing on a permission.
+    #[cfg(unix)]
+    #[test]
+    fn a_shared_place_that_cannot_be_written_is_not_taken() {
+        use std::os::unix::fs::PermissionsExt;
+        let scratch = std::env::temp_dir().join(format!("sailor-read-only-gate-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&scratch);
+        let (writable, shut) = (scratch.join("writable"), scratch.join("shut"));
+        std::fs::create_dir_all(&writable).expect("a writable main checkout");
+        std::fs::create_dir_all(&shut).expect("a main checkout");
+        std::fs::set_permissions(&shut, std::fs::Permissions::from_mode(0o555)).expect("shut it");
+
+        let taken = the_shared_place_takes_a_lock(&shut);
+        std::fs::set_permissions(&shut, std::fs::Permissions::from_mode(0o755)).expect("open it again");
+
+        assert!(the_shared_place_takes_a_lock(&writable), "a writable place was refused");
+        assert!(!taken, "a place nobody may write to was taken for the gate");
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// What this checkout's own earlier gates left goes, unless a gate still
+    /// runs there; the shared place itself is never taken for a leftover.
+    #[test]
+    fn a_checkouts_own_gate_copies_go_once_the_place_is_shared() {
+        let scratch = std::env::temp_dir().join(format!("sailor-own-copies-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&scratch);
+        let (checkout, gate) = (scratch.join("worktree"), scratch.join("main"));
+        for name in ["ratchet-tree", "ratchet"] {
+            std::fs::create_dir_all(checkout.join("target").join(name)).expect("an old copy");
+            std::fs::create_dir_all(gate.join("target").join(name)).expect("the shared copy");
+        }
+        let remove = |path: &Path| std::fs::remove_dir_all(path).is_ok();
+
+        let running = only_gate_in(&checkout).expect("an older gate holds the checkout");
+        this_checkouts_own_copies_go(&checkout, &gate, remove);
+        assert!(checkout.join("target/ratchet").exists(), "a running gate's build was taken");
+        drop(running);
+
+        // A child another test spawns at this instant inherits the lock until
+        // it execs, so the freed checkout is given a moment, not one try.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while checkout.join("target/ratchet").exists() && std::time::Instant::now() < deadline {
+            this_checkouts_own_copies_go(&checkout, &gate, remove);
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(!checkout.join("target/ratchet-tree").exists(), "the old copy of HEAD stayed");
+        assert!(!checkout.join("target/ratchet").exists(), "the old build of the judges stayed");
+        this_checkouts_own_copies_go(&gate, &gate, remove);
+        assert!(gate.join("target/ratchet").exists(), "the shared place was taken for a leftover");
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
     /// **TWO GATES ON ONE TREE MAKE A RED JUDGE OUT OF NOTHING**: they lay
     /// HEAD over each other, so a judge reads sources never together anywhere.
     #[test]
@@ -842,9 +1080,21 @@ mod tests {
         assert!(refused.is_err(), "a second gate was let in beside the first");
 
         // And released when the first ends, however it ends: a lock a crash
-        // leaves behind would shut the gate for good.
+        // leaves behind would shut the gate for good. A child another test is
+        // spawning at this instant inherits the descriptor until it execs, so
+        // the release is given a moment, not a single try.
         drop(held);
-        assert!(only_gate_in(&root).is_ok(), "the lock outlived the gate that took it");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let retaken = loop {
+            if only_gate_in(&root).is_ok() {
+                break true;
+            }
+            if std::time::Instant::now() > deadline {
+                break false;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        };
+        assert!(retaken, "the lock outlived the gate that took it");
         let _ = std::fs::remove_dir_all(&root);
     }
 

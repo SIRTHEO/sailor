@@ -26,6 +26,7 @@
 pub mod apply;
 pub mod budget;
 pub mod cooldown;
+pub mod digest;
 pub mod dormant_steps;
 pub mod draft;
 pub mod faults;
@@ -68,8 +69,12 @@ pub use models::usage::{
 };
 
 pub use cost::{current_price_list, price_list_from};
-pub use engine::ExternalEngineAction;
-pub use equipment::{equipment_for, equipment_with_keys, equipment_with_keys_and_disk, Equipment};
+pub use engine::{resolve_role, ExternalEngineAction};
+pub use equipment::{
+    equipment_asking_for, equipment_for, equipment_with_keys, equipment_with_keys_and_disk,
+    equipment_with_keys_disk_and_keychain,
+    Equipment,
+};
 pub use probe::{
     judge_dry_run, judge_login_status, probe_dry_run, probe_dry_run_with, probe_login_status,
     DryProbe, DryRun, EngineProbe, LoginProbe, LoginRecipe, LoginVerdict, ProbeVerdict,
@@ -111,6 +116,7 @@ pub fn register_default(registry: &mut flow::ActionRegistry) {
     registry.register(SHELL_CHECK_ACTION, ShellCheckAction::new());
     apply::register_apply_patch(registry);
     mcp::register_mcp(registry);
+    digest::register_digest(registry);
 }
 
 #[cfg(test)]

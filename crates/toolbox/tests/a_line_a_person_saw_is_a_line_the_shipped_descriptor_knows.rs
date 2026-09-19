@@ -25,6 +25,24 @@ const SEEN: &[(&str, &str)] = &[
         "codex",
         "ERROR: You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 2:48 PM.",
     ),
+    (
+        "codex",
+        "ERROR: Quota exceeded. Check your plan and billing details.",
+    ),
+];
+
+/// Lines an engine prints while working on a tree that talks about quotas: a
+/// failed call carrying one is not a spent quota, and must not set the engine
+/// aside for everyone.
+const WORK_THAT_MENTIONS_A_QUOTA: &[(&str, &str)] = &[
+    (
+        "codex",
+        "    /// The class of a failure this engine declared: a spent quota is its own",
+    ),
+    (
+        "codex",
+        "the PERSON's quota, not a run's: it counts every session, including the ones outside Sailor",
+    ),
 ];
 
 /// Only what the product ships, with nothing of this machine around it.
@@ -97,6 +115,68 @@ fn a_model_the_account_may_not_ask_for_moves_the_chain_on_without_a_spent_quota(
             "«{engine}» said «{line}», which is not a spent quota and must not be classed as one"
         );
     }
+}
+
+#[test]
+fn a_line_of_work_that_mentions_a_quota_neither_refuses_nor_spends_one() {
+    let tools = shipped_only();
+    for (engine, line) in WORK_THAT_MENTIONS_A_QUOTA {
+        let recipe = tools
+            .ask_recipe(engine)
+            .unwrap_or_else(|| panic!("«{engine}» declares how a question is put to it"));
+        let verdict = probe_dry_run(&Said(line), "/nowhere", &recipe);
+        assert!(
+            !matches!(verdict, ProbeVerdict::CannotWork { .. }),
+            "«{engine}» printed «{line}» as work, and its descriptor read a refusal: {verdict:?}"
+        );
+        let lowered = line.to_lowercase();
+        assert!(
+            !recipe.exhausted_when.iter().any(|word| lowered.contains(&word.to_lowercase())),
+            "«{engine}» printed «{line}» as work, and `exhausted_when` reads a spent quota"
+        );
+    }
+}
+
+/// Without the flag codex refuses a project root that is not a repository with
+/// «Not inside a trusted directory and --skip-git-repo-check was not
+/// specified.», before any model is asked; the ask is read-only, so the check
+/// protects nothing there.
+#[test]
+fn codex_is_asked_in_a_project_root_that_is_not_a_repository() {
+    let recipe = shipped_only()
+        .ask_recipe("codex")
+        .expect("«codex» declares how a question is put to it");
+    assert!(
+        recipe.args.iter().any(|arg| arg == "--skip-git-repo-check"),
+        "codex is asked with {:?}, which refuses outside a repository",
+        recipe.args
+    );
+    assert!(
+        recipe.args.windows(2).any(|pair| pair == ["--sandbox", "read-only"]),
+        "the flag is safe only beside a read-only sandbox: {:?}",
+        recipe.args
+    );
+}
+
+/// A step that declares a session runs the session line instead of the ask
+/// line, so each read-only session line needs the flag of its own.
+#[test]
+fn codex_opens_resumes_and_forks_a_session_in_a_project_root_that_is_not_a_repository() {
+    let recipe = toolbox::session::SessionAbilities::shipped()
+        .for_tool("codex")
+        .expect("«codex» declares its sessions");
+    let mut read_only = 0;
+    for (mode, line) in [("open", recipe.open), ("resume", recipe.resume), ("fork", recipe.fork)] {
+        let line = line.unwrap_or_else(|| panic!("codex declares no {mode} line"));
+        if line.windows(2).any(|pair| pair == ["--sandbox", "read-only"]) {
+            read_only += 1;
+            assert!(
+                line.iter().any(|arg| arg == "--skip-git-repo-check"),
+                "codex {mode} runs {line:?}, which refuses outside a repository"
+            );
+        }
+    }
+    assert!(read_only > 0, "no codex session line runs in a read-only sandbox");
 }
 
 #[test]

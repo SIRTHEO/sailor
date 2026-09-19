@@ -10,3 +10,11 @@ declare module "*.css?raw" {
   const source: string;
   export default source;
 }
+
+/** The one language layer this build carries; see `theLanguageLayer` in `vite.config.ts`. */
+declare module "virtual:language-layer" {
+  /** The language this build speaks. */
+  export const SPOKEN: string;
+  const catalogue: Record<string, string>;
+  export default catalogue;
+}

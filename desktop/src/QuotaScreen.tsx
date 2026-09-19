@@ -5,7 +5,7 @@
  * id, and joining them would read as an availability nobody can know.
  */
 import { useEffect, useState } from "react";
-import { quota, windowName, type Window as QuotaWindow } from "./quota";
+import { quota, windowName, type Quota, type Unreachable } from "./quota";
 
 export type Ask<T> = { state: "asking" } | { state: "asked"; seen: T } | { state: "mute"; why: string };
 
@@ -19,8 +19,8 @@ function Spent({ fraction }: { fraction: number }) {
   );
 }
 
-export function QuotaScreen({ native, now, readings }: { native: boolean; now: number; readings?: Ask<QuotaWindow[]> }) {
-  const [ownWindows, setWindows] = useState<Ask<QuotaWindow[]>>({ state: "asking" });
+export function QuotaScreen({ native, now, readings }: { native: boolean; now: number; readings?: Ask<Quota> }) {
+  const [ownWindows, setWindows] = useState<Ask<Quota>>({ state: "asking" });
   const windows = readings ?? ownWindows;
 
   useEffect(() => {
@@ -49,16 +49,17 @@ export function QuotaScreen({ native, now, readings }: { native: boolean; now: n
           <p className="now__mute" data-bad>I could not read it: {windows.why}</p>
         ) : windows.state === "asking" ? (
           <p className="now__mute">Asking…</p>
-        ) : windows.seen.length === 0 ? (
+        ) : windows.seen.windows.length === 0 && windows.seen.unreachable.length === 0 ? (
           <p className="now__empty">The engine reports no window at all.</p>
         ) : (
           <>
+            {windows.seen.windows.length > 0 && (
             <table className="now__table">
               <thead>
                 <tr><th>window</th><th>spent</th><th>the provider says it resets</th></tr>
               </thead>
               <tbody>
-                {windows.seen.map((one) => (
+                {windows.seen.windows.map((one) => (
                   <tr key={`${one.engine}/${one.unit}`}>
                     <td className="now__entity">{windowName(one.unit)}
                       <div className="now__why">{one.engine}</div>
@@ -75,14 +76,46 @@ export function QuotaScreen({ native, now, readings }: { native: boolean; now: n
                 ))}
               </tbody>
             </table>
+            )}
+            <Unanswered by={windows.seen.unreachable} />
+            {windows.seen.windows.length > 0 && (
             <p className="now__why">
               This is the whole person’s quota — every session, the terminal beside this
               one, yesterday’s job in the same window. It is not the cost of a run.
             </p>
+            )}
           </>
         )}
       </section>
     </div>
+  );
+}
+
+/** **SAILOR NEVER RENEWS A TOKEN** — it breaks the command line's own access —
+ * so the cure is a person signing in, and the engine's words say so. */
+function Unanswered({ by }: { by: Unreachable[] }) {
+  if (by.length === 0) return null;
+  return (
+    <section className="panel__block">
+      <h3 className="now__title">
+        {by.length === 1 ? "One account did not answer" : `${by.length} accounts did not answer`}
+      </h3>
+      <p className="now__why">
+        Not a quota of zero and not one with room: nothing is known about these.
+        Sailor never renews a token — it would break the command line's own access —
+        so the words below are the engine's, and they say what to do.
+      </p>
+      <table className="now__table">
+        <tbody>
+          {by.map((one) => (
+            <tr key={one.account}>
+              <td className="now__entity" data-bad>{one.account}</td>
+              <td className="now__why">{one.why}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
   );
 }
 

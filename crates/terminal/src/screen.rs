@@ -46,7 +46,7 @@ impl Screen {
 
 /// Where a terminal's last screenful is kept, beside its letterbox.
 pub fn address_in(store: &Path, tty: &str) -> PathBuf {
-    crate::inbox::mailroom(store).join(format!("{tty}.screen"))
+    crate::inbox::mailroom(store).join(format!("{}.screen", crate::inbox::file_name_of(tty)))
 }
 
 /// A screen, and the process that painted it. **A SCREEN OUTLIVES ITS

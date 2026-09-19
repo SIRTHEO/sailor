@@ -71,10 +71,12 @@ fn step(id: &str, deps: &[&str], action: &str, with: Value) -> Step {
         phase: None,
         stops_when: None,
         decides_done: false,
+        required: false,
         when: None,
         with: Some(with),
         input_schema: ValueSchema::Any,
         output_schema: ValueSchema::Any,
+        needs: Vec::new(),
     }
 }
 

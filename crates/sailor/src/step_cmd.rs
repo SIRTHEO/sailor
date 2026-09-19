@@ -14,7 +14,7 @@
 
 use crate::Form;
 use actions::handoff::{holder_key, HOLDER_COLLECTION};
-use flow::{Completion, Decision, FlowFile, InProcessExecutor, Outcome, StepRecord};
+use flow::{Completion, Decision, FlowFile, InProcessExecutor, Outcome, StepRecord, Unmet};
 use ledger::{EngineIdentity, Ledger, ModelCallRecord, StoreRecord};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -646,6 +646,14 @@ fn what_comes_next(decision: &Decision, run_id: &str, now: i64) -> String {
             reason,
             not_started,
         } => registry::why_it_halted(*reason, not_started),
+        Decision::RequirementUnmet { step, reason } => catalogue::say(
+            match reason {
+                Unmet::DidNotPass => "cli.step.required_check_did_not_pass",
+                Unmet::Skipped => "cli.step.required_check_was_skipped",
+                Unmet::NeverRan => "cli.step.required_check_never_ran",
+            },
+            &[("step", step)],
+        ),
         Decision::Complete => catalogue::say("cli.step.run_complete", &[]),
     }
 }
@@ -684,6 +692,8 @@ fn write_self_declared_turns(
             session_mode: None,
             work_kind: None,
             fell_back_from: Vec::new(),
+            role: None,
+            role_resolved_to: Vec::new(),
             // The row's reason lives in `purpose`: whoever sums a run's calls
             // must be able to separate what the engine measured from what
             // someone declared about themselves.
@@ -975,9 +985,29 @@ pub fn flow_of_run(ledger: &Ledger, run_id: &str) -> Result<FlowFile, String> {
         )),
         None => Err(catalogue::say(
             "cli.step.flow_no_longer_found",
-            &[("flow", &header.entity), ("run_id", run_id)],
+            &[
+                ("flow", &header.entity),
+                ("run_id", run_id),
+                ("sources", &sources_named(&sources)),
+            ],
         )),
     }
+}
+
+/// Every place `flow_of_run` just searched, named for a person to check: the
+/// shipped flows are named once, never as the sentinel path they live under.
+fn sources_named(sources: &[ui::gather::FlowSource]) -> String {
+    sources
+        .iter()
+        .map(|source| {
+            if source.is_builtin() {
+                source.origin.to_owned()
+            } else {
+                format!("{} ({})", source.origin, source.dir.display())
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 pub(crate) fn open_ledger() -> Result<Ledger, String> {

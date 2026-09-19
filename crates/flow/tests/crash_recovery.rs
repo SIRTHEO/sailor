@@ -160,6 +160,8 @@ fn opaque_graph() -> Graph {
         phase: None,
         stops_when: None,
         decides_done: false,
+        required: false,
+        needs: Vec::new(),
     }])
     .expect("valid test graph")
 }
@@ -419,6 +421,8 @@ fn recovery_graph() -> Graph {
             phase: None,
         stops_when: None,
         decides_done: false,
+        required: false,
+            needs: Vec::new(),
         },
         Step {
             id: "next".to_owned(),
@@ -437,6 +441,8 @@ fn recovery_graph() -> Graph {
             phase: None,
         stops_when: None,
         decides_done: false,
+        required: false,
+            needs: Vec::new(),
         },
     ])
     .expect("valid test graph")

@@ -140,3 +140,51 @@ mod tests {
         let _ = std::fs::remove_dir_all(&scratch);
     }
 }
+
+/// The whole left column in one reading.
+///
+/// **ONE CALL, NOT FOUR.** A column assembled from four calls shows four
+/// different instants of the same machine, and where it shows is the moment a
+/// tree is made or deleted — exactly when somebody is watching.
+#[tauri::command]
+pub(crate) fn left_column() -> Result<workspace::column::Reading, String> {
+    let home =
+        ledger::sailor_home().ok_or_else(|| "no house to read: HOME is not set".to_owned())?;
+    let home_flows = home.join("flows");
+    let here = std::env::current_dir().ok();
+    let standing_in = here.as_deref().and_then(workspace::tree_around);
+
+    let mut troubles = Vec::new();
+    let terminals = terminals_open(&mut troubles);
+
+    Ok(workspace::column::take(&workspace::column::Ground {
+        home: &home,
+        home_flows: &home_flows,
+        standing_in: standing_in.as_deref(),
+        terminals: &terminals,
+        boards: &[],
+        troubles: &troubles,
+    }))
+}
+
+/// **A STORE THAT WILL NOT OPEN IS NOT «NO TERMINALS».** The reason travels
+/// with the reading, or the window draws an empty place and calls it the truth.
+fn terminals_open(troubles: &mut Vec<String>) -> Vec<workspace::column::TerminalAt> {
+    let rows = sessions::Sessions::default_path()
+        .and_then(sessions::Sessions::open)
+        .and_then(|store| store.terminals());
+    match rows {
+        Ok(rows) => rows
+            .into_iter()
+            .filter(|row| row.is_open())
+            .map(|row| workspace::column::TerminalAt {
+                tty: row.tty,
+                worktree: row.worktree,
+            })
+            .collect(),
+        Err(why) => {
+            troubles.push(format!("the terminals would not read: {why}"));
+            Vec::new()
+        }
+    }
+}

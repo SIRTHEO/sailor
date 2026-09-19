@@ -25,7 +25,17 @@ pub fn mailroom(store: &Path) -> PathBuf {
 
 /// The address of one terminal's letterbox.
 pub fn address_in(store: &Path, tty: &str) -> PathBuf {
-    mailroom(store).join(format!("{tty}.sock"))
+    mailroom(store).join(format!("{}.sock", file_name_of(tty)))
+}
+
+/// A tty as one file name: Linux's `pts/3` would be a directory nobody made.
+pub fn file_name_of(tty: &str) -> String {
+    tty.replace('/', "-")
+}
+
+/// The tty a file name in the mailroom stands for.
+pub fn tty_of(file_name: &str) -> String {
+    file_name.replace('-', "/")
 }
 
 /// A letterbox that is open and listening.

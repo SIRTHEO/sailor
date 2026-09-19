@@ -31,6 +31,11 @@ struct Launch {
     /// Which home this launch carries and how it was chosen, so the swap can be
     /// written down before it happens.
     identity: EngineIdentity,
+    /// Set when the home's own file could not say which account it answers
+    /// as: the launch proceeds — an engine that declares no identity file yet
+    /// must keep working — but the reader is told before `exec` replaces this
+    /// process and there is nobody left to tell.
+    identity_unverified_note: Option<String>,
 }
 
 fn resolve(
@@ -75,6 +80,27 @@ fn resolve_with(
             )
         })?;
 
+    // **REFUSED, NOT WARNED**, for the reason already written at the top of
+    // this file: launching under the wrong identity is the worst fault this
+    // command could commit, and a mismatch is exactly that fault. Past this
+    // point there is no reader left to print a warning to before `exec`.
+    let identity = profiles::identity_of_home(cli, &profile.home_dir, &|path| {
+        std::fs::read_to_string(path).ok()
+    });
+    let identity_unverified_note = match profiles::verdict_of(&identity, &profile.name) {
+        profiles::IdentityVerdict::Mismatched { home_answers_as } => {
+            return Err(catalogue::say(
+                "cli.profiles.access.mismatched",
+                &[("home_answers_as", &home_answers_as), ("profile_named", &profile.name)],
+            ));
+        }
+        profiles::IdentityVerdict::Verified => None,
+        profiles::IdentityVerdict::Unverified => Some(catalogue::say(
+            "cli.run.identity_unverified",
+            &[("cli", &cli.display_name)],
+        )),
+    };
+
     // The link mechanism goes through no variable: the launch's identity depends
     // **only** on where a link on disk points. If the state says «X is active»
     // but the link still points at Y, the command line starts with Y's
@@ -105,6 +131,7 @@ fn resolve_with(
             home_dir: profile.home_dir.clone(),
             endpoint: profile.endpoint.as_ref().map(|it| it.url.clone()),
         },
+        identity_unverified_note,
     })
 }
 
@@ -153,6 +180,8 @@ fn the_invocation(launch: &Launch, cli_id: &str, pid: u32, now: i64) -> ModelCal
         session_mode: None,
         work_kind: None,
         fell_back_from: Vec::new(),
+        role: None,
+        role_resolved_to: Vec::new(),
     }
 }
 
@@ -223,6 +252,9 @@ pub fn run(args: &[String]) -> i32 {
         }
     };
     // Before `exec`, never after: past it there is no coming back.
+    if let Some(note) = &launch.identity_unverified_note {
+        eprintln!("sailor run: {note}");
+    }
     if let Some(expected) = &launch.expected_link {
         if let Err(message) = link_points_at_the_active_profile(expected) {
             eprintln!("sailor run: {message}");
@@ -382,6 +414,82 @@ mod tests {
             .insert("antigravity".to_owned(), "prova".to_owned());
         let error = resolve("antigravity", &store, &[], Path::new("/casa")).unwrap_err();
         assert!(error.contains("is not known yet"), "{error}");
+    }
+
+    /// **THE WORST FAULT THIS COMMAND COULD COMMIT, REFUSED BEFORE THE SWAP.**
+    /// A profile named after an account whose home's own file names another
+    /// one: `sailor run` must not hand the person somebody else's credentials
+    /// because the login re-authorised the wrong browser tab.
+    #[test]
+    fn a_home_answering_as_another_account_stops_the_launch() {
+        let dir = std::env::temp_dir().join(format!(
+            "sailor-run-identity-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|since| since.as_nanos())
+                .unwrap_or(0)
+        ));
+        let home = dir.join("someone@example.com");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(
+            home.join(".claude.json"),
+            r#"{"oauthAccount":{"emailAddress":"somebody-else@example.com"}}"#,
+        )
+        .unwrap();
+
+        let mut store = ProfileStore::default();
+        store.profiles.push(Profile {
+            name: "someone@example.com".to_owned(),
+            cli_id: "claude".to_owned(),
+            home_dir: home,
+            endpoint: None,
+        });
+        store
+            .active
+            .insert("claude".to_owned(), "someone@example.com".to_owned());
+
+        let error = resolve("claude", &store, &[], Path::new("/casa")).unwrap_err();
+        assert!(error.contains("somebody-else@example.com"), "{error}");
+        assert!(error.contains("someone@example.com"), "{error}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The same shape, and the file names the very account the profile is
+    /// for: the launch proceeds.
+    #[test]
+    fn a_home_answering_as_its_own_profile_is_not_stopped() {
+        let dir = std::env::temp_dir().join(format!(
+            "sailor-run-identity-ok-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|since| since.as_nanos())
+                .unwrap_or(0)
+        ));
+        let home = dir.join("someone@example.com");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(
+            home.join(".claude.json"),
+            r#"{"oauthAccount":{"emailAddress":"someone@example.com"}}"#,
+        )
+        .unwrap();
+
+        let mut store = ProfileStore::default();
+        store.profiles.push(Profile {
+            name: "someone@example.com".to_owned(),
+            cli_id: "claude".to_owned(),
+            home_dir: home,
+            endpoint: None,
+        });
+        store
+            .active
+            .insert("claude".to_owned(), "someone@example.com".to_owned());
+
+        assert!(resolve("claude", &store, &[], Path::new("/casa")).is_ok());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

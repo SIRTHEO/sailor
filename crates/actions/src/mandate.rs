@@ -8,12 +8,13 @@
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sessions::mandate::{self, Mandate, Work, Written};
+use sessions::mandate::{self, Mandate, Taken, Work, Written};
 use std::path::{Path, PathBuf};
 
 pub const MANDATE_DEPOSIT_ACTION: &str = "mandate_deposit";
 pub const MANDATE_RESUME_ACTION: &str = "mandate_resume";
 pub const MANDATE_WAITING_ACTION: &str = "mandate_waiting";
+pub const MANDATE_TAKEN_ACTION: &str = "mandate_taken";
 
 const DEPOSIT_FIELDS: &[&str] = &[
     "tree",
@@ -33,10 +34,16 @@ const RESUME_FIELDS: &[&str] = &["tree", "tty", "session", "store"];
 
 const WAITING_FIELDS: &[&str] = &["tty", "store"];
 
+const TAKEN_FIELDS: &[&str] = &["tty", "not_by", "within_seconds", "store"];
+
+/// How often the deposit is looked at while a successor is being waited for.
+const A_LOOK_APART: std::time::Duration = std::time::Duration::from_secs(1);
+
 pub fn register_mandate(registry: &mut flow::ActionRegistry) {
     registry.register(MANDATE_DEPOSIT_ACTION, DepositAction);
     registry.register(MANDATE_RESUME_ACTION, ResumeAction);
     registry.register(MANDATE_WAITING_ACTION, WaitingAction);
+    registry.register(MANDATE_TAKEN_ACTION, TakenAction);
 }
 
 #[derive(Debug, Deserialize)]
@@ -65,6 +72,20 @@ struct DepositSpec {
 #[derive(Debug, Deserialize)]
 struct WaitingSpec {
     tty: String,
+    #[serde(default)]
+    store: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TakenSpec {
+    tty: String,
+    /// The session that wrote the mandate. What it takes back is not an
+    /// arrival: the greeting runs at a compaction too, and the name stays.
+    not_by: String,
+    /// How long a successor is given to reach its own greeting. Required, and
+    /// with no value written here: how long to hold a step is a decision, and
+    /// one taken inside a node could not be argued with by the flow using it.
+    within_seconds: u64,
     #[serde(default)]
     store: Option<String>,
 }
@@ -152,6 +173,7 @@ pub fn deposited(input: &Value) -> Result<Value, ActionError> {
         },
         work: spec.work,
         taken: None,
+        passed: None,
     };
     let blank = mandate::blank_fields(&mandate);
     if !blank.is_empty() {
@@ -274,4 +296,50 @@ impl Action for WaitingAction {
     fn species(&self) -> StepSpecies {
         StepSpecies::Repeatable
     }
+}
+
+/// Whether a session other than the one that wrote the mandate has taken it.
+///
+/// **A GREETING NOBODY ANSWERS IS NOT A HANDOVER.** A successor reads its
+/// mandate at its own session start and then stands at the prompt until
+/// somebody types. The relay is what types, and the mandate marked taken by a
+/// name that is not its author's is its one proof that anybody is in there.
+struct TakenAction;
+
+impl Action for TakenAction {
+    fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
+        let spec: TakenSpec = read_input(input)?;
+        let root = store_root(&spec.store)?;
+        let path = mandate::address_in(&root, &spec.tty);
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(spec.within_seconds);
+        loop {
+            if let Some(taken) = taken_by_another(&path, &spec.not_by) {
+                return Ok(ActionOutcome::Went(json!({
+                    "tty": spec.tty,
+                    "taken_by": taken.by,
+                    "at": taken.at,
+                })));
+            }
+            if std::time::Instant::now() >= until {
+                return Ok(ActionOutcome::NotYet(format!(
+                    "{}: in {}s no session other than «{}» took the mandate here, so there is \
+                     nobody to start",
+                    spec.tty, spec.within_seconds, spec.not_by
+                )));
+            }
+            std::thread::sleep(A_LOOK_APART);
+        }
+    }
+
+    fn unknown_fields(&self, declared: &Value) -> Vec<String> {
+        unknown_of(declared, TAKEN_FIELDS)
+    }
+
+    fn species(&self) -> StepSpecies {
+        StepSpecies::Repeatable
+    }
+}
+
+fn taken_by_another(path: &Path, not_by: &str) -> Option<Taken> {
+    mandate::read(path)?.taken.filter(|taken| taken.by != not_by)
 }

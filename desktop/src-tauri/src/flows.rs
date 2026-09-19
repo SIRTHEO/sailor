@@ -50,9 +50,8 @@ pub(crate) fn delete_flow(name: String) -> Result<(), String> {
 /// the environment: the tests write into a throwaway folder, not among the real
 /// flows.
 ///
-/// A count copied into a comment ages on its own, and `docs/decisions.md`
-/// forbids it for exactly that reason — where a fact is already recorded, the
-/// text points at it rather than copying it. The number is said by
+/// A count copied into a comment ages on its own: where a fact is already
+/// recorded, the text points at it rather than copying it. The number is said by
 /// `sailor flow list`, which counts all three of the places they come from.
 fn save_flow_in(flows_dir: &Path, flow_json: serde_json::Value) -> Result<(), String> {
     // Deserializing `FlowFile` invokes `Graph::try_from`, which calls
@@ -73,8 +72,8 @@ fn delete_flow_in(flows_dir: &Path, name: &str) -> Result<(), String> {
 ///
 /// **THESE ARE POLICIES, NOT CLAIMS.** Both come from a trait method with a
 /// conservative default and cannot tell an author's answer from silence, so
-/// what travels is how the engine behaves. The surface and the other powers of
-/// `docs/the-four-surfaces.md` are absent because no action declares one.
+/// what travels is how the engine behaves. A surface and the other powers are
+/// absent because no action declares one.
 #[derive(serde::Serialize)]
 pub(crate) struct Registered {
     name: String,
@@ -431,5 +430,135 @@ mod tests {
         let dir = scratch_dir("delete-missing");
         let error = delete_flow_in(&dir, "never-existed").expect_err("deleting an absent flow");
         assert!(error.contains("does not exist"), "{error}");
+    }
+}
+
+/// **THE TEXT, AND NOT A FLOW REBUILT FROM ONE.** A flow that will not parse
+/// still belongs on the map — it is called by name — and a rebuilt one drops
+/// whatever the engine's own shape has no field for.
+#[derive(serde::Serialize)]
+pub(crate) struct FlowText {
+    /// As it reads on disk, `.flow.json` and all: the name the engine resolves
+    /// by is that one without the suffix, and the map takes it off itself.
+    name: String,
+    /// The source it came from, in the words that source gives itself.
+    origin: &'static str,
+    text: String,
+    /// Set when the file would not open at all, which is not the same as a
+    /// file whose text will not parse: there is no text either way, and only
+    /// one of the two is the author's doing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    unreadable: Option<String>,
+}
+
+/// Every flow file the engine would look at, in the order it looks. **LEAST
+/// SPECIFIC FIRST, SHADOWS AND ALL**: `load_all_flows` settles a name clash
+/// before anybody sees it, and editing the copy that does not run is the fault
+/// the order exists to make visible.
+#[tauri::command]
+pub(crate) fn flow_texts() -> Vec<FlowText> {
+    ui::gather::flow_sources()
+        .iter()
+        .flat_map(texts_of)
+        .collect()
+}
+
+/// The precedence chain of every flow, as `sailor flow where` reads it: the
+/// same function, over the same sources, in **the window's** working directory,
+/// which is named in each chain because it need not be the terminal's.
+#[tauri::command]
+pub(crate) fn flow_chains() -> Vec<flow::system::Chain> {
+    let here = std::env::current_dir().ok();
+    flow::system::chains(&ui::gather::flow_sources(), here.as_deref())
+}
+
+fn texts_of(source: &flow::system::FlowSource) -> Vec<FlowText> {
+    if source.is_builtin() {
+        return flow::system::FLOWS
+            .iter()
+            .map(|(name, text)| FlowText {
+                name: format!("{name}.flow.json"),
+                origin: source.origin,
+                text: (*text).to_owned(),
+                unreadable: None,
+            })
+            .collect();
+    }
+    let Ok(entries) = std::fs::read_dir(&source.dir) else {
+        return Vec::new();
+    };
+    let mut found: Vec<FlowText> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|kind| kind == "json"))
+        .map(|path| read_one(&path, source.origin))
+        .collect();
+    found.sort_by(|one, other| one.name.cmp(&other.name));
+    found
+}
+
+fn read_one(path: &Path, origin: &'static str) -> FlowText {
+    let name = path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+    match std::fs::read_to_string(path) {
+        Ok(text) => FlowText {
+            name,
+            origin,
+            text,
+            unreadable: None,
+        },
+        Err(why) => FlowText {
+            name,
+            origin,
+            text: String::new(),
+            unreadable: Some(why.to_string()),
+        },
+    }
+}
+
+#[cfg(test)]
+mod flow_text_tests {
+    use super::*;
+
+    /// **A MAP BUILT ON A SETTLED LIST CANNOT SEE A SHADOW.** The map's reading
+    /// depends on receiving both copies of a name, in the order the engine
+    /// reads them, so this asks the shipped source for its own texts and
+    /// checks they arrive whole instead of parsed and rebuilt.
+    #[test]
+    fn every_shipped_flow_arrives_as_the_text_it_is() {
+        let source = flow::system::FlowSource::builtin();
+        let shipped = texts_of(&source);
+
+        assert_eq!(
+            shipped.len(),
+            flow::system::FLOWS.len(),
+            "the map would be drawn over fewer flows than ship"
+        );
+        for one in &shipped {
+            assert!(
+                one.name.ends_with(".flow.json"),
+                "«{}» is not the name the engine resolves by",
+                one.name
+            );
+            assert_eq!(one.origin, source.origin);
+            assert!(one.unreadable.is_none());
+            serde_json::from_str::<serde_json::Value>(&one.text)
+                .unwrap_or_else(|why| panic!("«{}» did not arrive whole: {why}", one.name));
+        }
+    }
+
+    /// A folder nobody made is not an error to draw: the engine looks in three
+    /// places and two of them are commonly absent.
+    #[test]
+    fn a_source_with_no_folder_contributes_nothing_and_says_nothing() {
+        let missing = flow::system::FlowSource {
+            origin: "yours",
+            dir: std::path::PathBuf::from("/nowhere/a-folder-nobody-made"),
+        };
+
+        assert!(texts_of(&missing).is_empty());
     }
 }

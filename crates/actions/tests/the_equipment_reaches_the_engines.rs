@@ -13,7 +13,10 @@
 //! and did not travel with the product; the equipment was there and never
 //! reached the engines.
 
-use actions::{equipment_for, equipment_with_keys_and_disk};
+use actions::{
+    equipment_asking_for, equipment_for, equipment_with_keys_and_disk,
+    equipment_with_keys_disk_and_keychain,
+};
 use ledger::EngineIdentity;
 use profiles::{Profile, ProfileEndpoint, ProfileStore};
 use std::collections::BTreeMap;
@@ -35,6 +38,12 @@ fn a_store_with_one_active_profile() -> ProfileStore {
         home_dir: PathBuf::from("/case/claude/riposo"),
         endpoint: None,
     });
+    store.profiles.push(Profile {
+        name: "riposo-codex".to_owned(),
+        cli_id: "codex".to_owned(),
+        home_dir: PathBuf::from("/case/codex/riposo"),
+        endpoint: None,
+    });
     store.active.insert("codex".to_owned(), "lavoro".to_owned());
     store
 }
@@ -44,6 +53,56 @@ fn step_env(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         .iter()
         .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
         .collect()
+}
+
+/// **A CALL CAN NAME THE ACCOUNT IT RUNS ON, AND IT IS OBEYED.** Fault 165:
+/// five accounts out of seven had never answered anything, because the active
+/// profile is one per command line and nothing could ask for another.
+#[test]
+fn a_call_that_names_an_account_runs_in_that_account_and_not_the_active_one() {
+    let store = a_store_with_one_active_profile();
+
+    let signed_in = |_: &std::path::Path| true;
+    let active =
+        equipment_with_keys_and_disk(&store, "codex", &BTreeMap::new(), &|_| None, &signed_in, None);
+    let asked = equipment_with_keys_and_disk(
+        &store,
+        "codex",
+        &BTreeMap::new(),
+        &|_| None,
+        &signed_in,
+        Some("riposo-codex"),
+    );
+
+    assert!(
+        matches!(active.identity, EngineIdentity::ProfileInForce { ref profile_name, .. } if profile_name == "lavoro"),
+        "the control: with nothing asked the active profile answers: {:?}",
+        active.identity
+    );
+    assert!(
+        matches!(asked.identity, EngineIdentity::ProfileInForce { ref profile_name, .. } if profile_name == "riposo-codex"),
+        "the account asked for is the one that answers: {:?}",
+        asked.identity
+    );
+    assert_eq!(asked.refused, None, "it is a real account of this machine");
+    assert_ne!(
+        active.env.get("CODEX_HOME"),
+        asked.env.get("CODEX_HOME"),
+        "and the two do not share a home, or nothing moved"
+    );
+}
+
+/// **AN ACCOUNT THAT IS NOT HERE REFUSES THE CALL.** Falling back to whichever
+/// profile happens to be active would spend another person's quota under the
+/// name of the one asked for.
+#[test]
+fn a_call_naming_an_account_this_machine_does_not_have_is_refused() {
+    let store = a_store_with_one_active_profile();
+
+    let asked = equipment_asking_for(&store, "codex", &BTreeMap::new(), Some("nessuno"));
+
+    let why = asked.refused.expect("a name that resolves to nothing is refused");
+    assert!(why.contains("nessuno"), "the refusal names it: {why}");
 }
 
 /// **A HOME NOTHING MOVES IS NOT A HOME NOBODY LOOKED AT.** The shipped list
@@ -110,6 +169,7 @@ fn a_profile_with_a_native_endpoint_points_the_engine_there_and_says_so() {
             &BTreeMap::new(),
             &keys,
             &|path: &std::path::Path| path.ends_with("auth.json"),
+            None,
         )
     };
 
@@ -361,6 +421,7 @@ fn a_profile_whose_home_carries_no_credentials_is_refused_before_it_is_launched(
         &step_env(&[]),
         &|_| None,
         &nothing_on_this_disk,
+        None,
     );
 
     let why = equipment.refused.expect("a signed-out profile was let through");
@@ -379,13 +440,54 @@ fn a_profile_signed_in_where_its_command_line_says_is_not_refused() {
     let signed_in = |path: &std::path::Path| path.ends_with("auth.json");
 
     let equipment =
-        equipment_with_keys_and_disk(&store, "codex", &step_env(&[]), &|_| None, &signed_in);
+        equipment_with_keys_and_disk(&store, "codex", &step_env(&[]), &|_| None, &signed_in, None);
 
     assert_eq!(equipment.refused, None, "a signed-in profile was refused");
     assert_eq!(
         equipment.env.get("CODEX_HOME"),
         Some(&"/case/codex/lavoro".to_owned()),
         "the home stopped reaching the engine"
+    );
+}
+
+/// A claude home signed in on macOS has no credentials file: the item that
+/// proves it sits in the login keychain, under a name drawn from the home.
+#[test]
+fn a_claude_profile_signed_in_through_the_keychain_is_not_refused() {
+    let mut store = ProfileStore::default();
+    store.profiles.push(Profile {
+        name: "lavoro".to_owned(),
+        cli_id: "claude".to_owned(),
+        home_dir: PathBuf::from("/case/claude/lavoro"),
+        endpoint: None,
+    });
+    store.active.insert("claude".to_owned(), "lavoro".to_owned());
+    let nothing_on_this_disk = |_: &std::path::Path| false;
+    let keychain = |service: &str| service == "Claude Code-credentials-380d832c";
+
+    let signed_in = equipment_with_keys_disk_and_keychain(
+        &store,
+        "claude",
+        &step_env(&[]),
+        &|_| None,
+        &nothing_on_this_disk,
+        &keychain,
+        None,
+    );
+    let signed_out = equipment_with_keys_disk_and_keychain(
+        &store,
+        "claude",
+        &step_env(&[]),
+        &|_| None,
+        &nothing_on_this_disk,
+        &|_| false,
+        None,
+    );
+
+    assert_eq!(signed_in.refused, None, "a home signed in through the keychain was refused");
+    assert!(
+        signed_out.refused.is_some(),
+        "a home with neither a credentials file nor a keychain item was let through"
     );
 }
 
@@ -409,6 +511,7 @@ fn a_command_line_that_declares_no_credentials_file_is_never_refused_for_one() {
         &step_env(&[]),
         &|_| None,
         &|_: &std::path::Path| false,
+        None,
     );
 
     assert_eq!(

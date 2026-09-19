@@ -24,11 +24,14 @@ pub(crate) struct Handed {
     /// it** instead of judging from wherever the window happens to stand.
     /// `None` is a real answer: a run started outside every workspace.
     pub worktree: Option<String>,
+    /// Who has taken it on, if anyone. The row stays offered to them once
+    /// taken — the close gesture must survive «take it».
+    pub taken_by: Option<String>,
 }
 
 /// The handed steps among a run's records: the latest record of each step,
-/// kept only when its outcome is `Waiting`. An older attempt that waited and
-/// a newer one that went is a step nobody waits on any more.
+/// kept when its outcome is still `Waiting`, **or** taken and not yet closed.
+/// An attempt with nobody's name on it is the engine's own to close, not here.
 pub(crate) fn handed_of(records: &[StepRecord]) -> Vec<Handed> {
     let mut latest: BTreeMap<&str, &StepRecord> = BTreeMap::new();
     for record in records {
@@ -41,13 +44,17 @@ pub(crate) fn handed_of(records: &[StepRecord]) -> Vec<Handed> {
     }
     latest
         .values()
-        .filter(|record| record.outcome == Some(Outcome::Waiting))
+        .filter(|record| {
+            record.outcome == Some(Outcome::Waiting)
+                || (record.outcome.is_none() && record.taken_on_by.is_some())
+        })
         .map(|record| Handed {
             step_id: record.step_id.clone(),
             holder: word_in(&record.input, "holder"),
             mandate: word_in(&record.input, "mandate"),
             since: record.ended_at.unwrap_or(record.started_at),
             worktree: None,
+            taken_by: record.taken_on_by.clone(),
         })
         .collect()
 }
@@ -59,6 +66,33 @@ fn word_in(input: &Value, key: &str) -> String {
 fn open_ledger() -> Result<Ledger, String> {
     let dir = default_ledger_dir();
     Ledger::open(&dir).map_err(|error| format!("cannot open the ledger {}: {error}", dir.display()))
+}
+
+/// A run as little as the window can say about one it did not start: enough
+/// to place a handed step in the run that carries it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct RunGlimpse {
+    pub run_id: String,
+    pub flow: String,
+    pub worktree: Option<String>,
+}
+
+/// Reads a run's header straight from the ledger, for the attention queue's
+/// row: a run the shell never started has no live console to open, and this
+/// is what is left to show instead — the same facts `handed_steps` already
+/// reads, without the events only a started run keeps in memory.
+#[tauri::command]
+pub(crate) fn run_glimpse(run_id: String) -> Result<RunGlimpse, String> {
+    let ledger = open_ledger()?;
+    let header = ledger
+        .run_header(&run_id)
+        .map_err(|error| format!("cannot read run {run_id}: {error}"))?
+        .ok_or_else(|| format!("no run called {run_id}"))?;
+    Ok(RunGlimpse {
+        run_id,
+        flow: header.entity,
+        worktree: header.worktree,
+    })
 }
 
 #[tauri::command]
@@ -164,5 +198,26 @@ mod tests {
         assert_eq!(handed[0].mandate, "read the diff and say");
         assert_eq!(handed[0].since, 140);
         assert!(handed_of(&[record("build", 1, None)]).is_empty());
+    }
+
+    /// Fault: «take it» opened an attempt with `outcome: None`, and the old
+    /// filter dropped the row the close button had just offered.
+    #[test]
+    fn a_step_taken_by_a_person_stays_offered_until_it_closes() {
+        let mut taken = record("review", 2, None);
+        taken.taken_on_by = Some("mira".to_owned());
+        let records = vec![record("review", 1, Some(Outcome::Waiting)), taken];
+
+        let handed = handed_of(&records);
+        assert_eq!(handed.len(), 1, "{handed:?}");
+        assert_eq!(handed[0].step_id, "review");
+        assert_eq!(handed[0].taken_by.as_deref(), Some("mira"));
+
+        let mut engine_held = record("build", 1, None);
+        engine_held.held_by_pid = Some(4242);
+        assert!(
+            handed_of(&[engine_held]).is_empty(),
+            "an attempt open for the engine, nobody's name on it, is not a person's to close"
+        );
     }
 }

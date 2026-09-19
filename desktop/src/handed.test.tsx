@@ -46,6 +46,7 @@ const REVIEW = {
   mandate: "read the diff and say whether it holds",
   since: 100,
   worktree: "/work/a-tree",
+  taken_by: null,
 };
 
 describe("a step handed to a person", () => {
@@ -84,6 +85,50 @@ describe("a step handed to a person", () => {
     }
   });
 
+  test("closing shows busy while the engine is asked, then the closed report, and a later error clears back to idle", async () => {
+    const deferred: Array<{ resolve: (answer: string) => void; reject: (error: Error) => void }> = [];
+    const shell = pretendShell((command) => {
+      if (command === "handed_steps") return [REVIEW];
+      if (command === "close_handed_step") {
+        return new Promise<string>((resolve, reject) => {
+          deferred.push({ resolve, reject });
+        });
+      }
+      throw new Error(`no ${command}`);
+    });
+    try {
+      render(<Handed runId="relay-1" />);
+      await screen.findByText("read the diff and say whether it holds");
+
+      // Idle: the ordinary label, and the button ready to press.
+      const wentButton = screen.getByRole("button", { name: "close: it went" }) as HTMLButtonElement;
+      expect(wentButton.disabled).toBe(false);
+
+      // Closing: the label changes and every act on this row is held back,
+      // because a second click mid-flight would open a second attempt on the
+      // same step.
+      fireEvent.click(wentButton);
+      await screen.findByRole("button", { name: "closing…" });
+      expect((screen.getByRole("button", { name: "closing…" }) as HTMLButtonElement).disabled).toBe(true);
+      expect((screen.getByRole("button", { name: "take it" }) as HTMLButtonElement).disabled).toBe(true);
+
+      // Closed: the report lands, and the row goes back to idle.
+      deferred[0]?.resolve("step review closed by mira: went\nThe run is resuming.");
+      await screen.findByText(/The run is resuming/);
+      expect((screen.getByRole("button", { name: "close: it went" }) as HTMLButtonElement).disabled).toBe(false);
+
+      // A later close that fails clears busy back to idle too, with the error
+      // read as the engine said it.
+      fireEvent.click(screen.getByRole("button", { name: "close: it went" }));
+      await screen.findByRole("button", { name: "closing…" });
+      deferred[1]?.reject(new Error("mira wrote «build», the step this one judges: refused"));
+      await screen.findByText(/the step this one judges: refused/);
+      expect((screen.getByRole("button", { name: "close: it went" }) as HTMLButtonElement).disabled).toBe(false);
+    } finally {
+      shell.stop();
+    }
+  });
+
   test("a refusal is shown as the engine said it, and nothing is marked done", async () => {
     const shell = pretendShell((command) => {
       if (command === "handed_steps") return [REVIEW];
@@ -97,6 +142,46 @@ describe("a step handed to a person", () => {
       fireEvent.click(screen.getByRole("button", { name: "close: it broke" }));
       await screen.findByText(/the step this one judges: refused/);
       expect(changed).toBe(0);
+    } finally {
+      shell.stop();
+    }
+  });
+
+  test("A TAKEN STEP KEEPS ITS CLOSE BUTTONS, and the row leaves on the next beat once closed", async () => {
+    // The window's own `handed_of` now keeps an attempt open under a person's
+    // name: this mock plays that back so the regression is caught here, not
+    // only in the Rust unit that first proved it.
+    let state: "waiting" | "taken" | "closed" = "waiting";
+    const shell = pretendShell((command) => {
+      if (command === "handed_steps") {
+        if (state === "closed") return [];
+        return [{ ...REVIEW, taken_by: state === "taken" ? "someone" : null }];
+      }
+      if (command === "take_handed_step") {
+        state = "taken";
+        return "step review opened by someone";
+      }
+      if (command === "close_handed_step") {
+        state = "closed";
+        return "step review closed by someone: went\nThe run is resuming.";
+      }
+      throw new Error(`no ${command}`);
+    });
+    try {
+      render(<Handed runId="relay-1" />);
+      await screen.findByText("read the diff and say whether it holds");
+      expect(screen.getByRole("button", { name: "take it" })).toBeTruthy();
+
+      fireEvent.click(screen.getByRole("button", { name: "take it" }));
+      await screen.findByText("taken by «someone»");
+      // Taken, not yet closed: the close buttons are still there to press.
+      expect(screen.getByRole("button", { name: "close: it went" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "close: it broke" })).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "take it" })).toBeNull();
+
+      fireEvent.click(screen.getByRole("button", { name: "close: it went" }));
+      await screen.findByText(/The run is resuming/);
+      await screen.findByText(/No step of this run is handed to a person/);
     } finally {
       shell.stop();
     }

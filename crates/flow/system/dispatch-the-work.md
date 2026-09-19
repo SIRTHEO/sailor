@@ -21,6 +21,10 @@ outcome: it passes, or the flow is red.
 its own assignment, and has never seen the whole mandate nor the other's
 answer.
 
+`verdict` declares `"required": true`: the run reaches `Complete` only if it
+ran and passed, so a rejected review holds the run open instead of ending it
+quietly.
+
 ## The four rules this file keeps
 
 **1. In the flow lives *how* the work is dispatched, not *what*.** No step

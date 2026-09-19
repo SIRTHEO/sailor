@@ -21,7 +21,7 @@ const MAX_BLOCK: usize = 6;
 
 /// How many blocks run over today. **It can only go down**: lowering it is the
 /// repair, raising it has to be argued and shows in the diff.
-const LONG_BLOCKS_TODAY: usize = 412;
+const LONG_BLOCKS_TODAY: usize = 411;
 
 /// How many comment lines are still not in English. **THE ONLY HONEST RAISE**
 /// is a merge bringing in non-English comments written elsewhere: there you
@@ -35,27 +35,27 @@ const COMMENT_LINES_NOT_IN_ENGLISH: usize = 1;
 /// Comment lines per thousand code lines, per crate, as measured today.
 /// Downwards only; a crate under 100 is where the sweep stops.
 const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
-    ("actions", 249),
+    ("actions", 240),
     ("catalogue", 239),
-    ("desktop", 245),
-    ("faults", 156),
-    ("flow", 199),
+    ("desktop", 221),
+    ("faults", 150),
+    ("flow", 194),
     ("inventory", 274),
-    ("ledger", 145),
-    ("machine", 231),
-    ("models", 274),
-    ("profiles", 172),
-    ("registry", 286),
-    ("relay", 142),
-    ("release", 426),
-    ("sailor", 181),
-    ("sessions", 236),
+    ("ledger", 137),
+    ("machine", 226),
+    ("models", 269),
+    ("profiles", 168),
+    ("registry", 280),
+    ("relay", 138),
+    ("release", 415),
+    ("sailor", 165),
+    ("sessions", 230),
     ("supervisor", 242),
-    ("terminal", 275),
-    ("toolbox", 283),
+    ("terminal", 266),
+    ("toolbox", 268),
     ("trigger", 236),
-    ("ui", 186),
-    ("workspace", 152),
+    ("ui", 185),
+    ("workspace", 122),
 ];
 
 /// Words no English sentence uses, which a sentence in this tree's other
@@ -147,7 +147,7 @@ fn walk(dir: &Path, found: &mut Vec<PathBuf>) {
 #[test]
 fn the_files_named_one_by_one_are_inside_the_perimeter() {
     assert!(
-        !NAMED_ONE_BY_ONE.is_empty(),
+        NAMED_ONE_BY_ONE.iter().next().is_some(),
         "the list is empty: the files it held are measured by nobody"
     );
     let walked = sources();

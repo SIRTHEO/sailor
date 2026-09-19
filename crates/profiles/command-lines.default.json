@@ -10,6 +10,9 @@
     "`credential_symlink`; absent means NO KNOWN WAY, which is not the same as",
     "«nobody looked» — `home_note` says which, and it is read by a person.",
     "",
+    "`mark` is the two letters a crowded strip shows for this engine. Absent",
+    "means the first two letters of `id`, upper-cased.",
+    "",
     "`executable` is what actually reads that home, and it is the honest link: a",
     "step naming a binary is matched on this and never on `id`, so a wrapper",
     "does not get handed somebody else's credentials.",
@@ -45,12 +48,30 @@
     "`signed_in_when` names the files inside a home whose presence means somebody",
     "signed in there. Measured on this machine, never guessed. Absent means NOBODY",
     "ESTABLISHED IT, and no engine is ever refused for that: unknown is not signed",
-    "out. gemini and antigravity keep nothing under such a name, so neither declares one."
+    "out. gemini and antigravity keep nothing under such a name, so neither declares one.",
+    "`signed_in_keychain` is the login keychain item that means the same where a",
+    "command line keeps its credentials there instead: `service`, a dash, and the",
+    "first `home_digest_chars` hex characters of the SHA-256 of the home's path.",
+    "Measured for claude on macOS, where a signed-in home has no credentials file.",
+    "",
+    "`identity.file` lists candidate paths, relative to the home, that say",
+    "WHICH ACCOUNT that home answers as — read off the disk, never asked of the",
+    "engine, because the file is what a launch actually reads. They are tried in",
+    "order and the first one that actually carries the account wins, so a stale",
+    "file left behind by another home shape does not stop the search: an engine",
+    "that keeps the file beside its home rather than inside it, for its own",
+    "default directory, is a second candidate here, not a rule the code knows",
+    "by name. Absent means nobody",
+    "measured it yet for that engine: `identity_of_home` then answers «cannot",
+    "tell», never «matches». Measured for claude in `.claude.json`, inside a",
+    "`CLAUDE_CONFIG_DIR` home and beside the default `~/.claude` directory,",
+    "under `oauthAccount.emailAddress`."
   ],
   "command_lines": [
     {
       "id": "claude",
       "display_name": "Claude Code",
+      "mark": "CL",
       "executable": "claude",
       "native": "not supported",
       "native_note": "checked on 2.1.247: `auth` offers only login, logout and status, and `--help` names no profile or multi-account subcommand.",
@@ -58,6 +79,11 @@
       "home_note": "checked against the installed binary: the variable moves the whole directory, credentials and settings included.",
       "reads_instructions_from": ["~/.claude/CLAUDE.md", "CLAUDE.md"],
       "signed_in_when": [".credentials.json"],
+      "signed_in_keychain": { "service": "Claude Code-credentials", "home_digest_chars": 8 },
+      "identity": {
+        "file": [".claude.json", "../.claude.json"],
+        "pointer": ["oauthAccount", "emailAddress"]
+      },
       "endpoint": {
         "url_var": "ANTHROPIC_BASE_URL",
         "key_var": "ANTHROPIC_API_KEY",
@@ -67,6 +93,7 @@
     {
       "id": "codex",
       "display_name": "Codex",
+      "mark": "CX",
       "executable": "codex",
       "native": "supported",
       "native_note": "`-p/--profile` layers `<home>/<name>.config.toml` over the base configuration: config profiles, not separate credentials.",
@@ -83,6 +110,7 @@
     {
       "id": "gemini",
       "display_name": "Gemini CLI",
+      "mark": "GM",
       "executable": "gemini",
       "native": "not supported",
       "native_note": "no `--profile` in `--help`: only sessions (`--resume`, `--session-id`), not separate identities.",
@@ -93,6 +121,7 @@
     {
       "id": "antigravity",
       "display_name": "Antigravity",
+      "mark": "AG",
       "executable": "agy",
       "native": "unverified",
       "native_note": "`--help` and its subcommands name no profile option; nothing else was measured.",

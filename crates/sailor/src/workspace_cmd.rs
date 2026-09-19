@@ -43,6 +43,8 @@ fn dispatch(args: &[String]) -> Result<String, String> {
             init(&here, ledger::sailor_home().as_deref())
         }
         [command] if command == "list" => list(),
+        [command] if command == "column" => column(false),
+        [command, how] if command == "column" && how == "--json" => column(true),
         _ => Err(crate::forms_as_lines(USAGE)
             .iter()
             .map(|line| format!("{} {line}", catalogue::say("cli.usage_heading", &[])))
@@ -59,6 +61,14 @@ pub const USAGE: &[crate::Form] = &[
     },
     crate::Form {
         form: "sailor workspace list",
+        says_key: "",
+    },
+    crate::Form {
+        form: "sailor workspace column",
+        says_key: "",
+    },
+    crate::Form {
+        form: "sailor workspace column --json",
         says_key: "",
     },
 ];
@@ -151,7 +161,7 @@ fn init(root: &Path, home: Option<&Path>) -> Result<String, String> {
     })?;
     text.push('\n');
     std::fs::write(&marker, text)
-        .map_err(|error| format!("cannot write {}: {error}", marker.display()))?;
+        .map_err(|error| catalogue::say("cli.workspace.cannot_write", &[("path", &marker.display().to_string()), ("why", &error.to_string())]))?;
 
     // DECLARING A PROJECT PUTS IT ON THE LIST, or the marker exists and
     // `workspace list` cannot see it. **The house is an argument**: fetched
@@ -174,6 +184,172 @@ fn init(root: &Path, home: Option<&Path>) -> Result<String, String> {
             ("rules", &found),
         ],
     ))
+}
+
+// ── the left column ──────────────────────────────────────────────────────
+
+/// What the window draws down its left side, printed, so it can be proved
+/// without a window.
+///
+/// **THE LABELS ARE NOT SENTENCES.** Everything below is a name, a path, a
+/// count or a heading out of the drawing itself. Prose about them belongs in
+/// the catalogue, and the catalogue is not this agent's to write.
+fn column(as_json: bool) -> Result<String, String> {
+    let home = ledger::sailor_home()
+        .ok_or_else(|| catalogue::say("cli.workspace.no_house_to_read", &[]))?;
+    let home_flows = home.join("flows");
+    let here = std::env::current_dir().ok();
+    let standing_in = here.as_deref().and_then(workspace::tree_around);
+    let mut troubles = Vec::new();
+    let terminals = terminals_now(&mut troubles);
+    let boards = boards_now(&mut troubles);
+
+    let read = workspace::column::take(&workspace::column::Ground {
+        home: &home,
+        home_flows: &home_flows,
+        standing_in: standing_in.as_deref(),
+        terminals: &terminals,
+        boards: &boards,
+        troubles: &troubles,
+    });
+
+    if as_json {
+        return serde_json::to_string_pretty(&read).map_err(|error| error.to_string());
+    }
+    Ok(drawn(&read))
+}
+
+/// The terminals the register holds open. A killed one that closed nothing
+/// stays open in there, and that is a fact to show rather than to hide.
+///
+/// **A STORE THAT WILL NOT OPEN IS NOT «NO TERMINALS».** Read from a place
+/// with no right to the file, the whole list came back empty and said nothing.
+fn terminals_now(troubles: &mut Vec<String>) -> Vec<workspace::column::TerminalAt> {
+    let rows = sessions::Sessions::default_path()
+        .and_then(sessions::Sessions::open)
+        .and_then(|store| store.terminals());
+    match rows {
+        Ok(rows) => rows
+            .into_iter()
+            .filter(|row| row.is_open())
+            .map(|row| workspace::column::TerminalAt {
+                tty: row.tty,
+                worktree: row.worktree,
+            })
+            .collect(),
+        Err(why) => {
+            troubles.push(catalogue::say("cli.workspace.terminals_would_not_read", &[("why", &why.to_string())]));
+            Vec::new()
+        }
+    }
+}
+
+/// Where the board says work is being done. The same reading `sailor board`
+/// gives, counted by the directory each holder announced.
+fn boards_now(troubles: &mut Vec<String>) -> Vec<(String, usize)> {
+    let board = ledger::default_directory()
+        .ok_or_else(|| catalogue::say("cli.workspace.no_house", &[]))
+        .and_then(|directory| {
+            ledger::Ledger::open(&directory).map_err(|error| error.to_string())
+        })
+        .and_then(|store| {
+            actions::presence::survey(&store, None, now()).map_err(|error| error.to_string())
+        });
+    let board = match board {
+        Ok(board) => board,
+        Err(why) => {
+            troubles.push(catalogue::say("cli.workspace.board_would_not_read", &[("why", &why.to_string())]));
+            return Vec::new();
+        }
+    };
+    board
+        .working
+        .iter()
+        .filter_map(|entry| entry["workdir"].as_str())
+        .map(|at| (at.to_owned(), 1))
+        .collect()
+}
+
+const STOOD_IN: &str = "\u{25cf}";
+const BOARD: &str = "\u{25c8}";
+const FLOW: &str = "\u{2301}";
+const TERMINAL: &str = "\u{25ae}";
+const OPEN: &str = "\u{25be}";
+
+fn drawn(read: &workspace::column::Reading) -> String {
+    let mut lines = vec!["WORKSPACES".to_owned()];
+    for trouble in &read.troubles {
+        lines.push(format!("  ! {trouble}"));
+    }
+    for project in &read.projects {
+        lines.push(format!(
+            "{OPEN} {}{}",
+            project.name,
+            gone_if(project.standing)
+        ));
+        for tree in &project.trees {
+            lines.extend(tree_drawn(tree, read));
+        }
+    }
+
+    lines.push("FLOWS EVERYWHERE".to_owned());
+    for flow in &read.flows_everywhere {
+        lines.push(format!("   {} {FLOW} {}", flow.origin, flow_said(flow)));
+    }
+
+    lines.push("OUTSIDE EVERY WORKSPACE".to_owned());
+    for terminal in &read.terminals {
+        if terminal.place == workspace::column::Where::OutsideEveryTree {
+            lines.push(format!("   {TERMINAL} {}", terminal.tty));
+        }
+    }
+    lines.join("\n")
+}
+
+fn tree_drawn(
+    tree: &workspace::column::Tree,
+    read: &workspace::column::Reading,
+) -> Vec<String> {
+    let branch = tree.branch.as_deref().unwrap_or("(detached)");
+    let mut lines = vec![format!(
+        "   {} {}  {branch}{}{}",
+        if tree.stood_in { OPEN } else { " " },
+        tree.name,
+        gone_if(tree.standing),
+        if tree.stood_in {
+            format!("  {STOOD_IN}")
+        } else {
+            String::new()
+        }
+    )];
+    if tree.board > 0 {
+        lines.push(format!("        {BOARD} Board  {}", tree.board));
+    }
+    for flow in &tree.flows {
+        lines.push(format!("        {FLOW} {}", flow_said(flow)));
+    }
+    for terminal in &read.terminals {
+        if let workspace::column::Where::InATree { tree: at, .. } = &terminal.place {
+            if at == &tree.path {
+                lines.push(format!("        {TERMINAL} {}", terminal.tty));
+            }
+        }
+    }
+    lines
+}
+
+fn gone_if(standing: workspace::column::Standing) -> &'static str {
+    match standing {
+        workspace::column::Standing::Here => "",
+        workspace::column::Standing::Gone => "  gone",
+    }
+}
+
+fn flow_said(flow: &workspace::column::FlowLine) -> String {
+    match &flow.trouble {
+        Some(why) => format!("{}  ! {why}", flow.id),
+        None => format!("{}  {} steps", flow.id, flow.steps),
+    }
 }
 
 #[cfg(test)]

@@ -172,7 +172,9 @@ const ACTION_KIND: Record<string, StepKind> = {
   fault_record: "deposit",
   store_read: "deposit",
   store_write: "deposit",
+  store_write_if_absent: "deposit",
   store_list: "deposit",
+  store_select: "deposit",
   work_claim: "deposit",
   work_release: "deposit",
   work_survey: "deposit",
@@ -206,11 +208,15 @@ const ACTION_KIND: Record<string, StepKind> = {
   mandate_deposit: "deposit",
   mandate_resume: "deposit",
   mandate_waiting: "check",
+  mandate_taken: "check",
   type_into_terminal: "gesture",
   empty_terminal: "gesture",
   // The only step that writes a proposal onto the tree. It draws as a gesture
   // on the world, which is what it is.
   apply_patch: "gesture",
+  // A hash of a value already in hand, touching neither store nor tree: the
+  // same family as a reading a `when` compares against.
+  digest: "check",
   subflow: "subflow",
   // The same flow once per element of a list: a subflow repeated, so it draws
   // in that family rather than inventing one.

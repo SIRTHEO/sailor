@@ -726,8 +726,8 @@ fn an_empty_fragment_among_the_words_for_waiting_on_a_person_is_named() {
     assert!(named, "the empty fragment must be named with its field");
 }
 
-/// The shipped `codex` descriptor declares how its usage is read, in the
-/// text form: the only format actually measured for it.
+/// The shipped `codex` descriptor reads its usage from the stream of JSON
+/// lines it prints, which is where it states every count it has.
 #[test]
 fn the_shipped_codex_descriptor_declares_how_to_read_its_tokens() {
     let catalog = Catalog::load(&[Source::Builtin]);
@@ -741,16 +741,27 @@ fn the_shipped_codex_descriptor_declares_how_to_read_its_tokens() {
         .usage
         .as_ref()
         .expect("codex declares its own usage");
-    assert_eq!(usage.read, ReadAs::Text);
-    assert!(usage.total_tokens.is_some());
+    assert_eq!(usage.read, ReadAs::JsonLines);
+    assert_eq!(usage.args, vec!["--json"]);
+    // **THE SPLIT IS THE WHOLE POINT.** Read off the rendered screen only one
+    // number was there, so every call went into the ledger with no input and
+    // no cache: four counts, or the reading is back where it started.
+    for (named, pointer) in [
+        ("input", &usage.input_tokens),
+        ("output", &usage.output_tokens),
+        ("cached", &usage.cached_tokens),
+        ("written to cache", &usage.cache_write_tokens),
+    ] {
+        assert!(pointer.is_some(), "codex states its {named} tokens and they are read");
+    }
     assert!(
-        usage.args.is_empty(),
-        "codex already writes its tokens on its own: asking it for anything \
-         more would change its command line for nothing"
+        usage.total_tokens.is_none(),
+        "this stream states no total, and adding the others would count the \
+         cached input twice"
     );
     assert!(
-        usage.answer.is_none(),
-        "no envelope asked for, so nothing to unwrap: the step's output stays \
-         what it always was"
+        usage.answer.is_some(),
+        "the rendered text is gone once the stream is asked for, so the reply \
+         has to be taken out of it"
     );
 }

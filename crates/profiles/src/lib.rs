@@ -39,6 +39,8 @@ pub enum NativeProfiles {
 pub struct KnownCli {
     pub id: String,
     pub display_name: String,
+    /// Two letters for a crowded strip: declared, or `id` cut to two.
+    pub mark: String,
     pub executable: String,
     pub native_profiles: NativeProfiles,
     /// How the judgement above was reached: what the real command says, or why
@@ -57,6 +59,115 @@ pub struct KnownCli {
     pub reads_instructions_from: Vec<String>,
     /// Inside a home, the files whose presence means somebody signed in there.
     pub signed_in_when: Vec<String>,
+    /// The keychain item whose presence means somebody signed in to a home.
+    pub signed_in_keychain: Option<KeychainItem>,
+    /// Where, inside a home, this engine names the account it answers as.
+    /// `None` where nobody established it: never «matches» by default.
+    pub identity_at: Option<IdentityFile>,
+}
+
+/// A login keychain item named `service`, a dash, and the first
+/// `home_digest_chars` hex characters of the SHA-256 of the home's path.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct KeychainItem {
+    pub service: String,
+    pub home_digest_chars: usize,
+}
+
+/// A file naming the account, and the keys down to it. `file` lists candidate
+/// paths, tried in order until one carries the account.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IdentityFile {
+    pub file: Vec<String>,
+    pub pointer: Vec<String>,
+}
+
+/// What a home's own file says. **NOT A BOOL**: «nobody looked» is not «it matches».
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HomeIdentity {
+    /// The file names this account.
+    Answers(String),
+    /// Not declared, not there, or unreadable. Its own words say which.
+    CannotTell(String),
+}
+
+/// The one verdict `list`, `adopt` and `run` share, so a correction cannot
+/// make them disagree.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IdentityVerdict {
+    Verified,
+    Unverified,
+    Mismatched { home_answers_as: String },
+}
+
+pub fn verdict_of(identity: &HomeIdentity, profile_name: &str) -> IdentityVerdict {
+    match identity {
+        HomeIdentity::Answers(really) if really != profile_name => IdentityVerdict::Mismatched {
+            home_answers_as: really.clone(),
+        },
+        HomeIdentity::Answers(_) => IdentityVerdict::Verified,
+        HomeIdentity::CannotTell(_) => IdentityVerdict::Unverified,
+    }
+}
+
+/// Reads what a home's own file says, never asks the engine: the file is
+/// what a launch reads. `read` is a seam for a test to hand text with.
+pub fn identity_of_home(
+    cli: &KnownCli,
+    home: &Path,
+    read: &dyn Fn(&Path) -> Option<String>,
+) -> HomeIdentity {
+    let Some(declared) = &cli.identity_at else {
+        return HomeIdentity::CannotTell(format!(
+            "{} declares no file naming the account its home answers as",
+            cli.display_name
+        ));
+    };
+    let mut last_reason = String::new();
+    for candidate in &declared.file {
+        let path = home.join(candidate);
+        last_reason = match read(&path) {
+            Some(text) => match identity_at_path(&path, &text, &declared.pointer) {
+                answered @ HomeIdentity::Answers(_) => return answered,
+                HomeIdentity::CannotTell(reason) => reason,
+            },
+            None => format!("{} is not there", path.display()),
+        };
+    }
+    HomeIdentity::CannotTell(last_reason)
+}
+
+fn identity_at_path(path: &Path, text: &str, pointer: &[String]) -> HomeIdentity {
+    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(text) else {
+        return HomeIdentity::CannotTell(format!("{} is not valid JSON", path.display()));
+    };
+    let mut at = &parsed;
+    for key in pointer {
+        let Some(next) = at.get(key) else {
+            return HomeIdentity::CannotTell(format!(
+                "{} carries no «{}»",
+                path.display(),
+                pointer.join(".")
+            ));
+        };
+        at = next;
+    }
+    match at.as_str() {
+        Some(account) if !account.is_empty() => HomeIdentity::Answers(account.to_owned()),
+        _ => HomeIdentity::CannotTell(format!("{} carries no «{}»", path.display(), pointer.join("."))),
+    }
+}
+
+/// The keychain service a command line signed in to `home` writes its credentials under.
+pub fn keychain_service(item: &KeychainItem, home: &Path) -> String {
+    use sha2::{Digest, Sha256};
+    let hex: String = Sha256::digest(home.to_string_lossy().as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    format!("{}-{}", item.service, &hex[..item.home_digest_chars.min(hex.len())])
 }
 
 /// Whether a home carries credentials. **UNKNOWN IS NOT SIGNED OUT**: nobody
@@ -68,16 +179,23 @@ pub enum SignedIn {
     NobodyEstablished,
 }
 
-/// `there` answers whether a path exists, so a test hands it its own machine.
-pub fn signed_in(cli: &KnownCli, home: &Path, there: &dyn Fn(&Path) -> bool) -> SignedIn {
-    if cli.signed_in_when.is_empty() {
+/// `there` answers whether a path exists and `in_keychain` whether a keychain
+/// item does, so a test hands both its own machine.
+pub fn signed_in(
+    cli: &KnownCli,
+    home: &Path,
+    there: &dyn Fn(&Path) -> bool,
+    in_keychain: &dyn Fn(&str) -> bool,
+) -> SignedIn {
+    if cli.signed_in_when.is_empty() && cli.signed_in_keychain.is_none() {
         return SignedIn::NobodyEstablished;
     }
-    if cli
-        .signed_in_when
-        .iter()
-        .any(|file| there(&home.join(file)))
-    {
+    let on_disk = cli.signed_in_when.iter().any(|file| there(&home.join(file)));
+    let in_the_keychain = cli
+        .signed_in_keychain
+        .as_ref()
+        .is_some_and(|item| in_keychain(&keychain_service(item, home)));
+    if on_disk || in_the_keychain {
         SignedIn::Yes
     } else {
         SignedIn::No
@@ -209,6 +327,8 @@ struct DeclaredCli {
     id: String,
     #[serde(default)]
     display_name: String,
+    #[serde(default)]
+    mark: String,
     executable: String,
     #[serde(default)]
     native: String,
@@ -224,6 +344,10 @@ struct DeclaredCli {
     reads_instructions_from: Vec<String>,
     #[serde(default)]
     signed_in_when: Vec<String>,
+    #[serde(default)]
+    signed_in_keychain: Option<KeychainItem>,
+    #[serde(default)]
+    identity: Option<IdentityFile>,
 }
 
 /// Exactly one field is written; neither means **no known way**.
@@ -251,9 +375,15 @@ impl From<DeclaredCli> for KnownCli {
         } else {
             declared.display_name
         };
+        let mark = if declared.mark.trim().is_empty() {
+            two_letter_mark(&declared.id)
+        } else {
+            declared.mark.to_uppercase()
+        };
         KnownCli {
             id: declared.id,
             display_name,
+            mark,
             executable: declared.executable,
             // **A WORD NOBODY TAUGHT US IS «UNVERIFIED», NEVER «NO»**.
             native_profiles: match declared.native.as_str() {
@@ -276,8 +406,15 @@ impl From<DeclaredCli> for KnownCli {
             endpoint: declared.endpoint,
             reads_instructions_from: declared.reads_instructions_from,
             signed_in_when: declared.signed_in_when,
+            signed_in_keychain: declared.signed_in_keychain,
+            identity_at: declared.identity,
         }
     }
+}
+
+/// The fallback mark: `id` upper-cased, cut to two letters.
+pub fn two_letter_mark(id: &str) -> String {
+    id.to_uppercase().chars().take(2).collect()
 }
 
 /// The command line carrying this `id`, or a readable refusal. One place, so
@@ -428,6 +565,8 @@ pub fn profile_home_path(
     validate_profile_name(profile_name)?;
     Ok(profiles_root.join(cli_id).join(profile_name))
 }
+
+pub const AMBIENT_LAUNCH_ESSENTIALS: &[&str] = &["PATH", "HOME", "USER"];
 
 /// The environment to overlay to launch `cli` with its home at `profile_home`.
 /// Empty for a mechanism with no variable (see [`symlink_swap`]) and for a
@@ -639,6 +778,7 @@ mod tests {
         let cli = KnownCli {
             id: "una-casa".to_owned(),
             display_name: "Una Casa".to_owned(),
+            mark: "UC".to_owned(),
             executable: "unacasa".to_owned(),
             native_profiles: NativeProfiles::NotSupported,
             native_profiles_note: "a fixture".to_owned(),
@@ -650,6 +790,8 @@ mod tests {
             endpoint: None,
             reads_instructions_from: Vec::new(),
             signed_in_when: Vec::new(),
+            signed_in_keychain: None,
+            identity_at: None,
         };
         let env = build_environment(&cli, Path::new("/home/profiles/acme/work"), &|_| None);
         assert!(env.is_empty());
@@ -772,5 +914,100 @@ mod tests {
             assert!(!cli.id.is_empty());
             assert!(!cli.executable.is_empty());
         }
+    }
+
+    // ── which account a home answers as ────────────────────────────────
+
+    fn a_home_naming(email: &str) -> impl Fn(&Path) -> Option<String> + '_ {
+        move |path: &Path| {
+            path.ends_with(".claude.json")
+                .then(|| format!(r#"{{"oauthAccount":{{"emailAddress":"{email}"}}}}"#))
+        }
+    }
+
+    /// **THE FAULT THIS TEST HOLDS SHUT.** During the login the browser
+    /// re-authorised the account it already had open, and the home now names
+    /// somebody else: read off `.claude.json`, not asked of the engine.
+    #[test]
+    fn a_home_naming_another_account_is_read_as_that_account() {
+        let cli = find_cli("claude").unwrap();
+        let identity = identity_of_home(
+            cli,
+            Path::new("/homes/claude/someone"),
+            &a_home_naming("somebody-else@example.com"),
+        );
+        assert_eq!(identity, HomeIdentity::Answers("somebody-else@example.com".to_owned()));
+    }
+
+    /// A fictitious engine, so the test proves the rule — an identity file
+    /// tried beside the home, not only inside it — without naming a real one.
+    fn fake_engine_with_an_identity_file() -> KnownCli {
+        KnownCli {
+            id: "acme".to_owned(),
+            display_name: "Acme Tool".to_owned(),
+            mark: "AC".to_owned(),
+            executable: "acme".to_owned(),
+            native_profiles: NativeProfiles::Unverified,
+            native_profiles_note: "a fixture".to_owned(),
+            home: HomeMechanism::Unknown,
+            home_note: "a fixture".to_owned(),
+            home_already_here: None,
+            endpoint: None,
+            reads_instructions_from: Vec::new(),
+            signed_in_when: Vec::new(),
+            signed_in_keychain: None,
+            identity_at: Some(IdentityFile {
+                file: vec![".acme.json".to_owned(), "../.acme.json".to_owned()],
+                pointer: vec!["oauthAccount".to_owned(), "emailAddress".to_owned()],
+            }),
+        }
+    }
+
+    #[test]
+    fn a_home_with_the_identity_file_beside_it_is_read() {
+        let cli = fake_engine_with_an_identity_file();
+        let home = Path::new("/homes/acme/someone/.acme");
+        let identity = identity_of_home(&cli, home, &|path: &Path| {
+            path.to_string_lossy()
+                .ends_with(".acme/../.acme.json")
+                .then(|| r#"{"oauthAccount":{"emailAddress":"someone@example.com"}}"#.to_owned())
+        });
+        assert_eq!(identity, HomeIdentity::Answers("someone@example.com".to_owned()));
+    }
+
+    /// The identity file inside the home exists but names no account; stopping
+    /// the search there left the default home unverified.
+    #[test]
+    fn a_stale_identity_file_inside_does_not_stop_the_search_beside_it() {
+        let cli = fake_engine_with_an_identity_file();
+        let home = Path::new("/homes/acme/someone/.acme");
+        let identity = identity_of_home(&cli, home, &|path: &Path| {
+            let text = path.to_string_lossy();
+            if text.ends_with(".acme/../.acme.json") {
+                Some(r#"{"oauthAccount":{"emailAddress":"someone@example.com"}}"#.to_owned())
+            } else if text.ends_with(".acme.json") {
+                Some(r#"{"numStartups":1}"#.to_owned())
+            } else {
+                None
+            }
+        });
+        assert_eq!(identity, HomeIdentity::Answers("someone@example.com".to_owned()));
+    }
+
+    #[test]
+    fn a_home_with_no_identity_file_cannot_be_told() {
+        let cli = find_cli("claude").unwrap();
+        let identity = identity_of_home(cli, Path::new("/homes/claude/vuota"), &|_| None);
+        assert!(matches!(identity, HomeIdentity::CannotTell(_)));
+    }
+
+    /// A command line that declares no identity file at all — every one but
+    /// `claude`, today — never claims a match: nobody looked.
+    #[test]
+    fn a_cli_with_no_identity_declared_cannot_be_told_even_with_a_file_there() {
+        let cli = find_cli("codex").unwrap();
+        let identity =
+            identity_of_home(cli, Path::new("/homes/codex/lavoro"), &a_home_naming("x@example.com"));
+        assert!(matches!(identity, HomeIdentity::CannotTell(_)));
     }
 }

@@ -241,6 +241,8 @@ export interface HandedStep {
   since: number;
   /** The tree the run was born in; `null` when it was born outside every one. */
   worktree: string | null;
+  /** Who has taken it on, if anyone; `null` while it still only waits. */
+  taken_by: string | null;
 }
 
 export async function handedSteps(runId: string): Promise<HandedStep[]> {
@@ -266,6 +268,24 @@ export async function closeHandedStep(
   const invoke = invoker();
   if (!invoke) throw new Error("outside the native shell: no step to close");
   return invoke<string>("close_handed_step", { runId, stepId, outcome, said });
+}
+
+/**
+ * A run as little as the window can say about one it did not start.
+ * Mirrors `RunGlimpse` in `desktop/src-tauri/src/handoff.rs`.
+ */
+export interface RunGlimpse {
+  run_id: string;
+  flow: string;
+  worktree: string | null;
+}
+
+/** Reads a run's header straight from the ledger: what is left to show for a
+ * run this window's shell never started, and so cannot follow live. */
+export async function runGlimpse(runId: string): Promise<RunGlimpse> {
+  const invoke = invoker();
+  if (!invoke) throw new Error("outside the native shell: no ledger to read");
+  return invoke<RunGlimpse>("run_glimpse", { runId });
 }
 
 /** Everything a run has said so far, for whoever looks in now. */
@@ -670,4 +690,39 @@ export async function runUsage(runId: string): Promise<RunUsage | null> {
   const invoke = invoker();
   if (!invoke) return null;
   return invoke<RunUsage | null>("run_usage", { runId });
+}
+
+export interface StripRun {
+  run_id: string;
+  entity: string;
+  state: "waiting" | "working" | "not_yet" | "holder_gone";
+  step: string | null;
+  elapsed_secs: number;
+  cap_micros: number | null;
+  spend_micros: number;
+  device: string | null;
+  holder_gone: boolean;
+}
+
+export interface StripAccount {
+  name: string;
+  cli_id: string;
+  monogram: string;
+  unavailable: boolean;
+  spent_fraction: number | null;
+  resets_at: string | null;
+  read_at: number | null;
+  unit: string | null;
+}
+
+export interface StripState {
+  runs: StripRun[];
+  accounts: StripAccount[];
+  ended_today: number;
+}
+
+export async function stripData(since?: number): Promise<StripState> {
+  const invoke = invoker();
+  if (!invoke) throw new Error("outside the native shell: no engine to ask");
+  return invoke<StripState>("strip", { since });
 }

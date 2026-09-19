@@ -26,3 +26,4 @@ desktop/src-tauri/icons/ios/
 .claude/
 
 .DS_Store
+menubar/.build/

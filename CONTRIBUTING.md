@@ -7,8 +7,11 @@ full rules live in [`AGENTS.md`](AGENTS.md) and in `docs/decisions.md`.
 Everything committed here is in English — identifiers, comments, documents,
 commit messages, and every message a user of the tool can read. The Italian
 still in older comments is a measured debt, counted by a test whose number may
-only fall. Under `docs/` the one exception is the fault register, whose rows
-are generated from Sailor's own store and are translated nowhere.
+only fall.
+
+There is no declared exception any more. `docs/faults-encountered.md` is now
+a short page of the faults still open, rendered from Sailor's own store, and it
+is held to the same rule as every other document.
 
 ## Build and test
 
@@ -48,6 +51,49 @@ measure, and do not repair a test that was never broken.
 The desktop window itself is `desktop/` (Tauri and React), outside the
 workspace, and the README explains how to run it.
 
+## Every gate you may hit
+
+Every one of these has to be green on your branch before a change merges. Run
+the ones that apply to what you touched; a reviewer reruns the same ones.
+[`docs/gates.md`](docs/gates.md) is the one manifest a worker, a reviewer and
+integration all run by letter; the table below says the same commands with,
+for each, what to do when it is red, and is kept matching that manifest by
+hand.
+
+**Always:**
+
+| gate | command | if it is red |
+|---|---|---|
+| the counted seeds hold | `cargo test -p sailor -j 1 --test the_battery_does_not_shrink_in_silence --test comments_do_not_crowd_out_the_code --test the_fault_table_holds_together` | a test or flow file appeared or vanished, or a comment block or fault row grew past its cap — write the new seed the judge states, in the same commit (see "The ratchet" below) |
+| everything a user reads is English | `cargo test -p sailor -j 1 --test the_words_a_user_reads_are_in_english --test a_product_name_in_prose_only_ever_falls --test identifiers_are_in_english` | translate the sentence, remove the product name from prose, or rename the identifier — a new Italian word for an identifier is one line added to the list, not an exception |
+| nothing private or workshop-only is tracked | `cargo test -p sailor -j 1 --test no_engine_is_named_in_the_code --test no_product_home_is_written_into_the_code --test nothing_reserved_is_tracked --test the_repository_ships_no_workshop_flow --test no_push_publishes_a_private_name --test the_publication_boundary_holds` | move an engine's name into its descriptor, a product's home directory into data rather than a constant, and keep a personal flow out of `flows/` — a name once force-pushed cannot be unpublished, so this one is refused before the push, not fixed after |
+| clippy is clean | `cargo clippy -p <every crate you touched> --tests -j 1` | fix the lint; do not silence it with an attribute unless the comment says why |
+
+No tool signature in the commit range — the command has a pipe, so it does
+not fit the table above:
+
+```sh
+git log main..HEAD --format=%B | grep -E '^(Co-Authored-By|Claude-Session):'
+```
+
+Must print nothing. If it does, `git commit --amend` to drop the trailer.
+
+**When a `.flow.json` or a seed file changes:**
+
+```sh
+cargo test -p sailor -j 1 --test a_flow_never_grows_what_it_sends_in_silence --test every_flow_path_the_code_names_exists --test take_the_next_fault --test take_the_next_work
+cargo test -p flow -j 1
+```
+
+**When `crates/actions` or a brake changes:** `cargo test -p actions -j 1 --no-fail-fast` and `cargo test -p flow -j 1` — both suites, always both. A first-execution timeout on a fresh temp-file engine is rerun once and said aloud, not silently retried.
+
+**When `crates/profiles`, the login probe or a launch changes:** `cargo test -p profiles -j 1`, plus one real probe on a real home (the probe test's own name), pasted rather than skipped.
+
+**When `desktop/` changes:** `cd desktop && npm test` and `npx tsc --noEmit`, `cargo test --manifest-path desktop/src-tauri/Cargo.toml -j 1`, and — for anything a person would see on screen — a walkthrough of it against the fixture store, with screenshots.
+
+The full rules behind each of these, and the ones specific to an agent working
+unattended in this tree, live in [`AGENTS.md`](AGENTS.md).
+
 ## The ratchet, and it is the gate before every commit
 
 ```sh
@@ -81,11 +127,18 @@ vanishes, and nothing was looking for it. Write the number the judge states, in
 the same commit, and let the commit message say why the count moved.
 
 `sailor ratchet` does not measure your working tree. It rebuilds
-`git archive HEAD` into `target/ratchet-tree`, lays your changed and new files
+`git archive HEAD` into `target/ratchet-tree` of the main checkout (every
+worktree shares that copy and its build), lays your changed and new files
 over that clean copy, and runs each judge there — because several sessions can
 write in one checkout, and a seed taken over somebody else's uncommitted file
 describes a tree nobody has. It prints the files it laid over: read that list
 and check they are all yours. `sailor ratchet --only <judge>` runs one judge.
+
+Both `sailor ratchet` and `sailor release` build from the sources, and they find
+them in this order: `SAILOR_SOURCES` if you set it, otherwise the Sailor tree you
+are standing in, otherwise `$HOME/personal/sailor`. Standing in your checkout is
+enough — set `SAILOR_SOURCES` only to build from a tree other than the one you
+are in.
 
 ## Commits
 
@@ -113,6 +166,49 @@ refactor(profiles): the engines a profile can be made of are a file, not Rust
   use none of it. **Sending the story elsewhere is the rule, because it needs
   no judgement about which internal detail is acceptable.**
 - No tooling attribution trailers.
+
+## What must never be public
+
+This repository is public and permanent: a name once pushed cannot be
+unpublished, force-push included — see `no_push_publishes_a_private_name`
+above. The release preflight refuses, and a commit must never carry:
+
+- **Private names and personal paths** — a person's handle or email, an
+  absolute path from somebody's home directory, an internal repository or
+  employer name.
+- **A person's own flows and working habits** — a workshop flow built for one
+  person's machine, as opposed to what the product ships from `flow::system`.
+- **Reserved artefacts** — profile homes, credential files, anything under a
+  path this project's own judges (`nothing_reserved_is_tracked`, `no_engine_is_named_in_the_code`)
+  already refuse to see tracked.
+- **Credentials of any kind** — tokens, keys, session data, credential-bearing
+  configuration, and an unsanitized export or log copied out of the store.
+
+**The names are read from a list that never enters the repository**:
+`~/personal/.sailor-notes/private-names`, or the file `SAILOR_PRIVATE_NAMES`
+points at, one name per line. A missing list is not a clean tree:
+`nothing_from_this_machine_is_published` goes red with «not measured». If you
+keep no private name, create the file empty, and that declares it.
+
+The CI has no list, so it splits the check in two. Its `publication boundary`
+job refuses what needs no list in a commit message: a home path of a real
+machine, a process number, a session id or a tty. Placeholder homes such as
+`/home/pilot/` are not a machine. For the names, the job reports the status
+`sailor/private-names` on the exact commit. A maintainer posts that status by
+running `scripts/attest-private-names.sh <ref>` with the list armed. The status
+itself, not the job, is what a merge into `main` requires: a pull request from
+a fork can edit a workflow, but its token cannot post a status. Anyone with
+write access to the repository can post one, so the rule protects against
+outside contributions, not against a writer. A pull request body or release
+note passes through `scripts/privacy-scan.sh --text <file>` before it is
+published. That also refuses `127.0.0.1` and a passage about the machine the
+text was written on.
+
+**Not covered yet:** sensitive data folded inside a generated *attachment* —
+a screenshot, a database fixture, an archive, a packaged desktop resource —
+which the text- and name-based checks above do not open and cannot see
+inside. If what you are committing is binary or generated, look at what is
+inside it yourself before it goes in; no judge does that for you today.
 
 ## Comments
 

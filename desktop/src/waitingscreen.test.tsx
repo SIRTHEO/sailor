@@ -23,7 +23,7 @@ function answered(sources: Partial<Sources>): Sources {
     open: { state: "answered", value: [] },
     handed: { state: "answered", value: {} },
     history: { state: "answered", value: [] },
-    quota: { state: "answered", value: [] },
+    quota: { state: "answered", value: { windows: [], unreachable: [] } },
     terminals: { state: "answered", value: { answer: "seen", ttys: [] } },
     ...sources,
   };
@@ -50,6 +50,7 @@ function handedStep(stepId: string, since: number): HandedStep {
     mandate: `answer about ${stepId}\nand a second line nobody puts in a row`,
     since,
     worktree: null,
+    taken_by: null,
   };
 }
 
@@ -106,6 +107,30 @@ function shapeOf(state: string): string | null {
   return path?.getAttribute("d") ?? null;
 }
 
+describe("running now — the third answer, a row and not a place", () => {
+  test("a run in flight earns a row, with what it has cost", () => {
+    render(
+      <WaitingScreen
+        native
+        now={NOW}
+        since={AWAY}
+        sources={answered({})}
+        running={[
+          { run: { run_id: "r1", flow: "take-the-next-work", started_at: NOW - 60, status: "running", events: [] }, costMicros: 250_000 },
+        ]}
+      />,
+    );
+    expect(screen.getByText("Running now")).toBeTruthy();
+    expect(screen.getByText("take-the-next-work")).toBeTruthy();
+    expect(screen.getByText(/1m ago · \$0\.25/)).toBeTruthy();
+  });
+
+  test("nothing running draws no such row — it vanishes, not a stale empty panel", () => {
+    render(<WaitingScreen native now={NOW} since={AWAY} sources={answered({})} running={[]} />);
+    expect(screen.queryByText("Running now")).toBeNull();
+  });
+});
+
 describe("nothing waiting, and not being able to tell", () => {
   test("AN EMPTY MORNING SAYS SO PLAINLY", () => {
     render(<WaitingScreen native now={NOW} since={AWAY} sources={answered({})} />);
@@ -113,6 +138,30 @@ describe("nothing waiting, and not being able to tell", () => {
     expect(screen.getByText("and nothing happened while you were away")).toBeTruthy();
     expect(document.querySelector(".waiting__blind")).toBeNull();
     expect(document.body.textContent).not.toContain("I cannot tell you");
+  });
+
+  test("A STORE THAT COULD NOT BE READ IS A SENTENCE, NOT A COUNT", () => {
+    // Fault: one `unreadable` row read as «1 thing waits for you» — a number
+    // standing in for a store the window could not open at all.
+    render(
+      <WaitingScreen
+        native
+        now={NOW}
+        since={AWAY}
+        sources={answered({})}
+        attention={[
+          {
+            kind: "unreadable",
+            status_word: "unreadable",
+            reason: "the store at /nowhere/ledger could not be read: no such file or directory",
+            since: null,
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText(/I cannot tell you what waits: the store could not be read/)).toBeTruthy();
+    expect(document.body.textContent).not.toContain("1 thing waits for you");
+    expect(screen.getByText(/\/nowhere\/ledger could not be read/)).toBeTruthy();
   });
 
   test("A SCREEN THAT COULD NOT ASK READS NOTHING LIKE AN EMPTY ONE", () => {
@@ -220,7 +269,7 @@ describe("the order is the cost to the person", () => {
         sources={answered({
           // Handed last on purpose: an order nobody sorted is the order the
           // sources happened to arrive in.
-          quota: { state: "answered", value: [quotaWindow("claude", 0.97)] },
+          quota: { state: "answered", value: { windows: [quotaWindow("claude", 0.97)], unreachable: [] } },
           history: {
             state: "answered",
             value: [execution("r2", "failed", NOW - 3600, { steps_broke: 1, steps_went: 0 })],
@@ -345,7 +394,7 @@ describe("reading the engine for itself", () => {
             return Promise.resolve([handedStep("review", NOW - 600)]);
           }
           if (command === "execution_history") return Promise.resolve([]);
-          if (command === "quota") return Promise.resolve([]);
+          if (command === "quota") return Promise.resolve({ windows: [], unreachable: [] });
           if (command === "terminals_abandoned") return Promise.resolve({ answer: "seen", ttys: [] });
           return Promise.reject(new Error(`no ${command}`));
         },

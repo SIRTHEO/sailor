@@ -9,7 +9,7 @@ use crate::candidates::{strengths_path, Candidate, Refused};
 use crate::cost::{
     current_price_list, now_secs, record_the_call, recording_for, Chain, Recording, Spent,
 };
-use crate::equipment::current_equipment_for;
+use crate::equipment::current_equipment_asking_for;
 use crate::process::{
     invoke_external_engine_watched_until, sink_for_step, EngineInvocation, EngineResult, LiveSink,
     Pipe, StepSinks,
@@ -20,11 +20,64 @@ use crate::spec::{EngineSpec, A_TREE_OF_ITS_OWN, TREE};
 use crate::{budget, cooldown, reserve, Reading};
 use flow::{Action, ActionError, ActionOutcome, Ran, SharedState, StepSpecies, ValueSchema};
 use ledger::{EngineIdentity, Ledger};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+
+const ROLES_COLLECTION: &str = "roles";
+
+#[derive(Deserialize)]
+struct Role {
+    tools: Vec<String>,
+    #[serde(default)]
+    account: Option<String>,
+}
+
+/// Replaces a role with the tool chain its owner wrote in the ledger.
+///
+/// A `with` already carrying both is resolved, not miswritten: it is kept as
+/// is, so calling this a second time on the same `with` is safe.
+pub fn resolve_role(input: &Value, ledger: Option<&Ledger>) -> Result<Value, String> {
+    let Some(role) = input.get("role").and_then(Value::as_str) else {
+        return Ok(input.clone());
+    };
+    if input.get("tool").is_some() {
+        return Ok(input.clone());
+    }
+    let Some(ledger) = ledger else {
+        return Err(catalogue::say("cli.role.no_store", &[("role", role)]));
+    };
+    let record = ledger
+        .read_record(ROLES_COLLECTION, role)
+        .map_err(|error| {
+            catalogue::say("cli.role.read_error", &[("role", role), ("error", &error.to_string())])
+        })?
+        .ok_or_else(|| catalogue::say("cli.role.missing", &[("role", role)]))?;
+    let role_value: Role = serde_json::from_value(record.value).map_err(|error| {
+        catalogue::say("cli.role.invalid", &[("role", role), ("error", &error.to_string())])
+    })?;
+    if role_value.tools.is_empty() {
+        return Err(catalogue::say("cli.role.no_tools", &[("role", role)]));
+    }
+    let tools: Vec<Value> = role_value
+        .tools
+        .into_iter()
+        .map(|tool| match &role_value.account {
+            Some(account) => Value::String(format!("{tool}@{account}")),
+            None => Value::String(tool),
+        })
+        .collect();
+    let mut resolved = input.clone();
+    let object = resolved
+        .as_object_mut()
+        .ok_or_else(|| catalogue::say("cli.role.needs_object", &[("role", role)]))?;
+    // `role` stays: the ledger's row needs it, and the guard above is what
+    // stops a second resolution, not a reason to strip it here.
+    object.insert("tool".to_owned(), Value::Array(tools));
+    Ok(resolved)
+}
 
 // ── the two actions registrable in a flow::ActionRegistry ───────────────
 
@@ -136,11 +189,10 @@ impl ExternalEngineAction {
     }
 }
 
-/// The tree one step works in, taken down when that step ends however it ends.
-///
-/// Closed on drop and not by a line at the bottom: an engine step leaves by a
-/// dozen paths, and a tree closed on one of them is a tree left open on the
-/// other eleven. See fault 89.
+/// The tree one step works in, taken down when the step ends however it ends
+/// — unless the step declared `keep_tree`, in which case a call that
+/// answered leaves it standing for a later step to read, and release. See
+/// fault 182 and R-W18 point 1.
 struct OwnTree {
     repo: PathBuf,
     at: PathBuf,
@@ -148,6 +200,7 @@ struct OwnTree {
     /// The register the tree was written into, so the same binding that takes
     /// it down takes it off the page. See fault 97.
     register: Ledger,
+    close_on_drop: std::cell::Cell<bool>,
 }
 
 impl OwnTree {
@@ -159,10 +212,19 @@ impl OwnTree {
             None => eprintln!("{sentence}"),
         }
     }
+
+    /// The call answered: somebody downstream still reads this tree, so
+    /// closing it here is not this step's to do.
+    fn leave_open(&self) {
+        self.close_on_drop.set(false);
+    }
 }
 
 impl Drop for OwnTree {
     fn drop(&mut self) {
+        if !self.close_on_drop.get() {
+            return;
+        }
         let at = self.at.to_string_lossy().into_owned();
         match workspace::close_tree(&self.repo, &self.at, &self.register) {
             workspace::Closing::TakenDown => {}
@@ -207,8 +269,7 @@ fn tree_of_its_own(
         ));
     }
     let said = |key: &str| shared.get(key).and_then(Value::as_str).map(str::to_owned);
-    let (Some(root), Some(run), Some(step)) = (
-        said(flow::WORKSPACE_ROOT),
+    let (Some(run), Some(step)) = (
         said(flow::CURRENT_RUN),
         said(flow::CURRENT_STEP),
     ) else {
@@ -229,7 +290,36 @@ fn tree_of_its_own(
             ),
         ));
     };
-    let repo = PathBuf::from(&root);
+    let repo = match &spec.repo {
+        Some(path) => {
+            let p = PathBuf::from(path);
+            if !p.is_dir() {
+                return Err(ActionError::new(
+                    "invalid_input",
+                    format!("the declared `repo` is not a directory: {}", path),
+                ));
+            }
+            if !p.join(".git").exists() {
+                return Err(ActionError::new(
+                    "invalid_input",
+                    format!("the declared `repo` is not a git repository: {}", path),
+                ));
+            }
+            p
+        }
+        None => {
+            let Some(root) = said(flow::WORKSPACE_ROOT) else {
+                return Err(ActionError::new(
+                    "invalid_input",
+                    format!(
+                        "the step asks for a `{TREE}` of its own, and this run says neither which \
+                         project nor which run and step it is: there is no name to cut it under"
+                    ),
+                ));
+            };
+            PathBuf::from(root)
+        }
+    };
     workspace::tree_for(
         &repo,
         &run,
@@ -243,6 +333,7 @@ fn tree_of_its_own(
                 at,
                 live,
                 register,
+                close_on_drop: std::cell::Cell::new(true),
             })
         })
         .map_err(|why| ActionError::new("tree_not_cut", why))
@@ -359,7 +450,7 @@ fn compose(
     // the environment of whoever opened the terminal — reading the
     // neighbour's home, while `sailor run` took the same engine into its own.
     // The profile sits **under** `spec.env`: a variable written in the step wins.
-    let equipment = current_equipment_for(bin, &spec.env);
+    let equipment = current_equipment_asking_for(bin, &spec.env, candidate.account.as_deref());
     Prepared {
         invocation: EngineInvocation {
             bin: bin.clone(),
@@ -510,8 +601,16 @@ impl ExternalEngineAction {
                 // prints those words while working, and would refuse itself.
                 let answered = reading.answer.clone().unwrap_or_else(|| stdout.clone());
                 let in_shape = shape.is_some_and(|shape| shaped_answer(shape, &answered).is_ok());
+                // **AN ENGINE THAT REPORTED USAGE HAS ANSWERED**, and only its
+                // error channel may still say it could not work. Fault 183.
+                let has_usage = reading.input_tokens.is_some()
+                    || reading.output_tokens.is_some()
+                    || reading.total_tokens.is_some()
+                    || reading.declared_cost.is_some();
                 let class = if in_shape {
                     None
+                } else if has_usage {
+                    candidate.declared_class_of_a_call_that_answered(&stderr)
                 } else {
                     candidate.declared_class(&stdout, &stderr)
                 };
@@ -739,14 +838,17 @@ impl ExternalEngineAction {
         stdout: &str,
         stderr: &str,
     ) {
-        let (Some("quota_exhausted"), Some(secs), Some(id), Some(path)) =
+        let (Some("quota_exhausted"), Some(secs), Some(_), Some(path)) =
             (class, candidate.cooldown_secs, candidate.id.as_deref(), self.cooldowns.as_deref())
         else {
             return;
         };
+        // Set aside by engine **and account**: one account's spent quota says
+        // nothing about another's on the same command line.
+        let id = candidate.aside_key();
         // A list that cannot be written costs the next chain one knock: not
         // worth breaking this step over.
-        let _ = cooldown::set_aside(path, id, now, secs, &what_it_said(stdout, stderr));
+        let _ = cooldown::set_aside(path, &id, now, secs, &what_it_said(stdout, stderr));
     }
 
     /// Whether this call may be authorised under the cap the run declares.
@@ -780,6 +882,22 @@ impl ExternalEngineAction {
                 reserve::why_it_is_suspended(&stopped),
             )
         })
+    }
+
+    /// What this call may have of the run's remainder. **A CAP NOBODY WRITES
+    /// ON THE COMMAND LINE IS A STOP THRESHOLD**: fault 164. The remainder is
+    /// shared by the wave, never offered whole to each step in it.
+    fn share_of_the_cap(&self, shared: &SharedState) -> Option<i64> {
+        let cap = shared.get(flow::CURRENT_CAP)?.as_i64()?;
+        let run_id = shared.get(flow::CURRENT_RUN)?.as_str()?;
+        let spent = self.ledger.as_ref()?.spent_in_run(run_id).ok()?;
+        let front = shared
+            .get(flow::CURRENT_FRONT)
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or(1)
+            .max(1);
+        let left = cap - spent.micros - reserve::in_flight(run_id);
+        Some(left / front)
     }
 
     /// The most this call can cost, as a reserve or as the reason there is none.
@@ -857,7 +975,30 @@ impl Action for ExternalEngineAction {
         let written_shape = input.get("answer_shape").map(|shape| {
             serde_json::to_string(shape).expect("a value already in memory always reserialises")
         });
-        let mut spec: EngineSpec = serde_json::from_value(input.clone())
+        let role = input.get("role").and_then(Value::as_str).map(str::to_owned);
+        let resolved = resolve_role(input, self.ledger.as_ref())
+            .map_err(|error| ActionError::new("invalid_input", error))?;
+        // The chain a role resolved to, read off what `resolve_role` wrote in
+        // its place: the same array `spec.tool` deserialises from just below,
+        // kept apart so it can travel to the ledger even when the call fails
+        // before answering.
+        let role_resolved_to: Vec<String> = role
+            .as_ref()
+            .map(|_| {
+                resolved
+                    .get("tool")
+                    .and_then(Value::as_array)
+                    .map(|chain| {
+                        chain
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_owned)
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default();
+        let mut spec: EngineSpec = serde_json::from_value(resolved)
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         check_tolerance(&spec.accept, &ENGINE_FAILURES)?;
         // Held until this step returns, and taken down then: the binding is
@@ -882,7 +1023,7 @@ impl Action for ExternalEngineAction {
         }
         // Before spending anything: if none of the engines asked for is usable
         // here, the step stops and says why for each of them.
-        let (candidates, refused) = self.candidates(&spec)?;
+        let (candidates, refused) = self.candidates(&spec, self.share_of_the_cap(shared))?;
         if candidates.is_empty() {
             // A single engine that cannot be found stays `tool_unavailable`
             // with the resolver's reason: the commonest case, and that message
@@ -912,6 +1053,8 @@ impl Action for ExternalEngineAction {
         let mut chain = Chain {
             tried_before: Vec::new(),
             fell_back_from: self.fell_back_from(&spec, &candidates),
+            role,
+            role_resolved_to,
         };
         let mut last_ran = None;
         for candidate in &candidates {
@@ -931,7 +1074,14 @@ impl Action for ExternalEngineAction {
                 &chain,
             )?;
             match asked {
-                Asked::Answered(outcome) => return Ok((outcome, Some(ran))),
+                Asked::Answered(outcome) => {
+                    if spec.keep_tree {
+                        if let Some(tree) = &own_tree {
+                            tree.leave_open();
+                        }
+                    }
+                    return Ok((outcome, Some(ran)));
+                }
                 Asked::CannotWork(why) => {
                     last_ran = Some(ran);
                     set_aside.push(why);
@@ -973,6 +1123,46 @@ impl Action for ExternalEngineAction {
 mod tests {
     use super::*;
     use crate::tests::with_references_resolved;
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let directory = std::env::temp_dir().join(format!("sailor-engine-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("create the scratch directory");
+        directory
+    }
+
+    #[test]
+    fn a_role_becomes_its_users_tool_chain_and_account() {
+        let ledger = Ledger::open(scratch("role")).expect("open the ledger");
+        ledger
+            .put_record(&ledger::StoreRecord {
+                collection: ROLES_COLLECTION.to_owned(),
+                key: "reviewer".to_owned(),
+                value: json!({"tools":["first","second"],"account":"team"}),
+                written_by: "a person".to_owned(),
+                written_at: 0,
+            })
+            .expect("write the role");
+
+        let resolved = resolve_role(&json!({"role":"reviewer"}), Some(&ledger))
+            .expect("resolve the role");
+
+        assert_eq!(
+            resolved,
+            json!({"role":"reviewer","tool":["first@team","second@team"]}),
+            "role stays beside tool: the ledger's row still needs it, see fault 184"
+        );
+    }
+
+    #[test]
+    fn a_role_without_a_row_refuses_by_name() {
+        let ledger = Ledger::open(scratch("missing-role")).expect("open the ledger");
+
+        let error = resolve_role(&json!({"role":"reviewer"}), Some(&ledger))
+            .expect_err("a missing role must stop the step");
+
+        assert!(error.contains("role «reviewer» has no row"), "{error}");
+    }
 
     /// WHOSE STEP THE TEXT IS: the action asks the factory for the recipient,
     /// naming the step `SharedState` hands it, and what it delivers is what

@@ -3,7 +3,8 @@
  *
  * Contract, set by the `schermo` step of the design flows: an npm script named
  * `screenshots` that starts the project, captures at 375 and 1440 pixels, and
- * saves into `design/screenshots/`.
+ * saves into the build output. **A PICTURE IS NOT A SOURCE**: it is written
+ * under `target/`, which nothing tracks, so a render never lands in the tree.
  *
  * Two outputs per scene, and they are not interchangeable. The tree costs a few
  * hundred tokens and says what is there: roles, names, which cords join which
@@ -25,11 +26,11 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type Page } from "playwright";
-import { MACHINE, PLACES, UNDER_A_TREE, type Section } from "../src/places";
+import { MACHINE, UNDER_A_TREE, placeNamed, type Section } from "../src/places";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
-const outDir = join(root, "design", "screenshots");
+const outDir = join(root, "..", "target", "screenshots");
 
 /** Fixed in `vite.config.ts`: the native shell opens it by name. */
 const PORT = 5183;
@@ -87,7 +88,7 @@ async function openByPalette(page: Page, label: string): Promise<void> {
  * column, and everywhere else only the palette names it.
  */
 async function openPlace(page: Page, id: Section): Promise<void> {
-  const place = PLACES.find((one) => one.id === id);
+  const place = placeNamed(id);
   if (!place) throw new Error(`no place «${id}»: the product does not have it`);
   if (!UNDER_A_TREE.includes(id)) {
     await openByPalette(page, place.name);
@@ -230,6 +231,13 @@ const SCENES: Scene[] = [
     what: "what this machine has installed: a data-only view, where vertical rhythm shows more than elsewhere",
     reach: async (page) => {
       await openMachineRow(page, "equipment");
+    },
+  },
+  {
+    name: "flow-map",
+    what: "which flow calls which: the one view that reads the whole machine at once. Outside the native shell there are no files to read, so what this captures is the state that says why — the one a person meets when the engine is not answering",
+    reach: async (page) => {
+      await openPlace(page, "flowmap");
     },
   },
   {

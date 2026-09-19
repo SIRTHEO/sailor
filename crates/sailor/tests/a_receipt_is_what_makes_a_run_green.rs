@@ -2,7 +2,9 @@
 //! own words and the gate decides from them. Not a judge itself — it opens no
 //! source, it drives the gate — so it carries no seed and no receipt.
 
-use sailor::ratchet_cmd::{judges_in, verdict_of, Gate, Handed, Verdict};
+use sailor::ratchet_cmd::{
+    blind_checks_in, judges_in, verdict_of, what_the_suite_proved, Gate, Handed, Verdict,
+};
 
 /// The element the perimeter must contain: a judge that walked can count it.
 const SENTINEL: &str = "the sentinel this perimeter demands";
@@ -200,4 +202,111 @@ fn the_finder_reaches_one_of_the_three_places_a_judge_can_live() {
     assert_eq!(named.len(), 1, "one of the three, and no more: {named:?}");
 
     let _ = std::fs::remove_dir_all(&root);
+}
+
+/// What a judge that walked hands in when it also proves it can say it did not.
+fn a_judge_that_walked_and_proved_it_can_say_it_did_not() -> String {
+    format!(
+        "running 4 tests\n{} nothing to ask\n{} 760 sources holding {SENTINEL}{}760 paths git \
+         tracks\nok.",
+        workspace::MEASURED_NOTHING,
+        workspace::MEASURED,
+        workspace::AGAINST
+    )
+}
+
+/// **THE PROOF THAT A JUDGE IS NOT PUNISHED FOR PROVING ITSELF.** Reading the
+/// blind line before the receipt made the better judge the worse-reported one.
+#[test]
+fn a_judge_that_measured_is_green_even_where_one_of_its_checks_could_not() {
+    let both = a_judge_that_walked_and_proved_it_can_say_it_did_not();
+    let gate = Gate::over(&[Handed { judge: "nothing_reserved_is_tracked", passed: true, said: &both }]);
+
+    assert_eq!(
+        verdict_of(true, &both),
+        Verdict::Green,
+        "a judge that read 760 paths was recorded as having measured nothing"
+    );
+    assert_eq!(gate.unmeasured(), 0, "the run counted a judge that measured among the blind");
+    assert!(gate.lets_through(0, 0), "the gate held a run shut on a judge that measured");
+    assert_eq!(
+        blind_checks_in(&both),
+        1,
+        "the blind check went unsaid, which is the silence this gate exists to break"
+    );
+}
+
+fn repository() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|crates| crates.parent())
+        .expect("the crate lives in <root>/crates/sailor")
+        .to_path_buf()
+}
+
+/// A suite as `cargo test --nocapture` writes it.
+fn a_suite_where(judge: &str, said: &str) -> String {
+    format!("   Compiling sailor\n     Running tests/{judge}.rs (target/release/deps/{judge}-ab)\n{said}\n")
+}
+
+/// **THE RELEASE READ CARGO'S EXIT CODE AND NOTHING ELSE.** Every receipt lived
+/// in `sailor ratchet`, which no release ever invoked.
+#[test]
+fn a_release_refuses_a_suite_whose_judge_proved_nothing() {
+    let judge = judges_in(&repository())
+        .first()
+        .expect("this tree has judges")
+        .test
+        .clone();
+
+    let silent = a_suite_where(&judge, "running 3 tests\ntest result: ok. 3 passed; 0 failed");
+    let refused = what_the_suite_proved(&repository(), &silent)
+        .expect_err("a suite that proved nothing was accepted for service");
+    assert!(
+        refused.contains(&judge),
+        "the refusal did not name the judge that proved nothing: {refused}"
+    );
+
+    let walked = a_suite_where(
+        &judge,
+        &format!(
+            "{} 214 sources holding {SENTINEL}{}214 paths git tracks\nok.",
+            workspace::MEASURED,
+            workspace::AGAINST
+        ),
+    );
+    what_the_suite_proved(&repository(), &walked)
+        .expect("a suite whose judges handed in receipts was refused");
+}
+
+/// **THIS ONE DROVE THE GATE AND SAID NOTHING EITHER.** It opens no source, so
+/// it long carried no seed and no receipt - but the run counts it like any
+/// other, and a judge the run counts must say what it walked.
+#[test]
+fn every_verdict_the_gate_can_give_is_put_to_it_here() {
+    let cases = [
+        ("running 1 test\nok.", Verdict::NoReceipt),
+        (
+            &format!("{} nothing to ask\nok.", workspace::MEASURED_NOTHING) as &str,
+            Verdict::NotMeasured,
+        ),
+        (
+            &format!(
+                "{} 1 sources holding {SENTINEL}{}1 paths git tracks",
+                workspace::MEASURED,
+                workspace::AGAINST
+            ) as &str,
+            Verdict::Green,
+        ),
+    ];
+    workspace::measured_against(
+        cases.len() + 1,
+        "verdicts put to the gate",
+        judges_in(&repository()).len(),
+        "judges this tree holds",
+    );
+    for (said, expected) in cases {
+        assert_eq!(verdict_of(true, said), expected, "the gate read «{said}» as something else");
+    }
+    assert_eq!(verdict_of(false, "anything"), Verdict::Red, "a red judge read as anything else");
 }

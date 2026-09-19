@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { CATALOGUES } from "./i18n";
+// The file on disk, not what this build carries: the window ships one layer.
+import itOnDisk from "../../i18n/it.json";
 
 /**
  * **NO SENTENCE THE USER READS OUTSIDE THE CATALOGUE.** One written into a
@@ -190,7 +191,7 @@ describe("what a person reads comes from the catalogue", () => {
   });
 
   test("the catalogue itself is not counted, or the repair would raise the number", () => {
-    const inCatalogue = Object.values(CATALOGUES.it).filter((text) => looksItalian(text)).length;
+    const inCatalogue = Object.values(itOnDisk as Record<string, string>).filter((text) => looksItalian(text)).length;
     expect(inCatalogue).toBeGreaterThan(0);
     expect(everythingLoose().join("\n")).not.toContain("i18n.ts:");
   });

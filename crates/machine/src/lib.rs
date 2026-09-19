@@ -55,6 +55,37 @@ pub fn something_is_left_behind(store: &ledger::Ledger) -> Result<bool, String> 
         .any(|holding| ledger::holdings::whose(holding, &run_is_open) == Whose::Nobody))
 }
 
+/// Every process of this machine with the directory it stands in. **A table
+/// that comes back empty is a refusal**: this very process is always in it.
+pub fn where_processes_stand() -> Result<Vec<(u32, std::path::PathBuf)>, String> {
+    let out = std::process::Command::new("lsof")
+        .args(["-w", "-d", "cwd", "-Fpn"])
+        .output()
+        .map_err(|error| format!("lsof: {error}"))?;
+    let found = standing_in(&String::from_utf8_lossy(&out.stdout));
+    if found.is_empty() {
+        return Err(format!(
+            "lsof listed no process: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(found)
+}
+
+/// Reads `lsof -F`: a `p` line opens a process, and an `n` line is its directory.
+pub fn standing_in(text: &str) -> Vec<(u32, std::path::PathBuf)> {
+    let mut found = Vec::new();
+    let mut pid = None;
+    for line in text.lines() {
+        if let Some(number) = line.strip_prefix('p') {
+            pid = number.parse().ok();
+        } else if let (Some(at), Some(pid)) = (line.strip_prefix('n'), pid) {
+            found.push((pid, std::path::PathBuf::from(at)));
+        }
+    }
+    found
+}
+
 pub fn left_running(store: &ledger::Ledger) -> Result<Vec<LeftRunning>, ledger::LedgerError> {
     Ok(store
         .processes_left_running()?
@@ -459,6 +490,26 @@ pub fn build_directories_left(root: &Path) -> Vec<LeftBehind> {
     found
 }
 
+/// A tree's own building under a `target/` cargo was pointed at: weighed, and
+/// never a leftover, because the tree comes back to it.
+pub fn ordinary_building(root: &Path) -> Vec<LeftBehind> {
+    let target = root.join("target");
+    if !cargo_built_it(&target) {
+        return Vec::new();
+    }
+    let Ok(entries) = std::fs::read_dir(&target) else {
+        return Vec::new();
+    };
+    let mut found: Vec<LeftBehind> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| !cargo_built_it(path) && path.join(".fingerprint").is_dir())
+        .map(|path| LeftBehind { bytes: what_it_holds(&path), path })
+        .collect();
+    found.sort_by_key(|one| std::cmp::Reverse(one.bytes));
+    found
+}
+
 fn cargo_built_it(path: &Path) -> bool {
     std::fs::read_to_string(path.join("CACHEDIR.TAG"))
         .is_ok_and(|text| text.starts_with(CARGO_WROTE_THIS))
@@ -537,4 +588,36 @@ pub fn how_many_compilers(spare: &Spare, cores: usize) -> usize {
         return cores.max(1);
     };
     ((bytes / A_COMPILER_WANTS) as usize).clamp(1, cores.max(1))
+}
+
+/// Room a build is given before it starts: fault 176 filled the disk to 143 MiB.
+pub const A_BUILD_WANTS_FREE: u64 = 10 * 1024 * 1024 * 1024;
+
+/// Bytes an ordinary writer may still use on the disk holding `path`.
+pub fn free_bytes(path: &Path) -> Option<u64> {
+    use std::os::unix::ffi::OsStrExt;
+    let named = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
+    let mut about: libc::statvfs = unsafe { std::mem::zeroed() };
+    // SAFETY: the kernel fills a zeroed struct we own, from a path we own.
+    let done = unsafe { libc::statvfs(named.as_ptr(), &mut about) };
+    #[allow(clippy::unnecessary_cast)]
+    let free = about.f_bavail as u64 * about.f_frsize as u64;
+    (done == 0).then_some(free)
+}
+
+/// Whether a build must wait: only a disk that said so refuses one.
+pub fn too_little_to_build(free: Option<u64>) -> bool {
+    free.is_some_and(|free| free < A_BUILD_WANTS_FREE)
+}
+
+#[cfg(test)]
+mod tests {
+    /// Under the threshold a build waits; a disk that would not say refuses nothing.
+    #[test]
+    fn a_build_waits_only_when_the_disk_says_there_is_too_little_room() {
+        assert!(super::too_little_to_build(Some(super::A_BUILD_WANTS_FREE - 1)));
+        assert!(!super::too_little_to_build(Some(super::A_BUILD_WANTS_FREE)));
+        assert!(!super::too_little_to_build(None));
+        assert!(super::free_bytes(&std::env::temp_dir()).is_some_and(|free| free > 0));
+    }
 }

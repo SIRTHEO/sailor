@@ -4,9 +4,11 @@
 //! back, because that is where a tree can be misread into the wrong branch or
 //! the wrong name — and a wrong name is what `remove` acts on.
 
-use sailor::worktree_cmd::{render, render_open, still_the_opener, sweep};
+use ledger::holdings::Whose;
+use sailor::worktree_cmd::{render, render_open, still_the_opener, sweep, Holders};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use workspace::index_identity::IdentityRule;
 use workspace::{name_for, parse_worktrees, tree_path, OpenTree, OpenTrees};
 
 const PORCELAIN: &str = "\
@@ -194,8 +196,11 @@ fn the_sweep_takes_down_the_merged_trees_and_names_the_ones_holding_work() {
     run_git(&ahead, &["add", "answer"]);
     run_git(&ahead, &["commit", "-q", "-m", "not in the trunk"]);
     std::fs::write(dirty.join("half"), "half a thought\n").expect("work");
+    for tree in [&merged, &ahead, &dirty] {
+        written_down(&store, &repo, tree);
+    }
 
-    let said = sweep(&repo, &store as &dyn OpenTrees).expect("the sweep runs");
+    let said = sweep(&repo, &store as &dyn OpenTrees, &let_go_long_ago(&[], &[]), &IdentityRule::default()).expect("the sweep runs");
     let merged_is_gone = !merged.exists();
     let work_is_there = ahead.join("answer").exists() && dirty.join("half").exists();
     let _ = std::fs::remove_dir_all(&scratch);
@@ -205,6 +210,173 @@ fn the_sweep_takes_down_the_merged_trees_and_names_the_ones_holding_work() {
     assert!(said.contains("work/ancora-fuori"), "the kept tree was not named:\n{said}");
     assert!(said.contains("mai-committato"), "the dirty tree was not named:\n{said}");
     assert!(said.contains("1 taken down, 2 kept"), "{said}");
+}
+
+/// **A ROW OVER A DIRECTORY THAT IS GONE IS A LEFTOVER THE SWEEP MUST CLEAR.**
+/// The sweep walked git's list of trees, where such a row never appears, so
+/// eleven of them stood for two days and kept waking the flow that exists to
+/// clear them — fault 166, second face.
+#[test]
+fn the_sweep_clears_a_row_whose_tree_is_no_longer_on_disk() {
+    let scratch = a_scratch("stale-row");
+    let repo = a_repository_in(&scratch);
+    let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
+    let cut = workspace::tree_for(&repo, "run-sparito", "a_step", &store as &dyn OpenTrees, None)
+        .expect("a tree, written down as it is cut");
+    // Taken away behind git's back, which is what a killed crew agent leaves.
+    std::fs::remove_dir_all(&cut).expect("the directory goes");
+    run_git(&repo, &["worktree", "prune"]);
+    let held_before = store.trees_left_open().expect("the rows").len();
+
+    let said = sweep(&repo, &store as &dyn OpenTrees, &let_go_long_ago(&[], &[]), &IdentityRule::default()).expect("the sweep runs");
+    let held_after = store.trees_left_open().expect("the rows").len();
+    let _ = std::fs::remove_dir_all(&scratch);
+
+    assert_eq!(held_before, 1, "the row was never written: {said}");
+    assert_eq!(held_after, 0, "the row over a gone directory was kept:\n{said}");
+    assert!(said.contains("run-sparito"), "the row was cleared in silence:\n{said}");
+}
+
+/// **THE ONE THAT COST A SESSION ITS GROUND.** A tree whose work the trunk
+/// already holds and that git would take down without a word is kept, and
+/// named, while somebody is standing in it.
+#[test]
+fn a_merged_tree_somebody_is_working_in_is_kept_and_named() {
+    let scratch = a_scratch("occupied");
+    let repo = a_repository_in(&scratch);
+    let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
+    let busy = workspace::create(&repo, "work/qualcuno-dentro", None).expect("a merged tree");
+    written_down(&store, &repo, &busy);
+
+    let said = sweep(&repo, &store as &dyn OpenTrees, &let_go_long_ago(std::slice::from_ref(&busy), &[]), &IdentityRule::default()).expect("the sweep runs");
+    let still_there = busy.exists();
+
+    // And with nobody in it the same tree goes, or the guard is a sweep that
+    // never sweeps.
+    let again = sweep(&repo, &store as &dyn OpenTrees, &let_go_long_ago(&[], &[]), &IdentityRule::default()).expect("the sweep runs");
+    let gone = !busy.exists();
+    let _ = std::fs::remove_dir_all(&scratch);
+
+    assert!(still_there, "a tree somebody was working in was taken down:\n{said}");
+    assert!(said.contains("qualcuno-dentro"), "it was kept in silence:\n{said}");
+    assert!(gone, "with nobody in it the tree was still kept:\n{again}");
+}
+
+/// **A THING SAILOR NEVER TOOK IS NOT SAILOR'S TO TAKE.** A tree another tab cut
+/// by hand, still at the trunk, reads as one whose work the trunk already holds;
+/// the sweep took two such trees down twice in ten minutes.
+#[test]
+fn a_tree_sailor_never_cut_is_named_and_never_taken_down() {
+    let scratch = a_scratch("never-cut");
+    let repo = a_repository_in(&scratch);
+    let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
+    let by_hand = workspace::create(&repo, "work/tagliato-a-mano", None).expect("a tree");
+
+    let said = sweep(&repo, &store as &dyn OpenTrees, &let_go_long_ago(&[], &[]), &IdentityRule::default()).expect("the sweep runs");
+    let still_there = by_hand.exists();
+
+    written_down(&store, &repo, &by_hand);
+    let again = sweep(&repo, &store as &dyn OpenTrees, &let_go_long_ago(&[], &[]), &IdentityRule::default()).expect("the sweep runs");
+    let gone = !by_hand.exists();
+    let _ = std::fs::remove_dir_all(&scratch);
+
+    assert!(still_there, "a tree Sailor never cut was taken down:\n{said}");
+    assert!(said.contains("tagliato-a-mano"), "it was kept in silence:\n{said}");
+    assert!(gone, "written down and let go, the tree was still kept:\n{again}");
+}
+
+/// A tree cut minutes ago is somebody's first gesture, whoever wrote it down.
+#[test]
+fn a_tree_cut_less_than_an_hour_ago_stays_whoever_cut_it() {
+    let scratch = a_scratch("young");
+    let repo = a_repository_in(&scratch);
+    let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
+    let young = workspace::create(&repo, "work/appena-tagliato", None).expect("a tree");
+    written_down(&store, &repo, &young);
+    let nobody = |_: &OpenTree| Whose::Nobody;
+    let right_now = Holders { occupied: &[], standing: &[], owner: &nobody, now: seconds_now() };
+
+    let said = sweep(&repo, &store as &dyn OpenTrees, &right_now, &IdentityRule::default()).expect("the sweep runs");
+    let still_there = young.exists();
+    let later = sweep(&repo, &store as &dyn OpenTrees, &let_go_long_ago(&[], &[]), &IdentityRule::default()).expect("the sweep runs");
+    let gone = !young.exists();
+    let _ = std::fs::remove_dir_all(&scratch);
+
+    assert!(still_there, "a tree cut a moment ago was taken down:\n{said}");
+    assert!(said.contains("appena-tagliato"), "it was kept in silence:\n{said}");
+    assert!(gone, "past the hour and let go, the tree was still kept:\n{later}");
+}
+
+/// **THE CHAIN, NOT THE REGISTER.** A row alone is not permission: the process
+/// that cut the tree is asked first.
+#[test]
+fn a_tree_whose_opener_is_still_there_stays() {
+    let scratch = a_scratch("opener-alive");
+    let repo = a_repository_in(&scratch);
+    let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
+    let held = workspace::create(&repo, "work/ancora-tenuto", None).expect("a tree");
+    written_down(&store, &repo, &held);
+    let alive = |_: &OpenTree| Whose::TheProcessThatTookIt;
+    let its_opener_is_there = Holders { occupied: &[], standing: &[], owner: &alive, now: i64::MAX / 2 };
+
+    let said = sweep(&repo, &store as &dyn OpenTrees, &its_opener_is_there, &IdentityRule::default()).expect("the sweep runs");
+    let still_there = held.exists();
+    let _ = std::fs::remove_dir_all(&scratch);
+
+    assert!(still_there, "a tree its opener still holds was taken down:\n{said}");
+    assert!(said.contains("ancora-tenuto"), "it was kept in silence:\n{said}");
+}
+
+/// **A TERMINAL IS NOT THE ONLY WAY TO STAND IN A TREE.** A process with its
+/// directory inside is read off the machine, and named by its pid.
+#[test]
+fn a_tree_a_process_works_in_stays_and_the_process_is_named() {
+    let scratch = a_scratch("a-process-in-it");
+    let repo = a_repository_in(&scratch);
+    let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
+    let busy = workspace::create(&repo, "work/un-processo-dentro", None).expect("a tree");
+    written_down(&store, &repo, &busy);
+    let mut inside = Command::new("sleep").arg("60").current_dir(&busy).spawn().expect("a process inside");
+
+    let standing = machine::where_processes_stand().expect("the machine lists its processes");
+    let said = sweep(&repo, &store as &dyn OpenTrees, &let_go_long_ago(&[], &standing), &IdentityRule::default()).expect("the sweep runs");
+    let still_there = busy.exists();
+    let _ = inside.kill();
+    let _ = inside.wait();
+    let _ = std::fs::remove_dir_all(&scratch);
+
+    assert!(still_there, "a tree a process was working in was taken down:\n{said}");
+    assert!(said.contains(&inside.id().to_string()), "the process was not named:\n{said}");
+}
+
+/// A tree written down the way Sailor writes down the trees it cuts.
+fn written_down(store: &dyn OpenTrees, repo: &Path, tree: &Path) {
+    store
+        .tree_opened(&OpenTree {
+            path: tree.to_string_lossy().into_owned(),
+            repo: repo.to_string_lossy().into_owned(),
+            run: "run-finita".to_owned(),
+            step: "a_step".to_owned(),
+            opened_by_pid: 1,
+            opened_at: 0,
+            opened_by_born_at: None,
+        })
+        .expect("the register takes it");
+}
+
+fn let_go(_: &OpenTree) -> Whose {
+    Whose::Nobody
+}
+
+/// Everybody let go, and every tree is far past the hour.
+fn let_go_long_ago<'a>(occupied: &'a [PathBuf], standing: &'a [(u32, PathBuf)]) -> Holders<'a> {
+    Holders { occupied, standing, owner: &let_go, now: i64::MAX / 2 }
+}
+
+fn seconds_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs() as i64)
 }
 
 fn a_scratch(label: &str) -> PathBuf {

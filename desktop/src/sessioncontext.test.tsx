@@ -23,7 +23,7 @@ function bridge(overrides: Record<string, unknown> = {}) {
   const answers: Record<string, unknown> = {
     execution_history: [run, { ...run, run_id: "unrelated", worktree: "/work/elsewhere", started_at: 99 }],
     ledger_query: { columns: [], rows, truncated: false }, run_usage: usage,
-    quota: [{ engine: "engine", unit: "five_hour", spent_fraction: 0.25, observed_at: 1, resets_at: null }],
+    quota: { windows: [{ engine: "engine · an-account", unit: "five_hour", spent_fraction: 0.25, observed_at: 1, resets_at: null }], unreachable: [] },
     models_catalogue: { models: [], choices: [] }, ...overrides,
   };
   const invoke = vi.fn(async (command: string, _args?: unknown) => {

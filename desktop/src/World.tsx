@@ -28,6 +28,10 @@ export interface FlowGroup {
     dirty: boolean;
     /** What is happening to it right now, or `null` when nothing is known. */
     live?: FlowLive | null;
+    /** «replaces built in» when the flow that runs hides another, else `null`. */
+    replaces?: string | null;
+    /** The whole chain and the directory it was resolved from. */
+    chain?: string;
   }[];
   broken: { name: string; reason: string }[];
 }
@@ -77,6 +81,20 @@ export function everywhere(groups: FlowGroup[]): FlowGroup[] {
 
 /** What the column writes over flows that belong to no disk yet. */
 const NOT_SAVED = "not saved yet";
+
+/** One group of the column, under the heading that names it. Three runs of
+ * rows in the same nave under plain text gave a scan nothing to land on. */
+function Part({ name, children }: { name: string; children: React.ReactNode }) {
+  const named = `world-part-${name.replace(/ /g, "-")}`;
+  return (
+    <div className="world__part" role="group" aria-labelledby={named}>
+      <h2 className="world__head" id={named}>
+        {name}
+      </h2>
+      {children}
+    </div>
+  );
+}
 
 /** A tree with what Sailor has open in it. */
 export interface Inhabited {
@@ -137,6 +155,7 @@ export function World({
   focusName,
   onFlow,
   onNewFlow,
+  globalFlows,
 }: {
   native: boolean;
   /** Where the flows below came from. Only «sample» is drawn: the rest is the
@@ -154,6 +173,8 @@ export function World({
   focusName: string | null;
   onFlow: (name: string | null) => void;
   onNewFlow: () => void;
+  /** The view of every linked global flow, built elsewhere and shown here. */
+  globalFlows?: React.ReactNode;
 }) {
   const [seen, setSeen] = useState<Project[]>([]);
   const [why, setWhy] = useState<string | null>(null);
@@ -227,6 +248,11 @@ export function World({
               {one.name}
               {one.dirty && <span className="rail__dirty-dot" title="not saved" />}
             </span>
+            {one.replaces && (
+              <span className="rail__replaces" title={one.chain}>
+                {one.replaces}
+              </span>
+            )}
             <span className="rail__note">{liveNote(one.live) ?? one.note}</span>
           </button>
         ))}
@@ -269,9 +295,11 @@ export function World({
     <nav className="world" aria-label="the world">
       {/* **THE QUESTIONS COME FIRST, AND THEY ARE FEW ENOUGH TO STAY.** Held
           out of here as «a strip of destinations holding space the work
-          needs», the four cost a person the palette and the name of a place
-          they had to know already — the verdict was «ingestibile». Four rows
-          is not a strip: it is the answer to «where am I and what wants me». */}
+          needs», they cost a person the palette and the name of a place they
+          had to know already — the verdict was «ingestibile». Three rows is
+          not a strip: it is the answer to «where am I and what wants me».
+          The owner's word, 14/09: «tre voci» — a fourth (`memory`, "Why")
+          moved to the run that explains it; see `places.ts`. */}
       <div className="world__places">
         {PLACES.map((place) => (
           <button
@@ -298,8 +326,7 @@ export function World({
         </div>
       )}
 
-      <div className="world__head">workspaces</div>
-
+      <Part name="workspaces">
       {why !== null && <div className="world__mute">{why}</div>}
 
       {grouped(seen).map((project) => {
@@ -390,16 +417,23 @@ export function World({
         );
       })}
 
+      </Part>
+
       {/* THE FLOWS THAT ARE THE SAME WHEREVER YOU STAND. Yours, and the ones
           that ship inside the binary: neither belongs under a tree, and buried
-          in a column of «this project» they read as one more checkout's. */}
-      {shared.length > 0 && <div className="world__head">flows everywhere</div>}
-      {shared.map(flowsOf)}
+          in a column of «this project» they read as one more checkout's. The
+          view of every linked global flow is built elsewhere and lands here. */}
+      {(shared.length > 0 || globalFlows !== undefined) && (
+        <Part name="flows everywhere">
+          {shared.map(flowsOf)}
+          {globalFlows}
+        </Part>
+      )}
 
       {/* Outside is a place: a terminal no project claims is where a good
           deal of the work happens. The board lives here when no tree is
           open — unreachable is worse than in the wrong group. */}
-      <div className="world__head">outside every workspace</div>
+      <Part name="outside every workspace">
       {noTreeOpen && (
         <button
           type="button"
@@ -436,6 +470,7 @@ export function World({
           <span className="wsx__count">{treeName(one.workspaceRoot)}</span>
         </button>
       ))}
+      </Part>
     </nav>
   );
 }

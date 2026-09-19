@@ -14,6 +14,8 @@ export type Section =
   | "changes"
   | "sketch"
   | "terminals"
+  | "flowmap"
+  | "flows"
   | "memory"
   | "sailor";
 
@@ -36,9 +38,12 @@ export const MACHINE_GROUND = t("window.ground.machine");
 export const TERMINALS_GROUND = t("window.ground.terminals");
 
 /**
- * **WHAT THE WINDOW IS FOR**: to understand why a thing was done as it was, on
- * which engine, at what cost. `board`, `changes` and `sketch` are absent on
- * purpose — they answer about one tree, and hang under it.
+ * **THREE VOICES, THE OWNER'S OWN, 14/09**: «tre voci». `board`, `changes`
+ * and `sketch` were already absent — they answer about one tree, and hang
+ * under it. `memory` ("Why") is the fourth cut: it stayed a `Section`
+ * (`SECTIONS` below, and `setPlace("memory")` still routes to it) but left
+ * this list. It is reached from the run that generated it — `RunGlimpse`'s
+ * own "Why" link — not scanned for on the first screen a person opens.
  */
 export const PLACES: Place[] = [
   {
@@ -56,18 +61,26 @@ export const PLACES: Place[] = [
     group: "work",
   },
   {
-    id: "memory",
-    name: "Why",
-    glyph: "\u25f7",
-    asks: "why each thing was done as it was, what it cost, and the store under it",
-    group: "what happened",
-  },
-  {
     id: "sailor",
     name: MACHINE_GROUND,
     glyph: "\u2693",
     asks: "what is set up here, the same wherever you stand",
     group: "itself",
+  },
+];
+
+/**
+ * Places with no row in `PLACES`: found by name, in the palette, or from the
+ * run that explains them — never scanned for on the first screen. Kept apart
+ * so `nameOfPlace` and the palette find them without the navigation growing.
+ */
+export const SECOND_LEVEL: Place[] = [
+  {
+    id: "memory",
+    name: "Why",
+    glyph: "◷",
+    asks: "why each thing was done as it was, what it cost, and the store under it",
+    group: "what happened",
   },
 ];
 
@@ -83,6 +96,8 @@ export const SECTIONS: Section[] = [
   "changes",
   "sketch",
   "terminals",
+  "flowmap",
+  "flows",
   "memory",
   "sailor",
 ];
@@ -154,10 +169,33 @@ export function namedByTheMachine(id: Section): boolean {
  */
 export const UNDER_A_TREE: Section[] = ["board", "changes", "sketch"];
 
+/**
+ * The places that belong to no tree and take no row in the strip: the strip is
+ * where you stand all day, and one of these is opened now and then. **A ROW IN
+ * THE STRIP AND A ROW IN THE COLUMN ARE THE SAME NAME WRITTEN TWICE**, which
+ * is what the charter calls the sign of a surface nobody decided.
+ */
+export const BESIDE_WHAT_THEY_ARE_ABOUT: Place[] = [
+  {
+    id: "flowmap",
+    name: "Which calls which",
+    glyph: "\u2442",
+    asks: "which flow calls which, and which call nothing at all",
+    group: "work",
+  },
+  {
+    id: "flows",
+    name: t("window.place.flows.name"),
+    glyph: "\u2261",
+    asks: t("window.place.flows.asks"),
+    group: "work",
+  },
+];
+
 /** **A PLACE OUTSIDE THE LIST IS STILL A PLACE**: built from the fixed list
  * alone, the palette left out the three used while working in a tree. */
 export function onItsOwnName(): Place[] {
-  return [...PLACES, ...UNDER_THE_TREE];
+  return [...PLACES, ...SECOND_LEVEL, ...BESIDE_WHAT_THEY_ARE_ABOUT, ...UNDER_THE_TREE];
 }
 
 /** Out of `PLACES` because their answer changes with the tree: a fixed row
@@ -181,7 +219,12 @@ export const UNDER_THE_TREE: Place[] = [
 ];
 
 /** **ONE LOOKUP, NOT TWO**: the fixed list alone left Board printing its own
- * id in the bar. */
+ * id in the bar, and left the capture calling the board a place the product
+ * does not have. */
+export function placeNamed(id: Section): Place | null {
+  return onItsOwnName().find((place) => place.id === id) ?? null;
+}
+
 export function nameOfPlace(id: Section): string {
-  return [...PLACES, ...UNDER_THE_TREE].find((place) => place.id === id)?.name ?? id;
+  return placeNamed(id)?.name ?? id;
 }

@@ -57,3 +57,26 @@ describe("the words for a quota", () => {
     expect(perMillion(3)).toBe("$3.00");
   });
 });
+
+/**
+ * **A MACHINE WITH SEVEN ACCOUNTS SHOWS SEVEN, NOT THREE ENGINES.** The window
+ * asked `read_all`, which answers once per command line, so three accounts at
+ * their wall and one fresh averaged into a figure nobody could act on.
+ */
+describe("which reading the window asks for", () => {
+  /** The body of one function, so a name is read where it is called. */
+  function bodyOf(source: string, signature: string): string {
+    const from = source.indexOf(signature);
+    expect(from, `«${signature}» is gone: this check measures nothing`).toBeGreaterThan(-1);
+    const rest = source.slice(from);
+    const end = rest.indexOf("\n}\n");
+    return end < 0 ? rest : rest.slice(0, end);
+  }
+
+  test("THE QUOTA IS READ PER ACCOUNT, not once per command line", () => {
+    const body = bodyOf(rust, "pub(crate) fn quota()");
+
+    expect(body, "the window still asks for one reading per engine").not.toContain("read_all");
+    expect(body, "the window does not ask for the per-account reading").toContain("per_profile");
+  });
+});

@@ -571,6 +571,17 @@ body {
   flex-shrink: 0;
 }
 
+.focusbar__chain {
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 2px var(--space-1);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .focusbar__status {
   display: flex;
   align-items: center;
@@ -808,9 +819,17 @@ button.is-primary {
   white-space: nowrap;
 }
 
+/* A GROUP OF THE COLUMN, UNDER THE HEADING THAT NAMES IT. */
+.world__part {
+  display: flex;
+  flex-direction: column;
+}
+
 .world__head {
+  margin: 0;
   font-family: var(--font-display);
   font-size: var(--text-micro);
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.09em;
   color: var(--muted);
@@ -1061,6 +1080,203 @@ button.is-primary {
 .chip--who[data-warn] {
   border-color: var(--danger);
 }
+
+.strip {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  position: relative;
+  min-height: 32px;
+  overflow: hidden;
+}
+
+.strip__accent {
+  height: 2px;
+  width: 100%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+.strip__body {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-3);
+  height: 30px;
+  flex-grow: 1;
+}
+
+.strip__runs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.strip__rest {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+}
+
+.strip__clear {
+  color: var(--text-2);
+  font-weight: 500;
+}
+
+.strip__ended {
+  color: var(--text-3);
+}
+
+.strip__slots {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.strip__run_cell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  color: var(--text-1);
+  background: none;
+  border: none;
+  padding: 0 var(--space-1);
+  cursor: pointer;
+  white-space: nowrap;
+  /* Bounded on purpose: an unbounded cell let a long flow name push past its
+     own slot and paint over the account chips beside it instead of yielding
+     to them. The name is the one field of unpredictable length; it is the
+     one asked to give way. */
+  max-width: 220px;
+}
+
+.strip__run_state {
+  font-weight: 600;
+  text-transform: lowercase;
+}
+
+.strip__run_state[data-state="waiting"] {
+  color: var(--needs-human);
+}
+
+.strip__run_state[data-state="holder_gone"] {
+  color: var(--failed);
+}
+
+.strip__run_state[data-state="working"] {
+  color: var(--running);
+}
+
+.strip__run_state[data-state="not_yet"] {
+  color: var(--muted);
+}
+
+.strip__run_entity {
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.strip__run_step {
+  color: var(--text-2);
+}
+
+.strip__run_elapsed {
+  color: var(--text-3);
+}
+
+.strip__run_spend {
+  color: var(--text-2);
+}
+
+.strip__run_cap_bar {
+  display: inline-block;
+  width: 27px;
+  height: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.strip__run_cap_fill {
+  display: block;
+  height: 100%;
+  background: var(--running);
+}
+
+.strip__run_device {
+  color: var(--text-3);
+}
+
+.strip__more {
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  color: var(--accent);
+  background: none;
+  border: none;
+  padding: 0 var(--space-1);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.strip__rule {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.strip__accounts {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-shrink: 0;
+}
+
+.strip__account {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+}
+
+.strip__monogram {
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.strip__track {
+  width: 36px;
+  height: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.strip__track_fill {
+  height: 100%;
+  background: var(--text-2);
+}
+
+.strip__unavailable {
+  color: var(--text-3);
+  font-style: normal;
+}
+
 
 .topbar__palette {
   display: inline-flex;
@@ -1947,6 +2163,15 @@ tr[data-followable]:hover {
   border-radius: var(--radius-pill);
   background: var(--warn);
   margin-left: var(--space-1);
+}
+
+/* What the flow that runs hides, beside its name; the chain is in the title. */
+.rail__replaces {
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .rail__note {
@@ -3577,6 +3802,69 @@ tr[data-followable]:hover {
   height: 40px;
   flex-shrink: 0;
   border-bottom: 1px solid var(--line);
+}
+
+/* The smallest run view: a run this window never started, read from the
+   ledger instead of followed live. Shares the console's bar and truth line
+   on purpose — it is the same kind of thing, with less to say. */
+.glimpse {
+  flex-shrink: 0;
+  max-height: 60vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.glimpse__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  height: 40px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.glimpse__title {
+  font-weight: 600;
+  font-size: var(--text-body);
+}
+
+.glimpse__id {
+  font-size: var(--text-small);
+  color: var(--muted);
+}
+
+.glimpse__note {
+  padding: 6px 12px;
+  font-size: var(--text-small);
+  color: var(--muted);
+}
+
+.glimpse__facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 8px;
+  padding: 0 12px 8px;
+  font-size: var(--text-small);
+}
+
+.glimpse__facts dt {
+  color: var(--muted);
+}
+
+.glimpse__why {
+  margin: 0 12px 8px;
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--accent, var(--muted));
+  cursor: pointer;
+  font-size: var(--text-small);
+  padding: 0;
+  text-decoration: underline;
 }
 
 .console__title {
@@ -6990,4 +7278,166 @@ tr[data-followable]:hover {
   font-size: var(--text-mid);
   color: var(--muted);
   margin: 0;
+}
+
+/* The flows of every checkout: what runs here, and what it replaces. */
+.flows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  min-width: 0;
+}
+
+.flows__asks {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-mid);
+  color: var(--ink);
+}
+
+.flows__modes,
+.flows__actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.flows__mode,
+.flows__action,
+.flows__expand {
+  font-family: var(--font-prose);
+  font-size: var(--text-small);
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+}
+
+.flows__mode[aria-pressed="true"] {
+  border-color: var(--focus);
+}
+
+.flows__body {
+  display: flex;
+  gap: var(--space-4);
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.flows__list {
+  flex: 1 1 28rem;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.flows__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-prose);
+  font-size: var(--text-small);
+  color: var(--ink);
+}
+
+.flows__table th,
+.flows__table td {
+  text-align: left;
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--line);
+}
+
+.flows__group th {
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  color: var(--muted);
+  padding-top: var(--space-3);
+}
+
+.flows__row {
+  cursor: pointer;
+}
+
+.flows__row[data-chosen] {
+  background: var(--raised);
+}
+
+.flows__uncertain {
+  font-family: var(--font-prose);
+  font-size: var(--text-small);
+  color: var(--warn);
+}
+
+.flows__row[data-differs] {
+  cursor: default;
+  color: var(--warn);
+}
+
+.flows__steps,
+.flows__origin,
+.flows__sub,
+.flows__where,
+.flows__path,
+.flows__label {
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  color: var(--muted);
+}
+
+.flows__where,
+.flows__path,
+.flows__label,
+.flows__name {
+  margin: 0;
+}
+
+.flows__name {
+  font-family: var(--font-display);
+  font-size: var(--text-body);
+  color: var(--ink);
+}
+
+.flows__path {
+  overflow-wrap: anywhere;
+}
+
+.flows__detail {
+  flex: 0 1 20rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: var(--space-3);
+  min-width: 0;
+}
+
+.flows__chain {
+  margin: 0;
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.flows__mute {
+  margin: 0;
+  font-family: var(--font-prose);
+  font-size: var(--text-small);
+  color: var(--muted);
+}
+
+.flows__broken,
+.flows__troubles {
+  font-family: var(--font-prose);
+  font-size: var(--text-small);
+  color: var(--danger);
+}
+
+.flows__troubles {
+  margin: 0;
+  padding-left: var(--space-4);
 }

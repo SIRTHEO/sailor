@@ -101,6 +101,9 @@ fn parse_model_call_row(row: &Value) -> Option<ModelCallRecord> {
         session_mode: opt_str_at(cols, 30)
             .as_deref()
             .and_then(SessionMode::from_word),
+        // Version 20: the role a step asked for, and the chain it resolved to.
+        role: opt_str_at(cols, 31),
+        role_resolved_to: ids_at(cols, 32),
     })
 }
 
@@ -203,6 +206,8 @@ mod tests {
             (28, "work_kind"),
             (29, "fell_back_from"),
             (30, "session_mode"),
+            (31, "role"),
+            (32, "role_resolved_to"),
         ] {
             assert_eq!(
                 dumped.get(index).copied(),
@@ -212,7 +217,7 @@ mod tests {
         }
         assert_eq!(
             dumped.len(),
-            31,
+            33,
             "the ledger dumps a column this file never reads"
         );
     }

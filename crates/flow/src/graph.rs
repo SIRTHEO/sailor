@@ -16,6 +16,11 @@ pub struct Step {
     /// Values declared by the step win over the keys it receives as input.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub with: Option<Value>,
+    /// The command-line tools this step calls, by the id a descriptor gives
+    /// them. Beside `with` and never inside it: what a step declares about
+    /// itself is not an input its action must accept.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub needs: Vec<String>,
     /// Sees only the typed input value; `said` is out of reach.
     pub when: Option<Condition>,
     /// Stable name the executor resolves, not code embedded in the graph.
@@ -55,6 +60,14 @@ pub struct Step {
     /// decides**; what a pass is stays beside the action writing the verdict.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub decides_done: bool,
+    /// The run is done only if this step ran and its verdict passed.
+    ///
+    /// The other side of `decides_done`, which *permits* an early success where
+    /// this one *withholds* an ordinary one, and read the same way: `/status`
+    /// equal to `passed` and nothing else. A step that broke, was skipped, never
+    /// ran, or forgave its own failure leaves the run short of complete.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub required: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -610,6 +623,8 @@ mod tests {
             phase: None,
         stops_when: None,
         decides_done: false,
+        required: false,
+            needs: Vec::new(),
         }
     }
 

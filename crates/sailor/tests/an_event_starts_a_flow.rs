@@ -4,7 +4,7 @@
 //! single reason held the others, and that one event starts one run.
 
 use flow::system::FlowSource;
-use sailor::arc_cmd::{evaluate, watchers, SESSION_EVENT};
+use sailor::arc_cmd::{evaluate, watchers, ALREADY_PARKED, SESSION_EVENT};
 use serde_json::json;
 use sessions::{Sessions, ACTED, DEFERRED};
 use std::path::PathBuf;
@@ -79,6 +79,12 @@ fn happened() -> Happened {
     }
 }
 
+/// Nothing is parked: the arc's own default in these tests, so a test that
+/// wants a parked run says so.
+fn never_parked(_flow: &str, _tty: &str) -> bool {
+    false
+}
+
 /// What was asked of the starter, instead of anything being started.
 fn watching_starter(
     asked: &mut Vec<(String, String)>,
@@ -103,6 +109,47 @@ fn a_flow_that_declares_the_source_is_a_candidate_and_one_that_does_not_is_not()
     assert_eq!(found[0].1.event, "UserPromptSubmit");
 }
 
+/// **A FLOW ALREADY PARKED ON THIS TERMINAL IS NOT STARTED AGAIN.** Fault 163:
+/// starting on every event made 57 parked runs out of 59 actions. Both
+/// directions, because the claim is a difference.
+#[test]
+fn a_flow_parked_on_this_terminal_is_held_back_instead_of_started_again() {
+    let scratch = Scratch::new("parked");
+    scratch.holding("watches", watching("UserPromptSubmit"));
+    let store = scratch.store();
+
+    let mut asked = Vec::new();
+    let verdicts = evaluate(
+        &store,
+        11,
+        &happened(),
+        &scratch.sources(),
+        100,
+        &mut watching_starter(&mut asked),
+        &mut |_flow, _tty| true,
+    );
+
+    assert!(asked.is_empty(), "nothing was started: {asked:?}");
+    assert_eq!(verdicts.len(), 1, "the refusal still leaves its row");
+    assert_eq!(verdicts[0].verdict, DEFERRED);
+    assert_eq!(verdicts[0].why.as_deref(), Some(ALREADY_PARKED));
+
+    // The control: the same flow and the same event, with nothing parked.
+    let mut asked = Vec::new();
+    let verdicts = evaluate(
+        &store,
+        12,
+        &happened(),
+        &scratch.sources(),
+        100,
+        &mut watching_starter(&mut asked),
+        &mut never_parked,
+    );
+
+    assert_eq!(asked.len(), 1, "with nothing parked it starts: {asked:?}");
+    assert_eq!(verdicts[0].verdict, ACTED);
+}
+
 /// **AN EVENT THAT MATCHES STARTS ONE RUN, AND THE ROW POINTS AT THE EVENT.**
 #[test]
 fn an_event_a_flow_watches_for_starts_it_once() {
@@ -118,6 +165,7 @@ fn an_event_a_flow_watches_for_starts_it_once() {
         &scratch.sources(),
         100,
         &mut watching_starter(&mut asked),
+        &mut never_parked,
     );
 
     assert_eq!(asked.len(), 1, "exactly one run: {asked:?}");
@@ -143,6 +191,7 @@ fn a_flow_without_the_declaration_starts_nothing_and_leaves_no_row() {
         &scratch.sources(),
         100,
         &mut watching_starter(&mut asked),
+        &mut never_parked,
     );
 
     assert!(asked.is_empty(), "{asked:?}");
@@ -167,6 +216,7 @@ fn the_same_event_judged_again_starts_no_second_run() {
             &scratch.sources(),
             100,
             &mut watching_starter(&mut asked),
+            &mut never_parked,
         );
     }
 
@@ -193,6 +243,7 @@ fn a_flow_held_back_says_which_condition_held_it() {
         &scratch.sources(),
         100,
         &mut watching_starter(&mut asked),
+        &mut never_parked,
     );
 
     assert!(asked.is_empty());
@@ -222,6 +273,7 @@ fn a_flow_that_names_no_event_is_held_back_instead_of_firing_on_everything() {
         &scratch.sources(),
         100,
         &mut watching_starter(&mut asked),
+        &mut never_parked,
     );
 
     assert!(asked.is_empty(), "{asked:?}");
@@ -249,6 +301,7 @@ fn the_delivery_carries_the_event_and_never_the_prompt() {
         &scratch.sources(),
         100,
         &mut watching_starter(&mut asked),
+        &mut never_parked,
     );
 
     let delivery = &asked[0].1;

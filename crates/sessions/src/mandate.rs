@@ -12,6 +12,8 @@ use std::path::{Path, PathBuf};
 /// Where the mandates of a store live.
 pub const MANDATES: &str = "mandates";
 
+const DROPPED: &str = "sailor-mandates";
+
 /// What Sailor fills in at the moment the mandate is asked for.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Written {
@@ -104,12 +106,21 @@ pub struct Taken {
     pub at: i64,
 }
 
+/// Where a mandate was sent on to, and when: the mark its original keeps aside.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Passed {
+    pub to: String,
+    pub at: i64,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Mandate {
     pub written: Written,
     pub work: Work,
     #[serde(default)]
     pub taken: Option<Taken>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub passed: Option<Passed>,
 }
 
 /// Every field left blank, named at once.
@@ -187,7 +198,13 @@ pub fn freshness(mandate: &Mandate, head: &str, uncommitted: &str) -> Freshness 
 
 /// Where a terminal's mandate waits.
 pub fn address_in(store: &Path, tty: &str) -> PathBuf {
-    store.join(MANDATES).join(format!("{tty}.json"))
+    store.join(MANDATES).join(format!("{}.json", tty.replace('/', "-")))
+}
+
+/// Where a session leaves a mandate its own shell cannot file.
+pub fn dropped_in(home: &Path, tty: &str) -> PathBuf {
+    home.join(DROPPED)
+        .join(format!("{}.json", tty.replace('/', "-")))
 }
 
 /// Where a mandate goes when a second one is deposited over it.
@@ -248,6 +265,47 @@ pub fn consume(path: &Path, by: &str, at: i64) -> io::Result<()> {
     write_at(path, &mandate)
 }
 
+/// Moves a waiting mandate to another terminal and keeps the original aside,
+/// marked with where it went. **ONE ACT, UNDONE WHOLE**: the greeting looks a
+/// mandate up by the terminal that arrives, and one left waiting at the old
+/// address reads as work still owed. A failing step takes back the earlier ones.
+pub fn pass_on(store: &Path, from: &str, to: &str, at: i64) -> io::Result<PathBuf> {
+    let origin = address_in(store, from);
+    let mut mandate =
+        read(&origin).ok_or_else(|| io::Error::other(format!("no mandate waits for {from}")))?;
+    if let Some(taken) = &mandate.taken {
+        return Err(io::Error::other(format!(
+            "the mandate for {from} was already taken by «{}»",
+            taken.by
+        )));
+    }
+    let destination = address_in(store, to);
+    if read(&destination).is_some_and(|there| there.taken.is_none()) {
+        return Err(io::Error::other(format!(
+            "a mandate nobody has taken already waits for {to}"
+        )));
+    }
+
+    let mut arriving = mandate.clone();
+    arriving.written.tty = to.to_owned();
+    mandate.passed = Some(Passed {
+        to: to.to_owned(),
+        at,
+    });
+    let aside = archive_in(store, from, mandate.written.at);
+    write_at(&aside, &mandate)?;
+    if let Err(error) = deposit(store, &arriving) {
+        let _ = std::fs::remove_file(&aside);
+        return Err(error);
+    }
+    if let Err(error) = std::fs::remove_file(&origin) {
+        let _ = std::fs::remove_file(&destination);
+        let _ = std::fs::remove_file(&aside);
+        return Err(error);
+    }
+    Ok(aside)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -279,6 +337,7 @@ mod tests {
                 ..Work::default()
             },
             taken: None,
+            passed: None,
         }
     }
 
@@ -357,4 +416,63 @@ mod tests {
     fn a_mandate_with_every_field_filled_names_nothing() {
         assert!(blank_fields(&filled("ttys006")).is_empty());
     }
+
+    /// **A MANDATE PASSED ON WAITS WHERE IT WAS SENT, AND NOWHERE ELSE.** Left at
+    /// the old address it is handed to nobody and still counts as work owed.
+    #[test]
+    fn a_mandate_passed_on_waits_for_the_new_terminal_and_no_longer_for_the_old() {
+        let store = scratch("passed-on");
+        let left = filled("ttys007");
+        deposit(&store, &left).expect("deposit it");
+
+        let aside = pass_on(&store, "ttys007", "ttys008", 50).expect("pass it on");
+
+        assert_eq!(read(&address_in(&store, "ttys007")), None);
+        let arrived = read(&address_in(&store, "ttys008")).expect("it waits for the new one");
+        assert_eq!(arrived.work, left.work);
+        assert_eq!(arrived.taken, None);
+        let original = read(&aside).expect("the original is kept aside");
+        assert_eq!(
+            original.passed,
+            Some(Passed {
+                to: "ttys008".to_owned(),
+                at: 50
+            })
+        );
+        let _ = std::fs::remove_dir_all(&store);
+    }
+
+    #[test]
+    fn a_mandate_already_taken_is_not_passed_on() {
+        let store = scratch("passed-taken");
+        deposit(&store, &filled("ttys009")).expect("deposit it");
+        consume(&address_in(&store, "ttys009"), "the-successor", 60).expect("take it");
+
+        assert!(pass_on(&store, "ttys009", "ttys010", 70).is_err());
+        assert_eq!(read(&address_in(&store, "ttys010")), None);
+        let _ = std::fs::remove_dir_all(&store);
+    }
+
+    /// Passing one over another nobody has taken would bury somebody's handover.
+    #[test]
+    fn a_waiting_mandate_is_never_passed_over_another_waiting_one() {
+        let store = scratch("passed-over");
+        let mine = filled("ttys011");
+        let theirs = filled("ttys012");
+        deposit(&store, &mine).expect("deposit mine");
+        deposit(&store, &theirs).expect("deposit theirs");
+
+        assert!(pass_on(&store, "ttys011", "ttys012", 80).is_err());
+        assert_eq!(read(&address_in(&store, "ttys011")), Some(mine));
+        assert_eq!(read(&address_in(&store, "ttys012")), Some(theirs));
+        let _ = std::fs::remove_dir_all(&store);
+    }
+    /// On Linux a terminal is `pts/3`: its mandate is one file among the others.
+    #[test]
+    fn a_mandate_for_a_terminal_named_with_a_slash_is_one_file() {
+        let store = std::path::Path::new("/somewhere");
+        let address = address_in(store, "pts/3");
+        assert_eq!(address.parent(), Some(store.join(MANDATES).as_path()));
+    }
+
 }

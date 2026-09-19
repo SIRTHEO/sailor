@@ -120,6 +120,8 @@ fn sample_all(ledger: &Ledger) {
             work_kind: None,
             fell_back_from: Vec::new(),
             session_mode: None,
+            role: None,
+            role_resolved_to: Vec::new(),
         })
         .expect("record the call");
     ledger
@@ -1475,6 +1477,37 @@ fn the_last_write_wins_and_the_record_stays_one() {
     assert_eq!(ledger.records_in("mandate").expect("collection").len(), 1);
 }
 
+#[test]
+fn a_conditional_record_write_appends_one_record_written_event() {
+    let directory = TestDirectory::new("conditional-record-write");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    let entry = record(
+        "supervision_observations",
+        "event-17",
+        json!({"status": "done"}),
+        17,
+    );
+
+    assert_eq!(
+        ledger
+            .put_record_if_absent(&entry)
+            .expect("first conditional write"),
+        ConditionalWrite::Inserted
+    );
+    assert!(matches!(
+        ledger
+            .put_record_if_absent(&entry)
+            .expect("repeated conditional write"),
+        ConditionalWrite::AlreadyPresent(_)
+    ));
+    assert_eq!(
+        ledger
+            .events_of_kind("record_written")
+            .expect("record-written count"),
+        1
+    );
+}
+
 /// An entry without an address is refused.
 ///
 /// It holds for the key as much as for the collection: whoever writes without
@@ -2112,6 +2145,8 @@ fn call_with(call_id: &str, tokens: Option<u64>, cost: Option<i64>) -> ModelCall
         work_kind: None,
         fell_back_from: Vec::new(),
         session_mode: None,
+        role: None,
+        role_resolved_to: Vec::new(),
     }
 }
 
@@ -4007,6 +4042,24 @@ fn replaying_the_log_rebuilds_every_projection_row_for_row() {
     assert_eq!(every_projection(&ledger), expected);
 }
 
+#[test]
+fn a_role_and_its_resolved_chain_survive_a_projection_rebuild() {
+    let directory = TestDirectory::new("role-chain-rebuild");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    let mut call = call_with("role-chain", Some(10), Some(1));
+    call.role = Some("reviewer".to_owned());
+    call.role_resolved_to = vec!["motore-di-prova".to_owned()];
+    ledger.record_model_call(&call).expect("record the role call");
+
+    ledger.rebuild_projections().expect("rebuild the projections");
+
+    let rows = ledger
+        .dump_projection("model_calls")
+        .expect("read the rebuilt calls");
+    assert_eq!(rows[0][31], json!("reviewer"));
+    assert_eq!(rows[0][32], json!(r#"["motore-di-prova"]"#));
+}
+
 /// **A REFUSAL TO ANSWER IS NOT A BIRTH TIME.** Read anyway it dates the
 /// process to 1970, and every stranger looks older than every row.
 #[test]
@@ -4019,4 +4072,37 @@ fn a_process_this_machine_will_not_describe_is_not_dated_to_1970() {
         super::WhoHoldsThePid::AliveButUnsaid => {}
         super::WhoHoldsThePid::Nobody => panic!("the first process on this machine is not running"),
     }
+}
+
+/// On Linux the birth is in `/proc`, in ticks since boot, after a name that may hold `)`.
+#[test]
+fn a_linux_stat_line_says_the_second_its_process_was_born() {
+    let stat = "4242 (a (strange) name) S 1 4242 4242 0 -1 4194560 100 0 0 0 1 2 0 0 20 0 1 0 12345 1000 10";
+    assert_eq!(super::born_second_in(stat, 1_700_000_000, 100), Some(1_700_000_123));
+    assert_eq!(super::born_second_in("4242 (cut short) S 1", 1_700_000_000, 100), None);
+    assert_eq!(super::born_second_in(stat, 1_700_000_000, 0), None);
+}
+
+/// A declared home, or a declared configuration directory, does not need
+/// `HOME`: only the last rung is built from it.
+#[test]
+fn a_declared_home_does_not_need_home() {
+    use std::path::PathBuf;
+    let declared = Some(PathBuf::from("/declared/home"));
+    let config = Some(PathBuf::from("/declared/config"));
+    let home = Some(PathBuf::from("/home/someone"));
+
+    assert_eq!(
+        crate::sailor_home_declared_or(declared.clone(), None, None),
+        declared
+    );
+    assert_eq!(
+        crate::sailor_home_declared_or(None, config, None),
+        Some(PathBuf::from("/declared/config/sailor"))
+    );
+    assert_eq!(
+        crate::sailor_home_declared_or(None, None, home),
+        Some(PathBuf::from("/home/someone/.config/sailor"))
+    );
+    assert_eq!(crate::sailor_home_declared_or(None, None, None), None);
 }

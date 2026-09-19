@@ -160,26 +160,44 @@ struct Glance {
     streaks: Vec<FailureStreak>,
     faults_written: BTreeSet<String>,
     ledger: Option<ledger::Ledger>,
+    /// Whether a store exists at all, asked without `Ledger::open`'s own
+    /// unconditional `create_dir_all` opening one into being.
+    directory_missing: bool,
 }
 
 /// A ledger that is not there yet means nothing has ever run, and then
 /// everything is due and nothing has failed.
 fn glance() -> Result<Glance, String> {
-    let dir = default_ledger_dir();
+    glance_in(&default_ledger_dir())
+}
+
+fn glance_in(dir: &std::path::Path) -> Result<Glance, String> {
+    if !dir.exists() {
+        return Ok(Glance {
+            directory_missing: true,
+            ..Glance::default()
+        });
+    }
     if !dir.join("state.db").exists() {
         return Ok(Glance::default());
     }
-    ledger::Ledger::open(&dir)
+    ledger::Ledger::open(dir)
         .and_then(|ledger| {
+            let a_tree_is_left_behind = workspace::a_tree_is_left_behind(
+                &ledger,
+                &sailor::worktree_cmd::a_sweep_would_take(&ledger),
+            );
             Ok(Glance {
                 last_started: ledger.last_started_at()?,
                 and_also: flow::AndAlso {
                     something_is_left_behind: machine::something_is_left_behind(&ledger)
                         .unwrap_or(false),
+                    a_tree_is_left_behind,
                 },
                 streaks: ledger.failure_streaks(flow::FAILURES_THAT_MAKE_A_FAULT)?,
                 faults_written: ledger.faults_written()?,
                 ledger: Some(ledger),
+                directory_missing: false,
             })
         })
         .map_err(|error| format!("{}: {error}", dir.display()))
@@ -235,6 +253,29 @@ fn write_fault(app: &AppHandle, runs: &Arc<crate::run::Runs>, glance: &Glance, f
     }
 }
 
+/// **TWO LOOPS BEAT AND ONLY ONE OF THEM SWEPT.** The judgement is shared, in
+/// `sailor::flow_cmd::beat`, and the command line's tick was its only caller —
+/// so from the window the parked runs stayed. A woken run is resumed here and
+/// holds this thread: that is the beat being late, never the window.
+fn ask_the_parked_again(glance: &Glance, now: i64) {
+    let Some(ledger) = &glance.ledger else {
+        return;
+    };
+    let mut resume = |run_id: &str| {
+        let flow = sailor::step_cmd::flow_of_run(ledger, run_id)?;
+        sailor::flow_cmd::resume_run_in(ledger, &flow, run_id)
+    };
+    let (said, woken, let_go) =
+        sailor::flow_cmd::beat::ask_the_parked_again(&flow_sources(), ledger, now, &mut resume);
+    if woken == 0 && let_go == 0 {
+        return;
+    }
+    for line in said.lines() {
+        println!("beat\tparked\t{line}");
+    }
+    println!("beat\tparked\twoken {woken}, released {let_go}");
+}
+
 /// One beat, now. Returns nothing when another beat is judging this instant.
 pub fn once(app: &AppHandle) -> Option<Report> {
     let beat = app.state::<Arc<Beat>>().inner().clone();
@@ -256,6 +297,18 @@ pub fn once(app: &AppHandle) -> Option<Report> {
                 },
             })
             .collect(),
+        Ok(glance) if glance.directory_missing => {
+            // `Ledger::open`'s own `create_dir_all` stays for the CLI; a beat
+            // nobody asked to run must not create a ledger directory itself.
+            let why = catalogue::say("desktop.beat.ledger_directory_missing", &[]);
+            known
+                .iter()
+                .map(|(flow, _, _)| Decision {
+                    flow: flow.clone(),
+                    verdict: Verdict::Held { why: why.clone() },
+                })
+                .collect()
+        }
         Ok(glance) => {
             let running = runs.running_flows();
             let mut decisions: Vec<Decision> = judge(&known, &glance.last_started, &running, now, glance.and_also)
@@ -282,6 +335,7 @@ pub fn once(app: &AppHandle) -> Option<Report> {
             for fault in &faults {
                 decisions.push(write_fault(app, &runs, &glance, fault, now));
             }
+                    ask_the_parked_again(&glance, now);
             decisions
         }
     };
@@ -324,6 +378,27 @@ pub(crate) fn beat_report(beat: tauri::State<'_, Arc<Beat>>) -> Option<Report> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Fault: the beat's own glance recreated a directory that had gone
+    /// missing, emptied, every time it looked.
+    #[test]
+    fn a_glance_over_a_missing_directory_creates_nothing_and_says_so() {
+        let dir = std::env::temp_dir().join(format!(
+            "sailor-beat-missing-{}-{}",
+            std::process::id(),
+            line!()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let glance = glance_in(&dir).expect("a missing directory still answers");
+
+        assert!(glance.directory_missing);
+        assert!(glance.ledger.is_none());
+        assert!(
+            !dir.exists(),
+            "glancing at a missing ledger directory must not create it"
+        );
+    }
 
     fn decided(flow: &str, verdict: Verdict) -> Decision {
         Decision {

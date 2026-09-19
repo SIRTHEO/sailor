@@ -1,0 +1,26 @@
+# How GitHub drafts the notes of a release from the pull requests it contains.
+# The notes a release publishes are edited from CHANGELOG.md; these categories
+# only sort the draft, and pull requests that change nothing a user sees stay out.
+changelog:
+  exclude:
+    labels:
+      - skip-changelog
+      - duplicate
+      - invalid
+      - wontfix
+  categories:
+    - title: Fixes
+      labels:
+        - bug
+    - title: Features
+      labels:
+        - enhancement
+    - title: Accessibility
+      labels:
+        - accessibility
+    - title: Documentation
+      labels:
+        - documentation
+    - title: Other changes
+      labels:
+        - "*"

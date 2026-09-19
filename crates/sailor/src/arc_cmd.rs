@@ -6,12 +6,17 @@
 
 use sessions::{Sessions, Verdict, ACTED, BROKE, DEFERRED};
 pub use trigger::Happened;
+pub use trigger::ALREADY_PARKED;
 use trigger::{deferral, On};
 use ui::gather::FlowSource;
 
 /// How a flow is started, given its name and the delivery. Handed in so a test
 /// can watch what the arc asks for without starting anything.
 pub type Starter<'a> = &'a mut dyn FnMut(&str, &str) -> Result<String, String>;
+
+/// Whether this flow already has a run parked for this terminal. Handed in
+/// like `Starter`, so the arc stays testable without a ledger to read.
+pub type Parked<'a> = &'a mut dyn FnMut(&str, &str) -> bool;
 
 /// Which flows watch for a session event, and what each of them asks of it.
 ///
@@ -69,11 +74,29 @@ pub fn evaluate(
     sources: &[FlowSource],
     at: i64,
     start: Starter<'_>,
+    parked: Parked<'_>,
 ) -> Vec<Verdict> {
     let mut written = Vec::new();
     for (flow, on) in watchers(sources) {
         if let Some(why) = deferral(&on, happened) {
             written.push(note(store, event_id, &flow, DEFERRED, Some(why), None, at));
+            continue;
+        }
+        // **ONE RUN PER FLOW PER TERMINAL, NOT ONE PER EVENT.** Fault 163: a
+        // step that answers `NotYet` parks, and starting again on the next
+        // event manufactured 57 parked runs out of 59 actions. Waking the
+        // parked one is a separate decision and not taken here: the flow that
+        // produced those 57 was switched off after it emptied a live session.
+        if parked(&flow, &happened.tty) {
+            written.push(note(
+                store,
+                event_id,
+                &flow,
+                DEFERRED,
+                Some(ALREADY_PARKED),
+                None,
+                at,
+            ));
             continue;
         }
         // The same event replayed starts nothing a second time: a command line
@@ -134,6 +157,33 @@ fn note(
     };
     let _ = store.record_verdict(&row);
     row
+}
+
+/// Whether this flow already has a run parked for this terminal.
+///
+/// The run rows do not carry a terminal, so the trigger step's own delivery is
+/// read for one. A ledger that cannot be opened answers **false**: refusing to
+/// start on a reading that failed would silence the arc over a locked file.
+pub fn parked_for(flow: &str, tty: &str) -> bool {
+    let Some(store) = ledger::sailor_home().and_then(|home| ledger::Ledger::open(home).ok()) else {
+        return false;
+    };
+    let Ok(waiting) = store.runs_to_ask_again() else {
+        return false;
+    };
+    waiting
+        .iter()
+        .filter(|run| run.entity == flow)
+        .any(|run| terminal_of(&store, &run.run_id).as_deref() == Some(tty))
+}
+
+/// The terminal a run was lit for, read from what its trigger step was handed.
+fn terminal_of(store: &ledger::Ledger, run_id: &str) -> Option<String> {
+    let steps = store.steps(run_id).ok()?;
+    let trigger = steps.iter().find(|step| step.step_id == "trigger")?;
+    let carried = trigger.input.get("text")?.as_str()?;
+    let delivery: serde_json::Value = serde_json::from_str(carried).ok()?;
+    Some(delivery.get("tty")?.as_str()?.to_owned())
 }
 
 /// Starts `sailor flow run` as a process of its own and lets it go.

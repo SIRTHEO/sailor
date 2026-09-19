@@ -509,6 +509,7 @@
         ],
         "action": "shell_check",
         "max_attempts": 1,
+        "required": true,
         "when": null,
         "with": {
           "command": "[ \"$VERDICT\" = APPROVATO ]",

@@ -5,6 +5,7 @@
 //! which targets exist, how a stamp is read, when a service is busy — are in
 //! the `release` library, where they can be tested without changing the world.
 
+use crate::release_candidate;
 use profiles::{known_clis, HomeMechanism};
 use release::{read_stamp, readiness, target, target_names, Service, Target};
 use std::env;
@@ -24,6 +25,10 @@ struct Options {
     /// Release from HEAD while the tree carries uncommitted work, having been
     /// told what stays behind.
     even_if_dirty: bool,
+    /// Build and install without the trunk push, and without its preflight.
+    no_push: bool,
+    /// Build this commit instead of HEAD; only with `no_push`.
+    candidate: Option<String>,
     wait_secs: u64,
 }
 
@@ -102,7 +107,7 @@ pub fn run(args: &[String]) -> i32 {
 /// `release::TARGETS`, and whoever types a wrong name hears it from
 /// `target_names()` with today's table rather than an older one.
 pub const USAGE: &[crate::Form] = &[crate::Form {
-    form: "sailor release <target> [--dry-run] [--skip-tests] [--even-if-dirty] [--wait-secs N]",
+    form: "sailor release <target> [--dry-run] [--skip-tests] [--even-if-dirty] [--no-push [--candidate <sha>]] [--wait-secs N]",
     says_key: "",
 }];
 
@@ -121,12 +126,20 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
     let mut dry_run = false;
     let mut skip_tests = false;
     let mut even_if_dirty = false;
+    let mut no_push = false;
+    let mut candidate = None;
     let mut wait_secs = 600;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--dry-run" => dry_run = true,
             "--skip-tests" => skip_tests = true,
             "--even-if-dirty" => even_if_dirty = true,
+            "--no-push" => no_push = true,
+            "--candidate" => {
+                candidate = Some(args.next().ok_or_else(|| {
+                    catalogue::say("cli.option_wants_a_value", &[("option", "--candidate")])
+                })?);
+            }
             "--wait-secs" => {
                 let value = args.next().ok_or_else(|| {
                     catalogue::say("cli.option_wants_a_value", &[("option", "--wait-secs")])
@@ -138,11 +151,16 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
             _ => return Err(catalogue::say("cli.unknown_option", &[("option", &arg)])),
         }
     }
+    if candidate.is_some() && !no_push {
+        return Err(catalogue::say("cli.release.candidate_wants_no_push", &[]));
+    }
     Ok(Options {
         target_name,
         dry_run,
         skip_tests,
         even_if_dirty,
+        no_push,
+        candidate,
         wait_secs,
     })
 }
@@ -151,12 +169,27 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     let root = sources_root()?;
     let head_rev = git_text(&root, &["rev-parse", "HEAD"])?;
     let head_short = git_text(&root, &["rev-parse", "--short", "HEAD"])?;
-    let tree_rev = git_text(&root, &["rev-parse", "HEAD^{tree}"])?;
+    let push = if options.no_push {
+        None
+    } else {
+        Some(publication_preflight(&root)?)
+    };
+    let candidate = match &options.candidate {
+        Some(asked) => Some(release_candidate::resolve(&root, asked)?),
+        None => None,
+    };
+    let (built_rev, built_short) = match &candidate {
+        Some(chosen) => (chosen.revision.clone(), chosen.short.clone()),
+        None => (head_rev.clone(), head_short.clone()),
+    };
+    let tree_rev = git_text(&root, &["rev-parse", &format!("{built_rev}^{{tree}}")])?;
     // The parts the target is made of, not `crates/` alone: the window is half
     // a page, and a stamp read over the engine only would name a commit that
     // changed nothing inside it.
     let parts = release::parts_of(selected);
-    let source_rev = {
+    let source_rev = if candidate.is_some() {
+        built_rev.clone()
+    } else {
         let mut ask = vec!["log", "-1", "--format=%H", "--"];
         ask.extend(parts.iter().copied());
         let revision = git_text(&root, &ask)?;
@@ -186,24 +219,50 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     }
 
     let temporary = make_temporary_tree()?;
-    println!(
-        "{}",
-        catalogue::say(
-            "cli.release.cloning_head",
-            &[("head", &head_short), ("root", &root.display().to_string())],
-        )
-    );
-    let repository = release_tree(&root)?;
-    command_success(
-        Command::new("git")
-            .arg("-C")
-            .arg(&repository)
-            .args(["checkout", "--quiet"])
-            .arg(&head_rev),
-        &catalogue::say("cli.release.checkout_failed", &[]),
-    )?;
-
-    let build_target = root.join("target/from-head");
+    let building = candidate.as_ref().map(|chosen| chosen.revision.as_str());
+    // Taken before the checkout, or a release starting meanwhile would find
+    // this candidate held by nobody and remove it mid-clone.
+    if let Some(chosen) = &candidate {
+        let build = release_candidate::place_of(&root, chosen).build;
+        crate::machine_cmd::a_build_directory_is_taken(&build, None, "release");
+    }
+    for earlier in release_candidate::earlier_candidates(&root, building) {
+        if crate::machine_cmd::an_earlier_runs_build_goes(&earlier.join("build")) {
+            let _ = fs::remove_dir_all(&earlier);
+        }
+    }
+    let (repository, build_target) = match &candidate {
+        Some(chosen) => {
+            println!(
+                "{}",
+                catalogue::say(
+                    "cli.release.cloning_candidate",
+                    &[("candidate", &chosen.short), ("root", &root.display().to_string())],
+                )
+            );
+            let place = release_candidate::check_out(&root, chosen)?;
+            (place.tree, place.build)
+        }
+        None => {
+            println!(
+                "{}",
+                catalogue::say(
+                    "cli.release.cloning_head",
+                    &[("head", &head_short), ("root", &root.display().to_string())],
+                )
+            );
+            let repository = release_tree(&root)?;
+            git_success(
+                Command::new("git")
+                    .arg("-C")
+                    .arg(&repository)
+                    .args(["checkout", "--quiet"])
+                    .arg(&head_rev),
+                &catalogue::say("cli.release.checkout_failed", &[]),
+            )?;
+            (repository, root.join("target/from-head"))
+        }
+    };
     crate::machine_cmd::a_build_directory_is_taken(&build_target, None, "release");
     // The crates sit at the root of the tree since the move: there is no
     // sub-tree left to build from.
@@ -213,6 +272,11 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     // lying there — on a machine that develops the window, the working tree's.
     if let Some(page) = selected.page_rel {
         build_the_page(&root, &repository, page)?;
+    }
+    let room = machine::free_bytes(&root);
+    if machine::too_little_to_build(room) {
+        let free = format!("{:.1}", room.unwrap_or(0) as f64 / 1_073_741_824.0);
+        return Err(catalogue::say("cli.release.too_little_room", &[("gigabytes", &free)]));
     }
     println!("{}", catalogue::say("cli.release.building", &[]));
     let cloned_manifest = repository.join(selected.manifest_rel);
@@ -286,7 +350,9 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         &temporary.path,
         &profile_variables,
         terminal::scratch::ROOT_VARIABLE,
+        Some(release::NAMES_CARRIED_BY_THE_PREFLIGHT),
     );
+    let mut proved = String::new();
     for (number, manifest_rel) in judges.iter().enumerate() {
         println!(
             "{}",
@@ -332,6 +398,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
             })?;
         let suite = fs::read(&suite_path)
             .map_err(|error| format!("cannot read {} back: {error}", suite_path.display()))?;
+        proved.push_str(&String::from_utf8_lossy(&suite));
         print_tail(&suite, 25);
         if !suite_status.success() {
             // The tail ends on cargo's «N targets failed» and never on the
@@ -365,6 +432,18 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
             );
         }
     }
+    // **THE SUITE HELD THE RECEIPTS AND NOBODY READ THEM.** Passing was all the
+    // release ever asked, so a judge green while measuring nothing went into
+    // service untouched. The words are already in hand; this reads them.
+    if !options.skip_tests {
+        match crate::ratchet_cmd::what_the_suite_proved(&repository, &proved) {
+            Ok(said) => println!("{said}"),
+            Err(why) => {
+                eprintln!("sailor release: {why}");
+                return Ok(1);
+            }
+        }
+    }
     if !judges.is_empty() {
         remember_the_suite(&memo, &tree_rev);
     }
@@ -372,24 +451,33 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     let live = root.join(selected.live_rel);
     let stamp = home.join(selected.stamp_rel);
     let stamp_to_read = stamp.clone();
-    if live.is_file() && files_equal(&fresh, &live)? {
+    let safe = home.join(selected.safe_rel);
+    // A candidate's proof is the copy in service, so only that copy matching
+    // the build lets it skip the install.
+    let already_in_service = live.is_file()
+        && files_equal(&fresh, &live)?
+        && (candidate.is_none() || (safe.is_file() && files_equal(&fresh, &safe)?));
+    if already_in_service {
         println!(
             "{}",
-            catalogue::say("cli.release.nothing_to_do", &[("head", &head_short)])
+            catalogue::say("cli.release.nothing_to_do", &[("head", &built_short)])
         );
         if !options.dry_run {
-            write_stamp(&stamp, &source_rev, &head_short);
+            write_stamp(&stamp, &source_rev, &built_short);
+            if let Some(chosen) = &candidate {
+                release_candidate::record_what_was_installed(chosen, &fresh, &safe, &stamp)?;
+            }
             // **THE SAME REPORT ON THE PATH THAT DOES NOTHING**, which is the
             // one a release lands on most days: «nothing to do» while an older
             // copy answers to the name is the whole fault, said reassuringly.
-            let seen = say_what_the_name_finds(selected, &home.join(selected.safe_rel));
-            say_whether_pushed(&root);
+            let seen = say_what_the_name_finds(selected, &safe);
+            say_whether_pushed(&root, push.as_ref(), &built_short);
             return Ok(release::ends_with(&seen));
         }
         return Ok(0);
     }
 
-    print_changes(&root, &stamp_to_read, &head_rev, &head_short, &parts)?;
+    print_changes(&root, &stamp_to_read, &built_rev, &built_short, &parts)?;
     if options.dry_run {
         println!("{}", catalogue::say("cli.release.dry_run", &[]));
         return Ok(0);
@@ -410,10 +498,9 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     atomic_copy(&fresh, &live)?;
     println!(
         "   {}",
-        catalogue::say("cli.release.in_service", &[("head", &head_short)])
+        catalogue::say("cli.release.in_service", &[("head", &built_short)])
     );
 
-    let safe = home.join(selected.safe_rel);
     match atomic_copy(&fresh, &safe) {
         Ok(()) => println!(
             "   {}",
@@ -428,9 +515,12 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         }
     }
 
-    write_stamp(&stamp, &source_rev, &head_short);
+    write_stamp(&stamp, &source_rev, &built_short);
+    if let Some(chosen) = &candidate {
+        release_candidate::record_what_was_installed(chosen, &fresh, &safe, &stamp)?;
+    }
     let seen = say_what_the_name_finds(selected, &safe);
-    say_whether_pushed(&root);
+    say_whether_pushed(&root, push.as_ref(), &built_short);
 
     if let Some(service) = selected.service {
         // The service runs every 90 seconds: between the first check and this
@@ -482,6 +572,7 @@ fn install_root() -> Result<PathBuf, String> {
 pub(crate) fn sources_root() -> Result<PathBuf, String> {
     root_under(
         env::var_os("SAILOR_SOURCES"),
+        the_sources_standing_in(),
         env::var_os("HOME"),
         SOURCES_BELOW_HOME,
         "SAILOR_SOURCES",
@@ -501,12 +592,16 @@ pub(crate) fn sources_root() -> Result<PathBuf, String> {
 /// current directory, fault 25 in disguise.
 fn root_under(
     declared: Option<OsString>,
+    standing: Option<PathBuf>,
     home: Option<OsString>,
     below: &str,
     declared_name: &str,
 ) -> Result<PathBuf, String> {
     if let Some(root) = declared.filter(|value| !value.is_empty()) {
         return Ok(PathBuf::from(root));
+    }
+    if let Some(standing) = standing {
+        return Ok(standing);
     }
     home.map(|home| PathBuf::from(home).join(below))
         .ok_or_else(|| {
@@ -517,22 +612,43 @@ fn root_under(
         })
 }
 
+/// The sources this command is standing in, when it is standing in them.
+///
+/// **`personal/sailor` IS ONE MACHINE'S FOLDER LAYOUT, NOT A FACT.** Standing
+/// in a Sailor tree is an answer nobody has to declare.
+fn the_sources_standing_in() -> Option<PathBuf> {
+    let at = env::current_dir().ok()?;
+    let root = flow::workspace::find_root(&at)?;
+    root.join("crates")
+        .join("sailor")
+        .join("Cargo.toml")
+        .is_file()
+        .then_some(root)
+}
+
 fn git_output(root: &Path, args: &[&str]) -> Result<Output, String> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(args)
+    let mut git = Command::new("git");
+    git.arg("-C").arg(root).args(args);
+    git_output_from(git)
+}
+
+fn git_output_from(mut git: Command) -> Result<Output, String> {
+    let output = git
         .output()
-        .map_err(|error| format!("cannot start git: {error}"))?;
+        .map_err(|_| catalogue::say("cli.release.git_command_failed", &[]))?;
     if output.status.success() {
         Ok(output)
     } else {
-        let detail = String::from_utf8_lossy(&output.stderr);
-        Err(format!("git {} failed: {}", args.join(" "), detail.trim()))
+        Err(git_failure_report(&output))
     }
 }
 
-fn git_text(root: &Path, args: &[&str]) -> Result<String, String> {
+fn git_failure_report(output: &Output) -> String {
+    let _raw_git_output = (&output.stdout, &output.stderr);
+    catalogue::say("cli.release.git_command_failed", &[])
+}
+
+pub(crate) fn git_text(root: &Path, args: &[&str]) -> Result<String, String> {
     let output = git_output(root, args)?;
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
@@ -545,6 +661,15 @@ fn command_success(command: &mut Command, context: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!("{context} ({})", status_description(status)))
+    }
+}
+
+pub(crate) fn git_success(command: &mut Command, context: &str) -> Result<(), String> {
+    let output = command.output().map_err(|_| context.to_owned())?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!("{context} ({})", status_description(output.status)))
     }
 }
 
@@ -565,7 +690,7 @@ fn release_tree(root: &Path) -> Result<PathBuf, String> {
         vec!["checkout", "--quiet", "--force", "FETCH_HEAD"],
         vec!["clean", "-fdq"],
     ] {
-        command_success(
+        git_success(
             Command::new("git").arg("-C").arg(&tree).args(&args),
             &catalogue::say("cli.release.tree_not_brought_to_head", &[("step", args[0])]),
         )?;
@@ -573,7 +698,7 @@ fn release_tree(root: &Path) -> Result<PathBuf, String> {
     Ok(tree)
 }
 
-fn clone_repository(root: &Path, repository: &Path) -> Result<(), String> {
+pub(crate) fn clone_repository(root: &Path, repository: &Path) -> Result<(), String> {
     let first = Command::new("git")
         .args(["clone", "--local", "--quiet"])
         .arg(root)
@@ -619,16 +744,13 @@ fn clone_repository(root: &Path, repository: &Path) -> Result<(), String> {
     if second.status.success() {
         Ok(())
     } else {
-        let first_detail = String::from_utf8_lossy(&first.stderr);
-        let second_detail = String::from_utf8_lossy(&second.stderr);
-        Err(catalogue::say(
-            "cli.release.local_clone_failed",
-            &[
-                ("first", first_detail.trim()),
-                ("second", second_detail.trim()),
-            ],
-        ))
+        Err(local_clone_failure_report(&first, &second))
     }
+}
+
+fn local_clone_failure_report(first: &Output, second: &Output) -> String {
+    let _raw_git_output = (&first.stdout, &first.stderr, &second.stdout, &second.stderr);
+    catalogue::say("cli.release.local_clone_failed", &[])
 }
 
 fn status_description(status: ExitStatus) -> String {
@@ -917,33 +1039,24 @@ fn print_changes(
             .arg(root)
             .args(["cat-file", "-e"])
             .arg(format!("{previous}^{{commit}}"))
-            .status()
+            .output()
             .map_err(|error| {
                 catalogue::say(
                     "cli.release.cannot_check_the_old_stamp",
                     &[("error", &error.to_string())],
                 )
             })?;
-        if exists.success() {
+        if exists.status.success() {
             let range = format!("{previous}..{head_rev}");
             let mut ask = vec!["log", "--oneline", &range, "--"];
             ask.extend(parts.iter().copied());
             let log = git_output(root, &ask)?;
-            print!("{}", String::from_utf8_lossy(&log.stdout));
             let mut ask = vec!["rev-list", "--count", &range, "--"];
             ask.extend(parts.iter().copied());
             let count = git_text(root, &ask)?;
             println!(
                 "   {}",
-                catalogue::say(
-                    "cli.release.commits_touching_the_parts",
-                    &[
-                        ("count", &count),
-                        ("from", short_revision(&previous)),
-                        ("to", head_short),
-                        ("parts", &parts.join(", ")),
-                    ],
-                )
+                release_history_report(&log, &count, &previous, head_short, parts)
             );
             return Ok(());
         }
@@ -957,6 +1070,25 @@ fn print_changes(
         )
     );
     Ok(())
+}
+
+fn release_history_report(
+    log: &Output,
+    count: &str,
+    previous: &str,
+    head_short: &str,
+    parts: &[&str],
+) -> String {
+    let _raw_git_output = (&log.stdout, &log.stderr);
+    catalogue::say(
+        "cli.release.commits_touching_the_parts",
+        &[
+            ("count", count),
+            ("from", short_revision(previous)),
+            ("to", head_short),
+            ("parts", &parts.join(", ")),
+        ],
+    )
 }
 
 fn short_revision(revision: &str) -> &str {
@@ -1138,35 +1270,103 @@ const HELPER_FOR_THE_REMOTE: &str = "credential.https://github.com.helper";
 /// The trunk goes to the remote with every release: what is in service on
 /// this machine is what the remote holds. Refused, it is said, not hidden —
 /// the release stands, the remote is behind.
-fn push_the_trunk(root: &Path) -> Result<String, String> {
+struct PushAttempt {
+    succeeded: bool,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+fn push_the_trunk(root: &Path, plan: &toolbox::privacy::PushPlan) -> PushAttempt {
     let mut push = Command::new("git");
     push.arg("-C").arg(root);
     for argument in how_to_prove_who_we_are(root) {
         push.arg(argument);
     }
-    let pushed = push
-        .args(["push", "--porcelain"])
+    match push
+        .args(["push", "--porcelain", plan.remote()])
+        .arg(format!("{}:{}", plan.head(), plan.destination()))
         .output()
-        .map_err(|error| error.to_string())?;
-    let last_line = |bytes: &[u8]| {
-        String::from_utf8_lossy(bytes)
-            .lines()
-            .rfind(|line| !line.trim().is_empty())
-            .unwrap_or_default()
-            .to_string()
-    };
-    if pushed.status.success() {
-        Ok(last_line(&pushed.stdout))
-    } else {
-        Err(last_line(&pushed.stderr))
+    {
+        Ok(output) => PushAttempt {
+            succeeded: output.status.success(),
+            stdout: output.stdout,
+            stderr: output.stderr,
+        },
+        Err(_) => PushAttempt {
+            succeeded: false,
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        },
     }
 }
 
-fn say_whether_pushed(root: &Path) {
-    match push_the_trunk(root) {
-        Ok(line) => println!("   {}", catalogue::say("cli.release.pushed", &[("line", &line)])),
-        Err(line) => println!("   {}", catalogue::say("cli.release.not_pushed", &[("line", &line)])),
+/// Proves the push before making it: the destination, the outgoing commit
+/// range and the tracked sources it is made of. **THE SUITE CANNOT ANSWER THIS
+/// AND NEVER COULD**: a release runs its tests on a `git archive` extract,
+/// which is no repository, so the judge guarding the public trunk declares
+/// «measured nothing». Asked here, of the real tree.
+fn publication_preflight(root: &Path) -> Result<toolbox::privacy::PushPlan, String> {
+    publication_preflight_with(
+        root,
+        std::env::var("SAILOR_PRIVATE_NAMES").ok(),
+        std::env::var("HOME").ok(),
+    )
+}
+
+fn publication_preflight_with(
+    root: &Path,
+    declared_names: Option<String>,
+    home: Option<String>,
+) -> Result<toolbox::privacy::PushPlan, String> {
+    let (names, home) =
+        toolbox::privacy::required_input(declared_names, home).map_err(preflight_message)?;
+    let plan = toolbox::privacy::push_plan(root).map_err(preflight_message)?;
+    let private_metadata =
+        toolbox::privacy::outgoing_metadata_is_private(root, &plan, &names, &home, &[])
+            .map_err(preflight_message)?;
+    let private_sources = !toolbox::privacy::where_names_are_tracked(root, &names).is_empty();
+    let reserved_artifacts =
+        toolbox::privacy::tracked_reserved_artifacts(root).map_err(preflight_message)?;
+    if private_metadata || private_sources || !reserved_artifacts.is_empty() {
+        return Err(catalogue::say(
+            "cli.release.publication_preflight_refused",
+            &[],
+        ));
     }
+    Ok(plan)
+}
+
+fn preflight_message(why: toolbox::privacy::PublicationPreflight) -> String {
+    match why {
+        toolbox::privacy::PublicationPreflight::CannotProve => {
+            catalogue::say("cli.release.publication_preflight_failed", &[])
+        }
+        toolbox::privacy::PublicationPreflight::PrivateMaterial => {
+            catalogue::say("cli.release.publication_preflight_refused", &[])
+        }
+    }
+}
+
+fn say_whether_pushed(root: &Path, plan: Option<&toolbox::privacy::PushPlan>, built: &str) {
+    match plan {
+        Some(plan) => println!("   {}", push_report(&push_the_trunk(root, plan))),
+        None => println!(
+            "   {}",
+            catalogue::say("cli.release.not_pushed_by_request", &[("commit", built)])
+        ),
+    }
+}
+
+fn push_report(attempt: &PushAttempt) -> String {
+    let _raw_git_output = (&attempt.stdout, &attempt.stderr);
+    catalogue::say(
+        if attempt.succeeded {
+            "cli.release.pushed"
+        } else {
+            "cli.release.not_pushed"
+        },
+        &[],
+    )
 }
 
 fn write_stamp(path: &Path, revision: &str, head_short: &str) {
@@ -1374,7 +1574,7 @@ mod tests {
     #[test]
     fn the_release_builds_from_the_sources_and_not_from_the_configuration() {
         let home = Some(OsString::from("/casa/di-chiunque"));
-        let sources = root_under(None, home, SOURCES_BELOW_HOME, "SAILOR_SOURCES").unwrap();
+        let sources = root_under(None, None, home, SOURCES_BELOW_HOME, "SAILOR_SOURCES").unwrap();
         let house = ledger::sailor_home_in(None, None, PathBuf::from("/casa/di-chiunque"));
 
         // Spelled out on purpose: were the constant returned to the
@@ -1388,6 +1588,38 @@ mod tests {
     }
 
 
+    /// **THE FOLDER LAYOUT OF ONE MACHINE IS NOT A FACT ABOUT ANY OTHER.**
+    /// A clone under a name of its own built from a directory nobody has.
+    #[test]
+    fn the_tree_the_command_stands_in_beats_one_machines_folder_layout() {
+        let home = Some(OsString::from("/casa/di-chiunque"));
+        let standing = PathBuf::from("/qualunque/nome/abbia/scelto");
+
+        let stood = root_under(
+            None,
+            Some(standing.clone()),
+            home.clone(),
+            SOURCES_BELOW_HOME,
+            "SAILOR_SOURCES",
+        )
+        .unwrap();
+        assert_eq!(stood, standing, "the sources were taken from another machine's layout");
+
+        let declared = root_under(
+            Some(OsString::from("/altrove/sailor")),
+            Some(standing),
+            home,
+            SOURCES_BELOW_HOME,
+            "SAILOR_SOURCES",
+        )
+        .unwrap();
+        assert_eq!(
+            declared,
+            PathBuf::from("/altrove/sailor"),
+            "a declared root is the one answer nobody may overrule"
+        );
+    }
+
     /// A declared root beats the home, and a declared empty one does not.
     ///
     /// The second arm is the one that gets lost: a variable exported empty by a
@@ -1399,6 +1631,7 @@ mod tests {
         let home = Some(OsString::from("/casa/di-chiunque"));
         let declared = root_under(
             Some(OsString::from("/altrove/sailor")),
+            None,
             home.clone(),
             SOURCES_BELOW_HOME,
             "SAILOR_SOURCES",
@@ -1408,6 +1641,7 @@ mod tests {
 
         let empty = root_under(
             Some(OsString::new()),
+            None,
             home,
             SOURCES_BELOW_HOME,
             "SAILOR_SOURCES",
@@ -1415,7 +1649,7 @@ mod tests {
         .unwrap();
         assert_eq!(empty, PathBuf::from("/casa/di-chiunque/personal/sailor"));
 
-        assert!(root_under(None, None, "personal/sailor", "SAILOR_SOURCES").is_err());
+        assert!(root_under(None, None, None, "personal/sailor", "SAILOR_SOURCES").is_err());
     }
 
     /// Sailor's sources carry the crate the binary is named after.
@@ -1458,7 +1692,7 @@ mod tests {
     fn the_binary_is_installed_in_the_home_and_not_next_to_the_sources() {
         let declared_home = Some(OsString::from("/casa/di-chiunque"));
         let sources =
-            root_under(None, declared_home, SOURCES_BELOW_HOME, "SAILOR_SOURCES").unwrap();
+            root_under(None, None, declared_home, SOURCES_BELOW_HOME, "SAILOR_SOURCES").unwrap();
         let home = ledger::sailor_home_in(None, None, PathBuf::from("/casa/di-chiunque"));
         assert_ne!(sources, home);
         assert!(home.ends_with(".config/sailor"), "{home:?}");
@@ -1496,22 +1730,225 @@ mod tests {
         assert!(!other, "a tree with one more byte");
     }
 
-    /// A refused push is reported in git's own last line, not swallowed and not
-    /// fatal: the binary is already in service by then.
     #[test]
-    fn a_push_the_remote_refuses_is_said_in_gits_words() {
+    fn a_refused_push_does_not_report_gits_words() {
         let scratch = std::env::temp_dir().join(format!("sailor-no-remote-{}", std::process::id()));
         fs::create_dir_all(&scratch).expect("scratch");
+        let remote = scratch.join("remote.git");
         let git = |args: &[&str]| {
-            Command::new("git").arg("-C").arg(&scratch).args(args).output().expect("git")
+            Command::new("git")
+                .arg("-C")
+                .arg(&scratch)
+                .args(args)
+                .output()
+                .expect("git")
         };
         git(&["init", "--quiet"]);
+        git(&["config", "user.email", "test@example.invalid"]);
+        git(&["config", "user.name", "test"]);
+        fs::write(scratch.join("tracked.txt"), "first\n").expect("tracked file");
+        git(&["add", "tracked.txt"]);
+        git(&["commit", "--quiet", "-m", "first"]);
+        assert!(
+            Command::new("git")
+                .args(["init", "--bare", "--quiet"])
+                .arg(&remote)
+                .status()
+                .expect("git")
+                .success(),
+            "the remote is created"
+        );
+        git(&[
+            "remote",
+            "add",
+            "origin",
+            remote.to_str().expect("utf-8 path"),
+        ]);
+        git(&["push", "--quiet", "-u", "origin", "HEAD"]);
+        let plan = toolbox::privacy::push_plan(&scratch).expect("the destination is proven");
+        fs::remove_dir_all(&remote).expect("the remote disappears after the preflight");
 
-        let said = push_the_trunk(&scratch);
+        let pushed = push_the_trunk(&scratch, &plan);
         let _ = fs::remove_dir_all(&scratch);
 
-        let refused = said.expect_err("no remote to push to");
-        assert!(!refused.is_empty(), "git's line, not an empty one");
+        assert!(
+            !pushed.succeeded,
+            "a missing remote did not refuse the push"
+        );
+    }
+
+    fn repository_ready_to_publish(label: &str) -> (PathBuf, PathBuf, PathBuf) {
+        let scratch = std::env::temp_dir().join(format!(
+            "sailor-release-preflight-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|since| since.as_nanos())
+                .unwrap_or_default()
+        ));
+        let repository = scratch.join("repository");
+        let remote = scratch.join("remote.git");
+        fs::create_dir_all(&repository).expect("scratch repository");
+        let git = |args: &[&str]| {
+            let output = Command::new("git")
+                .arg("-C")
+                .arg(&repository)
+                .args(args)
+                .output()
+                .expect("git runs");
+            assert!(output.status.success(), "git {args:?}");
+        };
+        git(&["init", "--quiet"]);
+        git(&["config", "user.email", "test@example.invalid"]);
+        git(&["config", "user.name", "test"]);
+        fs::write(repository.join("tracked.txt"), "first\n").expect("first file");
+        git(&["add", "tracked.txt"]);
+        git(&["commit", "--quiet", "-m", "first"]);
+        assert!(
+            Command::new("git")
+                .args(["init", "--bare", "--quiet"])
+                .arg(&remote)
+                .status()
+                .expect("git runs")
+                .success(),
+            "the local remote is created"
+        );
+        git(&[
+            "remote",
+            "add",
+            "origin",
+            remote.to_str().expect("utf-8 path"),
+        ]);
+        git(&["push", "--quiet", "-u", "origin", "HEAD"]);
+        let private_names = scratch.join("private-names");
+        fs::write(&private_names, "").expect("privacy input");
+        (scratch, repository, private_names)
+    }
+
+    #[test]
+    fn a_tracked_reserved_artifact_is_refused_before_a_push() {
+        let (scratch, repository, private_names) = repository_ready_to_publish("reserved");
+        fs::write(repository.join("credentials.json"), "harmless\n").expect("reserved artifact");
+        let git = |args: &[&str]| {
+            let output = Command::new("git")
+                .arg("-C")
+                .arg(&repository)
+                .args(args)
+                .output()
+                .expect("git runs");
+            assert!(output.status.success(), "git {args:?}");
+            String::from_utf8_lossy(&output.stdout).trim().to_owned()
+        };
+        let remote_head = git(&["rev-parse", "@{u}"]);
+        git(&["add", "credentials.json"]);
+        git(&["commit", "--quiet", "-m", "harmless artifact"]);
+
+        let refused = publication_preflight_with(
+            &repository,
+            Some(private_names.display().to_string()),
+            Some("/home/tester".to_owned()),
+        );
+        let remote_after = git(&["rev-parse", "@{u}"]);
+        let _ = fs::remove_dir_all(&scratch);
+
+        assert!(
+            refused.is_err(),
+            "the reserved artifact was allowed to publish"
+        );
+        assert_eq!(
+            remote_after, remote_head,
+            "the refusal pushed before it answered"
+        );
+    }
+
+    #[test]
+    fn a_clean_repository_passes_the_publication_preflight() {
+        let (scratch, repository, private_names) = repository_ready_to_publish("clean");
+        fs::write(repository.join("tracked.txt"), "second\n").expect("ordinary change");
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(&repository)
+            .args(["add", "tracked.txt"])
+            .output()
+            .expect("git runs");
+        assert!(output.status.success(), "the ordinary change is staged");
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(&repository)
+            .args(["commit", "--quiet", "-m", "ordinary change"])
+            .output()
+            .expect("git runs");
+        assert!(output.status.success(), "the ordinary change is committed");
+
+        let preflight = publication_preflight_with(
+            &repository,
+            Some(private_names.display().to_string()),
+            Some("/home/tester".to_owned()),
+        );
+        let _ = fs::remove_dir_all(&scratch);
+
+        assert!(preflight.is_ok(), "a clean repository was refused");
+    }
+
+    const RAW_GIT_SENTINEL: &str =
+        concat!("GIT", "-", "SENTINEL", "-", "mylberry", "-", "DO", "-", "NOT", "-", "DISPLAY");
+
+    #[test]
+    fn a_raw_git_line_cannot_reach_the_release_report() {
+        let sentinel = RAW_GIT_SENTINEL;
+        let reported = push_report(&PushAttempt {
+            succeeded: false,
+            stdout: sentinel.as_bytes().to_vec(),
+            stderr: sentinel.as_bytes().to_vec(),
+        });
+
+        assert!(
+            !reported.contains(sentinel),
+            "the release report carried raw git output: {reported}"
+        );
+    }
+
+    fn fake_git_output(succeeds: bool) -> Output {
+        fake_git_command(succeeds)
+            .output()
+            .expect("the fake local Git runs")
+    }
+
+    fn fake_git_command(succeeds: bool) -> Command {
+        let ending = if succeeds { "" } else { "; exit 1" };
+        let script = format!("printf {RAW_GIT_SENTINEL}; printf {RAW_GIT_SENTINEL} >&2{ending}");
+        let mut command = Command::new("sh");
+        command.args(["-c", &script]);
+        command
+    }
+
+    #[test]
+    fn raw_git_output_never_reaches_a_release_error_or_history_report() {
+        let sentinel = RAW_GIT_SENTINEL;
+        let failed_git = fake_git_command(false);
+        let git_error = git_output_from(failed_git).expect_err("the fake Git fails");
+        let mut failed_checkout = fake_git_command(false);
+        let checkout_error = git_success(
+            &mut failed_checkout,
+            &catalogue::say("cli.release.checkout_failed", &[]),
+        )
+        .expect_err("the fake checkout fails");
+        let clone_error =
+            local_clone_failure_report(&fake_git_output(false), &fake_git_output(false));
+        let history = release_history_report(
+            &fake_git_output(true),
+            "2",
+            "1234567890abcdef",
+            "fedcba9",
+            &["crates/sailor"],
+        );
+
+        for report in [git_error, checkout_error, clone_error, history] {
+            assert!(
+                !report.contains(sentinel),
+                "a user-facing release report carried raw Git output: {report}"
+            );
+        }
     }
 
     /// The modules left by the last release are cleared before the tree's are

@@ -46,6 +46,10 @@ pub const WORKSPACE_ROOT: &str = "workspace.root";
 /// file able to write here would raise its own cap.
 pub const CURRENT_CAP: &str = "flow.cap_micros";
 
+/// How many paying steps opened in this wave, for the action that shares the
+/// remainder of the cap between them.
+pub const CURRENT_FRONT: &str = "flow.front_paying";
+
 /// The key under which the executor writes the holder of the process, for the
 /// action that starts another run: a child is held by whoever holds the parent.
 pub const CURRENT_HOLDER: &str = "flow.holder";
@@ -602,7 +606,37 @@ pub enum Decision {
         reason: StopReason,
         not_started: Vec<String>,
     },
+    /// The graph has nothing left to do and a step declared `required` has not
+    /// passed. Apart from `Failed`, which says a step broke: here nothing need
+    /// have broken, and the reason is carried because the cure differs — a
+    /// verdict that said no is repaired in the work, a check nobody asked in
+    /// the graph.
+    RequirementUnmet { step: String, reason: Unmet },
     Complete,
+}
+
+/// Why a required step did not satisfy its requirement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unmet {
+    /// It closed, and its verdict is not `passed`. A failure the step forgave
+    /// itself with `accept` is here too: what a step tolerates is the step's
+    /// business, and the run's acceptance is the run's.
+    DidNotPass,
+    /// It was skipped: its `when` said no, or nothing answered to its action.
+    Skipped,
+    /// Nothing ever opened it, or nothing ever closed what was opened.
+    NeverRan,
+}
+
+impl Unmet {
+    /// The word the ledger keeps.
+    pub fn as_text(&self) -> &'static str {
+        match self {
+            Self::DidNotPass => "did_not_pass",
+            Self::Skipped => "skipped",
+            Self::NeverRan => "never_ran",
+        }
+    }
 }
 
 /// Why a run closed short of its last step, as the ledger keeps it.
@@ -700,6 +734,9 @@ pub fn run_status(execution: &Execution) -> (&'static str, bool) {
             ..
         }) => ("complete", true),
         Some(Decision::Halted { .. }) => ("stopped", false),
+        // Not "stopped": nobody has to come and finish this run — its
+        // acceptance is red, and that is an answer, not an interruption.
+        Some(Decision::RequirementUnmet { .. }) => ("failed", false),
         Some(Decision::Ready(_)) | Some(Decision::Running(_)) | None => ("incomplete", false),
     }
 }
@@ -1169,6 +1206,10 @@ impl Executor for InProcessExecutor {
             // (see `how_many_fit`); with no cap it stays what it always was.
             let mut failure: Option<FlowError> = None;
             for group in waves(&opened, at_once) {
+                let paying = group.iter().filter(|work| work.may_spend()).count().max(1);
+                request
+                    .shared
+                    .insert(CURRENT_FRONT.to_owned(), Value::from(paying));
                 let outcomes: Vec<Result<(), FlowError>> = std::thread::scope(|scope| {
                     let handles: Vec<_> = group
                         .iter()
@@ -1276,7 +1317,10 @@ fn closes_the_run(
 ) -> Result<Option<StopReason>, FlowError> {
     // Ahead of the promise on purpose: when a command and a model both say the
     // work is done, the one that was measured is the one worth recording.
-    if a_check_settled_it(graph, records) {
+    // A gate may hand the run an early success, never a free one: while a step
+    // the flow declared `required` has not passed, the run has nothing to close
+    // on and goes on to the step that would.
+    if a_check_settled_it(graph, records) && requirement_unmet(graph, records).is_none() {
         return Ok(Some(StopReason::Checked));
     }
     if promise_is_kept(graph, records) {
@@ -1309,15 +1353,72 @@ fn closes_the_run(
 pub const VERDICT_FIELD: &str = "/status";
 pub const VERDICT_PASSED: &str = "passed";
 
+/// Whether a closed record carries the word a check writes when it passed.
+fn verdict_passed(record: &StepRecord) -> bool {
+    record.outcome == Some(Outcome::Went)
+        && record.output.as_ref().is_some_and(|output| {
+            output.pointer(VERDICT_FIELD) == Some(&Value::String(VERDICT_PASSED.to_owned()))
+        })
+}
+
 /// Whether a step that declared `decides_done` came back passed.
 fn a_check_settled_it(graph: &Graph, records: &[StepRecord]) -> bool {
-    graph.steps().iter().filter(|step| step.decides_done).any(|step| {
-        records
-            .iter()
-            .filter(|record| record.step_id == step.id && record.outcome == Some(Outcome::Went))
-            .filter_map(|record| record.output.as_ref())
-            .any(|output| output.pointer(VERDICT_FIELD) == Some(&Value::String(VERDICT_PASSED.to_owned())))
-    })
+    graph
+        .steps()
+        .iter()
+        .filter(|step| step.decides_done)
+        .any(|step| {
+            records
+                .iter()
+                .filter(|record| record.step_id == step.id)
+                .any(verdict_passed)
+        })
+}
+
+/// The first step declared `required` that has not passed, and why. Read on the
+/// step's latest attempt: a requirement is about where the run stands now, not
+/// about whether some attempt of it once went green.
+fn requirement_unmet(graph: &Graph, records: &[StepRecord]) -> Option<(String, Unmet)> {
+    graph
+        .steps()
+        .iter()
+        .filter(|step| step.required)
+        .find_map(|step| {
+            let record = latest_for(step, records);
+            if record.is_some_and(verdict_passed) {
+                return None;
+            }
+            if waived_by_condition(graph, step, records) {
+                return None;
+            }
+            let reason = match record {
+                Some(record) => match record.outcome {
+                    Some(Outcome::Skipped) => Unmet::Skipped,
+                    None => Unmet::NeverRan,
+                    Some(_) => Unmet::DidNotPass,
+                },
+                None => Unmet::NeverRan,
+            };
+            Some((step.id.clone(), reason))
+        })
+}
+
+/// Conditions are the only skips the author explicitly chose; other skips stay unmet.
+fn waived_by_condition(graph: &Graph, step: &Step, records: &[StepRecord]) -> bool {
+    match latest_for(step, records) {
+        Some(record) => {
+            record.outcome == Some(Outcome::Skipped)
+                && matches!(&record.why, Some(Why::Condition(judgement)) if !judgement.held)
+        }
+        None => {
+            !step.deps.is_empty()
+                && step
+                    .deps
+                    .iter()
+                    .filter_map(|dependency| graph.step(dependency))
+                    .all(|dependency| waived_by_condition(graph, dependency, records))
+        }
+    }
 }
 
 /// Whether a step that declared `stops_when` has made its own pointer true.
@@ -1648,6 +1749,8 @@ fn decision_from(graph: &Graph, records: &[StepRecord], now: i64) -> Result<Deci
         Ok(Decision::Waiting(waiting))
     } else if !stopped.is_empty() {
         Ok(Decision::Stopped(stopped))
+    } else if let Some((step, reason)) = requirement_unmet(graph, records) {
+        Ok(Decision::RequirementUnmet { step, reason })
     } else {
         Ok(Decision::Complete)
     }
@@ -2188,6 +2291,8 @@ mod tests {
             phase: None,
         stops_when: None,
         decides_done: false,
+        required: false,
+        needs: Vec::new(),
         }
     }
 

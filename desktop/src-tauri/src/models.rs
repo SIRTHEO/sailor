@@ -117,33 +117,54 @@ pub(crate) fn models_catalogue() -> Result<Catalogue, String> {
 /// **COSTS NOTHING AND CALLS NO MODEL**: it asks an address how much is already
 /// spent. That is why it can be looked at before deciding to launch something,
 /// which is the only moment it matters.
+/// An account whose quota could not be read. **NEVER A QUOTA OF ZERO**, and
+/// Sailor does not renew a token — that breaks the command line's own access —
+/// so it names the account and repeats what the engine said.
+#[derive(Serialize)]
+pub(crate) struct Unreachable {
+    /// «engine · account», as the reading labels it.
+    account: String,
+    why: String,
+}
+
+/// What was read and who did not answer, **both always**: the refusals were
+/// dropped unless every account failed, so five out looked like none.
+#[derive(Serialize)]
+pub(crate) struct Quota {
+    windows: Vec<Window>,
+    unreachable: Vec<Unreachable>,
+}
+
 #[tauri::command]
-pub(crate) fn quota() -> Result<Vec<Window>, String> {
+pub(crate) fn quota() -> Result<Quota, String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |since| since.as_secs() as i64);
-    // Every engine whose descriptor declares a channel, none named here. The
-    // error's own words say what to do — «the token has been revoked» is cured
-    // by authenticating again — so they travel whole; a channel that does not
-    // answer is never a quota of zero, which is the reassuring direction.
+    // Every engine whose descriptor declares a channel, none named here, and
+    // **once per account rather than once per command line**: three claude
+    // homes answer three different numbers. A channel that does not answer is
+    // never a quota of zero, and the error's own words travel whole.
     let machine = toolbox::Machine::current();
     let catalog = toolbox::Catalog::load(&toolbox::default_sources(&machine));
-    let readings = toolbox::quota::read_all(&catalog, &machine, now);
+    let readings = sailor::remaining_cmd::per_profile(&catalog, &machine, now);
     if readings.is_empty() {
         return Err("no engine on this machine declares a channel to read its quota from".to_owned());
     }
     let mut windows = Vec::new();
-    let mut refused = Vec::new();
+    let mut unreachable = Vec::new();
     for reading in readings {
         match reading.result {
             Ok(found) => windows.extend(found.into_iter().map(Window::from)),
-            Err(why) => refused.push(format!("{}: {why}", reading.engine)),
+            Err(why) => unreachable.push(Unreachable {
+                account: reading.engine,
+                why,
+            }),
         }
     }
-    if windows.is_empty() {
-        return Err(refused.join("; "));
-    }
-    Ok(windows)
+    Ok(Quota {
+        windows,
+        unreachable,
+    })
 }
 
 #[tauri::command]

@@ -26,6 +26,7 @@
 //! inside the window would be an engine nobody can test without opening it.
 
 pub mod bridge;
+pub mod consent;
 pub mod host;
 pub mod inbox;
 pub mod keeping;
@@ -34,6 +35,7 @@ pub mod routing;
 pub mod scratch;
 pub mod screen;
 pub mod session;
+pub mod standing;
 pub mod tally;
 
 pub use pty::{Pty, PtyError, Size};

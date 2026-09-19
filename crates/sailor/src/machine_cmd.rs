@@ -173,6 +173,33 @@ pub fn a_build_directory_is_taken(path: &Path, for_run: Option<String>, purpose:
     let _ = store.holding_taken(&holding);
 }
 
+/// A build directory an earlier run of the same command left and the next run
+/// will not reuse, removed by that command with its row in the register —
+/// unless the process that took it is still compiling there.
+pub fn an_earlier_runs_build_goes(path: &Path) -> bool {
+    an_earlier_runs_build_goes_in(open_ledger().ok().as_ref(), path)
+}
+
+fn an_earlier_runs_build_goes_in(store: Option<&Ledger>, path: &Path) -> bool {
+    let name = path.to_string_lossy();
+    let held = store
+        .and_then(|store| store.holdings_left_held(BUILD_DIRECTORY).ok())
+        .unwrap_or_default()
+        .into_iter()
+        .find(|one| one.name == name);
+    let compiling = |one: &Holding| matches!(ledger::holdings::whose(one, &|_| Ok(true)), Whose::TheProcessThatTookIt);
+    if held.as_ref().is_some_and(compiling) {
+        return false;
+    }
+    if std::fs::remove_dir_all(path).is_err() && path.exists() {
+        return false;
+    }
+    if let (Some(store), Some(one)) = (store, held) {
+        let _ = store.holding_let_go(BUILD_DIRECTORY, &one.name);
+    }
+    true
+}
+
 /// A build directory on the disk, and what the register says of it. `taken` is
 /// `None` for one Sailor never made: unknown is not the same as free.
 struct OnTheDisk {
@@ -246,8 +273,9 @@ fn about_the_disk(store: Option<&Ledger>) -> Option<String> {
 
 fn about_the_disk_in(root: &Path, store: Option<&Ledger>) -> Option<String> {
     let on_disk = build_directories(root, store);
+    let own = machine::ordinary_building(root);
     if on_disk.is_empty() {
-        return None;
+        return (!own.is_empty()).then(|| own_building(&own).trim_start().to_owned());
     }
     let held: u64 = on_disk.iter().map(|one| one.left.bytes).sum();
     let mut said = catalogue::say(
@@ -269,7 +297,20 @@ fn about_the_disk_in(root: &Path, store: Option<&Ledger>) -> Option<String> {
             ],
         ));
     }
+    said.push_str(&own_building(&own));
     Some(said)
+}
+
+fn own_building(own: &[machine::LeftBehind]) -> String {
+    own.iter()
+        .map(|one| {
+            let path = one.path.display().to_string();
+            let size = gigabytes(one.bytes);
+            let tail = catalogue::say("cli.machine.own_building_tail", &[]);
+            let line = [("path", path.as_str()), ("gigabytes", size.as_str()), ("tail", tail.as_str())];
+            format!("\n{}", catalogue::say("cli.machine.own_building", &line))
+        })
+        .collect()
 }
 
 /// How many of the heaviest build directories are worth naming.
@@ -626,6 +667,28 @@ mod tests {
             .expect("the holding goes in");
     }
 
+    /// **A COMMAND THAT BUILDS REMOVES WHAT ITS EARLIER RUNS LEFT**, and its row
+    /// with it; what a live process is compiling in stays where it is.
+    #[test]
+    fn an_earlier_runs_build_goes_unless_a_process_still_compiles_in_it() {
+        let root = scratch("earlier-run");
+        let store = Ledger::open(root.join("store")).expect("the store opens");
+        a_build_directory(&root, "left", 64);
+        a_build_directory(&root, "busy", 64);
+        let left = root.join("target").join("left");
+        let busy = root.join("target").join("busy");
+        taken_by_a_dead_process(&store, &left, None);
+        taken_by_this_process(&store, &busy);
+
+        assert!(an_earlier_runs_build_goes_in(Some(&store), &left), "the leftover was refused");
+        assert!(!left.exists(), "the earlier run's build is still on the disk");
+        let rows = store.holdings_left_held(BUILD_DIRECTORY).expect("the rows");
+        assert!(rows.iter().all(|one| one.name != left.to_string_lossy()), "its row stayed");
+        assert!(!an_earlier_runs_build_goes_in(Some(&store), &busy), "a live build was taken");
+        assert!(busy.exists(), "a build a process is compiling in was removed");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// A build directory of cargo's, made by hand, with the tag cargo writes.
     fn a_build_directory(root: &Path, name: &str, bytes: usize) {
         let path = root.join("target").join(name);
@@ -665,6 +728,29 @@ mod tests {
             !said.contains("target/debug:"),
             "the tree's own work was offered up as a leftover: {said}"
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// **A TREE'S OWN BUILDING IS WEIGHED, NEVER OFFERED.** `target/debug` grew
+    /// to 27 GB unseen: it carries no tag of its own, so the reading skipped it.
+    #[test]
+    fn the_reading_weighs_the_tree_s_own_building_and_never_takes_it() {
+        let root = scratch("own-building");
+        let store = Ledger::open(root.join("store")).expect("the store");
+        let target = root.join("target");
+        std::fs::create_dir_all(target.join("debug").join(".fingerprint")).expect("the tree's building");
+        std::fs::write(target.join("CACHEDIR.TAG"), "Signature: 8a477f597d28d172789f06886806bc55\n")
+            .expect("the tag cargo writes in the directory it was pointed at");
+        std::fs::write(target.join("debug").join("artefact"), "x".repeat(8_192)).expect("an artefact");
+
+        let own = machine::ordinary_building(&root);
+        assert_eq!(own.len(), 1, "{own:?}");
+        assert!(own[0].path.ends_with("debug") && own[0].bytes >= 8_192, "{own:?}");
+
+        let said = about_the_disk_in(&root, Some(&store)).expect("there is something to weigh");
+        assert!(said.contains(&catalogue::say("cli.machine.own_building_tail", &[])), "{said}");
+        assert!(free_the_disk_in(&root, Some(&store)).is_none(), "the tree's own building was taken");
+        assert!(target.join("debug").exists());
         let _ = std::fs::remove_dir_all(&root);
     }
 

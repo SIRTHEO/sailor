@@ -279,6 +279,33 @@ enum Freedom {
 /// One terminal's screen, read against what its command line declares.
 /// **NOT YET IN EVERY CASE BUT ONE**: only a still screen showing the prompt
 /// and none of the marks lets go of it.
+/// The executable a session of this line runs under, as the process table
+/// spells it. **IT IS THE DESCRIPTOR'S, NOT THIS CRATE'S.**
+fn line_command_of(catalog: &toolbox::Catalog, cli: &str) -> Result<String, ActionError> {
+    catalog
+        .live()
+        .into_iter()
+        .find(|loaded| loaded.descriptor.id == cli)
+        .and_then(|loaded| {
+            loaded
+                .descriptor
+                .detect
+                .as_ref()?
+                .as_slice()
+                .iter()
+                .find_map(|probe| probe.command.clone())
+        })
+        .ok_or_else(|| {
+            ActionError::new(
+                "command_not_declared",
+                format!(
+                    "«{cli}» declares no executable to look for, so the machine cannot be asked \
+                     what a session of it holds"
+                ),
+            )
+        })
+}
+
 fn freedom_now(
     catalog: &toolbox::Catalog,
     root: &Path,
@@ -286,6 +313,21 @@ fn freedom_now(
     cli: &str,
 ) -> Result<Freedom, ActionError> {
     let free_when = freedom_of(catalog, cli)?;
+    if let Some(but) = &free_when.and_holds_no_process_but {
+        let Some(rows) = what_the_machine_runs() else {
+            return Ok(Freedom::NotYet(format!(
+                "{tty}: the process table could not be read, and not knowing what a session \
+                 holds is not knowing it holds nothing"
+            )));
+        };
+        let held = still_holding(&rows, tty, &line_command_of(catalog, cli)?, but);
+        if !held.is_empty() {
+            return Ok(Freedom::NotYet(format!(
+                "{tty}: the session still holds {}, so it is working whatever its screen shows",
+                held.join(", ")
+            )));
+        }
+    }
     let painted = match painted_now(catalog, root, tty, free_when.and_still_for_seconds)? {
         Painted::Bytes(bytes) => bytes,
         Painted::NotYet(why) => return Ok(Freedom::NotYet(why)),
@@ -312,6 +354,90 @@ fn freedom_now(
             "{tty}: the prompt is not painted, and a quiet screen is not a free one"
         ))),
     }
+}
+
+/// One line of the process table: who it is, who started it, where it sits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OnTheMachine {
+    pub pid: u32,
+    pub parent: u32,
+    pub tty: String,
+    pub command: String,
+}
+
+/// The process table, or nothing. **NOTHING IS NOT AN EMPTY TABLE**: a reader
+/// that cannot look must not free a session, so the caller treats `None` as a
+/// reason to wait rather than as a machine with no processes on it.
+fn what_the_machine_runs() -> Option<Vec<OnTheMachine>> {
+    let out = std::process::Command::new("ps")
+        .args(["-A", "-o", "pid=,ppid=,tty=,command="])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut rows = Vec::new();
+    for line in text.lines() {
+        let mut fields = line.split_whitespace();
+        let (Some(pid), Some(parent), Some(tty)) = (fields.next(), fields.next(), fields.next())
+        else {
+            continue;
+        };
+        let command: String = fields.collect::<Vec<_>>().join(" ");
+        if command.is_empty() {
+            continue;
+        }
+        rows.push(OnTheMachine {
+            pid: pid.parse().ok()?,
+            parent: parent.parse().ok()?,
+            tty: tty.to_owned(),
+            command,
+        });
+    }
+    Some(rows)
+}
+
+/// The name a person would call this process, without its path or arguments.
+fn called(command: &str) -> &str {
+    let word = command.split_whitespace().next().unwrap_or(command);
+    word.rsplit('/').next().unwrap_or(word)
+}
+
+/// What the session at this terminal still holds, beyond the commands its line
+/// declares it runs while idle.
+///
+/// **THE MODEL STOPPING IS NOT THE SESSION FINISHING**: a tool the session
+/// started outlives the turn, and both screen tests call that terminal free.
+pub fn still_holding(
+    rows: &[OnTheMachine],
+    tty: &str,
+    line_command: &str,
+    but: &[String],
+) -> Vec<String> {
+    let here: Vec<&OnTheMachine> = rows.iter().filter(|row| row.tty.ends_with(tty)).collect();
+    let mut frontier: Vec<u32> = here
+        .iter()
+        .filter(|row| called(&row.command) == line_command)
+        .map(|row| row.pid)
+        .collect();
+    let mut held = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    while let Some(parent) = frontier.pop() {
+        for row in here.iter().filter(|row| row.parent == parent) {
+            if !seen.insert(row.pid) {
+                continue;
+            }
+            frontier.push(row.pid);
+            let name = called(&row.command);
+            if !but.iter().any(|idle| idle == name) {
+                held.push(name.to_owned());
+            }
+        }
+    }
+    held.sort();
+    held.dedup();
+    held
 }
 
 /// What is on that terminal now, by whichever road there is to it.

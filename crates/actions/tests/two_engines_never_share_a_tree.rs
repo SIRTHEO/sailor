@@ -198,6 +198,35 @@ fn each_step_asking_for_a_tree_of_its_own_gets_one_and_nobody_shares() {
     assert!(open.is_empty(), "the store still holds trees nobody has: {open:?}");
 }
 
+/// A tree kept by declaration outlives the answer: its readers in the flow
+/// have not run yet when the step returns.
+#[test]
+fn a_step_that_declares_keep_tree_leaves_it_standing_for_its_reader() {
+    let dir = TempDir::new();
+    let repo = a_repository_in(dir.path());
+    let reads = an_engine_that_reads_the_project(dir.path());
+    let store = a_store_in(dir.path());
+    let action = actions::ExternalEngineAction::new().recording_to(Some(store.clone()));
+    let asks_to_keep_it = json!({"bin": reads, "tree": "own", "keep_tree": true, "timeout_secs": 30});
+
+    let shared = shared_for(&repo, "corsa-5", "execute");
+    let kept = stood_in(&action.execute(&asks_to_keep_it, &shared).expect("the step had to go"));
+
+    let listed = what_git_has_cut(&repo);
+    assert!(listed.contains(&kept), "a declared tree was taken down before its reader ran:\n{listed}");
+    assert!(Path::new(&kept).exists(), "the tree is already gone: {kept}");
+    let open = workspace::OpenTrees::trees_left_open(&store).expect("the store reads back");
+    assert_eq!(open.len(), 1, "the kept tree is still on the page: {open:?}");
+
+    // Its reader is done: releasing it is the flow's own `release_tree` step,
+    // proved here by doing exactly what that step does.
+    assert_eq!(
+        workspace::close_tree(&repo, Path::new(&kept), &store),
+        workspace::Closing::TakenDown,
+        "a clean tree force-released after the fact should just go: {kept}"
+    );
+}
+
 fn what_git_has_cut(repo: &Path) -> String {
     let listed = std::process::Command::new("git")
         .arg("-C")
@@ -216,8 +245,8 @@ fn a_step_that_leaves_work_keeps_its_tree_and_the_person_is_told() {
     let dir = TempDir::new();
     let repo = a_repository_in(dir.path());
     let bin = an_engine_that_leaves_work_behind(dir.path());
-    let overheard = Overheard::default();
     let store = a_store_in(dir.path());
+    let overheard = Overheard::default();
     let action = actions::ExternalEngineAction::new()
         .watched_by(Some(Arc::new(overheard.clone()) as Arc<dyn actions::StepSinks>))
         .recording_to(Some(store.clone()));

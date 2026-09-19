@@ -35,8 +35,11 @@ fn git(repo: &Path, args: &[&str]) {
 
 /// A repository whose committed HEAD is clean and whose working tree is not,
 /// with the difference sitting inside the parts the `sailor` target is made of.
+/// A real remote and upstream branch: the publication preflight proves one
+/// before the dirty-work gate this file tests is ever reached.
 fn a_repository_with_work_left_out(at: &Path) -> PathBuf {
     let repo = at.join("sources");
+    let remote = at.join("remote.git");
     std::fs::create_dir_all(repo.join("crates/harbourmaster/src"))
         .expect("the sources directory is made");
     std::fs::write(repo.join("crates/harbourmaster/src/lib.rs"), "pub fn moored() {}\n")
@@ -46,12 +49,32 @@ fn a_repository_with_work_left_out(at: &Path) -> PathBuf {
     git(&repo, &["config", "user.name", "The Harbourmaster"]);
     git(&repo, &["add", "crates/harbourmaster/src/lib.rs"]);
     git(&repo, &["commit", "--quiet", "-m", "the first mooring"]);
+    assert!(
+        Command::new("git")
+            .args(["init", "-q", "--bare"])
+            .arg(&remote)
+            .status()
+            .expect("git runs")
+            .success(),
+        "the local remote is created"
+    );
+    git(&repo, &["remote", "add", "origin", remote.to_str().expect("utf-8 path")]);
+    git(&repo, &["push", "--quiet", "-u", "origin", "HEAD"]);
     std::fs::write(
         repo.join("crates/harbourmaster/src/lib.rs"),
         "pub fn moored() { unimplemented!() }\n",
     )
     .expect("the uncommitted change is written");
     repo
+}
+
+/// A declared list with fictitious names, so the privacy proof this gate's
+/// own preflight needs (`toolbox::privacy::where_the_names_are`) does not
+/// depend on a real home's `~/personal/.sailor-notes/private-names`.
+fn declared_private_names(home: &Path) -> PathBuf {
+    let list = home.join("declared-private-names");
+    std::fs::write(&list, "example-private-name\n").expect("the fictitious list is written");
+    list
 }
 
 fn release_in(repo: &Path, home: &Path, extra: &[&str]) -> Output {
@@ -61,7 +84,9 @@ fn release_in(repo: &Path, home: &Path, extra: &[&str]) -> Output {
         .args(["release", "sailor"])
         .args(extra)
         .env("SAILOR_SOURCES", repo)
-        .env("SAILOR_HOME", home);
+        .env("SAILOR_HOME", home)
+        .env("SAILOR_PRIVATE_NAMES", declared_private_names(home))
+        .env("HOME", home);
     command.output().expect("the binary starts")
 }
 

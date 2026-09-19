@@ -23,7 +23,7 @@ pub mod descriptor;
 pub use action::{register_default, TriggerAction, TRIGGER_ACTION};
 pub use descriptor::{
     deferral, Catalog, Happened, Kind, Listen, Loaded, MissedRun, On, Periodic, Problem, Source,
-    TriggerDescriptor,
+    TriggerDescriptor, ALREADY_PARKED,
 };
 
 use serde::Serialize;

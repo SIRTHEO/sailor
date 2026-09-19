@@ -6,7 +6,7 @@
       "runs_measured": 0,
       "words_it_sends": 0
     },
-    "empty-a-session-that-handed-on": {
+    "close-the-work": {
       "tokens_a_run": 0,
       "runs_measured": 0,
       "words_it_sends": 0
@@ -21,6 +21,11 @@
       "runs_measured": 0,
       "words_it_sends": 1182
     },
+    "cut-a-release": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
+    },
     "dispatch-the-work": {
       "tokens_a_run": 130894,
       "runs_measured": 4,
@@ -31,12 +36,22 @@
       "runs_measured": 4,
       "words_it_sends": 9212
     },
+    "empty-a-session-that-handed-on": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
+    },
     "find-the-dead-powers": {
       "tokens_a_run": 0,
       "runs_measured": 0,
       "words_it_sends": 0
     },
     "free-the-machine": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
+    },
+    "integrate-on-the-trunk": {
       "tokens_a_run": 0,
       "runs_measured": 0,
       "words_it_sends": 0
@@ -52,9 +67,14 @@
       "words_it_sends": 0
     },
     "one-agent-on-one-task": {
+      "tokens_a_run": 17775,
+      "runs_measured": 2,
+      "words_it_sends": 205
+    },
+    "open-the-draft-pull-request": {
       "tokens_a_run": 0,
       "runs_measured": 0,
-      "words_it_sends": 48
+      "words_it_sends": 0
     },
     "put-the-crew-to-work": {
       "tokens_a_run": 0,
@@ -71,6 +91,11 @@
       "runs_measured": 0,
       "words_it_sends": 0
     },
+    "review-a-pinned-commit": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
+    },
     "sweep-the-tree": {
       "tokens_a_run": 0,
       "runs_measured": 0,
@@ -80,6 +105,11 @@
       "tokens_a_run": 0,
       "runs_measured": 0,
       "words_it_sends": 2828
+    },
+    "take-the-next-work": {
+      "tokens_a_run": 0,
+      "runs_measured": 0,
+      "words_it_sends": 0
     },
     "watch-the-crew": {
       "tokens_a_run": 0,

@@ -4,22 +4,26 @@
 [![licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue.svg)](LICENSE)
 [![rust 1.89+](https://img.shields.io/badge/rust-1.89%2B-orange.svg)](https://www.rust-lang.org)
 
-Sailor makes the command-line agents you already have — Claude Code, Codex,
-Gemini CLI, anything else — work together inside **flows** you can read,
-measure and stop.
+For whoever runs more than one command-line agent — Claude Code, Codex, Gemini
+CLI — and is tired of each one having its own rules, its own memory and no
+record of what it actually did. Sailor gives them **one set of rules and one
+ledger**: it decides which engine to call, under which identity, how much it
+may spend, and it **writes down what actually happened**, so a run can be
+reviewed, compared and repeated instead of recounted.
 
-It is not another agent. It is the scaffolding around the ones you use: it
-decides which engine to call, under which identity, how much it may spend, and
-it **writes down what actually happened** — so a run can be reviewed, compared
-and repeated instead of recounted.
+One concrete outcome: point Sailor at a project, run one flow, and get back a
+queue of work items drained one at a time — each one either finished with a
+recorded result or handed back to you with the reason it stopped.
 
-> **Status: under construction, and used every day by the people writing it.**
-> Interfaces change. Tests cover individual contracts; a completed flow does
-> not by itself prove that its result meets the user's acceptance criteria.
-> Known defects are
-> written down in `docs/faults-encountered.md`, open defects included. What
-> would make it *finished* is written down too, as a termination condition
-> Sailor keeps in its own store: `sailor search termination condition` finds it.
+> **Status — what you can do tonight.** Run a queue of work through one
+> engine end to end (`take-the-next-work`), and watch a desktop window that
+> shows what is waiting and lets you close a step that was handed to a
+> person. **Not there yet:** filesystem and network restrictions on a handed
+> step are not enforced by Sailor itself, and a completed flow does not by
+> itself prove its result met your acceptance criteria: a `required` step
+> withholds completion, it does not certify the result. The open defects a
+> user can meet are described in
+> [`docs/faults-encountered.md`](docs/faults-encountered.md).
 
 ## Five minutes
 
@@ -42,22 +46,6 @@ returns. Missing measurements remain unknown. A spending threshold is a
 guaranteed ceiling only when the engine can enforce the bound on each call.
 The local rewrite flow needs a configured local runner and hands back a
 proposal for verification; it does not apply the proposal automatically.
-
-## What completion means
-
-A completed flow has finished according to its graph. That may mean it read
-the machine, produced a proposal, or accepted an engine's structured answer.
-It does not establish that a code change works. A task needs an executable
-acceptance check of its actual result whose failure blocks completion.
-The executor's `decides_done` flag permits early success when a check passes;
-it does not require that check to pass before ordinary graph completion.
-The shipped flows do not currently declare it.
-
-Project rules can be delivered to an agent, but delivery does not enforce
-filesystem or network restrictions. Process-boundary enforcement remains
-unfinished. A handed step also uses a declared holder name, not an
-authenticated identity. These limits matter before entrusting a flow with
-unattended work.
 
 ## What it does, concretely
 
@@ -108,7 +96,7 @@ not taste: `cargo tauri dev` closes the window on **every** touched file,
 *before* compiling, so a compile error makes it vanish and it does not come
 back. `sailor-live` builds first and touches what is running **only if** the
 build succeeded: the window survives, changes its title and shows the error.
-The long version is fault 11 in `docs/faults-encountered.md`.
+The long version is fault 11 in Sailor's fault store: `sailor faults list`.
 
 And a build no longer takes the window away either. It builds on every save —
 that is how you learn the code compiles — but the swap **waits to be asked**:
@@ -149,7 +137,7 @@ icon in the Dock.
 |---|---|
 | `sailor flow list \| check \| run \| cost \| cap` | flows: which exist, whether they hold up, running them, what they cost, what cap they carry |
 | `sailor flow publish [remote]` | your own flows to a git repository of your own, refused if one carries a key |
-| `sailor step open \| close` | the steps a live agent takes charge of |
+| `sailor step open \| close \| approve \| reject` | the steps a live agent takes charge of, and the ones handed to a person |
 | `sailor run <cli>` | starts a command line with its profile's equipment |
 | `sailor profiles list \| create \| switch \| endpoint` | each engine's identities, whether they are authenticated, and another endpoint that speaks the engine's own protocol |
 | `sailor remaining` | how much quota is left, read from the provider rather than inferred |
@@ -196,7 +184,7 @@ Few, and they count for more than style preferences. In full in
   does not come from whoever wrote it.
 - **A rule in a comment is not a defence: it is the shape of one.** It counts
   only where a list applies it or a check interrogates it.
-- **Every defect gets written down**, in `docs/faults-encountered.md`, with how
+- **Every defect gets written down**, in Sailor's own fault store, with how
   it came to light and **what would have stopped it** — because what follows a
   fault is a check, not a task assigned to somebody.
 - **Everything in the tree is in English**: identifiers, comments, documents,

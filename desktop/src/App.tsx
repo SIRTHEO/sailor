@@ -35,21 +35,13 @@ import { MACHINE, MACHINE_GROUND, SECTIONS, TERMINALS_GROUND, nameOfPlace, onIts
 import { World, OF_THIS_TREE, type FlowGroup } from "./World";
 import { liveOf, newestPerFlow } from "./flowlive";
 import { amongThese, rememberWhere, stillThere, whereYouWere } from "./whereyouwere";
+import { attentionQueue } from "./attention";
 import type { Project } from "./workspaces";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import type { TerminalSummary } from "./terminal";
-import { BeatChip, BuildChip, LiveChip, WhoChip } from "./Bar";
+import { BeatChip, BuildChip } from "./Bar";
+import { Strip } from "./Strip";
+import { FocusBar } from "./FocusBar";
 import { MEMORY_TABS, type MemoryTab } from "./memorytabs";
 import { SAILOR_TABS, type SailorTab } from "./sailortabs";
 import { TERMINALS_TABS, type TerminalsTab } from "./terminalstabs";
@@ -74,6 +66,12 @@ const TerminalsSection = lazy(() =>
 // A first-time visitor's entry point, not the operator's: nothing on the path
 // this window opens on every day needs it in the same chunk.
 const Demo = lazy(() => import("./Demo").then((module) => ({ default: module.Demo })));
+const FlowMapScreen = lazy(() =>
+  import("./FlowMapScreen").then((module) => ({ default: module.FlowMapScreen })),
+);
+const FlowsScreen = lazy(() =>
+  import("./FlowsScreen").then((module) => ({ default: module.FlowsScreen })),
+);
 
 /** What stands where a section will be: nothing. A section a few hundred
  *  milliseconds away does not need announcing, and a spinner that flashes is
@@ -82,6 +80,7 @@ const ARRIVING = null;
 
 import { TopBar } from "./TopBar";
 import { sourceWords, statusOfRun, type BarFlow, type Source } from "./boardhead";
+import { chainMark, readChains, type ChainsRead } from "./flowchain";
 import { BenchContext, type Bench } from "./Workbench";
 import { declaredCeiling } from "./terminal";
 import { Palette, isPaletteKey, type Entry } from "./Palette";
@@ -92,6 +91,7 @@ import { withStepWiredTo } from "./wiring";
 import { Toolbar } from "./Toolbar";
 import { RunContext, TriggerNode, triggerNodeId, type RunControls, type TriggerState } from "./TriggerNode";
 import { RunConsole, type ConsoleMode } from "./RunConsole";
+import { RunGlimpse } from "./RunGlimpse";
 import { StepHistory } from "./StepHistory";
 import { buildUnifiedLayout, nodeId, splitNodeId, wouldCycle } from "./layout";
 import { SAMPLE, SAMPLE_RUN } from "./sample";
@@ -167,7 +167,7 @@ type Place = Section;
 
 /* Only the graph. "Code" was a data file dressed as source and "Runs" is
    already the «Now» and «History» places. What the two unmounted screens
-   had measured about the engine is in `docs/faults-encountered.md`. */
+   had measured about the engine is in the fault store (`sailor faults list`). */
 
 /**
  * A flow being edited: what is on screen and what is already on disk.
@@ -299,6 +299,29 @@ export default function App() {
       ? amongThese(wasAt.current.place, SECTIONS, "waiting")
       : "waiting",
   );
+  /* **SOMETHING WAITING OUTRANKS WHERE YOU LEFT OFF.** The place kept across a
+     rebuild is a convenience for the ordinary case; it must not be the reason
+     a parked task sits unseen behind the board a person happened to close on
+     last. Asked once, at the very first beat: a later beat finding nothing new
+     must not keep pulling the window back here. */
+  const askedIfAnythingWaits = useRef(false);
+  useEffect(() => {
+    if (!NATIVE || askedIfAnythingWaits.current) return;
+    askedIfAnythingWaits.current = true;
+    let live = true;
+    attentionQueue().then(
+      (rows) => {
+        if (live && rows.length > 0) setPlace("waiting");
+      },
+      () => {
+        // Asked once, in good faith: a shell that cannot answer yet leaves
+        // the place exactly as the note above already decided it.
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
   const [memoryTab, setMemoryTab] = useState<MemoryTab>(() =>
     amongThese(wasAt.current.memoryTab, MEMORY_TABS.map((one) => one.id), "runs"),
   );
@@ -317,6 +340,15 @@ export default function App() {
   // person left looking at the row they pressed, is a terminal nobody uses.
   const openBench = useCallback((asked: Bench) => {
     setBench(asked);
+    setTerminalsTab("live");
+    setPlace("terminals");
+  }, []);
+  /** A tty a row elsewhere asked brought forward: the attention queue's own
+   * gesture, mirroring `openBench` above for the same reason — asked from a
+   * row with nobody left looking at the screen it names is asked nowhere. */
+  const [focusTty, setFocusTty] = useState<string | null>(null);
+  const openTerminalByTty = useCallback((tty: string) => {
+    setFocusTty(tty);
     setTerminalsTab("live");
     setPlace("terminals");
   }, []);
@@ -351,6 +383,7 @@ export default function App() {
 
   const [saving, setSaving] = useState<Set<string>>(new Set());
   const [saveErrors, setSaveErrors] = useState<Record<string, string>>({});
+  const [chains, setChains] = useState<ChainsRead>({ state: "read", chains: new Map() });
 
   const [discovery, setDiscovery] = useState<ToolDiscovery>(() =>
     NATIVE ? { state: "asking" } : { state: "mute", why: "outside the shell: the engine knows the tools" },
@@ -361,6 +394,9 @@ export default function App() {
   // still on screen when the answer arrives.
   const readFlows = useCallback((still: () => boolean) => {
     if (!NATIVE) return;
+    void readChains().then((read) => {
+      if (still()) setChains(read);
+    });
     loadFlows()
       .then((loaded) => {
         if (!still()) return;
@@ -1232,17 +1268,20 @@ export default function App() {
         origin: group.origin,
         flows: group.flows.map(({ name, flow }) => {
           const working = flows.get(name);
+          const mark = chainMark(chains, name);
           return {
             name,
             note: stepCountLabel(flow.graph.steps.length),
             color: layout.bands.get(name)?.color,
             dirty: working ? isDirty(working) : false,
             live: liveOf(liveFlows.get(name), now),
+            replaces: mark?.text ?? null,
+            chain: mark?.title,
           };
         }),
         broken: group.broken.map((entry) => ({ name: entry.name, reason: entry.reason })),
       })),
-    [railGroups, layout, flows, liveFlows, now],
+    [railGroups, layout, flows, liveFlows, now, chains],
   );
 
   /**
@@ -1398,18 +1437,14 @@ export default function App() {
               <kbd className="topbar__kbd">⌘K</kbd>
               Search or run a command
             </button>
-            <LiveChip
+            <Strip
               native={NATIVE}
               now={now}
-              onOpen={(runId) => setWatching(runId)}
-              onSpend={() => {
-                setPlace("memory");
-                setMemoryTab("spend");
-              }}
+              onOpenRun={(runId) => setWatching(runId)}
+              onOpenAttention={() => setPlace("waiting")}
             />
             <BuildChip native={NATIVE} now={now} />
             <BeatChip native={NATIVE} now={now} />
-            <WhoChip native={NATIVE} />
           </>
         }
       />
@@ -1434,6 +1469,34 @@ export default function App() {
           setSelectedNode(null);
         }}
         onNewFlow={addFlow}
+        globalFlows={
+          /* THE GROUP IS ALREADY CALLED «FLOWS EVERYWHERE», so the row inside
+             it is not called that too: it says what the map answers. */
+          <>
+          <button
+            type="button"
+            className="wsx__leaf"
+            data-here={place === "flowmap" || undefined}
+            onClick={() => setPlace("flowmap")}
+          >
+            <span className="world__glyph" aria-hidden="true">
+              ⑂
+            </span>
+            <span className="world__label">{nameOfPlace("flowmap")}</span>
+          </button>
+          <button
+            type="button"
+            className="wsx__leaf"
+            data-here={place === "flows" || undefined}
+            onClick={() => setPlace("flows")}
+          >
+            <span className="world__glyph" aria-hidden="true">
+              ≡
+            </span>
+            <span className="world__label">{nameOfPlace("flows")}</span>
+          </button>
+          </>
+        }
       />
       <div className="stage">
 
@@ -1454,6 +1517,7 @@ export default function App() {
               flow={focusedWorking.flow}
               bar={barFlow}
               neverSaved={focusedWorking.saved === null}
+              mark={chainMark(chains, focusName)}
               error={saveErrors[focusName]}
               onRename={(next) => renameFlow(focusName, next)}
               onDescription={(text) => updateFlow(focusName, (flow) => ({ ...flow, description: text }))}
@@ -1495,6 +1559,7 @@ export default function App() {
                 native={NATIVE}
                 now={Math.floor(Date.now() / 1000)}
                 onRun={(runId) => setWatching(runId)}
+                onTty={openTerminalByTty}
               />
             </Suspense>
           </div>
@@ -1537,6 +1602,43 @@ export default function App() {
           </div>
         </div>
       )}
+      {/* THE FLOWS THAT CALL EACH OTHER, AND THE ONES NOBODY CALLS. It stands
+          on its own and not under a tree: a flow of yours is the same wherever
+          you are, and a call that names a file nobody wrote is the one defect
+          only a whole-machine reading can find. */}
+      {place === "flowmap" && (
+        <div className="section" data-place="flowmap">
+          <div className="section__body">
+          <Suspense fallback={ARRIVING}>
+            <FlowMapScreen
+              native={NATIVE}
+              onOpen={(name) => {
+                setPlace("board");
+                setFocusName(name);
+                setSelectedNode(null);
+              }}
+            />
+          </Suspense>
+          </div>
+        </div>
+      )}
+      {place === "flows" && (
+        <div className="section" data-place="flows">
+          <div className="section__body">
+            <Suspense fallback={ARRIVING}>
+              <FlowsScreen
+                native={NATIVE}
+                onOpen={(name) => {
+                  setPlace("board");
+                  setFocusName(name);
+                  setSelectedNode(null);
+                }}
+                onRun={(name) => void handleRun(name)}
+              />
+            </Suspense>
+          </div>
+        </div>
+      )}
       {place === "sailor" && (
         <Suspense fallback={ARRIVING}>
         <SailorScreen
@@ -1571,6 +1673,8 @@ export default function App() {
         onList={setOpenTerminals}
         bench={bench}
         onBenchClosed={() => setBench(null)}
+        focusDevice={focusTty}
+        onFocused={() => setFocusTty(null)}
       />
       </Suspense>
 
@@ -1640,28 +1744,18 @@ export default function App() {
             <Background id="fine" gap={12} variant={BackgroundVariant.Lines} color="var(--grid-fine)" />
             <Background id="coarse" gap={96} variant={BackgroundVariant.Lines} color="var(--grid-coarse)" />
 
-            {/* CONTROLS MUST CONTROL SOMETHING, or they are not there. Four
-                buttons that zoom and frame nothing are the same «box you can see
-                that says nothing» for which the minimap below disappears: one
-                criterion, and it holds for both.
-
-                The graph paper stays: it is the canvas, not a control, and it is
-                what makes the space under the box read as a surface to fill. The
-                React Flow signature stays too, being a licence note —
-                `hideAttribution` is a paid option, and removing it is something
-                you buy, not a screen decision. */}
+            {/* CONTROLS MUST CONTROL SOMETHING, or they are not there: four
+                buttons that zoom and frame nothing are the same «box you can
+                see that says nothing» as the minimap below. The graph paper is
+                the canvas and not a control, so it stays; the React Flow
+                signature is a licence note, and removing it is a purchase. */}
             {flows.size > 0 && <Controls />}
 
-            {/* THE MINIMAP SAYS WHERE TO LOOK, not «there is stuff here». It was
-                a uniform grey block: now every step sits in it with the tint of
-                its own state, so a fault at the foot of an off-screen flow shows
-                without scrolling.
-
-                WITH ZERO FLOWS IT IS NOT THERE, for the same reason as the
-                toolbox: a map of nothing is a box you can see that says nothing,
-                and on the screen that teaches the first gesture anything mute is
-                a distraction. It is also the mitigation of the limit declared in
-                `unhappystates.test.tsx` — with nothing to mitigate, it is not needed. */}
+            {/* THE MINIMAP SAYS WHERE TO LOOK, not «there is stuff here»: every
+                step sits in it with the tint of its own state, so a fault at the
+                foot of an off-screen flow shows without scrolling. WITH ZERO
+                FLOWS IT IS NOT THERE — a map of nothing is a box that says
+                nothing, and it mitigates a limit that is not there to mitigate. */}
             {flows.size > 0 && (
               <MiniMap
                 pannable
@@ -1778,6 +1872,14 @@ export default function App() {
           onStop={() => stopRun(watched.run_id)}
         />
       )}
+      {/* WATCHING A RUN THIS WINDOW NEVER STARTED: `run_snapshot` answers «not
+          known to this window», so there is no live console to draw — the
+          smallest view instead, read straight from the ledger. This is how
+          the attention queue's «open the run» reaches a run handed to a
+          person from another terminal or another flow. */}
+      {watching && !watched && (
+        <RunGlimpse runId={watching} onClose={() => setWatching(null)} onWhy={() => setPlace("memory")} />
+      )}
       </StepUsageContext.Provider>
       </WireContext.Provider>
       </BenchContext.Provider>
@@ -1793,140 +1895,6 @@ export default function App() {
 
 /** A stable empty list: a fresh `[]` each render would redo the work downstream. */
 const EMPTY_TOOLS: Tool[] = [];
-
-interface FocusBarProps {
-  name: string;
-  color: string;
-  flow: FlowFile;
-  bar: BarFlow;
-  neverSaved: boolean;
-  error?: string;
-  onRename: (next: string) => void;
-  onDescription: (text: string) => void;
-  onDelete: () => void;
-  onWatch?: () => void;
-  onSave: () => void;
-  onRun: () => void;
-}
-
-/**
- * The focused flow's bar: everything that has this flow for a subject, and
- * nothing that does not. One Save, beside the thing it saves, which is all the
- * two-Save objection ever asked. The name is editable only until the first save,
- * since it is the filename; drafts settle on `blur`, or a rename fires per letter.
- */
-function FocusBar({
-  name,
-  color,
-  flow,
-  bar,
-  neverSaved,
-  error,
-  onRename,
-  onDescription,
-  onDelete,
-  onWatch,
-  onSave,
-  onRun,
-}: FocusBarProps) {
-  const [nameDraft, setNameDraft] = useState(name);
-  const [descDraft, setDescDraft] = useState(flow.description);
-  const statusBody = (
-    <>
-      <span className="focusbar__live" data-idle={bar.status.live ? undefined : true} />
-      <span className="focusbar__status-word">{bar.status.word}</span>
-    </>
-  );
-
-  return (
-    <div className="focusbar">
-      <span className="focusbar__dot" style={{ background: color }} />
-      {neverSaved ? (
-        <input
-          className="focusbar__name-input"
-          value={nameDraft}
-          aria-label="name of the flow"
-          onChange={(event) => setNameDraft(event.target.value)}
-          onBlur={() => onRename(nameDraft)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") event.currentTarget.blur();
-          }}
-        />
-      ) : (
-        <span className="focusbar__name" title="the name is the file's: it is chosen before saving">
-          {name}
-        </span>
-      )}
-      <span className="focusbar__steps">{bar.steps} steps</span>
-      <input
-        className="focusbar__desc-input"
-        value={descDraft}
-        aria-label="description of the flow"
-        placeholder="what this flow is for"
-        onChange={(event) => setDescDraft(event.target.value)}
-        onBlur={() => onDescription(descDraft)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") event.currentTarget.blur();
-        }}
-      />
-      <div className="focusbar__spacer" />
-      {onWatch ? (
-        <button type="button" className="focusbar__status" onClick={onWatch}>
-          {statusBody}
-        </button>
-      ) : (
-        <span className="focusbar__status">{statusBody}</span>
-      )}
-      {bar.dirty && (
-        <span className="focusbar__dirty">
-          <span className="focusbar__dirty-dot" />
-          unsaved changes
-        </span>
-      )}
-      {error && <span className="focusbar__error">{error}</span>}
-      {/* DELETING IS NOT WHAT THIS BAR IS FOR. A red button beside the name of
-          the thing it destroys is the loudest object on the screen, and it is
-          the one gesture nobody comes here to make. It keeps its place — one
-          click away, under the mark that always means «what else can I do». */}
-      <DropdownMenu>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <DropdownMenuTrigger asChild disabled={bar.busy}>
-              <button type="button" className="focusbar__more" aria-label="more for this flow">
-                ⋯
-              </button>
-            </DropdownMenuTrigger>
-          </TooltipTrigger>
-          {/* The mark has no word beside it, so it needs one the instant the
-              pointer arrives: ban 5 does not stop at colour. */}
-          <TooltipContent side="bottom">More for this flow</TooltipContent>
-        </Tooltip>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem variant="destructive" onSelect={onDelete}>
-            {neverSaved ? "Discard flow" : "Delete flow"}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-      {/* THE TWO GESTURES STAY TOGETHER AND DO NOT WRAP: the words beside them
-          give ground first, so Run keeps one place at every width. */}
-      <div className="focusbar__actions">
-        <button type="button" className="focusbar__save" onClick={onSave} disabled={!bar.dirty || bar.busy}>
-          {bar.busy ? "Saving…" : "Save"}
-        </button>
-        {/* THE ACCENT MEANS «THE ACTION», and this is the action. Not a green:
-            green is a step that went well, and prohibition 4 keeps the state
-            colours for states. */}
-        <button type="button" className="focusbar__run is-primary" onClick={onRun} disabled={bar.starting}>
-          <span className="focusbar__glyph" aria-hidden="true">
-            ▶
-          </span>
-          {bar.starting ? "Starting…" : "Run"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
 
 // ── the top bar, and the three views of one flow ─────────────────────────
 

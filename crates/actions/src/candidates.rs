@@ -3,7 +3,6 @@
 
 use crate::cost::now_secs;
 use crate::engine::ExternalEngineAction;
-use crate::equipment::current_equipment_for;
 use crate::recipe::{
     command_line_naming_model_and_ceiling, mentions_any, says_it_cannot_work, PromptVia,
     SessionRecipe, ToolResolver,
@@ -28,7 +27,7 @@ impl ExternalEngineAction {
         tools: &dyn ToolResolver,
         spec: &EngineSpec,
         chain: &[String],
-    ) -> (Vec<String>, Option<models::fuel::Preference>) {
+    ) -> (Vec<String>, Option<models::fuel::Preference>, Vec<(String, String)>) {
         let mut ordered: Vec<String> = self.preferred_for(spec);
         for id in chain {
             if !ordered.contains(id) {
@@ -36,9 +35,20 @@ impl ExternalEngineAction {
             }
         }
         if spec.prefer.as_deref() != Some(FUEL) {
-            return (ordered, None);
+            return (ordered, None, Vec::new());
         }
-        let fuels: Vec<models::fuel::Fuel> = ordered.iter().flat_map(|id| tools.fuel(id)).collect();
+        // `Err` here is a fuel channel that exists and could not be read just
+        // now, not one the descriptor declares absent — fault 139: the two
+        // used to collapse into the same empty list, and `prefer: fuel` left
+        // the engine out of the comparison with nobody told why.
+        let mut fuels: Vec<models::fuel::Fuel> = Vec::new();
+        let mut unreadable: Vec<(String, String)> = Vec::new();
+        for id in &ordered {
+            match tools.fuel(id) {
+                Ok(mut found) => fuels.append(&mut found),
+                Err(why) => unreadable.push((id.clone(), why)),
+            }
+        }
         let preferred = models::fuel::prefer(&fuels);
         if let Some(preference) = &preferred {
             if let Some(at) = ordered.iter().position(|id| *id == preference.engine) {
@@ -46,7 +56,7 @@ impl ExternalEngineAction {
                 ordered.insert(0, first);
             }
         }
-        (ordered, preferred)
+        (ordered, preferred, unreadable)
     }
 
     /// The engines the strengths table puts ahead of this step's own chain:
@@ -92,7 +102,13 @@ impl ExternalEngineAction {
     ///
     /// It also returns the engines that **cannot** be used here, with the
     /// reason: if none is left, that reason is all the reader will have.
-    pub(crate) fn candidates(&self, spec: &EngineSpec) -> Result<(Vec<Candidate>, Vec<Refused>), ActionError> {
+    ///
+    /// A step that declares no ceiling of its own is held to `share_of_the_cap`.
+    pub(crate) fn candidates(
+        &self,
+        spec: &EngineSpec,
+        share_of_the_cap: Option<i64>,
+    ) -> Result<(Vec<Candidate>, Vec<Refused>), ActionError> {
         // Whoever wrote the options wrote which model in them: a second answer
         // to one question would want a precedence, as `bin` and `tool` would.
         if !spec.model.is_empty() && !spec.args.is_empty() {
@@ -106,6 +122,7 @@ impl ExternalEngineAction {
             (Some(bin), None) => Ok((
                 vec![Candidate {
                     id: None,
+                    account: None,
                     bin: bin.to_owned(),
                     args: spec.args.clone(),
                     prompt: PromptVia::Stdin,
@@ -150,7 +167,7 @@ impl ExternalEngineAction {
                         format!("`prefer` knows «{FUEL}» and «{AS_WRITTEN}», not «{other}»"),
                     ));
                 }
-                let (ids, preferred) = self.ordered(tools.as_ref(), spec, choice.ids());
+                let (ids, preferred, unreadable_fuel) = self.ordered(tools.as_ref(), spec, choice.ids());
                 if ids.is_empty() {
                     return Err(ActionError::new(
                         "invalid_input",
@@ -161,7 +178,12 @@ impl ExternalEngineAction {
                 let step_said_args = !spec.args.is_empty();
                 let mut usable = Vec::new();
                 let mut refused = Vec::new();
-                for id in &ids {
+                for entry in &ids {
+                    // `id@account` names the engine and the account it runs
+                    // on; a bare id runs on whichever is active. Fault 165.
+                    let (named_id, account) = crate::spec::engine_and_account(entry);
+                    let id = &named_id.to_owned();
+                    let account = account.map(str::to_owned);
                     let bin = match tools.resolve(id) {
                         Ok(bin) => bin,
                         Err(reason) => {
@@ -179,7 +201,7 @@ impl ExternalEngineAction {
                     if let Some(aside) = self
                         .cooldowns
                         .as_deref()
-                        .and_then(|path| cooldown::set_aside_until(path, id, now_secs()))
+                        .and_then(|path| cooldown::set_aside_until(path, entry, now_secs()))
                     {
                         refused.push(Refused {
                             id: id.clone(),
@@ -214,7 +236,9 @@ impl ExternalEngineAction {
                         });
                         continue;
                     }
-                    if let Some(why) = current_equipment_for(&bin, &spec.env).refused {
+                    if let Some(why) =
+                        crate::equipment::current_equipment_asking_for(&bin, &spec.env, account.as_deref()).refused
+                    {
                         refused.push(Refused {
                             id: id.clone(),
                             reason: why,
@@ -229,6 +253,7 @@ impl ExternalEngineAction {
                         let declared = tools.ask_recipe(id);
                         usable.push(Candidate {
                             id: Some(id.clone()),
+                            account: account.clone(),
                             bin,
                             args: spec.args.clone(),
                             prompt: PromptVia::Stdin,
@@ -237,7 +262,19 @@ impl ExternalEngineAction {
                             // elsewhere: `git` and `cargo` declare no `ask`,
                             // and their runs are not model calls.
                             can_be_asked: declared.is_some(),
-                            why: preferred.as_ref().filter(|p| p.engine == *id).map(|p| p.why.clone()),
+                            why: preferred
+                                .as_ref()
+                                .filter(|p| p.engine == *id)
+                                .map(|p| p.why.clone())
+                                .or_else(|| {
+                                    unreadable_fuel.iter().find(|(named, _)| named == id).map(
+                                        |(_, reason)| {
+                                            format!(
+                                                "its fuel channel could not be read just now: {reason}"
+                                            )
+                                        },
+                                    )
+                                }),
                             exhausted_when: declared
                                 .as_ref()
                                 .map(|recipe| recipe.exhausted_when.clone())
@@ -299,11 +336,12 @@ impl ExternalEngineAction {
                     let held_to = tools.spend_ceiling_option(id);
                     let ceiling = held_to
                         .as_ref()
-                        .and_then(|option| reserve::ceiling_for(option, &ceiling_of(spec)));
+                        .and_then(|option| reserve::ceiling_for(option, &ceiling_of(spec, share_of_the_cap)));
                     let written = ceiling.as_ref().and_then(reserve::Ceiling::as_written);
                     match tools.ask_recipe(id) {
                         Some(recipe) => usable.push(Candidate {
                             id: Some(id.clone()),
+                            account: account.clone(),
                             bin,
                             args: command_line_naming_model_and_ceiling(
                                 &recipe,
@@ -318,7 +356,7 @@ impl ExternalEngineAction {
                             ceiling,
                             no_ceiling_because: reserve::why_no_ceiling(
                                 held_to.as_ref(),
-                                &ceiling_of(spec),
+                                &ceiling_of(spec, share_of_the_cap),
                             ),
                             prompt: recipe.prompt,
                             session: session_lines(&recipe, tools.session_recipe(id)),
@@ -330,7 +368,19 @@ impl ExternalEngineAction {
                             // We are inside the branch that found an `ask`
                             // recipe: this tool is an engine by definition.
                             can_be_asked: true,
-                            why: preferred.as_ref().filter(|p| p.engine == *id).map(|p| p.why.clone()),
+                            why: preferred
+                                .as_ref()
+                                .filter(|p| p.engine == *id)
+                                .map(|p| p.why.clone())
+                                .or_else(|| {
+                                    unreadable_fuel.iter().find(|(named, _)| named == id).map(
+                                        |(_, reason)| {
+                                            format!(
+                                                "its fuel channel could not be read just now: {reason}"
+                                            )
+                                        },
+                                    )
+                                }),
                         }),
                         None => refused.push(Refused {
                             id: id.clone(),
@@ -410,6 +460,8 @@ pub(crate) struct Candidate {
     pub(crate) can_be_asked: bool,
     /// Why this engine was moved to the front, when the fuel said so.
     pub(crate) why: Option<String>,
+    /// The account this call runs on, when the chain entry named one.
+    pub(crate) account: Option<String>,
     /// The ceiling written on this line, when one could be. `None` is what
     /// makes a run's cap a stop threshold rather than a cap.
     pub(crate) ceiling: Option<reserve::Ceiling>,
@@ -457,6 +509,16 @@ impl ExternalEngineAction {
 }
 
 impl Candidate {
+    /// How this call is named in the list of engines set aside: the engine
+    /// alone, or the engine on the account the entry named.
+    pub(crate) fn aside_key(&self) -> String {
+        let id = self.id.clone().unwrap_or_default();
+        match &self.account {
+            Some(account) => format!("{id}@{account}"),
+            None => id,
+        }
+    }
+
     fn says_it_cannot_work(&self, stdout: &str, stderr: &str) -> bool {
         says_it_cannot_work(&self.unusable_when, stdout)
             || says_it_cannot_work(&self.unusable_when, stderr)
@@ -470,6 +532,13 @@ impl Candidate {
             return Some("quota_exhausted");
         }
         self.says_it_cannot_work(stdout, stderr).then_some("exhausted")
+    }
+
+    /// The class of a call that **exited zero and reported real usage**: it
+    /// answered, so only its error channel can still say it could not work —
+    /// never the body of the answer it just paid for. See fault 183.
+    pub(crate) fn declared_class_of_a_call_that_answered(&self, stderr: &str) -> Option<&'static str> {
+        self.declared_class("", stderr)
     }
 }
 
@@ -1206,5 +1275,50 @@ mod tests {
         let input = json!({"timeout_secs": 5});
         let shared = SharedState::new();
         assert!(action.execute(&input, &shared).is_err());
+    }
+
+    // ── fault 139: a fuel channel that could not be read is not a silence ──
+
+    /// One engine declares no fuel channel at all, the other declares one and
+    /// fails to answer it. `Ok(&[])` and `Err` must not blur into each other.
+    struct FuelReadsThatDiffer;
+
+    impl ToolResolver for FuelReadsThatDiffer {
+        fn resolve(&self, id: &str) -> Result<String, String> {
+            match id {
+                "no-channel" | "channel-down" => Ok("echo".to_owned()),
+                other => Err(format!("«{other}» is not here")),
+            }
+        }
+        fn fuel(&self, id: &str) -> Result<Vec<models::fuel::Fuel>, String> {
+            match id {
+                "no-channel" => Ok(Vec::new()),
+                "channel-down" => Err("the engine refused: token expired".to_owned()),
+                other => panic!("fuel asked for an id nobody named: {other}"),
+            }
+        }
+    }
+
+    /// **Mutant run**: reverting `fuel`'s return type to `Vec<Fuel>` and
+    /// folding the `Err` arm back into `.unwrap_or_default()` makes this red —
+    /// `unreadable_fuel` comes back empty and the assertion on it fails.
+    #[test]
+    fn an_engine_whose_fuel_channel_failed_is_named_apart_from_one_that_declares_none() {
+        let action = ExternalEngineAction::resolving_with(FuelReadsThatDiffer);
+        let spec: EngineSpec =
+            serde_json::from_value(json!({"prefer": "fuel", "timeout_secs": 10}))
+                .expect("spec");
+        let chain = vec!["no-channel".to_owned(), "channel-down".to_owned()];
+
+        let (ids, preferred, unreadable) = action.ordered(&FuelReadsThatDiffer, &spec, &chain);
+
+        assert_eq!(ids, chain, "no fuel read for either means the written order stands");
+        assert!(preferred.is_none());
+        assert_eq!(
+            unreadable,
+            vec![("channel-down".to_owned(), "the engine refused: token expired".to_owned())],
+            "only the engine whose channel failed is named; the one with no channel is silent \
+             because it has nothing to report, not because it was never asked"
+        );
     }
 }

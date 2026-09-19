@@ -173,11 +173,11 @@ fn complaints_over(measured: &BTreeMap<String, usize>, seeds: &[(&str, usize)]) 
     let mut complaints = Vec::new();
     for (name, howmany) in measured {
         let seed = seeded.get(name.as_str()).copied();
-        if !seed.is_some_and(|seed| *howmany <= seed) {
+        if !matches!(seed, Some(seed) if *howmany <= seed) {
             complaints.push(format!(
                 "crate «{name}» warns {howmany} times against a seed of {seed:?}: quiet the new ones, or the table is stale"
             ));
-        } else if !seed.is_some_and(|seed| seed <= howmany + HOW_STALE_A_SEED_MAY_BE) {
+        } else if !matches!(seed, Some(seed) if seed <= howmany + HOW_STALE_A_SEED_MAY_BE) {
             complaints.push(format!(
                 "crate «{name}» is seeded at {seed:?} and warns {howmany} times: lower the seed to {howmany}"
             ));

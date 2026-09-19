@@ -15,3 +15,4 @@ catalogue = { path = "../catalogue" }
 ledger = { path = "../ledger" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = "0.10"
