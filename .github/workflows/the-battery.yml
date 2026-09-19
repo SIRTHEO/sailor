@@ -181,8 +181,13 @@ jobs:
     # The two gaps are far too large to demand zero, so the ceiling is the
     # number of the day and the rule is the tree's own — a seed may fall,
     # never rise. `CONTRIBUTING.md` states it for the judges; it holds here.
+    #
+    # The numbers are the battery's own, never a local measure: a rustfmt one
+    # version apart counted 1669 of the same places on the same commit, and a
+    # cargo that had already checked these crates re-emitted none of clippy's
+    # warnings at all. The ceiling belongs to the machine that enforces it.
     env:
-      FORMATTING_PLACES_TODAY: 1669
+      FORMATTING_PLACES_TODAY: 1675
       CLIPPY_SUSPICIONS_TODAY: 0
     steps:
       - uses: actions/checkout@v4
