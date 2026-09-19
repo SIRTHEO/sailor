@@ -1062,7 +1062,7 @@
   "cli.accounts.one_account": "  {mark} {cli} · {profile}   {standing}   ${spent}   {calls} call(s)",
   "cli.accounts.to_cure_it": "      to cure it: {line}",
   "cli.accounts.what_it_worked": "      worked: {calls} call(s) in {sessions} session(s), {tokens} tokens, ${worth} at list price",
-  "cli.accounts.no_price_for_it": "no price for one of these models",
+  "cli.accounts.what_it_worked_unpriced": "      worked: {calls} call(s) in {sessions} session(s), {tokens} tokens, and no price for one of these models",
   "cli.accounts.from_the_terminal": "(whatever home the terminal was in)",
   "cli.accounts.no_profile_declares_it": "it answered and no profile declares it",
   "cli.accounts.standing.ready": "ready",

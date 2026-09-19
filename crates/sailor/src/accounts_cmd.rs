@@ -432,13 +432,12 @@ fn in_short(tokens: u64) -> String {
     }
 }
 
-/// What the work would have cost at list price, or the words for «nobody
-/// priced one of these models»: never a figure short of a model.
-fn worth_of(did: &models::work::Worked) -> String {
-    match models::work::cost_micros(did, &models::pricing::shipped()) {
-        Some(micros) => dollars(micros),
-        None => catalogue::say("cli.accounts.no_price_for_it", &[]),
-    }
+/// What the work would have cost at list price; `None` where a model in it
+/// carries no price. **NEVER A FIGURE SHORT OF A MODEL**, and never a sentence
+/// where a sum is spoken: the words for the missing price are a line of their
+/// own, or the currency and «at list price» end up wrapped around them.
+fn worth_of(did: &models::work::Worked) -> Option<String> {
+    models::work::cost_micros(did, &models::pricing::shipped()).map(dollars)
 }
 
 fn dollars(micros: i64) -> String {
@@ -488,15 +487,21 @@ pub fn report(views: &[AccountView], hours: i64) -> String {
             });
         }
         if let Some(did) = view.worked.as_ref().filter(|did| did.calls > 0) {
-            lines.push(catalogue::say(
-                "cli.accounts.what_it_worked",
-                &[
-                    ("calls", &did.calls.to_string()),
-                    ("sessions", &did.sessions.to_string()),
-                    ("tokens", &in_short(did.tokens().all())),
-                    ("worth", &worth_of(did)),
-                ],
-            ));
+            let mut said = vec![
+                ("calls", did.calls.to_string()),
+                ("sessions", did.sessions.to_string()),
+                ("tokens", in_short(did.tokens().all())),
+            ];
+            let key = match worth_of(did) {
+                Some(worth) => {
+                    said.push(("worth", worth));
+                    "cli.accounts.what_it_worked"
+                }
+                None => "cli.accounts.what_it_worked_unpriced",
+            };
+            let said: Vec<(&str, &str)> =
+                said.iter().map(|(name, value)| (*name, value.as_str())).collect();
+            lines.push(catalogue::say(key, &said));
         }
         if view.standing != Standing::Ready && !view.said.is_empty() {
             lines.push(format!("      {}", view.said));
@@ -647,6 +652,27 @@ mod tests {
         let said = report(&views, 5);
         assert!(said.contains("900"), "the calls are shown: {said}");
         assert!(said.contains("$5.00"), "and what they weigh at list price: {said}");
+    }
+
+    /// **A SENTENCE IS NOT A SUM.** Where no price covers a model, the words
+    /// saying so once stood in the slot the currency and «at list price» are
+    /// written around, and the line read «$no price for one of these models at
+    /// list price» to whoever ran the command.
+    #[test]
+    fn work_nobody_priced_says_so_instead_of_wearing_a_currency_sign() {
+        let views = joined(
+            &[declared("claude", "who@example.test", Access::Yes)],
+            &[],
+            &nothing_left(),
+            &[("who@example.test".to_owned(), worked(4, "a-model-nobody-priced", 2_000))]
+                .into_iter()
+                .collect(),
+            NOW,
+        );
+        let said = report(&views, 5);
+        assert!(said.contains("no price for one of these models"), "{said}");
+        assert!(!said.contains("$no price"), "a sum is never spoken: {said}");
+        assert!(!said.contains("models at list price"), "nor is it priced: {said}");
     }
 
     fn nothing_worked() -> BTreeMap<String, models::work::Worked> {
