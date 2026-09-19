@@ -1,6 +1,6 @@
 {
   "id": "open-the-draft-pull-request",
-  "description": "Step 4 of docs/the-delivery-loop.md: a branch published as a checkpoint. The mandate is one JSON object naming the repo, the branch, the title and the three sections of the text (problem, behaviour, verification), with base and forge_repo optional. The branch head is recorded first and every later step refuses if it moved. The text is written to a file in the first person under the headings Problem, Behaviour and Verification, and refused if it names a model, a session or a tool signature, or quotes anyone. The delivery policy is read from the trusted trunk; `ask` hands the push to a person. The publication gate runs on the commits before the push and on the text before the pull request. Every forge call runs as the account the tree declares in sailor.forgeAs, and the step refuses when none is declared. The run is complete only when the remote branch carries the recorded commit and an open draft pull request reads that same head.",
+  "description": "Step 4 of docs/the-delivery-loop.md: a branch published as a checkpoint. The mandate is one JSON object naming the repo, the branch, the title and the three sections of the text (problem, behaviour, verification), with base and forge_repo optional. The branch head is recorded first and every later step refuses if it moved. The text is written to a file in the first person under the headings Problem, Behaviour and Verification, and refused if it names a model, a session or a tool signature, or quotes anyone. The delivery policy is read from the trusted trunk; `ask` hands the push to a person. A branch rebased since its last checkpoint is pushed with a lease on the ref just read, so a branch that moved under it is refused rather than overwritten. The publication gate runs on the commits before the push and on the text before the pull request, and the private-names check is posted from here, because only this machine holds the list. The run is complete only when the remote branch carries the recorded commit and an open draft pull request reads that same head. Every forge call runs as the account the tree declares in sailor.forgeAs, and the step refuses when none is declared.",
   "inputs": {
     "trigger": {
       "source": "manual",
@@ -47,13 +47,13 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\nprintf '%s' \"$TEXT\" | REQUIRED=\"$REQUIRED\" OPTIONAL=\"$OPTIONAL\" python3 -c '\nimport json, os, re, subprocess, sys\ntry:\n    asked = json.loads(sys.stdin.read())\nexcept ValueError as error:\n    sys.exit(\"the mandate is not one JSON object: %s\" % error)\nif not isinstance(asked, dict):\n    sys.exit(\"the mandate is not one JSON object\")\nrequired = os.environ[\"REQUIRED\"].split()\noptional = json.loads(os.environ[\"OPTIONAL\"])\nmissing = [key for key in required if not str(asked.get(key, \"\")).strip()]\nif missing:\n    sys.exit(\"the mandate does not name: \" + \", \".join(missing))\nunknown = sorted(set(asked) - set(required) - set(optional))\nif unknown:\n    sys.exit(\"the mandate names what this flow does not read: \" + \", \".join(unknown))\nout = {key: str(asked.get(key, default)) for key, default in optional.items()}\nout.update({key: str(asked[key]) for key in required})\nrepo = out[\"repo\"]\nif not os.path.isabs(repo) or subprocess.run([\"git\", \"-C\", repo, \"rev-parse\", \"--git-dir\"], capture_output=True).returncode != 0:\n    sys.exit(\"the repo is not an absolute path to a git tree: \" + repo)\nfor key in (\"branch\", \"base\"):\n    if key in out and not re.fullmatch(r\"[A-Za-z0-9][A-Za-z0-9._/-]*\", out[key]):\n        sys.exit(\"the %s is not a plain branch name: %s\" % (key, out[key]))\nfor key in (\"issue\",):\n    if key in out and out[key] and not re.fullmatch(r\"[0-9]+\", out[key]):\n        sys.exit(\"the issue is not a number: \" + out[key])\nif \"version\" in out and not re.fullmatch(r\"[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?\", out[\"version\"]):\n    sys.exit(\"the version is not MAJOR.MINOR.PATCH: \" + out[\"version\"])\nif \"forge_repo\" in out and out[\"forge_repo\"] and not re.fullmatch(r\"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+\", out[\"forge_repo\"]):\n    sys.exit(\"the forge_repo is not owner/name: \" + out[\"forge_repo\"])\nprint(json.dumps(out))\n'\n",
+          "command": "set -eu\nprintf '%s' \"$TEXT\" | REQUIRED=\"$REQUIRED\" OPTIONAL=\"$OPTIONAL\" python3 -c '\nimport json, os, re, subprocess, sys\ntry:\n    asked = json.loads(sys.stdin.read())\nexcept ValueError as error:\n    sys.exit(\"the mandate is not one JSON object: %s\" % error)\nif not isinstance(asked, dict):\n    sys.exit(\"the mandate is not one JSON object\")\nrequired = os.environ[\"REQUIRED\"].split()\noptional = json.loads(os.environ[\"OPTIONAL\"])\nmissing = [key for key in required if not str(asked.get(key, \"\")).strip()]\nif missing:\n    sys.exit(\"the mandate does not name: \" + \", \".join(missing))\nunknown = sorted(set(asked) - set(required) - set(optional))\nif unknown:\n    sys.exit(\"the mandate names what this flow does not read: \" + \", \".join(unknown))\nout = {key: str(asked.get(key, default)) for key, default in optional.items()}\nout.update({key: str(asked[key]) for key in required})\nrepo = out[\"repo\"]\nif not os.path.isabs(repo) or subprocess.run([\"git\", \"-C\", repo, \"rev-parse\", \"--git-dir\"], capture_output=True).returncode != 0:\n    sys.exit(\"the repo is not an absolute path to a git tree: \" + repo)\nfor key in (\"branch\", \"base\"):\n    if key in out and not re.fullmatch(r\"[A-Za-z0-9][A-Za-z0-9._/-]*\", out[key]):\n        sys.exit(\"the %s is not a plain branch name: %s\" % (key, out[key]))\nfor key in (\"issue\",):\n    if key in out and out[key] and not re.fullmatch(r\"[0-9]+\", out[key]):\n        sys.exit(\"the issue is not a number: \" + out[key])\nif out.get(\"issue\") and out.get(\"no_issue\"):\n    sys.exit(\"the mandate names both an issue and a reason there is none: it is one or the other\")\nif not out.get(\"issue\") and not out.get(\"no_issue\"):\n    sys.exit(\"the mandate names no issue and no reason there is none: say `issue` or say `no_issue`\")\nif \"version\" in out and not re.fullmatch(r\"[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?\", out[\"version\"]):\n    sys.exit(\"the version is not MAJOR.MINOR.PATCH: \" + out[\"version\"])\nif \"forge_repo\" in out and out[\"forge_repo\"] and not re.fullmatch(r\"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+\", out[\"forge_repo\"]):\n    sys.exit(\"the forge_repo is not owner/name: \" + out[\"forge_repo\"])\nprint(json.dumps(out))\n'\n",
           "env": {
             "TEXT": {
               "$from": "/text"
             },
             "REQUIRED": "repo branch title problem behaviour verification",
-            "OPTIONAL": "{\"base\": \"main\", \"forge_repo\": \"\", \"issue\": \"\"}"
+            "OPTIONAL": "{\"base\": \"main\", \"forge_repo\": \"\", \"issue\": \"\", \"no_issue\": \"\"}"
           },
           "timeout_secs": 30,
           "answer_shape": {
@@ -84,6 +84,9 @@
                 "type": "string"
               },
               "issue": {
+                "type": "string"
+              },
+              "no_issue": {
                 "type": "string"
               }
             },
@@ -207,7 +210,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\ncommon=$(cd \"$REPO\" && cd \"$(git rev-parse --git-common-dir)\" && pwd)\noutgoing=\"$common/sailor/outgoing\"\nmkdir -p \"$outgoing\"\nfile=\"$outgoing/pull-request-$(printf '%s' \"$BRANCH\" | shasum -a 256 | cut -c1-16).md\"\nFILE=\"$file\" python3 -c '\nimport json, os, re, sys\nproblem = os.environ[\"PROBLEM\"].strip()\nif os.environ[\"ISSUE\"]:\n    problem += \"\\n\\nCloses #%s.\" % os.environ[\"ISSUE\"]\nsections = [(\"Problem\", problem), (\"Behaviour\", os.environ[\"BEHAVIOUR\"]), (\"Verification\", os.environ[\"VERIFICATION\"])]\nfor heading, text in sections:\n    if not text.strip():\n        sys.exit(\"the %s section is empty\" % heading)\nbody = \"\\n\\n\".join(\"## %s\\n\\n%s\" % (heading, text.strip()) for heading, text in sections) + \"\\n\"\nwhole = os.environ[\"TITLE\"] + \"\\n\" + body\nif not re.search(r\"\\b(I|I am|I have|my|me)\\b\", body):\n    sys.exit(\"the pull request text is not written in the first person\")\nnamed = re.search(r\"(?i)\\b(claude|codex|gemini|gpt(-?[0-9o]+)?|chatgpt|o[134](-mini)?|opus|sonnet|haiku|fable|anthropic|openai|copilot|cursor|windsurf|aider|cline|devin|llama|mistral|mixtral|grok|deepseek|qwen|phi-?[0-9]|bard|palm|llm|language models?|co-authored-by|generated with|session id|session_id|claude-session)\\b\", whole)\nif named:\n    sys.exit(\"the pull request text names a model, a session or a tool signature: \" + named.group(0))\nmachine = r\"(an?\\s+|the\\s+|my\\s+)?(ai|a\\.i\\.|artificial intelligence|coding|automated|language)?\\s*(agents?|assistants?|bots?|models?|llms?|ai|a\\.i\\.)\\b\"\ncredited = (re.search(r\"(?i)\\b(written|generated|created|produced|drafted|authored|made|done|coded|implemented|assisted|helped|built|reviewed)\\s+(by|with|using|via|through)\\s+\" + machine, whole)\n            or re.search(r\"(?i)\\bwith\\s+(the\\s+)?(help|assistance|aid|support)\\s+of\\s+\" + machine, whole)\n            or re.search(r\"(?i)\\b(an?\\s+)?(ai|a\\.i\\.)\\s+(agents?|assistants?|models?|tools?)\\b|\\bcoding\\s+(agents?|assistants?)\\b\", whole))\nif credited:\n    sys.exit(\"the pull request text credits the work to an agent, an assistant or a model: \" + credited.group(0).strip())\nif re.search(r\"(?m)^\\s*>\", body):\n    sys.exit(\"the pull request text quotes someone: a blockquote is not how this text speaks\")\nif re.search(r\"```|~~~|^( {4}|\\t)\\S\", body, re.M):\n    sys.exit(\"the pull request text carries a code block, which is where a quoted prompt hides\")\nif re.search(r\"\\\"[^\\\"\\n]+\\\"|\\u201c[^\\u201d\\n]+\\u201d|\\u00ab[^\\u00bb\\n]+\\u00bb\", whole) or re.search(r\"(?i)\\bprompt(ed|s)?\\b\", whole):\n    sys.exit(\"the pull request text quotes someone or names a prompt\")\ntitle = os.environ[\"TITLE\"].strip()\nif not title or \"\\n\" in title:\n    sys.exit(\"the title is empty or spans more than one line\")\nwith open(os.environ[\"FILE\"], \"w\") as out:\n    out.write(title + \"\\n\\n\" + body)\nprint(json.dumps({\"body_file\": os.environ[\"FILE\"]}))\n'\n",
+          "command": "set -eu\ncommon=$(cd \"$REPO\" && cd \"$(git rev-parse --git-common-dir)\" && pwd)\noutgoing=\"$common/sailor/outgoing\"\nmkdir -p \"$outgoing\"\nfile=\"$outgoing/pull-request-$(printf '%s' \"$BRANCH\" | shasum -a 256 | cut -c1-16).md\"\nFILE=\"$file\" python3 -c '\nimport json, os, re, sys\nproblem = os.environ[\"PROBLEM\"].strip()\nif os.environ[\"ISSUE\"]:\n    problem += \"\\n\\nCloses #%s.\" % os.environ[\"ISSUE\"]\nelse:\n    problem += \"\\n\\nNo issue: %s\" % os.environ[\"NO_ISSUE\"].strip()\nsections = [(\"Problem\", problem), (\"Behaviour\", os.environ[\"BEHAVIOUR\"]), (\"Verification\", os.environ[\"VERIFICATION\"])]\nfor heading, text in sections:\n    if not text.strip():\n        sys.exit(\"the %s section is empty\" % heading)\nbody = \"\\n\\n\".join(\"## %s\\n\\n%s\" % (heading, text.strip()) for heading, text in sections) + \"\\n\"\nwhole = os.environ[\"TITLE\"] + \"\\n\" + body\nif not re.search(r\"\\b(I|I am|I have|my|me)\\b\", body):\n    sys.exit(\"the pull request text is not written in the first person\")\nnamed = re.search(r\"(?i)\\b(claude|codex|gemini|gpt(-?[0-9o]+)?|chatgpt|o[134](-mini)?|opus|sonnet|haiku|fable|anthropic|openai|copilot|cursor|windsurf|aider|cline|devin|llama|mistral|mixtral|grok|deepseek|qwen|phi-?[0-9]|bard|palm|llm|language models?|co-authored-by|generated with|session id|session_id|claude-session)\\b\", whole)\nif named:\n    sys.exit(\"the pull request text names a model, a session or a tool signature: \" + named.group(0))\nmachine = r\"(an?\\s+|the\\s+|my\\s+)?(ai|a\\.i\\.|artificial intelligence|coding|automated|language)?\\s*(agents?|assistants?|bots?|models?|llms?|ai|a\\.i\\.)\\b\"\ncredited = (re.search(r\"(?i)\\b(written|generated|created|produced|drafted|authored|made|done|coded|implemented|assisted|helped|built|reviewed)\\s+(by|with|using|via|through)\\s+\" + machine, whole)\n            or re.search(r\"(?i)\\bwith\\s+(the\\s+)?(help|assistance|aid|support)\\s+of\\s+\" + machine, whole)\n            or re.search(r\"(?i)\\b(an?\\s+)?(ai|a\\.i\\.)\\s+(agents?|assistants?|models?|tools?)\\b|\\bcoding\\s+(agents?|assistants?)\\b\", whole))\nif credited:\n    sys.exit(\"the pull request text credits the work to an agent, an assistant or a model: \" + credited.group(0).strip())\nif re.search(r\"(?m)^\\s*>\", body):\n    sys.exit(\"the pull request text quotes someone: a blockquote is not how this text speaks\")\nif re.search(r\"```|~~~|^( {4}|\\t)\\S\", body, re.M):\n    sys.exit(\"the pull request text carries a code block, which is where a quoted prompt hides\")\nif re.search(r\"\\\"[^\\\"\\n]+\\\"|\\u201c[^\\u201d\\n]+\\u201d|\\u00ab[^\\u00bb\\n]+\\u00bb\", whole) or re.search(r\"(?i)\\bprompt(ed|s)?\\b\", whole):\n    sys.exit(\"the pull request text quotes someone or names a prompt\")\ntitle = os.environ[\"TITLE\"].strip()\nif not title or \"\\n\" in title:\n    sys.exit(\"the title is empty or spans more than one line\")\nwith open(os.environ[\"FILE\"], \"w\") as out:\n    out.write(title + \"\\n\\n\" + body)\nprint(json.dumps({\"body_file\": os.environ[\"FILE\"]}))\n'\n",
           "env": {
             "REPO": {
               "$from": "/the_request/answer/repo"
@@ -229,6 +232,9 @@
             },
             "ISSUE": {
               "$from": "/the_request/answer/issue"
+            },
+            "NO_ISSUE": {
+              "$from": "/the_request/answer/no_issue"
             }
           },
           "timeout_secs": 30,
@@ -477,7 +483,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\n# git ls-remote's own exit is checked before its answer is read: a lost transport is not an empty ref.\nread_remote_ref() {\n    listed=$(git -C \"$REPO\" ls-remote origin \"$1\") || { code=$?; echo \"cannot read $1 on origin: git ls-remote exited $code, so nothing is decided on an empty answer\" >&2; exit 2; }\n    printf '%s\\n' \"$listed\" | awk -v ref=\"$1\" '$2 == ref { print $1 }'\n}\nurl=$(git -C \"$REPO\" remote get-url origin) || { echo \"the tree has no origin remote\" >&2; exit 1; }\nset -- -C \"$REPO\"\ncase \"$url\" in\n    /*|file://*) ;;\n    http://*|https://*)\n        push_as=$(git -C \"$REPO\" config --get sailor.pushAs) || { echo \"sailor.pushAs is not declared on this tree: refusing to push with the machine's own credentials\" >&2; exit 1; }\n        [ -n \"$push_as\" ] || { echo \"sailor.pushAs is empty on this tree: refusing to push with the machine's own credentials\" >&2; exit 1; }\n        helper='!f() { printf \"%s\\\\n\" username=x-access-token; printf \"password=%s\\\\n\" \"$(env -u GH_TOKEN -u GITHUB_TOKEN -u GH_REPO gh auth token --user \"'\"$push_as\"'\")\"; }; f'\n        set -- -C \"$REPO\" -c credential.helper= -c \"credential.helper=$helper\" ;;\n    *) echo \"origin is $url: a push over it cannot be bound to sailor.pushAs, so this flow refuses it\" >&2; exit 1 ;;\nesac\nremote=$(read_remote_ref \"refs/heads/$BRANCH\")\nif [ \"$remote\" != \"$HEAD_COMMIT\" ]; then\n    git \"$@\" push origin \"$HEAD_COMMIT:refs/heads/$BRANCH\" >&2\nfi\nprintf '{\"pushed\":\"%s\"}' \"$HEAD_COMMIT\"\n",
+          "command": "set -eu\n# git ls-remote's own exit is checked before its answer is read: a lost transport is not an empty ref.\nread_remote_ref() {\n    listed=$(git -C \"$REPO\" ls-remote origin \"$1\") || { code=$?; echo \"cannot read $1 on origin: git ls-remote exited $code, so nothing is decided on an empty answer\" >&2; exit 2; }\n    printf '%s\\n' \"$listed\" | awk -v ref=\"$1\" '$2 == ref { print $1 }'\n}\nurl=$(git -C \"$REPO\" remote get-url origin) || { echo \"the tree has no origin remote\" >&2; exit 1; }\nset -- -C \"$REPO\"\ncase \"$url\" in\n    /*|file://*) ;;\n    http://*|https://*)\n        push_as=$(git -C \"$REPO\" config --get sailor.pushAs) || { echo \"sailor.pushAs is not declared on this tree: refusing to push with the machine's own credentials\" >&2; exit 1; }\n        [ -n \"$push_as\" ] || { echo \"sailor.pushAs is empty on this tree: refusing to push with the machine's own credentials\" >&2; exit 1; }\n        helper='!f() { printf \"%s\\\\n\" username=x-access-token; printf \"password=%s\\\\n\" \"$(env -u GH_TOKEN -u GITHUB_TOKEN -u GH_REPO gh auth token --user \"'\"$push_as\"'\")\"; }; f'\n        set -- -C \"$REPO\" -c credential.helper= -c \"credential.helper=$helper\" ;;\n    *) echo \"origin is $url: a push over it cannot be bound to sailor.pushAs, so this flow refuses it\" >&2; exit 1 ;;\nesac\nremote=$(read_remote_ref \"refs/heads/$BRANCH\")\nif [ \"$remote\" != \"$HEAD_COMMIT\" ]; then\n    if [ -n \"$remote\" ]; then\n        # A branch amended or rebased since its last checkpoint is not a\n        # fast-forward, and a plain push dies on it. The lease is the ref this\n        # step has just read: a branch that moved under it is somebody else's,\n        # and the push is refused, never forced.\n        git \"$@\" push --force-with-lease=\"refs/heads/$BRANCH:$remote\" origin \"$HEAD_COMMIT:refs/heads/$BRANCH\" >&2\n    else\n        git \"$@\" push origin \"$HEAD_COMMIT:refs/heads/$BRANCH\" >&2\n    fi\nfi\nprintf '{\"pushed\":\"%s\"}' \"$HEAD_COMMIT\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/answer/repo"
@@ -557,6 +563,55 @@
           "type": "any"
         },
         "required": true
+      },
+      {
+        "id": "attest",
+        "deps": [
+          "the_request",
+          "the_checkpoint",
+          "remote_carries"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "needs": [
+          "gh",
+          "python3"
+        ],
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        },
+        "with": {
+          "command": "set -eu\n# The list of private names lives only on this machine, so the forge cannot post\n# this check for itself. Until it is posted the request stays blocked and the\n# host says nothing about why.\ncd \"$REPO\"\ngit -C \"$REPO\" fetch --quiet origin\n\"$REPO/scripts/attest-private-names.sh\" \"$COMMIT\" >&2\nprintf '{\"attested\":\"%s\",\"posted\":true}' \"$COMMIT\"\n",
+          "env": {
+            "REPO": {
+              "$from": "/the_request/answer/repo"
+            },
+            "COMMIT": {
+              "$from": "/the_checkpoint/answer/head"
+            }
+          },
+          "timeout_secs": 600,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "attested": {
+                "type": "string"
+              },
+              "posted": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "attested",
+              "posted"
+            ],
+            "allow_extra": false
+          }
+        }
       },
       {
         "id": "text_gate",

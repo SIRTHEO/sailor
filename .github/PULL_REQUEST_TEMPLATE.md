@@ -2,7 +2,11 @@
 
 ## Problem
 
-<!-- The defect, the missing behaviour, or the decision this implements, in your own words, and why this is the right repair. Link the issue if there is one. -->
+<!-- The defect, the missing behaviour, or the decision this implements, in your own words, and why this is the right repair. -->
+
+Closes #
+
+<!-- The issue this answers, so merging closes it. If it answers no issue, write «No issue: <why this was not worth one>» instead — a change nobody asked for in writing is worth a line saying so. If it advances an issue without closing it, write «Relates to #N» and say what is left. -->
 
 ## Behaviour
 

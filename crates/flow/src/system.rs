@@ -52,6 +52,18 @@ pub const FLOWS: &[(&str, &str)] = &[
         "what-this-machine-has",
         include_str!("../system/what-this-machine-has.flow.json"),
     ),
+    (
+        "price-every-call",
+        include_str!("../system/price-every-call.flow.json"),
+    ),
+    (
+        "measure-the-baseline",
+        include_str!("../system/measure-the-baseline.flow.json"),
+    ),
+    (
+        "run-one-bench-task",
+        include_str!("../system/run-one-bench-task.flow.json"),
+    ),
     // A hard question taken to a strong model with the material already in
     // hand. The refusal of an empty brief is a step, not a comment: the same
     // engine on the same question spent its whole window exploring and
@@ -125,6 +137,10 @@ pub const FLOWS: &[(&str, &str)] = &[
         "take-the-next-fault",
         include_str!("../system/take-the-next-fault.flow.json"),
     ),
+    (
+        "judge-a-change",
+        include_str!("../system/judge-a-change.flow.json"),
+    ),
     // The ordinary gesture that reaches the two actions naming everything
     // else's dead powers — without this flow, they were their own example.
     (
@@ -174,6 +190,14 @@ pub const FLOWS: &[(&str, &str)] = &[
     (
         "empty-a-session-that-handed-on",
         include_str!("../system/empty-a-session-that-handed-on.flow.json"),
+    ),
+    (
+        "build-the-bench",
+        include_str!("../system/build-the-bench.flow.json"),
+    ),
+    (
+        "validate-a-bench-task",
+        include_str!("../system/validate-a-bench-task.flow.json"),
     ),
 ];
 
@@ -887,13 +911,24 @@ static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 /// half-written file — `rename` on the same filesystem is indivisible, a direct
 /// `write` on the target is not.
 fn write_atomically(target: &Path, contents: &[u8]) -> Result<(), String> {
+    write_atomically_with(target, contents, &|path, bytes| fs::write(path, bytes))
+}
+
+/// A write that fails halfway can leave the temporary file created and partly
+/// filled: it goes, as it does when the rename fails.
+fn write_atomically_with(
+    target: &Path,
+    contents: &[u8],
+    write: &dyn Fn(&Path, &[u8]) -> io::Result<()>,
+) -> Result<(), String> {
     let temp_path = temp_path_for(target);
-    fs::write(&temp_path, contents).map_err(|error| {
-        format!(
+    if let Err(error) = write(&temp_path, contents) {
+        let _ = fs::remove_file(&temp_path);
+        return Err(format!(
             "cannot write the temporary file {}: {error}",
             temp_path.display()
-        )
-    })?;
+        ));
+    }
     fs::rename(&temp_path, target).map_err(|error| {
         let _ = fs::remove_file(&temp_path);
         format!("cannot replace {}: {error}", target.display())
@@ -912,6 +947,25 @@ fn temp_path_for(target: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_write_that_fails_halfway_leaves_no_temporary_file_and_no_flow() {
+        let dir = std::env::temp_dir().join(format!("sailor-half-write-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("a scratch directory");
+        let target = dir.join("half.flow.json");
+
+        let refused = write_atomically_with(&target, b"{\"id\": \"half\"}", &|path, bytes| {
+            fs::write(path, &bytes[..bytes.len() / 2])?;
+            Err(io::Error::other("the disk filled up"))
+        })
+        .expect_err("the write failed");
+
+        let left: Vec<_> = fs::read_dir(&dir).expect("readable").flatten().map(|entry| entry.file_name()).collect();
+        let _ = fs::remove_dir_all(&dir);
+        assert!(refused.contains("the disk filled up"), "{refused}");
+        assert!(left.is_empty(), "left behind: {left:?}");
+    }
 
     /// **A FOLDER THAT REFUSED THE READING IS NOT A FOLDER WITH NO FLOWS**, and
     /// one nobody made is: only the first is a trouble to say.

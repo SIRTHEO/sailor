@@ -157,35 +157,29 @@ pub(crate) fn record_the_call(
     }
     let reading = spent.reading;
     let price_list = current_price_list();
-    // The link to the price list runs through the name the engine itself states,
-    // never a guess: a presumed model would be an invented number wearing the
-    // face of a measure, believed for ever by whoever reads it.
-    let entry = reading
-        .model
-        .as_deref()
-        .and_then(|name| price_list.find(name));
-    let prices = entry
-        .map(models::pricing::Price::micros)
-        .unwrap_or_default();
-    let priced = models::pricing::cost_micros(
-        models::pricing::TokenCounts {
-            input: reading.input_tokens,
-            output: reading.output_tokens,
-            cached: reading.cached_tokens,
-            cache_write: reading.cache_write_tokens,
-            cache_write_long: reading.cache_write_long_tokens,
+    // One rule book for the row written now and for the ledger repriced later:
+    // the same facts give the same figure, or the two would drift apart.
+    let priced = models::pricing::equivalent_cost(
+        &models::pricing::CallFacts {
+            cli,
+            model: reading.model.as_deref(),
+            counts: models::pricing::TokenCounts {
+                input: reading.input_tokens,
+                output: reading.output_tokens,
+                cached: reading.cached_tokens,
+                cache_write: reading.cache_write_tokens,
+                cache_write_long: reading.cache_write_long_tokens,
+            },
+            models_named: reading.models_named,
+            error_type: spent.error_type,
+            started_at: spent.started_at,
+            ended_at: Some(spent.ended_at),
+            declared_cost: reading.declared_cost,
         },
-        prices,
+        &price_list,
     );
-    // **A COUNT OF ONE MODEL IS NOT THE COST OF A CALL THAT CROSSED SEVERAL.**
-    // The engine states each model's tokens apart, this row prices the one the
-    // engine put first, and the rest go to a price of their own that no line of
-    // this row can carry. Unknown, never a third of the truth: see fault 121.
-    let cost_micros = if answered_nothing(spent.error_type, &reading) {
-        Some(0)
-    } else {
-        reading.counts_the_whole_call().then_some(priced).flatten()
-    };
+    let prices = priced.prices;
+    let cost_micros = priced.cost_micros;
     let sequence = CALLS_SO_FAR.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let written = ModelCallRecord {
         call_id: format!(
@@ -241,21 +235,6 @@ pub(crate) fn record_the_call(
         role_resolved_to: chain.role_resolved_to.clone(),
     };
     let _ = record.ledger.record_model_call(&written);
-}
-
-/// A call the engine refused before generating anything — a spent quota, a
-/// model this account may not ask for, a binary that would not start — with
-/// no token or cost figure to its name. It spent nothing, and is counted as
-/// nothing rather than left unknown: one unknown call makes every later
-/// admission under a cap impossible.
-fn answered_nothing(error_type: Option<&'static str>, reading: &Reading) -> bool {
-    matches!(
-        error_type,
-        Some("quota_exhausted" | "exhausted" | "spawn_failed")
-    ) && reading.input_tokens.is_none()
-        && reading.output_tokens.is_none()
-        && reading.total_tokens.is_none()
-        && reading.declared_cost.is_none()
 }
 
 #[cfg(test)]
@@ -1270,8 +1249,8 @@ printf '{"result":"the quota page in the tree explains the weekly limit","model"
         fn ask_recipe(&self, _id: &str) -> Option<AskRecipe> {
             Some(declaring_recipe())
         }
-        fn fuel(&self, id: &str) -> Vec<models::fuel::Fuel> {
-            self.fuels.get(id).cloned().into_iter().collect()
+        fn fuel(&self, id: &str) -> Result<Vec<models::fuel::Fuel>, String> {
+            Ok(self.fuels.get(id).cloned().into_iter().collect())
         }
     }
 

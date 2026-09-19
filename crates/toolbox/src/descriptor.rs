@@ -543,6 +543,14 @@ pub struct Quota {
     /// is no good. **WHAT IS NOT NAMED HERE NEVER MARKS AN ACCOUNT SHUT.**
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dead_when: Vec<String>,
+    /// The path of keys down to the access token's own expiry, unix
+    /// milliseconds; empty where the provider's credentials carry none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub access_expires_pointer: Vec<String>,
+    /// The same for the refresh token: an expired access token beside an
+    /// unexpired refresh one is not a refusal to authenticate.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub refresh_expires_pointer: Vec<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub note: String,
 }

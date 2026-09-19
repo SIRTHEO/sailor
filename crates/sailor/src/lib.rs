@@ -30,6 +30,7 @@ pub mod faults_cmd;
 pub mod flow_cmd;
 pub mod inventory_cmd;
 pub mod machine_cmd;
+pub mod space_cmd;
 pub mod memory_cmd;
 pub mod models_cmd;
 pub mod notes_cmd;
@@ -185,6 +186,12 @@ pub const COMMANDS: &[Command] = &[
         description_key: "cli.command.machine",
         usage: machine_cmd::USAGE,
         run: machine_cmd::run,
+    },
+    Command {
+        name: "space",
+        description_key: "cli.command.space",
+        usage: space_cmd::USAGE,
+        run: space_cmd::run,
     },
     Command {
         name: "ratchet",

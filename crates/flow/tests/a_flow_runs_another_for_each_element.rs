@@ -446,6 +446,29 @@ fn children_run_together_up_to_the_front_width_and_no_wider() {
     assert_eq!(bench.leaf.seen().len(), AT_ONCE + 2, "all of them ran");
 }
 
+/// A step whose children each build a tree asks for one at a time, and gets
+/// exactly that: the peak of children alive together is one.
+#[test]
+fn children_run_one_at_a_time_when_the_step_asks_for_one() {
+    let scratch = Scratch::new("serial");
+    scratch.put(LEAF);
+    let bench = Bench::new(scratch.place(), Leaf::new(None));
+    let items: Vec<Value> = (0..3).map(|n| json!({ "n": n })).collect();
+    let graph = Graph::new(vec![step(
+        "ripeti",
+        &[],
+        FOR_EACH_ACTION,
+        Some(json!({ "flow": "foglia", "items": items, "at_once": 1 })),
+    )])
+    .expect("valid graph");
+
+    let execution = run(&bench, graph, json!({}));
+
+    assert_eq!(execution.decisions.last(), Some(&Decision::Complete));
+    assert_eq!(bench.leaf.most_alive.load(Ordering::SeqCst), 1, "one child alive at a time");
+    assert_eq!(bench.leaf.seen().len(), 3, "all of them ran");
+}
+
 /// The step names the fields it does not know, which is how `flow check`
 /// finds a typo before it costs a paid call.
 #[test]

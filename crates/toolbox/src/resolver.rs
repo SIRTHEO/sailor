@@ -255,24 +255,27 @@ impl actions::ToolResolver for Tools {
         spend_ceiling_option_of(&loaded.descriptor)
     }
 
-    fn fuel(&self, id: &str) -> Vec<models::fuel::Fuel> {
+    fn fuel(&self, id: &str) -> Result<Vec<models::fuel::Fuel>, String> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|since| since.as_secs() as i64)
             .unwrap_or(0);
-        self.catalog
-            .live()
-            .into_iter()
-            .find(|loaded| loaded.descriptor.id == id)
-            .and_then(|loaded| crate::quota::read_one(&loaded.descriptor, &self.machine, now))
-            .and_then(|reading| reading.result.ok())
-            .map(|windows| {
-                windows
-                    .iter()
-                    .map(|remaining| models::fuel::Fuel::from_remaining(remaining, now))
-                    .collect()
-            })
-            .unwrap_or_default()
+        let Some(loaded) = self.catalog.live().into_iter().find(|loaded| loaded.descriptor.id == id)
+        else {
+            return Ok(Vec::new());
+        };
+        match crate::quota::read_one(&loaded.descriptor, &self.machine, now) {
+            None => Ok(Vec::new()),
+            Some(reading) => reading
+                .result
+                .map(|windows| {
+                    windows
+                        .iter()
+                        .map(|remaining| models::fuel::Fuel::from_remaining(remaining, now))
+                        .collect()
+                })
+                .map_err(|refusal| refusal.to_string()),
+        }
     }
 
     fn data_pact(&self, id: &str) -> models::pact::DataPact {

@@ -1,0 +1,644 @@
+{
+  "id": "run-one-bench-task",
+  "description": "ONE TASK OF THE FROZEN BENCHMARK, ONE RUN OF THE FLOW UNDER MEASUREMENT, ONE VERDICT. The root step restates the item it was handed, since a child run receives its item and nothing else; a clone is cut at the task's base commit under target/bench/baseline with no branch, tag or reflog left in it, so the history the agent can walk ends at the base and the fix is not one `git log --all` away; the flow under measurement runs there with the task's prompt as its whole mandate, through its own `sailor flow run`, so its run is a run of the ledger like any other; the deterministic judge reads the tree against the hidden tests; the run's equivalent cost, turns and wall time are read from the ledger; and the whole reading lands in the store under `bench-runs`. The diff the flow left is saved beside the trees before the tree is removed, so a rejected change can still be looked at. Nothing here is a verdict of an engine: the judge compiles and runs tests, and a run that never started is recorded as such rather than stopping the batch behind it.",
+  "graph": {
+    "steps": [
+      {
+        "id": "item",
+        "deps": [],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "python3 -c 'import json, os; print(json.dumps({\"task_id\": os.environ.get(\"TASK_ID\", \"\"), \"task_file\": os.environ.get(\"TASK_FILE\", \"\"), \"repo\": os.environ.get(\"REPO\", \"\"), \"base_commit\": os.environ.get(\"BASE_COMMIT\", \"\"), \"prompt\": os.environ.get(\"PROMPT\", \"\"), \"set\": os.environ.get(\"SET\", \"\"), \"flow\": os.environ.get(\"FLOW\", \"\"), \"sailor\": os.environ.get(\"SAILOR\", \"\"), \"run_index\": int(os.environ.get(\"RUN_INDEX\", \"1\") or 1)}))'",
+          "env": {
+            "TASK_ID": {
+              "$from": "/task_id"
+            },
+            "TASK_FILE": {
+              "$from": "/task_file"
+            },
+            "REPO": {
+              "$from": "/repo"
+            },
+            "BASE_COMMIT": {
+              "$from": "/base_commit"
+            },
+            "PROMPT": {
+              "$from": "/prompt"
+            },
+            "SET": {
+              "$from": "/set"
+            },
+            "FLOW": {
+              "$from": "/flow"
+            },
+            "SAILOR": {
+              "$from": "/sailor"
+            },
+            "RUN_INDEX": {
+              "$json": "/run_index"
+            }
+          },
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "task_id": {
+                "type": "string"
+              },
+              "task_file": {
+                "type": "string"
+              },
+              "repo": {
+                "type": "string"
+              },
+              "base_commit": {
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "set": {
+                "type": "string"
+              },
+              "flow": {
+                "type": "string"
+              },
+              "sailor": {
+                "type": "string"
+              },
+              "run_index": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "task_id",
+              "task_file",
+              "repo",
+              "base_commit",
+              "prompt",
+              "set",
+              "flow",
+              "sailor",
+              "run_index"
+            ],
+            "allow_extra": false
+          },
+          "timeout_secs": 60
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "command",
+            "timeout_secs"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "passed"
+              ]
+            },
+            "answer": {
+              "type": "object",
+              "properties": {
+                "task_id": {
+                  "type": "string"
+                },
+                "task_file": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "base_commit": {
+                  "type": "string"
+                },
+                "prompt": {
+                  "type": "string"
+                },
+                "set": {
+                  "type": "string"
+                },
+                "flow": {
+                  "type": "string"
+                },
+                "sailor": {
+                  "type": "string"
+                },
+                "run_index": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "task_id",
+                "task_file",
+                "repo",
+                "base_commit",
+                "prompt",
+                "set",
+                "flow",
+                "sailor",
+                "run_index"
+              ],
+              "allow_extra": false
+            }
+          },
+          "required": [
+            "status",
+            "answer"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "cut",
+        "deps": [
+          "item"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -eu\nroot=\"$REPO/target/bench/baseline\"\ntree=\"$root/$TASK-$RUN\"\nmkdir -p \"$root\"\nrm -rf \"$tree\"\ngit clone -q --shared --no-checkout \"$REPO\" \"$tree\"\ngit -C \"$tree\" checkout -q --detach \"$BASE\"\ngit -C \"$tree\" for-each-ref --format='%(refname)' | while IFS= read -r ref; do git -C \"$tree\" update-ref -d \"$ref\"; done\ngit -C \"$tree\" remote remove origin >/dev/null 2>&1 || true\ngit -C \"$tree\" reflog expire --expire=now --all\nprintf '{\"tree\":\"%s\",\"logs\":\"%s\"}' \"$tree\" \"$root\"",
+          "env": {
+            "REPO": {
+              "$from": "/answer/repo"
+            },
+            "TASK": {
+              "$from": "/answer/task_id"
+            },
+            "RUN": {
+              "$json": "/answer/run_index"
+            },
+            "BASE": {
+              "$from": "/answer/base_commit"
+            }
+          },
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "tree": {
+                "type": "string"
+              },
+              "logs": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "tree",
+              "logs"
+            ],
+            "allow_extra": false
+          },
+          "timeout_secs": 300
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "command",
+            "timeout_secs"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "passed"
+              ]
+            },
+            "answer": {
+              "type": "object",
+              "properties": {
+                "tree": {
+                  "type": "string"
+                },
+                "logs": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tree",
+                "logs"
+              ],
+              "allow_extra": false
+            }
+          },
+          "required": [
+            "status",
+            "answer"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "develop",
+        "deps": [
+          "item",
+          "cut"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "workdir": {
+            "$from": "/cut/answer/tree"
+          },
+          "command": "set +e\nlog=\"$LOGS/$TASK-$RUN.develop.log\"\nout=$(\"${SAILOR:-sailor}\" flow run \"${FLOW:-sviluppa-sailor}\" \"$PROMPT\" 2>\"$log\")\ncode=$?\nprintf '%s\\n' \"$out\" >> \"$log\"\nrun=$({ printf '%s\\n' \"$out\"; cat \"$log\"; } | sed -n 's/^sailor flow: .*; run \\([a-z0-9-]*-[0-9][0-9]*\\)$/\\1/p; s/^flow [a-z0-9-]* complete; run \\([a-z0-9-]*-[0-9][0-9]*\\)$/\\1/p' | tail -1)\nif [ \"$code\" = 0 ]; then status=complete; else status=failed; fi\nprintf '{\"run_id\":\"%s\",\"status\":\"%s\",\"exit\":%d}' \"$run\" \"$status\" \"$code\"",
+          "env": {
+            "SAILOR": {
+              "$from": "/item/answer/sailor"
+            },
+            "FLOW": {
+              "$from": "/item/answer/flow"
+            },
+            "PROMPT": {
+              "$from": "/item/answer/prompt"
+            },
+            "TASK": {
+              "$from": "/item/answer/task_id"
+            },
+            "RUN": {
+              "$json": "/item/answer/run_index"
+            },
+            "LOGS": {
+              "$from": "/cut/answer/logs"
+            },
+            "CARGO_TARGET_DIR": {
+              "$join": [
+                {
+                  "$from": "/item/answer/repo"
+                },
+                "/target/bench/shared-target"
+              ]
+            }
+          },
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "run_id": {
+                "type": "string"
+              },
+              "status": {
+                "type": "one_of",
+                "values": [
+                  "complete",
+                  "failed"
+                ]
+              },
+              "exit": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "run_id",
+              "status",
+              "exit"
+            ],
+            "allow_extra": false
+          },
+          "timeout_secs": 10800
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "command",
+            "timeout_secs"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "passed"
+              ]
+            },
+            "answer": {
+              "type": "object",
+              "properties": {
+                "run_id": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "one_of",
+                  "values": [
+                    "complete",
+                    "failed"
+                  ]
+                },
+                "exit": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "run_id",
+                "status",
+                "exit"
+              ],
+              "allow_extra": false
+            }
+          },
+          "required": [
+            "status",
+            "answer"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "judge",
+        "deps": [
+          "item",
+          "cut",
+          "develop"
+        ],
+        "action": "judge_change",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tree": {
+            "$from": "/cut/answer/tree"
+          },
+          "task_file": {
+            "$from": "/item/answer/task_file"
+          },
+          "run_status": {
+            "$from": "/develop/answer/status"
+          },
+          "target_dir": {
+            "$join": [
+              {
+                "$from": "/item/answer/repo"
+              },
+              "/target/bench/shared-target"
+            ]
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "accepted": {
+              "type": "boolean"
+            },
+            "false_done": {
+              "type": "boolean"
+            },
+            "failure_class": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "accepted",
+            "false_done",
+            "failure_class"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "reading",
+        "deps": [
+          "develop"
+        ],
+        "action": "run_reading",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "run_id": {
+            "$from": "/answer/run_id"
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "run_id": {
+              "type": "string"
+            },
+            "found": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "run_id",
+            "found"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "record",
+        "deps": [
+          "item",
+          "develop",
+          "judge",
+          "reading"
+        ],
+        "action": "store_write",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "collection": "bench-runs",
+          "key": {
+            "$join": [
+              {
+                "$from": "/item/answer/set"
+              },
+              "/",
+              {
+                "$from": "/item/answer/task_id"
+              },
+              "-",
+              {
+                "$json": "/item/answer/run_index"
+              }
+            ]
+          },
+          "written_by": "run-one-bench-task",
+          "value": {
+            "set": {
+              "$from": "/item/answer/set"
+            },
+            "task_id": {
+              "$from": "/item/answer/task_id"
+            },
+            "run_index": {
+              "$from": "/item/answer/run_index"
+            },
+            "base_commit": {
+              "$from": "/item/answer/base_commit"
+            },
+            "flow": {
+              "$from": "/item/answer/flow"
+            },
+            "develop": {
+              "$from": "/develop/answer"
+            },
+            "judge": {
+              "$from": "/judge"
+            },
+            "reading": {
+              "$from": "/reading"
+            }
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "collection": {
+              "type": "string"
+            },
+            "written_by": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "collection",
+            "written_by"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "collection": {
+              "type": "string"
+            },
+            "key": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "collection",
+            "key"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "put_away",
+        "deps": [
+          "item",
+          "cut",
+          "record"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -eu\ngit -C \"$TREE\" add --intent-to-add -A >/dev/null 2>&1 || true\ngit -C \"$TREE\" diff \"$BASE\" > \"$LOGS/$TASK-$RUN.diff\" || true\nrm -rf \"$TREE\"",
+          "env": {
+            "REPO": {
+              "$from": "/item/answer/repo"
+            },
+            "TREE": {
+              "$from": "/cut/answer/tree"
+            },
+            "LOGS": {
+              "$from": "/cut/answer/logs"
+            },
+            "BASE": {
+              "$from": "/item/answer/base_commit"
+            },
+            "TASK": {
+              "$from": "/item/answer/task_id"
+            },
+            "RUN": {
+              "$json": "/item/answer/run_index"
+            }
+          },
+          "timeout_secs": 300
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "command",
+            "timeout_secs"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "passed"
+              ]
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "allow_extra": false
+        }
+      }
+    ]
+  },
+  "inputs": {
+    "item": {
+      "task_id": "",
+      "task_file": "",
+      "repo": ".",
+      "base_commit": "",
+      "prompt": "",
+      "run_index": 1,
+      "set": "stage-1",
+      "flow": "sviluppa-sailor",
+      "sailor": "sailor"
+    }
+  }
+}

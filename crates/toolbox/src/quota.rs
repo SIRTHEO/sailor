@@ -64,6 +64,8 @@ pub fn channel_of(descriptor: &Descriptor, machine: &Machine) -> Option<Result<O
             url: quota.url.clone(),
             headers: quota.headers.clone(),
             held_by: spoken_for(&quota.held_by, &machine.expand(&quota.credentials)),
+            access_expires_pointer: quota.access_expires_pointer.clone(),
+            refresh_expires_pointer: quota.refresh_expires_pointer.clone(),
             shape: words_of(quota),
         }),
         other => Err(format!(
