@@ -8,7 +8,7 @@ use std::fmt::Write as _;
 use ui::gather::FlowSource;
 
 use super::cap_and_schedule::WHAT_THE_CAP_DOES_NOT_PROMISE_KEY;
-use super::cost::{in_units, models_asked_by, models_seen_by, what_is_priced};
+use super::cost::{in_units, models_asked_by, models_seen_by, runs_of, what_is_priced};
 use super::engines::{engine_lines_into, login_states_into};
 use super::extensions::{extensions_of_this_machine_into, undeclared_extensions_named_in_text};
 use super::hazards::{
@@ -124,6 +124,7 @@ fn check_flow_report(
         &models_asked_by(&flow, tools),
         models_seen_by(&flow.id).as_ref(),
         flow.spend_cap_micros,
+        runs_of(&flow.id),
     ));
     // The inventory is this machine's, so it is read here for the same reason
     // as the price list: a test feeds `check_report` a scratch one instead.
