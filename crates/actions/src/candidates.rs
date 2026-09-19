@@ -27,7 +27,7 @@ impl ExternalEngineAction {
         tools: &dyn ToolResolver,
         spec: &EngineSpec,
         chain: &[String],
-    ) -> (Vec<String>, Option<models::fuel::Preference>) {
+    ) -> (Vec<String>, Option<models::fuel::Preference>, Vec<(String, String)>) {
         let mut ordered: Vec<String> = self.preferred_for(spec);
         for id in chain {
             if !ordered.contains(id) {
@@ -35,9 +35,20 @@ impl ExternalEngineAction {
             }
         }
         if spec.prefer.as_deref() != Some(FUEL) {
-            return (ordered, None);
+            return (ordered, None, Vec::new());
         }
-        let fuels: Vec<models::fuel::Fuel> = ordered.iter().flat_map(|id| tools.fuel(id)).collect();
+        // `Err` here is a fuel channel that exists and could not be read just
+        // now, not one the descriptor declares absent — fault 139: the two
+        // used to collapse into the same empty list, and `prefer: fuel` left
+        // the engine out of the comparison with nobody told why.
+        let mut fuels: Vec<models::fuel::Fuel> = Vec::new();
+        let mut unreadable: Vec<(String, String)> = Vec::new();
+        for id in &ordered {
+            match tools.fuel(id) {
+                Ok(mut found) => fuels.append(&mut found),
+                Err(why) => unreadable.push((id.clone(), why)),
+            }
+        }
         let preferred = models::fuel::prefer(&fuels);
         if let Some(preference) = &preferred {
             if let Some(at) = ordered.iter().position(|id| *id == preference.engine) {
@@ -45,7 +56,7 @@ impl ExternalEngineAction {
                 ordered.insert(0, first);
             }
         }
-        (ordered, preferred)
+        (ordered, preferred, unreadable)
     }
 
     /// The engines the strengths table puts ahead of this step's own chain:
@@ -156,7 +167,7 @@ impl ExternalEngineAction {
                         format!("`prefer` knows «{FUEL}» and «{AS_WRITTEN}», not «{other}»"),
                     ));
                 }
-                let (ids, preferred) = self.ordered(tools.as_ref(), spec, choice.ids());
+                let (ids, preferred, unreadable_fuel) = self.ordered(tools.as_ref(), spec, choice.ids());
                 if ids.is_empty() {
                     return Err(ActionError::new(
                         "invalid_input",
@@ -251,7 +262,19 @@ impl ExternalEngineAction {
                             // elsewhere: `git` and `cargo` declare no `ask`,
                             // and their runs are not model calls.
                             can_be_asked: declared.is_some(),
-                            why: preferred.as_ref().filter(|p| p.engine == *id).map(|p| p.why.clone()),
+                            why: preferred
+                                .as_ref()
+                                .filter(|p| p.engine == *id)
+                                .map(|p| p.why.clone())
+                                .or_else(|| {
+                                    unreadable_fuel.iter().find(|(named, _)| named == id).map(
+                                        |(_, reason)| {
+                                            format!(
+                                                "its fuel channel could not be read just now: {reason}"
+                                            )
+                                        },
+                                    )
+                                }),
                             exhausted_when: declared
                                 .as_ref()
                                 .map(|recipe| recipe.exhausted_when.clone())
@@ -345,7 +368,19 @@ impl ExternalEngineAction {
                             // We are inside the branch that found an `ask`
                             // recipe: this tool is an engine by definition.
                             can_be_asked: true,
-                            why: preferred.as_ref().filter(|p| p.engine == *id).map(|p| p.why.clone()),
+                            why: preferred
+                                .as_ref()
+                                .filter(|p| p.engine == *id)
+                                .map(|p| p.why.clone())
+                                .or_else(|| {
+                                    unreadable_fuel.iter().find(|(named, _)| named == id).map(
+                                        |(_, reason)| {
+                                            format!(
+                                                "its fuel channel could not be read just now: {reason}"
+                                            )
+                                        },
+                                    )
+                                }),
                         }),
                         None => refused.push(Refused {
                             id: id.clone(),
@@ -1240,5 +1275,50 @@ mod tests {
         let input = json!({"timeout_secs": 5});
         let shared = SharedState::new();
         assert!(action.execute(&input, &shared).is_err());
+    }
+
+    // ── fault 139: a fuel channel that could not be read is not a silence ──
+
+    /// One engine declares no fuel channel at all, the other declares one and
+    /// fails to answer it. `Ok(&[])` and `Err` must not blur into each other.
+    struct FuelReadsThatDiffer;
+
+    impl ToolResolver for FuelReadsThatDiffer {
+        fn resolve(&self, id: &str) -> Result<String, String> {
+            match id {
+                "no-channel" | "channel-down" => Ok("echo".to_owned()),
+                other => Err(format!("«{other}» is not here")),
+            }
+        }
+        fn fuel(&self, id: &str) -> Result<Vec<models::fuel::Fuel>, String> {
+            match id {
+                "no-channel" => Ok(Vec::new()),
+                "channel-down" => Err("the engine refused: token expired".to_owned()),
+                other => panic!("fuel asked for an id nobody named: {other}"),
+            }
+        }
+    }
+
+    /// **Mutant run**: reverting `fuel`'s return type to `Vec<Fuel>` and
+    /// folding the `Err` arm back into `.unwrap_or_default()` makes this red —
+    /// `unreadable_fuel` comes back empty and the assertion on it fails.
+    #[test]
+    fn an_engine_whose_fuel_channel_failed_is_named_apart_from_one_that_declares_none() {
+        let action = ExternalEngineAction::resolving_with(FuelReadsThatDiffer);
+        let spec: EngineSpec =
+            serde_json::from_value(json!({"prefer": "fuel", "timeout_secs": 10}))
+                .expect("spec");
+        let chain = vec!["no-channel".to_owned(), "channel-down".to_owned()];
+
+        let (ids, preferred, unreadable) = action.ordered(&FuelReadsThatDiffer, &spec, &chain);
+
+        assert_eq!(ids, chain, "no fuel read for either means the written order stands");
+        assert!(preferred.is_none());
+        assert_eq!(
+            unreadable,
+            vec![("channel-down".to_owned(), "the engine refused: token expired".to_owned())],
+            "only the engine whose channel failed is named; the one with no channel is silent \
+             because it has nothing to report, not because it was never asked"
+        );
     }
 }

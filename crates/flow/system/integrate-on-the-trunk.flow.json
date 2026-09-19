@@ -1,6 +1,6 @@
 {
   "id": "integrate-on-the-trunk",
-  "description": "Steps 7 and 8 of docs/the-delivery-loop.md: a reviewed branch validated on the real candidate, published, and reconciled with its pull request. The mandate is one JSON object naming the repo and the branch, with base and forge_repo optional. The latest review recorded by review-a-pinned-commit must be clean, and the flow refuses when the branch head, local or remote, differs from the reviewed commit. The combined tree is built on the current remote trunk in a locked worktree of its own, and scripts/run-gates.sh runs letter A plus every applicable letter of docs/gates.md there with --no-fail-fast; a red line stops the run, and lines that need a person are handed to one. The policy is read from the trusted trunk; `ask` on merge or push hands the push to a person. Just before the push the trunk is re-read, and a trunk that moved stops the run rather than validating something else; the publication gate runs on the candidate. It pushes only when green, then requires both that the remote trunk carries the candidate and that the host reports the pull request MERGED, not merely pushed. Every forge call runs as the account in sailor.forgeAs.",
+  "description": "Steps 7 and 8 of docs/the-delivery-loop.md: a reviewed branch validated on the real candidate, merged on the forge, and reconciled with its pull request. The mandate is one JSON object naming the repo and the branch, with base and forge_repo optional. The latest review recorded by review-a-pinned-commit must be clean, and the flow refuses when the branch head, local or remote, differs from the reviewed commit. The combined tree is built on the current remote trunk in a locked worktree of its own, and scripts/run-gates.sh runs letter A plus every applicable letter of docs/gates.md there with --no-fail-fast; a red line stops the run, and lines that need a person are handed to one. The policy is read from the trusted trunk; `ask` on merge or push hands the step to a person. Just before the merge the trunk is re-read, and a trunk that moved stops the run rather than validating something else; the publication gate runs on the candidate. The private-names check is posted from here, because only this machine holds the list. Nothing is pushed to the trunk: the flow waits for every check the forge requires, asks the forge to merge the pull request, and is complete only when the remote trunk carries the reviewed commit, the tree that landed is the one the gates ran on, and the host reports the pull request MERGED. Every forge call runs as the account in sailor.forgeAs.",
   "inputs": {
     "trigger": {
       "source": "manual",
@@ -713,6 +713,60 @@
         }
       },
       {
+        "id": "attest",
+        "deps": [
+          "the_request",
+          "the_reviewed",
+          "combined",
+          "ref_gate"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/combined/answer/already",
+          "value": false
+        },
+        "needs": [
+          "gh",
+          "python3"
+        ],
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        },
+        "with": {
+          "command": "set -eu\n# The list of private names lives only on this machine, so the forge cannot post\n# this check for itself. Until it is posted the request stays blocked and the\n# host says nothing about why.\ncd \"$REPO\"\ngit -C \"$REPO\" fetch --quiet origin\n\"$REPO/scripts/attest-private-names.sh\" \"$COMMIT\" >&2\nprintf '{\"attested\":\"%s\",\"posted\":true}' \"$COMMIT\"\n",
+          "env": {
+            "REPO": {
+              "$from": "/the_request/answer/repo"
+            },
+            "COMMIT": {
+              "$from": "/the_reviewed/answer/commit"
+            }
+          },
+          "timeout_secs": 600,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "attested": {
+                "type": "string"
+              },
+              "posted": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "attested",
+              "posted"
+            ],
+            "allow_extra": false
+          }
+        }
+      },
+      {
         "id": "ready",
         "deps": [
           "the_request",
@@ -766,41 +820,51 @@
         }
       },
       {
-        "id": "push",
+        "id": "merge_request",
         "deps": [
           "the_request",
+          "the_reviewed",
+          "pull_request",
           "combined",
-          "ready"
+          "ready",
+          "attest"
         ],
         "action": "shell_check",
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\nurl=$(git -C \"$REPO\" remote get-url origin) || { echo \"the tree has no origin remote\" >&2; exit 1; }\nset -- -C \"$REPO\"\ncase \"$url\" in\n    /*|file://*) ;;\n    http://*|https://*)\n        push_as=$(git -C \"$REPO\" config --get sailor.pushAs) || { echo \"sailor.pushAs is not declared on this tree: refusing to push with the machine's own credentials\" >&2; exit 1; }\n        [ -n \"$push_as\" ] || { echo \"sailor.pushAs is empty on this tree: refusing to push with the machine's own credentials\" >&2; exit 1; }\n        helper='!f() { printf \"%s\\\\n\" username=x-access-token; printf \"password=%s\\\\n\" \"$(env -u GH_TOKEN -u GITHUB_TOKEN -u GH_REPO gh auth token --user \"'\"$push_as\"'\")\"; }; f'\n        set -- -C \"$REPO\" -c credential.helper= -c \"credential.helper=$helper\" ;;\n    *) echo \"origin is $url: a push over it cannot be bound to sailor.pushAs, so this flow refuses it\" >&2; exit 1 ;;\nesac\nif [ \"$ALREADY\" != true ]; then\n    git \"$@\" push origin \"$CANDIDATE:refs/heads/$BASE\" >&2\nfi\nprintf '{\"pushed\":\"%s\"}' \"$CANDIDATE\"\n",
+          "command": "set -eu\ncd \"$REPO\"\n# An inherited GH_REPO would point a call at another repository: it goes before the first gh call.\nunset GH_REPO\nforge_as=$(git -C \"$REPO\" config --get sailor.forgeAs) || { echo \"sailor.forgeAs is not declared on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\n[ -n \"$forge_as\" ] || { echo \"sailor.forgeAs is empty on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\nenv -u GH_TOKEN -u GITHUB_TOKEN -u GH_REPO gh auth token --user \"$forge_as\" >/dev/null || { echo \"no forge token for the declared account $forge_as\" >&2; exit 1; }\n[ -z \"${FORGE_REPO:-}\" ] || export GH_REPO=\"$FORGE_REPO\"\n# An empty --user or an empty GH_TOKEN makes gh answer as the machine's active account.\nforge() {\n    who=$(git -C \"$REPO\" config --get sailor.forgeAs) && [ -n \"$who\" ] || { echo \"sailor.forgeAs vanished from this tree: refusing\" >&2; exit 1; }\n    token=$(env -u GH_TOKEN -u GITHUB_TOKEN -u GH_REPO gh auth token --user \"$who\") && [ -n \"$token\" ] || { echo \"no forge token for $who: refusing\" >&2; exit 1; }\n    if [ -n \"${FORGE_REPO:-}\" ]; then\n        env -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN -u GITHUB_ENTERPRISE_TOKEN GH_REPO=\"$FORGE_REPO\" GH_TOKEN=\"$token\" gh \"$@\"\n    else\n        env -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN -u GITHUB_ENTERPRISE_TOKEN -u GH_REPO GH_TOKEN=\"$token\" gh \"$@\"\n    fi\n}\nif [ \"$ALREADY\" = true ]; then\n    printf '{\"merged\":\"\",\"asked\":false}'\n    exit 0\nfi\n# **THE TRUNK REFUSES A PUSH.** The merge commit is the forge's to make, and it\n# makes none until every check it requires is green, so this waits for them\n# rather than asking and reading a refusal.\ntries=0\nwhile :; do\n    pending=$(forge pr checks \"$NUMBER\" --json bucket --jq '[.[] | select(.bucket == \"pending\")] | length') || { echo \"cannot read the checks of pull request $NUMBER\" >&2; exit 2; }\n    [ \"$pending\" = 0 ] && break\n    tries=$((tries + 1))\n    [ \"$tries\" -lt 120 ] || { echo \"$pending check(s) of pull request $NUMBER are still pending after an hour: nothing is merged\" >&2; exit 1; }\n    sleep 30\ndone\n# A skipped check is not a passed one, but neither is it a refusal: only a\n# bucket the forge calls fail or cancel stops the merge.\nred=$(forge pr checks \"$NUMBER\" --json bucket,name --jq '[.[] | select(.bucket == \"fail\" or .bucket == \"cancel\") | .name] | join(\", \")')\n[ -z \"$red\" ] || { echo \"the forge reports these checks not green on pull request $NUMBER: $red\" >&2; exit 1; }\nforge pr merge \"$NUMBER\" --merge >&2\nprintf '{\"merged\":\"%s\",\"asked\":true}' \"$COMMIT\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/answer/repo"
             },
-            "BASE": {
-              "$from": "/the_request/answer/base"
+            "FORGE_REPO": {
+              "$from": "/the_request/answer/forge_repo"
             },
-            "CANDIDATE": {
-              "$from": "/combined/answer/candidate"
+            "NUMBER": {
+              "$json": "/pull_request/answer/number"
+            },
+            "COMMIT": {
+              "$from": "/the_reviewed/answer/commit"
             },
             "ALREADY": {
               "$json": "/combined/answer/already"
             }
           },
-          "timeout_secs": 300,
+          "timeout_secs": 3900,
           "answer_shape": {
             "type": "object",
             "properties": {
-              "pushed": {
+              "merged": {
                 "type": "string"
+              },
+              "asked": {
+                "type": "boolean"
               }
             },
             "required": [
-              "pushed"
+              "merged",
+              "asked"
             ],
             "allow_extra": false
           }
@@ -821,13 +885,13 @@
           "the_request",
           "the_reviewed",
           "combined",
-          "push"
+          "merge_request"
         ],
         "action": "shell_check",
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\ngit -C \"$REPO\" fetch --quiet origin\nremote=$(git -C \"$REPO\" rev-parse \"refs/remotes/origin/$BASE\")\ngit -C \"$REPO\" merge-base --is-ancestor \"$CANDIDATE\" \"$remote\" || { echo \"the remote $BASE at $remote does not carry $CANDIDATE\" >&2; exit 1; }\ngit -C \"$REPO\" merge-base --is-ancestor \"$COMMIT\" \"$remote\" || { echo \"the remote $BASE at $remote does not carry the reviewed $COMMIT\" >&2; exit 1; }\nprintf '{\"remote_trunk\":\"%s\"}' \"$remote\"\n",
+          "command": "set -eu\ngit -C \"$REPO\" fetch --quiet origin\nremote=$(git -C \"$REPO\" rev-parse \"refs/remotes/origin/$BASE\")\ngit -C \"$REPO\" merge-base --is-ancestor \"$COMMIT\" \"$remote\" || { echo \"the remote $BASE at $remote does not carry the reviewed $COMMIT\" >&2; exit 1; }\nif [ \"$ALREADY\" != true ]; then\n    # **THE CANDIDATE'S ID IS NEVER ON THE TRUNK**: the forge writes its own\n    # merge commit. What has to match is the tree, or what landed is not what\n    # the gates were run on.\n    landed=$(git -C \"$REPO\" rev-parse \"$remote^{tree}\")\n    validated=$(git -C \"$REPO\" rev-parse \"$CANDIDATE^{tree}\")\n    [ \"$landed\" = \"$validated\" ] || { echo \"the trunk at $remote carries tree $landed, not the $validated the gates were run on\" >&2; exit 1; }\nfi\nprintf '{\"remote_trunk\":\"%s\"}' \"$remote\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/answer/repo"
@@ -840,6 +904,9 @@
             },
             "COMMIT": {
               "$from": "/the_reviewed/answer/commit"
+            },
+            "ALREADY": {
+              "$json": "/combined/answer/already"
             }
           },
           "timeout_secs": 120,

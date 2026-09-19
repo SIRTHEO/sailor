@@ -644,17 +644,34 @@ fn started(request: &Request<'_>, arrival: &Arrival) -> Started<'static> {
         .options
         .get("cli")
         .and_then(|id| profiles::find_cli(id).ok());
-    let profile_home = engine.and_then(|engine| {
-        let store = profiles::store_io::load_store().ok()?;
-        crate::memory_cmd::active_profile(&store, &engine.id)
-            .map(|profile| profile.home_dir.clone())
-    });
+    let profile_home = engine.and_then(profile_home_of);
     Started {
         engine,
         profile_home,
         worktree: PathBuf::from(&arrival.anchor.worktree),
         home: profiles::store_io::home_dir().ok(),
     }
+}
+
+/// **A HOOK RUNS INSIDE THE SESSION**: which profile it is under comes from
+/// the session's own variable, never from the store's separately switchable
+/// active one.
+fn profile_home_of(engine: &profiles::KnownCli) -> Option<PathBuf> {
+    let live_env = match &engine.home {
+        profiles::HomeMechanism::EnvVar(variable) => std::env::var(variable).ok(),
+        _ => None,
+    };
+    profile_home_from(engine, live_env.as_deref())
+}
+
+/// [`profile_home_of`], with the variable already read: pure, so a test can
+/// say what a session was launched under without touching this process.
+fn profile_home_from(engine: &profiles::KnownCli, session_env: Option<&str>) -> Option<PathBuf> {
+    if let Some(dir) = session_env.filter(|dir| !dir.is_empty()) {
+        return Some(PathBuf::from(dir));
+    }
+    let store = profiles::store_io::load_store().ok()?;
+    crate::memory_cmd::active_profile(&store, &engine.id).map(|profile| profile.home_dir.clone())
 }
 
 
@@ -900,6 +917,30 @@ mod tests {
     use super::*;
     use sessions::census::{Inhabitant, Refusal, Terminal};
     use sessions::SESSIONS_FILE;
+
+    /// A session launched with `CLAUDE_CONFIG_DIR` set is truthfully that
+    /// home, never the store's separately switchable "active" profile.
+    /// *Mutant run*: drop the env check from `profile_home_from` and this
+    /// goes red.
+    #[test]
+    fn a_sessions_own_config_dir_outranks_the_store_switched_active_profile() {
+        let engine = profiles::find_cli("claude").expect("a known command line moves its home by a variable");
+        let moves_by_a_variable = matches!(engine.home, profiles::HomeMechanism::EnvVar(_));
+        assert!(
+            moves_by_a_variable,
+            "the fixture this test relies on has changed: {:?}",
+            engine.home
+        );
+
+        let explicit = "/home/someone/.config/sailor/profiles-homes/some-engine/an-account";
+        let home = profile_home_from(engine, Some(explicit));
+
+        assert_eq!(
+            home,
+            Some(PathBuf::from(explicit)),
+            "the session's own variable must win outright, with no store read at all"
+        );
+    }
 
     /// The moments are toolbox's list and nothing is added or lost on the way:
     /// one verb per moment, the first opens, every other one is an event.
