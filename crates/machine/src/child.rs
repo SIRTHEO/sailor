@@ -174,14 +174,24 @@ impl Process {
         Ok(process)
     }
 
-    /// Lets it run on after whoever started it has gone.
+    /// Lets it run on after whoever started it has gone: without this, the hook
+    /// that starts a run would kill it on the way out.
     ///
-    /// **THE ROW STAYS, THE PROCESS STAYS.** Dropping a `Process` stops it, so
-    /// a hook that starts a run would kill it on the way out. The ledger holds
-    /// the row already: a process let go is still one Sailor can account for.
-    pub fn let_it_go(mut self) -> u32 {
+    /// **A START NOTHING WROTE DOWN IS NOT ONE TO LET GO.** The destructor was
+    /// its last guarantee and no row is left to name it by, so it is stopped
+    /// here instead of left where nobody can find it — fault 4.
+    pub fn let_it_go(mut self) -> Result<u32, String> {
+        let pid = self.child.id();
+        if self.store.is_none() {
+            let _ = self.stop_now();
+            return Err(format!(
+                "pid {pid} was started with no ledger to write it in, so letting \
+                 it go would leave behind a process nothing on this machine can \
+                 name: it was stopped instead"
+            ));
+        }
         self.stopped = true;
-        self.child.id()
+        Ok(pid)
     }
 
     pub fn pid(&self) -> u32 {
