@@ -1181,6 +1181,19 @@ impl Ledger {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// How many runs each flow has, and when the last one began. A count, not
+    /// the rows: the projection is hundreds of megabytes here, and loading it
+    /// to answer «has this ever run» is what made nobody ask.
+    pub fn runs_by_entity(&self) -> Result<Vec<(String, i64, i64)>, LedgerError> {
+        let connection = self.lock()?;
+        let mut statement = connection
+            .prepare("SELECT entity, COUNT(*), MAX(started_at) FROM runs GROUP BY entity")?;
+        let rows = statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     /// How many runs the store knows about, however it knows them.
     ///
     /// **IT SEPARATES "THERE IS NOTHING" FROM "ZERO FAILURES"**: on a fresh
