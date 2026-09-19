@@ -944,9 +944,138 @@ fn temp_path_for(target: &Path) -> PathBuf {
     target.with_file_name(format!(".{file_name}.tmp-{}-{unique}", std::process::id()))
 }
 
+/// What a flow of yours changes from the shipped flow it replaces, as JSON
+/// pointers: a field named is a field the reader can open in both files, which
+/// a rendered diff is not.
+pub fn what_yours_changes(yours: &FlowFile, shipped: &FlowFile) -> Vec<String> {
+    let (Ok(yours), Ok(shipped)) = (serde_json::to_value(yours), serde_json::to_value(shipped))
+    else {
+        return Vec::new();
+    };
+    let mut found = Vec::new();
+    walk_apart("", &yours, &shipped, &mut found);
+    found
+}
+
+fn walk_apart(
+    at: &str,
+    yours: &serde_json::Value,
+    shipped: &serde_json::Value,
+    found: &mut Vec<String>,
+) {
+    use serde_json::Value;
+    match (yours, shipped) {
+        (Value::Object(yours), Value::Object(shipped)) => {
+            let mut keys: Vec<&String> = yours.keys().chain(shipped.keys()).collect();
+            keys.sort_unstable();
+            keys.dedup();
+            for key in keys {
+                let under = format!("{at}/{key}");
+                match (yours.get(key), shipped.get(key)) {
+                    (Some(yours), Some(shipped)) => walk_apart(&under, yours, shipped, found),
+                    _ => found.push(under),
+                }
+            }
+        }
+        // By position, not by id: a step inserted in the middle does move
+        // every one after it, and matching by id would call that no change.
+        (Value::Array(yours), Value::Array(shipped)) => {
+            for index in 0..yours.len().max(shipped.len()) {
+                let under = format!("{at}/{index}");
+                match (yours.get(index), shipped.get(index)) {
+                    (Some(yours), Some(shipped)) => walk_apart(&under, yours, shipped, found),
+                    _ => found.push(under),
+                }
+            }
+        }
+        (yours, shipped) if yours != shipped => found.push(at.to_owned()),
+        _ => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Down to the leaf: "/graph" would send the reader through the whole
+    /// graph to find one changed word.
+    #[test]
+    fn what_yours_changes_names_the_leaf_that_moved_and_not_the_object_holding_it() {
+        let shipped = flow_of(
+            r#"{"id":"f","description":"as shipped","graph":{"steps":[
+            {"id":"a","deps":[],"action":"trigger","with":{"data":"private"}}]}}"#,
+        );
+        let yours = flow_of(
+            r#"{"id":"f","description":"a home copy","graph":{"steps":[
+            {"id":"a","deps":[],"action":"trigger","with":{"data":"public"}}]}}"#,
+        );
+
+        let apart = what_yours_changes(&yours, &shipped);
+
+        assert!(apart.contains(&"/description".to_owned()), "{apart:?}");
+        assert!(apart.contains(&"/graph/steps/0/with/data".to_owned()), "{apart:?}");
+        assert!(!apart.iter().any(|at| at == "/graph"), "{apart:?}");
+    }
+
+    /// What the caller reads to stay quiet.
+    #[test]
+    fn a_copy_still_equal_to_the_shipped_flow_differs_nowhere() {
+        let both = r#"{"id":"f","description":"the same","graph":{"steps":[
+            {"id":"a","deps":[],"action":"trigger","with":{}}]}}"#;
+
+        assert!(what_yours_changes(&flow_of(both), &flow_of(both)).is_empty());
+    }
+
+    /// Both directions: a cap added to a copy is what makes a run cost what
+    /// nobody expected.
+    #[test]
+    fn a_field_only_one_side_has_is_named_whichever_side_has_it() {
+        let shipped =
+            flow_of(r#"{"id":"f","graph":{"steps":[{"id":"a","deps":[],"action":"trigger"}]}}"#);
+        let yours = flow_of(
+            r#"{"id":"f","spend_cap_micros":2000000,
+            "graph":{"steps":[{"id":"a","deps":[],"action":"trigger"}]}}"#,
+        );
+
+        assert!(what_yours_changes(&yours, &shipped).contains(&"/spend_cap_micros".to_owned()));
+        assert!(what_yours_changes(&shipped, &yours).contains(&"/spend_cap_micros".to_owned()));
+    }
+
+    /// A reordering changes which step runs first, so it is a change.
+    #[test]
+    fn a_step_inserted_in_front_is_reported_and_not_matched_away_by_its_id() {
+        let shipped =
+            flow_of(r#"{"id":"f","graph":{"steps":[{"id":"a","deps":[],"action":"trigger"}]}}"#);
+        let yours = flow_of(
+            r#"{"id":"f","graph":{"steps":[
+            {"id":"b","deps":[],"action":"trigger"},
+            {"id":"a","deps":["b"],"action":"trigger"}]}}"#,
+        );
+
+        let apart = what_yours_changes(&yours, &shipped);
+
+        assert!(apart.contains(&"/graph/steps/0/id".to_owned()), "{apart:?}");
+        assert!(apart.contains(&"/graph/steps/1".to_owned()), "{apart:?}");
+    }
+
+    /// The same filling on both sides, so it can never be part of the answer.
+    fn flow_of(document: &str) -> FlowFile {
+        let mut document: serde_json::Value =
+            serde_json::from_str(document).expect("the test's own document is JSON");
+        let anything =
+            serde_json::json!({"type":"object","properties":{},"required":[],"allow_extra":true});
+        for step in document["graph"]["steps"].as_array_mut().expect("a list of steps") {
+            let step = step.as_object_mut().expect("a step is an object");
+            step.entry("input_schema").or_insert_with(|| anything.clone());
+            step.entry("output_schema").or_insert_with(|| anything.clone());
+            step.entry("max_attempts").or_insert_with(|| serde_json::json!(1));
+            step.entry("when").or_insert(serde_json::Value::Null);
+        }
+        let top = document.as_object_mut().expect("a flow is an object");
+        top.entry("inputs").or_insert_with(|| serde_json::json!({}));
+        top.entry("description").or_insert_with(|| serde_json::json!(""));
+        serde_json::from_value(document).expect("the test's own flow parses")
+    }
 
     #[test]
     fn a_write_that_fails_halfway_leaves_no_temporary_file_and_no_flow() {
