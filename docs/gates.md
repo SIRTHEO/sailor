@@ -48,9 +48,13 @@ suffixed `_TODAY` upward, comment ratios and long blocks downward.
 
 A required check that cannot refuse is worse than no check: the ruleset counts
 it, the tree believes it, and the belief is free. Two of these six were exactly
-that — `the style debt` could not go red whatever it measured, `publication
-boundary` could not go green on any merge — and nothing noticed, because
-nothing had ever asked a gate to prove it had said no.
+that. `publication boundary` could not go green on any merge. `the style debt`
+could not go red whatever it measured, and underneath that it was not
+measuring: its clippy count had been zero on every run since it was written,
+because the file sets `CARGO_TERM_COLOR: always` and no coloured line begins
+`warning: `. One blindness had hidden the other for as long as both existed,
+and neither was found by reading — the second surfaced only when a commit
+built on purpose to be refused came back counted at zero.
 
 So each ends in one of two states, never a third. **proved red**: a real commit
 and the receipt of the run that concluded `failure` on it. **refused**: it
@@ -58,6 +62,10 @@ cannot be made red without touching the product, the reason is written, and a
 fault number holds it. `scripts/gates-can-say-no.sh` reads this table, reads
 the six from the ruleset itself, and exits 0 only when the two agree and every
 receipt still holds on the forge.
+
+The commits below are on no branch: they were written to be refused and their
+branches were deleted the same day. The forge keeps them under the requests
+that carried them, which is why the receipts can still be fetched.
 
 | check | state | commit | receipt | what made it refuse |
 | --- | --- | --- | --- | --- |

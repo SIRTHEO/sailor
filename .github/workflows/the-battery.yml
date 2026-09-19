@@ -195,7 +195,14 @@ jobs:
       # whatever it counted. Colour is off here and the numbers are real.
       CARGO_TERM_COLOR: never
       FORMATTING_PLACES_TODAY: 1675
-      CLIPPY_SUSPICIONS_TODAY: 0
+      # The one suspicion is `this boolean expression can be simplified`, and
+      # it exists only under the version the manifest declares: clippy nine
+      # minors later does not raise it at all. That is the whole reason this
+      # battery builds with the declared minimum and not the latest, and the
+      # reason the number is seeded here rather than argued about — clearing
+      # it means editing a crate, which the work that wrote this ceiling was
+      # scoped out of.
+      CLIPPY_SUSPICIONS_TODAY: 1
     steps:
       - uses: actions/checkout@v4
 
@@ -205,10 +212,14 @@ jobs:
           rustup default "$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)"
 
       - name: formatting, counted
-        # `|| true` because here a non-zero exit is the data, not the failure:
-        # rustfmt exits 1 exactly when it has something to say. The fall comes
-        # from the step that reads the count against the ceiling.
-        run: cargo fmt --all -- --check > "$RUNNER_TEMP/formatting.txt" 2>&1 || true
+        # The exit is data here, not failure: rustfmt answers 0 when it has
+        # nothing to say and 1 when it has. Anything else means it did not
+        # run, and then the count below is 0 for the wrong reason — the same
+        # blind green the clippy step is guarded against.
+        run: |
+          set +e
+          cargo fmt --all -- --check > "$RUNNER_TEMP/formatting.txt" 2>&1
+          echo $? > "$RUNNER_TEMP/formatting.status"
 
       - name: clippy, counted
         # No `-D warnings`: we want the number, not the fall. And no global
@@ -234,8 +245,14 @@ jobs:
             [ -f "$RUNNER_TEMP/$measured.txt" ] \
               || { echo "::error::$measured was never measured: there is no file to count"; exit 1; }
           done
-          [ -f "$RUNNER_TEMP/clippy.status" ] \
-            || { echo "::error::clippy left no exit behind: whether it finished is unknown"; exit 1; }
+          for measured in formatting clippy; do
+            [ -f "$RUNNER_TEMP/$measured.status" ] \
+              || { echo "::error::$measured left no exit behind: whether it finished is unknown"; exit 1; }
+          done
+          case "$(cat "$RUNNER_TEMP/formatting.status")" in
+            0|1) ;;
+            *) echo "::error::rustfmt answered $(cat "$RUNNER_TEMP/formatting.status"), which is neither «nothing to say» nor «something to say»: it did not run"; exit 1 ;;
+          esac
           status=$(cat "$RUNNER_TEMP/clippy.status")
           [ "$status" = 0 ] || {
             echo "::error::clippy stopped at exit $status, so it linted only the crates it reached and any count would read lower than the truth"
