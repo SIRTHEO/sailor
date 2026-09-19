@@ -63,7 +63,7 @@ receipt still holds on the forge.
 | --- | --- | --- | --- | --- |
 | `publication boundary` | proved red | `b24a7bab` | `105945273889` | an empty `.envrc`: a reserved path, which is a shape that needs no list |
 | `sailor/private-names` | proved red | `b24a7bab` | `54512959547` | an empty `.envrc`: a reserved path, refused by the armed check that holds the list |
-| `workspace tests` | not yet asked | — | — | — |
-| `desktop tests` | not yet asked | — | — | — |
-| `clippy gate` | not yet asked | — | — | — |
+| `workspace tests` | proved red | `b24a7bab` | `105945273886` | a failing assertion |
+| `desktop tests` | proved red | `b24a7bab` | `105945273862` | a failing assertion in the shell's own workspace, which `cargo test --workspace` never reaches |
+| `clippy gate` | proved red | `b24a7bab` | `105945273758` | `approx_constant`, which is `clippy::correctness` and deny by default |
 | `the style debt` | not yet asked | — | — | — |

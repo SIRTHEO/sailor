@@ -243,7 +243,13 @@ jobs:
           }
           places=$(grep -c '^Diff in' "$RUNNER_TEMP/formatting.txt" || true)
           files=$(grep '^Diff in' "$RUNNER_TEMP/formatting.txt" | sed 's/:[0-9]*:$//' | sort -u | wc -l || true)
-          suspicions=$(grep -cE '^warning: ' "$RUNNER_TEMP/clippy.txt" || true)
+          # **CARGO'S OWN SUMMARIES BEGIN `warning: ` TOO** — `warning:
+          # `sailor` (lib) generated 2 warnings`, `warning: build failed` —
+          # and counting those makes the number depend on how the crates are
+          # split rather than on what the code says.
+          lints=$(grep -E '^warning: ' "$RUNNER_TEMP/clippy.txt" \
+            | grep -vE 'generated [0-9]+ warning|^warning: build failed' || true)
+          suspicions=$(printf '%s' "$lints" | grep -c . || true)
 
           # **SAID IN THE LOG, NOT ONLY IN THE SUMMARY.** A step summary is not
           # in the API: asked what this job had measured on a past commit, the
@@ -251,6 +257,11 @@ jobs:
           # script can read is a number nobody checks.
           echo "formatting places: ${places:-0} across ${files:-0} files, ceiling ${FORMATTING_PLACES_TODAY}"
           echo "clippy suspicions: ${suspicions:-0}, ceiling ${CLIPPY_SUSPICIONS_TODAY}"
+          # **AND IT NAMES THEM.** A bare count cannot be acted on: to learn
+          # which two warnings the tree held, somebody had to guess, and a
+          # local clippy of another version answered none. The file itself is
+          # not kept anywhere after the run.
+          [ "${suspicions:-0}" = 0 ] || printf '%s\n' "$lints" | sed 's/^/counted: /'
           {
             echo "### The style debt"
             echo
