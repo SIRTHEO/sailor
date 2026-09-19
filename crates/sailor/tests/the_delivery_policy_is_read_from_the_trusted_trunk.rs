@@ -40,8 +40,7 @@ fn init_repo_on(dir: &Path, trunk: &str) {
     git(dir, &["config", "sailor.trunk", trunk]);
     git(dir, &["config", "user.email", "policy-test@example"]);
     git(dir, &["config", "user.name", "policy-test"]);
-    std::fs::write(dir.join("readme"), "the repository this test builds\n")
-        .expect("a first file");
+    std::fs::write(dir.join("readme"), "the repository this test builds\n").expect("a first file");
     git(dir, &["add", "readme"]);
     git(dir, &["commit", "-q", "-m", "first"]);
 }
@@ -171,7 +170,10 @@ fn a_policy_only_on_a_side_branch_is_no_policy_at_all() {
     git(&dir, &["checkout", "-q", "main"]);
 
     let (ok, stdout, stderr) = run_policy(&dir);
-    assert!(!ok, "a policy absent from main must refuse: stdout={stdout}");
+    assert!(
+        !ok,
+        "a policy absent from main must refuse: stdout={stdout}"
+    );
     assert!(stdout.is_empty(), "nothing is printed to stdout: {stdout}");
     assert!(
         stderr.contains("no policy on the trunk"),
@@ -192,7 +194,10 @@ fn an_invalid_field_is_refused_by_name() {
     let (ok, stdout, stderr) = run_policy(&dir);
     assert!(!ok, "an invalid value must refuse: stdout={stdout}");
     assert!(stdout.is_empty(), "nothing is printed to stdout: {stdout}");
-    assert!(stderr.contains("merge"), "the refusal names the field: {stderr}");
+    assert!(
+        stderr.contains("merge"),
+        "the refusal names the field: {stderr}"
+    );
     assert!(
         stderr.contains("maybe"),
         "the refusal names what was there instead: {stderr}"
