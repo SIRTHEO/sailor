@@ -85,6 +85,19 @@ pub struct Fault {
     /// the public page shows. `None` keeps the fault off that page.
     #[serde(default)]
     pub public_summary: Option<String>,
+    /// The GitHub issue this fault is shown as, if a person has linked one.
+    /// This store never opens or closes an issue itself — linking only
+    /// records that somebody already did, the same way `public_summary`
+    /// records a sentence without deciding whether to publish it.
+    #[serde(default)]
+    pub github_issue: Option<GithubIssue>,
+}
+
+/// One GitHub issue a fault is linked to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GithubIssue {
+    pub number: i64,
+    pub url: String,
 }
 
 /// A fault to record: everything except the number, which is not chosen.
@@ -376,11 +389,23 @@ pub struct Faults {
     /// A store only ever opened by a binary without the summary verb has no
     /// table for them, and read-only it cannot be given one.
     the_public_summaries: bool,
+    /// A store only ever opened by a binary without `faults link` has no
+    /// table for them, and read-only it cannot be given one.
+    the_github_issues: bool,
 }
 
 fn the_public_summaries_are_there(connection: &Connection) -> Result<bool, FaultError> {
     let found: i64 = connection.query_row(
         "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'public_summaries'",
+        [],
+        |row| row.get(0),
+    )?;
+    Ok(found == 1)
+}
+
+fn the_github_issues_are_there(connection: &Connection) -> Result<bool, FaultError> {
+    let found: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'github_issues'",
         [],
         |row| row.get(0),
     )?;
@@ -470,11 +495,13 @@ impl Faults {
         }
         let the_reading_columns = the_reading_columns_are_there(&connection)?;
         let the_public_summaries = the_public_summaries_are_there(&connection)?;
+        let the_github_issues = the_github_issues_are_there(&connection)?;
         Ok(Faults {
             connection,
             path,
             the_reading_columns,
             the_public_summaries,
+            the_github_issues,
         })
     }
 
@@ -512,12 +539,23 @@ impl Faults {
                  summary TEXT NOT NULL
              );",
         )?;
+        // A table of its own, for the same reason as public_summaries: linking
+        // is never part of `restore`, and never opens or closes anything on
+        // GitHub by itself — it only records that a person already did.
+        connection.execute_batch(
+            "CREATE TABLE IF NOT EXISTS github_issues (
+                 number INTEGER PRIMARY KEY,
+                 issue_number INTEGER NOT NULL,
+                 issue_url TEXT NOT NULL
+             );",
+        )?;
         connection.pragma_update(None, "user_version", FAULTS_SCHEMA_VERSION)?;
         Ok(Faults {
             connection,
             path,
             the_reading_columns: true,
             the_public_summaries: true,
+            the_github_issues: true,
         })
     }
 
@@ -621,12 +659,24 @@ impl Faults {
         } else {
             "NULL"
         };
+        let (issue_number, issue_url) = if self.the_github_issues {
+            (
+                "(SELECT issue_number FROM github_issues WHERE github_issues.number = faults.number)",
+                "(SELECT issue_url FROM github_issues WHERE github_issues.number = faults.number)",
+            )
+        } else {
+            ("NULL", "NULL")
+        };
         let mut statement = self.connection.prepare(&format!(
             "SELECT number, happened_on, what_happened, how_it_showed, what_would_prevent,
-                    status, {columns}, {summary}
+                    status, {columns}, {summary}, {issue_number}, {issue_url}
              FROM faults ORDER BY number"
         ))?;
         let rows = statement.query_map([], |row| {
+            let linked = match (row.get::<_, Option<i64>>(10)?, row.get::<_, Option<String>>(11)?) {
+                (Some(number), Some(url)) => Some(GithubIssue { number, url }),
+                _ => None,
+            };
             Ok((
                 Fault {
                     number: row.get(0)?,
@@ -638,6 +688,7 @@ impl Faults {
                     status: row.get(5)?,
                     standing: Standing::Unknown,
                     public_summary: row.get(9)?,
+                    github_issue: linked,
                 },
                 row.get::<_, String>(6)?,
                 row.get::<_, String>(7)?,
@@ -715,6 +766,38 @@ impl Faults {
         Ok(self.all()?.iter().filter(|f| f.still_open()).count())
     }
 
+    /// Records that a fault is shown as this GitHub issue. This never opens,
+    /// closes or edits anything on GitHub — it only writes down a link a
+    /// person already made, the same way `set_public_summary` writes a
+    /// sentence without deciding whether to publish it. Replaces any earlier
+    /// link, so relinking after a duplicate issue is closed needs no unlink.
+    pub fn link(&self, number: i64, issue_number: i64, issue_url: &str) -> Result<Fault, FaultError> {
+        if issue_url.trim().is_empty() {
+            return Err(FaultError::CannotCrossTheTable(
+                "a link with no url points nowhere".to_owned(),
+            ));
+        }
+        nothing_that_breaks_a_row(&[("issue url", issue_url)])?;
+        if issue_number <= 0 {
+            return Err(FaultError::CannotCrossTheTable(
+                "an issue number of zero or less names nothing on GitHub".to_owned(),
+            ));
+        }
+        self.get(number)?;
+        self.connection.execute(
+            "INSERT OR REPLACE INTO github_issues (number, issue_number, issue_url) VALUES (?1, ?2, ?3)",
+            params![number, issue_number, issue_url],
+        )?;
+        self.get(number)
+    }
+
+    /// Removes a fault's link, without touching the issue itself.
+    pub fn unlink(&self, number: i64) -> Result<Fault, FaultError> {
+        self.get(number)?;
+        self.connection.execute("DELETE FROM github_issues WHERE number = ?1", params![number])?;
+        self.get(number)
+    }
+
     pub fn next_open(&self) -> Result<Option<Fault>, FaultError> {
         Ok(self.all()?.into_iter().find(Fault::still_open))
     }
@@ -740,248 +823,6 @@ impl Faults {
     }
 }
 
-// ── Markdown: one rendering, and one door in ─────────────────────────────
+mod document;
 
-/// Reads a hand-written fault table.
-///
-/// It exists for the migration, and then to disprove it: the round-trip test
-/// writes the rows back and compares them to the source, which is the only
-/// way to know none was lost on the way in.
-pub fn parse(markdown: &str) -> Vec<Fault> {
-    markdown
-        .lines()
-        .filter_map(|line| {
-            let trimmed = line.trim();
-            if !trimmed.starts_with('|') {
-                return None;
-            }
-            let cells: Vec<&str> = trimmed.trim_matches('|').split(" | ").collect();
-            if cells.len() != 6 {
-                return None;
-            }
-            let number: i64 = cells[0].trim().parse().ok()?;
-            let happened_on = as_prose(cells[1]);
-            let status = as_prose(cells[5]);
-            Some(Fault {
-                number,
-                happened: Happening::read(&happened_on),
-                happened_on,
-                what_happened: as_prose(cells[2]),
-                how_it_showed: as_prose(cells[3]),
-                what_would_prevent: as_prose(cells[4]),
-                standing: standing_of(&status),
-                status,
-                public_summary: None,
-            })
-        })
-        .collect()
-}
-
-/// Escaping a `|` is the writing's business: fault 125 rendered in eight columns.
-fn as_a_cell(text: &str) -> String {
-    text.replace('|', "\\|")
-}
-
-fn as_prose(cell: &str) -> String {
-    cell.trim().replace("\\|", "|")
-}
-
-/// Writes the rows back the way the table wrote them, for whoever reads that way.
-/// The document with its rows replaced, and everything around them kept.
-///
-/// **A DOCUMENT IS NOT ITS TABLE.** Writing `render`'s rows over the file drops
-/// the prose around them: only the run of *data* rows is replaced here.
-pub fn render_into(document: &str, faults: &[Fault]) -> String {
-    rows_replaced(document, &render(faults))
-}
-
-/// The public page: its rows and its count sentence replaced, and the prose
-/// around them kept as [`render_into`] keeps it. A document with no count
-/// sentence gets one at its end.
-pub fn render_open_into(document: &str, faults: &[Fault]) -> String {
-    let on_the_page = on_the_public_page(faults).len();
-    let open = faults.iter().filter(|fault| fault.still_open()).count();
-    let sentence = count_sentence(on_the_page, open - on_the_page);
-    let with_rows = rows_replaced(document, &render_open(faults));
-    let mut out = String::new();
-    let mut replaced = false;
-    for line in with_rows.lines() {
-        if !replaced && is_the_count_sentence(line) {
-            out.push_str(&sentence);
-            replaced = true;
-        } else {
-            out.push_str(line);
-        }
-        out.push('\n');
-    }
-    if !replaced {
-        out.push('\n');
-        out.push_str(&sentence);
-        out.push('\n');
-    }
-    out
-}
-
-/// How the count sentence ends, so a render finds the line it rewrites.
-pub const COUNT_SENTENCE_END: &str = "kept only in the fault store.**";
-
-pub fn is_the_count_sentence(line: &str) -> bool {
-    let line = line.trim();
-    line.starts_with("**") && line.ends_with(COUNT_SENTENCE_END)
-}
-
-/// `**Three open faults are described on this page; fifty-five more are kept
-/// only in the fault store.**`
-pub fn count_sentence(on_the_page: usize, only_in_the_store: usize) -> String {
-    let words = in_words(on_the_page);
-    let mut letters = words.chars();
-    let capital: String = letters.next().map(|first| first.to_uppercase().collect()).unwrap_or_default();
-    let page = if on_the_page == 1 { "open fault is" } else { "open faults are" };
-    let store = if only_in_the_store == 1 { "is" } else { "are" };
-    format!(
-        "**{capital}{} {page} described on this page; {} more {store} {COUNT_SENTENCE_END}",
-        letters.as_str(),
-        in_words(only_in_the_store)
-    )
-}
-
-/// The faults the public page shows: still open, and given a summary for users.
-pub fn on_the_public_page(faults: &[Fault]) -> Vec<(&Fault, &str)> {
-    faults
-        .iter()
-        .filter(|fault| fault.still_open())
-        .filter_map(|fault| fault.public_summary.as_deref().map(|summary| (fault, summary)))
-        .collect()
-}
-
-const BELOW_TWENTY: [&str; 20] = [
-    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
-    "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen",
-    "nineteen",
-];
-
-const TENS: [&str; 10] = [
-    "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety",
-];
-
-/// A count in English words: tens and units joined by a hyphen, a hundred and
-/// the rest by «and». From a thousand on, the digits.
-pub fn in_words(number: usize) -> String {
-    match number {
-        0..=19 => BELOW_TWENTY[number].to_owned(),
-        20..=99 => match (TENS[number / 10], number % 10) {
-            (tens, 0) => tens.to_owned(),
-            (tens, unit) => format!("{tens}-{}", BELOW_TWENTY[unit]),
-        },
-        100..=999 => {
-            let hundreds = match number / 100 {
-                1 => "a hundred".to_owned(),
-                many => format!("{} hundred", BELOW_TWENTY[many]),
-            };
-            match number % 100 {
-                0 => hundreds,
-                rest => format!("{hundreds} and {}", in_words(rest)),
-            }
-        }
-        _ => number.to_string(),
-    }
-}
-
-fn rows_replaced(document: &str, rows: &str) -> String {
-    let lines: Vec<&str> = document.lines().collect();
-    let first = lines.iter().position(|line| is_a_data_row(line));
-    let Some(first) = first else {
-        // An empty table takes its rows under the header's separator.
-        if let Some(separator) = lines.iter().position(|line| is_a_separator(line)) {
-            return spliced(&lines, separator + 1, separator + 1, rows);
-        }
-        // No table to replace: the rows go at the end rather than nowhere.
-        let mut out = document.to_owned();
-        if !out.is_empty() && !out.ends_with('\n') {
-            out.push('\n');
-        }
-        out.push_str(rows);
-        return out;
-    };
-    let after = lines[first..]
-        .iter()
-        .position(|line| !is_a_data_row(line))
-        .map_or(lines.len(), |offset| first + offset);
-    spliced(&lines, first, after, rows)
-}
-
-/// The lines before `from`, the rows, then the lines from `to` on.
-fn spliced(lines: &[&str], from: usize, to: usize, rows: &str) -> String {
-    let mut out = String::new();
-    for line in &lines[..from] {
-        out.push_str(line);
-        out.push('\n');
-    }
-    out.push_str(rows);
-    for line in &lines[to..] {
-        out.push_str(line);
-        out.push('\n');
-    }
-    out
-}
-
-/// The `|---|---|` line under a table's header.
-fn is_a_separator(line: &str) -> bool {
-    let trimmed = line.trim();
-    trimmed.starts_with('|')
-        && trimmed.contains('-')
-        && trimmed.chars().all(|letter| matches!(letter, '|' | '-' | ':' | ' '))
-}
-
-/// A row of the register: a first cell holding a number.
-pub fn is_a_data_row(line: &str) -> bool {
-    let trimmed = line.trim();
-    if !trimmed.starts_with('|') {
-        return false;
-    }
-    trimmed
-        .trim_start_matches('|')
-        .split('|')
-        .next()
-        .is_some_and(|cell| cell.trim().parse::<i64>().is_ok())
-}
-
-pub fn render(faults: &[Fault]) -> String {
-    let mut out = String::new();
-    for fault in faults {
-        let [on, what, how, prevent, status, _] = fault.cells();
-        let (on, what) = (as_a_cell(on), as_a_cell(what));
-        let (how, prevent, status) = (as_a_cell(how), as_a_cell(prevent), as_a_cell(status));
-        out.push_str(&format!(
-            "| {} | {on} | {what} | {how} | {prevent} | {status} |\n",
-            fault.number
-        ));
-    }
-    out
-}
-
-/// The header of the public page's table, which a render writes under.
-pub const PUBLIC_HEADER: &str = "| # | since | what goes wrong | status |";
-
-/// One row per fault on the public page: `| # | since | what goes wrong | status |`.
-/// The status is the standing's marker alone: the prose after it is the register's.
-pub fn render_open(faults: &[Fault]) -> String {
-    let mut out = String::new();
-    for (fault, summary) in on_the_public_page(faults) {
-        let since = as_a_cell(&fault.happened_on);
-        let what = as_a_cell(summary);
-        let status = public_standing(fault.standing);
-        out.push_str(&format!("| {} | {since} | {what} | {status} |\n", fault.number));
-    }
-    out
-}
-
-/// The only words the public status column holds, read from the standing.
-pub fn public_standing(standing: Standing) -> &'static str {
-    match standing {
-        Standing::Open => OPEN,
-        Standing::PartlyClosed => PARTLY_CLOSED,
-        Standing::Closed => CLOSED,
-        Standing::Unknown => "**unknown**",
-    }
-}
+pub use document::*;
