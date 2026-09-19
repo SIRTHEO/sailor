@@ -632,6 +632,12 @@ pub struct FreeWhen {
     pub and_none_of_these: Vec<String>,
     /// How long the screen must have stood still: a session at work repaints.
     pub and_still_for_seconds: u64,
+    /// The commands a session of this line runs while idle. Declared, the
+    /// freedom test also asks the machine what the session still holds, and
+    /// anything not named here is work in flight: **A PAINTED PROMPT IS NOT AN
+    /// EMPTY SESSION**. Absent asks the machine nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub and_holds_no_process_but: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub note: String,
     #[serde(flatten)]

@@ -2292,6 +2292,7 @@ mod tests {
         stops_when: None,
         decides_done: false,
         required: false,
+        needs: Vec::new(),
         }
     }
 

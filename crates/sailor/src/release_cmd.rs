@@ -219,6 +219,18 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     }
 
     let temporary = make_temporary_tree()?;
+    let building = candidate.as_ref().map(|chosen| chosen.revision.as_str());
+    // Taken before the checkout, or a release starting meanwhile would find
+    // this candidate held by nobody and remove it mid-clone.
+    if let Some(chosen) = &candidate {
+        let build = release_candidate::place_of(&root, chosen).build;
+        crate::machine_cmd::a_build_directory_is_taken(&build, None, "release");
+    }
+    for earlier in release_candidate::earlier_candidates(&root, building) {
+        if crate::machine_cmd::an_earlier_runs_build_goes(&earlier.join("build")) {
+            let _ = fs::remove_dir_all(&earlier);
+        }
+    }
     let (repository, build_target) = match &candidate {
         Some(chosen) => {
             println!(
@@ -340,6 +352,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         terminal::scratch::ROOT_VARIABLE,
         Some(release::NAMES_CARRIED_BY_THE_PREFLIGHT),
     );
+    let mut proved = String::new();
     for (number, manifest_rel) in judges.iter().enumerate() {
         println!(
             "{}",
@@ -385,6 +398,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
             })?;
         let suite = fs::read(&suite_path)
             .map_err(|error| format!("cannot read {} back: {error}", suite_path.display()))?;
+        proved.push_str(&String::from_utf8_lossy(&suite));
         print_tail(&suite, 25);
         if !suite_status.success() {
             // The tail ends on cargo's «N targets failed» and never on the
@@ -416,6 +430,18 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
                     &[("count", &not_run.to_string())],
                 )
             );
+        }
+    }
+    // **THE SUITE HELD THE RECEIPTS AND NOBODY READ THEM.** Passing was all the
+    // release ever asked, so a judge green while measuring nothing went into
+    // service untouched. The words are already in hand; this reads them.
+    if !options.skip_tests {
+        match crate::ratchet_cmd::what_the_suite_proved(&repository, &proved) {
+            Ok(said) => println!("{said}"),
+            Err(why) => {
+                eprintln!("sailor release: {why}");
+                return Ok(1);
+            }
         }
     }
     if !judges.is_empty() {
@@ -546,6 +572,7 @@ fn install_root() -> Result<PathBuf, String> {
 pub(crate) fn sources_root() -> Result<PathBuf, String> {
     root_under(
         env::var_os("SAILOR_SOURCES"),
+        the_sources_standing_in(),
         env::var_os("HOME"),
         SOURCES_BELOW_HOME,
         "SAILOR_SOURCES",
@@ -565,12 +592,16 @@ pub(crate) fn sources_root() -> Result<PathBuf, String> {
 /// current directory, fault 25 in disguise.
 fn root_under(
     declared: Option<OsString>,
+    standing: Option<PathBuf>,
     home: Option<OsString>,
     below: &str,
     declared_name: &str,
 ) -> Result<PathBuf, String> {
     if let Some(root) = declared.filter(|value| !value.is_empty()) {
         return Ok(PathBuf::from(root));
+    }
+    if let Some(standing) = standing {
+        return Ok(standing);
     }
     home.map(|home| PathBuf::from(home).join(below))
         .ok_or_else(|| {
@@ -579,6 +610,20 @@ fn root_under(
                 &[("variable", declared_name)],
             )
         })
+}
+
+/// The sources this command is standing in, when it is standing in them.
+///
+/// **`personal/sailor` IS ONE MACHINE'S FOLDER LAYOUT, NOT A FACT.** Standing
+/// in a Sailor tree is an answer nobody has to declare.
+fn the_sources_standing_in() -> Option<PathBuf> {
+    let at = env::current_dir().ok()?;
+    let root = flow::workspace::find_root(&at)?;
+    root.join("crates")
+        .join("sailor")
+        .join("Cargo.toml")
+        .is_file()
+        .then_some(root)
 }
 
 fn git_output(root: &Path, args: &[&str]) -> Result<Output, String> {
@@ -1529,7 +1574,7 @@ mod tests {
     #[test]
     fn the_release_builds_from_the_sources_and_not_from_the_configuration() {
         let home = Some(OsString::from("/casa/di-chiunque"));
-        let sources = root_under(None, home, SOURCES_BELOW_HOME, "SAILOR_SOURCES").unwrap();
+        let sources = root_under(None, None, home, SOURCES_BELOW_HOME, "SAILOR_SOURCES").unwrap();
         let house = ledger::sailor_home_in(None, None, PathBuf::from("/casa/di-chiunque"));
 
         // Spelled out on purpose: were the constant returned to the
@@ -1543,6 +1588,38 @@ mod tests {
     }
 
 
+    /// **THE FOLDER LAYOUT OF ONE MACHINE IS NOT A FACT ABOUT ANY OTHER.**
+    /// A clone under a name of its own built from a directory nobody has.
+    #[test]
+    fn the_tree_the_command_stands_in_beats_one_machines_folder_layout() {
+        let home = Some(OsString::from("/casa/di-chiunque"));
+        let standing = PathBuf::from("/qualunque/nome/abbia/scelto");
+
+        let stood = root_under(
+            None,
+            Some(standing.clone()),
+            home.clone(),
+            SOURCES_BELOW_HOME,
+            "SAILOR_SOURCES",
+        )
+        .unwrap();
+        assert_eq!(stood, standing, "the sources were taken from another machine's layout");
+
+        let declared = root_under(
+            Some(OsString::from("/altrove/sailor")),
+            Some(standing),
+            home,
+            SOURCES_BELOW_HOME,
+            "SAILOR_SOURCES",
+        )
+        .unwrap();
+        assert_eq!(
+            declared,
+            PathBuf::from("/altrove/sailor"),
+            "a declared root is the one answer nobody may overrule"
+        );
+    }
+
     /// A declared root beats the home, and a declared empty one does not.
     ///
     /// The second arm is the one that gets lost: a variable exported empty by a
@@ -1554,6 +1631,7 @@ mod tests {
         let home = Some(OsString::from("/casa/di-chiunque"));
         let declared = root_under(
             Some(OsString::from("/altrove/sailor")),
+            None,
             home.clone(),
             SOURCES_BELOW_HOME,
             "SAILOR_SOURCES",
@@ -1563,6 +1641,7 @@ mod tests {
 
         let empty = root_under(
             Some(OsString::new()),
+            None,
             home,
             SOURCES_BELOW_HOME,
             "SAILOR_SOURCES",
@@ -1570,7 +1649,7 @@ mod tests {
         .unwrap();
         assert_eq!(empty, PathBuf::from("/casa/di-chiunque/personal/sailor"));
 
-        assert!(root_under(None, None, "personal/sailor", "SAILOR_SOURCES").is_err());
+        assert!(root_under(None, None, None, "personal/sailor", "SAILOR_SOURCES").is_err());
     }
 
     /// Sailor's sources carry the crate the binary is named after.
@@ -1613,7 +1692,7 @@ mod tests {
     fn the_binary_is_installed_in_the_home_and_not_next_to_the_sources() {
         let declared_home = Some(OsString::from("/casa/di-chiunque"));
         let sources =
-            root_under(None, declared_home, SOURCES_BELOW_HOME, "SAILOR_SOURCES").unwrap();
+            root_under(None, None, declared_home, SOURCES_BELOW_HOME, "SAILOR_SOURCES").unwrap();
         let home = ledger::sailor_home_in(None, None, PathBuf::from("/casa/di-chiunque"));
         assert_ne!(sources, home);
         assert!(home.ends_with(".config/sailor"), "{home:?}");

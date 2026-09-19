@@ -88,6 +88,24 @@ fn full_graph() -> Graph {
     Graph::new(flow.graph.steps().to_vec()).expect("the shipped graph stays valid")
 }
 
+/// **A FLOW RUN END TO END HANDED IN NO RECEIPT.** Passing said the same thing
+/// it would have said with the flow gone from the binary.
+#[test]
+fn the_shipped_flow_this_judge_runs_is_the_one_the_binary_hands_out() {
+    let steps = full_graph().steps().len();
+    workspace::measured_against(
+        steps,
+        "steps read off the shipped flow",
+        flow::system::FLOWS.len(),
+        "flows the binary hands out",
+    );
+    assert!(
+        steps > 0,
+        "the shipped flow «take-the-next-work» loaded with no step in it, and every \
+         case below would pass on an empty graph"
+    );
+}
+
 /// Guards `make-fixtures.sh`'s `rm -rf`: `cargo test` runs a binary's tests
 /// concurrently, so one test's rebuild deleted another's fixtures mid-run.
 static FIXTURES_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
