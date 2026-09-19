@@ -74,4 +74,4 @@ that carried them, which is why the receipts can still be fetched.
 | `workspace tests` | proved red | `b24a7bab` | `105945273886` | a failing assertion |
 | `desktop tests` | proved red | `b24a7bab` | `105945273862` | a failing assertion in the shell's own workspace, which `cargo test --workspace` never reaches |
 | `clippy gate` | proved red | `b24a7bab` | `105945273758` | `approx_constant`, which is `clippy::correctness` and deny by default |
-| `the style debt` | not yet asked | — | — | — |
+| `the style debt` | proved red | `01347a02` | `105946675134` | three blank lines where rustfmt allows one: 1676 places against a ceiling of 1675 |

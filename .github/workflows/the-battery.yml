@@ -79,6 +79,13 @@ jobs:
       # when it was pushed, long before any gate — so this loses nothing that
       # was ever protected here. The shapes in that message are read by the
       # step above, which needs no list.
+      #
+      # **NOR DOES IT COVER A REQUEST THAT HAS FALLEN BEHIND.** If main moved
+      # while the request waited, the merge writes a combination of two trees
+      # that nobody ever measured, and no parent carries it. That merge is red,
+      # and rightly: bring main into the branch first and attest the result.
+      # The ruleset does not demand an up-to-date branch; this gate does, which
+      # is the strictness it should have had all along.
       - name: the names, carried by a trusted check on this content
         env:
           GH_TOKEN: ${{ github.token }}
