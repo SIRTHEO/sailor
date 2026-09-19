@@ -116,7 +116,10 @@ pub fn models_named_in(with: &Value) -> BTreeMap<String, String> {
 }
 
 /// The ceiling this step declares, in every unit an engine may take one in.
-pub(crate) fn ceiling_of(spec: &EngineSpec, share_of_the_cap: Option<i64>) -> crate::reserve::Declared {
+pub(crate) fn ceiling_of(
+    spec: &EngineSpec,
+    share_of_the_cap: Option<i64>,
+) -> crate::reserve::Declared {
     let declared = crate::reserve::Declared {
         max_spend_micros: spec.max_spend_micros,
         max_tokens: spec.max_tokens,
