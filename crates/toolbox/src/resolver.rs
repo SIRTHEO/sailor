@@ -245,6 +245,17 @@ impl actions::ToolResolver for Tools {
             .model_option()
     }
 
+    /// The same rule again, on the permission: an engine whose descriptor is
+    /// silent about leave is silent, not permissive.
+    fn edit_the_tree_option(&self, id: &str) -> Option<Vec<String>> {
+        self.catalog
+            .live()
+            .into_iter()
+            .find(|loaded| loaded.descriptor.id == id)?
+            .descriptor
+            .edit_the_tree_option()
+    }
+
     /// The same rule as the model option: what is not written is not there.
     fn spend_ceiling_option(&self, id: &str) -> Option<actions::reserve::CeilingOption> {
         let loaded = self

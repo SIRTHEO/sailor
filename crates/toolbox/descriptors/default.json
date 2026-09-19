@@ -294,6 +294,10 @@
           "unit": "usd",
           "note": "works only together with --print, which is the line Sailor composes; the value is written in whole dollars, hence the unit"
         },
+        "edit_the_tree": {
+          "args": ["-p", "--permission-mode", "acceptEdits"],
+          "note": "How this command line is asked the same one-shot question WITH LEAVE TO CHANGE THE TREE: it replaces `ask.args`, it does not extend them. Measured 11/09/2026: `claude -p` alone cannot be asked for permission, so every write is denied and an implementation step reports «This session permits only filesystem reads» after spending. acceptEdits covers both a file write and a shell command, so bypassPermissions is not used."
+        },
         "choose_model": { "args": ["--model"], "takes_value": true },
         "fallback_model": {
           "args": ["--fallback-model"],
@@ -402,6 +406,10 @@
           { "args": ["-c"], "takes_value": true, "note": "key=value, repeatable; the value is read as TOML" }
         ],
         "native_spend_cap": false,
+        "edit_the_tree": {
+          "args": ["exec", "--sandbox", "workspace-write"],
+          "note": "The same question WITH LEAVE TO CHANGE THE TREE, and here the leave is a value already on the line, not an option beside it — which is why this replaces `ask.args` rather than extending them. Measured 11/09/2026: take-the-next-fault spent on three runs and reported «No files changed» every time, against --sandbox read-only. workspace-write writes the workspace and nothing else; danger-full-access is not used."
+        },
         "choose_model": { "args": ["--model"], "takes_value": true },
         "fallback_model": false,
         "read_remaining_quota": {"note": "Not a flag: a channel, and it said `false` because nobody had found it. Measured 11/09/2026 by reading the paths in the binary: `https://chatgpt.com/backend-api/wham/usage` answers HTTP 200 to the bearer in the home's `auth.json` under `tokens.access_token`, with no other header. Under `rate_limit` sit `primary_window` and `secondary_window`, each with `used_percent` and `reset_at` in unix seconds, and `limit_window_seconds` says which is which: 18000 and 604800. The sibling path `/api/codex/usage` answers 403. It is the PERSON's quota over every session, never one run's. Read only, no cost."}

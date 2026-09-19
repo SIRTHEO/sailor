@@ -183,6 +183,12 @@ pub(crate) struct EngineSpec {
     /// declares it — a step is not read as a judge by the words in it.
     #[serde(default)]
     pub(crate) blind: bool,
+
+    /// This step changes the tree, so the engine is asked for leave to do it.
+    /// **The permission belongs to the step**: an engine that may edit is the
+    /// same engine that may not.
+    #[serde(default)]
+    pub(crate) edits_the_tree: bool,
     /// `fuel`: among the chain, the engine whose subscription window would
     /// otherwise expire unused goes first, and the why is said.
     #[serde(default)]

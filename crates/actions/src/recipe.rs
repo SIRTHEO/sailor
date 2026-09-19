@@ -39,6 +39,16 @@ pub trait ToolResolver: Send + Sync {
         models::pact::DataPact::Unknown
     }
 
+    /// How `id` is asked a one-shot question **with leave to change the
+    /// tree**. It replaces `ask_recipe(id).args`: one engine takes leave as an
+    /// option beside the question, another by changing a value already there.
+    ///
+    /// `None` is a refusal, not a default — the rule `data_pact` already
+    /// holds, where what nobody measured reads as a no.
+    fn edit_the_tree_option(&self, _id: &str) -> Option<Vec<String>> {
+        None
+    }
+
     /// The subscription windows of `id` as fuel, read now.
     ///
     /// `Ok(&[])` is a channel the descriptor does not declare; `Err` is one
