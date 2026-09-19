@@ -271,7 +271,11 @@ impl actions::ToolResolver for Tools {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|since| since.as_secs() as i64)
             .unwrap_or(0);
-        let Some(loaded) = self.catalog.live().into_iter().find(|loaded| loaded.descriptor.id == id)
+        let Some(loaded) = self
+            .catalog
+            .live()
+            .into_iter()
+            .find(|loaded| loaded.descriptor.id == id)
         else {
             return Ok(Vec::new());
         };
@@ -504,7 +508,9 @@ mod tests {
         );
         let tools = Tools::new(catalog, machine(&dir));
 
-        let reason = tools.resolve("another-one").expect_err("nobody declares it");
+        let reason = tools
+            .resolve("another-one")
+            .expect_err("nobody declares it");
 
         assert!(reason.contains("another-one"), "{reason}");
         assert!(reason.contains("the-engine"), "{reason}");

@@ -1105,7 +1105,11 @@ impl Descriptor {
                 .map(|mark| mark.trim().to_lowercase())
                 .filter(|mark| !mark.is_empty())
                 .collect();
-            for mark in ask.exhausted_when.iter().filter(|mark| !mark.trim().is_empty()) {
+            for mark in ask
+                .exhausted_when
+                .iter()
+                .filter(|mark| !mark.trim().is_empty())
+            {
                 let said = mark.trim().to_lowercase();
                 if !unusable.iter().any(|covering| said.contains(covering)) {
                     found.push(format!(

@@ -697,7 +697,9 @@ fn a_word_for_a_spent_quota_that_no_word_for_cannot_work_covers_is_a_contradicti
 
     let empty = of("frammento-vuoto");
     assert!(
-        empty.iter().any(|said| said.contains("empty fragment") && said.contains("exhausted_when")),
+        empty
+            .iter()
+            .any(|said| said.contains("empty fragment") && said.contains("exhausted_when")),
         "an empty fragment in `exhausted_when` matches everything and must be named: {empty:?}"
     );
 }
@@ -719,10 +721,9 @@ fn an_empty_fragment_among_the_words_for_waiting_on_a_person_is_named() {
         ]"#,
     );
     assert!(catalog.problems.is_empty(), "{:?}", catalog.problems);
-    let named = catalog
-        .contradictions()
-        .into_iter()
-        .any(|found| found.said.contains("empty fragment") && found.said.contains("waits_for_a_person_when"));
+    let named = catalog.contradictions().into_iter().any(|found| {
+        found.said.contains("empty fragment") && found.said.contains("waits_for_a_person_when")
+    });
     assert!(named, "the empty fragment must be named with its field");
 }
 
@@ -752,7 +753,10 @@ fn the_shipped_codex_descriptor_declares_how_to_read_its_tokens() {
         ("cached", &usage.cached_tokens),
         ("written to cache", &usage.cache_write_tokens),
     ] {
-        assert!(pointer.is_some(), "codex states its {named} tokens and they are read");
+        assert!(
+            pointer.is_some(),
+            "codex states its {named} tokens and they are read"
+        );
     }
     assert!(
         usage.total_tokens.is_none(),

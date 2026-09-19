@@ -27,7 +27,11 @@ impl ExternalEngineAction {
         tools: &dyn ToolResolver,
         spec: &EngineSpec,
         chain: &[String],
-    ) -> (Vec<String>, Option<models::fuel::Preference>, Vec<(String, String)>) {
+    ) -> (
+        Vec<String>,
+        Option<models::fuel::Preference>,
+        Vec<(String, String)>,
+    ) {
         let mut ordered: Vec<String> = self.preferred_for(spec);
         for id in chain {
             if !ordered.contains(id) {
@@ -83,7 +87,11 @@ impl ExternalEngineAction {
     pub(crate) fn fell_back_from(&self, spec: &EngineSpec, usable: &[Candidate]) -> Vec<String> {
         self.preferred_for(spec)
             .into_iter()
-            .filter(|first| !usable.iter().any(|one| one.id.as_deref() == Some(first.as_str())))
+            .filter(|first| {
+                !usable
+                    .iter()
+                    .any(|one| one.id.as_deref() == Some(first.as_str()))
+            })
             .collect()
     }
 
@@ -167,7 +175,8 @@ impl ExternalEngineAction {
                         format!("`prefer` knows «{FUEL}» and «{AS_WRITTEN}», not «{other}»"),
                     ));
                 }
-                let (ids, preferred, unreadable_fuel) = self.ordered(tools.as_ref(), spec, choice.ids());
+                let (ids, preferred, unreadable_fuel) =
+                    self.ordered(tools.as_ref(), spec, choice.ids());
                 if ids.is_empty() {
                     return Err(ActionError::new(
                         "invalid_input",
@@ -250,8 +259,12 @@ impl ExternalEngineAction {
                         });
                         continue;
                     }
-                    if let Some(why) =
-                        crate::equipment::current_equipment_asking_for(&bin, &spec.env, account.as_deref()).refused
+                    if let Some(why) = crate::equipment::current_equipment_asking_for(
+                        &bin,
+                        &spec.env,
+                        account.as_deref(),
+                    )
+                    .refused
                     {
                         refused.push(Refused {
                             id: id.clone(),
@@ -348,9 +361,9 @@ impl ExternalEngineAction {
                     // makes. Both come from the descriptor and the step: an
                     // engine that takes none leaves the run a stop threshold.
                     let held_to = tools.spend_ceiling_option(id);
-                    let ceiling = held_to
-                        .as_ref()
-                        .and_then(|option| reserve::ceiling_for(option, &ceiling_of(spec, share_of_the_cap)));
+                    let ceiling = held_to.as_ref().and_then(|option| {
+                        reserve::ceiling_for(option, &ceiling_of(spec, share_of_the_cap))
+                    });
                     let written = ceiling.as_ref().and_then(reserve::Ceiling::as_written);
                     match tools.ask_recipe(id).map(|recipe| match &leave {
                         // Whole, never appended: see `edit_the_tree_option`.
@@ -521,7 +534,11 @@ impl ExternalEngineAction {
         };
         let declared = budgets.get(id)?;
         let now = now_secs();
-        let spent = match self.ledger.as_ref()?.spent_by_cli_since(id, now - declared.window_secs) {
+        let spent = match self
+            .ledger
+            .as_ref()?
+            .spent_by_cli_since(id, now - declared.window_secs)
+        {
             Ok(spent) => spent,
             Err(error) => return Some(format!("its spend cannot be summed: {error}")),
         };
@@ -549,16 +566,21 @@ impl Candidate {
     /// class, anything else it cannot work with is `exhausted` as before, and
     /// an output that says neither is `None`.
     pub(crate) fn declared_class(&self, stdout: &str, stderr: &str) -> Option<&'static str> {
-        if mentions_any(&self.exhausted_when, stdout) || mentions_any(&self.exhausted_when, stderr) {
+        if mentions_any(&self.exhausted_when, stdout) || mentions_any(&self.exhausted_when, stderr)
+        {
             return Some("quota_exhausted");
         }
-        self.says_it_cannot_work(stdout, stderr).then_some("exhausted")
+        self.says_it_cannot_work(stdout, stderr)
+            .then_some("exhausted")
     }
 
     /// The class of a call that **exited zero and reported real usage**: it
     /// answered, so only its error channel can still say it could not work —
     /// never the body of the answer it just paid for. See fault 183.
-    pub(crate) fn declared_class_of_a_call_that_answered(&self, stderr: &str) -> Option<&'static str> {
+    pub(crate) fn declared_class_of_a_call_that_answered(
+        &self,
+        stderr: &str,
+    ) -> Option<&'static str> {
         self.declared_class("", stderr)
     }
 }
@@ -782,8 +804,9 @@ mod tests {
         assert!(refused.is_empty(), "{} refusals", refused.len());
         let line = usable.first().expect("one candidate");
         assert!(
-            line.args.windows(2).any(|pair| pair
-                == ["--permission-mode".to_owned(), "acceptEdits".to_owned()]),
+            line.args
+                .windows(2)
+                .any(|pair| pair == ["--permission-mode".to_owned(), "acceptEdits".to_owned()]),
             "the leave the descriptor spells is on the line: {:?}",
             line.args
         );
@@ -847,9 +870,10 @@ mod tests {
         }
 
         let action = ExternalEngineAction::resolving_with(Sandboxed);
-        let spec: EngineSpec =
-            serde_json::from_value(json!({"tool": "sandboxed", "edits_the_tree": true, "timeout_secs": 5}))
-                .expect("the step parses");
+        let spec: EngineSpec = serde_json::from_value(
+            json!({"tool": "sandboxed", "edits_the_tree": true, "timeout_secs": 5}),
+        )
+        .expect("the step parses");
         let (usable, _) = action.candidates(&spec, None).expect("the chain is read");
 
         let line = usable.first().expect("one candidate");
@@ -1207,9 +1231,9 @@ mod tests {
                         unusable_when: vec![String::new(), "   ".to_owned()],
                         silent_without_prompt: false,
                         refuses_without_prompt: Vec::new(),
-                    exhausted_when: Vec::new(),
-                    cooldown_secs: None,
-                    waits_for_a_person_when: Vec::new(),
+                        exhausted_when: Vec::new(),
+                        cooldown_secs: None,
+                        waits_for_a_person_when: Vec::new(),
                         usage: None,
                     }),
                     other => Chain.ask_recipe(other),
@@ -1482,17 +1506,22 @@ mod tests {
     fn an_engine_whose_fuel_channel_failed_is_named_apart_from_one_that_declares_none() {
         let action = ExternalEngineAction::resolving_with(FuelReadsThatDiffer);
         let spec: EngineSpec =
-            serde_json::from_value(json!({"prefer": "fuel", "timeout_secs": 10}))
-                .expect("spec");
+            serde_json::from_value(json!({"prefer": "fuel", "timeout_secs": 10})).expect("spec");
         let chain = vec!["no-channel".to_owned(), "channel-down".to_owned()];
 
         let (ids, preferred, unreadable) = action.ordered(&FuelReadsThatDiffer, &spec, &chain);
 
-        assert_eq!(ids, chain, "no fuel read for either means the written order stands");
+        assert_eq!(
+            ids, chain,
+            "no fuel read for either means the written order stands"
+        );
         assert!(preferred.is_none());
         assert_eq!(
             unreadable,
-            vec![("channel-down".to_owned(), "the engine refused: token expired".to_owned())],
+            vec![(
+                "channel-down".to_owned(),
+                "the engine refused: token expired".to_owned()
+            )],
             "only the engine whose channel failed is named; the one with no channel is silent \
              because it has nothing to report, not because it was never asked"
         );
