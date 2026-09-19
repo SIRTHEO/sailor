@@ -1,20 +1,9 @@
 //! The detection step does not die on a field it never asked for.
 //!
-//! MEASURED FAULT, and not on a badly written flow: on
-//! `what-this-machine-has`, shipped with the product. Inside a directory
-//! holding a `sailor.json` it always failed —
-//!
-//!   unknown field `workdir`, expected one of `descriptor_paths`,
-//!   `include_defaults`, `builtin_catalogs`, `family`, `version_probes`
-//!
-//! — and outside a project it ran. The difference is not in the flow: it is
-//! that the executor offers the project root to every step whose declared
-//! schema would accept it, and `{"type": "any"}` accepts anything. With
-//! `deny_unknown_fields` the action refused its own caller.
-//!
-//! The two proofs below hold both halves: the field no longer brings the step
-//! down, **and** it is not thrown away — a descriptor written relative counts
-//! from the root, not from where the process sits.
+//! The executor offers the project root to every step whose declared schema
+//! would accept it, and `{"type": "any"}` accepts anything: under
+//! `deny_unknown_fields` the action refused its own caller. Both proofs below
+//! hold — the field does not bring the step down, and it is not thrown away.
 
 use flow::{Action, ActionOutcome, SharedState};
 use serde_json::json;
