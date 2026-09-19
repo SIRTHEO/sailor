@@ -24,6 +24,7 @@ use super::{missing_actions, one_flow, open_default_ledger};
 /// stays for whoever works offline or is in a hurry.
 pub(super) fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) -> Result<String, String> {
     let (flow, _) = one_flow(sources, name)?;
+    let drift = how_far_yours_has_drifted(sources, name, &flow);
     let tools = toolbox::Tools::current();
     let real = actions::RealDryProbe;
     // **AN UNREADABLE PROFILE STORE DOES NOT STOP THE CHECK**, for the same
@@ -41,6 +42,11 @@ pub(super) fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) 
         &tools,
         if try_engines { Some(&world) } else { None },
     );
+    // The line above does not always end in a newline.
+    let report = match (report.ends_with('\n'), drift.is_empty()) {
+        (false, false) => format!("{report}\n{drift}"),
+        _ => format!("{report}{drift}"),
+    };
     match outcome {
         Ok(()) => Ok(report),
         Err(refusal) => {
@@ -51,6 +57,41 @@ pub(super) fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) 
             Err(refusal)
         }
     }
+}
+
+/// What a flow of yours changes from the shipped flow it hides. A home copy is
+/// frozen where it was taken and asks its reader to diff it against the source;
+/// nothing did. Empty for a flow that hides nothing.
+fn how_far_yours_has_drifted(sources: &[FlowSource], name: &str, yours: &FlowFile) -> String {
+    let replaces_builtin = flow::system::chains(sources, None)
+        .into_iter()
+        .find(|chain| chain.name == name)
+        .is_some_and(|chain| chain.replaces_builtin());
+    if !replaces_builtin {
+        return String::new();
+    }
+    let Some(Ok(shipped)) = flow::system::builtin_registry().remove(name) else {
+        return String::new();
+    };
+    let apart = flow::system::what_yours_changes(yours, &shipped);
+    if apart.is_empty() {
+        return catalogue::say("cli.flow.yours_matches_the_shipped_one", &[]);
+    }
+    // Ten and a count: a reworked copy differs everywhere, and a page of
+    // pointers buries the one that matters.
+    let shown = apart.iter().take(10).cloned().collect::<Vec<_>>().join(", ");
+    let rest = apart.len().saturating_sub(10);
+    let count = apart.len().to_string();
+    if rest == 0 {
+        return catalogue::say(
+            "cli.flow.yours_has_drifted",
+            &[("fields", &shown), ("count", &count)],
+        );
+    }
+    catalogue::say(
+        "cli.flow.yours_has_drifted_and_more",
+        &[("fields", &shown), ("more", &rest.to_string()), ("count", &count)],
+    )
 }
 
 /// The rest of `check_flow`, split out so a test can hand it a throwaway
