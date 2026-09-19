@@ -596,11 +596,8 @@ pub fn too_little_to_build(free: Option<u64>) -> bool {
     free.is_some_and(|free| free < A_BUILD_WANTS_FREE)
 }
 
-/// Bytes actually held under `path`: a symlink counts as zero, so a place
-/// that only points elsewhere is never charged the weight of what it points
-/// to. `None` when any entry along the way could not be read — a permission
-/// refusal or a path that no longer exists is not the same as an empty
-/// place, and reporting it as zero would say the opposite of what happened.
+/// Bytes held under `path`; a symlink counts as zero. `None` where an entry
+/// could not be read: **A PLACE NOBODY CAN OPEN IS NOT AN EMPTY PLACE.**
 pub fn weight_of(path: &Path) -> Option<u64> {
     let metadata = std::fs::symlink_metadata(path).ok()?;
     if metadata.is_symlink() {

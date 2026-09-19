@@ -357,6 +357,7 @@ fn a_step(id: &str, deps: &[&str], with: Option<serde_json::Value>) -> Step {
         stops_when: None,
         decides_done: false,
         required: false,
+        needs: Vec::new(),
     }
 }
 

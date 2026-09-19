@@ -134,6 +134,12 @@ write in one checkout, and a seed taken over somebody else's uncommitted file
 describes a tree nobody has. It prints the files it laid over: read that list
 and check they are all yours. `sailor ratchet --only <judge>` runs one judge.
 
+Both `sailor ratchet` and `sailor release` build from the sources, and they find
+them in this order: `SAILOR_SOURCES` if you set it, otherwise the Sailor tree you
+are standing in, otherwise `$HOME/personal/sailor`. Standing in your checkout is
+enough — set `SAILOR_SOURCES` only to build from a tree other than the one you
+are in.
+
 ## Commits
 
 Conventional Commits, as `AGENTS.md` states them: `<type>(<scope>): <subject>`,

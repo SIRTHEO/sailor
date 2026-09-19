@@ -150,6 +150,7 @@ fn step(id: &str, deps: Vec<String>) -> Step {
         decides_done: false,
         required: false,
         with: None,
+        needs: Vec::new(),
     }
 }
 

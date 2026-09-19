@@ -3,7 +3,7 @@
 //! **SURFACE: `gate`. POWERS CLAIMED: none.** It does not read the world, does
 //! not touch it, does not write to the store on its own account: it offers a
 //! brief and waits. The declaration is written here because the four surfaces
-//! of `docs/the-four-surfaces.md` do not exist in the code yet, and a new
+//! do not exist in the code yet, and a new
 //! action that stays silent while the criterion is being born becomes the first
 //! unwritten exception — the way the window reached eight kinds of step against
 //! three that are executed. Whoever carries the surfaces into the registry

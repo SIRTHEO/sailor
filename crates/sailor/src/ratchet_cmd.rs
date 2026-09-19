@@ -237,16 +237,26 @@ fn receipt_in(said: &str) -> Receipt {
 
 /// Passing is not the same as having measured, and the judge is the only one
 /// that can tell: it says so on its own output, and this reads it there.
+/// **A JUDGE THAT MEASURED IS NOT BLIND, WHATEVER ELSE IT PRINTED.** The cure
+/// for blind gates asked each judge to drive its own blind branch on purpose,
+/// and deciding the whole binary on that line turned the proof into the
+/// verdict. The receipt is read first.
 pub fn verdict_of(passed: bool, said: &str) -> Verdict {
     if !passed {
         Verdict::Red
-    } else if said.contains(workspace::MEASURED_NOTHING) {
-        Verdict::NotMeasured
     } else if matches!(receipt_in(said), Receipt::Walked { .. }) {
         Verdict::Green
+    } else if said.contains(workspace::MEASURED_NOTHING) {
+        Verdict::NotMeasured
     } else {
         Verdict::NoReceipt
     }
+}
+
+/// The checks a judge declared it could not measure, counted even where it
+/// handed in a receipt for the others.
+pub fn blind_checks_in(said: &str) -> usize {
+    said.lines().filter(|line| line.trim().starts_with(workspace::MEASURED_NOTHING)).count()
 }
 
 /// How many judges hand in no receipt today. **It can only fall**, and no run
@@ -257,6 +267,70 @@ const NO_RECEIPT_TODAY: usize = 0;
 /// through. **It can only fall**, and it is at the floor: the eight that can
 /// give that answer were each run against this tree and all eight measured.
 const UNMEASURED_TODAY: usize = 0;
+
+/// The verdicts of the judges a suite ran, read off the output it already
+/// captured: `cargo test` names each binary before it runs.
+fn verdicts_in(suite: &str, judges: &[Judge]) -> Vec<(String, Verdict)> {
+    let mut found = Vec::new();
+    let mut named: Option<&Judge> = None;
+    let mut said = String::new();
+    let mut close = |named: &mut Option<&Judge>, said: &mut String| {
+        if let Some(judge) = named.take() {
+            found.push((judge.test.clone(), verdict_of(true, said)));
+        }
+        said.clear();
+    };
+    for line in suite.lines() {
+        if let Some(binary) = line.trim().strip_prefix("Running ") {
+            close(&mut named, &mut said);
+            named = judges.iter().find(|judge| {
+                binary.starts_with(&format!("tests/{}.rs", judge.test))
+            });
+            continue;
+        }
+        if named.is_some() {
+            said.push_str(line);
+            said.push('\n');
+        }
+    }
+    close(&mut named, &mut said);
+    found
+}
+
+/// What the release must be told before it puts a binary in service.
+///
+/// **A RECEIPT THAT GATES NOTHING IS DOCUMENTATION.** The release read cargo's
+/// exit code alone, so a judge passing while measuring nothing sailed through.
+pub fn what_the_suite_proved(root: &Path, suite: &str) -> Result<String, String> {
+    let judges = judges_in(root);
+    if judges.is_empty() {
+        return Ok(catalogue::say("cli.release.no_judge_to_read", &[]));
+    }
+    let verdicts = verdicts_in(suite, &judges);
+    let mut counted = Verdicts::default();
+    for (_, verdict) in &verdicts {
+        counted.saw(*verdict);
+    }
+    let unheard = judges.len() - verdicts.len();
+    let blind: Vec<&str> = verdicts
+        .iter()
+        .filter(|(_, verdict)| matches!(verdict, Verdict::NotMeasured | Verdict::NoReceipt))
+        .map(|(name, _)| name.as_str())
+        .collect();
+    if counted.not_measured > UNMEASURED_TODAY || counted.no_receipt > NO_RECEIPT_TODAY {
+        return Err(catalogue::say(
+            "cli.release.the_suite_proved_too_little",
+            &[("judges", &blind.join(", "))],
+        ));
+    }
+    Ok(catalogue::say(
+        "cli.release.the_suite_proved_itself",
+        &[
+            ("read", &verdicts.len().to_string()),
+            ("unheard", &unheard.to_string()),
+        ],
+    ))
+}
 
 /// The tally of the run, kept apart so a green count never absorbs the others.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -745,6 +819,14 @@ fn measured(asked: &Asked) -> Result<bool, String> {
         match verdict {
             Verdict::Green => {
                 println!("  {} {}", catalogue::say("cli.ratchet.green", &[]), judge.test);
+                // A judge that measured can still hold a check that could not.
+                // Green is the verdict; the blind check is still said, or the
+                // reader is handed the silence this apparatus exists to break.
+                for line in text.lines().filter(|line| {
+                    line.trim_start().starts_with(workspace::MEASURED_NOTHING)
+                }) {
+                    println!("      {}", line.trim());
+                }
             }
             Verdict::NotMeasured => {
                 println!("  {} {}", catalogue::say("cli.ratchet.not_measured", &[]), judge.test);

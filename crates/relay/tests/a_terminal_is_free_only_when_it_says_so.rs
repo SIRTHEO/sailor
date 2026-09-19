@@ -264,3 +264,66 @@ fn a_screen_whose_painter_is_gone_says_nothing_about_now() {
 
     assert!(why.contains("is gone"), "{why}");
 }
+
+/// A process table read from a live session at work: a login, its shell, the
+/// command line, and under it a server it started and that server's node.
+fn the_table_of_a_session_at_work() -> Vec<relay::OnTheMachine> {
+    fn row(pid: u32, parent: u32, command: &str) -> relay::OnTheMachine {
+        relay::OnTheMachine {
+            pid,
+            parent,
+            tty: "ttys015".to_owned(),
+            command: command.to_owned(),
+        }
+    }
+    vec![
+        row(21404, 1314, "/usr/bin/login -flpq a-person"),
+        row(21405, 21404, "/bin/zsh -l"),
+        row(27719, 21405, "a-command-line"),
+        row(11494, 27719, "caffeinate -i -t 300"),
+        row(28080, 27719, "npm exec a-server"),
+        row(28448, 28080, "/Users/somebody/node_modules/.bin/a-server"),
+    ]
+}
+
+#[test]
+fn a_session_holding_a_tool_is_not_free_however_still_its_screen_is() {
+    let held = relay::still_holding(
+        &the_table_of_a_session_at_work(),
+        "ttys015",
+        "a-command-line",
+        &["caffeinate".to_owned()],
+    );
+
+    assert_eq!(
+        held,
+        vec!["a-server".to_owned(), "npm".to_owned()],
+        "what the session holds is named, so the wait says why"
+    );
+}
+
+/// What a session of this line holds while idle is declared, not guessed: a
+/// process the line starts for itself must not hold its own terminal for ever.
+#[test]
+fn what_the_line_declares_it_holds_while_idle_frees_the_terminal() {
+    let mut table = the_table_of_a_session_at_work();
+    table.retain(|row| !row.command.contains("a-server"));
+
+    let held = relay::still_holding(&table, "ttys015", "a-command-line", &["caffeinate".to_owned()]);
+
+    assert!(held.is_empty(), "only the idle companion is left: {held:?}");
+}
+
+/// A session of another terminal is another terminal's business: its work must
+/// not hold this one back.
+#[test]
+fn what_another_terminal_runs_does_not_hold_this_one() {
+    let mut table = the_table_of_a_session_at_work();
+    for row in &mut table {
+        row.tty = "ttys002".to_owned();
+    }
+
+    let held = relay::still_holding(&table, "ttys015", "a-command-line", &[]);
+
+    assert!(held.is_empty(), "nothing on ttys015 is running: {held:?}");
+}
