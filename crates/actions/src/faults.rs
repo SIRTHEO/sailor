@@ -168,8 +168,20 @@ impl FaultRecordAction {
     }
 }
 
+/// Whether a fault already open and word for word the same stops a second one
+/// being written. **The step declares it**: a watcher on a schedule repeats
+/// itself by construction, a person reporting twice usually means twice.
+#[derive(Debug, Deserialize)]
+struct RecordInput {
+    #[serde(default)]
+    only_if_not_already_open: bool,
+}
+
 impl Action for FaultRecordAction {
     fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
+        let asked: RecordInput = serde_json::from_value(input.clone()).map_err(|error| {
+            wrong_input(format!("«only_if_not_already_open» is true or false: {error}"))
+        })?;
         // Validated before the store is opened, so a malformed step is wrong on
         // every machine instead of only where the register happens to exist.
         let draft: Draft = serde_json::from_value(input.clone()).map_err(|error| {
@@ -189,17 +201,34 @@ impl Action for FaultRecordAction {
             // defect; answering "went" with nothing written would lose it.
             return Err(unreadable("there is no register on this machine"));
         };
+        if asked.only_if_not_already_open {
+            let already = store
+                .all()
+                .map_err(unreadable)?
+                .into_iter()
+                .find(|fault| fault.still_open() && fault.what_happened == draft.what_happened);
+            if let Some(already) = already {
+                return Ok(ActionOutcome::Went(json!({
+                    "register": REGISTER_PRESENT,
+                    "number": already.number,
+                    "fault": already,
+                    "already_open": true,
+                })));
+            }
+        }
         let recorded = store.record(&draft).map_err(unreadable)?;
         Ok(ActionOutcome::Went(json!({
             "register": REGISTER_PRESENT,
             "number": recorded.number,
             "fault": recorded,
+            "already_open": false,
         })))
     }
 
     fn species(&self) -> StepSpecies {
-        // Running it again writes a second fault with a second number. Nothing
-        // here can tell a repeat from a new defect, so nothing here may decide.
+        // Running it again writes a second fault with a second number, unless
+        // the step said `only_if_not_already_open` — and a step that did not
+        // say it is one nothing here may decide for.
         StepSpecies::HandToHuman
     }
 }
@@ -229,6 +258,65 @@ mod tests {
             "what_would_prevent": "a test that is born red",
             "status": "**open**",
         })
+    }
+
+    /// A watcher on a schedule meets the same drift every quarter of an hour.
+    /// Twenty rows for four defects is a register nobody reads.
+    #[test]
+    fn a_step_that_asked_for_it_does_not_open_a_second_fault_saying_the_same_thing() {
+        let store = scratch("already-open");
+        let action = FaultRecordAction::new(Some(store));
+        let mut draft = a_draft("the lab no longer runs what the repository declares");
+        draft["only_if_not_already_open"] = json!(true);
+
+        let first = went(action.execute(&draft, &SharedState::new()));
+        let again = went(action.execute(&draft, &SharedState::new()));
+
+        assert_eq!(first["already_open"], json!(false));
+        assert_eq!(again["already_open"], json!(true));
+        assert_eq!(again["number"], first["number"]);
+    }
+
+    /// The default, and the reason it is the default: a person reporting the
+    /// same sentence twice usually means it happened twice.
+    #[test]
+    fn a_step_that_did_not_ask_for_it_opens_a_second_fault_as_it_always_did() {
+        let store = scratch("twice-over");
+        let action = FaultRecordAction::new(Some(store));
+        let draft = a_draft("the same sentence, written twice");
+
+        let first = went(action.execute(&draft, &SharedState::new()));
+        let again = went(action.execute(&draft, &SharedState::new()));
+
+        assert_ne!(again["number"], first["number"]);
+    }
+
+    /// Only an open one holds the door: a defect that comes back after it was
+    /// closed is news, and closing it must not silence the next report.
+    #[test]
+    fn a_fault_that_was_closed_does_not_hold_the_door_against_the_same_one_returning() {
+        let store = scratch("closed-then-back");
+        let action = FaultRecordAction::new(Some(store.clone()));
+        let mut draft = a_draft("the service went down");
+        draft["only_if_not_already_open"] = json!(true);
+        let first = went(action.execute(&draft, &SharedState::new()));
+        let number = first["number"].as_i64().expect("a number");
+        Faults::open(&store)
+            .expect("the register opens")
+            .set_status(number, "**closed** — the service was brought back")
+            .expect("the status is written");
+
+        let again = went(action.execute(&draft, &SharedState::new()));
+
+        assert_eq!(again["already_open"], json!(false));
+        assert_ne!(again["number"], first["number"]);
+    }
+
+    fn went(outcome: Result<ActionOutcome, ActionError>) -> Value {
+        match outcome.expect("the step went") {
+            ActionOutcome::Went(answer) => answer,
+            other => panic!("the step did not go: {other:?}"),
+        }
     }
 
     /// A flow writes a fault and the store gives it the number, exactly as the
