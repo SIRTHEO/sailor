@@ -1,6 +1,6 @@
 {
   "id": "close-the-work",
-  "description": "Step 10 of docs/the-delivery-loop.md: the holdings of a delivered branch released, every gesture safe to run again. The mandate is one JSON object naming the repo, the branch and the issue, with base and forge_repo optional. The proof is the merged pull request of the branch, read from the host so a rerun after the branch is gone still finds it, and the remote trunk must carry both its head and its merge commit before anything is deleted. The closing comment names that commit and passes the publication gate before it leaves; an issue already closed is left as it is. The worktree holding the branch is removed only when it is clean and nobody holds its lock; the local and remote branches are deleted only when the remote trunk carries their tip, and the remote deletion follows the push policy read from the trusted trunk. The run is complete only when the issue reads closed and no worktree, local branch or remote branch is left. Every forge call runs as the account in sailor.forgeAs. What this flow defends against: a different sailor found on PATH, a sailor in service that does not match its recorded sha256, a delivery policy that is missing, is not readable as JSON, or whose merge, push and release fields are not auto or ask, and a remote that cannot be read or has moved. What it does not defend against: whoever can already write to the directory of the sailor in service can replace that binary between its sha256 check and its execution; the policy reader inside this flow is more permissive than sailor policy on malformed input, such as out-of-range numbers or NUL bytes, in fields nobody reads; and whoever closes a handed step, such as authorize_push, does it with the sailor on their own PATH.",
+  "description": "Step 10 of docs/the-delivery-loop.md: the holdings of a delivered branch released, every gesture safe to run again. The mandate is one JSON object naming the repo, the branch and the issue, with base and forge_repo optional. The proof is the merged pull request of the branch, read from the host so a rerun after the branch is gone still finds it, and the remote trunk must carry both its head and its merge commit before anything is deleted. The closing comment names that commit and passes the publication gate before it leaves; an issue already closed is left as it is. The worktree holding the branch is removed only when it is clean and nobody holds its lock; the local and remote branches are deleted only when the remote trunk carries their tip, and the remote deletion follows the push policy read from the trusted trunk. The run is complete only when the issue reads closed and no worktree, local branch or remote branch is left. Every forge call runs as the account in sailor.forgeAs. What this flow defends against: a different sailor found on PATH, a sailor in service that does not match its recorded sha256, a delivery policy that is missing, is not readable as JSON, or whose merge, push and release fields are not auto or ask, and a remote that cannot be read or has moved. What it does not defend against: whoever can already write to the directory of the sailor in service can replace that binary between its sha256 check and its execution; and whoever closes a handed step, such as authorize_push, does it with the sailor on their own PATH.",
   "inputs": {
     "trigger": {
       "source": "manual",
@@ -523,65 +523,63 @@
           "the_request",
           "local_branch"
         ],
-        "action": "shell_check",
+        "action": "delivery_policy",
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\n# The policy is the file the trunk commits, read with git: a sailor on PATH never decides who authorizes.\ntrusted_policy() {\n    policy_commit=$(git -C \"$REPO\" rev-parse --verify --quiet \"$TRUNK^{commit}\") || { echo \"the trunk $TRUNK does not exist in this tree: no trusted policy to read\" >&2; exit 1; }\n    policy_text=$(git -C \"$REPO\" show \"$policy_commit:.sailor/delivery-policy.json\") || { echo \"$TRUNK at $policy_commit carries no .sailor/delivery-policy.json\" >&2; exit 1; }\n    printf '%s' \"$policy_text\" | POLICY_COMMIT=\"$policy_commit\" python3 -c '\nimport json, os, sys\ndef no_constant(name):\n    raise ValueError(\"%s is not JSON\" % name)\ntry:\n    policy = json.loads(sys.stdin.read(), parse_constant=no_constant)\nexcept ValueError as error:\n    sys.exit(\"the delivery policy is not JSON: %s\" % error)\nif not isinstance(policy, dict):\n    sys.exit(\"the delivery policy is not an object\")\nlines = []\nfor field in (\"merge\", \"push\", \"release\"):\n    if policy.get(field) not in (\"auto\", \"ask\"):\n        sys.exit(\"the delivery policy does not say auto or ask for %s\" % field)\n    lines.append(\"%s: %s\" % (field, policy[field]))\nlines.append(os.environ[\"POLICY_COMMIT\"])\nprint(\"\\n\".join(lines))\n'\n}\ncd \"$REPO\"\nsaid=$(trusted_policy) || exit 1\nprintf '%s\\n' \"$said\" | python3 -c '\nimport json, sys\nlines = [line.strip() for line in sys.stdin if line.strip()]\nfields = dict(line.split(\": \", 1) for line in lines[:-1])\nfor key in (\"merge\", \"push\", \"release\"):\n    if fields.get(key) not in (\"auto\", \"ask\"):\n        sys.exit(\"the policy does not say auto or ask for \" + key)\nprint(json.dumps({\n    \"merge\": fields[\"merge\"], \"push\": fields[\"push\"], \"release\": fields[\"release\"],\n    \"read_from\": lines[-1],\n    \"asks_publication\": \"ask\" if fields[\"push\"] == \"ask\" else \"auto\",\n    \"asks_integration\": \"ask\" if \"ask\" in (fields[\"merge\"], fields[\"push\"]) else \"auto\",\n    \"asks_release\": \"ask\" if \"ask\" in (fields[\"release\"], fields[\"push\"]) else \"auto\",\n}))\n'\n",
-          "env": {
-            "REPO": {
-              "$from": "/the_request/answer/repo"
-            },
-            "TRUNK": {
-              "$from": "/the_request/answer/trunk"
-            }
-          },
-          "timeout_secs": 30,
-          "answer_shape": {
-            "type": "object",
-            "properties": {
-              "merge": {
-                "type": "string"
-              },
-              "push": {
-                "type": "string"
-              },
-              "release": {
-                "type": "string"
-              },
-              "read_from": {
-                "type": "string"
-              },
-              "asks_publication": {
-                "type": "string"
-              },
-              "asks_integration": {
-                "type": "string"
-              },
-              "asks_release": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "merge",
-              "push",
-              "release",
-              "read_from",
-              "asks_publication",
-              "asks_integration",
-              "asks_release"
-            ],
-            "allow_extra": false
+          "repo": {
+            "$from": "/the_request/answer/repo"
           }
         },
         "needs": [
-          "python3"
+          "git"
         ],
         "input_schema": {
           "type": "any"
         },
         "output_schema": {
-          "type": "any"
+          "type": "object",
+          "properties": {
+            "merge": {
+              "type": "string"
+            },
+            "push": {
+              "type": "string"
+            },
+            "release": {
+              "type": "string"
+            },
+            "forge": {
+              "type": "string"
+            },
+            "remote": {
+              "type": "string"
+            },
+            "read_from": {
+              "type": "string"
+            },
+            "asks_publication": {
+              "type": "string"
+            },
+            "asks_integration": {
+              "type": "string"
+            },
+            "asks_release": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "merge",
+            "push",
+            "release",
+            "forge",
+            "remote",
+            "read_from",
+            "asks_publication",
+            "asks_integration",
+            "asks_release"
+          ],
+          "allow_extra": false
         }
       },
       {
@@ -594,7 +592,7 @@
         "max_attempts": 1,
         "when": {
           "kind": "pointer_equals",
-          "pointer": "/policy/answer/asks_publication",
+          "pointer": "/policy/asks_publication",
           "value": "ask"
         },
         "with": {
@@ -602,7 +600,7 @@
             "$join": [
               "The delivery policy read from the trusted trunk (commit ",
               {
-                "$from": "/policy/answer/read_from"
+                "$from": "/policy/read_from"
               },
               ") asks a person before this flow may delete the remote branch. Approve with an output file holding {\"authorized\": true}, or reject with the reason."
             ]
@@ -633,43 +631,34 @@
           "policy",
           "authorize_push"
         ],
-        "action": "shell_check",
+        "action": "the_person_said",
         "max_attempts": 1,
         "when": {
           "kind": "pointer_equals",
-          "pointer": "/policy/answer/asks_publication",
+          "pointer": "/policy/asks_publication",
           "value": "ask"
         },
         "with": {
-          "command": "set -eu\nprintf '%s' \"$SAID\" | KEY=\"$KEY\" python3 -c '\nimport json, os, sys\nsaid = json.loads(sys.stdin.read())\nif not isinstance(said, dict) or said.get(os.environ[\"KEY\"]) is not True:\n    sys.exit(\"the person did not write %s: true; nothing proceeds\" % os.environ[\"KEY\"])\nprint(json.dumps({\"confirmed\": True}))\n'\n",
-          "env": {
-            "SAID": {
-              "$json": "/authorize_push"
-            },
-            "KEY": "authorized"
+          "said": {
+            "$json": "/authorize_push"
           },
-          "timeout_secs": 30,
-          "answer_shape": {
-            "type": "object",
-            "properties": {
-              "confirmed": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "confirmed"
-            ],
-            "allow_extra": false
-          }
+          "key": "authorized"
         },
-        "needs": [
-          "python3"
-        ],
+        "needs": [],
         "input_schema": {
           "type": "any"
         },
         "output_schema": {
-          "type": "any"
+          "type": "object",
+          "properties": {
+            "confirmed": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "confirmed"
+          ],
+          "allow_extra": false
         }
       },
       {
@@ -750,7 +739,7 @@
               "$from": "/the_proof/answer/trunk"
             },
             "POLICY_READ": {
-              "$json": "/policy/answer"
+              "$json": "/policy"
             },
             "TRUNK": {
               "$from": "/the_request/answer/trunk"
@@ -808,7 +797,7 @@
               "$from": "/remote_tip/answer/tip"
             },
             "POLICY_READ": {
-              "$json": "/policy/answer"
+              "$json": "/policy"
             },
             "TRUNK": {
               "$from": "/the_request/answer/trunk"

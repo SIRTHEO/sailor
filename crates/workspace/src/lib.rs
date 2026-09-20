@@ -5,6 +5,7 @@
 
 pub mod branches;
 pub mod column;
+pub mod delivery;
 pub mod index_identity;
 pub mod ratchet;
 

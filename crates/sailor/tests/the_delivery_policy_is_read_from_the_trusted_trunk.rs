@@ -181,6 +181,34 @@ fn a_policy_only_on_a_side_branch_is_no_policy_at_all() {
     );
 }
 
+/// **THE CASE THIS FILE WAS MISSING.** Every other case here leaves the
+/// working tree agreeing with the trunk, or leaves it with no policy at all,
+/// so reading `.sailor/delivery-policy.json` off the disk passed them all:
+/// found by putting that defect back and watching five greens. Here the two
+/// disagree, and only the trunk's word may be printed.
+#[test]
+fn the_working_tree_may_not_talk_the_command_out_of_what_the_trunk_committed() {
+    let dir = scratch("working-tree-disagrees");
+    init_repo(&dir);
+    commit_policy(
+        &dir,
+        r#"{"schema_version": 1, "merge": "ask", "push": "ask", "release": "ask"}"#,
+    );
+    std::fs::write(
+        dir.join(".sailor/delivery-policy.json"),
+        r#"{"schema_version": 1, "merge": "auto", "push": "auto", "release": "auto"}"#,
+    )
+    .expect("the working tree's own policy");
+
+    let (ok, stdout, stderr) = run_policy(&dir);
+    assert!(ok, "stdout={stdout} stderr={stderr}");
+    assert_eq!(
+        stdout.lines().take(3).collect::<Vec<&str>>(),
+        vec!["merge: ask", "push: ask", "release: ask"],
+        "the uncommitted file was read: {stdout}"
+    );
+}
+
 /// A field the schema does not allow: the refusal names which one.
 #[test]
 fn an_invalid_field_is_refused_by_name() {

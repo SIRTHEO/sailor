@@ -276,65 +276,63 @@
           "the_request",
           "the_body"
         ],
-        "action": "shell_check",
+        "action": "delivery_policy",
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\n# The policy is the file the trunk commits, read with git: a sailor on PATH never decides who authorizes.\ntrusted_policy() {\n    policy_commit=$(git -C \"$REPO\" rev-parse --verify --quiet \"$TRUNK^{commit}\") || { echo \"the trunk $TRUNK does not exist in this tree: no trusted policy to read\" >&2; exit 1; }\n    policy_text=$(git -C \"$REPO\" show \"$policy_commit:.sailor/delivery-policy.json\") || { echo \"$TRUNK at $policy_commit carries no .sailor/delivery-policy.json\" >&2; exit 1; }\n    printf '%s' \"$policy_text\" | POLICY_COMMIT=\"$policy_commit\" python3 -c '\nimport json, os, sys\ndef no_constant(name):\n    raise ValueError(\"%s is not JSON\" % name)\ntry:\n    policy = json.loads(sys.stdin.read(), parse_constant=no_constant)\nexcept ValueError as error:\n    sys.exit(\"the delivery policy is not JSON: %s\" % error)\nif not isinstance(policy, dict):\n    sys.exit(\"the delivery policy is not an object\")\nlines = []\nfor field in (\"merge\", \"push\", \"release\"):\n    if policy.get(field) not in (\"auto\", \"ask\"):\n        sys.exit(\"the delivery policy does not say auto or ask for %s\" % field)\n    lines.append(\"%s: %s\" % (field, policy[field]))\nlines.append(os.environ[\"POLICY_COMMIT\"])\nprint(\"\\n\".join(lines))\n'\n}\ncd \"$REPO\"\nsaid=$(trusted_policy) || exit 1\nprintf '%s\\n' \"$said\" | python3 -c '\nimport json, sys\nlines = [line.strip() for line in sys.stdin if line.strip()]\nfields = dict(line.split(\": \", 1) for line in lines[:-1])\nfor key in (\"merge\", \"push\", \"release\"):\n    if fields.get(key) not in (\"auto\", \"ask\"):\n        sys.exit(\"the policy does not say auto or ask for \" + key)\nprint(json.dumps({\n    \"merge\": fields[\"merge\"], \"push\": fields[\"push\"], \"release\": fields[\"release\"],\n    \"read_from\": lines[-1],\n    \"asks_publication\": \"ask\" if fields[\"push\"] == \"ask\" else \"auto\",\n    \"asks_integration\": \"ask\" if \"ask\" in (fields[\"merge\"], fields[\"push\"]) else \"auto\",\n    \"asks_release\": \"ask\" if \"ask\" in (fields[\"release\"], fields[\"push\"]) else \"auto\",\n}))\n'\n",
-          "env": {
-            "REPO": {
-              "$from": "/the_request/answer/repo"
-            },
-            "TRUNK": {
-              "$from": "/the_request/answer/trunk"
-            }
-          },
-          "timeout_secs": 30,
-          "answer_shape": {
-            "type": "object",
-            "properties": {
-              "merge": {
-                "type": "string"
-              },
-              "push": {
-                "type": "string"
-              },
-              "release": {
-                "type": "string"
-              },
-              "read_from": {
-                "type": "string"
-              },
-              "asks_publication": {
-                "type": "string"
-              },
-              "asks_integration": {
-                "type": "string"
-              },
-              "asks_release": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "merge",
-              "push",
-              "release",
-              "read_from",
-              "asks_publication",
-              "asks_integration",
-              "asks_release"
-            ],
-            "allow_extra": false
+          "repo": {
+            "$from": "/the_request/answer/repo"
           }
         },
         "needs": [
-          "python3"
+          "git"
         ],
         "input_schema": {
           "type": "any"
         },
         "output_schema": {
-          "type": "any"
+          "type": "object",
+          "properties": {
+            "merge": {
+              "type": "string"
+            },
+            "push": {
+              "type": "string"
+            },
+            "release": {
+              "type": "string"
+            },
+            "forge": {
+              "type": "string"
+            },
+            "remote": {
+              "type": "string"
+            },
+            "read_from": {
+              "type": "string"
+            },
+            "asks_publication": {
+              "type": "string"
+            },
+            "asks_integration": {
+              "type": "string"
+            },
+            "asks_release": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "merge",
+            "push",
+            "release",
+            "forge",
+            "remote",
+            "read_from",
+            "asks_publication",
+            "asks_integration",
+            "asks_release"
+          ],
+          "allow_extra": false
         }
       },
       {
@@ -347,7 +345,7 @@
         "max_attempts": 1,
         "when": {
           "kind": "pointer_equals",
-          "pointer": "/policy/answer/asks_publication",
+          "pointer": "/policy/asks_publication",
           "value": "ask"
         },
         "with": {
@@ -355,7 +353,7 @@
             "$join": [
               "The delivery policy read from the trusted trunk (commit ",
               {
-                "$from": "/policy/answer/read_from"
+                "$from": "/policy/read_from"
               },
               ") asks a person before this flow may push the branch and open or update its draft pull request. Approve with an output file holding {\"authorized\": true}, or reject with the reason."
             ]
@@ -386,43 +384,34 @@
           "policy",
           "authorize_push"
         ],
-        "action": "shell_check",
+        "action": "the_person_said",
         "max_attempts": 1,
         "when": {
           "kind": "pointer_equals",
-          "pointer": "/policy/answer/asks_publication",
+          "pointer": "/policy/asks_publication",
           "value": "ask"
         },
         "with": {
-          "command": "set -eu\nprintf '%s' \"$SAID\" | KEY=\"$KEY\" python3 -c '\nimport json, os, sys\nsaid = json.loads(sys.stdin.read())\nif not isinstance(said, dict) or said.get(os.environ[\"KEY\"]) is not True:\n    sys.exit(\"the person did not write %s: true; nothing proceeds\" % os.environ[\"KEY\"])\nprint(json.dumps({\"confirmed\": True}))\n'\n",
-          "env": {
-            "SAID": {
-              "$json": "/authorize_push"
-            },
-            "KEY": "authorized"
+          "said": {
+            "$json": "/authorize_push"
           },
-          "timeout_secs": 30,
-          "answer_shape": {
-            "type": "object",
-            "properties": {
-              "confirmed": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "confirmed"
-            ],
-            "allow_extra": false
-          }
+          "key": "authorized"
         },
-        "needs": [
-          "python3"
-        ],
+        "needs": [],
         "input_schema": {
           "type": "any"
         },
         "output_schema": {
-          "type": "any"
+          "type": "object",
+          "properties": {
+            "confirmed": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "confirmed"
+          ],
+          "allow_extra": false
         }
       },
       {
@@ -449,7 +438,7 @@
               "$from": "/the_checkpoint/answer/base_commit"
             },
             "POLICY_READ": {
-              "$json": "/policy/answer"
+              "$json": "/policy"
             },
             "BRANCH": {
               "$from": "/the_request/answer/branch"

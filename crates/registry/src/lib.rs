@@ -219,6 +219,7 @@ pub fn registry_in(
     );
     // Who is working on what, because an **agent** must be able to ask. The
     // reading half goes in without a store; the two that write stay out.
+    actions::delivery::register_delivery(&mut registry);
     actions::presence::register_presence(&mut registry, ledger.clone());
     // The graph a flow deposits proposals and decisions into.
     actions::graph_memory::register_graph_memory(&mut registry, ledger.clone());
