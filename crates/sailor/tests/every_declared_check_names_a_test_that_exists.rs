@@ -1,9 +1,9 @@
 //! Every check a document declares names a test that exists.
 //!
 //! A rule came in with its check written only as prose, and a test nobody
-//! wrote never fails: the page that promises it stays green by definition.
-//! So every section under `docs/` that declares its own check is read here,
-//! and the tree is asked for the test it names — see fault 67.
+//! wrote never fails: the page that promises it stays green by definition. So
+//! every section declaring a check — under `docs/`, and in the pages at the
+//! root a stranger reads first — is asked for the test it names, fault 67.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -483,11 +483,22 @@ fn documents_under(directory: &Path, found: &mut Vec<PathBuf>) {
     }
 }
 
+/// The pages a stranger reads before touching anything. They sit at the root,
+/// outside `docs/`, and they name judges the same way the pages under `docs/`
+/// do — so a rule file naming a test nobody wrote was green by definition.
+const PAGES_AT_THE_ROOT: &[&str] = &["AGENTS.md", "CONTRIBUTING.md", "README.md"];
+
 fn declared_in_the_docs(root: &Path) -> Vec<Declared> {
     let mut documents = Vec::new();
     documents_under(&root.join("docs"), &mut documents);
+    documents.extend(
+        PAGES_AT_THE_ROOT
+            .iter()
+            .map(|page| root.join(page))
+            .filter(|path| path.is_file()),
+    );
     documents.sort();
-    workspace::measured(documents.len(), "documents under docs/ read for the checks they declare");
+    workspace::measured(documents.len(), "documents read for the checks they declare");
     documents
         .iter()
         .filter_map(|path| {
