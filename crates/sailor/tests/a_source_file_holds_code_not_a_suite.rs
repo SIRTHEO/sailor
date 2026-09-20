@@ -1,21 +1,14 @@
-//! Two numbers that say the same thing. A file this repository can no longer be
-//! read in one sitting is almost always a file whose test module grew inside
-//! it: `session_cmd.rs` is 3.457 lines, of which 2.545 are its suite. Rust puts
-//! the suite in its own file with `#[cfg(test)] mod tests;`, and three files
-//! here already do. ADR-022. Both seeds may only fall.
+//! Where a file's suite is written. `session_cmd.rs` is 3.457 lines of which
+//! 2.545 are its test module; Rust puts that module in a file of its own.
+//!
+//! **THE CEILING IS NOT HERE**: `files_do_not_grow_out_of_scale` holds it, and
+//! weighs product apart from judges. ADR-022.
 
 use std::path::{Path, PathBuf};
 use workspace::ratchet::{weigh, Weighed};
 
 /// Source files whose test module is written inside them.
 const SUITES_INSIDE_A_SOURCE_FILE_TODAY: usize = 163;
-
-/// Files whose code — the suite not counted — passes the ceiling.
-const FILES_PAST_THE_CEILING_TODAY: usize = 11;
-
-/// **NOT A TASTE.** The number the owner named, and the one every long file
-/// here passes by more than a little: the shortest of the eleven is 1.032.
-const THE_CEILING: usize = 1000;
 
 const TEST_MODULE: &str = "#[cfg(test)]";
 
@@ -65,11 +58,7 @@ fn the_suite_is_written_here(text: &str) -> bool {
         .any(|line| line.contains("mod ") && line.trim_end().ends_with('{'))
 }
 
-fn code_lines(text: &str) -> usize {
-    the_suite_starts_at(text).unwrap_or_else(|| text.lines().count())
-}
-
-fn measure() -> (usize, usize, Vec<(usize, PathBuf)>) {
+fn measure() -> usize {
     let root = root();
     let mut files = Vec::new();
     for place in [
@@ -79,28 +68,13 @@ fn measure() -> (usize, usize, Vec<(usize, PathBuf)>) {
     ] {
         sources(&place, &mut files);
     }
-    workspace::measured_against(files.len(), "sources read", THE_CEILING, "lines of ceiling");
-    let mut inside = 0;
-    let mut past = Vec::new();
-    for file in files {
-        let text = std::fs::read_to_string(&file).unwrap_or_default();
-        if the_suite_is_written_here(&text) {
-            inside += 1;
-        }
-        let code = code_lines(&text);
-        if code > THE_CEILING {
-            past.push((code, file.strip_prefix(&root).unwrap_or(&file).to_path_buf()));
-        }
-    }
-    past.sort_by_key(|entry| std::cmp::Reverse(entry.0));
-    (inside, past.len(), past)
-}
-
-fn told(past: &[(usize, PathBuf)]) -> String {
-    past.iter()
-        .map(|(lines, file)| format!("{lines:>5}  {}", file.display()))
-        .collect::<Vec<_>>()
-        .join("\n")
+    workspace::measured_against(files.len(), "sources read", 1, "shape asked for");
+    files
+        .iter()
+        .filter(|file| {
+            the_suite_is_written_here(&std::fs::read_to_string(file).unwrap_or_default())
+        })
+        .count()
 }
 
 #[test]
@@ -111,14 +85,11 @@ fn the_control_a_declaration_is_not_a_body() {
     assert!(!the_suite_is_written_here("fn a() {}\n#[cfg(test)]\nmod tests;"));
     assert!(!the_suite_is_written_here("fn a() {}\n"));
 
-    // The suite is not code, whether it is declared or written here.
-    assert_eq!(code_lines("one\ntwo\n#[cfg(test)]\nmod tests {\n}\n"), 2);
-    assert_eq!(code_lines("one\ntwo\nthree"), 3);
 }
 
 #[test]
 fn no_new_source_file_carries_its_own_suite() {
-    let (inside, _, _) = measure();
+    let inside = measure();
     match weigh(SUITES_INSIDE_A_SOURCE_FILE_TODAY, inside) {
         Weighed::TreeIsAbove(more) => panic!(
             "source files carrying their suite inside them: {inside} ({more} more than the seed's \
@@ -129,26 +100,6 @@ fn no_new_source_file_carries_its_own_suite() {
         Weighed::TreeIsBelow(apart) => panic!(
             "the seed says {SUITES_INSIDE_A_SOURCE_FILE_TODAY} and the tree holds {inside}, \
              {apart} apart: somebody moved suites out without re-measuring; write {inside}"
-        ),
-        Weighed::Holds => {}
-    }
-}
-
-#[test]
-fn no_new_file_passes_the_ceiling() {
-    let (_, past, listed) = measure();
-    match weigh(FILES_PAST_THE_CEILING_TODAY, past) {
-        Weighed::TreeIsAbove(more) => panic!(
-            "files whose code passes {THE_CEILING} lines: {past} ({more} more than the seed's \
-             {FILES_PAST_THE_CEILING_TODAY}). The suite is not counted here, so this is code \
-             that grew: it comes apart into modules that name what they hold \
-             (ADR-022).\n{}",
-            told(&listed)
-        ),
-        Weighed::TreeIsBelow(apart) => panic!(
-            "the seed says {FILES_PAST_THE_CEILING_TODAY} and the tree holds {past}, {apart} \
-             apart: somebody split a file without re-measuring; write {past}\n{}",
-            told(&listed)
         ),
         Weighed::Holds => {}
     }
