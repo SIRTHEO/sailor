@@ -62,15 +62,26 @@ in front of you.
   `no_forge_no_remote_no_trunk_is_named_in_the_code`).
 - **No tool of the workbench.** An index, an editor, a protocol server, a
   plugin or a skill used while building Sailor is declared in a descriptor, not
-  compiled into it. Somebody downloading Sailor to run their own flows gets the
-  product, not the toolbox of whoever wrote it (ADR-021, held by
-  `no_workbench_tool_is_named_in_the_code`).
+  compiled into it: the index this repository uses is named in
+  `.sailor/index.json`, and a repository that names none reads no pin and has
+  its trees named by their path. Somebody downloading Sailor to run their own
+  flows gets the product, not the toolbox of whoever wrote it (ADR-021, held by
+  `no_workbench_tool_is_named_in_the_code`, **whose seed is 0**).
 - **No home of another product** is a constant here (held by
   `no_product_home_is_written_into_the_code`).
 
 The two seeds each of those judges carries may only fall. A name that is a fact
 in a descriptor is right; the same name as a `const` in `crates/` is the debt
 being counted.
+
+**Where a repository declares its own facts**, so nothing has to be guessed:
+`.sailor/delivery-policy.json` (what may merge, push, release, and on which
+forge and remote), `.sailor/index.json` (the names its code index uses),
+`.sailor/tools.d/*.json` (the tools it offers), and the `sailor.*` keys of its
+git configuration — `sailor.trunk`, `sailor.forgeAs`, `sailor.pushAs`,
+`sailor.indexServer`. What none of these declares, the product names as missing
+and stops over. **It never falls back to a value that happens to be right
+here**, which is the whole of ADR-013 applied outside engines.
 
 The four in one line, which is how they are run:
 
