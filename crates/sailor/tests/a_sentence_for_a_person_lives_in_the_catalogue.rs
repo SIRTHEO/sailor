@@ -266,6 +266,15 @@ fn sentences_of(whole: &str) -> Vec<(usize, String)> {
         .collect()
 }
 
+/// **A SUITE IN A FILE OF ITS OWN IS STILL A SUITE.** The cut above looks for
+/// `#[cfg(test)]` inside the file, and ADR-022 moved every suite out into a
+/// `tests.rs` beside its module — where that line never appears. Read as
+/// production code, a suite's assertion messages count as sentences written
+/// for a person, and three of them did.
+fn is_a_suite_of_its_own(path: &Path) -> bool {
+    path.file_name().is_some_and(|name| name == "tests.rs")
+}
+
 fn count_them(root: &Path) -> (usize, BTreeMap<String, usize>, Vec<String>) {
     let mut sources = Vec::new();
     for place in WHERE_A_PERSON_IS_SPOKEN_TO {
@@ -275,6 +284,9 @@ fn count_them(root: &Path) -> (usize, BTreeMap<String, usize>, Vec<String>) {
     let mut per_file = BTreeMap::new();
     let mut examples = Vec::new();
     for path in &sources {
+        if is_a_suite_of_its_own(path) {
+            continue;
+        }
         let Ok(text) = std::fs::read_to_string(path) else {
             continue;
         };
