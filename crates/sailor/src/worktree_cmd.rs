@@ -90,8 +90,13 @@ fn dispatch(args: &[String]) -> Result<String, String> {
             Ok(format!("{}", path.display()))
         }
         [command, name] if command == "remove" => remove_one(&repo, name, &IndexTending::of(&repo)),
-        [command] if command == "names" => names(&branch_names(&repo)?),
-        [command] if command == "adrift" => adrift(&workspace::branch_standing(&repo, now())?),
+        [command] if command == "names" => {
+            names(&branch_names(&repo)?, &workspace::declared_trunk(&repo)?)
+        }
+        [command] if command == "adrift" => adrift(
+            &workspace::branch_standing(&repo, now())?,
+            &workspace::declared_trunk(&repo)?,
+        ),
         [command] if command == "retire" => {
             let left = a_store()?.identities_left_behind()?;
             Ok(render_left_behind(&left, now()))
@@ -674,26 +679,24 @@ fn what_became_of_it(at: &Path, became: Swept) -> String {
 /// An error and not a line of prose: whoever runs this wants an exit code to
 /// act on, and a check that says its bad news on standard output at exit zero
 /// is a check nothing can be built upon.
-pub fn names(all: &[String]) -> Result<String, String> {
-    let against = against_the_convention(all);
+pub fn names(all: &[String], trunk: &str) -> Result<String, String> {
+    let against = against_the_convention(all, trunk);
     if against.is_empty() {
         return Ok(catalogue::say("cli.worktree.names_follow", &[]));
     }
     let count = against.len().to_string();
     let mut lines = vec![catalogue::say(
         "cli.worktree.names_against",
-        &[("count", &count), ("trunk", workspace::branches::TRUNK)],
+        &[("count", &count), ("trunk", trunk)],
     )];
     lines.extend(against);
     Err(lines.join("\n"))
 }
 
-/// The branches nothing is watching any more, and the exit code that says so.
-///
 /// Nothing is deleted here: a branch holds work, and what happens to work is a
-/// person's call. The report is the thing that was missing.
-fn adrift(standing: &[workspace::branches::Branch]) -> Result<String, String> {
-    let adrift = workspace::branches::adrift(standing);
+/// person's call.
+fn adrift(standing: &[workspace::branches::Branch], trunk: &str) -> Result<String, String> {
+    let adrift = workspace::branches::adrift(standing, trunk);
     if adrift.is_empty() {
         return Ok(catalogue::say("cli.worktree.adrift_none", &[]));
     }

@@ -9,19 +9,22 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use workspace::branches::{may_be_cut, THE_CONVENTION};
 
+/// **NOT «main».** A trunk with another name is what catches one read from the code.
+const A_TRUNK: &str = "tronco";
+
 const THE_BRANCH_EXISTS: bool = true;
 const A_NEW_BRANCH: bool = false;
 
 #[test]
 fn a_new_branch_named_for_its_work_is_cut() {
-    assert!(may_be_cut("work/the-trees-are-swept", A_NEW_BRANCH).is_ok());
+    assert!(may_be_cut("work/the-trees-are-swept", A_NEW_BRANCH, A_TRUNK).is_ok());
 }
 
 #[test]
 fn a_new_branch_against_the_convention_is_refused() {
     for name in ["t", "tmp/rebuild-68", "fix-docs", "crew/round1-a4"] {
         assert!(
-            may_be_cut(name, A_NEW_BRANCH).is_err(),
+            may_be_cut(name, A_NEW_BRANCH, A_TRUNK).is_err(),
             "«{name}» was cut anyway"
         );
     }
@@ -30,7 +33,7 @@ fn a_new_branch_against_the_convention_is_refused() {
 /// A refusal nobody can act on sends the reader back to the source.
 #[test]
 fn the_refusal_names_the_branch_and_says_the_shape() {
-    let refusal = may_be_cut("fix-docs", A_NEW_BRANCH).unwrap_err();
+    let refusal = may_be_cut("fix-docs", A_NEW_BRANCH, A_TRUNK).unwrap_err();
     assert!(refusal.contains("fix-docs"), "{refusal}");
     assert!(refusal.contains(THE_CONVENTION), "{refusal}");
 }
@@ -40,13 +43,13 @@ fn the_refusal_names_the_branch_and_says_the_shape() {
 /// forge or another person named.
 #[test]
 fn a_branch_that_already_exists_keeps_the_name_it_was_given() {
-    assert!(may_be_cut("fix-docs", THE_BRANCH_EXISTS).is_ok());
-    assert!(may_be_cut("matteodimattia/window-three", THE_BRANCH_EXISTS).is_ok());
+    assert!(may_be_cut("fix-docs", THE_BRANCH_EXISTS, A_TRUNK).is_ok());
+    assert!(may_be_cut("somebody/their-own-name", THE_BRANCH_EXISTS, A_TRUNK).is_ok());
 }
 
 #[test]
 fn the_trunk_is_cut_like_any_branch_that_follows_the_convention() {
-    assert!(may_be_cut(workspace::branches::TRUNK, A_NEW_BRANCH).is_ok());
+    assert!(may_be_cut(A_TRUNK, A_NEW_BRANCH, A_TRUNK).is_ok());
 }
 
 /// **THE JUDGE ABOVE IS ONLY HALF OF IT.** A refusal no gesture asks for is a
@@ -91,7 +94,8 @@ fn a_repository_in(scratch: &Path) -> PathBuf {
     std::fs::write(repo.join("README"), "a tree to cut from\n").expect("a file");
     run_git(&repo, &["add", "README"]);
     run_git(&repo, &["commit", "-q", "-m", "the first"]);
-    run_git(&repo, &["branch", "-M", workspace::branches::TRUNK]);
+    run_git(&repo, &["branch", "-M", A_TRUNK]);
+    run_git(&repo, &["config", workspace::branches::TRUNK_KEY, A_TRUNK]);
     repo
 }
 
@@ -117,10 +121,10 @@ fn run_git(at: &Path, args: &[&str]) {
 /// would not find; the name now comes from the one place that holds it.
 #[test]
 fn the_verdict_on_the_names_says_the_trunk_this_repository_has() {
-    let said = sailor::worktree_cmd::names(&[String::from("fix-docs")])
+    let said = sailor::worktree_cmd::names(&[String::from("fix-docs")], A_TRUNK)
         .expect_err("a stray name is bad news, and bad news is an error");
     assert!(
-        said.contains(workspace::branches::TRUNK),
+        said.contains(A_TRUNK),
         "the verdict names no trunk: {said}"
     );
     assert!(

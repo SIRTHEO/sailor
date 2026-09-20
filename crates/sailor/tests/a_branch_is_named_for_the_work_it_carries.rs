@@ -7,9 +7,11 @@
 
 use workspace::branches::{against_the_convention, follows_the_convention};
 
+/// **NOT «main».** The trunk is a repository's own fact, handed in.
+const A_TRUNK: &str = "tronco";
+
 /// The table of names that follow the convention, each for its own reason.
 const FOLLOW: &[&str] = &[
-    "main",
     "work/terminal-claims",
     "work/toml-graft",
     "work/branch-hygiene",
@@ -45,13 +47,13 @@ fn named(names: &[&str]) -> Vec<String> {
 
 #[test]
 fn a_name_that_follows_the_convention_is_never_reported() {
-    let reported = against_the_convention(&named(FOLLOW));
+    let reported = against_the_convention(&named(FOLLOW), A_TRUNK);
     assert!(reported.is_empty(), "reported as breaking: {reported:?}");
 }
 
 #[test]
 fn every_name_that_breaks_the_convention_is_reported() {
-    let reported = against_the_convention(&named(BREAK));
+    let reported = against_the_convention(&named(BREAK), A_TRUNK);
     assert_eq!(reported, named(BREAK), "some breaking name went unreported");
 }
 
@@ -59,15 +61,19 @@ fn every_name_that_breaks_the_convention_is_reported() {
 /// the older history it used to share the repository with is a tag now.
 #[test]
 fn the_trunk_is_exempt_and_it_is_the_one_that_releases() {
-    assert!(follows_the_convention(workspace::branches::TRUNK));
-    assert_eq!(workspace::branches::TRUNK, "main");
+    assert!(follows_the_convention(A_TRUNK, A_TRUNK));
+    assert!(
+        !follows_the_convention("main", A_TRUNK),
+        "«main» passed on a repository whose trunk is not called that: the name \
+         is read from the code somewhere"
+    );
 }
 
 #[test]
 fn a_tree_the_mechanism_named_is_exempt_because_nobody_chose_it() {
-    assert!(follows_the_convention("worktree-agent-a4d628b5cb6687bc0"));
+    assert!(follows_the_convention("worktree-agent-a4d628b5cb6687bc0", A_TRUNK));
     assert!(
-        !follows_the_convention("worktree-agent-"),
+        !follows_the_convention("worktree-agent-", A_TRUNK),
         "the prefix alone names no tree"
     );
 }
@@ -82,9 +88,9 @@ fn the_command_line_carries_the_naming_check_as_a_verb() {
 /// A mixed list answers about each name, in the order it was given.
 #[test]
 fn the_names_come_back_in_the_order_they_were_given() {
-    let mixed = named(&["work/one", "innesto-toml-codex", "main", "work/Two"]);
+    let mixed = named(&["work/one", "innesto-toml-codex", A_TRUNK, "work/Two"]);
     assert_eq!(
-        against_the_convention(&mixed),
+        against_the_convention(&mixed, A_TRUNK),
         named(&["innesto-toml-codex", "work/Two"])
     );
 }

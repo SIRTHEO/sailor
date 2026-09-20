@@ -39,7 +39,11 @@ mod tests {
     #[test]
     fn a_tree_that_moved_one_past_its_seed_is_weighed_above_it() {
         for &seed in SEEDS_THE_TREE_CARRIES {
-            assert_eq!(weigh(seed, seed + 1), Weighed::TreeIsAbove(1), "seed {seed}");
+            assert_eq!(
+                weigh(seed, seed + 1),
+                Weighed::TreeIsAbove(1),
+                "seed {seed}"
+            );
             assert!(!weigh(seed, seed + 1).holds(), "seed {seed}");
         }
     }
@@ -47,7 +51,11 @@ mod tests {
     #[test]
     fn a_seed_left_one_above_the_tree_is_weighed_below_it() {
         for &seed in SEEDS_THE_TREE_CARRIES.iter().filter(|seed| **seed > 0) {
-            assert_eq!(weigh(seed, seed - 1), Weighed::TreeIsBelow(1), "seed {seed}");
+            assert_eq!(
+                weigh(seed, seed - 1),
+                Weighed::TreeIsBelow(1),
+                "seed {seed}"
+            );
             assert!(!weigh(seed, seed - 1).holds(), "seed {seed}");
         }
     }
