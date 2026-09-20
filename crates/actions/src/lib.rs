@@ -27,6 +27,7 @@ pub mod apply;
 pub mod bench;
 pub mod budget;
 pub mod cooldown;
+pub mod delivery;
 pub mod digest;
 pub mod dormant_steps;
 pub mod draft;
