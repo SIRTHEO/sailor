@@ -818,6 +818,11 @@ pub struct Descriptor {
     /// What it is called for the reader.
     #[serde(default)]
     pub label: String,
+    /// The brand this line belongs to, as a slug a mark is looked up by.
+    /// **THE SLUG IS THE WHOLE DECLARATION**: no path and no colour live in the
+    /// code, and one nobody has a drawing for still draws, as a monogram.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub brand: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detect: Option<Probes>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

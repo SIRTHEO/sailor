@@ -231,6 +231,7 @@
       },
       "family": "ai_cli",
       "label": "Claude Code",
+      "brand": "claudecode",
       "detect": { "command": "claude" },
       "version": { "args": ["--version"] },
       "ask": {
@@ -361,6 +362,7 @@
       },
       "family": "ai_cli",
       "label": "Codex",
+      "brand": "openai",
       "detect": { "command": "codex" },
       "version": { "args": ["--version"] },
       "ask": {
@@ -441,6 +443,7 @@
       },
       "family": "ai_cli",
       "label": "Gemini CLI",
+      "brand": "googlegemini",
       "detect": { "command": "gemini" },
       "version": { "args": ["--version"] },
       "ask": {
@@ -501,6 +504,7 @@
       },
       "family": "ai_cli",
       "label": "agy",
+      "brand": "googleantigravity",
       "detect": { "command": "agy" },
       "version": { "args": ["--version"] },
       "ask": {
@@ -549,6 +553,7 @@
       "id": "openrouter-cli",
       "family": "ai_cli",
       "label": "OpenRouter CLI",
+      "brand": "openrouter",
       "detect": { "command": "openrouter" },
       "version": { "args": ["--version"] },
       "note": "The `@openrouter/cli` package on npm, published by OpenRouter; it installs the `openrouter` command. It is here as a descriptor and not as code: the proof that a new command line is declared without recompiling."
@@ -568,6 +573,7 @@
       },
       "family": "ai_cli",
       "label": "Ollama",
+      "brand": "ollama",
       "detect": { "command": "ollama" },
       "version": { "args": ["--version"], "must_contain": "version" },
       "config": ["~/.ollama"],
@@ -615,6 +621,7 @@
       "id": "mcp-claude-code",
       "family": "mcp_server",
       "label": "MCP servers declared for Claude Code",
+      "brand": "claude",
       "enumerate": {
         "json_keys": {
           "files": ["~/.claude.json", "~/.claude/settings.json", "~/.mcp.json"],
@@ -626,6 +633,7 @@
       "id": "mcp-claude-projects",
       "family": "mcp_server",
       "label": "MCP servers declared project by project",
+      "brand": "claude",
       "enumerate": {
         "json_keys": {
           "files": ["~/.claude.json"],
@@ -637,6 +645,7 @@
       "id": "mcp-claude-plugins",
       "family": "mcp_server",
       "label": "MCP servers brought in by a plugin",
+      "brand": "claude",
       "enumerate": {
         "json_keys": {
           "files": [
@@ -652,6 +661,7 @@
       "id": "mcp-claude-desktop",
       "family": "mcp_server",
       "label": "MCP servers of the Claude application",
+      "brand": "claude",
       "enumerate": {
         "json_keys": {
           "files": ["~/Library/Application Support/Claude/claude_desktop_config.json"],
@@ -663,6 +673,7 @@
       "id": "mcp-cursor",
       "family": "mcp_server",
       "label": "MCP servers declared for Cursor",
+      "brand": "cursor",
       "enumerate": {
         "json_keys": {
           "files": ["~/.cursor/mcp.json"],
@@ -707,6 +718,7 @@
       "id": "docker",
       "family": "tool",
       "label": "Docker",
+      "brand": "docker",
       "detect": { "command": "docker" },
       "version": { "args": ["--version"] },
       "config": ["~/.docker/config.json"]
@@ -715,6 +727,7 @@
       "id": "docker-compose",
       "family": "tool",
       "label": "Docker Compose",
+      "brand": "docker",
       "detect": { "command": "docker-compose" },
       "version": { "args": ["--version"] }
     },
@@ -722,6 +735,7 @@
       "id": "kubectl",
       "family": "tool",
       "label": "kubectl",
+      "brand": "kubernetes",
       "detect": { "command": "kubectl" },
       "version": { "args": ["version", "--client=true"] },
       "config": ["~/.kube/config", "$KUBECONFIG"]
@@ -730,6 +744,7 @@
       "id": "postman",
       "family": "tool",
       "label": "Postman",
+      "brand": "postman",
       "detect": [
         { "path": "/Applications/Postman.app" },
         { "command": "postman" }
@@ -740,6 +755,7 @@
       "id": "newman",
       "family": "tool",
       "label": "Newman (Postman from the command line)",
+      "brand": "postman",
       "detect": { "command": "newman" },
       "version": { "args": ["--version"] }
     },
@@ -747,6 +763,7 @@
       "id": "gh",
       "family": "tool",
       "label": "GitHub CLI",
+      "brand": "github",
       "detect": { "command": "gh" },
       "version": { "args": ["--version"] },
       "config": ["~/.config/gh/config.yml", "~/.config/gh/hosts.yml"]
@@ -755,6 +772,7 @@
       "id": "git",
       "family": "tool",
       "label": "git",
+      "brand": "git",
       "detect": { "command": "git" },
       "version": { "args": ["--version"] },
       "config": ["~/.gitconfig", "~/.config/git/config"]
@@ -763,6 +781,7 @@
       "id": "psql",
       "family": "tool",
       "label": "PostgreSQL from the command line",
+      "brand": "postgresql",
       "detect": { "command": "psql" },
       "version": { "args": ["--version"] },
       "config": ["~/.psqlrc", "~/.pgpass"]
@@ -771,6 +790,7 @@
       "id": "mysql",
       "family": "tool",
       "label": "MySQL from the command line",
+      "brand": "mysql",
       "detect": { "command": "mysql" },
       "version": { "args": ["--version"] },
       "config": ["~/.my.cnf"]
@@ -779,6 +799,7 @@
       "id": "sqlite3",
       "family": "tool",
       "label": "SQLite",
+      "brand": "sqlite",
       "detect": { "command": "sqlite3" },
       "version": { "args": ["--version"] },
       "config": ["~/.sqliterc"]
@@ -787,6 +808,7 @@
       "id": "redis-cli",
       "family": "tool",
       "label": "Redis from the command line",
+      "brand": "redis",
       "detect": { "command": "redis-cli" },
       "version": { "args": ["--version"] }
     },
@@ -794,6 +816,7 @@
       "id": "cargo",
       "family": "tool",
       "label": "Cargo",
+      "brand": "rust",
       "detect": { "command": "cargo" },
       "version": { "args": ["--version"] },
       "config": ["~/.cargo/config.toml"]
@@ -802,6 +825,7 @@
       "id": "node",
       "family": "tool",
       "label": "Node.js",
+      "brand": "nodedotjs",
       "detect": { "command": "node" },
       "version": { "args": ["--version"] }
     },
@@ -809,6 +833,7 @@
       "id": "npm",
       "family": "tool",
       "label": "npm",
+      "brand": "npm",
       "detect": { "command": "npm" },
       "version": { "args": ["--version"] },
       "config": ["~/.npmrc"]
@@ -817,6 +842,7 @@
       "id": "pnpm",
       "family": "tool",
       "label": "pnpm",
+      "brand": "pnpm",
       "detect": { "command": "pnpm" },
       "version": { "args": ["--version"] }
     },
@@ -824,6 +850,7 @@
       "id": "bun",
       "family": "tool",
       "label": "Bun",
+      "brand": "bun",
       "detect": { "command": "bun" },
       "version": { "args": ["--version"] }
     },
@@ -831,6 +858,7 @@
       "id": "python3",
       "family": "tool",
       "label": "Python 3",
+      "brand": "python",
       "detect": { "command": "python3" },
       "version": { "args": ["--version"] }
     },
@@ -838,6 +866,7 @@
       "id": "jq",
       "family": "tool",
       "label": "jq",
+      "brand": "jq",
       "detect": { "command": "jq" },
       "version": { "args": ["--version"] }
     },
@@ -858,6 +887,7 @@
       "id": "ripgrep",
       "family": "tool",
       "label": "ripgrep",
+      "brand": "ripgrep",
       "detect": { "command": "rg" },
       "version": { "args": ["--version"] }
     },
@@ -865,6 +895,7 @@
       "id": "just",
       "family": "tool",
       "label": "just",
+      "brand": "just",
       "detect": { "command": "just" },
       "version": { "args": ["--version"] }
     },
@@ -872,6 +903,7 @@
       "id": "make",
       "family": "tool",
       "label": "make",
+      "brand": "make",
       "detect": { "command": "make" },
       "version": { "args": ["--version"] }
     },
@@ -879,6 +911,7 @@
       "id": "curl",
       "family": "tool",
       "label": "curl",
+      "brand": "curl",
       "detect": { "command": "curl" },
       "version": { "args": ["--version"] }
     },
@@ -886,6 +919,7 @@
       "id": "terraform",
       "family": "tool",
       "label": "Terraform",
+      "brand": "terraform",
       "detect": { "command": "terraform" },
       "version": { "args": ["--version"] }
     },
@@ -893,6 +927,7 @@
       "id": "aws-cli",
       "family": "tool",
       "label": "AWS CLI",
+      "brand": "aws",
       "detect": { "command": "aws" },
       "version": { "args": ["--version"] },
       "config": ["~/.aws/config"]

@@ -51,6 +51,8 @@ export interface Budget {
 export interface Engine {
   id: string;
   label: string;
+  /** The slug its mark is looked up by. Empty draws a monogram, never nothing. */
+  brand: string;
   presence: Presence;
   reason: string;
   executable: string | null;

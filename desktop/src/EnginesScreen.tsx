@@ -10,6 +10,7 @@ import { openTerminal, pressKeys } from "./terminal";
 import { BORN_COLS, BORN_ROWS } from "./TerminalPane";
 import { labStatus } from "./lab";
 import { LabEngineRow, type LabAsk } from "./LabEngineRow";
+import { BrandMark } from "./BrandMark";
 
 type Ask = { state: "asking" } | { state: "asked"; value: Engines } | { state: "mute"; why: string };
 
@@ -130,7 +131,10 @@ export function EnginesScreen({ native, onTerminalOpened }: EnginesScreenProps) 
 
       {ask.value.engines.map((engine) => (
         <section className="panel__block" key={engine.id} data-presence={engine.presence}>
-          <div className="panel__title">{engine.label}</div>
+          <div className="panel__title now__engine">
+            <BrandMark slug={engine.brand} label={engine.label} />
+            {engine.label}
+          </div>
           {engine.executable !== null && <div className="now__command">{engine.executable}</div>}
           <dl className="now__kv">
             <dt>on this machine</dt>

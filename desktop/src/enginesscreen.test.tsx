@@ -18,7 +18,7 @@ const ANSWER: Engines = {
   workspace_root: "/home/mira/personal/sailor",
   engines: [
     {
-      id: "codex", label: "Codex", presence: "present", reason: "found `codex` in /opt/homebrew/bin/codex",
+      id: "codex", brand: "openai", label: "Codex", presence: "present", reason: "found `codex` in /opt/homebrew/bin/codex",
       executable: "/opt/homebrew/bin/codex", version: "0.152.1",
       signed_in: "no", signed_in_said: "Not logged in", profile_in_force: "prove",
       quota: [], quota_why: "this engine declares no channel to read what is left",
@@ -27,7 +27,7 @@ const ANSWER: Engines = {
       install: { line: "npm install -g @openai/codex", note: "measured" },
     },
     {
-      id: "claude-code", label: "Claude Code", presence: "present", reason: "found `claude`",
+      id: "claude-code", brand: "claudecode", label: "Claude Code", presence: "present", reason: "found `claude`",
       executable: "/home/mira/.local/bin/claude", version: "2.1.258",
       signed_in: "yes", signed_in_said: "loggedIn: true", profile_in_force: null,
       quota: [{ engine: "claude-code", unit: "seven_day", window: "week", lasts_seconds: 604_800, spent_fraction: 0.42, resets_at: "2026-09-06T04:59:59Z", observed_at: 1 }],
@@ -38,7 +38,7 @@ const ANSWER: Engines = {
       budget: { cap_micros: 20_000_000, window_secs: 86_400, spent_micros: 18_300_000, spent_why: null },
     },
     {
-      id: "openrouter-cli", label: "OpenRouter CLI", presence: "absent", reason: "no `openrouter` on the PATH",
+      id: "openrouter-cli", brand: "openrouter", label: "OpenRouter CLI", presence: "absent", reason: "no `openrouter` on the PATH",
       executable: null, version: null,
       signed_in: "not known", signed_in_said: "it is not on this machine, so there is nobody to ask", profile_in_force: null,
       quota: [], quota_why: "this engine declares no channel to read what is left",
@@ -113,6 +113,17 @@ describe("the engines screen", () => {
     // The bytes cross the bridge as base64, the contract of `pressKeys`.
     const pressed = shell.calls.find((call) => call.command === "terminal_press");
     expect(atob((pressed?.args as { bytes: string }).bytes)).toBe("npm install -g openrouter");
+  });
+
+  test("EVERY ENGINE IS MARKED, including the one whose brand has no drawing", async () => {
+    shellThatAnswers();
+    render(<EnginesScreen native />);
+    await waitFor(() => expect(screen.getByText("Codex")).toBeTruthy());
+    // Three engines, three marks, no hole: Codex is a monogram because OpenAI's
+    // mark was withdrawn, and reading the screen that must not look like a gap.
+    expect(screen.getByRole("img", { name: "Claude Code" }).tagName.toLowerCase()).toBe("svg");
+    expect(screen.getByRole("img", { name: "OpenRouter" }).tagName.toLowerCase()).toBe("svg");
+    expect(screen.getByRole("img", { name: "Codex" }).textContent).toBe("C");
   });
 
   test("an engine that cannot answer is said, never drawn as a machine without engines", async () => {
