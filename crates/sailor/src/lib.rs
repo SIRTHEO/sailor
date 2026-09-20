@@ -25,6 +25,7 @@
 //! shows it by reading it from there.
 
 pub mod arc_cmd;
+pub mod aside_cmd;
 pub mod board_cmd;
 pub mod faults_cmd;
 pub mod flow_cmd;
@@ -252,6 +253,12 @@ pub const COMMANDS: &[Command] = &[
         description_key: "cli.command.accounts",
         usage: accounts_cmd::USAGE,
         run: accounts_cmd::run,
+    },
+    Command {
+        name: "aside",
+        description_key: "cli.command.aside",
+        usage: aside_cmd::USAGE,
+        run: aside_cmd::run,
     },
     Command {
         name: "stuck",
