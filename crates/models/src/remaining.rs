@@ -120,12 +120,24 @@ pub enum HowLong {
     NotSaid,
 }
 
+const A_MINUTE: u64 = 60;
+const AN_HOUR: u64 = 60 * A_MINUTE;
+const A_DAY: u64 = 24 * AN_HOUR;
+
+fn plural(out: &mut fmt::Formatter<'_>, count: u64, unit: &str) -> fmt::Result {
+    write!(out, "{count} {unit}{}", if count == 1 { "" } else { "s" })
+}
+
 impl fmt::Display for HowLong {
     fn fmt(&self, out: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             HowLong::Session => out.write_str("session"),
             HowLong::Week => out.write_str("week"),
-            HowLong::Other(secs) => write!(out, "{secs}s"),
+            HowLong::Other(secs) => match *secs {
+                secs if secs >= A_DAY => plural(out, (secs + A_DAY / 2) / A_DAY, "day"),
+                secs if secs >= AN_HOUR => plural(out, (secs + AN_HOUR / 2) / AN_HOUR, "hour"),
+                secs => plural(out, secs.div_ceil(A_MINUTE), "minute"),
+            },
             HowLong::NotSaid => out.write_str("window"),
         }
     }
@@ -628,7 +640,7 @@ mod tests {
     /// answered with a window nineteen days long; called a week it would send
     /// somebody back to a door that stays shut for twelve more days.
     #[test]
-    fn a_length_that_is_neither_keeps_its_seconds() {
+    fn a_length_that_is_neither_is_kept_whole() {
         let body = r#"{"rate_limit": {"primary_window":
             {"used_percent": 100, "limit_window_seconds": 1641600}}}"#;
         let words = WindowWords {
@@ -641,7 +653,21 @@ mod tests {
         let found = from_oauth_usage(body, ENGINE, 7, &words).expect("its own words");
 
         assert_eq!(found[0].how_long(), HowLong::Other(1_641_600));
-        assert_eq!(found[0].how_long().to_string(), "1641600s");
+        assert_eq!(found[0].how_long().to_string(), "19 days");
+    }
+
+    /// **A LENGTH IS SAID IN THE UNITS A PERSON USES**, or a table holding
+    /// «session», «week» and `2592000s` cannot be read across.
+    #[test]
+    fn a_length_neither_shape_covers_is_still_said_in_words() {
+        let words = |secs| HowLong::of(Some(secs)).to_string();
+        assert_eq!(words(2_592_000), "30 days");
+        assert_eq!(words(24 * 60 * 60), "1 day");
+        assert_eq!(words(14 * 60 * 60), "14 hours");
+        // Half a day or shorter is a session: these come through the shape.
+        assert_eq!(HowLong::Other(60 * 60).to_string(), "1 hour");
+        assert_eq!(HowLong::Other(90).to_string(), "2 minutes");
+        assert_eq!(HowLong::Other(60).to_string(), "1 minute");
     }
 
     /// A window nothing measured says so, and does not borrow a neighbour's
