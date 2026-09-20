@@ -219,8 +219,6 @@ pub fn registry_in(
     );
     // Who is working on what, because an **agent** must be able to ask. The
     // reading half goes in without a store; the two that write stay out.
-    // The policy the trunk commits, and the word a person writes back: both
-    // stood as shell in four delivery flows apiece.
     actions::delivery::register_delivery(&mut registry);
     actions::presence::register_presence(&mut registry, ledger.clone());
     // The graph a flow deposits proposals and decisions into.

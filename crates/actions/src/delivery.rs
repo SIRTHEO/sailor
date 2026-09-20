@@ -1,22 +1,14 @@
-//! The two steps every delivery flow begins with, as actions rather than as
-//! shell.
-//!
-//! **A FLOW STEP IS NOT A SHELL PROGRAM.** Both of these stood in the flow
-//! files as a string of shell — the policy at 1.966 characters in four files,
-//! the confirmation at 314 in four — unparsed, untested, and failing by
-//! quoting or by timeout. One edit had to be made four times and nothing made
-//! the four agree. Goal #47.
-//!
-//! Neither reads the working tree and neither trusts a binary on the path: the
-//! policy comes out of the commit the declared trunk points at, through
-//! `workspace::delivery`, which `sailor policy` reads through as well.
+//! **A FLOW STEP IS NOT A SHELL PROGRAM.** Both of these stood in four flow
+//! files as a string of shell — 1.966 characters and 314 — unparsed, untested,
+//! and failing by quoting or by timeout. Goal #47. Neither reads the working
+//! tree and neither trusts a binary on the path: `workspace::delivery` holds
+//! the reading, and `sailor policy` reads through it too.
 
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::path::PathBuf;
 
-/// The names these register under.
 pub const DELIVERY_POLICY_ACTION: &str = "delivery_policy";
 pub const THE_PERSON_SAID_ACTION: &str = "the_person_said";
 
@@ -77,9 +69,7 @@ struct SaidSpec {
     key: String,
 }
 
-/// The answer arrives either as the step's own output or as the text of it,
-/// because a reference can hand on a value or its JSON and both spellings
-/// stand in the flows this replaced.
+/// A reference hands on a value or its JSON, and the flows spell it both ways.
 fn as_answer(said: &Value) -> Value {
     match said.as_str() {
         Some(text) => serde_json::from_str(text).unwrap_or(Value::Null),
@@ -87,10 +77,9 @@ fn as_answer(said: &Value) -> Value {
     }
 }
 
-/// **SILENCE IS NOT A YES, AND NEITHER IS ANYTHING BUT `true`.** The person is
-/// handed the gesture and writes one word back; a missing answer, an answer
-/// that is not an object, and the string `"true"` all stop the flow, because
-/// each of them is something other than a person having said yes.
+/// **SILENCE IS NOT A YES, AND NEITHER IS ANYTHING BUT `true`.** A missing
+/// answer, one that is not an object, and the string `"true"` all stop the
+/// flow: none of them is a person having said yes.
 struct ThePersonSaidAction;
 
 impl Action for ThePersonSaidAction {

@@ -1,11 +1,8 @@
-//! `sailor policy`: the delivery policy as the trusted trunk commits it,
-//! never as the branch under review would have it read — a proposed change
-//! must never authorize itself. See `docs/the-delivery-loop.md`.
+//! `sailor policy`: the delivery policy as the trusted trunk commits it. See
+//! `docs/the-delivery-loop.md`.
 //!
 //! **THE READING ITSELF IS NOT HERE**, it is `workspace::delivery`, which the
-//! `delivery_policy` action reads through too: a command for a person and a
-//! step of a flow that disagree about what the same file says is worse than
-//! either of them being wrong.
+//! `delivery_policy` action reads through too.
 
 use crate::Form;
 use workspace::delivery::{policy_on_the_trunk, Refusal, DECLARED, GOVERNED};
