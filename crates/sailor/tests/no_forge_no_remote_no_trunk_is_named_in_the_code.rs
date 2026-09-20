@@ -87,6 +87,24 @@ fn lines_of(text: &str) -> Vec<&str> {
         .collect()
 }
 
+/// **A NAME GIVEN TO A SYMBOL KEEPS NO COMPANY.** `pub const TRUNK: &str =
+/// "main";` stood in `branches.rs` with no call within two lines, and every
+/// judgement on a branch name leaned on it. The window cannot see that shape,
+/// so a published constant holding a bare name counts on its own. A `let` does
+/// not: `let schema = "main"` is SQLite's own, and the control below holds it.
+fn binds_a_name(line: &str) -> bool {
+    let Some((left, right)) = line.split_once('=') else {
+        return false;
+    };
+    if !["const ", "static "].iter().any(|word| left.contains(word)) {
+        return false;
+    }
+    let value = right.trim();
+    ATOMS.iter().any(|atom| {
+        value.starts_with(&format!("\"{atom}\"")) || value.starts_with(&format!("'{atom}'"))
+    })
+}
+
 fn named_in(text: &str) -> usize {
     let lines = lines_of(text);
     let words: Vec<Vec<String>> = lines.iter().map(|line| words_of(line)).collect();
@@ -101,7 +119,7 @@ fn named_in(text: &str) -> usize {
         if is_prose(line) || !words[at].iter().any(|word| ATOMS.contains(&word.as_str())) {
             continue;
         }
-        if REF_SHAPES.iter().any(|shape| line.contains(shape)) {
+        if REF_SHAPES.iter().any(|shape| line.contains(shape)) || binds_a_name(line) {
             named += 1;
             continue;
         }
@@ -159,6 +177,12 @@ fn the_control_a_name_counts_only_in_the_company_that_makes_it_a_repository_s_fa
         named_in("let trunk = \"main\".to_owned();\n    let commit = git(&root, &at)?;"),
         1
     );
+
+    // The shape the window cannot see: a name given to a symbol, no call near.
+    assert_eq!(named_in(r#"pub const TRUNK: &str = "main";"#), 1);
+    assert_eq!(named_in(r#"const A_REMOTE: &str = "origin";"#), 1);
+    assert_eq!(named_in(r#"const TRUNK = 'master';"#), 1);
+    assert_eq!(named_in(r#"const NOT_A_TRUNK: &str = "main-thing";"#), 0);
 
     // The same words where they are not a repository's fact at all.
     assert_eq!(named_in(r#"let shown = if schema == "main" { name };"#), 0);
