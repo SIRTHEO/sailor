@@ -693,10 +693,8 @@ pub fn names(all: &[String], trunk: &str) -> Result<String, String> {
     Err(lines.join("\n"))
 }
 
-/// The branches nothing is watching any more, and the exit code that says so.
-///
 /// Nothing is deleted here: a branch holds work, and what happens to work is a
-/// person's call. The report is the thing that was missing.
+/// person's call.
 fn adrift(standing: &[workspace::branches::Branch], trunk: &str) -> Result<String, String> {
     let adrift = workspace::branches::adrift(standing, trunk);
     if adrift.is_empty() {
