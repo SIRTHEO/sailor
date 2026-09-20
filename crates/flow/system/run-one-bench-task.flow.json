@@ -172,7 +172,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\nroot=\"$REPO/target/bench/baseline\"\ntree=\"$root/$TASK-$RUN\"\nmkdir -p \"$root\"\nrm -rf \"$tree\"\ngit clone -q --shared --no-checkout \"$REPO\" \"$tree\"\ngit -C \"$tree\" checkout -q --detach \"$BASE\"\ngit -C \"$tree\" for-each-ref --format='%(refname)' | while IFS= read -r ref; do git -C \"$tree\" update-ref -d \"$ref\"; done\ngit -C \"$tree\" remote remove origin >/dev/null 2>&1 || true\ngit -C \"$tree\" reflog expire --expire=now --all\nprintf '{\"tree\":\"%s\",\"logs\":\"%s\"}' \"$tree\" \"$root\"",
+          "command": "set -eu\nroot=\"$REPO/target/bench/baseline\"\ntree=\"$root/$TASK-$RUN\"\nmkdir -p \"$root\"\nrm -rf \"$tree\"\ngit clone -q --shared --no-checkout \"$REPO\" \"$tree\"\ngit -C \"$tree\" checkout -q --detach \"$BASE\"\ngit -C \"$tree\" for-each-ref --format='%(refname)' | while IFS= read -r ref; do git -C \"$tree\" update-ref -d \"$ref\"; done\ngit -C \"$tree\" remote | while IFS= read -r name; do git -C \"$tree\" remote remove \"$name\"; done\ngit -C \"$tree\" reflog expire --expire=now --all\nprintf '{\"tree\":\"%s\",\"logs\":\"%s\"}' \"$tree\" \"$root\"",
           "env": {
             "REPO": {
               "$from": "/answer/repo"

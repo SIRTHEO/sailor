@@ -9,7 +9,7 @@ use workspace::ratchet::{weigh, Weighed};
 const NAMED_IN_THE_CODE_TODAY: usize = 5;
 
 /// Counted apart from the code: the larger half, and the slower to come down.
-const NAMED_IN_THE_SHIPPED_FLOWS_TODAY: usize = 173;
+const NAMED_IN_THE_SHIPPED_FLOWS_TODAY: usize = 108;
 
 const ATOMS: &[&str] = &["origin", "main", "master", "gh"];
 
