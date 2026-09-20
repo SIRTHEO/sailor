@@ -462,9 +462,7 @@ fn a_start_the_ledger_names_is_let_go_and_goes_on_running() {
     let supervisor = Supervisor::over(Some(
         ledger::Ledger::open(&directory.0).expect("the store"),
     ));
-    // Mute, unlike every other start here: this one is *meant* to outlive the
-    // proof, and a process that speaks holds the battery's stdout open. Under
-    // `cargo test | tee` that pipe never reaches EOF and the run hangs.
+    // Mute: it outlives the proof, and a start that speaks holds `tee` open.
     let process = supervisor
         .start(Spec { speaks: false, ..sleeper("a-row-names-it", None) })
         .expect("start the process");
@@ -482,11 +480,7 @@ fn a_start_the_ledger_names_is_let_go_and_goes_on_running() {
         "it runs on and no row reaches it, which is the fault by another door"
     );
 
-    // The group, so the `sleep` inside it goes too; the shell is left a zombie,
-    // which is the limit `pid_is_alive` declares and cannot be asserted on.
-    // Through a shell because a negative pid is not portable to `kill(1)`: the
-    // BSD one reads it as a group, the util-linux one as a second option and
-    // leaves the process running — green here, hung on the forge.
+    // Through a shell: to `kill(1)` a negative pid is a group only on BSD.
     let _ = std::process::Command::new("/bin/sh")
         .args(["-c", &format!("kill -9 -{pid}")])
         .status();
