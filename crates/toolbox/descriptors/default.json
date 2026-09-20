@@ -201,6 +201,11 @@
         "refresh_expires_pointer": ["claudeAiOauth", "refreshTokenExpiresAt"],
         "url": "https://api.anthropic.com/api/oauth/usage",
         "headers": ["anthropic-beta: oauth-2025-04-20"],
+        "shape": {
+          "used": "utilization",
+          "used_in": "percent",
+          "lasts_by_name": {"five_hour": 18000, "seven_day": 604800}
+        },
         "dead_when": ["authentication_error", "permission_error"],
         "note": "measured with an HTTP 200: `utilization` as a percentage per window and `resets_at`; a beta, versioned channel that can stop answering with nothing here changing, so a missing reading is a reading that is not there, never a zero WHERE THE CREDENTIAL REALLY IS, AND WHY THIS PATH IS THE EXCEPTION (measured and documented, 11/09/2026): on macOS the login is kept in the encrypted Keychain, and the file named here is written ONLY when the Keychain refuses the write — a locked keychain, an SSH session — which is also the ordinary place on Linux and Windows. CLAUDE_CONFIG_DIR moves this file with it AND keys the Keychain entry to that directory, so a session with another config directory reads another entry: that is how several accounts stand side by side, and it is also why this reader reaches only the account whose credential happens to sit in a file. Measured on this machine: three accounts signed in and answering as themselves, one file. FAULT 169, measured 15/09/2026: the same keychain entry carries `expiresAt` and `refreshTokenExpiresAt` beside the token, unix milliseconds. `accessToken` expires on the order of an hour and a live `claude` run renews it on its own; this reader never does, so a refusal against an expired access token with an unexpired refresh token is read as evidence, not as a need to sign in again."
       },
@@ -340,7 +345,8 @@
           "used": "used_percent",
           "used_in": "percent",
           "resets": "reset_at",
-          "resets_in": "epoch_seconds"
+          "resets_in": "epoch_seconds",
+          "lasts": "limit_window_seconds"
         },
         "note": "MEASURED 11/09/2026 with an HTTP 200, found by reading the paths in the binary: `/api/codex/usage` answers 403 and `/wham/usage` answers. Under `rate_limit` sit `primary_window` and `secondary_window`, each with `used_percent`, `limit_window_seconds` (18000 and 604800, so five hours and seven days) and `reset_at` in unix seconds. The body also carries the account's address and plan, which is how a profile's home is told from another's. The token is in the home's `auth.json` and is read there, never renewed. No beta header is needed, and no account header either: the bearer alone answered."
       },

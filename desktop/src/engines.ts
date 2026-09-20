@@ -22,7 +22,12 @@ export interface Install {
 
 export interface QuotaWindow {
   engine: string;
+  /** The provider's own word for this window: an order as often as a length. */
   unit: string;
+  /** What to show a person: `session`, `week`, or the provider's word where
+   *  nothing measured a length. */
+  window: string;
+  lasts_seconds: number | null;
   spent_fraction: number;
   resets_at: string | null;
   observed_at: number;

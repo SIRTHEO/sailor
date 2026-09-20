@@ -144,6 +144,8 @@ fn words_of(quota: &crate::descriptor::Quota) -> models::remaining::WindowWords 
         used_in_percent: said.used_in != "fraction",
         resets: if said.resets.is_empty() { standing.resets } else { said.resets.clone() },
         resets_in_seconds: said.resets_in == "epoch_seconds",
+        lasts: said.lasts.clone(),
+        lasts_by_name: said.lasts_by_name.clone(),
         dead_when: quota.dead_when.clone(),
     }
 }

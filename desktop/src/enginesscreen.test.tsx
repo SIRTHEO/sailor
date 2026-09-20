@@ -30,7 +30,7 @@ const ANSWER: Engines = {
       id: "claude-code", label: "Claude Code", presence: "present", reason: "found `claude`",
       executable: "/home/mira/.local/bin/claude", version: "2.1.258",
       signed_in: "yes", signed_in_said: "loggedIn: true", profile_in_force: null,
-      quota: [{ engine: "claude-code", unit: "seven_day", spent_fraction: 0.42, resets_at: "2026-09-06T04:59:59Z", observed_at: 1 }],
+      quota: [{ engine: "claude-code", unit: "seven_day", window: "week", lasts_seconds: 604_800, spent_fraction: 0.42, resets_at: "2026-09-06T04:59:59Z", observed_at: 1 }],
       quota_why: null,
       sign_in: { program: "/home/mira/.local/bin/claude", args: ["auth", "login"], interactive: true, note: "" },
       install: null,
@@ -82,7 +82,9 @@ describe("the engines screen", () => {
     expect(screen.getByText("found `codex` in /opt/homebrew/bin/codex")).toBeTruthy();
     expect(screen.getByText("Not logged in")).toBeTruthy();
     expect(screen.getByText(/as prove/)).toBeTruthy();
-    expect(screen.getByText(/seven_day: 42% spent/)).toBeTruthy();
+    // The length, not the provider's word for it: `seven_day` reads as a week
+    // only because this provider happens to name it after one.
+    expect(screen.getByText(/week: 42% spent/)).toBeTruthy();
     expect(screen.getByText("not on this machine")).toBeTruthy();
     expect(percent(0.126)).toBe("13% spent");
   });
