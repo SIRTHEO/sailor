@@ -142,7 +142,7 @@ export const SAMPLE: FlowEntry[] = [
       },
       inputs: {
         "chain-brake": {
-          command: 'test -n "$CLAUDE_CODE_SESSION_ID"',
+          command: 'test -n "$SESSION_ID"',
           env: {},
           timeout_secs: 10,
         },
