@@ -1,7 +1,7 @@
 //! What a branch of this repository is called.
 
-/// **ONE TRUNK, AND IT IS THE ONE A READER EXPECTS.** An archived history is a tag.
-pub const TRUNK: &str = "main";
+/// The git configuration key a repository declares its trunk in.
+pub const TRUNK_KEY: &str = "sailor.trunk";
 
 const WORK: &str = "work/";
 
@@ -10,8 +10,8 @@ const AGENT_TREE: &str = "worktree-agent-";
 pub const THE_CONVENTION: &str = "work/<topic>, in lowercase letters, digits and hyphens";
 
 /// A branch already standing keeps the name it was given; a new one does not.
-pub fn may_be_cut(branch: &str, the_branch_exists: bool) -> Result<(), String> {
-    if the_branch_exists || follows_the_convention(branch) {
+pub fn may_be_cut(branch: &str, the_branch_exists: bool, trunk: &str) -> Result<(), String> {
+    if the_branch_exists || follows_the_convention(branch, trunk) {
         return Ok(());
     }
     Err(format!(
@@ -22,16 +22,16 @@ pub fn may_be_cut(branch: &str, the_branch_exists: bool) -> Result<(), String> {
 /// The names that break the convention, in the order they were given. **Pure,
 /// and that is the point:** a check reading the branches of whichever machine
 /// runs it goes red over a stray branch of somebody else's.
-pub fn against_the_convention(names: &[String]) -> Vec<String> {
+pub fn against_the_convention(names: &[String], trunk: &str) -> Vec<String> {
     names
         .iter()
-        .filter(|name| !follows_the_convention(name))
+        .filter(|name| !follows_the_convention(name, trunk))
         .cloned()
         .collect()
 }
 
-pub fn follows_the_convention(name: &str) -> bool {
-    if name == TRUNK {
+pub fn follows_the_convention(name: &str, trunk: &str) -> bool {
+    if name == trunk {
         return true;
     }
     if let Some(id) = name.strip_prefix(AGENT_TREE) {
@@ -67,11 +67,11 @@ pub const ADRIFT_AFTER_HOURS: i64 = 120;
 
 /// The branches carrying work nothing watches. **Pure, for the reason
 /// `against_the_convention` is**: the facts are handed in, never read here.
-pub fn adrift(branches: &[Branch]) -> Vec<&Branch> {
+pub fn adrift<'a>(branches: &'a [Branch], trunk: &str) -> Vec<&'a Branch> {
     let mut adrift: Vec<&Branch> = branches
         .iter()
         .filter(|branch| {
-            branch.name != TRUNK
+            branch.name != trunk
                 && !branch.in_the_trunk
                 && !branch.has_a_tree
                 && branch.idle_hours > ADRIFT_AFTER_HOURS

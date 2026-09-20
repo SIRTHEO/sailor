@@ -8,7 +8,7 @@
 use crate::Form;
 use flow::{ActionRegistry, FlowFile, Graph};
 use ledger::Ledger;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -461,6 +461,41 @@ fn usage() -> String {
     )
 }
 
+/// How many runs each flow has, and when the last one began. Empty when no
+/// ledger has been opened here: a list must still print without one.
+fn runs_by_flow() -> BTreeMap<String, (usize, i64)> {
+    let Ok(dir) = default_ledger_dir() else {
+        return BTreeMap::new();
+    };
+    if !ui::gather::ledger_present(&dir) {
+        return BTreeMap::new();
+    }
+    let Ok(ledger) = Ledger::open(&dir) else {
+        return BTreeMap::new();
+    };
+    ledger
+        .runs_by_entity()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(entity, count, last)| (entity, (count.max(0) as usize, last)))
+        .collect()
+}
+
+/// A flow the product ships and nobody has run is a claim, not a feature, and
+/// the list is where that shows.
+fn how_often_it_ran(ran: &BTreeMap<String, (usize, i64)>, name: &str) -> String {
+    let Some((count, last)) = ran.get(name) else {
+        return catalogue::say("cli.flow.list_never_run", &[]);
+    };
+    let days = now_secs()
+        .map(|now| (now - last).max(0) / 86_400)
+        .unwrap_or(0);
+    catalogue::say(
+        "cli.flow.list_ran",
+        &[("count", &count.to_string()), ("days", &days.to_string())],
+    )
+}
+
 fn list_flows(sources: &[FlowSource]) -> Result<String, String> {
     // ONE READING: the row's flow, its origin and its mark all come from the
     // same resolved entry, so they cannot describe two different files.
@@ -470,6 +505,7 @@ fn list_flows(sources: &[FlowSource]) -> Result<String, String> {
         return Ok(nothing_found(sources));
     }
     let mut report = String::new();
+    let ran = runs_by_flow();
     // THE ORIGIN IS IN THE LIST, and it is no ornament: two flows of the same
     // name in two places are one in here — the most specific wins — and whoever
     // cannot see where the running one comes from edits the other.
@@ -480,9 +516,10 @@ fn list_flows(sources: &[FlowSource]) -> Result<String, String> {
             Ok(flow) => {
                 let _ = writeln!(
                     report,
-                    "{}\t{} steps\t{origin}\t{}",
+                    "{}\t{} steps\t{origin}\t{}\t{}",
                     flow.id,
                     flow.graph.steps().len(),
+                    how_often_it_ran(&ran, name),
                     flow.description
                 );
             }
