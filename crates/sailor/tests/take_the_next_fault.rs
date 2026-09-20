@@ -37,6 +37,12 @@ impl ToolResolver for EveryToolIsShell {
     fn data_pact(&self, _id: &str) -> models::pact::DataPact {
         models::pact::DataPact::DoesNotTrain
     }
+
+    /// The repair step changes the tree. The shell writes wherever it is
+    /// sent, so it asks with nothing — which is a declaration, not a silence.
+    fn edit_the_tree_option(&self, _id: &str) -> Option<Vec<String>> {
+        Some(Vec::new())
+    }
 }
 
 /// A scratch directory of this test's own, taken down with it.

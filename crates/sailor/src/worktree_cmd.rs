@@ -13,8 +13,8 @@ use std::path::{Path, PathBuf};
 use workspace::branches::against_the_convention;
 use workspace::index_identity::{IdentityRule, IndexIdentity};
 use workspace::{
-    branch_names, close_if_the_trunk_holds_it, create, list, remove, root, run_and_step_of, Closing,
-    IdentityLeftBehind, OpenTree, OpenTrees, Swept, Worktree,
+    branch_names, close_if_the_trunk_holds_it, create, list, remove, root, run_and_step_of,
+    Closing, IdentityLeftBehind, OpenTree, OpenTrees, Swept, Worktree,
 };
 
 pub const USAGE: &[Form] = &[
@@ -49,6 +49,10 @@ pub const USAGE: &[Form] = &[
     Form {
         form: "sailor worktree retire [<identity>]",
         says_key: "cli.worktree.form.retire",
+    },
+    Form {
+        form: "sailor worktree adrift",
+        says_key: "cli.worktree.form.adrift",
     },
 ];
 
@@ -85,10 +89,9 @@ fn dispatch(args: &[String]) -> Result<String, String> {
             let path = create(&repo, branch, Some(name))?;
             Ok(format!("{}", path.display()))
         }
-        [command, name] if command == "remove" => {
-            remove_one(&repo, name, &IndexTending::of(&repo))
-        }
+        [command, name] if command == "remove" => remove_one(&repo, name, &IndexTending::of(&repo)),
         [command] if command == "names" => names(&branch_names(&repo)?),
+        [command] if command == "adrift" => adrift(&workspace::branch_standing(&repo, now())?),
         [command] if command == "retire" => {
             let left = a_store()?.identities_left_behind()?;
             Ok(render_left_behind(&left, now()))
@@ -105,7 +108,10 @@ fn dispatch(args: &[String]) -> Result<String, String> {
             // **NOBODY SWEEPS BLIND**: a store that will not answer is not
             // a machine with nobody in it.
             let Some(occupied) = who_is_standing() else {
-                return Err(catalogue::say("cli.worktree.cannot_ask_who_is_standing", &[]));
+                return Err(catalogue::say(
+                    "cli.worktree.cannot_ask_who_is_standing",
+                    &[],
+                ));
             };
             let store = a_store()?;
             let standing = machine::where_processes_stand().map_err(|why| {
@@ -120,10 +126,9 @@ fn dispatch(args: &[String]) -> Result<String, String> {
             };
             sweep(&repo, &store, &holders, &IdentityRule::from_environment())
         }
-        [command, word] if command == "close" && word.starts_with("--") => Err(catalogue::say(
-            "cli.unknown_option",
-            &[("option", word)],
-        )),
+        [command, word] if command == "close" && word.starts_with("--") => {
+            Err(catalogue::say("cli.unknown_option", &[("option", word)]))
+        }
         [command, name] if command == "close" => {
             close_one(&repo, name, &a_store()?, &IndexTending::of(&repo))
         }
@@ -133,8 +138,7 @@ fn dispatch(args: &[String]) -> Result<String, String> {
 
 fn a_store() -> Result<Ledger, String> {
     let directory = ui::gather::default_ledger_dir();
-    Ledger::open(&directory)
-        .map_err(|error| format!("{}: {error}", directory.display()))
+    Ledger::open(&directory).map_err(|error| format!("{}: {error}", directory.display()))
 }
 
 fn now() -> i64 {
@@ -170,7 +174,10 @@ pub fn render_open(held: &[OpenTree], now: i64, alive: impl Fn(&OpenTree) -> boo
                 "cli.worktree.open_row",
                 &[
                     ("tree", &tree.path),
-                    ("hours", &((now - tree.opened_at).max(0) / AN_HOUR).to_string()),
+                    (
+                        "hours",
+                        &((now - tree.opened_at).max(0) / AN_HOUR).to_string(),
+                    ),
                     ("step", &tree.step),
                     ("run", &tree.run),
                     ("pid", &tree.opened_by_pid.to_string()),
@@ -258,7 +265,9 @@ pub fn retire_one(
         .identities_left_behind()?
         .into_iter()
         .find(|row| row.identity == identity)
-        .ok_or_else(|| catalogue::say("cli.worktree.index_not_recorded", &[("identity", identity)]))?;
+        .ok_or_else(|| {
+            catalogue::say("cli.worktree.index_not_recorded", &[("identity", identity)])
+        })?;
     let repo = Path::new(&row.repo);
     let became = retire(repo, identity, &tending_for(repo));
     match became {
@@ -309,13 +318,11 @@ pub fn who_is_standing() -> Option<Vec<PathBuf>> {
     if !path.exists() {
         return Some(Vec::new());
     }
-    let rows = sessions::Sessions::open(path)
-        .ok()?
-        .terminals()
-        .ok()?;
-    Some(occupied_trees(rows.into_iter().map(|row| {
-        (row.worktree, row.closed_at.is_none())
-    })))
+    let rows = sessions::Sessions::open(path).ok()?.terminals().ok()?;
+    Some(occupied_trees(
+        rows.into_iter()
+            .map(|row| (row.worktree, row.closed_at.is_none())),
+    ))
 }
 
 /// Who holds a tree, read from the machine and handed in so the rule is tested
@@ -366,7 +373,10 @@ pub fn sweep(
                 )),
             }
         }
-        if matches!(became, Swept::Closed(Closing::TakenDown) | Swept::AlreadyGone) {
+        if matches!(
+            became,
+            Swept::Closed(Closing::TakenDown) | Swept::AlreadyGone
+        ) {
             closed += 1;
         }
         said.push(what_became_of_it(&at, became));
@@ -376,7 +386,10 @@ pub fn sweep(
     // stood for two days waking the flow that exists to clear them (fault 166).
     for row in &rows {
         let at = PathBuf::from(&row.path);
-        if trees.iter().any(|known| same_place(Path::new(&known.path), &at)) {
+        if trees
+            .iter()
+            .any(|known| same_place(Path::new(&known.path), &at))
+        {
             continue;
         }
         if let Some(line) = held_by_somebody(occupied, &at) {
@@ -384,7 +397,10 @@ pub fn sweep(
             continue;
         }
         let became = close_if_the_trunk_holds_it(repo, &at, store);
-        if matches!(became, Swept::Closed(Closing::TakenDown) | Swept::AlreadyGone) {
+        if matches!(
+            became,
+            Swept::Closed(Closing::TakenDown) | Swept::AlreadyGone
+        ) {
             closed += 1;
         }
         said.push(what_became_of_it(&at, became));
@@ -429,9 +445,13 @@ fn write_down_what_was_left(
     let standing: Vec<String> = trees
         .iter()
         .filter_map(|tree| {
-            workspace::index_identity::identity_of(Path::new(&tree.path), tree.branch.as_deref(), rule)
-                .ok()
-                .map(|held| held.id)
+            workspace::index_identity::identity_of(
+                Path::new(&tree.path),
+                tree.branch.as_deref(),
+                rule,
+            )
+            .ok()
+            .map(|held| held.id)
         })
         .collect();
     left_behind
@@ -476,11 +496,17 @@ fn why_it_stays(at: &Path, row: Option<&OpenTree>, holders: &Holders) -> Option<
         ));
     }
     let Some(row) = row else {
-        return Some(catalogue::say("cli.worktree.not_cut_by_sailor", &[("tree", tree.as_str())]));
+        return Some(catalogue::say(
+            "cli.worktree.not_cut_by_sailor",
+            &[("tree", tree.as_str())],
+        ));
     };
     match cut_at(at) {
         None => {
-            return Some(catalogue::say("cli.worktree.cut_at_unknown", &[("tree", tree.as_str())]));
+            return Some(catalogue::say(
+                "cli.worktree.cut_at_unknown",
+                &[("tree", tree.as_str())],
+            ));
         }
         Some(cut) if holders.now - cut < AN_HOUR => {
             let minutes = ((holders.now - cut).max(0) / 60).to_string();
@@ -501,7 +527,11 @@ fn why_it_stays(at: &Path, row: Option<&OpenTree>, holders: &Holders) -> Option<
     let pid = row.opened_by_pid.to_string();
     Some(catalogue::say(
         key,
-        &[("tree", tree.as_str()), ("pid", pid.as_str()), ("run", row.run.as_str())],
+        &[
+            ("tree", tree.as_str()),
+            ("pid", pid.as_str()),
+            ("run", row.run.as_str()),
+        ],
     ))
 }
 
@@ -604,8 +634,13 @@ fn held_by_somebody(occupied: &[PathBuf], at: &Path) -> Option<String> {
 /// git refuses both, and a refusal read as a fault sends whoever typed this
 /// looking for a break that is not there.
 fn why_it_is_not_mine_to_close(trees: &[Worktree], at: &Path) -> Option<String> {
-    let here = std::env::current_dir().ok().and_then(|from| workspace::tree_around(&from));
-    if trees.first().is_some_and(|main| Path::new(&main.path) == at) {
+    let here = std::env::current_dir()
+        .ok()
+        .and_then(|from| workspace::tree_around(&from));
+    if trees
+        .first()
+        .is_some_and(|main| Path::new(&main.path) == at)
+    {
         return Some(catalogue::say("cli.worktree.that_is_the_main_tree", &[]));
     }
     let same = here.is_some_and(|here| at.canonicalize().is_ok_and(|at| at == here));
@@ -639,14 +674,52 @@ fn what_became_of_it(at: &Path, became: Swept) -> String {
 /// An error and not a line of prose: whoever runs this wants an exit code to
 /// act on, and a check that says its bad news on standard output at exit zero
 /// is a check nothing can be built upon.
-fn names(all: &[String]) -> Result<String, String> {
+pub fn names(all: &[String]) -> Result<String, String> {
     let against = against_the_convention(all);
     if against.is_empty() {
         return Ok(catalogue::say("cli.worktree.names_follow", &[]));
     }
     let count = against.len().to_string();
-    let mut lines = vec![catalogue::say("cli.worktree.names_against", &[("count", &count)])];
+    let mut lines = vec![catalogue::say(
+        "cli.worktree.names_against",
+        &[("count", &count), ("trunk", workspace::branches::TRUNK)],
+    )];
     lines.extend(against);
+    Err(lines.join("\n"))
+}
+
+/// The branches nothing is watching any more, and the exit code that says so.
+///
+/// Nothing is deleted here: a branch holds work, and what happens to work is a
+/// person's call. The report is the thing that was missing.
+fn adrift(standing: &[workspace::branches::Branch]) -> Result<String, String> {
+    let adrift = workspace::branches::adrift(standing);
+    if adrift.is_empty() {
+        return Ok(catalogue::say("cli.worktree.adrift_none", &[]));
+    }
+    let widest = adrift
+        .iter()
+        .map(|branch| branch.name.len())
+        .max()
+        .unwrap_or(0);
+    let mut lines = vec![catalogue::say(
+        "cli.worktree.adrift_some",
+        &[
+            ("count", &adrift.len().to_string()),
+            (
+                "hours",
+                &workspace::branches::ADRIFT_AFTER_HOURS.to_string(),
+            ),
+        ],
+    )];
+    for branch in adrift {
+        let days = (branch.idle_hours / 24).to_string();
+        lines.push(format!(
+            "{:widest$}  {}",
+            branch.name,
+            catalogue::say("cli.worktree.adrift_for", &[("days", &days)])
+        ));
+    }
     Err(lines.join("\n"))
 }
 

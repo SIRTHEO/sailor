@@ -43,3 +43,35 @@ suffixed `_TODAY` upward, comment ratios and long blocks downward.
 
 - The branch's `HEAD` is recorded before a reviewer starts; the review names that commit; a different `HEAD` invalidates the review
 - The combined trunk runs A plus every applicable letter, then the per-crate battery in a tab with line-by-line logging
+
+## The six the trunk requires, and the day each said no
+
+A required check that cannot refuse is worse than no check: the ruleset counts
+it, the tree believes it, and the belief is free. Two of these six were exactly
+that. `publication boundary` could not go green on any merge. `the style debt`
+could not go red whatever it measured, and underneath that it was not
+measuring: its clippy count had been zero on every run since it was written,
+because the file sets `CARGO_TERM_COLOR: always` and no coloured line begins
+`warning: `. One blindness had hidden the other for as long as both existed,
+and neither was found by reading — the second surfaced only when a commit
+built on purpose to be refused came back counted at zero.
+
+So each ends in one of two states, never a third. **proved red**: a real commit
+and the receipt of the run that concluded `failure` on it. **refused**: it
+cannot be made red without touching the product, the reason is written, and a
+fault number holds it. `scripts/gates-can-say-no.sh` reads this table, reads
+the six from the ruleset itself, and exits 0 only when the two agree and every
+receipt still holds on the forge.
+
+The commits below are on no branch: they were written to be refused and their
+branches were deleted the same day. The forge keeps them under the requests
+that carried them, which is why the receipts can still be fetched.
+
+| check | state | commit | receipt | what made it refuse |
+| --- | --- | --- | --- | --- |
+| `publication boundary` | proved red | `b24a7bab` | `105945273889` | an empty `.envrc`: a reserved path, which is a shape that needs no list |
+| `sailor/private-names` | proved red | `b24a7bab` | `54512959547` | an empty `.envrc`: a reserved path, refused by the armed check that holds the list |
+| `workspace tests` | proved red | `b24a7bab` | `105945273886` | a failing assertion |
+| `desktop tests` | proved red | `b24a7bab` | `105945273862` | a failing assertion in the shell's own workspace, which `cargo test --workspace` never reaches |
+| `clippy gate` | proved red | `b24a7bab` | `105945273758` | `approx_constant`, which is `clippy::correctness` and deny by default |
+| `the style debt` | proved red | `01347a02` | `105946675134` | three blank lines where rustfmt allows one: 1676 places against a ceiling of 1675 |

@@ -152,6 +152,7 @@
           "kind": "implementation",
           "prefer": "as_written",
           "data": "private",
+          "edits_the_tree": true,
           "answer_shape": {
             "type": "object",
             "properties": {

@@ -1008,6 +1008,14 @@ impl Descriptor {
     /// The options a model's name is written after. A form without a value has
     /// nowhere to put the name, so it answers `None` as an undeclared
     /// capability does: neither can be told which model to answer with.
+    /// The line this command is asked with leave to change the tree. A form
+    /// taking a value is not one: leave is asked, never named.
+    pub fn edit_the_tree_option(&self) -> Option<Vec<String>> {
+        let forms = self.capabilities.get(EDIT_THE_TREE)?.forms();
+        let asks = |form: &&CapabilityForm| !form.takes_value && !form.args.is_empty();
+        forms.iter().find(asks).map(|form| form.args.clone())
+    }
+
     pub fn model_option(&self) -> Option<Vec<String>> {
         let forms = self.capabilities.get(CHOOSE_MODEL)?.forms();
         let carries = |form: &&CapabilityForm| form.takes_value && !form.args.is_empty();
@@ -1097,7 +1105,11 @@ impl Descriptor {
                 .map(|mark| mark.trim().to_lowercase())
                 .filter(|mark| !mark.is_empty())
                 .collect();
-            for mark in ask.exhausted_when.iter().filter(|mark| !mark.trim().is_empty()) {
+            for mark in ask
+                .exhausted_when
+                .iter()
+                .filter(|mark| !mark.trim().is_empty())
+            {
                 let said = mark.trim().to_lowercase();
                 if !unusable.iter().any(|covering| said.contains(covering)) {
                     found.push(format!(
@@ -1148,6 +1160,10 @@ pub const ASK_WITHOUT_INTERACTION: &str = "ask_without_interaction";
 /// The name of the capability saying how an engine is told which model to
 /// answer with. The code reads a form; the options are the descriptor's.
 pub const CHOOSE_MODEL: &str = "choose_model";
+
+/// The name of the capability saying how an engine is asked for leave to
+/// change the tree. **A permission is not an engine.**
+pub const EDIT_THE_TREE: &str = "edit_the_tree";
 
 /// A descriptor that says two different things about the same fact.
 ///

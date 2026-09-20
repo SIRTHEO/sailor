@@ -145,6 +145,7 @@ pub fn create(repo: &Path, branch: &str, name: Option<&str>) -> Result<PathBuf, 
         &["rev-parse", "--verify", &format!("refs/heads/{branch}")],
     )
     .is_ok();
+    branches::may_be_cut(branch, known)?;
     let target = path.to_string_lossy().into_owned();
     let args: Vec<&str> = if known {
         vec!["worktree", "add", &target, branch]
@@ -580,6 +581,56 @@ pub fn measured_against(walked: usize, what: &str, held: usize, oracle: &str) {
     println!("\n{MEASURED} {walked} {what}{AGAINST}{held} {oracle}");
 }
 
+/// Every local branch with the three facts [`branches::adrift`] reads.
+pub fn branch_standing(repo: &Path, now: i64) -> Result<Vec<branches::Branch>, String> {
+    let trunk = branches::TRUNK;
+    let merged: Vec<String> = git(
+        repo,
+        &[
+            "for-each-ref",
+            "--format=%(refname:short)",
+            "--merged",
+            trunk,
+            "refs/heads",
+        ],
+    )?
+    .lines()
+    .map(str::trim)
+    .filter(|name| !name.is_empty())
+    .map(str::to_owned)
+    .collect();
+    let with_a_tree: Vec<String> = list(repo)?
+        .into_iter()
+        .filter_map(|tree| tree.branch)
+        .collect();
+    let mut standing = Vec::new();
+    for line in git(
+        repo,
+        &[
+            "for-each-ref",
+            "--format=%(refname:short)%09%(committerdate:unix)",
+            "refs/heads",
+        ],
+    )?
+    .lines()
+    {
+        let Some((name, when)) = line.split_once('\t') else {
+            continue;
+        };
+        let when: i64 = when
+            .trim()
+            .parse()
+            .map_err(|_| format!("«{name}» has no date"))?;
+        standing.push(branches::Branch {
+            name: name.to_owned(),
+            in_the_trunk: merged.iter().any(|held| held == name),
+            has_a_tree: with_a_tree.iter().any(|held| held == name),
+            idle_hours: (now - when) / 3_600,
+        });
+    }
+    Ok(standing)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -742,8 +793,12 @@ mod tests {
         let empty = a_tree_is_left_behind(&page, &|_| true);
 
         let carrying = tree_for(&repo, "run-1", "carrying", &page, None).expect("a tree");
-        std::fs::write(carrying.join("only-here"), "a thought of its own
-").expect("work");
+        std::fs::write(
+            carrying.join("only-here"),
+            "a thought of its own
+",
+        )
+        .expect("work");
         assert!(run_git(&carrying, &["add", "only-here"]).status.success());
         assert!(run_git(&carrying, &["commit", "-q", "-m", "only here"])
             .status
@@ -792,7 +847,10 @@ mod tests {
         let let_go = a_tree_is_left_behind(&page, &|_| true);
         let _ = std::fs::remove_dir_all(&scratch);
 
-        assert!(!held, "a tree somebody still holds woke a sweep that must keep it");
+        assert!(
+            !held,
+            "a tree somebody still holds woke a sweep that must keep it"
+        );
         assert!(let_go, "the same tree, let go, woke nothing");
     }
 
