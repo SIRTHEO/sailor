@@ -2,7 +2,7 @@ import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwind from "@tailwindcss/vite";
 import { fileURLToPath, URL } from "node:url";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 // **THE WINDOW CARRIES ONE CATALOGUE, NOT EVERY LANGUAGE THERE IS.** Both
@@ -65,10 +65,32 @@ function theBrandMarks() {
         known.map((icon) => [icon.slug ?? icon.title.toLowerCase().replace(/[^a-z0-9]/g, ""), icon]),
       );
 
+      // **THE ONE PLACE A MARK MAY BE KEPT BY HAND**, and only for a brand the
+      // catalogue does not carry: upstream is read first, so the day it adds a
+      // brand the copy here stops being used and a check asks for its removal.
+      const ourOwn = (slug: string) => {
+        const path = here(`./src/brands/${slug}.svg`);
+        if (!existsSync(path)) return undefined;
+        const drawing = readFileSync(path, "utf8");
+        const drawn = /\sd="([^"]+)"/.exec(drawing)?.[1];
+        const hex = /<svg[^>]*\sfill="(#[0-9a-fA-F]{6})"/.exec(drawing)?.[1];
+        const title = /<title>([^<]+)<\/title>/.exec(drawing)?.[1];
+        if (drawn === undefined || hex === undefined || title === undefined) {
+          throw new Error(
+            `${slug}.svg must carry one path, a fill of six hex digits on its <svg>, and a <title>`,
+          );
+        }
+        return { title, hex: hex.toLowerCase(), path: drawn };
+      };
+
       const marks: Record<string, { title: string; hex: string; path: string }> = {};
       for (const slug of [...asked].sort()) {
         const icon = by.get(slug);
-        if (icon === undefined) continue;
+        if (icon === undefined) {
+          const mine = ourOwn(slug);
+          if (mine !== undefined) marks[slug] = mine;
+          continue;
+        }
         const drawing = readFileSync(here(`./node_modules/simple-icons/icons/${slug}.svg`), "utf8");
         const path = /\sd="([^"]+)"/.exec(drawing)?.[1];
         if (path === undefined) continue;

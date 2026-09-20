@@ -7,6 +7,7 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { BrandMark } from "./BrandMark";
+import { readFileSync, readdirSync } from "node:fs";
 import { GROUND, MARKS, contrast, hueOfSlug, legible, monogramOf, rgbOf } from "./brands";
 
 describe("the marks the build carries", () => {
@@ -22,6 +23,37 @@ describe("the marks the build carries", () => {
     // is the truth, the missing drawing is somebody else's.
     expect(MARKS["openai"]).toBeUndefined();
     expect(MARKS["aws"]).toBeUndefined();
+  });
+});
+
+describe("the marks kept by hand", () => {
+  // Read from the project's root, not from `import.meta.url`: under jsdom that
+  // URL is an http one, and `node:fs` refuses it.
+  const folder = "src/brands";
+  const kept = readdirSync(folder).filter((name) => name.endsWith(".svg"));
+
+  test("holds only brands the catalogue is missing, so it empties itself", () => {
+    const upstream = new Set(
+      (JSON.parse(
+        readFileSync("node_modules/simple-icons/data/simple-icons.json", "utf8"),
+      ) as { title: string; slug?: string }[]).map(
+        (icon) => icon.slug ?? icon.title.toLowerCase().replace(/[^a-z0-9]/g, ""),
+      ),
+    );
+    for (const name of kept) {
+      const slug = name.replace(/\.svg$/, "");
+      expect(upstream.has(slug), `${slug} is in simple-icons now: delete this copy`).toBe(false);
+    }
+  });
+
+  test("gives each mark the three things the build refuses it without", () => {
+    for (const name of kept) {
+      const drawing = readFileSync(`${folder}/${name}`, "utf8");
+      expect(/<svg[^>]*\sviewBox="0 0 24 24"/.test(drawing), `${name}: a 24×24 viewBox`).toBe(true);
+      expect(/<svg[^>]*\sfill="#[0-9a-fA-F]{6}"/.test(drawing), `${name}: a fill of six hex digits`).toBe(true);
+      expect(/<title>[^<]+<\/title>/.test(drawing), `${name}: a title`).toBe(true);
+      expect(/\sd="[^"]+"/.test(drawing), `${name}: one path`).toBe(true);
+    }
   });
 });
 
