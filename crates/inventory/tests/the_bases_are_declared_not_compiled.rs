@@ -86,7 +86,7 @@ fn the_bases_that_are_declared_are_the_ones_searched() {
 #[test]
 fn with_nothing_declared_the_survey_says_so_instead_of_saying_zero() {
     let home = temp("home-with-no-declaration");
-    let survey = default_roots_from(&home, &[]);
+    let survey = default_roots_from(&home, &[], None);
 
     assert!(
         !survey.bases_declared,

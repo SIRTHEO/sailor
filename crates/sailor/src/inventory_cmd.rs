@@ -330,7 +330,7 @@ fn print_human(found: &Inventory, only: Option<Kind>, unreachable_only: bool) {
                 Reach::Inactive(reason) => format!("  ✗ {reason}"),
                 Reach::Unknown(reason) => format!("  ? {reason}"),
             };
-            println!("  {:<34} {:<18}{}", entry.name, entry.origin, mark);
+            println!("  {:<34} {:<18}{:<16}{}", entry.name, entry.origin, entry.root, mark);
         }
         println!();
     }
