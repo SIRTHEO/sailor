@@ -4,7 +4,6 @@
  * left behind — a gate reading yesterday's output measures nothing.
  */
 import { execFileSync } from "node:child_process";
-import { readdirSync, statSync } from "node:fs";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
