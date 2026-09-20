@@ -119,31 +119,45 @@ fn is_prose(line: &str) -> bool {
     start.starts_with("//") || start.starts_with('#') || start.starts_with("* ") || start == "*"
 }
 
-/// **A TEST MODULE IS NOT THE END OF THE FILE.** Cutting at `#[cfg(test)]` and
-/// keeping the head hides every line below it, and those lines ship: a mutant
-/// appended to `workspace/src/lib.rs` went unseen while the judge stayed green.
-/// The module is skipped by its braces, and the file resumes after it.
+fn indent_of(line: &str) -> usize {
+    line.len() - line.trim_start().len()
+}
+
+/// The file with its test modules taken out, and what follows them put back.
+///
+/// **NOT CUT AT THE FIRST MARK, AND NOT COUNTED IN BRACES.** Cutting hid 3.311
+/// of ledger's 3.341 lines, and those ship; counting braces reads the ones
+/// inside a JSON string, which this tree is full of. A module ends at the lone
+/// `}` in the column its `mod` stands in, which no string literal can be.
 fn the_code_of(text: &str) -> Vec<&str> {
+    let lines: Vec<&str> = text.lines().collect();
     let mut kept = Vec::new();
-    let mut depth = 0usize;
-    let mut inside = false;
-    for line in text.lines() {
-        if !inside && line.trim_start().starts_with("#[cfg(test)]") {
-            inside = true;
-            depth = 0;
+    let mut at = 0;
+    while at < lines.len() {
+        if !lines[at].trim_start().starts_with("#[cfg(test)]") {
+            kept.push(lines[at]);
+            at += 1;
             continue;
         }
-        if inside {
-            depth += line.matches('{').count();
-            let closes = line.matches('}').count();
-            if depth > 0 && closes >= depth {
-                inside = false;
-            } else {
-                depth = depth.saturating_sub(closes);
-            }
+        let mut head = at + 1;
+        while head < lines.len() && lines[head].trim().is_empty() {
+            head += 1;
+        }
+        let Some(opening) = lines.get(head) else {
+            break;
+        };
+        if !opening.contains('{') {
+            at = head + 1;
             continue;
         }
-        kept.push(line);
+        let column = indent_of(opening);
+        let mut close = head + 1;
+        while close < lines.len()
+            && !(lines[close].trim() == "}" && indent_of(lines[close]) == column)
+        {
+            close += 1;
+        }
+        at = close + 1;
     }
     kept
 }
@@ -212,6 +226,11 @@ fn the_control_a_tool_counts_only_where_it_is_a_machine_s_configuration() {
     assert_eq!(
         named_in("#[cfg(test)]\nmod tests {\n    let y = \".socraticode.json\";\n}", &tools),
         0
+    );
+    // A module declared in a file beside this one has no body to skip.
+    assert_eq!(
+        named_in("#[cfg(test)]\nmod tests;\nconst F: &str = \".socraticode.json\";", &tools),
+        1
     );
     // And the file goes on after the module: those lines ship.
     assert_eq!(
