@@ -494,7 +494,11 @@ pub fn report(views: &[AccountView], hours: i64) -> String {
             lines.push(match window.resets_at.as_deref() {
                 Some(resets) => catalogue::say(
                     "cli.accounts.one_window",
-                    &[("unit", &window.word()), ("used", &used), ("resets", resets)],
+                    &[
+                        ("unit", &window.word()),
+                        ("used", &used),
+                        ("resets", resets),
+                    ],
                 ),
                 None => catalogue::say(
                     "cli.accounts.one_window_no_reset",
@@ -715,7 +719,10 @@ mod tests {
     }
 
     fn window_lasting(unit: &str, lasts_seconds: u64) -> WindowLeft {
-        WindowLeft { lasts_seconds: Some(lasts_seconds), ..window(unit, 1.0) }
+        WindowLeft {
+            lasts_seconds: Some(lasts_seconds),
+            ..window(unit, 1.0)
+        }
     }
 
     /// **THE LENGTH IS WHAT A PERSON READS, WHERE ANYTHING MEASURED ONE.**
@@ -725,7 +732,10 @@ mod tests {
     fn a_window_is_called_by_its_length_and_falls_back_to_the_providers_word() {
         assert_eq!(window_lasting("primary_window", 18_000).word(), "session");
         assert_eq!(window_lasting("primary_window", 604_800).word(), "week");
-        assert_eq!(window_lasting("primary_window", 2_592_000).word(), "2592000s");
+        assert_eq!(
+            window_lasting("primary_window", 2_592_000).word(),
+            "2592000s"
+        );
         assert_eq!(
             window("nimbus_quill", 0.0).word(),
             "nimbus_quill",

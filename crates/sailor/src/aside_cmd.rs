@@ -88,9 +88,15 @@ pub fn render(aside: &BTreeMap<String, SetAside>, now: i64) -> String {
 fn how_long_is_left(secs: i64) -> String {
     let secs = secs.max(0);
     if secs >= AN_HOUR {
-        return catalogue::say("cli.aside.hours_left", &[("hours", &(secs / AN_HOUR).to_string())]);
+        return catalogue::say(
+            "cli.aside.hours_left",
+            &[("hours", &(secs / AN_HOUR).to_string())],
+        );
     }
-    catalogue::say("cli.aside.minutes_left", &[("minutes", &(secs / 60).to_string())])
+    catalogue::say(
+        "cli.aside.minutes_left",
+        &[("minutes", &(secs / 60).to_string())],
+    )
 }
 
 /// **PUBLIC SO A TEST CAN HAND IT A PATH.** Which list is read is decided by
@@ -100,7 +106,10 @@ pub fn bring_back(path: &Path, key: &str) -> Result<String, String> {
     if cooldown::bring_back(path, key)? {
         return Ok(catalogue::say("cli.aside.brought_back", &[("key", key)]));
     }
-    Err(catalogue::say("cli.aside.was_not_set_aside", &[("key", key)]))
+    Err(catalogue::say(
+        "cli.aside.was_not_set_aside",
+        &[("key", key)],
+    ))
 }
 
 #[cfg(test)]

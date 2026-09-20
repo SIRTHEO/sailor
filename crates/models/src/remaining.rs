@@ -614,8 +614,14 @@ mod tests {
         };
         let found = from_oauth_usage(SAMPLE, ENGINE, 1_000, &words).expect("the sample parses");
 
-        assert_eq!(window(&found, "five_hour").expect("the sitting").how_long(), HowLong::Session);
-        assert_eq!(window(&found, "seven_day").expect("the week").how_long(), HowLong::Week);
+        assert_eq!(
+            window(&found, "five_hour").expect("the sitting").how_long(),
+            HowLong::Session
+        );
+        assert_eq!(
+            window(&found, "seven_day").expect("the week").how_long(),
+            HowLong::Week
+        );
     }
 
     /// **A THIRD LENGTH IS NOT ROUNDED INTO ONE OF THE TWO.** A real account
@@ -648,9 +654,17 @@ mod tests {
         };
         let found = from_oauth_usage(SAMPLE, ENGINE, 1_000, &words).expect("the sample parses");
 
-        assert_eq!(window(&found, "five_hour").expect("the sitting").how_long(), HowLong::Session);
+        assert_eq!(
+            window(&found, "five_hour").expect("the sitting").how_long(),
+            HowLong::Session
+        );
         for entry in found.iter().filter(|entry| entry.unit != "five_hour") {
-            assert_eq!(entry.how_long(), HowLong::NotSaid, "{} borrowed a length", entry.unit);
+            assert_eq!(
+                entry.how_long(),
+                HowLong::NotSaid,
+                "{} borrowed a length",
+                entry.unit
+            );
         }
     }
 

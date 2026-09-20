@@ -24,7 +24,10 @@ fn shipped() -> Vec<Descriptor> {
 fn every_shipped_quota_channel_says_where_the_length_comes_from() {
     let mut mute = Vec::new();
     for descriptor in shipped() {
-        let Some(quota) = descriptor.quota.as_ref().filter(|quota| quota.reader == "oauth_usage")
+        let Some(quota) = descriptor
+            .quota
+            .as_ref()
+            .filter(|quota| quota.reader == "oauth_usage")
         else {
             continue;
         };
@@ -59,8 +62,14 @@ fn the_lengths_the_catalogue_declares_are_a_session_and_a_week() {
         .expect("its shape")
         .lasts_by_name;
 
-    assert_eq!(HowLong::of(by_name.get("five_hour").copied()), HowLong::Session);
-    assert_eq!(HowLong::of(by_name.get("seven_day").copied()), HowLong::Week);
+    assert_eq!(
+        HowLong::of(by_name.get("five_hour").copied()),
+        HowLong::Session
+    );
+    assert_eq!(
+        HowLong::of(by_name.get("seven_day").copied()),
+        HowLong::Week
+    );
 }
 
 /// **A LENGTH NOBODY DECLARED STAYS UNNAMED.** The bands are what a screen
@@ -72,7 +81,10 @@ fn a_length_outside_the_two_bands_is_never_called_one_of_them() {
     let nineteen_days = 19 * 24 * 60 * 60;
 
     assert_eq!(HowLong::of(None), HowLong::NotSaid);
-    assert_eq!(HowLong::of(Some(nineteen_days)), HowLong::Other(nineteen_days));
+    assert_eq!(
+        HowLong::of(Some(nineteen_days)),
+        HowLong::Other(nineteen_days)
+    );
     assert_eq!(HowLong::of(Some(18_000)).to_string(), "session");
     assert_eq!(HowLong::of(Some(604_800)).to_string(), "week");
 }

@@ -91,9 +91,20 @@ mod tests {
         assert_eq!(set_aside_until(&path, "x", 0), None);
         set_aside(&path, "x", 100, 60, "weekly  limit\nreached").expect("written");
         let aside = set_aside_until(&path, "x", 159).expect("still aside");
-        assert_eq!((aside.since, aside.until, aside.said.as_str()), (100, 160, "weekly limit reached"));
-        assert_eq!(set_aside_until(&path, "x", 160), None, "at its time it is back");
-        assert_eq!(set_aside_until(&path, "y", 120), None, "another engine is not aside");
+        assert_eq!(
+            (aside.since, aside.until, aside.said.as_str()),
+            (100, 160, "weekly limit reached")
+        );
+        assert_eq!(
+            set_aside_until(&path, "x", 160),
+            None,
+            "at its time it is back"
+        );
+        assert_eq!(
+            set_aside_until(&path, "y", 120),
+            None,
+            "another engine is not aside"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -106,10 +117,21 @@ mod tests {
         let dir = a_scratch("bring-back");
         let path = dir.join("cooldowns.json");
         set_aside(&path, "x", 100, 600, "quota spent").expect("written");
-        assert!(set_aside_until(&path, "x", 200).is_some(), "aside to begin with");
+        assert!(
+            set_aside_until(&path, "x", 200).is_some(),
+            "aside to begin with"
+        );
         assert_eq!(bring_back(&path, "x"), Ok(true), "the entry was there");
-        assert_eq!(set_aside_until(&path, "x", 200), None, "brought back before its time");
-        assert_eq!(bring_back(&path, "x"), Ok(false), "and there is nothing left to bring back");
+        assert_eq!(
+            set_aside_until(&path, "x", 200),
+            None,
+            "brought back before its time"
+        );
+        assert_eq!(
+            bring_back(&path, "x"),
+            Ok(false),
+            "and there is nothing left to bring back"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -120,8 +142,15 @@ mod tests {
         assert_eq!(bring_back(&path, "x"), Ok(false));
         assert!(!path.exists(), "a question does not write a list");
         set_aside(&path, "x", 100, 600, "quota spent").expect("written");
-        assert_eq!(bring_back(&path, "y"), Ok(false), "another engine is not this one");
-        assert!(set_aside_until(&path, "x", 200).is_some(), "and the one set aside is untouched");
+        assert_eq!(
+            bring_back(&path, "y"),
+            Ok(false),
+            "another engine is not this one"
+        );
+        assert!(
+            set_aside_until(&path, "x", 200).is_some(),
+            "and the one set aside is untouched"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -136,7 +165,11 @@ mod tests {
         assert_eq!(named, vec!["x".to_owned(), "y@second".to_owned()]);
         assert_eq!(all_set_aside(&path, 150)["y@second"].said, "weekly limit");
         let after = all_set_aside(&path, 300);
-        assert_eq!(after.keys().cloned().collect::<Vec<_>>(), vec!["x".to_owned()], "the lapsed one is gone");
+        assert_eq!(
+            after.keys().cloned().collect::<Vec<_>>(),
+            vec!["x".to_owned()],
+            "the lapsed one is gone"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -29,10 +29,22 @@ fn every_parked_engine_is_named_with_what_it_said_and_how_long_is_left() {
     ]);
     let said = render(&aside, 400);
     let rows: Vec<&str> = said.lines().collect();
-    assert!(rows[1].contains("second@other"), "soonest back comes first: {said}");
-    assert!(rows[2].contains("a-later-one"), "soonest back comes first: {said}");
-    assert!(said.contains("quota spent") && said.contains("weekly limit"), "{said}");
-    assert!(said.contains("10m"), "under an hour is said in minutes: {said}");
+    assert!(
+        rows[1].contains("second@other"),
+        "soonest back comes first: {said}"
+    );
+    assert!(
+        rows[2].contains("a-later-one"),
+        "soonest back comes first: {said}"
+    );
+    assert!(
+        said.contains("quota spent") && said.contains("weekly limit"),
+        "{said}"
+    );
+    assert!(
+        said.contains("10m"),
+        "under an hour is said in minutes: {said}"
+    );
     assert!(said.contains("6h"), "over an hour is said in hours: {said}");
 }
 
