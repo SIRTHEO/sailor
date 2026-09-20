@@ -224,6 +224,13 @@ const ACTION_KIND: Record<string, StepKind> = {
   // A hash of a value already in hand, touching neither store nor tree: the
   // same family as a reading a `when` compares against.
   digest: "check",
+  // The delivery policy as the trunk committed it. A reading a `when` compares
+  // against — every delivery flow branches on its three `asks_*` — so it draws
+  // in the same family as the other readings that end in a verdict.
+  delivery_policy: "check",
+  // Whether the person wrote back the one word that lets the run go on. It
+  // reads what a `handed_to_agent` step left and says yes or no: a check.
+  the_person_said: "check",
   // The deterministic judge of a change: a verdict a run closes on, so it
   // draws with the checks.
   judge_change: "check",
