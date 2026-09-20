@@ -129,7 +129,7 @@ fn dispatch(args: &[String]) -> Result<String, String> {
                 owner: &owner,
                 now: now(),
             };
-            sweep(&repo, &store, &holders, &IdentityRule::from_environment())
+            sweep(&repo, &store, &holders, &IdentityRule::declared_by(&repo)?)
         }
         [command, word] if command == "close" && word.starts_with("--") => {
             Err(catalogue::say("cli.unknown_option", &[("option", word)]))
