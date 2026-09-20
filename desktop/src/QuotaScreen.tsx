@@ -61,7 +61,7 @@ export function QuotaScreen({ native, now, readings }: { native: boolean; now: n
               <tbody>
                 {windows.seen.windows.map((one) => (
                   <tr key={`${one.engine}/${one.unit}`}>
-                    <td className="now__entity">{windowName(one.unit)}
+                    <td className="now__entity">{windowName(one.window)}
                       <div className="now__why">{one.engine}</div>
                     </td>
                     <td>

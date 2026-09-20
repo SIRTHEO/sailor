@@ -21,6 +21,10 @@ export interface Window {
   engine: string;
   /** `five_hour`, `seven_day`, or a name this version does not know. */
   unit: string;
+  /** What to call it to a person: its length where anything measured one, and
+   *  the provider's own word where nothing did. */
+  window: string;
+  lasts_seconds: number | null;
   spent_fraction: number;
   /** In the provider's own shape, on purpose: nobody waits on this hour. */
   resets_at: string | null;
@@ -87,13 +91,14 @@ export function setModel(kind: string, model_id: string): Promise<void> {
   return ask<void>("model_set", { kind, modelId: model_id });
 }
 
-/** `five_hour` → «5 hours»: the provider's key, said the way a person says it. */
-export function windowName(unit: string): string {
-  if (unit === "five_hour") return "5 hours";
-  if (unit === "seven_day") return "7 days";
-  // NOT a closed set: an unknown window is shown under its own key rather than
-  // dropped, or a new one the provider adds would silently stop appearing.
-  return unit.replace(/_/g, " ");
+/**
+ * `window` already reads `session` or `week` wherever a length was measured;
+ * this tidies the cases where none was. **NOT A CLOSED SET**: an unrecognised
+ * key is shown as it reads, or a window the provider adds tomorrow would stop
+ * appearing — which a person reads as «I have no such limit».
+ */
+export function windowName(window: string): string {
+  return window.replace(/_/g, " ");
 }
 
 /**

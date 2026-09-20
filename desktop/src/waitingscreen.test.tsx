@@ -91,6 +91,8 @@ function quotaWindow(engine: string, spentFraction: number): QuotaWindow {
   return {
     engine,
     unit: "five_hour",
+    window: "session",
+    lasts_seconds: 18_000,
     spent_fraction: spentFraction,
     resets_at: null,
     observed_at: NOW - 120,
@@ -282,7 +284,7 @@ describe("the order is the cost to the person", () => {
     expect(rows()).toEqual([
       "answer about review",
       "flow-r2 broke",
-      "97% of the 5 hours window on claude is spent",
+      "97% of the session window on claude is spent",
     ]);
   });
 
