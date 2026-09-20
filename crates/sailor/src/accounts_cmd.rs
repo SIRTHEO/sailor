@@ -710,7 +710,27 @@ mod tests {
             unit: unit.to_owned(),
             used_fraction,
             resets_at: Some("2026-09-19T22:57:45Z".to_owned()),
+            lasts_seconds: None,
         }
+    }
+
+    fn window_lasting(unit: &str, lasts_seconds: u64) -> WindowLeft {
+        WindowLeft { lasts_seconds: Some(lasts_seconds), ..window(unit, 1.0) }
+    }
+
+    /// **THE LENGTH IS WHAT A PERSON READS, WHERE ANYTHING MEASURED ONE.**
+    /// Two accounts of one provider both answered `primary_window`, one
+    /// lasting a week and the other thirty days: drawn by name, one row.
+    #[test]
+    fn a_window_is_called_by_its_length_and_falls_back_to_the_providers_word() {
+        assert_eq!(window_lasting("primary_window", 18_000).word(), "session");
+        assert_eq!(window_lasting("primary_window", 604_800).word(), "week");
+        assert_eq!(window_lasting("primary_window", 2_592_000).word(), "2592000s");
+        assert_eq!(
+            window("nimbus_quill", 0.0).word(),
+            "nimbus_quill",
+            "a window nothing measured keeps its own word and claims nothing"
+        );
     }
 
     #[test]
@@ -902,6 +922,7 @@ mod tests {
                 unit: "five_hour".to_owned(),
                 used_fraction: 0.1,
                 resets_at: None,
+                lasts_seconds: None,
                 observed_at: NOW,
             }]),
         };
