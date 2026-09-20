@@ -180,7 +180,8 @@ mod tests {
     #[test]
     fn a_pin_in_the_tree_wins_over_the_path() {
         let scratch = a_scratch("pinned");
-        std::fs::write(scratch.join(PIN_FILE), "{\"projectId\": \" the-pin \"}\n").expect("the pin");
+        std::fs::write(scratch.join(PIN_FILE), "{\"projectId\": \" the-pin \"}\n")
+            .expect("the pin");
         let identity = identity_of(&scratch, None, &IdentityRule::default()).expect("an identity");
         let _ = std::fs::remove_dir_all(&scratch);
         assert_eq!(identity.id, "the-pin");
@@ -223,12 +224,20 @@ mod tests {
             pinned_by_environment: None,
             branch_aware: true,
         };
-        let on_a_branch = identity_of(Path::new("/somewhere/project-worktrees/one"), Some("work/topic"), &rule)
+        let on_a_branch = identity_of(
+            Path::new("/somewhere/project-worktrees/one"),
+            Some("work/topic"),
+            &rule,
+        )
+        .expect("an identity");
+        let detached = identity_of(Path::new("/somewhere/project-worktrees/one"), None, &rule)
             .expect("an identity");
-        let detached =
-            identity_of(Path::new("/somewhere/project-worktrees/one"), None, &rule).expect("an identity");
-        let unusable = identity_of(Path::new("/somewhere/project-worktrees/one"), Some("___"), &rule)
-            .expect("an identity");
+        let unusable = identity_of(
+            Path::new("/somewhere/project-worktrees/one"),
+            Some("___"),
+            &rule,
+        )
+        .expect("an identity");
         assert_eq!(on_a_branch.id, "c6e9f9d721e2__work_topic");
         assert_eq!(detached.id, "c6e9f9d721e2");
         assert_eq!(unusable.id, "c6e9f9d721e2");
@@ -242,7 +251,8 @@ mod tests {
         assert_eq!(resolve_like_the_index(Path::new("/a/b/../c/")), "/a/c");
         assert_eq!(resolve_like_the_index(Path::new("/a//./c")), "/a/c");
         assert_eq!(resolve_like_the_index(Path::new("/")), "/");
-        let folded = identity_of(Path::new("/a/b/../c"), None, &IdentityRule::default()).expect("an identity");
+        let folded = identity_of(Path::new("/a/b/../c"), None, &IdentityRule::default())
+            .expect("an identity");
         assert_eq!(folded.id, "61f97427d954");
     }
 }
