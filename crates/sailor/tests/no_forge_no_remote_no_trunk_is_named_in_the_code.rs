@@ -78,20 +78,58 @@ fn is_prose(line: &str) -> bool {
 
 /// **A SHIPPED FLOW'S SHELL IS A PROGRAM ON ONE JSON LINE**, whose newlines are
 /// the two characters `\` and `n`: a file is cut on both.
-fn lines_of(text: &str) -> Vec<&str> {
-    text.split("#[cfg(test)]")
-        .next()
-        .unwrap_or("")
-        .split('\n')
-        .flat_map(|line| line.split("\\n"))
-        .collect()
+fn newlines_of(text: &str) -> Vec<&str> {
+    text.split('\n').flat_map(|line| line.split("\\n")).collect()
+}
+
+fn indent_of(line: &str) -> usize {
+    line.len() - line.trim_start().len()
+}
+
+/// The file with its test modules taken out, and what follows them put back.
+///
+/// **NOT CUT AT THE FIRST MARK, AND NOT COUNTED IN BRACES.** Cutting hid 3.311
+/// of ledger's 3.341 lines, and those ship; counting braces reads the ones
+/// inside a JSON string, which this tree is full of. A module ends at the lone
+/// `}` in the column its `mod` stands in, which no string literal can be.
+fn the_code_of(text: &str) -> Vec<&str> {
+    let lines = newlines_of(text);
+    let mut kept = Vec::new();
+    let mut at = 0;
+    while at < lines.len() {
+        if !lines[at].trim_start().starts_with("#[cfg(test)]") {
+            kept.push(lines[at]);
+            at += 1;
+            continue;
+        }
+        let mut head = at + 1;
+        while head < lines.len() && lines[head].trim().is_empty() {
+            head += 1;
+        }
+        let Some(opening) = lines.get(head) else {
+            break;
+        };
+        if !opening.contains('{') {
+            at = head + 1;
+            continue;
+        }
+        let column = indent_of(opening);
+        let mut close = head + 1;
+        while close < lines.len()
+            && !(lines[close].trim() == "}" && indent_of(lines[close]) == column)
+        {
+            close += 1;
+        }
+        at = close + 1;
+    }
+    kept
 }
 
 /// **A NAME GIVEN TO A SYMBOL KEEPS NO COMPANY.** `pub const TRUNK: &str =
 /// "main";` stood in `branches.rs` with no call within two lines, and every
-/// judgement on a branch name leaned on it. The window cannot see that shape,
-/// so a published constant holding a bare name counts on its own. A `let` does
-/// not: `let schema = "main"` is SQLite's own, and the control below holds it.
+/// judgement on a branch name leaned on it, so a published constant holding a
+/// bare name counts on its own. A `let` does not: `let schema = "main"` is
+/// SQLite's own, and the control below holds it.
 fn binds_a_name(line: &str) -> bool {
     let Some((left, right)) = line.split_once('=') else {
         return false;
@@ -106,7 +144,7 @@ fn binds_a_name(line: &str) -> bool {
 }
 
 fn named_in(text: &str) -> usize {
-    let lines = lines_of(text);
+    let lines = the_code_of(text);
     let words: Vec<Vec<String>> = lines.iter().map(|line| words_of(line)).collect();
     let keeps_company = |at: usize| {
         !is_prose(lines[at])
@@ -205,8 +243,18 @@ fn the_control_a_name_counts_only_in_the_company_that_makes_it_a_repository_s_fa
     // Prose about the rule is not a breach of it; a test module is not code.
     assert_eq!(named_in("// git push origin main is what this replaces"), 0);
     assert_eq!(
-        named_in("let x = 1;\n#[cfg(test)]\nlet y = \"git checkout main\";"),
+        named_in("let x = 1;\n#[cfg(test)]\nmod tests {\n    let y = \"git checkout main\";\n}"),
         0
+    );
+    // And the file goes on after the module: those lines ship.
+    assert_eq!(
+        named_in("#[cfg(test)]\nmod tests {\n    let a = 1;\n}\nlet y = \"git checkout main\";"),
+        1
+    );
+    // A module declared in a file beside this one has no body to skip.
+    assert_eq!(
+        named_in("#[cfg(test)]\nmod tests;\nlet y = \"git checkout main\";"),
+        1
     );
 
     // A shell block written on one JSON line is cut on its own newlines.
