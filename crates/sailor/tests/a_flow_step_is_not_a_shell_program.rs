@@ -1,7 +1,7 @@
 //! A flow step is not a shell program: three numbers that can only go down.
 //!
 //! `AGENTS.md` asks for an action in `crates/actions`, never a script. A
-//! `shell_check` holding 4.357 characters is a script in a string: unparsed,
+//! `shell_check` holding 4.335 characters is a script in a string: unparsed,
 //! untested, failing by quoting or by timeout. **Scaffolding for goal #47** —
 //! each seed is a debt, and at zero the file goes.
 
@@ -21,7 +21,7 @@ const SHELL_PROGRAMS_TODAY: usize = 54;
 const REDUNDANT_SHELL_COPIES_TODAY: usize = 9;
 
 /// The longest single step. It shrinks or it stays.
-const LONGEST_SHELL_STEP_TODAY: usize = 4357;
+const LONGEST_SHELL_STEP_TODAY: usize = 4335;
 
 /// Bodies shorter than this are one command and repeat legitimately.
 const TOO_SHORT_TO_COUNT: usize = 200;

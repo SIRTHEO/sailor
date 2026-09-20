@@ -47,13 +47,13 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\nprintf '%s' \"$TEXT\" | REQUIRED=\"$REQUIRED\" OPTIONAL=\"$OPTIONAL\" python3 -c '\nimport json, os, re, subprocess, sys\ntry:\n    asked = json.loads(sys.stdin.read())\nexcept ValueError as error:\n    sys.exit(\"the mandate is not one JSON object: %s\" % error)\nif not isinstance(asked, dict):\n    sys.exit(\"the mandate is not one JSON object\")\nrequired = os.environ[\"REQUIRED\"].split()\noptional = json.loads(os.environ[\"OPTIONAL\"])\nmissing = [key for key in required if not str(asked.get(key, \"\")).strip()]\nif missing:\n    sys.exit(\"the mandate does not name: \" + \", \".join(missing))\nunknown = sorted(set(asked) - set(required) - set(optional))\nif unknown:\n    sys.exit(\"the mandate names what this flow does not read: \" + \", \".join(unknown))\nout = {key: str(asked.get(key, default)) for key, default in optional.items()}\nout.update({key: str(asked[key]) for key in required})\nrepo = out[\"repo\"]\nif not os.path.isabs(repo) or subprocess.run([\"git\", \"-C\", repo, \"rev-parse\", \"--git-dir\"], capture_output=True).returncode != 0:\n    sys.exit(\"the repo is not an absolute path to a git tree: \" + repo)\nfor key in (\"branch\", \"base\"):\n    if key in out and not re.fullmatch(r\"[A-Za-z0-9][A-Za-z0-9._/-]*\", out[key]):\n        sys.exit(\"the %s is not a plain branch name: %s\" % (key, out[key]))\nfor key in (\"issue\",):\n    if key in out and out[key] and not re.fullmatch(r\"[0-9]+\", out[key]):\n        sys.exit(\"the issue is not a number: \" + out[key])\nif out.get(\"issue\") and out.get(\"no_issue\"):\n    sys.exit(\"the mandate names both an issue and a reason there is none: it is one or the other\")\nif not out.get(\"issue\") and not out.get(\"no_issue\"):\n    sys.exit(\"the mandate names no issue and no reason there is none: say `issue` or say `no_issue`\")\nif \"version\" in out and not re.fullmatch(r\"[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?\", out[\"version\"]):\n    sys.exit(\"the version is not MAJOR.MINOR.PATCH: \" + out[\"version\"])\nif \"forge_repo\" in out and out[\"forge_repo\"] and not re.fullmatch(r\"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+\", out[\"forge_repo\"]):\n    sys.exit(\"the forge_repo is not owner/name: \" + out[\"forge_repo\"])\nprint(json.dumps(out))\n'\n",
+          "command": "set -eu\nprintf '%s' \"$TEXT\" | REQUIRED=\"$REQUIRED\" OPTIONAL=\"$OPTIONAL\" python3 -c '\nimport json, os, re, subprocess, sys\ntry:\n    asked = json.loads(sys.stdin.read())\nexcept ValueError as error:\n    sys.exit(\"the mandate is not one JSON object: %s\" % error)\nif not isinstance(asked, dict):\n    sys.exit(\"the mandate is not one JSON object\")\nrequired = os.environ[\"REQUIRED\"].split()\noptional = json.loads(os.environ[\"OPTIONAL\"])\nmissing = [key for key in required if not str(asked.get(key, \"\")).strip()]\nif missing:\n    sys.exit(\"the mandate does not name: \" + \", \".join(missing))\nunknown = sorted(set(asked) - set(required) - set(optional))\nif unknown:\n    sys.exit(\"the mandate names what this flow does not read: \" + \", \".join(unknown))\nout = {key: str(asked.get(key, default)) for key, default in optional.items()}\nout.update({key: str(asked[key]) for key in required})\nrepo = out[\"repo\"]\nif not os.path.isabs(repo) or subprocess.run([\"git\", \"-C\", repo, \"rev-parse\", \"--git-dir\"], capture_output=True).returncode != 0:\n    sys.exit(\"the repo is not an absolute path to a git tree: \" + repo)\ntrunk = subprocess.run([\"git\", \"-C\", repo, \"config\", \"--get\", \"sailor.trunk\"], capture_output=True, text=True).stdout.strip()\nif not trunk:\n    sys.exit(\"sailor.trunk is not declared on this tree: which branch is the trunk is a fact a repository declares\")\nshown = subprocess.run([\"git\", \"-C\", repo, \"show\", \"%s:.sailor/delivery-policy.json\" % trunk], capture_output=True, text=True)\nif shown.returncode != 0:\n    sys.exit(\"the trunk %s carries no .sailor/delivery-policy.json\" % trunk)\nremote = str(json.loads(shown.stdout).get(\"remote\", \"\")).strip()\nif not remote:\n    sys.exit(\"the delivery policy on %s names no remote: the remote is a fact a repository declares\" % trunk)\nout[\"trunk\"] = trunk\nout[\"remote\"] = remote\nout[\"base\"] = out.get(\"base\") or trunk\nfor key in (\"branch\", \"base\"):\n    if key in out and not re.fullmatch(r\"[A-Za-z0-9][A-Za-z0-9._/-]*\", out[key]):\n        sys.exit(\"the %s is not a plain branch name: %s\" % (key, out[key]))\nfor key in (\"issue\",):\n    if key in out and out[key] and not re.fullmatch(r\"[0-9]+\", out[key]):\n        sys.exit(\"the issue is not a number: \" + out[key])\nif out.get(\"issue\") and out.get(\"no_issue\"):\n    sys.exit(\"the mandate names both an issue and a reason there is none: it is one or the other\")\nif not out.get(\"issue\") and not out.get(\"no_issue\"):\n    sys.exit(\"the mandate names no issue and no reason there is none: say `issue` or say `no_issue`\")\nif \"version\" in out and not re.fullmatch(r\"[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?\", out[\"version\"]):\n    sys.exit(\"the version is not MAJOR.MINOR.PATCH: \" + out[\"version\"])\nif \"forge_repo\" in out and out[\"forge_repo\"] and not re.fullmatch(r\"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+\", out[\"forge_repo\"]):\n    sys.exit(\"the forge_repo is not owner/name: \" + out[\"forge_repo\"])\nprint(json.dumps(out))\n'\n",
           "env": {
             "TEXT": {
               "$from": "/text"
             },
             "REQUIRED": "repo branch title problem behaviour verification",
-            "OPTIONAL": "{\"base\": \"main\", \"forge_repo\": \"\", \"issue\": \"\", \"no_issue\": \"\"}"
+            "OPTIONAL": "{\"base\": \"\", \"forge_repo\": \"\", \"issue\": \"\", \"no_issue\": \"\"}"
           },
           "timeout_secs": 30,
           "answer_shape": {
@@ -88,6 +88,12 @@
               },
               "no_issue": {
                 "type": "string"
+              },
+              "trunk": {
+                "type": "string"
+              },
+              "remote": {
+                "type": "string"
               }
             },
             "required": [
@@ -99,7 +105,9 @@
               "verification",
               "base",
               "forge_repo",
-              "issue"
+              "issue",
+              "trunk",
+              "remote"
             ],
             "allow_extra": false
           }
@@ -272,10 +280,13 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\n# The policy is the file main commits, read here with git: a sailor found on PATH never decides who authorizes.\ntrusted_policy() {\n    policy_commit=$(git -C \"$REPO\" rev-parse --verify --quiet \"main^{commit}\") || { echo \"the trunk main does not exist in this tree: no trusted policy to read\" >&2; exit 1; }\n    policy_text=$(git -C \"$REPO\" show \"$policy_commit:.sailor/delivery-policy.json\") || { echo \"main at $policy_commit carries no .sailor/delivery-policy.json\" >&2; exit 1; }\n    printf '%s' \"$policy_text\" | POLICY_COMMIT=\"$policy_commit\" python3 -c '\nimport json, os, sys\ndef no_constant(name):\n    raise ValueError(\"%s is not JSON\" % name)\ntry:\n    policy = json.loads(sys.stdin.read(), parse_constant=no_constant)\nexcept ValueError as error:\n    sys.exit(\"the delivery policy on main is not JSON: %s\" % error)\nif not isinstance(policy, dict):\n    sys.exit(\"the delivery policy on main is not an object\")\nlines = []\nfor field in (\"merge\", \"push\", \"release\"):\n    if policy.get(field) not in (\"auto\", \"ask\"):\n        sys.exit(\"the delivery policy on main does not say auto or ask for %s\" % field)\n    lines.append(\"%s: %s\" % (field, policy[field]))\nlines.append(os.environ[\"POLICY_COMMIT\"])\nprint(\"\\n\".join(lines))\n'\n}\ncd \"$REPO\"\nsaid=$(trusted_policy) || exit 1\nprintf '%s\\n' \"$said\" | python3 -c '\nimport json, sys\nlines = [line.strip() for line in sys.stdin if line.strip()]\nfields = dict(line.split(\": \", 1) for line in lines[:-1])\nfor key in (\"merge\", \"push\", \"release\"):\n    if fields.get(key) not in (\"auto\", \"ask\"):\n        sys.exit(\"the policy does not say auto or ask for \" + key)\nprint(json.dumps({\n    \"merge\": fields[\"merge\"], \"push\": fields[\"push\"], \"release\": fields[\"release\"],\n    \"read_from\": lines[-1],\n    \"asks_publication\": \"ask\" if fields[\"push\"] == \"ask\" else \"auto\",\n    \"asks_integration\": \"ask\" if \"ask\" in (fields[\"merge\"], fields[\"push\"]) else \"auto\",\n    \"asks_release\": \"ask\" if \"ask\" in (fields[\"release\"], fields[\"push\"]) else \"auto\",\n}))\n'\n",
+          "command": "set -eu\n# The policy is the file the trunk commits, read with git: a sailor on PATH never decides who authorizes.\ntrusted_policy() {\n    policy_commit=$(git -C \"$REPO\" rev-parse --verify --quiet \"$TRUNK^{commit}\") || { echo \"the trunk $TRUNK does not exist in this tree: no trusted policy to read\" >&2; exit 1; }\n    policy_text=$(git -C \"$REPO\" show \"$policy_commit:.sailor/delivery-policy.json\") || { echo \"$TRUNK at $policy_commit carries no .sailor/delivery-policy.json\" >&2; exit 1; }\n    printf '%s' \"$policy_text\" | POLICY_COMMIT=\"$policy_commit\" python3 -c '\nimport json, os, sys\ndef no_constant(name):\n    raise ValueError(\"%s is not JSON\" % name)\ntry:\n    policy = json.loads(sys.stdin.read(), parse_constant=no_constant)\nexcept ValueError as error:\n    sys.exit(\"the delivery policy is not JSON: %s\" % error)\nif not isinstance(policy, dict):\n    sys.exit(\"the delivery policy is not an object\")\nlines = []\nfor field in (\"merge\", \"push\", \"release\"):\n    if policy.get(field) not in (\"auto\", \"ask\"):\n        sys.exit(\"the delivery policy does not say auto or ask for %s\" % field)\n    lines.append(\"%s: %s\" % (field, policy[field]))\nlines.append(os.environ[\"POLICY_COMMIT\"])\nprint(\"\\n\".join(lines))\n'\n}\ncd \"$REPO\"\nsaid=$(trusted_policy) || exit 1\nprintf '%s\\n' \"$said\" | python3 -c '\nimport json, sys\nlines = [line.strip() for line in sys.stdin if line.strip()]\nfields = dict(line.split(\": \", 1) for line in lines[:-1])\nfor key in (\"merge\", \"push\", \"release\"):\n    if fields.get(key) not in (\"auto\", \"ask\"):\n        sys.exit(\"the policy does not say auto or ask for \" + key)\nprint(json.dumps({\n    \"merge\": fields[\"merge\"], \"push\": fields[\"push\"], \"release\": fields[\"release\"],\n    \"read_from\": lines[-1],\n    \"asks_publication\": \"ask\" if fields[\"push\"] == \"ask\" else \"auto\",\n    \"asks_integration\": \"ask\" if \"ask\" in (fields[\"merge\"], fields[\"push\"]) else \"auto\",\n    \"asks_release\": \"ask\" if \"ask\" in (fields[\"release\"], fields[\"push\"]) else \"auto\",\n}))\n'\n",
           "env": {
             "REPO": {
               "$from": "/the_request/answer/repo"
+            },
+            "TRUNK": {
+              "$from": "/the_request/answer/trunk"
             }
           },
           "timeout_secs": 30,
@@ -426,7 +437,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\n# The policy is the file main commits, read here with git: a sailor found on PATH never decides who authorizes.\ntrusted_policy() {\n    policy_commit=$(git -C \"$REPO\" rev-parse --verify --quiet \"main^{commit}\") || { echo \"the trunk main does not exist in this tree: no trusted policy to read\" >&2; exit 1; }\n    policy_text=$(git -C \"$REPO\" show \"$policy_commit:.sailor/delivery-policy.json\") || { echo \"main at $policy_commit carries no .sailor/delivery-policy.json\" >&2; exit 1; }\n    printf '%s' \"$policy_text\" | POLICY_COMMIT=\"$policy_commit\" python3 -c '\nimport json, os, sys\ndef no_constant(name):\n    raise ValueError(\"%s is not JSON\" % name)\ntry:\n    policy = json.loads(sys.stdin.read(), parse_constant=no_constant)\nexcept ValueError as error:\n    sys.exit(\"the delivery policy on main is not JSON: %s\" % error)\nif not isinstance(policy, dict):\n    sys.exit(\"the delivery policy on main is not an object\")\nlines = []\nfor field in (\"merge\", \"push\", \"release\"):\n    if policy.get(field) not in (\"auto\", \"ask\"):\n        sys.exit(\"the delivery policy on main does not say auto or ask for %s\" % field)\n    lines.append(\"%s: %s\" % (field, policy[field]))\nlines.append(os.environ[\"POLICY_COMMIT\"])\nprint(\"\\n\".join(lines))\n'\n}\ncd \"$REPO\"\ntrusted_scan() {\n    git -C \"$REPO\" show \"main:scripts/privacy-scan.sh\" 2>/dev/null | cmp -s - \"$REPO/scripts/privacy-scan.sh\" || { echo \"scripts/privacy-scan.sh in this tree differs from the one the trusted trunk commits: the gate refuses to judge with it\" >&2; exit 2; }\n}\ntrusted_scan\npolicy_now=$(trusted_policy) || exit 1\npolicy_was=$(printf '%s' \"$POLICY_READ\" | python3 -c 'import json,sys; p=json.load(sys.stdin); print(\"merge: %s\\npush: %s\\nrelease: %s\\n%s\" % (p[\"merge\"], p[\"push\"], p[\"release\"], p[\"read_from\"]))')\n[ \"$policy_now\" = \"$policy_was\" ] || { echo \"the delivery policy changed since it was read: the authorization in flight no longer holds; run the flow again\" >&2; exit 1; }\nnow=$(git rev-parse --verify \"refs/heads/$BRANCH^{commit}\")\n[ \"$now\" = \"$REF\" ] || { echo \"$BRANCH moved from $REF to $now since the checkpoint was recorded; run the flow again\" >&2; exit 1; }\nset +e\nif [ -n \"$SCAN_BASE\" ]; then \"$REPO/scripts/privacy-scan.sh\" \"$REF\" \"$SCAN_BASE\" >&2; else \"$REPO/scripts/privacy-scan.sh\" \"$REF\" >&2; fi\ncode=$?\nset -e\n[ \"$code\" -eq 0 ] || { echo \"publication gate: privacy-scan exited $code on $REF; nothing leaves\" >&2; exit \"$code\"; }\nprintf '{\"ref\":\"%s\",\"privacy_exit\":0}' \"$REF\"\n",
+          "command": "set -eu\n# The policy is the file the trunk commits, read with git: a sailor on PATH never decides who authorizes.\ntrusted_policy() {\n    policy_commit=$(git -C \"$REPO\" rev-parse --verify --quiet \"$TRUNK^{commit}\") || { echo \"the trunk $TRUNK does not exist in this tree: no trusted policy to read\" >&2; exit 1; }\n    policy_text=$(git -C \"$REPO\" show \"$policy_commit:.sailor/delivery-policy.json\") || { echo \"$TRUNK at $policy_commit carries no .sailor/delivery-policy.json\" >&2; exit 1; }\n    printf '%s' \"$policy_text\" | POLICY_COMMIT=\"$policy_commit\" python3 -c '\nimport json, os, sys\ndef no_constant(name):\n    raise ValueError(\"%s is not JSON\" % name)\ntry:\n    policy = json.loads(sys.stdin.read(), parse_constant=no_constant)\nexcept ValueError as error:\n    sys.exit(\"the delivery policy is not JSON: %s\" % error)\nif not isinstance(policy, dict):\n    sys.exit(\"the delivery policy is not an object\")\nlines = []\nfor field in (\"merge\", \"push\", \"release\"):\n    if policy.get(field) not in (\"auto\", \"ask\"):\n        sys.exit(\"the delivery policy does not say auto or ask for %s\" % field)\n    lines.append(\"%s: %s\" % (field, policy[field]))\nlines.append(os.environ[\"POLICY_COMMIT\"])\nprint(\"\\n\".join(lines))\n'\n}\ncd \"$REPO\"\ntrusted_scan() {\n    git -C \"$REPO\" show \"$TRUNK:scripts/privacy-scan.sh\" 2>/dev/null | cmp -s - \"$REPO/scripts/privacy-scan.sh\" || { echo \"scripts/privacy-scan.sh in this tree differs from the one the trusted trunk commits: the gate refuses to judge with it\" >&2; exit 2; }\n}\ntrusted_scan\npolicy_now=$(trusted_policy) || exit 1\npolicy_was=$(printf '%s' \"$POLICY_READ\" | python3 -c 'import json,sys; p=json.load(sys.stdin); print(\"merge: %s\\npush: %s\\nrelease: %s\\n%s\" % (p[\"merge\"], p[\"push\"], p[\"release\"], p[\"read_from\"]))')\n[ \"$policy_now\" = \"$policy_was\" ] || { echo \"the delivery policy changed since it was read: the authorization in flight no longer holds; run the flow again\" >&2; exit 1; }\nnow=$(git rev-parse --verify \"refs/heads/$BRANCH^{commit}\")\n[ \"$now\" = \"$REF\" ] || { echo \"$BRANCH moved from $REF to $now since the checkpoint was recorded; run the flow again\" >&2; exit 1; }\nset +e\nif [ -n \"$SCAN_BASE\" ]; then \"$REPO/scripts/privacy-scan.sh\" \"$REF\" \"$SCAN_BASE\" >&2; else \"$REPO/scripts/privacy-scan.sh\" \"$REF\" >&2; fi\ncode=$?\nset -e\n[ \"$code\" -eq 0 ] || { echo \"publication gate: privacy-scan exited $code on $REF; nothing leaves\" >&2; exit \"$code\"; }\nprintf '{\"ref\":\"%s\",\"privacy_exit\":0}' \"$REF\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/answer/repo"
@@ -442,6 +453,9 @@
             },
             "BRANCH": {
               "$from": "/the_request/answer/branch"
+            },
+            "TRUNK": {
+              "$from": "/the_request/answer/trunk"
             }
           },
           "timeout_secs": 300,
@@ -483,7 +497,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\n# git ls-remote's own exit is checked before its answer is read: a lost transport is not an empty ref.\nread_remote_ref() {\n    listed=$(git -C \"$REPO\" ls-remote origin \"$1\") || { code=$?; echo \"cannot read $1 on origin: git ls-remote exited $code, so nothing is decided on an empty answer\" >&2; exit 2; }\n    printf '%s\\n' \"$listed\" | awk -v ref=\"$1\" '$2 == ref { print $1 }'\n}\nurl=$(git -C \"$REPO\" remote get-url origin) || { echo \"the tree has no origin remote\" >&2; exit 1; }\nset -- -C \"$REPO\"\ncase \"$url\" in\n    /*|file://*) ;;\n    http://*|https://*)\n        push_as=$(git -C \"$REPO\" config --get sailor.pushAs) || { echo \"sailor.pushAs is not declared on this tree: refusing to push with the machine's own credentials\" >&2; exit 1; }\n        [ -n \"$push_as\" ] || { echo \"sailor.pushAs is empty on this tree: refusing to push with the machine's own credentials\" >&2; exit 1; }\n        helper='!f() { printf \"%s\\\\n\" username=x-access-token; printf \"password=%s\\\\n\" \"$(env -u GH_TOKEN -u GITHUB_TOKEN -u GH_REPO gh auth token --user \"'\"$push_as\"'\")\"; }; f'\n        set -- -C \"$REPO\" -c credential.helper= -c \"credential.helper=$helper\" ;;\n    *) echo \"origin is $url: a push over it cannot be bound to sailor.pushAs, so this flow refuses it\" >&2; exit 1 ;;\nesac\nremote=$(read_remote_ref \"refs/heads/$BRANCH\")\nif [ \"$remote\" != \"$HEAD_COMMIT\" ]; then\n    if [ -n \"$remote\" ]; then\n        # A branch amended or rebased since its last checkpoint is not a\n        # fast-forward, and a plain push dies on it. The lease is the ref this\n        # step has just read: a branch that moved under it is somebody else's,\n        # and the push is refused, never forced.\n        git \"$@\" push --force-with-lease=\"refs/heads/$BRANCH:$remote\" origin \"$HEAD_COMMIT:refs/heads/$BRANCH\" >&2\n    else\n        git \"$@\" push origin \"$HEAD_COMMIT:refs/heads/$BRANCH\" >&2\n    fi\nfi\nprintf '{\"pushed\":\"%s\"}' \"$HEAD_COMMIT\"\n",
+          "command": "set -eu\n# git ls-remote's own exit is checked before its answer is read: a lost transport is not an empty ref.\nread_remote_ref() {\n    listed=$(git -C \"$REPO\" ls-remote \"$REMOTE_NAME\" \"$1\") || { code=$?; echo \"cannot read $1 on $REMOTE_NAME: git ls-remote exited $code, so nothing is decided on an empty answer\" >&2; exit 2; }\n    printf '%s\\n' \"$listed\" | awk -v ref=\"$1\" '$2 == ref { print $1 }'\n}\nurl=$(git -C \"$REPO\" remote get-url \"$REMOTE_NAME\") || { echo \"the tree has no remote named $REMOTE_NAME\" >&2; exit 1; }\nset -- -C \"$REPO\"\ncase \"$url\" in\n    /*|file://*) ;;\n    http://*|https://*)\n        push_as=$(git -C \"$REPO\" config --get sailor.pushAs) || { echo \"sailor.pushAs is not declared on this tree: refusing to push with the machine's own credentials\" >&2; exit 1; }\n        [ -n \"$push_as\" ] || { echo \"sailor.pushAs is empty on this tree: refusing to push with the machine's own credentials\" >&2; exit 1; }\n        helper='!f() { printf \"%s\\\\n\" username=x-access-token; printf \"password=%s\\\\n\" \"$(env -u GH_TOKEN -u GITHUB_TOKEN -u GH_REPO gh auth token --user \"'\"$push_as\"'\")\"; }; f'\n        set -- -C \"$REPO\" -c credential.helper= -c \"credential.helper=$helper\" ;;\n    *) echo \"$REMOTE_NAME is $url: a push over it cannot be bound to sailor.pushAs, so this flow refuses it\" >&2; exit 1 ;;\nesac\nremote=$(read_remote_ref \"refs/heads/$BRANCH\")\nif [ \"$remote\" != \"$HEAD_COMMIT\" ]; then\n    if [ -n \"$remote\" ]; then\n        # A branch amended or rebased since its last checkpoint is not a\n        # fast-forward, and a plain push dies on it. The lease is the ref this\n        # step has just read: a branch that moved under it is somebody else's,\n        # and the push is refused, never forced.\n        git \"$@\" push --force-with-lease=\"refs/heads/$BRANCH:$remote\" \"$REMOTE_NAME\" \"$HEAD_COMMIT:refs/heads/$BRANCH\" >&2\n    else\n        git \"$@\" push \"$REMOTE_NAME\" \"$HEAD_COMMIT:refs/heads/$BRANCH\" >&2\n    fi\nfi\nprintf '{\"pushed\":\"%s\"}' \"$HEAD_COMMIT\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/answer/repo"
@@ -493,6 +507,9 @@
             },
             "HEAD_COMMIT": {
               "$from": "/the_checkpoint/answer/head"
+            },
+            "REMOTE_NAME": {
+              "$from": "/the_request/answer/remote"
             }
           },
           "timeout_secs": 300,
@@ -585,13 +602,16 @@
           "type": "any"
         },
         "with": {
-          "command": "set -eu\n# The list of private names lives only on this machine, so the forge cannot post\n# this check for itself. Until it is posted the request stays blocked and the\n# host says nothing about why.\ncd \"$REPO\"\ngit -C \"$REPO\" fetch --quiet origin\n\"$REPO/scripts/attest-private-names.sh\" \"$COMMIT\" >&2\nprintf '{\"attested\":\"%s\",\"posted\":true}' \"$COMMIT\"\n",
+          "command": "set -eu\n# The list of private names lives only on this machine, so the forge cannot post\n# this check for itself. Until it is posted the request stays blocked and the\n# host says nothing about why.\ncd \"$REPO\"\ngit -C \"$REPO\" fetch --quiet \"$REMOTE_NAME\"\n\"$REPO/scripts/attest-private-names.sh\" \"$COMMIT\" >&2\nprintf '{\"attested\":\"%s\",\"posted\":true}' \"$COMMIT\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/answer/repo"
             },
             "COMMIT": {
               "$from": "/the_checkpoint/answer/head"
+            },
+            "REMOTE_NAME": {
+              "$from": "/the_request/answer/remote"
             }
           },
           "timeout_secs": 600,
@@ -624,13 +644,16 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\ncd \"$REPO\"\ntrusted_scan() {\n    git -C \"$REPO\" show \"main:scripts/privacy-scan.sh\" 2>/dev/null | cmp -s - \"$REPO/scripts/privacy-scan.sh\" || { echo \"scripts/privacy-scan.sh in this tree differs from the one the trusted trunk commits: the gate refuses to judge with it\" >&2; exit 2; }\n}\ntrusted_scan\nset +e\n\"$REPO/scripts/privacy-scan.sh\" --text \"$TEXT_FILE\" >&2\ncode=$?\nset -e\n[ \"$code\" -eq 0 ] || { echo \"publication gate: privacy-scan --text exited $code on $TEXT_FILE; the text does not leave\" >&2; exit \"$code\"; }\nsha=$(shasum -a 256 < \"$TEXT_FILE\" | awk '{ print $1 }')\nprintf '{\"text_file\":\"%s\",\"sha256\":\"%s\",\"privacy_exit\":0}' \"$TEXT_FILE\" \"$sha\"\n",
+          "command": "set -eu\ncd \"$REPO\"\ntrusted_scan() {\n    git -C \"$REPO\" show \"$TRUNK:scripts/privacy-scan.sh\" 2>/dev/null | cmp -s - \"$REPO/scripts/privacy-scan.sh\" || { echo \"scripts/privacy-scan.sh in this tree differs from the one the trusted trunk commits: the gate refuses to judge with it\" >&2; exit 2; }\n}\ntrusted_scan\nset +e\n\"$REPO/scripts/privacy-scan.sh\" --text \"$TEXT_FILE\" >&2\ncode=$?\nset -e\n[ \"$code\" -eq 0 ] || { echo \"publication gate: privacy-scan --text exited $code on $TEXT_FILE; the text does not leave\" >&2; exit \"$code\"; }\nsha=$(shasum -a 256 < \"$TEXT_FILE\" | awk '{ print $1 }')\nprintf '{\"text_file\":\"%s\",\"sha256\":\"%s\",\"privacy_exit\":0}' \"$TEXT_FILE\" \"$sha\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/answer/repo"
             },
             "TEXT_FILE": {
               "$from": "/the_body/answer/body_file"
+            },
+            "TRUNK": {
+              "$from": "/the_request/answer/trunk"
             }
           },
           "timeout_secs": 120,
