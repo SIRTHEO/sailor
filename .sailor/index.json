@@ -1,0 +1,8 @@
+{
+  "identity": {
+    "pin_file": ".socraticode.json",
+    "pin_key": "projectId",
+    "pin_variable": "SOCRATICODE_PROJECT_ID",
+    "branch_aware_variable": "SOCRATICODE_BRANCH_AWARE"
+  }
+}

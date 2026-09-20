@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 use workspace::ratchet::{weigh, Weighed};
 
-const NAMED_IN_THE_CODE_TODAY: usize = 4;
+const NAMED_IN_THE_CODE_TODAY: usize = 0;
 
 /// **WHAT SAILOR IS BUILT FROM IS NOT SOMEBODY'S WORKBENCH.** `CARGO_TARGET_DIR`
 /// and `Cargo.toml` are this product's own build, `./StepNode` is a React
