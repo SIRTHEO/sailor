@@ -13,6 +13,9 @@ use std::time::Duration;
 use workspace::index_identity::{identity_of, IdentityRule};
 use workspace::OpenTrees;
 
+/// **NOT «main».** A trunk with another name is what catches one read from the code.
+const A_TRUNK: &str = "tronco";
+
 const ANOTHER_IDENTITY: &str = "other0000000";
 
 #[test]
@@ -379,6 +382,7 @@ fn a_repository_in(scratch: &Path) -> PathBuf {
     std::fs::write(repo.join("README"), "a tree to cut from\n").expect("a file");
     run_git(&repo, &["add", "README"]);
     run_git(&repo, &["commit", "-q", "-m", "the first"]);
-    run_git(&repo, &["branch", "-M", workspace::branches::TRUNK]);
+    run_git(&repo, &["branch", "-M", A_TRUNK]);
+    run_git(&repo, &["config", workspace::branches::TRUNK_KEY, A_TRUNK]);
     repo
 }
