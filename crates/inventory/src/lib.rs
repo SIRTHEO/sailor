@@ -87,6 +87,10 @@ pub struct Entry {
     /// Whether the model may invoke it, or only the person typing.
     /// `disable-model-invocation: true` does not mean "it is not there".
     pub by_model: bool,
+    /// The root that loads it, labelled as `Inventory::roots` labels it.
+    /// `origin` says what kind of thing holds it; this says which searched
+    /// place to walk to, so a count can be traced back to a directory.
+    pub root: String,
 }
 
 /// A root things load from: the home, or a repo with its own `.claude/`.
@@ -205,10 +209,10 @@ pub fn collect(roots: &[Root]) -> Inventory {
     let home = roots.iter().find(|r| r.is_home).map(|r| r.path.as_path());
     for root in roots {
         if root.is_home {
-            let (found, dropped) = home_skills(&root.path);
+            let (found, dropped) = home_skills(root);
             entries.extend(found);
             stale += dropped;
-            let (found, dropped) = home_agents(&root.path);
+            let (found, dropped) = home_agents(root);
             entries.extend(found);
             stale += dropped;
         } else if root.is_warehouse {
@@ -266,13 +270,14 @@ fn is_the_installed_copy(path: &Path, installed: &BTreeSet<PathBuf>) -> bool {
 /// things. Here a disabled skill stays in the list with the reason it is off —
 /// the case shown nowhere today, without which "I have fourteen plugins" and
 /// "six of them work" look like the same sentence.
-fn home_skills(home: &Path) -> (Vec<Entry>, usize) {
+fn home_skills(root: &Root) -> (Vec<Entry>, usize) {
+    let home = &root.path;
     let on = discovery::enabled_plugins(home);
     let installed = discovery::installed_paths(home);
     let mut out = Vec::new();
     let mut stale = 0usize;
-    for (root, pattern) in discovery::skill_sources(home) {
-        for path in discovery::glob(&root, &pattern) {
+    for (base, pattern) in discovery::skill_sources(home) {
+        for path in discovery::glob(&base, &pattern) {
             if !is_the_installed_copy(&path, &installed) {
                 stale += 1;
                 continue;
@@ -322,18 +327,20 @@ fn home_skills(home: &Path) -> (Vec<Entry>, usize) {
                 path: path.to_string_lossy().into_owned(),
                 reach,
                 by_model,
+                root: root.label.clone(),
             });
         }
     }
     (out, stale)
 }
 
-fn home_agents(home: &Path) -> (Vec<Entry>, usize) {
+fn home_agents(root: &Root) -> (Vec<Entry>, usize) {
+    let home = &root.path;
     let installed = discovery::installed_paths(home);
     let mut out = Vec::new();
     let mut stale = 0usize;
-    for (root, pattern) in discovery::agent_sources(home) {
-        for path in discovery::glob(&root, &pattern) {
+    for (base, pattern) in discovery::agent_sources(home) {
+        for path in discovery::glob(&base, &pattern) {
             if !is_the_installed_copy(&path, &installed) {
                 stale += 1;
                 continue;
@@ -355,6 +362,7 @@ fn home_agents(home: &Path) -> (Vec<Entry>, usize) {
                 path: path.to_string_lossy().into_owned(),
                 reach: Reach::Active,
                 by_model,
+                root: root.label.clone(),
             });
         }
     }
@@ -417,6 +425,7 @@ fn warehouse_skills(root: &Root, home: Option<&Path>) -> Vec<Entry> {
                     )
                 },
                 by_model,
+                root: root.label.clone(),
             })
         })
         .collect()
@@ -445,6 +454,7 @@ fn repo_dir(root: &Root, folder: &str, kind: Kind) -> Vec<Entry> {
                 path: path.to_string_lossy().into_owned(),
                 reach: Reach::Unknown(format!("only for a session opened inside {}", root.label)),
                 by_model,
+                root: root.label.clone(),
             })
         })
         .collect()
@@ -485,6 +495,7 @@ fn commands_of(root: &Root) -> Vec<Entry> {
                 path: path.to_string_lossy().into_owned(),
                 reach: reach_of(root),
                 by_model,
+                root: root.label.clone(),
             })
         })
         .collect()
@@ -517,6 +528,7 @@ fn rules_of(root: &Root) -> Vec<Entry> {
             reach: reach_of(root),
             // A rule is not invoked, it is applied. That holds for everyone.
             by_model: true,
+            root: root.label.clone(),
         });
     }
     out
@@ -584,6 +596,7 @@ fn hooks_of(root: &Root) -> Vec<Entry> {
                         None => reach_of(root),
                     },
                     by_model: true,
+                    root: root.label.clone(),
                 });
             }
         }
@@ -729,7 +742,30 @@ pub fn default_roots(config_dir: Option<&Path>) -> Survey {
     // THE BASES ARE DECLARED, NOT SEARCHED ACROSS THE WHOLE DISK: walking from
     // `/` would also find the worktrees, where the same rules reappear as
     // links.
-    default_roots_from(&home, &declared_bases(config_dir))
+    default_roots_from(
+        &home,
+        &declared_bases(config_dir),
+        std::env::current_dir().ok().as_deref(),
+    )
+}
+
+/// The repository whose own configuration a session opened at `here` would
+/// load: the nearest directory at or above `here` carrying a declared
+/// product's extensions, stopping short of `home`, which is already a root of
+/// its own kind. **A root the product never walks is a root whose contents
+/// nobody can account for** — this one held 271 skills while the census said
+/// 23 (fault 252).
+pub fn repository_of(here: &Path, home: &Path) -> Option<PathBuf> {
+    let mut at = here;
+    loop {
+        if at == home {
+            return None;
+        }
+        if carries_extensions(at) {
+            return Some(at.to_path_buf());
+        }
+        at = at.parent()?;
+    }
 }
 
 /// The same rule applied to a given home and given declared bases, instead of
@@ -738,8 +774,16 @@ pub fn default_roots(config_dir: Option<&Path>) -> Survey {
 /// **SEPARATE, OR IT CANNOT BE TESTED.** A function that reads the environment
 /// can only be tested by changing the process environment, and tests run in
 /// parallel: the first to touch a variable falsifies the others.
-pub fn default_roots_from(home: &Path, bases: &[PathBuf]) -> Survey {
+pub fn default_roots_from(home: &Path, bases: &[PathBuf], here: Option<&Path>) -> Survey {
     let mut survey = repos_under(bases);
+    // The repository one is standing in loads its own extensions whether or
+    // not anybody declared a working base, so it is a root in its own right
+    // and not a repo that happened to be found under one.
+    if let Some(repository) = here.and_then(|here| repository_of(here, home)) {
+        if !survey.roots.iter().any(|root| root.path == repository) {
+            survey.roots.push(Root::repo(&repository));
+        }
+    }
     survey.roots.insert(0, Root::home(home));
     // WAREHOUSES ARE LOOKED FOR WHERE WE LOOK, not where one person's used to
     // be. The first is the home's; the others sit under the declared bases, and
