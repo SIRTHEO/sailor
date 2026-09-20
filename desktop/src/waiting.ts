@@ -224,7 +224,7 @@ function near_the_limit(windows: QuotaWindow[], now: number, near: number): Deci
       state: "quota" as const,
       question:
         `${(one.spent_fraction * 100).toFixed(0)}% of the ` +
-        `${windowName(one.unit)} window on ${one.engine} is spent`,
+        `${windowName(one.window)} window on ${one.engine} is spent`,
       // A QUOTA AGES: without the instant it was read at, a reading from
       // yesterday looks exactly like one from a minute ago.
       context:

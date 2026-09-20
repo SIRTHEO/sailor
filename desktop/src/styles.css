@@ -7441,3 +7441,26 @@ tr[data-followable]:hover {
   margin: 0;
   padding-left: var(--space-4);
 }
+
+/* THE BRAND MARKS. A mark carries its own colour — the one exception to
+   prohibition 4, and it earns it: that colour is an identity, not a state, and
+   it appears nowhere else on the row. */
+.brand {
+  border-radius: var(--radius);
+}
+
+.brand--letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--surface-0);
+}
+
+/* The engine's name with its mark, sharing a line without either shrinking. */
+.now__engine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

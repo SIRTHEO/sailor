@@ -99,6 +99,21 @@ pub struct WindowLeft {
     /// Spent, from `0.0` to `1.0`, in the shape `models::remaining` keeps it.
     pub used_fraction: f64,
     pub resets_at: Option<String>,
+    /// How long the window lasts, where anything measured it.
+    pub lasts_seconds: Option<u64>,
+}
+
+impl WindowLeft {
+    /// What to call this window to a person. **THE LENGTH FIRST, THE
+    /// PROVIDER'S WORD ONLY WHERE NOTHING MEASURED ONE**: `primary_window`
+    /// named an order, and covered five hours on one account and nineteen
+    /// days on another.
+    pub fn word(&self) -> String {
+        match models::remaining::HowLong::of(self.lasts_seconds) {
+            models::remaining::HowLong::NotSaid => self.unit.clone(),
+            named => named.to_string(),
+        }
+    }
 }
 
 /// What asking an account for its allowance answered.
@@ -146,6 +161,7 @@ pub fn quota_by_profile(readings: &[toolbox::quota::Reading]) -> BTreeMap<String
                         unit: window.unit.clone(),
                         used_fraction: window.used_fraction,
                         resets_at: window.resets_at.clone(),
+                        lasts_seconds: window.lasts_seconds,
                     })
                     .collect(),
                 refused: None,
@@ -478,11 +494,15 @@ pub fn report(views: &[AccountView], hours: i64) -> String {
             lines.push(match window.resets_at.as_deref() {
                 Some(resets) => catalogue::say(
                     "cli.accounts.one_window",
-                    &[("unit", &window.unit), ("used", &used), ("resets", resets)],
+                    &[
+                        ("unit", &window.word()),
+                        ("used", &used),
+                        ("resets", resets),
+                    ],
                 ),
                 None => catalogue::say(
                     "cli.accounts.one_window_no_reset",
-                    &[("unit", &window.unit), ("used", &used)],
+                    &[("unit", &window.word()), ("used", &used)],
                 ),
             });
         }
@@ -541,6 +561,8 @@ pub fn as_one_object(views: &[AccountView], now: i64) -> String {
                         .map(|window| {
                             serde_json::json!({
                                 "unit": window.unit,
+                                "window": window.word(),
+                                "lasts_seconds": window.lasts_seconds,
                                 "used_percent": (window.used_fraction * 1000.0).round() / 10.0,
                                 "resets_at": window.resets_at,
                             })
@@ -692,7 +714,33 @@ mod tests {
             unit: unit.to_owned(),
             used_fraction,
             resets_at: Some("2026-09-19T22:57:45Z".to_owned()),
+            lasts_seconds: None,
         }
+    }
+
+    fn window_lasting(unit: &str, lasts_seconds: u64) -> WindowLeft {
+        WindowLeft {
+            lasts_seconds: Some(lasts_seconds),
+            ..window(unit, 1.0)
+        }
+    }
+
+    /// **THE LENGTH IS WHAT A PERSON READS, WHERE ANYTHING MEASURED ONE.**
+    /// Two accounts of one provider both answered `primary_window`, one
+    /// lasting a week and the other thirty days: drawn by name, one row.
+    #[test]
+    fn a_window_is_called_by_its_length_and_falls_back_to_the_providers_word() {
+        assert_eq!(window_lasting("primary_window", 18_000).word(), "session");
+        assert_eq!(window_lasting("primary_window", 604_800).word(), "week");
+        assert_eq!(
+            window_lasting("primary_window", 2_592_000).word(),
+            "2592000s"
+        );
+        assert_eq!(
+            window("nimbus_quill", 0.0).word(),
+            "nimbus_quill",
+            "a window nothing measured keeps its own word and claims nothing"
+        );
     }
 
     #[test]
@@ -884,6 +932,7 @@ mod tests {
                 unit: "five_hour".to_owned(),
                 used_fraction: 0.1,
                 resets_at: None,
+                lasts_seconds: None,
                 observed_at: NOW,
             }]),
         };

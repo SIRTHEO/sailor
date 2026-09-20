@@ -317,6 +317,7 @@ mod tests {
             unit: unit.to_owned(),
             used_fraction,
             resets_at: resets_at.map(str::to_owned),
+            lasts_seconds: None,
             observed_at: 1_788_000_000,
         }
     }

@@ -48,6 +48,9 @@ pub(crate) struct Budget {
 pub(crate) struct Engine {
     pub id: String,
     pub label: String,
+    /// The slug the brand mark is looked up by. Empty where the descriptor
+    /// declares none, and the screen draws a monogram rather than nothing.
+    pub brand: String,
     /// `present` | `absent` | `undetermined`, and the reason beside it.
     pub presence: &'static str,
     pub reason: String,
@@ -216,6 +219,7 @@ pub(crate) fn engines() -> Result<Engines, String> {
         engines.push(Engine {
             id: descriptor.id.clone(),
             label: if found.label.is_empty() { found.name.clone() } else { found.label.clone() },
+            brand: descriptor.brand.clone(),
             presence: match &found.presence {
                 Presence::Present(_) => "present",
                 Presence::Absent(_) => "absent",

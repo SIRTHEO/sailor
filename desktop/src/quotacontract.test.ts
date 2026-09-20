@@ -41,10 +41,12 @@ describe("the quota contract", () => {
 
 describe("the words for a quota", () => {
   test("A WINDOW NOBODY HAS A NAME FOR IS STILL SHOWN", () => {
-    expect(windowName("five_hour")).toBe("5 hours");
-    expect(windowName("seven_day")).toBe("7 days");
-    // The provider adds windows: an unknown one must appear under its own key,
-    // never vanish. A dropped row reads as «you have no such limit».
+    // The two the catalogue measured arrive already named, and pass through.
+    expect(windowName("session")).toBe("session");
+    expect(windowName("week")).toBe("week");
+    // The provider adds windows: one whose length nobody measured arrives as
+    // its own key and must appear under it, never vanish. A dropped row reads
+    // as «you have no such limit».
     expect(windowName("thirty_day")).toBe("thirty day");
   });
 

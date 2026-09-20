@@ -4,6 +4,7 @@
 //! the A/B it declared 33 turns out of 75 real ones. The cure is not to ask
 //! better — it is to **read**, spending nothing to do it.
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -46,6 +47,13 @@ pub struct WindowWords {
     pub resets: String,
     /// Whether `resets` is an instant written out or a count of seconds.
     pub resets_in_seconds: bool,
+    /// The key inside a window holding how long that window lasts, in seconds.
+    /// Empty where the provider sends no such field.
+    pub lasts: String,
+    /// How long a window lasts, by the provider's own name for it, where the
+    /// provider never sends the length: measured once, written down, and not
+    /// guessed from the name at every reading.
+    pub lasts_by_name: BTreeMap<String, u64>,
     /// The refusal kinds that mean **the credential itself is no good**; every
     /// other refusal is a «not now», and **EMPTY IS THE SAFE DEFAULT**.
     pub dead_when: Vec<String>,
@@ -59,6 +67,8 @@ impl Default for WindowWords {
             used_in_percent: true,
             resets: "resets_at".to_owned(),
             resets_in_seconds: false,
+            lasts: String::new(),
+            lasts_by_name: BTreeMap::new(),
             dead_when: Vec::new(),
         }
     }
@@ -87,9 +97,59 @@ pub struct Remaining {
     /// derived from a rarely seen shape is invented data wearing the face of a
     /// measure. Convert it when something waits for that hour.
     pub resets_at: Option<String>,
+    /// How long this window lasts, in seconds, where anything says so.
+    ///
+    /// **THE NAME OF A WINDOW DOES NOT SAY WHAT IT IS**: `primary_window`
+    /// names an order, and was measured at a week on one account and thirty
+    /// days on another. Only this says which window a person is looking at.
+    pub lasts_seconds: Option<u64>,
     /// When we looked. A quota ages: a value without the instant it was read
     /// at cannot be told apart from yesterday's.
     pub observed_at: i64,
+}
+
+/// Which window a reading is about, from how long it lasts. **THE BANDS ARE
+/// WIDE ON PURPOSE**, and a third length never enters one of the two: it
+/// keeps its seconds instead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HowLong {
+    Session,
+    Week,
+    /// A length that is neither, kept as it was read.
+    Other(u64),
+    NotSaid,
+}
+
+impl fmt::Display for HowLong {
+    fn fmt(&self, out: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            HowLong::Session => out.write_str("session"),
+            HowLong::Week => out.write_str("week"),
+            HowLong::Other(secs) => write!(out, "{secs}s"),
+            HowLong::NotSaid => out.write_str("window"),
+        }
+    }
+}
+
+impl HowLong {
+    /// Which window a length is, and never which window a name says it is.
+    pub fn of(lasts_seconds: Option<u64>) -> HowLong {
+        const HALF_A_DAY: u64 = 12 * 60 * 60;
+        const SIX_DAYS: u64 = 6 * 24 * 60 * 60;
+        const EIGHT_DAYS: u64 = 8 * 24 * 60 * 60;
+        match lasts_seconds {
+            None => HowLong::NotSaid,
+            Some(secs) if secs <= HALF_A_DAY => HowLong::Session,
+            Some(secs) if (SIX_DAYS..=EIGHT_DAYS).contains(&secs) => HowLong::Week,
+            Some(secs) => HowLong::Other(secs),
+        }
+    }
+}
+
+impl Remaining {
+    pub fn how_long(&self) -> HowLong {
+        HowLong::of(self.lasts_seconds)
+    }
 }
 
 /// Why a reading is not there.
@@ -302,6 +362,10 @@ pub fn from_oauth_usage(
                     when.as_str().map(str::to_owned)
                 }
             }),
+            lasts_seconds: fields
+                .get(&words.lasts)
+                .and_then(serde_json::Value::as_u64)
+                .or_else(|| words.lasts_by_name.get(unit).copied()),
             observed_at,
         });
     }
@@ -490,7 +554,8 @@ mod tests {
             used_in_percent: true,
             resets: "reset_at".to_owned(),
             resets_in_seconds: true,
-            dead_when: Vec::new(),
+            lasts: "limit_window_seconds".to_owned(),
+            ..WindowWords::default()
         };
 
         assert_eq!(
@@ -503,9 +568,104 @@ mod tests {
 
         assert_eq!(found.len(), 2);
         assert_eq!(found[0].unit, "primary_window");
+        assert_eq!(
+            found[0].how_long(),
+            HowLong::NotSaid,
+            "«primary» names an order, and this body never said a length"
+        );
         assert_eq!(found[0].used_fraction, 1.0);
         assert_eq!(found[0].resets_at.as_deref(), Some("2026-09-11T12:48:37Z"));
         assert_eq!(found[1].used_fraction, 0.65);
+    }
+
+    /// **THE NAME OF A WINDOW IS NOT ITS LENGTH.** This provider numbers its
+    /// windows instead of naming them, and the same word covered five hours on
+    /// one account and nineteen days on another. The length it sends beside
+    /// them is the only thing that tells a person which window they are in.
+    #[test]
+    fn a_numbered_window_is_told_apart_by_the_length_beside_it() {
+        let body = r#"{"rate_limit": {
+            "primary_window": {"used_percent": 100, "limit_window_seconds": 18000},
+            "secondary_window": {"used_percent": 65, "limit_window_seconds": 604800}}}"#;
+        let words = WindowWords {
+            windows_at: vec!["rate_limit".to_owned()],
+            used: "used_percent".to_owned(),
+            lasts: "limit_window_seconds".to_owned(),
+            ..WindowWords::default()
+        };
+
+        let found = from_oauth_usage(body, ENGINE, 7, &words).expect("its own words");
+
+        assert_eq!(found[0].how_long(), HowLong::Session);
+        assert_eq!(found[1].how_long(), HowLong::Week);
+        assert_eq!(found[0].how_long().to_string(), "session");
+    }
+
+    /// A provider that names its windows sends no length: the descriptor
+    /// carries the one that was measured, so both providers answer alike.
+    #[test]
+    fn a_named_window_takes_the_length_the_descriptor_measured() {
+        let words = WindowWords {
+            lasts_by_name: BTreeMap::from([
+                ("five_hour".to_owned(), 18_000),
+                ("seven_day".to_owned(), 604_800),
+            ]),
+            ..WindowWords::default()
+        };
+        let found = from_oauth_usage(SAMPLE, ENGINE, 1_000, &words).expect("the sample parses");
+
+        assert_eq!(
+            window(&found, "five_hour").expect("the sitting").how_long(),
+            HowLong::Session
+        );
+        assert_eq!(
+            window(&found, "seven_day").expect("the week").how_long(),
+            HowLong::Week
+        );
+    }
+
+    /// **A THIRD LENGTH IS NOT ROUNDED INTO ONE OF THE TWO.** A real account
+    /// answered with a window nineteen days long; called a week it would send
+    /// somebody back to a door that stays shut for twelve more days.
+    #[test]
+    fn a_length_that_is_neither_keeps_its_seconds() {
+        let body = r#"{"rate_limit": {"primary_window":
+            {"used_percent": 100, "limit_window_seconds": 1641600}}}"#;
+        let words = WindowWords {
+            windows_at: vec!["rate_limit".to_owned()],
+            used: "used_percent".to_owned(),
+            lasts: "limit_window_seconds".to_owned(),
+            ..WindowWords::default()
+        };
+
+        let found = from_oauth_usage(body, ENGINE, 7, &words).expect("its own words");
+
+        assert_eq!(found[0].how_long(), HowLong::Other(1_641_600));
+        assert_eq!(found[0].how_long().to_string(), "1641600s");
+    }
+
+    /// A window nothing measured says so, and does not borrow a neighbour's
+    /// name: `nimbus_quill` sits beside the two that are known.
+    #[test]
+    fn a_window_nobody_measured_stays_unnamed() {
+        let words = WindowWords {
+            lasts_by_name: BTreeMap::from([("five_hour".to_owned(), 18_000)]),
+            ..WindowWords::default()
+        };
+        let found = from_oauth_usage(SAMPLE, ENGINE, 1_000, &words).expect("the sample parses");
+
+        assert_eq!(
+            window(&found, "five_hour").expect("the sitting").how_long(),
+            HowLong::Session
+        );
+        for entry in found.iter().filter(|entry| entry.unit != "five_hour") {
+            assert_eq!(
+                entry.how_long(),
+                HowLong::NotSaid,
+                "{} borrowed a length",
+                entry.unit
+            );
+        }
     }
 
     fn token_of(text: &str) -> Result<Token, RemainingError> {

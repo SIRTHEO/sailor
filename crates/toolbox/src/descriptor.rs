@@ -572,6 +572,13 @@ pub struct QuotaShape {
     /// `text` for an instant written out, `epoch_seconds` for a number.
     #[serde(default)]
     pub resets_in: String,
+    /// The key holding how long a window lasts, in seconds.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub lasts: String,
+    /// How long each window lasts, by the provider's name for it, where the
+    /// provider sends no length of its own. Measured, then written here.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub lasts_by_name: BTreeMap<String, u64>,
 }
 
 /// Where a home writes down the calls made in it, and what the fields are
@@ -811,6 +818,11 @@ pub struct Descriptor {
     /// What it is called for the reader.
     #[serde(default)]
     pub label: String,
+    /// The brand this line belongs to, as a slug a mark is looked up by.
+    /// **THE SLUG IS THE WHOLE DECLARATION**: no path and no colour live in the
+    /// code, and one nobody has a drawing for still draws, as a monogram.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub brand: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detect: Option<Probes>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -27,7 +27,7 @@ export function SessionContext({ native, terminal, lines }: { native: boolean; t
   const quotaText = windows.state === "mute" ? t("window.session.unreadable", { why: windows.why })
     : windows.state === "asking" ? t("window.session.asking")
     : matching.length === 0 ? t("window.session.quota_unknown", { engine })
-    : matching.map((one) => t("window.session.remaining", { window: windowName(one.unit), percent: ((1 - one.spent_fraction) * 100).toFixed(1), at: new Date(one.observed_at * 1000).toLocaleTimeString() })).join(" · ");
+    : matching.map((one) => t("window.session.remaining", { window: windowName(one.window), percent: ((1 - one.spent_fraction) * 100).toFixed(1), at: new Date(one.observed_at * 1000).toLocaleTimeString() })).join(" · ");
 
   return <aside className="session-context" aria-label={t("window.session.attention")}>
     <label className="session-context__choice">

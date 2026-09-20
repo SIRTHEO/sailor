@@ -2,7 +2,8 @@ import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwind from "@tailwindcss/vite";
 import { fileURLToPath, URL } from "node:url";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 // **THE WINDOW CARRIES ONE CATALOGUE, NOT EVERY LANGUAGE THERE IS.** Both
 // shipped in every build: 201 kB of the chunk that loads before anything is
@@ -28,8 +29,58 @@ function theLanguageLayer(spoken: string | undefined) {
   };
 }
 
+
+// **THE BUILD CARRIES THE BRANDS THE DESCRIPTORS ASK FOR, AND NO OTHERS.**
+// `simple-icons` holds 3461 marks, 4.8 MB of them. The descriptors are the only
+// place a brand is named, so they are read here and each slug looked up once.
+// A slug the catalogue lacks stops nothing: it reaches the screen as a
+// monogram, which is what lets `openai` and `aws` still draw something.
+const BRANDS = "virtual:brand-marks";
+const BRANDS_RESOLVED = "\0brand-marks";
+
+function theBrandMarks() {
+  const here = (to: string) => fileURLToPath(new URL(to, import.meta.url));
+  return {
+    name: "the-brand-marks",
+    resolveId: (id: string) => (id === BRANDS ? BRANDS_RESOLVED : null),
+    load(id: string) {
+      if (id !== BRANDS_RESOLVED) return null;
+      const asked = new Set<string>();
+      const folder = here("../crates/toolbox/descriptors");
+      for (const file of readdirSync(folder).filter((name) => name.endsWith(".json"))) {
+        const catalogue = JSON.parse(readFileSync(join(folder, file), "utf8")) as Record<string, unknown>;
+        for (const entries of Object.values(catalogue)) {
+          if (!Array.isArray(entries)) continue;
+          for (const entry of entries) {
+            const slug = (entry as { brand?: unknown }).brand;
+            if (typeof slug === "string" && slug !== "") asked.add(slug);
+          }
+        }
+      }
+
+      const known = JSON.parse(
+        readFileSync(here("./node_modules/simple-icons/data/simple-icons.json"), "utf8"),
+      ) as { title: string; slug?: string; hex: string }[];
+      const by = new Map(
+        known.map((icon) => [icon.slug ?? icon.title.toLowerCase().replace(/[^a-z0-9]/g, ""), icon]),
+      );
+
+      const marks: Record<string, { title: string; hex: string; path: string }> = {};
+      for (const slug of [...asked].sort()) {
+        const icon = by.get(slug);
+        if (icon === undefined) continue;
+        const drawing = readFileSync(here(`./node_modules/simple-icons/icons/${slug}.svg`), "utf8");
+        const path = /\sd="([^"]+)"/.exec(drawing)?.[1];
+        if (path === undefined) continue;
+        marks[slug] = { title: icon.title, hex: `#${icon.hex.toLowerCase()}`, path };
+      }
+      return `export default ${JSON.stringify(marks)};\n`;
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), tailwind(), theLanguageLayer(process.env.SAILOR_LANG)],
+  plugins: [react(), tailwind(), theLanguageLayer(process.env.SAILOR_LANG), theBrandMarks()],
   // `@/` is the source root: the convention shadcn writes into its own
   // components, and without the alias every file added has to be fixed by hand.
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },

@@ -18,3 +18,17 @@ declare module "virtual:language-layer" {
   const catalogue: Record<string, string>;
   export default catalogue;
 }
+
+/** The marks of the brands the descriptors declare; see `theBrandMarks` in
+ *  `vite.config.ts`. A slug absent from this map is not a failure: `brands.ts`
+ *  draws it as a monogram. */
+declare module "virtual:brand-marks" {
+  export interface BrandMark {
+    title: string;
+    hex: string;
+    /** The mark itself, as the `d` of one path on a 24×24 viewBox. */
+    path: string;
+  }
+  const marks: Record<string, BrandMark>;
+  export default marks;
+}

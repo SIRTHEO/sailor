@@ -15,8 +15,8 @@ afterEach(() => {
 const NOW = 1_000_000;
 
 const WINDOWS = [
-  { engine: "claude", unit: "five_hour", spent_fraction: 0.614, resets_at: "2026-09-02T18:00:00Z", observed_at: NOW - 120 },
-  { engine: "claude", unit: "thirty_day", spent_fraction: 1, resets_at: null, observed_at: NOW - 120 },
+  { engine: "claude", unit: "five_hour", window: "session", lasts_seconds: 18_000, spent_fraction: 0.614, resets_at: "2026-09-02T18:00:00Z", observed_at: NOW - 120 },
+  { engine: "claude", unit: "thirty_day", window: "thirty_day", lasts_seconds: null, spent_fraction: 1, resets_at: null, observed_at: NOW - 120 },
 ];
 
 function engine(answers: Record<string, unknown>, fails: Record<string, string> = {}): void {
@@ -47,7 +47,7 @@ describe("the quota screen", () => {
     engine({ quota: { windows: WINDOWS, unreachable: [] } });
     const { container } = render(<QuotaScreen native now={NOW} />);
 
-    await waitFor(() => expect(screen.getByText("5 hours")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("session")).toBeTruthy());
     expect(container.querySelectorAll(".quota__bar").length, "a window went missing").toBe(2);
     // The unknown one appears under its own key rather than being dropped.
     expect(container.textContent).toContain("thirty day");
@@ -72,7 +72,7 @@ describe("the quota screen", () => {
     };
     render(<QuotaScreen native now={NOW} />);
 
-    await waitFor(() => expect(screen.getByText("5 hours")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("session")).toBeTruthy());
     expect(asked).toEqual(["quota"]);
   });
 });
