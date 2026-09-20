@@ -133,15 +133,13 @@ fn a_pinned_identity_another_tree_still_carries_is_kept() {
     let scratch = a_scratch("pinned");
     let repo = a_repository_in(&scratch);
     let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
-    std::fs::write(
-        repo.join(workspace::index_identity::PIN_FILE),
-        "{\"projectId\": \"shared-pin\"}\n",
-    )
-    .expect("the pin");
-    run_git(&repo, &["add", workspace::index_identity::PIN_FILE]);
+    let rule = a_declared_pin(&repo);
+    std::fs::write(repo.join(".an-index.json"), "{\"projectId\": \"shared-pin\"}\n")
+        .expect("the pin");
+    run_git(&repo, &["add", ".an-index.json", ".sailor"]);
     run_git(&repo, &["commit", "-q", "-m", "pin the index"]);
     let tree = workspace::create(&repo, "work/done", None).expect("a tree");
-    let index = an_index(&scratch, "shared-pin", &[PRUNE_TOOL]);
+    let index = an_index_reading(&scratch, "shared-pin", &[PRUNE_TOOL], rule);
 
     let said = close_one(&repo, "done", &store as &dyn OpenTrees, &index.tending).expect("the close");
     let gone = !tree.exists();
@@ -240,15 +238,13 @@ fn a_repository_whose_trees_cannot_be_listed_applies_nothing_and_says_so() {
 fn the_gesture_looks_at_the_repository_that_left_the_identity_behind() {
     let scratch = a_scratch("elsewhere");
     let pinned = a_repository_in(&scratch);
-    std::fs::write(
-        pinned.join(workspace::index_identity::PIN_FILE),
-        "{\"projectId\": \"shared-pin\"}\n",
-    )
-    .expect("the pin");
-    run_git(&pinned, &["add", workspace::index_identity::PIN_FILE]);
+    let rule = a_declared_pin(&pinned);
+    std::fs::write(pinned.join(".an-index.json"), "{\"projectId\": \"shared-pin\"}\n")
+        .expect("the pin");
+    run_git(&pinned, &["add", ".an-index.json", ".sailor"]);
     run_git(&pinned, &["commit", "-q", "-m", "pin the index"]);
     let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
-    let index = an_index(&scratch, "shared-pin", &[PRUNE_TOOL]);
+    let index = an_index_reading(&scratch, "shared-pin", &[PRUNE_TOOL], rule);
 
     // Typed from another repository: what is handed in is that repository's
     // tending, and the gesture must still judge by the row's own.
@@ -293,6 +289,18 @@ impl AnIndex {
 /// another identity nobody asked about, and a third mid-write. Every apply
 /// it receives is written to a log, which is what the assertions read.
 fn an_index(scratch: &Path, identity: &str, tools: &[&str]) -> AnIndex {
+    an_index_reading(scratch, identity, tools, IdentityRule::default())
+}
+
+/// The same fake index, reading the convention a repository declares. ADR-021:
+/// the pin file's name is the repository's to choose, so a test that wants a
+/// pin read has to say where it is written.
+fn an_index_reading(
+    scratch: &Path,
+    identity: &str,
+    tools: &[&str],
+    rule: IdentityRule,
+) -> AnIndex {
     let applied_log = scratch.join("applied.log");
     let tools = tools
         .iter()
@@ -327,13 +335,25 @@ fn an_index(scratch: &Path, identity: &str, tools: &[&str]) -> AnIndex {
             env: Default::default(),
             cwd: None,
         }),
-        IdentityRule::default(),
+        rule,
         Duration::from_secs(10),
     );
     AnIndex {
         tending,
         applied_log,
     }
+}
+
+/// The convention this scratch repository declares: the pin file is named
+/// here, not in the product.
+fn a_declared_pin(repo: &Path) -> IdentityRule {
+    std::fs::create_dir_all(repo.join(".sailor")).expect("the directory");
+    std::fs::write(
+        repo.join(workspace::index_identity::CONVENTION_FILE),
+        "{\"identity\": {\"pin_file\": \".an-index.json\", \"pin_key\": \"projectId\"}}\n",
+    )
+    .expect("the declaration");
+    IdentityRule::declared_by(repo).expect("a convention")
 }
 
 /// The identity of a tree as git lists it: the path git reports is the one

@@ -42,14 +42,23 @@ pub enum IndexServer {
 pub struct IndexTending {
     pub server: IndexServer,
     pub rule: IdentityRule,
+    /// Why the repository's own declaration could not be read, when it could
+    /// not. Carried rather than thrown away: falling back to «no convention»
+    /// would go on naming trees, by a rule nobody chose.
+    pub convention_refused: Option<String>,
     pub timeout: Duration,
 }
 
 impl IndexTending {
     pub fn of(repo: &Path) -> IndexTending {
+        let (rule, refused) = match IdentityRule::declared_by(repo) {
+            Ok(rule) => (rule, None),
+            Err(why) => (IdentityRule::default(), Some(why)),
+        };
         IndexTending {
             server: index_server_of(repo),
-            rule: IdentityRule::from_environment(),
+            rule,
+            convention_refused: refused,
             timeout: Duration::from_secs(TWO_MINUTES),
         }
     }
@@ -58,11 +67,15 @@ impl IndexTending {
         IndexTending {
             server,
             rule,
+            convention_refused: None,
             timeout,
         }
     }
 
     pub fn identity_of(&self, tree: &Worktree) -> Result<IndexIdentity, String> {
+        if let Some(why) = &self.convention_refused {
+            return Err(why.clone());
+        }
         identity_of(Path::new(&tree.path), tree.branch.as_deref(), &self.rule)
     }
 }
