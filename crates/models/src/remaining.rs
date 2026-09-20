@@ -50,10 +50,9 @@ pub struct WindowWords {
     /// The key inside a window holding how long that window lasts, in seconds.
     /// Empty where the provider sends no such field.
     pub lasts: String,
-    /// How long a window lasts, by the provider's own name for it, for the
-    /// providers that never send the length. **A LENGTH IS A MEASURE AND
-    /// BELONGS IN THE DESCRIPTOR**: read off one provider's answer once,
-    /// written down, and not guessed from the name at every reading.
+    /// How long a window lasts, by the provider's own name for it, where the
+    /// provider never sends the length: measured once, written down, and not
+    /// guessed from the name at every reading.
     pub lasts_by_name: BTreeMap<String, u64>,
     /// The refusal kinds that mean **the credential itself is no good**; every
     /// other refusal is a «not now», and **EMPTY IS THE SAFE DEFAULT**.
@@ -100,31 +99,24 @@ pub struct Remaining {
     pub resets_at: Option<String>,
     /// How long this window lasts, in seconds, where anything says so.
     ///
-    /// **THE NAME OF A WINDOW DOES NOT SAY WHAT IT IS.** One provider calls
-    /// them `five_hour` and `seven_day` and a person can read that; another
-    /// calls them `primary_window` and `secondary_window`, which name an order
-    /// and not a length. Only this says which window a person is looking at.
+    /// **THE NAME OF A WINDOW DOES NOT SAY WHAT IT IS**: `primary_window`
+    /// names an order, and was measured at a week on one account and thirty
+    /// days on another. Only this says which window a person is looking at.
     pub lasts_seconds: Option<u64>,
     /// When we looked. A quota ages: a value without the instant it was read
     /// at cannot be told apart from yesterday's.
     pub observed_at: i64,
 }
 
-/// Which window a reading is about, from how long it lasts.
-///
-/// **THE BANDS ARE WIDE ON PURPOSE.** The two lengths measured are five hours
-/// and seven days, and a provider is free to move either a little; what must
-/// never happen is a third length being shown under one of those two names,
-/// so anything outside the bands keeps its seconds and says nothing else.
+/// Which window a reading is about, from how long it lasts. **THE BANDS ARE
+/// WIDE ON PURPOSE**, and a third length never enters one of the two: it
+/// keeps its seconds instead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HowLong {
-    /// A sitting: up to half a day.
     Session,
-    /// A week, give or take a day.
     Week,
     /// A length that is neither, kept as it was read.
     Other(u64),
-    /// Nothing said how long it lasts.
     NotSaid,
 }
 

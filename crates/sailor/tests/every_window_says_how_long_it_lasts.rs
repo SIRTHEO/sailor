@@ -1,11 +1,8 @@
-//! A quota window is shown to a person, and the name a provider gives it does
-//! not say what it is. One provider calls them `five_hour` and `seven_day`,
-//! which a person can read; another calls them `primary_window` and
-//! `secondary_window`, which name an order. Measured on two real accounts on
-//! 20/09/2026, the same `primary_window` stood for seven days on one and
-//! nineteen days on the other. What is proved here: every shipped channel
-//! declares where the length comes from, and a length nobody declared is
-//! never dressed up as a week.
+//! The name a provider gives a quota window does not say what the window is:
+//! one names lengths, another names an order, and the same `primary_window`
+//! was measured at a week on one account and thirty days on another. Proved
+//! here: every shipped channel declares where the length comes from, and a
+//! length nobody declared is never dressed up as a week.
 
 use models::remaining::HowLong;
 use toolbox::descriptor::{Descriptor, BUILTIN};

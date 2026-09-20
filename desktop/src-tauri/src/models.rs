@@ -17,12 +17,9 @@ pub(crate) struct Window {
     /// `five_hour`, `seven_day`, or a name this version does not know. **Not a
     /// closed set** — the provider adds windows.
     unit: String,
-    /// What to call this window to a person: the length it lasts where
-    /// anything measured one, and the provider's own word where nothing did.
-    /// **A NAME THAT COUNTS IS NOT A NAME THAT MEASURES** — `primary_window`
-    /// stood for seven days on one account and nineteen on another.
+    /// What to call it to a person: its length where anything measured one,
+    /// and the provider's own word where nothing did.
     window: String,
-    /// How long it lasts, in seconds, where anything says so.
     lasts_seconds: Option<u64>,
     /// From 0.0 to 1.0, a fraction and not a percentage.
     spent_fraction: f64,
