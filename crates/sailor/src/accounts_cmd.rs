@@ -46,7 +46,7 @@ pub enum Standing {
 }
 
 impl Standing {
-    fn key(self) -> &'static str {
+    pub fn key(self) -> &'static str {
         match self {
             Standing::Ready => "ready",
             Standing::RanOut => "ran_out",
@@ -198,8 +198,12 @@ fn worth(seen: &QuotaSeen) -> u8 {
     }
 }
 
-fn dispatch(args: &[String]) -> Result<String, String> {
-    let (hours, as_json, with_quota) = how_it_was_asked(args)?;
+/// Every account, read the way the line reads them. **THE WINDOW AND THE LINE
+/// CALL THIS SAME FUNCTION**: `dispatch` below only chooses how to print what
+/// comes back, so the two surfaces cannot grow two opinions about what an
+/// account is. Asking with `with_quota` calls the engines and takes seconds;
+/// without it, nothing leaves the machine.
+pub fn the_accounts(hours: i64, with_quota: bool) -> Result<Vec<AccountView>, String> {
     let since = machine::now() - hours * 3_600;
     let directory = ledger::default_directory()
         .ok_or_else(|| catalogue::say("cli.accounts.no_home_no_store", &[]))?;
@@ -217,6 +221,12 @@ fn dispatch(args: &[String]) -> Result<String, String> {
         machine::now(),
     );
     name_the_repairs(&mut views, &declared);
+    Ok(views)
+}
+
+fn dispatch(args: &[String]) -> Result<String, String> {
+    let (hours, as_json, with_quota) = how_it_was_asked(args)?;
+    let views = the_accounts(hours, with_quota)?;
     Ok(if as_json {
         as_one_object(&views, machine::now())
     } else {

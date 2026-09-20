@@ -9,6 +9,7 @@ export type SailorTab =
   | "keeps"
   | "cando"
   | "engines"
+  | "accounts"
   | "profiles"
   | "models"
   | "equipment"
@@ -20,6 +21,7 @@ export const SAILOR_TABS: { id: SailorTab; name: string; about: string; group: s
   { id: "keeps", name: "What it keeps", about: "every store, its path and its size", group: "itself" },
   { id: "cando", name: "What it can do", about: "the actions a flow may use", group: "itself" },
   { id: "engines", name: "Engines", about: "which command lines are here, signed in, and how full", group: "setup" },
+  { id: "accounts", name: "Accounts", about: "what each account has left of its windows, and what it did today", group: "setup" },
   { id: "profiles", name: "Profiles", about: "which account each command line runs under", group: "setup" },
   { id: "models", name: "Models", about: "the catalogue, and which is in use", group: "setup" },
   { id: "equipment", name: "Equipment", about: "tools, skills and rules on this machine", group: "setup" },

@@ -4,6 +4,7 @@
 // copy was the one nobody could see from anywhere else.
 
 import { AbilitiesScreen } from "./AbilitiesScreen";
+import { AccountsScreen } from "./AccountsScreen";
 import type { SailorTab } from "./sailortabs";
 import { EnginesScreen } from "./EnginesScreen";
 import { Installed } from "./Installed";
@@ -37,6 +38,7 @@ export function SailorScreen({
         {tab === "keeps" && <KeepsScreen native={native} />}
         {tab === "cando" && <AbilitiesScreen native={native} />}
         {tab === "engines" && <EnginesScreen native={native} onTerminalOpened={onTerminalOpened} />}
+        {tab === "accounts" && <AccountsScreen native={native} />}
         {tab === "profiles" && <ProfileList native={native} />}
         {tab === "models" && <ModelsScreen native={native} onQuota={onQuota} />}
         {tab === "equipment" && (

@@ -7464,3 +7464,124 @@ tr[data-followable]:hover {
   align-items: center;
   gap: 8px;
 }
+
+/* The accounts, one card each. THE CARDS SIT IN A GRID AND NOT A TABLE: a row
+   per window made one account read as two, which is the confusion this screen
+   was built to end. */
+.account__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-3);
+}
+
+.account__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.account__who {
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.account__name {
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The state word, in the colour of what it means. An account nobody could ask
+   about is not drawn as a good one: absence takes the quiet colour, never the
+   reassuring one. */
+.account__standing {
+  flex-shrink: 0;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-small);
+  color: var(--text-3);
+  border: 1px solid var(--line);
+}
+
+.account__standing[data-standing="ready"] {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+
+.account__standing[data-standing="ran_out"],
+.account__standing[data-standing="shut"] {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+/* The account the next step runs on, marked on the card and not in a legend. */
+.account[data-active] {
+  border-color: var(--ink);
+}
+
+.account__windows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+/* One window and its bar, kept together so a name cannot drift onto the bar
+   below it when a card is narrow. */
+.account__window {
+  display: flex;
+  flex-direction: column;
+}
+
+.account__windowhead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: var(--text-small);
+}
+
+.account__windowname {
+  color: var(--text-2);
+}
+
+.account__windowspent {
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.account__did {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-small);
+  color: var(--text-2);
+}
+
+.account__models {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.account__models li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--text-small);
+}
+
+.account__model {
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account__said {
+  margin-top: var(--space-2);
+}

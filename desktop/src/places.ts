@@ -130,6 +130,7 @@ export interface MachineRow {
 export const MACHINE: MachineRow[] = [
   { id: "running", name: "What it is running", glyph: "\u25c9", asks: "what sailor lit on this machine and never saw end", section: "sailor", tab: "running" },
   { id: "engines", name: "Engines", glyph: "\u2699", asks: "which command lines are here, signed in, and how full", section: "sailor", tab: "engines" },
+  { id: "accounts", name: "Accounts", glyph: "\u25d5", asks: "what each account has left of its windows, and what it did today", section: "sailor", tab: "accounts" },
   { id: "profiles", name: "Profiles", glyph: "\u25d1", asks: "which account each command line runs under", section: "sailor", tab: "profiles" },
   { id: "models", name: "Models", glyph: "\u25cd", asks: "the catalogue, and which is in use", section: "sailor", tab: "models" },
   { id: "equipment", name: "Equipment", glyph: "\u2692", asks: "tools, skills and rules on this machine", section: "sailor", tab: "equipment" },

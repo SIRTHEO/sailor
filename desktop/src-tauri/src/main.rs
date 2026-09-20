@@ -16,6 +16,7 @@
 use serde::Serialize;
 use ui::gather::{flow_sources, load_all_flows};
 
+mod accounts;
 mod attention;
 mod beat;
 mod board;
@@ -191,6 +192,7 @@ fn main() {
             tools::discover_tools,
             tools::tools_sweep,
             engines::engines,
+            accounts::accounts,
             faults::faults,
             faults::fault_status,
             ledger::ledger_held,
