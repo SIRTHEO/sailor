@@ -672,7 +672,7 @@
               "$from": "/combined/answer/trunk"
             },
             "POLICY_READ": {
-              "$json": "/policy/answer"
+              "$json": "/policy"
             },
             "BASE": {
               "$from": "/the_request/answer/base"

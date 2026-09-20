@@ -739,7 +739,7 @@
               "$from": "/the_proof/answer/trunk"
             },
             "POLICY_READ": {
-              "$json": "/policy/answer"
+              "$json": "/policy"
             },
             "TRUNK": {
               "$from": "/the_request/answer/trunk"
@@ -797,7 +797,7 @@
               "$from": "/remote_tip/answer/tip"
             },
             "POLICY_READ": {
-              "$json": "/policy/answer"
+              "$json": "/policy"
             },
             "TRUNK": {
               "$from": "/the_request/answer/trunk"

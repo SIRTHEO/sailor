@@ -454,7 +454,7 @@
               "$from": "/the_candidate/answer/remote_trunk"
             },
             "POLICY_READ": {
-              "$json": "/policy/answer"
+              "$json": "/policy"
             },
             "TRUNK": {
               "$from": "/the_request/answer/trunk"
@@ -728,7 +728,7 @@
               "$from": "/the_candidate/answer/remote_trunk"
             },
             "POLICY_READ": {
-              "$json": "/policy/answer"
+              "$json": "/policy"
             },
             "BASE": {
               "$from": "/the_request/answer/base"

@@ -438,7 +438,7 @@
               "$from": "/the_checkpoint/answer/base_commit"
             },
             "POLICY_READ": {
-              "$json": "/policy/answer"
+              "$json": "/policy"
             },
             "BRANCH": {
               "$from": "/the_request/answer/branch"
