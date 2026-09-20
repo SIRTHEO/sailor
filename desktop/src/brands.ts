@@ -105,7 +105,8 @@ export function legible(colour: string, ground: string = GROUND, floor: number =
  */
 export function hueOfSlug(slug: string): string {
   let hash = 0;
-  for (const letter of slug) hash = (hash * 31 + letter.charCodeAt(0)) % 360;
+  for (const letter of slug) hash = (Math.imul(hash, 31) + letter.charCodeAt(0)) | 0;
+  hash = Math.abs(hash) % 360;
   // Lifted against the LETTER: one hue in seven came back at 4.45:1 when it
   // was lifted only for the wall, and a square legible enough to carry its
   // letter clears the ground's 3:1 anyway.

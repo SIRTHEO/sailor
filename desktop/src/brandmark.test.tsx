@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { BrandMark } from "./BrandMark";
-import { GROUND, MARKS, contrast, hueOfSlug, legible, monogramOf } from "./brands";
+import { GROUND, MARKS, contrast, hueOfSlug, legible, monogramOf, rgbOf } from "./brands";
 
 describe("the marks the build carries", () => {
   test("holds the brands the descriptors declare and not the catalogue", () => {
@@ -52,6 +52,30 @@ describe("a colour that can be seen on the ground", () => {
 });
 
 describe("the monogram", () => {
+  test("gives the brands with no mark hues far enough apart to be told apart", () => {
+    // A modulo inside the hash left `openai` and `aws` 8° apart, which on two
+    // squares side by side is one colour. The five below are the whole of what
+    // Sailor declares and cannot draw.
+    const hues = ["openai", "aws", "jq", "ripgrep", "googleantigravity"].map((slug) => {
+      const { red, green, blue } = rgbOf(hueOfSlug(slug));
+      const high = Math.max(red, green, blue);
+      const span = high - Math.min(red, green, blue);
+      const turn =
+        high === red ? ((green - blue) / span + (green < blue ? 6 : 0))
+        : high === green ? (blue - red) / span + 2
+        : (red - green) / span + 4;
+      return turn * 60;
+    });
+    for (const one of hues) {
+      for (const other of hues) {
+        if (one === other) continue;
+        const apart = Math.abs(one - other);
+        expect(Math.min(apart, 360 - apart)).toBeGreaterThan(15);
+      }
+    }
+  });
+
+
   test("takes the first letter a name can spare", () => {
     expect(monogramOf("Codex")).toBe("C");
     expect(monogramOf(".ENV")).toBe("E");
