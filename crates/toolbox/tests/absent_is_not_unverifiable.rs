@@ -10,13 +10,22 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Mutex, MutexGuard};
 use toolbox::{descriptor::Source, Catalog, Machine, Presence, VersionReading};
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
+/// **ONE CASE AT A TIME, OR LINUX REFUSES TO RUN WHAT WE JUST WROTE.** Cargo
+/// runs the cases of one binary as threads of one process, so a `fork` in one
+/// case inherits the descriptor another case still has open on its fake
+/// executable, and `execve` on it is `ETXTBSY` until that child reaches its own
+/// `exec`. Held by `Sandbox` for the whole case, so no case reads it.
+static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+
 /// A directory of our own, which takes away what we put in it.
 struct Sandbox {
     root: PathBuf,
+    _serial: MutexGuard<'static, ()>,
 }
 
 impl Sandbox {
@@ -25,7 +34,10 @@ impl Sandbox {
         let root = std::env::temp_dir().join(format!("toolbox-{name}-{}-{n}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).expect("the test directory is created");
-        Sandbox { root }
+        Sandbox {
+            root,
+            _serial: ONE_AT_A_TIME.lock().unwrap_or_else(|held| held.into_inner()),
+        }
     }
 
     fn dir(&self, name: &str) -> PathBuf {
@@ -86,6 +98,22 @@ fn machine(path_dirs: Vec<PathBuf>, home: &Path) -> Machine {
 
 fn catalog_from(path: &Path) -> Catalog {
     Catalog::load(&[Source::File(path.to_path_buf())])
+}
+
+/// `ETXTBSY` is a Linux race this machine cannot raise; what is testable here
+/// is that a case holds the lock for as long as it holds its directory.
+#[test]
+fn a_case_holds_the_others_off_for_as_long_as_it_has_a_directory() {
+    let sandbox = Sandbox::new("oneatatime");
+    assert!(
+        ONE_AT_A_TIME.try_lock().is_err(),
+        "a second case could have started while this one still had its directory"
+    );
+    drop(sandbox);
+    assert!(
+        ONE_AT_A_TIME.try_lock().is_ok(),
+        "the lock outlived the directory it was taken for"
+    );
 }
 
 // ── a present tool, recognised by the descriptor that named it ──────────

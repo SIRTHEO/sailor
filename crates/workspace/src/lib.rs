@@ -202,6 +202,44 @@ fn now() -> i64 {
         .unwrap_or_default()
 }
 
+/// **`git worktree add` IS NOT SAFE BESIDE ITSELF.** It reads every other
+/// tree's `commondir`; one written right then is `fatal: failed to read
+/// .git/worktrees/<other>/commondir` — what two parallel steps make. It is
+/// taken in the shared git directory, and no git directory means no lock.
+struct OneTreeAtATime(Option<PathBuf>);
+
+impl OneTreeAtATime {
+    fn over(repo: &Path) -> OneTreeAtATime {
+        let Ok(common) = git(repo, &["rev-parse", "--git-common-dir"]) else {
+            return OneTreeAtATime(None);
+        };
+        let at = repo.join(common.trim()).join("one-tree-at-a-time");
+        for _ in 0..600 {
+            if std::fs::create_dir(&at).is_ok() {
+                break;
+            }
+            let stale = at
+                .metadata()
+                .and_then(|held| held.modified())
+                .map(|since| since.elapsed().unwrap_or_default().as_secs() >= 60)
+                .unwrap_or(false);
+            if stale {
+                let _ = std::fs::remove_dir(&at);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        OneTreeAtATime(Some(at))
+    }
+}
+
+impl Drop for OneTreeAtATime {
+    fn drop(&mut self) {
+        if let Some(at) = self.0.as_ref() {
+            let _ = std::fs::remove_dir(at);
+        }
+    }
+}
+
 /// The tree one step of one run works in, detached so no branch is left behind.
 /// An existing one is the answer: a retried step needs what its first attempt
 /// left. Cutting and writing down are one gesture: a tree the register refused
@@ -232,7 +270,10 @@ pub fn tree_for(
             .map_err(|error| format!("{}: {error}", parent.display()))?;
     }
     let target = path.to_string_lossy().into_owned();
-    git(repo, &["worktree", "add", "--detach", &target, "HEAD"])?;
+    let held = OneTreeAtATime::over(repo);
+    let cut = git(repo, &["worktree", "add", "--detach", &target, "HEAD"]);
+    drop(held);
+    cut?;
     if let Err(why) = register.tree_opened(&opened) {
         let _ = take_down(repo, &path);
         return Err(why);
@@ -334,7 +375,10 @@ fn nothing_is_uncommitted_in(tree: &Path) -> bool {
 
 fn take_down(repo: &Path, tree: &Path) -> Result<(), String> {
     let at = tree.to_string_lossy().into_owned();
-    git(repo, &["worktree", "remove", &at])?;
+    let held = OneTreeAtATime::over(repo);
+    let gone = git(repo, &["worktree", "remove", &at]);
+    drop(held);
+    gone?;
     // The run's directory goes with its last step: a full one errors.
     if let Some(parent) = tree.parent() {
         let _ = std::fs::remove_dir(parent);
