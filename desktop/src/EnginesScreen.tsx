@@ -152,7 +152,7 @@ export function EnginesScreen({ native, onTerminalOpened }: EnginesScreenProps) 
               ) : (
                 engine.quota.map((window) => (
                   <div key={window.unit}>
-                    {window.unit}: {percent(window.spent_fraction)}
+                    {window.window}: {percent(window.spent_fraction)}
                     {window.resets_at !== null && <span className="now__why"> · resets {window.resets_at}</span>}
                   </div>
                 ))

@@ -99,6 +99,21 @@ pub struct WindowLeft {
     /// Spent, from `0.0` to `1.0`, in the shape `models::remaining` keeps it.
     pub used_fraction: f64,
     pub resets_at: Option<String>,
+    /// How long the window lasts, where anything measured it.
+    pub lasts_seconds: Option<u64>,
+}
+
+impl WindowLeft {
+    /// What to call this window to a person. **THE LENGTH FIRST, THE
+    /// PROVIDER'S WORD ONLY WHERE NOTHING MEASURED ONE**: `primary_window`
+    /// named an order, and covered five hours on one account and nineteen
+    /// days on another.
+    pub fn word(&self) -> String {
+        match models::remaining::HowLong::of(self.lasts_seconds) {
+            models::remaining::HowLong::NotSaid => self.unit.clone(),
+            named => named.to_string(),
+        }
+    }
 }
 
 /// What asking an account for its allowance answered.
@@ -146,6 +161,7 @@ pub fn quota_by_profile(readings: &[toolbox::quota::Reading]) -> BTreeMap<String
                         unit: window.unit.clone(),
                         used_fraction: window.used_fraction,
                         resets_at: window.resets_at.clone(),
+                        lasts_seconds: window.lasts_seconds,
                     })
                     .collect(),
                 refused: None,
@@ -478,11 +494,11 @@ pub fn report(views: &[AccountView], hours: i64) -> String {
             lines.push(match window.resets_at.as_deref() {
                 Some(resets) => catalogue::say(
                     "cli.accounts.one_window",
-                    &[("unit", &window.unit), ("used", &used), ("resets", resets)],
+                    &[("unit", &window.word()), ("used", &used), ("resets", resets)],
                 ),
                 None => catalogue::say(
                     "cli.accounts.one_window_no_reset",
-                    &[("unit", &window.unit), ("used", &used)],
+                    &[("unit", &window.word()), ("used", &used)],
                 ),
             });
         }
@@ -541,6 +557,8 @@ pub fn as_one_object(views: &[AccountView], now: i64) -> String {
                         .map(|window| {
                             serde_json::json!({
                                 "unit": window.unit,
+                                "window": window.word(),
+                                "lasts_seconds": window.lasts_seconds,
                                 "used_percent": (window.used_fraction * 1000.0).round() / 10.0,
                                 "resets_at": window.resets_at,
                             })

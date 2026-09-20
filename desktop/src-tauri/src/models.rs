@@ -17,6 +17,13 @@ pub(crate) struct Window {
     /// `five_hour`, `seven_day`, or a name this version does not know. **Not a
     /// closed set** — the provider adds windows.
     unit: String,
+    /// What to call this window to a person: the length it lasts where
+    /// anything measured one, and the provider's own word where nothing did.
+    /// **A NAME THAT COUNTS IS NOT A NAME THAT MEASURES** — `primary_window`
+    /// stood for seven days on one account and nineteen on another.
+    window: String,
+    /// How long it lasts, in seconds, where anything says so.
+    lasts_seconds: Option<u64>,
     /// From 0.0 to 1.0, a fraction and not a percentage.
     spent_fraction: f64,
     /// In the provider's own shape, kept as text on purpose (fault 14).
@@ -29,8 +36,13 @@ pub(crate) struct Window {
 impl From<::models::remaining::Remaining> for Window {
     fn from(one: ::models::remaining::Remaining) -> Self {
         Window {
+            window: match one.how_long() {
+                ::models::remaining::HowLong::NotSaid => one.unit.clone(),
+                named => named.to_string(),
+            },
             engine: one.engine,
             unit: one.unit,
+            lasts_seconds: one.lasts_seconds,
             spent_fraction: one.used_fraction,
             resets_at: one.resets_at,
             observed_at: one.observed_at,
