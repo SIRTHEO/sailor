@@ -34,6 +34,7 @@
       "skills": [
         { "under": ".claude/skills", "glob": "*/SKILL.md" },
         { "under": ".claude/skills", "glob": "*/skills/*/SKILL.md" },
+        { "under": ".claude/skills", "glob": "synced/*/*/SKILL.md" },
         { "under": ".claude/plugins/cache", "glob": "*/*/skills/*/SKILL.md" },
         { "under": ".claude/plugins/cache", "glob": "*/*/*/skills/*/SKILL.md" }
       ],
