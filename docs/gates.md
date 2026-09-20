@@ -24,6 +24,7 @@ suffixed `_TODAY` upward, comment ratios and long blocks downward.
 ## B. When a `.flow.json` or `token-seeds.json` changes
 
 - `cargo test -p sailor -j 1 --test a_flow_never_grows_what_it_sends_in_silence --test every_flow_path_the_code_names_exists --test take_the_next_fault --test take_the_next_work`
+- `cargo test -p sailor -j 1 --test a_flow_step_is_not_a_shell_program` — the seed counts the steps that still reach for a shell
 - `cargo test -p flow -j 1`
 
 ## C. When `crates/actions` or a brake changes
