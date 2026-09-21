@@ -138,6 +138,17 @@ fn resolve_with(
     })
 }
 
+/// The process a launch becomes: what it lifts goes before what it overlays,
+/// so a variable the profile names itself still reaches the engine.
+fn command_for(launch: &Launch) -> Command {
+    let mut command = Command::new(&launch.executable);
+    for variable in &launch.lifted {
+        command.env_remove(variable);
+    }
+    command.args(&launch.args).envs(&launch.env);
+    command
+}
+
 /// The run_id of an engine nobody started for a flow. A real id would tie the
 /// spend to a run that never existed; the empty string would be a run.
 pub const BY_HAND: &str = "by-hand";
@@ -267,11 +278,7 @@ pub fn run(args: &[String]) -> i32 {
     write_down_the_invocation(&launch, cli_id);
     // `exec` replaces this process's image: on success the code below never
     // runs. It returns only to say the launch failed.
-    let mut command = Command::new(&launch.executable);
-    for variable in &launch.lifted {
-        command.env_remove(variable);
-    }
-    let error = command.args(&launch.args).envs(&launch.env).exec();
+    let error = command_for(&launch).exec();
     eprintln!(
         "{}",
         catalogue::say(
@@ -365,6 +372,13 @@ mod tests {
         let launch = resolve_with("codex", &store, &[], Path::new("/casa"), &at_home).unwrap();
         assert_eq!(launch.lifted, vec![variable.clone()]);
         assert!(!launch.env.contains_key(variable));
+
+        let removed: Vec<_> = command_for(&launch)
+            .get_envs()
+            .filter(|(_, value)| value.is_none())
+            .map(|(name, _)| name.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(removed, vec![variable.clone()], "the process itself goes without it");
 
         store.active.insert("codex".to_owned(), "secondo".to_owned());
         let launch = resolve_with("codex", &store, &[], Path::new("/casa"), &at_home).unwrap();

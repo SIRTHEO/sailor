@@ -961,7 +961,7 @@ mod tests {
         };
         let without = |name: &str| (name == "HOME").then(|| "/Users/someone".to_owned());
         assert_eq!(
-            account_of_this_session(engine, &without, &read).as_deref(),
+            account_of_this_session(engine, &without, &read, &[]).as_deref(),
             Some("the-default-account@example.test")
         );
         let with = |name: &str| {
@@ -972,9 +972,32 @@ mod tests {
             }
         };
         assert_eq!(
-            account_of_this_session(engine, &with, &read).as_deref(),
+            account_of_this_session(engine, &with, &read, &[]).as_deref(),
             Some("the-profile@example.test")
         );
+    }
+
+    /// A home that cannot say which account it holds is named by the profile
+    /// declared on it, so two terminals under two profiles stay two names.
+    #[test]
+    fn a_home_that_cannot_tell_is_named_by_its_profile() {
+        let engine = profiles::find_cli("claude").expect("a known command line");
+        let profiles::HomeMechanism::EnvVar(variable) = &engine.home else {
+            panic!("the fixture this test relies on has changed: {:?}", engine.home);
+        };
+        let silent = |_: &std::path::Path| None;
+        let with = |name: &str| (name == variable.as_str()).then(|| "/homes/b-profile".to_owned());
+        let declared = [profiles::Profile {
+            name: "b-profile".to_owned(),
+            cli_id: engine.id.clone(),
+            home_dir: PathBuf::from("/homes/b-profile"),
+            endpoint: None,
+        }];
+        assert_eq!(
+            account_of_this_session(engine, &with, &silent, &declared).as_deref(),
+            Some("b-profile")
+        );
+        assert_eq!(account_of_this_session(engine, &with, &silent, &[]), None);
     }
 
     /// A session started with no variable runs in the engine's own home, so no

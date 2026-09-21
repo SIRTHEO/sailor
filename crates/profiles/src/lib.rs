@@ -1102,9 +1102,9 @@ mod tests {
         let home = Path::new("/Users/someone/.claude");
         let read = |path: &Path| {
             let email = if leaves_the_home(path) {
-                "the-account-in-use@example.com"
+                "the-account-in-use@example.test"
             } else {
-                "a-leftover@example.com"
+                "a-leftover@example.test"
             };
             Some(format!(
                 r#"{{"oauthAccount":{{"emailAddress":"{email}"}}}}"#
@@ -1114,12 +1114,12 @@ mod tests {
         let living_elsewhere = |name: &str| (name == "HOME").then(|| "/Users/another".to_owned());
         assert_eq!(
             identity_as_launched(cli, home, &living_there, &read),
-            HomeIdentity::Answers("the-account-in-use@example.com".to_owned())
+            HomeIdentity::Answers("the-account-in-use@example.test".to_owned())
         );
         assert!(build_environment(cli, home, &living_there).is_empty());
         assert_eq!(
             identity_as_launched(cli, home, &living_elsewhere, &read),
-            HomeIdentity::Answers("a-leftover@example.com".to_owned())
+            HomeIdentity::Answers("a-leftover@example.test".to_owned())
         );
         assert!(!build_environment(cli, home, &living_elsewhere).is_empty());
     }
