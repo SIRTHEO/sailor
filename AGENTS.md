@@ -313,6 +313,10 @@ Traps already paid for:
 - **A branch with nothing open on it is invisible.** Work that is paused gets a
   draft request saying what it holds and what it needs, so the decision is made
   on a page instead of in a branch list.
+- **The loop is run as flows, not by hand.** `docs/the-delivery-loop.md` names
+  the flow for each step, from `open-the-draft-pull-request` to `cut-a-release`;
+  `sailor flow list` says how often each has run. A step done by hand is a step
+  whose flow nobody learns is broken.
 - **In a shared checkout, commit by path and never restore the tree.** Several
   sessions write in the same working copy: `git add -A` sweeps somebody else's
   index, and `--abort`, `stash` or `reset --hard` throws away work that is not
