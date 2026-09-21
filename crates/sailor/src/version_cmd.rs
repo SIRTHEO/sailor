@@ -52,14 +52,17 @@ mod tests {
             .filter(|said| !said.is_empty())
     }
 
-    /// Sources a repository tracks name its head; sources nothing tracks, such
-    /// as an archive, say they do not know.
+    /// Sources a repository tracks name one of its commits; sources nothing
+    /// tracks, such as an archive, say they do not know. The head itself may
+    /// have moved since the build, so it is not what the stamp is held to.
     #[test]
-    fn a_build_from_a_tracked_tree_names_its_head() {
-        let tracked = git(&["ls-files", "build.rs"]).is_some();
-        let head = tracked
-            .then(|| git(&["rev-parse", "--verify", "HEAD^{commit}"]))
-            .flatten();
-        assert_eq!(env!("SAILOR_BUILD_COMMIT"), head.as_deref().unwrap_or(""));
+    fn a_build_from_a_tracked_tree_names_one_of_its_commits() {
+        let stamped = env!("SAILOR_BUILD_COMMIT");
+        if git(&["ls-files", "build.rs"]).is_none() {
+            assert_eq!(stamped, "");
+            return;
+        }
+        let known = git(&["rev-parse", "--verify", &format!("{stamped}^{{commit}}")]);
+        assert_eq!(known.as_deref(), Some(stamped));
     }
 }
