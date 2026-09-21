@@ -8,6 +8,7 @@ pub mod column;
 pub mod delivery;
 pub mod index_identity;
 pub mod ratchet;
+pub mod standing;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

@@ -12,6 +12,7 @@ use ledger::Ledger;
 use std::path::{Path, PathBuf};
 use workspace::branches::against_the_convention;
 use workspace::index_identity::{IdentityRule, IndexIdentity};
+use workspace::standing::WhoIsIn;
 use workspace::{
     branch_names, close_if_the_trunk_holds_it, create, list, remove, root, run_and_step_of,
     Closing, IdentityLeftBehind, OpenTree, OpenTrees, Swept, Worktree,
@@ -110,18 +111,8 @@ fn dispatch(args: &[String]) -> Result<String, String> {
             Ok(render_open(&held, now(), still_the_opener))
         }
         [command, word] if command == "close" && word == MERGED => {
-            // **NOBODY SWEEPS BLIND**: a store that will not answer is not
-            // a machine with nobody in it.
-            let Some(occupied) = who_is_standing() else {
-                return Err(catalogue::say(
-                    "cli.worktree.cannot_ask_who_is_standing",
-                    &[],
-                ));
-            };
+            let (occupied, standing) = what_the_machine_says()?;
             let store = a_store()?;
-            let standing = machine::where_processes_stand().map_err(|why| {
-                catalogue::say("cli.worktree.cannot_see_processes", &[("why", &why)])
-            })?;
             let owner = owner_in(&store);
             let holders = Holders {
                 occupied: &occupied,
@@ -135,10 +126,36 @@ fn dispatch(args: &[String]) -> Result<String, String> {
             Err(catalogue::say("cli.unknown_option", &[("option", word)]))
         }
         [command, name] if command == "close" => {
-            close_one(&repo, name, &a_store()?, &IndexTending::of(&repo))
+            let (occupied, standing) = what_the_machine_says()?;
+            close_one(
+                &repo,
+                name,
+                &a_store()?,
+                &IndexTending::of(&repo),
+                &occupied,
+                &standing,
+            )
         }
         _ => Err(crate::forms_as_lines(USAGE).join("\n")),
     }
+}
+
+/// The terminals Sailor tracks and every process with its working directory.
+type WhoHoldsWhat = (Vec<PathBuf>, Vec<(u32, PathBuf)>);
+
+/// **NOBODY CLOSES BLIND.** A store that will not answer is not a machine with
+/// nobody in it, and neither is an `lsof` that lists nothing. The sweep asked
+/// this and the named close did not: fault 267.
+fn what_the_machine_says() -> Result<WhoHoldsWhat, String> {
+    let Some(occupied) = who_is_standing() else {
+        return Err(catalogue::say(
+            "cli.worktree.cannot_ask_who_is_standing",
+            &[],
+        ));
+    };
+    let standing = machine::where_processes_stand()
+        .map_err(|why| catalogue::say("cli.worktree.cannot_see_processes", &[("why", &why)]))?;
+    Ok((occupied, standing))
 }
 
 fn a_store() -> Result<Ledger, String> {
@@ -201,6 +218,8 @@ pub fn close_one(
     name: &str,
     store: &dyn OpenTrees,
     index: &IndexTending,
+    occupied: &[PathBuf],
+    standing: &[(u32, PathBuf)],
 ) -> Result<String, String> {
     let trees = list(repo)?;
     let found = trees
@@ -209,6 +228,9 @@ pub fn close_one(
         .ok_or_else(|| catalogue::say("cli.worktree.no_tree_by_that_name", &[("name", name)]))?;
     let at = PathBuf::from(&found.path);
     if let Some(refusal) = why_it_is_not_mine_to_close(&trees, &at) {
+        return Err(refusal);
+    }
+    if let Some(refusal) = somebody_is_in(&at, occupied, standing) {
         return Err(refusal);
     }
     // Read before the take-down: a pin lives in the tree, and goes with it.
@@ -397,7 +419,7 @@ pub fn sweep(
         {
             continue;
         }
-        if let Some(line) = held_by_somebody(occupied, &at) {
+        if let Some(line) = somebody_is_in(&at, occupied, holders.standing) {
             said.push(line);
             continue;
         }
@@ -490,15 +512,8 @@ fn write_down_what_was_left(
 /// for a row Sailor wrote down the chain of possession. See `ledger::holdings`.
 fn why_it_stays(at: &Path, row: Option<&OpenTree>, holders: &Holders) -> Option<String> {
     let tree = at.to_string_lossy().into_owned();
-    if let Some(line) = held_by_somebody(holders.occupied, at) {
+    if let Some(line) = somebody_is_in(at, holders.occupied, holders.standing) {
         return Some(line);
-    }
-    if let Some(pid) = a_process_in(holders.standing, at) {
-        let pid = pid.to_string();
-        return Some(catalogue::say(
-            "cli.worktree.a_process_is_in_it",
-            &[("tree", tree.as_str()), ("pid", pid.as_str())],
-        ));
     }
     let Some(row) = row else {
         return Some(catalogue::say(
@@ -591,14 +606,6 @@ fn cut_at(at: &Path) -> Option<i64> {
         .map(|since| since.as_secs() as i64)
 }
 
-fn a_process_in(standing: &[(u32, PathBuf)], at: &Path) -> Option<u32> {
-    let tree = canonical(at);
-    standing
-        .iter()
-        .find(|(_, cwd)| canonical(cwd).starts_with(&tree))
-        .map(|(pid, _)| *pid)
-}
-
 fn written_down_as<'a>(rows: &'a [OpenTree], at: &Path) -> Option<&'a OpenTree> {
     rows.iter().find(|row| same_place(Path::new(&row.path), at))
 }
@@ -622,17 +629,21 @@ fn canonical(at: &Path) -> PathBuf {
 }
 
 /// **A TREE SOMEBODY IS IN IS KEPT AND NAMED**: a session at work is work.
-fn held_by_somebody(occupied: &[PathBuf], at: &Path) -> Option<String> {
-    let here = at.canonicalize().unwrap_or_else(|_| at.to_path_buf());
-    occupied
-        .iter()
-        .any(|taken| taken.canonicalize().unwrap_or_else(|_| taken.clone()) == here)
-        .then(|| {
-            catalogue::say(
-                "cli.worktree.somebody_is_in_it",
-                &[("tree", &at.to_string_lossy())],
-            )
-        })
+/// The reading is `workspace::standing`, so the sweep, the named close and a
+/// flow all keep a tree for the same reasons and say the same thing.
+fn somebody_is_in(at: &Path, occupied: &[PathBuf], standing: &[(u32, PathBuf)]) -> Option<String> {
+    let tree = at.to_string_lossy().into_owned();
+    match workspace::standing::who_is_in(at, occupied, standing) {
+        WhoIsIn::Nobody => None,
+        WhoIsIn::ATerminal(_) => Some(catalogue::say(
+            "cli.worktree.somebody_is_in_it",
+            &[("tree", tree.as_str())],
+        )),
+        WhoIsIn::AProcess(pid) => Some(catalogue::say(
+            "cli.worktree.a_process_is_in_it",
+            &[("tree", tree.as_str()), ("pid", &pid.to_string())],
+        )),
+    }
 }
 
 /// The main tree and the one the command is standing in are never taken down:

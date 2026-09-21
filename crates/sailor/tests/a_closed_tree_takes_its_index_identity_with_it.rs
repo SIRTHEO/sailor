@@ -18,6 +18,11 @@ const A_TRUNK: &str = "tronco";
 
 const ANOTHER_IDENTITY: &str = "other0000000";
 
+/// A machine with nobody in any tree: these cases are about the index, and the
+/// readings of who stands where are handed in so they can be.
+const NOBODY: &[PathBuf] = &[];
+const NO_PROCESS: &[(u32, PathBuf)] = &[];
+
 #[test]
 fn closing_a_tree_retires_its_identity_and_no_other() {
     let scratch = a_scratch("close");
@@ -27,7 +32,7 @@ fn closing_a_tree_retires_its_identity_and_no_other() {
     let identity = identity_as_listed(&repo, "done");
     let index = an_index(&scratch, &identity, &[PRUNE_TOOL, "codebase_search"]);
 
-    let said = close_one(&repo, "done", &store as &dyn OpenTrees, &index.tending).expect("the close");
+    let said = close_one(&repo, "done", &store as &dyn OpenTrees, &index.tending, NOBODY, NO_PROCESS).expect("the close");
     let gone = !tree.exists();
     let applied = index.applied();
     let _ = std::fs::remove_dir_all(&scratch);
@@ -82,10 +87,10 @@ fn an_index_without_the_tool_or_out_of_reach_leaves_the_close_green_and_says_why
         Duration::from_secs(10),
     );
 
-    let said_first = close_one(&repo, "first", &store as &dyn OpenTrees, &without_the_tool.tending)
+    let said_first = close_one(&repo, "first", &store as &dyn OpenTrees, &without_the_tool.tending, NOBODY, NO_PROCESS)
         .expect("the close is green");
     let said_second =
-        close_one(&repo, "second", &store as &dyn OpenTrees, &out_of_reach).expect("the close is green");
+        close_one(&repo, "second", &store as &dyn OpenTrees, &out_of_reach, NOBODY, NO_PROCESS).expect("the close is green");
     let both_gone = !first.exists() && !second.exists();
     let applied = without_the_tool.applied();
     let _ = std::fs::remove_dir_all(&scratch);
@@ -117,9 +122,9 @@ fn a_repository_declaring_no_index_server_says_where_it_would() {
         Duration::from_secs(10),
     );
 
-    let said = close_one(&repo, "done", &store as &dyn OpenTrees, &none).expect("the close is green");
+    let said = close_one(&repo, "done", &store as &dyn OpenTrees, &none, NOBODY, NO_PROCESS).expect("the close is green");
     let said_unreadable =
-        close_one(&repo, "other", &store as &dyn OpenTrees, &unreadable).expect("the close is green");
+        close_one(&repo, "other", &store as &dyn OpenTrees, &unreadable, NOBODY, NO_PROCESS).expect("the close is green");
     let _ = std::fs::remove_dir_all(&scratch);
 
     assert!(said.contains("sailor.indexServer") && said.contains("declares no index server"), "{said}");
@@ -141,7 +146,7 @@ fn a_pinned_identity_another_tree_still_carries_is_kept() {
     let tree = workspace::create(&repo, "work/done", None).expect("a tree");
     let index = an_index_reading(&scratch, "shared-pin", &[PRUNE_TOOL], rule);
 
-    let said = close_one(&repo, "done", &store as &dyn OpenTrees, &index.tending).expect("the close");
+    let said = close_one(&repo, "done", &store as &dyn OpenTrees, &index.tending, NOBODY, NO_PROCESS).expect("the close");
     let gone = !tree.exists();
     let applied = index.applied();
     let _ = std::fs::remove_dir_all(&scratch);
