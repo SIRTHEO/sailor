@@ -233,6 +233,7 @@ const ACTION_KIND: Record<string, StepKind> = {
   delivery_request: "check",
   sailor_in_service: "check",
   close_the_worktree: "check",
+  candidate_gate: "check",
   // Whether the person wrote back the one word that lets the run go on. It
   // reads what a `handed_to_agent` step left and says yes or no: a check.
   the_person_said: "check",
