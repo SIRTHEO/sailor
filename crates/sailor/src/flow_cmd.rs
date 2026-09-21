@@ -461,30 +461,42 @@ fn usage() -> String {
     )
 }
 
-/// How many runs each flow has, and when the last one began. Empty when no
-/// ledger has been opened here: a list must still print without one.
-fn runs_by_flow() -> BTreeMap<String, (usize, i64)> {
+/// How many runs each flow has, and when the last one began. An absent ledger
+/// is a machine where nothing ran; one that will not open answers `Err`, so the
+/// list cannot print «never run» for a flow run a hundred times.
+fn runs_by_flow() -> Result<Runs, String> {
     let Ok(dir) = default_ledger_dir() else {
-        return BTreeMap::new();
+        return Ok(Runs::default());
     };
     if !ui::gather::ledger_present(&dir) {
-        return BTreeMap::new();
+        return Ok(Runs::default());
     }
-    let Ok(ledger) = Ledger::open(&dir) else {
-        return BTreeMap::new();
-    };
-    ledger
+    let ledger = Ledger::open_for_reading(&dir).map_err(|error| error.to_string())?;
+    let by_flow = ledger
         .runs_by_entity()
-        .unwrap_or_default()
+        .map_err(|error| error.to_string())?
         .into_iter()
         .map(|(entity, count, last)| (entity, (count.max(0) as usize, last)))
-        .collect()
+        .collect();
+    Ok(Runs {
+        by_flow,
+        as_of_checkpoint: ledger.reads_as_of_the_last_checkpoint(),
+    })
+}
+
+#[derive(Default)]
+struct Runs {
+    by_flow: BTreeMap<String, (usize, i64)>,
+    as_of_checkpoint: bool,
 }
 
 /// A flow the product ships and nobody has run is a claim, not a feature, and
 /// the list is where that shows.
-fn how_often_it_ran(ran: &BTreeMap<String, (usize, i64)>, name: &str) -> String {
-    let Some((count, last)) = ran.get(name) else {
+fn how_often_it_ran(ran: &Result<Runs, String>, name: &str) -> String {
+    let Ok(ran) = ran else {
+        return catalogue::say("cli.flow.list_runs_unknown", &[]);
+    };
+    let Some((count, last)) = ran.by_flow.get(name) else {
         return catalogue::say("cli.flow.list_never_run", &[]);
     };
     let days = now_secs()
@@ -494,6 +506,22 @@ fn how_often_it_ran(ran: &BTreeMap<String, (usize, i64)>, name: &str) -> String 
         "cli.flow.list_ran",
         &[("count", &count.to_string()), ("days", &days.to_string())],
     )
+}
+
+/// The line under the list that says the counts beside it are partial or
+/// missing, and why.
+fn how_the_runs_were_read(ran: &Result<Runs, String>) -> Option<String> {
+    match ran {
+        Err(error) => Some(catalogue::say(
+            "cli.flow.list_ledger_unreadable",
+            &[("error", error)],
+        )),
+        Ok(runs) if runs.as_of_checkpoint => Some(catalogue::say(
+            "cli.store.read_as_of_the_last_checkpoint",
+            &[],
+        )),
+        Ok(_) => None,
+    }
 }
 
 fn list_flows(sources: &[FlowSource]) -> Result<String, String> {
@@ -544,6 +572,9 @@ fn list_flows(sources: &[FlowSource]) -> Result<String, String> {
     }
     if let Some(no_home) = flow::system::no_home_said(sources) {
         let _ = writeln!(report, "{no_home}");
+    }
+    if let Some(partial) = how_the_runs_were_read(&ran) {
+        let _ = writeln!(report, "{partial}");
     }
     let _ = write!(report, "{}", waiting_report());
     Ok(report)
@@ -810,5 +841,20 @@ mod tests {
             assert!(report.contains(name), "manca «{name}» in:\n{report}");
         }
         assert!(report.contains("built in"), "{report}");
+    }
+
+    #[test]
+    fn a_ledger_that_will_not_open_is_not_read_as_never_run() {
+        let blind: Result<super::Runs, String> = Err("unable to open database file".to_owned());
+        let said = super::how_often_it_ran(&blind, "cut-a-release");
+        assert_ne!(said, catalogue::say("cli.flow.list_never_run", &[]));
+        let why = super::how_the_runs_were_read(&blind).expect("the list says why");
+        assert!(why.contains("unable to open database file"), "{why}");
+        let empty: Result<super::Runs, String> = Ok(super::Runs::default());
+        assert_eq!(
+            super::how_often_it_ran(&empty, "cut-a-release"),
+            catalogue::say("cli.flow.list_never_run", &[])
+        );
+        assert!(super::how_the_runs_were_read(&empty).is_none());
     }
 }
